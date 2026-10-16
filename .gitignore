@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+*.db
+*.db-shm
+*.db-wal
+traces/
+*.swp
+# made by codex_proxy.sh: sessions, state, maybe credentials
+codex_home/
+node_modules/

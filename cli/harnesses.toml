@@ -1,0 +1,38 @@
+# The harnesses ag can run. Each names its launcher (a Launcher subclass,
+# "module:Class") and its adaptor (Python "module:Class", or TypeScript
+# "path.ts:Export" relative to this clone), then the launcher's settings. Add
+# an entry to run another harness: nothing else in ag changes. Before a run ag
+# checks that the event types the adaptor and the gatherer's pollers output are
+# all among the policy's, and refuses to run otherwise.
+
+[cli.harnesses.codex]
+launcher = "integrations.harnesses.codex.setup.launch:CodexLauncher"
+adaptor  = "integrations.harnesses.codex.adaptor.adaptor:CodexAdaptor"
+command  = ["codex"]        # the codex to run
+provider = ""               # the model provider to hook ("": the one codex would use)
+port     = 4013             # the first port a hook server tries
+log_dir  = ""               # if set, each request the hook changed, before and after
+env      = {}               # extra environment for codex (and nothing else)
+
+[cli.harnesses.pi]
+launcher = "integrations.harnesses.pi.setup.launch:PiLauncher"
+adaptor  = "integrations/harnesses/pi/adaptor/adaptor.ts:PiAdaptor"
+command  = ["pi"]           # the pi to run
+env      = {}               # extra environment for pi
+
+[cli.harnesses.opencode]
+launcher = "integrations.harnesses.opencode.setup.launch:OpencodeLauncher"
+adaptor  = "integrations/harnesses/opencode/adaptor/adaptor.ts:OpencodeAdaptor"
+command  = ["opencode"]     # the opencode to run
+env      = {}               # extra environment for opencode
+
+[cli.harnesses.claude]
+launcher = "integrations.harnesses.claude.setup.launch:ClaudeLauncher"
+adaptor  = "integrations.harnesses.claude.adaptor.adaptor:ClaudeAdaptor"
+command  = ["claude"]       # the Claude Code to run
+upstream = ""               # where its API calls go ("": ANTHROPIC_BASE_URL as set, else Anthropic's)
+port     = 4113             # the first port a hook server tries
+log_dir  = ""               # if set, each request the hook changed, before and after
+trace_root = ""             # if set, every model call there: the request as the model got it, and its answer
+system_messages = ""        # "keep" / "user" for every request ("": chosen by each request's model)
+env      = {}               # extra environment for Claude Code (and nothing else)

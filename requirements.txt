@@ -1,0 +1,2 @@
+# Everything ag needs: this clone, editable, with its dependencies (pyproject.toml).
+-e .[codex]

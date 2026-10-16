@@ -1,0 +1,31 @@
+{
+  "name": "pi-context-manager",
+  "version": "0.0.1",
+  "description": "The context manager in pi: it decides what the model's context holds, before every model call.",
+  "private": true,
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "integrations/harnesses/",
+    "ag/ag_harness/",
+    "pyproject.toml",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./integrations/harnesses/pi/setup/setup.ts"
+    ],
+    "skills": [],
+    "prompts": [],
+    "themes": []
+  },
+  "scripts": {
+    "test": "npm run test:py && npm run test:ts",
+    "test:py": "python3 -m unittest discover -s tests -q",
+    "test:ts": "node --test --experimental-strip-types --no-warnings tests/ts/*.test.ts"
+  }
+}

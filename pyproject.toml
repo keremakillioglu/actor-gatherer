@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "context_manager"
+version = "0.0.1"
+description = "The Actor-Gatherer framework: a context manager for AI agent harnesses, and `ag` to run them with it."
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.9",          # the hook server (Codex, Claude Code)
+    "tiktoken>=0.7",         # counting tokens
+    "litellm>=1.60",         # every LLM call the policies make, to any provider
+]
+
+[project.optional-dependencies]
+codex = ["openai-codex>=0.163"]   # codex/<model> as the Gatherer's LLM, on your Codex login (CLIClient)
+
+[project.scripts]
+ag = "cli.main:main"   # run a harness with the context manager
+
+[tool.setuptools.packages.find]
+include = ["ag*", "integrations*", "cli*"]
