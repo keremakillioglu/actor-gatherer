@@ -58,16 +58,20 @@
   <p><strong>Pollers</strong> bring in information from the environment, such as files changed under the working directory. The Gatherer asks them for new events, and they insert those events like an Actor would. A <strong>context management policy</strong> inside the Gatherer then decides what context each Actor gets, using everything it has gathered from every Actor and from the environment.</p>
   <p><code>ag</code> currently uses:</p>
   <ul>
-    <li><strong>Adaptors:</strong> <a href="https://github.com/ucbepic/actor-gatherer/blob/main/integrations/harnesses/claude/adaptor/adaptor.py"><code>ClaudeAdaptor</code></a>, <a href="https://github.com/ucbepic/actor-gatherer/blob/main/integrations/harnesses/codex/adaptor/adaptor.py"><code>CodexAdaptor</code></a>, <a href="https://github.com/ucbepic/actor-gatherer/blob/main/integrations/harnesses/opencode/adaptor/adaptor.ts"><code>OpencodeAdaptor</code></a> and <a href="https://github.com/ucbepic/actor-gatherer/blob/main/integrations/harnesses/pi/adaptor/adaptor.ts"><code>PiAdaptor</code></a>, each with the launcher <code>ag</code> uses to start that harness connected to the Gatherer.</li>
+    <li><strong>Adaptors:</strong> <a href="https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/claude/adaptor/adaptor.py"><code>ClaudeAdaptor</code></a>, <a href="https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/codex/adaptor/adaptor.py"><code>CodexAdaptor</code></a>, <a href="https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/opencode/adaptor/adaptor.ts"><code>OpencodeAdaptor</code></a> and <a href="https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/pi/adaptor/adaptor.ts"><code>PiAdaptor</code></a>, each with the launcher <code>ag</code> uses to start that harness connected to the Gatherer.</li>
     <li><strong>Pollers:</strong> <a href="https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_pollers/file_changes.py"><code>FileChangePoller</code></a>, which reports files changed under the agent's working directory since it last looked.</li>
     <li><strong>Context Policy:</strong> <a href="https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_policies/proactive_context_manager/policy.py"><code>ProactiveContextManager</code></a>, which searches earlier history in the background, and adds what other sessions asked for and what changed in the environment.</li>
   </ul>
   <p>The framework is extensible. Add a new harness by defining an adaptor for it, new context policies for context management, and pollers that track other information in the environment. See <a href="#extending">Extending <code>ag</code></a>.</p>
 
   <h2 id="install">Install</h2>
-  <p>You need Python 3.11+ and the harness you want to run on your <code>PATH</code>.</p>
+  <p>You need Python 3.11+ and the harness you want to run on your <code>PATH</code>. Install <code>ag</code> from PyPI:</p>
+<pre><code>pip install actor-gatherer             # the `ag` command
+pip install "actor-gatherer[codex]"    # ...and the Codex SDK, to use codex/&lt;model&gt; as the Gatherer's LLM</code></pre>
+  <p>Or from source:</p>
 <pre><code>git clone https://github.com/ucbepic/actor-gatherer &amp;&amp; cd actor-gatherer
-pip install -r requirements.txt    # the `ag` command and every dependency</code></pre>
+pip install -r requirements.txt        # `ag` from this clone, editable, with every dependency</code></pre>
+
   <p><strong>Then set the LLM the Gatherer uses.</strong> It can be an API-based model, called through <a href="https://docs.litellm.ai/docs/providers">LiteLLM</a>. Name it as <code>provider/model</code>, and set that provider's API key:</p>
 <pre><code>ag model openai/gpt-6-sol                    # "provider/model"; the key from OPENAI_API_KEY
 export OPENAI_API_KEY=...
@@ -194,7 +198,7 @@ options = { show = 3 }</code></pre>
   <h3 id="llm"><code>[policies.llm]</code></h3>
   <p>The LLM the policy calls (to split history into tasks, summarize them, and rank them). There is no default model; set one here or with <a href="#commands"><code>ag model</code></a>. The model's name decides how it is called:</p>
   <ul>
-    <li><strong>A coding agent</strong>, <code>claude-code/&lt;model&gt;</code> or <code>codex/&lt;model&gt;</code> (e.g. <code>claude-code/sonnet</code>): runs Claude Code (<code>claude -p</code>) or Codex for each call, on that agent's own login, with its tools and default instructions out of the way. No API key is needed, and every call counts against the subscription's limits. Codex models need the <code>openai-codex</code> package, which <code>pip install -r requirements.txt</code> installs.</li>
+    <li><strong>A coding agent</strong>, <code>claude-code/&lt;model&gt;</code> or <code>codex/&lt;model&gt;</code> (e.g. <code>claude-code/sonnet</code>): runs Claude Code (<code>claude -p</code>) or Codex for each call, on that agent's own login, with its tools and default instructions out of the way. No API key is needed, and every call counts against the subscription's limits. Codex models need the <code>openai-codex</code> package: install <code>actor-gatherer[codex]</code> (a clone's <code>pip install -r requirements.txt</code> includes it).</li>
     <li><strong>Any other name</strong>, <code>provider/model</code> (e.g. <code>gemini/gemini-3.8-flash</code>): called through <a href="https://docs.litellm.ai/docs/providers">LiteLLM</a>, with the provider's API key.</li>
   </ul>
 <pre><code>[policies.llm]
@@ -241,8 +245,8 @@ gatherer = "default"     # the gatherer every run joins; "." for one gatherer pe
   <h3 id="harnesses"><code>[cli.harnesses.&lt;name&gt;]</code></h3>
   <p><code>ag</code> knows a harness only from its entry here, which names its launcher and its adaptor and holds the launcher's settings. <code>ag &lt;name&gt;</code> runs it. How each shipped harness is connected is in <a href="#connection-table">The shipped harnesses</a>.</p>
 <pre><code>[cli.harnesses.claude]
-launcher = "integrations.harnesses.claude.setup.launch:ClaudeLauncher"
-adaptor  = "integrations.harnesses.claude.adaptor.adaptor:ClaudeAdaptor"
+launcher = "ag.integrations.harnesses.claude.setup.launch:ClaudeLauncher"
+adaptor  = "ag.integrations.harnesses.claude.adaptor.adaptor:ClaudeAdaptor"
 command  = ["claude"]
 upstream = ""
 port     = 4113
@@ -489,8 +493,8 @@ args = { path = "~/team-chat.jsonl", stream = "#team" }</code></pre>
   </table></div>
 
   <h4>The adaptor</h4>
-  <p>An adaptor is a Python subclass of <code>Adaptor</code> (<code>integrations/tools/ag_orchestrator/adaptor.py</code>), or a TypeScript class implementing <code>Adaptor&lt;M&gt;</code> (<code>adaptor.ts</code>) with the same declarations as static fields (<code>adaptorName</code>, <code>outputs</code>, <code>accepts</code>, <code>properties</code>):</p>
-<pre><code>from integrations.tools.ag_orchestrator.adaptor import AG, CHANNEL, CWD, Adaptor
+  <p>An adaptor is a Python subclass of <code>Adaptor</code> (<code>ag/integrations/tools/ag_orchestrator/adaptor.py</code>), or a TypeScript class implementing <code>Adaptor&lt;M&gt;</code> (<code>adaptor.ts</code>) with the same declarations as static fields (<code>adaptorName</code>, <code>outputs</code>, <code>accepts</code>, <code>properties</code>):</p>
+<pre><code>from ag.integrations.tools.ag_orchestrator.adaptor import AG, CHANNEL, CWD, Adaptor
 
 
 class MyAdaptor(Adaptor):
@@ -521,18 +525,18 @@ class MyAdaptor(Adaptor):
 
   <h4>The hook</h4>
   <p>The hook works out where the call belongs: the gatherer, the channel (the harness's session id) and the working directory. It then runs one call through the shared routing, which never raises:</p>
-<pre><code>from integrations.tools.ag_connection.ag_client import AgClient
-from integrations.tools.ag_orchestrator.adaptor import CHANNEL
-from integrations.tools.ag_orchestrator.call_ag import call_ag
+<pre><code>from ag.integrations.tools.ag_connection.ag_client import AgClient
+from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag
 
 client = AgClient("mine")                  # starts the Gatherer's server on first use
 messages, note = await call_ag(client, gatherer, {CHANNEL: session_id}, cwd, harness_messages, MyAdaptor())
 send(messages if messages is not None else harness_messages)   # None: the Gatherer could not answer</code></pre>
-  <p><code>call_ag</code> runs <code>to_events</code>, sends the events to the Gatherer, and runs <code>to_messages</code> on the context it returns. In TypeScript, <code>call_ag(server, {gatherer, properties, cwd}, messages, adaptor)</code> in <code>call_ag.ts</code> does the same. For a proxy-based harness, <code>integrations/tools/hook_server/hook_server.py</code> is the proxy: it calls a given hook on every request to the model's endpoint, and relays everything else unchanged. A URL that starts with <code>/h/&lt;label&gt;/</code> hands the hook that label, which the shipped hooks use as the gatherer.</p>
+  <p><code>call_ag</code> runs <code>to_events</code>, sends the events to the Gatherer, and runs <code>to_messages</code> on the context it returns. In TypeScript, <code>call_ag(server, {gatherer, properties, cwd}, messages, adaptor)</code> in <code>call_ag.ts</code> does the same. For a proxy-based harness, <code>ag/integrations/tools/hook_server/hook_server.py</code> is the proxy: it calls a given hook on every request to the model's endpoint, and relays everything else unchanged. A URL that starts with <code>/h/&lt;label&gt;/</code> hands the hook that label, which the shipped hooks use as the gatherer.</p>
 
   <h4>The launcher</h4>
-  <p>A launcher is a subclass of <code>cli.launch.Launcher</code>. <code>ag</code> builds it with the harness's settings (its <code>config.toml</code> entry over the class's <code>defaults</code>), and calls <code>launch</code> with a <code>Run</code>. The <code>Run</code> holds the harness's arguments, its command, the environment, the gatherer (<code>None</code> for one per session), the working directory, whether this is a dry run, and the adaptor named in the entry. <code>launch</code> returns the command and environment to run:</p>
-<pre><code>from cli.launch import Launch, Launcher
+  <p>A launcher is a subclass of <code>ag.cli.launch.Launcher</code>. <code>ag</code> builds it with the harness's settings (its <code>config.toml</code> entry over the class's <code>defaults</code>), and calls <code>launch</code> with a <code>Run</code>. The <code>Run</code> holds the harness's arguments, its command, the environment, the gatherer (<code>None</code> for one per session), the working directory, whether this is a dry run, and the adaptor named in the entry. <code>launch</code> returns the command and environment to run:</p>
+<pre><code>from ag.cli.launch import Launch, Launcher
 
 
 class MyLauncher(Launcher):
