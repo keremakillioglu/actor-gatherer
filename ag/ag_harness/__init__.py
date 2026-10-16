@@ -38,7 +38,7 @@ a property means is the policy's, and this package names none. Everything
 is an EVENT: an opaque,
 JSON-serializable payload -- stored and returned verbatim -- of one of the
 gatherer's `EventType`s, named by id. What turns a particular agent's messages
-into events is the harness side (`integrations/harnesses/<harness>/adaptor/`),
+into events is the harness side (`ag/integrations/harnesses/<harness>/adaptor/`),
 which reaches this package only through its server, over stdio; this package
 knows no harness. What a policy writes itself comes back as an `ag` message.
 """

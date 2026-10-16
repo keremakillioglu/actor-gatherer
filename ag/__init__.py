@@ -1,4 +1,4 @@
-"""The context manager: five packages, apart from the harnesses that use it (integrations/).
+"""The context manager: five packages, apart from the harnesses that use it (ag/integrations/).
 
     ag_interface/   the contract: events and types, the Policy and Poller bases, and what a
                     policy is given (GathererStore, Gatherers, Jobs)

@@ -1,4 +1,4 @@
-"""The hook server (`integrations/tools/hook_server/hook_server.py`): an HTTP server that
+"""The hook server (`ag/integrations/tools/hook_server/hook_server.py`): an HTTP server that
 calls a given hook on every request and relays. It knows nothing of any
 harness, so it is checked here with a hook for a made-up API whose body is
 `{"messages": [...]}`: what reaches the upstream, what comes back, and that a
@@ -19,7 +19,7 @@ except ImportError:
     web = None
 
 if web is not None:
-    from integrations.tools.hook_server import hook_server  # noqa: E402
+    from ag.integrations.tools.hook_server import hook_server  # noqa: E402
 
 STREAM = b"data: one\n\ndata: two\n\n"
 
@@ -44,7 +44,7 @@ class ToyHook:
 
 class RouteOfTest(unittest.TestCase):
     def test_the_url_s_label(self):
-        route_of = __import__("integrations.tools.hook_server.hook_server", fromlist=["route_of"]).route_of if web else None
+        route_of = __import__("ag.integrations.tools.hook_server.hook_server", fromlist=["route_of"]).route_of if web else None
         if route_of is None:
             self.skipTest("the hook server needs aiohttp")
         self.assertEqual(route_of("/h/demo/v1/responses"), ("demo", "/v1/responses"))
@@ -216,12 +216,12 @@ class LoadHookTest(unittest.TestCase):
     def test_a_hook_or_a_class_built_with_the_options(self):
         if web is None:
             self.skipTest("the hook server needs aiohttp")
-        hook = hook_server.load_hook("integrations.harnesses.codex.ag_orchestrator.context_manager:CodexContextManager", {"cwd": "/w"})
+        hook = hook_server.load_hook("ag.integrations.harnesses.codex.ag_orchestrator.context_manager:CodexContextManager", {"cwd": "/w"})
         self.assertEqual(hook.cwd, "/w")
-        self.assertIs(hook_server.load_hook("integrations.harnesses.codex.ag_orchestrator.context_manager:is_model_call", {}),
-                      __import__("integrations.harnesses.codex.ag_orchestrator.context_manager", fromlist=["x"]).is_model_call)
+        self.assertIs(hook_server.load_hook("ag.integrations.harnesses.codex.ag_orchestrator.context_manager:is_model_call", {}),
+                      __import__("ag.integrations.harnesses.codex.ag_orchestrator.context_manager", fromlist=["x"]).is_model_call)
         with self.assertRaises(ValueError):
-            hook_server.load_hook("integrations.harnesses.codex.ag_orchestrator.context_manager:is_model_call", {"cwd": "/w"})
+            hook_server.load_hook("ag.integrations.harnesses.codex.ag_orchestrator.context_manager:is_model_call", {"cwd": "/w"})
 
 
 if __name__ == "__main__":

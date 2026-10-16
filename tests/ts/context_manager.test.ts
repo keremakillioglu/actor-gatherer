@@ -1,12 +1,12 @@
-// The context manager as pi's and opencode's hook (integrations/harnesses/<harness>/ag_orchestrator/context_manager.ts), with a stand-in
+// The context manager as pi's and opencode's hook (ag/integrations/harnesses/<harness>/ag_orchestrator/context_manager.ts), with a stand-in
 // server: which gatherer and channel a call belongs to, what reaches the server, what comes back, and that
 // whatever fails leaves the harness's own messages. How the harness calls it (setup.ts) is not involved.
 // Run: npm test.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { OpencodeContextManager } from "../../integrations/harnesses/opencode/ag_orchestrator/context_manager.ts";
-import { PiContextManager } from "../../integrations/harnesses/pi/ag_orchestrator/context_manager.ts";
+import { OpencodeContextManager } from "../../ag/integrations/harnesses/opencode/ag_orchestrator/context_manager.ts";
+import { PiContextManager } from "../../ag/integrations/harnesses/pi/ag_orchestrator/context_manager.ts";
 
 const server = (answer: (op: string, body: any) => any) => {
 	const requests: { op: string; body: any }[] = [];

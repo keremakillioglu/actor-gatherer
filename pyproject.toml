@@ -1,12 +1,21 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "context_manager"
-version = "0.0.1"
+name = "actor-gatherer"
+version = "0.1.0"
 description = "The Actor-Gatherer framework: a context manager for AI agent harnesses, and `ag` to run them with it."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
+keywords = ["agents", "context management", "coding agents", "claude code", "codex", "opencode", "pi"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX",
+    "Operating System :: MacOS",
+]
 dependencies = [
     "aiohttp>=3.9",          # the hook server (Codex, Claude Code)
     "tiktoken>=0.7",         # counting tokens
@@ -16,8 +25,18 @@ dependencies = [
 [project.optional-dependencies]
 codex = ["openai-codex>=0.163"]   # codex/<model> as the Gatherer's LLM, on your Codex login (CLIClient)
 
+[project.urls]
+Homepage = "https://ucbepic.github.io/actor-gatherer/"
+Documentation = "https://ucbepic.github.io/actor-gatherer/docs.html"
+Source = "https://github.com/ucbepic/actor-gatherer"
+
 [project.scripts]
-ag = "cli.main:main"   # run a harness with the context manager
+ag = "ag.cli.main:main"   # run a harness with the context manager
 
 [tool.setuptools.packages.find]
-include = ["ag*", "integrations*", "cli*"]
+include = ["ag*"]
+
+[tool.setuptools.package-data]
+# what runs from the installed package besides Python: ag's harness entries, and the TypeScript
+# plugins (Pi, OpenCode) with the shared harness-side code they import
+ag = ["cli/harnesses.toml", "integrations/**/*.ts"]

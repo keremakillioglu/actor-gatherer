@@ -9,3 +9,5 @@ traces/
 # made by codex_proxy.sh: sessions, state, maybe credentials
 codex_home/
 node_modules/
+build/
+dist/

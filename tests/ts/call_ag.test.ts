@@ -1,11 +1,11 @@
-// integrations/tools/ag_orchestrator/call_ag.ts: one model call through a harness's adaptor and the server, with every way it
+// ag/integrations/tools/ag_orchestrator/call_ag.ts: one model call through a harness's adaptor and the server, with every way it
 // can fail leaving the harness's own messages, and the adaptor held to what it declares. The adaptor and the server are
 // stand-ins. Run: npm test.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CHANNEL, AG, CWD } from "../../integrations/tools/ag_orchestrator/adaptor.ts";
-import { call_ag } from "../../integrations/tools/ag_orchestrator/call_ag.ts";
+import { CHANNEL, AG, CWD } from "../../ag/integrations/tools/ag_orchestrator/adaptor.ts";
+import { call_ag } from "../../ag/integrations/tools/ag_orchestrator/call_ag.ts";
 
 type Req = { op: string; body?: Record<string, unknown> };
 const server = (answer: (body: any) => any) => {
@@ -79,19 +79,19 @@ test("a context entry the adaptor does not accept is noted", async () => {
 });
 
 test("an adaptor ag names is loaded from its path, and one without declarations refused", async () => {
-	const { loadAdaptor } = await import("../../integrations/tools/ag_orchestrator/adaptor.ts");
-	const { PiAdaptor } = await import("../../integrations/harnesses/pi/adaptor/adaptor.ts");
+	const { loadAdaptor } = await import("../../ag/integrations/tools/ag_orchestrator/adaptor.ts");
+	const { PiAdaptor } = await import("../../ag/integrations/harnesses/pi/adaptor/adaptor.ts");
 	const { join } = await import("node:path");
 	const here = new URL(".", import.meta.url).pathname;
-	const loaded = await loadAdaptor(join(here, "../../integrations/harnesses/pi/adaptor/adaptor.ts:PiAdaptor"));
+	const loaded = await loadAdaptor(join(here, "../../ag/integrations/harnesses/pi/adaptor/adaptor.ts:PiAdaptor"));
 	assert.ok(loaded instanceof PiAdaptor);
-	await assert.rejects(loadAdaptor(join(here, "../../integrations/tools/ag_orchestrator/adaptor.ts:declarations")),
+	await assert.rejects(loadAdaptor(join(here, "../../ag/integrations/tools/ag_orchestrator/adaptor.ts:declarations")),
 		/not an adaptor class/);
 });
 
 test("each shipped adaptor emits only what it declares", async () => {
-	const { PiAdaptor } = await import("../../integrations/harnesses/pi/adaptor/adaptor.ts");
-	const { OpencodeAdaptor } = await import("../../integrations/harnesses/opencode/adaptor/adaptor.ts");
+	const { PiAdaptor } = await import("../../ag/integrations/harnesses/pi/adaptor/adaptor.ts");
+	const { OpencodeAdaptor } = await import("../../ag/integrations/harnesses/opencode/adaptor/adaptor.ts");
 	const pi = [{ role: "user", content: "hi", timestamp: 1 }, { role: "assistant", content: [{ type: "text", text: "x" },
 		{ type: "toolCall", id: "c", name: "read", arguments: {} }, { type: "hologram" }] },
 		{ role: "toolResult", toolCallId: "c", content: [] }, { role: "robot" }, {}];

@@ -1,14 +1,14 @@
 """The parts stay apart.
 
-  * The harness side -- `integrations/`: `harnesses/`, what is each
+  * The harness side -- `ag/integrations/`: `harnesses/`, what is each
     harness's, and `tools/`, what every harness uses -- reaches the context
     manager only through its server, over stdio, and the context manager
     (`ag_harness/`) knows nothing of any harness.
-  * `integrations/harnesses/` holds harnesses alone, and each harness three folders:
+  * `ag/integrations/harnesses/` holds harnesses alone, and each harness three folders:
       ag_orchestrator/  the context manager as the harness's hook
       adaptor/          the POLICY-SPECIFIC half: to_events and to_messages
       setup/            the setup that wires the hook in, and the launcher
-    `integrations/tools/` holds ag_connection/ (the ag server's client, the
+    `ag/integrations/tools/` holds ag_connection/ (the ag server's client, the
     protocol), ag_orchestrator/ (call_ag, on ag_connection) and hook_server/
     (on neither), and reaches into no harness.
   * ROUTING (every ag_orchestrator -- the tools' and each harness's -- and
@@ -20,7 +20,7 @@
   * The hook server is generic: it names nothing of any harness, and codex's
     context manager does not know it is what calls it.
   * LAUNCHING: each harness's launcher (`harnesses/<harness>/setup/launch.py`)
-    and adaptor are named by its entry in ag's config (`cli/harnesses.toml`,
+    and adaptor are named by its entry in ag's config (`ag/cli/harnesses.toml`,
     written into config.toml); of its harness a launcher reaches the setup
     alone. `ag`'s code names no harness and imports nothing of the harness
     side: it imports what an entry names, at run time."""
@@ -35,8 +35,8 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AG_SIDE = ("ag_harness", "ag_interface", "ag_tools", "ag_policies", "ag_pollers")   # the context manager's packages
 HARNESS_SIDE = ("integrations",)                     # its package, and its folder
-H_DIR = os.path.join("integrations", "harnesses")
-T_DIR = os.path.join("integrations", "tools")
+H_DIR = os.path.join("ag", "integrations", "harnesses")
+T_DIR = os.path.join("ag", "integrations", "tools")
 TOOLS = ("ag_connection", "ag_orchestrator", "hook_server")
 HARNESSES = ("codex", "pi", "opencode", "claude")
 PARTS = ("ag_orchestrator", "adaptor", "setup")
@@ -49,19 +49,21 @@ TOOLS_CONNECTION = os.path.join(REPO, T_DIR, "ag_connection") + os.sep
 TOOLS_ORCHESTRATOR = os.path.join(REPO, T_DIR, "ag_orchestrator") + os.sep
 
 
-#: The context manager's packages live under ag/: `ag.ag_harness`, in ag/ag_harness/.
-AG_PACKAGES = ("ag_harness", "ag_interface", "ag_tools", "ag_policies", "ag_pollers")
+#: Every package lives under ag/: `ag.ag_harness` in ag/ag_harness/, `ag.integrations` in ag/integrations/.
+AG_PACKAGES = ("ag_harness", "ag_interface", "ag_tools", "ag_policies", "ag_pollers", "integrations", "cli")
 
 
 def folder(top: str) -> str:
-    """A package's folder: ag/<name> for the context manager's own."""
+    """A package's folder: ag/<name>."""
     first = top.split(os.sep)[0]
     return os.path.join("ag", top) if first in AG_PACKAGES else top
 
 
 def name_of(module: str) -> str:
-    """A module, named the way the rules name packages: `ag.ag_harness.x` is `ag_harness.x`."""
-    return module[3:] if module.startswith("ag.ag_") else module
+    """A module, named the way the rules name packages: `ag.ag_harness.x` is `ag_harness.x`,
+    `ag.integrations.x` is `integrations.x`."""
+    head, _, rest = module.partition(".")
+    return rest if head == "ag" and rest.split(".")[0] in AG_PACKAGES else module
 
 
 def files(top: str, ext: str):
@@ -174,7 +176,7 @@ class SidesTest(unittest.TestCase):
                 self.assertEqual(set(python_imports(path)) & set(AG_SIDE), set(), rel(path))
 
     def test_the_harness_side_s_typescript_stays_on_the_harness_side(self):
-        inside = tuple(os.path.join(REPO, top) + os.sep for top in HARNESS_SIDE)
+        inside = tuple(os.path.join(REPO, folder(top)) + os.sep for top in HARNESS_SIDE)
         for top in HARNESS_SIDE:
             for path in files(top, ".ts"):
                 for _names, target in ts_relative(path):
@@ -204,7 +206,7 @@ class SidesTest(unittest.TestCase):
 
 class FoldersTest(unittest.TestCase):
     def test_integrations_holds_the_harnesses_and_what_they_share(self):
-        found = {n for n in os.listdir(os.path.join(REPO, "integrations")) if n not in ("__init__.py", "__pycache__")}
+        found = {n for n in os.listdir(os.path.join(REPO, "ag", "integrations")) if n not in ("__init__.py", "__pycache__")}
         self.assertEqual(found, {"harnesses", "tools"})
 
     def test_harnesses_holds_harnesses_alone(self):
@@ -322,9 +324,9 @@ class RoutingTest(unittest.TestCase):
                     self.assertEqual(target, part(harness, "ag_orchestrator", "context_manager.ts"), rel(path))
         path = part("codex", "setup", "setup.py")
         setup = open(path, encoding="utf-8").read()
-        self.assertIn('HOOK = "integrations.harnesses.codex.ag_orchestrator.context_manager:CodexContextManager"', setup)
+        self.assertIn('HOOK = "ag.integrations.harnesses.codex.ag_orchestrator.context_manager:CodexContextManager"', setup)
         imported = {(n.level, n.module) for n in ast.walk(ast.parse(setup)) if isinstance(n, ast.ImportFrom)}
-        self.assertEqual(imported, {(0, "integrations.tools.hook_server")}, rel(path))                  # the hook server
+        self.assertEqual(imported, {(0, "ag.integrations.tools.hook_server")}, rel(path))                  # the hook server
 
 
 class HookServerTest(unittest.TestCase):
@@ -365,7 +367,7 @@ class LaunchTest(unittest.TestCase):
             self.assertTrue(os.path.exists(part(harness, "setup", "launch.py")), harness)
 
     def test_the_launcher_base_names_no_harness(self):
-        path = os.path.join(REPO, "cli", "launch.py")
+        path = os.path.join(REPO, "ag", "cli", "launch.py")
         source = open(path, encoding="utf-8").read()
         for harness in HARNESSES:
             self.assertNotRegex(source, rf"\b{harness}\b", f"{rel(path)} names {harness}")
@@ -398,12 +400,12 @@ class LaunchTest(unittest.TestCase):
 
     def test_every_harness_is_in_ag_s_default_config_by_its_launcher_and_adaptor(self):
         import tomllib
-        with open(os.path.join(REPO, "cli", "harnesses.toml"), "rb") as fh:
+        with open(os.path.join(REPO, "ag", "cli", "harnesses.toml"), "rb") as fh:
             entries = tomllib.load(fh)["cli"]["harnesses"]
         self.assertEqual(sorted(entries), sorted(HARNESSES))
         for harness, entry in entries.items():
             module, _, cls = entry["launcher"].partition(":")
-            self.assertEqual(module, f"integrations.harnesses.{harness}.setup.launch")
+            self.assertEqual(module, f"ag.integrations.harnesses.{harness}.setup.launch")
             self.assertIn(f"class {cls}(Launcher)", open(part(harness, "setup", "launch.py"), encoding="utf-8").read())
             where, _, export = entry["adaptor"].rpartition(":") if EXT[harness] == ".ts" else \
                 (entry["adaptor"].partition(":")[0].replace(".", "/") + ".py", None, entry["adaptor"].partition(":")[2])
@@ -412,7 +414,7 @@ class LaunchTest(unittest.TestCase):
 
     def test_ag_names_no_harness(self):
         for name in ("main.py", "config.py"):
-            path = os.path.join(REPO, "cli", name)
+            path = os.path.join(REPO, "ag", "cli", name)
             source = open(path, encoding="utf-8").read()
             for harness in HARNESSES:
                 self.assertNotRegex(source, rf"\b{harness}\b", f"{rel(path)} names {harness}")

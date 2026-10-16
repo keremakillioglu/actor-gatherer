@@ -1,11 +1,11 @@
-"""pi's launcher (integrations/harnesses/pi/setup/launch.py): the extension for the run, unless pi's
+"""pi's launcher (ag/integrations/harnesses/pi/setup/launch.py): the extension for the run, unless pi's
 settings install it."""
 
 import json
 import os
 import unittest
 
-from integrations.harnesses.pi.setup import launch as pi
+from ag.integrations.harnesses.pi.setup import launch as pi
 from cli_home import Home
 
 
@@ -14,7 +14,7 @@ class Pi(Home):
         code, out, err = self.run_ag("--dry-run", "pi", "-p", "hi")
         self.assertEqual(code, 0, err)
         self.assertIn(f"-e {pi.EXTENSION} --ag-gatherer default -p hi", out)         # the default gatherer
-        self.assertIn("AG_ADAPTOR=" + os.path.join(pi.REPO, "integrations/harnesses/pi/adaptor/adaptor.ts:PiAdaptor"),
+        self.assertIn("AG_ADAPTOR=" + os.path.join(pi.REPO, "ag/integrations/harnesses/pi/adaptor/adaptor.ts:PiAdaptor"),
                       out)                                                        # the adaptor ag checked
 
 

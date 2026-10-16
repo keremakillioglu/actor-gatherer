@@ -7,7 +7,7 @@
     "pi-package"
   ],
   "files": [
-    "integrations/harnesses/",
+    "ag/integrations/harnesses/",
     "ag/ag_harness/",
     "pyproject.toml",
     "README.md"
@@ -17,7 +17,7 @@
   },
   "pi": {
     "extensions": [
-      "./integrations/harnesses/pi/setup/setup.ts"
+      "./ag/integrations/harnesses/pi/setup/setup.ts"
     ],
     "skills": [],
     "prompts": [],

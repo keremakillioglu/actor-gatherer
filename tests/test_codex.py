@@ -7,8 +7,8 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
-from integrations.harnesses.codex.adaptor import to_messages as back  # noqa: E402
+from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
+from ag.integrations.harnesses.codex.adaptor import to_messages as back  # noqa: E402
 
 USER_MESSAGE, AGENT_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT = (
     "user_message", "agent_message", "tool_call", "tool_output", "context")
@@ -62,7 +62,7 @@ class ClassifyTest(unittest.TestCase):
         self.check("not a dict", CONTEXT)
 
     def test_the_adaptor_emits_only_what_it_declares(self):
-        from integrations.harnesses.codex.adaptor.adaptor import CodexAdaptor
+        from ag.integrations.harnesses.codex.adaptor.adaptor import CodexAdaptor
         items = [msg("user", "hi"), msg("developer", "rules"), {"type": "function_call", "call_id": "c", "name": "x"},
                  {"type": "function_call_output", "call_id": "c", "output": "ok"}, {"type": "something_new"},
                  msg("robot", "?"), {}]

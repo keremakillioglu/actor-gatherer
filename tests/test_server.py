@@ -17,7 +17,7 @@ from ag.ag_harness import home as ag_home  # noqa: E402
 from ag.ag_harness.server import serve  # noqa: E402
 from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
-from integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
+from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
 
 DEV = {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "instructions"}]}
 

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from cli import main
+from ag.cli import main
 
 
 class Home(unittest.TestCase):

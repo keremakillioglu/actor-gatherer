@@ -1,9 +1,9 @@
-"""The context manager as codex's hook (`integrations/harnesses/codex/ag_orchestrator/context_manager.py`): codex's model calls through
+"""The context manager as codex's hook (`ag/integrations/harnesses/codex/ag_orchestrator/context_manager.py`): codex's model calls through
 the context manager, as the hook server calls it.
 
 What it decides -- which requests are model calls, the thread, the working
 directory -- is checked on its own; then requests go through the real hook
-server (`integrations/tools/hook_server/hook_server.py`) calling the hook, to a stand-in
+server (`ag/integrations/tools/hook_server/hook_server.py`) calling the hook, to a stand-in
 upstream that records what it receives and answers with a short event stream,
 so what is checked is what reaches the model and what reaches codex. Behind
 the hook, a fake server client (what it asks, what it is answered), then the
@@ -26,14 +26,14 @@ try:
 except ImportError:                                   # the proxy's one dependency
     web = None
 
-from integrations.harnesses.codex.adaptor import to_events as codex_format  # noqa: E402
+from ag.integrations.harnesses.codex.adaptor import to_events as codex_format  # noqa: E402
 
-from integrations.harnesses.codex.ag_orchestrator import context_manager as codex_ag  # noqa: E402
-from integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.harnesses.codex.ag_orchestrator import context_manager as codex_ag  # noqa: E402
+from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from channels import ch, on  # noqa: E402
 
 if web is not None:
-    from integrations.tools.hook_server import hook_server  # noqa: E402
+    from ag.integrations.tools.hook_server import hook_server  # noqa: E402
 
 SSE = b'event: response.created\ndata: {"type": "response.created"}\n\n' \
       b'event: response.completed\ndata: {"type": "response.completed", "response": {"output": []}}\n\n'
@@ -67,7 +67,7 @@ def agent(text, n):
 
 
 class FakeClient:
-    """Stands in for a gatherer's server client (`integrations.tools.ag_connection.ag_client.AgClient`):
+    """Stands in for a gatherer's server client (`ag.integrations.tools.ag_connection.ag_client.AgClient`):
     records each request and answers a rewrite with an `ag` message before
     the events, as sent; `answer` can be replaced."""
 

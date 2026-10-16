@@ -1,4 +1,4 @@
-"""codex's launcher (integrations/harnesses/codex/setup/launch.py): the provider codex would use and where
+"""codex's launcher (ag/integrations/harnesses/codex/setup/launch.py): the provider codex would use and where
 it relays, what codex is started with -- and nothing codex reads written --
 and the hook servers it starts."""
 
@@ -6,9 +6,9 @@ import json
 import os
 import unittest
 
-from integrations.harnesses.codex.setup import launch as codex
-from integrations.harnesses.codex.setup.hook_servers import HookServers, _listening
-from cli.launch import LaunchError
+from ag.integrations.harnesses.codex.setup import launch as codex
+from ag.integrations.harnesses.codex.setup.hook_servers import HookServers, _listening
+from ag.cli.launch import LaunchError
 from cli_home import Home
 
 
@@ -146,7 +146,7 @@ class Lifecycle(Home):
     def test_one_started_with_another_adaptor_is_not_shared(self):
         port = 46000 + os.getpid() % 1000
         setup, servers = codex.SETUP, HookServers(self.home)
-        mine = {"adaptor": "integrations.harnesses.codex.adaptor.adaptor:CodexAdaptor"}
+        mine = {"adaptor": "ag.integrations.harnesses.codex.adaptor.adaptor:CodexAdaptor"}
         server = servers.start(setup, "http://127.0.0.1:9", port, options=mine)
         self.addCleanup(servers.stop, server)
         self.assertEqual(server.options, mine)

@@ -3,8 +3,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classify, itemId, pieces, textOf, toEvents } from "../../integrations/harnesses/opencode/adaptor/to_events.ts";
-import { agMessage, join, toMessages } from "../../integrations/harnesses/opencode/adaptor/to_messages.ts";
+import { classify, itemId, pieces, textOf, toEvents } from "../../ag/integrations/harnesses/opencode/adaptor/to_events.ts";
+import { agMessage, join, toMessages } from "../../ag/integrations/harnesses/opencode/adaptor/to_messages.ts";
 
 const SID = "ses_1";
 const user = (mid: string, text: string, ...extra: object[]) => ({
