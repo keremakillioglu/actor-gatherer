@@ -1,10 +1,10 @@
 """The context manager behind stdio: the one way every harness reaches it.
 
-    <harness> --> integrations/harnesses/<harness>/ag_orchestrator/ --(JSON lines, integrations/tools/ag_connection/)--> python -m ag.ag_harness.server
+    <harness> --> ag/integrations/harnesses/<harness>/ag_orchestrator/ --(JSON lines, ag/integrations/tools/ag_connection/)--> python -m ag.ag_harness.server
 
-The server knows no harness. The harness side (`integrations/`) turns its
+The server knows no harness. The harness side (`ag/integrations/`) turns its
 agent's messages into EVENTS and the context back into messages
-(`integrations/harnesses/<harness>/adaptor/`); this side stores the events and runs the
+(`ag/integrations/harnesses/<harness>/adaptor/`); this side stores the events and runs the
 policy.
 
 An event, as the harness side sends it:

@@ -31,11 +31,18 @@ Without a Gatherer, each agent operates largely on its own history, which is typ
 
 ## Install
 
-You need Python 3.11+ and the harness you want to run on your `PATH`.
+You need Python 3.11+ and the harness you want to run on your `PATH`. Install `ag` from PyPI:
 
 ```bash
-git clone <this repo> && cd <this repo>
-pip install -r requirements.txt    # the `ag` command and every dependency
+pip install actor-gatherer             # the `ag` command
+pip install "actor-gatherer[codex]"    # ...and the Codex SDK, to use codex/<model> as the Gatherer's LLM
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/ucbepic/actor-gatherer && cd actor-gatherer
+pip install -r requirements.txt        # `ag` from this clone, editable, with every dependency
 ```
 
 **Then set the LLM the Gatherer uses.** It can be an API-based model, called through
@@ -213,10 +220,10 @@ Gatherer then decides what context each Actor gets, using everything it has
 gathered from every Actor and from the environment.
 
 `ag` currently uses:
-- **Adaptors:** [`ClaudeAdaptor`](integrations/harnesses/claude/adaptor/adaptor.py),
-  [`CodexAdaptor`](integrations/harnesses/codex/adaptor/adaptor.py),
-  [`OpencodeAdaptor`](integrations/harnesses/opencode/adaptor/adaptor.ts) and
-  [`PiAdaptor`](integrations/harnesses/pi/adaptor/adaptor.ts), each with the
+- **Adaptors:** [`ClaudeAdaptor`](ag/integrations/harnesses/claude/adaptor/adaptor.py),
+  [`CodexAdaptor`](ag/integrations/harnesses/codex/adaptor/adaptor.py),
+  [`OpencodeAdaptor`](ag/integrations/harnesses/opencode/adaptor/adaptor.ts) and
+  [`PiAdaptor`](ag/integrations/harnesses/pi/adaptor/adaptor.ts), each with the
   launcher `ag` uses to start that harness connected to the Gatherer.
 - **Pollers:** [`FileChangePoller`](ag/ag_pollers/file_changes.py),
   which reports files changed under the agent's working directory since it last

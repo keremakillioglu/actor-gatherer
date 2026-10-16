@@ -2,7 +2,7 @@
 
     python -m ag.ag_harness.server [--factory module:attr] [--path DIR ...]
 
-What every harness starts (integrations/tools/ag_connection/ag_client.py, integrations/tools/ag_connection/ag_client.ts). Each
+What every harness starts (ag/integrations/tools/ag_connection/ag_client.py, ag/integrations/tools/ag_connection/ag_client.ts). Each
 gatherer is what its config in the home says (`ag.ag_harness.home`: ~/.ag,
 or AG_HOME); `--factory` names a callable (gatherer) -> a manager instead,
 with each `--path` on sys.path.

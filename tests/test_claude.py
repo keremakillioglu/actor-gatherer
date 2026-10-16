@@ -1,6 +1,6 @@
 """The claude harness: Claude Code's Anthropic Messages API messages as the context manager's
-events and back (`integrations/harnesses/claude/adaptor/`), and the hook that routes its model
-calls (`integrations/harnesses/claude/ag_orchestrator/context_manager.py`). Behind the hook, a fake
+events and back (`ag/integrations/harnesses/claude/adaptor/`), and the hook that routes its model
+calls (`ag/integrations/harnesses/claude/ag_orchestrator/context_manager.py`). Behind the hook, a fake
 server client; nothing of the context manager is imported here."""
 
 import asyncio
@@ -11,11 +11,11 @@ import unittest
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from integrations.harnesses.claude.adaptor import to_events as claude  # noqa: E402
-from integrations.harnesses.claude.adaptor import to_messages as back  # noqa: E402
-from integrations.harnesses.claude.adaptor.adaptor import ClaudeAdaptor  # noqa: E402
-from integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
-from integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.harnesses.claude.adaptor import to_events as claude  # noqa: E402
+from ag.integrations.harnesses.claude.adaptor import to_messages as back  # noqa: E402
+from ag.integrations.harnesses.claude.adaptor.adaptor import ClaudeAdaptor  # noqa: E402
+from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
+from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 
 USER_MESSAGE, AGENT_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT, AGENT_REASONING = claude.OUTPUTS
 
@@ -458,7 +458,7 @@ class GatewayTest(unittest.TestCase):
             claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda gatherer: FakeClient()), system_messages="x")
 
     def test_the_launcher_passes_the_setting_only_when_set(self):
-        from integrations.harnesses.claude.setup import launch
+        from ag.integrations.harnesses.claude.setup import launch
         seen = []
 
         class Servers:
@@ -483,7 +483,7 @@ class TraceAnswerTest(unittest.TestCase):
         return "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events).encode()
 
     def test_a_stream_is_put_together(self):
-        from integrations.tools.hook_server.trace import response_of
+        from ag.integrations.tools.hook_server.trace import response_of
         raw = self.sse(
             {"type": "message_start", "message": {"id": "msg_1", "usage": {
                 "input_tokens": 10, "cache_read_input_tokens": 100, "cache_creation_input_tokens": 5, "output_tokens": 1}}},
@@ -507,7 +507,7 @@ class TraceAnswerTest(unittest.TestCase):
                                             "output_tokens": 42, "reasoning_output_tokens": 0, "total_tokens": 157})
 
     def test_a_json_answer_and_an_error(self):
-        from integrations.tools.hook_server.trace import response_of
+        from ag.integrations.tools.hook_server.trace import response_of
         body = {"type": "message", "id": "msg_2", "stop_reason": "end_turn",
                 "content": [{"type": "text", "text": "7"}], "usage": {"input_tokens": 3, "output_tokens": 1}}
         r = response_of(json.dumps(body).encode())
@@ -519,7 +519,7 @@ class TraceAnswerTest(unittest.TestCase):
 
 class LauncherTraceTest(unittest.TestCase):
     def test_trace_root_is_handed_to_the_hook_server_with_claude_codes_session_header(self):
-        from integrations.harnesses.claude.setup import launch
+        from ag.integrations.harnesses.claude.setup import launch
         seen = {}
 
         class Servers:

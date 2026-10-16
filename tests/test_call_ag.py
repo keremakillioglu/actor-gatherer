@@ -1,4 +1,4 @@
-"""The harness side's routing in Python (`integrations/tools/ag_orchestrator/call_ag.py`): one
+"""The harness side's routing in Python (`ag/integrations/tools/ag_orchestrator/call_ag.py`): one
 model call through a harness's adaptor and the server, with every way it can
 fail leaving the harness's own messages, and the adaptor held to what it
 declares. The adaptor and the server are stand-ins: routing never looks
@@ -10,8 +10,8 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from integrations.tools.ag_orchestrator.adaptor import CHANNEL, AG, CWD, Adaptor  # noqa: E402
-from integrations.tools.ag_orchestrator.call_ag import call_ag  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, AG, CWD, Adaptor  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag  # noqa: E402
 
 
 class Client:

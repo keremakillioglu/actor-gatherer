@@ -14,12 +14,12 @@ import tempfile
 import unittest
 from unittest import mock
 
-from cli import config, main
-from cli.launch import Run
+from ag.cli import config, main
+from ag.cli.launch import Run
 from cli_home import Home
 
 LAUNCHER = '''
-from cli.launch import Launch, Launcher
+from ag.cli.launch import Launch, Launcher
 
 class EchoLauncher(Launcher):
     """A stand-in harness: echoes what it would run. `launched` says it ran."""
@@ -32,7 +32,7 @@ class EchoLauncher(Launcher):
 '''
 
 ADAPTOR = '''
-from integrations.tools.ag_orchestrator.adaptor import AG, Adaptor
+from ag.integrations.tools.ag_orchestrator.adaptor import AG, Adaptor
 
 class Plain(Adaptor):
     name, outputs, accepts = "plain", ("user_message", "agent_message"), ("user_message", "agent_message", AG)
@@ -117,7 +117,7 @@ class Harnesses(WithPlugins):
         harnesses = config.load()["harnesses"]
         self.assertEqual(sorted(harnesses), ["claude", "codex", "opencode", "pi"])
         for name, entry in harnesses.items():
-            self.assertEqual(entry["launcher"].split(":")[0], f"integrations.harnesses.{name}.setup.launch")
+            self.assertEqual(entry["launcher"].split(":")[0], f"ag.integrations.harnesses.{name}.setup.launch")
             self.assertIn("adaptor", entry)
 
     def test_any_harness_in_the_config_runs(self):
@@ -301,7 +301,7 @@ class Gatherers(Home):
 
 class Config(Home):
     def test_an_entry_over_its_launcher_s_defaults(self):
-        from integrations.harnesses.codex.setup.launch import CodexLauncher
+        from ag.integrations.harnesses.codex.setup.launch import CodexLauncher
         self.assertEqual(config.harness(config.load(), "codex", CodexLauncher.defaults)["port"], 4013)
         set_entry("codex", "port", "5000")
         set_entry("codex", "command", '"/bin/codex"')

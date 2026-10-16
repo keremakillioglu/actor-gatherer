@@ -1,7 +1,7 @@
 """For the tests: a Manager fed codex items, the way the server feeds it.
 
 The policies' tests drive a policy with codex-shaped items. The harness side
-turns them into events (`integrations/harnesses/codex/adaptor/to_events.py`), and the server resolves
+turns them into events (`ag/integrations/harnesses/codex/adaptor/to_events.py`), and the server resolves
 each event's type name to the gatherer's id -- adding a type the gatherer does
 not have -- before `Manager.insert` (ag/ag_harness/server). `CodexItems`
 does both, so a test can insert codex items into a real Manager:
@@ -23,7 +23,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag.ag_interface import FORMAT, Event, EventType  # noqa: E402,F401 - FORMAT for the tests
-from integrations.harnesses.codex.adaptor import to_events as codex_format  # noqa: E402
+from ag.integrations.harnesses.codex.adaptor import to_events as codex_format  # noqa: E402
 from ag.ag_policies.tools.channel import CHANNEL_PROPERTY  # noqa: E402
 from channels import ch, on  # noqa: E402
 

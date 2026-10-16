@@ -9,7 +9,7 @@ Event types are a contract between a policy and the harness that feeds it.
 A POLICY defines the types it expects (`Policy.event_types`: name, properties),
 and they are registered when a gatherer is created. The HARNESS side agrees
 to insert events of those types -- it maps its agent's items onto the names
-(`integrations/harnesses/<harness>/adaptor/`). A caller can define more types at any time
+(`ag/integrations/harnesses/<harness>/adaptor/`). A caller can define more types at any time
 (`add_event_type`) and list them with their ids (`event_types`). Every event
 inserted names its type by that id; an unknown id is refused.
 

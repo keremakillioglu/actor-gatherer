@@ -3,8 +3,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classify, event, pieces, textOf, toEvents } from "../../integrations/harnesses/pi/adaptor/to_events.ts";
-import { agMessage, CUSTOM_TYPE, join, toMessages } from "../../integrations/harnesses/pi/adaptor/to_messages.ts";
+import { classify, event, pieces, textOf, toEvents } from "../../ag/integrations/harnesses/pi/adaptor/to_events.ts";
+import { agMessage, CUSTOM_TYPE, join, toMessages } from "../../ag/integrations/harnesses/pi/adaptor/to_messages.ts";
 
 const user = (text: string, ts = 1000) => ({ role: "user", content: [{ type: "text", text }], timestamp: ts });
 const assistant = (blocks: object[], ts = 2000) => ({

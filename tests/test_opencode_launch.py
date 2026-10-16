@@ -1,11 +1,11 @@
-"""opencode's launcher (integrations/harnesses/opencode/setup/launch.py): the plugin for the run, merged
+"""opencode's launcher (ag/integrations/harnesses/opencode/setup/launch.py): the plugin for the run, merged
 into any OPENCODE_CONFIG_CONTENT given."""
 
 import json
 import unittest
 
-from cli.launch import LaunchError
-from integrations.harnesses.opencode.setup import launch as opencode
+from ag.cli.launch import LaunchError
+from ag.integrations.harnesses.opencode.setup import launch as opencode
 from cli_home import Home
 
 
@@ -15,7 +15,7 @@ class Opencode(Home):
         self.assertEqual(code, 0, err)
         self.assertIn("OPENCODE_CONFIG_CONTENT=", out)
         self.assertIn(opencode.PLUGIN, out)
-        self.assertIn("integrations/harnesses/opencode/adaptor/adaptor.ts:OpencodeAdaptor", out)   # AG_ADAPTOR
+        self.assertIn("ag/integrations/harnesses/opencode/adaptor/adaptor.ts:OpencodeAdaptor", out)   # AG_ADAPTOR
 
 
     def test_merged_into_a_config_given_and_not_twice(self):
