@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "actor-gatherer"
 version = "0.1.0"
-description = "The Actor-Gatherer framework: a context manager for AI agents."
+description = "The Actor-Gatherer framework: a context management framework for AI agents."
 readme = "README.md"
 authors = [{ name = "Sepanta Zeighami" }]
 license = "MIT"
