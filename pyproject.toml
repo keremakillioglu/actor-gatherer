@@ -7,6 +7,7 @@ name = "actor-gatherer"
 version = "0.1.0"
 description = "The Actor-Gatherer framework: a context manager for AI agents."
 readme = "README.md"
+authors = [{ name = "Sepanta Zeighami" }]
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"

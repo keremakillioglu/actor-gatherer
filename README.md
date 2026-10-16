@@ -5,7 +5,7 @@
 [![Project page](https://img.shields.io/badge/Project%20page-actor--gatherer-blue)](https://ucbepic.github.io/actor-gatherer/)
 [![Docs](https://img.shields.io/badge/Docs-actor--gatherer%2Fdocs-green)](https://ucbepic.github.io/actor-gatherer/docs.html)
 [![Blog](https://img.shields.io/badge/Blog-read%20the%20post-purple)](https://ucbepic.github.io/actor-gatherer/blog.html)
-[![Works with Claude Code, Codex, OpenCode and Pi](assets/works-with.svg)](#quickstart)
+[![Works with Claude Code, Codex, OpenCode and Pi](https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/works-with.svg)](#quickstart)
 
 [What is the Actor-Gatherer Framework](#what-is-the-actor-gatherer-framework) · [Install](#install) · [Quickstart](#quickstart) · [Examples](#examples) · [How it works](#how-it-works) · [Extensions](#extensions)
 
@@ -161,7 +161,7 @@ work.
 
 `ag` observes the agent's environment, such as the files in its working
 directory, and tells the agent when something it relied on has changed. The
-example's data file is in this repo, at [`demo/salaries.csv`](demo/salaries.csv).
+example's data file is in this repo, at [`demo/salaries.csv`](https://github.com/ucbepic/actor-gatherer/blob/main/demo/salaries.csv).
 
 **1. Copy the demo file,** so your edit leaves the repo's copy as it is, and
 start Codex next to it:
@@ -204,7 +204,7 @@ answers $7,130, which is incorrect: it uses Japan's old value from its first rea
 
 ## How it works
 
-![Actor-Gatherer architecture: each Actor (a harness plus its adaptor) calls insert and get_context on the Gatherer, which holds the context and insertion policy and a database; pollers watch the environment and insert events](assets/architecture.png)
+![Actor-Gatherer architecture: each Actor (a harness plus its adaptor) calls insert and get_context on the Gatherer, which holds the context and insertion policy and a database; pollers watch the environment and insert events](https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/architecture.png)
 
 The **Gatherer** is a server that many **Actors** talk to, and the Actors can come
 from different coding harnesses. An Actor is a harness plus its **adaptor**, which
@@ -220,15 +220,15 @@ Gatherer then decides what context each Actor gets, using everything it has
 gathered from every Actor and from the environment.
 
 `ag` currently uses:
-- **Adaptors:** [`ClaudeAdaptor`](ag/integrations/harnesses/claude/adaptor/adaptor.py),
-  [`CodexAdaptor`](ag/integrations/harnesses/codex/adaptor/adaptor.py),
-  [`OpencodeAdaptor`](ag/integrations/harnesses/opencode/adaptor/adaptor.ts) and
-  [`PiAdaptor`](ag/integrations/harnesses/pi/adaptor/adaptor.ts), each with the
+- **Adaptors:** [`ClaudeAdaptor`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/claude/adaptor/adaptor.py),
+  [`CodexAdaptor`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/codex/adaptor/adaptor.py),
+  [`OpencodeAdaptor`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/opencode/adaptor/adaptor.ts) and
+  [`PiAdaptor`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/pi/adaptor/adaptor.ts), each with the
   launcher `ag` uses to start that harness connected to the Gatherer.
-- **Pollers:** [`FileChangePoller`](ag/ag_pollers/file_changes.py),
+- **Pollers:** [`FileChangePoller`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_pollers/file_changes.py),
   which reports files changed under the agent's working directory since it last
   looked.
-- **Context Policy:** [`ProactiveContextManager`](ag/ag_policies/proactive_context_manager/policy.py),
+- **Context Policy:** [`ProactiveContextManager`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_policies/proactive_context_manager/policy.py),
   which searches earlier history in the
   background, and adds what other sessions asked for and what changed in the
   environment.
