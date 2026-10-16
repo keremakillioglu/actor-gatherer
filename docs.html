@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Actor-Gatherer Docs</title>
+<meta name="description" content="Documentation for ag, the Actor-Gatherer command line: every setting for policies, pollers and harnesses, the environment variables, and how to write your own policies, pollers and adaptors.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<link rel="stylesheet" href="style.css?v=20">
+</head>
+<body>
+<div class="topbar">
+  <button class="menu" id="menu" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">&#9776;</button>
+  <a class="brand" href="./">Actor-Gatherer</a><span class="crumb">Documentation</span>
+</div>
+<div class="docs-layout">
+<aside class="sidebar" id="sidebar">
+  <nav aria-label="Documentation">
+    <p class="side-group"><a href="#overview">Overview</a></p>
+    <p class="side-group"><a href="#install">Install</a></p>
+    <p class="side-group"><a href="#quickstart">Quickstart</a></p>
+    <p class="side-group"><a href="#cli"><code>ag</code> CLI interface</a></p>
+    <ul>
+      <li><a href="#options">Options</a></li>
+      <li><a href="#commands">Commands</a></li>
+      <li><a href="#home">The home directory</a></li>
+    </ul>
+    <p class="side-group"><a href="#configuration">Configuration</a></p>
+    <ul>
+      <li><a href="#policies"><code>[policies]</code></a></li>
+      <li><a href="#llm"><code>[policies.llm]</code></a></li>
+      <li><a href="#pollers"><code>[pollers]</code></a></li>
+      <li><a href="#cli-settings"><code>[cli]</code></a></li>
+      <li><a href="#harnesses"><code>[cli.harnesses.&lt;name&gt;]</code></a></li>
+      <li><a href="#env">Other environment variables</a></li>
+    </ul>
+    <p class="side-group"><a href="#extending">Extending <code>ag</code></a></p>
+    <ul>
+      <li><a href="#events">Events, event types and properties</a></li>
+      <li><a href="#write-policy">Writing a new context policy</a></li>
+      <li><a href="#write-poller">Writing a new poller</a></li>
+      <li><a href="#write-adaptor">Adding a new harness</a></li>
+    </ul>
+  </nav>
+</aside>
+<main class="doc">
+  <h1>Documentation</h1>
+  <h2 id="overview">Overview</h2>
+  <p>Actor-Gatherer is a framework for agent design where agents context is managed proactively and externally using a Gatherer component. <code>ag</code> is a cli tool that turns any coding agent (Claude Code, Codex, OpenCode or Pi) into an actor-gatherer agent. The agent performing your tasks is called an Actor, and a <strong>Gatherer</strong> component manages the context of all actors connected to it. The Actors share all their messages with the Gatherer, and before every LLM call, they ask the Gatherer for their context. The Gatherer decides the context the model gets based on the current conversation, plus what matters from earlier history, from other agents, and from the environment.</p>
+
+  <figure class="wide full"><img src="figures/architecture.png" alt="Actor-Gatherer architecture: each Actor, a harness plus its adaptor, calls insert and get_context on the Gatherer, which holds the context and insertion policy and a database; pollers watch the environment and insert events."><figcaption>Each Actor (a harness and its adaptor) sends what it sees and does to the Gatherer, and gets its context back before each model call. Pollers bring in changes from the environment, and the Gatherer's policy decides what context each Actor gets.</figcaption></figure>
+  <p>The <strong>Gatherer</strong> is a server that many <strong>Actors</strong> talk to, and the Actors can come from different coding harnesses. An Actor is a harness plus its <strong>adaptor</strong>, which turns the harness's messages into events and the Gatherer's context back into messages. Each Actor uses two calls on the Gatherer:</p>
+  <ul>
+    <li><strong><code>insert</code></strong> gives the Gatherer what the Actor has seen and done.</li>
+    <li><strong><code>get_context</code></strong> runs before each model call, and returns the context the model gets.</li>
+  </ul>
+  <p><strong>Pollers</strong> bring in information from the environment, such as files changed under the working directory. The Gatherer asks them for new events, and they insert those events like an Actor would. A <strong>context management policy</strong> inside the Gatherer then decides what context each Actor gets, using everything it has gathered from every Actor and from the environment.</p>
+  <p><code>ag</code> currently uses:</p>
+  <ul>
+    <li><strong>Adaptors:</strong> <a href="https://github.com/ucbepic/actor-gatherer/blob/main/integrations/harnesses/claude/adaptor/adaptor.py"><code>ClaudeAdaptor</code></a>, <a href="https://github.com/ucbepic/actor-gatherer/blob/main/integrations/harnesses/codex/adaptor/adaptor.py"><code>CodexAdaptor</code></a>, <a href="https://github.com/ucbepic/actor-gatherer/blob/main/integrations/harnesses/opencode/adaptor/adaptor.ts"><code>OpencodeAdaptor</code></a> and <a href="https://github.com/ucbepic/actor-gatherer/blob/main/integrations/harnesses/pi/adaptor/adaptor.ts"><code>PiAdaptor</code></a>, each with the launcher <code>ag</code> uses to start that harness connected to the Gatherer.</li>
+    <li><strong>Pollers:</strong> <a href="https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_pollers/file_changes.py"><code>FileChangePoller</code></a>, which reports files changed under the agent's working directory since it last looked.</li>
+    <li><strong>Context Policy:</strong> <a href="https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_policies/proactive_context_manager/policy.py"><code>ProactiveContextManager</code></a>, which searches earlier history in the background, and adds what other sessions asked for and what changed in the environment.</li>
+  </ul>
+  <p>The framework is extensible. Add a new harness by defining an adaptor for it, new context policies for context management, and pollers that track other information in the environment. See <a href="#extending">Extending <code>ag</code></a>.</p>
+
+  <h2 id="install">Install</h2>
+  <p>You need Python 3.11+ and the harness you want to run on your <code>PATH</code>.</p>
+<pre><code>git clone https://github.com/ucbepic/actor-gatherer &amp;&amp; cd actor-gatherer
+pip install -r requirements.txt    # the `ag` command and every dependency</code></pre>
+  <p><strong>Then set the LLM the Gatherer uses.</strong> It can be an API-based model, called through <a href="https://docs.litellm.ai/docs/providers">LiteLLM</a>. Name it as <code>provider/model</code>, and set that provider's API key:</p>
+<pre><code>ag model openai/gpt-6-sol                    # "provider/model"; the key from OPENAI_API_KEY
+export OPENAI_API_KEY=...
+
+ag model gemini/gemini-3.8-flash             # or a Gemini model; the key from GEMINI_API_KEY
+export GEMINI_API_KEY=...</code></pre>
+  <p>Or it can be a coding agent, such as Claude Code or Codex, which then runs for the Gatherer:</p>
+<pre><code>ag model claude-code/sonnet
+ag model codex/gpt-6-sol</code></pre>
+  <p>To check the model that is set:</p>
+<pre><code>ag model</code></pre>
+
+  <h2 id="quickstart">Quickstart</h2>
+  <p>Put <code>ag --gatherer NAME</code> in front of the agent command you would normally run:</p>
+<pre><code>ag --gatherer demo claude                                # Claude Code
+ag --gatherer demo codex exec "fix the tests"            # Codex
+ag --gatherer demo opencode run "add a --verbose flag"   # OpenCode
+ag --gatherer demo pi                                    # Pi</code></pre>
+  <p>Agents join the gatherer named (<code>demo</code> above). Agents in the same gatherer share information with each other, whichever harness runs them. Agents in different gatherers don't share context, and each gatherer keeps its own history.</p>
+  <p>For example, the first two agents below share information; the third, in a gatherer of its own, sees neither of them:</p>
+<pre><code>ag --gatherer frontend claude                            # shares with the Codex below
+ag --gatherer frontend codex                             # shares with the Claude Code above
+ag --gatherer backend codex                              # shares with neither</code></pre>
+  <p>Without <code>--gatherer</code>, a session joins the gatherer <code>default</code>:</p>
+<pre><code>ag codex                                                 # the same as: ag --gatherer default codex</code></pre>
+  <p>Use <code>--gatherer .</code> to create a new, unnamed gatherer. Agents created this way don't share context with other agents:</p>
+<pre><code>ag --gatherer . codex</code></pre>
+  <p>To see every gatherer:</p>
+<pre><code>ag gatherers                                             # each one's policy, pollers, event count, last activity</code></pre>
+  <p>Every option and command is in <a href="#cli"><code>ag</code> CLI interface</a>.</p>
+
+  <h2 id="cli"><code>ag</code> CLI interface</h2>
+  <p><code>ag</code> is the command line that runs a harness with the Gatherer, and manages the gatherers and settings it keeps. Its options go before the harness's name, and everything after the name is passed to the harness unchanged.</p>
+
+  <h3 id="options">Options</h3>
+  <p>By default every agent you start with <code>ag</code>, from any harness, joins one shared gatherer named <code>default</code> (<a href="#cli-settings"><code>[cli] gatherer</code></a>), each session as its own channel.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>flag</th><th>meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>--gatherer NAME</code></td><td>Join the named gatherer, created if it does not exist. Overrides <code>[cli] gatherer</code>.</td></tr>
+      <tr><td><code>--gatherer .</code></td><td>Give each session a new gatherer of its own, named after the session.</td></tr>
+      <tr><td><code>--policy P</code></td><td>Create the gatherer with policy <code>P</code>. Refused if it exists with another policy.</td></tr>
+      <tr><td><code>--poller X</code></td><td>Create the gatherer with poller <code>X</code> (repeatable).</td></tr>
+      <tr><td><code>--no-pollers</code></td><td>Create the gatherer with no pollers.</td></tr>
+      <tr><td><code>--dry-run</code></td><td>Print the command and environment that would run, and run nothing.</td></tr>
+    </tbody>
+  </table></div>
+  <p>A new gatherer takes its policy and pollers from the defaults in <code>config.toml</code>, or from <code>--policy</code> and <code>--poller</code> when given. They are recorded in <code>~/.ag/gatherers/&lt;name&gt;/gatherer.toml</code>, where you can change an existing gatherer's pollers, or override its policy's options under <code>[options]</code>. A gatherer's policy cannot change once it is in use; to try another, start a new gatherer.</p>
+  <p class="note">The gatherer is chosen on every model call; it is not stored with the session. To resume a session in a named gatherer, name it again: <code>ag --gatherer demo codex resume &lt;id&gt;</code>. Without <code>--gatherer demo</code>, the resumed session goes into <code>default</code>.</p>
+
+  <h3 id="commands">Commands</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>command</th><th>does</th></tr></thead>
+    <tbody>
+      <tr><td><code>ag &lt;harness&gt; [args]</code></td><td>Run the harness with the Gatherer.</td></tr>
+      <tr><td><code>ag model [NAME] [--api-base URL] [--key-env VAR]</code></td><td>Show or set the LLM the Gatherer calls.</td></tr>
+      <tr><td><code>ag config</code></td><td>Show where the settings are, and what each harness resolves to.</td></tr>
+      <tr><td><code>ag status</code> / <code>ag stop</code></td><td>List / stop the proxies <code>ag</code> started.</td></tr>
+      <tr><td><code>ag gatherers</code></td><td>List every gatherer: its policy, pollers, events and last activity.</td></tr>
+      <tr><td><code>ag show &lt;gatherer&gt;</code></td><td>Show a gatherer's resolved settings.</td></tr>
+      <tr><td><code>ag new &lt;gatherer&gt; [--policy P] [--poller X ... | --no-pollers]</code></td><td>Create a gatherer ahead of use.</td></tr>
+      <tr><td><code>ag home list</code></td><td>List every available policy and poller, and any problem.</td></tr>
+      <tr><td><code>ag home path</code></td><td>Print the home directory.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="home">The home directory</h3>
+  <p>Everything <code>ag</code> keeps is in one directory, <code>~/.ag</code> (set <code>AG_HOME</code> to move it). Each gatherer has a directory of its own, with its settings and its database:</p>
+<pre><code>~/.ag/
+├── config.toml                     every setting: policies, pollers, the LLM, harnesses
+├── plugins/                        your own policies and pollers (Python files)
+├── gatherers/&lt;name&gt;/               one directory per gatherer:
+│   ├── gatherer.toml               its policy, its options and its pollers
+│   └── context.db                  its database (SQLite): every event, and every context it sent
+├── hook_server/&lt;port&gt;.json         the proxies ag started (Claude Code, Codex)
+└── logs/
+    ├── gatherers/&lt;name&gt;/server.log what each model call came to
+    ├── gatherers/&lt;name&gt;/worker.log the gatherer's background builds
+    ├── &lt;harness&gt;_server.log        each Gatherer server's own output
+    ├── hook_servers/&lt;port&gt;.log     each proxy's output
+    └── llm/                        one JSON file per LLM call the policies make</code></pre>
+  <p>A gatherer's database records exactly what the model was sent on every call, so any context can be audited later. <code>ag gatherers</code> lists every gatherer, and <code>ag show &lt;gatherer&gt;</code> shows one's settings.</p>
+
+  <h2 id="configuration">Configuration</h2>
+  <p>Every setting is in <code>~/.ag/config.toml</code>, created the first time you run <code>ag</code> with every default written out. A command-line option overrides the setting it names (<code>--gatherer</code> over <code>[cli] gatherer</code>), and so does an <code>AG_*</code> environment variable (<code>AG_LLM_MODEL</code> over <code>[policies.llm] model</code>). The file has these tables:</p>
+<pre><code>[policies]                     # the default policy
+[policies.llm]                 # the LLM the policies call
+[policies.available.&lt;name&gt;]    # the catalog: every policy a gatherer may use
+
+[pollers]                      # the default pollers
+[pollers.available.&lt;name&gt;]     # the catalog: every poller a gatherer may use
+
+[cli]                          # the ag command: the default gatherer
+[cli.harnesses.&lt;name&gt;]         # each harness ag can run</code></pre>
+  <p><code>ag config</code>, <code>ag home list</code> and <code>ag show</code> show how the settings resolve (see <a href="#commands">Commands</a>).</p>
+
+  <h3 id="policies"><code>[policies]</code></h3>
+<pre><code>[policies]
+default = "proactive_context_manager"    # the policy a new gatherer gets when none is named
+
+[policies.available.proactive_context_manager]
+class = "ag.ag_policies.proactive_context_manager:ProactiveContextManager"
+
+[policies.available.pcm_small]           # a variant: the same class, other options
+class = "ag.ag_policies.proactive_context_manager:ProactiveContextManager"
+options = { min_context_tokens = 5000, max_context_tokens = 40000 }
+
+[policies.available.mine]                # your own, from ~/.ag/plugins/mine.py
+file = "mine.py"
+class = "MyPolicy"
+options = { show = 3 }</code></pre>
+  <p>Each entry under <code>[policies.available.&lt;name&gt;]</code> makes a policy available under that name:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>key</th><th>meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>class</code></td><td><code>"module:Class"</code> for an importable class; or just <code>"Class"</code> together with <code>file</code> or <code>module</code>. A factory function works too.</td></tr>
+      <tr><td><code>file</code></td><td>A Python file in <code>~/.ag/plugins/</code> that defines <code>class</code>.</td></tr>
+      <tr><td><code>module</code></td><td>An importable module that defines <code>class</code>.</td></tr>
+      <tr><td><code>options</code></td><td>Options passed to the policy. A gatherer's own <code>[options]</code> in its <code>gatherer.toml</code> are applied on top of these.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Two entries can name the same class with different options; each is a separate policy, and a gatherer picks one by name (<code>ag --gatherer small --policy pcm_small codex</code>).</p>
+
+  <h3 id="llm"><code>[policies.llm]</code></h3>
+  <p>The LLM the policy calls (to split history into tasks, summarize them, and rank them). There is no default model; set one here or with <a href="#commands"><code>ag model</code></a>. The model's name decides how it is called:</p>
+  <ul>
+    <li><strong>A coding agent</strong>, <code>claude-code/&lt;model&gt;</code> or <code>codex/&lt;model&gt;</code> (e.g. <code>claude-code/sonnet</code>): runs Claude Code (<code>claude -p</code>) or Codex for each call, on that agent's own login, with its tools and default instructions out of the way. No API key is needed, and every call counts against the subscription's limits. Codex models need the <code>openai-codex</code> package, which <code>pip install -r requirements.txt</code> installs.</li>
+    <li><strong>Any other name</strong>, <code>provider/model</code> (e.g. <code>gemini/gemini-3.8-flash</code>): called through <a href="https://docs.litellm.ai/docs/providers">LiteLLM</a>, with the provider's API key.</li>
+  </ul>
+<pre><code>[policies.llm]
+model = "gemini/gemini-3.8-flash"        # required: claude-code/&lt;model&gt;, codex/&lt;model&gt;, or "provider/model" for LiteLLM
+# api_base = "http://127.0.0.1:4011/v1"  # LiteLLM: send every call to a LiteLLM proxy or another OpenAI-compatible server
+# key_env = "LITELLM_KEY"                # LiteLLM: read the key from this variable (default: the provider's own)
+# claude_command = "claude"              # claude-code: the Claude Code to run
+# codex_command = "codex"                # codex: the Codex to run
+# log_prompts = true                     # also keep each call's full prompt in its log</code></pre>
+  <div class="table-wrap"><table>
+    <thead><tr><th>key</th><th>for</th><th>default</th><th>meaning</th><th>overridden by</th></tr></thead>
+    <tbody>
+      <tr><td><code>model</code></td><td>all</td><td>none</td><td>The model, as above. Without one, <code>ag</code> warns at launch and every Gatherer call fails.</td><td><code>AG_LLM_MODEL</code></td></tr>
+      <tr><td><code>api_base</code></td><td>LiteLLM</td><td>the provider's</td><td>Send every call to this server instead.</td><td><code>AG_LLM_URL</code></td></tr>
+      <tr><td><code>key_env</code></td><td>LiteLLM</td><td>the provider's variable</td><td>The environment variable that holds the API key.</td><td><code>AG_LLM_KEY</code> (the key itself)</td></tr>
+      <tr><td><code>claude_command</code></td><td>claude-code</td><td><code>"claude"</code></td><td>The Claude Code executable, found on <code>PATH</code>.</td><td></td></tr>
+      <tr><td><code>codex_command</code></td><td>codex</td><td><code>"codex"</code></td><td>The Codex executable, found on <code>PATH</code>.</td><td></td></tr>
+      <tr><td><code>log_prompts</code></td><td>all</td><td><code>false</code></td><td>Keep each call's system text and prompt, whole, in <code>~/.ag/logs/llm/</code>. Usage, timing and the answer are always logged.</td><td></td></tr>
+      <tr><td><code>class</code></td><td>your own</td><td>none</td><td>An LLM implementation of your own, named like a policy's <code>class</code> (with <code>file</code> or <code>module</code> if needed), instead of the two above.</td><td></td></tr>
+    </tbody>
+  </table></div>
+  <p>The Gatherer's own calls to Claude Code or Codex run without <code>ag</code>'s environment, so they never come back through <code>ag</code>.</p>
+
+  <h3 id="pollers"><code>[pollers]</code></h3>
+<pre><code>[pollers]
+default = ["file_changes"]               # the pollers a new gatherer gets, whatever its policy
+
+[pollers.available.file_changes]
+class = "ag.ag_pollers.file_changes:FileChangePoller"
+args = { root = "{cwd}" }
+
+[pollers.available.team_chat]            # your own, from ~/.ag/plugins/chat_log.py
+file = "chat_log.py"
+class = "ChatLogPoller"
+args = { path = "~/team-chat.jsonl", stream = "#team" }</code></pre>
+  <p>An entry under <code>[pollers.available.&lt;name&gt;]</code> takes <code>class</code>, <code>file</code> and <code>module</code> as for policies, and <code>args</code>: the arguments the poller is built with. In a string argument, <code>{cwd}</code> is the agent's working directory, <code>{gatherer}</code> the gatherer's name and <code>{home}</code> the <code>ag</code> home; <code>~</code> is expanded. A poller whose arguments need <code>{cwd}</code> is skipped when the request has no working directory.</p>
+  <p>A gatherer's pollers must output event types its policy accepts; <code>ag</code> checks this before each run (see <a href="#events">Events, event types and properties</a>).</p>
+
+  <h3 id="cli-settings"><code>[cli]</code></h3>
+<pre><code>[cli]
+gatherer = "default"     # the gatherer every run joins; "." for one gatherer per session</code></pre>
+  <p><code>--gatherer</code> overrides it for one run (see <a href="#options">Options</a>).</p>
+
+  <h3 id="harnesses"><code>[cli.harnesses.&lt;name&gt;]</code></h3>
+  <p><code>ag</code> knows a harness only from its entry here, which names its launcher and its adaptor and holds the launcher's settings. <code>ag &lt;name&gt;</code> runs it. How each shipped harness is connected is in <a href="#connection-table">The shipped harnesses</a>.</p>
+<pre><code>[cli.harnesses.claude]
+launcher = "integrations.harnesses.claude.setup.launch:ClaudeLauncher"
+adaptor  = "integrations.harnesses.claude.adaptor.adaptor:ClaudeAdaptor"
+command  = ["claude"]
+upstream = ""
+port     = 4113
+log_dir  = ""
+trace_root = ""
+system_messages = ""
+env      = {}</code></pre>
+  <div class="table-wrap"><table>
+    <thead><tr><th>key</th><th>harnesses</th><th>default</th><th>meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>launcher</code></td><td>all</td><td>(shipped)</td><td>The launcher class, <code>"module:Class"</code>.</td></tr>
+      <tr><td><code>adaptor</code></td><td>all</td><td>(shipped)</td><td>The adaptor class: <code>"module:Class"</code> in Python, or <code>"path.ts:Export"</code> in TypeScript (relative to the clone).</td></tr>
+      <tr><td><code>command</code></td><td>all</td><td>the harness's name</td><td>The command to run, as a list or a string.</td></tr>
+      <tr><td><code>env</code></td><td>all</td><td><code>{}</code></td><td>Extra environment variables for this harness only.</td></tr>
+      <tr><td><code>port</code></td><td>claude, codex</td><td>4113 / 4013</td><td>The first port the proxy tries.</td></tr>
+      <tr><td><code>log_dir</code></td><td>claude, codex</td><td><code>""</code></td><td>If set, write each request the hook changed, before and after.</td></tr>
+      <tr><td><code>upstream</code></td><td>claude</td><td><code>""</code></td><td>Where API calls go. Empty: <code>$ANTHROPIC_BASE_URL</code> if set, else Anthropic's API.</td></tr>
+      <tr><td><code>trace_root</code></td><td>claude</td><td><code>""</code></td><td>If set, record every model call there: the request as the model got it, and its answer.</td></tr>
+      <tr><td><code>system_messages</code></td><td>claude</td><td><code>""</code></td><td>How the Gatherer's messages are sent: <code>keep</code> (as system messages) or <code>user</code> (as user-turn reminders). Empty: chosen by model, <code>user</code> for Gemini.</td></tr>
+      <tr><td><code>provider</code></td><td>codex</td><td><code>""</code></td><td>The Codex model provider to hook. Empty: the one Codex would use.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Environment variables for one harness, set when you run it:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>variable</th><th>harness</th><th>default</th><th>meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>AG_PI_TIMEOUT_MS</code>, <code>AG_OPENCODE_TIMEOUT_MS</code></td><td>pi, opencode</td><td>300000</td><td>How long a model call waits for the Gatherer.</td></tr>
+      <tr><td><code>AG_PI_COMPACTION=allow</code>, <code>AG_OPENCODE_COMPACTION=allow</code></td><td>pi, opencode</td><td>off</td><td>Keep the harness's own compaction on.</td></tr>
+      <tr><td><code>AG_CODEX_AG_ROLE=user</code></td><td>codex</td><td><code>developer</code></td><td>Send the Gatherer's messages to Codex as user messages instead of developer messages.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="env">Other environment variables</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>variable</th><th>default</th><th>meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>AG_HOME</code></td><td><code>~/.ag</code></td><td>The <a href="#home">home directory</a>: settings, gatherers, logs.</td></tr>
+      <tr><td><code>AG_PYTHON</code></td><td><code>python3</code></td><td>The Python that runs the Gatherer's server. The Claude Code and Codex proxies default to the Python they run in.</td></tr>
+      <tr><td><code>AG_GATHERER</code></td><td>none</td><td>The gatherer, for the Pi extension and the OpenCode plugin when run without <code>ag</code>. Ignored under <code>ag</code>: use <code>--gatherer</code>.</td></tr>
+      <tr><td><code>AG_ADAPTOR</code></td><td>set by <code>ag</code></td><td>The adaptor the Pi extension or OpenCode plugin loads, as <code>"path.ts:Export"</code>.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="extending">Extending <code>ag</code></h2>
+  <p>The framework is built to be extended in three places. A <strong>context policy</strong> decides what context each model call gets. A <strong>poller</strong> brings in information from the environment. An <strong>adaptor</strong>, with a launcher, connects a new harness. Each is a class you name in <code>config.toml</code>; nothing else in <code>ag</code> needs to change. Policies and pollers can live in <code>~/.ag/plugins/</code>, or in any importable package.</p>
+
+  <h3 id="events">Events, event types and properties</h3>
+  <p>Everything the Gatherer stores is an <strong>event</strong>: a user message, the model's answer, a tool call, a tool's output, a file change. An event carries an opaque JSON <em>payload</em>, which the Gatherer stores and returns exactly as given, and has an <em>event type</em>. It may also carry an <em>id</em> (so a re-sent event is stored once), a <em>text</em> (what the policy reads of it, without the harness's metadata), and a token cost.</p>
+  <p>Event types are the contract between the three extension points. A policy declares the types it accepts; an adaptor and a poller each declare the types they output. <code>ag</code> refuses to run when an output is not among the policy's types. The types <code>proactive_context_manager</code> accepts are:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>type</th><th>events of this type</th></tr></thead>
+    <tbody>
+      <tr><td><code>user_message</code></td><td>A request from the user; opens a turn.</td></tr>
+      <tr><td><code>agent_message</code></td><td>The model's answer.</td></tr>
+      <tr><td><code>tool_call</code>, <code>tool_output</code></td><td>A request to run a tool, and its result.</td></tr>
+      <tr><td><code>context</code></td><td>Text the harness puts in front of the model (instructions, injected context, compaction summaries). Kept verbatim.</td></tr>
+      <tr><td><code>agent_reasoning</code></td><td>The model's own reasoning: sent back as it was, never read or counted.</td></tr>
+      <tr><td><code>environment_update</code></td><td>Something in the environment changed. Payload: <code>subject</code> (what changed, named as the agent would name it), <code>what</code> (a sentence saying what happened), <code>timestamp</code>, <code>source</code>.</td></tr>
+      <tr><td><code>context_stream</code></td><td>A message from a stream the user is part of (a chat channel, a ticket). Payload: <code>stream</code>, <code>author</code>, <code>text</code>, <code>timestamp</code>.</td></tr>
+    </tbody>
+  </table></div>
+  <p>An event type also declares <strong>properties</strong>: named values its events carry beside the payload. Three are in use:</p>
+  <ul>
+    <li><code>channel</code>: the session an event belongs to. The harness side sets it on every event and on every read. An event without a channel (such as a poller's) is visible from every channel.</li>
+    <li><code>cwd</code>: the agent's working directory, set from the request, and by the file poller to the directory it watched.</li>
+    <li><code>poller</code>: which of the gatherer's pollers an event came from (its name in the catalog).</li>
+  </ul>
+  <p>Adaptors and pollers declare which properties they set, and <code>ag</code> also checks those against the policy's event types.</p>
+
+  <h3 id="write-policy">Writing a new context policy</h3>
+  <p>A policy is a subclass of <code>ag.ag_interface.Policy</code>. It imports nothing of the rest of <code>ag</code>: everything it works with is handed to it.</p>
+<pre><code>class Policy(ABC):
+    name: str                                  # what the logs call it
+    event_types: Tuple[EventType, ...]         # the event types it accepts
+
+    def init(self, store) -&gt; None: ...         # optional: create its own tables
+    @abstractmethod
+    def read(self, store, read: Read) -&gt; Context: ...      # the context for one model call
+    def bulk_loaded(self, store, gatherer_id, properties): ...  # optional: after a whole history was loaded</code></pre>
+  <p><strong>Construction.</strong> The constructor takes whichever of these keyword arguments it names (or all of them, with <code>**kwargs</code>):</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>argument</th><th>what it is</th></tr></thead>
+    <tbody>
+      <tr><td><code>format</code></td><td>Makes the policy's own messages: <code>format.make_section(text, name)</code> returns an <code>ag</code> message, <code>{"type": "ag", "name", "text"}</code>, which each harness shows its own way (Codex as a developer message, Pi as a hidden custom message, OpenCode as a synthetic user message).</td></tr>
+      <tr><td><code>llm</code></td><td>The LLM client set in <code>[policies.llm]</code>; its model is <code>llm.model</code>.</td></tr>
+      <tr><td><code>options</code></td><td>A dict: the catalog entry's <code>options</code>, then the gatherer's <code>[options]</code>.</td></tr>
+      <tr><td><code>tokenizer</code></td><td>Counts tokens: <code>tokenizer.count(text)</code>. Also set as <code>self.tokenizer</code> when not taken.</td></tr>
+      <tr><td><code>jobs</code></td><td>Starts background work: <code>jobs.start(gatherer, properties, "build", job_id)</code> calls <code>policy.build(gatherer, properties, job_id)</code> in a worker process, with the same policy built from the home. The job opens the gatherer with <code>self.gatherers.open(gatherer)</code>.</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>Reading.</strong> <code>read(store, read)</code> is called before every model call. <code>read.properties</code> holds the call's <code>channel</code> and <code>cwd</code>, and <code>read.row_id</code> the event it responds to (normally the last one the harness sent). It returns a <code>Context</code>: the items to send, in order (stored payloads, and <code>ag</code> messages), with a <code>Ref</code> for each saying where it came from, for the read log. The <code>store</code> is the gatherer's database:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>method</th><th>returns</th></tr></thead>
+    <tbody>
+      <tr><td><code>store.rows(after_row=0, type_ids=None, match=None, differ=None)</code></td><td>Stored events (<code>Row</code>: <code>row_id</code>, <code>type</code>, <code>payload</code>, <code>text</code>, <code>tokens</code>, <code>properties</code>), in order. <code>match={"channel": c}</code>: events of channel <code>c</code> or of none; <code>differ={"channel": c}</code>: events of other channels.</td></tr>
+      <tr><td><code>store.event_types()</code></td><td>The gatherer's event types, with their ids. <code>TypeIds.load(store).of("user_message")</code> resolves names to ids.</td></tr>
+      <tr><td><code>store.make_item(item, tokenizer, properties=, name=)</code></td><td>Stores an item the policy made, for the read log; its id, for <code>Ref(made_id=...)</code>.</td></tr>
+      <tr><td><code>store.last_read(properties)</code>, <code>store.high_water()</code></td><td>The last read for these properties; the highest row id stored.</td></tr>
+      <tr><td><code>store.execute(...)</code>, <code>store.commit()</code></td><td>The SQLite connection's own methods, for tables the policy creates in <code>init</code>.</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>An example.</strong> This policy sends the channel's whole conversation, and before the latest request, a note listing the user's latest requests to other agents in the same gatherer:</p>
+<pre><code># ~/.ag/plugins/other_requests.py
+from ag.ag_interface import Context, Policy, Ref, TypeIds, event_text
+from ag.ag_policies.proactive_context_manager.events import EVENT_TYPES
+
+CONVERSATION = ("user_message", "agent_message", "tool_call", "tool_output", "context", "agent_reasoning")
+
+
+class OtherRequests(Policy):
+    """The channel's whole conversation, with the user's latest requests to other agents."""
+    name = "other_requests"
+    event_types = EVENT_TYPES            # the same types the shipped adaptors and pollers use
+
+    def __init__(self, format, options=None):
+        self.format = format
+        self.show = int((options or {}).get("show", 5))
+
+    def read(self, store, read):
+        channel = read.properties.get("channel")
+        types = TypeIds.load(store)
+        mine = store.rows(type_ids=types.of(*CONVERSATION), match={"channel": channel})
+        items = [r.payload for r in mine]
+        refs = [Ref(row_id=r.row_id) for r in mine]
+
+        requests = types.of("user_message")
+        latest = max((i for i, r in enumerate(mine) if r.type.id in requests), default=None)
+        others = store.rows(type_ids=requests, differ={"channel": channel})[-self.show:]
+        if others and latest is not None:
+            text = "Meanwhile, the user asked other agents:\n" + "\n".join(f"- {event_text(r)}" for r in others)
+            note = self.format.make_section(text, "other_requests")
+            made = store.make_item(note, self.tokenizer, properties={"channel": channel}, name="other_requests")
+            items.insert(latest, note)                       # just before the latest request
+            refs.insert(latest, Ref(made_id=made))
+        return Context(items, refs)</code></pre>
+  <p>Register it, and start a gatherer that uses it:</p>
+<pre><code>[policies.available.other_requests]
+file = "other_requests.py"
+class = "OtherRequests"
+options = { show = 3 }</code></pre>
+<pre><code>ag --gatherer team --policy other_requests codex</code></pre>
+  <p>A few things to keep in mind:</p>
+  <ul>
+    <li>Return payloads exactly as stored: the adaptor turns them back into the harness's messages. Keep a tool call with its output, since most model APIs reject one without the other.</li>
+    <li>A policy accepts only the event types it declares. To take a new kind of event (say, test results), add its type to <code>event_types</code> and have a poller output it; no other policy is affected.</li>
+    <li><code>read</code> runs before every model call, so keep it fast. Put LLM calls and other slow work in a background job (<code>jobs.start</code>), and use its result on a later read, as <code>proactive_context_manager</code> does.</li>
+    <li>The policy's building blocks are in <code>ag/ag_policies/tools/</code>: grouping events into turns and tasks, segmentation, summarization, the new-task check, ranking, and rendering to a token budget. A new policy can compose them.</li>
+  </ul>
+
+  <h3 id="write-poller">Writing a new poller</h3>
+  <p>A poller is a subclass of <code>ag.ag_interface.Poller</code>. Before every model call, the Gatherer asks each of the gatherer's pollers for what happened since it last asked, stores what they return, and only then lets the policy build the context.</p>
+<pre><code>class Poller(ABC):
+    name: str            # its poll mark: one "last asked" time is kept per name
+    id: str              # set by ag: its name in the catalog
+    outputs: tuple       # the event types it returns (required)
+    properties: tuple    # the event properties it sets
+    @abstractmethod
+    def poll(self, since: Optional[float], types: List[EventType]) -&gt; List[Event]: ...</code></pre>
+  <ul>
+    <li><code>since</code> is when this poller was last asked for this gatherer, in seconds since the epoch; <code>None</code> the first time. The poller decides what <code>None</code> means: the file poller reports nothing and starts from now, while a poller reading a log might return its backlog.</li>
+    <li><code>types</code> are the gatherer's event types with their ids. Return events typed by those ids (<code>Event(type_id, payload, id=..., properties=..., text=...)</code>), and nothing if the gatherer lacks your type.</li>
+    <li>Give each event an <code>id</code> that is the same if the same occurrence is seen again: duplicates are stored once.</li>
+    <li>Return <code>environment_update</code> or <code>context_stream</code> events when they fit, so that existing policies already know how to show them. An event of a type not in <code>outputs</code>, or with a property not in <code>properties</code>, is dropped. A poller that raises is skipped, and never fails a model call.</li>
+    <li>A poller's events belong to no channel: every session in the gatherer sees them.</li>
+  </ul>
+  <p><strong>An example.</strong> This poller turns messages appended to a JSON-lines file (say, exported from a team chat) into <code>context_stream</code> events, which <code>proactive_context_manager</code> shows to the agent where they arrived:</p>
+<pre><code># ~/.ag/plugins/chat_log.py
+import json
+import os
+
+from ag.ag_interface import Event, Poller
+
+
+class ChatLogPoller(Poller):
+    """Messages appended to a JSON-lines file, {"author", "text", "ts"} per line."""
+    outputs = ("context_stream",)
+    properties = ("poller",)
+
+    def __init__(self, path, stream="#team"):
+        self.path, self.stream = os.path.expanduser(path), stream
+        self.name = f"chat_log:{self.path}"
+
+    def poll(self, since, types):
+        type_id = next((t.id for t in types if t.name == "context_stream"), None)
+        if type_id is None or not os.path.exists(self.path):
+            return []
+        events = []
+        with open(self.path) as fh:
+            for line in fh:
+                m = json.loads(line)
+                if since is not None and m["ts"] &lt;= since:
+                    continue
+                events.append(Event(
+                    type_id,
+                    {"stream": self.stream, "author": m["author"], "text": m["text"], "timestamp": m["ts"]},
+                    id=f"context_stream:{self.stream}:{m['ts']}",
+                    properties={"poller": self.id or self.name},
+                    text=f"{m['author']} in {self.stream}: {m['text']}"))
+        return events</code></pre>
+  <p>Register it, and add it to a gatherer (or to <code>[pollers] default</code>):</p>
+<pre><code>[pollers.available.team_chat]
+file = "chat_log.py"
+class = "ChatLogPoller"
+args = { path = "~/team-chat.jsonl", stream = "#team" }</code></pre>
+<pre><code>ag --gatherer team --poller file_changes --poller team_chat claude</code></pre>
+  <p>An existing gatherer's pollers can be changed at any time by editing <code>pollers</code> in its <code>gatherer.toml</code>.</p>
+
+  <h3 id="write-adaptor">Adding a new harness</h3>
+  <p>Connecting a new harness takes three pieces:</p>
+  <ul>
+    <li>An <strong>adaptor</strong> turns the harness's messages into events, and the context back into messages.</li>
+    <li>A <strong>hook</strong> in the harness calls the Gatherer before each model call.</li>
+    <li>A <strong>launcher</strong> starts the harness with that hook in place, for one run.</li>
+  </ul>
+  <p>The hook is the harness's own, if it has one; otherwise a proxy stands in for it. Nothing the harness reads on disk is changed: each change (an environment variable, a flag, a local proxy) applies to that one run, and the same command without <code>ag</code> behaves as it always did. If the Gatherer fails or times out, the harness sends its own messages unchanged.</p>
+
+  <h4 id="hook-based">Hook-based harnesses</h4>
+  <p>A harness with a plugin system that can change the messages before each model call is connected through a <strong>hook</strong>: a plugin that <code>ag</code> loads into the harness. Pi (an extension) and OpenCode (a plugin) are connected this way.</p>
+  <ul>
+    <li>The launcher loads the plugin for this run only: a command-line flag for Pi, and the configuration passed in the environment for OpenCode.</li>
+    <li>Before every model call, the harness calls the plugin's hook with the messages. The plugin runs the adaptor, sends the events to the Gatherer, and gives the harness back the context to send instead.</li>
+    <li>The gatherer is passed to the plugin as an option, and the channel is the harness's session.</li>
+    <li>The harness's own compaction is turned off while the Gatherer answers, since the Gatherer now decides what the context holds. Set <code>AG_PI_COMPACTION=allow</code> or <code>AG_OPENCODE_COMPACTION=allow</code> to keep it on.</li>
+  </ul>
+
+  <h4 id="proxy-based">Proxy-based harnesses</h4>
+  <p>A harness without such a hook is connected through a <strong>proxy</strong>: a local server that sits between the harness and its model's API, and changes each model call on its way there. This works for any harness that calls its model over HTTP and lets you change where those calls go. Claude Code and Codex are connected this way.</p>
+  <ul>
+    <li>The launcher points the harness's API base URL at the proxy, for this run only. The proxy relays to wherever the harness pointed before (the <em>upstream</em>).</li>
+    <li>On every request that is a model call, the proxy runs the adaptor on the request's messages, sends the events to the Gatherer, and forwards the request with the context in place of the messages. Every other request passes through untouched, and the answer streams back unchanged.</li>
+    <li>The gatherer is passed in the URL path, <code>/h/&lt;gatherer&gt;/</code>, and the channel is the harness's session (a Claude Code session, a Codex thread), read from the request.</li>
+    <li>Proxies run detached: the first run with a given upstream starts one, and later runs and other sessions reuse it. <code>ag status</code> lists them and <code>ag stop</code> stops them.</li>
+  </ul>
+
+  <h4 id="connection-table">The shipped harnesses</h4>
+  <div class="table-wrap"><table>
+    <thead><tr><th>harness</th><th>type</th><th>what the launcher does</th><th>gatherer</th><th>channel</th><th>the Gatherer's own messages arrive as</th><th>turned off</th></tr></thead>
+    <tbody>
+      <tr><td>Pi</td><td>hook</td><td>Loads the extension with <code>-e</code>, unless Pi already has the package installed.</td><td><code>--ag-gatherer NAME</code></td><td>the session</td><td>a hidden custom message</td><td>Pi's compaction</td></tr>
+      <tr><td>OpenCode</td><td>hook</td><td>Adds the plugin through <code>OPENCODE_CONFIG_CONTENT</code>.</td><td>the plugin's <code>gatherer</code> option</td><td>the session</td><td>a synthetic user message</td><td>auto-compaction and tool-output pruning</td></tr>
+      <tr><td>Claude Code</td><td>proxy</td><td>Starts a proxy if none is running for the upstream, and points <code>ANTHROPIC_BASE_URL</code> at it.</td><td>URL path <code>/h/&lt;gatherer&gt;/</code></td><td>the session</td><td>system messages, or user-turn reminders (<code>system_messages</code>)</td><td>nothing</td></tr>
+      <tr><td>Codex</td><td>proxy</td><td>Starts a proxy if none is running for the upstream, and points the active provider's <code>base_url</code> at it (<code>-c</code>).</td><td>URL path <code>/h/&lt;gatherer&gt;/</code></td><td>the thread</td><td>developer messages (<code>AG_CODEX_AG_ROLE=user</code>: user messages)</td><td>nothing</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>The adaptor</h4>
+  <p>An adaptor is a Python subclass of <code>Adaptor</code> (<code>integrations/tools/ag_orchestrator/adaptor.py</code>), or a TypeScript class implementing <code>Adaptor&lt;M&gt;</code> (<code>adaptor.ts</code>) with the same declarations as static fields (<code>adaptorName</code>, <code>outputs</code>, <code>accepts</code>, <code>properties</code>):</p>
+<pre><code>from integrations.tools.ag_orchestrator.adaptor import AG, CHANNEL, CWD, Adaptor
+
+
+class MyAdaptor(Adaptor):
+    name = "mine"
+    outputs = ("user_message", "agent_message", "tool_call", "tool_output", "context")
+    accepts = outputs + (AG,)              # what to_messages can show: event types, and ag messages
+    properties = (CHANNEL, CWD)            # the properties the hook sets
+
+    def to_events(self, messages):
+        """The harness's messages as events."""
+        return [{"type": kind_of(m), "id": m["id"], "payload": m, "text": text_of(m)} for m in messages]
+
+    def to_messages(self, context, messages):
+        """The context as the harness's messages: each event's payload as it was,
+        and each ag message ({"type": "ag", "name", "text"}) the harness's way."""
+        return [as_system_message(e["text"]) if e["type"] == AG else e["payload"] for e in context]</code></pre>
+  <ul>
+    <li><code>to_events</code> returns one dict per event: <code>type</code> (one of <code>outputs</code>), <code>id</code>, <code>payload</code>, and optionally <code>text</code> and <code>tokens</code>.
+      <ul>
+        <li><strong><code>id</code>:</strong> the harness re-sends its whole conversation on every call, so give each message a stable id. Use the harness's own id, or a hash of the message, so that a message is stored once.</li>
+        <li><strong>Splitting:</strong> one event per unit the policy should see. If an assistant message holds both text and tool calls, split it, as the Pi adaptor does.</li>
+        <li><strong><code>text</code>:</strong> what the policy should read: the words, a tool call's name and arguments, a tool's output, without ids and metadata.</li>
+        <li><strong><code>tokens</code>:</strong> set it to 0 for opaque content such as encrypted reasoning.</li>
+      </ul></li>
+    <li><code>to_messages</code> gets back events in the order the model should see them, and must rebuild valid messages for the harness's API. It also shows the policy's <code>ag</code> messages, as a developer, system or user message.</li>
+    <li>The declarations are checked. <code>ag</code> refuses to run a policy that does not accept every type in <code>outputs</code>, or every property in <code>properties</code>. An event of an undeclared type makes the hook send the harness's own messages unchanged.</li>
+  </ul>
+
+  <h4>The hook</h4>
+  <p>The hook works out where the call belongs: the gatherer, the channel (the harness's session id) and the working directory. It then runs one call through the shared routing, which never raises:</p>
+<pre><code>from integrations.tools.ag_connection.ag_client import AgClient
+from integrations.tools.ag_orchestrator.adaptor import CHANNEL
+from integrations.tools.ag_orchestrator.call_ag import call_ag
+
+client = AgClient("mine")                  # starts the Gatherer's server on first use
+messages, note = await call_ag(client, gatherer, {CHANNEL: session_id}, cwd, harness_messages, MyAdaptor())
+send(messages if messages is not None else harness_messages)   # None: the Gatherer could not answer</code></pre>
+  <p><code>call_ag</code> runs <code>to_events</code>, sends the events to the Gatherer, and runs <code>to_messages</code> on the context it returns. In TypeScript, <code>call_ag(server, {gatherer, properties, cwd}, messages, adaptor)</code> in <code>call_ag.ts</code> does the same. For a proxy-based harness, <code>integrations/tools/hook_server/hook_server.py</code> is the proxy: it calls a given hook on every request to the model's endpoint, and relays everything else unchanged. A URL that starts with <code>/h/&lt;label&gt;/</code> hands the hook that label, which the shipped hooks use as the gatherer.</p>
+
+  <h4>The launcher</h4>
+  <p>A launcher is a subclass of <code>cli.launch.Launcher</code>. <code>ag</code> builds it with the harness's settings (its <code>config.toml</code> entry over the class's <code>defaults</code>), and calls <code>launch</code> with a <code>Run</code>. The <code>Run</code> holds the harness's arguments, its command, the environment, the gatherer (<code>None</code> for one per session), the working directory, whether this is a dry run, and the adaptor named in the entry. <code>launch</code> returns the command and environment to run:</p>
+<pre><code>from cli.launch import Launch, Launcher
+
+
+class MyLauncher(Launcher):
+    defaults = {"command": ["mine"], "env": {}}
+
+    def launch(self, run):
+        env = {**run.env, "AG_ADAPTOR": run.adaptor}          # the plugin loads the adaptor ag checked
+        flags = ["--plugin", "/path/to/my_plugin"] + (["--ag-gatherer", run.gatherer] if run.gatherer else [])
+        return Launch([*run.command, *flags, *run.args], env)</code></pre>
+  <p>A launcher may also implement <code>describe</code> (for <code>ag config</code>), and <code>status</code> and <code>stop</code> (for anything it keeps running, such as a proxy). Change nothing the harness reads on disk: pass everything for this run only, through flags or the environment.</p>
+
+  <h4>Registering the harness</h4>
+<pre><code>[cli.harnesses.mine]
+launcher = "my_pkg.launch:MyLauncher"
+adaptor  = "my_pkg.adaptor:MyAdaptor"        # or "path/to/adaptor.ts:MyAdaptor"
+command  = ["mine"]</code></pre>
+  <p>Then <code>ag mine</code> runs it. Before every run, <code>ag</code> checks that the gatherer's policy accepts what the adaptor and the pollers output, and <code>ag --dry-run mine</code> shows the command it would run. A harness cannot be named after one of <code>ag</code>'s own commands (<code>help</code>, <code>home</code>, <code>config</code>, <code>status</code>, <code>stop</code>, <code>gatherers</code>, <code>show</code>, <code>new</code>, <code>model</code>).</p>
+
+  <footer>Actor-Gatherer · 2026</footer>
+</main>
+</div>
+<script>
+(function () {
+  var side = document.getElementById('sidebar'), menu = document.getElementById('menu');
+  function setOpen(open) { side.classList.toggle('open', open); menu.setAttribute('aria-expanded', open); }
+  menu.onclick = function () { setOpen(!side.classList.contains('open')); };
+  side.addEventListener('click', function (e) { if (e.target.closest('a')) setOpen(false); });
+  // Each group's list of subsections collapses under a toggle; the group being read opens itself.
+  side.querySelectorAll('.side-group').forEach(function (g) {
+    var list = g.nextElementSibling;
+    if (!list || list.tagName !== 'UL') return;
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'caret'; btn.setAttribute('aria-label', 'Show or hide subsections');
+    g.insertBefore(btn, g.firstChild);
+    function set(open) { list.hidden = !open; btn.setAttribute('aria-expanded', open); g.classList.toggle('expanded', open); }
+    btn.onclick = function () { set(list.hidden); };
+    g.querySelector('a').addEventListener('click', function () { set(true); });
+    g.setOpen = set; set(false);
+  });
+  var links = {}; side.querySelectorAll('a[href^="#"]').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+  var openGroup = null;
+  var heads = Array.prototype.filter.call(document.querySelectorAll('.doc h2[id], .doc h3[id]'), function (h) { return links[h.id]; });
+  function spy() {
+    var cur = heads[0];
+    for (var i = 0; i < heads.length; i++) { if (heads[i].getBoundingClientRect().top <= 90) cur = heads[i]; else break; }
+    side.querySelectorAll('a.active').forEach(function (a) { a.classList.remove('active'); });
+    if (!cur) return;
+    var a = links[cur.id]; a.classList.add('active');
+    var list = a.closest('ul'), g = list ? list.previousElementSibling : a.closest('.side-group');
+    if (g && g !== openGroup && g.setOpen) { g.setOpen(true); openGroup = g; }
+  }
+  window.addEventListener('scroll', spy, { passive: true }); spy();
+})();
+</script>
+</body>
+</html>
