@@ -278,6 +278,85 @@ class StrictMaxTest(Base):
             self.assertLessEqual(tok.count(text) - (fixed if name == "requests" else 0), budget[name], name)
 
 
+class LimitBuildTest(Base):
+    """A build started because the context was over max_context_tokens (reason `limit`) closes the
+    running task at the last user message: what came before is a finished, summarised task, and
+    that message starts the running task."""
+
+    STANDING = {"carry_forward": [{"applies_to": "joining catalogue to companies", "spec": "use feed_tag = callsign"}]}
+
+    def setUp(self):
+        super().setUp()
+        self.llm = ScriptedLLM(per_task=100, retention=self.STANDING)      # one task for the whole session
+        self.cfg = ProactiveContextManagerConfig(**SMALL)
+        self.policy = ProactiveContextManager(codex.FORMAT, self.llm, self.cfg)
+        self.m = Manager(self.policy)
+        self.m.init("s")
+
+    def build(self, reason):
+        return self.policy.build("s", ch("c1"), tables.new_build(self.m._conn("s"), "c1", reason))
+
+    def tasks(self):
+        return tables.load_tasks(self.m._conn("s"), "c1")
+
+    def first_row_of(self, text):
+        return self.m._conn("s").execute("SELECT min(row_id) FROM events WHERE text = ?", (text,)).fetchone()[0]
+
+    def test_a_limit_build_closes_the_running_task_at_the_last_user_message(self):
+        self.put(PREAMBLE + conversation(6) + [user("the last request", 99), call(99), output(99)])
+        build = self.build(tables.LIMIT)
+        start = self.first_row_of("the last request")
+        self.assertEqual(build["open_from_row"], start)
+        tasks = self.tasks()
+        self.assertEqual([t.name for t in tasks], ["task 1-6", "Current request"])     # named from turns 1-6 alone
+        self.assertEqual(tasks[-1].first_row, start)
+        self.assertEqual(tasks[0].retention["carry_forward"], self.STANDING["carry_forward"])   # the finished part, summarised
+        segments = [p for p, c in zip(self.llm.prompts, self.llm.calls) if c == "segment"]
+        self.assertTrue(segments and all("end at turn 6." in p for p in segments))       # never shown the last turn
+        self.put([agent("done", 99), user("and then?", 100)])                          # the next request: adopted
+        texts = self.texts(self.read())
+        previous = next(t for t in texts if t.startswith("# Previous task"))
+        self.assertIn("standing: joining catalogue to companies — use feed_tag = callsign", previous)
+        self.assertIn("the last request", texts)                                       # verbatim, from there on
+        self.assertFalse(any(t.startswith("# This task so far") for t in texts))
+
+    def test_a_second_limit_build_in_the_same_turn_segments_nothing(self):
+        self.put(PREAMBLE + conversation(6) + [user("the last request", 99), call(99), output(99)])
+        self.build(tables.LIMIT)
+        segments = self.llm.calls.count("segment")
+        self.put([call(98), output(98)])
+        build = self.build(tables.LIMIT)
+        self.assertEqual(self.llm.calls.count("segment"), segments)
+        self.assertEqual([t.name for t in self.tasks()], ["task 1-6", "Current request"])
+        self.assertEqual(build["open_from_row"], self.first_row_of("the last request"))
+
+    def test_a_limit_build_on_one_long_turn_is_one_running_task(self):
+        self.put(PREAMBLE + long_turn(5))
+        build = self.build(tables.LIMIT)
+        self.assertEqual([t.name for t in self.tasks()], ["Current request"])
+        self.assertNotIn("segment", self.llm.calls)
+        self.assertEqual(build["open_from_row"], self.first_row_of("refactor the parser"))
+
+    def test_a_boundary_build_segments_every_turn_as_before(self):
+        self.put(PREAMBLE + conversation(6) + [user("the last request", 99), call(99), output(99)])
+        self.assertIsNone(self.build(tables.BOUNDARY))                                  # one task: nothing, as before
+        self.assertEqual([t.name for t in self.tasks()], ["task 1-7"])                 # segmentation's grouping kept,
+        segments = [p for p, c in zip(self.llm.prompts, self.llm.calls) if c == "segment"]   # the last turn included
+        self.assertTrue(segments and all("end at turn 7." in p for p in segments))
+
+    def test_a_database_without_the_reason_column_gets_it(self):
+        conn = self.m._conn("s")
+        with conn:
+            conn.execute("DROP TABLE _builds")
+            conn.execute("CREATE TABLE _builds (build_id INTEGER PRIMARY KEY, channel_key TEXT NOT NULL, "
+                         "status TEXT NOT NULL, started_at REAL NOT NULL, finished_at REAL, through_row INTEGER, "
+                         "open_from_row INTEGER, ranking_json TEXT, parallel_mark INTEGER, error TEXT)")
+            conn.execute("INSERT INTO _builds (channel_key, status, started_at) VALUES ('c1', 'ready', 1)")
+        tables.create(conn)
+        self.assertIsNone(tables.latest_build(conn, "c1")["reason"])                   # an old build: not a limit one
+        self.assertEqual(tables.get_build(conn, tables.new_build(conn, "c1", tables.LIMIT))["reason"], "limit")
+
+
 class ParsingTest(unittest.TestCase):
     def test_parse_tasks(self):
         text = '```json\n{"tasks": [{"name": "b", "start_turn": 3, "end_turn": 4},' \

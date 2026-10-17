@@ -64,6 +64,7 @@ from .config import ProactiveContextManagerConfig
 from .events import CONTEXT_STREAM, ENVIRONMENT_UPDATE, EVENT_TYPES
 
 PARALLEL_REQUEST = "parallel_request"
+CURRENT_REQUEST = "Current request"   # the running task a `limit` build starts at the last user message
 LEFT_OUT = "left_out"           # a step stubbed to keep the context within max_context_tokens
 AGENT_STEP = ("agent_message", "tool_call", "agent_reasoning")   # what an agent step may start with
 
@@ -583,7 +584,7 @@ class ProactiveContextManager(Policy):
         if not over and size < cfg.min_context_tokens and not cfg.build_every_request:
             return ""
         if over or cfg.build_every_request:
-            build_id = tables.claim_build(conn, ch, cfg.build_timeout)
+            build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.LIMIT if over else tables.REQUEST)
             if build_id is None:
                 return ""
             try:
@@ -648,7 +649,10 @@ class ProactiveContextManager(Policy):
     def build(self, gatherer_id: str, properties, build_id: int) -> Optional[dict]:
         """The analysis: segmentation, the summaries of the newly finished
         tasks, a ranking of every earlier task. Kept in `tasks` and on the
-        build (tables.py)."""
+        build (tables.py). A build started because the context was over
+        max_context_tokens (reason `limit`) closes the running task at the
+        last user message: what came before is finished and summarised, and
+        that message starts the running task (`limit_tasks`)."""
         channel_id = channel_of(properties)
         cfg, tok, groups = self.config, self.tokenizer, self.groups
         conn = self.gatherers.open(gatherer_id)
@@ -658,18 +662,24 @@ class ProactiveContextManager(Policy):
             through_row = rows[-1].row_id if rows else 0
             mark = conn.high_water()
             preamble, turns = history.split(rows, types, groups, tok)
-            # one turn, or one task, is built only when it is over the limit: a cut inside it is then due
-            oversized = sum(r.tokens for r in rows) - sum(e.tokens for e in preamble) > cfg.max_context_tokens
-            if len(turns) < 2 and not oversized:
-                return self.nothing(conn, build_id, through_row, "fewer than two turns")
-            tasks, failed, fresh = segmentation.update(turns, tables.tasks_for(conn, channel_id), self.llm,
-                                                       cfg.segmentation, tok)
+            limit = (tables.get_build(conn, build_id) or {}).get("reason") == tables.LIMIT
+            if limit:
+                if not turns:
+                    return self.nothing(conn, build_id, through_row, "no turns")
+                tasks, failed, fresh = self.limit_tasks(conn, channel_id, turns)
+            else:
+                # one turn, or one task, is built only when it is over the limit: a cut inside it is then due
+                oversized = sum(r.tokens for r in rows) - sum(e.tokens for e in preamble) > cfg.max_context_tokens
+                if len(turns) < 2 and not oversized:
+                    return self.nothing(conn, build_id, through_row, "fewer than two turns")
+                tasks, failed, fresh = segmentation.update(turns, tables.tasks_for(conn, channel_id), self.llm,
+                                                           cfg.segmentation, tok)
             if failed:
                 tables.fail_build(conn, build_id, "segmentation: no model call answered", through_row=through_row)
                 return None
             for i, t in enumerate(tasks):
                 t.channel_id, t.task_index = channel_id, i
-            if len(tasks) < 2 and not (tasks and oversized):
+            if not limit and len(tasks) < 2 and not (tasks and oversized):
                 tables.save_tasks(conn, channel_id, tasks)
                 return self.nothing(conn, build_id, through_row, "fewer than two tasks")
             with ThreadPoolExecutor(max_workers=1) as pool:
@@ -688,6 +698,29 @@ class ProactiveContextManager(Policy):
             return tables.get_build(conn, build_id)
         finally:
             conn.close()
+
+    def limit_tasks(self, conn, channel_id, turns) -> Tuple[List, bool, List]:
+        """(the tasks, whether segmentation failed, the tasks to summarise) of a `limit` build: the
+        last user message starts the running task, CURRENT_REQUEST, and everything before it is
+        finished. Segmentation is given only the turns before it, so it names and describes tasks
+        from exactly the turns they cover; the last task it returns -- open in its view -- is closed
+        here and summarised with the others it finished. A second limit build in the same turn finds
+        the running task already starting there and segments nothing again."""
+        last = turns[-1]
+        current = history.Task(CURRENT_REQUEST, last.user_text.strip()[:200], last.first_row, last.last_row,
+                               last.index, last.index)
+        stored = tasks_tool.locate(tables.tasks_for(conn, channel_id), turns)
+        if len(turns) == 1:
+            return [current], False, []
+        if stored and stored[-1].first_row == last.first_row:      # an earlier limit build in this turn
+            return stored[:-1] + [current], False, []
+        tasks, failed, fresh = segmentation.update(turns[:-1], tables.tasks_for(conn, channel_id), self.llm,
+                                                   self.config.segmentation, self.tokenizer)
+        if failed:
+            return tasks, True, fresh
+        if tasks and all(t is not tasks[-1] for t in fresh):
+            fresh = fresh + [tasks[-1]]                            # finished now: summarised with the rest
+        return tasks + [current], False, fresh
 
     def nothing(self, conn, build_id: int, through_row: int, why: str) -> None:
         tables.settle(conn, build_id, "nothing", through_row=through_row, error=why)
@@ -717,7 +750,7 @@ class ProactiveContextManager(Policy):
             tables.record_boundary(conn, row_id, verdict, why, channel_id)
             if not verdict:
                 return False
-            build_id = tables.claim_build(conn, channel_id, cfg.build_timeout)
+            build_id = tables.claim_build(conn, channel_id, cfg.build_timeout, tables.BOUNDARY)
         finally:
             conn.close()
         if build_id is not None:
