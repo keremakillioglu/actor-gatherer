@@ -10,7 +10,7 @@ import sys
 from typing import Dict, List, Optional
 
 from . import __doc__ as USAGE
-from . import config
+from . import config, usage
 from .launch import LaunchError, Run, adaptor_declarations, load_launcher, resolve_adaptor
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # the directory that holds ag/
@@ -276,7 +276,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         opts, cmd, rest = parse(argv)
         if cmd == "help":
-            print(USAGE.strip())
+            print(usage.help_text(USAGE))
             return 0
         if cmd == "home":
             return home_cli(rest).returncode

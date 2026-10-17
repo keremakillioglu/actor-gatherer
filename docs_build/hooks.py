@@ -9,6 +9,13 @@
   pollers or cli.
 - `<!-- gen: readme SECTION -->` becomes the body of the README's `## SECTION`, its own
   headings one level down and its links to the rest of the README pointed at GitHub.
+- `<!-- gen: doc module[:Class] [TITLE] -->` becomes that docstring, as Markdown: the part
+  before its first titled section, less its summary line (which is for readers of the
+  code), or the section titled TITLE (a title is a line underlined with dashes).
+- `<!-- gen: options -->`, `commands`, `env general|harness`, `llm-settings`, `home-layout`
+  and `harness-keys` become tables or blocks made from the data the code keeps: ag.cli.usage,
+  ag.cli.config.ENVIRONMENT, each launcher's `environment`, ag.ag_harness.home (LLM_SETTINGS, LAYOUT) and
+  ag/cli/harnesses.toml.
 - Tables are wrapped for horizontal scrolling, and the sidebar is made from the page's
   h2 and h3 headings.
 """
@@ -22,7 +29,7 @@ import sys
 import textwrap
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GEN = re.compile(r"<!-- gen: (\w+) (.*?) -->")
+GEN = re.compile(r"<!-- gen: ([\w-]+)(?: (.*?))? -->")
 
 
 def first_sentence(text: str) -> str:
@@ -115,10 +122,116 @@ def readme(section: str) -> str:
                   lambda l: l.group(0) if l.group(1) in own else f"]({README_URL}#{l.group(1)})", body)
 
 
+def docstring(target: str, title: str = "") -> str:
+    module, _, cls = target.partition(":")
+    source = open(importlib.util.find_spec(module).origin, encoding="utf-8").read()
+    node = ast.parse(source)
+    if cls:
+        node = next(n for n in node.body if isinstance(n, ast.ClassDef) and n.name == cls)
+    doc = ast.get_docstring(node) or ""
+    parts = re.split(r"^(.+)\n-{3,}$", doc, flags=re.M)        # [intro, title, body, title, body, ...]
+    if not title:
+        intro = parts[0].strip().split("\n\n", 1)              # the summary line is for readers of the code
+        return intro[1].strip() if len(intro) > 1 else ""
+    sections = dict(zip(parts[1::2], parts[2::2]))
+    if title not in sections:
+        raise ValueError(f"{target} has no section {title!r}: {list(sections)}")
+    return sections[title].strip()
+
+
+def cell(text: str) -> str:
+    return text.replace("|", "&#124;") if "`" not in text else re.sub(
+        r"`([^`]*\|[^`]*)`", lambda m: "<code>" + m.group(1).replace("<", "&lt;").replace(">", "&gt;")
+        .replace("|", "&#124;") + "</code>", text)
+
+
+def table(header, rows) -> str:
+    out = ["| " + " | ".join(header) + " |", "|" + "|".join("---" for _ in header) + "|"]
+    return "\n".join(out + ["| " + " | ".join(cell(c) for c in row) + " |" for row in rows])
+
+
+def options() -> str:
+    from ag.cli.usage import OPTIONS
+    return table(("flag", "meaning"), [(f"`{o}`", d) for o, d in OPTIONS if not o.startswith("-h")])
+
+
+def commands() -> str:
+    from ag.cli.usage import COMMANDS
+    return table(("command", "does"), [(" / ".join(f"`{c.strip()}`" for c in cmd.split(" / ")), d)
+                                      for cmd, d in COMMANDS])
+
+
+def harness_environment():
+    """(harness, name, default, meaning) for each variable a shipped harness's launcher declares."""
+    import tomllib
+    from ag.cli.launch import load_launcher
+    entries = tomllib.load(open(os.path.join(ROOT, "ag", "cli", "harnesses.toml"), "rb"))["cli"]["harnesses"]
+    return [(h, *v) for h, e in entries.items() for v in load_launcher(e["launcher"]).environment]
+
+
+def environment(scope: str) -> str:
+    from ag.cli.config import ENVIRONMENT
+    if scope == "harness":
+        return table(("variable", "harness", "default", "meaning"),
+                     [(f"`{n}`", h, f"`{d}`", m) for h, n, d, m in harness_environment()])
+    return table(("variable", "default", "meaning"),
+                 [(f"`{n}`", f"`{d}`" if d.startswith(("~", "python", "[")) else d or "none", m)
+                  for n, h, d, m in ENVIRONMENT if not h])
+
+
+def llm_settings() -> str:
+    from ag.ag_harness.home import LLM_SETTINGS
+    return table(("key", "for", "default", "meaning", "overridden by"),
+                 [(f"`{k}`", f, f"`{d}`" if d not in ("none",) and not d.startswith("the ") else d, m,
+                   (f"`{o.split(' ')[0]}`" + o[len(o.split(' ')[0]):]) if o else "")
+                  for k, f, d, m, o in LLM_SETTINGS])
+
+
+def harness_keys() -> str:
+    """Every key of ag/cli/harnesses.toml's entries: the harnesses that have it, its value
+    in each, and the comment that says what it is."""
+    import tomllib
+    path = os.path.join(ROOT, "ag", "cli", "harnesses.toml")
+    text = open(path, encoding="utf-8").read()
+    entries = tomllib.loads(text)["cli"]["harnesses"]
+    meaning = {}
+    for key, comment in re.findall(r"^(\w+)\s*=.*?#\s*(.+)$", text, re.M):
+        meaning.setdefault(key, comment.strip())
+    rows = []
+    for key in dict.fromkeys(k for entry in entries.values() for k in entry):
+        have = [h for h, e in entries.items() if key in e]
+        values = {h: entries[h][key] for h in have}
+        shown = {h: f"`{v!r}`".replace("'", '"') for h, v in values.items()}
+        if len(set(shown.values())) == 1:
+            default = next(iter(shown.values()))
+        elif key in ("launcher", "adaptor", "command"):
+            default = "each harness's own"
+        else:
+            default = " / ".join(f"{v} ({h})" for h, v in shown.items())
+        rows.append((f"`{key}`", "all" if len(have) == len(entries) else ", ".join(have), default,
+                     meaning.get(key, "")))
+    return table(("key", "harnesses", "default", "meaning"), rows)
+
+
 def generate(kind: str, args: str) -> str:
     words = args.split()
     if kind == "readme":
         return readme(args.strip())
+    if kind == "doc":
+        return docstring(words[0], " ".join(words[1:]))
+    if kind == "options":
+        return options()
+    if kind == "commands":
+        return commands()
+    if kind == "env":
+        return environment(words[0])
+    if kind == "llm-settings":
+        return llm_settings()
+    if kind == "harness-keys":
+        return harness_keys()
+    if kind == "home-layout":
+        from ag.ag_harness.home import LAYOUT
+        return f"```\n{LAYOUT}\n```"
     if kind == "stub":
         code = stub(words[0], words[1:])
     elif kind == "harness":
@@ -136,7 +249,7 @@ def on_config(config):
 
 
 def on_page_markdown(markdown, page, config, files):
-    return GEN.sub(lambda m: generate(m.group(1), m.group(2)), markdown)
+    return GEN.sub(lambda m: generate(m.group(1), m.group(2) or ""), markdown)
 
 
 def on_page_content(html, page, config, files):

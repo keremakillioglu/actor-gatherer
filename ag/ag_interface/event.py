@@ -1,37 +1,29 @@
-"""What a context manager is given: events, each of a registered type.
+r"""What a context manager is given: events, each of a registered type.
 
-Everything that reaches a context manager is an EVENT: a message from the
-user, the model's answer, a tool call, a tool's output, an instruction, a
-notice from the harness. An event carries an opaque JSON PAYLOAD (the item as
-the agent sees it) and points at an EVENT TYPE by id.
+Everything the Gatherer stores is an **event**: a user message, the model's answer, a tool
+call, a tool's output, a file change. An event carries an opaque JSON *payload*, which the
+Gatherer stores and returns exactly as given, and has an *event type*. It may also carry an
+*id* (so a re-sent event is stored once), a *text* (what the policy reads of it, without the
+harness's metadata), and a token cost.
 
-Event types are a contract between a policy and the harness that feeds it.
-A POLICY defines the types it expects (`Policy.event_types`: name, properties),
-and they are registered when a gatherer is created. The HARNESS side agrees
-to insert events of those types -- it maps its agent's items onto the names
-(`ag/integrations/harnesses/<harness>/adaptor/`). A caller can define more types at any time
-(`add_event_type`) and list them with their ids (`event_types`). Every event
-inserted names its type by that id; an unknown id is refused.
+Event types are the contract between the three extension points. A policy declares the
+types it accepts (`Policy.event_types`); an adaptor and a poller each declare the types
+they output. `ag` refuses to run when an output is not among the policy's types.
 
-A type is known by its NAME: what a policy does with its events is the
-policy's, which groups the names it knows (ag/ag_policies/tools/groups.py) and
-ignores any other. The names, like the types, are the policies' (each
-policy's events.py) and the pollers', not this contract's.
+An event type also declares **properties**: named values its events carry beside the
+payload, each required or not. The store keeps one column per property, refuses an event
+that lacks a required one or carries one its type does not declare, and filters by them
+when a policy asks. Three are in use:
 
-An event may carry its TEXT beside its payload: what a reader of the history
-needs of it -- a message's words, a tool call's name and arguments, a tool's
-output -- without the harness's bookkeeping (ids, metadata, wrappers). The
-harness side gives it, since only it knows its agent's items; wherever a policy
-renders or counts an event it uses the text, and the payload as JSON when there
-is none. The payload is still what goes back to the agent, as it was given.
+- `channel`: the session an event belongs to. The harness side sets it on every event and
+  on every read. An event without a channel (such as a poller's) is visible from every
+  channel.
+- `cwd`: the agent's working directory, set from the request, and by the file poller to the
+  directory it watched.
+- `poller`: which of the gatherer's pollers an event came from (its name in the catalog).
 
-A type also lists its PROPERTIES: the named values an event of the type may
-carry beside its payload (e.g. a policy's `channel`), each required or not.
-What a property means is the policy's; the harness only stores it, one column
-per property any registered type declares, refuses an event that lacks a
-required one or carries one its type does not declare, and filters by them
-when a policy asks (`GathererStore.rows`). An event without a value for a
-property has it unset.
+Adaptors and pollers declare which properties they set, and `ag` also checks those against
+the policy's event types.
 """
 
 import re

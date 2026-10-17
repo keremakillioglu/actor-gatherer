@@ -97,7 +97,95 @@ class TypeIds:
 
 
 class Policy(ABC):
-    """One way of building an agent's context from the gatherer's database."""
+    r"""One way of building an agent's context from the gatherer's database.
+
+    A policy imports nothing of the rest of `ag`: everything it works with is handed to it.
+
+    **Construction.** The constructor takes whichever of these keyword arguments it names
+    (or all of them, with `**kwargs`):
+
+    | argument | what it is |
+    |---|---|
+    | `format` | Makes the policy's own messages: `format.make_section(text, name)` returns an `ag` message, `{"type": "ag", "name", "text"}`, which each harness shows its own way. |
+    | `llm` | The LLM client set in `[policies.llm]`; its model is `llm.model`. |
+    | `options` | A dict: the catalog entry's `options`, then the gatherer's `[options]`. |
+    | `tokenizer` | Counts tokens: `tokenizer.count(text)`. Also set as `self.tokenizer` when not taken. |
+    | `jobs` | Starts background work: `jobs.start(gatherer, properties, "build", job_id)` calls `policy.build(gatherer, properties, job_id)` in a worker process, with the same policy built from the home. The job opens the gatherer with `self.gatherers.open(gatherer)`. |
+
+    **Reading.** `read(store, read)` is called before every model call. `read.properties` holds
+    the call's `channel` and `cwd`, and `read.row_id` the event it responds to (normally the
+    last one the harness sent). It returns a `Context`: the items to send, in order (stored
+    payloads, and `ag` messages), with a `Ref` for each saying where it came from, for the read
+    log. The `store` is the gatherer's database (`GathererStore`, in store.py), and answers the
+    SQLite connection's own methods (`execute`, `commit`) for tables the policy creates in `init`.
+
+    **A sketch.** A policy that sends the channel's whole conversation and, before the latest
+    request, the user's latest requests to other agents in the same gatherer:
+
+    ```
+    # ~/.ag/plugins/other_requests.py
+    from ag.ag_interface import Context, Policy, Ref, TypeIds, event_text
+    from ag.ag_policies.proactive_context_manager.events import EVENT_TYPES
+
+    CONVERSATION = ("user_message", "agent_message", "tool_call", "tool_output", "context", "agent_reasoning")
+
+
+    class OtherRequests(Policy):
+        name = "other_requests"
+        event_types = EVENT_TYPES            # the same types the shipped adaptors and pollers use
+
+        def __init__(self, format, options=None):
+            self.format = format
+            self.show = int((options or {}).get("show", 5))
+
+        def read(self, store, read):
+            channel = read.properties.get("channel")
+            types = TypeIds.load(store)
+            mine = store.rows(type_ids=types.of(*CONVERSATION), match={"channel": channel})
+            items = [r.payload for r in mine]
+            refs = [Ref(row_id=r.row_id) for r in mine]
+
+            requests = types.of("user_message")
+            latest = max((i for i, r in enumerate(mine) if r.type.id in requests), default=None)
+            others = store.rows(type_ids=requests, differ={"channel": channel})[-self.show:]
+            if others and latest is not None:
+                text = "Meanwhile, the user asked other agents:\n" + "\n".join(f"- {event_text(r)}" for r in others)
+                note = self.format.make_section(text, "other_requests")
+                made = store.make_item(note, self.tokenizer, properties={"channel": channel}, name="other_requests")
+                items.insert(latest, note)                       # just before the latest request
+                refs.insert(latest, Ref(made_id=made))
+            return Context(items, refs)
+    ```
+
+    Registered in config.toml, and used by a gatherer:
+
+    ```
+    [policies.available.other_requests]
+    file = "other_requests.py"
+    class = "OtherRequests"
+    options = { show = 3 }
+    ```
+
+    ```
+    ag --gatherer team --policy other_requests codex
+    ```
+
+    **Keep in mind.**
+
+    - Return payloads exactly as stored: the adaptor turns them back into the harness's
+      messages. Keep a tool call with its output, since most model APIs reject one without the
+      other.
+    - A policy accepts only the event types it declares. To take a new kind of event (say, test
+      results), add its type to `event_types` and have a poller output it; no other policy is
+      affected.
+    - `read` runs before every model call, so keep it fast. Put LLM calls and other slow work in
+      a background job (`jobs.start`), and use its result on a later read.
+    - The policies' building blocks are in `ag/ag_policies/tools/`: grouping events into turns
+      and tasks, segmentation, summarization, the new-task check, ranking, and rendering to a
+      token budget. A new policy can compose them.
+
+    A working policy: `ProactiveContextManager`, in `ag/ag_policies/proactive_context_manager/`.
+    """
 
     #: What the registry and the read log call it.
     name: str = ""

@@ -34,6 +34,8 @@ def config_content(existing: str = "", gatherer: Optional[str] = None) -> str:
 
 class OpencodeLauncher(Launcher):
     defaults = {"command": ["opencode"], "env": {}}
+    environment = (("AG_OPENCODE_TIMEOUT_MS", "300000", "How long a model call waits for the Gatherer."),
+                   ("AG_OPENCODE_COMPACTION", "off", "`allow`: keep OpenCode's own compaction on."))
 
     def launch(self, run: Run) -> Launch:
         given = run.env.get("OPENCODE_CONFIG_CONTENT", "")

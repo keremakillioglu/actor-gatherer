@@ -28,7 +28,7 @@ import os
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Dict, List, Optional, Type
+from typing import Any, ClassVar, Dict, List, Optional, Tuple, Type
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 #: The directory that holds ag/ (the clone, or site-packages): what a launcher's own processes need on their PYTHONPATH, and
@@ -59,10 +59,50 @@ class Launch:
 
 
 class Launcher(ABC):
-    """One harness's launcher, built with its settings (its entry in
-    config.toml over its `defaults`) and the context manager's home."""
+    r"""One harness's launcher, built with its settings (its entry in config.toml over its
+    `defaults`) and the context manager's home.
+
+    `ag` calls `launch` with a `Run`: the harness's arguments, its command, the environment, the
+    gatherer (`None` for one per session), the working directory, whether this is a dry run, and
+    the adaptor named in the entry. `launch` returns the command and environment to run. A
+    launcher may also implement `describe` (for `ag config`), and `status` and `stop` (for
+    anything it keeps running, such as a proxy). It changes nothing the harness reads on disk:
+    everything is passed for this run only, through flags or the environment.
+
+    **A sketch**, for a harness that loads a plugin given by a flag:
+
+    ```
+    from ag.cli.launch import Launch, Launcher
+
+
+    class MyLauncher(Launcher):
+        defaults = {"command": ["mine"], "env": {}}
+
+        def launch(self, run):
+            env = {**run.env, "AG_ADAPTOR": run.adaptor}          # the plugin loads the adaptor ag checked
+            flags = ["--plugin", "/path/to/my_plugin"] + (["--ag-gatherer", run.gatherer] if run.gatherer else [])
+            return Launch([*run.command, *flags, *run.args], env)
+    ```
+
+    **Registering the harness** in config.toml:
+
+    ```
+    [cli.harnesses.mine]
+    launcher = "my_pkg.launch:MyLauncher"
+    adaptor  = "my_pkg.adaptor:MyAdaptor"        # or "path/to/adaptor.ts:MyAdaptor"
+    command  = ["mine"]
+    ```
+
+    Then `ag mine` runs it. Before every run, `ag` checks that the gatherer's policy accepts
+    what the adaptor and the pollers output, and `ag --dry-run mine` shows the command it would
+    run. A harness cannot be named after one of `ag`'s own commands.
+
+    Working launchers: each shipped harness's, in `ag/integrations/harnesses/<name>/setup/launch.py`.
+    """
 
     defaults: ClassVar[Dict[str, Any]] = {"command": [], "env": {}}
+    #: The environment variables this harness's side reads: (name, default, what it does).
+    environment: ClassVar[Tuple[Tuple[str, str, str], ...]] = ()
 
     def __init__(self, settings: Dict[str, Any], home: str):
         self.settings = settings
