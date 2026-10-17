@@ -4,6 +4,11 @@
   members of the class as the source declares them: attributes with their annotation,
   methods with their signature, each with the first sentence of its documentation.
 - `<!-- gen: harness NAME -->` becomes NAME's entry in ag/cli/harnesses.toml.
+- `<!-- gen: config TABLE -->` becomes that part of the config.toml ag writes on first run
+  (ag.ag_harness.home.TEMPLATE, and ag.cli.config.HEADER for [cli]): policies, policies.llm,
+  pollers or cli.
+- `<!-- gen: readme SECTION -->` becomes the body of the README's `## SECTION`, its own
+  headings one level down and its links to the rest of the README pointed at GitHub.
 - Tables are wrapped for horizontal scrolling, and the sidebar is made from the page's
   h2 and h3 headings.
 """
@@ -71,12 +76,55 @@ def harness(name: str) -> str:
     return m.group(0).rstrip()
 
 
+def config(table: str) -> str:
+    from ag.ag_harness.home import TEMPLATE
+    from ag.cli.config import HEADER
+    text = TEMPLATE + HEADER
+
+    def between(start: str, end: str) -> str:
+        i = text.index(start)
+        j = text.index(end, i) if end else len(text)
+        return text[i:j].rstrip()
+
+    if table == "policies":
+        return (between("[policies]\n", "\n[policies.llm]") + "\n\n"
+                + between("# ---------------------------------------------------------------- available policies",
+                          "\n# ================================================================ pollers"))
+    if table == "policies.llm":
+        return between("[policies.llm]", "\n\n")
+    if table == "pollers":
+        return between("[pollers]\n", "\n# ================================================================ cli")
+    if table == "cli":
+        return between("[cli]\n", "")
+    raise ValueError(f"no config table {table!r}")
+
+
+README_URL = "https://github.com/ucbepic/actor-gatherer"
+
+
+def readme(section: str) -> str:
+    text = open(os.path.join(ROOT, "README.md"), encoding="utf-8").read()
+    m = re.search(rf"^## {re.escape(section)}\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    if not m:
+        raise ValueError(f"README.md has no section ## {section}")
+    body = m.group(1).strip()
+    body = re.sub(r"^(#{3,5}) ", lambda h: "#" * len(h.group(1)) + " ", body, flags=re.M)
+    own = {re.sub(r"[^\w\s-]", "", h.lower()).strip().replace(" ", "-")
+           for h in re.findall(r"^#{3,5} (.+)$", body, re.M)}
+    return re.sub(r"\]\(#([\w-]+)\)",
+                  lambda l: l.group(0) if l.group(1) in own else f"]({README_URL}#{l.group(1)})", body)
+
+
 def generate(kind: str, args: str) -> str:
     words = args.split()
+    if kind == "readme":
+        return readme(args.strip())
     if kind == "stub":
         code = stub(words[0], words[1:])
     elif kind == "harness":
         code = harness(words[0])
+    elif kind == "config":
+        code = config(words[0])
     else:
         raise ValueError(f"unknown generator {kind!r}")
     return f"```\n{code}\n```"
