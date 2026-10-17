@@ -145,6 +145,11 @@ class ProactiveContextManagerConfig:
                 f"the budgets do not fit max_context_tokens={self.max_context_tokens}: sections "
                 f"{self.section_budgets} + keep_pinned_tokens {self.keep_pinned_tokens} = {held}, which leaves "
                 f"no headroom before the next build")
+        if self.min_context_tokens >= self.max_context_tokens:
+            raise ValueError(
+                f"min_context_tokens={self.min_context_tokens} is not under max_context_tokens="
+                f"{self.max_context_tokens}: the context never reaches it, so the policy would never check "
+                f"whether a user message starts a new task")
 
     @property
     def section_budgets(self) -> int:

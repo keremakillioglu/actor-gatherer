@@ -183,6 +183,11 @@ class StrictMaxTest(Base):
         self.assertIn("leaves no headroom", str(caught.exception))
         self.assertEqual(ProactiveContextManagerConfig().section_budgets, 100000)
 
+    def test_a_min_at_or_above_the_limit_is_refused(self):
+        with self.assertRaises(ValueError) as caught:              # the boundary checks could never run
+            ProactiveContextManagerConfig(**{**SMALL, "min_context_tokens": SMALL["max_context_tokens"]})
+        self.assertIn("never check whether a user message starts a new task", str(caught.exception))
+
     def test_a_read_over_the_limit_mid_turn_starts_a_build_and_waits_for_it(self):
         spawned, waited = [], []
         self.policy.jobs = Recording(lambda s, c, job, job_id: spawned.append(job))
