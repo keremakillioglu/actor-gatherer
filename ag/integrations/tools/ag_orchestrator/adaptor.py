@@ -63,7 +63,7 @@ class Adaptor(ABC):
       noted.
 
     **A sketch** (`TYPES`, `kind_of`, `text_of` and `as_system_message` stand for the harness's own:
-the event type names it emits, and its logic):
+    the event type names it emits, and its logic):
 
     ```python
     from ag.integrations.tools.ag_orchestrator.adaptor import AG, CHANNEL, CWD, Adaptor
