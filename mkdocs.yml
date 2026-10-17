@@ -1,0 +1,30 @@
+# The project site (https://ucbepic.github.io/actor-gatherer/), built from docs/ by
+# .github/workflows/docs.yml. index.html and blog.html are served as they are; docs.md is
+# rendered into docs_build/theme/main.html, with the blocks marked <!-- gen: ... --> filled from
+# the source (docs_build/hooks.py).
+site_name: Actor-Gatherer
+site_url: https://ucbepic.github.io/actor-gatherer/
+site_description: "Documentation for ag, the Actor-Gatherer command line: every setting for policies, pollers and harnesses, the environment variables, and how to write your own policies, pollers and adaptors."
+docs_dir: docs
+site_dir: site
+use_directory_urls: false
+strict: true
+theme:
+  name: null
+  custom_dir: docs_build/theme
+  static_templates: []
+nav:
+  - docs.md
+plugins: []
+hooks:
+  - docs_build/hooks.py
+markdown_extensions:
+  - attr_list
+  - tables
+  - fenced_code
+  - toc
+extra:
+  title: Actor-Gatherer Docs
+  css_version: 20
+exclude_docs: |
+  *.py
