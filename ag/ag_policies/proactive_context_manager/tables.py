@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS _builds (
     open_from_row     INTEGER,           -- where the running (open) task starts
     ranking_json      TEXT,              -- earlier tasks, most relevant first: [[channel_key, task_index], ...]
     parallel_mark     INTEGER,           -- other channels' rows up to here were seen
-    error             TEXT
+    error             TEXT,
+    reason            TEXT               -- why it was started: limit / boundary / request / direct
 );
 CREATE INDEX IF NOT EXISTS _builds_channel ON _builds (channel_key, build_id);
 
@@ -85,8 +86,12 @@ CREATE TABLE IF NOT EXISTS _boundaries (
 
 
 def create(conn: sqlite3.Connection) -> None:
-    """Create every table that is absent. Idempotent."""
+    """Create every table that is absent, and add the columns a database made by
+    an older version lacks. Idempotent."""
     conn.executescript(SCHEMA)
+    if "reason" not in {r[1] for r in conn.execute("PRAGMA table_info(_builds)")}:
+        with conn:
+            conn.execute("ALTER TABLE _builds ADD COLUMN reason TEXT")     # older builds: NULL
 
 
 def key(channel_id: Optional[str]) -> str:
@@ -156,7 +161,10 @@ def channels_with_tasks(conn) -> List[Optional[str]]:
 # ---------------------------------------------------------------- builds
 
 BUILD_COLUMNS = ("build_id, status, started_at, finished_at, through_row, open_from_row, "
-                 "ranking_json, parallel_mark, error")
+                 "ranking_json, parallel_mark, error, reason")
+#: Why a build was started: the context was over max_context_tokens; the boundary check found a new
+#: task; build_every_request; run directly (bulk loading, tests).
+LIMIT, BOUNDARY, REQUEST, DIRECT = "limit", "boundary", "request", "direct"
 
 
 def _build(row) -> Optional[dict]:
@@ -165,12 +173,12 @@ def _build(row) -> Optional[dict]:
     return {"build_id": row[0], "status": row[1], "started_at": row[2], "finished_at": row[3],
             "through_row": row[4], "open_from_row": row[5],
             "ranking": [tuple(x) for x in json.loads(row[6])] if row[6] else [], "parallel_mark": row[7] or 0,
-            "error": row[8]}
+            "error": row[8], "reason": row[9]}
 
 
-def claim_build(conn, channel_id, timeout: float) -> Optional[int]:
-    """Start a build for the channel -- a new `running` row -- unless its
-    latest build is still running (and younger than `timeout`). Atomic across
+def claim_build(conn, channel_id, timeout: float, reason: str = DIRECT) -> Optional[int]:
+    """Start a build for the channel -- a new `running` row, with why (`reason`) -- unless
+    its latest build is still running (and younger than `timeout`). Atomic across
     processes. Returns the new build_id, or None."""
     now = time.time()
     conn.execute("BEGIN IMMEDIATE")
@@ -180,8 +188,8 @@ def claim_build(conn, channel_id, timeout: float) -> Optional[int]:
         if row and row[0] == "running" and now - row[1] < timeout:
             conn.execute("ROLLBACK")
             return None
-        cur = conn.execute("INSERT INTO _builds (channel_key, status, started_at) "
-                           "VALUES (?, 'running', ?)", (key(channel_id), now))
+        cur = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
+                           "VALUES (?, 'running', ?, ?)", (key(channel_id), now, reason))
         conn.execute("COMMIT")
         return cur.lastrowid
     except Exception:
@@ -189,11 +197,11 @@ def claim_build(conn, channel_id, timeout: float) -> Optional[int]:
         raise
 
 
-def new_build(conn, channel_id) -> int:
+def new_build(conn, channel_id, reason: str = DIRECT) -> int:
     """A `running` build row, unconditionally (for a build run directly)."""
     with conn:
-        cur = conn.execute("INSERT INTO _builds (channel_key, status, started_at) "
-                           "VALUES (?, 'running', ?)", (key(channel_id), time.time()))
+        cur = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
+                           "VALUES (?, 'running', ?, ?)", (key(channel_id), time.time(), reason))
     return cur.lastrowid
 
 
