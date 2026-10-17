@@ -34,8 +34,14 @@ Without a Gatherer, each agent operates largely on its own history, which is typ
 You need Python 3.11+ and the harness you want to run on your `PATH`. Install `ag` from PyPI:
 
 ```bash
-pip install actor-gatherer             # the `ag` command
-pip install "actor-gatherer[codex]"    # ...and the Codex SDK, to use codex/<model> as the Gatherer's LLM
+pip install actor-gatherer
+```
+
+To use a Codex model as the Gatherer's LLM (`codex/<model>`, [below](#set-the-gatherers-llm)),
+install it with the Codex SDK instead:
+
+```bash
+pip install "actor-gatherer[codex]"
 ```
 
 Or from source:
@@ -45,7 +51,9 @@ git clone https://github.com/ucbepic/actor-gatherer && cd actor-gatherer
 pip install -r requirements.txt        # `ag` from this clone, editable, with every dependency
 ```
 
-**Then set the LLM the Gatherer uses.** It can be an API-based model, called through
+### Set the Gatherer's LLM
+
+It can be an API-based model, called through
 [LiteLLM](https://docs.litellm.ai/docs/providers). Name it as `provider/model`, and set that provider's API key, e.g.,
 
 ```bash
@@ -63,7 +71,9 @@ ag model claude-code/sonnet
 ag model codex/gpt-6-sol
 ```
 
-which runs Claude Code or Codex for the Gatherer.
+which runs Claude Code or Codex for the Gatherer, on its own login. Codex models need the
+Codex SDK, from `pip install "actor-gatherer[codex]"` (a clone's `pip install -r requirements.txt`
+includes it); Claude Code models need only `claude` on your `PATH`.
 
 To check the model that is set:
 
