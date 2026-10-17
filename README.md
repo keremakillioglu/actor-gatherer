@@ -37,13 +37,6 @@ You need Python 3.11+ and the harness you want to run on your `PATH`. Install `a
 pip install actor-gatherer
 ```
 
-To use a Codex model as the Gatherer's LLM (`codex/<model>`, [below](#set-the-gatherers-llm)),
-install it with the Codex SDK instead:
-
-```bash
-pip install "actor-gatherer[codex]"
-```
-
 Or from source:
 
 ```bash
@@ -71,9 +64,13 @@ ag model claude-code/sonnet
 ag model codex/gpt-6-sol
 ```
 
-which runs Claude Code or Codex for the Gatherer, on its own login. Codex models need the
-Codex SDK, from `pip install "actor-gatherer[codex]"` (a clone's `pip install -r requirements.txt`
-includes it); Claude Code models need only `claude` on your `PATH`.
+which runs Claude Code or Codex for the Gatherer, on its own login. Claude Code models need
+only `claude` on your `PATH`. To use a Codex model, install `ag` with the Codex SDK instead (a
+clone's `pip install -r requirements.txt` already includes it):
+
+```bash
+pip install "actor-gatherer[codex]"
+```
 
 To check the model that is set:
 
