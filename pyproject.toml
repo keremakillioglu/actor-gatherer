@@ -19,6 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "aiohttp>=3.9",          # the hook server (Codex, Claude Code)
+    "backports.zstd>=1.0; python_version < '3.14'",   # for aiohttp: Codex on a ChatGPT login sends zstd requests
     "tiktoken>=0.7",         # counting tokens
     "litellm>=1.60",         # every LLM call the policies make, to any provider
 ]

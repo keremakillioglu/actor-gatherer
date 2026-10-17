@@ -111,6 +111,19 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((resp.status, self.received[-1][:2]), (200, ("GET", "/v1/models")))
         self.assertEqual(os.listdir(self.dir) if os.path.isdir(self.dir) else [], [])   # nothing changed: no log
 
+    async def test_a_zstd_compressed_request_reaches_the_hook_decoded(self):
+        try:
+            from compression import zstd                                          # Python 3.14+
+        except ImportError:
+            from backports import zstd                                            # a dependency before 3.14
+        body = {"model": "m", "messages": ["hi"]}                                 # Codex on a ChatGPT login
+        resp = await self.client.post("/v1/chat", data=zstd.compress(json.dumps(body).encode()),
+                                      headers={"Content-Type": "application/json", "Content-Encoding": "zstd"})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(self.hook.seen[-1].body, body)
+        _, _, headers, raw = self.received[-1]                                    # sent on decoded
+        self.assertEqual((json.loads(raw), headers.get("Content-Encoding")), ({"model": "m", "messages": ["HI"]}, None))
+
     async def test_a_websocket_upgrade_is_refused_not_relayed(self):
         resp = await self.client.get("/v1/responses", headers={"Upgrade": "websocket", "Connection": "Upgrade"})
         self.assertEqual((resp.status, self.received, self.hook.seen), (426, [], []))   # codex then uses HTTP
