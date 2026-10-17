@@ -23,86 +23,11 @@ The framework is extensible. Add a new harness by defining an adaptor for it, ne
 
 ## Install {#install}
 
-You need Python 3.11+ and the harness you want to run on your `PATH`. Install `ag` from PyPI:
-
-```
-pip install actor-gatherer
-```
-
-Or from source:
-
-```
-git clone https://github.com/ucbepic/actor-gatherer && cd actor-gatherer
-pip install -r requirements.txt        # `ag` from this clone, editable, with every dependency
-```
-
-**Then set the LLM the Gatherer uses.** It can be an API-based model, called through [LiteLLM](https://docs.litellm.ai/docs/providers). Name it as `provider/model`, and set that provider's API key:
-
-```
-ag model openai/gpt-6-sol                    # "provider/model"; the key from OPENAI_API_KEY
-export OPENAI_API_KEY=...
-
-ag model gemini/gemini-3.8-flash             # or a Gemini model; the key from GEMINI_API_KEY
-export GEMINI_API_KEY=...
-```
-
-Or it can be a coding agent, such as Claude Code or Codex, which then runs for the Gatherer on its own login:
-
-```
-ag model claude-code/sonnet
-ag model codex/gpt-6-sol
-```
-
-To use Codex, make sure OpenAI's Codex SDK is installed (`ag` refuses to run with a `codex/` model until it is):
-
-```
-pip install openai-codex
-```
-
-To check the model that is set:
-
-```
-ag model
-```
+<!-- gen: readme Install -->
 
 ## Quickstart {#quickstart}
 
-Put `ag --gatherer NAME` in front of the agent command you would normally run:
-
-```
-ag --gatherer demo claude                                # Claude Code
-ag --gatherer demo codex exec "fix the tests"            # Codex
-ag --gatherer demo opencode run "add a --verbose flag"   # OpenCode
-ag --gatherer demo pi                                    # Pi
-```
-
-Agents join the gatherer named (`demo` above). Agents in the same gatherer share information with each other, whichever harness runs them. Agents in different gatherers don't share context, and each gatherer keeps its own history.
-
-For example, the first two agents below share information; the third, in a gatherer of its own, sees neither of them:
-
-```
-ag --gatherer frontend claude                            # shares with the Codex below
-ag --gatherer frontend codex                             # shares with the Claude Code above
-ag --gatherer backend codex                              # shares with neither
-```
-
-Without `--gatherer`, a session joins the gatherer `default`:
-
-```
-ag codex                                                 # the same as: ag --gatherer default codex
-```
-
-Use `--gatherer .` to create a new, unnamed gatherer. Agents created this way don't share context with other agents:
-
-```
-ag --gatherer . codex
-```
-
-To see every gatherer:
-
-```
-ag gatherers                                             # each one's policy, pollers, event count, last activity
-```
+<!-- gen: readme Quickstart -->
 
 Every option and command is in [`ag` CLI interface](#cli).
 
@@ -183,22 +108,7 @@ Every setting is in `~/.ag/config.toml`, created the first time you run `ag` wit
 
 ### `[policies]` {#policies}
 
-```
-[policies]
-default = "proactive_context_manager"    # the policy a new gatherer gets when none is named
-
-[policies.available.proactive_context_manager]
-class = "ag.ag_policies.proactive_context_manager:ProactiveContextManager"
-
-[policies.available.pcm_small]           # a variant: the same class, other options
-class = "ag.ag_policies.proactive_context_manager:ProactiveContextManager"
-options = { min_context_tokens = 5000, max_context_tokens = 40000 }
-
-[policies.available.mine]                # your own, from ~/.ag/plugins/mine.py
-file = "mine.py"
-class = "MyPolicy"
-options = { show = 3 }
-```
+<!-- gen: config policies -->
 
 Each entry under `[policies.available.<name>]` makes a policy available under that name:
 
@@ -218,15 +128,7 @@ The LLM the policy calls (to split history into tasks, summarize them, and rank 
 - **A coding agent**, `claude-code/<model>` or `codex/<model>` (e.g. `claude-code/sonnet`): runs Claude Code (`claude -p`) or Codex for each call, on that agent's own login, with its tools and default instructions out of the way. No API key is needed, and every call counts against the subscription's limits. Codex models need OpenAI's Codex SDK: `pip install openai-codex`; `ag` refuses to run without it.
 - **Any other name**, `provider/model` (e.g. `gemini/gemini-3.8-flash`): called through [LiteLLM](https://docs.litellm.ai/docs/providers), with the provider's API key.
 
-```
-[policies.llm]
-model = "gemini/gemini-3.8-flash"        # required: claude-code/<model>, codex/<model>, or "provider/model" for LiteLLM
-# api_base = "http://127.0.0.1:4011/v1"  # LiteLLM: send every call to a LiteLLM proxy or another OpenAI-compatible server
-# key_env = "LITELLM_KEY"                # LiteLLM: read the key from this variable (default: the provider's own)
-# claude_command = "claude"              # claude-code: the Claude Code to run
-# codex_command = "codex"                # codex: the Codex to run
-# log_prompts = true                     # also keep each call's full prompt in its log
-```
+<!-- gen: config policies.llm -->
 
 | key | for | default | meaning | overridden by |
 |---|---|---|---|---|
@@ -242,19 +144,7 @@ The Gatherer's own calls to Claude Code or Codex run without `ag`'s environment,
 
 ### `[pollers]` {#pollers}
 
-```
-[pollers]
-default = ["file_changes"]               # the pollers a new gatherer gets, whatever its policy
-
-[pollers.available.file_changes]
-class = "ag.ag_pollers.file_changes:FileChangePoller"
-args = { root = "{cwd}" }
-
-[pollers.available.team_chat]            # your own, from ~/.ag/plugins/chat_log.py
-file = "chat_log.py"
-class = "ChatLogPoller"
-args = { path = "~/team-chat.jsonl", stream = "#team" }
-```
+<!-- gen: config pollers -->
 
 An entry under `[pollers.available.<name>]` takes `class`, `file` and `module` as for policies, and `args`: the arguments the poller is built with. In a string argument, `{cwd}` is the agent's working directory, `{gatherer}` the gatherer's name and `{home}` the `ag` home; `~` is expanded. A poller whose arguments need `{cwd}` is skipped when the request has no working directory.
 
@@ -262,10 +152,7 @@ A gatherer's pollers must output event types its policy accepts; `ag` checks thi
 
 ### `[cli]` {#cli-settings}
 
-```
-[cli]
-gatherer = "default"     # the gatherer every run joins; "." for one gatherer per session
-```
+<!-- gen: config cli -->
 
 `--gatherer` overrides it for one run (see [Options](#options)).
 

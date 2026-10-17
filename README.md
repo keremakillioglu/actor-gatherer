@@ -87,7 +87,7 @@ ag --gatherer demo opencode run "add a --verbose flag"   # OpenCode
 ag --gatherer demo pi                                    # Pi
 ```
 Agents join the gatherer specified (`demo` above).  Agents with the same gatherer 
-share information with each other, whichever harness runs them (see the [example](#awareness-across-agents) below). Agents in
+share information with each other, whichever harness runs them (see the [example](#awareness-across-agents)). Agents in
 different gatherers don't share context and each gatherer keeps its own history.
 
 For example, the first two agents below share information; the third, in a
