@@ -136,27 +136,29 @@ Below are two short examples of the latter two.
 `ag` proactively shares information across agents when one needs it, as long as
 they are in the same gatherer, even if they run in different harnesses.
 
-For example, start a Codex session in a gatherer named `demo`:
+**1. Terminal 1: start Codex in a gatherer named `demo`, with a first message.**
 
 ```bash
 ag --gatherer demo codex "Let X = 5. What is 2X?"
 ```
-```
-If X = 5, then 2X = 2 × 5 = 10.
-```
 
-Then start Claude Code in the same gatherer, in another terminal or after the
-first has ended:
+> **You → Codex:** Let X = 5. What is 2X?
+>
+> **Codex:** If X = 5, then 2X = 2 × 5 = 10.
+
+**2. Terminal 2 (or after the first session has ended): start Claude Code in the
+same gatherer.**
 
 ```bash
 ag --gatherer demo claude "What is 3X?"
 ```
-```
-3X = 15.
 
-Your question doesn't define X, so I took X = 5 from your message to the other
-agent ("Let X = 5. What is 2X?").
-```
+> **You → Claude Code:** What is 3X?
+>
+> **Claude Code:** 3X = 15.
+>
+> Your question doesn't define X, so I took X = 5 from your message to the other
+> agent ("Let X = 5. What is 2X?").
 
 Claude Code never saw the Codex session. Both are in `demo`, so the Gatherer
 gave it Codex's request, and told it where to read the rest of that session's
@@ -168,44 +170,50 @@ work.
 directory, and tells the agent when something it relied on has changed. The
 example's data file is in this repo, at [`demo/salaries.csv`](https://github.com/ucbepic/actor-gatherer/blob/main/demo/salaries.csv).
 
-**1. Copy the demo file,** so your edit leaves the repo's copy as it is, and
-start Codex next to it:
+**1. Terminal 1: copy the demo file and start Codex next to it.** The copy keeps
+the repo's file as it is when you edit it.
 
 ```bash
 mkdir -p /tmp/ag-salaries && cp demo/salaries.csv /tmp/ag-salaries/ && cd /tmp/ag-salaries
 ag --gatherer salaries codex
 ```
 
-**2. Ask, in Codex:**
+**2. In Codex: ask about the file.**
 
-```
-> I'm putting together a compensation benchmark from salaries.csv. Where does
-  Germany's average salary sit relative to the median of the countries listed?
+> **You → Codex:** I'm putting together a compensation benchmark from salaries.csv.
+> Where does Germany's average salary sit relative to the median of the countries
+> listed?
+>
+> **Codex:** Germany ($58,940) sits $3,820 above the median ($55,120, the United
+> Kingdom).
 
-Germany ($58,940) sits $3,820 above the median ($55,120, the United Kingdom).
-```
-
-**3. Change the file while the session stays open.** In another terminal,
-change Japan from 42,180 to 47,152 (or edit the file by hand):
+**3. Terminal 2: change the file while the Codex session stays open.** This
+changes Japan from 42,180 to 47,152 (or edit the file by hand):
 
 ```bash
 f=/tmp/ag-salaries/salaries.csv; c=$(<"$f"); printf '%s\n' "${c/Japan,42180,/Japan,47152,}" > "$f"
 ```
 
-**4. Ask, in the same Codex session:**
+**4. In the same Codex session: ask a second question.**
 
-```
-> How large is the gap between France and Japan, in USD?
-
-France: $49,310. Japan: $47,152. The gap between France and Japan is $2,158.
-```
+> **You → Codex:** How large is the gap between France and Japan, in USD?
+>
+> **Codex:** France: $49,310. Japan: $47,152. The gap between France and Japan is
+> $2,158.
 
 Before this question reached the model, the Gatherer told Codex that
 `salaries.csv` had changed after it last read it, so Codex read the file again.
 
-**To compare,** repeat the steps with plain `codex`, starting from a fresh copy
-(`mkdir -p /tmp/plain-salaries && cp demo/salaries.csv /tmp/plain-salaries/ && cd /tmp/plain-salaries && codex`). It
-answers $7,130, which is incorrect: it uses Japan's old value from its first read.
+**To compare,** repeat the steps with plain `codex`, starting from a fresh copy:
+
+```bash
+mkdir -p /tmp/plain-salaries && cp demo/salaries.csv /tmp/plain-salaries/ && cd /tmp/plain-salaries
+codex
+```
+
+Asked the same two questions, with the same change in between, plain Codex answers
+$7,130 to the second, which is incorrect: it uses Japan's old value from its first
+read.
 
 ## How it works
 
