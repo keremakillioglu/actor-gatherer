@@ -337,5 +337,20 @@ class CliTest(HomeBase):
         self.assertIn("proactive_context_manager", lines[2])
         self.assertIn("no database yet", lines[2])
 
+
+class LlmProblemTest(HomeBase):
+    def test_a_codex_model_needs_the_codex_sdk(self):
+        import importlib.util
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"AG_LLM_MODEL": "codex/gpt-6-sol"}):
+            with mock.patch.object(importlib.util, "find_spec", return_value=None):
+                self.assertIn("pip install openai-codex", self.h.llm_problem())
+            with mock.patch.object(importlib.util, "find_spec", return_value=object()):
+                self.assertEqual(self.h.llm_problem(), "")
+        for model in ("claude-code/sonnet", "gemini/gemini-3.8-flash", ""):
+            with mock.patch.dict(os.environ, {"AG_LLM_MODEL": model}):
+                with mock.patch.object(importlib.util, "find_spec", return_value=None):
+                    self.assertEqual(self.h.llm_problem(), "", model)
+
 if __name__ == "__main__":
     unittest.main()

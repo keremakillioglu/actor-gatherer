@@ -314,5 +314,16 @@ class Config(Home):
             config.load()
 
 
+
+class CodexSdk(Home):
+    def test_a_codex_model_without_the_sdk_is_refused_before_anything_runs(self):
+        import importlib.util
+        if importlib.util.find_spec("openai_codex") is not None:
+            self.skipTest("the Codex SDK is installed here")
+        with mock.patch.dict(os.environ, {"AG_LLM_MODEL": "codex/gpt-6-sol"}):
+            code, out, err = self.run_ag("--dry-run", "pi")
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("pip install openai-codex", err)
+
 if __name__ == "__main__":
     unittest.main()

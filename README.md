@@ -64,12 +64,10 @@ ag model claude-code/sonnet
 ag model codex/gpt-6-sol
 ```
 
-which runs Claude Code or Codex for the Gatherer, on its own login. Claude Code models need
-only `claude` on your `PATH`. To use a Codex model, install `ag` with the Codex SDK instead (a
-clone's `pip install -r requirements.txt` already includes it):
+which runs Claude Code or Codex for the Gatherer. To use Codex, make sure OpenAI's Codex SDK is installed:
 
 ```bash
-pip install "actor-gatherer[codex]"
+pip install openai-codex
 ```
 
 To check the model that is set:

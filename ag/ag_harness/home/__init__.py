@@ -464,6 +464,17 @@ class Home:
         neither is set -- there is no default, and every call then fails (logged)."""
         return os.environ.get("AG_LLM_MODEL") or str(self._llm_config().get("model") or "")
 
+    def llm_problem(self) -> str:
+        """Why the Gatherer's LLM cannot run in this Python, or "": a codex/ model
+        needs OpenAI's Codex SDK (openai_codex) importable here."""
+        model = self.model()
+        if self._llm_config().get("class") or model.partition("/")[0] != "codex":
+            return ""
+        if importlib.util.find_spec("openai_codex") is None:
+            return (f"the Gatherer's model {model} runs through OpenAI's Codex SDK, which is not installed "
+                    f"for {sys.executable}: pip install openai-codex")
+        return ""
+
     def set_llm(self, model: Optional[str] = None, api_base: Optional[str] = None,
                 key_env: Optional[str] = None) -> dict:
         """Write [policies.llm] in config.toml: each of `model`, `api_base`,
