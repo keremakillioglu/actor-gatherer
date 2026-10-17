@@ -84,25 +84,30 @@ def harness(name: str) -> str:
 
 
 def config(table: str) -> str:
+    """A part of the config.toml ag writes, as blank-line separated blocks (a table with the
+    comment above it): policies (the defaults and the catalog), policies.llm, pollers, cli."""
     from ag.ag_harness.home import TEMPLATE
     from ag.cli.config import HEADER
-    text = TEMPLATE + HEADER
+    blocks = [b.strip("\n") for b in (TEMPLATE + HEADER).split("\n\n") if b.strip()]
 
-    def between(start: str, end: str) -> str:
-        i = text.index(start)
-        j = text.index(end, i) if end else len(text)
-        return text[i:j].rstrip()
+    def at(header: str) -> int:
+        return next(i for i, b in enumerate(blocks) if re.search(rf"^{re.escape(header)}$", b, re.M))
 
+    def rule(name: str) -> int:
+        return next(i for i, b in enumerate(blocks) if b.startswith("# ----") and name in b.splitlines()[0])
+
+    divider = re.compile(r"^# ====")
     if table == "policies":
-        return (between("[policies]\n", "\n[policies.llm]") + "\n\n"
-                + between("# ---------------------------------------------------------------- available policies",
-                          "\n# ================================================================ pollers"))
+        catalog = blocks[rule("available policies"):]
+        catalog = catalog[:next(i for i, b in enumerate(catalog) if divider.match(b))]
+        return "\n\n".join([blocks[at("[policies]")]] + catalog)
     if table == "policies.llm":
-        return between("[policies.llm]", "\n\n")
+        return blocks[at("[policies.llm]")]
     if table == "pollers":
-        return between("[pollers]\n", "\n# ================================================================ cli")
+        rest = blocks[at("[pollers]"):]
+        return "\n\n".join(rest[:next((i for i, b in enumerate(rest) if divider.match(b)), len(rest))])
     if table == "cli":
-        return between("[cli]\n", "")
+        return blocks[at("[cli]")]
     raise ValueError(f"no config table {table!r}")
 
 

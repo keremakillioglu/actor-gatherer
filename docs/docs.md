@@ -77,6 +77,8 @@ Every setting is in `~/.ag/config.toml`, created the first time you run `ag` wit
 
 ### `[policies]` {#policies}
 
+This is the `[policies]` part of the `config.toml` that `ag` writes on first run. `default` names the policy a new gatherer gets. Below it is the catalog, one `[policies.available.<name>]` entry per policy a gatherer may use: the shipped `proactive_context_manager`, and two commented-out entries to copy, a variant of it with other options (`pcm_small`) and a policy of your own from `~/.ag/plugins/` (`mine`).
+
 <!-- gen: config policies -->
 
 Each entry under `[policies.available.<name>]` makes a policy available under that name:
@@ -104,6 +106,8 @@ The LLM the policy calls (to split history into tasks, summarize them, and rank 
 The Gatherer's own calls to Claude Code or Codex run without `ag`'s environment, so they never come back through `ag`.
 
 ### `[pollers]` {#pollers}
+
+This is the `[pollers]` part of the `config.toml` that `ag` writes on first run. `default` lists the pollers a new gatherer gets. Below it is the catalog, one `[pollers.available.<name>]` entry per poller a gatherer may list: the shipped `file_changes`, and a commented-out entry to copy for a poller of your own from `~/.ag/plugins/` (`tickets`).
 
 <!-- gen: config pollers -->
 

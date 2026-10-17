@@ -94,26 +94,29 @@ TEMPLATE = '''# This home's settings, by who reads them:
 [policies]
 default = "proactive_context_manager"   # the policy a new gatherer gets when none is named
 
-[policies.llm]                          # the LLM the policies call
-model = ""                              # required, no default (AG_LLM_MODEL): a coding agent on its own
-                                        # login, claude-code/<model> or codex/<model>, or any other
-                                        # "provider/model" through LiteLLM, e.g. "gemini/gemini-3.8-flash"
-# api_base = "http://127.0.0.1:4011/v1" # LiteLLM: send every call to this server instead, a LiteLLM
-                                        # proxy, or any OpenAI-compatible endpoint (AG_LLM_URL)
-# key_env = "LITELLM_KEY"               # LiteLLM: the variable holding the key (AG_LLM_KEY); unset: the
-                                        # provider's own, e.g. GEMINI_API_KEY, ANTHROPIC_API_KEY
+# The LLM the policies call. `model` is a coding agent on its own login,
+# claude-code/<model> or codex/<model>, or any other "provider/model" through LiteLLM,
+# e.g. "gemini/gemini-3.8-flash". `api_base` and `key_env` are for LiteLLM only; without
+# `key_env`, the key is the provider's own variable, e.g. GEMINI_API_KEY.
+[policies.llm]
+model = ""                              # required: no default (AG_LLM_MODEL)
+# api_base = "http://127.0.0.1:4011/v1" # a LiteLLM proxy, or any OpenAI-compatible endpoint (AG_LLM_URL)
+# key_env = "LITELLM_KEY"               # the variable holding the key (AG_LLM_KEY)
 
 # ---------------------------------------------------------------- available policies
 # Every policy a gatherer may run.
 
-[policies.available.proactive_context_manager]  # earlier history as sections, built in the background;
-class = "ag.ag_policies.proactive_context_manager:ProactiveContextManager"  # file-change notices; the
-                                                 # user's requests to the other channels, shown during a task
+# Earlier history as sections, built in the background; file-change notices; the user's
+# requests to the other channels, shown during a task.
+[policies.available.proactive_context_manager]
+class = "ag.ag_policies.proactive_context_manager:ProactiveContextManager"
 
-# [policies.available.pcm_small]        # a variant: the same class, other options
+# A variant: the same class, other options. Its budgets must add up to less than its
+# max_context_tokens; the rest is headroom before the next build.
+# [policies.available.pcm_small]
 # class = "ag.ag_policies.proactive_context_manager:ProactiveContextManager"
-# [policies.available.pcm_small.options]   # the budgets must stay under the max:
-# max_context_tokens = 100000              # the rest is headroom before the next build
+# [policies.available.pcm_small.options]
+# max_context_tokens = 100000
 # all_task_tokens = 30000
 # parallel_index_tokens = 15000
 # keep_temporal_relevant_tokens = 7500
@@ -122,8 +125,10 @@ class = "ag.ag_policies.proactive_context_manager:ProactiveContextManager"  # fi
 # keep_so_far_tokens = 7500
 # keep_pinned_tokens = 5000
 
-# [policies.available.mine]             # your own: a Policy subclass (or a factory) in plugins/mine.py,
-# file = "mine.py"                      # built with whichever of format=, llm=, options= it takes
+# Your own: a Policy subclass (or a factory) in plugins/mine.py, built with whichever of
+# format=, llm=, options= it takes.
+# [policies.available.mine]
+# file = "mine.py"
 # class = "MyPolicy"
 # options = {}
 
@@ -135,11 +140,13 @@ default = ["file_changes"]              # the pollers a new gatherer gets, whate
 # ---------------------------------------------------------------- available pollers
 # Every poller a gatherer may list: where its events come from outside the conversation.
 
-[pollers.available.file_changes]        # files changed under the agent's working directory
-class = "ag.ag_pollers.file_changes:FileChangePoller"   # -> environment_update
+# Files changed under the agent's working directory, as environment_update events.
+[pollers.available.file_changes]
+class = "ag.ag_pollers.file_changes:FileChangePoller"
 args = { root = "{cwd}" }
 
-# [pollers.available.tickets]           # your own: a Poller in plugins/tickets.py, built with args
+# Your own: a Poller in plugins/tickets.py, built with its args.
+# [pollers.available.tickets]
 # file = "tickets.py"
 # class = "TicketPoller"
 # args = { ticket = "4123", cwd = "{cwd}" }

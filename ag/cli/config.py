@@ -26,9 +26,10 @@ HEADER = '''
 # ag, the command line: how `ag <harness>` launches each harness. Added by ag
 # with the defaults written out; edit freely.
 
+# The gatherer every run files into ("." for one per harness session); `ag --gatherer NAME`
+# (or `--gatherer .`) overrides it for one run.
 [cli]
-gatherer = "default"        # the gatherer every run files into ("." : one per harness session);
-                            # `ag --gatherer NAME` (or `--gatherer .`) overrides it
+gatherer = "default"
 '''
 
 #: The gatherer a run files into when neither --gatherer nor [cli] gatherer names one
