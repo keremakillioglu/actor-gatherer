@@ -46,7 +46,8 @@ pip install -r requirements.txt        # `ag` from this clone, editable, with ev
 
 ### Set the Gatherer's LLM
 
-It can be an API-based model, called through
+The Gatherer uses LLMs to manage the context of Actors, so you must set the model the
+Gatherer uses. It can be an API-based model, called through
 [LiteLLM](https://docs.litellm.ai/docs/providers). Name it as `provider/model`, and set that provider's API key, e.g.,
 
 ```bash
