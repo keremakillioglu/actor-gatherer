@@ -4,7 +4,7 @@ messages through its adaptor and the Gatherer's server, and back.
 The hook works out where the call belongs: the gatherer, the channel (the harness's session
 id) and the working directory. It then runs one call through `call_ag`, which never raises:
 
-```
+```python
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL
 from ag.integrations.tools.ag_orchestrator.call_ag import call_ag

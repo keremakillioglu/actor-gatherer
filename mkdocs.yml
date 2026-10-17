@@ -22,9 +22,12 @@ markdown_extensions:
   - attr_list
   - tables
   - fenced_code
+  - codehilite:
+      css_class: highlight
+      guess_lang: false
   - toc
 extra:
   title: Actor-Gatherer Docs
-  css_version: 20
+  css_version: 21
 exclude_docs: |
   *.py

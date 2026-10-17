@@ -39,7 +39,7 @@ class Poller(ABC):
     a team chat) into `context_stream` events, which `proactive_context_manager` shows to the
     agent where they arrived:
 
-    ```
+    ```python
     # ~/.ag/plugins/chat_log.py
     import json
     import os
@@ -76,14 +76,14 @@ class Poller(ABC):
 
     Registered in config.toml, and added to a gatherer (or to `[pollers] default`):
 
-    ```
+    ```toml
     [pollers.available.team_chat]
     file = "chat_log.py"
     class = "ChatLogPoller"
     args = { path = "~/team-chat.jsonl", stream = "#team" }
     ```
 
-    ```
+    ```sh
     ag --gatherer team --poller file_changes --poller team_chat claude
     ```
 
