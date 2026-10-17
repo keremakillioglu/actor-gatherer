@@ -61,7 +61,7 @@ A gatherer's database records exactly what the model was sent on every call, so 
 
 Every setting is in `~/.ag/config.toml`, created the first time you run `ag` with every default written out. A command-line option overrides the setting it names (`--gatherer` over `[cli] gatherer`), and so does an `AG_*` environment variable (`AG_LLM_MODEL` over `[policies.llm] model`). The file has these tables:
 
-```
+```toml
 [policies]                     # the default policy
 [policies.llm]                 # the LLM the policies call
 [policies.available.<name>]    # the catalog: every policy a gatherer may use

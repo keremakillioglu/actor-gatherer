@@ -122,7 +122,7 @@ class Policy(ABC):
     **A sketch.** A policy that sends the channel's whole conversation and, before the latest
     request, the user's latest requests to other agents in the same gatherer:
 
-    ```
+    ```python
     # ~/.ag/plugins/other_requests.py
     from ag.ag_interface import Context, Policy, Ref, TypeIds, event_text
     from ag.ag_policies.proactive_context_manager.events import EVENT_TYPES
@@ -159,14 +159,14 @@ class Policy(ABC):
 
     Registered in config.toml, and used by a gatherer:
 
-    ```
+    ```toml
     [policies.available.other_requests]
     file = "other_requests.py"
     class = "OtherRequests"
     options = { show = 3 }
     ```
 
-    ```
+    ```sh
     ag --gatherer team --policy other_requests codex
     ```
 

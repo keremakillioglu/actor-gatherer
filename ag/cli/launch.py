@@ -71,7 +71,7 @@ class Launcher(ABC):
 
     **A sketch**, for a harness that loads a plugin given by a flag:
 
-    ```
+    ```python
     from ag.cli.launch import Launch, Launcher
 
 
@@ -86,7 +86,7 @@ class Launcher(ABC):
 
     **Registering the harness** in config.toml:
 
-    ```
+    ```toml
     [cli.harnesses.mine]
     launcher = "my_pkg.launch:MyLauncher"
     adaptor  = "my_pkg.adaptor:MyAdaptor"        # or "path/to/adaptor.ts:MyAdaptor"

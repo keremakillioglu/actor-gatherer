@@ -1,11 +1,18 @@
 :root {
   --bg: #fbfbf9; --fg: #1d1d1f; --muted: #5b5b63; --accent: #2f5bd3;
   --card: #ffffff; --line: #e4e4e0; --tag: #eef2fc;
+  /* docs.html's code and tables, as NumPy's docs show them (PyData Sphinx Theme) */
+  --code-fg: #912583; --code-bg: #f3f4f5; --code-border: #d1d5da; --code-text: #222832;
+  --table-head: #f3f4f5; --table-rule: #0a7d91; --table-odd: #f3f4f5; --table-even: #ffffff;
+  --table-inner: #e5e7ea; --table-line: #dee2e6;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #131316; --fg: #ececf0; --muted: #a2a2ad; --accent: #8aa8ff;
     --card: #1c1c21; --line: #2e2e35; --tag: #232a3d;
+    --code-fg: #f3c7ee; --code-bg: #29313d; --code-border: #48566b; --code-text: #ced6dd;
+    --table-head: #29313d; --table-rule: #3fb1c5; --table-odd: #29313d; --table-even: #222832;
+    --table-inner: #364150; --table-line: #495057;
   }
 }
 * { box-sizing: border-box; }
@@ -88,16 +95,24 @@ h4 { font: 600 0.98rem Inter, system-ui, sans-serif; margin: 18px 0 6px; color: 
 /* docs.html */
 .doc h2 { scroll-margin-top: 16px; }
 .doc h3, .doc h4 { scroll-margin-top: 16px; }
-.doc code { font: 0.86em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--tag);
-  padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
-.doc pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
-  overflow-x: auto; margin: 0 0 1.2em; }
-.doc pre code { background: none; padding: 0; font-size: 0.8rem; line-height: 1.55; overflow-wrap: normal; white-space: pre; }
+.doc code { font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 0.875em; color: var(--code-fg); background: var(--code-bg); border: 1px solid var(--code-border);
+  border-radius: 0.25rem; padding: 0.1rem 0.25rem; overflow-wrap: anywhere; }
+.doc a code { color: inherit; }
+.doc pre { font-size: 0.875em; line-height: 1.25; color: var(--code-text); background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 0.25rem; padding: 1rem; overflow-x: auto; margin: 1.5em 0; }
+.doc pre code { color: inherit; background: none; border: 0; padding: 0; font-size: inherit; overflow-wrap: normal;
+  white-space: pre; }
+.doc .highlight pre { margin: 1.5em 0; }
 .doc .table-wrap { overflow-x: auto; margin: 0 0 1.2em; }
-.doc table { border-collapse: collapse; width: 100%; font: 0.86rem/1.5 Inter, system-ui, sans-serif; }
-.doc th, .doc td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
-.doc th { font-weight: 600; color: var(--muted); border-bottom: 2px solid var(--line); }
-.doc td code { font-size: 0.82rem; white-space: nowrap; }
+.doc table { border-collapse: collapse; width: 100%; font-size: 0.92rem; line-height: 1.5; }
+.doc th, .doc td { text-align: left; vertical-align: top; padding: 0.5rem; border-bottom: 1px solid var(--table-line); }
+.doc th ~ th, .doc td ~ td { border-left: 1px solid var(--table-inner); }
+.doc thead tr { background: var(--table-head); border-bottom: 2px solid var(--table-rule); }
+.doc th { font-weight: 600; color: var(--fg); border-bottom: 0; }
+.doc tbody tr:nth-child(odd) { background: var(--table-odd); }
+.doc tbody tr:nth-child(even) { background: var(--table-even); }
+.doc td code { white-space: nowrap; }
 .doc ul { margin: 0 0 1.1em; padding-left: 1.3em; }
 .doc li { margin-bottom: 0.35em; }
 .toc { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 20px;

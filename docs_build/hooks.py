@@ -231,7 +231,7 @@ def generate(kind: str, args: str) -> str:
         return harness_keys()
     if kind == "home-layout":
         from ag.ag_harness.home import LAYOUT
-        return f"```\n{LAYOUT}\n```"
+        return f"```text\n{LAYOUT}\n```"
     if kind == "stub":
         code = stub(words[0], words[1:])
     elif kind == "harness":
@@ -240,7 +240,8 @@ def generate(kind: str, args: str) -> str:
         code = config(words[0])
     else:
         raise ValueError(f"unknown generator {kind!r}")
-    return f"```\n{code}\n```"
+    lang = {"stub": "python", "harness": "toml", "config": "toml"}[kind]
+    return f"```{lang}\n{code}\n```"
 
 
 def on_config(config):
