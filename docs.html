@@ -67,8 +67,6 @@
   <h2 id="install">Install</h2>
   <p>You need Python 3.11+ and the harness you want to run on your <code>PATH</code>. Install <code>ag</code> from PyPI:</p>
 <pre><code>pip install actor-gatherer</code></pre>
-  <p>To use a Codex model as the Gatherer's LLM (<code>codex/&lt;model&gt;</code>, <a href="#llm">below</a>), install it with the Codex SDK instead:</p>
-<pre><code>pip install "actor-gatherer[codex]"</code></pre>
   <p>Or from source:</p>
 <pre><code>git clone https://github.com/ucbepic/actor-gatherer &amp;&amp; cd actor-gatherer
 pip install -r requirements.txt        # `ag` from this clone, editable, with every dependency</code></pre>
@@ -79,9 +77,11 @@ export OPENAI_API_KEY=...
 
 ag model gemini/gemini-3.8-flash             # or a Gemini model; the key from GEMINI_API_KEY
 export GEMINI_API_KEY=...</code></pre>
-  <p>Or it can be a coding agent, such as Claude Code or Codex, which then runs for the Gatherer on its own login. Codex models need the Codex SDK, from <code>pip install "actor-gatherer[codex]"</code>; Claude Code models need only <code>claude</code> on your <code>PATH</code>.</p>
+  <p>Or it can be a coding agent, such as Claude Code or Codex, which then runs for the Gatherer on its own login:</p>
 <pre><code>ag model claude-code/sonnet
 ag model codex/gpt-6-sol</code></pre>
+  <p>Claude Code models need only <code>claude</code> on your <code>PATH</code>. To use a Codex model, install <code>ag</code> with the Codex SDK instead (a clone's <code>pip install -r requirements.txt</code> already includes it):</p>
+<pre><code>pip install "actor-gatherer[codex]"</code></pre>
   <p>To check the model that is set:</p>
 <pre><code>ag model</code></pre>
 
