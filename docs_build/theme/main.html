@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ config.extra.title }}</title>
+<meta name="description" content="{{ config.site_description }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<link rel="stylesheet" href="{{ base_url }}/style.css?v={{ config.extra.css_version }}">
+</head>
+<body>
+<div class="topbar">
+  <button class="menu" id="menu" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">&#9776;</button>
+  <a class="brand" href="{{ base_url }}/">Actor-Gatherer</a><span class="crumb">Documentation</span>
+</div>
+<div class="docs-layout">
+<aside class="sidebar" id="sidebar">
+  <nav aria-label="Documentation">
+{%- for group in page.sidebar %}
+    <p class="side-group"><a href="#{{ group.id }}">{{ group.title }}</a></p>
+  {%- if group.children %}
+    <ul>
+    {%- for item in group.children %}
+      <li><a href="#{{ item.id }}">{{ item.title }}</a></li>
+    {%- endfor %}
+    </ul>
+  {%- endif %}
+{%- endfor %}
+  </nav>
+</aside>
+<main class="doc">
+{{ page.content }}
+  <footer>Actor-Gatherer · 2026</footer>
+</main>
+</div>
+<script>
+(function () {
+  var side = document.getElementById('sidebar'), menu = document.getElementById('menu');
+  function setOpen(open) { side.classList.toggle('open', open); menu.setAttribute('aria-expanded', open); }
+  menu.onclick = function () { setOpen(!side.classList.contains('open')); };
+  side.addEventListener('click', function (e) { if (e.target.closest('a')) setOpen(false); });
+  // Each group's list of subsections collapses under a toggle; the group being read opens itself.
+  side.querySelectorAll('.side-group').forEach(function (g) {
+    var list = g.nextElementSibling;
+    if (!list || list.tagName !== 'UL') return;
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'caret'; btn.setAttribute('aria-label', 'Show or hide subsections');
+    g.insertBefore(btn, g.firstChild);
+    function set(open) { list.hidden = !open; btn.setAttribute('aria-expanded', open); g.classList.toggle('expanded', open); }
+    btn.onclick = function () { set(list.hidden); };
+    g.querySelector('a').addEventListener('click', function () { set(true); });
+    g.setOpen = set; set(false);
+  });
+  var links = {}; side.querySelectorAll('a[href^="#"]').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+  var openGroup = null;
+  var heads = Array.prototype.filter.call(document.querySelectorAll('.doc h2[id], .doc h3[id]'), function (h) { return links[h.id]; });
+  function spy() {
+    var cur = heads[0];
+    for (var i = 0; i < heads.length; i++) { if (heads[i].getBoundingClientRect().top <= 90) cur = heads[i]; else break; }
+    side.querySelectorAll('a.active').forEach(function (a) { a.classList.remove('active'); });
+    if (!cur) return;
+    var a = links[cur.id]; a.classList.add('active');
+    var list = a.closest('ul'), g = list ? list.previousElementSibling : a.closest('.side-group');
+    if (g && g !== openGroup && g.setOpen) { g.setOpen(true); openGroup = g; }
+  }
+  window.addEventListener('scroll', spy, { passive: true }); spy();
+})();
+</script>
+</body>
+</html>
