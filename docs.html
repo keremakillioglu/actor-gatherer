@@ -80,8 +80,8 @@ export GEMINI_API_KEY=...</code></pre>
   <p>Or it can be a coding agent, such as Claude Code or Codex, which then runs for the Gatherer on its own login:</p>
 <pre><code>ag model claude-code/sonnet
 ag model codex/gpt-6-sol</code></pre>
-  <p>Claude Code models need only <code>claude</code> on your <code>PATH</code>. To use a Codex model, install <code>ag</code> with the Codex SDK instead (a clone's <code>pip install -r requirements.txt</code> already includes it):</p>
-<pre><code>pip install "actor-gatherer[codex]"</code></pre>
+  <p>To use Codex, make sure OpenAI's Codex SDK is installed (<code>ag</code> refuses to run with a <code>codex/</code> model until it is):</p>
+<pre><code>pip install openai-codex</code></pre>
   <p>To check the model that is set:</p>
 <pre><code>ag model</code></pre>
 
@@ -199,7 +199,7 @@ options = { show = 3 }</code></pre>
   <h3 id="llm"><code>[policies.llm]</code></h3>
   <p>The LLM the policy calls (to split history into tasks, summarize them, and rank them). There is no default model; set one here or with <a href="#commands"><code>ag model</code></a>. The model's name decides how it is called:</p>
   <ul>
-    <li><strong>A coding agent</strong>, <code>claude-code/&lt;model&gt;</code> or <code>codex/&lt;model&gt;</code> (e.g. <code>claude-code/sonnet</code>): runs Claude Code (<code>claude -p</code>) or Codex for each call, on that agent's own login, with its tools and default instructions out of the way. No API key is needed, and every call counts against the subscription's limits. Codex models need the <code>openai-codex</code> package: install <code>actor-gatherer[codex]</code> (a clone's <code>pip install -r requirements.txt</code> includes it).</li>
+    <li><strong>A coding agent</strong>, <code>claude-code/&lt;model&gt;</code> or <code>codex/&lt;model&gt;</code> (e.g. <code>claude-code/sonnet</code>): runs Claude Code (<code>claude -p</code>) or Codex for each call, on that agent's own login, with its tools and default instructions out of the way. No API key is needed, and every call counts against the subscription's limits. Codex models need OpenAI's Codex SDK: <code>pip install openai-codex</code>; <code>ag</code> refuses to run without it.</li>
     <li><strong>Any other name</strong>, <code>provider/model</code> (e.g. <code>gemini/gemini-3.8-flash</code>): called through <a href="https://docs.litellm.ai/docs/providers">LiteLLM</a>, with the provider's API key.</li>
   </ul>
 <pre><code>[policies.llm]
