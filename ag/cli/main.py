@@ -125,6 +125,8 @@ def contract_problems(harness: str, adaptor: str, gatherer: Optional[str], opts)
     if got.returncode != 0:
         raise AgError((got.stderr or got.stdout).strip() or "the home could not say what this run takes")
     contract = json.loads(got.stdout)
+    if contract.get("llm_problem"):
+        raise AgError(contract["llm_problem"])
     if not contract.get("model", True):
         say("no LLM model set: the Gatherer's calls will fail until one is -- "
             "`ag model gemini/gemini-3.8-flash`, say (or AG_LLM_MODEL)")

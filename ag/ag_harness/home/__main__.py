@@ -165,7 +165,8 @@ def contract(h, gatherer, policy, pollers, none: bool = False) -> dict:
             "poller_properties": {name: list(getattr(h.poller_class(known[name]), "properties", ()))
                                   for name in names},
             "pollers_from": source,                                   # given, the gatherer's, or [pollers] default
-            "model": h.model()}                                       # the LLM's; "": none set
+            "model": h.model(),                                       # the LLM's; "": none set
+            "llm_problem": h.llm_problem()}                           # why it cannot run here; "": none
 def cmd_model(h, model, api_base, key_env) -> int:
     """[policies.llm]: set what is given (a flag left out stays; "" removes it), then
     show it, and what overrides it from the environment."""
