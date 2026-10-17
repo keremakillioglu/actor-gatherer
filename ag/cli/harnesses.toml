@@ -6,13 +6,13 @@
 # all among the policy's, and refuses to run otherwise.
 
 [cli.harnesses.codex]
-launcher = "ag.integrations.harnesses.codex.setup.launch:CodexLauncher"
-adaptor  = "ag.integrations.harnesses.codex.adaptor.adaptor:CodexAdaptor"
-command  = ["codex"]        # the codex to run
+launcher = "ag.integrations.harnesses.codex.setup.launch:CodexLauncher"   # the launcher class, "module:Class"
+adaptor  = "ag.integrations.harnesses.codex.adaptor.adaptor:CodexAdaptor"  # the adaptor class: "module:Class", or "path.ts:Export"
+command  = ["codex"]        # the command that runs the harness
 provider = ""               # the model provider to hook ("": the one codex would use)
 port     = 4013             # the first port a hook server tries
 log_dir  = ""               # if set, each request the hook changed, before and after
-env      = {}               # extra environment for codex (and nothing else)
+env      = {}               # extra environment for this harness only
 
 [cli.harnesses.pi]
 launcher = "ag.integrations.harnesses.pi.setup.launch:PiLauncher"

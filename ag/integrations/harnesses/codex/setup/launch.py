@@ -256,6 +256,8 @@ def plan(args: List[str], settings: Dict[str, Any], env: Dict[str, str]) -> Plan
 
 class CodexLauncher(Launcher):
     defaults = {"command": ["codex"], "provider": "", "port": 4013, "log_dir": "", "env": {}}
+    environment = (("AG_CODEX_AG_ROLE", "developer", "`user`: send the Gatherer's messages to Codex as user "
+                                                     "messages instead of developer messages."),)
 
     def __init__(self, settings: Dict[str, Any], home: str):
         super().__init__(settings, home)

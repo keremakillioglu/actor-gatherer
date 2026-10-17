@@ -40,6 +40,22 @@ DEFAULTS: Dict[str, Any] = {"gatherer": DEFAULT_GATHERER}
 HARNESSES_TOML = os.path.join(REPO, "ag", "cli", "harnesses.toml")
 
 
+#: The environment variables ag and every harness read: (name, "", default, what it does). A
+#: harness's own are its launcher's `environment`. The docs' tables are made from both.
+ENVIRONMENT = (
+    ("AG_HOME", "", "~/.ag", "The home directory: settings, gatherers, logs."),
+    ("AG_PYTHON", "", "python3", "The Python that runs the Gatherer's server. The Claude Code and Codex "
+                                 "proxies default to the Python they run in."),
+    ("AG_LLM_MODEL", "", "[policies.llm] model", "The Gatherer's model."),
+    ("AG_LLM_URL", "", "[policies.llm] api_base", "Where the Gatherer's LiteLLM calls go."),
+    ("AG_LLM_KEY", "", "the variable key_env names", "The API key for those calls."),
+    ("AG_GATHERER", "", "", "The gatherer, for the Pi extension and the OpenCode plugin when run without "
+                            "`ag`. Ignored under `ag`: use `--gatherer`."),
+    ("AG_ADAPTOR", "", "set by ag", "The adaptor the Pi extension or OpenCode plugin loads, as "
+                                    "`\"path.ts:Export\"`."),
+)
+
+
 class ConfigError(Exception):
     pass
 

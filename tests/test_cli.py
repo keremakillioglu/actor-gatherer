@@ -325,5 +325,47 @@ class CodexSdk(Home):
         self.assertEqual((code, out), (1, ""))
         self.assertIn("pip install openai-codex", err)
 
+
+class Reference(unittest.TestCase):
+    """The data the docs and `ag --help` are made from says what the code does."""
+
+    def test_the_parser_takes_exactly_the_listed_options(self):
+        from ag.cli import usage
+        listed = {word for option, _ in usage.OPTIONS for word in option.replace(",", " ").split()
+                  if word.startswith("-")}
+        source = open(main.__file__, encoding="utf-8").read()
+        parsed = set(re.findall(r'"(--?[a-z][a-z-]*)"', source.split("def parse(")[1].split("\ndef ")[0]))
+        self.assertEqual(parsed, listed)
+
+    def test_every_command_is_listed(self):
+        from ag.cli import usage
+        text = " ".join(c for c, _ in usage.COMMANDS) + " " + " ".join(o for o, _ in usage.OPTIONS)
+        for command in config.RESERVED:
+            self.assertIn(command if command != "help" else "--help", text, command)
+
+    def test_every_environment_variable_read_is_listed(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(main.__file__)))
+        read = set()
+        for dirpath, _, names in os.walk(root):
+            for name in names:
+                if name.endswith((".py", ".ts")):
+                    text = open(os.path.join(dirpath, name), encoding="utf-8").read()
+                    read |= set(re.findall(r"(?:environ(?:\.get)?\(?\[?|process\.env\.|process\.env\[)\s*[\"']?(AG_[A-Z_]+)", text))
+                    read |= set(re.findall(r'^[A-Z_]*ENV\s*=\s*"(AG_[A-Z_]+)"', text, re.M))
+        import tomllib
+        from ag.cli.launch import load_launcher
+        entries = tomllib.loads(open(config.HARNESSES_TOML, encoding="utf-8").read())["cli"]["harnesses"]
+        listed = {name for name, *_ in config.ENVIRONMENT}
+        listed |= {name for e in entries.values() for name, *_ in load_launcher(e["launcher"]).environment}
+        self.assertEqual(read - listed, set())
+
+    def test_every_llm_setting_is_listed(self):
+        from ag.ag_harness.home import LLM_KEYS, LLM_SETTINGS
+        from ag.ag_tools.llm.cli_client import CLIClient
+        import inspect
+        listed = {k for k, *_ in LLM_SETTINGS}
+        commands = {p for p in inspect.signature(CLIClient).parameters if p.endswith("_command")}
+        self.assertEqual((set(LLM_KEYS) | commands) - {"url", "file", "module"}, listed)
+
 if __name__ == "__main__":
     unittest.main()

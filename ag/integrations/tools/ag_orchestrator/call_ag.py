@@ -1,20 +1,31 @@
-"""One model call, for a harness whose hook is in Python:
-the harness's messages through its adaptor and the context manager's
-server, and back. Routing only -- it never looks inside a message: turning
-messages into events and the context back into messages is the harness's
-adaptor's (adaptor.py); where the call belongs (gatherer, the properties of its
-events -- e.g. {CHANNEL: thread} -- working directory) is its routing's.
+r"""One model call, for a hook in Python (call_ag.ts is the same in TypeScript): the harness's
+messages through its adaptor and the Gatherer's server, and back.
 
-    messages, note = await call_ag(client, gatherer, {CHANNEL: thread}, cwd, items, adaptor)
-    messages or items               # None: send the harness's own
+The hook works out where the call belongs: the gatherer, the channel (the harness's session
+id) and the working directory. It then runs one call through `call_ag`, which never raises:
 
-It holds the adaptor to what it declares: an event of a type not in its
-`outputs`, or a property not in its `properties`, sends nothing (None), and
-a context entry not in its `accepts` is noted. The working directory, when
-given, goes on the events and the read as the property CWD too. It never
-raises: an adaptor that fails, a server that errors or does not answer, a
-context that is not a list -- each gives None and a note. call_ag.ts is the
-same in TypeScript.
+```
+from ag.integrations.tools.ag_connection.ag_client import AgClient
+from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag
+
+client = AgClient("mine")                  # starts the Gatherer's server on first use
+messages, note = await call_ag(client, gatherer, {CHANNEL: session_id}, cwd, harness_messages, MyAdaptor())
+send(messages if messages is not None else harness_messages)   # None: the Gatherer could not answer
+```
+
+`call_ag` runs `to_events`, sends the events to the Gatherer, and runs `to_messages` on the
+context it returns. In TypeScript, `call_ag(server, {gatherer, properties, cwd}, messages,
+adaptor)` does the same. It holds the adaptor to what it declares: an event of a type not in
+its `outputs`, or a property not in its `properties`, sends nothing (None), and a context
+entry not in its `accepts` is noted. The working directory, when given, goes on the events
+and the read as the property CWD too. An adaptor that fails, a server that errors or does
+not answer, or a context that is not a list each give None and a note.
+
+For a proxy-based harness, ag/integrations/tools/hook_server/hook_server.py is the proxy: it
+calls a given hook on every request to the model's endpoint, and relays everything else
+unchanged. A URL that starts with `/h/<label>/` hands the hook that label, which the shipped
+hooks use as the gatherer.
 """
 
 from typing import Any, Dict, Optional, Tuple

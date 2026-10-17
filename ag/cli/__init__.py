@@ -10,12 +10,6 @@
     ag --gatherer . codex                      each thread a new gatherer of its own, named by its id
     ag --gatherer demo --policy <policy> pi    ... made with this policy (and --poller X ... or --no-pollers)
     ag --dry-run codex exec "..."          print what would run, and run nothing
-    ag status | stop                       what ag started and keeps running (hook servers)
-    ag config                              where ag's settings are, and what they resolve to
-    ag gatherers | show <gatherer> | new <gatherer> ...  the gatherers: all of them, one's config, one made ahead of use
-    ag model [NAME] [--api-base URL] [--key-env VAR]     the LLM the Gatherer calls: shown, or set for every gatherer
-    ag home list | path | ...              the context manager's home (python -m ag.ag_harness.home);
-                                           `ag gatherers` is `ag home gatherers`, and so on
 
 ag's own commands -- help, home, config, status, stop, gatherers, show, new, model --
 are not harness names: a [cli.harnesses.<name>] named after one is refused.

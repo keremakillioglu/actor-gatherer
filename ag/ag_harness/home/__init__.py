@@ -217,6 +217,37 @@ def gatherer_toml(cfg: GathererConfig) -> str:
 CLI_MODELS = ("claude-code", "codex")
 #: [policies.llm]'s own keys; any other is offered to the LLM's constructor.
 LLM_KEYS = ("model", "api_base", "key_env", "url", "class", "file", "module", "log_prompts")
+#: [policies.llm]'s settings, as the docs list them: (key, for which models, default, what it
+#: does, the environment variable that overrides it).
+LLM_SETTINGS = (
+    ("model", "all", "none", "The model: claude-code/<model> or codex/<model> for a coding agent on its "
+                             "own login, any other \"provider/model\" through LiteLLM. Without one, `ag` warns "
+                             "at launch and every Gatherer call fails.", "AG_LLM_MODEL"),
+    ("api_base", "LiteLLM", "the provider's", "Send every call to this server instead.", "AG_LLM_URL"),
+    ("key_env", "LiteLLM", "the provider's variable", "The environment variable that holds the API key.",
+     "AG_LLM_KEY (the key itself)"),
+    ("claude_command", "claude-code", "\"claude\"", "The Claude Code executable, found on `PATH`.", ""),
+    ("codex_command", "codex", "\"codex\"", "The Codex executable, found on `PATH`.", ""),
+    ("log_prompts", "all", "false", "Keep each call's system text and prompt, whole, in `~/.ag/logs/llm/`. "
+                                    "Usage, timing and the answer are always logged.", ""),
+    ("class", "your own", "none", "An LLM implementation of your own, named like a policy's `class` (with "
+                                  "`file` or `module` if needed), instead of the two above.", ""),
+)
+#: What the home holds, as the docs show it.
+LAYOUT = """\
+~/.ag/
+├── config.toml                     every setting: policies, pollers, the LLM, harnesses
+├── plugins/                        your own policies and pollers (Python files)
+├── gatherers/<name>/               one directory per gatherer:
+│   ├── gatherer.toml               its policy, its options and its pollers
+│   └── context.db                  its database (SQLite): every event, and every context it sent
+├── hook_server/<port>.json         the proxies ag started (Claude Code, Codex)
+└── logs/
+    ├── gatherers/<name>/server.log what each model call came to
+    ├── gatherers/<name>/worker.log the gatherer's background builds
+    ├── <harness>_server.log        each Gatherer server's own output
+    ├── hook_servers/<port>.log     each proxy's output
+    └── llm/                        one JSON file per LLM call the policies make"""
 
 _HEADER = re.compile(r"^\s*\[\s*([^\]]+?)\s*\]\s*(#.*)?$")
 

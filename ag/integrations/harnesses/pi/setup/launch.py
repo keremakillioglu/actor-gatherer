@@ -65,6 +65,8 @@ def argv(command: List[str], args: List[str], cwd: str, env: Dict[str, str],
 
 class PiLauncher(Launcher):
     defaults = {"command": ["pi"], "env": {}}
+    environment = (("AG_PI_TIMEOUT_MS", "300000", "How long a model call waits for the Gatherer."),
+                   ("AG_PI_COMPACTION", "off", "`allow`: keep Pi's own compaction on."))
 
     def launch(self, run: Run) -> Launch:
         notes = []

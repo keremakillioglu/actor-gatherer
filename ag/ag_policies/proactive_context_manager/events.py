@@ -1,17 +1,21 @@
-"""The event types the proactive context manager expects: its contract with the harness.
+r"""The event types the proactive context manager accepts: its contract with the harness side.
 
-The five standard types (ag_policies/tools/groups.py: every harness sends
-them the same way), and the two generic types for what
-happens outside the conversation, defined here (a poller that makes them
-defines its own copy): ENVIRONMENT_UPDATE_TYPE (something in the agent's
-environment changed; the policy notifies the model when the conversation
-refers to its subject) and CONTEXT_STREAM_TYPE (a message from a stream the
-user is part of; the policy shows it where it arrived). Any poller that
-returns one of the two feeds this policy.
+The types `proactive_context_manager` accepts are:
 
-Last, AGENT_REASONING_TYPE: the model's own reasoning (encrypted items, thinking blocks),
-kept and sent back but never read. In a gatherer running this
-policy the eight are ids 1 to 8, in this order (reasoning last, so the others keep their ids).
+| type | events of this type |
+|---|---|
+| `user_message` | A request from the user; opens a turn. |
+| `agent_message` | The model's answer. |
+| `tool_call`, `tool_output` | A request to run a tool, and its result. |
+| `context` | Text the harness puts in front of the model (instructions, injected context, compaction summaries). Kept verbatim. |
+| `agent_reasoning` | The model's own reasoning: sent back as it was, never read or counted. |
+| `environment_update` | Something in the environment changed. Payload: `subject` (what changed, named as the agent would name it), `what` (a sentence saying what happened), `timestamp`, `source`. |
+| `context_stream` | A message from a stream the user is part of (a chat channel, a ticket). Payload: `stream`, `author`, `text`, `timestamp`. |
+
+The first five are the standard types (ag_policies/tools/groups.py). The two outside types
+are defined here; a poller that makes them defines its own copy, and any poller that returns
+one feeds this policy. In a gatherer running this policy the eight are ids 1 to 8, in this
+order (reasoning last, so the others keep their ids).
 """
 
 from typing import Any
