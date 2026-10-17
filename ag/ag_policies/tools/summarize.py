@@ -85,8 +85,11 @@ What belongs in each:
 Rules:
 - MOST TASKS ESTABLISH NOTHING. Return [] for each of the first four fields unless the user
   indicated something should keep applying beyond these turns -- a correction, a
-  "from now on", a "use X not Y", a definition they supplied. Do not record a
-  step merely because the work happened to be done that way.
+  "from now on", a "use X not Y", a definition they supplied. It also counts when
+  the user CONFIRMS a choice the agent made where the environment left a real
+  alternative (which config file to read, which flag to run a command with):
+  record the confirmed choice. Do not record a step merely because the work
+  happened to be done that way.
 - MAKE IT ACTIONABLE. A later task gets your spec without these turns, so write
   it so someone holding only the environment could act on it directly:
     - resolve a name the user used to the CONCRETE object it refers to, with the
