@@ -64,8 +64,7 @@ ag model claude-code/sonnet
 ag model codex/gpt-6-sol
 ```
 
-which runs Claude Code or Codex for the Gatherer. To use Codex, make sure OpenAI's Codex SDK is installed
-(`ag` refuses to run with a `codex/` model until it is):
+which runs Claude Code or Codex for the Gatherer. To use Codex, make sure OpenAI's Codex SDK is installed:
 
 ```bash
 pip install openai-codex
