@@ -121,16 +121,13 @@ ag gatherers                                             # each one's policy, po
 
 ## Examples
 
-The Actor-Gatherer framework improves accuracy in three settings:
+The Actor-Gatherer framework improves accuracy by ensuring agents have the right information at the right time:
 
-- **Long-running sessions:** the Gatherer decides what matters from a long history
-  for the task at hand, pages in relevant information when needed and removes irrelevant ones.
-- **Sharing information across parallel agents:** agents in the same gatherer,
-  even in different harnesses, get what they need from each other's work.
-- **Observing the environment:** when something an agent relied on changes, such
-  as a file, the Gatherer tells it before it answers from a stale copy.
+- **Across and within long-running sessions:** The Gatherer identifies what matters from a long interaction history, retrieves relevant information when needed, and filters out what is no longer useful.
+- **Across parallel agents:** Agents managed by the same Gatherer, even across different harnesses, benefit from each other’s work.
+- **As the environment changes:** Gatherer informs the agent when relevant information in the environment changes. For example, when a relevant file changes, the Gatherer alerts the agent before it acts on stale information.
 
-Below are two short examples of the latter two.
+Below are a few short examples.
 
 ### Awareness across agents
 
@@ -215,6 +212,50 @@ codex
 Asked the same two questions, with the same change in between, plain Codex answers
 $7,130 to the second, which is incorrect: it uses Japan's old value from its first
 read.
+
+### Information across sessions
+
+`ag` keeps relevant information across sessions in context. Here, we show an example for a data analysis task with schema
+ambiguity, where it is ambiguous which column should be used to join two of the tables (details
+[here](https://github.com/ucbepic/actor-gatherer/blob/main/demo/cross_session)). The user picks a join column
+that should be reapplied in a new session. 
+
+**1. Make the database in a new folder, and start Claude Code there.**
+
+```bash
+mkdir -p /tmp/tv-analytics && python3 demo/cross_session/make_db.py /tmp/tv-analytics/studios.sqlite && cd /tmp/tv-analytics
+ag --gatherer tv-analytics claude
+```
+
+**2. In Claude Code:**
+
+> **You → Claude Code:** In studios.sqlite, which studios have the most catalogue entries? Top five, name and count.
+>
+> **You → Claude Code:** Which genres are most common across the catalogue? Give counts.
+>
+> **You → Claude Code:** Join catalogue to companies on catalogue.feed_tag = companies.callsign and give the top five studios by catalogue entries, name and count.
+>
+> **You → Claude Code:** Reply with a short report with exactly these fields:
+> Title: Catalogue Report; Total entries: 704; Genre counts …; National Broadcasting entries: 105
+
+**3. Exit, and start a new session in the same folder and gatherer.**
+
+```bash
+ag --gatherer tv-analytics claude
+```
+
+> **You → Claude Code:** Which five studios have the most Drama entries? Name and count.
+>
+> **Claude Code:** These are the five studios with the most Drama entries. I matched
+> entries to studios on `feed_tag = callsign`, the join you chose in your last studio
+> question. …
+
+It answers National Broadcasting 46, ABC Network 31, Public Broadcasting 21, FBC 18,
+Columbia Broadcasting 9, which is correct. Running the same steps without `ag` leads to 
+incorrectly useing the wrong join key in the new session. 
+
+Scripts to run the example are in [`demo/cross_session`](https://github.com/ucbepic/actor-gatherer/tree/main/demo/cross_session).
+To run it, do `demo/cross_session/run.sh ag` (or `demo/cross_session/run.sh plain` to run it without `ag`).
 
 ## How it works
 
