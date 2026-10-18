@@ -266,6 +266,9 @@ and told it where to read that session's work.
 
 Running the same steps without `ag` leads to an incorrect result.
 
+Scripts to run the example are in [`demo/cross_session`](https://github.com/ucbepic/actor-gatherer/tree/main/demo/cross_session).
+To run it, do `demo/cross_session/run.sh ag` (or `demo/cross_session/run.sh plain` to run it without `ag`).
+
 ## How it works
 
 ![Actor-Gatherer architecture: each Actor (a harness plus its adaptor) calls insert and get_context on the Gatherer, which holds the context and insertion policy and a database; pollers watch the environment and insert events](https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/architecture.png)
