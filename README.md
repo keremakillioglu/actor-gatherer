@@ -264,20 +264,7 @@ Columbia Broadcasting 9, which is correct. Claude Code kept no memory of the fir
 session: the Gatherer gave the new session the requests you made in the first one,
 and told it where to read that session's work.
 
-**To compare,** repeat the steps with plain `claude`, in a fresh folder:
-
-```bash
-mkdir -p /tmp/tv-catalogue && python3 demo/cross_session/make_db.py /tmp/tv-catalogue/studios.sqlite && cd /tmp/tv-catalogue
-claude
-```
-
-Asked the same question in the new session, plain Claude Code joins on the declared
-foreign key and answers Columbia Broadcasting 46, ABC Network 31, Nickelodeon 21,
-FBC 18, National Broadcasting 9, which is incorrect. These answers are with Claude
-Opus 5.5 as Claude Code's model and `claude-code/sonnet` as the Gatherer's. To play
-both sessions headless, run `demo/cross_session/run.sh ag` or
-`demo/cross_session/run.sh plain`; see
-[`demo/cross_session`](https://github.com/ucbepic/actor-gatherer/tree/main/demo/cross_session).
+Running the same steps without `ag` leads to an incorrect result.
 
 ## How it works
 
