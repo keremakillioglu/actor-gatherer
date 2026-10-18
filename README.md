@@ -2,7 +2,7 @@
 
 # The Actor-Gatherer Framework for AI Agents
 
-[![Blog](https://img.shields.io/badge/Blog-read%20the%20post-purple)](https://ucbepic.github.io/actor-gatherer/)
+[![Blog](https://img.shields.io/badge/Blog-read%20more-purple)](https://ucbepic.github.io/actor-gatherer/)
 [![Docs](https://img.shields.io/badge/Docs-actor--gatherer%2Fdocs-green)](https://ucbepic.github.io/actor-gatherer/docs.html)
 [![Works with Claude Code, Codex, OpenCode and Pi](https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/works-with.svg)](#quickstart)
 
