@@ -13,7 +13,10 @@
 <body>
 <div class="topbar">
   <button class="menu" id="menu" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">&#9776;</button>
-  <a class="brand" href="{{ base_url }}/">Actor-Gatherer</a><span class="crumb">Documentation</span>
+  <a class="brand" href="{{ base_url }}/">Actor-Gatherer</a>
+  <nav class="topnav" aria-label="Site">
+    <a href="{{ base_url }}/">Blog</a><a href="{{ base_url }}/docs.html" aria-current="page">Docs</a><a href="https://github.com/ucbepic/actor-gatherer">GitHub</a>
+  </nav>
 </div>
 <div class="docs-layout">
 <aside class="sidebar" id="sidebar">
@@ -32,7 +35,7 @@
 </aside>
 <main class="doc">
 {{ page.content }}
-  <footer>Actor-Gatherer · 2026</footer>
+  <footer>Developed at the <a href="https://epic.berkeley.edu/">EPIC Data Lab</a>, UC Berkeley · <a href="https://github.com/ucbepic/actor-gatherer">GitHub</a> · 2026</footer>
 </main>
 </div>
 <script>

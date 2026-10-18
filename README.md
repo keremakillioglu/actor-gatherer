@@ -2,9 +2,10 @@
 
 # The Actor-Gatherer Framework for AI Agents
 
-[![Project page](https://img.shields.io/badge/Project%20page-actor--gatherer-blue)](https://ucbepic.github.io/actor-gatherer/)
+Developed at the [EPIC Data Lab](https://epic.berkeley.edu/), UC Berkeley
+
+[![Blog](https://img.shields.io/badge/Blog-read%20the%20post-purple)](https://ucbepic.github.io/actor-gatherer/)
 [![Docs](https://img.shields.io/badge/Docs-actor--gatherer%2Fdocs-green)](https://ucbepic.github.io/actor-gatherer/docs.html)
-[![Blog](https://img.shields.io/badge/Blog-read%20the%20post-purple)](https://ucbepic.github.io/actor-gatherer/blog.html)
 [![Works with Claude Code, Codex, OpenCode and Pi](https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/works-with.svg)](#quickstart)
 
 [What is the Actor-Gatherer Framework](#what-is-the-actor-gatherer-framework) · [Install](#install) · [Quickstart](#quickstart) · [Examples](#examples) · [How it works](#how-it-works) · [Extensions](#extensions)

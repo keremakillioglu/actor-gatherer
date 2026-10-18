@@ -3,54 +3,225 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Actor-Gatherer</title>
-<meta name="description" content="The Actor-Gatherer framework: proactive, external context management for AI agents.">
+<title>The Actor-Gatherer Framework for AI Agents</title>
+<meta name="description" content="The Actor-Gatherer framework for AI agents: the context management problem, the architecture, and results.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
-<main>
+<div class="topbar">
+  <button class="menu" id="menu" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">&#9776;</button>
+  <a class="brand" href="./">Actor-Gatherer</a>
+  <nav class="topnav" aria-label="Site">
+    <a href="./" aria-current="page">Blog</a><a href="docs.html">Docs</a><a href="https://github.com/ucbepic/actor-gatherer">GitHub</a>
+  </nav>
+</div>
+<div class="docs-layout">
+<aside class="sidebar" id="sidebar">
+  <nav aria-label="Blog post">
+    <p class="side-group"><a href="#overview">Overview</a></p>
+    <ul>
+      <li><a href="#what-is">What is the Actor-Gatherer Framework?</a></li>
+      <li><a href="#comparison">How does it compare with existing context management methods?</a></li>
+    </ul>
+    <p class="side-group"><a href="#problem">The Context Management Problem, Revisited</a></p>
+    <p class="side-group"><a href="#why-fail">Why Existing Harnesses Fail</a></p>
+    <p class="side-group"><a href="#architecture">Bolt-On Actor-Gatherer Architecture</a></p>
+    <p class="side-group"><a href="#results">Results</a></p>
+    <ul>
+      <li><a href="#results-single">Single-agent comparison with baselines</a></li>
+      <li><a href="#results-multi">Multi-agent environments</a></li>
+      <li><a href="#results-harnesses">Different harnesses</a></li>
+    </ul>
+    <p class="side-group"><a href="#framework">Context Management Details</a></p>
+    <p class="side-group"><a href="#conclusion">Conclusion</a></p>
+    <p class="side-group"><a href="#references">References</a></p>
+  </nav>
+</aside>
+<main class="post">
   <header>
     <h1>The Actor-Gatherer Framework<br>for AI Agents</h1>
-    <p class="subtitle">Proactive context management for agents, curated from long-running sessions, parallel agents, and the environment</p>
-    <div class="buttons">
-      <a class="btn" href="https://github.com/ucbepic/actor-gatherer">Code</a>
-      <a class="btn secondary" href="blog.html">Blog post</a>
-      <a class="btn secondary" href="docs.html">Docs</a>
-    </div>
-    <div class="harnesses"><span class="use">Bolt-on context management for</span>
-      <span class="rotator" id="rotator">
-        <span class="harness"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="#D97757" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg><span>Claude Code</span></span>
-        <span class="harness"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg><span>Codex</span></span>
-        <span class="harness"><svg width="14" height="14" viewBox="0 0 560 560" aria-hidden="true"><g fill="currentColor"><path d="M420 280H280V140H0V0H420V280Z"/><path d="M560 560H420V280H560V560Z"/><path d="M140 560H0V140H140V280H280V420H140V560Z"/></g></svg><span>Pi</span></span>
-        <span class="harness"><svg width="14" height="14" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="96" fill="#131010"/><path d="M320 224V352H192V224H320Z" fill="#5A5858"/><path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="#fff"/></svg><span>OpenCode</span></span>
-      </span>
-    </div>
+    <p class="authors"><a href="https://szeighami.github.io/">Sepanta Zeighami</a>, <a href="https://keremakillioglu.github.io/">Kerem Akillioglu</a>, <a href="https://abiswal2001.github.io/">Asim Biswal</a>,<br><a href="https://people.eecs.berkeley.edu/~akcheung/">Alvin Cheung</a>, <a href="https://people.eecs.berkeley.edu/~jegonzal/">Joseph E. Gonzalez</a>, <a href="https://people.eecs.berkeley.edu/~adityagp/">Aditya G. Parameswaran</a></p>
+    <p class="affil"><em>Developed at UC Berkeley</em></p>
+    <p class="logos">
+      <a href="https://www.berkeley.edu/"><img class="logo-berkeley" src="figures/logos/berkeley.svg" alt="UC Berkeley" width="215" height="68"></a>
+      <a href="https://epic.berkeley.edu/"><picture><source srcset="figures/logos/epic-dark.png" media="(prefers-color-scheme: dark)"><img class="logo-epic" src="figures/logos/epic.png" alt="EPIC Data Lab" width="1038" height="412"></picture></a>
+      <a href="https://sky.cs.berkeley.edu/"><picture><source srcset="figures/logos/sky.png" media="(prefers-color-scheme: dark)"><img class="logo-sky" src="figures/logos/sky-light.png" alt="Sky Computing Lab" width="768" height="131"></picture></a>
+    </p>
   </header>
+  <section class="tldr" aria-label="TL;DR">
+    <p class="tldr-label">TL;DR</p>
+    <ul>
+      <li>Actor-Gatherer is an open source bolt-on framework for context management across agents.</li>
+      <li>Improves context management in long-running sessions, across agents working in parallel, and as the environment changes.</li>
+      <li>Currently integrates with <span class="harness"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="#D97757" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg><span>Claude Code</span></span>, <span class="harness"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg><span>Codex</span></span>, <span class="harness"><svg width="14" height="14" viewBox="0 0 560 560" aria-hidden="true"><g fill="currentColor"><path d="M420 280H280V140H0V0H420V280Z"/><path d="M560 560H420V280H560V560Z"/><path d="M140 560H0V140H140V280H280V420H140V560Z"/></g></svg><span>Pi</span></span> and <span class="harness"><svg width="14" height="14" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="96" fill="#131010"/><path d="M320 224V352H192V224H320Z" fill="#5A5858"/><path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="#fff"/></svg><span>OpenCode</span></span>.</li>
+      <li><a href="#comparison"><b>+32%</b> higher accuracy over state-of-the-art for a long-running single agent, and <b>+31%</b> with parallel agents and in a changing environment.</a></li>
+    </ul>
+    <p class="links"><a href="https://github.com/ucbepic/actor-gatherer">Code&nbsp;&rarr;</a><a href="docs.html">Docs&nbsp;&rarr;</a></p>
+  </section>
+
+  <h2 id="overview">Overview</h2>
+  <h3 id="what-is">What is the Actor-Gatherer Framework?</h3>
+  <p>Users perform interrelated tasks (e.g., build different, but related features on a code base) using agents over long running sessions, often also using multiple agents in parallel. Multiple long running sessions create a large amount of evolving historical data that new tasks depend on. This data is often too large to fit in typical LLM context windows, and a context management layer decides what information goes in the LLM’s context.</p>
+  <p>Actor-Gatherer is a new paradigm in agent design where the <strong>context across agents is managed proactively and externally</strong>. Actor-Gatherer separates solving a task from context management needed to do so. An <strong>Actor</strong> agent is responsible for performing the user-specified tasks, while a <strong>Gatherer</strong> component observes the Actor agent, as well as other agents and the environment, and decides what context should be provided to the Actor agent. So, the Gatherer decides the context both based on the Actor’s task and actions, as well as any relevant external event, such as other Actors changing a relevant file. Actor-Gatherer is particularly useful for context management in long-running sessions, sharing context across sessions and agents, and in changing environments (e.g., working in parallel with agents).</p>
+  <p>We design a bolt-on framework to turn any existing coding agent into one that uses the Actor-Gatherer framework: different agents from different harnesses connect to a common Gatherer component (a single Gatherer across agents), that, before every LLM call, sets its context based on the collective past history of all the agents, any parallel actions performed by the user, or any other relevant information available in the environment. <strong>We have currently built integrations for Claude Code, Codex, OpenCode and Pi, and are actively expanding the set of integrations.</strong></p>
+
+  <figure class="walkthrough" id="walkthrough">
+    <img id="wt-img" src="figures/gatherer/01.svg?v=4" alt="Actor-Gatherer architecture, step 1" width="836" height="388">
+    <figcaption id="wt-cap"></figcaption>
+    <div class="wt-controls">
+      <button type="button" id="wt-prev" aria-label="Previous step">&larr; Back</button>
+      <span id="wt-count" aria-live="polite"></span>
+      <button type="button" id="wt-next" aria-label="Next step">Next &rarr;</button>
+    </div>
+  </figure>
   <script>
   (function () {
-    // One harness at a time, in turn; all of them at once without motion (or without JS).
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var box = document.getElementById('rotator'), items = box.children, i = 0;
-    box.classList.add('rotating'); items[0].classList.add('on');
-    setInterval(function () {
-      items[i].classList.remove('on'); items[i].classList.add('off');
-      var was = items[i]; setTimeout(function () { was.classList.remove('off'); }, 500);
-      i = (i + 1) % items.length; items[i].classList.add('on');
-    }, 2200);
+    var caps = ["Actors are agents that interact with the user and the environment.", "The Gatherer observes every interaction between user, actors and the environment and sets the context for each Actor.", "Specifically, the Gatherer observes messages from user and environment to the Actor.", "The Gatherer also observes interactions of other agents with the user and the environment.", "and also observes interactions between the user and the environment.", "Based on all available information, the Gatherer decides what context each Actor receives."];
+    var n = caps.length, i = 0;
+    var img = document.getElementById('wt-img'), cap = document.getElementById('wt-cap'),
+        cnt = document.getElementById('wt-count'),
+        prev = document.getElementById('wt-prev'), next = document.getElementById('wt-next');
+    function src(k) { return 'figures/gatherer/' + String(k + 1).padStart(2, '0') + '.svg?v=4'; }
+    for (var k = 1; k < n; k++) { new Image().src = src(k); }
+    function show(k) {
+      i = Math.max(0, Math.min(n - 1, k));
+      img.src = src(i);
+      img.alt = 'Actor-Gatherer architecture, step ' + (i + 1) + ': ' + caps[i];
+      cap.textContent = caps[i];
+      cnt.textContent = (i + 1) + ' / ' + n;
+      prev.disabled = i === 0; next.disabled = i === n - 1;
+    }
+    prev.onclick = function () { show(i - 1); };
+    next.onclick = function () { show(i + 1); };
+    document.getElementById('walkthrough').addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft') show(i - 1);
+      if (e.key === 'ArrowRight') show(i + 1);
+    });
+    show(0);
   })();
   </script>
 
+  <h3 id="comparison">How does it compare with existing context management methods?</h3>
+  <p>Existing techniques either rely on summarization, e.g., Codex includes a summary of the history in context, which is lossy and therefore ineffective. Or they rely on tool-based access, e.g., Recursive Language Models or Context Language Models, where the agent itself can search the history using tools. However, this approach relies on agents knowing what information to search for in the first place, causing errors with <strong><em>unknown unknowns</em></strong>: when an agent is missing key information but is unaware that it is missing it. In the Actor-Gatherer framework, the Gatherer proactively looks at the history, other agents and the environment based on the task at hand and finds any such information.</p>
 
-  <div class="stats">
-    <a class="stat" href="blog.html#comparison"><span class="num">+32%</span><span class="lbl">more accurate than state-of-the-art in single agent setting</span></a>
-    <a class="stat" href="blog.html#comparison"><span class="num">+31%</span><span class="lbl">more accurate with parallel agents and changes to the environment</span></a>
+  <p>We evaluated the Actor-Gatherer framework across coding and data analysis tasks, using it for context management of Codex agents, referred to as AG-Codex. Fig. 1 shows the results in single-agent settings, where relevant context must include information from past interactions with the same agent. Fig. 2 shows the results when multiple agents perform tasks in parallel, so relevant context must include information from interactions with other agents or changes in the environment. Results show <strong>more than 30% improvement in accuracy at lower cost</strong> compared to the second-best approach.</p>
+  <div class="figs">
+    <figure>
+      <img src="figures/fig1_single_agent.png?v=2" alt="Bar chart: average accuracy in single-agent settings. AG-Codex 91%, Codex 32%, Mem0-Codex 59%, Scroll 41%, RLM 32%, CLM 41% (+32 points over the best baseline).">
+      <figcaption>Fig. 1. Single-agent results across coding and data analysis tasks</figcaption>
+    </figure>
+    <figure>
+      <img src="figures/fig2_multi_agent.png?v=2" alt="Bar chart: average accuracy in multi-agent settings. AG-Codex 100%, Codex+Hint 69%, Codex 0% (+31 points).">
+      <figcaption>Fig. 2. Results in multi-agent settings</figcaption>
+    </figure>
   </div>
+  <p>The Actor-Gatherer framework’s key improvements in accuracy come from better <em>longitudinal (1) and lateral awareness (2, 3):</em> (1) doing a better job identifying relevant context in long-running sessions (2) identifying relevant context from other parallel agentic sessions (3) identifying changes in the environment that may be pertinent to the current agentic tasks. Doing (1)-(3) requires us to separate the Gatherer from the Actor so that the Actor can be responsible for reasoning and execution, while the Gatherer is responsible for proactive context management and maintenance. We separate the “thinking” from the “remembering”.</p>
 
-  <img class="hero" src="figures/hero.jpg" width="1678" height="937" alt="Illustration: a robot Gatherer hands a glowing document to a robot Actor working at a laptop, with floating files above them and other Actors at desks in the background.">
 
-  <footer>Actor-Gatherer · 2026</footer>
+  <h2 id="problem">The Context Management Problem, Revisited</h2>
+  <p>Users work with agents on interconnected tasks (e.g., developing multiple related features within the same codebase) over extended sessions, often performing several tasks with agents in parallel. New tasks users specify can depend&mdash;explicitly or implicitly&mdash;on the users&rsquo; prior and parallel interaction with the agents and the environment. Thus, to correctly perform a task, agents need to understand the past and parallel interactions between the user, agents, and the environment (e.g., files, databases, available tools). For example, a feature a user has built in the past or is building in parallel, or a data cleaning operation they specified in the past, may be implicitly needed for a future task, but an agent unaware of such history may not use them and perform the task incorrectly. Users may additionally interact with the environment themselves, e.g., modify files outside of their interaction with agents, which causes errors if agents are unaware of them. Thus, agents need <em>longitudinal awareness</em> of past user interactions with the agent itself (i.e., the history of the current active session), as well as <em>lateral awareness</em> of the user&rsquo;s simultaneous interactions with other agents and changes in the environment that may pertain to the task at hand.</p>
+  <p>The amount of available lateral and longitudinal information grows over time and through parallel interactions with the system. However, LLMs have a bounded context window, and agentic harnesses decide what, among all possible information, should be provided to the LLM. As Fig. 3 shows, existing harnesses provide an insufficient view of the lateral and longitudinal information, so agents in existing harnesses lack both longitudinal and lateral awareness.</p>
+  <figure class="wide" style="max-width:460px;margin-left:auto;margin-right:auto"><img src="figures/awareness.png" alt="Plot of lateral versus longitudinal awareness: compaction (Codex, Claude Code, Pi) low and no; memory (Mem0, A-Mem) and tool-based (RLM, CLM, Scroll) medium and no; Actor-Gatherer high and yes."><figcaption>Fig. 3. Information captured by existing harnesses.</figcaption></figure>
+
+  <h2 id="why-fail">Why Existing Harnesses Fail</h2>
+  <p>As Fig. 4 (a) shows, in typical coding harnesses, such as Codex or Claude Code, agents passively rely on lossy summaries of past interactions with the user, which often miss relevant longitudinal information. Meanwhile, their context often contains the detailed trajectory (i.e., LLM tool calls and outputs) of more recent interactions, which can be redundant (e.g., the user may have switched to a different, unrelated task) and thus incur unnecessary cost. Moreover, agents are not provided any lateral information (either about other agents or changes to the environment), which causes errors even in simple scenarios; for example, an agent may not become aware of a file change and incorrectly rely on its old value. Memory-based approaches complement such coding harnesses by appending additional summaries (called <em>memories</em>) of the past to the context, retrieved (e.g., through embedding similarity) based on the user tasks [<a href="#ref-1">1</a>, <a href="#ref-2">2</a>]. Such summaries are still lossy, and embedding-based retrieval can be inaccurate, thus providing limited improvement in longitudinal awareness.</p>
+  <figure class="wide full"><img src="figures/harness_comparison.png?v=2" alt="Three panels comparing (a) a compaction-based harness, (b) tool-based context management, and (c) the Actor-Gatherer harness, showing how each agent's context evolves across iterations."><figcaption>Fig. 4. (a) Compaction-based context management, possibly augmented with memory. (b) Tool-based context management additionally allows tools to search/modify context. (c) The Actor-Gatherer harness uses a Gatherer component to store all relevant information and decides what to provide to the agent based on the task at hand.</figcaption></figure>
+  <p>More recent work, including Recursive Language Models (RLMs) and Context Language Models (CLMs), provides tools to the agents to manage their context [<a href="#ref-3">3</a>, <a href="#ref-4">4</a>, <a href="#ref-5">5</a>, <a href="#ref-6">6</a>], e.g., to search past history or remove irrelevant information from their context, as shown in Fig. 4 (b). These tool-based approaches miss <strong><em>unknown unknowns</em></strong>: context that an agent needs to perform the task but does not know is needed, coming from both past and parallel user interactions, or from changes in the environment. For example, the user may have previously asked to ensure the code stays compatible with Python 3.8, but an agent not given this information in context may not look for it at all and build an incompatible feature. Another example is when a user or a parallel agent changes a file the agent is using, and, unaware of the change, the agent may perform the task it&rsquo;s given incorrectly. We also note that even when relevant information is found, tool-based context management approaches often also keep irrelevant information in context, which can both incur extra cost and cause inaccuracies. This is because retrieval is often imprecise, and harnesses may keep recent raw trajectory [<a href="#ref-5">5</a>] or its metadata [<a href="#ref-4">4</a>, <a href="#ref-6">6</a>] in context, which may not remain relevant for future tasks.</p>
+
+  <h2 id="architecture">Bolt-On Actor-Gatherer Architecture</h2>
+  <p>We propose to rethink the architecture of agentic systems to enable full lateral and longitudinal awareness. Our key insight is that <em>context should be proactively constructed for a given task</em>; that is, the system should proactively decide, based on the task, agent actions and changes in the environment, what information should be provided to the agent to correctly perform the task. To do this, we introduce a <strong>Gatherer</strong> component, which is in charge of storing all relevant information and providing the context for agents that solve the task, called <strong>Actors</strong>. This approach decouples reasoning and acting from context management, allowing Actor agents to focus on performing the task while context management proactively decides what should be included in context, and removed, at any point during Actor reasoning.</p>
+  <p>Fig. 4 (c) shows how the Actor-Gatherer architecture differs from existing methods. It consists of a Gatherer component that gathers all relevant information, both from other agents and from the environment, in a shared data layer. Using this shared data layer, the Gatherer then uses LLMs, combined with other temporally-aware rules, to decide what information, and at what granularity, should be provided to the Actor when performing a given task. This approach improves accuracy, by better allocating limited context using LLM reasoning and utilizing all lateral and longitudinal information, and reduces cost by removing redundant information from the context.</p>
+  <p>A more detailed view of the architecture of agents following the Actor-Gatherer framework is shown in Fig. 5. A Gatherer component is a server that interacts with different Actors, potentially from different coding harnesses. Each Actor provides information to the Gatherer by calling the <code>insert</code> function in the Gatherer&rsquo;s interface. When an Actor needs to perform an LLM call, it receives the LLM&rsquo;s context from the Gatherer by calling the <code>get_context</code> function. The Gatherer separately defines pull-based streams to observe information from the environment through <em>pollers</em>, components that insert relevant information from the environment into the Gatherer. Inside the Gatherer, a context management policy decides, based on all available information (captured from all Actors and the environment), what context to return to the Actors. We discuss the Gatherer&rsquo;s context management policy in <a href="#framework">Context Management Details</a> below.</p>
+  <figure class="wide full"><img src="figures/architecture.png" alt="Architecture: Actors (Codex and Claude Code harnesses with adapters) call insert and get_context on the Gatherer, which holds the context and insertion policy and a database; pollers watch the environment and insert events."><figcaption>Fig. 5. Actor-Gatherer architecture.</figcaption></figure>
+
+  <h2 id="results">Results</h2>
+  <p>We evaluated the Actor-Gatherer framework as a bolt-on framework used on top of Codex, Claude Code, Pi and OpenCode; AG-Codex refers to Actor-Gatherer used with Codex, and similarly for the other harnesses. We first present comparisons in single-agent settings, and then discuss settings where concurrent work occurs, including multiple agents or events that happen in the environment.</p>
+
+  <h3 id="results-single">Single-agent comparison with baselines</h3>
+  <h4>Setup</h4>
+  <p>We compare AG-Codex with vanilla Codex, a memory-based baseline Mem0-Codex, which uses Mem0 [<a href="#ref-1">1</a>] to augment Codex, and the more recent tool-based baselines RLM [<a href="#ref-4">4</a>], CLM [<a href="#ref-5">5</a>] and Scroll [<a href="#ref-6">6</a>]. All of RLM, CLM and Scroll do variations of context offloading with tool-based access, where the agent&rsquo;s context is stored in external variables or files that it can access if it needs more information. RLM and Scroll store context in variables, with different strategies for what is kept in context, while CLM stores context in a file that can be directly modified by the agent itself, giving the main agent the ability to remove information from its context. We use gemini-3.1-pro-preview as the model for agents, but generated histories with GPT-5.6-Terra to reduce cost. We evaluate three tasks:</p>
+  <p><em>Coding.</em> We use a variation of SWE-bench to evaluate the coding ability of different methods when longitudinal awareness, i.e., knowledge of the past history of the agent, is needed. Specifically, we take tasks from SWE-bench, but remove part of the task specification and put it instead in a history which also includes other related and unrelated tasks. Each history is generated by running various coding and data analysis questions from different benchmarks; after generating the history, we plant the removed specification in it. Agents that do not obtain the specification from the history are likely to perform the task incorrectly.</p>
+  <p><em>Data analysis.</em> We use a similar setup with the BirdInteract dataset. The history now includes planted information about which tables and columns to use, and how to use them, to perform certain tasks.</p>
+  <p><em>Session analysis.</em> We evaluate how well the agent remembers the content of the history itself. The history contains past data analysis questions, based on Spider 2.0 results, and evaluation is done by asking about what was done in the history, e.g., &ldquo;which questions discussed Africa&rdquo;. Results are evaluated by the F1-score of the returned set.</p>
+  <h4>Results</h4>
+  <p>AG-Codex outperforms the baselines on all three tasks. On coding, RLMs perform poorly, as they often do not look for the specification in their history. Scroll performs better than RLM, as it maintains a summary of past actions that allows the agent to obtain the past specification. Codex frequently loses the specification during compaction, which is sometimes recovered by Mem0.</p>
+  <p>On data analysis, AG-Codex improves accuracy by 36 points over the best baseline, and all tool-based baselines perform significantly worse than on coding. The main challenge here is that agents often do not know that past information is needed and can be relevant, and often answer the question without looking at the history at all. Mem0, which automatically retrieves relevant information and includes it in context, performs better, as it sometimes correctly retrieves the needed information; failures occur when it either does not retrieve the relevant information or the relevant information is not included in its memories at all. On session analysis, the baselines perform worse on questions whose answers are harder to retrieve using keyword search or embeddings.</p>
+  <figure class="wide full"><img src="figures/single_agent.png?v=3" alt="Accuracy (F1-score for session analysis) versus cost per task on the coding, data analysis and session analysis benchmarks for AG-Codex, Codex, Mem0-Codex, Scroll, RLM and CLM. AG-Codex is best on all three: +27 points on coding, +36 points on data analysis and +0.19 F1 on session analysis over the best baseline."><figcaption>Single-agent results: accuracy vs. cost per task.</figcaption></figure>
+
+  <h3 id="results-multi">Multi-agent environments</h3>
+  <h4>Setup</h4>
+  <p>Here, we evaluate how well AG-Codex performs tasks in multi-agent environments. None of the baselines are designed to support settings where information needs to be shared across agents and/or from the environment, so we compare against vanilla Codex and Codex+Hint, which tells the agent that other agents may have relevant information and provides the path to the other agents&rsquo; traces for Codex to search. We evaluate two scenarios:</p>
+  <p><em>Cross-session information sharing.</em> This scenario mirrors our data analysis setup, but instead of the required specification being in the agent&rsquo;s own history, it is in another agent&rsquo;s history.</p>
+  <p><em>Environment changes.</em> AG-Codex is given simple coding and data analysis tasks, but while it is performing a task, required files get modified, either by other agents or by the user. The agent must then re-read the files and resolve any inconsistencies.</p>
+  <h4>Results</h4>
+  <p>Not surprisingly, Codex by default is unable to perform any of the cross-session tasks correctly, as it is unaware of other agents, and it also handles environment changes incorrectly. Codex+Hint gets some of the instances correct in both scenarios, but again misses information it doesn&rsquo;t know to search for. AG-Codex correctly identifies relevant information from other agents&rsquo; history and accurately resolves changes in the environment. In cross-session sharing, both Codex variants are also more expensive: for tasks where they do realize they are missing information, they perform a more extensive search, reading either other agents&rsquo; traces or the files in the working directory. Similarly, under environment changes, reading through the traces of other agents working in parallel incurs additional cost for Codex+Hint.</p>
+  <div class="figs">
+    <figure><img src="figures/cross_session.png" alt="Accuracy versus cost per task for cross-session information sharing: AG-Codex, Codex+Hint and Codex."><figcaption>Cross-session information sharing</figcaption></figure>
+    <figure><img src="figures/environment_changes.png" alt="Accuracy versus cost per task under environment changes: AG-Codex, Codex+Hint and Codex."><figcaption>Environment changes</figcaption></figure>
+  </div>
+  <p class="rowcap">Multi-agent results: accuracy vs. cost per task.</p>
+
+  <h3 id="results-harnesses">Different harnesses</h3>
+  <p>Finally, we compare using the Actor-Gatherer framework in different harnesses on the coding task discussed earlier, on top of Codex, Claude Code, Pi and OpenCode. Accuracy is similar across harnesses. AG-Pi was the fastest and cheapest in general, which we observed is because it performs less validation after it generates a first answer.</p>
+  <figure class="wide full"><img src="figures/harnesses.png?v=3" alt="Accuracy, cost and latency per task for AG-Codex, AG-Pi, AG-OpenCode and AG-ClaudeCode on the coding task."><figcaption>Actor-Gatherer across harnesses: accuracy, cost and latency per task.</figcaption></figure>
+
+  <h2 id="framework">Context Management Details</h2>
+  <p>Given the information stored in the Gatherer database, the context management policy decides, for every LLM call the harness makes, what context the LLM should be provided with. Identifying and including relevant information for a task is challenging for multiple reasons. As mentioned earlier, a major challenge is identifying unknown unknowns based on the given task. Identifying such information often requires reasoning over past traces and cannot be done with simple retrieval methods. Moreover, the method needs to balance cost/latency/accuracy trade-offs when deciding what context to provide to the LLM, and at what granularity. For example, changing the model context can invalidate the KV-cache, which can increase cost and latency, and is thus only worth doing when modifying the context is expected to improve accuracy. Similarly, spending more time identifying more relevant context worsens latency, which is only worth it if it is expected to improve accuracy.</p>
+  <figure class="wide" style="max-width:520px;margin-left:auto;margin-right:auto"><img src="figures/segment_policy.png" alt="Segment-based policy: within segment A the context is appended to; at a detected segment boundary the Gatherer performs a context switch, replacing G2 and G3 with G4 and G5, then segment B appends again."><figcaption>Fig. 6. Proactive context management policy overview.</figcaption></figure>
+  <p>To balance cost/latency/accuracy trade-offs, we present a <em>segment</em>-based context management policy. We divide user interactions into <em>segments</em>, where a segment is a contiguous group of user and agent interactions that serve a single purpose. Within a segment, we only use an append-only context management policy; this keeps cost and latency low without sacrificing accuracy, since we expect the context needed within a segment to be similar. However, we perform <em>context switches</em> at segment boundaries, where a context switch modifies the context of the agent to both remove irrelevant information and bring in relevant information.</p>
+  <p>Fig. 6 illustrates this process. Within a segment, our append-only policy appends new tool calls, outputs and other messages to the context, similarly to existing policies in harnesses. Unlike existing harnesses, it may also include relevant concurrent events from other agents and the environment (e.g., file changes, or other agents performing a related task). During a context switch, on the other hand, the whole context may be modified. This is done with an LLM-based approach that reasons over the past history and trajectories of all the agents in the Gatherer database to decide what to include in the context, augmented by a temporal inductive bias that gives more weight to more recent observations. Finally, information is included in the context at varying degrees of granularity, depending on its importance and how frequently it may change. Information expected to remain relevant for more tasks is placed earlier in the context to maximize KV-cache reuse, while information expected to change more frequently is placed towards the end.</p>
+
+  <h2 id="conclusion">Conclusion</h2>
+  <p>Actor-Gatherer is an open source bolt-on framework for context management across any agents, with current integrations with Claude Code, Codex, Pi and OpenCode. It separating the Actor, which performs the task, from the Gatherer, which proactively decides the Actor's context from its history, other agents and the environment. This approach gives agents both longitudinal and lateral awareness. In single-agent settings, it improves basedlines accuracy by at least 27% on coding and 36% on data analysis tasks. With parallel agents and changes to the environment, It improves  accuracy by 31% over baselines.</p>
+  <p>Try it out at <a href="https://github.com/ucbepic/actor-gatherer">github.com/ucbepic/actor-gatherer</a>.</p>
+
+  <h2 id="references">References</h2>
+  <ol class="refs">
+    <li id="ref-1">P. Chhikara, D. Khant, S. Aryan, T. Singh, D. Yadav. <a href="https://arxiv.org/abs/2504.19413">Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory</a>. arXiv:2504.19413, 2025.</li>
+    <li id="ref-2">W. Xu, Z. Liang, K. Mei, H. Gao, J. Tan, Y. Zhang. <a href="https://arxiv.org/abs/2502.12110">A-MEM: Agentic Memory for LLM Agents</a>. arXiv:2502.12110, 2025.</li>
+    <li id="ref-3">C. Packer, S. Wooders, K. Lin, V. Fang, S. G. Patil, I. Stoica, J. E. Gonzalez. <a href="https://arxiv.org/abs/2310.08560">MemGPT: Towards LLMs as Operating Systems</a>. arXiv:2310.08560, 2023.</li>
+    <li id="ref-4">A. L. Zhang, T. Kraska, O. Khattab. <a href="https://arxiv.org/abs/2512.24601">Recursive Language Models</a>. arXiv:2512.24601, 2026.</li>
+    <li id="ref-5">R. Shao, S. Z. Shen, J. O. Yin, Y. Li, M. Wang, H. Ivison, R. Poovendran, N. Lambert, T. Xiao, M. Lewis, W. Yih, L. Zettlemoyer, P. W. Koh. <a href="https://arxiv.org/abs/2609.37725">Context Language Models</a>. arXiv:2609.37725, 2026.</li>
+    <li id="ref-6">Y. Lin, E. Ang, E. Zhu, B. Ding, J. Zhou. <a href="https://arxiv.org/abs/2608.21690">Context as an Environment: Programmatic Context Management for Long-Horizon Agents</a> (Scroll). arXiv:2608.21690, 2026.</li>
+  </ol>
+
+  <footer>Developed at the <a href="https://epic.berkeley.edu/">EPIC Data Lab</a>, UC Berkeley · <a href="https://github.com/ucbepic/actor-gatherer">GitHub</a> · 2026</footer>
 </main>
+</div>
+<script>
+(function () {
+  var side = document.getElementById('sidebar'), menu = document.getElementById('menu');
+  function setOpen(open) { side.classList.toggle('open', open); menu.setAttribute('aria-expanded', open); }
+  menu.onclick = function () { setOpen(!side.classList.contains('open')); };
+  side.addEventListener('click', function (e) { if (e.target.closest('a')) setOpen(false); });
+  // Each group's list of subsections collapses under a toggle; the group being read opens itself.
+  side.querySelectorAll('.side-group').forEach(function (g) {
+    var list = g.nextElementSibling;
+    if (!list || list.tagName !== 'UL') return;
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'caret'; btn.setAttribute('aria-label', 'Show or hide subsections');
+    g.insertBefore(btn, g.firstChild);
+    function set(open) { list.hidden = !open; btn.setAttribute('aria-expanded', open); g.classList.toggle('expanded', open); }
+    btn.onclick = function () { set(list.hidden); };
+    g.querySelector('a').addEventListener('click', function () { set(true); });
+    g.setOpen = set; set(false);
+  });
+  var links = {}; side.querySelectorAll('a[href^="#"]').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+  var openGroup = null;
+  var heads = Array.prototype.filter.call(document.querySelectorAll('main h2[id], main h3[id]'), function (h) { return links[h.id]; });
+  function spy() {
+    var cur = heads[0];
+    for (var i = 0; i < heads.length; i++) { if (heads[i].getBoundingClientRect().top <= 90) cur = heads[i]; else break; }
+    side.querySelectorAll('a.active').forEach(function (a) { a.classList.remove('active'); });
+    if (!cur) return;
+    var a = links[cur.id]; a.classList.add('active');
+    var list = a.closest('ul'), g = list ? list.previousElementSibling : a.closest('.side-group');
+    if (g && g !== openGroup && g.setOpen) { g.setOpen(true); openGroup = g; }
+  }
+  window.addEventListener('scroll', spy, { passive: true }); spy();
+})();
+</script>
 </body>
 </html>
