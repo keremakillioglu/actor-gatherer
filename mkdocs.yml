@@ -1,5 +1,6 @@
 # The project site (https://ucbepic.github.io/actor-gatherer/), built from docs/ by
-# .github/workflows/docs.yml. index.html and blog.html are served as they are; docs.md is
+# .github/workflows/docs.yml. index.html (the blog post, the home page) and blog.html (which sends
+# the post's old links to it) are served as they are; docs.md is
 # rendered into docs_build/theme/main.html, with the blocks marked <!-- gen: ... --> filled from
 # the source (docs_build/hooks.py).
 site_name: Actor-Gatherer
@@ -28,6 +29,6 @@ markdown_extensions:
   - toc
 extra:
   title: Actor-Gatherer Docs
-  css_version: 21
+  css_version: 22
 exclude_docs: |
   *.py
