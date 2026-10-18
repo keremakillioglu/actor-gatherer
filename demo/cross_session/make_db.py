@@ -1,5 +1,5 @@
-"""make_db.py [path]: studios_join.sqlite, a TV catalogue with a trap. catalogue -> companies has two
-join columns that both match every row: the declared foreign key, catalogue.studiolink ->
+"""make_db.py [path]: studios.sqlite, a TV catalogue with a trap. catalogue -> companies has two join
+columns that both match every row: the declared foreign key, catalogue.studio_id ->
 companies.company_id, is stale (four studios' ids were swapped), and the undeclared
 catalogue.feed_tag = companies.callsign is right."""
 import random, sqlite3, sys
@@ -14,13 +14,13 @@ STALE = {5: 3, 3: 5, 12: 14, 14: 12}
 GENRES = ["Drama", "Comedy", "News", "Kids", "Reality", "Documentary", "Animation"]
 WEIGHTS = {5: [6, 1, 1, 1, 1, 1, 1], 14: [5, 1, 1, 1, 1, 2, 1]}
 words = "Night City River Story Kitchen Signal Harbor Lights House Road Bright Echo North Garden Trail Party".split()
-conn = sqlite3.connect(sys.argv[1] if len(sys.argv) > 1 else "studios_join.sqlite")
+conn = sqlite3.connect(sys.argv[1] if len(sys.argv) > 1 else "studios.sqlite")
 conn.executescript("""
 DROP TABLE IF EXISTS catalogue; DROP TABLE IF EXISTS companies;
 CREATE TABLE companies (company_id INTEGER PRIMARY KEY, name TEXT NOT NULL, callsign TEXT NOT NULL);
 CREATE TABLE catalogue (entry_id INTEGER PRIMARY KEY, show_title TEXT, season INTEGER, episode INTEGER,
                         genre TEXT, minutes INTEGER, year INTEGER,
-                        studiolink INTEGER REFERENCES companies(company_id), feed_tag TEXT);
+                        studio_id INTEGER REFERENCES companies(company_id), feed_tag TEXT);
 """)
 conn.executemany("INSERT INTO companies VALUES (?,?,?)", [s[:3] for s in STUDIOS])
 eid = 1

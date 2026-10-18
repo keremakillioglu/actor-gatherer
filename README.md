@@ -129,53 +129,7 @@ The Actor-Gatherer framework improves accuracy in three settings:
 - **Observing the environment:** when something an agent relied on changes, such
   as a file, the Gatherer tells it before it answers from a stale copy.
 
-Below is an example of each.
-
-### Long-running sessions
-
-When a session's history no longer fits, a coding agent compacts it into a summary
-of its own, and an early decision can be lost. The Gatherer instead splits the
-history into tasks, records what each task established, and gives the agent the
-earlier tasks the request at hand needs.
-
-In this example, the database has a trap. Its catalogue links to its studios
-through two columns that both match every row: the declared foreign key
-(`catalogue.studiolink`) is stale, and the right join is the undeclared
-`catalogue.feed_tag = companies.callsign`. Early in the session:
-
-> **You → Codex:** Which studios have the most catalogue entries? Top five, name and count.
->
-> **Codex:** I joined `catalogue` to `companies` on `catalogue.feed_tag = companies.callsign`: …
->
-> **You → Codex:** Good, that's correct.
-
-Ten turns of other work on the catalogue follow, and then:
-
-> **You → Codex:** Which five studios have the most Drama entries? Name and count.
-
-| | correct |
-|---|---|
-| `codex`, compacting along the way | 0 of 3: joins on `studiolink` |
-| `ag codex` | 3 of 3: joins on `feed_tag` |
-
-Codex's summary of the early turns keeps "Good, that's correct" but not what was
-correct, so it falls back on the declared foreign key. Under `ag`, the Gatherer
-records "join catalogue to companies on `catalogue.feed_tag = companies.callsign`,
-not `catalogue.studiolink = companies.company_id`" for that task, and gives it to
-the agent with the Drama question.
-
-To run it yourself (every turn is a real model call):
-
-```bash
-demo/long_session/run.sh ag       # Codex under ag
-demo/long_session/run.sh plain    # Codex alone
-```
-
-The session is short, so both run with lowered limits to make the history
-overflow within it: 10,000 tokens for the Gatherer, and compaction at 18,000 for
-Codex. The numbers above are with Gemini 3.8 Flash as both Codex's model and the
-Gatherer's. See [`demo/long_session`](https://github.com/ucbepic/actor-gatherer/tree/main/demo/long_session)
-for how the session is set up.
+Below are short examples of the latter two.
 
 ### Awareness across agents
 
@@ -260,6 +214,69 @@ codex
 Asked the same two questions, with the same change in between, plain Codex answers
 $7,130 to the second, which is incorrect: it uses Japan's old value from its first
 read.
+
+### Decisions across sessions
+
+`ag` also carries what you decided in one session into the next, even when the
+agent kept no memory of it. The example's database comes from
+[`demo/cross_session/make_db.py`](https://github.com/ucbepic/actor-gatherer/blob/main/demo/cross_session/make_db.py),
+and it has a trap: its catalogue links to its studios through two columns that
+disagree for four studios. The declared foreign key, `catalogue.studio_id`, is
+stale; the right join is `catalogue.feed_tag = companies.callsign`.
+
+**1. Make the database in a new folder, and start Claude Code there.**
+
+```bash
+mkdir -p /tmp/tv-analytics && python3 demo/cross_session/make_db.py /tmp/tv-analytics/studios.sqlite && cd /tmp/tv-analytics
+ag --gatherer tv-analytics claude
+```
+
+**2. In Claude Code: four requests.**
+
+> **You → Claude Code:** In studios.sqlite, which studios have the most catalogue entries? Top five, name and count.
+>
+> **Claude Code:** … The catalogue also has a `feed_tag` column holding each
+> studio's callsign, and for four studios it doesn't match `studio_id`. … I used
+> `studio_id` because it's the column that actually links to the companies table.
+>
+> **You → Claude Code:** Which genres are most common across the catalogue? Give counts.
+>
+> **You → Claude Code:** Join catalogue to companies on catalogue.feed_tag = companies.callsign and give the top five studios by catalogue entries, name and count.
+>
+> **You → Claude Code:** Reply with a short report with exactly these fields:
+> Title: Catalogue Report; Total entries: 704; Genre counts …; National Broadcasting entries: 105
+
+**3. Exit, and start a new session in the same folder and gatherer.**
+
+```bash
+ag --gatherer tv-analytics claude
+```
+
+> **You → Claude Code:** Which five studios have the most Drama entries? Name and count.
+>
+> **Claude Code:** These are the five studios with the most Drama entries. I matched
+> entries to studios on `feed_tag = callsign`, the join you chose in your last studio
+> question. …
+
+It answers National Broadcasting 46, ABC Network 31, Public Broadcasting 21, FBC 18,
+Columbia Broadcasting 9, which is correct. Claude Code kept no memory of the first
+session: the Gatherer gave the new session the requests you made in the first one,
+and told it where to read that session's work.
+
+**To compare,** repeat the steps with plain `claude`, in a fresh folder:
+
+```bash
+mkdir -p /tmp/tv-catalogue && python3 demo/cross_session/make_db.py /tmp/tv-catalogue/studios.sqlite && cd /tmp/tv-catalogue
+claude
+```
+
+Asked the same question in the new session, plain Claude Code joins on the declared
+foreign key and answers Columbia Broadcasting 46, ABC Network 31, Nickelodeon 21,
+FBC 18, National Broadcasting 9, which is incorrect. These answers are with Claude
+Opus 5.5 as Claude Code's model and `claude-code/sonnet` as the Gatherer's. To play
+both sessions headless, run `demo/cross_session/run.sh ag` or
+`demo/cross_session/run.sh plain`; see
+[`demo/cross_session`](https://github.com/ucbepic/actor-gatherer/tree/main/demo/cross_session).
 
 ## How it works
 
