@@ -14,11 +14,11 @@ minutes.
 
 ## The sessions
 
-`make_db.py` builds `studios.sqlite`, a TV catalogue with a trap: the catalogue
-links to its studios through two columns that both match every row. The declared
-foreign key, `catalogue.studio_id -> companies.company_id`, is stale (four
-studios' ids were swapped); the undeclared `catalogue.feed_tag = companies.callsign`
-is right.
+`make_db.py` builds `studios.sqlite`, a TV catalogue with schema ambiguity: the
+catalogue can be linked to its studios through two columns that both match every
+row, the declared foreign key `catalogue.studio_id -> companies.company_id` and
+`catalogue.feed_tag = companies.callsign`. They disagree for four studios. In this
+data `feed_tag` is right; four studios' ids in `studio_id` are swapped.
 
 Session 1, four turns:
 

@@ -1,7 +1,7 @@
-"""make_db.py [path]: studios.sqlite, a TV catalogue with a trap. catalogue -> companies has two join
-columns that both match every row: the declared foreign key, catalogue.studio_id ->
-companies.company_id, is stale (four studios' ids were swapped), and the undeclared
-catalogue.feed_tag = companies.callsign is right."""
+"""make_db.py [path]: studios.sqlite, a TV catalogue with schema ambiguity. catalogue -> companies has
+two join columns that both match every row: the declared foreign key, catalogue.studio_id ->
+companies.company_id, and catalogue.feed_tag = companies.callsign. They disagree for four studios;
+feed_tag is right (four studios' ids in studio_id are swapped)."""
 import random, sqlite3, sys
 random.seed(11)
 STUDIOS = [  # (company_id, name, callsign, entries)

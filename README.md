@@ -218,11 +218,12 @@ read.
 ### Decisions across sessions
 
 `ag` also carries what you decided in one session into the next, even when the
-agent kept no memory of it. The example's database comes from
+agent kept no memory of it. The example is a data analysis task with schema
+ambiguity. Its database, from
 [`demo/cross_session/make_db.py`](https://github.com/ucbepic/actor-gatherer/blob/main/demo/cross_session/make_db.py),
-and it has a trap: its catalogue links to its studios through two columns that
-disagree for four studios. The declared foreign key, `catalogue.studio_id`, is
-stale; the right join is `catalogue.feed_tag = companies.callsign`.
+can link the catalogue to its studios through two columns that disagree for four
+studios: the declared foreign key, `catalogue.studio_id`, and
+`catalogue.feed_tag = companies.callsign`. In this data, `feed_tag` is the right one.
 
 **1. Make the database in a new folder, and start Claude Code there.**
 
