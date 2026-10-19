@@ -14,7 +14,7 @@
 
 ## What is the Actor-Gatherer Framework
 
-Actor-Gatherer is a new paradigm in agent design where the context across agents is managed proactively and externally, separating solving a task from context management needed to do so. 
+Actor-Gatherer is a new paradigm in agent design where the context across agents is managed proactively and externally, separating solving a task from context management needed to do so.
 An **Actor** (your coding agent: Claude Code, Codex, OpenCode or Pi) works on
 the task. A **Gatherer** (also AI-powered) monitors the Actor, other agents and the environment,
 and before every model call decides what context the Actor gets. The Gatherer:
@@ -86,7 +86,7 @@ ag --gatherer demo codex exec "fix the tests"            # Codex
 ag --gatherer demo opencode run "add a --verbose flag"   # OpenCode
 ag --gatherer demo pi                                    # Pi
 ```
-Agents join the gatherer specified (`demo` above).  Agents with the same gatherer 
+Agents join the gatherer specified (`demo` above). Agents with the same gatherer
 share information with each other, whichever harness runs them (see the [example](#awareness-across-agents)). Agents in
 different gatherers don't share context and each gatherer keeps its own history.
 
@@ -124,7 +124,7 @@ The Actor-Gatherer framework improves accuracy by ensuring agents have the right
 
 - **Across and within long-running sessions:** The Gatherer identifies what matters from a long interaction history, retrieves relevant information when needed, and filters out what is no longer useful.
 - **Across parallel agents:** Agents managed by the same Gatherer, even across different harnesses, benefit from each other’s work.
-- **As the environment changes:** Gatherer informs the agent when relevant information in the environment changes. For example, when a relevant file changes, the Gatherer alerts the agent before it acts on stale information.
+- **As the environment changes:** The Gatherer informs the agent when relevant information in the environment changes. For example, when a relevant file changes, the Gatherer alerts the agent before it acts on stale information.
 
 Below are a few short examples.
 
@@ -215,9 +215,9 @@ read.
 ### Information across sessions
 
 `ag` keeps relevant information across sessions in context. Here, we show an example for a data analysis task with schema
-ambiguity, where it is ambiguous which column should be used to join two of the tables (details
-[here](https://github.com/ucbepic/actor-gatherer/blob/main/demo/cross_session)). The user picks a join column
-that should be reapplied in a new session. 
+ambiguity, where it is unclear which column should be used to join two of the tables (details
+[here](https://github.com/ucbepic/actor-gatherer/tree/main/demo/cross_session)). The user picks a join column
+that should be reapplied in a new session.
 
 **1. Make the database in a new folder, and start Claude Code there.**
 
@@ -250,8 +250,8 @@ ag --gatherer tv-analytics claude
 > question. …
 
 It answers National Broadcasting 46, ABC Network 31, Public Broadcasting 21, FBC 18,
-Columbia Broadcasting 9, which is correct. Running the same steps without `ag` leads to 
-incorrectly useing the wrong join key in the new session. 
+Columbia Broadcasting 9, which is correct. Running the same steps without `ag` leads the
+new session to use the wrong join key.
 
 Scripts to run the example are in [`demo/cross_session`](https://github.com/ucbepic/actor-gatherer/tree/main/demo/cross_session).
 To run it, do `demo/cross_session/run.sh ag` (or `demo/cross_session/run.sh plain` to run it without `ag`).
