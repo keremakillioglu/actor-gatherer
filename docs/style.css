@@ -47,16 +47,25 @@ h3 { font: 600 1.08rem Inter, system-ui, sans-serif; margin: 30px 0 8px; }
 .lead { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin: 0 0 8px; }
 .back { font: 500 0.9rem Inter, system-ui, sans-serif; text-decoration: none; }
 .more { margin-top: 36px; }
-.walkthrough { margin: 28px auto; max-width: 600px; }
-.walkthrough img { width: 100%; height: auto; display: block; border-radius: 6px; background: #fff; }
+.walkthrough { margin: 28px auto; max-width: 600px; scroll-margin-top: 72px; }
+.walkthrough img { width: 100%; height: auto; display: block; border-radius: 6px; background: #fff; cursor: pointer; }
 .walkthrough figcaption { min-height: 2.9em; }
-.wt-controls { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 8px;
-  font: 0.88rem Inter, system-ui, sans-serif; color: var(--muted); }
-.wt-controls button { font: 500 0.9rem Inter, system-ui, sans-serif; color: var(--fg); background: var(--bg);
-  border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
-.wt-controls button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.wt-controls button:disabled { opacity: 0.4; cursor: default; }
-#wt-count { min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; }
+/* the step-through diagram: which step it is above, and below, arrows either side of a dot per step;
+   the next arrow pulses until the reader first moves */
+.wt-badge { display: block; width: max-content; margin: 2px auto 8px; padding: 3px 10px; border-radius: 999px;
+  font: 600 0.75rem Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums; color: var(--bg); background: var(--accent); }
+.wt-controls { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 6px; }
+.wt-arrow { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: var(--card);
+  color: var(--accent); font: 600 1.4rem/1 Inter, system-ui, sans-serif; cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); }
+.wt-arrow:hover, .walkthrough.pulse .wt-next { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.walkthrough.pulse .wt-next { animation: wt-pulse 1.8s ease-out infinite; }
+@keyframes wt-pulse { 0% { box-shadow: 0 0 0 0 rgba(47, 91, 211, 0.5); } 70% { box-shadow: 0 0 0 12px rgba(47, 91, 211, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(47, 91, 211, 0); } }
+@media (prefers-reduced-motion: reduce) { .walkthrough.pulse .wt-next { animation: none; } }
+.wt-dots { display: flex; gap: 8px; }
+.wt-dots button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 4px; background: var(--muted); opacity: 0.35;
+  cursor: pointer; transition: width 0.2s ease; }
+.wt-dots button.on { width: 22px; background: var(--accent); opacity: 1; }
 .refs { font-size: 0.92rem; line-height: 1.55; padding-left: 1.6em; }
 .refs li { margin-bottom: 0.6em; }
 .figs3 { grid-template-columns: repeat(3, 1fr); gap: 14px; }

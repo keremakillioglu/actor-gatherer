@@ -29,6 +29,6 @@ markdown_extensions:
   - toc
 extra:
   title: Actor-Gatherer Docs
-  css_version: 22
+  css_version: 23
 exclude_docs: |
   *.py

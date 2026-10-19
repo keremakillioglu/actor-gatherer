@@ -7,7 +7,7 @@
 <meta name="description" content="The Actor-Gatherer framework for AI agents: the context management problem, the architecture, and results.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
-<link rel="stylesheet" href="style.css?v=22">
+<link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
 <div class="topbar">
@@ -66,21 +66,22 @@
   <p>Actor-Gatherer is a new paradigm in agent design where the <strong>context across agents is managed proactively and externally</strong>. Actor-Gatherer separates solving a task from context management needed to do so. An <strong>Actor</strong> agent is responsible for performing the user-specified tasks, while a <strong>Gatherer</strong> component observes the Actor agent, as well as other agents and the environment, and decides what context should be provided to the Actor agent. So, the Gatherer decides the context both based on the Actor’s task and actions, as well as any relevant external event, such as other Actors changing a relevant file. Actor-Gatherer is particularly useful for context management in long-running sessions, sharing context across sessions and agents, and in changing environments (e.g., working in parallel with agents).</p>
   <p>We design a bolt-on framework to turn any existing coding agent into one that uses the Actor-Gatherer framework: different agents from different harnesses connect to a common Gatherer component (a single Gatherer across agents), that, before every LLM call, sets its context based on the collective past history of all the agents, any parallel actions performed by the user, or any other relevant information available in the environment. <strong>We have currently built integrations for Claude Code, Codex, OpenCode and Pi, and are actively expanding the set of integrations.</strong></p>
 
-  <figure class="walkthrough" id="walkthrough">
+  <figure class="walkthrough pulse" id="walkthrough">
+    <span class="wt-badge" id="wt-count" aria-live="polite"></span>
     <img id="wt-img" src="figures/gatherer/01.svg?v=4" alt="Actor-Gatherer architecture, step 1" width="836" height="388">
     <figcaption id="wt-cap"></figcaption>
     <div class="wt-controls">
-      <button type="button" id="wt-prev" aria-label="Previous step">&larr; Back</button>
-      <span id="wt-count" aria-live="polite"></span>
-      <button type="button" id="wt-next" aria-label="Next step">Next &rarr;</button>
+      <button type="button" class="wt-arrow" id="wt-prev" aria-label="Previous step">&lsaquo;</button>
+      <div class="wt-dots" id="wt-dots"><button type="button" data-k="0" aria-label="Step 1"></button><button type="button" data-k="1" aria-label="Step 2"></button><button type="button" data-k="2" aria-label="Step 3"></button><button type="button" data-k="3" aria-label="Step 4"></button><button type="button" data-k="4" aria-label="Step 5"></button><button type="button" data-k="5" aria-label="Step 6"></button></div>
+      <button type="button" class="wt-arrow wt-next" id="wt-next" aria-label="Next step">&rsaquo;</button>
     </div>
   </figure>
   <script>
   (function () {
     var caps = ["Actors are agents that interact with the user and the environment.", "The Gatherer observes every interaction between user, actors and the environment and sets the context for each Actor.", "Specifically, the Gatherer observes messages from user and environment to the Actor.", "The Gatherer also observes interactions of other agents with the user and the environment.", "and also observes interactions between the user and the environment.", "Based on all available information, the Gatherer decides what context each Actor receives."];
-    var n = caps.length, i = 0;
+    var n = caps.length, i = 0, fig = document.getElementById('walkthrough');
     var img = document.getElementById('wt-img'), cap = document.getElementById('wt-cap'),
-        cnt = document.getElementById('wt-count'),
+        cnt = document.getElementById('wt-count'), dots = document.getElementById('wt-dots').children,
         prev = document.getElementById('wt-prev'), next = document.getElementById('wt-next');
     function src(k) { return 'figures/gatherer/' + String(k + 1).padStart(2, '0') + '.svg?v=4'; }
     for (var k = 1; k < n; k++) { new Image().src = src(k); }
@@ -89,14 +90,22 @@
       img.src = src(i);
       img.alt = 'Actor-Gatherer architecture, step ' + (i + 1) + ': ' + caps[i];
       cap.textContent = caps[i];
-      cnt.textContent = (i + 1) + ' / ' + n;
-      prev.disabled = i === 0; next.disabled = i === n - 1;
+      cnt.textContent = 'Step ' + (i + 1) + ' of ' + n;
+      for (var j = 0; j < n; j++) dots[j].classList.toggle('on', j === i);
+      prev.style.visibility = i === 0 ? 'hidden' : '';
+      next.innerHTML = i === n - 1 ? '&#8634;' : '&rsaquo;';
+      next.setAttribute('aria-label', i === n - 1 ? 'Start over' : 'Next step');
     }
-    prev.onclick = function () { show(i - 1); };
-    next.onclick = function () { show(i + 1); };
-    document.getElementById('walkthrough').addEventListener('keydown', function (e) {
-      if (e.key === 'ArrowLeft') show(i - 1);
-      if (e.key === 'ArrowRight') show(i + 1);
+    // Moving through the steps in any way stops the next arrow's pulse.
+    function go(k) { fig.classList.remove('pulse'); show(k); }
+    prev.onclick = function () { go(i - 1); };
+    next.onclick = img.onclick = function () { go(i === n - 1 ? 0 : i + 1); };
+    document.getElementById('wt-dots').onclick = function (e) {
+      var b = e.target.closest('button'); if (b) go(+b.dataset.k);
+    };
+    fig.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft') go(i - 1);
+      if (e.key === 'ArrowRight') go(i + 1);
     });
     show(0);
   })();
