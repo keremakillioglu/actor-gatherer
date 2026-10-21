@@ -23,8 +23,14 @@ only, so a harness that tries WebSockets first falls back to HTTP.
 `--hook` names the hook: an async callable taking a `Request` and returning a
 new JSON body or None, or a class, built with the `--option`s, whose
 instances are that. A hook with a `close()` has it called when the server
-stops. A URL starting `/h/<label>/` gives the hook that label (the prefix is
-stripped before forwarding): what the label means is the hook's to decide.
+stops. A hook with a `measured(request, tokens)` has it called (awaited) when
+a POST's answer has come back whole, before the harness sees its end: `tokens`
+is the call's input tokens as the answer reports them, cached ones included
+(trace.py's reading of a Responses or Anthropic Messages answer), or None; the
+`request` is the one it was given, with whatever it kept in `request.state`
+(only a request it kept something on is measured). A URL starting
+`/h/<label>/` gives the hook that label (the prefix is stripped before
+forwarding): what the label means is the hook's to decide.
 With `--log-dir`, each request the hook changed is written there as
 NNNN.json: its body before and after, then the status and duration. With
 `--trace-root`, every model call -- as the model got it, and its answer -- is
@@ -48,7 +54,7 @@ from typing import Any, Callable, Optional
 
 from aiohttp import ClientSession, ClientTimeout, web
 
-from .trace import ModelTrace
+from .trace import ModelTrace, response_of
 
 HOP = {"host", "content-length", "transfer-encoding", "connection", "content-encoding", "accept-encoding"}
 LABEL_PREFIX = re.compile(r"^/h/([A-Za-z0-9._-]+)(?=/|$)")
@@ -62,6 +68,7 @@ class Request:
     label: Optional[str]                        # the <label> of /h/<label>/..., if the URL had one
     headers: dict = field(default_factory=dict)
     body: Any = None                            # the JSON body, or None if it is not JSON
+    state: dict = field(default_factory=dict)   # the hook's own, kept until its `measured` for this request
 
 
 def route_of(path: str):
@@ -77,6 +84,13 @@ def route_of(path: str):
 async def _call(hook: Callable, request: Request):
     result = hook(request)
     return await result if inspect.isawaitable(result) else result
+
+
+def input_tokens_of(raw: bytes) -> Optional[int]:
+    """The call's input tokens, cached ones included, from the answer's bytes; None if it reports none."""
+    usage = response_of(raw).get("token_usage") or {}
+    tokens = usage.get("input_tokens")
+    return tokens if isinstance(tokens, int) and tokens > 0 else None
 
 
 def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
@@ -103,9 +117,9 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
             body = json.loads(raw) if raw else None
         except ValueError:
             body = None                                    # not JSON (e.g. compressed): as it is
+        given = Request(request.method, path_qs.split("?", 1)[0], label, dict(request.headers), body)
         try:
-            new = await _call(hook, Request(request.method, path_qs.split("?", 1)[0], label,
-                                            dict(request.headers), body))
+            new = await _call(hook, given)
         except Exception as exc:  # noqa: BLE001 - a failing hook never blocks the call
             print(f"#{n:04d} hook failed: {exc!r}; request unchanged", file=sys.stderr, flush=True)
             new = None
@@ -121,8 +135,10 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         call = None
         if trace is not None and request.method == "POST" and isinstance(sent, dict):
             thread = next((request.headers[h] for h in thread_headers if request.headers.get(h)), None)
-            call = (trace.started(n, path_qs, label, thread, sent, new is not None), thread, [])
+            call = (trace.started(n, path_qs, label, thread, sent, new is not None), thread)
 
+        measured = getattr(hook, "measured", None) if request.method == "POST" and given.state else None
+        answer = [] if call or measured else None
         timeout = ClientTimeout(total=None, sock_read=1800)
         status, error = None, None
         try:
@@ -133,13 +149,20 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                         k: v for k, v in up.headers.items() if k.lower() not in HOP})
                     await resp.prepare(request)
                     async for chunk in up.content.iter_any():
-                        if call:
-                            call[2].append(chunk)
+                        if answer is not None:
+                            answer.append(chunk)
                         await resp.write(chunk)
+                    whole = b"".join(answer) if answer is not None else b""
                     if call:                                  # traced before the harness sees the end
-                        trace.completed(call[0], call[1], status, b"".join(call[2]),
-                                        time.time() - record["t_start"])
+                        trace.completed(call[0], call[1], status, whole, time.time() - record["t_start"])
                         call = None
+                    if measured:                              # counted before the harness sees the end
+                        try:
+                            result = measured(given, input_tokens_of(whole) if status == 200 else None)
+                            if inspect.isawaitable(result):
+                                await result
+                        except Exception as exc:  # noqa: BLE001 - a lost count never breaks the answer
+                            print(f"#{n:04d} measured failed: {exc!r}", file=sys.stderr, flush=True)
                     await resp.write_eof()
                     record["status"] = up.status
         except Exception as exc:
@@ -147,7 +170,8 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
             raise
         finally:
             if call:                                          # the call broke off: what came back
-                trace.completed(call[0], call[1], status, b"".join(call[2]), time.time() - record["t_start"], error)
+                trace.completed(call[0], call[1], status, b"".join(answer or []), time.time() - record["t_start"],
+                                error)
         record["seconds"] = time.time() - record["t_start"]
         if log_dir and new is not None:
             save(n, record)                               # and how it went

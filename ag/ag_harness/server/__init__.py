@@ -39,12 +39,18 @@ carries them, and its read is made with them -- {name: value}, the names the
 policy's event types declare (e.g. {"channel": <the harness's thread>});
 none: {}. `cwd` is the working directory the gatherer's pollers look at.
 
-    {"op": "rewrite", "gatherer", "properties", "cwd", "events"}
-        -> {"context": [...] or null, "note"}   one model call: insert, then read in
-                                                response to the last event; null: send
-                                                your own
+    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?}
+        -> {"context": [...] or null, "note", "read_id"}   one model call: insert, then read
+                                                in response to the last event; null: send
+                                                your own. `read_id` names the read, for
+                                                `measured`; a `measured` given here is
+                                                recorded before the read
+    {"op": "measured", "gatherer", "read_id", "tokens"} -> {"recorded": bool}
+                                                the provider's count of read `read_id`'s
+                                                context: the call's input tokens, cached
+                                                ones included, reported after the call
     {"op": "insert", "gatherer", "properties", "events"} -> {"rows": [row id or null, ...], "last"}
-    {"op": "read", "gatherer", "properties", "cwd", "row"} -> {"context": [...]}
+    {"op": "read", "gatherer", "properties", "cwd", "row"} -> {"context": [...], "read_id"}
     {"op": "locate", "gatherer", "properties", "event_id"} -> {"row"}      (`id` is the request's own)
     {"op": "init", "gatherer", "event_types"?: [TYPE]} -> {"event_types": [TYPE with its id]}
     {"op": "event_types", "gatherer"} -> {"event_types": [...]}
@@ -115,6 +121,17 @@ def properties_of(request: dict) -> Dict[str, Any]:
     if not isinstance(props, dict):
         raise BadEvent(f"properties must be an object, not {str(props)[:120]}")
     return props
+
+
+def measured_of(value) -> Optional[dict]:
+    """{"read_id", "tokens"} from a `measured` (or a `measured` request), both
+    positive ints; None if it is not one -- a size that is not given, or not
+    one, is no size."""
+    if not isinstance(value, dict):
+        return None
+    read_id, tokens = value.get("read_id"), value.get("tokens")
+    ok = all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in (read_id, tokens))
+    return {"read_id": read_id, "tokens": tokens} if ok else None
 
 
 def tag(properties: Dict[str, Any]) -> str:
@@ -193,7 +210,12 @@ class Server:
 
     def read(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], row: int, manager=None) -> dict:
         manager = self.with_pollers(manager or self.manager(gatherer), gatherer, cwd)
-        return {"context": manager.read_events(gatherer, row, properties=properties)}
+        context, read_id = manager.read_logged(gatherer, row, properties=properties)
+        return {"context": context, "read_id": read_id}
+
+    def measured(self, gatherer: str, read_id: int, tokens: int) -> dict:
+        """Record the provider's count of the context read `read_id` returned."""
+        return {"recorded": self.manager(gatherer).record_real_tokens(gatherer, read_id, tokens)}
 
     def locate(self, gatherer: str, properties: Dict[str, Any], event_id: str) -> dict:
         return {"row": self.manager(gatherer).locate(gatherer, event_id, properties=properties)}
@@ -212,10 +234,18 @@ class Server:
 
     # ---- one model call
 
-    def rewrite(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], events: list) -> dict:
-        """Insert `events`, then read in response to the last. Never raises:
-        a failure anywhere answers a null context."""
+    def rewrite(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], events: list,
+                measured: Optional[dict] = None) -> dict:
+        """Insert `events`, then read in response to the last. `measured`,
+        {"read_id", "tokens"}, is the provider's count of an earlier read's
+        context, recorded first, so this read sees it. Never raises: a
+        failure anywhere answers a null context."""
         prefix = tag(properties)
+        if measured is not None:
+            try:
+                self.manager(gatherer).record_real_tokens(gatherer, measured["read_id"], measured["tokens"])
+            except Exception as exc:  # noqa: BLE001 - a lost count never blocks the call
+                self.log(gatherer, prefix + f"could not record the measured size: {exc!r}")
         try:
             manager = self.manager(gatherer)
             last = self.insert(gatherer, properties, events, manager)["last"]
@@ -228,15 +258,16 @@ class Server:
             self.log(gatherer, prefix + note)
             return {"context": None, "note": note}
         try:
-            context = self.read(gatherer, properties, cwd, last, manager)["context"]
+            answer = self.read(gatherer, properties, cwd, last, manager)
         except Exception as exc:  # noqa: BLE001
             note = f"read failed: {exc!r}; messages unchanged"
             self.log(gatherer, prefix + note)
             return {"context": None, "note": note}
+        context = answer["context"]
         ags = sum(1 for e in context if e.get("type") == "ag")
         note = f"{len(events)} events in (event {last}), {len(context)} out ({ags} ag)"
         self.log(gatherer, prefix + note)
-        return {"context": context, "note": note}
+        return {"context": context, "note": note, "read_id": answer["read_id"]}
 
     def open(self, gatherer: str, properties: Dict[str, Any]) -> dict:
         self.manager(gatherer)
@@ -256,7 +287,12 @@ class Server:
         if op == "rewrite":
             if not isinstance(events, list):
                 return {"context": None, "note": "no events; messages unchanged"}
-            return self.rewrite(gatherer, properties, cwd, events)
+            return self.rewrite(gatherer, properties, cwd, events, measured_of(request.get("measured")))
+        if op == "measured":
+            measured = measured_of(request)
+            if measured is None:
+                return {"error": "no read_id and tokens"}
+            return self.measured(gatherer, measured["read_id"], measured["tokens"])
         if op == "insert":
             if not isinstance(events, list):
                 return {"error": "no events"}

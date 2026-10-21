@@ -187,11 +187,11 @@ class ProactiveContextManager(Policy):
         last = conn.last_read(channel.of(ch))
         build, made = self.choose(conn, types, rows, latest, last, at_user, read)
         items, refs, size = self.assemble(conn, rows, build, made, types, read)
-        over = size > cfg.max_context_tokens
+        over = size > cfg.max_context_tokens or self.measured_over(last, build, ch)
         if over and not at_user and tables.waiting(latest, last):        # a ready build: taken now, not at the user
             build, made = self.choose(conn, types, rows, latest, last, True, read)
             items, refs, size = self.assemble(conn, rows, build, made, types, read)
-            over = size > cfg.max_context_tokens
+            over = size > cfg.max_context_tokens or self.measured_over(last, build, ch)
         if at_user or over:
             latest = tables.build_for(conn, ch)
             started = self.start_due(conn, types, read, rows, latest, build, size, over)
@@ -206,7 +206,23 @@ class ProactiveContextManager(Policy):
         if size > cfg.max_context_tokens:
             self.log(f"[{ch}] context {size} tokens, over max_context_tokens={cfg.max_context_tokens}")
         self.last_tokens = size                     # the session's context the read returned, as max bounds it
-        return Context(items, refs, str(build["build_id"]) if build else None)
+        return Context(items, refs, str(build["build_id"]) if build else None, tokens=size)
+
+    def measured_over(self, last: Optional[dict], build: Optional[dict], ch) -> bool:
+        """Whether the provider's count of the last call's context (`real_tokens`, reported
+        after the call) was over max_context_tokens, and that context is the one this read
+        extends: the last read was made from the same build (or, like this one, from none).
+        After a build its first call has not been counted yet, so a count from before it
+        does not ask for another."""
+        if not last or not last.get("real_tokens"):
+            return False
+        if last.get("basis") != (str(build["build_id"]) if build else None):
+            return False
+        if last["real_tokens"] <= self.config.max_context_tokens:
+            return False
+        self.log(f"[{ch}] the last call's context was {last['real_tokens']} tokens by the provider's count "
+                 f"(ag counted {last.get('est_tokens')}), over max_context_tokens={self.config.max_context_tokens}")
+        return True
 
     def assemble(self, conn, rows, build: Optional[dict], made: List[int], types: TypeIds,
                  read: Read, stub: bool = False) -> Tuple[list, list, int]:

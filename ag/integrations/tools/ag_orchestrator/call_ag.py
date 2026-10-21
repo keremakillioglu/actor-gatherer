@@ -34,9 +34,13 @@ from .adaptor import CWD, Adaptor
 
 
 async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], messages: list,
-                  adaptor: Adaptor) -> Tuple[Optional[list], str]:
+                  adaptor: Adaptor, out: Optional[dict] = None,
+                  measured: Optional[dict] = None) -> Tuple[Optional[list], str]:
     """(the messages the model gets, or None to send the harness's own; a
-    note): the adaptor's `to_events`, a `rewrite` to the server, its `to_messages`."""
+    note): the adaptor's `to_events`, a `rewrite` to the server, its `to_messages`.
+    `out`, when given, gets the read's `read_id` (what the provider's count of
+    this call is reported against, `measured`); `measured`, {"read_id",
+    "tokens"}, is an earlier call's count, sent with this one."""
     if cwd:
         properties = {**properties, CWD: cwd}                     # where the agent works
     unset = sorted(set(properties) - set(adaptor.properties))
@@ -51,8 +55,10 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     if undeclared:
         return None, (f"adaptor {adaptor.name} made events of types it does not declare "
                       f"({', '.join(undeclared)}); request unchanged")
-    answer = await client.request("rewrite", {"gatherer": gatherer, "properties": properties, "cwd": cwd,
-                                              "events": events})
+    body = {"gatherer": gatherer, "properties": properties, "cwd": cwd, "events": events}
+    if measured is not None:
+        body["measured"] = measured
+    answer = await client.request("rewrite", body)
     if not isinstance(answer, dict) or answer.get("error"):
         why = answer.get("error") if isinstance(answer, dict) else repr(answer)
         return None, f"server: {why}; request unchanged"
@@ -64,6 +70,31 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     if unaccepted:
         note += f"; adaptor {adaptor.name} does not accept {', '.join(unaccepted)}"
     try:
-        return adaptor.to_messages(context, messages), note
+        routed = adaptor.to_messages(context, messages)
     except Exception as exc:  # noqa: BLE001
         return None, f"could not make messages: {exc!r}; request unchanged"
+    if out is not None and isinstance(answer.get("read_id"), int):
+        out["read_id"] = answer["read_id"]                # the read's context is what is sent
+    return routed, note
+
+
+READ = "ag_read"      # a proxy hook's key in the hook server's `request.state`: (gatherer, read_id)
+
+
+def keep_read(request, gatherer: str, out: dict) -> None:
+    """For a proxy hook: keep the read this request's context came from (`call_ag`'s `out`)
+    on the request, for `report_measured` once the answer is back."""
+    state = getattr(request, "state", None)
+    if isinstance(state, dict) and isinstance(out.get("read_id"), int):
+        state[READ] = (gatherer, out["read_id"])
+
+
+async def report_measured(ag_clients, request, tokens: Optional[int]) -> None:
+    """For a proxy hook's `measured`: the provider's count of the request's context, to the
+    read it came from (`keep_read`). Nothing when either is unknown."""
+    kept = (getattr(request, "state", None) or {}).get(READ)
+    if kept is None or not tokens:
+        return
+    gatherer, read_id = kept
+    await ag_clients.client(gatherer).request("measured", {"gatherer": gatherer, "read_id": read_id,
+                                                           "tokens": tokens})

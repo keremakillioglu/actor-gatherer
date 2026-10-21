@@ -60,10 +60,14 @@ class Context:
             manager logs in `_read_items`.
         basis: what the context was built from, in the policy's own terms
             (e.g. a build id), or None; logged in `_reads.basis`.
+        tokens: the context's size by the policy's own count, or None;
+            logged in `_reads.est_tokens`, beside the size the provider
+            reports for it later (`real_tokens`).
     """
     items: list = field(default_factory=list)
     refs: list = field(default_factory=list)
     basis: Optional[str] = None
+    tokens: Optional[int] = None
 
 
 class TypeIds:

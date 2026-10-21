@@ -98,8 +98,11 @@ CREATE TABLE IF NOT EXISTS _reads (
     read_at     TEXT    NOT NULL,   -- (and the read's properties)
     row_id      INTEGER,            -- the event (an events row) the read responded to
     manager     TEXT,               -- which implementation read
-    basis       TEXT                -- what the context was built from, in the
+    basis       TEXT,               -- what the context was built from, in the
                                     -- manager's terms (e.g. a build id); NULL = none
+    est_tokens  INTEGER,            -- the context's size by the manager's own count; NULL = not given
+    real_tokens INTEGER             -- its size as the model's provider counted it (the
+                                    -- call's input tokens, reported after it); NULL = not yet
 );
 
 -- What each read returned, in order: a stored event (row_id) or a made item
@@ -147,6 +150,10 @@ def create(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     if "text" not in {c[1] for c in conn.execute("PRAGMA table_info(events)")}:
         conn.execute("ALTER TABLE events ADD COLUMN text TEXT")      # a file from before events had text
+    read_columns = {c[1] for c in conn.execute("PRAGMA table_info(_reads)")}
+    for column in ("est_tokens", "real_tokens"):                     # a file from before reads had sizes
+        if column not in read_columns:
+            conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} INTEGER")
     if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'events_id'").fetchone() is None:
         index(conn, property_names(conn))            # a new file: over no property yet
 

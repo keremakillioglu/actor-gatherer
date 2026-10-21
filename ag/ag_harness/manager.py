@@ -28,7 +28,7 @@ import os
 import time
 from dataclasses import replace
 from datetime import datetime
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Tuple
 
 from ag.ag_interface import AG, ContextManager, Event, EventType, Poller, Tokenizer, is_ag
 from ag.ag_interface.policy import Context, Policy, Read
@@ -230,18 +230,20 @@ class Manager(ContextManager):
         (`poll`) and what they return is stored after
         everything inserted so far, so the context is built from it too. A
         gatherer with no database reads as empty, and is not polled."""
-        return self._context(gatherer_id, row_id, properties).items
+        return self._context(gatherer_id, row_id, properties)[0].items
 
-    def _context(self, gatherer_id: str, row_id: int, properties: Optional[dict]) -> Context:
+    def _context(self, gatherer_id: str, row_id: int, properties: Optional[dict]) -> Tuple[Context, Optional[int]]:
+        """(the policy's context, the read_id it was logged as; None: an empty context, not logged)."""
         if not os.path.exists(db_path(gatherer_id)):
-            return Context()
+            return Context(), None
         self.poll(gatherer_id)
         conn = self._conn(gatherer_id)
         ctx = self.policy.read(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), row_id))
+        read_id = None
         if ctx.items:
-            store.record_read(conn, properties, ctx.refs, manager=self.policy.name, basis=ctx.basis,
-                              row_id=row_id)
-        return ctx
+            read_id = store.record_read(conn, properties, ctx.refs, manager=self.policy.name, basis=ctx.basis,
+                                        row_id=row_id, est_tokens=ctx.tokens)
+        return ctx, read_id
 
     def read_events(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None) -> List[dict]:
         """Not part of the interface: `read`, as events -- what the server
@@ -250,9 +252,16 @@ class Manager(ContextManager):
         message is an `ag` message, `{"type": "ag", "name", "text"}`
         (ag/ag_interface/format.py). Any other item a policy made is left
         out."""
-        ctx = self._context(gatherer_id, row_id, properties)
+        return self.read_logged(gatherer_id, row_id, properties=properties)[0]
+
+    def read_logged(self, gatherer_id: str, row_id: int, *,
+                    properties: Optional[dict] = None) -> Tuple[List[dict], Optional[int]]:
+        """Not part of the interface: `read_events`, with the read_id the read
+        was logged as (None: nothing returned, nothing logged) -- what the
+        provider's count of the call is later recorded against (`record_real_tokens`)."""
+        ctx, read_id = self._context(gatherer_id, row_id, properties)
         if not ctx.items:
-            return []
+            return [], None
         rows = store.rows_by_id(self._conn(gatherer_id), [r.row_id for r in ctx.refs if r.row_id is not None])
         out = []
         for item, ref in zip(ctx.items, ctx.refs):
@@ -261,7 +270,16 @@ class Manager(ContextManager):
                 out.append({"type": row.type.name, "id": row.event_id, "payload": row.payload})
             elif is_ag(item):
                 out.append({"type": AG, "name": item.get("name"), "text": item["text"]})
-        return out
+        return out, read_id
+
+    def record_real_tokens(self, gatherer_id: str, read_id: int, tokens: int) -> bool:
+        """Not part of the interface: record the provider's count of the context
+        read `read_id` returned -- the model call's input tokens, reported after
+        it -- for the policy to see on the read log (`last_read`). Whether that
+        read exists."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return False
+        return store.record_real_tokens(self._conn(gatherer_id), read_id, tokens)
 
     def bulk_load(self, gatherer_id: str, events, *, properties: Optional[dict] = None):
         """Not part of the interface: store a whole recorded history in one
