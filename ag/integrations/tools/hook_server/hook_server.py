@@ -23,7 +23,9 @@ only, so a harness that tries WebSockets first falls back to HTTP.
 `--hook` names the hook: an async callable taking a `Request` and returning a
 new JSON body or None, or a class, built with the `--option`s, whose
 instances are that. A hook with a `close()` has it called when the server
-stops. A hook with a `measured(request, tokens)` has it called (awaited) when
+stops. A URL's `/h/<label>/` may be followed by `/l/<n>/`: the hook's
+`request.limit` is then `n` (the prefix is stripped before forwarding), the
+harness's own limit for its calls. A hook with a `measured(request, tokens)` has it called (awaited) when
 a POST's answer has come back whole, before the harness sees its end: `tokens`
 is the call's input tokens as the answer reports them, cached ones included
 (trace.py's reading of a Responses or Anthropic Messages answer), or None; the
@@ -58,6 +60,7 @@ from .trace import ModelTrace, response_of
 
 HOP = {"host", "content-length", "transfer-encoding", "connection", "content-encoding", "accept-encoding"}
 LABEL_PREFIX = re.compile(r"^/h/([A-Za-z0-9._-]+)(?=/|$)")
+LIMIT_PREFIX = re.compile(r"^/l/([0-9]+)(?=/|$)")
 
 
 @dataclass
@@ -68,6 +71,7 @@ class Request:
     label: Optional[str]                        # the <label> of /h/<label>/..., if the URL had one
     headers: dict = field(default_factory=dict)
     body: Any = None                            # the JSON body, or None if it is not JSON
+    limit: Optional[int] = None                 # the <n> of /l/<n>/..., if the URL had one
     state: dict = field(default_factory=dict)   # the hook's own, kept until its `measured` for this request
 
 
@@ -79,6 +83,16 @@ def route_of(path: str):
     if not match:
         return None, path
     return match.group(1), path[match.end():] or "/"
+
+
+def limit_of(path: str):
+    """(the limit the URL states, or None; the path to forward): `/l/<n>/v1/chat`, after
+    any label, is limit `n` and `/v1/chat` -- the harness's own limit for its calls, in
+    its provider's tokens, as its launcher found it."""
+    match = LIMIT_PREFIX.match(path)
+    if not match or not int(match.group(1)):
+        return None, path
+    return int(match.group(1)), path[match.end():] or "/"
 
 
 async def _call(hook: Callable, request: Request):
@@ -111,13 +125,14 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
             return web.Response(status=426, text="WebSockets are not relayed: use HTTP")
         n = next(counter)
         label, path_qs = route_of(request.path_qs)
+        limit, path_qs = limit_of(path_qs)
         raw = await request.read()
         headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP}
         try:
             body = json.loads(raw) if raw else None
         except ValueError:
             body = None                                    # not JSON (e.g. compressed): as it is
-        given = Request(request.method, path_qs.split("?", 1)[0], label, dict(request.headers), body)
+        given = Request(request.method, path_qs.split("?", 1)[0], label, dict(request.headers), body, limit)
         try:
             new = await _call(hook, given)
         except Exception as exc:  # noqa: BLE001 - a failing hook never blocks the call

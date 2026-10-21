@@ -10,7 +10,7 @@ from the flat fields here, so one config states everything and the tools
 know nothing of it.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List
 
 from ..tools import boundary as boundary_tool
@@ -42,8 +42,16 @@ class ProactiveContextManagerConfig:
     # only what comes after is verbatim. What the budgets (below) leave under the limit
     # is the headroom the running task grows into before the next build:
     # their sum + keep_pinned_tokens < max_context_tokens.
+    #
+    # A harness that states its own limit with a call (where it compacts by itself, or
+    # where its model's window ends: the `limit` of a read) sets max_context_tokens for that
+    # call's channel to harness_limit_fraction of it, unless the gatherer's options set
+    # max_context_tokens; below the default, the budgets and min_context_tokens shrink with
+    # it in proportion (`within_limit`). The fraction leaves room for one step's growth: the
+    # harness checks its limit right after an answer, before ag's next read can act.
     min_context_tokens: int = 15000
     max_context_tokens: int = 200000
+    harness_limit_fraction: float = 0.9
     keep_pinned_tokens: int = 5000        # the pinned rows of the condensed span (the newest kept)
     build_every_request: bool = False     # build at every user message (tests, experiments)
     sync_seconds: float = 15.0            # how long a read waits for the worker it started
@@ -182,3 +190,26 @@ class ProactiveContextManagerConfig:
         return ranking_tool.Params(turns=self.rank_turns, top_n=self.rank_top_n, legroom=self.rank_legroom,
                               budget_tokens=self.keep_task_relevant_tokens, task_tokens_fallback=self.task_tokens_fallback,
                               model=self.rank_model, effort=self.rank_effort, timeout=self.rank_timeout)
+
+
+#: What shrinks with max_context_tokens when a harness's limit puts it below the config's own.
+SCALED = ("min_context_tokens", "keep_pinned_tokens", "all_task_tokens", "parallel_index_tokens",
+          "keep_temporal_relevant_tokens", "keep_task_relevant_tokens", "keep_previous_task_tokens",
+          "keep_so_far_tokens")
+
+
+def within_limit(cfg: ProactiveContextManagerConfig, limit: int) -> ProactiveContextManagerConfig:
+    """`cfg` for a harness whose own limit is `limit` tokens: max_context_tokens is
+    harness_limit_fraction of it; when that is below cfg's, the budgets and
+    min_context_tokens shrink in the same proportion, so they fit as they did.
+
+    Raises:
+        ValueError: the limit leaves too little to fit them.
+    """
+    target = int(limit * cfg.harness_limit_fraction)
+    if target == cfg.max_context_tokens:
+        return cfg
+    if target > cfg.max_context_tokens:
+        return replace(cfg, max_context_tokens=target)
+    factor = target / cfg.max_context_tokens
+    return replace(cfg, max_context_tokens=target, **{f: int(getattr(cfg, f) * factor) for f in SCALED})

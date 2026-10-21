@@ -396,16 +396,17 @@ def made_items(conn: sqlite3.Connection, made_ids) -> dict:
 
 def record_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], refs, *,
                 manager: str, basis: Optional[str] = None, row_id: Optional[int] = None,
-                est_tokens: Optional[int] = None) -> int:
+                est_tokens: Optional[int] = None, limit_tokens: Optional[int] = None) -> int:
     """Log one read: a `_reads` row (with its properties, `row_id`, the
-    event it responded to, and `est_tokens`, the context's size by the
-    manager's count), and a `_read_items` row per item it returned, in
-    order. Returns the read_id."""
+    event it responded to, `est_tokens`, the context's size by the
+    manager's count, and `limit_tokens`, the harness's own limit the call
+    stated), and a `_read_items` row per item it returned, in order.
+    Returns the read_id."""
     names, values = _given(conn, properties, "a read")
     with conn:
-        cur = conn.execute(f"INSERT INTO _reads (read_at, row_id, manager, basis, est_tokens{_columns(names)}) "
-                           f"VALUES (?, ?, ?, ?, ?{', ?' * len(names)})",
-                           (_now(), row_id, manager, basis, est_tokens, *values))
+        cur = conn.execute(f"INSERT INTO _reads (read_at, row_id, manager, basis, est_tokens, limit_tokens"
+                           f"{_columns(names)}) VALUES (?, ?, ?, ?, ?, ?{', ?' * len(names)})",
+                           (_now(), row_id, manager, basis, est_tokens, limit_tokens, *values))
         read_id = cur.lastrowid
         conn.executemany("INSERT INTO _read_items (read_id, position, row_id, made_id) VALUES (?, ?, ?, ?)",
                          [(read_id, i, r.row_id, r.made_id) for i, r in enumerate(refs)])
@@ -416,10 +417,12 @@ def last_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = N
     """The most recent read with these properties -- each given one its
     value (None: unset), those not given any value -- {read_id, read_at,
     row_id (the event it responded to), manager, basis, est_tokens,
-    real_tokens (None: not reported), refs: [Ref, ...]}, or None."""
+    real_tokens (None: not reported), limit_tokens (None: none stated),
+    refs: [Ref, ...]}, or None."""
     names, _ = _given(conn, properties, "a read")
     given = {n: v for n, v in (properties or {}).items() if n in names}
-    row = conn.execute(f"SELECT read_id, read_at, row_id, manager, basis, est_tokens, real_tokens FROM _reads "
+    row = conn.execute(f"SELECT read_id, read_at, row_id, manager, basis, est_tokens, real_tokens, limit_tokens "
+                       f"FROM _reads "
                        f"WHERE {_same(list(given))}1 ORDER BY read_id DESC LIMIT 1",
                        _unset_is_empty(given.values())).fetchone()
     if not row:
@@ -427,7 +430,7 @@ def last_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = N
     refs = [Ref(r, m) for r, m in conn.execute(
         "SELECT row_id, made_id FROM _read_items WHERE read_id = ? ORDER BY position", (row[0],))]
     return {"read_id": row[0], "read_at": row[1], "row_id": row[2], "manager": row[3], "basis": row[4],
-            "est_tokens": row[5], "real_tokens": row[6], "refs": refs}
+            "est_tokens": row[5], "real_tokens": row[6], "limit_tokens": row[7], "refs": refs}
 
 
 def record_real_tokens(conn: sqlite3.Connection, read_id: int, tokens: int) -> bool:

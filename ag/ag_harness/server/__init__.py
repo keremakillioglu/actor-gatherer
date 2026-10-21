@@ -39,18 +39,21 @@ carries them, and its read is made with them -- {name: value}, the names the
 policy's event types declare (e.g. {"channel": <the harness's thread>});
 none: {}. `cwd` is the working directory the gatherer's pollers look at.
 
-    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?}
+    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?}
         -> {"context": [...] or null, "note", "read_id"}   one model call: insert, then read
                                                 in response to the last event; null: send
                                                 your own. `read_id` names the read, for
                                                 `measured`; a `measured` given here is
-                                                recorded before the read
+                                                recorded before the read. `limit` is the
+                                                harness's own limit for the call (where it
+                                                compacts, or its window ends), in its
+                                                provider's tokens; the policy keeps under it
     {"op": "measured", "gatherer", "read_id", "tokens"} -> {"recorded": bool}
                                                 the provider's count of read `read_id`'s
                                                 context: the call's input tokens, cached
                                                 ones included, reported after the call
     {"op": "insert", "gatherer", "properties", "events"} -> {"rows": [row id or null, ...], "last"}
-    {"op": "read", "gatherer", "properties", "cwd", "row"} -> {"context": [...], "read_id"}
+    {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?} -> {"context": [...], "read_id"}
     {"op": "locate", "gatherer", "properties", "event_id"} -> {"row"}      (`id` is the request's own)
     {"op": "init", "gatherer", "event_types"?: [TYPE]} -> {"event_types": [TYPE with its id]}
     {"op": "event_types", "gatherer"} -> {"event_types": [...]}
@@ -121,6 +124,11 @@ def properties_of(request: dict) -> Dict[str, Any]:
     if not isinstance(props, dict):
         raise BadEvent(f"properties must be an object, not {str(props)[:120]}")
     return props
+
+
+def limit_of(value) -> Optional[int]:
+    """A harness's stated limit: a positive int, else None (none stated)."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
 
 
 def measured_of(value) -> Optional[dict]:
@@ -208,9 +216,10 @@ class Server:
             last = manager.locate(gatherer, stored[-1].id, properties=properties)
         return {"rows": rows, "last": last}
 
-    def read(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], row: int, manager=None) -> dict:
+    def read(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], row: int, manager=None,
+             limit: Optional[int] = None) -> dict:
         manager = self.with_pollers(manager or self.manager(gatherer), gatherer, cwd)
-        context, read_id = manager.read_logged(gatherer, row, properties=properties)
+        context, read_id = manager.read_logged(gatherer, row, properties=properties, limit=limit)
         return {"context": context, "read_id": read_id}
 
     def measured(self, gatherer: str, read_id: int, tokens: int) -> dict:
@@ -235,7 +244,7 @@ class Server:
     # ---- one model call
 
     def rewrite(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], events: list,
-                measured: Optional[dict] = None) -> dict:
+                measured: Optional[dict] = None, limit: Optional[int] = None) -> dict:
         """Insert `events`, then read in response to the last. `measured`,
         {"read_id", "tokens"}, is the provider's count of an earlier read's
         context, recorded first, so this read sees it. Never raises: a
@@ -258,7 +267,7 @@ class Server:
             self.log(gatherer, prefix + note)
             return {"context": None, "note": note}
         try:
-            answer = self.read(gatherer, properties, cwd, last, manager)
+            answer = self.read(gatherer, properties, cwd, last, manager, limit)
         except Exception as exc:  # noqa: BLE001
             note = f"read failed: {exc!r}; messages unchanged"
             self.log(gatherer, prefix + note)
@@ -287,7 +296,8 @@ class Server:
         if op == "rewrite":
             if not isinstance(events, list):
                 return {"context": None, "note": "no events; messages unchanged"}
-            return self.rewrite(gatherer, properties, cwd, events, measured_of(request.get("measured")))
+            return self.rewrite(gatherer, properties, cwd, events, measured_of(request.get("measured")),
+                                limit_of(request.get("limit")))
         if op == "measured":
             measured = measured_of(request)
             if measured is None:
@@ -300,7 +310,7 @@ class Server:
         if op == "read":
             if not isinstance(request.get("row"), int):
                 return {"error": "no row"}
-            return self.read(gatherer, properties, cwd, request["row"])
+            return self.read(gatherer, properties, cwd, request["row"], limit=limit_of(request.get("limit")))
         if op == "locate":
             if not isinstance(request.get("event_id"), str):
                 return {"error": "no event_id"}

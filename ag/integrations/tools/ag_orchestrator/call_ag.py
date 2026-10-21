@@ -35,12 +35,13 @@ from .adaptor import CWD, Adaptor
 
 async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], messages: list,
                   adaptor: Adaptor, out: Optional[dict] = None,
-                  measured: Optional[dict] = None) -> Tuple[Optional[list], str]:
+                  measured: Optional[dict] = None, limit: Optional[int] = None) -> Tuple[Optional[list], str]:
     """(the messages the model gets, or None to send the harness's own; a
     note): the adaptor's `to_events`, a `rewrite` to the server, its `to_messages`.
     `out`, when given, gets the read's `read_id` (what the provider's count of
     this call is reported against, `measured`); `measured`, {"read_id",
-    "tokens"}, is an earlier call's count, sent with this one."""
+    "tokens"}, is an earlier call's count, sent with this one; `limit` the
+    harness's own limit for this call (where it compacts, or its window ends)."""
     if cwd:
         properties = {**properties, CWD: cwd}                     # where the agent works
     unset = sorted(set(properties) - set(adaptor.properties))
@@ -58,6 +59,8 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     body = {"gatherer": gatherer, "properties": properties, "cwd": cwd, "events": events}
     if measured is not None:
         body["measured"] = measured
+    if limit:
+        body["limit"] = limit
     answer = await client.request("rewrite", body)
     if not isinstance(answer, dict) or answer.get("error"):
         why = answer.get("error") if isinstance(answer, dict) else repr(answer)

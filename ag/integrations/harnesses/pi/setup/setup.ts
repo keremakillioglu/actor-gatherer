@@ -59,7 +59,7 @@ export default async function (pi: ExtensionAPI) {
 
 	pi.on("context", async (event, ctx) => {
 		if (failed) return undefined;
-		const messages = await ag.context(event.messages as any[], where(ctx), ctx.cwd);
+		const messages = await ag.context(event.messages as any[], where(ctx), ctx.cwd, ctx.model);
 		if (!messages) {
 			ctx.ui.setStatus(STATUS, "ag: unchanged");
 			return undefined;

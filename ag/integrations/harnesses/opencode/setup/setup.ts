@@ -48,6 +48,10 @@ async function server(input: { directory: string }, options?: Record<string, unk
 			cfg.compaction = { ...cfg.compaction, auto: false, prune: false };
 		},
 
+		"chat.params": async (params: { sessionID?: string; model?: unknown }) => {
+			ag.params(params.sessionID, params.model); // the model's limit, for this session's calls
+		},
+
 		"experimental.chat.messages.transform": async (_input: {}, output: { messages: Message[] }) => {
 			const messages = await ag.transform(output.messages, input.directory);
 			if (!messages) return; // opencode sends its own

@@ -43,10 +43,13 @@ class Read:
             property it does not give is unset.
         row_id: the event this read responds to -- the row id `insert`
             returned for it; normally the last event before the model call.
+        limit: the harness's own limit for this call, in its provider's tokens -- where it
+            compacts by itself, or where its model's window ends -- or None when it states none.
     """
     gatherer_id: str
     properties: Dict[str, Any]
     row_id: int
+    limit: Optional[int] = None
 
 
 @dataclass
