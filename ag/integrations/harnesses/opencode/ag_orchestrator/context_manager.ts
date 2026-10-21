@@ -22,7 +22,15 @@ import { AgClient } from "../../../tools/ag_connection/ag_client.ts";
 import { type Requester, call_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
 import type { Message } from "../adaptor/to_events.ts";
 import { type Adaptor, CHANNEL } from "../../../tools/ag_orchestrator/adaptor.ts";
+import { Measurements, n } from "../../../tools/ag_orchestrator/measured.ts";
 import { OpencodeAdaptor } from "../adaptor/adaptor.ts";
+
+/** An opencode assistant message's input tokens: its `info.tokens`, the cache's included. */
+export function opencodeInputTokens(m: Message): number | null {
+	const t = m?.info?.tokens;
+	if (!t || typeof t !== "object") return null;
+	return n(t.input) + n(t.cache?.read) + n(t.cache?.write) || null;
+}
 
 type Client = Requester & { stop(): void };
 
@@ -31,6 +39,8 @@ export class OpencodeContextManager {
 	readonly named?: string;
 
 	readonly adaptor: Adaptor<Message>;
+	/** Each call's count, from the tokens on opencode's next assistant message, sent with the call after. */
+	readonly measurements = new Measurements<Message>((m) => m?.info?.role === "assistant", opencodeInputTokens);
 
 	constructor(options: { named?: string; timeoutMs?: number; server?: Client; adaptor?: Adaptor<Message> } = {}) {
 		this.named = options.named || undefined;
@@ -48,7 +58,10 @@ export class OpencodeContextManager {
 	async transform(messages: Message[], directory?: string): Promise<Message[] | null> {
 		const where = this.where(messages);
 		if (!where) return null;
-		const routed = await call_ag(this.server, { ...where, cwd: directory }, messages, this.adaptor);
+		const channel = where.properties[CHANNEL];
+		const routed = await call_ag(this.server, { ...where, cwd: directory }, messages, this.adaptor,
+			this.measurements.take(channel, messages));
+		this.measurements.keep(channel, routed.messages !== null ? routed.readId : undefined, messages);
 		return routed.messages as Message[] | null;
 	}
 

@@ -37,7 +37,7 @@ from typing import Callable, Optional, Union
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import call_ag
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, report_measured
 from .ag_clients import AgClients
 from ..adaptor.adaptor import CodexAdaptor
 
@@ -128,13 +128,18 @@ class CodexContextManager:
             print("a model call with no thread id; request unchanged", file=sys.stderr, flush=True)
             return None
         gatherer, channel = (request.label, thread) if request.label else (thread, thread)
-        items = body["input"]
+        items, out = body["input"], {}
         messages, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
-                                       cwd_of(items) or self.cwd, items, self.adaptor)
+                                       cwd_of(items) or self.cwd, items, self.adaptor, out=out)
         self.log(gatherer, f"[{channel}] {note}")
+        keep_read(request, gatherer, out)                 # what was sent is the read's context either way
         if messages is None or messages == items:
             return None                                   # nothing to change: codex's own bytes go through
         return dict(body, input=messages)
+
+    async def measured(self, request, tokens: Optional[int]) -> None:
+        """The hook server's report, once the answer is back: the call's input tokens, to the read."""
+        await report_measured(self.ag_clients, request, tokens)
 
     async def close(self) -> None:
         """Stop every gatherer's server."""

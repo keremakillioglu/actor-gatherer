@@ -20,7 +20,15 @@
 import { type Answer, AgClient } from "../../../tools/ag_connection/ag_client.ts";
 import { type Requester, call_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
 import { type Adaptor, CHANNEL } from "../../../tools/ag_orchestrator/adaptor.ts";
+import { Measurements, n } from "../../../tools/ag_orchestrator/measured.ts";
 import { PiAdaptor } from "../adaptor/adaptor.ts";
+
+/** A pi assistant message's input tokens: its `usage` (pi-ai's Usage), the cache's included. */
+export function piInputTokens(m: any): number | null {
+	const u = m?.usage;
+	if (!u || typeof u !== "object") return null;
+	return n(u.input) + n(u.cacheRead) + n(u.cacheWrite) || null;
+}
 
 export type Where = { gatherer: string; properties: { [CHANNEL]: string } };
 type Client = Requester & { stop(): void };
@@ -31,6 +39,8 @@ export class PiContextManager {
 	answering = false;
 
 	readonly adaptor: Adaptor<any>;
+	/** Each call's count, from the usage on pi's next assistant message, sent with the call after. */
+	readonly measurements = new Measurements<any>((m) => m?.role === "assistant", piInputTokens);
 
 	constructor(options: { timeoutMs?: number; server?: Client; adaptor?: Adaptor<any> } = {}) {
 		this.server = options.server ?? new AgClient("pi", options.timeoutMs);
@@ -51,7 +61,10 @@ export class PiContextManager {
 
 	/** The messages the model gets for this call, or null to send pi's own. */
 	async context(messages: any[], where: Where, cwd?: string): Promise<any[] | null> {
-		const routed = await call_ag(this.server, { ...where, cwd }, messages, this.adaptor);
+		const channel = where.properties[CHANNEL];
+		const routed = await call_ag(this.server, { ...where, cwd }, messages, this.adaptor,
+			this.measurements.take(channel, messages));
+		this.measurements.keep(channel, routed.messages !== null ? routed.readId : undefined, messages);
 		this.answering = routed.messages !== null;
 		return routed.messages;
 	}
