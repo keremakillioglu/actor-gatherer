@@ -184,30 +184,76 @@ class CodexLimitTest(unittest.TestCase):
             self.assertEqual(p.base_url("http://127.0.0.1:4013", "demo"), "http://127.0.0.1:4013/h/demo/l/244800/v1")
 
 
+CONTEXT_REPORT = """## Context Usage
+
+**Model:** claude-sonnet-4-6
+**Tokens:** 30.4k / 200k (15%)
+
+| Category | Tokens | Percentage |
+|----------|--------|------------|
+| System prompt | 6.9k | 3.5% |
+| Free space | 136.6k | 68.3% |
+| Autocompact buffer | 33k | 16.5% |
+"""
+
+
 class ClaudeLimitTest(unittest.TestCase):
+    """Without /context (the probe answers nothing): the documented rules, less the buffer."""
+
     def limit(self, args=(), env=None, settings=None):
-        return claude.harness_limit(list(args), env or {}, settings or {})[0]
+        return claude.harness_limit(list(args), env or {}, settings or {}, lambda: None)[0]
 
     def test_windows_by_model(self):
-        self.assertEqual(self.limit(), 200_000)                                          # no model named
-        self.assertEqual(self.limit(["--model", "claude-sonnet-4-6"]), 200_000)
-        self.assertEqual(self.limit(["--model", "claude-sonnet-4-6[1m]"]), 1_000_000)
+        self.assertEqual(self.limit(), 167_000)                                          # no model named: 200K
+        self.assertEqual(self.limit(["--model", "claude-sonnet-4-6"]), 167_000)
+        self.assertEqual(self.limit(["--model", "claude-sonnet-4-6[1m]"]), 967_000)
         self.assertEqual(self.limit(["--model=claude-opus-5-5"]), 967_000)               # native 1M
         self.assertEqual(self.limit(env={"ANTHROPIC_MODEL": "claude-fable-5-1"}), 967_000)
         self.assertEqual(self.limit(settings={"model": "opus"}), 967_000)                # an alias: the newest
-        self.assertEqual(self.limit(settings={"model": "opus"}, env={"CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"}), 200_000)
-        self.assertEqual(self.limit(["--model", "gateway-x"], {"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "400k"}), 400_000)
+        self.assertEqual(self.limit(settings={"model": "opus"}, env={"CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"}), 167_000)
+        self.assertEqual(self.limit(["--model", "gateway-x"], {"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "400k"}), 367_000)
 
     def test_an_auto_compact_window_and_a_percentage_lower_it(self):
         opus = ["--model", "claude-opus-5-5"]
-        self.assertEqual(self.limit(opus + ["--autocompact", "500"]), 500_000)            # bare 100-1000: thousands
-        self.assertEqual(self.limit(opus, {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"}), 300_000)
-        self.assertEqual(self.limit(opus, settings={"autoCompactWindow": 400000}), 400_000)
+        self.assertEqual(self.limit(opus + ["--autocompact", "500"]), 467_000)            # bare 100-1000: thousands
+        self.assertEqual(self.limit(opus, {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"}), 267_000)
+        self.assertEqual(self.limit(opus, settings={"autoCompactWindow": 400000}), 367_000)
         self.assertEqual(self.limit(opus, settings={"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 350000}},
-                                                    "autoCompactWindow": 400000}), 350_000)
-        self.assertEqual(self.limit(["--model", "claude-sonnet-4-6", "--autocompact", "500k"]), 200_000)   # capped
-        self.assertEqual(self.limit(opus, {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50"}), 483_500)
+                                                    "autoCompactWindow": 400000}), 317_000)
+        self.assertEqual(self.limit(["--model", "claude-sonnet-4-6", "--autocompact", "500k"]), 167_000)   # capped
+        self.assertEqual(self.limit(opus, {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50"}), 500_000)
         self.assertEqual(self.limit(opus, {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "150"}), 967_000)   # only lowers
+
+
+class ClaudeContextTest(unittest.TestCase):
+    """With /context: Claude Code's own window and buffer."""
+
+    def test_the_report_s_window_and_buffer(self):
+        self.assertEqual(claude.context_of(CONTEXT_REPORT), (200_000, 33_000))
+        self.assertEqual(claude.context_of(CONTEXT_REPORT.replace("200k", "1m").splitlines()[3]), (1_000_000, None))
+        self.assertIsNone(claude.context_of("Error: something else"))
+
+    def test_the_limit_is_its_window_less_its_buffer(self):
+        self.assertEqual(claude.harness_limit([], {}, {}, lambda: (500_000, 33_000)), (
+            467_000, "Claude Code's /context: window 500000, auto-compact buffer 33000"))
+        self.assertEqual(claude.harness_limit([], {}, {}, lambda: (200_000, None))[0], 167_000)   # none shown
+        self.assertEqual(claude.harness_limit([], {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "60"}, {},
+                                              lambda: (1_000_000, 33_000))[0], 600_000)
+
+    def test_the_probe_asks_claude_code_with_the_run_s_flags_and_no_api(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake, seen = os.path.join(d, "claude"), os.path.join(d, "seen")
+            with open(fake, "w") as fh:          # a stand-in: records its arguments and API, prints a report
+                fh.write(f"#!/bin/sh\necho \"$*\" > {seen}\necho \"$ANTHROPIC_BASE_URL\" >> {seen}\n"
+                         "printf '**Tokens:** 1k / 500k\\n| Autocompact buffer | 33k | 6%% |\\n'\n")
+            os.chmod(fake, 0o755)
+            got = claude.probe([fake], ["--model", "m1", "--autocompact=500k", "-c", "--verbose", "hi"],
+                               {"ANTHROPIC_BASE_URL": "https://api.anthropic.com"})
+            with open(seen) as fh:
+                args, api = fh.read().splitlines()
+        self.assertEqual(got, (500_000, 33_000))
+        self.assertEqual(args, "-p /context --no-session-persistence --strict-mcp-config --model m1 --autocompact 500k")
+        self.assertEqual(api, claude.DEAD_API)  # whatever the run's API: nothing is billed
 
 
 if __name__ == "__main__":

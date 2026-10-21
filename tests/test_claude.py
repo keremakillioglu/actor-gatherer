@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import unittest
+from unittest import mock
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -472,7 +473,9 @@ class GatewayTest(unittest.TestCase):
             launcher = launch.ClaudeLauncher({**launch.ClaudeLauncher.defaults, "upstream": "http://127.0.0.1:4011",
                                               "system_messages": setting}, "/tmp/home")
             launcher.servers = Servers()
-            launcher.launch(SimpleNamespace(args=[], command=["claude"], env={}, gatherer="h", adaptor="", dry_run=False))
+            with mock.patch.object(launch, "probe", lambda *a: None):       # no Claude Code to ask
+                launcher.launch(SimpleNamespace(args=[], command=["claude"], env={}, gatherer="h", adaptor="",
+                                                dry_run=False))
             self.assertEqual(seen[-1].get("system_messages"), want, setting)
 
 
@@ -533,7 +536,8 @@ class LauncherTraceTest(unittest.TestCase):
                                           "upstream": "https://api.anthropic.com"}, "/tmp/home")
         launcher.servers = Servers()
         run = SimpleNamespace(args=["-p", "hi"], command=["claude"], env={}, gatherer="h", adaptor="", dry_run=False)
-        out = launcher.launch(run)
+        with mock.patch.object(launch, "probe", lambda *a: None):           # no Claude Code to ask
+            out = launcher.launch(run)
         self.assertEqual(seen["kwargs"]["trace_root"], "/tmp/tr")
         self.assertEqual(seen["kwargs"]["thread_headers"], ("x-claude-code-session-id",))
         self.assertIn("model trace: /tmp/tr", out.notes)
