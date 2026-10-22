@@ -64,6 +64,23 @@ class EventsTest(unittest.TestCase):
         for text in ("<system-reminder>x</system-reminder>", "<local-command-stdout>ok</local-command-stdout>", "  "):
             self.assertEqual(claude.classify({"role": "user", "content": [{"type": "text", "text": text}]}), CONTEXT)
 
+    def test_claude_code_s_notes_beside_the_user_s_words_are_its_own(self):
+        # as Claude Code 2.1.308 sends them (saved from a live session)
+        interrupted = {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]\n"},
+                                                   {"type": "text", "text": "Use the Bash tool to run exactly: sleep 40 && echo finished"}]}
+        self.assertEqual([e["type"] for e in claude.to_events([interrupted])], [CONTEXT, USER_MESSAGE])
+        bang = {"role": "user", "content": [{"type": "text", "text": "<bash-input>ls -la</bash-input>\n"},
+                                            {"type": "text", "text": "<bash-stdout>total 16\n-rw-r--r-- 1 sep sep 329 salaries.csv</bash-stdout>"
+                                                                     "<bash-stderr></bash-stderr>"}]}
+        self.assertEqual([e["type"] for e in claude.to_events([bang])], [USER_MESSAGE, CONTEXT])   # the command is theirs
+        sent = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": [{"type": "text", "text": "hello"}]}, bang]
+        self.assertEqual(back.to_messages(claude.to_events(sent), sent)[-1]["content"], bang["content"])   # in its order
+        stopped = {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user for tool use]"}]}
+        self.assertEqual(claude.classify(stopped), CONTEXT)
+        summary = {"role": "user", "content": [{"type": "text", "text": "This session is being continued from a previous "
+                   "conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n..."}]}
+        self.assertEqual(claude.classify(summary), CONTEXT)
+
     def test_claude_code_s_note_on_an_image_is_not_the_user_speaking(self):
         image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBOR"}}
         note = "[Image: original 1400x2400, displayed at 1167x2000. Multiply coordinates by 1.20 to map to original image.]"
