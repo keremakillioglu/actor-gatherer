@@ -131,7 +131,7 @@ class Plan(Home):
         before = self.read(path)
         code, out, err = self.run_ag("--dry-run", "--gatherer", "demo", "codex", "exec", "hi")
         self.assertEqual(code, 0, err)
-        self.assertIn('model_providers.gemini.base_url="http://127.0.0.1:4013/h/demo/v1"', out)
+        self.assertIn('model_providers.gemini.base_url="http://127.0.0.1:4013/h/demo/l/244800/v1"', out)
         self.assertIn("model_auto_compact_token_limit=1000000000000000", out)
         self.assertNotIn("AG_GATHERER", out)                                              # the URL carries it
         self.assertEqual(self.read(path), before)

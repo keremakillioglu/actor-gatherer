@@ -2,7 +2,7 @@
 calls the context manager (its setup, setup.py), for this run only. ag finds the provider codex would use
 and where it points, and overrides the one setting codex takes that provider's base_url from:
 
-    "http://127.0.0.1:<port>[/h/<gatherer>]<path>"
+    "http://127.0.0.1:<port>[/h/<gatherer>][/l/<limit>]<path>"
 
 The hook server relays to the provider's own origin, so <path> -- and everything else about the
 provider (its key, headers, wire API), the model, the codex home, its hooks and auth -- stays as it
@@ -31,10 +31,19 @@ Codex's own automatic compaction is switched off for the run (`-c model_auto_com
 condensing the history is the context manager's job, and each codex compaction re-sends the user
 messages it keeps under new ids, which the context manager stores again. A limit set in the
 arguments, the profile or config.toml stays, with a note. A manual /compact still works.
+
+Codex compacts anyway once a context passes 90% of its model's window, whatever the limit
+says (codex caps the limit there), so the run states that as its own limit (`/l/<limit>`),
+for the context manager to keep under: 90% of the window `model_context_window` sets (`-c`,
+the profile's, config.toml's), else of the model's in codex's catalog (`codex debug
+models`), else of the window codex gives a model it does not know (FALLBACK_WINDOW); a
+limit set in the arguments, the profile or config.toml, when lower. The model is `-m`/`--model`,
+else `-c model=`, the profile's, config.toml's.
 """
 
 import json
 import os
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -47,6 +56,8 @@ SETUP = "ag.integrations.harnesses.codex.setup.setup"      # codex's setup: the 
 OSS_URL = "CODEX_OSS_BASE_URL"
 COMPACT_LIMIT = "model_auto_compact_token_limit"        # the context size at which codex compacts by itself
 NO_COMPACTION = 10 ** 15                                # a limit no context reaches: codex never compacts by itself
+FALLBACK_WINDOW = 272_000                               # the window codex gives a model it does not know
+WINDOW_SHARE = 0.9                                      # codex compacts past this share of the window, whatever the limit
 
 
 def _chatgpt_login(codex_home: str) -> bool:
@@ -98,6 +109,10 @@ class Plan:
     codex_home: str
     notes: List[str] = field(default_factory=list)
     compaction_off: bool = True     # add the limit that switches codex's own automatic compaction off
+    model: Optional[str] = None     # the model, as the arguments or the config name it (None: codex's default)
+    window: Optional[int] = None    # model_context_window, when set
+    own_limit: Optional[int] = None  # model_auto_compact_token_limit, when set
+    limit: Optional[int] = None     # where codex compacts by itself (`harness_limit`), stated in the base URL
 
     @property
     def setting(self) -> str:
@@ -106,7 +121,8 @@ class Plan:
         return builtin.setting if builtin else f"model_providers.{self.provider}.base_url"
 
     def base_url(self, server_url: str, gatherer: Optional[str]) -> str:
-        return server_url + (f"/h/{gatherer}" if gatherer else "") + self.path
+        return (server_url + (f"/h/{gatherer}" if gatherer else "") + (f"/l/{self.limit}" if self.limit else "")
+                + self.path)
 
     def argv(self, command: List[str], server_url: str, gatherer: Optional[str]) -> List[str]:
         added = ["-c", f"{COMPACT_LIMIT}={NO_COMPACTION}"] if self.compaction_off else []
@@ -134,6 +150,7 @@ class Scan:
     profile: Optional[str] = None
     oss: bool = False
     local_provider: Optional[str] = None
+    model: Optional[str] = None
 
 
 def scan(args: List[str]) -> Scan:
@@ -161,6 +178,11 @@ def scan(args: List[str]) -> Scan:
             i += 1
         elif a.startswith("--local-provider="):
             found.local_provider = a[len("--local-provider="):]
+        elif a in ("-m", "--model") and i + 1 < len(args):
+            found.model = args[i + 1]
+            i += 1
+        elif a.startswith("--model="):
+            found.model = a[len("--model="):]
         elif a == "--oss":
             found.oss = True
         if raw is not None and "=" in raw:
@@ -250,8 +272,48 @@ def plan(args: List[str], settings: Dict[str, Any], env: Dict[str, str]) -> Plan
     if limit:
         notes.append(f"codex's own compaction stays on ({COMPACT_LIMIT}={limit} is set): it works against "
                      f"the context manager's")
+    model = found.model or given("model") or profile_cfg.get("model") or cfg.get("model")
+    window = given("model_context_window") or profile_cfg.get("model_context_window") or cfg.get("model_context_window")
     return Plan(provider, f"{parts.scheme}://{parts.netloc}", parts.path.rstrip("/"), args, codex_home, notes,
-                compaction_off=not limit)
+                compaction_off=not limit, model=str(model) if model else None,
+                window=window if isinstance(window, int) and window > 0 else None,
+                own_limit=limit if isinstance(limit, int) and limit > 0 else None)
+
+
+def catalog(command: List[str], env: Dict[str, str]) -> Dict[str, dict]:
+    """Codex's model catalog by slug (`codex debug models`: its refreshed catalog, else the
+    one it ships); {} when codex gives none."""
+    for extra in ([], ["--bundled"]):
+        try:
+            done = subprocess.run([*command, "debug", "models", *extra], env=env, capture_output=True, text=True,
+                                  timeout=30, stdin=subprocess.DEVNULL)
+            models = json.loads(done.stdout).get("models") if done.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+            models = None
+        if isinstance(models, list):
+            return {m["slug"]: m for m in models if isinstance(m, dict) and m.get("slug")}
+    return {}
+
+
+def harness_limit(p: Plan, models: Callable[[], Dict[str, dict]]) -> Tuple[int, str]:
+    """(where codex compacts by itself in this run, how that was found): WINDOW_SHARE of
+    the model's window -- model_context_window, capped at the catalog's max_context_window,
+    else the catalog's context_window, else FALLBACK_WINDOW -- or the run's own limit when
+    lower. `models` is asked only when the run names a model."""
+    entry = models().get(p.model or "", {}) if p.model else {}
+    if p.window:
+        top = entry.get("max_context_window")
+        window = min(p.window, top) if isinstance(top, int) and top > 0 else p.window
+        source = "model_context_window"
+    elif isinstance(entry.get("context_window"), int) and entry["context_window"] > 0:
+        window, source = entry["context_window"], f"{p.model}'s window in codex's catalog"
+    else:
+        window = FALLBACK_WINDOW
+        source = f"codex's window for {'a model it does not know' if p.model else 'its default model'}"
+    limit = int(window * WINDOW_SHARE)
+    if p.own_limit and p.own_limit < limit:
+        return p.own_limit, f"{COMPACT_LIMIT}={p.own_limit}"
+    return limit, f"{int(WINDOW_SHARE * 100)}% of {window} ({source})"
 
 
 class CodexLauncher(Launcher):
@@ -267,6 +329,8 @@ class CodexLauncher(Launcher):
         """codex, its provider pointed at the hook server -- started if none
         with its upstream is running (not in a dry run)."""
         p = plan(run.args, self.settings, run.env)
+        p.limit, how = harness_limit(p, lambda: catalog(list(run.command), {**os.environ, **run.env,
+                                                                            "CODEX_HOME": p.codex_home}))
         log_dir = os.path.expanduser(str(self.settings.get("log_dir") or ""))
         port = int(self.settings["port"])
         options = {"adaptor": run.adaptor} if run.adaptor else {}                  # the hook builds it
@@ -286,6 +350,7 @@ class CodexLauncher(Launcher):
         notes.append(f"codex provider {p.provider}: {p.base_url(server_url, run.gatherer)} -> {p.upstream}{p.path}")
         if p.compaction_off:
             notes.append(f"codex's own automatic compaction: off for the run ({COMPACT_LIMIT}={NO_COMPACTION})")
+        notes.append(f"codex's own limit: {p.limit} tokens, {how}; the context manager keeps under it")
         return Launch(p.argv(run.command, server_url, run.gatherer), p.env(run.env, server_url, run.gatherer), notes)
 
     def describe(self, env: Dict[str, str]) -> List[str]:

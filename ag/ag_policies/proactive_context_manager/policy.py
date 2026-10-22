@@ -47,6 +47,7 @@ builds and their adoption.
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -60,7 +61,7 @@ from ag.ag_policies.tools.channel import CHANNEL, channel_of
 from ag.ag_policies.tools.cwd import same_place
 from ag.ag_policies.tools.options import config_from
 from . import layout, tables
-from .config import ProactiveContextManagerConfig
+from .config import ProactiveContextManagerConfig, within_limit
 from .events import CONTEXT_STREAM, ENVIRONMENT_UPDATE, EVENT_TYPES
 
 PARALLEL_REQUEST = "parallel_request"
@@ -146,6 +147,9 @@ class ProactiveContextManager(Policy):
         self.format = format
         self.llm = llm
         self.config = config or config_from(ProactiveContextManagerConfig, options, llm)
+        # a max_context_tokens of the gatherer's own (or a whole config) wins over a harness's limit
+        self.max_given = config is not None or "max_context_tokens" in (options or {})
+        self._limited: Dict[int, ProactiveContextManagerConfig] = {}
 
     @property
     def groups(self):
@@ -172,11 +176,36 @@ class ProactiveContextManager(Policy):
 
     # ------------------------------------------------------------ read time
 
+    @contextmanager
+    def within(self, limit: Optional[int]):
+        """`self.config` as a harness's own limit makes it (`config.within_limit`), while in
+        the block: one read, or one build. Not when the gatherer sets max_context_tokens, or
+        none is stated. (The server answers one request at a time, the worker runs one job.)"""
+        saved = self.config
+        if limit and not self.max_given:
+            if limit not in self._limited:
+                try:
+                    self._limited[limit] = within_limit(saved, limit)
+                except ValueError as exc:
+                    self.log(f"the harness's limit {limit} leaves too little for the budgets ({exc}); "
+                             f"max_context_tokens={saved.max_context_tokens} kept")
+                    self._limited[limit] = saved
+            self.config = self._limited[limit]
+        try:
+            yield
+        finally:
+            self.config = saved
+
     def read(self, conn, read: Read) -> Context:
         """The context for the channel's next model call: the sectioned
         context, with the stream messages of the verbatim part shown where
         they arrived, and a notice for every environment update the
-        verbatim part refers to."""
+        verbatim part refers to. Within the harness's own limit, when the
+        call states one (`within`)."""
+        with self.within(read.limit):
+            return self.read_within(conn, read)
+
+    def read_within(self, conn, read: Read) -> Context:
         cfg, ch = self.config, channel_of(read)
         types = TypeIds.load(conn)
         rows = history.rows(conn, types, self.groups, ch)
@@ -668,7 +697,17 @@ class ProactiveContextManager(Policy):
         build (tables.py). A build started because the context was over
         max_context_tokens (reason `limit`) closes the running task at the
         last user message: what came before is finished and summarised, and
-        that message starts the running task (`limit_tasks`)."""
+        that message starts the running task (`limit_tasks`). Within the
+        limit the channel's harness stated last (`within`)."""
+        conn = self.gatherers.open(gatherer_id)
+        try:
+            last = conn.last_read(channel.of(channel_of(properties)))
+        finally:
+            conn.close()
+        with self.within((last or {}).get("limit_tokens")):
+            return self.build_within(gatherer_id, properties, build_id)
+
+    def build_within(self, gatherer_id: str, properties, build_id: int) -> Optional[dict]:
         channel_id = channel_of(properties)
         cfg, tok, groups = self.config, self.tokenizer, self.groups
         conn = self.gatherers.open(gatherer_id)

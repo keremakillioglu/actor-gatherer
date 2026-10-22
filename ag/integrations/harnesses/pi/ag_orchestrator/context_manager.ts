@@ -23,6 +23,15 @@ import { type Adaptor, CHANNEL } from "../../../tools/ag_orchestrator/adaptor.ts
 import { Measurements, n } from "../../../tools/ag_orchestrator/measured.ts";
 import { PiAdaptor } from "../adaptor/adaptor.ts";
 
+/** pi's default compaction reserve (its settings' compaction.reserveTokens): pi compacts past window - reserve. */
+export const PI_RESERVE_TOKENS = 16384;
+
+/** pi's own limit for a call with this model: where it would compact, its window less the reserve; null if unknown. */
+export function piLimit(model: any): number | null {
+	const window = n(model?.contextWindow);
+	return window > PI_RESERVE_TOKENS ? window - PI_RESERVE_TOKENS : null;
+}
+
 /** A pi assistant message's input tokens: its `usage` (pi-ai's Usage), the cache's included. */
 export function piInputTokens(m: any): number | null {
 	const u = m?.usage;
@@ -59,11 +68,11 @@ export class PiContextManager {
 		return answer;
 	}
 
-	/** The messages the model gets for this call, or null to send pi's own. */
-	async context(messages: any[], where: Where, cwd?: string): Promise<any[] | null> {
+	/** The messages the model gets for this call, or null to send pi's own; `model` is pi's current model. */
+	async context(messages: any[], where: Where, cwd?: string, model?: any): Promise<any[] | null> {
 		const channel = where.properties[CHANNEL];
 		const routed = await call_ag(this.server, { ...where, cwd }, messages, this.adaptor,
-			this.measurements.take(channel, messages));
+			this.measurements.take(channel, messages), piLimit(model));
 		this.measurements.keep(channel, routed.messages !== null ? routed.readId : undefined, messages);
 		this.answering = routed.messages !== null;
 		return routed.messages;

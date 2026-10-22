@@ -232,17 +232,19 @@ class Manager(ContextManager):
         gatherer with no database reads as empty, and is not polled."""
         return self._context(gatherer_id, row_id, properties)[0].items
 
-    def _context(self, gatherer_id: str, row_id: int, properties: Optional[dict]) -> Tuple[Context, Optional[int]]:
-        """(the policy's context, the read_id it was logged as; None: an empty context, not logged)."""
+    def _context(self, gatherer_id: str, row_id: int, properties: Optional[dict],
+                 limit: Optional[int] = None) -> Tuple[Context, Optional[int]]:
+        """(the policy's context, the read_id it was logged as; None: an empty context, not logged).
+        `limit` is the harness's own limit the call stated (`Read.limit`)."""
         if not os.path.exists(db_path(gatherer_id)):
             return Context(), None
         self.poll(gatherer_id)
         conn = self._conn(gatherer_id)
-        ctx = self.policy.read(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), row_id))
+        ctx = self.policy.read(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), row_id, limit))
         read_id = None
         if ctx.items:
             read_id = store.record_read(conn, properties, ctx.refs, manager=self.policy.name, basis=ctx.basis,
-                                        row_id=row_id, est_tokens=ctx.tokens)
+                                        row_id=row_id, est_tokens=ctx.tokens, limit_tokens=limit)
         return ctx, read_id
 
     def read_events(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None) -> List[dict]:
@@ -254,12 +256,13 @@ class Manager(ContextManager):
         out."""
         return self.read_logged(gatherer_id, row_id, properties=properties)[0]
 
-    def read_logged(self, gatherer_id: str, row_id: int, *,
-                    properties: Optional[dict] = None) -> Tuple[List[dict], Optional[int]]:
+    def read_logged(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None,
+                    limit: Optional[int] = None) -> Tuple[List[dict], Optional[int]]:
         """Not part of the interface: `read_events`, with the read_id the read
         was logged as (None: nothing returned, nothing logged) -- what the
-        provider's count of the call is later recorded against (`record_real_tokens`)."""
-        ctx, read_id = self._context(gatherer_id, row_id, properties)
+        provider's count of the call is later recorded against (`record_real_tokens`).
+        `limit` is the harness's own limit the call stated (`Read.limit`)."""
+        ctx, read_id = self._context(gatherer_id, row_id, properties, limit)
         if not ctx.items:
             return [], None
         rows = store.rows_by_id(self._conn(gatherer_id), [r.row_id for r in ctx.refs if r.row_id is not None])

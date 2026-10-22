@@ -34,10 +34,11 @@ export type Routed<M> = { messages: M[] | null; note: string; readId?: number };
 /**
  * One model call: the adaptor's `toEvents`, a `rewrite` to the server, its `toMessages`; null messages if anything
  * fails. `readId` names the read the context came from, for the call's own count to be reported against later;
- * `measured` is an earlier call's count, sent with this one.
+ * `measured` is an earlier call's count, sent with this one; `limit` the harness's own limit for this call (where
+ * it compacts, or its model's window ends), in its provider's tokens.
  */
 export async function call_ag<M>(server: Requester, where: Where, messages: M[], adaptor: Adaptor<M>,
-	measured?: Measured | null): Promise<Routed<M>> {
+	measured?: Measured | null, limit?: number | null): Promise<Routed<M>> {
 	const declared = declarations(adaptor);
 	if (where.cwd) where = { ...where, properties: { ...where.properties, [CWD]: where.cwd } };   // where the agent works
 	const unset = Object.keys(where.properties).filter((p) => !declared.properties.includes(p)).sort();
@@ -54,7 +55,10 @@ export async function call_ag<M>(server: Requester, where: Where, messages: M[],
 	if (undeclared.length) {
 		return { messages: null, note: `adaptor ${declared.name} made events of types it does not declare (${undeclared.join(", ")})` };
 	}
-	const answer = await server.request("rewrite", measured ? { ...where, events, measured } : { ...where, events });
+	const body: Record<string, unknown> = { ...where, events };
+	if (measured) body.measured = measured;
+	if (limit && limit > 0) body.limit = Math.floor(limit);
+	const answer = await server.request("rewrite", body);
 	if (answer.error) return { messages: null, note: `server: ${answer.error}` };
 	const readId = typeof answer.read_id === "number" ? answer.read_id : undefined;
 	if (!Array.isArray(answer.context)) return { messages: null, note: String(answer.note ?? "no context") };

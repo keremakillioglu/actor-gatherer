@@ -25,6 +25,13 @@ import { type Adaptor, CHANNEL } from "../../../tools/ag_orchestrator/adaptor.ts
 import { Measurements, n } from "../../../tools/ag_orchestrator/measured.ts";
 import { OpencodeAdaptor } from "../adaptor/adaptor.ts";
 
+/** opencode's own limit for a call with this model (its `limit`): the window less the output it reserves; null if unknown. */
+export function opencodeLimit(model: any): number | null {
+	const context = n(model?.limit?.context), output = n(model?.limit?.output);
+	if (!context) return null;
+	return output > 0 && output < context ? context - output : context;
+}
+
 /** An opencode assistant message's input tokens: its `info.tokens`, the cache's included. */
 export function opencodeInputTokens(m: Message): number | null {
 	const t = m?.info?.tokens;
@@ -41,6 +48,8 @@ export class OpencodeContextManager {
 	readonly adaptor: Adaptor<Message>;
 	/** Each call's count, from the tokens on opencode's next assistant message, sent with the call after. */
 	readonly measurements = new Measurements<Message>((m) => m?.info?.role === "assistant", opencodeInputTokens);
+	/** Each session's own limit, from the model opencode last named for it (`chat.params`). */
+	readonly limits = new Map<string, number>();
 
 	constructor(options: { named?: string; timeoutMs?: number; server?: Client; adaptor?: Adaptor<Message> } = {}) {
 		this.named = options.named || undefined;
@@ -60,9 +69,15 @@ export class OpencodeContextManager {
 		if (!where) return null;
 		const channel = where.properties[CHANNEL];
 		const routed = await call_ag(this.server, { ...where, cwd: directory }, messages, this.adaptor,
-			this.measurements.take(channel, messages));
+			this.measurements.take(channel, messages), this.limits.get(channel));
 		this.measurements.keep(channel, routed.messages !== null ? routed.readId : undefined, messages);
 		return routed.messages as Message[] | null;
+	}
+
+	/** Keep a session's own limit, from the model opencode names for its call (`chat.params`'s input). */
+	params(sessionID: string | undefined, model: any): void {
+		const limit = opencodeLimit(model);
+		if (sessionID && limit) this.limits.set(sessionID, limit);
 	}
 
 	/** Stop the server: it finishes what it is answering and exits. */

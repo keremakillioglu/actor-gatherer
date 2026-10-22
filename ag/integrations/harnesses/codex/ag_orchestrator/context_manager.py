@@ -130,7 +130,8 @@ class CodexContextManager:
         gatherer, channel = (request.label, thread) if request.label else (thread, thread)
         items, out = body["input"], {}
         messages, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
-                                       cwd_of(items) or self.cwd, items, self.adaptor, out=out)
+                                       cwd_of(items) or self.cwd, items, self.adaptor, out=out,
+                                       limit=getattr(request, "limit", None))
         self.log(gatherer, f"[{channel}] {note}")
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
         if messages is None or messages == items:

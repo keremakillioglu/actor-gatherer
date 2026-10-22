@@ -143,7 +143,8 @@ class ClaudeContextManager:
             adaptor = adaptor.for_channel(self.continuity.setdefault((gatherer, channel), Continuity()))
         out = {}
         new, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
-                                  cwd_of(messages) or self.cwd, messages, adaptor, out=out)
+                                  cwd_of(messages) or self.cwd, messages, adaptor, out=out,
+                                  limit=getattr(request, "limit", None))
         self.log(gatherer, f"[{channel}] {note}")
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
         if new is None or new == messages:
