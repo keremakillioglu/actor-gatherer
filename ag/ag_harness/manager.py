@@ -25,6 +25,7 @@ alike.
 """
 
 import os
+import sqlite3
 import time
 from dataclasses import replace
 from datetime import datetime
@@ -260,6 +261,36 @@ class Manager(ContextManager):
                 + sum(made[r.made_id][2] or 0 for r in ctx.refs if r.made_id in made)
                 + store.preamble_tokens(conn, preamble))
 
+    def context_only(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None,
+                     limit: Optional[int] = None, preamble: Optional[List[dict]] = None) -> Tuple[List[dict], dict]:
+        """Not part of the interface: the policy's context for `properties` in response to the event
+        `row_id`, as `read_logged` answers it, but read only -- the gatherer's state is as it was:
+        nothing polled, no read logged, no build or check started, and whatever else the policy writes
+        as it reads (its notices, a build it adopts, a step it stubs) written to a copy of the
+        database, thrown away after. For a harness's side call (a prompt suggestion) that should see
+        the context the next call would, without being one. (events, {"tokens", "budget", "basis",
+        "sent_tokens"}); ([], {}) for a gatherer with no database."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return [], {}
+        conn = self._conn(gatherer_id)
+        copy = sqlite3.connect(":memory:", check_same_thread=False)
+        try:
+            conn.backup(copy)                       # the policy reads, and writes, the copy alone
+            jobs, self.policy.jobs = getattr(self.policy, "jobs", None), None
+            try:
+                ctx = self.policy.read(Store(copy, gatherer_id, db_path(gatherer_id)),
+                                       Read(gatherer_id, dict(properties or {}), row_id, limit,
+                                            fixed_tokens=store.preamble_tokens(conn, preamble)))
+            finally:
+                self.policy.jobs = jobs
+            sizes = {"tokens": ctx.tokens, "budget": ctx.budget, "basis": ctx.basis}
+            if not ctx.items:
+                return [], sizes
+            sizes["sent_tokens"] = self.sent_tokens(copy, ctx, preamble)
+            return self.as_events(copy, ctx, made_ids=False), sizes
+        finally:
+            copy.close()
+
     def read_events(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None) -> List[dict]:
         """Not part of the interface: `read`, as events -- what the server
         answers. A stored event comes back as it was given, `{"type": its
@@ -285,17 +316,24 @@ class Manager(ContextManager):
         if not ctx.items:
             return [], None, sizes
         conn = self._conn(gatherer_id)
-        rows = store.rows_by_id(conn, [r.row_id for r in ctx.refs if r.row_id is not None])
-        made = store.made_items(conn, [r.made_id for r in ctx.refs if r.made_id is not None])
         sizes["sent_tokens"] = self.sent_tokens(conn, ctx, preamble)          # as the read log keeps it
+        return self.as_events(conn, ctx), read_id, sizes
+
+    @staticmethod
+    def as_events(conn, ctx: Context, made_ids: bool = True) -> List[dict]:
+        """A context as the server answers it: a stored event as it was given, `{"type", "id",
+        "payload"}`; the policy's own message an `ag` message, `{"type": "ag", "name", "text"}`, with
+        its `made_id` (unless `made_ids` is false: an id in a copy of the database names nothing)."""
+        rows = store.rows_by_id(conn, [r.row_id for r in ctx.refs if r.row_id is not None])
         out = []
         for item, ref in zip(ctx.items, ctx.refs):
             if ref.row_id is not None and ref.row_id in rows:
                 row = rows[ref.row_id]
                 out.append({"type": row.type.name, "id": row.event_id, "payload": row.payload})
             elif is_ag(item):
-                out.append({"type": AG, "name": item.get("name"), "text": item["text"], "made_id": ref.made_id})
-        return out, read_id, sizes
+                ag = {"type": AG, "name": item.get("name"), "text": item["text"]}
+                out.append(dict(ag, made_id=ref.made_id) if made_ids else ag)
+        return out
 
     def record_real_tokens(self, gatherer_id: str, read_id: int, tokens: int) -> bool:
         """Not part of the interface: record the provider's count of the context
