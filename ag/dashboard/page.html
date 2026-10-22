@@ -185,10 +185,11 @@ const itemType = (it) => INLINE.has(it.group) || it.name === "context" ? TYPES[5
 const EMPTY = "empty";                            // a history item with no words (a model's empty text beside its tool call)
 const typeOf = (name) => TYPES.find((t) => t[0] === name) || OTHER_TYPE;
 const HISTORY = new Set(["Recent history", "Kept from before the cut"]);
-const SHOWN_KEY = "ag-dashboard-shown-types";
-const shownTypes = (() => {                       // the reader's choice, kept in this browser; user and assistant by default
+const SHOWN_KEY = "ag-dashboard-shown-types-2";   // -2: system messages joined the defaults
+const shownTypes = (() => {                       // the reader's choice, kept in this browser; by default the
+                                                  // conversation: user, assistant, system/developer messages
   try { const v = JSON.parse(localStorage.getItem(SHOWN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
-  return new Set(["user_message", "agent_message"]);
+  return new Set(["user_message", "agent_message", "system"]);
 })();
 function toggleType(type) {
   if (shownTypes.has(type)) shownTypes.delete(type); else shownTypes.add(type);
