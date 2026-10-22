@@ -1,13 +1,15 @@
 # Builds the project site (mkdocs.yml: docs/, rendered with docs_build/theme/) on every pull request,
-# and deploys it to GitHub Pages on every push to main. The site's source is on main; there is
-# no gh-pages branch to edit. Pages is set to deploy from GitHub Actions.
+# as a check, and deploys it to GitHub Pages when a GitHub release is published -- with the PyPI
+# package (publish.yml), so the site describes the version people install -- or when run by hand
+# (Actions -> Site -> Run workflow). A merge into main does not change the site. The site's source
+# is on main; there is no gh-pages branch to edit. Pages is set to deploy from GitHub Actions.
 
 name: Site
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -32,7 +34,7 @@ jobs:
           path: site
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     permissions:
