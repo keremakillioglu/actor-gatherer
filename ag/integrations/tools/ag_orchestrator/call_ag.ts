@@ -28,6 +28,8 @@ export type Where = { gatherer: string; properties: Record<string, string | numb
 export type Requester = { request(op: string, body?: Record<string, unknown>): Promise<Answer> };
 /** The provider's count of an earlier call's context: the read it came from, and the call's input tokens. */
 export type Measured = { read_id: number; tokens: number };
+/** What a harness sends besides its messages: its system prompt, its tool definitions, by name. */
+export type Preamble = { name: string; text: string }[];
 /** `readId` is set only when the read's context is what goes to the model. */
 export type Routed<M> = { messages: M[] | null; note: string; readId?: number };
 
@@ -35,10 +37,11 @@ export type Routed<M> = { messages: M[] | null; note: string; readId?: number };
  * One model call: the adaptor's `toEvents`, a `rewrite` to the server, its `toMessages`; null messages if anything
  * fails. `readId` names the read the context came from, for the call's own count to be reported against later;
  * `measured` is an earlier call's count, sent with this one; `limit` the harness's own limit for this call (where
- * it compacts, or its model's window ends), in its provider's tokens.
+ * it compacts, or its model's window ends), in its provider's tokens; `preamble` what it sends besides its
+ * messages, kept with the read.
  */
 export async function call_ag<M>(server: Requester, where: Where, messages: M[], adaptor: Adaptor<M>,
-	measured?: Measured | null, limit?: number | null): Promise<Routed<M>> {
+	measured?: Measured | null, limit?: number | null, preamble?: Preamble | null): Promise<Routed<M>> {
 	const declared = declarations(adaptor);
 	if (where.cwd) where = { ...where, properties: { ...where.properties, [CWD]: where.cwd } };   // where the agent works
 	const unset = Object.keys(where.properties).filter((p) => !declared.properties.includes(p)).sort();
@@ -58,6 +61,8 @@ export async function call_ag<M>(server: Requester, where: Where, messages: M[],
 	const body: Record<string, unknown> = { ...where, events };
 	if (measured) body.measured = measured;
 	if (limit && limit > 0) body.limit = Math.floor(limit);
+	const parts = (preamble || []).filter((p) => p && p.name && typeof p.text === "string" && p.text.trim());
+	if (parts.length) body.preamble = parts;
 	const answer = await server.request("rewrite", body);
 	if (answer.error) return { messages: null, note: `server: ${answer.error}` };
 	const readId = typeof answer.read_id === "number" ? answer.read_id : undefined;

@@ -48,6 +48,14 @@ async function server(input: { directory: string }, options?: Record<string, unk
 			cfg.compaction = { ...cfg.compaction, auto: false, prune: false };
 		},
 
+		"experimental.chat.system.transform": async (input: { sessionID?: string }, output: { system: string[] }) => {
+			ag.system(input.sessionID, output.system); // the system prompt, for this session's calls
+		},
+
+		"tool.definition": async (input: { toolID: string }, output: { description: string; parameters: unknown }) => {
+			ag.tool(input.toolID, output); // each tool's definition, as opencode sends it
+		},
+
 		"chat.params": async (params: { sessionID?: string; model?: unknown }) => {
 			ag.params(params.sessionID, params.model); // the model's limit, for this session's calls
 		},

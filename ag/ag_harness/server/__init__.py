@@ -39,21 +39,42 @@ carries them, and its read is made with them -- {name: value}, the names the
 policy's event types declare (e.g. {"channel": <the harness's thread>});
 none: {}. `cwd` is the working directory the gatherer's pollers look at.
 
-    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?}
-        -> {"context": [...] or null, "note", "read_id"}   one model call: insert, then read
+    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?, "preamble"?}
+        -> {"context": [...] or null, "note", "read_id", "tokens", "budget", "sent_tokens", "basis"}
+                                                one model call: insert, then read
                                                 in response to the last event; null: send
                                                 your own. `read_id` names the read, for
                                                 `measured`; a `measured` given here is
                                                 recorded before the read. `limit` is the
                                                 harness's own limit for the call (where it
                                                 compacts, or its window ends), in its
-                                                provider's tokens; the policy keeps under it
+                                                provider's tokens; the policy keeps under it.
+                                                `preamble`, [{"name", "text"}], is what the
+                                                harness sends besides its messages (its system
+                                                prompt, its tool definitions), kept with the read.
+                                                `tokens` is the context's size by the policy's
+                                                count, `budget` the size it keeps it under (null:
+                                                none), `sent_tokens` all the call sends by that
+                                                count (every item, and the preamble), `basis`
+                                                what it was built from (null: the history as it
+                                                is); an `ag` item carries its `made_id`. A harness
+                                                that counts the context exactly before sending
+                                                it, and finds it over `budget`, reports that
+                                                count (`measured`) and asks again
     {"op": "measured", "gatherer", "read_id", "tokens"} -> {"recorded": bool}
                                                 the provider's count of read `read_id`'s
                                                 context: the call's input tokens, cached
-                                                ones included, reported after the call
+                                                ones included, reported after the call (or
+                                                counted exactly before it)
+    {"op": "counted", "gatherer", "properties", "counts"?: {event_id: n}, "made"?: {made_id: n},
+     "preamble_counts"?: [{"name", "text", "tokens"}]} -> {"events", "made", "preamble"}
+                                                sizes the model's provider counted after the
+                                                fact (a harness that can ask it), in place of
+                                                the tokenizer's: of the events with these ids
+                                                (and properties), the made items, the preamble
+                                                parts. How many of each were found
     {"op": "insert", "gatherer", "properties", "events"} -> {"rows": [row id or null, ...], "last"}
-    {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?} -> {"context": [...], "read_id"}
+    {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens", "basis"}
     {"op": "locate", "gatherer", "properties", "event_id"} -> {"row"}      (`id` is the request's own)
     {"op": "init", "gatherer", "event_types"?: [TYPE]} -> {"event_types": [TYPE with its id]}
     {"op": "event_types", "gatherer"} -> {"event_types": [...]}
@@ -129,6 +150,33 @@ def properties_of(request: dict) -> Dict[str, Any]:
 def limit_of(value) -> Optional[int]:
     """A harness's stated limit: a positive int, else None (none stated)."""
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def preamble_of(value) -> Optional[List[dict]]:
+    """A harness's stated preamble: the [{"name", "text"}] whose name and text are non-empty
+    strings; None for none."""
+    if not isinstance(value, list):
+        return None
+    out = [{"name": p["name"], "text": p["text"]} for p in value
+           if isinstance(p, dict) and isinstance(p.get("name"), str) and p["name"] and isinstance(p.get("text"), str) and p["text"]]
+    return out or None
+
+
+def counted_of(request) -> Optional[tuple]:
+    """(events {id: tokens}, made {made_id: tokens}, preamble [(name, text, tokens)]) from a
+    `counted` request, what is not a whole number of tokens left out; None if it holds none."""
+    def size(v):
+        return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+    events = {k: v for k, v in (request.get("counts") or {}).items() if isinstance(k, str) and size(v)} \
+        if isinstance(request.get("counts"), dict) else {}
+    made = {}
+    for k, v in (request.get("made") or {}).items() if isinstance(request.get("made"), dict) else ():
+        if str(k).isdigit() and size(v):
+            made[int(k)] = v
+    preamble = [(p["name"], p["text"], p["tokens"]) for p in request.get("preamble_counts") or ()
+                if isinstance(p, dict) and isinstance(p.get("name"), str) and isinstance(p.get("text"), str)
+                and size(p.get("tokens"))]
+    return (events, made, preamble) if events or made or preamble else None
 
 
 def measured_of(value) -> Optional[dict]:
@@ -217,14 +265,19 @@ class Server:
         return {"rows": rows, "last": last}
 
     def read(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], row: int, manager=None,
-             limit: Optional[int] = None) -> dict:
+             limit: Optional[int] = None, preamble: Optional[List[dict]] = None) -> dict:
         manager = self.with_pollers(manager or self.manager(gatherer), gatherer, cwd)
-        context, read_id = manager.read_logged(gatherer, row, properties=properties, limit=limit)
-        return {"context": context, "read_id": read_id}
+        context, read_id, sizes = manager.read_logged(gatherer, row, properties=properties, limit=limit,
+                                                      preamble=preamble)
+        return {"context": context, "read_id": read_id, **sizes}
 
     def measured(self, gatherer: str, read_id: int, tokens: int) -> dict:
         """Record the provider's count of the context read `read_id` returned."""
         return {"recorded": self.manager(gatherer).record_real_tokens(gatherer, read_id, tokens)}
+
+    def counted(self, gatherer: str, properties: Dict[str, Any], events: dict, made: dict, preamble: list) -> dict:
+        """Record sizes the model's provider counted after the fact, in place of the tokenizer's."""
+        return self.manager(gatherer).record_counts(gatherer, properties, events, made, preamble)
 
     def locate(self, gatherer: str, properties: Dict[str, Any], event_id: str) -> dict:
         return {"row": self.manager(gatherer).locate(gatherer, event_id, properties=properties)}
@@ -244,7 +297,8 @@ class Server:
     # ---- one model call
 
     def rewrite(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], events: list,
-                measured: Optional[dict] = None, limit: Optional[int] = None) -> dict:
+                measured: Optional[dict] = None, limit: Optional[int] = None,
+                preamble: Optional[List[dict]] = None) -> dict:
         """Insert `events`, then read in response to the last. `measured`,
         {"read_id", "tokens"}, is the provider's count of an earlier read's
         context, recorded first, so this read sees it. Never raises: a
@@ -267,7 +321,7 @@ class Server:
             self.log(gatherer, prefix + note)
             return {"context": None, "note": note}
         try:
-            answer = self.read(gatherer, properties, cwd, last, manager, limit)
+            answer = self.read(gatherer, properties, cwd, last, manager, limit, preamble)
         except Exception as exc:  # noqa: BLE001
             note = f"read failed: {exc!r}; messages unchanged"
             self.log(gatherer, prefix + note)
@@ -276,7 +330,8 @@ class Server:
         ags = sum(1 for e in context if e.get("type") == "ag")
         note = f"{len(events)} events in (event {last}), {len(context)} out ({ags} ag)"
         self.log(gatherer, prefix + note)
-        return {"context": context, "note": note, "read_id": answer["read_id"]}
+        return {"context": context, "note": note, "read_id": answer["read_id"],
+                **{k: answer.get(k) for k in ("tokens", "budget", "sent_tokens", "basis")}}
 
     def open(self, gatherer: str, properties: Dict[str, Any]) -> dict:
         self.manager(gatherer)
@@ -297,12 +352,17 @@ class Server:
             if not isinstance(events, list):
                 return {"context": None, "note": "no events; messages unchanged"}
             return self.rewrite(gatherer, properties, cwd, events, measured_of(request.get("measured")),
-                                limit_of(request.get("limit")))
+                                limit_of(request.get("limit")), preamble_of(request.get("preamble")))
         if op == "measured":
             measured = measured_of(request)
             if measured is None:
                 return {"error": "no read_id and tokens"}
             return self.measured(gatherer, measured["read_id"], measured["tokens"])
+        if op == "counted":
+            sizes = counted_of(request)
+            if sizes is None:
+                return {"error": "no counts"}
+            return self.counted(gatherer, properties, *sizes)
         if op == "insert":
             if not isinstance(events, list):
                 return {"error": "no events"}

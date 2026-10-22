@@ -19,7 +19,7 @@
  */
 
 import { AgClient } from "../../../tools/ag_connection/ag_client.ts";
-import { type Requester, call_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
+import { type Preamble, type Requester, call_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
 import type { Message } from "../adaptor/to_events.ts";
 import { type Adaptor, CHANNEL } from "../../../tools/ag_orchestrator/adaptor.ts";
 import { Measurements, n } from "../../../tools/ag_orchestrator/measured.ts";
@@ -50,6 +50,9 @@ export class OpencodeContextManager {
 	readonly measurements = new Measurements<Message>((m) => m?.info?.role === "assistant", opencodeInputTokens);
 	/** Each session's own limit, from the model opencode last named for it (`chat.params`). */
 	readonly limits = new Map<string, number>();
+	/** What opencode sends besides the messages: each session's system prompt, every tool's definition. */
+	readonly systems = new Map<string, string>();
+	readonly tools = new Map<string, { description: string; parameters: unknown }>();
 
 	constructor(options: { named?: string; timeoutMs?: number; server?: Client; adaptor?: Adaptor<Message> } = {}) {
 		this.named = options.named || undefined;
@@ -69,7 +72,7 @@ export class OpencodeContextManager {
 		if (!where) return null;
 		const channel = where.properties[CHANNEL];
 		const routed = await call_ag(this.server, { ...where, cwd: directory }, messages, this.adaptor,
-			this.measurements.take(channel, messages), this.limits.get(channel));
+			this.measurements.take(channel, messages), this.limits.get(channel), this.preamble(channel));
 		this.measurements.keep(channel, routed.messages !== null ? routed.readId : undefined, messages);
 		return routed.messages as Message[] | null;
 	}
@@ -78,6 +81,22 @@ export class OpencodeContextManager {
 	params(sessionID: string | undefined, model: any): void {
 		const limit = opencodeLimit(model);
 		if (sessionID && limit) this.limits.set(sessionID, limit);
+	}
+
+	/** Keep a session's system prompt (`experimental.chat.system.transform`'s output). */
+	system(sessionID: string | undefined, parts: string[]): void {
+		if (sessionID && parts.length) this.systems.set(sessionID, parts.join("\n\n"));
+	}
+
+	/** Keep a tool's definition (`tool.definition`'s output). */
+	tool(toolID: string, definition: { description: string; parameters: unknown }): void {
+		if (toolID) this.tools.set(toolID, { description: definition.description, parameters: definition.parameters });
+	}
+
+	/** What this session's calls send besides the messages, as known so far. */
+	preamble(sessionID: string): Preamble {
+		const tools = [...this.tools].sort(([a], [b]) => a.localeCompare(b)).map(([name, d]) => ({ name, ...d }));
+		return [{ name: "system", text: this.systems.get(sessionID) || "" }, { name: "tools", text: tools.length ? JSON.stringify(tools) : "" }];
 	}
 
 	/** Stop the server: it finishes what it is answering and exits. */

@@ -26,7 +26,22 @@ The `system` prompt, `tools`, `thinking` and the rest of the request go through 
 them: only `messages` is the context manager's. Options: `adaptor` (module:Class), `cwd`, `factory`,
 `path`, as the codex hook takes them; `system_messages`: how the adaptor sends system messages back
 (ClaudeAdaptor), "keep" or "user" for every request, or "auto" (the default): "user" for a Gemini
-model (whose gateway moves system messages into its system instruction), else "keep".
+model (whose gateway moves system messages into its system instruction), else "keep"; `count`:
+"on" (the default), "check" or "off" -- see Counting.
+
+Counting (counting.py). ag's own count of a context is not Claude's: Claude's tokenizer makes about
+half as many tokens again of the same text, and the thinking Claude Code sends back (encrypted) is
+counted by the API but not by ag. With `count` "on", once each call is sent, what it holds that is
+not counted yet -- its new steps, its thinking, ag's items, the system prompt and tools -- is
+counted by the API's /v1/messages/count_tokens, at the request's own upstream with its own
+credentials, in the background, and the counts set in place of ag's (the server's `counted`): the
+policy then sizes contexts in Claude's tokens. And before a call is sent ("on" or "check"): once
+ag's count of all the call sends reaches COUNT_FROM of the policy's budget, the request is counted
+exactly (about 0.1 s); a count over the budget is reported as the read's size (`measured`) and the
+context read again, so the policy, seeing it, switches to a build or makes one. Under a build, the
+thinking from before the switch is not sent (counting.py says why). Tool search itself, a server
+tool, cannot be counted and is left out (the count then differs from the call's by a few dozen
+tokens); an upstream that cannot count is not asked again.
 """
 
 import copy
@@ -40,13 +55,15 @@ from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
 from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load_adaptor
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, report_measured
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, preamble_of, report_measured
 from ..adaptor.adaptor import ClaudeAdaptor
 from ..adaptor.to_events import Continuity, blocks_of
+from .counting import Counter, countable  # noqa: F401 - countable: this module's before counting.py
 
 CWD = re.compile(r"Primary working directory:\s*(\S+)")
 SESSION_HEADER = "x-claude-code-session-id"
 AGENT_HEADER = "x-claude-code-agent-id"           # set on a subagent's calls only
+COUNT_FROM = 0.5            # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
 def is_model_call(method: str, path: str, body) -> bool:
@@ -105,12 +122,14 @@ class ClaudeContextManager:
         adaptor: the adaptor, or its class as "module:Class"; Claude Code's own by default.
         system_messages: "auto" (by the request's model: Gemini "user", any other "keep"), "keep" or
             "user" -- the adaptor's setting for a request (see ClaudeAdaptor).
+        count: "on" (a context near its budget counted before it is sent, and every call's new
+            events after it is), "check" (only the first), or "off".
         log: (gatherer, line) -> None, for what each model call came to.
     """
 
     def __init__(self, cwd: Optional[str] = None, factory: Optional[str] = None, path: Optional[str] = None,
                  ag_clients: Optional[AgClients] = None, log: Callable[[str, str], None] = _print,
-                 adaptor: Union[Adaptor, str, None] = None, system_messages: str = "auto"):
+                 adaptor: Union[Adaptor, str, None] = None, system_messages: str = "auto", count: str = "on"):
         args = (["--factory", factory] if factory else []) + \
             [x for p in (path.split(os.pathsep) if path else []) for x in ("--path", p)]
         self.ag_clients = ag_clients or AgClients(lambda gatherer: AgClient("claude", args=args))
@@ -119,6 +138,10 @@ class ClaudeContextManager:
         if system_messages not in ("auto", "keep", "user"):
             raise ValueError(f"system_messages: {system_messages!r}, not auto, keep or user")
         self.system_messages = system_messages
+        if count not in ("on", "check", "off"):
+            raise ValueError(f"count: {count!r}, not on, check or off")
+        self.counter = Counter(enabled=count != "off", log=log)
+        self.count_events = count == "on"
         self.adaptors = {}                                  # one per mode: requests run concurrently
         self.continuity = {}                                # (gatherer, channel) -> its Continuity (to_events.py)
         for mode in ("keep", "user"):
@@ -141,12 +164,33 @@ class ClaudeContextManager:
         adaptor = self.adaptors[mode]
         if isinstance(adaptor, ClaudeAdaptor):                    # its ids carry on from the channel's last call
             adaptor = adaptor.for_channel(self.continuity.setdefault((gatherer, channel), Continuity()))
-        out = {}
-        new, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
-                                  cwd_of(messages) or self.cwd, messages, adaptor, out=out,
-                                  limit=getattr(request, "limit", None))
-        self.log(gatherer, f"[{channel}] {note}")
+        client = self.ag_clients.client(gatherer)
+
+        async def read():
+            out = {}
+            new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd_of(messages) or self.cwd,
+                                      messages, adaptor, out=out, limit=getattr(request, "limit", None),
+                                      preamble=preamble_of({"system": body.get("system"), "tools": body.get("tools")}))
+            self.log(gatherer, f"[{channel}] {note}")
+            return new, out
+
+        new, out = await read()
+        size, budget = out.get("sent_tokens"), out.get("budget")      # all of it, as the provider counts
+        if "read_id" in out and budget and size is not None and size >= COUNT_FROM * budget:
+            counted = await self.counter.exact(request, dict(body, messages=messages if new is None else new))
+            if counted is not None and counted > budget:
+                self.log(gatherer, f"[{channel}] counted {counted} tokens before sending (ag's count {size}), "
+                                   f"over the budget {budget}: read again")
+                await client.request("measured", {"gatherer": gatherer, "read_id": out["read_id"], "tokens": counted})
+                again, out_again = await read()
+                if "read_id" in out_again:
+                    new, out = again, out_again
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
+        if new is not None and "read_id" in out:
+            new = self.counter.fresh_thinking(gatherer, channel, out.get("basis"), new)
+        sent = messages if new is None else new
+        if self.count_events and "read_id" in out:
+            self.counter.start(request, client, gatherer, {CHANNEL: channel}, body, messages, sent, out)
         if new is None or new == messages:
             return None                                   # nothing to change: Claude Code's own bytes go through
         return dict(body, messages=new)
@@ -156,5 +200,6 @@ class ClaudeContextManager:
         await report_measured(self.ag_clients, request, tokens)
 
     async def close(self) -> None:
-        """Stop every gatherer's server."""
+        """Let counts still being taken finish, then stop every gatherer's server."""
+        await self.counter.close()
         await self.ag_clients.close()

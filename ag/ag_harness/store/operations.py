@@ -13,6 +13,7 @@ back (`rows`): `match`, what a read with those properties sees -- the value,
 or unset -- and `differ`, set to anything else.
 """
 
+import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass, field
@@ -396,17 +397,19 @@ def made_items(conn: sqlite3.Connection, made_ids) -> dict:
 
 def record_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], refs, *,
                 manager: str, basis: Optional[str] = None, row_id: Optional[int] = None,
-                est_tokens: Optional[int] = None, limit_tokens: Optional[int] = None) -> int:
+                est_tokens: Optional[int] = None, limit_tokens: Optional[int] = None,
+                preamble_ids: Optional[List[int]] = None) -> int:
     """Log one read: a `_reads` row (with its properties, `row_id`, the
     event it responded to, `est_tokens`, the context's size by the
     manager's count, and `limit_tokens`, the harness's own limit the call
-    stated), and a `_read_items` row per item it returned, in order.
-    Returns the read_id."""
+    stated, and `preamble_ids`, the _preambles it sent besides its messages), and a
+    `_read_items` row per item it returned, in order. Returns the read_id."""
     names, values = _given(conn, properties, "a read")
+    preamble = json.dumps(list(preamble_ids)) if preamble_ids else None
     with conn:
-        cur = conn.execute(f"INSERT INTO _reads (read_at, row_id, manager, basis, est_tokens, limit_tokens"
-                           f"{_columns(names)}) VALUES (?, ?, ?, ?, ?, ?{', ?' * len(names)})",
-                           (_now(), row_id, manager, basis, est_tokens, limit_tokens, *values))
+        cur = conn.execute(f"INSERT INTO _reads (read_at, row_id, manager, basis, est_tokens, limit_tokens, preamble_json"
+                           f"{_columns(names)}) VALUES (?, ?, ?, ?, ?, ?, ?{', ?' * len(names)})",
+                           (_now(), row_id, manager, basis, est_tokens, limit_tokens, preamble, *values))
         read_id = cur.lastrowid
         conn.executemany("INSERT INTO _read_items (read_id, position, row_id, made_id) VALUES (?, ?, ?, ?)",
                          [(read_id, i, r.row_id, r.made_id) for i, r in enumerate(refs)])
@@ -431,6 +434,51 @@ def last_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = N
         "SELECT row_id, made_id FROM _read_items WHERE read_id = ? ORDER BY position", (row[0],))]
     return {"read_id": row[0], "read_at": row[1], "row_id": row[2], "manager": row[3], "basis": row[4],
             "est_tokens": row[5], "real_tokens": row[6], "limit_tokens": row[7], "refs": refs}
+
+
+def record_preamble(conn: sqlite3.Connection, name: str, text: str, tokenizer) -> int:
+    """The id of a harness's preamble part `name` (its system prompt, its tools...) with
+    this `text`: stored the first time, found after -- each distinct text once."""
+    sha = hashlib.sha256(f"{name}\u0000{text}".encode("utf-8")).hexdigest()
+    with conn:
+        conn.execute("INSERT OR IGNORE INTO _preambles (name, sha, text, tokens) VALUES (?, ?, ?, ?)",
+                     (name, sha, text, tokenizer.count(text)))
+    return conn.execute("SELECT preamble_id FROM _preambles WHERE sha = ?", (sha,)).fetchone()[0]
+
+
+def record_counts(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], events: Dict[str, int],
+                  made: Dict[int, int], preamble: List[tuple]) -> Dict[str, int]:
+    """Set sizes the model's provider counted, after the fact, in place of the tokenizer's: of the
+    events with these ids (and `properties`), of the made items with these ids, and of the preamble
+    parts (name, text, tokens). Each is marked `counted`. How many of each were found."""
+    names = [n for n in property_names(conn) if properties and n in properties]
+    where = "".join(f" AND {property_column(n)} = ?" for n in names)
+    values = [properties[n] for n in names]
+    found = {"events": 0, "made": 0, "preamble": 0}
+    with conn:
+        for event_id, tokens in events.items():
+            cur = conn.execute(f"UPDATE events SET tokens = ?, counted = 1 WHERE event_id = ?{where}",
+                               (tokens, event_id, *values))
+            found["events"] += cur.rowcount
+        for made_id, tokens in made.items():
+            cur = conn.execute("UPDATE _made_items SET tokens = ?, counted = 1 WHERE made_id = ?", (tokens, made_id))
+            found["made"] += cur.rowcount
+        for name, text, tokens in preamble:
+            sha = hashlib.sha256(f"{name}\u0000{text}".encode("utf-8")).hexdigest()
+            cur = conn.execute("UPDATE _preambles SET tokens = ?, counted = 1 WHERE sha = ?", (tokens, sha))
+            found["preamble"] += cur.rowcount
+    return found
+
+
+def preamble_tokens(conn: sqlite3.Connection, parts) -> int:
+    """The size of a call's preamble parts ({"name", "text"}) as stored: the provider's count where it
+    was set (`record_counts`), else the tokenizer's taken when the part was first stored."""
+    total = 0
+    for p in parts or ():
+        sha = hashlib.sha256(f"{p['name']}\u0000{p['text']}".encode("utf-8")).hexdigest()
+        row = conn.execute("SELECT tokens FROM _preambles WHERE sha = ?", (sha,)).fetchone()
+        total += (row[0] or 0) if row else 0
+    return total
 
 
 def record_real_tokens(conn: sqlite3.Connection, read_id: int, tokens: int) -> bool:

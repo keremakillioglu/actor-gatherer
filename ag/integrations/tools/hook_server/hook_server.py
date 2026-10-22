@@ -32,7 +32,9 @@ is the call's input tokens as the answer reports them, cached ones included
 `request` is the one it was given, with whatever it kept in `request.state`
 (only a request it kept something on is measured). A URL starting
 `/h/<label>/` gives the hook that label (the prefix is stripped before
-forwarding): what the label means is the hook's to decide.
+forwarding): what the label means is the hook's to decide. `request.upstream` is
+where the request goes (its path after it), for a hook that asks the same
+endpoint something first, with the request's own headers.
 With `--log-dir`, each request the hook changed is written there as
 NNNN.json: its body before and after, then the status and duration. With
 `--trace-root`, every model call -- as the model got it, and its answer -- is
@@ -72,6 +74,7 @@ class Request:
     headers: dict = field(default_factory=dict)
     body: Any = None                            # the JSON body, or None if it is not JSON
     limit: Optional[int] = None                 # the <n> of /l/<n>/..., if the URL had one
+    upstream: Optional[str] = None              # where the request is forwarded (path_qs after it)
     state: dict = field(default_factory=dict)   # the hook's own, kept until its `measured` for this request
 
 
@@ -132,7 +135,8 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
             body = json.loads(raw) if raw else None
         except ValueError:
             body = None                                    # not JSON (e.g. compressed): as it is
-        given = Request(request.method, path_qs.split("?", 1)[0], label, dict(request.headers), body, limit)
+        given = Request(request.method, path_qs.split("?", 1)[0], label, dict(request.headers), body, limit,
+                        upstream=upstream)
         try:
             new = await _call(hook, given)
         except Exception as exc:  # noqa: BLE001 - a failing hook never blocks the call

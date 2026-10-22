@@ -28,6 +28,7 @@ unchanged. A URL that starts with `/h/<label>/` hands the hook that label, which
 hooks use as the gatherer.
 """
 
+import json
 from typing import Any, Dict, Optional, Tuple
 
 from .adaptor import CWD, Adaptor
@@ -35,13 +36,19 @@ from .adaptor import CWD, Adaptor
 
 async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], messages: list,
                   adaptor: Adaptor, out: Optional[dict] = None,
-                  measured: Optional[dict] = None, limit: Optional[int] = None) -> Tuple[Optional[list], str]:
+                  measured: Optional[dict] = None, limit: Optional[int] = None,
+                  preamble: Optional[list] = None) -> Tuple[Optional[list], str]:
     """(the messages the model gets, or None to send the harness's own; a
     note): the adaptor's `to_events`, a `rewrite` to the server, its `to_messages`.
     `out`, when given, gets the read's `read_id` (what the provider's count of
-    this call is reported against, `measured`); `measured`, {"read_id",
+    this call is reported against, `measured`), and its `tokens`, `budget` and
+    `sent_tokens` by the policy's count and its `basis` (the server's `rewrite`), the
+    `events` sent, and the context manager's own items as [(made_id, text)] (`ag_items`);
+    `measured`, {"read_id",
     "tokens"}, is an earlier call's count, sent with this one; `limit` the
-    harness's own limit for this call (where it compacts, or its window ends)."""
+    harness's own limit for this call (where it compacts, or its window ends); `preamble`,
+    [{"name", "text"}], what the harness sends besides its messages (its system prompt,
+    its tool definitions), kept with the read."""
     if cwd:
         properties = {**properties, CWD: cwd}                     # where the agent works
     unset = sorted(set(properties) - set(adaptor.properties))
@@ -61,6 +68,8 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
         body["measured"] = measured
     if limit:
         body["limit"] = limit
+    if preamble:
+        body["preamble"] = preamble
     answer = await client.request("rewrite", body)
     if not isinstance(answer, dict) or answer.get("error"):
         why = answer.get("error") if isinstance(answer, dict) else repr(answer)
@@ -78,10 +87,34 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
         return None, f"could not make messages: {exc!r}; request unchanged"
     if out is not None and isinstance(answer.get("read_id"), int):
         out["read_id"] = answer["read_id"]                # the read's context is what is sent
+        out.update({k: answer[k] for k in ("tokens", "budget", "sent_tokens") if isinstance(answer.get(k), int)})
+        out["basis"] = answer.get("basis")
+        out["events"] = events
+        out["ag_items"] = [(e.get("made_id"), e.get("text")) for e in context
+                           if isinstance(e, dict) and e.get("type") == "ag" and isinstance(e.get("made_id"), int)]
     return routed, note
 
 
 READ = "ag_read"      # a proxy hook's key in the hook server's `request.state`: (gatherer, read_id)
+
+
+def preamble_of(parts) -> list:
+    """[{"name", "text"}] from a request's parts besides its messages, {name: value}: a string
+    as it is, a list of text blocks (Anthropic's `system`) joined, anything else (`tools`) as
+    JSON with sorted keys -- the same definitions give the same text, stored once."""
+    out = []
+    for name, value in parts.items():
+        if isinstance(value, str):
+            text = value
+        elif isinstance(value, list) and value and all(isinstance(b, dict) and isinstance(b.get("text"), str) for b in value):
+            text = "\n\n".join(b["text"] for b in value)
+        elif value:
+            text = json.dumps(value, sort_keys=True, ensure_ascii=False)
+        else:
+            text = ""
+        if text.strip():
+            out.append({"name": name, "text": text})
+    return out
 
 
 def keep_read(request, gatherer: str, out: dict) -> None:
