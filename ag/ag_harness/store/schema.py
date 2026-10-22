@@ -66,8 +66,10 @@ CREATE TABLE IF NOT EXISTS events (
     tokens      INTEGER NOT NULL,   -- the caller's count if it gave one, else the
                                     -- tokenizer's count of `text` (of payload_json
                                     -- without one), taken at insert
-    text        TEXT                -- the event's readable text, as the caller gave it:
+    text        TEXT,               -- the event's readable text, as the caller gave it:
                                     -- what a policy shows and counts of it. NULL: none
+    counted     INTEGER             -- 1: `tokens` is the model's provider's count, set after
+                                    -- insert (`record_counts`); NULL: the caller's or the tokenizer's
                                     -- given; its payload as JSON stands in
                                     -- (then a p_<name> column per property: add_properties)
 );
@@ -90,7 +92,8 @@ CREATE TABLE IF NOT EXISTS _made_items (
     name        TEXT,               -- what it is, in the manager's terms
     source      TEXT,               -- what made it, in the manager's terms (e.g. a build)
     item_json   TEXT    NOT NULL,   -- the item, exactly as returned by read
-    tokens      INTEGER             -- its size, by the manager's tokenizer
+    tokens      INTEGER,            -- its size, by the manager's tokenizer (or, `counted`, the provider's)
+    counted     INTEGER             -- 1: `tokens` is the provider's count (`record_counts`)
 );
 
 -- One row per read: what the manager returned as the context, when, and in
@@ -118,7 +121,8 @@ CREATE TABLE IF NOT EXISTS _preambles (
     name        TEXT    NOT NULL,   -- what it is, as the harness names it: "instructions", "tools", ...
     sha         TEXT    NOT NULL UNIQUE,   -- of the name and the text
     text        TEXT    NOT NULL,
-    tokens      INTEGER             -- its size, by the manager's tokenizer
+    tokens      INTEGER,            -- its size, by the manager's tokenizer (or, `counted`, the provider's)
+    counted     INTEGER             -- 1: `tokens` is the provider's count (`record_counts`)
 );
 
 -- What each read returned, in order: a stored event (row_id) or a made item
@@ -166,6 +170,9 @@ def create(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     if "text" not in {c[1] for c in conn.execute("PRAGMA table_info(events)")}:
         conn.execute("ALTER TABLE events ADD COLUMN text TEXT")      # a file from before events had text
+    for table in ("events", "_made_items", "_preambles"):            # a file from before counts were set
+        if "counted" not in {c[1] for c in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN counted INTEGER")
     read_columns = {c[1] for c in conn.execute("PRAGMA table_info(_reads)")}
     for column, kind in (("est_tokens", "INTEGER"), ("real_tokens", "INTEGER"), ("limit_tokens", "INTEGER"),
                          ("preamble_json", "TEXT")):                 # a file from before reads had them

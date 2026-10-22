@@ -78,6 +78,7 @@ class CountTest(unittest.IsolatedAsyncioTestCase):
         await self.upstream.close()
 
     def hook(self, client, **options):
+        options.setdefault("count", "check")                # the check alone: no counting after the call
         return claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda gatherer: client), log=lambda g, l: None,
                                               **options)
 

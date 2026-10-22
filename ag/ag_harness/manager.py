@@ -264,13 +264,13 @@ class Manager(ContextManager):
         """Not part of the interface: `read_events`, with the read_id the read
         was logged as (None: nothing returned, nothing logged) -- what the
         provider's count of the call is later recorded against (`record_real_tokens`) --
-        and its sizes by the policy's count: {"tokens", "budget"} (`Context`: what the
-        policy budgets, and its budget), and "sent_tokens", all the call sends -- every
+        and its sizes by the policy's count: {"tokens", "budget", "basis"} (`Context`: what the
+        policy budgets, its budget, and what it was built from), and "sent_tokens", all the call sends -- every
         item and the preamble -- as the provider counts it too. `limit` is the harness's
         own limit the call stated (`Read.limit`); `preamble`, what it sends besides its
         messages ([{name, text}])."""
         ctx, read_id = self._context(gatherer_id, row_id, properties, limit, preamble)
-        sizes = {"tokens": ctx.tokens, "budget": ctx.budget}
+        sizes = {"tokens": ctx.tokens, "budget": ctx.budget, "basis": ctx.basis}
         if not ctx.items:
             return [], None, sizes
         conn = self._conn(gatherer_id)
@@ -278,14 +278,14 @@ class Manager(ContextManager):
         made = store.made_items(conn, [r.made_id for r in ctx.refs if r.made_id is not None])
         sizes["sent_tokens"] = (sum(rows[r.row_id].tokens or 0 for r in ctx.refs if r.row_id in rows)
                                 + sum(made[r.made_id][2] or 0 for r in ctx.refs if r.made_id in made)
-                                + sum(self.tokenizer.count(p["text"]) for p in preamble or ()))
+                                + store.preamble_tokens(conn, preamble))
         out = []
         for item, ref in zip(ctx.items, ctx.refs):
             if ref.row_id is not None and ref.row_id in rows:
                 row = rows[ref.row_id]
                 out.append({"type": row.type.name, "id": row.event_id, "payload": row.payload})
             elif is_ag(item):
-                out.append({"type": AG, "name": item.get("name"), "text": item["text"]})
+                out.append({"type": AG, "name": item.get("name"), "text": item["text"], "made_id": ref.made_id})
         return out, read_id, sizes
 
     def record_real_tokens(self, gatherer_id: str, read_id: int, tokens: int) -> bool:
@@ -296,6 +296,15 @@ class Manager(ContextManager):
         if not os.path.exists(db_path(gatherer_id)):
             return False
         return store.record_real_tokens(self._conn(gatherer_id), read_id, tokens)
+
+    def record_counts(self, gatherer_id: str, properties: Optional[dict], events: dict, made: dict,
+                      preamble: list) -> dict:
+        """Not part of the interface: sizes the model's provider counted after the fact -- of
+        events by id, made items by id, preamble parts (name, text, tokens) -- in place of the
+        tokenizer's (`store.record_counts`): what the policy then sizes contexts by."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return {"events": 0, "made": 0, "preamble": 0}
+        return store.record_counts(self._conn(gatherer_id), properties, events, made, preamble)
 
     def bulk_load(self, gatherer_id: str, events, *, properties: Optional[dict] = None):
         """Not part of the interface: store a whole recorded history in one

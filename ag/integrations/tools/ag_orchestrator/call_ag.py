@@ -42,7 +42,9 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     note): the adaptor's `to_events`, a `rewrite` to the server, its `to_messages`.
     `out`, when given, gets the read's `read_id` (what the provider's count of
     this call is reported against, `measured`), and its `tokens`, `budget` and
-    `sent_tokens` by the policy's count (the server's `rewrite`); `measured`, {"read_id",
+    `sent_tokens` by the policy's count and its `basis` (the server's `rewrite`), the
+    `events` sent, and the context manager's own items as [(made_id, text)] (`ag_items`);
+    `measured`, {"read_id",
     "tokens"}, is an earlier call's count, sent with this one; `limit` the
     harness's own limit for this call (where it compacts, or its window ends); `preamble`,
     [{"name", "text"}], what the harness sends besides its messages (its system prompt,
@@ -86,6 +88,10 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     if out is not None and isinstance(answer.get("read_id"), int):
         out["read_id"] = answer["read_id"]                # the read's context is what is sent
         out.update({k: answer[k] for k in ("tokens", "budget", "sent_tokens") if isinstance(answer.get(k), int)})
+        out["basis"] = answer.get("basis")
+        out["events"] = events
+        out["ag_items"] = [(e.get("made_id"), e.get("text")) for e in context
+                           if isinstance(e, dict) and e.get("type") == "ag" and isinstance(e.get("made_id"), int)]
     return routed, note
 
 

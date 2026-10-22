@@ -27,17 +27,21 @@ them: only `messages` is the context manager's. Options: `adaptor` (module:Class
 `path`, as the codex hook takes them; `system_messages`: how the adaptor sends system messages back
 (ClaudeAdaptor), "keep" or "user" for every request, or "auto" (the default): "user" for a Gemini
 model (whose gateway moves system messages into its system instruction), else "keep"; `count`:
-"on" (the default) or "off", whether contexts near the budget are counted before they are sent.
+"on" (the default), "check" or "off" -- see Counting.
 
-Counting. ag's own count of a context is not Claude's: Claude's tokenizer makes about half as many
-tokens again of the same text, and the thinking Claude Code sends back (encrypted) is counted by
-the API but not by ag. Once ag's count of all a call sends -- every message, with Claude Code's own
-notes, system prompt and tools -- reaches COUNT_FROM of the policy's budget, the context is counted exactly before it is sent: the API's /v1/messages/count_tokens, asked at the
-request's own upstream with the request's own credentials (about 0.1 s). A count over the budget is
-reported as the read's size (`measured`) and the context read again, so the policy, seeing it,
-switches to a build or makes one. Tool search itself, a server tool, cannot be counted and is left
-out (the count then differs from the call's by a few dozen tokens); an upstream that cannot count
-is not asked again.
+Counting (counting.py). ag's own count of a context is not Claude's: Claude's tokenizer makes about
+half as many tokens again of the same text, and the thinking Claude Code sends back (encrypted) is
+counted by the API but not by ag. With `count` "on", once each call is sent, what it holds that is
+not counted yet -- its new steps, its thinking, ag's items, the system prompt and tools -- is
+counted by the API's /v1/messages/count_tokens, at the request's own upstream with its own
+credentials, in the background, and the counts set in place of ag's (the server's `counted`): the
+policy then sizes contexts in Claude's tokens. And before a call is sent ("on" or "check"): once
+ag's count of all the call sends reaches COUNT_FROM of the policy's budget, the request is counted
+exactly (about 0.1 s); a count over the budget is reported as the read's size (`measured`) and the
+context read again, so the policy, seeing it, switches to a build or makes one. Under a build, the
+thinking from before the switch is not sent (counting.py says why). Tool search itself, a server
+tool, cannot be counted and is left out (the count then differs from the call's by a few dozen
+tokens); an upstream that cannot count is not asked again.
 """
 
 import copy
@@ -54,15 +58,12 @@ from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, preamble_of, report_measured
 from ..adaptor.adaptor import ClaudeAdaptor
 from ..adaptor.to_events import Continuity, blocks_of
+from .counting import Counter, countable  # noqa: F401 - countable: this module's before counting.py
 
 CWD = re.compile(r"Primary working directory:\s*(\S+)")
 SESSION_HEADER = "x-claude-code-session-id"
 AGENT_HEADER = "x-claude-code-agent-id"           # set on a subagent's calls only
 COUNT_FROM = 0.5            # of the budget, by the policy's count: from there a context is counted before it is sent
-COUNT_SECONDS = 5.0
-COUNTED = ("model", "messages", "system", "tools", "tool_choice", "thinking")      # what count_tokens takes
-CREDENTIALS = ("authorization", "x-api-key", "anthropic-version", "anthropic-beta")
-CANNOT_COUNT = (404, 405, 501)               # the upstream has no count_tokens: not asked again
 
 
 def is_model_call(method: str, path: str, body) -> bool:
@@ -107,20 +108,6 @@ def cwd_of(messages: list) -> Optional[str]:
     return found
 
 
-def countable(body: dict) -> dict:
-    """What count_tokens takes of a Messages request: its model, messages, system prompt, thinking,
-    and its tools but the server tools it refuses (tool search itself). Deferred tools stay: once tool
-    search has loaded one, the history refers to it, and a count without it is refused."""
-    out = {k: body[k] for k in COUNTED if k in body}
-    tools = [t for t in out.get("tools") or () if isinstance(t, dict) and t.get("type") in (None, "custom")]
-    if tools:
-        out["tools"] = tools
-    else:
-        out.pop("tools", None)
-        out.pop("tool_choice", None)
-    return out
-
-
 def _print(gatherer: str, line: str) -> None:
     print(f"[{gatherer}] {line}", flush=True)
 
@@ -135,7 +122,8 @@ class ClaudeContextManager:
         adaptor: the adaptor, or its class as "module:Class"; Claude Code's own by default.
         system_messages: "auto" (by the request's model: Gemini "user", any other "keep"), "keep" or
             "user" -- the adaptor's setting for a request (see ClaudeAdaptor).
-        count: "on" or "off": whether a context near its budget is counted before it is sent.
+        count: "on" (a context near its budget counted before it is sent, and every call's new
+            events after it is), "check" (only the first), or "off".
         log: (gatherer, line) -> None, for what each model call came to.
     """
 
@@ -150,10 +138,10 @@ class ClaudeContextManager:
         if system_messages not in ("auto", "keep", "user"):
             raise ValueError(f"system_messages: {system_messages!r}, not auto, keep or user")
         self.system_messages = system_messages
-        if count not in ("on", "off"):
-            raise ValueError(f"count: {count!r}, not on or off")
-        self.counting = count == "on"
-        self.uncountable = set()                            # upstreams with no count_tokens
+        if count not in ("on", "check", "off"):
+            raise ValueError(f"count: {count!r}, not on, check or off")
+        self.counter = Counter(enabled=count != "off", log=log)
+        self.count_events = count == "on"
         self.adaptors = {}                                  # one per mode: requests run concurrently
         self.continuity = {}                                # (gatherer, channel) -> its Continuity (to_events.py)
         for mode in ("keep", "user"):
@@ -189,7 +177,7 @@ class ClaudeContextManager:
         new, out = await read()
         size, budget = out.get("sent_tokens"), out.get("budget")      # all of it, as the provider counts
         if "read_id" in out and budget and size is not None and size >= COUNT_FROM * budget:
-            counted = await self.count(request, dict(body, messages=messages if new is None else new))
+            counted = await self.counter.exact(request, dict(body, messages=messages if new is None else new))
             if counted is not None and counted > budget:
                 self.log(gatherer, f"[{channel}] counted {counted} tokens before sending (ag's count {size}), "
                                    f"over the budget {budget}: read again")
@@ -198,38 +186,20 @@ class ClaudeContextManager:
                 if "read_id" in out_again:
                     new, out = again, out_again
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
+        if new is not None and "read_id" in out:
+            new = self.counter.fresh_thinking(gatherer, channel, out.get("basis"), new)
+        sent = messages if new is None else new
+        if self.count_events and "read_id" in out:
+            self.counter.start(request, client, gatherer, {CHANNEL: channel}, body, messages, sent, out)
         if new is None or new == messages:
             return None                                   # nothing to change: Claude Code's own bytes go through
         return dict(body, messages=new)
-
-    async def count(self, request, body: dict) -> Optional[int]:
-        """The request's context counted exactly, by its upstream's /v1/messages/count_tokens with its
-        own credentials; None if it cannot be (counting off, no upstream, an error)."""
-        upstream = getattr(request, "upstream", None)
-        if not self.counting or not upstream or upstream in self.uncountable:
-            return None
-        url = upstream.rstrip("/") + request.path.rstrip("/") + "/count_tokens"
-        headers = {k: v for k, v in (request.headers or {}).items() if k.lower() in CREDENTIALS}
-        headers["content-type"] = "application/json"
-        from aiohttp import ClientError, ClientSession, ClientTimeout     # the hook server's own: it runs there
-        try:
-            async with ClientSession(timeout=ClientTimeout(total=COUNT_SECONDS)) as session:
-                async with session.post(url, json=countable(body), headers=headers) as resp:
-                    if resp.status in CANNOT_COUNT:
-                        self.uncountable.add(upstream)
-                        print(f"{upstream} cannot count tokens ({resp.status}); not asked again", file=sys.stderr, flush=True)
-                        return None
-                    answer = await resp.json(content_type=None) if resp.status == 200 else None
-        except (ClientError, OSError, ValueError, TimeoutError) as exc:
-            print(f"counting tokens failed: {exc!r}", file=sys.stderr, flush=True)
-            return None
-        tokens = answer.get("input_tokens") if isinstance(answer, dict) else None
-        return tokens if isinstance(tokens, int) and tokens > 0 else None
 
     async def measured(self, request, tokens: Optional[int]) -> None:
         """The hook server's report, once the answer is back: the call's input tokens, to the read."""
         await report_measured(self.ag_clients, request, tokens)
 
     async def close(self) -> None:
-        """Stop every gatherer's server."""
+        """Let counts still being taken finish, then stop every gatherer's server."""
+        await self.counter.close()
         await self.ag_clients.close()

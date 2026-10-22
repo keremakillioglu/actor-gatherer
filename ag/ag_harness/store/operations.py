@@ -446,6 +446,41 @@ def record_preamble(conn: sqlite3.Connection, name: str, text: str, tokenizer) -
     return conn.execute("SELECT preamble_id FROM _preambles WHERE sha = ?", (sha,)).fetchone()[0]
 
 
+def record_counts(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], events: Dict[str, int],
+                  made: Dict[int, int], preamble: List[tuple]) -> Dict[str, int]:
+    """Set sizes the model's provider counted, after the fact, in place of the tokenizer's: of the
+    events with these ids (and `properties`), of the made items with these ids, and of the preamble
+    parts (name, text, tokens). Each is marked `counted`. How many of each were found."""
+    names = [n for n in property_names(conn) if properties and n in properties]
+    where = "".join(f" AND {property_column(n)} = ?" for n in names)
+    values = [properties[n] for n in names]
+    found = {"events": 0, "made": 0, "preamble": 0}
+    with conn:
+        for event_id, tokens in events.items():
+            cur = conn.execute(f"UPDATE events SET tokens = ?, counted = 1 WHERE event_id = ?{where}",
+                               (tokens, event_id, *values))
+            found["events"] += cur.rowcount
+        for made_id, tokens in made.items():
+            cur = conn.execute("UPDATE _made_items SET tokens = ?, counted = 1 WHERE made_id = ?", (tokens, made_id))
+            found["made"] += cur.rowcount
+        for name, text, tokens in preamble:
+            sha = hashlib.sha256(f"{name}\u0000{text}".encode("utf-8")).hexdigest()
+            cur = conn.execute("UPDATE _preambles SET tokens = ?, counted = 1 WHERE sha = ?", (tokens, sha))
+            found["preamble"] += cur.rowcount
+    return found
+
+
+def preamble_tokens(conn: sqlite3.Connection, parts) -> int:
+    """The size of a call's preamble parts ({"name", "text"}) as stored: the provider's count where it
+    was set (`record_counts`), else the tokenizer's taken when the part was first stored."""
+    total = 0
+    for p in parts or ():
+        sha = hashlib.sha256(f"{p['name']}\u0000{p['text']}".encode("utf-8")).hexdigest()
+        row = conn.execute("SELECT tokens FROM _preambles WHERE sha = ?", (sha,)).fetchone()
+        total += (row[0] or 0) if row else 0
+    return total
+
+
 def record_real_tokens(conn: sqlite3.Connection, read_id: int, tokens: int) -> bool:
     """Set read `read_id`'s `real_tokens`: the size of the context it
     returned as the model's provider counted it (the call's input tokens,
