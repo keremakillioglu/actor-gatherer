@@ -105,6 +105,9 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .task > summary:hover { background: var(--wash); }
 .task[open] > summary { background: var(--selected); }
 .task .tname { font-weight: 500; }
+.task .badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px;
+  padding: 0 7px; margin-right: 6px; line-height: 16px; vertical-align: 1px; }
+.task .tnote { display: block; color: var(--muted); margin-top: 2px; }
 .task .n, .tasks .thead .n { text-align: right; font-variant-numeric: tabular-nums; }
 .task .messages { padding: 4px 0 10px 44px; }
 @media (max-width: 760px) { .tasks .thead { display: none; } .task > summary { grid-template-columns: 24px minmax(0, 1fr); }
@@ -714,22 +717,29 @@ async function loadHistory(first, last) {
 }
 function historyCard(tasks) {
   const card = el("section", { class: "card" }, el("h3", { text: "Complete history" }),
-    el("div", { class: "desc", text: "The agent's whole history as ag has segmented it into tasks, oldest first, then its raw messages since the last task. "
-      + "Click one to see its messages." }));
+    el("div", { class: "desc", text: "The agent's whole history as ag has segmented it into tasks, oldest first; the last is the current task, "
+      + "from its first message to now. Click one to see its messages." }));
   card.append(typeChips(null));
+  // ag's last task is the one running when it last segmented the history -- where its cut falls, not a
+  // finished task: shown as the current task, from its first message to now
   const last = tasks.length ? tasks[tasks.length - 1] : null;
-  const entries = [...tasks.map((t) => ({ ...t, key: `task-${t.index}` })),
-    { key: "task-recent", index: "", name: "Recent raw messages", recent: true, first_row: last ? (last.last_row ?? 0) + 1 : 1, last_row: null,
-      description: tasks.length ? "Everything since ag last segmented the history: no task covers it yet." : "No task yet: the whole history, as it happened." }];
+  const entries = [...tasks.slice(0, -1).map((t) => ({ ...t, key: `task-${t.index}` })),
+    last ? { ...last, key: "task-current", current: true, last_row: null,
+      note: "Still running when ag last segmented the history: its messages from then to now." }
+      : { key: "task-current", index: "", name: "The whole history", current: true, first_row: 1, last_row: null,
+        note: "No task yet: ag has not segmented the history.", description: "" }];
   const list = el("div", { class: "tasks" }, el("div", { class: "thead" },
     ...["#", "Task", "What it was", "Started", "Took", "Message tokens"].map((h, i) => el("span", { class: i === 0 || i === 5 ? "n" : "", text: h,
       title: i === 5 ? "ag's count of the task's user and assistant messages: its tool calls and outputs are not in it" : null }))));
   for (const t of entries) {
     const body = el("div", { class: "messages" });
     const row = el("details", { class: "task", id: t.key },
-      el("summary", {}, el("span", { class: "n", text: t.index }), el("span", { class: "tname", text: t.name || "–" }),
-        el("span", { class: "desc-cell", text: t.description || "" }), el("span", { text: t.recent ? "" : clock(t.started, true) }),
-        el("span", { text: t.recent ? "" : span(t.started, t.ended) }), el("span", { class: "n", text: t.recent ? "" : full(t.tokens) })),
+      el("summary", {}, el("span", { class: "n", text: t.index }),
+        el("span", { class: "tname" }, ...(t.current ? [el("span", { class: "badge", text: "Current" })] : []), t.name || "–"),
+        el("span", { class: "desc-cell" }, t.description || "", ...(t.note ? [el("span", { class: "tnote", text: t.note })] : [])),
+        el("span", { text: t.started ? clock(t.started, true) : "" }),
+        el("span", { text: t.current ? (t.started ? "running" : "") : span(t.started, t.ended) }),
+        el("span", { class: "n", text: t.current ? "" : full(t.tokens) })),
       body);
     row.addEventListener("toggle", async () => {
       if (!row.open) return;
