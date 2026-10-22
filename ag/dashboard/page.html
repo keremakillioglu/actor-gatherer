@@ -176,8 +176,12 @@ const span = (a, b) => {
 // The agent's own events by type, as the context card colors and filters them; fixed order, fixed colors.
 const TYPES = [["user_message", "User", "var(--s7)"], ["agent_message", "Assistant", "var(--s1)"],
   ["tool_call", "Tool call", "var(--s4)"], ["tool_output", "Tool output", "var(--s3)"],
-  ["agent_reasoning", "Reasoning", "var(--s5)"], ["context", "Context", "var(--s8)"]];
+  ["agent_reasoning", "Reasoning", "var(--s5)"], ["system", "System / developer", "var(--s8)"]];
 const OTHER_TYPE = ["other", "Other", "var(--muted)"];
+// ag's own messages placed among the history -- shown in it, as system/developer messages, with the
+// harness's own (its `context` events: instructions, environment notes)
+const INLINE = new Set(["File-change notices", "Other agents' requests", "Stream messages"]);
+const itemType = (it) => INLINE.has(it.group) || it.name === "context" ? TYPES[5] : typeOf(it.name);
 const EMPTY = "empty";                            // a history item with no words (a model's empty text beside its tool call)
 const typeOf = (name) => TYPES.find((t) => t[0] === name) || OTHER_TYPE;
 const HISTORY = new Set(["Recent history", "Kept from before the cut"]);
@@ -514,10 +518,10 @@ function contextCard() {
   card.append(el("div", { class: "desc", text: `Everything the latest call sent (read ${ctx.read_id}, ${clock(ctx.at, true)}), in the order the model got it: `
     + `${full(ctx.items.length)} items, ${full(ctx.tokens)} tokens by ag's own count${real}.`
     + (ctx.cut ? ` Built from build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet: the whole history, verbatim.") }));
-  const history = ctx.items.filter((i) => HISTORY.has(i.group));
+  const history = ctx.items.filter((i) => HISTORY.has(i.group) || INLINE.has(i.group));
   if (history.length) {                              // which of the agent's own events to list, by type
     const counts = {};
-    for (const i of history) { const t = typeOf(i.name)[0]; counts[t] = (counts[t] || 0) + 1; }
+    for (const i of history) { const t = itemType(i)[0]; counts[t] = (counts[t] || 0) + 1; }
     const empty = history.filter((i) => !i.text.trim()).length;
     const row = el("div", { class: "filters", role: "group", "aria-label": "Message types shown in the history" },
       el("span", { class: "label", text: "History shows" }));
@@ -539,12 +543,14 @@ function contextCard() {
       el("span", { text: `${r.items} item${r.items > 1 ? "s" : ""} · ${full(r.tokens)} tokens${hidden ? ` · ${hidden} not shown` : ""}` }));
   };
   for (const it of ctx.items) {                      // one block per run of the same kind, in order
-    if (!run || run.group !== it.group) {
-      run = { group: it.group, items: 0, shown: 0, tokens: 0, head: el("div", { class: "run" }) };
+    // ag's messages among the history belong to the run they sit in (the recent history, before any)
+    const group = INLINE.has(it.group) ? (run && HISTORY.has(run.group) ? run.group : "Recent history") : it.group;
+    if (!run || run.group !== group) {
+      run = { group, items: 0, shown: 0, tokens: 0, head: el("div", { class: "run" }) };
       list.append(run.head);
     }
     run.items++; run.tokens += it.tokens;
-    const listed = !HISTORY.has(it.group) || (shownTypes.has(typeOf(it.name)[0]) && (it.text.trim() || shownTypes.has(EMPTY)));
+    const listed = !HISTORY.has(group) || (shownTypes.has(itemType(it)[0]) && (it.text.trim() || shownTypes.has(EMPTY)));
     if (listed) { run.shown++; list.append(contextItem(it)); }
     head(run);
   }
@@ -554,7 +560,7 @@ function contextCard() {
 function contextItem(it) {
   const preview = it.text.replace(/\s+/g, " ").slice(0, 220);
   const row = el("details", { class: "item" },
-    el("summary", {}, el("span", { class: "bar-key", style: `background:${HISTORY.has(it.group) ? typeOf(it.name)[2] : color(it.group)}` }),
+    el("summary", {}, el("span", { class: "bar-key", style: `background:${HISTORY.has(it.group) || INLINE.has(it.group) ? itemType(it)[2] : color(it.group)}` }),
       el("span", { class: "mono kind", text: it.name }), el("span", { class: "preview" + (preview ? "" : " none"), text: preview || "(empty)" }),
       el("span", { class: "n", text: full(it.tokens) })));
   row.addEventListener("toggle", () => {             // the whole text, only once asked for
