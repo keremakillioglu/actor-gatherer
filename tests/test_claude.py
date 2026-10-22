@@ -64,6 +64,22 @@ class EventsTest(unittest.TestCase):
         for text in ("<system-reminder>x</system-reminder>", "<local-command-stdout>ok</local-command-stdout>", "  "):
             self.assertEqual(claude.classify({"role": "user", "content": [{"type": "text", "text": text}]}), CONTEXT)
 
+    def test_claude_code_s_note_on_an_image_is_not_the_user_speaking(self):
+        image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBOR"}}
+        note = "[Image: original 1400x2400, displayed at 1167x2000. Multiply coordinates by 1.20 to map to original image.]"
+        read = [{"role": "user", "content": "check the screenshot"},
+                {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_9", "name": "Read",
+                                                   "input": {"file_path": "/tmp/shot.png"}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_9", "content": [image]},
+                                             {"type": "text", "text": note}]}]
+        types = [e["type"] for e in claude.to_events(read)]
+        self.assertEqual(types, [USER_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT])     # the user spoke once
+        for text in ("[Image could not be processed: too large]", "[Image left out: it did not fit in the tool output limit]",
+                     "[Document removed: this model does not accept whole PDF documents.]"):
+            self.assertEqual(claude.classify({"role": "user", "content": [{"type": "text", "text": text}]}), CONTEXT)
+        pasted = {"role": "user", "content": [{"type": "text", "text": "[Image #1] why is this button grey?"}]}
+        self.assertEqual(claude.classify(pasted), USER_MESSAGE)                       # the user's own words
+
     def test_ids_do_not_move_with_cache_control(self):
         a = claude.to_events(first_turn(cache=True))
         b = claude.to_events(first_turn(cache=False))
