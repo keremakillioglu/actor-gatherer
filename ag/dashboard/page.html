@@ -9,7 +9,7 @@
   color-scheme: light;
   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --selected: rgba(42,120,214,0.10);
 }
 @media (prefers-color-scheme: dark) {
@@ -17,14 +17,14 @@
     color-scheme: dark;
     --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --selected: rgba(57,135,229,0.16);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --selected: rgba(57,135,229,0.16);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -96,6 +96,13 @@ tr.total td { font-weight: 600; border-bottom: 0; }
 .stack div:first-child { border-radius: 4px 0 0 4px; } .stack div:last-child { border-radius: 0 4px 4px 0; }
 .stack div:only-child { border-radius: 4px; }
 details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-top: 8px; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 10px; }
+.filters .label { color: var(--muted); font-size: 12px; margin-right: 4px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; color: var(--ink-2); }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.chip[aria-pressed="false"] { color: var(--muted); background: none; }
+.chip[aria-pressed="false"] .dot { opacity: .35; }
+.chip[aria-pressed="true"] { background: var(--selected); border-color: transparent; color: var(--ink); }
 .ctx { max-height: 520px; overflow-y: auto; border-top: 1px solid var(--grid); }
 .ctx .run { display: flex; align-items: center; gap: 8px; padding: 10px 4px 4px; font-size: 12px; position: sticky; top: 0; background: var(--surface); z-index: 1; }
 .ctx .run span:last-child { color: var(--muted); }
@@ -166,6 +173,24 @@ const span = (a, b) => {
   const s = Math.max(0, b - a);
   return s < 60 ? `${s.toFixed(0)}s` : s < 3600 ? `${(s / 60).toFixed(1)}m` : `${(s / 3600).toFixed(1)}h`;
 };
+// The agent's own events by type, as the context card colors and filters them; fixed order, fixed colors.
+const TYPES = [["user_message", "User", "var(--s7)"], ["agent_message", "Assistant", "var(--s1)"],
+  ["tool_call", "Tool call", "var(--s4)"], ["tool_output", "Tool output", "var(--s3)"],
+  ["agent_reasoning", "Reasoning", "var(--s5)"], ["context", "Context", "var(--s8)"]];
+const OTHER_TYPE = ["other", "Other", "var(--muted)"];
+const EMPTY = "empty";                            // a history item with no words (a model's empty text beside its tool call)
+const typeOf = (name) => TYPES.find((t) => t[0] === name) || OTHER_TYPE;
+const HISTORY = new Set(["Recent history", "Kept from before the cut"]);
+const SHOWN_KEY = "ag-dashboard-shown-types";
+const shownTypes = (() => {                       // the reader's choice, kept in this browser; user and assistant by default
+  try { const v = JSON.parse(localStorage.getItem(SHOWN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  return new Set(["user_message", "agent_message"]);
+})();
+function toggleType(type) {
+  if (shownTypes.has(type)) shownTypes.delete(type); else shownTypes.add(type);
+  try { localStorage.setItem(SHOWN_KEY, JSON.stringify([...shownTypes])); } catch (e) { /* kept for this page only */ }
+  keepingPlace(renderMain);
+}
 const color = (group) => `var(--s${(GROUP_ORDER.indexOf(group) + 1) || 6})`;
 const short = (id) => id && id.length > 18 ? id.slice(0, 8) + "…" + id.slice(-6) : (id || "(none)");
 const base = (p) => p ? p.replace(/\/+$/, "").split("/").pop() : "";
@@ -489,19 +514,39 @@ function contextCard() {
   card.append(el("div", { class: "desc", text: `Everything the latest call sent (read ${ctx.read_id}, ${clock(ctx.at, true)}), in the order the model got it: `
     + `${full(ctx.items.length)} items, ${full(ctx.tokens)} tokens by ag's own count${real}.`
     + (ctx.cut ? ` Built from build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet: the whole history, verbatim.") }));
-  const groups = [...new Set(ctx.items.map((i) => i.group))].sort((x, y) => GROUP_ORDER.indexOf(x) - GROUP_ORDER.indexOf(y));
-  card.append(legend(groups.map((g) => ({ label: g, color: color(g), kind: "rect" }))));
+  const history = ctx.items.filter((i) => HISTORY.has(i.group));
+  if (history.length) {                              // which of the agent's own events to list, by type
+    const counts = {};
+    for (const i of history) { const t = typeOf(i.name)[0]; counts[t] = (counts[t] || 0) + 1; }
+    const empty = history.filter((i) => !i.text.trim()).length;
+    const row = el("div", { class: "filters", role: "group", "aria-label": "Message types shown in the history" },
+      el("span", { class: "label", text: "History shows" }));
+    for (const [type, label, swatch] of [...TYPES, OTHER_TYPE]) {
+      if (!counts[type]) continue;
+      const on = shownTypes.has(type);
+      row.append(el("button", { type: "button", class: "chip", "aria-pressed": on ? "true" : "false", onclick: () => toggleType(type) },
+        el("span", { class: "dot", style: `background:${swatch}` }), `${label} ${counts[type]}`));
+    }
+    if (empty) row.append(el("button", { type: "button", class: "chip", "aria-pressed": shownTypes.has(EMPTY) ? "true" : "false",
+      onclick: () => toggleType(EMPTY) }, `Empty ${empty}`));
+    card.append(row);
+  }
   const list = el("div", { class: "ctx tall", "data-keep": "context" });
   let run = null;
+  const head = (r) => {
+    const hidden = r.items - r.shown;
+    r.head.replaceChildren(el("span", { class: "key-rect", style: `background:${color(r.group)}` }), el("strong", { text: r.group }),
+      el("span", { text: `${r.items} item${r.items > 1 ? "s" : ""} · ${full(r.tokens)} tokens${hidden ? ` · ${hidden} not shown` : ""}` }));
+  };
   for (const it of ctx.items) {                      // one block per run of the same kind, in order
     if (!run || run.group !== it.group) {
-      run = { group: it.group, items: 0, tokens: 0, head: el("div", { class: "run" }) };
+      run = { group: it.group, items: 0, shown: 0, tokens: 0, head: el("div", { class: "run" }) };
       list.append(run.head);
     }
     run.items++; run.tokens += it.tokens;
-    run.head.replaceChildren(el("span", { class: "key-rect", style: `background:${color(run.group)}` }),
-      el("strong", { text: run.group }), el("span", { text: `${run.items} item${run.items > 1 ? "s" : ""} · ${full(run.tokens)} tokens` }));
-    list.append(contextItem(it));
+    const listed = !HISTORY.has(it.group) || (shownTypes.has(typeOf(it.name)[0]) && (it.text.trim() || shownTypes.has(EMPTY)));
+    if (listed) { run.shown++; list.append(contextItem(it)); }
+    head(run);
   }
   card.append(list);
   return card;
@@ -509,7 +554,7 @@ function contextCard() {
 function contextItem(it) {
   const preview = it.text.replace(/\s+/g, " ").slice(0, 220);
   const row = el("details", { class: "item" },
-    el("summary", {}, el("span", { class: "bar-key", style: `background:${color(it.group)}` }),
+    el("summary", {}, el("span", { class: "bar-key", style: `background:${HISTORY.has(it.group) ? typeOf(it.name)[2] : color(it.group)}` }),
       el("span", { class: "mono kind", text: it.name }), el("span", { class: "preview" + (preview ? "" : " none"), text: preview || "(empty)" }),
       el("span", { class: "n", text: full(it.tokens) })));
   row.addEventListener("toggle", () => {             // the whole text, only once asked for
