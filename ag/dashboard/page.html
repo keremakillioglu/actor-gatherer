@@ -150,6 +150,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .ctx .kind { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ctx .preview { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ctx .preview.none { color: var(--muted); }
+.ctx .uncounted { font-size: 12px; color: var(--muted); padding: 4px 4px 10px 17px; }
 .ctx .n { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .ctx pre { margin: 0; padding: 10px 12px 12px 17px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
   overflow-wrap: anywhere; color: var(--ink-2); background: var(--page); border-bottom: 1px solid var(--grid); max-height: 360px; overflow-y: auto; }
@@ -176,7 +177,8 @@ const POLL_MS = 5000;
 // What the page calls each kind the data names (data.py's group names stay as they are).
 const LABELS = { "ag's sections": "Summarized history", "Recent history": "Recent raw history", "Other agents' requests": "Other actors' requests" };
 const label = (group) => LABELS[group] || group;
-const GROUP_ORDER = ["Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages"];
+const PREAMBLE = "Harness preamble", NOT_COUNTED = "Not counted by ag";
+const GROUP_ORDER = [PREAMBLE, "Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages", NOT_COUNTED];
 let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, timer: null,
   tab: (() => { try { return localStorage.getItem("ag-dashboard-tab") === "gatherer" ? "gatherer" : "actor"; } catch (e) { return "actor"; } })() };
 
@@ -241,7 +243,8 @@ function toggleType(type) {
   try { localStorage.setItem(SHOWN_KEY, JSON.stringify([...shownTypes])); } catch (e) { /* kept for this page only */ }
   keepingPlace(renderMain);
 }
-const color = (group) => `var(--s${(GROUP_ORDER.indexOf(group) + 1) || 6})`;
+const GROUP_COLORS = { [PREAMBLE]: "var(--s8)", [NOT_COUNTED]: "var(--axis)" };
+const color = (group) => GROUP_COLORS[group] || `var(--s${GROUP_ORDER.indexOf(group) || 6})`;
 const short = (id) => id && id.length > 18 ? id.slice(0, 8) + "…" + id.slice(-6) : (id || "(none)");
 const base = (p) => p ? p.replace(/\/+$/, "").split("/").pop() : "";
 const usd = (v) => v === null || v === undefined ? "–" : v > 0 && v < 0.01 ? "<$0.01" : "$" + v.toFixed(2);
@@ -566,11 +569,14 @@ function contextCard() {
     return card;
   }
   const real = typeof ctx.real_tokens === "number" ? ` · the provider counted ${full(ctx.real_tokens)}` : "";
+  const pre = (ctx.preamble || []).reduce((n, p) => n + p.tokens, 0);
   card.append(el("div", { class: "desc", text: `Everything ${latest ? "the latest call" : "this call"} sent (read ${ctx.read_id}, ${clock(ctx.at, true)}), in the order the model got it: `
-    + `${full(ctx.items.length)} items, ${full(ctx.tokens)} tokens by ag's own count${real}.`
+    + (pre ? `the harness's preamble (${full(pre)} tokens), then ` : "") + `${full(ctx.items.length)} items, ${full(ctx.tokens)} tokens by ag's own count${real}.`
     + (ctx.cut ? ` Built from build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet: the whole history, verbatim.")
     + (latest ? " Click the size chart to see an earlier call's." : "") }));
-  card.append(decomposition(placed(ctx.items)));
+  const extra = [...(ctx.preamble || []).map((p) => entry(p, PREAMBLE)),
+    ...(ctx.not_counted ? [entry({ name: "not counted", tokens: ctx.not_counted }, NOT_COUNTED)] : [])];
+  card.append(decomposition([...extra, ...placed(ctx.items)]));
   const history = ctx.items.filter((i) => HISTORY.has(i.group) || GATHERER.has(i.group));
   if (history.length) {                              // which items to list, by type
     const counts = {};
@@ -579,6 +585,12 @@ function contextCard() {
     card.append(typeChips(counts, empty));
   }
   const list = el("div", { class: "ctx tall", "data-keep": "context" });
+  if ((ctx.preamble || []).length) {                 // what the harness sent besides its messages: first, always shown
+    list.append(el("div", { class: "run" }, el("span", { class: "key-rect", style: `background:${color(PREAMBLE)}` }), el("strong", { text: PREAMBLE }),
+      el("span", { text: `${ctx.preamble.length} part${ctx.preamble.length > 1 ? "s" : ""} · ${full(ctx.preamble.reduce((n, p) => n + p.tokens, 0))} tokens · `
+        + "what the harness sent besides its messages" })));
+    for (const p of ctx.preamble) list.append(contextItem(p));
+  }
   let run = null;
   const head = (r) => {
     const hidden = r.items - r.shown;
@@ -598,12 +610,19 @@ function contextCard() {
     if (listed) { run.shown++; list.append(contextItem(it)); }
     head(run);
   }
+  if (ctx.not_counted) {                              // what the provider counted beyond all of it
+    list.append(el("div", { class: "run" }, el("span", { class: "key-rect", style: `background:${color(NOT_COUNTED)}` }), el("strong", { text: NOT_COUNTED }),
+      el("span", { text: `${full(ctx.not_counted)} tokens` })));
+    list.append(el("div", { class: "uncounted", text: "The provider's count for this call, less everything above: what ag cannot see or count -- "
+      + "the model's tokenizer differing from ag's, reasoning and hidden payloads (signatures in tool-call ids), message framing." }));
+  }
   card.append(list);
   return card;
 }
 // Where each item goes in the figure: its run's group -- ag's messages among the history in the
 // history they sit in, as the list shows them -- and its part: a type for the history, a name for the summary.
 function entry(it, group, items = 1) {
+  if (group === PREAMBLE || group === NOT_COUNTED) return { group, part: it.name, label: it.name, color: color(group), tokens: it.tokens, items };
   const history = HISTORY.has(group);
   const t = itemType(it);
   return { group, part: history ? t[0] : it.name, label: history ? t[1] : it.name, color: history ? t[2] : color(group),
@@ -690,15 +709,18 @@ function usageCard() {
   if (!u || !u.entries || !u.entries.length) { card.append(el("div", { class: "desc", text: "No calls yet." })); return card; }
   const real = u.real_calls ? ` The provider counted ${full(u.real_tokens)} over the ${full(u.real_calls)} calls it reported.` : "";
   card.append(el("div", { class: "desc", text: `Everything sent to the model over this actor's ${full(u.calls)} calls, by kind: `
-    + `${full(u.tokens)} tokens by ag's own count, each message counted once for every call it went in.${real}` }));
+    + `${full(u.tokens)} tokens by ag's own count, each message (and the harness's preamble) counted once for every call it went in.${real}`
+    + (u.not_counted ? ` ${full(u.not_counted)} of the provider's count is in none of them: "Not counted by ag".` : "") }));
   // ag's messages among the history count in the recent raw history, where they sit
-  card.append(decomposition(u.entries.map((e) => entry(e, INLINE.has(e.group) ? "Recent history" : e.group, e.items)), "all calls"));
+  const notCounted = u.not_counted ? [entry({ name: "not counted", tokens: u.not_counted }, NOT_COUNTED, u.real_calls)] : [];
+  card.append(decomposition([...u.entries.map((e) => entry(e, INLINE.has(e.group) ? "Recent history" : e.group, e.items)), ...notCounted],
+    "all calls"));
   return card;
 }
 function contextItem(it) {
   const preview = it.text.replace(/\s+/g, " ").slice(0, 220);
   const row = el("details", { class: "item" },
-    el("summary", {}, el("span", { class: "bar-key", style: `background:${HISTORY.has(it.group) || GATHERER.has(it.group) ? itemType(it)[2] : color(it.group)}` }),
+    el("summary", {}, el("span", { class: "bar-key", style: `background:${(HISTORY.has(it.group) || GATHERER.has(it.group)) && it.group !== PREAMBLE ? itemType(it)[2] : color(it.group)}` }),
       el("span", { class: "mono kind", text: it.name }), el("span", { class: "preview" + (preview ? "" : " none"), text: preview || "(empty)" }),
       el("span", { class: "n", text: full(it.tokens) })));
   row.addEventListener("toggle", () => {             // the whole text, only once asked for

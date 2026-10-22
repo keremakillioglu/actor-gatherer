@@ -208,9 +208,11 @@ _USAGE: Dict[tuple, dict] = {}      # (database, channel) -> (its last read, its
 
 def _usage(conn, channel: str, tables: set) -> dict:
     """Every item every read of the channel sent, added up by kind and name -- each message
-    counted once per call it went in: {tokens, entries: [{group, name, items, tokens}]}, the
-    groups as read() names them (an event before its read's cut is KEPT, after it RECENT).
-    Kept until the channel's next read: a long agent's sum is a scan of every read."""
+    counted once per call it went in -- with the harness's preamble of each call (PREAMBLE):
+    {tokens, entries: [{group, name, items, tokens}], not_counted}, the groups as read() names
+    them (an event before its read's cut is KEPT, after it RECENT); `not_counted` is what the
+    provider counted beyond them, over the calls it counted. Kept until the channel's next read:
+    a long agent's sum is a scan of every read."""
     path = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
     last = conn.execute(f"SELECT max(read_id) FROM _reads WHERE {CHANNEL} = ?", (channel,)).fetchone()[0]
     kept = _USAGE.get((path, channel))
@@ -227,7 +229,27 @@ def _usage(conn, channel: str, tables: set) -> dict:
     entries = [{"group": RECENT if r["kind"] == "recent" else KEPT if r["kind"] == "kept"
                 else AG_KINDS.get(r["item"], "ag's sections"), "name": r["item"], "items": r["n"], "tokens": r["tok"] or 0}
                for r in rows]
-    usage = {"tokens": sum(e["tokens"] for e in entries), "entries": entries}
+    cols = _columns(conn, "_reads")
+    pre = "preamble_json" if "preamble_json" in cols else "NULL"
+    real = "real_tokens" if "real_tokens" in cols else "NULL"
+    per_read = conn.execute(f"SELECT read_id, {pre}, {real} FROM _reads WHERE {CHANNEL} = ?", (channel,)).fetchall()
+    ids = {r[0]: _preamble_ids(r[1]) for r in per_read}
+    known = _preambles(conn, [i for v in ids.values() for i in v])
+    by_name: Dict[str, dict] = {}
+    for v in ids.values():
+        for i in v:
+            if i in known:
+                e = by_name.setdefault(known[i]["name"], {"group": PREAMBLE, "name": known[i]["name"], "items": 0, "tokens": 0})
+                e["items"] += 1
+                e["tokens"] += known[i]["tokens"]
+    entries += list(by_name.values())
+    sent = dict(conn.execute(
+        "SELECT i.read_id, coalesce(sum(e.tokens), 0) + coalesce(sum(m.tokens), 0) FROM _read_items i "
+        f"JOIN _reads r ON r.read_id = i.read_id AND r.{CHANNEL} = ? LEFT JOIN events e ON e.row_id = i.row_id "
+        "LEFT JOIN _made_items m ON m.made_id = i.made_id GROUP BY i.read_id", (channel,)))
+    not_counted = sum(max(0, r[2] - sent.get(r[0], 0) - sum(known[i]["tokens"] for i in ids[r[0]] if i in known))
+                      for r in per_read if r[2])
+    usage = {"tokens": sum(e["tokens"] for e in entries), "entries": entries, "not_counted": not_counted}
     _USAGE[(path, channel)] = (last, usage)
     return dict(usage)
 
@@ -311,6 +333,25 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
 #: The agent's own events, verbatim: since the cut of the build the read was made from (all of
 #: them before any build), and those kept from before it (its preamble, the pinned rows).
 RECENT, KEPT = "Recent history", "Kept from before the cut"
+#: What the harness sent besides its messages (its system prompt, its tools), as it stated them.
+PREAMBLE = "Harness preamble"
+
+
+def _preamble_ids(raw) -> List[int]:
+    try:
+        ids = json.loads(raw) if raw else []
+    except ValueError:
+        return []
+    return [i for i in ids if isinstance(i, int)] if isinstance(ids, list) else []
+
+
+def _preambles(conn, ids) -> Dict[int, dict]:
+    """The _preambles with these ids: {id: {name, text, tokens}}; {} in a file from before them."""
+    ids = sorted(set(ids))
+    if not ids or "_preambles" not in _tables(conn):
+        return {}
+    rows = conn.execute(f"SELECT preamble_id, name, text, tokens FROM _preambles WHERE preamble_id IN ({', '.join('?' * len(ids))})", ids)
+    return {r[0]: {"name": r[1], "text": r[2], "tokens": r[3] or 0} for r in rows}
 #: ag's own messages by name, as the read's breakdown groups them; any other name is a section of its own.
 AG_KINDS = {"environment_update": "File-change notices", "parallel_request": "Other agents' requests",
             "context_stream": "Stream messages"}
@@ -439,13 +480,19 @@ def context(gatherer: str, read_id: int) -> dict:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
         meta, cut, items = _items(conn, read_id)
-        for it in items:
+        ids = _preamble_ids(meta["preamble_json"]) if meta is not None and "preamble_json" in meta.keys() else []
+        known = _preambles(conn, ids)
+        preamble = [{"position": None, "group": PREAMBLE, "name": known[i]["name"], "tokens": known[i]["tokens"],
+                     "row_id": None, "made_id": None, "at": None, "text": known[i]["text"]} for i in ids if i in known]
+        for it in preamble + items:
             it["clipped"] = max(0, len(it["text"]) - TEXT_CHARS)
             it["text"] = it["text"][:TEXT_CHARS]
+        real = meta["real_tokens"] if meta is not None and "real_tokens" in meta.keys() else None
+        counted = sum(it["tokens"] for it in preamble + items)
         return {"read_id": read_id, "cut": cut, "at": _seconds(meta["read_at"]) if meta else None,
-                "basis": meta["basis"] if meta is not None else None,
-                "real_tokens": meta["real_tokens"] if meta is not None and "real_tokens" in meta.keys() else None,
-                "tokens": sum(it["tokens"] for it in items), "items": items}
+                "basis": meta["basis"] if meta is not None else None, "real_tokens": real,
+                "tokens": sum(it["tokens"] for it in items), "preamble": preamble,
+                "not_counted": max(0, real - counted) if real else None, "items": items}
     finally:
         conn.close()
 
