@@ -14,13 +14,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ag.ag_harness import Event, EventType, Manager, Poller  # noqa: E402
 from ag.ag_interface.policy import Context, Policy  # noqa: E402
 from ag.ag_pollers import FileChangePoller  # noqa: E402
-from ag.ag_pollers.file_changes import changed_files  # noqa: E402
+from ag.ag_pollers import file_changes  # noqa: E402
+from ag.ag_pollers.file_changes import changed_files, mentioned_files  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from channels import CHANNEL, ch, on  # noqa: E402
 from ag.ag_interface import Property  # noqa: E402
 
-HIDDEN = "." + "hidden"   # a hidden directory the walk must skip
+HIDDEN = "." + "hidden"   # a hidden directory the poller does not watch in
 
 
 def payload_text(payload):
@@ -50,6 +51,19 @@ class Ticker(Poller):
     def poll(self, since, types):
         self.asked.append((since, [t.name for t in types]))
         return self.events
+
+
+class Watcher(Ticker):
+    """A Ticker that is told what the conversation says, and records it."""
+
+    name = "watcher"
+
+    def __init__(self, events=()):
+        super().__init__(events)
+        self.told = []
+
+    def watch(self, texts):
+        self.told.append(list(texts))
 
 
 class Broken(Poller):
@@ -140,6 +154,29 @@ class ManagerPollingTest(Base):
         self.m.read("p", 1, properties=ch("a"))                     # a's read polls
         self.assertEqual(self.m.read("p", 2, properties=ch("b")), [{"text": "n2"}, {"n": 1}])   # b sees it too
 
+    def test_a_poller_is_told_what_the_raw_part_says_before_it_is_asked(self):
+        watcher, ticker = Watcher(), Ticker()
+        self.m.add_poller(watcher)
+        self.m.add_poller(ticker)
+        self.m.insert("p", on(Event(1, {"text": "x"}, id="n1", text="I edited notes.txt"), "c"))
+        self.m.read("p", 1, properties=ch("c"))
+        self.assertEqual(watcher.told, [["I edited notes.txt"]])          # before any read: all of it
+        self.m.insert("p", on(Event(1, {"text": "y"}, id="n2", text="and src/a.py"), "c"))
+        self.m.read("p", 2, properties=ch("c"))
+        self.assertIn("and src/a.py", watcher.told[-1])                    # what came since the last read
+        self.assertEqual(len(ticker.asked), 2)                             # one that does not watch: as before
+
+    def test_the_raw_part_is_what_was_sent_verbatim_and_since(self):
+        conn = self.m._conn("p")
+        for n in (1, 2, 3):
+            self.m.insert("p", on(Event(1, {"text": "x"}, id=f"n{n}", text=f"text {n}"), "c"))
+        read_id = store.record_read(conn, ch("c"), [store.Ref(2, None)], manager="plain", row_id=2)
+        self.assertEqual(store.raw_texts(conn), ["text 2", "text 3"])      # the read's row, and the one after it
+        self.m.insert("p", on(Event(self.tick, {"n": 1}, id="t1", text="tick"), None))
+        self.assertIn("tick", store.raw_texts(conn))
+        self.assertNotIn("text 1", store.raw_texts(conn, skip_types=()))
+        self.assertTrue(read_id)
+
     def test_a_gatherer_without_a_database_is_not_polled(self):
         ticker = Ticker()
         self.m.add_poller(ticker)
@@ -197,7 +234,7 @@ class ManagerPollingTest(Base):
         self.assertEqual(ticker.asked, [])
 
 
-class FileWalkTest(unittest.TestCase):
+class FileWatchTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
 
@@ -205,13 +242,14 @@ class FileWalkTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def workdir(self, since):
-        """A directory with a file older than `since`, a newer one, and newer
-        ones the walk must skip."""
+        """A directory with a file older than `since`, newer ones, and newer ones the
+        poller does not watch (under a hidden directory, __pycache__)."""
         root = os.path.join(self.tmp.name, "work")
         os.makedirs(os.path.join(root, "src"))
         os.makedirs(os.path.join(root, HIDDEN))
         os.makedirs(os.path.join(root, "__pycache__"))
         for rel, when in (("old.py", since - 100), (os.path.join("src", "new.py"), since + 5),
+                          (os.path.join("src", "unnamed.py"), since + 5),
                           (os.path.join(HIDDEN, "index"), since + 5), (os.path.join("__pycache__", "x.pyc"), since + 5)):
             path = os.path.join(root, rel)
             with open(path, "w") as fh:
@@ -219,24 +257,55 @@ class FileWalkTest(unittest.TestCase):
             os.utime(path, (when, when))
         return root
 
-    def test_changed_files_walk(self):
+    def said(self, root):
+        """What a conversation in `root` says: names of its files, some it should not watch."""
+        return [f"I read old.py and src/new.py, then {os.path.join(root, 'src', 'new.py')} again.",
+                f"{HIDDEN}/index and __pycache__/x.pyc, /etc/hosts, ../work/old.py, version 1.2."]
+
+    def test_the_files_a_conversation_names(self):
+        root = self.workdir(time.time() - 1000)
+        self.assertEqual(mentioned_files(root, self.said(root)), ["old.py", os.path.join("src", "new.py")])
+        self.assertEqual(mentioned_files(root, ["src/new.py old.py"], limit=1), [os.path.join("src", "new.py")])
+        self.assertEqual(mentioned_files(os.path.join(root, "nope"), self.said(root)), [])
+        os.symlink(os.path.join(root, "old.py"), os.path.join(root, "link.py"))
+        self.assertEqual(mentioned_files(root, ["link.py"]), [])
+
+    def test_changed_files_among_them(self):
         since = time.time() - 1000
         root = self.workdir(since)
-        self.assertEqual([p for p, _ in changed_files(root, since)], [os.path.join("src", "new.py")])   # relative
-        self.assertEqual(changed_files(root, None), [])
-        self.assertEqual(changed_files(os.path.join(root, "nope"), since), [])
-        self.assertEqual(changed_files(root, time.time() + 10), [])
-        many = os.path.join(root, "many")
-        os.makedirs(many)
-        for n in range(5):
-            with open(os.path.join(many, f"{n}.txt"), "w") as fh:
-                fh.write("y")
-        self.assertEqual(len(changed_files(root, since, limit=3)), 3)
+        named = mentioned_files(root, self.said(root))
+        self.assertEqual([p for p, _ in changed_files(root, named, since)], [os.path.join("src", "new.py")])
+        self.assertEqual(changed_files(root, named, None), [])
+        self.assertEqual(changed_files(root, named, time.time() + 10), [])
+        self.assertEqual(changed_files(root, ["gone.py"], since), [])
+        self.assertEqual(len(changed_files(root, ["old.py", os.path.join("src", "new.py")], since - 1000, limit=1)), 1)
+
+    def test_a_file_the_conversation_never_named_is_not_looked_at(self):
+        since = time.time() - 1000
+        root = self.workdir(since)
+        poller = FileChangePoller(root)
+        types = [EventType("environment_update", id=6)]
+        self.assertEqual(poller.poll(since, types), [])                    # not told anything yet: nothing
+        poller.watch(self.said(root))
+        self.assertEqual([e.payload["subject"] for e in poller.poll(since, types)], [os.path.join("src", "new.py")])
+
+    def test_the_directory_is_never_walked(self):
+        since = time.time() - 1000
+        root = self.workdir(since)
+        saved = file_changes.os.walk
+        file_changes.os.walk = lambda *a, **k: (_ for _ in ()).throw(AssertionError("walked"))
+        try:
+            poller = FileChangePoller(root)
+            poller.watch(self.said(root))
+            self.assertEqual(len(poller.poll(since, [EventType("environment_update", id=6)])), 1)
+        finally:
+            file_changes.os.walk = saved
 
     def test_the_poller_types_events_from_the_gatherer_and_names_files_relatively(self):
         since = time.time() - 1000
         root = self.workdir(since)
         poller = FileChangePoller(root)
+        poller.watch(self.said(root))
         self.assertEqual(poller.name, f"file_changes:{os.path.abspath(root)}")   # a mark per directory
         self.assertNotEqual(FileChangePoller(root + "/src").name, poller.name)
         types = [EventType("user_message", id=1),
@@ -261,9 +330,12 @@ class FileWalkTest(unittest.TestCase):
         mark = time.time()
         os.utime(path, (mark - 0.01, mark - 0.01))           # "changed" a hair before the mark
         types = [EventType("environment_update", id=6)]
-        first = FileChangePoller(root).poll(mark, types)
-        self.assertEqual([e.payload["subject"] for e in first], ["old.py"])
-        self.assertEqual([e.id for e in FileChangePoller(root).poll(mark + 0.03, types)], [e.id for e in first])
+        first, second = FileChangePoller(root), FileChangePoller(root)
+        first.watch(["old.py"])
+        second.watch(["old.py"])
+        found = first.poll(mark, types)
+        self.assertEqual([e.payload["subject"] for e in found], ["old.py"])
+        self.assertEqual([e.id for e in second.poll(mark + 0.03, types)], [e.id for e in found])
 
     def test_a_file_written_well_before_the_first_mark_is_not_a_change(self):
         """What was there when the gatherer started is not reported later."""
@@ -271,13 +343,15 @@ class FileWalkTest(unittest.TestCase):
         path = os.path.join(root, "old.py")
         mark = time.time()
         os.utime(path, (mark - 0.3, mark - 0.3))              # written before the first poll's mark
-        types = [EventType("environment_update", id=6)]
-        self.assertEqual(FileChangePoller(root).poll(mark, types), [])
+        poller = FileChangePoller(root)
+        poller.watch(["old.py"])
+        self.assertEqual(poller.poll(mark, [EventType("environment_update", id=6)]), [])
 
     def test_nothing_without_the_type_or_a_since(self):
         since = time.time() - 1000
         root = self.workdir(since)
         poller = FileChangePoller(root)
+        poller.watch(self.said(root))
         self.assertEqual(poller.poll(since, [EventType("user_message", id=1)]), [])
         self.assertEqual(poller.poll(None, [EventType("environment_update", id=6)]), [])
 

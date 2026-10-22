@@ -280,8 +280,8 @@ gathered from every Actor and from the environment.
   [`PiAdaptor`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/pi/adaptor/adaptor.ts), each with the
   launcher `ag` uses to start that harness connected to the Gatherer.
 - **Pollers:** [`FileChangePoller`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_pollers/file_changes.py),
-  which reports files changed under the agent's working directory since it last
-  looked.
+  which reports changes to the files the conversation names, under the agent's
+  working directory, since it last looked.
 - **Context Policy:** [`ProactiveContextManager`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_policies/proactive_context_manager/policy.py),
   which searches earlier history in the
   background, and adds what other sessions asked for and what changed in the
