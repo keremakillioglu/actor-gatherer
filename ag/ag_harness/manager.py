@@ -178,6 +178,10 @@ class Manager(ContextManager):
         properties it does not name or that are unset, although the poll
         mark is the gatherer's and only one read found it.
 
+        Right before it is asked, a poller is told what the conversation's raw part says
+        (`Poller.watch`: the texts of the events the channels were last sent verbatim, and of
+        those since): one that only looks at what the conversation refers to takes it from there.
+
         A poller's `since` is its mark in `_polls`, or None the first time it
         is asked for this gatherer: there is no earlier moment, and each
         poller decides what that means (the file poller returns nothing). The mark is taken before the poller
@@ -193,10 +197,14 @@ class Manager(ContextManager):
         types = store.event_types(conn)
         names = {t.id: t.name for t in types}
         stored = 0
+        watching = [p for p in self.pollers if getattr(type(p), "watch", Poller.watch) is not Poller.watch]
+        texts = store.raw_texts(conn) if watching else []        # what the conversation's raw part says
         for poller in self.pollers:
             since = store.polled_at(conn, poller.name)
             now = time.time()
             try:
+                if poller in watching:
+                    poller.watch(texts)
                 events = list(poller.poll(since, types))
             except Exception as exc:  # noqa: BLE001 - an outside source must not break a read
                 warn(f"poller {poller.name!r} failed: {exc!r}")

@@ -16,7 +16,7 @@ The **Gatherer** is a server that many **Actors** talk to, and the Actors can co
 `ag` currently uses:
 
 - **Adaptors:** [`ClaudeAdaptor`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/claude/adaptor/adaptor.py), [`CodexAdaptor`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/codex/adaptor/adaptor.py), [`OpencodeAdaptor`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/opencode/adaptor/adaptor.ts) and [`PiAdaptor`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/integrations/harnesses/pi/adaptor/adaptor.ts), each with the launcher `ag` uses to start that harness connected to the Gatherer.
-- **Pollers:** [`FileChangePoller`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_pollers/file_changes.py), which reports files changed under the agent's working directory since it last looked.
+- **Pollers:** [`FileChangePoller`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_pollers/file_changes.py), which reports changes to the files the conversation names, under the agent's working directory, since it last looked.
 - **Context Policy:** [`ProactiveContextManager`](https://github.com/ucbepic/actor-gatherer/blob/main/ag/ag_policies/proactive_context_manager/policy.py), which searches earlier history in the background, and adds what other sessions asked for and what changed in the environment.
 
 The framework is extensible. Add a new harness by defining an adaptor for it, new context policies for context management, and pollers that track other information in the environment. See [Extending `ag`](#extending).
@@ -165,7 +165,7 @@ What `read` and `init` get as `store`, beside the SQLite connection's own method
 
 A poller is a subclass of `ag.ag_interface.Poller`:
 
-<!-- gen: stub ag.ag_interface.poller:Poller name id outputs properties poll -->
+<!-- gen: stub ag.ag_interface.poller:Poller name id outputs properties watch poll -->
 
 <!-- gen: doc ag.ag_interface.poller:Poller -->
 

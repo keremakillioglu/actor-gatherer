@@ -10,7 +10,7 @@ the policy builds the context.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from .event import Event, EventType
 
@@ -112,6 +112,12 @@ class Poller(ABC):
     #: it returns of another type is dropped, and ag refuses to run a policy
     #: whose event types do not take them all.
     outputs: tuple = ()
+
+    def watch(self, texts: Iterable[str]) -> None:
+        """What the conversation's raw part says, given right before each `poll`: the texts of the
+        events the gatherer's channels were last sent verbatim, and of those since (the pollers' own
+        left out). A poller that only looks at what the conversation refers to takes it from here --
+        the file poller, the files it names -- instead of looking at everything; by default nothing."""
 
     @abstractmethod
     def poll(self, since: Optional[float], types: List[EventType]) -> List[Event]:

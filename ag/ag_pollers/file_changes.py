@@ -1,11 +1,19 @@
-"""Which files under a directory changed since the last poll, as
+"""Which files the conversation refers to changed since the last poll, as
 `environment_update` events (defined here, as the policy that takes them defines its own).
 
-The plain way: a walk of the directory comparing each file's modification
-time with the moment of the last poll. Left out: hidden directories (`.git`
-and the like), `__pycache__`, `node_modules`, and symbolic links. The walk
-stops at `limit` changed files, so a mass change (a checkout, a build) costs
-a bounded number of events.
+Only files the conversation names are looked at: before each poll the manager
+gives the poller what the conversation's raw part says (`Poller.watch`: the
+events the channels were last sent verbatim, and those since), and the poller
+takes from it every path-like name of an existing file under its directory --
+absolute, or relative to the directory -- and compares those files'
+modification times with the moment of the last poll. Nothing else is read: a
+working directory of any size (a home directory) costs what the conversation
+names. A change to a file the conversation never named is not reported; a
+policy has nothing to match it against anyway (proactive_context_manager
+shows an update only where the verbatim history refers to its file). Left
+out: files under hidden directories (`.git` and the like), `__pycache__` and
+`node_modules`, and symbolic links. At most `limit` changed files a poll, so a
+mass change (a checkout, a build) costs a bounded number of events.
 
 Files are named the way the agent refers to them: relative to the directory
 (`notes.txt`, `src/a.py`). That is the update's `subject`, what a policy
@@ -14,7 +22,8 @@ matches against the conversation; its `what` says what happened in words:
 """
 
 import os
-from typing import List, Optional, Tuple
+import re
+from typing import Iterable, List, Optional, Tuple
 
 from ag.ag_interface import Event, EventType, Poller
 
@@ -48,39 +57,75 @@ SKIP_DIRS = {"__pycache__", "node_modules"}
 LOOKBACK = 0.05
 
 
-def changed_files(root: str, since: float, limit: int = 500) -> List[Tuple[str, float]]:
-    """`(path relative to root, mtime)` for every regular file under `root`
-    modified after `since` (seconds since the epoch), oldest change first;
-    at most `limit` of them. An unreadable root or file is skipped, never an
-    error."""
-    found = []
-    if not root or since is None or not os.path.isdir(root):
+#: Path-like names in a text: with a slash, or a name with an extension.
+PATH = re.compile(r"[~\w.\-/]*/[\w.\-/]+|[\w\-][\w.\-]*\.[A-Za-z0-9]{1,12}\b")
+#: The most files a poller watches; names past it, in the order the conversation gives them, are not.
+WATCHED = 5000
+
+
+def names_in(text: Optional[str]) -> List[str]:
+    """The path-like names in `text`, in order."""
+    return [n for n in (m.rstrip(".") for m in PATH.findall(text or "")) if n]
+
+
+def resolve(root: str, name: str) -> Optional[str]:
+    """`name` as an existing file under `root` (absolute, or relative to it), relative to `root`;
+    None if it is none -- or under a hidden directory, `__pycache__` or `node_modules`, or a link."""
+    path = os.path.normpath(os.path.join(root, os.path.expanduser(name)))
+    rel = os.path.relpath(path, root)
+    if rel.startswith(os.pardir) or rel == os.curdir:
+        return None                                  # not under the directory
+    if any(p.startswith(".") or p in SKIP_DIRS for p in rel.split(os.sep)[:-1]):
+        return None
+    if os.path.islink(path) or not os.path.isfile(path):
+        return None
+    return rel
+
+
+def mentioned_files(root: str, texts: Iterable[str], limit: int = WATCHED) -> List[str]:
+    """The existing files under `root` that `texts` name -- by an absolute path, or one relative to
+    `root` -- as paths relative to `root`, each once, in the order first named; at most `limit`.
+    A file under a hidden directory, `__pycache__` or `node_modules`, or a symbolic link, is not one."""
+    found, seen = [], set()
+    if not root or not os.path.isdir(root):
         return found
     root = os.path.abspath(root)
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS
-                             and not os.path.islink(os.path.join(dirpath, d)))
-        for name in filenames:
-            path = os.path.join(dirpath, name)
-            try:
-                if os.path.islink(path):
-                    continue
-                mtime = os.stat(path).st_mtime
-            except OSError:
+    for text in texts:
+        for name in names_in(text):
+            if name in seen:
                 continue
-            if mtime > since:
-                found.append((os.path.relpath(path, root), mtime))
+            seen.add(name)
+            rel = resolve(root, name)
+            if rel is not None and rel not in found:
+                found.append(rel)
                 if len(found) >= limit:
-                    found.sort(key=lambda x: x[1])
                     return found
-    found.sort(key=lambda x: x[1])
     return found
 
 
+def changed_files(root: str, paths: Iterable[str], since: float, limit: int = 500) -> List[Tuple[str, float]]:
+    """`(path, mtime)` for each of `paths` (relative to `root`) modified after `since` (seconds since
+    the epoch), oldest change first; at most `limit` of them. A file gone or unreadable is skipped."""
+    found = []
+    if not root or since is None:
+        return found
+    root = os.path.abspath(root)
+    for rel in paths:
+        try:
+            mtime = os.stat(os.path.join(root, rel)).st_mtime
+        except OSError:
+            continue
+        if mtime > since:
+            found.append((rel, mtime))
+    found.sort(key=lambda x: x[1])
+    return found[:limit]
+
+
 class FileChangePoller(Poller):
-    """The files under `root` modified since the last poll, as
-    `environment_update` events; nothing on the first poll (there is no
-    earlier moment), and nothing for a gatherer whose types have no
+    """The files under `root` the conversation names (`watch`) modified since
+    the last poll, as `environment_update` events; nothing on the first poll
+    (there is no earlier moment), nothing before it is told what the
+    conversation says, and nothing for a gatherer whose types have no
     `environment_update`.
 
     Named after its directory (`file_changes:<root>`), so that threads of one
@@ -92,10 +137,14 @@ class FileChangePoller(Poller):
     outputs = ("environment_update",)
     properties = (POLLER, CWD)
 
-    def __init__(self, root: str, limit: int = 500):
+    def __init__(self, root: str, limit: int = 500, watched: int = WATCHED):
         self.root = root
-        self.limit = limit
+        self.limit, self.most = limit, watched
+        self.watched: List[str] = []
         self.name = f"file_changes:{os.path.abspath(root) if root else ''}"
+
+    def watch(self, texts: Iterable[str]) -> None:
+        self.watched = mentioned_files(self.root, texts, self.most)
 
     def poll(self, since: Optional[float], types: List[EventType]) -> List[Event]:
         type_id = next((t.id for t in types if t.name == ENVIRONMENT_UPDATE), None)
@@ -103,4 +152,4 @@ class FileChangePoller(Poller):
             return []
         return [environment_update(type_id, path, f"File {path} was changed on disk", round(mtime, 3), source=self.name,
                                    poller=self.id or self.name, cwd=os.path.abspath(self.root))
-                for path, mtime in changed_files(self.root, since - LOOKBACK, self.limit)]
+                for path, mtime in changed_files(self.root, self.watched, since - LOOKBACK, self.limit)]
