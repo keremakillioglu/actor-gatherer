@@ -176,20 +176,23 @@ const span = (a, b) => {
 // The agent's own events by type, as the context card colors and filters them; fixed order, fixed colors.
 const TYPES = [["user_message", "User", "var(--s7)"], ["agent_message", "Assistant", "var(--s1)"],
   ["tool_call", "Tool call", "var(--s4)"], ["tool_output", "Tool output", "var(--s3)"],
-  ["agent_reasoning", "Reasoning", "var(--s5)"], ["system", "System / developer", "var(--s8)"]];
+  ["agent_reasoning", "Reasoning", "var(--s5)"], ["system", "System / developer", "var(--s8)"],
+  ["gatherer", "Gatherer messages", "var(--s2)"]];
 const OTHER_TYPE = ["other", "Other", "var(--muted)"];
-// ag's own messages placed among the history -- shown in it, as system/developer messages, with the
-// harness's own (its `context` events: instructions, environment notes)
+// ag's own messages placed among the history -- shown in it, where ag put them
 const INLINE = new Set(["File-change notices", "Other agents' requests", "Stream messages"]);
-const itemType = (it) => INLINE.has(it.group) || it.name === "context" ? TYPES[5] : typeOf(it.name);
+// what the Gatherer wrote (its sections, and its messages among the history) is one type; the harness's
+// own system/developer messages (its `context` events: instructions, environment notes) another
+const GATHERER = new Set(["ag's sections", ...INLINE]);
+const itemType = (it) => GATHERER.has(it.group) ? typeOf("gatherer") : it.name === "context" ? typeOf("system") : typeOf(it.name);
 const EMPTY = "empty";                            // a history item with no words (a model's empty text beside its tool call)
 const typeOf = (name) => TYPES.find((t) => t[0] === name) || OTHER_TYPE;
 const HISTORY = new Set(["Recent history", "Kept from before the cut"]);
-const SHOWN_KEY = "ag-dashboard-shown-types-2";   // -2: system messages joined the defaults
+const SHOWN_KEY = "ag-dashboard-shown-types-3";   // -3: Gatherer messages got their own type, shown by default
 const shownTypes = (() => {                       // the reader's choice, kept in this browser; by default the
                                                   // conversation: user, assistant, system/developer messages
   try { const v = JSON.parse(localStorage.getItem(SHOWN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
-  return new Set(["user_message", "agent_message", "system"]);
+  return new Set(["user_message", "agent_message", "system", "gatherer"]);
 })();
 function toggleType(type) {
   if (shownTypes.has(type)) shownTypes.delete(type); else shownTypes.add(type);
@@ -519,14 +522,14 @@ function contextCard() {
   card.append(el("div", { class: "desc", text: `Everything the latest call sent (read ${ctx.read_id}, ${clock(ctx.at, true)}), in the order the model got it: `
     + `${full(ctx.items.length)} items, ${full(ctx.tokens)} tokens by ag's own count${real}.`
     + (ctx.cut ? ` Built from build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet: the whole history, verbatim.") }));
-  const history = ctx.items.filter((i) => HISTORY.has(i.group) || INLINE.has(i.group));
-  if (history.length) {                              // which of the agent's own events to list, by type
+  const history = ctx.items.filter((i) => HISTORY.has(i.group) || GATHERER.has(i.group));
+  if (history.length) {                              // which items to list, by type
     const counts = {};
     for (const i of history) { const t = itemType(i)[0]; counts[t] = (counts[t] || 0) + 1; }
-    const empty = history.filter((i) => !i.text.trim()).length;
+    const empty = history.filter((i) => !GATHERER.has(i.group) && !i.text.trim()).length;
     const row = el("div", { class: "filters", role: "group", "aria-label": "Message types shown in the history" },
-      el("span", { class: "label", text: "History shows" }));
-    for (const [type, label, swatch] of [...TYPES, OTHER_TYPE]) {
+      el("span", { class: "label", text: "Shows" }));
+    for (const [type, label, swatch] of [TYPES[6], ...TYPES.slice(0, 6), OTHER_TYPE]) {   // the Gatherer's first
       if (!counts[type]) continue;
       const on = shownTypes.has(type);
       row.append(el("button", { type: "button", class: "chip", "aria-pressed": on ? "true" : "false", onclick: () => toggleType(type) },
@@ -551,7 +554,8 @@ function contextCard() {
       list.append(run.head);
     }
     run.items++; run.tokens += it.tokens;
-    const listed = !HISTORY.has(group) || (shownTypes.has(itemType(it)[0]) && (it.text.trim() || shownTypes.has(EMPTY)));
+    const listed = GATHERER.has(it.group) ? shownTypes.has("gatherer")
+      : !HISTORY.has(group) || (shownTypes.has(itemType(it)[0]) && (it.text.trim() || shownTypes.has(EMPTY)));
     if (listed) { run.shown++; list.append(contextItem(it)); }
     head(run);
   }
@@ -561,7 +565,7 @@ function contextCard() {
 function contextItem(it) {
   const preview = it.text.replace(/\s+/g, " ").slice(0, 220);
   const row = el("details", { class: "item" },
-    el("summary", {}, el("span", { class: "bar-key", style: `background:${HISTORY.has(it.group) || INLINE.has(it.group) ? itemType(it)[2] : color(it.group)}` }),
+    el("summary", {}, el("span", { class: "bar-key", style: `background:${HISTORY.has(it.group) || GATHERER.has(it.group) ? itemType(it)[2] : color(it.group)}` }),
       el("span", { class: "mono kind", text: it.name }), el("span", { class: "preview" + (preview ? "" : " none"), text: preview || "(empty)" }),
       el("span", { class: "n", text: full(it.tokens) })));
   row.addEventListener("toggle", () => {             // the whole text, only once asked for
