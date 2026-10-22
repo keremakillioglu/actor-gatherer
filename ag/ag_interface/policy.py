@@ -45,11 +45,15 @@ class Read:
             returned for it; normally the last event before the model call.
         limit: the harness's own limit for this call, in its provider's tokens -- where it
             compacts by itself, or where its model's window ends -- or None when it states none.
+        fixed_tokens: the size of what the harness sends besides its messages with this call (its
+            system prompt, its tools: its preamble), counted as the events are; 0 when it states none.
+            The model gets it with every context, so the context's limits count it too.
     """
     gatherer_id: str
     properties: Dict[str, Any]
     row_id: int
     limit: Optional[int] = None
+    fixed_tokens: int = 0
 
 
 @dataclass

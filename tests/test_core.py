@@ -1047,9 +1047,9 @@ class BoundaryTest(Base):
         self.assertEqual(len(self.spawned), 1)
 
     def test_thresholds_measure_the_whole_returned_context(self):
-        # With a build in use the session's context is the condensation messages + the
-        # open task (the preamble and the sections' overview aside): that size, not the
-        # new history, is what the bands see.
+        # With a build in use, what the model gets is the condensation messages + the open
+        # task + the history's preamble (and what the harness sends besides it: none here):
+        # that size, not the new history, is what the bands see.
         recording, self.policy.jobs = self.policy.jobs, None       # no background work until the bands are set
         self.put(PREAMBLE + conversation(8) + [user("q", 50)])
         self.run_build("s", "c1")
@@ -1061,8 +1061,8 @@ class BoundaryTest(Base):
         made = sum(t for _, _, t in store.made_items(conn, made_ids).values())
         rows = store.rows(conn, match=ch("c1"))
         tail = sum(r.tokens for r in rows if r.row_id >= build["open_from_row"])
-        overview = self.policy.tokenizer.count(layout.overview(self.cfg, paths.db_path("s")))
-        size = made - overview + tail          # the session's context: not the preamble, nor the overview
+        preamble = sum(r.tokens for r in rows if r.event_id in {e["id"] for e in PREAMBLE})
+        size = made + tail + preamble          # all the model gets: the overview and the preamble too
         self.assertGreater(made, 0)
         self.policy.jobs, self.cfg.min_context_tokens = recording, size + 1
         self.read()

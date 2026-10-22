@@ -241,10 +241,11 @@ class Manager(ContextManager):
             return Context(), None
         self.poll(gatherer_id)
         conn = self._conn(gatherer_id)
-        ctx = self.policy.read(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), row_id, limit))
+        ids = [store.record_preamble(conn, p["name"], p["text"], self.tokenizer) for p in preamble or ()]
+        ctx = self.policy.read(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), row_id, limit,
+                                                              fixed_tokens=store.preamble_tokens(conn, preamble)))
         read_id = None
         if ctx.items:
-            ids = [store.record_preamble(conn, p["name"], p["text"], self.tokenizer) for p in preamble or ()]
             read_id = store.record_read(conn, properties, ctx.refs, manager=self.policy.name, basis=ctx.basis,
                                         row_id=row_id, est_tokens=ctx.tokens, limit_tokens=limit, preamble_ids=ids)
         return ctx, read_id

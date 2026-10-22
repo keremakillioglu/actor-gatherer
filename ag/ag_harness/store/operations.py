@@ -421,19 +421,22 @@ def last_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = N
     value (None: unset), those not given any value -- {read_id, read_at,
     row_id (the event it responded to), manager, basis, est_tokens,
     real_tokens (None: not reported), limit_tokens (None: none stated),
-    refs: [Ref, ...]}, or None."""
+    fixed_tokens (the size of the preamble it named: 0 for none), refs: [Ref, ...]}, or None."""
     names, _ = _given(conn, properties, "a read")
     given = {n: v for n, v in (properties or {}).items() if n in names}
-    row = conn.execute(f"SELECT read_id, read_at, row_id, manager, basis, est_tokens, real_tokens, limit_tokens "
-                       f"FROM _reads "
+    row = conn.execute(f"SELECT read_id, read_at, row_id, manager, basis, est_tokens, real_tokens, limit_tokens, "
+                       f"preamble_json FROM _reads "
                        f"WHERE {_same(list(given))}1 ORDER BY read_id DESC LIMIT 1",
                        _unset_is_empty(given.values())).fetchone()
     if not row:
         return None
     refs = [Ref(r, m) for r, m in conn.execute(
         "SELECT row_id, made_id FROM _read_items WHERE read_id = ? ORDER BY position", (row[0],))]
+    ids = [i for i in json.loads(row[8] or "[]") if isinstance(i, int)]
+    fixed = conn.execute(f"SELECT COALESCE(SUM(tokens), 0) FROM _preambles WHERE preamble_id IN ({','.join('?' * len(ids))})",
+                         ids).fetchone()[0] if ids else 0
     return {"read_id": row[0], "read_at": row[1], "row_id": row[2], "manager": row[3], "basis": row[4],
-            "est_tokens": row[5], "real_tokens": row[6], "limit_tokens": row[7], "refs": refs}
+            "est_tokens": row[5], "real_tokens": row[6], "limit_tokens": row[7], "fixed_tokens": fixed, "refs": refs}
 
 
 def record_preamble(conn: sqlite3.Connection, name: str, text: str, tokenizer) -> int:

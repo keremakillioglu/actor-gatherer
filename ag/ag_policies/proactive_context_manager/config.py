@@ -28,12 +28,12 @@ REMEMBER_MANY = (' Remember this for later too: until you have read them again, 
 
 @dataclass
 class ProactiveContextManagerConfig:
-    # The session's context -- the sections, the pinned rows and the running task (its
-    # verbatim events since the cut, with the notices, stream messages and other channels'
-    # requests among them); not the agent's preamble nor the sections' fixed headings and
-    # overview -- is at most max_context_tokens: above it, on any read, a build is started,
-    # waited for, and cuts the running task so the context is below it again. At a user
-    # message, X being that size:
+    # All the model gets with a call -- the sections, the pinned rows and the running task
+    # (its verbatim events since the cut, with the notices, stream messages and other
+    # channels' requests among them), the history's preamble, the sections' overview, and
+    # what the harness sends besides the context (its system prompt and tools) -- is at most
+    # max_context_tokens: above it, on any read, a build is started, waited for, and cuts
+    # the running task so the context is below it again. At a user message, X being that size:
     #     X <  min_context_tokens   no build
     #     min <= X                  ask the model whether this message starts a new
     #                               task (tools/boundary.py); build if so

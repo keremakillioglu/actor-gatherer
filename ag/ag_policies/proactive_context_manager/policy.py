@@ -27,9 +27,11 @@ placed just before this channel's latest user message. Requests before the
 build's mark are in its index section instead. All three are made items,
 remade on every read and never reused as sections.
 
-The session's context -- the sections, the pinned rows, the running task
-with all of the above among it; not the agent's preamble nor the sections'
-overview -- is kept at or under max_context_tokens. Above it, on any read
+All the model gets with a call -- the sections, the pinned rows, the running
+task with all of the above among it, the history's preamble, the sections'
+overview, and what the harness sends besides the context (its system prompt
+and tools, `Read.fixed_tokens`) -- is kept at or under max_context_tokens,
+and is what min_context_tokens is checked against. Above it, on any read
 (not only at a user message), a build is started -- or the running one
 awaited -- and the read waits for it; adopted, it cuts the running task
 after its last event when the context would not otherwise fit (`cut_for`):
@@ -215,11 +217,11 @@ class ProactiveContextManager(Policy):
         latest = tables.build_for(conn, ch)
         last = conn.last_read(channel.of(ch))
         build, made = self.choose(conn, types, rows, latest, last, at_user, read)
-        items, refs, size = self.assemble(conn, rows, build, made, types, read)
+        items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
         over = size > cfg.max_context_tokens or self.measured_over(last, build, ch)
         if over and not at_user and tables.waiting(latest, last):        # a ready build: taken now, not at the user
             build, made = self.choose(conn, types, rows, latest, last, True, read)
-            items, refs, size = self.assemble(conn, rows, build, made, types, read)
+            items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
             over = size > cfg.max_context_tokens or self.measured_over(last, build, ch)
         if at_user or over:
             latest = tables.build_for(conn, ch)
@@ -229,13 +231,13 @@ class ProactiveContextManager(Policy):
             if started and seconds > 0 and self.wait(conn, ch, rows[-1].row_id, started, seconds):
                 latest = tables.build_for(conn, ch)
                 build, made = self.choose(conn, types, rows, latest, last, True, read)
-                items, refs, size = self.assemble(conn, rows, build, made, types, read)
+                items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
         if size > cfg.max_context_tokens:                # still over: the steps that do not fit, left out
-            items, refs, size = self.assemble(conn, rows, build, made, types, read, stub=True)
+            items, refs, size, own = self.assemble(conn, rows, build, made, types, read, stub=True)
         if size > cfg.max_context_tokens:
             self.log(f"[{ch}] context {size} tokens, over max_context_tokens={cfg.max_context_tokens}")
-        self.last_tokens = size                     # the session's context the read returned, as max bounds it
-        return Context(items, refs, str(build["build_id"]) if build else None, tokens=size,
+        self.last_tokens = own                      # the part of it the policy arranges
+        return Context(items, refs, str(build["build_id"]) if build else None, tokens=own,
                        budget=cfg.max_context_tokens)
 
     def measured_over(self, last: Optional[dict], build: Optional[dict], ch) -> bool:
@@ -255,8 +257,8 @@ class ProactiveContextManager(Policy):
         return True
 
     def assemble(self, conn, rows, build: Optional[dict], made: List[int], types: TypeIds,
-                 read: Read, stub: bool = False) -> Tuple[list, list, int]:
-        """(items, refs, tokens): the sectioned context -- preamble, the
+                 read: Read, stub: bool = False) -> Tuple[list, list, int, int]:
+        """(items, refs, tokens, own): the sectioned context -- preamble, the
         section items, the pinned rows of the condensed span (the newest that
         fit keep_pinned_tokens), the running task verbatim (or the whole
         history before a build; after a build that cut the running task,
@@ -268,11 +270,14 @@ class ProactiveContextManager(Policy):
         to the other channels (`parallel_requests`), right before this
         channel's latest user message.
 
-        `tokens` is the session's context, what max_context_tokens bounds:
-        all of it but the preamble and the sections' fixed overview. With
-        `stub`, over the limit, agent steps of the verbatim part are replaced
-        by notes naming their rows (`stubbed`): the read's last resort, once
-        it has built what it could."""
+        `tokens` is all the model gets with the context, what min_ and
+        max_context_tokens are checked against: the context, and what the
+        harness sends besides it (`read.fixed_tokens`, its system prompt and
+        tools). `own` is the part the policy arranges, logged as the read's
+        size: all of it but the harness's, the history's preamble and the
+        sections' fixed overview. With `stub`, over the limit, agent steps of
+        the verbatim part are replaced by notes naming their rows (`stubbed`):
+        the read's last resort, once it has built what it could."""
         cfg = self.config
         preamble, body = history.arrange(rows, types, self.groups)
         if build is None:
@@ -296,6 +301,8 @@ class ProactiveContextManager(Policy):
         entries = list(self.interleave(tail, made_here, types))
         shown = self.parallel_requests(conn, types, channel_of(read), build["parallel_mark"] if build else 0)
         tokens += sum(cost[1] if kind == "made" else cost for kind, _, _, cost in entries) + sum(c for _, _, c in shown)
+        outside = sum(r.tokens for r in preamble) + fixed + read.fixed_tokens     # the model gets these too
+        tokens += outside
         if stub and tokens > cfg.max_context_tokens:
             entries, tokens = self.stubbed(conn, entries, tokens, types, read)
         for kind, row_id, item, cost in entries:
@@ -306,7 +313,7 @@ class ProactiveContextManager(Policy):
             for made_id, item, cost in reversed(shown):
                 items.insert(at, item)
                 refs.insert(at, Ref(made_id=made_id))
-        return items, refs, tokens
+        return items, refs, tokens, tokens - outside
 
     @staticmethod
     def newest_within(rows: list, budget: int) -> list:
@@ -569,7 +576,7 @@ class ProactiveContextManager(Policy):
         with_cleaned(conn, [e for _, e in others])
         sections = layout.build_sections(turns, tasks, ranked, earlier, others, turns_by_channel, ch, cfg, tok,
                                          conn.path, build["through_row"], mark)
-        cut = self.cut_for(rows, types, tasks[-1], sections, conn.path)
+        cut = self.cut_for(rows, types, tasks[-1], sections, conn.path, read.fixed_tokens)
         if cut != sections.open_from_row:
             sections = layout.build_sections(turns, tasks, ranked, earlier, others, turns_by_channel, ch, cfg, tok,
                                              conn.path, build["through_row"], mark, cut_row=cut)
@@ -590,13 +597,14 @@ class ProactiveContextManager(Policy):
                 for name, text in sections.sections]
         return made
 
-    def cut_for(self, rows, types: TypeIds, running, sections, db_path) -> int:
+    def cut_for(self, rows, types: TypeIds, running, sections, db_path, fixed_tokens: int = 0) -> int:
         """Where the verbatim part should start: the running task's start -- or, when the sections, the
-        pinned rows and the running task from there would be over max_context_tokens, after the last
-        event: the running task is then all in "This task so far", and only what comes after it is
-        verbatim."""
+        pinned rows and the running task from there, with what the model gets besides them (the
+        history's preamble, the harness's `fixed_tokens`), would be over max_context_tokens, after the
+        last event: the running task is then all in "This task so far", and only what comes after it
+        is verbatim."""
         cfg, tok = self.config, self.tokenizer
-        _, body = history.arrange(rows, types, self.groups)
+        preamble, body = history.arrange(rows, types, self.groups)
         task_rows = [r for r in body if r.row_id >= running.first_row]
         if not task_rows:
             return running.first_row
@@ -604,7 +612,8 @@ class ProactiveContextManager(Policy):
         pinned_ids = types.of(*self.groups.pinned)
         pinned = self.newest_within([r for r in body if r.row_id < running.first_row and r.type.id in pinned_ids],
                                     cfg.keep_pinned_tokens)
-        whole = held + sum(r.tokens for r in pinned) + sum(r.tokens for r in task_rows)
+        whole = held + sum(r.tokens for r in pinned) + sum(r.tokens for r in task_rows) \
+            + sum(r.tokens for r in preamble) + tok.count(layout.overview(cfg, db_path)) + fixed_tokens
         return running.first_row if whole <= cfg.max_context_tokens else task_rows[-1].row_id + 1
 
     def not_smaller(self, sections, rows, turns, types: TypeIds) -> Optional[str]:
@@ -724,8 +733,10 @@ class ProactiveContextManager(Policy):
                     return self.nothing(conn, build_id, through_row, "no turns")
                 tasks, failed, fresh = self.limit_tasks(conn, channel_id, turns)
             else:
-                # one turn, or one task, is built only when it is over the limit: a cut inside it is then due
-                oversized = sum(r.tokens for r in rows) - sum(e.tokens for e in preamble) > cfg.max_context_tokens
+                # one turn, or one task, is built only when it is over the limit: a cut inside it is then due --
+                # all the model gets, with what the harness sends besides it (as its last call stated)
+                fixed = (conn.last_read(channel.of(channel_id)) or {}).get("fixed_tokens") or 0
+                oversized = sum(r.tokens for r in rows) + fixed > cfg.max_context_tokens
                 if len(turns) < 2 and not oversized:
                     return self.nothing(conn, build_id, through_row, "fewer than two turns")
                 tasks, failed, fresh = segmentation.update(turns, tables.tasks_for(conn, channel_id), self.llm,
