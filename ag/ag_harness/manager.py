@@ -241,13 +241,24 @@ class Manager(ContextManager):
             return Context(), None
         self.poll(gatherer_id)
         conn = self._conn(gatherer_id)
-        ctx = self.policy.read(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), row_id, limit))
+        ids = [store.record_preamble(conn, p["name"], p["text"], self.tokenizer) for p in preamble or ()]
+        ctx = self.policy.read(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), row_id, limit,
+                                                              fixed_tokens=store.preamble_tokens(conn, preamble)))
         read_id = None
         if ctx.items:
-            ids = [store.record_preamble(conn, p["name"], p["text"], self.tokenizer) for p in preamble or ()]
             read_id = store.record_read(conn, properties, ctx.refs, manager=self.policy.name, basis=ctx.basis,
-                                        row_id=row_id, est_tokens=ctx.tokens, limit_tokens=limit, preamble_ids=ids)
+                                        row_id=row_id, est_tokens=ctx.tokens, limit_tokens=limit, preamble_ids=ids,
+                                        sent_tokens=self.sent_tokens(conn, ctx, preamble))
         return ctx, read_id
+
+    @staticmethod
+    def sent_tokens(conn, ctx: Context, preamble: Optional[List[dict]]) -> int:
+        """All a read's context sends -- every item, and the preamble -- by the sizes stored now."""
+        rows = store.rows_by_id(conn, [r.row_id for r in ctx.refs if r.row_id is not None])
+        made = store.made_items(conn, [r.made_id for r in ctx.refs if r.made_id is not None])
+        return (sum(rows[r.row_id].tokens or 0 for r in ctx.refs if r.row_id in rows)
+                + sum(made[r.made_id][2] or 0 for r in ctx.refs if r.made_id in made)
+                + store.preamble_tokens(conn, preamble))
 
     def read_events(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None) -> List[dict]:
         """Not part of the interface: `read`, as events -- what the server
@@ -276,9 +287,7 @@ class Manager(ContextManager):
         conn = self._conn(gatherer_id)
         rows = store.rows_by_id(conn, [r.row_id for r in ctx.refs if r.row_id is not None])
         made = store.made_items(conn, [r.made_id for r in ctx.refs if r.made_id is not None])
-        sizes["sent_tokens"] = (sum(rows[r.row_id].tokens or 0 for r in ctx.refs if r.row_id in rows)
-                                + sum(made[r.made_id][2] or 0 for r in ctx.refs if r.made_id in made)
-                                + store.preamble_tokens(conn, preamble))
+        sizes["sent_tokens"] = self.sent_tokens(conn, ctx, preamble)          # as the read log keeps it
         out = []
         for item, ref in zip(ctx.items, ctx.refs):
             if ref.row_id is not None and ref.row_id in rows:
@@ -298,13 +307,13 @@ class Manager(ContextManager):
         return store.record_real_tokens(self._conn(gatherer_id), read_id, tokens)
 
     def record_counts(self, gatherer_id: str, properties: Optional[dict], events: dict, made: dict,
-                      preamble: list) -> dict:
+                      preamble: list, left_out: Optional[dict] = None) -> dict:
         """Not part of the interface: sizes the model's provider counted after the fact -- of
         events by id, made items by id, preamble parts (name, text, tokens) -- in place of the
         tokenizer's (`store.record_counts`): what the policy then sizes contexts by."""
         if not os.path.exists(db_path(gatherer_id)):
             return {"events": 0, "made": 0, "preamble": 0}
-        return store.record_counts(self._conn(gatherer_id), properties, events, made, preamble)
+        return store.record_counts(self._conn(gatherer_id), properties, events, made, preamble, left_out)
 
     def bulk_load(self, gatherer_id: str, events, *, properties: Optional[dict] = None):
         """Not part of the interface: store a whole recorded history in one
