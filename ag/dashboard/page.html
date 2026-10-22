@@ -660,12 +660,12 @@ function tasksCard(tasks) {
   const card = el("section", { class: "card" }, el("h3", { text: `Tasks · ${tasks.length}` }),
     el("div", { class: "desc", text: "ag's segmentation of this agent's history, oldest first." }));
   if (!tasks.length) { card.append(el("div", { class: "desc", text: "None yet: a build segments the history." })); return card; }
-  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["#", "Task", "What it was", "Started", "Took", "History rows", "Tokens"].map((h, i) =>
+  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["#", "Task", "What it was", "Started", "Took", "Tokens"].map((h, i) =>
     el("th", { class: i >= 5 || i === 0 ? "n" : "", text: h })))));
   const body = el("tbody");
   for (const t of tasks) body.append(el("tr", {}, el("td", { class: "n", text: t.index }), el("td", { text: t.name || "–" }),
     el("td", { class: "desc-cell", text: t.description || "" }), el("td", { text: clock(t.started, true) }), el("td", { text: span(t.started, t.ended) }),
-    el("td", { class: "n", text: `${t.first_row ?? "–"}–${t.last_row ?? "–"}` }), el("td", { class: "n", text: full(t.tokens) })));
+    el("td", { class: "n", text: full(t.tokens) })));
   table.append(body);
   card.append(el("div", { class: "scroll" }, table));
   return card;
