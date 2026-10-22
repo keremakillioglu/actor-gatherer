@@ -109,6 +109,10 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .task .messages { padding: 4px 0 10px 44px; }
 @media (max-width: 760px) { .tasks .thead { display: none; } .task > summary { grid-template-columns: 24px minmax(0, 1fr); }
   .task > summary > span:nth-child(n+3) { grid-column: 2; } .task .messages { padding-left: 0; } }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--ring); margin: -4px 0 16px; }
+.tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 14px; font-size: 13px; color: var(--ink-2); margin-bottom: -1px; }
+.tab:hover { background: var(--wash); }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--s1); font-weight: 600; }
 .card-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .decomp { position: relative; margin: 6px 0 14px; display: grid; gap: 8px; }
 .drow { display: grid; grid-template-columns: 210px minmax(0, 1fr); align-items: center; gap: 12px; }
@@ -168,7 +172,8 @@ const POLL_MS = 5000;
 const LABELS = { "ag's sections": "Summarized history", "Recent history": "Recent raw history" };
 const label = (group) => LABELS[group] || group;
 const GROUP_ORDER = ["Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages"];
-let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, timer: null };
+let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, timer: null,
+  tab: (() => { try { return localStorage.getItem("ag-dashboard-tab") === "gatherer" ? "gatherer" : "actor"; } catch (e) { return "actor"; } })() };
 
 // ------------------------------------------------------------------ helpers
 const el = (tag, attrs = {}, ...kids) => {
@@ -451,24 +456,43 @@ function renderMain() {
   const hasReal = reads.some((r) => typeof r.real_tokens === "number");
   const builds = a.builds || [], failed = builds.filter((b) => b.status === "failed").length;
   const llm = a.llm.total;
-  main.replaceChildren(
-    el("div", { class: "title" }, el("h2", { text: `${harnessName(a.harness)} · ${g}` }), statusEl(cls, label),
-      el("span", { class: "sub", text: `channel ${c}${info.cwd ? " · " + info.cwd : ""}` })),
+  const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Views of this agent" });
+  for (const [id, name] of [["actor", "Actor"], ["gatherer", "Gatherer"]]) {
+    tabs.append(el("button", { type: "button", role: "tab", class: "tab", "aria-selected": state.tab === id ? "true" : "false",
+      onclick: () => setTab(id) }, name));
+  }
+  const view = state.tab === "gatherer" ? [         // what ag did for the agent
+    el("div", { class: "tiles" },
+      tile("Rebuilds", full(a.rebuilds), "reads on a new build"),
+      tile("Builds", full(builds.length), failed ? `${failed} failed` : "none failed"),
+      tile("New-task checks", full(a.checks.length), `${a.checks.filter((x) => x.new_task).length} said a new task`),
+      tile("ag's model calls", full(llm.calls), `${usd(llm.cost)}${llm.unpriced ? ` + ${llm.unpriced} unpriced` : ""}`)),
+    buildsCard(builds),
+    llmCard(a),
+  ] : [                                              // what the agent saw and did
     el("div", { class: "tiles" },
       tile("Context now", compact(last.real_tokens ?? last.sent_tokens),
         last.real_tokens !== null && last.real_tokens !== undefined ? `provider's count · ag counted ${compact(last.sent_tokens)}` : "ag's count"),
       tile("Harness limit", compact(last.limit_tokens), last.limit_tokens ? "where the harness compacts" : "none stated"),
-      tile("Tasks", full(a.tasks.length), `${a.checks.filter((x) => x.new_task).length} new-task decisions`),
-      tile("Rebuilds", full(a.rebuilds), "reads on a new build"),
-      tile("Reads", full(reads.length), last.at ? `last ${ago(last.at)}` : ""),
-      tile("Builds", full(builds.length), failed ? `${failed} failed` : "none failed"),
-      tile("ag's model calls", full(llm.calls), `${usd(llm.cost)}${llm.unpriced ? ` + ${llm.unpriced} unpriced` : ""}`)),
+      tile("Tasks", full(a.tasks.length), "as ag has segmented the history"),
+      tile("Reads", full(reads.length), last.at ? `last ${ago(last.at)}` : "")),
     sizeCard(reads, hasReal),
     contextCard(),
     usageCard(),
     historyCard(a.tasks),
-    el("div", { class: "grid2" }, buildsCard(builds), llmCard(a)));
+  ];
+  main.replaceChildren(
+    el("div", { class: "title" }, el("h2", { text: `${harnessName(a.harness)} · ${g}` }), statusEl(cls, label),
+      el("span", { class: "sub", text: `channel ${c}${info.cwd ? " · " + info.cwd : ""}` })),
+    tabs, ...view);
   drawCharts();
+}
+const TAB_KEY = "ag-dashboard-tab";
+function setTab(id) {
+  state.tab = id;
+  try { localStorage.setItem(TAB_KEY, id); } catch (e) { /* this page only */ }
+  renderMain();
+  window.scrollTo(0, 0);
 }
 function tile(labelText, value, note) {
   return el("div", { class: "tile" }, el("div", { class: "label", text: labelText }), el("div", { class: "value", text: value }), el("div", { class: "note", text: note }));
