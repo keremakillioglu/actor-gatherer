@@ -39,7 +39,7 @@ carries them, and its read is made with them -- {name: value}, the names the
 policy's event types declare (e.g. {"channel": <the harness's thread>});
 none: {}. `cwd` is the working directory the gatherer's pollers look at.
 
-    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?}
+    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?, "preamble"?}
         -> {"context": [...] or null, "note", "read_id"}   one model call: insert, then read
                                                 in response to the last event; null: send
                                                 your own. `read_id` names the read, for
@@ -47,7 +47,10 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 recorded before the read. `limit` is the
                                                 harness's own limit for the call (where it
                                                 compacts, or its window ends), in its
-                                                provider's tokens; the policy keeps under it
+                                                provider's tokens; the policy keeps under it.
+                                                `preamble`, [{"name", "text"}], is what the
+                                                harness sends besides its messages (its system
+                                                prompt, its tool definitions), kept with the read
     {"op": "measured", "gatherer", "read_id", "tokens"} -> {"recorded": bool}
                                                 the provider's count of read `read_id`'s
                                                 context: the call's input tokens, cached
@@ -129,6 +132,16 @@ def properties_of(request: dict) -> Dict[str, Any]:
 def limit_of(value) -> Optional[int]:
     """A harness's stated limit: a positive int, else None (none stated)."""
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def preamble_of(value) -> Optional[List[dict]]:
+    """A harness's stated preamble: the [{"name", "text"}] whose name and text are non-empty
+    strings; None for none."""
+    if not isinstance(value, list):
+        return None
+    out = [{"name": p["name"], "text": p["text"]} for p in value
+           if isinstance(p, dict) and isinstance(p.get("name"), str) and p["name"] and isinstance(p.get("text"), str) and p["text"]]
+    return out or None
 
 
 def measured_of(value) -> Optional[dict]:
@@ -217,9 +230,9 @@ class Server:
         return {"rows": rows, "last": last}
 
     def read(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], row: int, manager=None,
-             limit: Optional[int] = None) -> dict:
+             limit: Optional[int] = None, preamble: Optional[List[dict]] = None) -> dict:
         manager = self.with_pollers(manager or self.manager(gatherer), gatherer, cwd)
-        context, read_id = manager.read_logged(gatherer, row, properties=properties, limit=limit)
+        context, read_id = manager.read_logged(gatherer, row, properties=properties, limit=limit, preamble=preamble)
         return {"context": context, "read_id": read_id}
 
     def measured(self, gatherer: str, read_id: int, tokens: int) -> dict:
@@ -244,7 +257,8 @@ class Server:
     # ---- one model call
 
     def rewrite(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], events: list,
-                measured: Optional[dict] = None, limit: Optional[int] = None) -> dict:
+                measured: Optional[dict] = None, limit: Optional[int] = None,
+                preamble: Optional[List[dict]] = None) -> dict:
         """Insert `events`, then read in response to the last. `measured`,
         {"read_id", "tokens"}, is the provider's count of an earlier read's
         context, recorded first, so this read sees it. Never raises: a
@@ -267,7 +281,7 @@ class Server:
             self.log(gatherer, prefix + note)
             return {"context": None, "note": note}
         try:
-            answer = self.read(gatherer, properties, cwd, last, manager, limit)
+            answer = self.read(gatherer, properties, cwd, last, manager, limit, preamble)
         except Exception as exc:  # noqa: BLE001
             note = f"read failed: {exc!r}; messages unchanged"
             self.log(gatherer, prefix + note)
@@ -297,7 +311,7 @@ class Server:
             if not isinstance(events, list):
                 return {"context": None, "note": "no events; messages unchanged"}
             return self.rewrite(gatherer, properties, cwd, events, measured_of(request.get("measured")),
-                                limit_of(request.get("limit")))
+                                limit_of(request.get("limit")), preamble_of(request.get("preamble")))
         if op == "measured":
             measured = measured_of(request)
             if measured is None:

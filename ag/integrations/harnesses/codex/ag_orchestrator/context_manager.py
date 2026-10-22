@@ -37,7 +37,7 @@ from typing import Callable, Optional, Union
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, report_measured
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, preamble_of, report_measured
 from .ag_clients import AgClients
 from ..adaptor.adaptor import CodexAdaptor
 
@@ -131,7 +131,8 @@ class CodexContextManager:
         items, out = body["input"], {}
         messages, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
                                        cwd_of(items) or self.cwd, items, self.adaptor, out=out,
-                                       limit=getattr(request, "limit", None))
+                                       limit=getattr(request, "limit", None),
+                                       preamble=preamble_of({"instructions": body.get("instructions"), "tools": body.get("tools")}))
         self.log(gatherer, f"[{channel}] {note}")
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
         if messages is None or messages == items:

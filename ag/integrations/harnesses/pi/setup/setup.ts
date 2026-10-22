@@ -39,6 +39,14 @@ export default async function (pi: ExtensionAPI) {
 		type: "string",
 	});
 
+	// What pi sends besides the messages: its system prompt, and the definitions of its active tools.
+	const preambleOf = (ctx: ExtensionContext) => {
+		const active = new Set(pi.getActiveTools());
+		const tools = pi.getAllTools().filter((t) => active.has(t.name))
+			.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
+		return [{ name: "system", text: ctx.getSystemPrompt() || "" }, { name: "tools", text: tools.length ? JSON.stringify(tools) : "" }];
+	};
+
 	const where = (ctx: ExtensionContext) =>
 		ag.where(ctx.sessionManager.getSessionId(), (pi.getFlag("ag-gatherer") as string | undefined) || process.env.AG_GATHERER);
 
@@ -59,7 +67,7 @@ export default async function (pi: ExtensionAPI) {
 
 	pi.on("context", async (event, ctx) => {
 		if (failed) return undefined;
-		const messages = await ag.context(event.messages as any[], where(ctx), ctx.cwd, ctx.model);
+		const messages = await ag.context(event.messages as any[], where(ctx), ctx.cwd, ctx.model, preambleOf(ctx));
 		if (!messages) {
 			ctx.ui.setStatus(STATUS, "ag: unchanged");
 			return undefined;

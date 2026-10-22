@@ -18,7 +18,7 @@
  */
 
 import { type Answer, AgClient } from "../../../tools/ag_connection/ag_client.ts";
-import { type Requester, call_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
+import { type Preamble, type Requester, call_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
 import { type Adaptor, CHANNEL } from "../../../tools/ag_orchestrator/adaptor.ts";
 import { Measurements, n } from "../../../tools/ag_orchestrator/measured.ts";
 import { PiAdaptor } from "../adaptor/adaptor.ts";
@@ -68,11 +68,14 @@ export class PiContextManager {
 		return answer;
 	}
 
-	/** The messages the model gets for this call, or null to send pi's own; `model` is pi's current model. */
-	async context(messages: any[], where: Where, cwd?: string, model?: any): Promise<any[] | null> {
+	/**
+	 * The messages the model gets for this call, or null to send pi's own; `model` is pi's current model,
+	 * `preamble` what pi sends besides the messages (its system prompt, its tools).
+	 */
+	async context(messages: any[], where: Where, cwd?: string, model?: any, preamble?: Preamble): Promise<any[] | null> {
 		const channel = where.properties[CHANNEL];
 		const routed = await call_ag(this.server, { ...where, cwd }, messages, this.adaptor,
-			this.measurements.take(channel, messages), piLimit(model));
+			this.measurements.take(channel, messages), piLimit(model), preamble);
 		this.measurements.keep(channel, routed.messages !== null ? routed.readId : undefined, messages);
 		this.answering = routed.messages !== null;
 		return routed.messages;

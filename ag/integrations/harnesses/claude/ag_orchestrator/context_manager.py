@@ -40,7 +40,7 @@ from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
 from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load_adaptor
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, report_measured
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, preamble_of, report_measured
 from ..adaptor.adaptor import ClaudeAdaptor
 from ..adaptor.to_events import Continuity, blocks_of
 
@@ -144,7 +144,8 @@ class ClaudeContextManager:
         out = {}
         new, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
                                   cwd_of(messages) or self.cwd, messages, adaptor, out=out,
-                                  limit=getattr(request, "limit", None))
+                                  limit=getattr(request, "limit", None),
+                                  preamble=preamble_of({"system": body.get("system"), "tools": body.get("tools")}))
         self.log(gatherer, f"[{channel}] {note}")
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
         if new is None or new == messages:

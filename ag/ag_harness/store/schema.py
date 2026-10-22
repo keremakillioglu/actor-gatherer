@@ -12,6 +12,8 @@ One SQLite file per gatherer (paths.py):
                          exactly as sent; never read back as history (internal)
     _reads, _read_items  the read log: what each read returned, in order, and in
                          response to which event (internal)
+    _preambles           what harnesses sent besides their messages (system prompts, tool
+                         definitions), each text once; a read names its own (internal)
     _polls               when each poller (a source of events from outside the
                          conversation) was last asked (internal)
 
@@ -103,8 +105,20 @@ CREATE TABLE IF NOT EXISTS _reads (
     est_tokens  INTEGER,            -- the context's size by the manager's own count; NULL = not given
     real_tokens INTEGER,            -- its size as the model's provider counted it (the
                                     -- call's input tokens, reported after it); NULL = not yet
-    limit_tokens INTEGER            -- the harness's own limit the call stated (where it compacts,
+    limit_tokens INTEGER,           -- the harness's own limit the call stated (where it compacts,
                                     -- or its window ends); NULL = none
+    preamble_json TEXT              -- the harness's preamble the call stated: the _preambles it
+                                    -- sent besides its messages, as a JSON list of ids; NULL = none
+);
+
+-- What a harness sends besides its messages -- its system prompt, its tool definitions --
+-- each distinct text once (a call names the ones it sent, `_reads.preamble_json`).
+CREATE TABLE IF NOT EXISTS _preambles (
+    preamble_id INTEGER PRIMARY KEY,
+    name        TEXT    NOT NULL,   -- what it is, as the harness names it: "instructions", "tools", ...
+    sha         TEXT    NOT NULL UNIQUE,   -- of the name and the text
+    text        TEXT    NOT NULL,
+    tokens      INTEGER             -- its size, by the manager's tokenizer
 );
 
 -- What each read returned, in order: a stored event (row_id) or a made item
@@ -153,9 +167,10 @@ def create(conn: sqlite3.Connection) -> None:
     if "text" not in {c[1] for c in conn.execute("PRAGMA table_info(events)")}:
         conn.execute("ALTER TABLE events ADD COLUMN text TEXT")      # a file from before events had text
     read_columns = {c[1] for c in conn.execute("PRAGMA table_info(_reads)")}
-    for column in ("est_tokens", "real_tokens", "limit_tokens"):     # a file from before reads had sizes
+    for column, kind in (("est_tokens", "INTEGER"), ("real_tokens", "INTEGER"), ("limit_tokens", "INTEGER"),
+                         ("preamble_json", "TEXT")):                 # a file from before reads had them
         if column not in read_columns:
-            conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} INTEGER")
+            conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} {kind}")
     if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'events_id'").fetchone() is None:
         index(conn, property_names(conn))            # a new file: over no property yet
 
