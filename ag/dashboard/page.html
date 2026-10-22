@@ -270,6 +270,8 @@ async function loadAgent() {
   state.agent = SNAPSHOT ? SNAPSHOT.agents[key(g, c)] || null
     : await get(`/api/agent?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`);
   const reads = (state.agent && state.agent.reads) || [];
+  for (const r of reads)                             // ag's count of all a call sent: its messages, and the preamble where recorded
+    r.counted_tokens = r.sent_tokens === null || r.sent_tokens === undefined ? null : r.sent_tokens + (r.preamble_tokens || 0);
   if (!reads.length) { state.readId = null; state.context = null; return; }
   const followLatest = state.readId === null || state.followLatest;
   const want = followLatest ? reads[reads.length - 1].read_id : state.readId;
@@ -480,8 +482,8 @@ function renderMain() {
     llmCard(a),
   ] : [                                              // what the agent saw and did
     el("div", { class: "tiles" },
-      tile("Context now", compact(last.real_tokens ?? last.sent_tokens),
-        last.real_tokens !== null && last.real_tokens !== undefined ? `provider's count · ag counted ${compact(last.sent_tokens)}` : "ag's count"),
+      tile("Context now", compact(last.real_tokens ?? last.counted_tokens),
+        last.real_tokens !== null && last.real_tokens !== undefined ? `provider's count · ag counted ${compact(last.counted_tokens)}` : "ag's count"),
       tile("Harness limit", compact(last.limit_tokens), last.limit_tokens ? "where the harness compacts" : "none stated"),
       tile("Tasks", full(a.tasks.length), "as ag has segmented the history"),
       tile("Reads", full(reads.length), last.at ? `last ${ago(last.at)}` : "")),
@@ -508,16 +510,19 @@ function tile(labelText, value, note) {
 }
 function sizeCard(reads, hasReal) {
   const card = el("section", { class: "card" }, el("h3", { text: "Context size" }),
-    el("div", { class: "desc", text: (hasReal ? "Each model call's context, in tokens: as the provider counted it, and as ag counts all it sent."
+    el("div", { class: "desc", text: (hasReal ? "Each model call's context, in tokens: as the provider counted it, and as ag counts all it sent "
+      + "(the harness's preamble included, where it was recorded)."
       : "Each model call's context, in tokens, as ag counts all it sent (these reads have no provider count).") + " Click the chart to see what a read held." }),
     legend([...(hasReal ? [{ label: "Provider's count", color: "var(--s1)" }] : []), { label: "ag's own count", color: "var(--s2)" },
       { label: "Rebuild", kind: "rule" }]),
     el("div", { id: "size-chart" }));
-  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["Read", "Time", "Provider's count", "ag's count", "ag's budgeted size", "Limit", "Tasks", "Build"].map((h, i) =>
-    el("th", { class: i >= 2 && i <= 6 ? "n" : "", text: h })))));
+  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["Read", "Time", "Provider's count", "ag's count", "of it, preamble", "ag's budgeted size", "Limit", "Tasks", "Build"].map((h, i) =>
+    el("th", { class: i >= 2 && i <= 7 ? "n" : "", text: h })))));
   const body = el("tbody");
   for (const r of [...reads].reverse()) body.append(el("tr", {}, el("td", { class: "n", text: r.read_id }), el("td", { text: clock(r.at, true) }),
-    el("td", { class: "n", text: full(r.real_tokens) }), el("td", { class: "n", text: full(r.sent_tokens) }), el("td", { class: "n", text: full(r.est_tokens) }),
+    el("td", { class: "n", text: full(r.real_tokens) }), el("td", { class: "n", text: full(r.counted_tokens ?? r.sent_tokens) }),
+    el("td", { class: "n", text: r.preamble_tokens === null || r.preamble_tokens === undefined ? "not recorded" : full(r.preamble_tokens) }),
+    el("td", { class: "n", text: full(r.est_tokens) }),
     el("td", { class: "n", text: full(r.limit_tokens) }),
     el("td", { class: "n", text: r.tasks }), el("td", { text: (r.basis ?? "none") + (r.rebuild ? " (rebuild)" : "") })));
   table.append(body);
@@ -536,7 +541,7 @@ function drawCharts() {
   const sizeHost = document.getElementById("size-chart");
   const series = [];
   if (reads.some((r) => typeof r.real_tokens === "number")) series.push({ field: "real_tokens", color: "var(--s1)", label: "provider's count" });
-  series.push({ field: "sent_tokens", color: "var(--s2)", label: "ag's own count" });
+  series.push({ field: "counted_tokens", color: "var(--s2)", label: "ag's own count" });
   if (sizeHost) lineChart(sizeHost, { reads, series, onPick: pick, picked: state.readId });
 }
 // The row of type chips: which items the lists show. With counts, only the types present, counted.

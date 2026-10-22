@@ -17,8 +17,9 @@ session, ...); which harness, its events' shape tells (`harness_of`). It is RUNN
 running for it, else idle. A REBUILD is a read whose context comes from another build
 than the agent's read before it: the condensed history was replaced.
 
-Each read has three sizes: `sent_tokens`, ag's own count of everything it sent (what the
-read returned, `_read_items`, added up -- what read() breaks down); `est_tokens`, the
+Each read has these sizes: `sent_tokens`, ag's own count of everything it sent (what the
+read returned, `_read_items`, added up -- what read() breaks down); `preamble_tokens`, its
+count of what the harness sent besides (None: not recorded); `est_tokens`, the
 policy's count of it against its budget (which leaves out the agent's preamble and the
 sections' fixed overview); and `real_tokens`, the provider's count. A database written
 before a column existed reads as None there. Nothing here writes anything.
@@ -297,8 +298,14 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
         f"JOIN _reads r ON r.read_id = i.read_id AND r.{CHANNEL} = ? "
         "LEFT JOIN events e ON e.row_id = i.row_id LEFT JOIN _made_items m ON m.made_id = i.made_id "
         "GROUP BY i.read_id", (channel,)))
+    pre = dict(conn.execute(f"SELECT read_id, preamble_json FROM _reads WHERE {CHANNEL} = ?", (channel,))) \
+        if "preamble_json" in read_cols else {}
+    known = _preambles(conn, [i for raw in pre.values() for i in _preamble_ids(raw)])
     for r in reads:
         r["sent_tokens"] = sent.get(r["read_id"])
+        ids = _preamble_ids(pre.get(r["read_id"]))
+        # the harness's preamble the call stated (None: none recorded -- a call from before ag kept it)
+        r["preamble_tokens"] = sum(known[i]["tokens"] for i in ids if i in known) if ids else None
     starts = sorted(t["started"] for t in tasks if t["started"] is not None)
     for i, r in enumerate(reads):          # the tasks begun by then (a read may answer an older event)
         r["tasks"] = sum(1 for s in starts if r["at"] is not None and s <= r["at"])
