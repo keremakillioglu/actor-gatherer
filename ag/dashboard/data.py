@@ -10,6 +10,7 @@ database, opened read-only, and ag's own logs -- as plain JSON-ready dicts.
                                   every token it was sent across its calls, by kind
     read(gatherer, read_id)       what one read put in the agent's context, by kind
     context(gatherer, read_id)    every item of it, in order, with its text
+    history(gatherer, channel, a, b)  the agent's own events from row a to b: a task's messages
 
 An agent is a channel of a gatherer: one harness session (codex's thread, Claude Code's
 session, ...); which harness, its events' shape tells (`harness_of`). It is RUNNING when its last read is recent (RUNNING_SECONDS) or a build is
@@ -392,6 +393,35 @@ def read(gatherer: str, read_id: int) -> dict:
 
 
 TEXT_CHARS = 20000          # the most of one item's text `context` returns; the rest is counted, not sent
+
+
+HISTORY_ITEMS = 3000        # the most events `history` returns at once
+
+
+def history(gatherer: str, channel: str, first_row: int, last_row: Optional[int] = None) -> dict:
+    """The channel's own events from row `first_row` to `last_row` (None: to its newest), in
+    order, as `context` lists items: each one's type, size, time and text (at most
+    TEXT_CHARS; `clipped` says how much more), at most HISTORY_ITEMS of them (`more` counts
+    the rest) -- a task's messages, or those since the last task."""
+    conn = _connect(gatherer)
+    if conn is None:
+        return {"error": f"no database for gatherer {gatherer!r}"}
+    try:
+        top = last_row if last_row is not None else 2 ** 62
+        where = f"e.{CHANNEL} = ? AND e.row_id >= ? AND e.row_id <= ?"
+        n = conn.execute(f"SELECT count(*) FROM events e WHERE {where}", (channel, first_row, top)).fetchone()[0]
+        items = []
+        for r in conn.execute(
+                "SELECT e.row_id, t.name AS type, e.tokens, e.text, e.payload_json, e.inserted_at FROM events e "
+                f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE {where} ORDER BY e.row_id LIMIT ?",
+                (channel, first_row, top, HISTORY_ITEMS)):
+            text = r["text"] if r["text"] else readable(r["payload_json"])
+            items.append({"row_id": r["row_id"], "name": r["type"] or "?", "tokens": r["tokens"] or 0,
+                          "at": _seconds(r["inserted_at"]), "clipped": max(0, len(text or "") - TEXT_CHARS),
+                          "text": (text or "")[:TEXT_CHARS]})
+        return {"first_row": first_row, "last_row": last_row, "items": items, "more": max(0, n - len(items))}
+    finally:
+        conn.close()
 
 
 def context(gatherer: str, read_id: int) -> dict:

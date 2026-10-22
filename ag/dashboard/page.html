@@ -96,6 +96,19 @@ tr.total td { font-weight: 600; border-bottom: 0; }
 .stack div:first-child { border-radius: 4px 0 0 4px; } .stack div:last-child { border-radius: 0 4px 4px 0; }
 .stack div:only-child { border-radius: 4px; }
 details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-top: 8px; }
+.tasks { border-top: 1px solid var(--grid); }
+.tasks .thead, .task > summary { display: grid; grid-template-columns: 32px minmax(140px, 220px) minmax(0, 1fr) 150px 60px 96px; gap: 12px;
+  padding: 7px 8px; font-size: 12px; align-items: start; }
+.tasks .thead { color: var(--muted); border-bottom: 1px solid var(--grid); }
+.task > summary { margin: 0; color: var(--ink); cursor: pointer; border-bottom: 1px solid var(--grid); list-style: none; }
+.task > summary::-webkit-details-marker { display: none; }
+.task > summary:hover { background: var(--wash); }
+.task[open] > summary { background: var(--selected); }
+.task .tname { font-weight: 500; }
+.task .n, .tasks .thead .n { text-align: right; font-variant-numeric: tabular-nums; }
+.task .messages { padding: 4px 0 10px 44px; }
+@media (max-width: 760px) { .tasks .thead { display: none; } .task > summary { grid-template-columns: 24px minmax(0, 1fr); }
+  .task > summary > span:nth-child(n+3) { grid-column: 2; } .task .messages { padding-left: 0; } }
 .card-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .decomp { position: relative; margin: 6px 0 14px; display: grid; gap: 8px; }
 .drow { display: grid; grid-template-columns: 210px minmax(0, 1fr); align-items: center; gap: 12px; }
@@ -201,7 +214,9 @@ const INLINE = new Set(["File-change notices", "Other agents' requests", "Stream
 // what the Gatherer wrote (its sections, and its messages among the history) is one type; the harness's
 // own system/developer messages (its `context` events: instructions, environment notes) another
 const GATHERER = new Set(["ag's sections", ...INLINE]);
-const itemType = (it) => GATHERER.has(it.group) ? typeOf("gatherer") : it.name === "context" ? typeOf("system") : typeOf(it.name);
+const OUTSIDE = new Set(["environment_update", "context_stream"]);   // events from outside the conversation
+const itemType = (it) => GATHERER.has(it.group) || OUTSIDE.has(it.name) ? typeOf("gatherer")
+  : it.name === "context" ? typeOf("system") : typeOf(it.name);
 const EMPTY = "empty";                            // a history item with no words (a model's empty text beside its tool call)
 const typeOf = (name) => TYPES.find((t) => t[0] === name) || OTHER_TYPE;
 const HISTORY = new Set(["Recent history", "Kept from before the cut"]);
@@ -451,7 +466,7 @@ function renderMain() {
     sizeCard(reads, hasReal),
     contextCard(),
     usageCard(),
-    tasksCard(a.tasks),
+    historyCard(a.tasks),
     el("div", { class: "grid2" }, buildsCard(builds), llmCard(a)));
   drawCharts();
 }
@@ -491,6 +506,20 @@ function drawCharts() {
   series.push({ field: "sent_tokens", color: "var(--s2)", label: "ag's own count" });
   if (sizeHost) lineChart(sizeHost, { reads, series, onPick: pick, picked: state.readId });
 }
+// The row of type chips: which items the lists show. With counts, only the types present, counted.
+function typeChips(counts, empty) {
+  const row = el("div", { class: "filters", role: "group", "aria-label": "Message types shown" }, el("span", { class: "label", text: "Shows" }));
+  for (const [type, name, swatch] of [TYPES[6], ...TYPES.slice(0, 6), OTHER_TYPE]) {   // the Gatherer's first
+    if (counts && !counts[type]) continue;
+    if (!counts && type === OTHER_TYPE[0]) continue;
+    const on = shownTypes.has(type);
+    row.append(el("button", { type: "button", class: "chip", "aria-pressed": on ? "true" : "false", onclick: () => toggleType(type) },
+      el("span", { class: "dot", style: `background:${swatch}` }), counts ? `${name} ${counts[type]}` : name));
+  }
+  if (!counts || empty) row.append(el("button", { type: "button", class: "chip", "aria-pressed": shownTypes.has(EMPTY) ? "true" : "false",
+    onclick: () => toggleType(EMPTY) }, counts ? `Empty ${empty}` : "Empty"));
+  return row;
+}
 function contextCard() {
   const latest = state.followLatest;
   const title = el("div", { class: "card-title" }, el("h3", { text: latest ? "Context right now" : `Context at read ${state.readId}` }));
@@ -517,17 +546,7 @@ function contextCard() {
     const counts = {};
     for (const i of history) { const t = itemType(i)[0]; counts[t] = (counts[t] || 0) + 1; }
     const empty = history.filter((i) => !GATHERER.has(i.group) && !i.text.trim()).length;
-    const row = el("div", { class: "filters", role: "group", "aria-label": "Message types shown in the history" },
-      el("span", { class: "label", text: "Shows" }));
-    for (const [type, label, swatch] of [TYPES[6], ...TYPES.slice(0, 6), OTHER_TYPE]) {   // the Gatherer's first
-      if (!counts[type]) continue;
-      const on = shownTypes.has(type);
-      row.append(el("button", { type: "button", class: "chip", "aria-pressed": on ? "true" : "false", onclick: () => toggleType(type) },
-        el("span", { class: "dot", style: `background:${swatch}` }), `${label} ${counts[type]}`));
-    }
-    if (empty) row.append(el("button", { type: "button", class: "chip", "aria-pressed": shownTypes.has(EMPTY) ? "true" : "false",
-      onclick: () => toggleType(EMPTY) }, `Empty ${empty}`));
-    card.append(row);
+    card.append(typeChips(counts, empty));
   }
   const list = el("div", { class: "ctx tall", "data-keep": "context" });
   let run = null;
@@ -659,19 +678,57 @@ function contextItem(it) {
   });
   return row;
 }
-function tasksCard(tasks) {
-  const card = el("section", { class: "card" }, el("h3", { text: `Tasks · ${tasks.length}` }),
-    el("div", { class: "desc", text: "ag's segmentation of this agent's history, oldest first." }));
-  if (!tasks.length) { card.append(el("div", { class: "desc", text: "None yet: a build segments the history." })); return card; }
-  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["#", "Task", "What it was", "Started", "Took", "Tokens"].map((h, i) =>
-    el("th", { class: i >= 5 || i === 0 ? "n" : "", text: h })))));
-  const body = el("tbody");
-  for (const t of tasks) body.append(el("tr", {}, el("td", { class: "n", text: t.index }), el("td", { text: t.name || "–" }),
-    el("td", { class: "desc-cell", text: t.description || "" }), el("td", { text: clock(t.started, true) }), el("td", { text: span(t.started, t.ended) }),
-    el("td", { class: "n", text: full(t.tokens) })));
-  table.append(body);
-  card.append(el("div", { class: "scroll" }, table));
+const historyCache = new Map();                    // a task's messages, once loaded: closed stretches never change
+async function loadHistory(first, last) {
+  const [g, c] = state.selected;
+  const k = [g, c, first, last].join("\u0000");
+  if (last !== null && historyCache.has(k)) return historyCache.get(k);
+  const got = await get(`/api/history?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}&from=${first}`
+    + (last !== null ? `&to=${last}` : ""));
+  if (last !== null) historyCache.set(k, got);
+  return got;
+}
+function historyCard(tasks) {
+  const card = el("section", { class: "card" }, el("h3", { text: "Complete history" }),
+    el("div", { class: "desc", text: "The agent's whole history as ag has segmented it into tasks, oldest first, then its raw messages since the last task. "
+      + "Click one to see its messages." }));
+  card.append(typeChips(null));
+  const last = tasks.length ? tasks[tasks.length - 1] : null;
+  const entries = [...tasks.map((t) => ({ ...t, key: `task-${t.index}` })),
+    { key: "task-recent", index: "", name: "Recent raw messages", recent: true, first_row: last ? (last.last_row ?? 0) + 1 : 1, last_row: null,
+      description: tasks.length ? "Everything since ag last segmented the history: no task covers it yet." : "No task yet: the whole history, as it happened." }];
+  const list = el("div", { class: "tasks" }, el("div", { class: "thead" },
+    ...["#", "Task", "What it was", "Started", "Took", "Message tokens"].map((h, i) => el("span", { class: i === 0 || i === 5 ? "n" : "", text: h,
+      title: i === 5 ? "ag's count of the task's user and assistant messages: its tool calls and outputs are not in it" : null }))));
+  for (const t of entries) {
+    const body = el("div", { class: "messages" });
+    const row = el("details", { class: "task", id: t.key },
+      el("summary", {}, el("span", { class: "n", text: t.index }), el("span", { class: "tname", text: t.name || "–" }),
+        el("span", { class: "desc-cell", text: t.description || "" }), el("span", { text: t.recent ? "" : clock(t.started, true) }),
+        el("span", { text: t.recent ? "" : span(t.started, t.ended) }), el("span", { class: "n", text: t.recent ? "" : full(t.tokens) })),
+      body);
+    row.addEventListener("toggle", async () => {
+      if (!row.open) return;
+      if (SNAPSHOT) { body.replaceChildren(el("div", { class: "warn", text: "A snapshot has no messages: run `ag dashboard` live to open a task." })); return; }
+      body.replaceChildren(el("div", { class: "desc", text: "Loading…" }));
+      try { showMessages(body, await loadHistory(t.first_row, t.last_row)); }
+      catch (err) { body.replaceChildren(el("div", { class: "warn", text: `Not loaded: ${err.message}` })); }
+    });
+    list.append(row);
+  }
+  card.append(list);
   return card;
+}
+function showMessages(body, h) {
+  const items = h.items.map((i) => ({ ...i, group: "Recent history" }));
+  const listed = items.filter((it) => shownTypes.has(itemType(it)[0]) && (it.text.trim() || shownTypes.has(EMPTY)));
+  const tokens = items.reduce((n, i) => n + i.tokens, 0);
+  const box = el("div", { class: "ctx tall" }, el("div", { class: "run" }, el("strong", { text: `${full(items.length)} messages` }),
+    el("span", { text: `${full(tokens)} tokens${items.length - listed.length ? ` · ${items.length - listed.length} not shown` : ""}`
+      + (h.more ? ` · ${full(h.more)} more not loaded` : "") })));
+  for (const it of listed) box.append(contextItem(it));
+  if (!items.length) box.append(el("div", { class: "desc", text: "No messages yet." }));
+  body.replaceChildren(box);
 }
 function buildsCard(builds) {
   const card = el("section", { class: "card" }, el("h3", { text: `Builds · ${builds.length}` }),

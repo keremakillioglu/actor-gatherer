@@ -135,6 +135,17 @@ class DataTest(HomeBase):
             data.TEXT_CHARS = old
         self.assertTrue(all(len(i["text"]) <= 5 for i in clipped) and any(i["clipped"] for i in clipped))
 
+    def test_a_stretch_of_the_agent_s_own_history(self):
+        tasks = data.agent("g", "c1", [])["tasks"]
+        first = tasks[0]
+        h = data.history("g", "c1", first["first_row"], first["last_row"])
+        rows = [i["row_id"] for i in h["items"]]
+        self.assertEqual((rows[0], rows[-1]), (first["first_row"], first["last_row"]))
+        self.assertEqual(rows, sorted(rows))
+        since = data.history("g", "c1", tasks[-1]["last_row"] + 1)                 # after the last task: to the end
+        self.assertTrue(all(i["row_id"] > tasks[-1]["last_row"] for i in since["items"]))
+        self.assertEqual(data.history("g", "c2", 1)["items"][0]["name"], "context")   # only the channel's own
+
     def test_the_gatherer_s_calls_go_to_the_agent_by_job_or_by_time(self):
         build = data.agent("g", "c1", [])["builds"][0]
         self.log_call("1-a-1-summarize.json", purpose="summarize", model="openai/gpt-4o-mini",
@@ -205,6 +216,7 @@ class PageTest(HomeBase):
         self.assertEqual(len(json.load(get("/api/agent?gatherer=g&channel=c1"))["reads"]), 3)
         self.assertTrue(json.load(get(f"/api/read?gatherer=g&read_id={self.reads[0]}"))["groups"])
         self.assertTrue(json.load(get(f"/api/context?gatherer=g&read_id={self.reads[0]}"))["items"])
+        self.assertTrue(json.load(get("/api/history?gatherer=g&channel=c1&from=1&to=5"))["items"])
         with self.assertRaises(urllib.error.HTTPError) as caught:
             get("/api/read?gatherer=g&read_id=x")
         self.assertEqual(caught.exception.code, 404)
