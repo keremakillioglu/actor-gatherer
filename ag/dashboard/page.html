@@ -137,6 +137,9 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 "use strict";
 const SNAPSHOT = /*SNAPSHOT*/null;
 const POLL_MS = 5000;
+// What the page calls each kind the data names (data.py's group names stay as they are).
+const LABELS = { "ag's sections": "Summarized history", "Recent history": "Recent raw history" };
+const label = (group) => LABELS[group] || group;
 const GROUP_ORDER = ["Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages"];
 let state = { home: null, selected: null, agent: null, read: null, readId: null, paused: false, timer: null };
 
@@ -493,18 +496,18 @@ function compositionCard() {
   if (!r) { card.append(el("div", { class: "desc", text: "No read selected." })); return card; }
   const readMeta = state.agent.reads.find((x) => x.read_id === r.read_id) || {};
   card.append(el("div", { class: "desc", text: `Read ${r.read_id} · ${clock(readMeta.at, true)}${state.followLatest ? " · the latest" : ""} · by ag's own count. `
-    + (r.cut ? `Recent history is the agent's own events, verbatim, since build ${readMeta.basis} cut the history at row ${r.cut}; what was kept from before is the preamble and pinned rows.`
+    + (r.cut ? `Recent raw history is the agent's own events, verbatim, since build ${readMeta.basis} cut the history at row ${r.cut}; summarized history is ag's condensed account of what came before; what was kept from before is the preamble and pinned rows.`
       : "No build yet: the whole history goes verbatim.") }));
   if (r.missing) { card.append(el("div", { class: "warn", text: "A snapshot keeps only each agent's latest read. Run `ag dashboard` live to inspect older ones." })); return card; }
   const groups = [...r.groups].sort((x, y) => GROUP_ORDER.indexOf(x.group) - GROUP_ORDER.indexOf(y.group));
   const total = groups.reduce((n, x) => n + x.tokens, 0) || 1;
-  card.append(legend(groups.map((x) => ({ label: x.group, color: color(x.group), kind: "rect" }))));
-  card.append(el("div", { class: "stack", role: "img", "aria-label": groups.map((x) => `${x.group} ${x.tokens} tokens`).join(", ") },
-    ...groups.map((x) => el("div", { style: `width:${x.tokens / total * 100}%;background:${color(x.group)}`, title: `${x.group}: ${full(x.tokens)} tokens, ${x.items} items` }))));
+  card.append(legend(groups.map((x) => ({ label: label(x.group), color: color(x.group), kind: "rect" }))));
+  card.append(el("div", { class: "stack", role: "img", "aria-label": groups.map((x) => `${label(x.group)} ${x.tokens} tokens`).join(", ") },
+    ...groups.map((x) => el("div", { style: `width:${x.tokens / total * 100}%;background:${color(x.group)}`, title: `${label(x.group)}: ${full(x.tokens)} tokens, ${x.items} items` }))));
   const table = el("table", {}, el("thead", {}, el("tr", {}, el("th", { text: "Kind" }), el("th", { class: "n", text: "Items" }), el("th", { class: "n", text: "Tokens" }), el("th", { class: "n", text: "Share" }))));
   const body = el("tbody");
   for (const x of groups) {
-    body.append(el("tr", { class: "total" }, el("td", { text: x.group }), el("td", { class: "n", text: full(x.items) }), el("td", { class: "n", text: full(x.tokens) }),
+    body.append(el("tr", { class: "total" }, el("td", { text: label(x.group) }), el("td", { class: "n", text: full(x.items) }), el("td", { class: "n", text: full(x.tokens) }),
       el("td", { class: "n", text: (x.tokens / total * 100).toFixed(1) + "%" })));
     for (const n of x.by_name) body.append(el("tr", {}, el("td", { class: "mono", text: "  " + n.name, style: "padding-left:20px" }),
       el("td", { class: "n", text: full(n.items) }), el("td", { class: "n", text: full(n.tokens) }), el("td", { class: "n", text: (n.tokens / total * 100).toFixed(1) + "%" })));
@@ -543,7 +546,7 @@ function contextCard() {
   let run = null;
   const head = (r) => {
     const hidden = r.items - r.shown;
-    r.head.replaceChildren(el("span", { class: "key-rect", style: `background:${color(r.group)}` }), el("strong", { text: r.group }),
+    r.head.replaceChildren(el("span", { class: "key-rect", style: `background:${color(r.group)}` }), el("strong", { text: label(r.group) }),
       el("span", { text: `${r.items} item${r.items > 1 ? "s" : ""} · ${full(r.tokens)} tokens${hidden ? ` · ${hidden} not shown` : ""}` }));
   };
   for (const it of ctx.items) {                      // one block per run of the same kind, in order
