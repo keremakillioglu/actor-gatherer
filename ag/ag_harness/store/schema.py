@@ -110,8 +110,11 @@ CREATE TABLE IF NOT EXISTS _reads (
                                     -- call's input tokens, reported after it); NULL = not yet
     limit_tokens INTEGER,           -- the harness's own limit the call stated (where it compacts,
                                     -- or its window ends); NULL = none
-    preamble_json TEXT              -- the harness's preamble the call stated: the _preambles it
+    preamble_json TEXT,             -- the harness's preamble the call stated: the _preambles it
                                     -- sent besides its messages, as a JSON list of ids; NULL = none
+    sent_tokens INTEGER             -- all the call sent -- every item and the preamble -- as the
+                                    -- manager counted it at the read (less what the harness then
+                                    -- left out, as it reports); NULL = not known
 );
 
 -- What a harness sends besides its messages -- its system prompt, its tool definitions --
@@ -175,7 +178,7 @@ def create(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN counted INTEGER")
     read_columns = {c[1] for c in conn.execute("PRAGMA table_info(_reads)")}
     for column, kind in (("est_tokens", "INTEGER"), ("real_tokens", "INTEGER"), ("limit_tokens", "INTEGER"),
-                         ("preamble_json", "TEXT")):                 # a file from before reads had them
+                         ("preamble_json", "TEXT"), ("sent_tokens", "INTEGER")):   # a file from before reads had them
         if column not in read_columns:
             conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} {kind}")
     if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'events_id'").fetchone() is None:

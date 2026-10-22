@@ -7,6 +7,7 @@ import asyncio
 import io
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -202,6 +203,17 @@ class FreshThinkingTest(unittest.TestCase):
         out = Counter().fresh_thinking("g", "c", "1", self.history(tool_loop=True))
         self.assertEqual(self.signatures(out), ["sig-2"])
 
+    def test_what_it_leaves_out_is_what_ag_counted_it_at(self):
+        counter = Counter()
+        counter.channel("g", "c").thinking["sig-1"] = 120               # counted at 120 before the switch
+        counter.fresh_thinking("g", "c", "1", self.history())
+        self.assertEqual(counter.left_out("g", "c"), 120)
+        counter.channel("g", "c").zeroed.add("sig-1")                    # since set to 0: nothing more off
+        counter.fresh_thinking("g", "c", "1", self.history())
+        self.assertEqual(counter.left_out("g", "c"), 0)
+        counter.fresh_thinking("g", "c", None, turn())
+        self.assertEqual(counter.left_out("g", "c"), 0)
+
     def test_a_new_build_leaves_out_what_came_before_it(self):
         counter = Counter()
         counter.fresh_thinking("g", "c", "1", self.history())
@@ -295,6 +307,21 @@ class ServerTest(unittest.TestCase):
         other, = self.ask({"op": "counted", "gatherer": "s", "properties": {"channel": "elsewhere"},
                            "counts": {i: 7 for i in stored}})
         self.assertEqual(other["events"], 0)                  # another channel's are not touched
+
+    def test_the_read_log_keeps_what_each_call_sent_as_counted_then(self):
+        user = {"type": "message", "role": "user", "id": "u1", "content": [{"type": "input_text", "text": "hi there"}]}
+        events = codex.to_events([user])
+        first, = self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "events": events})
+        stored = [e["id"] for e in events if e.get("id")]
+        self.ask({"op": "counted", "gatherer": "s", "properties": {"channel": "c"}, "counts": {i: 1000 for i in stored},
+                  "left_out": {str(first["read_id"]): 3}})
+        second, = self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "events": events})
+        conn = sqlite3.connect(paths.db_path("s"))
+        sent = dict(conn.execute("SELECT read_id, sent_tokens FROM _reads"))
+        conn.close()
+        self.assertEqual(sent[first["read_id"]], first["sent_tokens"] - 3)    # as counted then, less what was left out
+        self.assertEqual(sent[second["read_id"]], second["sent_tokens"])     # with the counts set since
+        self.assertNotEqual(sent[first["read_id"]], sent[second["read_id"]])
 
 
 if __name__ == "__main__":

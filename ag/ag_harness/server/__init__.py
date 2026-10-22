@@ -67,12 +67,14 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 ones included, reported after the call (or
                                                 counted exactly before it)
     {"op": "counted", "gatherer", "properties", "counts"?: {event_id: n}, "made"?: {made_id: n},
-     "preamble_counts"?: [{"name", "text", "tokens"}]} -> {"events", "made", "preamble"}
-                                                sizes the model's provider counted after the
+     "preamble_counts"?: [{"name", "text", "tokens"}], "left_out"?: {read_id: n}}
+        -> {"events", "made", "preamble"}       sizes the model's provider counted after the
                                                 fact (a harness that can ask it), in place of
                                                 the tokenizer's: of the events with these ids
                                                 (and properties), the made items, the preamble
-                                                parts. How many of each were found
+                                                parts; and what the harness left out of a
+                                                read's context before sending it, taken off the
+                                                read's sent_tokens. How many of each were found
     {"op": "insert", "gatherer", "properties", "events"} -> {"rows": [row id or null, ...], "last"}
     {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens", "basis"}
     {"op": "locate", "gatherer", "properties", "event_id"} -> {"row"}      (`id` is the request's own)
@@ -163,8 +165,9 @@ def preamble_of(value) -> Optional[List[dict]]:
 
 
 def counted_of(request) -> Optional[tuple]:
-    """(events {id: tokens}, made {made_id: tokens}, preamble [(name, text, tokens)]) from a
-    `counted` request, what is not a whole number of tokens left out; None if it holds none."""
+    """(events {id: tokens}, made {made_id: tokens}, preamble [(name, text, tokens)], left_out
+    {read_id: tokens}) from a `counted` request, what is not a whole number of tokens left out;
+    None if it holds none."""
     def size(v):
         return isinstance(v, int) and not isinstance(v, bool) and v >= 0
     events = {k: v for k, v in (request.get("counts") or {}).items() if isinstance(k, str) and size(v)} \
@@ -176,7 +179,11 @@ def counted_of(request) -> Optional[tuple]:
     preamble = [(p["name"], p["text"], p["tokens"]) for p in request.get("preamble_counts") or ()
                 if isinstance(p, dict) and isinstance(p.get("name"), str) and isinstance(p.get("text"), str)
                 and size(p.get("tokens"))]
-    return (events, made, preamble) if events or made or preamble else None
+    left_out = {}
+    for k, v in (request.get("left_out") or {}).items() if isinstance(request.get("left_out"), dict) else ():
+        if str(k).isdigit() and size(v):
+            left_out[int(k)] = v
+    return (events, made, preamble, left_out) if events or made or preamble or left_out else None
 
 
 def measured_of(value) -> Optional[dict]:
@@ -275,9 +282,10 @@ class Server:
         """Record the provider's count of the context read `read_id` returned."""
         return {"recorded": self.manager(gatherer).record_real_tokens(gatherer, read_id, tokens)}
 
-    def counted(self, gatherer: str, properties: Dict[str, Any], events: dict, made: dict, preamble: list) -> dict:
+    def counted(self, gatherer: str, properties: Dict[str, Any], events: dict, made: dict, preamble: list,
+                left_out: Optional[dict] = None) -> dict:
         """Record sizes the model's provider counted after the fact, in place of the tokenizer's."""
-        return self.manager(gatherer).record_counts(gatherer, properties, events, made, preamble)
+        return self.manager(gatherer).record_counts(gatherer, properties, events, made, preamble, left_out)
 
     def locate(self, gatherer: str, properties: Dict[str, Any], event_id: str) -> dict:
         return {"row": self.manager(gatherer).locate(gatherer, event_id, properties=properties)}

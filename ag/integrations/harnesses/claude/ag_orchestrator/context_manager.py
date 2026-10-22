@@ -188,6 +188,7 @@ class ClaudeContextManager:
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
         if new is not None and "read_id" in out:
             new = self.counter.fresh_thinking(gatherer, channel, out.get("basis"), new)
+            out["left_out"] = self.counter.left_out(gatherer, channel)     # off the read's sent_tokens
         sent = messages if new is None else new
         if self.count_events and "read_id" in out:
             self.counter.start(request, client, gatherer, {CHANNEL: channel}, body, messages, sent, out)

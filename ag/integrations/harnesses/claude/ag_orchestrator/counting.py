@@ -119,6 +119,7 @@ class Channel:
     basis: Optional[str] = None                               # the build the context last came from
     stale: Set[str] = field(default_factory=set)              # thinking from before it: not sent
     zeroed: Set[str] = field(default_factory=set)             # stale thinking whose count went to 0
+    left_out: int = 0                                         # what the last call's rule took out, by its counts
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -179,6 +180,7 @@ class Counter:
         """`messages`, the context about to be sent, without the thinking from before its build (see the
         module's doc); as they are when the context is the history itself (no basis)."""
         ch = self.channel(gatherer, channel)
+        ch.left_out = 0
         if not basis:
             ch.basis = None
             return messages
@@ -195,6 +197,8 @@ class Counter:
         out = []
         for m in messages:
             if m.get("role") == "assistant" and isinstance(m.get("content"), list):
+                gone = [signature(b) for b in m["content"] if b.get("type") in THINKING and signature(b) in ch.stale]
+                ch.left_out += sum(0 if s in ch.zeroed else ch.thinking.get(s, 0) for s in gone)   # as ag counted them
                 kept = [b for b in m["content"] if not (b.get("type") in THINKING and signature(b) in ch.stale)]
                 if not kept:
                     continue
@@ -205,10 +209,15 @@ class Counter:
 
     # ------------------------------------------------------------------ after a call is sent
 
+    def left_out(self, gatherer: str, channel: str) -> int:
+        """What `fresh_thinking` took out of the last call's context, by the counts ag sized it with."""
+        return self.channel(gatherer, channel).left_out
+
     def start(self, request, client, gatherer: str, properties: dict, body: dict, messages: list,
               sent: list, out: dict) -> None:
         """Count what the call holds that is not counted yet, in the background: `messages` Claude
-        Code's own, `sent` what the model got, `out` call_ag's (its events, ag's items)."""
+        Code's own, `sent` what the model got, `out` call_ag's (its events, ag's items, its read_id,
+        and `left_out`: what the hook took out of the read's context before sending it)."""
         if not self.enabled or not getattr(request, "upstream", None) or request.upstream in self.uncountable:
             return
         task = asyncio.ensure_future(self.count_call(request, client, gatherer, properties, body, messages, sent, out))
@@ -231,7 +240,9 @@ class Counter:
                                    f"{len(counts['preamble_counts'])} preamble parts")
 
     async def counts(self, session, request, ch: Channel, body: dict, messages: list, sent: list, out: dict) -> dict:
-        found = {"counts": {}, "made": {}, "preamble_counts": []}
+        found = {"counts": {}, "made": {}, "preamble_counts": [], "left_out": {}}
+        if out.get("left_out") and isinstance(out.get("read_id"), int):
+            found["left_out"][str(out["read_id"])] = out["left_out"]
         base = {k: body[k] for k in COUNTED if k in body and k != "messages"}
         placeholder = await self.ask(session, request, dict(base, messages=PLACEHOLDER))
         if not isinstance(placeholder, int):
