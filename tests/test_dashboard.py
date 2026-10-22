@@ -73,6 +73,7 @@ class DataTest(HomeBase):
         self.assertEqual(set(agents), {"c1", "c2"})
         c1 = agents["c1"]
         self.assertEqual((c1["reads"], c1["limit_tokens"], c1["harness"]), (3, 244800, "codex"))
+        self.assertEqual(c1["last_user_message"], "the next request")        # what it was last asked
         self.assertTrue(c1["running"])                      # read just now
         self.assertFalse(agents["c2"]["running"] and agents["c2"]["reads"])
 

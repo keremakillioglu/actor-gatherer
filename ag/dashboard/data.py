@@ -151,8 +151,15 @@ def _agents(conn, now: float) -> List[dict]:
             if r["ch"] in out:
                 out[r["ch"]]["tasks"] = r["n"]
     building = _running_builds(conn)
+    last_user = {}                                   # each agent's newest user message: what it was last asked
+    for ch, text, payload in conn.execute(
+            f"SELECT e.{CHANNEL}, e.text, e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+            f"WHERE t.name = 'user_message' AND e.row_id IN (SELECT max(e2.row_id) FROM events e2 "
+            f"JOIN event_types t2 ON t2.event_type_id = e2.event_type_id WHERE t2.name = 'user_message' GROUP BY e2.{CHANNEL})"):
+        last_user[ch] = (text if text else readable(payload)) or ""
     for ch, a in out.items():
         a["harness"] = _harness(conn, ch)
+        a["last_user_message"] = " ".join(last_user.get(ch, "").split())[:600] or None
         a["last"] = max(a["last_read"] or 0, a["last_event"] or 0) or None
         a["building"] = ch in building
         a["running"] = a["building"] or bool(a["last_read"] and now - a["last_read"] < RUNNING_SECONDS)
