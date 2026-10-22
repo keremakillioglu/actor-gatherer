@@ -174,7 +174,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 const SNAPSHOT = /*SNAPSHOT*/null;
 const POLL_MS = 5000;
 // What the page calls each kind the data names (data.py's group names stay as they are).
-const LABELS = { "ag's sections": "Summarized history", "Recent history": "Recent raw history" };
+const LABELS = { "ag's sections": "Summarized history", "Recent history": "Recent raw history", "Other agents' requests": "Other actors' requests" };
 const label = (group) => LABELS[group] || group;
 const GROUP_ORDER = ["Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages"];
 let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, timer: null,
@@ -332,7 +332,7 @@ function renderAgents() {
   document.getElementById("home").textContent = state.home.home;
   const running = state.home.gatherers.reduce((n, g) => n + g.agents.filter((a) => a.running).length, 0);
   const total = state.home.gatherers.reduce((n, g) => n + g.agents.length, 0);
-  aside.replaceChildren(el("h2", { text: `Agents · ${running} running of ${total}` }));
+  aside.replaceChildren(el("h2", { text: `Actors · ${running} running of ${total}` }));
   if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No gatherers in this home yet." }));
   for (const g of state.home.gatherers) {
     const box = el("div", { class: "gatherer" },
@@ -452,9 +452,9 @@ function legend(items) {
 // ------------------------------------------------------------------ the selected agent
 function renderMain() {
   const main = document.getElementById("main");
-  if (!state.selected) { main.replaceChildren(el("div", { class: "empty", text: "No agents yet. Run a harness through ag and it appears here." })); return; }
+  if (!state.selected) { main.replaceChildren(el("div", { class: "empty", text: "No actors yet. Run a harness through ag and it appears here." })); return; }
   const a = state.agent;
-  if (!a || a.error) { main.replaceChildren(el("div", { class: "empty", text: (a && a.error) || "No data for this agent." })); return; }
+  if (!a || a.error) { main.replaceChildren(el("div", { class: "empty", text: (a && a.error) || "No data for this actor." })); return; }
   const [g, c] = state.selected;
   const info = (state.home.gatherers.find((x) => x.name === g) || { agents: [] }).agents.find((x) => x.channel === c) || {};
   const [cls, label] = statusOf(info);
@@ -462,7 +462,7 @@ function renderMain() {
   const hasReal = reads.some((r) => typeof r.real_tokens === "number");
   const builds = a.builds || [], failed = builds.filter((b) => b.status === "failed").length;
   const llm = a.llm.total;
-  const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Views of this agent" });
+  const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Views of this actor" });
   for (const [id, name] of [["actor", "Actor"], ["gatherer", "Gatherer"]]) {
     tabs.append(el("button", { type: "button", role: "tab", class: "tab", "aria-selected": state.tab === id ? "true" : "false",
       onclick: () => setTab(id) }, name));
@@ -562,7 +562,7 @@ function contextCard() {
   const ctx = state.context;
   if (!ctx || !ctx.items) {
     card.append(el("div", { class: "desc", text: SNAPSHOT && !latest
-      ? "A snapshot keeps only each agent's latest context. Run `ag dashboard` live to see older ones." : "No context sent yet." }));
+      ? "A snapshot keeps only each actor's latest context. Run `ag dashboard` live to see older ones." : "No context sent yet." }));
     return card;
   }
   const real = typeof ctx.real_tokens === "number" ? ` · the provider counted ${full(ctx.real_tokens)}` : "";
@@ -689,7 +689,7 @@ function usageCard() {
   const card = el("section", { class: "card" }, el("h3", { text: "Tokens sent across all calls" }));
   if (!u || !u.entries || !u.entries.length) { card.append(el("div", { class: "desc", text: "No calls yet." })); return card; }
   const real = u.real_calls ? ` The provider counted ${full(u.real_tokens)} over the ${full(u.real_calls)} calls it reported.` : "";
-  card.append(el("div", { class: "desc", text: `Everything sent to the model over this agent's ${full(u.calls)} calls, by kind: `
+  card.append(el("div", { class: "desc", text: `Everything sent to the model over this actor's ${full(u.calls)} calls, by kind: `
     + `${full(u.tokens)} tokens by ag's own count, each message counted once for every call it went in.${real}` }));
   // ag's messages among the history count in the recent raw history, where they sit
   card.append(decomposition(u.entries.map((e) => entry(e, INLINE.has(e.group) ? "Recent history" : e.group, e.items)), "all calls"));
@@ -720,7 +720,7 @@ async function loadHistory(first, last) {
 }
 function historyCard(tasks) {
   const card = el("section", { class: "card" }, el("h3", { text: "Complete history" }),
-    el("div", { class: "desc", text: "The agent's whole history as ag has segmented it into tasks, oldest first; the last is the current task, "
+    el("div", { class: "desc", text: "The actor's whole history as ag has segmented it into tasks, oldest first; the last is the current task, "
       + "from its first message to now. Click one to see its messages." }));
   card.append(typeChips(null));
   // ag's last task is the one running when it last segmented the history -- where its cut falls, not a
@@ -788,7 +788,7 @@ function buildsCard(builds) {
 }
 function llmCard(a) {
   const card = el("section", { class: "card" }, el("h3", { text: "ag's own model calls" }),
-    el("div", { class: "desc", text: "The Gatherer's calls for this agent: new-task checks, segmentation, summaries, ranking." }));
+    el("div", { class: "desc", text: "The Gatherer's calls for this actor: new-task checks, segmentation, summaries, ranking." }));
   const rows = a.llm.by_purpose;
   if (!rows.length) { card.append(el("div", { class: "desc", text: "None found in the home's call log." })); return card; }
   const table = el("table", {}, el("thead", {}, el("tr", {}, ...["Purpose", "Calls", "Tokens in", "Tokens out", "Time", "Errors", "Cost"].map((h, i) => el("th", { class: i ? "n" : "", text: h })))));
@@ -802,7 +802,7 @@ function llmCard(a) {
   table.append(body);
   card.append(el("div", { class: "scroll" }, table));
   if (t.unpriced) card.append(el("div", { class: "warn", text: `* ${t.unpriced} calls on models LiteLLM has no price for are not in the cost.` }));
-  if (a.llm_attributed_by_time) card.append(el("div", { class: "warn", text: `${a.llm_attributed_by_time} calls predate job tags and were matched to this agent by time.` }));
+  if (a.llm_attributed_by_time) card.append(el("div", { class: "warn", text: `${a.llm_attributed_by_time} calls predate job tags and were matched to this actor by time.` }));
   return card;
 }
 
