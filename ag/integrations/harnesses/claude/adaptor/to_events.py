@@ -198,6 +198,10 @@ def text_of(item) -> Optional[str]:
         image, document     [image], [document]
         tool_use            name(input as JSON)
         tool_result         the result's text (prefixed `error: ` when it is one)
+        tool_addition       `tool added: <name>: <description>` and its input schema as JSON
+                            (Claude Code's notice that tool search, or a connector, made a tool
+                            available: the model gets its whole definition)
+        tool_removal        `tool removed: <name>`
     """
     if not isinstance(item, dict):
         return None
@@ -215,6 +219,17 @@ def text_of(item) -> Optional[str]:
     if kind == "tool_result":
         text = _result_text(b.get("content"))
         return ("error: " + text) if b.get("is_error") else text
+    if kind in ("tool_addition", "tool_removal"):
+        tool = b.get("tool") if isinstance(b.get("tool"), dict) else {}
+        definition = tool.get("definition") if isinstance(tool.get("definition"), dict) else tool
+        name = definition.get("name") or tool.get("name")
+        if not name:
+            return None
+        if kind == "tool_removal":
+            return f"tool removed: {name}"
+        text = f"tool added: {name}" + (f": {definition['description']}" if definition.get("description") else "")
+        schema = definition.get("input_schema")
+        return text + (f"\n{json.dumps(schema, ensure_ascii=False)}" if schema else "")
     return None
 
 

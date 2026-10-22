@@ -82,6 +82,12 @@ class EventsTest(unittest.TestCase):
         self.assertNotIn("text", events[AGENT_REASONING])
         self.assertEqual(events[AGENT_REASONING]["tokens"], 0)
 
+    def test_a_tool_notice_reads_as_the_tool_it_adds_or_removes(self):
+        added, removed = claude.to_events([NOTE("Tools just became available", ADD), NOTE("Tools are gone", REMOVE)])[1::2]
+        self.assertEqual((added["type"], removed["type"]), (CONTEXT, CONTEXT))
+        self.assertEqual(added["text"], 'tool added: mcp__demo__search: Search.\n{"type": "object"}')
+        self.assertEqual(removed["text"], "tool removed: mcp__demo__search")
+
     def test_an_error_result_says_so(self):
         e = claude.to_events([{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t",
                                                              "is_error": True, "content": "no such file"}]}])[0]
