@@ -96,6 +96,20 @@ tr.total td { font-weight: 600; border-bottom: 0; }
 .stack div:first-child { border-radius: 4px 0 0 4px; } .stack div:last-child { border-radius: 0 4px 4px 0; }
 .stack div:only-child { border-radius: 4px; }
 details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-top: 8px; }
+.card-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.decomp { position: relative; margin: 6px 0 14px; display: grid; gap: 8px; }
+.drow { display: grid; grid-template-columns: 210px minmax(0, 1fr); align-items: center; gap: 12px; }
+.drow .dzero { grid-column: 2; color: var(--muted); font-size: 11px; margin-top: -4px; }
+.dlabel { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-2); }
+.dlabel .dval { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dbar { height: 22px; display: flex; }
+.dinner { display: flex; gap: 2px; height: 100%; }
+.dbar > .seg + .seg { margin-left: 2px; }
+.seg { height: 100%; min-width: 2px; display: flex; align-items: center; overflow: hidden; cursor: default; outline-offset: 2px; }
+.seg:first-child { border-radius: 4px 0 0 4px; } .seg:last-child { border-radius: 0 4px 4px 0; } .seg:only-child { border-radius: 4px; }
+.seg:hover, .seg:focus-visible { filter: brightness(1.08); }
+.seg span { font-size: 11px; padding: 0 6px; white-space: nowrap; pointer-events: none; }
+@media (max-width: 760px) { .drow { grid-template-columns: minmax(0, 1fr); gap: 4px; } .drow .dzero { grid-column: 1; } }
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 10px; }
 .filters .label { color: var(--muted); font-size: 12px; margin-right: 4px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; color: var(--ink-2); }
@@ -141,7 +155,7 @@ const POLL_MS = 5000;
 const LABELS = { "ag's sections": "Summarized history", "Recent history": "Recent raw history" };
 const label = (group) => LABELS[group] || group;
 const GROUP_ORDER = ["Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages"];
-let state = { home: null, selected: null, agent: null, read: null, readId: null, paused: false, timer: null };
+let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, timer: null };
 
 // ------------------------------------------------------------------ helpers
 const el = (tag, attrs = {}, ...kids) => {
@@ -228,12 +242,12 @@ async function loadAgent() {
   state.agent = SNAPSHOT ? SNAPSHOT.agents[key(g, c)] || null
     : await get(`/api/agent?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`);
   const reads = (state.agent && state.agent.reads) || [];
-  if (!reads.length) { state.read = null; state.readId = null; state.context = null; return; }
+  if (!reads.length) { state.readId = null; state.context = null; return; }
   const followLatest = state.readId === null || state.followLatest;
   const want = followLatest ? reads[reads.length - 1].read_id : state.readId;
   state.readId = want;
   state.followLatest = followLatest;
-  await Promise.all([loadRead(), loadContext(reads[reads.length - 1].read_id)]);
+  await loadContext(want);
 }
 async function loadContext(readId) {
   const [g] = state.selected;
@@ -241,12 +255,6 @@ async function loadContext(readId) {
   const got = SNAPSHOT ? SNAPSHOT.contexts && SNAPSHOT.contexts[key(g, readId)]
     : await get(`/api/context?gatherer=${encodeURIComponent(g)}&read_id=${readId}`);
   state.context = got ? { ...got, gatherer: g } : null;
-}
-async function loadRead() {
-  const [g] = state.selected;
-  if (state.readId === null) { state.read = null; return; }
-  if (SNAPSHOT) { state.read = SNAPSHOT.reads[key(g, state.readId)] || { missing: true, read_id: state.readId }; return; }
-  state.read = await get(`/api/read?gatherer=${encodeURIComponent(g)}&read_id=${state.readId}`);
 }
 // What was last drawn, so a poll that brings nothing new draws nothing: no flash, and an open
 // table, a scrolled list or a tooltip stays as it is.
@@ -264,7 +272,7 @@ async function refresh(userAction = false) {
     await loadAgent();
     const agents = signature([state.home.gatherers, state.home.hook_servers, state.selected, Math.floor(Date.now() / 30000)]);
     if (userAction || agents !== drawn.agents) { renderAgents(); drawn.agents = agents; }    // "ago" texts: every 30 s
-    const view = signature([state.selected, state.agent, state.read, state.readId, state.context && state.context.read_id]);
+    const view = signature([state.selected, state.agent, state.readId, state.context && state.context.read_id]);
     if (userAction || view !== drawn.main) { keepingPlace(renderMain); drawn.main = view; }
     document.getElementById("live").textContent = SNAPSHOT ? `Snapshot · ${clock(state.home.now, true)}`
       : state.paused ? "Paused" : `Live · updated ${clock(Date.now() / 1000)}`;
@@ -443,7 +451,7 @@ function renderMain() {
     sizeCard(reads, hasReal),
     contextCard(),
     tasksCard(a.tasks),
-    el("div", { class: "grid2" }, tasksChartCard(reads), compositionCard()),
+    tasksChartCard(reads),
     el("div", { class: "grid2" }, buildsCard(builds), llmCard(a)));
   drawCharts();
 }
@@ -478,9 +486,9 @@ function drawCharts() {
   const reads = state.agent.reads;
   const pick = async (id) => {
     state.readId = id; state.followLatest = id === reads[reads.length - 1].read_id;
-    await loadRead();
+    await loadContext(id);
     keepingPlace(renderMain);
-    drawn.main = signature([state.selected, state.agent, state.read, state.readId, state.context && state.context.read_id]);
+    drawn.main = signature([state.selected, state.agent, state.readId, state.context && state.context.read_id]);
   };
   const sizeHost = document.getElementById("size-chart");
   const series = [];
@@ -490,41 +498,27 @@ function drawCharts() {
   const tasksHost = document.getElementById("tasks-chart");
   if (tasksHost) lineChart(tasksHost, { reads, series: [{ field: "tasks", color: "var(--s1)", label: "tasks", format: (v) => String(v) }], height: 170, step: true });
 }
-function compositionCard() {
-  const card = el("section", { class: "card" }, el("h3", { text: "Context decomposition" }));
-  const r = state.read;
-  if (!r) { card.append(el("div", { class: "desc", text: "No read selected." })); return card; }
-  const readMeta = state.agent.reads.find((x) => x.read_id === r.read_id) || {};
-  card.append(el("div", { class: "desc", text: `Read ${r.read_id} · ${clock(readMeta.at, true)}${state.followLatest ? " · the latest" : ""} · by ag's own count. `
-    + (r.cut ? `Recent raw history is the agent's own events, verbatim, since build ${readMeta.basis} cut the history at row ${r.cut}; summarized history is ag's condensed account of what came before; what was kept from before is the preamble and pinned rows.`
-      : "No build yet: the whole history goes verbatim.") }));
-  if (r.missing) { card.append(el("div", { class: "warn", text: "A snapshot keeps only each agent's latest read. Run `ag dashboard` live to inspect older ones." })); return card; }
-  const groups = [...r.groups].sort((x, y) => GROUP_ORDER.indexOf(x.group) - GROUP_ORDER.indexOf(y.group));
-  const total = groups.reduce((n, x) => n + x.tokens, 0) || 1;
-  card.append(legend(groups.map((x) => ({ label: label(x.group), color: color(x.group), kind: "rect" }))));
-  card.append(el("div", { class: "stack", role: "img", "aria-label": groups.map((x) => `${label(x.group)} ${x.tokens} tokens`).join(", ") },
-    ...groups.map((x) => el("div", { style: `width:${x.tokens / total * 100}%;background:${color(x.group)}`, title: `${label(x.group)}: ${full(x.tokens)} tokens, ${x.items} items` }))));
-  const table = el("table", {}, el("thead", {}, el("tr", {}, el("th", { text: "Kind" }), el("th", { class: "n", text: "Items" }), el("th", { class: "n", text: "Tokens" }), el("th", { class: "n", text: "Share" }))));
-  const body = el("tbody");
-  for (const x of groups) {
-    body.append(el("tr", { class: "total" }, el("td", { text: label(x.group) }), el("td", { class: "n", text: full(x.items) }), el("td", { class: "n", text: full(x.tokens) }),
-      el("td", { class: "n", text: (x.tokens / total * 100).toFixed(1) + "%" })));
-    for (const n of x.by_name) body.append(el("tr", {}, el("td", { class: "mono", text: "  " + n.name, style: "padding-left:20px" }),
-      el("td", { class: "n", text: full(n.items) }), el("td", { class: "n", text: full(n.tokens) }), el("td", { class: "n", text: (n.tokens / total * 100).toFixed(1) + "%" })));
-  }
-  table.append(body);
-  card.append(el("div", { class: "scroll" }, table));
-  if (typeof r.real_tokens === "number") card.append(el("div", { class: "warn", text: `The provider counted ${full(r.real_tokens)} tokens for this call: the harness's own instructions and tools, and what ag cannot see, are the difference.` }));
-  return card;
-}
 function contextCard() {
-  const card = el("section", { class: "card" }, el("h3", { text: "Context right now" }));
+  const latest = state.followLatest;
+  const title = el("div", { class: "card-title" }, el("h3", { text: latest ? "Context right now" : `Context at read ${state.readId}` }));
+  if (!latest) title.append(el("button", { type: "button", onclick: async () => {
+    const reads = state.agent.reads;
+    state.readId = reads[reads.length - 1].read_id; state.followLatest = true;
+    await loadContext(state.readId); keepingPlace(renderMain);
+  } }, "Back to the latest"));
+  const card = el("section", { class: "card" }, title);
   const ctx = state.context;
-  if (!ctx || !ctx.items) { card.append(el("div", { class: "desc", text: "No context sent yet." })); return card; }
+  if (!ctx || !ctx.items) {
+    card.append(el("div", { class: "desc", text: SNAPSHOT && !latest
+      ? "A snapshot keeps only each agent's latest context. Run `ag dashboard` live to see older ones." : "No context sent yet." }));
+    return card;
+  }
   const real = typeof ctx.real_tokens === "number" ? ` · the provider counted ${full(ctx.real_tokens)}` : "";
-  card.append(el("div", { class: "desc", text: `Everything the latest call sent (read ${ctx.read_id}, ${clock(ctx.at, true)}), in the order the model got it: `
+  card.append(el("div", { class: "desc", text: `Everything ${latest ? "the latest call" : "this call"} sent (read ${ctx.read_id}, ${clock(ctx.at, true)}), in the order the model got it: `
     + `${full(ctx.items.length)} items, ${full(ctx.tokens)} tokens by ag's own count${real}.`
-    + (ctx.cut ? ` Built from build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet: the whole history, verbatim.") }));
+    + (ctx.cut ? ` Built from build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet: the whole history, verbatim.")
+    + (latest ? " Click the size chart to see an earlier call's." : "") }));
+  card.append(decomposition(ctx));
   const history = ctx.items.filter((i) => HISTORY.has(i.group) || GATHERER.has(i.group));
   if (history.length) {                              // which items to list, by type
     const counts = {};
@@ -564,6 +558,82 @@ function contextCard() {
   }
   card.append(list);
   return card;
+}
+// Where each item goes in the figure: its run's group -- ag's messages among the history in the
+// history they sit in, as the list shows them -- and its part: a type for the history, a name for the summary.
+function placed(items) {
+  let current = null;
+  return items.map((it) => {
+    const group = INLINE.has(it.group) ? (current || "Recent history") : it.group;
+    if (HISTORY.has(it.group)) current = it.group;
+    const history = HISTORY.has(group);
+    const t = itemType(it);
+    return { it, group, part: history ? t[0] : it.name, label: history ? t[1] : it.name, color: history ? t[2] : color(group) };
+  });
+}
+function decomposition(ctx) {
+  const total = ctx.items.reduce((n, i) => n + i.tokens, 0) || 1;
+  const groups = new Map();
+  for (const p of placed(ctx.items)) {
+    const g = groups.get(p.group) || { group: p.group, tokens: 0, items: 0, parts: new Map() };
+    g.tokens += p.it.tokens; g.items++;
+    const part = g.parts.get(p.part) || { label: p.label, color: p.color, tokens: 0, items: 0 };
+    part.tokens += p.it.tokens; part.items++;
+    g.parts.set(p.part, part); groups.set(p.group, g);
+  }
+  const ordered = [...groups.values()].sort((x, y) => GROUP_ORDER.indexOf(x.group) - GROUP_ORDER.indexOf(y.group));
+  const pct = (v) => `${(v / total * 100).toFixed(1)}%`;
+  const fig = el("figure", { class: "decomp", "aria-label": "How the context divides, by ag's own count" });
+  const tip = el("div", { class: "tooltip" });
+  const show = (seg, ev) => {
+    const d = seg._d;
+    tip.replaceChildren(el("div", { class: "row" }, el("b", { text: pct(d.tokens) }), el("span", { text: `${full(d.tokens)} tokens` })),
+      el("div", { class: "t", text: d.name }), el("div", { class: "t", text: `${full(d.items)} item${d.items === 1 ? "" : "s"}` }));
+    tip.style.display = "block";
+    const box = fig.getBoundingClientRect(), r = seg.getBoundingClientRect();
+    const x = ev && ev.clientX !== undefined ? ev.clientX - box.left : r.left - box.left + r.width / 2;
+    tip.style.left = Math.min(Math.max(0, x + 12), box.width - 200) + "px";
+    tip.style.top = (r.bottom - box.top + 6) + "px";
+  };
+  const segment = (d, width) => {
+    const seg = el("div", { class: "seg", tabindex: "0", role: "img", style: `width:${width}%;background:${d.color}`,
+      "aria-label": `${d.name}: ${full(d.tokens)} tokens, ${pct(d.tokens)} of the context, ${d.items} items` },
+      el("span", { text: d.short }));
+    seg._d = d;
+    seg.addEventListener("pointermove", (ev) => show(seg, ev));
+    seg.addEventListener("focus", () => show(seg));
+    for (const e of ["pointerleave", "blur"]) seg.addEventListener(e, () => { tip.style.display = "none"; });
+    return seg;
+  };
+  const row = (name, tokens, bar) => el("div", { class: "drow" },
+    el("div", { class: "dlabel" }, el("span", { text: name }), el("span", { class: "dval", text: `${compact(tokens)} · ${pct(tokens)}` })), bar);
+  const whole = el("div", { class: "dbar" });       // the whole context, by kind
+  for (const g of ordered) if (g.tokens > 0) whole.append(segment({ name: label(g.group), short: label(g.group), color: color(g.group),
+    tokens: g.tokens, items: g.items }, g.tokens / total * 100));
+  fig.append(row("Whole context", total, whole));
+  for (const g of ordered) {                         // each kind, by its parts, on the same scale
+    const bar = el("div", { class: "dbar" });
+    const inner = el("div", { class: "dinner", style: `width:${g.tokens / total * 100}%` });
+    for (const part of [...g.parts.values()].sort((x, y) => y.tokens - x.tokens)) if (part.tokens > 0)
+      inner.append(segment({ name: `${label(g.group)} · ${part.label}`, short: part.label, color: part.color,
+        tokens: part.tokens, items: part.items }, part.tokens / g.tokens * 100));
+    bar.append(inner);
+    const zero = [...g.parts.values()].filter((p) => !p.tokens).map((p) => `${p.items} ${p.label.toLowerCase()}`);
+    const r = row(label(g.group), g.tokens, bar);
+    if (zero.length) r.append(el("div", { class: "dzero", text: `also ${zero.join(", ")}, at 0 tokens by ag's count` }));
+    fig.append(r);
+  }
+  fig.append(tip);
+  requestAnimationFrame(() => {                     // a label shows only where it fits, in ink that reads on its fill
+    for (const seg of fig.querySelectorAll(".seg")) {
+      const text = seg.firstChild;
+      if (!text || text.scrollWidth > seg.clientWidth - 10) { if (text) text.style.visibility = "hidden"; continue; }
+      const m = getComputedStyle(seg).backgroundColor.match(/\d+/g) || [0, 0, 0];
+      const lum = (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255;
+      text.style.color = lum > 0.6 ? "#0b0b0b" : "#ffffff";
+    }
+  });
+  return fig;
 }
 function contextItem(it) {
   const preview = it.text.replace(/\s+/g, " ").slice(0, 220);
