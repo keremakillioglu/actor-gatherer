@@ -119,6 +119,54 @@ class MessagesTest(unittest.TestCase):
                 self.assertTrue(i == len(out) - 1 or out[i + 1]["role"] == "assistant", out)
         self.assertTrue(all(out[i]["role"] != out[i + 1]["role"] for i in range(len(out) - 1)))
 
+    def rebuilt(self, tail=()):
+        """A build's context as ag sends it: Claude Code's notes, a summary in place of the reply that
+        followed a tool search notice, the notice, the new task's request (and `tail`, its turn so far)."""
+        reply = {"role": "assistant", "content": [{"type": "text", "text": "The readme has 3 sections."}]}
+        sent = first_turn() + tool_turn() + [NOTE("Tools just became available: mcp__demo__search", ADD), reply,
+                                             txt("user", "New task: count the rows")] + list(tail)
+        events = claude.to_events(sent)
+        notes = [e for e in events if e["type"] == CONTEXT]                # reminder, environment, notice, ADD
+        request = [e for e in events if e["type"] == USER_MESSAGE][-1]
+        after = events[events.index(request) + 1:]
+        ctx = notes[:2] + [{"type": "ag", "name": "earlier", "text": "SUMMARY"}] + notes[2:] + [request] + after
+        return back.to_messages(ctx, sent)
+
+    def assert_takes(self, out):
+        for i, m in enumerate(out):
+            if m["role"] == "system":
+                self.assertTrue(i == len(out) - 1 or out[i + 1]["role"] == "assistant", out)
+            for b in m["content"] if isinstance(m["content"], list) else []:
+                if b.get("type") in ("tool_addition", "tool_removal"):
+                    self.assertEqual(m["role"], "system", out)
+        self.assertTrue(all(out[i]["role"] != out[i + 1]["role"] for i in range(len(out) - 1)), out)
+
+    def test_a_tool_notice_whose_reply_a_build_left_out_moves_to_the_end(self):
+        out = self.rebuilt()
+        self.assert_takes(out)
+        self.assertEqual(out[-1]["role"], "system")
+        self.assertEqual([claude.without_cache_control(b) for b in out[-1]["content"]], [ADD])
+        self.assertIn({"type": "text", "text": "Tools just became available: mcp__demo__search"},
+                      [b for m in out if m["role"] == "user" for b in m["content"]])    # its words: user text
+
+    def test_a_tool_notice_moves_to_right_before_the_next_reply(self):
+        call = {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_2", "name": "Bash",
+                                                   "input": {"command": "wc -l t.csv"}}]}
+        result = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_2", "content": "16"}]}
+        out = self.rebuilt([call, result])
+        self.assert_takes(out)
+        at = next(i for i, m in enumerate(out) if m["role"] == "assistant")
+        self.assertEqual(out[at - 1], {"role": "system", "content": [ADD]})
+        self.assertEqual(out[at]["content"][0]["id"], "toolu_2")
+
+    def test_a_tool_notice_moves_the_same_way_as_user_reminders(self):
+        reply = {"role": "assistant", "content": [{"type": "text", "text": "ok"}]}
+        sent = first_turn() + [NOTE("Tools just became available: mcp__demo__search", ADD), reply, txt("user", "next")]
+        events = claude.to_events(sent)
+        ctx = [e for e in events if e["type"] == CONTEXT] + [e for e in events if e["type"] == USER_MESSAGE][-1:]
+        out = back.to_messages(ctx, sent, system_messages="user")
+        self.assert_takes(out)
+
     def test_a_tool_result_stays_right_after_its_call(self):
         out = back.to_messages(claude.to_events(tool_turn()))
         self.assertEqual([m["role"] for m in out], ["assistant", "user"])

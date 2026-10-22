@@ -24,7 +24,8 @@ back where it sent them (`as_sent`). `finish` does all of this.
 
 System-role messages, by `system_messages`: "keep" (the default) sends them as
 Claude Code does, but one the API would refuse where it is made user text
-(`placed`); "user" sends every one that says something as user-turn
+(`placed`) -- its tool search blocks, which only a system message may hold, first
+moved on to where one is taken (`tools_placed`); "user" sends every one that says something as user-turn
 `<system-reminder>` text (`as_user`), for a gateway that moves system messages
 into the model's system instruction, where a new one per call would keep the
 request from caching. Nothing of the context manager is imported here.
@@ -172,6 +173,36 @@ def as_sent(out: List[dict], messages: Optional[list], whole: bool = False) -> L
     return rebuilt
 
 
+def tools_placed(out: List[dict]) -> List[dict]:
+    """`out` with the tool search blocks (`tool_addition`, `tool_removal`) of each system-role message
+    the API would refuse where it is -- one neither last nor right before an assistant message -- moved
+    on to the next place it takes one: a system message right before the next assistant message, else
+    at the end. Only a system message may hold them, so they cannot go into the user turn as its text
+    does (`placed`). In Claude Code's own history they always sit right before an assistant reply; a
+    context that leaves that reply out (a build's summary in its place) leaves them before a user
+    turn. Moved on, the tools are still offered before the model next answers."""
+    fixed, moving = [], []
+    for i, m in enumerate(out):
+        nxt = out[i + 1] if i + 1 < len(out) else None
+        if moving and m.get("role") == "assistant":
+            fixed.append({"role": "system", "content": moving})
+            moving = []
+        blocks = m.get("content")
+        if m.get("role") == "system" and nxt is not None and nxt.get("role") != "assistant" \
+                and isinstance(blocks, list):
+            tools = [b for b in blocks if isinstance(b, dict) and b.get("type") in INLINE_TOOLS]
+            if tools:
+                moving += tools
+                rest = [b for b in blocks if not (isinstance(b, dict) and b.get("type") in INLINE_TOOLS)]
+                if not rest:
+                    continue
+                m = {**m, "content": rest}
+        fixed.append(m)
+    if moving:
+        fixed.append({"role": "system", "content": moving})
+    return join(fixed)
+
+
 def placed(out: List[dict]) -> List[dict]:
     """`out` with each system-role message the API would refuse where it is -- one neither last nor
     right before an assistant message -- made a user message, joined into the user turn beside it."""
@@ -237,14 +268,17 @@ def with_fields(out: List[dict], messages: Optional[list]) -> List[dict]:
 def finish(out: List[dict], messages: Optional[list], system_messages: str = "keep") -> List[dict]:
     """The context's messages made a request's: Claude Code's own system notes back where it sent them
     (`as_sent`), its cache markers put back (`with_markers`), its messages' own fields back on theirs
-    (`with_fields`); then the system messages: with `system_messages` "keep" only those the API would
-    refuse where they are made user text (`placed`); with "user" every one that says something made
-    user-turn system reminders (`as_user`)."""
+    (`with_fields`); then the system messages: tool search's blocks moved on to where the API takes
+    them (`tools_placed`; after the markers, so one moved to the end does not take Claude Code's), then with `system_messages` "keep" only those the API would refuse where
+    they are made user text (`placed`); with "user" every one that says something made user-turn
+    system reminders (`as_user`)."""
     if system_messages not in SYSTEM_MESSAGES:
         raise ValueError(f"system_messages: {system_messages!r}, not one of {SYSTEM_MESSAGES}")
     if system_messages == "user":
-        return as_user(with_fields(with_markers(as_sent(out, messages, whole=True), cache_markers(messages)), messages))
-    return with_fields(with_markers(placed(as_sent(out, messages)), cache_markers(messages)), messages)
+        return as_user(tools_placed(with_fields(with_markers(as_sent(out, messages, whole=True),
+                                                             cache_markers(messages)), messages)))
+    # tool blocks moved after the markers are put back: one moved to the end does not take the marker
+    return with_fields(placed(tools_placed(with_markers(as_sent(out, messages), cache_markers(messages)))), messages)
 
 
 INLINE_TOOLS = ("tool_addition", "tool_removal")     # tool search's blocks: the request's state, not history
