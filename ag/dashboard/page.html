@@ -234,7 +234,6 @@ const GATHERER = new Set(["ag's sections", ...INLINE]);
 const OUTSIDE = new Set(["environment_update", "context_stream"]);   // events from outside the conversation
 const itemType = (it) => GATHERER.has(it.group) || OUTSIDE.has(it.name) ? typeOf("gatherer")
   : it.name === "context" ? typeOf("system") : typeOf(it.name);
-const EMPTY = "empty";                            // a history item with no words (a model's empty text beside its tool call)
 const typeOf = (name) => TYPES.find((t) => t[0] === name) || OTHER_TYPE;
 const HISTORY = new Set(["Recent history", "Kept from before the cut"]);
 const SHOWN_KEY = "ag-dashboard-shown-types-3";   // -3: Gatherer messages got their own type, shown by default
@@ -563,8 +562,8 @@ function drawCharts() {
   series.push({ field: "counted_tokens", color: "var(--s2)", label: "ag's own count" });
   if (sizeHost) lineChart(sizeHost, { reads, series, onPick: pick, picked: state.readId });
 }
-// The row of type chips: which items the lists show. With counts, only the types present, counted.
-function typeChips(counts, empty) {
+// The row of type chips: which items the lists show, by message type. With counts, only the types present, counted.
+function typeChips(counts) {
   const row = el("div", { class: "filters", role: "group", "aria-label": "Message types shown" }, el("span", { class: "label", text: "Shows" }));
   for (const [type, name, swatch] of [TYPES[6], ...TYPES.slice(0, 6), OTHER_TYPE]) {   // the Gatherer's first
     if (counts && !counts[type]) continue;
@@ -573,8 +572,6 @@ function typeChips(counts, empty) {
     row.append(el("button", { type: "button", class: "chip", "aria-pressed": on ? "true" : "false", onclick: () => toggleType(type) },
       el("span", { class: "dot", style: `background:${swatch}` }), counts ? `${name} ${counts[type]}` : name));
   }
-  if (!counts || empty) row.append(el("button", { type: "button", class: "chip", "aria-pressed": shownTypes.has(EMPTY) ? "true" : "false",
-    onclick: () => toggleType(EMPTY) }, counts ? `Empty ${empty}` : "Empty"));
   return row;
 }
 function contextCard() {
@@ -605,8 +602,7 @@ function contextCard() {
   if (history.length) {                              // which items to list, by type
     const counts = {};
     for (const i of history) { const t = itemType(i)[0]; counts[t] = (counts[t] || 0) + 1; }
-    const empty = history.filter((i) => !GATHERER.has(i.group) && !i.text.trim()).length;
-    card.append(typeChips(counts, empty));
+    card.append(typeChips(counts));
   }
   const list = el("div", { class: "ctx tall", "data-keep": "context" });
   if ((ctx.preamble || []).length) {                 // what the harness sent besides its messages: first, always shown
@@ -630,7 +626,7 @@ function contextCard() {
     }
     run.items++; run.tokens += it.tokens;
     const listed = GATHERER.has(it.group) ? shownTypes.has("gatherer")
-      : !HISTORY.has(group) || (shownTypes.has(itemType(it)[0]) && (it.text.trim() || shownTypes.has(EMPTY)));
+      : !HISTORY.has(group) || shownTypes.has(itemType(it)[0]);
     if (listed) { run.shown++; list.append(contextItem(it)); }
     head(run);
   }
@@ -741,15 +737,18 @@ function usageCard() {
     "all calls"));
   return card;
 }
+// What an item with no words is: Claude's thinking comes back encrypted (the API reads it, no one else);
+// a model's text beside its tool call can be empty.
+const wordless = (it) => it.name === "agent_reasoning" ? "thinking, encrypted: not readable" : "no text";
 function contextItem(it) {
   const preview = it.text.replace(/\s+/g, " ").slice(0, 220);
   const row = el("details", { class: "item" },
     el("summary", {}, el("span", { class: "bar-key", style: `background:${(HISTORY.has(it.group) || GATHERER.has(it.group)) && it.group !== PREAMBLE ? itemType(it)[2] : color(it.group)}` }),
-      el("span", { class: "mono kind", text: it.name }), el("span", { class: "preview" + (preview ? "" : " none"), text: preview || "(empty)" }),
+      el("span", { class: "mono kind", text: it.name }), el("span", { class: "preview" + (preview ? "" : " none"), text: preview || wordless(it) }),
       el("span", { class: "n", text: full(it.tokens) })));
   row.addEventListener("toggle", () => {             // the whole text, only once asked for
     if (row.open && !row.querySelector("pre")) {
-      row.append(el("pre", { text: it.text + (it.clipped ? `\n… ${full(it.clipped)} more characters not shown` : "") }));
+      row.append(el("pre", { text: (it.text || `(${wordless(it)})`) + (it.clipped ? `\n… ${full(it.clipped)} more characters not shown` : "") }));
     }
   });
   return row;
@@ -804,7 +803,7 @@ function historyCard(tasks) {
 }
 function showMessages(body, h) {
   const items = h.items.map((i) => ({ ...i, group: "Recent history" }));
-  const listed = items.filter((it) => shownTypes.has(itemType(it)[0]) && (it.text.trim() || shownTypes.has(EMPTY)));
+  const listed = items.filter((it) => shownTypes.has(itemType(it)[0]));
   const tokens = items.reduce((n, i) => n + i.tokens, 0);
   const box = el("div", { class: "ctx tall" }, el("div", { class: "run" }, el("strong", { text: `${full(items.length)} messages` }),
     el("span", { text: `${full(tokens)} tokens${items.length - listed.length ? ` · ${items.length - listed.length} not shown` : ""}`
