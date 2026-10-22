@@ -72,7 +72,7 @@ class DataTest(HomeBase):
         agents = {a["channel"]: a for a in g["agents"]}
         self.assertEqual(set(agents), {"c1", "c2"})
         c1 = agents["c1"]
-        self.assertEqual((c1["reads"], c1["limit_tokens"]), (3, 244800))
+        self.assertEqual((c1["reads"], c1["limit_tokens"], c1["harness"]), (3, 244800, "codex"))
         self.assertTrue(c1["running"])                      # read just now
         self.assertFalse(agents["c2"]["running"] and agents["c2"]["reads"])
 
@@ -103,7 +103,9 @@ class DataTest(HomeBase):
     def test_what_a_read_held(self):
         r = data.read("g", self.reads[-1])
         groups = {g["group"]: g for g in r["groups"]}
-        self.assertIn("History", groups)
+        self.assertIsNotNone(r["cut"])                           # made from the build: the history was cut
+        self.assertIn("Recent history", groups)
+        self.assertIn("Kept from before the cut", groups)         # the preamble
         self.assertIn("ag's sections", groups)                   # the build's sections
         self.assertEqual(sum(g["tokens"] for g in r["groups"]),
                          data.agent("g", "c1", [])["reads"][-1]["sent_tokens"])   # what the chart plots
@@ -123,6 +125,22 @@ class DataTest(HomeBase):
         self.assertEqual((by["summarize"]["calls"], by["rank"]["calls"]), (1, 1))
         self.assertEqual((by["rank"]["tokens_in"], by["rank"]["unpriced"]), (50, 1))   # a CLI model: no price
         self.assertEqual(data.agent("g", "c2")["llm"]["total"]["calls"], 0)
+
+
+class HarnessTest(unittest.TestCase):
+    """Which harness an agent runs on, from its events' shape."""
+
+    def test_each_harness_s_events(self):
+        user = {"role": "user", "content": [{"type": "text", "text": "hi"}]}       # pi and Claude Code alike
+        cases = {
+            "codex": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]}],
+            "claude": [user, {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "Bash", "input": {}}]}],
+            "pi": [user, {"role": "assistant", "api": "google-generative-ai", "content": [{"type": "toolCall", "name": "read"}]}],
+            "opencode": [{"info": {"role": "user", "sessionID": "ses_1"}, "parts": []}],
+        }
+        for harness, payloads in cases.items():
+            self.assertEqual(data.harness_of(payloads), harness, harness)
+        self.assertIsNone(data.harness_of([user]))          # a lone user message tells nothing
 
 
 class PageTest(HomeBase):

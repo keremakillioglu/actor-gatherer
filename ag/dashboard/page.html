@@ -9,7 +9,7 @@
   color-scheme: light;
   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300;
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --selected: rgba(42,120,214,0.10);
 }
 @media (prefers-color-scheme: dark) {
@@ -17,14 +17,14 @@
     color-scheme: dark;
     --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --selected: rgba(57,135,229,0.16);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --selected: rgba(57,135,229,0.16);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --selected: rgba(57,135,229,0.16);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --selected: rgba(57,135,229,0.16);
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -44,7 +44,8 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
 .agent:hover { background: var(--wash); }
 .agent[aria-current="true"] { background: var(--selected); }
 .agent .top { display: flex; align-items: center; gap: 8px; }
-.agent .id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.agent .harness { font-weight: 600; white-space: nowrap; }
+.agent .id { color: var(--ink-2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .agent .meta { color: var(--muted); font-size: 12px; padding-left: 0; margin-top: 2px; }
 .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
 .status i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--axis); }
@@ -115,7 +116,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 "use strict";
 const SNAPSHOT = /*SNAPSHOT*/null;
 const POLL_MS = 5000;
-const GROUP_ORDER = ["History", "ag's sections", "File-change notices", "Other agents' requests", "Stream messages"];
+const GROUP_ORDER = ["Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages"];
 let state = { home: null, selected: null, agent: null, read: null, readId: null, paused: false, timer: null };
 
 // ------------------------------------------------------------------ helpers
@@ -154,6 +155,8 @@ const span = (a, b) => {
 const short = (id) => id && id.length > 18 ? id.slice(0, 8) + "…" + id.slice(-6) : (id || "(none)");
 const base = (p) => p ? p.replace(/\/+$/, "").split("/").pop() : "";
 const usd = (v) => v === null || v === undefined ? "–" : v > 0 && v < 0.01 ? "<$0.01" : "$" + v.toFixed(2);
+const HARNESS = { codex: "Codex", claude: "Claude Code", pi: "Pi", opencode: "OpenCode" };
+const harnessName = (h) => HARNESS[h] || "Unknown harness";
 const statusOf = (a) => a.building ? ["building", "Building"] : a.running ? ["running", "Running"] : ["idle", "Idle"];
 const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
 
@@ -250,7 +253,8 @@ function renderAgents() {
       const size = a.real_tokens ?? a.sent_tokens;
       const btn = el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false",
         title: a.channel, onclick: () => select(g.name, a.channel) },
-        el("div", { class: "top" }, el("span", { class: "id", text: short(a.channel) }), statusEl(cls, label)),
+        el("div", { class: "top" }, el("span", { class: "harness", text: harnessName(a.harness) }),
+          el("span", { class: "id", text: short(a.channel) }), statusEl(cls, label)),
         el("div", { class: "meta", text: [base(a.cwd), `${a.reads} reads`, `${a.tasks} tasks`,
           size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }));
       box.append(btn);
@@ -367,7 +371,8 @@ function renderMain() {
   const builds = a.builds || [], failed = builds.filter((b) => b.status === "failed").length;
   const llm = a.llm.total;
   main.replaceChildren(
-    el("div", { class: "title" }, el("h2", { text: g }), statusEl(cls, label), el("span", { class: "sub", text: `channel ${c}${info.cwd ? " · " + info.cwd : ""}` })),
+    el("div", { class: "title" }, el("h2", { text: `${harnessName(a.harness)} · ${g}` }), statusEl(cls, label),
+      el("span", { class: "sub", text: `channel ${c}${info.cwd ? " · " + info.cwd : ""}` })),
     el("div", { class: "tiles" },
       tile("Context now", compact(last.real_tokens ?? last.sent_tokens),
         last.real_tokens !== null && last.real_tokens !== undefined ? `provider's count · ag counted ${compact(last.sent_tokens)}` : "ag's count"),
@@ -378,8 +383,8 @@ function renderMain() {
       tile("Builds", full(builds.length), failed ? `${failed} failed` : "none failed"),
       tile("ag's model calls", full(llm.calls), `${usd(llm.cost)}${llm.unpriced ? ` + ${llm.unpriced} unpriced` : ""}`)),
     sizeCard(reads, hasReal),
-    el("div", { class: "grid2" }, tasksChartCard(reads), compositionCard()),
     tasksCard(a.tasks),
+    el("div", { class: "grid2" }, tasksChartCard(reads), compositionCard()),
     el("div", { class: "grid2" }, buildsCard(builds), llmCard(a)));
   drawCharts();
 }
@@ -427,15 +432,17 @@ function drawCharts() {
   if (tasksHost) lineChart(tasksHost, { reads, series: [{ field: "tasks", color: "var(--s1)", label: "tasks", format: (v) => String(v) }], height: 170, step: true });
 }
 function compositionCard() {
-  const card = el("section", { class: "card" }, el("h3", { text: "What ag put in the context" }));
+  const card = el("section", { class: "card" }, el("h3", { text: "Context decomposition" }));
   const r = state.read;
   if (!r) { card.append(el("div", { class: "desc", text: "No read selected." })); return card; }
   const readMeta = state.agent.reads.find((x) => x.read_id === r.read_id) || {};
-  card.append(el("div", { class: "desc", text: `Read ${r.read_id} · ${clock(readMeta.at, true)}${state.followLatest ? " · the latest" : ""} · by ag's own count` }));
+  card.append(el("div", { class: "desc", text: `Read ${r.read_id} · ${clock(readMeta.at, true)}${state.followLatest ? " · the latest" : ""} · by ag's own count. `
+    + (r.cut ? `Recent history is the agent's own events, verbatim, since build ${readMeta.basis} cut the history at row ${r.cut}; what was kept from before is the preamble and pinned rows.`
+      : "No build yet: the whole history goes verbatim.") }));
   if (r.missing) { card.append(el("div", { class: "warn", text: "A snapshot keeps only each agent's latest read. Run `ag dashboard` live to inspect older ones." })); return card; }
   const groups = [...r.groups].sort((x, y) => GROUP_ORDER.indexOf(x.group) - GROUP_ORDER.indexOf(y.group));
   const total = groups.reduce((n, x) => n + x.tokens, 0) || 1;
-  const color = (name) => `var(--s${(GROUP_ORDER.indexOf(name) + 1) || 5})`;
+  const color = (name) => `var(--s${(GROUP_ORDER.indexOf(name) + 1) || 6})`;
   card.append(legend(groups.map((x) => ({ label: x.group, color: color(x.group), kind: "rect" }))));
   card.append(el("div", { class: "stack", role: "img", "aria-label": groups.map((x) => `${x.group} ${x.tokens} tokens`).join(", ") },
     ...groups.map((x) => el("div", { style: `width:${x.tokens / total * 100}%;background:${color(x.group)}`, title: `${x.group}: ${full(x.tokens)} tokens, ${x.items} items` }))));

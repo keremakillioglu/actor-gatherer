@@ -10,7 +10,7 @@ database, opened read-only, and ag's own logs -- as plain JSON-ready dicts.
     read(gatherer, read_id)       what one read put in the agent's context, by kind
 
 An agent is a channel of a gatherer: one harness session (codex's thread, Claude Code's
-session, ...). It is RUNNING when its last read is recent (RUNNING_SECONDS) or a build is
+session, ...); which harness, its events' shape tells (`harness_of`). It is RUNNING when its last read is recent (RUNNING_SECONDS) or a build is
 running for it, else idle. A REBUILD is a read whose context comes from another build
 than the agent's read before it: the condensed history was replaced.
 
@@ -149,10 +149,48 @@ def _agents(conn, now: float) -> List[dict]:
                 out[r["ch"]]["tasks"] = r["n"]
     building = _running_builds(conn)
     for ch, a in out.items():
+        a["harness"] = _harness(conn, ch)
         a["last"] = max(a["last_read"] or 0, a["last_event"] or 0) or None
         a["building"] = ch in building
         a["running"] = a["building"] or bool(a["last_read"] and now - a["last_read"] < RUNNING_SECONDS)
     return sorted(out.values(), key=lambda a: a["last"] or 0, reverse=True)
+
+
+CODEX_TYPES = {"message", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output",
+               "reasoning", "local_shell_call", "web_search_call", "compaction", "compaction_summary"}
+
+
+def harness_of(payloads) -> Optional[str]:
+    """The harness an agent runs on, as its events' shape tells -- ag stores no name: codex's
+    Responses items, Claude Code's Anthropic message pieces, pi's messages, opencode's
+    {info, parts} messages; None when none of them shows."""
+    for p in payloads:
+        if not isinstance(p, dict):
+            continue
+        if "info" in p and ("parts" in p or "sessionID" in (p.get("info") or {})) or "sessionID" in p:
+            return "opencode"
+        if p.get("type") in CODEX_TYPES and ("role" in p or "call_id" in p or "summary" in p or "id" in p):
+            return "codex"
+        blocks = [c for c in p.get("content") or [] if isinstance(c, dict)] if isinstance(p.get("content"), list) else []
+        kinds = {c.get("type") for c in blocks}
+        if kinds & {"input_text", "output_text"}:
+            return "codex"
+        if "api" in p or p.get("role") == "toolResult" or kinds & {"toolCall"}:
+            return "pi"
+        if kinds & {"tool_use", "tool_result", "redacted_thinking"} or p.get("role") == "system":
+            return "claude"
+    return None
+
+
+def _harness(conn, channel: str) -> Optional[str]:
+    rows = conn.execute(f"SELECT payload_json FROM events WHERE {CHANNEL} = ? ORDER BY row_id LIMIT 60", (channel,))
+    payloads = []
+    for (raw,) in rows:
+        try:
+            payloads.append(json.loads(raw))
+        except ValueError:
+            continue
+    return harness_of(payloads)
 
 
 def _sent(conn, read_id: int) -> int:
@@ -220,13 +258,17 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
             checks.append({"row_id": r["row_id"], "asked": _seconds(r["asked_at"]), "decided": _seconds(r["decided_at"]),
                            "new_task": bool(r["new_task"]) if r["new_task"] is not None else None, "why": r["why"]})
     mine = [c for c in llm if _belongs(c, gatherer, channel, builds, checks)]
-    return {"gatherer": gatherer, "channel": channel, "reads": reads, "tasks": tasks, "builds": builds,
+    return {"gatherer": gatherer, "channel": channel, "harness": _harness(conn, channel), "reads": reads,
+            "tasks": tasks, "builds": builds,
             "checks": checks, "rebuilds": sum(1 for r in reads if r["rebuild"]), "llm": _llm_summary(mine),
             "llm_attributed_by_time": sum(1 for c in mine if not c.get("job"))}
 
 
 # ---------------------------------------------------------------- what a read held
 
+#: The agent's own events, verbatim: since the cut of the build the read was made from (all of
+#: them before any build), and those kept from before it (its preamble, the pinned rows).
+RECENT, KEPT = "Recent history", "Kept from before the cut"
 #: ag's own messages by name, as the read's breakdown groups them; any other name is a section of its own.
 AG_KINDS = {"environment_update": "File-change notices", "parallel_request": "Other agents' requests",
             "context_stream": "Stream messages"}
@@ -234,13 +276,19 @@ AG_KINDS = {"environment_update": "File-change notices", "parallel_request": "Ot
 
 def read(gatherer: str, read_id: int) -> dict:
     """What read `read_id` put in the context: each item's kind and size (the manager's own
-    count; all of them add up to its `sent_tokens`), grouped as the agent's history (by
-    event type) and ag's own messages (by name)."""
+    count; all of them add up to its `sent_tokens`), grouped as the agent's own events,
+    verbatim, by event type -- RECENT (since the cut of the read's build) and KEPT (before
+    it) -- and ag's own messages, by name."""
     conn = _connect(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
         groups: Dict[str, dict] = {}
+        meta = conn.execute("SELECT * FROM _reads WHERE read_id = ?", (read_id,)).fetchone()
+        cut = None                       # where the build the read was made from cut the history
+        if meta is not None and meta["basis"] and str(meta["basis"]).isdigit() and "_builds" in _tables(conn):
+            found = conn.execute("SELECT open_from_row FROM _builds WHERE build_id = ?", (int(meta["basis"]),)).fetchone()
+            cut = found[0] if found else None
         rows = conn.execute(
             "SELECT i.row_id, i.made_id, t.name AS type, e.tokens AS etok, m.name AS made, m.tokens AS mtok "
             "FROM _read_items i LEFT JOIN events e ON e.row_id = i.row_id "
@@ -248,8 +296,9 @@ def read(gatherer: str, read_id: int) -> dict:
             "LEFT JOIN _made_items m ON m.made_id = i.made_id WHERE i.read_id = ? ORDER BY i.position",
             (read_id,)).fetchall()
         for r in rows:
-            if r["row_id"] is not None:
-                group, name, tokens = "History", r["type"] or "?", r["etok"] or 0
+            if r["row_id"] is not None:          # the agent's own, verbatim
+                group = RECENT if cut is None or r["row_id"] >= cut else KEPT
+                name, tokens = r["type"] or "?", r["etok"] or 0
             else:
                 name, tokens = r["made"] or "?", r["mtok"] or 0
                 group = AG_KINDS.get(name, "ag's sections")
@@ -259,8 +308,7 @@ def read(gatherer: str, read_id: int) -> dict:
             n = g["by_name"].setdefault(name, {"name": name, "tokens": 0, "items": 0})
             n["tokens"] += tokens
             n["items"] += 1
-        meta = conn.execute("SELECT * FROM _reads WHERE read_id = ?", (read_id,)).fetchone()
-        return {"read_id": read_id, "at": _seconds(meta["read_at"]) if meta else None,
+        return {"read_id": read_id, "cut": cut, "at": _seconds(meta["read_at"]) if meta else None,
                 "real_tokens": meta["real_tokens"] if meta is not None and "real_tokens" in meta.keys() else None,
                 "groups": [dict(g, by_name=sorted(g["by_name"].values(), key=lambda n: -n["tokens"]))
                            for g in sorted(groups.values(), key=lambda g: -g["tokens"])]}
