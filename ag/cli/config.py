@@ -54,6 +54,8 @@ ENVIRONMENT = (
                             "`ag`. Ignored under `ag`: use `--gatherer`."),
     ("AG_ADAPTOR", "", "set by ag", "The adaptor the Pi extension or OpenCode plugin loads, as "
                                     "`\"path.ts:Export\"`."),
+    ("AG_JOB", "", "set by the worker", "The job a worker runs (gatherer, job, id, properties), as JSON: each "
+                                        "of its model calls' logs names it, for `ag dashboard`."),
 )
 
 
@@ -108,7 +110,7 @@ def ensure() -> str:
 #: ag's own commands: no harness may be named one. `gatherers`, `show` and `new`
 #: are the home's (`ag home <them>`), given at the top for short.
 HOME_SHORTCUTS = ("gatherers", "show", "new", "model")
-RESERVED = ("help", "home", "config", "status", "stop") + HOME_SHORTCUTS
+RESERVED = ("help", "home", "config", "status", "stop", "dashboard") + HOME_SHORTCUTS
 
 
 def load() -> Dict[str, Any]:

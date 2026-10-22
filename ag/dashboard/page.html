@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ag dashboard</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --selected: rgba(42,120,214,0.10);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --selected: rgba(57,135,229,0.16);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --selected: rgba(57,135,229,0.16);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--ring); background: var(--surface); position: sticky; top: 0; z-index: 2; }
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+header .home { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+header .live { color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+button { font: inherit; font-size: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { background: var(--wash); }
+.layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: calc(100vh - 50px); }
+aside { border-right: 1px solid var(--ring); background: var(--surface); padding: 12px 0; overflow-y: auto; max-height: calc(100vh - 50px); position: sticky; top: 50px; }
+aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
+.gatherer { margin-bottom: 6px; }
+.gatherer > .name { padding: 4px 16px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+.gatherer > .name span { color: var(--muted); font-weight: 400; font-size: 12px; }
+.agent { display: block; width: 100%; text-align: left; border: 0; border-radius: 0; background: none; padding: 7px 16px 7px 24px; cursor: pointer; }
+.agent:hover { background: var(--wash); }
+.agent[aria-current="true"] { background: var(--selected); }
+.agent .top { display: flex; align-items: center; gap: 8px; }
+.agent .id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.agent .meta { color: var(--muted); font-size: 12px; padding-left: 0; margin-top: 2px; }
+.status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.status i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--axis); }
+.status.running i { background: var(--good); }
+.status.building i { background: var(--warning); }
+.status.failed i { background: var(--critical); }
+.servers { padding: 0 16px; color: var(--ink-2); font-size: 12px; }
+main { padding: 20px; min-width: 0; }
+.empty { color: var(--muted); padding: 40px; text-align: center; }
+.title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.title h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.title .sub { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 12px 14px; }
+.tile .label { color: var(--ink-2); font-size: 12px; }
+.tile .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
+.tile .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; min-width: 0; }
+.card h3 { margin: 0 0 2px; font-size: 14px; font-weight: 600; }
+.card .desc { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.key-line { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
+.key-rect { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.key-rule { width: 1px; height: 12px; display: inline-block; background: var(--muted); }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tooltip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 170px; z-index: 3; display: none; }
+.tooltip .t { color: var(--muted); margin-bottom: 4px; }
+.tooltip .row { display: flex; align-items: center; gap: 8px; }
+.tooltip .row b { font-weight: 600; min-width: 64px; }
+.tooltip .row span { color: var(--ink-2); }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .layout { grid-template-columns: minmax(0, 1fr); } aside { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--ring); } main { padding: 16px; } }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+td { padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.total td { font-weight: 600; border-bottom: 0; }
+.scroll { overflow-x: auto; }
+.tall { max-height: 420px; overflow-y: auto; }
+.desc-cell { color: var(--ink-2); max-width: 520px; }
+.bar { height: 8px; border-radius: 0 4px 4px 0; background: var(--s1); display: inline-block; vertical-align: middle; }
+.stack { display: flex; height: 18px; gap: 2px; margin: 8px 0 10px; }
+.stack div { height: 100%; }
+.stack div:first-child { border-radius: 4px 0 0 4px; } .stack div:last-child { border-radius: 0 4px 4px 0; }
+.stack div:only-child { border-radius: 4px; }
+details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-top: 8px; }
+.warn { color: var(--ink-2); font-size: 12px; margin-top: 8px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.stale { opacity: .55; transition: opacity .2s; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ag dashboard</h1>
+  <div class="home" id="home"></div>
+  <div class="live" id="live"></div>
+  <button id="pause" type="button">Pause</button>
+</header>
+<div class="layout">
+  <aside id="agents"></aside>
+  <main id="main"><div class="empty">Loading…</div></main>
+</div>
+<script>
+"use strict";
+const SNAPSHOT = /*SNAPSHOT*/null;
+const POLL_MS = 5000;
+const GROUP_ORDER = ["History", "ag's sections", "File-change notices", "Other agents' requests", "Stream messages"];
+let state = { home: null, selected: null, agent: null, read: null, readId: null, paused: false, timer: null };
+
+// ------------------------------------------------------------------ helpers
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v; else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else if (v !== undefined && v !== null) n.setAttribute(k, v);
+  }
+  for (const kid of kids) if (kid !== null && kid !== undefined) n.append(kid);
+  return n;
+};
+const svgEl = (tag, attrs = {}) => {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+};
+const compact = (v) => v === null || v === undefined ? "–" : v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M"
+  : v >= 1e3 ? (v / 1e3).toFixed(v >= 1e5 ? 0 : 1).replace(/\.0$/, "") + "K" : String(Math.round(v));
+const full = (v) => v === null || v === undefined ? "–" : Math.round(v).toLocaleString();
+const axisTime = (t, days, seconds) => new Date(t * 1000).toLocaleString([], days
+  ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+  : seconds ? { hour: "2-digit", minute: "2-digit", second: "2-digit" } : { hour: "2-digit", minute: "2-digit" });
+const clock = (t, withDate) => t ? new Date(t * 1000).toLocaleString([], withDate
+  ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "–";
+const ago = (t) => {
+  if (!t) return "never";
+  const s = Math.max(0, Date.now() / 1000 - t);
+  return s < 60 ? `${Math.round(s)}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
+};
+const span = (a, b) => {
+  if (!a || !b) return "–";
+  const s = Math.max(0, b - a);
+  return s < 60 ? `${s.toFixed(0)}s` : s < 3600 ? `${(s / 60).toFixed(1)}m` : `${(s / 3600).toFixed(1)}h`;
+};
+const short = (id) => id && id.length > 18 ? id.slice(0, 8) + "…" + id.slice(-6) : (id || "(none)");
+const base = (p) => p ? p.replace(/\/+$/, "").split("/").pop() : "";
+const usd = (v) => v === null || v === undefined ? "–" : v > 0 && v < 0.01 ? "<$0.01" : "$" + v.toFixed(2);
+const statusOf = (a) => a.building ? ["building", "Building"] : a.running ? ["running", "Running"] : ["idle", "Idle"];
+const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
+
+async function get(path) {
+  const r = await fetch(path, { cache: "no-store" });
+  if (!r.ok) throw new Error(`${path}: ${r.status}`);
+  return r.json();
+}
+const key = (g, c) => g + "\u0000" + c;
+
+// ------------------------------------------------------------------ data
+async function loadHome() {
+  state.home = SNAPSHOT ? SNAPSHOT.home : await get("/api/home");
+}
+async function loadAgent() {
+  if (!state.selected) return;
+  const [g, c] = state.selected;
+  state.agent = SNAPSHOT ? SNAPSHOT.agents[key(g, c)] || null
+    : await get(`/api/agent?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`);
+  const reads = (state.agent && state.agent.reads) || [];
+  if (!reads.length) { state.read = null; state.readId = null; return; }
+  const followLatest = state.readId === null || state.followLatest;
+  const want = followLatest ? reads[reads.length - 1].read_id : state.readId;
+  state.readId = want;
+  state.followLatest = followLatest;
+  await loadRead();
+}
+async function loadRead() {
+  const [g] = state.selected;
+  if (state.readId === null) { state.read = null; return; }
+  if (SNAPSHOT) { state.read = SNAPSHOT.reads[key(g, state.readId)] || { missing: true, read_id: state.readId }; return; }
+  state.read = await get(`/api/read?gatherer=${encodeURIComponent(g)}&read_id=${state.readId}`);
+}
+async function refresh() {
+  document.getElementById("main").classList.add("stale");
+  try {
+    await loadHome();
+    if (!state.selected) {
+      const first = state.home.gatherers.find((g) => g.agents.length);
+      if (first) state.selected = [first.name, first.agents[0].channel];
+    }
+    await loadAgent();
+    renderAgents(); renderMain();
+    document.getElementById("live").textContent = SNAPSHOT ? `Snapshot · ${clock(state.home.now, true)}`
+      : state.paused ? "Paused" : `Live · updated ${clock(Date.now() / 1000)}`;
+  } catch (err) {
+    document.getElementById("live").textContent = `Not updated: ${err.message}`;
+  } finally {
+    document.getElementById("main").classList.remove("stale");
+  }
+}
+function schedule() {
+  clearTimeout(state.timer);
+  if (!SNAPSHOT && !state.paused) state.timer = setTimeout(async () => { await refresh(); schedule(); }, POLL_MS);
+}
+
+// ------------------------------------------------------------------ the agent list
+function renderAgents() {
+  const aside = document.getElementById("agents");
+  document.getElementById("home").textContent = state.home.home;
+  const running = state.home.gatherers.reduce((n, g) => n + g.agents.filter((a) => a.running).length, 0);
+  const total = state.home.gatherers.reduce((n, g) => n + g.agents.length, 0);
+  aside.replaceChildren(el("h2", { text: `Agents · ${running} running of ${total}` }));
+  if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No gatherers in this home yet." }));
+  for (const g of state.home.gatherers) {
+    const box = el("div", { class: "gatherer" },
+      el("div", { class: "name" }, el("strong", { text: g.name }), el("span", { text: g.policy || "" })));
+    if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
+    for (const a of g.agents) {
+      const [cls, label] = statusOf(a);
+      const current = state.selected && state.selected[0] === g.name && state.selected[1] === a.channel;
+      const size = a.real_tokens ?? a.sent_tokens;
+      const btn = el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false",
+        title: a.channel, onclick: () => select(g.name, a.channel) },
+        el("div", { class: "top" }, el("span", { class: "id", text: short(a.channel) }), statusEl(cls, label)),
+        el("div", { class: "meta", text: [base(a.cwd), `${a.reads} reads`, `${a.tasks} tasks`,
+          size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }));
+      box.append(btn);
+    }
+    aside.append(box);
+  }
+  aside.append(el("h2", { text: "Hook servers" }));
+  const servers = state.home.hook_servers || [];
+  aside.append(el("div", { class: "servers", text: servers.length
+    ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running." }));
+}
+async function select(g, c) {
+  state.selected = [g, c]; state.readId = null; state.followLatest = true;
+  await refresh(); schedule();
+}
+
+// ------------------------------------------------------------------ charts
+function lineChart(host, { reads, series, height = 220, rebuilds = true, step = false, onPick, picked }) {
+  host.replaceChildren();
+  const box = el("div", { class: "chart" });
+  host.append(box);
+  const W = Math.max(320, host.clientWidth || 640), H = height, m = { l: 48, r: 12, t: 12, b: 26 };
+  const xs = reads.map((r) => r.at).filter((t) => t);
+  if (!xs.length) { box.append(el("div", { class: "desc", text: "No reads yet." })); return; }
+  let x0 = Math.min(...xs), x1 = Math.max(...xs);
+  if (x1 === x0) { x0 -= 30; x1 += 30; }
+  const vals = series.flatMap((s) => reads.map((r) => r[s.field]).filter((v) => typeof v === "number"));
+  let ymax = Math.max(1, ...vals);
+  const stepY = Math.max(1, niceStep(ymax / 4)); ymax = Math.ceil(ymax / stepY) * stepY;
+  const X = (t) => m.l + (t - x0) / (x1 - x0) * (W - m.l - m.r), Y = (v) => H - m.b - v / ymax * (H - m.t - m.b);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img" });
+  for (let v = 0; v <= ymax + 1e-9; v += stepY) {
+    svg.append(svgEl("line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: v === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }));
+    const t = svgEl("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end" }); t.textContent = compact(v); svg.append(t);
+  }
+  const days = (x1 - x0) > 86400;
+  const ticks = Math.max(2, Math.min(6, Math.floor((W - m.l - m.r) / 110)));
+  for (let i = 0; i <= ticks; i++) {
+    const t = x0 + (x1 - x0) * i / ticks;
+    const lab = svgEl("text", { x: X(t), y: H - 8, "text-anchor": i === 0 ? "start" : i === ticks ? "end" : "middle" });
+    lab.textContent = axisTime(t, days, (x1 - x0) < 600); svg.append(lab);
+  }
+  if (rebuilds) for (const r of reads) if (r.rebuild && r.at)
+    svg.append(svgEl("line", { x1: X(r.at), x2: X(r.at), y1: m.t, y2: H - m.b, stroke: "var(--muted)", "stroke-width": 1, opacity: .7 }));
+  for (const s of series) {
+    const pts = reads.filter((r) => typeof r[s.field] === "number" && r.at);
+    if (!pts.length) continue;
+    let d = "";
+    pts.forEach((r, i) => {
+      const x = X(r.at), y = Y(r[s.field]);
+      if (i === 0) d += `M${x},${y}`;
+      else if (step) d += `H${x}V${y}`; else d += `L${x},${y}`;
+    });
+    svg.append(svgEl("path", { d, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    const last = pts[pts.length - 1];
+    svg.append(svgEl("circle", { cx: X(last.at), cy: Y(last[s.field]), r: 4, fill: s.color, stroke: "var(--surface)", "stroke-width": 2 }));
+  }
+  if (picked) {
+    const r = reads.find((q) => q.read_id === picked);
+    if (r && r.at) svg.append(svgEl("line", { x1: X(r.at), x2: X(r.at), y1: m.t, y2: H - m.b, stroke: "var(--s1)", "stroke-width": 1 }));
+  }
+  const cross = svgEl("line", { y1: m.t, y2: H - m.b, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" });
+  svg.append(cross);
+  const hit = svgEl("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent", style: onPick ? "cursor:pointer" : "" });
+  svg.append(hit);
+  box.append(svg);
+  const tip = el("div", { class: "tooltip" });
+  box.append(tip);
+  const nearest = (ev) => {
+    const rect = svg.getBoundingClientRect();
+    const px = (ev.clientX - rect.left) * W / rect.width;
+    const t = x0 + (px - m.l) / (W - m.l - m.r) * (x1 - x0);
+    let best = null;
+    for (const r of reads) if (r.at && (!best || Math.abs(r.at - t) < Math.abs(best.at - t))) best = r;
+    return { best, rect };
+  };
+  hit.addEventListener("pointermove", (ev) => {
+    const { best, rect } = nearest(ev);
+    if (!best) return;
+    cross.setAttribute("x1", X(best.at)); cross.setAttribute("x2", X(best.at)); cross.setAttribute("visibility", "visible");
+    tip.replaceChildren(el("div", { class: "t", text: `${clock(best.at, days)} · read ${best.read_id}${best.rebuild ? " · rebuild" : ""}` }));
+    for (const s of series) tip.append(el("div", { class: "row" }, el("span", { class: "key-line", style: `background:${s.color}` }),
+      el("b", { text: s.format ? s.format(best[s.field]) : full(best[s.field]) }), el("span", { text: s.label })));
+    tip.style.display = "block";
+    const left = X(best.at) / W * rect.width;
+    tip.style.left = Math.min(Math.max(0, left + 12), rect.width - 190) + "px";
+    tip.style.top = "8px";
+  });
+  hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+  if (onPick) hit.addEventListener("click", (ev) => { const { best } = nearest(ev); if (best) onPick(best.read_id); });
+}
+function niceStep(raw) {
+  const p = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-9))));
+  for (const f of [1, 2, 2.5, 5, 10]) if (raw <= f * p) return f * p;
+  return 10 * p;
+}
+function legend(items) {
+  return el("div", { class: "legend" }, ...items.map((i) => el("span", {},
+    el("span", { class: i.kind === "rule" ? "key-rule" : i.kind === "rect" ? "key-rect" : "key-line", style: i.color ? `background:${i.color}` : "" }),
+    i.label)));
+}
+
+// ------------------------------------------------------------------ the selected agent
+function renderMain() {
+  const main = document.getElementById("main");
+  if (!state.selected) { main.replaceChildren(el("div", { class: "empty", text: "No agents yet. Run a harness through ag and it appears here." })); return; }
+  const a = state.agent;
+  if (!a || a.error) { main.replaceChildren(el("div", { class: "empty", text: (a && a.error) || "No data for this agent." })); return; }
+  const [g, c] = state.selected;
+  const info = (state.home.gatherers.find((x) => x.name === g) || { agents: [] }).agents.find((x) => x.channel === c) || {};
+  const [cls, label] = statusOf(info);
+  const reads = a.reads, last = reads[reads.length - 1] || {};
+  const hasReal = reads.some((r) => typeof r.real_tokens === "number");
+  const builds = a.builds || [], failed = builds.filter((b) => b.status === "failed").length;
+  const llm = a.llm.total;
+  main.replaceChildren(
+    el("div", { class: "title" }, el("h2", { text: g }), statusEl(cls, label), el("span", { class: "sub", text: `channel ${c}${info.cwd ? " · " + info.cwd : ""}` })),
+    el("div", { class: "tiles" },
+      tile("Context now", compact(last.real_tokens ?? last.sent_tokens),
+        last.real_tokens !== null && last.real_tokens !== undefined ? `provider's count · ag counted ${compact(last.sent_tokens)}` : "ag's count"),
+      tile("Harness limit", compact(last.limit_tokens), last.limit_tokens ? "where the harness compacts" : "none stated"),
+      tile("Tasks", full(a.tasks.length), `${a.checks.filter((x) => x.new_task).length} new-task decisions`),
+      tile("Rebuilds", full(a.rebuilds), "reads on a new build"),
+      tile("Reads", full(reads.length), last.at ? `last ${ago(last.at)}` : ""),
+      tile("Builds", full(builds.length), failed ? `${failed} failed` : "none failed"),
+      tile("ag's model calls", full(llm.calls), `${usd(llm.cost)}${llm.unpriced ? ` + ${llm.unpriced} unpriced` : ""}`)),
+    sizeCard(reads, hasReal),
+    el("div", { class: "grid2" }, tasksChartCard(reads), compositionCard()),
+    tasksCard(a.tasks),
+    el("div", { class: "grid2" }, buildsCard(builds), llmCard(a)));
+  drawCharts();
+}
+function tile(labelText, value, note) {
+  return el("div", { class: "tile" }, el("div", { class: "label", text: labelText }), el("div", { class: "value", text: value }), el("div", { class: "note", text: note }));
+}
+function sizeCard(reads, hasReal) {
+  const card = el("section", { class: "card" }, el("h3", { text: "Context size" }),
+    el("div", { class: "desc", text: (hasReal ? "Each model call's context, in tokens: as the provider counted it, and as ag counts all it sent."
+      : "Each model call's context, in tokens, as ag counts all it sent (these reads have no provider count).") + " Click the chart to see what a read held." }),
+    legend([...(hasReal ? [{ label: "Provider's count", color: "var(--s1)" }] : []), { label: "ag's own count", color: "var(--s2)" },
+      { label: "Rebuild", kind: "rule" }]),
+    el("div", { id: "size-chart" }));
+  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["Read", "Time", "Provider's count", "ag's count", "ag's budgeted size", "Limit", "Tasks", "Build"].map((h, i) =>
+    el("th", { class: i >= 2 && i <= 6 ? "n" : "", text: h })))));
+  const body = el("tbody");
+  for (const r of [...reads].reverse()) body.append(el("tr", {}, el("td", { class: "n", text: r.read_id }), el("td", { text: clock(r.at, true) }),
+    el("td", { class: "n", text: full(r.real_tokens) }), el("td", { class: "n", text: full(r.sent_tokens) }), el("td", { class: "n", text: full(r.est_tokens) }),
+    el("td", { class: "n", text: full(r.limit_tokens) }),
+    el("td", { class: "n", text: r.tasks }), el("td", { text: (r.basis ?? "none") + (r.rebuild ? " (rebuild)" : "") })));
+  table.append(body);
+  card.append(el("details", {}, el("summary", { text: "Show as a table" }), el("div", { class: "scroll tall" }, table)));
+  return card;
+}
+function tasksChartCard(reads) {
+  return el("section", { class: "card" }, el("h3", { text: "Tasks over time" }),
+    el("div", { class: "desc", text: "How many of the agent's tasks had begun by each read, as ag has segmented its history." }),
+    legend([{ label: "Rebuild", kind: "rule" }]), el("div", { id: "tasks-chart" }));
+}
+function drawCharts() {
+  const reads = state.agent.reads;
+  const pick = async (id) => { state.readId = id; state.followLatest = id === reads[reads.length - 1].read_id; await loadRead(); renderMain(); };
+  const sizeHost = document.getElementById("size-chart");
+  const series = [];
+  if (reads.some((r) => typeof r.real_tokens === "number")) series.push({ field: "real_tokens", color: "var(--s1)", label: "provider's count" });
+  series.push({ field: "sent_tokens", color: "var(--s2)", label: "ag's own count" });
+  if (sizeHost) lineChart(sizeHost, { reads, series, onPick: pick, picked: state.readId });
+  const tasksHost = document.getElementById("tasks-chart");
+  if (tasksHost) lineChart(tasksHost, { reads, series: [{ field: "tasks", color: "var(--s1)", label: "tasks", format: (v) => String(v) }], height: 170, step: true });
+}
+function compositionCard() {
+  const card = el("section", { class: "card" }, el("h3", { text: "What ag put in the context" }));
+  const r = state.read;
+  if (!r) { card.append(el("div", { class: "desc", text: "No read selected." })); return card; }
+  const readMeta = state.agent.reads.find((x) => x.read_id === r.read_id) || {};
+  card.append(el("div", { class: "desc", text: `Read ${r.read_id} · ${clock(readMeta.at, true)}${state.followLatest ? " · the latest" : ""} · by ag's own count` }));
+  if (r.missing) { card.append(el("div", { class: "warn", text: "A snapshot keeps only each agent's latest read. Run `ag dashboard` live to inspect older ones." })); return card; }
+  const groups = [...r.groups].sort((x, y) => GROUP_ORDER.indexOf(x.group) - GROUP_ORDER.indexOf(y.group));
+  const total = groups.reduce((n, x) => n + x.tokens, 0) || 1;
+  const color = (name) => `var(--s${(GROUP_ORDER.indexOf(name) + 1) || 5})`;
+  card.append(legend(groups.map((x) => ({ label: x.group, color: color(x.group), kind: "rect" }))));
+  card.append(el("div", { class: "stack", role: "img", "aria-label": groups.map((x) => `${x.group} ${x.tokens} tokens`).join(", ") },
+    ...groups.map((x) => el("div", { style: `width:${x.tokens / total * 100}%;background:${color(x.group)}`, title: `${x.group}: ${full(x.tokens)} tokens, ${x.items} items` }))));
+  const table = el("table", {}, el("thead", {}, el("tr", {}, el("th", { text: "Kind" }), el("th", { class: "n", text: "Items" }), el("th", { class: "n", text: "Tokens" }), el("th", { class: "n", text: "Share" }))));
+  const body = el("tbody");
+  for (const x of groups) {
+    body.append(el("tr", { class: "total" }, el("td", { text: x.group }), el("td", { class: "n", text: full(x.items) }), el("td", { class: "n", text: full(x.tokens) }),
+      el("td", { class: "n", text: (x.tokens / total * 100).toFixed(1) + "%" })));
+    for (const n of x.by_name) body.append(el("tr", {}, el("td", { class: "mono", text: "  " + n.name, style: "padding-left:20px" }),
+      el("td", { class: "n", text: full(n.items) }), el("td", { class: "n", text: full(n.tokens) }), el("td", { class: "n", text: (n.tokens / total * 100).toFixed(1) + "%" })));
+  }
+  table.append(body);
+  card.append(el("div", { class: "scroll" }, table));
+  if (typeof r.real_tokens === "number") card.append(el("div", { class: "warn", text: `The provider counted ${full(r.real_tokens)} tokens for this call: the harness's own instructions and tools, and what ag cannot see, are the difference.` }));
+  return card;
+}
+function tasksCard(tasks) {
+  const card = el("section", { class: "card" }, el("h3", { text: `Tasks · ${tasks.length}` }),
+    el("div", { class: "desc", text: "ag's segmentation of this agent's history, oldest first." }));
+  if (!tasks.length) { card.append(el("div", { class: "desc", text: "None yet: a build segments the history." })); return card; }
+  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["#", "Task", "What it was", "Started", "Took", "History rows", "Tokens"].map((h, i) =>
+    el("th", { class: i >= 5 || i === 0 ? "n" : "", text: h })))));
+  const body = el("tbody");
+  for (const t of tasks) body.append(el("tr", {}, el("td", { class: "n", text: t.index }), el("td", { text: t.name || "–" }),
+    el("td", { class: "desc-cell", text: t.description || "" }), el("td", { text: clock(t.started, true) }), el("td", { text: span(t.started, t.ended) }),
+    el("td", { class: "n", text: `${t.first_row ?? "–"}–${t.last_row ?? "–"}` }), el("td", { class: "n", text: full(t.tokens) })));
+  table.append(body);
+  card.append(el("div", { class: "scroll" }, table));
+  return card;
+}
+function buildsCard(builds) {
+  const card = el("section", { class: "card" }, el("h3", { text: `Builds · ${builds.length}` }),
+    el("div", { class: "desc", text: "Each analysis of the history: why it started, how long it took, how it ended." }));
+  if (!builds.length) { card.append(el("div", { class: "desc", text: "None yet." })); return card; }
+  const longest = Math.max(1, ...builds.map((b) => (b.finished || Date.now() / 1000) - (b.started || 0)));
+  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["#", "Started", "Reason", "Status", "Duration", ""].map((h, i) => el("th", { class: i === 0 ? "n" : "", text: h })))));
+  const body = el("tbody");
+  for (const b of [...builds].reverse()) {
+    const dur = (b.finished || Date.now() / 1000) - (b.started || 0);
+    const st = b.status === "failed" ? ["failed", "Failed"] : b.status === "running" ? ["building", "Running"] : b.status === "ready" ? ["running", "Ready"] : ["idle", b.status === "nothing" ? "Nothing to do" : (b.status || "?")];
+    body.append(el("tr", { title: b.error || "" }, el("td", { class: "n", text: b.build_id }), el("td", { text: clock(b.started, true) }), el("td", { text: b.reason || "–" }),
+      el("td", {}, statusEl(st[0], st[1])), el("td", { class: "n", text: span(b.started, b.finished || (b.status === "running" ? Date.now() / 1000 : null)) }),
+      el("td", { style: "width:35%" }, el("span", { class: "bar", style: `width:${Math.max(2, dur / longest * 100)}%` }))));
+    if (b.error) body.append(el("tr", {}, el("td"), el("td", { colspan: 5, class: "desc-cell", text: b.error })));
+  }
+  table.append(body);
+  card.append(el("div", { class: "scroll tall" }, table));
+  return card;
+}
+function llmCard(a) {
+  const card = el("section", { class: "card" }, el("h3", { text: "ag's own model calls" }),
+    el("div", { class: "desc", text: "The Gatherer's calls for this agent: new-task checks, segmentation, summaries, ranking." }));
+  const rows = a.llm.by_purpose;
+  if (!rows.length) { card.append(el("div", { class: "desc", text: "None found in the home's call log." })); return card; }
+  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["Purpose", "Calls", "Tokens in", "Tokens out", "Time", "Errors", "Cost"].map((h, i) => el("th", { class: i ? "n" : "", text: h })))));
+  const body = el("tbody");
+  for (const p of rows) body.append(el("tr", { title: p.models.join(", ") }, el("td", { text: p.purpose }), el("td", { class: "n", text: full(p.calls) }),
+    el("td", { class: "n", text: compact(p.tokens_in) }), el("td", { class: "n", text: compact(p.tokens_out) }), el("td", { class: "n", text: `${p.seconds}s` }),
+    el("td", { class: "n", text: full(p.errors) }), el("td", { class: "n", text: usd(p.cost) + (p.unpriced ? "*" : "") })));
+  const t = a.llm.total;
+  body.append(el("tr", { class: "total" }, el("td", { text: "Total" }), el("td", { class: "n", text: full(t.calls) }), el("td", { class: "n", text: compact(t.tokens_in) }),
+    el("td", { class: "n", text: compact(t.tokens_out) }), el("td"), el("td", { class: "n", text: full(t.errors) }), el("td", { class: "n", text: usd(t.cost) })));
+  table.append(body);
+  card.append(el("div", { class: "scroll" }, table));
+  if (t.unpriced) card.append(el("div", { class: "warn", text: `* ${t.unpriced} calls on models LiteLLM has no price for are not in the cost.` }));
+  if (a.llm_attributed_by_time) card.append(el("div", { class: "warn", text: `${a.llm_attributed_by_time} calls predate job tags and were matched to this agent by time.` }));
+  return card;
+}
+
+// ------------------------------------------------------------------ start
+document.getElementById("pause").addEventListener("click", async (ev) => {
+  state.paused = !state.paused;
+  ev.target.textContent = state.paused ? "Resume" : "Pause";
+  if (!state.paused) await refresh();
+  schedule();
+});
+if (SNAPSHOT) document.getElementById("pause").style.display = "none";
+let resizeTimer = null;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => state.agent && drawCharts(), 150); });
+refresh().then(schedule);
+</script>
+</body>
+</html>

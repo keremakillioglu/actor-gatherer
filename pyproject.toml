@@ -40,5 +40,5 @@ include = ["ag*"]
 
 [tool.setuptools.package-data]
 # what runs from the installed package besides Python: ag's harness entries, and the TypeScript
-# plugins (Pi, OpenCode) with the shared harness-side code they import
-ag = ["cli/harnesses.toml", "integrations/**/*.ts"]
+# plugins (Pi, OpenCode) with the shared harness-side code they import, and the dashboard's page
+ag = ["cli/harnesses.toml", "integrations/**/*.ts", "dashboard/page.html"]

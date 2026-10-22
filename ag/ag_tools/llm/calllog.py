@@ -1,12 +1,16 @@
 """One JSON file per model call, for any LLM implementation: purpose, model,
 usage, duration, any error and the answer (first 20,000 characters) -- so a
 build can be priced and checked -- and, with `prompts`, the system text and the
-prompt, whole."""
+prompt, whole. A call made by a worker's job carries the job (`job`: its gatherer,
+job, id and properties, from JOB_ENV), so its cost can be put to the gatherer and
+channel it was for."""
 
 import json
 import os
 from datetime import datetime, timezone
 from typing import Optional
+
+JOB_ENV = "AG_JOB"      # the job the process runs, as JSON (ag.ag_tools.worker sets it)
 
 
 class CallLog:
@@ -24,6 +28,9 @@ class CallLog:
             self._calls += 1
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
             path = os.path.join(self.log_dir, f"{stamp}-{os.getpid()}-{self._calls}-{purpose}.json")
+            job = os.environ.get(JOB_ENV)
+            if job:
+                extra = {"job": json.loads(job), **extra}
             record = {"purpose": purpose, "model": model, "effort": effort, **extra,
                       "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                       "usage": usage, "seconds": round(seconds, 3),

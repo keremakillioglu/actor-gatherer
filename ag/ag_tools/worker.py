@@ -34,6 +34,7 @@ from typing import Any, Callable, Dict, Optional, Union
 from ag.ag_interface.store import Jobs
 
 from .imports import call, load_factory
+from .llm.calllog import JOB_ENV
 from .log import warn
 
 # <repo> (this file is <repo>/ag/ag_tools/worker.py)
@@ -102,6 +103,8 @@ def main(argv=None) -> int:
     ap.add_argument("--properties", type=json.loads, default={}, help="the job's properties, as a JSON object")
     ap.add_argument("--path", action="append", default=[])
     args = ap.parse_args(argv)
+    os.environ[JOB_ENV] = json.dumps({"gatherer": args.gatherer, "job": args.job, "id": args.id,
+                                      "properties": args.properties})    # named on its model calls (CallLog)
     policy = None
     try:
         policy = unwrap(call(load_factory(args.factory, args.path), args.gatherer))      # a factory may take the gatherer

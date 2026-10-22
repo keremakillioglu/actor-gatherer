@@ -272,6 +272,39 @@ def stop(settings) -> int:
     return 0
 
 
+def dashboard(args: List[str]) -> int:
+    """`ag dashboard [--host H] [--port N] [--out FILE]`: the page on localhost until
+    interrupted, or, with --out, written to FILE with its data inside it."""
+    host, port, out = "127.0.0.1", 4200, None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--host", "--port", "--out") and i + 1 < len(args):
+            host, port, out = (args[i + 1], port, out) if a == "--host" else \
+                (host, args[i + 1], out) if a == "--port" else (host, port, args[i + 1])
+            i += 2
+            continue
+        raise AgError(f"ag dashboard: unknown argument {a!r} (--host H, --port N, --out FILE)")
+    from ag.dashboard import data, server
+    if out:
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write(server.page(data.snapshot()))
+        print(f"wrote {os.path.abspath(out)}")
+        return 0
+    try:
+        httpd = server.serve(host, int(port))
+    except (OSError, ValueError) as exc:
+        raise AgError(f"ag dashboard: cannot listen on {host}:{port}: {exc}") from exc
+    say(f"dashboard: http://{host}:{httpd.server_port}/  (home {data.paths.AG_HOME}; Ctrl-C to stop)")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     try:
@@ -292,6 +325,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return status(settings)
         if cmd == "stop":
             return stop(settings)
+        if cmd == "dashboard":
+            return dashboard(rest)
         raise AgError(f"no command {cmd!r}: one of {', '.join(settings['harnesses'])} (the harnesses in "
                       f"{config.path()}), or {', '.join(c for c in config.RESERVED if c != 'help')}")
     except (AgError, config.ConfigError) as exc:
