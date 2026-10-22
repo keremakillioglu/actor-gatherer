@@ -40,7 +40,8 @@ policy's event types declare (e.g. {"channel": <the harness's thread>});
 none: {}. `cwd` is the working directory the gatherer's pollers look at.
 
     {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?, "preamble"?}
-        -> {"context": [...] or null, "note", "read_id"}   one model call: insert, then read
+        -> {"context": [...] or null, "note", "read_id", "tokens", "budget", "sent_tokens"}
+                                                one model call: insert, then read
                                                 in response to the last event; null: send
                                                 your own. `read_id` names the read, for
                                                 `measured`; a `measured` given here is
@@ -50,13 +51,21 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 provider's tokens; the policy keeps under it.
                                                 `preamble`, [{"name", "text"}], is what the
                                                 harness sends besides its messages (its system
-                                                prompt, its tool definitions), kept with the read
+                                                prompt, its tool definitions), kept with the read.
+                                                `tokens` is the context's size by the policy's
+                                                count, `budget` the size it keeps it under (null:
+                                                none), `sent_tokens` all the call sends by that
+                                                count (every item, and the preamble); a harness
+                                                that counts the context exactly
+                                                before sending it, and finds it over `budget`,
+                                                reports that count (`measured`) and asks again
     {"op": "measured", "gatherer", "read_id", "tokens"} -> {"recorded": bool}
                                                 the provider's count of read `read_id`'s
                                                 context: the call's input tokens, cached
-                                                ones included, reported after the call
+                                                ones included, reported after the call (or
+                                                counted exactly before it)
     {"op": "insert", "gatherer", "properties", "events"} -> {"rows": [row id or null, ...], "last"}
-    {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?} -> {"context": [...], "read_id"}
+    {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens"}
     {"op": "locate", "gatherer", "properties", "event_id"} -> {"row"}      (`id` is the request's own)
     {"op": "init", "gatherer", "event_types"?: [TYPE]} -> {"event_types": [TYPE with its id]}
     {"op": "event_types", "gatherer"} -> {"event_types": [...]}
@@ -232,8 +241,9 @@ class Server:
     def read(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], row: int, manager=None,
              limit: Optional[int] = None, preamble: Optional[List[dict]] = None) -> dict:
         manager = self.with_pollers(manager or self.manager(gatherer), gatherer, cwd)
-        context, read_id = manager.read_logged(gatherer, row, properties=properties, limit=limit, preamble=preamble)
-        return {"context": context, "read_id": read_id}
+        context, read_id, sizes = manager.read_logged(gatherer, row, properties=properties, limit=limit,
+                                                      preamble=preamble)
+        return {"context": context, "read_id": read_id, **sizes}
 
     def measured(self, gatherer: str, read_id: int, tokens: int) -> dict:
         """Record the provider's count of the context read `read_id` returned."""
@@ -290,7 +300,8 @@ class Server:
         ags = sum(1 for e in context if e.get("type") == "ag")
         note = f"{len(events)} events in (event {last}), {len(context)} out ({ags} ag)"
         self.log(gatherer, prefix + note)
-        return {"context": context, "note": note, "read_id": answer["read_id"]}
+        return {"context": context, "note": note, "read_id": answer["read_id"],
+                **{k: answer.get(k) for k in ("tokens", "budget", "sent_tokens")}}
 
     def open(self, gatherer: str, properties: Dict[str, Any]) -> dict:
         self.manager(gatherer)

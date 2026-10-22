@@ -259,16 +259,26 @@ class Manager(ContextManager):
         return self.read_logged(gatherer_id, row_id, properties=properties)[0]
 
     def read_logged(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None,
-                    limit: Optional[int] = None, preamble: Optional[List[dict]] = None) -> Tuple[List[dict], Optional[int]]:
+                    limit: Optional[int] = None, preamble: Optional[List[dict]] = None
+                    ) -> Tuple[List[dict], Optional[int], dict]:
         """Not part of the interface: `read_events`, with the read_id the read
         was logged as (None: nothing returned, nothing logged) -- what the
-        provider's count of the call is later recorded against (`record_real_tokens`).
-        `limit` is the harness's own limit the call stated (`Read.limit`); `preamble`, what it
-        sends besides its messages ([{name, text}])."""
+        provider's count of the call is later recorded against (`record_real_tokens`) --
+        and its sizes by the policy's count: {"tokens", "budget"} (`Context`: what the
+        policy budgets, and its budget), and "sent_tokens", all the call sends -- every
+        item and the preamble -- as the provider counts it too. `limit` is the harness's
+        own limit the call stated (`Read.limit`); `preamble`, what it sends besides its
+        messages ([{name, text}])."""
         ctx, read_id = self._context(gatherer_id, row_id, properties, limit, preamble)
+        sizes = {"tokens": ctx.tokens, "budget": ctx.budget}
         if not ctx.items:
-            return [], None
-        rows = store.rows_by_id(self._conn(gatherer_id), [r.row_id for r in ctx.refs if r.row_id is not None])
+            return [], None, sizes
+        conn = self._conn(gatherer_id)
+        rows = store.rows_by_id(conn, [r.row_id for r in ctx.refs if r.row_id is not None])
+        made = store.made_items(conn, [r.made_id for r in ctx.refs if r.made_id is not None])
+        sizes["sent_tokens"] = (sum(rows[r.row_id].tokens or 0 for r in ctx.refs if r.row_id in rows)
+                                + sum(made[r.made_id][2] or 0 for r in ctx.refs if r.made_id in made)
+                                + sum(self.tokenizer.count(p["text"]) for p in preamble or ()))
         out = []
         for item, ref in zip(ctx.items, ctx.refs):
             if ref.row_id is not None and ref.row_id in rows:
@@ -276,7 +286,7 @@ class Manager(ContextManager):
                 out.append({"type": row.type.name, "id": row.event_id, "payload": row.payload})
             elif is_ag(item):
                 out.append({"type": AG, "name": item.get("name"), "text": item["text"]})
-        return out, read_id
+        return out, read_id, sizes
 
     def record_real_tokens(self, gatherer_id: str, read_id: int, tokens: int) -> bool:
         """Not part of the interface: record the provider's count of the context

@@ -66,11 +66,16 @@ class Context:
         tokens: the context's size by the policy's own count, or None;
             logged in `_reads.est_tokens`, beside the size the provider
             reports for it later (`real_tokens`).
+        budget: the size the policy keeps the context under, counted as
+            `tokens` is and compared with `real_tokens` too, or None: a
+            harness that can count the context exactly before sending it
+            checks it against this.
     """
     items: list = field(default_factory=list)
     refs: list = field(default_factory=list)
     basis: Optional[str] = None
     tokens: Optional[int] = None
+    budget: Optional[int] = None
 
 
 class TypeIds:

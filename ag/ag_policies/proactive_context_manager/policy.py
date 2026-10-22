@@ -235,7 +235,8 @@ class ProactiveContextManager(Policy):
         if size > cfg.max_context_tokens:
             self.log(f"[{ch}] context {size} tokens, over max_context_tokens={cfg.max_context_tokens}")
         self.last_tokens = size                     # the session's context the read returned, as max bounds it
-        return Context(items, refs, str(build["build_id"]) if build else None, tokens=size)
+        return Context(items, refs, str(build["build_id"]) if build else None, tokens=size,
+                       budget=cfg.max_context_tokens)
 
     def measured_over(self, last: Optional[dict], build: Optional[dict], ch) -> bool:
         """Whether the provider's count of the last call's context (`real_tokens`, reported
