@@ -13,7 +13,15 @@ What it decides, Claude Code's own:
                    (a title, a summary for its status line) offer none and go through as they are;
                    so do a subagent's (its `Agent` tool), which carry `X-Claude-Code-Agent-Id` and
                    the session's id: a conversation of their own, whose result reaches the session
-                   as the Agent call's tool_result
+                   as the Agent call's tool_result. Claude Code's other side calls that do offer
+                   tools -- `X-Claude-Code-Request-Class` auxiliary or side_reply -- go through as
+                   they are too, but for one:
+    a suggestion   Claude Code's prompt suggestion: its conversation so far (the session's last
+                   call, as it was) with a user message asking what the user might type next
+                   (`[SUGGESTION MODE: ...`). Not a turn: the conversation's events are inserted,
+                   the context the next call would get is made read only (the server's `context`:
+                   nothing else of the gatherer changes, no read), the suggestion's own message is
+                   put after it, and that is sent -- nothing of it stored, counted or measured
     the session    the `X-Claude-Code-Session-Id` header, else the session id in the body's
                    `metadata.user_id` (a JSON object); none: None. `claude --session-id <uuid>`
                    chooses it, and a resumed session keeps it
@@ -56,6 +64,7 @@ from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, preamble_of, report_measured
+from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
 from ..adaptor.to_events import Continuity, blocks_of
 from .counting import Counter, countable  # noqa: F401 - countable: this module's before counting.py
@@ -63,6 +72,9 @@ from .counting import Counter, countable  # noqa: F401 - countable: this module'
 CWD = re.compile(r"Primary working directory:\s*(\S+)")
 SESSION_HEADER = "x-claude-code-session-id"
 AGENT_HEADER = "x-claude-code-agent-id"           # set on a subagent's calls only
+REQUEST_CLASS_HEADER = "x-claude-code-request-class"   # main, subagent, workflow, compaction, auxiliary, side_reply
+SIDE_CLASSES = ("auxiliary", "side_reply")       # Claude Code's side calls, not the session's turns
+SUGGESTION = "[SUGGESTION MODE:"                 # how Claude Code's prompt suggestion asks
 COUNT_FROM = 0.5            # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
@@ -86,6 +98,22 @@ def session_of(headers, body: dict) -> Optional[str]:
         return json.loads(user).get("session_id") or None if isinstance(user, str) else None
     except (ValueError, AttributeError):
         return None
+
+
+def request_class(headers) -> Optional[str]:
+    """What Claude Code says the call is (`X-Claude-Code-Request-Class`), or None."""
+    return next((str(v).lower() for k, v in (headers or {}).items() if k.lower() == REQUEST_CLASS_HEADER and v), None)
+
+
+def suggestion_at(messages: list) -> Optional[int]:
+    """Where a prompt suggestion's own message is -- the last, a user message of text alone opening
+    with `[SUGGESTION MODE:`, after the conversation it forks -- or None: not a suggestion."""
+    if len(messages) < 2 or not isinstance(messages[-1], dict) or messages[-1].get("role") != "user":
+        return None
+    blocks = blocks_of(messages[-1])
+    if not blocks or any(b.get("type") != "text" for b in blocks):
+        return None
+    return len(messages) - 1 if str(blocks[0].get("text") or "").lstrip().startswith(SUGGESTION) else None
 
 
 def is_subagent(headers) -> bool:
@@ -159,12 +187,18 @@ class ClaudeContextManager:
             return None
         gatherer, channel = (request.label, session) if request.label else (session, session)
         messages = body["messages"]
+        at = suggestion_at(messages)
+        if at is None and request_class(request.headers) in SIDE_CLASSES:
+            return None                                   # a side call of Claude Code's own: as it is
         mode = self.system_messages if self.system_messages != "auto" else \
             ("user" if is_gemini(body.get("model")) else "keep")
         adaptor = self.adaptors[mode]
         if isinstance(adaptor, ClaudeAdaptor):                    # its ids carry on from the channel's last call
             adaptor = adaptor.for_channel(self.continuity.setdefault((gatherer, channel), Continuity()))
         client = self.ag_clients.client(gatherer)
+        if at is not None:
+            return await self.suggestion(request, client, gatherer, channel, body, messages[:at], messages[at:],
+                                         adaptor, mode)
 
         async def read():
             out = {}
@@ -195,6 +229,22 @@ class ClaudeContextManager:
         if new is None or new == messages:
             return None                                   # nothing to change: Claude Code's own bytes go through
         return dict(body, messages=new)
+
+    async def suggestion(self, request, client, gatherer: str, channel: str, body: dict, history: list,
+                         prompt: list, adaptor, mode: str) -> Optional[dict]:
+        """A prompt suggestion's body: the context the session's next call would get, read only, with
+        the suggestion's own message after it; None (Claude Code's own) when there is none."""
+        out = {}
+        new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd_of(history) or self.cwd, history,
+                                  adaptor, out=out, limit=getattr(request, "limit", None), op="context",
+                                  preamble=preamble_of({"system": body.get("system"), "tools": body.get("tools")}))
+        self.log(gatherer, f"[{channel}] suggestion: {note}")
+        if new is None:
+            return None
+        new = self.counter.fresh_thinking(gatherer, channel, out.get("basis"), new)
+        joined = new + [dict(m) for m in prompt]
+        joined = back.as_user(back.tools_placed(joined)) if mode == "user" else back.placed(back.tools_placed(joined))
+        return dict(body, messages=joined)
 
     async def measured(self, request, tokens: Optional[int]) -> None:
         """The hook server's report, once the answer is back: the call's input tokens, to the read."""
