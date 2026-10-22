@@ -187,8 +187,13 @@ async function loadRead() {
   if (SNAPSHOT) { state.read = SNAPSHOT.reads[key(g, state.readId)] || { missing: true, read_id: state.readId }; return; }
   state.read = await get(`/api/read?gatherer=${encodeURIComponent(g)}&read_id=${state.readId}`);
 }
-async function refresh() {
-  document.getElementById("main").classList.add("stale");
+// What was last drawn, so a poll that brings nothing new draws nothing: no flash, and an open
+// table, a scrolled list or a tooltip stays as it is.
+const drawn = { agents: null, main: null };
+const signature = (value) => JSON.stringify(value);
+async function refresh(userAction = false) {
+  const main = document.getElementById("main");
+  if (userAction) main.classList.add("stale");     // dimmed only while what the reader asked for loads
   try {
     await loadHome();
     if (!state.selected) {
@@ -196,14 +201,31 @@ async function refresh() {
       if (first) state.selected = [first.name, first.agents[0].channel];
     }
     await loadAgent();
-    renderAgents(); renderMain();
+    const agents = signature([state.home.gatherers, state.home.hook_servers, state.selected, Math.floor(Date.now() / 30000)]);
+    if (userAction || agents !== drawn.agents) { renderAgents(); drawn.agents = agents; }    // "ago" texts: every 30 s
+    const view = signature([state.selected, state.agent, state.read, state.readId]);
+    if (userAction || view !== drawn.main) { keepingPlace(renderMain); drawn.main = view; }
     document.getElementById("live").textContent = SNAPSHOT ? `Snapshot · ${clock(state.home.now, true)}`
       : state.paused ? "Paused" : `Live · updated ${clock(Date.now() / 1000)}`;
   } catch (err) {
     document.getElementById("live").textContent = `Not updated: ${err.message}`;
   } finally {
-    document.getElementById("main").classList.remove("stale");
+    main.classList.remove("stale");
   }
+}
+// Redraw the main view where the reader left it: the same tables open, the same lists scrolled.
+function keepingPlace(draw) {
+  const main = document.getElementById("main");
+  const open = [...main.querySelectorAll("details[id]")].filter((d) => d.open).map((d) => d.id);
+  const scrolled = [...main.querySelectorAll("[data-keep]")].map((n) => [n.dataset.keep, n.scrollTop, n.scrollLeft]);
+  const pageY = window.scrollY;
+  draw();
+  for (const id of open) { const d = document.getElementById(id); if (d) d.open = true; }
+  for (const [k, top, left] of scrolled) {
+    const n = main.querySelector(`[data-keep="${k}"]`);
+    if (n) { n.scrollTop = top; n.scrollLeft = left; }
+  }
+  window.scrollTo(0, pageY);
 }
 function schedule() {
   clearTimeout(state.timer);
@@ -242,7 +264,7 @@ function renderAgents() {
 }
 async function select(g, c) {
   state.selected = [g, c]; state.readId = null; state.followLatest = true;
-  await refresh(); schedule();
+  await refresh(true); schedule();
 }
 
 // ------------------------------------------------------------------ charts
@@ -379,7 +401,8 @@ function sizeCard(reads, hasReal) {
     el("td", { class: "n", text: full(r.limit_tokens) }),
     el("td", { class: "n", text: r.tasks }), el("td", { text: (r.basis ?? "none") + (r.rebuild ? " (rebuild)" : "") })));
   table.append(body);
-  card.append(el("details", {}, el("summary", { text: "Show as a table" }), el("div", { class: "scroll tall" }, table)));
+  card.append(el("details", { id: "size-table" }, el("summary", { text: "Show as a table" }),
+    el("div", { class: "scroll tall", "data-keep": "size-table" }, table)));
   return card;
 }
 function tasksChartCard(reads) {
@@ -389,7 +412,12 @@ function tasksChartCard(reads) {
 }
 function drawCharts() {
   const reads = state.agent.reads;
-  const pick = async (id) => { state.readId = id; state.followLatest = id === reads[reads.length - 1].read_id; await loadRead(); renderMain(); };
+  const pick = async (id) => {
+    state.readId = id; state.followLatest = id === reads[reads.length - 1].read_id;
+    await loadRead();
+    keepingPlace(renderMain);
+    drawn.main = signature([state.selected, state.agent, state.read, state.readId]);
+  };
   const sizeHost = document.getElementById("size-chart");
   const series = [];
   if (reads.some((r) => typeof r.real_tokens === "number")) series.push({ field: "real_tokens", color: "var(--s1)", label: "provider's count" });
@@ -454,7 +482,7 @@ function buildsCard(builds) {
     if (b.error) body.append(el("tr", {}, el("td"), el("td", { colspan: 5, class: "desc-cell", text: b.error })));
   }
   table.append(body);
-  card.append(el("div", { class: "scroll tall" }, table));
+  card.append(el("div", { class: "scroll tall", "data-keep": "builds" }, table));
   return card;
 }
 function llmCard(a) {
@@ -481,13 +509,13 @@ function llmCard(a) {
 document.getElementById("pause").addEventListener("click", async (ev) => {
   state.paused = !state.paused;
   ev.target.textContent = state.paused ? "Resume" : "Pause";
-  if (!state.paused) await refresh();
+  if (!state.paused) await refresh(true);
   schedule();
 });
 if (SNAPSHOT) document.getElementById("pause").style.display = "none";
 let resizeTimer = null;
 window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => state.agent && drawCharts(), 150); });
-refresh().then(schedule);
+refresh(true).then(schedule);
 </script>
 </body>
 </html>
