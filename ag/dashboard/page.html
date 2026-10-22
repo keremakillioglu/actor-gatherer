@@ -104,7 +104,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .dlabel .dval { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dbar { height: 22px; display: flex; }
 .dinner { display: flex; gap: 2px; height: 100%; }
-.dbar > .seg + .seg { margin-left: 2px; }
+.dbar > .seg + .seg, .dbar > .dinner + .dinner { margin-left: 2px; }
 .seg { height: 100%; min-width: 2px; display: flex; align-items: center; overflow: hidden; cursor: default; outline-offset: 2px; }
 .seg:first-child { border-radius: 4px 0 0 4px; } .seg:last-child { border-radius: 0 4px 4px 0; } .seg:only-child { border-radius: 4px; }
 .seg:hover, .seg:focus-visible { filter: brightness(1.08); }
@@ -608,18 +608,21 @@ function decomposition(entries, what = "the context") {
   for (const g of ordered) if (g.tokens > 0) whole.append(segment({ name: label(g.group), short: label(g.group), color: color(g.group),
     tokens: g.tokens, items: g.items }, g.tokens / total * 100));
   fig.append(row(what === "the context" ? "Whole context" : "All calls", total, whole));
-  for (const g of ordered) {                         // each kind, by its parts, on the same scale
-    const bar = el("div", { class: "dbar" });
+  // every kind's parts on one line, each kind where it sits in the line above: a finer split of the whole
+  const parts = el("div", { class: "dbar" });
+  const zero = [];
+  for (const g of ordered) {
+    if (g.tokens <= 0) continue;
     const inner = el("div", { class: "dinner", style: `width:${g.tokens / total * 100}%` });
     for (const part of [...g.parts.values()].sort((x, y) => y.tokens - x.tokens)) if (part.tokens > 0)
       inner.append(segment({ name: `${label(g.group)} · ${part.label}`, short: part.label, color: part.color,
         tokens: part.tokens, items: part.items }, part.tokens / g.tokens * 100));
-    bar.append(inner);
-    const zero = [...g.parts.values()].filter((p) => !p.tokens).map((p) => `${p.items} ${p.label.toLowerCase()}`);
-    const r = row(label(g.group), g.tokens, bar);
-    if (zero.length) r.append(el("div", { class: "dzero", text: `also ${zero.join(", ")}, at 0 tokens by ag's count` }));
-    fig.append(r);
+    parts.append(inner);
+    for (const p of g.parts.values()) if (!p.tokens) zero.push(`${p.items} ${p.label.toLowerCase()}`);
   }
+  const r = row("By part", total, parts);
+  if (zero.length) r.append(el("div", { class: "dzero", text: `also ${zero.join(", ")}, at 0 tokens by ag's count` }));
+  fig.append(r);
   fig.append(tip);
   requestAnimationFrame(() => {                     // a label shows only where it fits, in ink that reads on its fill
     for (const seg of fig.querySelectorAll(".seg")) {
