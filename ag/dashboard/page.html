@@ -38,7 +38,12 @@ button:hover { background: var(--wash); }
 aside { border-right: 1px solid var(--ring); background: var(--surface); padding: 12px 0; overflow-y: auto; max-height: calc(100vh - 50px); position: sticky; top: 50px; }
 aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
 .gatherer { margin-bottom: 6px; }
-.gatherer > .name { padding: 4px 16px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+.gatherer > .name { padding: 4px 16px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  width: 100%; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.gatherer > .name:hover { background: var(--wash); }
+.gatherer > .name:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
+.gatherer > .name .caret { display: inline-block; width: 12px; color: var(--muted); font-weight: 400; transition: transform .15s; }
+.gatherer > .name[aria-expanded="true"] .caret { transform: rotate(90deg); }
 .gatherer > .name span { color: var(--muted); font-weight: 400; font-size: 12px; }
 .agent { display: block; width: 100%; text-align: left; border: 0; border-radius: 0; background: none; padding: 7px 16px 7px 24px; cursor: pointer; }
 .agent:hover { background: var(--wash); }
@@ -332,6 +337,16 @@ function schedule() {
 }
 
 // ------------------------------------------------------------------ the agent list
+const COLLAPSED_KEY = "ag-dashboard-collapsed-gatherers";
+const collapsed = (() => {                        // gatherers the reader folded, kept in this browser
+  try { const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  return new Set();
+})();
+function toggleGatherer(name) {
+  if (collapsed.has(name)) collapsed.delete(name); else collapsed.add(name);
+  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
+  renderAgents();
+}
 function renderAgents() {
   const aside = document.getElementById("agents");
   document.getElementById("home").textContent = state.home.home;
@@ -340,10 +355,14 @@ function renderAgents() {
   aside.replaceChildren(el("h2", { text: `Actors · ${running} running of ${total}` }));
   if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No gatherers in this home yet." }));
   for (const g of state.home.gatherers) {
+    const open = !collapsed.has(g.name);
+    const live = g.agents.filter((a) => a.running).length;
     const box = el("div", { class: "gatherer" },
-      el("div", { class: "name" }, el("strong", { text: g.name }), el("span", { text: g.policy || "" })));
+      el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name) },
+        el("strong", {}, el("span", { class: "caret", text: "▸" }), g.name),
+        el("span", { text: open ? g.policy || "" : `${g.agents.length} actor${g.agents.length === 1 ? "" : "s"}${live ? ` · ${live} running` : ""}` })));
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
-    for (const a of g.agents) {
+    for (const a of open ? g.agents : []) {
       const [cls, label] = statusOf(a);
       const current = state.selected && state.selected[0] === g.name && state.selected[1] === a.channel;
       const size = a.real_tokens ?? a.sent_tokens;
