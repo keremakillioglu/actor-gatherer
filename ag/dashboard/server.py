@@ -5,6 +5,7 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/home                         data.home()
     GET /api/agent?gatherer=G&channel=C   data.agent(G, C)
     GET /api/read?gatherer=G&read_id=N    data.read(G, N)
+    GET /api/context?gatherer=G&read_id=N data.context(G, N)
 
 `page(snapshot)` is the page itself; with a snapshot (data.snapshot()) it stands alone,
 its data inside it (`ag dashboard --out`)."""
@@ -74,6 +75,8 @@ def handler(calls: _Calls):
                     return self.answer(data.agent(q["gatherer"], q["channel"], calls.get()))
                 if url.path == "/api/read" and q.get("gatherer") and q.get("read_id", "").isdigit():
                     return self.answer(data.read(q["gatherer"], int(q["read_id"])))
+                if url.path == "/api/context" and q.get("gatherer") and q.get("read_id", "").isdigit():
+                    return self.answer(data.context(q["gatherer"], int(q["read_id"])))
                 return self.send(404, b"not found", "text/plain")
             except Exception as exc:  # noqa: BLE001 - the page shows the error and keeps its last view
                 return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")

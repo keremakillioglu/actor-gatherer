@@ -8,6 +8,7 @@ database, opened read-only, and ag's own logs -- as plain JSON-ready dicts.
                                   tasks and how many had begun by each read, its builds,
                                   and the Gatherer's model calls made for it
     read(gatherer, read_id)       what one read put in the agent's context, by kind
+    context(gatherer, read_id)    every item of it, in order, with its text
 
 An agent is a channel of a gatherer: one harness session (codex's thread, Claude Code's
 session, ...); which harness, its events' shape tells (`harness_of`). It is RUNNING when its last read is recent (RUNNING_SECONDS) or a build is
@@ -274,6 +275,63 @@ AG_KINDS = {"environment_update": "File-change notices", "parallel_request": "Ot
             "context_stream": "Stream messages"}
 
 
+def readable(payload_json: Optional[str]) -> str:
+    """The words in an event's payload, for one ag stores no text for (reasoning, an empty
+    message): the text and thinking of its content blocks (pi's, Claude Code's), a codex
+    item's summary or content; the payload itself when there are none; "" for none at all."""
+    try:
+        p = json.loads(payload_json) if payload_json else None
+    except ValueError:
+        return payload_json or ""
+    if not isinstance(p, dict):
+        return payload_json or ""
+    words = []
+    for key in ("content", "summary", "parts"):
+        for block in p.get(key) or [] if isinstance(p.get(key), list) else []:
+            if isinstance(block, dict):
+                words += [block[k] for k in ("text", "thinking") if isinstance(block.get(k), str) and block[k].strip()]
+    if words:
+        return "\n\n".join(words)
+    has_blocks = any(isinstance(p.get(k), list) for k in ("content", "summary", "parts"))
+    return "" if has_blocks else payload_json
+
+
+def _items(conn, read_id: int):
+    """(the read's row, the cut of its build or None, its items in order): each item's place,
+    group (RECENT / KEPT for the agent's own events, AG_KINDS or "ag's sections" for ag's),
+    name (the event type, or the made item's name), size (the manager's own count), the event
+    row or made item it is, and its text (an event's readable text, else its payload; a made
+    item's text)."""
+    meta = conn.execute("SELECT * FROM _reads WHERE read_id = ?", (read_id,)).fetchone()
+    cut = None                           # where the build the read was made from cut the history
+    if meta is not None and meta["basis"] and str(meta["basis"]).isdigit() and "_builds" in _tables(conn):
+        found = conn.execute("SELECT open_from_row FROM _builds WHERE build_id = ?", (int(meta["basis"]),)).fetchone()
+        cut = found[0] if found else None
+    rows = conn.execute(
+        "SELECT i.position, i.row_id, i.made_id, t.name AS type, e.tokens AS etok, e.text AS etext, "
+        "e.payload_json AS payload, e.inserted_at AS at, m.name AS made, m.tokens AS mtok, m.item_json AS item "
+        "FROM _read_items i LEFT JOIN events e ON e.row_id = i.row_id "
+        "LEFT JOIN event_types t ON t.event_type_id = e.event_type_id "
+        "LEFT JOIN _made_items m ON m.made_id = i.made_id WHERE i.read_id = ? ORDER BY i.position",
+        (read_id,)).fetchall()
+    items = []
+    for r in rows:
+        if r["row_id"] is not None:              # the agent's own, verbatim
+            group = RECENT if cut is None or r["row_id"] >= cut else KEPT
+            name, tokens, text = r["type"] or "?", r["etok"] or 0, r["etext"] if r["etext"] else readable(r["payload"])
+        else:
+            name, tokens = r["made"] or "?", r["mtok"] or 0
+            group = AG_KINDS.get(name, "ag's sections")
+            try:
+                made = json.loads(r["item"]) if r["item"] else {}
+            except ValueError:
+                made = {}
+            text = made.get("text") if isinstance(made, dict) and isinstance(made.get("text"), str) else r["item"]
+        items.append({"position": r["position"], "group": group, "name": name, "tokens": tokens,
+                      "row_id": r["row_id"], "made_id": r["made_id"], "at": _seconds(r["at"]), "text": text or ""})
+    return meta, cut, items
+
+
 def read(gatherer: str, read_id: int) -> dict:
     """What read `read_id` put in the context: each item's kind and size (the manager's own
     count; all of them add up to its `sent_tokens`), grouped as the agent's own events,
@@ -283,35 +341,41 @@ def read(gatherer: str, read_id: int) -> dict:
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
+        meta, cut, items = _items(conn, read_id)
         groups: Dict[str, dict] = {}
-        meta = conn.execute("SELECT * FROM _reads WHERE read_id = ?", (read_id,)).fetchone()
-        cut = None                       # where the build the read was made from cut the history
-        if meta is not None and meta["basis"] and str(meta["basis"]).isdigit() and "_builds" in _tables(conn):
-            found = conn.execute("SELECT open_from_row FROM _builds WHERE build_id = ?", (int(meta["basis"]),)).fetchone()
-            cut = found[0] if found else None
-        rows = conn.execute(
-            "SELECT i.row_id, i.made_id, t.name AS type, e.tokens AS etok, m.name AS made, m.tokens AS mtok "
-            "FROM _read_items i LEFT JOIN events e ON e.row_id = i.row_id "
-            "LEFT JOIN event_types t ON t.event_type_id = e.event_type_id "
-            "LEFT JOIN _made_items m ON m.made_id = i.made_id WHERE i.read_id = ? ORDER BY i.position",
-            (read_id,)).fetchall()
-        for r in rows:
-            if r["row_id"] is not None:          # the agent's own, verbatim
-                group = RECENT if cut is None or r["row_id"] >= cut else KEPT
-                name, tokens = r["type"] or "?", r["etok"] or 0
-            else:
-                name, tokens = r["made"] or "?", r["mtok"] or 0
-                group = AG_KINDS.get(name, "ag's sections")
-            g = groups.setdefault(group, {"group": group, "tokens": 0, "items": 0, "by_name": {}})
-            g["tokens"] += tokens
+        for it in items:
+            g = groups.setdefault(it["group"], {"group": it["group"], "tokens": 0, "items": 0, "by_name": {}})
+            g["tokens"] += it["tokens"]
             g["items"] += 1
-            n = g["by_name"].setdefault(name, {"name": name, "tokens": 0, "items": 0})
-            n["tokens"] += tokens
+            n = g["by_name"].setdefault(it["name"], {"name": it["name"], "tokens": 0, "items": 0})
+            n["tokens"] += it["tokens"]
             n["items"] += 1
         return {"read_id": read_id, "cut": cut, "at": _seconds(meta["read_at"]) if meta else None,
                 "real_tokens": meta["real_tokens"] if meta is not None and "real_tokens" in meta.keys() else None,
                 "groups": [dict(g, by_name=sorted(g["by_name"].values(), key=lambda n: -n["tokens"]))
                            for g in sorted(groups.values(), key=lambda g: -g["tokens"])]}
+    finally:
+        conn.close()
+
+
+TEXT_CHARS = 20000          # the most of one item's text `context` returns; the rest is counted, not sent
+
+
+def context(gatherer: str, read_id: int) -> dict:
+    """Every item read `read_id` put in the context, in the order the model got them: its
+    group, name, size and text (at most TEXT_CHARS of it; `clipped` says how much more)."""
+    conn = _connect(gatherer)
+    if conn is None:
+        return {"error": f"no database for gatherer {gatherer!r}"}
+    try:
+        meta, cut, items = _items(conn, read_id)
+        for it in items:
+            it["clipped"] = max(0, len(it["text"]) - TEXT_CHARS)
+            it["text"] = it["text"][:TEXT_CHARS]
+        return {"read_id": read_id, "cut": cut, "at": _seconds(meta["read_at"]) if meta else None,
+                "basis": meta["basis"] if meta is not None else None,
+                "real_tokens": meta["real_tokens"] if meta is not None and "real_tokens" in meta.keys() else None,
+                "tokens": sum(it["tokens"] for it in items), "items": items}
     finally:
         conn.close()
 
@@ -393,10 +457,10 @@ def _llm_summary(calls: List[dict]) -> dict:
 
 def snapshot() -> dict:
     """Everything, for a page that stands alone (`ag dashboard --out`): the home, every
-    agent over time, and the last read's contents of each."""
+    agent over time, and the last read's contents of each (by kind, and item by item)."""
     h = home()
     llm = llm_calls()
-    agents, reads = {}, {}
+    agents, reads, contexts = {}, {}, {}
     for g in h["gatherers"]:
         for a in g["agents"]:
             detail = agent(g["name"], a["channel"], llm)
@@ -404,4 +468,5 @@ def snapshot() -> dict:
             if detail.get("reads"):
                 rid = detail["reads"][-1]["read_id"]
                 reads[f"{g['name']}\u0000{rid}"] = read(g["name"], rid)
-    return {"home": h, "agents": agents, "reads": reads}
+                contexts[f"{g['name']}\u0000{rid}"] = context(g["name"], rid)
+    return {"home": h, "agents": agents, "reads": reads, "contexts": contexts}

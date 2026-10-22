@@ -110,6 +110,22 @@ class DataTest(HomeBase):
         self.assertEqual(sum(g["tokens"] for g in r["groups"]),
                          data.agent("g", "c1", [])["reads"][-1]["sent_tokens"])   # what the chart plots
 
+    def test_the_context_item_by_item(self):
+        c = data.context("g", self.reads[-1])
+        self.assertEqual([i["position"] for i in c["items"]], list(range(len(c["items"]))))     # in order
+        self.assertEqual(c["tokens"], data.agent("g", "c1", [])["reads"][-1]["sent_tokens"])
+        groups = [i["group"] for i in c["items"]]
+        self.assertIn("ag's sections", groups)
+        self.assertTrue(all(i["text"] for i in c["items"] if i["group"] == "ag's sections"))   # the section's text
+        self.assertEqual(c["basis"], str(self.build_id))
+        old = data.TEXT_CHARS
+        data.TEXT_CHARS = 5
+        try:
+            clipped = data.context("g", self.reads[-1])["items"]
+        finally:
+            data.TEXT_CHARS = old
+        self.assertTrue(all(len(i["text"]) <= 5 for i in clipped) and any(i["clipped"] for i in clipped))
+
     def test_the_gatherer_s_calls_go_to_the_agent_by_job_or_by_time(self):
         build = data.agent("g", "c1", [])["builds"][0]
         self.log_call("1-a-1-summarize.json", purpose="summarize", model="openai/gpt-4o-mini",
@@ -125,6 +141,17 @@ class DataTest(HomeBase):
         self.assertEqual((by["summarize"]["calls"], by["rank"]["calls"]), (1, 1))
         self.assertEqual((by["rank"]["tokens_in"], by["rank"]["unpriced"]), (50, 1))   # a CLI model: no price
         self.assertEqual(data.agent("g", "c2")["llm"]["total"]["calls"], 0)
+
+
+class ReadableTest(unittest.TestCase):
+    def test_the_words_of_an_event_ag_keeps_no_text_for(self):
+        pi = {"api": "x", "role": "assistant", "content": [{"type": "thinking", "thinking": "Plan it."},
+                                                             {"type": "text", "text": ""}]}
+        self.assertEqual(data.readable(json.dumps(pi)), "Plan it.")
+        self.assertEqual(data.readable(json.dumps({"role": "assistant", "content": [{"type": "text", "text": ""}]})), "")
+        codex = {"type": "reasoning", "summary": [{"type": "summary_text", "text": "Checking."}], "encrypted_content": "zz"}
+        self.assertEqual(data.readable(json.dumps(codex)), "Checking.")
+        self.assertEqual(data.readable('{"a": 1}'), '{"a": 1}')                 # no blocks: the payload itself
 
 
 class HarnessTest(unittest.TestCase):
@@ -151,6 +178,7 @@ class PageTest(HomeBase):
         snap = json.loads(embedded.replace("<\\/", "</"))
         self.assertIn("g\u0000c1", snap["agents"])
         self.assertIn(f"g\u0000{self.reads[-1]}", snap["reads"])     # the last read's contents, inside
+        self.assertIn(f"g\u0000{self.reads[-1]}", snap["contexts"])
 
     def test_a_snapshot_cannot_close_its_script(self):
         text = server.page({"home": {"x": "</script><script>alert(1)</script>"}})
@@ -167,6 +195,7 @@ class PageTest(HomeBase):
         self.assertEqual(json.load(get("/api/home"))["gatherers"][0]["name"], "g")
         self.assertEqual(len(json.load(get("/api/agent?gatherer=g&channel=c1"))["reads"]), 3)
         self.assertTrue(json.load(get(f"/api/read?gatherer=g&read_id={self.reads[0]}"))["groups"])
+        self.assertTrue(json.load(get(f"/api/context?gatherer=g&read_id={self.reads[0]}"))["items"])
         with self.assertRaises(urllib.error.HTTPError) as caught:
             get("/api/read?gatherer=g&read_id=x")
         self.assertEqual(caught.exception.code, 404)
