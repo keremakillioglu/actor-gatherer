@@ -450,8 +450,8 @@ function renderMain() {
       tile("ag's model calls", full(llm.calls), `${usd(llm.cost)}${llm.unpriced ? ` + ${llm.unpriced} unpriced` : ""}`)),
     sizeCard(reads, hasReal),
     contextCard(),
+    usageCard(),
     tasksCard(a.tasks),
-    tasksChartCard(reads),
     el("div", { class: "grid2" }, buildsCard(builds), llmCard(a)));
   drawCharts();
 }
@@ -477,11 +477,6 @@ function sizeCard(reads, hasReal) {
     el("div", { class: "scroll tall", "data-keep": "size-table" }, table)));
   return card;
 }
-function tasksChartCard(reads) {
-  return el("section", { class: "card" }, el("h3", { text: "Tasks over time" }),
-    el("div", { class: "desc", text: "How many of the agent's tasks had begun by each read, as ag has segmented its history." }),
-    legend([{ label: "Rebuild", kind: "rule" }]), el("div", { id: "tasks-chart" }));
-}
 function drawCharts() {
   const reads = state.agent.reads;
   const pick = async (id) => {
@@ -495,8 +490,6 @@ function drawCharts() {
   if (reads.some((r) => typeof r.real_tokens === "number")) series.push({ field: "real_tokens", color: "var(--s1)", label: "provider's count" });
   series.push({ field: "sent_tokens", color: "var(--s2)", label: "ag's own count" });
   if (sizeHost) lineChart(sizeHost, { reads, series, onPick: pick, picked: state.readId });
-  const tasksHost = document.getElementById("tasks-chart");
-  if (tasksHost) lineChart(tasksHost, { reads, series: [{ field: "tasks", color: "var(--s1)", label: "tasks", format: (v) => String(v) }], height: 170, step: true });
 }
 function contextCard() {
   const latest = state.followLatest;
@@ -518,7 +511,7 @@ function contextCard() {
     + `${full(ctx.items.length)} items, ${full(ctx.tokens)} tokens by ag's own count${real}.`
     + (ctx.cut ? ` Built from build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet: the whole history, verbatim.")
     + (latest ? " Click the size chart to see an earlier call's." : "") }));
-  card.append(decomposition(ctx));
+  card.append(decomposition(placed(ctx.items)));
   const history = ctx.items.filter((i) => HISTORY.has(i.group) || GATHERER.has(i.group));
   if (history.length) {                              // which items to list, by type
     const counts = {};
@@ -561,29 +554,33 @@ function contextCard() {
 }
 // Where each item goes in the figure: its run's group -- ag's messages among the history in the
 // history they sit in, as the list shows them -- and its part: a type for the history, a name for the summary.
-function placed(items) {
+function entry(it, group, items = 1) {
+  const history = HISTORY.has(group);
+  const t = itemType(it);
+  return { group, part: history ? t[0] : it.name, label: history ? t[1] : it.name, color: history ? t[2] : color(group),
+    tokens: it.tokens, items };
+}
+function placed(items) {                          // one context's items, in order
   let current = null;
   return items.map((it) => {
     const group = INLINE.has(it.group) ? (current || "Recent history") : it.group;
     if (HISTORY.has(it.group)) current = it.group;
-    const history = HISTORY.has(group);
-    const t = itemType(it);
-    return { it, group, part: history ? t[0] : it.name, label: history ? t[1] : it.name, color: history ? t[2] : color(group) };
+    return entry(it, group);
   });
 }
-function decomposition(ctx) {
-  const total = ctx.items.reduce((n, i) => n + i.tokens, 0) || 1;
+function decomposition(entries, what = "the context") {
+  const total = entries.reduce((n, e) => n + e.tokens, 0) || 1;
   const groups = new Map();
-  for (const p of placed(ctx.items)) {
+  for (const p of entries) {
     const g = groups.get(p.group) || { group: p.group, tokens: 0, items: 0, parts: new Map() };
-    g.tokens += p.it.tokens; g.items++;
+    g.tokens += p.tokens; g.items += p.items;
     const part = g.parts.get(p.part) || { label: p.label, color: p.color, tokens: 0, items: 0 };
-    part.tokens += p.it.tokens; part.items++;
+    part.tokens += p.tokens; part.items += p.items;
     g.parts.set(p.part, part); groups.set(p.group, g);
   }
   const ordered = [...groups.values()].sort((x, y) => GROUP_ORDER.indexOf(x.group) - GROUP_ORDER.indexOf(y.group));
   const pct = (v) => `${(v / total * 100).toFixed(1)}%`;
-  const fig = el("figure", { class: "decomp", "aria-label": "How the context divides, by ag's own count" });
+  const fig = el("figure", { class: "decomp", "aria-label": `How ${what} divides, by ag's own count` });
   const tip = el("div", { class: "tooltip" });
   const show = (seg, ev) => {
     const d = seg._d;
@@ -597,7 +594,7 @@ function decomposition(ctx) {
   };
   const segment = (d, width) => {
     const seg = el("div", { class: "seg", tabindex: "0", role: "img", style: `width:${width}%;background:${d.color}`,
-      "aria-label": `${d.name}: ${full(d.tokens)} tokens, ${pct(d.tokens)} of the context, ${d.items} items` },
+      "aria-label": `${d.name}: ${full(d.tokens)} tokens, ${pct(d.tokens)} of ${what}, ${d.items} items` },
       el("span", { text: d.short }));
     seg._d = d;
     seg.addEventListener("pointermove", (ev) => show(seg, ev));
@@ -610,7 +607,7 @@ function decomposition(ctx) {
   const whole = el("div", { class: "dbar" });       // the whole context, by kind
   for (const g of ordered) if (g.tokens > 0) whole.append(segment({ name: label(g.group), short: label(g.group), color: color(g.group),
     tokens: g.tokens, items: g.items }, g.tokens / total * 100));
-  fig.append(row("Whole context", total, whole));
+  fig.append(row(what === "the context" ? "Whole context" : "All calls", total, whole));
   for (const g of ordered) {                         // each kind, by its parts, on the same scale
     const bar = el("div", { class: "dbar" });
     const inner = el("div", { class: "dinner", style: `width:${g.tokens / total * 100}%` });
@@ -634,6 +631,17 @@ function decomposition(ctx) {
     }
   });
   return fig;
+}
+function usageCard() {
+  const u = state.agent.usage;
+  const card = el("section", { class: "card" }, el("h3", { text: "Tokens sent across all calls" }));
+  if (!u || !u.entries || !u.entries.length) { card.append(el("div", { class: "desc", text: "No calls yet." })); return card; }
+  const real = u.real_calls ? ` The provider counted ${full(u.real_tokens)} over the ${full(u.real_calls)} calls it reported.` : "";
+  card.append(el("div", { class: "desc", text: `Everything sent to the model over this agent's ${full(u.calls)} calls, by kind: `
+    + `${full(u.tokens)} tokens by ag's own count, each message counted once for every call it went in.${real}` }));
+  // ag's messages among the history count in the recent raw history, where they sit
+  card.append(decomposition(u.entries.map((e) => entry(e, INLINE.has(e.group) ? "Recent history" : e.group, e.items)), "all calls"));
+  return card;
 }
 function contextItem(it) {
   const preview = it.text.replace(/\s+/g, " ").slice(0, 220);

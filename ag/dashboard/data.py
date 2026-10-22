@@ -6,7 +6,8 @@ database, opened read-only, and ag's own logs -- as plain JSON-ready dicts.
     agent(gatherer, channel)      one agent over time: each read's size (ag's own count,
                                   the provider's, the harness's limit), its rebuilds, its
                                   tasks and how many had begun by each read, its builds,
-                                  and the Gatherer's model calls made for it
+                                  and the Gatherer's model calls made for it; and
+                                  every token it was sent across its calls, by kind
     read(gatherer, read_id)       what one read put in the agent's context, by kind
     context(gatherer, read_id)    every item of it, in order, with its text
 
@@ -194,6 +195,35 @@ def _harness(conn, channel: str) -> Optional[str]:
     return harness_of(payloads)
 
 
+_USAGE: Dict[tuple, dict] = {}      # (database, channel) -> (its last read, its usage): reads only add up
+
+
+def _usage(conn, channel: str, tables: set) -> dict:
+    """Every item every read of the channel sent, added up by kind and name -- each message
+    counted once per call it went in: {tokens, entries: [{group, name, items, tokens}]}, the
+    groups as read() names them (an event before its read's cut is KEPT, after it RECENT).
+    Kept until the channel's next read: a long agent's sum is a scan of every read."""
+    path = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
+    last = conn.execute(f"SELECT max(read_id) FROM _reads WHERE {CHANNEL} = ?", (channel,)).fetchone()[0]
+    kept = _USAGE.get((path, channel))
+    if kept and kept[0] == last:
+        return dict(kept[1])
+    cut = ("LEFT JOIN _builds b ON b.build_id = CAST(r.basis AS INTEGER) " if "_builds" in tables else "")
+    since = "b.open_from_row IS NULL OR i.row_id >= b.open_from_row" if cut else "1"
+    rows = conn.execute(
+        f"SELECT CASE WHEN i.row_id IS NULL THEN 'made' WHEN {since} THEN 'recent' ELSE 'kept' END AS kind, "
+        "coalesce(t.name, m.name, '?') AS item, count(*) AS n, sum(coalesce(e.tokens, m.tokens, 0)) AS tok "
+        f"FROM _read_items i JOIN _reads r ON r.read_id = i.read_id AND r.{CHANNEL} = ? {cut}"
+        "LEFT JOIN events e ON e.row_id = i.row_id LEFT JOIN event_types t ON t.event_type_id = e.event_type_id "
+        "LEFT JOIN _made_items m ON m.made_id = i.made_id GROUP BY 1, 2", (channel,)).fetchall()
+    entries = [{"group": RECENT if r["kind"] == "recent" else KEPT if r["kind"] == "kept"
+                else AG_KINDS.get(r["item"], "ag's sections"), "name": r["item"], "items": r["n"], "tokens": r["tok"] or 0}
+               for r in rows]
+    usage = {"tokens": sum(e["tokens"] for e in entries), "entries": entries}
+    _USAGE[(path, channel)] = (last, usage)
+    return dict(usage)
+
+
 def _sent(conn, read_id: int) -> int:
     """ag's count of all read `read_id` sent: what it returned, added up."""
     return conn.execute("SELECT coalesce(sum(e.tokens), 0) + coalesce(sum(m.tokens), 0) FROM _read_items i "
@@ -259,9 +289,12 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
             checks.append({"row_id": r["row_id"], "asked": _seconds(r["asked_at"]), "decided": _seconds(r["decided_at"]),
                            "new_task": bool(r["new_task"]) if r["new_task"] is not None else None, "why": r["why"]})
     mine = [c for c in llm if _belongs(c, gatherer, channel, builds, checks)]
+    usage = _usage(conn, channel, tables)
+    usage.update(calls=len(reads), real_tokens=sum(r["real_tokens"] or 0 for r in reads),
+                 real_calls=sum(1 for r in reads if r["real_tokens"]))
     return {"gatherer": gatherer, "channel": channel, "harness": _harness(conn, channel), "reads": reads,
             "tasks": tasks, "builds": builds,
-            "checks": checks, "rebuilds": sum(1 for r in reads if r["rebuild"]), "llm": _llm_summary(mine),
+            "checks": checks, "rebuilds": sum(1 for r in reads if r["rebuild"]), "llm": _llm_summary(mine), "usage": usage,
             "llm_attributed_by_time": sum(1 for c in mine if not c.get("job"))}
 
 

@@ -89,6 +89,15 @@ class DataTest(HomeBase):
         self.assertEqual(third["tasks"], sum(1 for t in a["tasks"] if t["started"] <= third["at"]))
         self.assertTrue(all(t["started"] for t in a["tasks"]))
 
+    def test_every_call_s_tokens_added_up_by_kind(self):
+        a = data.agent("g", "c1", [])
+        u = a["usage"]
+        self.assertEqual(u["tokens"], sum(r["sent_tokens"] for r in a["reads"]))    # each message once per call
+        self.assertEqual(u["calls"], 3)
+        self.assertEqual(u["real_tokens"], 9999)
+        groups = {e["group"] for e in u["entries"]}
+        self.assertTrue({"Recent history", "Kept from before the cut", "ag's sections"} <= groups)
+
     def test_a_file_from_before_reads_had_sizes_still_has_ag_s_count(self):
         conn = sqlite3.connect(paths.db_path("g"))
         conn.executescript("ALTER TABLE _reads DROP COLUMN est_tokens; ALTER TABLE _reads DROP COLUMN real_tokens; "
