@@ -26,8 +26,8 @@ the build.
 The third: each request the user made to another channel since the build in
 use (since the start, before one) is a developer message (`parallel_message`)
 placed, the first time it is shown, just before this channel's latest user
-message -- and kept there after (`tables.record_shown`), so a later user
-message does not move it and the context only grows at its end. Requests
+message -- and kept there after (where the channel's last read had it), so
+a later user message does not move it and the context only grows at its end. Requests
 before the build's mark are in its index section instead. All three are made items,
 remade on every read and never reused as sections.
 
@@ -439,24 +439,41 @@ class ProactiveContextManager(Policy):
 
     def parallel_places(self, conn, refs: list, tail_from: int, rows, types: TypeIds, channel_id,
                         shown: List[tuple]) -> List[int]:
-        """Where in the context each of `shown` goes, before any is inserted: before the user message
-        of this channel it was first shown before (`tables.shown_at`) -- or, that one condensed away,
-        before the first row of the verbatim part (`refs[tail_from:]`) after it -- and a request
-        not shown before goes before this channel's latest user message (the end, if it has none),
-        which is then recorded as its place."""
+        """Where in the context each of `shown` goes, before any is inserted: before the row it came
+        before in the channel's last read (`shown_before`) -- or, that row condensed away, before the
+        first row of the verbatim part (`refs[tail_from:]`) after it -- and a request not shown
+        before goes before this channel's latest user message (the end, if it has none)."""
         own = [r.row_id for r in rows if channel_of(r) == channel_id and history.opens_turn(r, types, self.groups)]
-        anchors = tables.shown_at(conn, channel_id, [row for _, _, _, row in shown])
-        new = {row: own[-1] for _, _, _, row in shown if row not in anchors and own}
-        tables.record_shown(conn, channel_id, new)
-        anchors.update(new)
+        before = self.shown_before(conn, channel_id)
         places = []
         for _, _, _, row in shown:
-            anchor = anchors.get(row)
+            anchor = before.get(row, own[-1] if own else None)
             at = len(refs) if anchor is None else next(
                 (i for i in range(tail_from, len(refs)) if refs[i].row_id is not None and refs[i].row_id >= anchor),
                 len(refs))
             places.append(at)
         return places
+
+    def shown_before(self, conn, channel_id) -> Dict[int, int]:
+        """{request row: the row it came before} for each other channel's request the channel's last
+        read showed (its made item's source names the request); one shown last, with no row after it,
+        is left out: it goes where a new one would. Every request since the build's mark is shown on
+        every read, so the last read has each one shown before, in its place."""
+        last = conn.last_read(channel.of(channel_id))
+        refs = last["refs"] if last else []
+        made = [r.made_id for r in refs if r.made_id is not None]
+        if not made:
+            return {}
+        sources = dict(conn.execute(f"SELECT made_id, source FROM _made_items WHERE name = ? AND made_id IN "
+                                    f"({','.join('?' * len(made))})", [PARALLEL_REQUEST, *made]).fetchall())
+        out, waiting = {}, []
+        for ref in refs:
+            if ref.made_id in sources and str(sources[ref.made_id]).startswith("request "):
+                waiting.append(int(str(sources[ref.made_id]).split()[1]))
+            elif ref.row_id is not None and waiting:
+                out.update((request, ref.row_id) for request in waiting)
+                waiting = []
+        return out
 
     def parallel_requests(self, conn, types: TypeIds, channel_id, after_row: int) -> List[tuple]:
         """(made_id, item, tokens, its row id) for each user message stored in

@@ -168,8 +168,10 @@ class BuildTest(ParallelBase):
         self.read()                                                  # shown before "my task"
         self.put([agent("ok", 50)])
         conn = self.m._conn("w")
-        conn.execute("UPDATE _parallel_shown SET anchor_row = 3")    # as if its message were condensed away
-        conn.commit()
+        last = store.last_read(conn, ch("c1"))["read_id"]
+        conn.execute("UPDATE _read_items SET row_id = 3 WHERE read_id = ? AND row_id = "
+                     "(SELECT max(row_id) FROM _read_items WHERE read_id = ?)", (last, last))
+        conn.commit()                                                # as if it had come before a row condensed away
         texts = self.texts(self.read())
         last_section = max(i for i, t in enumerate(texts) if t.startswith("# "))
         self.assertEqual(texts.index("P[c2]: their task"), last_section + 1)   # the verbatim part's first

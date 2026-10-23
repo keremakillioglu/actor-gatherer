@@ -12,9 +12,6 @@ gatherer's store (ag.ag_interface.GathererStore):
                  ready / failed / nothing; what it saw, where the verbatim part
                  starts, its ranking of the earlier tasks (internal)
     _boundaries  the boundary check's verdict per user message (internal)
-    _parallel_shown
-                 where each channel was first shown each other channel's
-                 request: the user message it went before (internal)
 
 A leading underscore marks a table internal to the policy, which the agent
 has no reason to know about; `tasks` it may be pointed at. The no-channel
@@ -26,7 +23,6 @@ cannot be a key.
     builds      claim_build, new_build, settle, set_cut, fail_build, latest_build, build_for,
                 get_build; basis_of, in_use, waiting
     boundaries  claim_boundary, record_boundary, boundary_verdict
-    parallel    shown_at, record_shown
 """
 
 import json
@@ -85,15 +81,6 @@ CREATE TABLE IF NOT EXISTS _boundaries (
     decided_at  REAL,
     new_task    INTEGER,                 -- 1 / 0; NULL = not decided yet
     why         TEXT
-);
-
--- Where a channel's context first showed another channel's request: before
--- that channel's user message `anchor_row`. It stays there on later reads.
-CREATE TABLE IF NOT EXISTS _parallel_shown (
-    channel_key TEXT NOT NULL,
-    request_row INTEGER NOT NULL,        -- the other channel's user message (an events row)
-    anchor_row  INTEGER NOT NULL,        -- this channel's user message it was shown before
-    PRIMARY KEY (channel_key, request_row)
 );
 """
 
@@ -330,24 +317,3 @@ def boundary_verdict(conn, row_id: int) -> Optional[dict]:
         return None
     return {"new_task": None if row[0] is None else bool(row[0]), "why": row[1],
             "asked_at": row[2], "decided_at": row[3]}
-
-
-def shown_at(conn, channel_id, request_rows) -> dict:
-    """{request row: anchor row} for those of `request_rows` the channel was already shown."""
-    rows = sorted(set(request_rows))
-    out = {}
-    for i in range(0, len(rows), 900):                      # SQLite's limit on bound parameters
-        chunk = rows[i:i + 900]
-        out.update(conn.execute(f"SELECT request_row, anchor_row FROM _parallel_shown WHERE channel_key = ? "
-                                f"AND request_row IN ({','.join('?' * len(chunk))})", [key(channel_id), *chunk]).fetchall())
-    return out
-
-
-def record_shown(conn, channel_id, anchors: dict) -> None:
-    """Keep where the channel was first shown each request, `{request row: anchor row}`; a request
-    already recorded keeps its place."""
-    if not anchors:
-        return
-    with conn:
-        conn.executemany("INSERT OR IGNORE INTO _parallel_shown VALUES (?, ?, ?)",
-                         [(key(channel_id), r, a) for r, a in anchors.items()])
