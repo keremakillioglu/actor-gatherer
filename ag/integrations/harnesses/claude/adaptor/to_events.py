@@ -265,10 +265,39 @@ def request_last(events: List[dict]) -> List[dict]:
     return events[:first] + events[last + 1:] + events[first:last + 1]
 
 
+#: How the summary Claude Code goes on from after compacting its history opens: not an event -- the
+#: gatherer holds the history it summarizes, and built in its place (the hook's `compaction`).
+COMPACTED = "This session is being continued from a previous conversation that ran out of context"
+
+
+def is_compacted_summary(item) -> bool:
+    """Whether a piece is the summary Claude Code goes on from after compacting its history."""
+    blocks = blocks_of(item) if isinstance(item, dict) and item.get("role") == "user" else []
+    return len(blocks) == 1 and blocks[0].get("type") == "text" and \
+        str(blocks[0].get("text") or "").lstrip().startswith(COMPACTED)
+
+
+def compacted_opening(items: list) -> set:
+    """The pieces Claude Code sends with a compacted history that are not the conversation (by index):
+    when the history opens with its summary (`COMPACTED`), the summary and every note of its own up to
+    the first reply to the user's first words after it -- its reminders and environment notes again,
+    the /compact command's lines, the files it read before restored ("Called the Read tool ..."), its
+    tools announced again. The gatherer holds the history they stand for, and built in its place; what
+    the conversation said there (the reply it kept, the user's words) stays. Nothing, for a history
+    that does not open with the summary."""
+    if not items or not is_compacted_summary(items[0]):
+        return set()
+    asked = next((i for i, p in enumerate(items) if i and classify(p) == USER_MESSAGE), len(items))
+    end = next((i for i in range(asked + 1, len(items)) if items[i].get("role") == "assistant"), len(items))
+    return {0} | {i for i in range(1, end) if classify(items[i]) == CONTEXT}
+
+
 def to_events(messages: list, continuity: Optional[Continuity] = None) -> List[dict]:
     """The events Claude Code's messages are, in order -- but for its notes after the user's last
-    request, moved before it (`request_last`). With the channel's `continuity`, only from the
-    previous request's last pieces on (see the module's doc)."""
+    request, moved before it (`request_last`), and, after it compacted its history, its summary and
+    the notes it sent with it, left out (`compacted_opening`). With the channel's `continuity`, only
+    from the previous request's last pieces on (see the module's doc)."""
     items = pieces(copy.deepcopy(messages))
     ids, start = continuity.ids(items) if continuity is not None else (chain_ids(items), 0)
-    return request_last([event(p, i) for p, i in zip(items[start:], ids[start:])])
+    dropped = compacted_opening(items)
+    return request_last([event(items[k], ids[k]) for k in range(start, len(items)) if k not in dropped])

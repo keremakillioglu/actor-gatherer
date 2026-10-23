@@ -70,6 +70,13 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 (what the policy writes as it reads goes to a
                                                 copy of the database). For a side call (a prompt
                                                 suggestion) that sees the context without being one
+    {"op": "compaction", "gatherer", "properties", "cwd", "events", "limit"?, "preamble"?}
+        -> as `context`                         the harness is compacting its own history (Claude
+                                                Code's /compact): the events are inserted, the
+                                                policy builds -- a build that closes the running
+                                                task and is adopted at the next read whatever its
+                                                size -- and waits for it, and the context is
+                                                answered read only, for the compaction call
     {"op": "measured", "gatherer", "read_id", "tokens"} -> {"recorded": bool}
                                                 the provider's count of read `read_id`'s
                                                 context: the call's input tokens, cached
@@ -315,13 +322,15 @@ class Server:
 
     def rewrite(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], events: list,
                 measured: Optional[dict] = None, limit: Optional[int] = None,
-                preamble: Optional[List[dict]] = None, read_only: bool = False) -> dict:
+                preamble: Optional[List[dict]] = None, read_only: bool = False, compacted: bool = False) -> dict:
         """Insert `events`, then read in response to the last. `measured`,
         {"read_id", "tokens"}, is the provider's count of an earlier read's
         context, recorded first, so this read sees it. With `read_only`, the
         context only (`Manager.context_only`): nothing else of the gatherer's
-        state changes, and there is no read_id. Never raises: a failure
-        anywhere answers a null context."""
+        state changes, and there is no read_id. With `compacted` (read only
+        too), the harness compacted its history: the policy builds first, and
+        waits for it (`Manager.compacted`). Never raises: a failure anywhere
+        answers a null context."""
         prefix = tag(properties)
         if measured is not None:
             try:
@@ -339,6 +348,12 @@ class Server:
             note = f"{len(events)} events in, no event to respond to; messages unchanged"
             self.log(gatherer, prefix + note)
             return {"context": None, "note": note}
+        built = ""
+        if compacted:
+            try:
+                built = manager.compacted(gatherer, last, properties=properties, limit=limit, preamble=preamble)
+            except Exception as exc:  # noqa: BLE001 - a failed build never blocks the call
+                built = f"failed: {exc!r}"
         try:
             if read_only:
                 context, sizes = manager.context_only(gatherer, last, properties=properties, limit=limit,
@@ -352,7 +367,8 @@ class Server:
             return {"context": None, "note": note}
         context = answer["context"]
         ags = sum(1 for e in context if e.get("type") == "ag")
-        note = f"{len(events)} events in (event {last}), {len(context)} out ({ags} ag)" + (" read only" if read_only else "")
+        note = f"{len(events)} events in (event {last}), {len(context)} out ({ags} ag)" + (" read only" if read_only else "") \
+            + (f", compaction build: {built or 'none'}" if compacted else "")
         self.log(gatherer, prefix + note)
         return {"context": context, "note": note, "read_id": answer["read_id"],
                 **{k: answer.get(k) for k in ("tokens", "budget", "sent_tokens", "basis")}}
@@ -377,11 +393,11 @@ class Server:
                 return {"context": None, "note": "no events; messages unchanged"}
             return self.rewrite(gatherer, properties, cwd, events, measured_of(request.get("measured")),
                                 limit_of(request.get("limit")), preamble_of(request.get("preamble")))
-        if op == "context":
+        if op in ("context", "compaction"):
             if not isinstance(events, list):
                 return {"context": None, "note": "no events; messages unchanged"}
             return self.rewrite(gatherer, properties, cwd, events, None, limit_of(request.get("limit")),
-                                preamble_of(request.get("preamble")), read_only=True)
+                                preamble_of(request.get("preamble")), read_only=True, compacted=op == "compaction")
         if op == "measured":
             measured = measured_of(request)
             if measured is None:

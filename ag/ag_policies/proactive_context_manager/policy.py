@@ -585,7 +585,7 @@ class ProactiveContextManager(Policy):
             return None
         if sections.open_from_row != build["open_from_row"]:
             tables.set_cut(conn, build["build_id"], sections.open_from_row)
-        if cfg.require_smaller:
+        if cfg.require_smaller and build.get("reason") != tables.COMPACTION:   # compacted: not sent whole again
             why = self.not_smaller(sections, rows, turns, types)
             if why:
                 tables.settle(conn, build["build_id"], "nothing", error=why)
@@ -669,6 +669,30 @@ class ProactiveContextManager(Policy):
             return ""
         return "check"
 
+    def compacted(self, conn, read: Read) -> str:
+        """The harness compacted its own history (Claude Code's /compact, or its own at its limit): build
+        now -- a `compaction` build, which closes the running task as one over the limit does, and is
+        adopted at the next read whatever its size -- and wait for it, up to build_timeout. What it came
+        to: "ready", "failed", "nothing", "timeout"; "" with no background work."""
+        with self.within(read.limit):
+            cfg, ch = self.config, channel_of(read)
+            if self.jobs is None:
+                return ""
+            build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.COMPACTION)
+            if build_id is None:                    # one is running: let it finish, then build again
+                self.wait(conn, ch, read.row_id, "build", cfg.build_timeout)
+                build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.COMPACTION)
+            if build_id is None:
+                return "timeout"
+            try:
+                self.jobs.start(read.gatherer_id, channel.of(ch), "build", build_id)
+            except OSError as exc:
+                tables.fail_build(conn, build_id, f"could not start the worker: {exc}")
+                return "failed"
+            self.wait(conn, ch, read.row_id, "build", cfg.build_timeout)
+            build = tables.get_build(conn, build_id) or {}
+            return build.get("status") if build.get("status") in ("ready", "failed", "nothing") else "timeout"
+
     def wait(self, conn, channel_id, row_id: int, started: str, seconds: float) -> bool:
         deadline = time.monotonic() + seconds
         while True:
@@ -727,7 +751,7 @@ class ProactiveContextManager(Policy):
             through_row = rows[-1].row_id if rows else 0
             mark = conn.high_water()
             preamble, turns = history.split(rows, types, groups, tok)
-            limit = (tables.get_build(conn, build_id) or {}).get("reason") == tables.LIMIT
+            limit = (tables.get_build(conn, build_id) or {}).get("reason") in (tables.LIMIT, tables.COMPACTION)
             if limit:
                 if not turns:
                     return self.nothing(conn, build_id, through_row, "no turns")
