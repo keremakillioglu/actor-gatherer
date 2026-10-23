@@ -302,6 +302,15 @@ class TextTest(StoreTest):
         self.insert(Event(1, A, id="a", text="said"))
         self.assertEqual([r["text"] for r in self.rows()], ["said"])
 
+    def test_a_file_from_before_pending_kept_the_stop_gets_the_column(self):
+        path = ag.ag_harness.db_path("s")
+        conn = sqlite3.connect(path)
+        conn.execute("ALTER TABLE _pending DROP COLUMN stop")
+        conn.commit(); conn.close()
+        self.m = Manager(ProactiveContextManager(codex.FORMAT, NoLLM()))
+        self.m.record_pending("s", None, [{"type": "agent_message", "payload": A}], "r1", "end_turn")
+        self.assertEqual([p["stop"] for p in self.m.pending("s")], ["end_turn"])
+
 
 class InsertTest(StoreTest):
     def test_returns_the_row_id_then_none_for_a_duplicate(self):

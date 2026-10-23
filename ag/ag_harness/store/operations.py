@@ -564,34 +564,35 @@ def last_inserted_at(conn: sqlite3.Connection) -> Optional[str]:
 # ---------------------------------------------------------------- pending
 
 def record_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], events: List[dict],
-                   answer: Optional[str] = None) -> int:
+                   answer: Optional[str] = None, stop: Optional[str] = None) -> int:
     """Keep an answer's events -- {"type", "payload", "text"?} -- in `_pending` with the
-    properties of the call it answered, until that channel's next call (`clear_pending`).
+    properties of the call it answered, until that channel's next call (`clear_pending`); `stop`
+    is why the answer stopped, as the provider says it (end_turn, tool_use, ...), on each.
     Returns how many were kept."""
     names, values = _given(conn, properties, "a pending event")
-    rows = [(_now(), answer, e["type"], json.dumps(e["payload"], ensure_ascii=False),
+    rows = [(_now(), answer, stop, e["type"], json.dumps(e["payload"], ensure_ascii=False),
              e.get("text") if isinstance(e.get("text"), str) else None, *values) for e in events]
     with conn:
-        conn.executemany(f"INSERT INTO _pending (received_at, answer, type, payload_json, text{_columns(names)}) "
-                         f"VALUES (?, ?, ?, ?, ?{', ?' * len(names)})", rows)
+        conn.executemany(f"INSERT INTO _pending (received_at, answer, stop, type, payload_json, text{_columns(names)}) "
+                         f"VALUES (?, ?, ?, ?, ?, ?{', ?' * len(names)})", rows)
     return len(rows)
 
 
 def pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = None) -> List[dict]:
     """The pending events with these properties -- each given one its value (None: unset),
-    those not given any value -- oldest first: {pending_id, received_at, answer, type,
+    those not given any value -- oldest first: {pending_id, received_at, answer, stop, type,
     payload, text, properties}."""
     names = property_names(conn)
     given = {n: v for n, v in (properties or {}).items() if n in names}
     if any(v is not None for n, v in (properties or {}).items() if n not in names):
         return []                                  # a property no event has: none has it set
     out = []
-    for r in conn.execute(f"SELECT pending_id, received_at, answer, type, payload_json, text{_columns(names)} "
+    for r in conn.execute(f"SELECT pending_id, received_at, answer, stop, type, payload_json, text{_columns(names)} "
                           f"FROM _pending WHERE {_same(list(given))}1 ORDER BY pending_id",
                           _unset_is_empty(given.values())):
-        out.append({"pending_id": r[0], "received_at": r[1], "answer": r[2], "type": r[3],
-                    "payload": json.loads(r[4]), "text": r[5],
-                    "properties": {n: v for n, v in zip(names, r[6:]) if v is not None}})
+        out.append({"pending_id": r[0], "received_at": r[1], "answer": r[2], "stop": r[3], "type": r[4],
+                    "payload": json.loads(r[5]), "text": r[6],
+                    "properties": {n: v for n, v in zip(names, r[7:]) if v is not None}})
     return out
 
 
