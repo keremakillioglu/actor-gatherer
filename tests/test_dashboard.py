@@ -1,4 +1,4 @@
-"""`ag dashboard` (ag/dashboard): what it reads from a home -- its gatherers and agents,
+"""`ag dashboard` (ag_dashboard): what it reads from a home -- its gatherers and agents,
 one agent over time, what a read held, the Gatherer's own model calls -- and the page,
 served on localhost or written with its data inside it."""
 import json
@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,7 +19,8 @@ from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
 from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
-from ag.dashboard import data, server  # noqa: E402
+from ag_dashboard import data, server  # noqa: E402
+from ag_dashboard import home as dashboard_home  # noqa: E402
 from channels import ch  # noqa: E402
 from test_core import PREAMBLE, ScriptedLLM, conversation, long_turn, user  # noqa: E402
 import codex_items  # noqa: E402
@@ -33,6 +35,7 @@ class HomeBase(unittest.TestCase):
         self.saved = paths.TRACE_DIR, paths.AG_HOME
         paths.AG_HOME = os.path.join(self.tmp.name, "ag")
         paths.TRACE_DIR = os.path.join(paths.AG_HOME, "gatherers")
+        self.saved_home, dashboard_home.HOME = dashboard_home.HOME, paths.AG_HOME   # the dashboard reads the same home
         os.makedirs(os.path.join(paths.TRACE_DIR, "g"))
         with open(os.path.join(paths.TRACE_DIR, "g", "gatherer.toml"), "w") as fh:
             fh.write('policy = "proactive_context_manager"\n')
@@ -56,6 +59,7 @@ class HomeBase(unittest.TestCase):
 
     def tearDown(self):
         paths.TRACE_DIR, paths.AG_HOME = self.saved
+        dashboard_home.HOME = self.saved_home
         self.tmp.cleanup()
 
     def log_call(self, name, **record):
@@ -246,11 +250,28 @@ class CommandTest(HomeBase):
     def test_out_writes_the_page_and_a_bad_argument_is_refused(self):
         from ag.cli import main
         out = os.path.join(self.tmp.name, "d.html")
-        self.assertEqual(main.dashboard(["--out", out]), 0)
+        with unittest.mock.patch.dict(os.environ, {"AG_HOME": paths.AG_HOME}):       # ag's home: the test's
+            self.assertEqual(main.dashboard(["--out", out]), 0)
         with open(out) as fh:
             self.assertIn('"g\\u0000c1"', fh.read())
-        with self.assertRaises(main.AgError):
-            main.dashboard(["--bogus"])
+        with unittest.mock.patch("sys.stderr"):
+            self.assertEqual(main.dashboard(["--bogus"]), 2)
+
+
+class SeparateTest(unittest.TestCase):
+    def test_the_dashboard_imports_nothing_of_ag(self):
+        import ast
+        import ag_dashboard
+        root = os.path.dirname(ag_dashboard.__file__)
+        for name in os.listdir(root):
+            if name.endswith(".py"):
+                with open(os.path.join(root, name)) as fh:
+                    tree = ast.parse(fh.read())
+                for node in ast.walk(tree):
+                    mods = [a.name for a in node.names] if isinstance(node, ast.Import) else \
+                        [node.module or ""] if isinstance(node, ast.ImportFrom) and not node.level else []
+                    for m in mods:
+                        self.assertNotEqual(m.split(".")[0], "ag", f"{name} imports {m}")
 
 
 if __name__ == "__main__":

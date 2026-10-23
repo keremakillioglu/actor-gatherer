@@ -33,7 +33,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from ag.ag_harness.store import paths
+from . import home as paths
 
 RUNNING_SECONDS = 120          # a read this recent: the agent is running
 CHANNEL = "p_channel"          # the channel property's column (ag.ag_policies.tools.channel)
@@ -72,7 +72,7 @@ def _seconds(value) -> Optional[float]:
 
 
 def gatherer_names() -> List[str]:
-    root = paths.TRACE_DIR
+    root = paths.gatherers_dir()
     if not os.path.isdir(root):
         return []
     return sorted(n for n in os.listdir(root) if os.path.exists(os.path.join(root, n, "context.db")))
@@ -97,8 +97,7 @@ def _running_builds(conn) -> set:
 
 def _hook_servers() -> List[dict]:
     try:
-        from ag.integrations.harnesses.codex.setup.hook_servers import HookServers
-        return [{"port": s.port, "pid": s.pid, "upstream": s.upstream} for s in HookServers(paths.AG_HOME).running()]
+        return paths.hook_servers()
     except Exception:  # noqa: BLE001 - the dashboard shows what it can
         return []
 
@@ -121,7 +120,7 @@ def home() -> dict:
         gatherers.append({"name": name, "policy": _policy(name), "agents": agents,
                           "last": max((a["last"] or 0 for a in agents), default=0) or None})
     gatherers.sort(key=lambda g: g.get("last") or 0, reverse=True)
-    return {"home": paths.AG_HOME, "now": now, "running_seconds": RUNNING_SECONDS, "gatherers": gatherers,
+    return {"home": paths.HOME, "now": now, "running_seconds": RUNNING_SECONDS, "gatherers": gatherers,
             "hook_servers": _hook_servers()}
 
 
@@ -341,12 +340,23 @@ _tokenizer = None
 
 
 def _count(text: str) -> int:
-    """ag's own count of a pending event's text (pending rows keep none): tiktoken's, as the store's default."""
+    """ag's own count of a pending event's text (pending rows keep none): tiktoken's o200k_base, as
+    the store's default; characters / 4 without tiktoken."""
     global _tokenizer
+    if not text:
+        return 0
     if _tokenizer is None:
-        from ag.ag_tools.tokenizers.tiktoken_tokenizer import Tiktoken
-        _tokenizer = Tiktoken()
-    return _tokenizer.count(text) if text else 0
+        try:
+            import tiktoken
+            _tokenizer = tiktoken.get_encoding("o200k_base")
+        except Exception:  # noqa: BLE001 - no tiktoken, or no encoding file
+            _tokenizer = False
+    if _tokenizer:
+        try:
+            return len(_tokenizer.encode(text, disallowed_special=()))
+        except Exception:  # noqa: BLE001
+            pass
+    return max(1, len(text) // 4)
 
 
 def _pending(conn, channel: str, tables: set) -> List[dict]:
@@ -544,7 +554,7 @@ def llm_calls() -> List[dict]:
     purpose, model, start, seconds, tokens in and out, error, and the job it ran for when
     the worker named it (`job`: gatherer, job, id, properties)."""
     out = []
-    for path in sorted(glob.glob(os.path.join(paths.AG_HOME, "logs", "llm", "*.json"))):
+    for path in sorted(glob.glob(os.path.join(paths.llm_log_dir(), "*.json"))):
         try:
             with open(path, encoding="utf-8") as fh:
                 rec = json.load(fh)

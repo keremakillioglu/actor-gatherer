@@ -22,7 +22,8 @@ from ag.ag_harness import home as ag_home  # noqa: E402
 from ag.ag_harness.server import serve  # noqa: E402
 from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
-from ag.dashboard import data  # noqa: E402
+from ag_dashboard import data  # noqa: E402
+from ag_dashboard import home as dashboard_home  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.call_ag import preamble_of  # noqa: E402
 
@@ -43,10 +44,12 @@ class HomeBase(unittest.TestCase):
         self.saved = paths.TRACE_DIR, paths.AG_HOME
         paths.AG_HOME = os.path.join(self.tmp.name, "ag")
         paths.TRACE_DIR = os.path.join(paths.AG_HOME, "gatherers")
+        self.saved_home, dashboard_home.HOME = dashboard_home.HOME, paths.AG_HOME   # the dashboard reads the same home
         ag_home._HOMES.clear()
 
     def tearDown(self):
         paths.TRACE_DIR, paths.AG_HOME = self.saved
+        dashboard_home.HOME = self.saved_home
         ag_home._HOMES.clear()
         self.tmp.cleanup()
 

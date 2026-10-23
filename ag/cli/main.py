@@ -273,36 +273,13 @@ def stop(settings) -> int:
 
 
 def dashboard(args: List[str]) -> int:
-    """`ag dashboard [--host H] [--port N] [--out FILE]`: the page on localhost until
-    interrupted, or, with --out, written to FILE with its data inside it."""
-    host, port, out = "127.0.0.1", 4200, None
-    i = 0
-    while i < len(args):
-        a = args[i]
-        if a in ("--host", "--port", "--out") and i + 1 < len(args):
-            host, port, out = (args[i + 1], port, out) if a == "--host" else \
-                (host, args[i + 1], out) if a == "--port" else (host, port, args[i + 1])
-            i += 2
-            continue
-        raise AgError(f"ag dashboard: unknown argument {a!r} (--host H, --port N, --out FILE)")
-    from ag.dashboard import data, server
-    if out:
-        with open(out, "w", encoding="utf-8") as fh:
-            fh.write(server.page(data.snapshot()))
-        print(f"wrote {os.path.abspath(out)}")
-        return 0
+    """`ag dashboard [--host H] [--port N] [--out FILE]`: the dashboard (its own package,
+    ag_dashboard, which reads the home's files and imports nothing of ag), on this home."""
+    from ag_dashboard.__main__ import main as dashboard_main
     try:
-        httpd = server.serve(host, int(port))
-    except (OSError, ValueError) as exc:
-        raise AgError(f"ag dashboard: cannot listen on {host}:{port}: {exc}") from exc
-    say(f"dashboard: http://{host}:{httpd.server_port}/  (home {data.paths.AG_HOME}; Ctrl-C to stop)")
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        httpd.server_close()
-    return 0
+        return dashboard_main(["--home", config.home(), *args])
+    except SystemExit as exc:                 # its argument errors: the usage is printed
+        return exc.code if isinstance(exc.code, int) else 2
 
 
 def main(argv: Optional[List[str]] = None) -> int:
