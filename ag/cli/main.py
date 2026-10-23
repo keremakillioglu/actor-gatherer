@@ -107,8 +107,9 @@ def launcher(harness: str, settings):
 
 def shown(event_type: dict) -> str:
     """An event type as a problem shows it: its name, and its properties
-    (`!`: required)."""
-    props = [p["name"] + ("!" if p.get("required") else "") for p in event_type.get("properties", [])]
+    (`!`: required, `*`: identifying)."""
+    props = [p["name"] + ("!" if p.get("required") else "") + ("*" if p.get("identifies") else "")
+             for p in event_type.get("properties", [])]
     return event_type["name"] + (f" ({', '.join(props)})" if props else "")
 
 

@@ -143,7 +143,7 @@ class Harnesses(WithPlugins):
         code, _, err = self.run_ag("--dry-run", "--no-pollers", "--gatherer", "p2", "tagged", "hi")
         self.assertEqual(code, 1)
         self.assertIn("adaptor tagged sets user on user_message, which declares channel, cwd", err)
-        self.assertIn("proactive_context_manager takes: user_message (channel, cwd)", err)
+        self.assertIn("proactive_context_manager takes: user_message (channel*, cwd)", err)
 
     def test_a_required_property_must_be_set_by_whoever_sends_the_type(self):
         contract = {"policy": "strict", "pollers_from": "given",

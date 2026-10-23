@@ -114,7 +114,8 @@ class Manager(ContextManager):
     def insert(self, gatherer_id: str, event: Event) -> Optional[int]:
         """One row in `events`, in its own transaction. Returns the event's
         `row_id`, or None if it was already stored: a duplicate is the same
-        event id with the same properties, and the first insert wins. Without an
+        event id with the same identifying properties (whatever the others
+        say), and the first insert wins. Without an
         id, every insert is a new row. Its `tokens` are stored as given, else
         the tokenizer's count of the payload's JSON. Creates the database if
         `init` was not called. The pollers are not asked: `read` does that.

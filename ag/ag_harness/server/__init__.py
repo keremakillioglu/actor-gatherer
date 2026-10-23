@@ -106,7 +106,7 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
     {"op": "add_event_type", "gatherer", TYPE's fields} -> {"type_id"}
     {"op": "open", "gatherer", "properties"} -> {"gatherer", "properties", "policy", "pollers", "config", "database"}
 
-where TYPE is {"name", "properties"?: [{"name", "required"?}]}.
+where TYPE is {"name", "properties"?: [{"name", "required"?, "identifies"?}]}.
     {"op": "ping"} -> {"pong": true}
 
 A request that fails is answered `{"id", "error"}`; a rewrite that fails is
@@ -141,21 +141,24 @@ def log_line(gatherer: str, line: str) -> None:
 
 def _type(t: EventType) -> dict:
     return {"id": t.id, "name": t.name,
-            "properties": [{"name": p.name, "required": p.required} for p in t.properties]}
+            "properties": [{"name": p.name, "required": p.required, "identifies": p.identifies}
+                           for p in t.properties]}
 
 
 def type_of(t) -> EventType:
     """The EventType a request's TYPE is.
 
     Raises:
-        BadEvent: it is not {"name": <non-empty>, "properties"?: [{"name", "required"?}]}.
+        BadEvent: it is not {"name": <non-empty>, "properties"?: [{"name", "required"?, "identifies"?}]}.
     """
     if not isinstance(t, dict) or not isinstance(t.get("name"), str) or not t["name"]:
         raise BadEvent(f"not an event type: {str(t)[:120]}")
     props = t.get("properties") or []
     if not isinstance(props, list) or not all(isinstance(p, dict) and isinstance(p.get("name"), str) for p in props):
-        raise BadEvent(f"event type {t['name']!r}: properties must be [{{name, required?}}], not {str(props)[:120]}")
-    return EventType(t["name"], tuple(Property(p["name"], bool(p.get("required"))) for p in props))
+        raise BadEvent(f"event type {t['name']!r}: properties must be [{{name, required?, identifies?}}], "
+                       f"not {str(props)[:120]}")
+    return EventType(t["name"], tuple(Property(p["name"], bool(p.get("required")), bool(p.get("identifies")))
+                                      for p in props))
 
 
 def properties_of(request: dict) -> Dict[str, Any]:

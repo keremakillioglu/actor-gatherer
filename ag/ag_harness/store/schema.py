@@ -5,7 +5,8 @@ One SQLite file per gatherer (paths.py):
 
     event_types          every event type the gatherer has: defined at init or added
                          later; its name
-    event_type_properties  the properties each type declares, required or not
+    event_type_properties  the properties each type declares, required or not,
+                         identifying or not
     events               every event stored, in the order first seen, each of
                          one event type, with the tokenizer's count of each
     _made_items          items a policy MADE (e.g. condensation messages),
@@ -33,7 +34,9 @@ the rows a caller puts in `event_types`, at init or later, and every event
 points at one of them. Nor are their PROPERTIES: `events`, `_made_items`, `_reads`
 and `_pending` get a column for each property a registered type declares
 (`add_properties`, `p_<name>`, NULL = unset), and the unique index on events
-covers them all, so an event id is one event per combination of properties.
+covers the identifying ones (`identifying_names`: those a type declares
+`identifies`), so an event id is one event per combination of them; the other
+properties only describe it, and keep the values it was first stored with.
 """
 
 import os
@@ -83,6 +86,7 @@ CREATE TABLE IF NOT EXISTS event_type_properties (
     event_type_id INTEGER NOT NULL REFERENCES event_types (event_type_id),
     name        TEXT    NOT NULL,   -- the property; its column is p_<name>
     required    INTEGER NOT NULL,   -- 1: an event of the type must carry it
+    identifies  INTEGER NOT NULL DEFAULT 0,   -- 1: part of an event's identity, with its id
     PRIMARY KEY (event_type_id, name)
 );
 
@@ -167,7 +171,8 @@ CREATE TABLE IF NOT EXISTS _pending (
 
 class OutdatedDatabase(RuntimeError):
     """The file was written by an earlier schema: it has an `items` table
-    and no `events`. It is not migrated; delete it, or load the gatherer
+    and no `events`, or it holds one event twice by the identity its types
+    now declare. It is not migrated; delete it, or load the gatherer
     again."""
 
 
@@ -201,6 +206,8 @@ def create(conn: sqlite3.Connection) -> None:
     for name in property_names(conn):                                # a file from before _pending: its properties
         if property_column(name) not in pending_columns:
             conn.execute(f"ALTER TABLE _pending ADD COLUMN {property_column(name)}")
+    if "identifies" not in {c[1] for c in conn.execute("PRAGMA table_info(event_type_properties)")}:
+        conn.execute("ALTER TABLE event_type_properties ADD COLUMN identifies INTEGER NOT NULL DEFAULT 0")
     if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'events_id'").fetchone() is None:
         index(conn, property_names(conn))            # a new file: over no property yet
 
@@ -211,18 +218,39 @@ def property_names(conn: sqlite3.Connection) -> List[str]:
             if c.startswith(PREFIX)]
 
 
+def identifying_names(conn: sqlite3.Connection) -> List[str]:
+    """The properties that are part of an event's identity -- those a type declares `identifies` --
+    in the order they were added."""
+    marked = {n for (n,) in conn.execute("SELECT DISTINCT name FROM event_type_properties WHERE identifies = 1")}
+    return [n for n in property_names(conn) if n in marked]
+
+
 def index(conn: sqlite3.Connection, names: List[str]) -> None:
     """(Re)make the unique index on events -- one row per event id per
-    combination of properties -- and the read log's, over `names`.
-    ifnull() because SQLite treats NULLs as distinct in a unique index, which
-    would let events with a property unset duplicate. event_id is left bare
-    for exactly that reason: rows without an id never collide, so each is
-    stored."""
-    keys = "".join(f"ifnull({property_column(n)}, ''), " for n in names)
-    conn.execute("DROP INDEX IF EXISTS events_id")
-    conn.execute(f"CREATE UNIQUE INDEX events_id ON events ({keys}event_id)")
+    combination of identifying properties (`identifying_names`) -- and the
+    read log's, over all of `names`. ifnull() because SQLite treats NULLs as
+    distinct in a unique index, which would let events with a property unset
+    duplicate. event_id is left bare for exactly that reason: rows without an
+    id never collide, so each is stored.
+
+    Raises:
+        OutdatedDatabase: the events already stored hold one event twice by
+            the new identity (a file from before properties were identifying).
+    """
+    keys = "".join(f"ifnull({property_column(n)}, ''), " for n in identifying_names(conn))
+    sql = f"CREATE UNIQUE INDEX events_id ON events ({keys}event_id)"
+    found = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'events_id'").fetchone()
+    if found is None or found[0] != sql:
+        conn.execute("DROP INDEX IF EXISTS events_id")
+        try:
+            conn.execute(sql)
+        except sqlite3.IntegrityError as exc:
+            file = next((row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"), "?")
+            raise OutdatedDatabase(f"{file}: holds the same event more than once by its identifying properties "
+                                   f"(written before they were declared); delete the gatherer") from exc
+    every = "".join(f"ifnull({property_column(n)}, ''), " for n in names)
     conn.execute("DROP INDEX IF EXISTS _reads_properties")
-    conn.execute(f"CREATE INDEX _reads_properties ON _reads ({keys}read_id)")
+    conn.execute(f"CREATE INDEX _reads_properties ON _reads ({every}read_id)")
 
 
 def add_properties(conn: sqlite3.Connection, names) -> None:
