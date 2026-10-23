@@ -269,6 +269,18 @@ class Manager(ContextManager):
                 + sum(made[r.made_id][2] or 0 for r in ctx.refs if r.made_id in made)
                 + store.preamble_tokens(conn, preamble))
 
+    def compacted(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None,
+                  limit: Optional[int] = None, preamble: Optional[List[dict]] = None) -> str:
+        """Not part of the interface: the harness compacted its own history, in response to the event
+        `row_id` -- the policy builds (its `compacted`, if it has one) and waits for it. What it came
+        to, in the policy's words; "" for a policy that does not build, or a gatherer with no database."""
+        hook = getattr(self.policy, "compacted", None)
+        if hook is None or not os.path.exists(db_path(gatherer_id)):
+            return ""
+        conn = self._conn(gatherer_id)
+        return hook(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), row_id, limit,
+                                                   fixed_tokens=store.preamble_tokens(conn, preamble)))
+
     def context_only(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None,
                      limit: Optional[int] = None, preamble: Optional[List[dict]] = None) -> Tuple[List[dict], dict]:
         """Not part of the interface: the policy's context for `properties` in response to the event

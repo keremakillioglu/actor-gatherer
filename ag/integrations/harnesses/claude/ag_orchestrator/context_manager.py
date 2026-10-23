@@ -22,6 +22,14 @@ What it decides, Claude Code's own:
                    the context the next call would get is made read only (the server's `context`:
                    nothing else of the gatherer changes, no read), the suggestion's own message is
                    put after it, and that is sent -- nothing of it stored, counted or measured
+    a compaction   Claude Code compacting its history (/compact, or its own at its limit): its
+                   conversation with, at the end of its last user message, the instruction to
+                   summarize it (`CRITICAL: Respond with TEXT ONLY. ...`). The gatherer builds in
+                   its place (the server's `compaction`: the conversation's events inserted, a
+                   build that closes the running task, waited for and adopted at the next call),
+                   and the compaction call gets the context read only, the instruction after it,
+                   for the summary Claude Code goes on from -- which ag does not store, holding
+                   the history itself (to_events.py)
     the session    the `X-Claude-Code-Session-Id` header, else the session id in the body's
                    `metadata.user_id` (a JSON object); none: None. `claude --session-id <uuid>`
                    chooses it, and a resumed session keeps it
@@ -57,7 +65,7 @@ import json
 import os
 import re
 import sys
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Tuple, Union
 
 from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
 from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load_adaptor
@@ -75,6 +83,7 @@ AGENT_HEADER = "x-claude-code-agent-id"           # set on a subagent's calls on
 REQUEST_CLASS_HEADER = "x-claude-code-request-class"   # main, subagent, workflow, compaction, auxiliary, side_reply
 SIDE_CLASSES = ("auxiliary", "side_reply")       # Claude Code's side calls, not the session's turns
 SUGGESTION = "[SUGGESTION MODE:"                 # how Claude Code's prompt suggestion asks
+COMPACTION = "CRITICAL: Respond with TEXT ONLY"  # how Claude Code's compaction call asks for its summary
 COUNT_FROM = 0.5            # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
@@ -114,6 +123,23 @@ def suggestion_at(messages: list) -> Optional[int]:
     if not blocks or any(b.get("type") != "text" for b in blocks):
         return None
     return len(messages) - 1 if str(blocks[0].get("text") or "").lstrip().startswith(SUGGESTION) else None
+
+
+def compaction_split(messages: list) -> Optional[Tuple[list, list]]:
+    """(the conversation, the instruction's blocks) of a compaction call -- the last user message's
+    text blocks from the one opening with `CRITICAL: Respond with TEXT ONLY` on are the instruction,
+    the rest the conversation -- or None: not a compaction."""
+    at = next((i for i in range(len(messages) - 1, -1, -1)
+               if isinstance(messages[i], dict) and messages[i].get("role") == "user"), None)
+    if at is None or at < len(messages) - 2:          # the last user message, or just before a system note
+        return None
+    blocks = blocks_of(messages[at])
+    start = next((j for j, b in enumerate(blocks) if b.get("type") == "text"
+                  and str(b.get("text") or "").lstrip().startswith(COMPACTION)), None)
+    if start is None:
+        return None
+    rest = [dict(messages[at], content=blocks[:start])] if start else []
+    return messages[:at] + rest + messages[at + 1:], blocks[start:]
 
 
 def is_subagent(headers) -> bool:
@@ -197,8 +223,14 @@ class ClaudeContextManager:
             adaptor = adaptor.for_channel(self.continuity.setdefault((gatherer, channel), Continuity()))
         client = self.ag_clients.client(gatherer)
         if at is not None:
-            return await self.suggestion(request, client, gatherer, channel, body, messages[:at], messages[at:],
-                                         adaptor, mode)
+            return await self.side_call(request, client, gatherer, channel, body, messages[:at], messages[at:],
+                                        adaptor, mode, "context", "suggestion")
+        compaction = compaction_split(messages)
+        if compaction is not None:
+            history, instruction = compaction
+            return await self.side_call(request, client, gatherer, channel, body, history,
+                                        [{"role": "user", "content": instruction}], adaptor, mode, "compaction",
+                                        "compaction")
 
         async def read():
             out = {}
@@ -230,15 +262,16 @@ class ClaudeContextManager:
             return None                                   # nothing to change: Claude Code's own bytes go through
         return dict(body, messages=new)
 
-    async def suggestion(self, request, client, gatherer: str, channel: str, body: dict, history: list,
-                         prompt: list, adaptor, mode: str) -> Optional[dict]:
-        """A prompt suggestion's body: the context the session's next call would get, read only, with
-        the suggestion's own message after it; None (Claude Code's own) when there is none."""
+    async def side_call(self, request, client, gatherer: str, channel: str, body: dict, history: list,
+                        prompt: list, adaptor, mode: str, op: str, what: str) -> Optional[dict]:
+        """A side call's body (a prompt suggestion, a compaction): the context the session's next call
+        would get, read only (`op`: the server's `context`, or `compaction`, which builds first), with
+        the call's own message after it; None (Claude Code's own) when there is none."""
         out = {}
         new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd_of(history) or self.cwd, history,
-                                  adaptor, out=out, limit=getattr(request, "limit", None), op="context",
+                                  adaptor, out=out, limit=getattr(request, "limit", None), op=op,
                                   preamble=preamble_of({"system": body.get("system"), "tools": body.get("tools")}))
-        self.log(gatherer, f"[{channel}] suggestion: {note}")
+        self.log(gatherer, f"[{channel}] {what}: {note}")
         if new is None:
             return None
         new = self.counter.fresh_thinking(gatherer, channel, out.get("basis"), new)

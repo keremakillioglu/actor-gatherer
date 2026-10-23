@@ -163,8 +163,9 @@ def channels_with_tasks(conn) -> List[Optional[str]]:
 BUILD_COLUMNS = ("build_id, status, started_at, finished_at, through_row, open_from_row, "
                  "ranking_json, parallel_mark, error, reason")
 #: Why a build was started: the context was over max_context_tokens; the boundary check found a new
-#: task; build_every_request; run directly (bulk loading, tests).
-LIMIT, BOUNDARY, REQUEST, DIRECT = "limit", "boundary", "request", "direct"
+#: task; build_every_request; run directly (bulk loading, tests); the harness compacted its own
+#: history (a build that closes the running task, as `limit` does, and is adopted whatever its size).
+LIMIT, BOUNDARY, REQUEST, DIRECT, COMPACTION = "limit", "boundary", "request", "direct", "compaction"
 
 
 def _build(row) -> Optional[dict]:
