@@ -11,12 +11,14 @@ history before a build):
   * `context_stream` events are shown as a developer message (`message`) at
     their row's place. Pollers run at read time, so a message's row is where
     the model first saw it, and each read's context extends the last one.
-  * `environment_update` events whose SUBJECT a verbatim row before them
-    refers to get a developer message (`notice`) at their row's place; what
-    the model did about it follows, so it is never repeated as news. An
-    update the conversation had not referred to, or one the agent made
-    itself (a tool call that came in with it could have WRITTEN the subject,
-    `writes`), is not shown.
+  * `environment_update` events whose SUBJECT one of the agent's own tool
+    calls in the verbatim part opened before them (by that path: `mentions`)
+    get a developer message (`notice`) at their row's place; what the model
+    did about it follows, so it is never repeated as news. An update to
+    something no tool call named, one the agent made itself (a tool call
+    that came in with it could have WRITTEN the subject, `writes`), or a
+    second one before the agent opened the subject again since its notice,
+    is not shown: better a notice too few than one too many.
 
 The events themselves never reach the model, and neither kind is history for
 the build.
@@ -46,6 +48,7 @@ Everything below `assemble` is the sections' logic: segmentation, ranking,
 builds and their adoption.
 """
 
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -60,7 +63,7 @@ from ag.ag_policies.tools import tasks as tasks_tool
 from ag.ag_interface import Ref, Row, event_text, property_column
 from ag.ag_interface.policy import Context, Policy, Read, TypeIds
 from ag.ag_policies.tools.channel import CHANNEL, channel_of
-from ag.ag_policies.tools.cwd import same_place
+from ag.ag_policies.tools.cwd import cwd_of, same_place
 from ag.ag_policies.tools.options import config_from
 from . import layout, tables
 from .config import ProactiveContextManagerConfig, within_limit
@@ -128,11 +131,42 @@ def with_cleaned(conn, entries) -> None:
             e.text = texts[e.row_id]
 
 
-def mentions(text: str, subject: str) -> bool:
+CD = re.compile(r"(?<![\w\-])cd\s+\\?['\"]?([^\s;&|'\"\\]+)")
+
+
+def moved(before: str, cwd) -> bool:
+    """Whether a command, up to here (`before`), changed to a directory other than `cwd`: its last
+    `cd` goes anywhere else (a relative one too, but `.`)."""
+    found = list(CD.finditer(before))
+    if not found:
+        return False
+    target = os.path.expanduser(found[-1].group(1))
+    return os.path.normpath(target) != "." and os.path.normpath(target) != os.path.normpath(str(cwd))
+
+
+PATH_CHAR = r"[\w.\-/~+@%]"                        # what a path is made of, for where one starts
+
+
+def mentions(text: str, subject: str, cwd=None) -> bool:
     """Whether `text` refers to `subject`: it appears as a whole -- not
-    inside another name (`a.py` is not in `data.py` or `a.pyc`), while a
-    longer path ending in it counts (`/w/notes.txt` mentions `notes.txt`)."""
-    return re.search(r"(?<![\w.\-])" + re.escape(subject) + r"(?![\w\-])(?!\.\w)", text) is not None
+    inside another name (`a.py` is not in `data.py` or `a.pyc`) -- and
+    the path it ends is that file. Without `cwd`, a longer path ending in
+    it counts too (`/w/notes.txt` mentions `notes.txt`). With it, only the
+    subject itself (`./a.py` too) or the absolute path `cwd`/subject, and
+    the subject itself not after a `cd` elsewhere (`cd /x && cat a.py`)."""
+    for m in re.finditer(r"(?<![\w.\-])" + re.escape(subject) + r"(?![\w\-])(?!\.\w)", text):
+        start = m.start()
+        while start and re.match(PATH_CHAR, text[start - 1]):
+            start -= 1
+        path = os.path.expanduser(text[start:m.end()])
+        if not cwd:
+            return True
+        if os.path.isabs(path):
+            if os.path.normpath(path) == os.path.normpath(os.path.join(str(cwd), subject)):
+                return True
+        elif os.path.normpath(path) == os.path.normpath(subject) and not moved(text[:start], cwd):
+            return True
+    return False
 
 
 class ProactiveContextManager(Policy):
@@ -265,7 +299,7 @@ class ProactiveContextManager(Policy):
         only what came after it) -- with every stream message of the
         verbatim part shown in that last, verbatim run, at its row's place,
         and a notice at the place of each environment update of the verbatim
-        part whose subject the rows before it refer to. Messages and notices
+        part whose subject the agent's tool calls before it opened (`notices`). Messages and notices
         are made items; the events are never returned. Then the requests made
         to the other channels (`parallel_requests`), right before this
         channel's latest user message.
@@ -457,76 +491,86 @@ class ProactiveContextManager(Policy):
                 read_properties=None) -> List[tuple]:
         """("made", row_id, item, (made_id, tokens)): one notice per poll, for
         the environment updates of the verbatim part -- in the read's working
-        directory (`cwd`), when both have one -- it found whose subject
-        a verbatim row before them refers to -- the model had seen the
-        subject, then it changed -- and that are not the agent's own doing:
-        no tool call or output that came in with them
-        (`history.batch_start`: what the agent ran since its previous model
-        call, while the change happened) names the subject. It names them
-        (up to `notice_names`), or counts them. Keyed by the first update's
-        row id, so it sorts into its place in the history: where the model
-        first saw it. On the read after the poll, it is the newest thing in
-        the context; on later ones it is history, and whatever the model did
-        about it (read the file again) comes after it. Each is a made item."""
+        directory (`cwd`), when both have one -- that the agent should hear
+        of. Better one notice too few than one too many, so an update counts
+        only when:
+
+          - a tool call of the agent's own before it, in the verbatim part,
+            names the subject (`mentions`: the file itself, by its path
+            under `cwd` when absolute) -- what a message or a tool's output
+            says does not count;
+          - for a subject already notified there, a tool call names it again
+            after that notice: the agent read it since, so there is a newer
+            read to be out of date (without one, the notice it has stands);
+          - it is not the agent's own doing: no tool call that came in with
+            it (`history.batch_start`: what the agent ran since its previous
+            model call, while the change happened) names the subject and
+            could have written it (`own_change`).
+
+        It names them (up to `notice_names`), or counts them. Keyed by the
+        first update's row id, so it sorts into its place in the history.
+        On the read after the poll, it is the newest thing in the context; on
+        later ones it is history, and whatever the model did about it (read
+        the file again) comes after it. Each is a made item."""
         updates = self.outside(conn, types, channel_id, cut, ENVIRONMENT_UPDATE)
         if not updates:
             return []
         texts = [(v.row_id, v.type.id, event_text(v)) for v in verbatim]
-        first: Dict[str, Optional[int]] = {}                 # subject -> the first row that refers to it
-        polls: Dict[int, dict] = {}                          # batch start -> {subject: (row id, subject, payload)}
+        calls = types.of("tool_call")
+        noticed: Dict[str, Tuple[int, int]] = {}              # subject -> (its last notice's update row, batch start)
+        polls: Dict[int, dict] = {}                          # batch start -> {subject: (row id, subject, payload, repeat)}
         for r in updates:
             payload = r.payload if isinstance(r.payload, dict) else {}
             subject = payload.get("subject")
             if not isinstance(subject, str) or not subject or not same_place(r, read_properties):
                 continue                                     # another directory's file of that name
-            if subject not in first:
-                first[subject] = min((row for row, _, text in texts if mentions(text, subject)), default=None)
-            if first[subject] is None or first[subject] > r.row_id:
-                continue
+            cwd = cwd_of(r) or cwd_of(read_properties)
             start = history.batch_start(conn, channel_id, r.row_id)
-            if self.own_change(texts, types, start, r.row_id, subject):
+            before = noticed.get(subject)
+            if before is not None and before[1] == start:    # changed again in the same poll: its latest
+                polls[start][subject] = (r.row_id, subject, payload, polls[start][subject][3])
+                noticed[subject] = (r.row_id, start)
+                continue
+            after = before[0] if before else 0
+            if not any(after < row < r.row_id and tid in calls and mentions(text, subject, cwd)
+                       for row, tid, text in texts):
+                continue                                     # not seen, or not again since its notice
+            if self.own_change(texts, types, start, r.row_id, subject, cwd):
                 continue                                     # the agent's own doing
-            polls.setdefault(start, {})[subject] = (r.row_id, subject, payload)   # a subject once: its latest
+            polls.setdefault(start, {})[subject] = (r.row_id, subject, payload, before is not None)
+            noticed[subject] = (r.row_id, start)
         out = []
         for by_subject in polls.values():
             found = sorted(by_subject.values(), key=lambda f: f[0])
             cfg = self.config
             if len(found) == 1:
-                row, subject, payload = found[0]
-                text = cfg.notice.format(**self.notice_fields(conn, texts, types, channel_id, row, subject, payload))
+                row, subject, payload, repeat = found[0]
+                text = cfg.notice.format(**self.notice_fields(subject, payload, repeat))
             elif len(found) <= cfg.notice_names:
-                text = cfg.notice_named.format(subjects=", ".join(subject for _, subject, _ in found))
+                text = cfg.notice_named.format(subjects=", ".join(f[1] for f in found))
             else:
                 text = cfg.notice_counted.format(count=len(found))
             item = self.format.make_section(text, "environment_update")
-            rows = [row for row, _, _ in found]
+            rows = [f[0] for f in found]
             made_id = conn.make_item(item, self.tokenizer, properties=channel.of(channel_id), name="environment_update",
                                       source="update " + ",".join(map(str, rows)))
             out.append(("made", rows[0], item, (made_id, conn.made_items([made_id])[made_id][2])))
         return out
 
-    def notice_fields(self, conn, texts, types: TypeIds, channel_id, row_id: int, subject: str,
-                      payload: dict) -> dict:
+    def notice_fields(self, subject: str, payload: dict, repeat: bool) -> dict:
         """What a one-file notice is worded from (`notice`): {what}, {subject}, {timestamp}, and
         {repeat}: the config's `notice_repeat` when an earlier change to the same file was already
-        notified in this conversation (one before this update in the verbatim part, whose subject the
-        conversation had mentioned by then), else ""."""
-        earlier = conn.execute(
-            "SELECT e.row_id FROM events e JOIN event_types t USING (event_type_id) WHERE t.name = ? "
-            "AND e.row_id < ? AND json_extract(e.payload_json, '$.subject') = ?",
-            (ENVIRONMENT_UPDATE, row_id, subject)).fetchall()
-        first = min((row for row, _, text in texts if mentions(text, subject)), default=None)
-        repeat = self.config.notice_repeat if any(first is not None and first < r for (r,) in earlier) else ""
+        notified in the verbatim part (and the agent read the file again since), else ""."""
         return {"what": payload.get("what") or f"{subject} changed", "subject": subject,
-                "timestamp": shown(payload.get("timestamp")), "repeat": repeat}
+                "timestamp": shown(payload.get("timestamp")), "repeat": self.config.notice_repeat if repeat else ""}
 
-    def own_change(self, texts, types: TypeIds, start: int, row_id: int, subject: str) -> bool:
+    def own_change(self, texts, types: TypeIds, start: int, row_id: int, subject: str, cwd=None) -> bool:
         """Whether the update at `row_id` is the agent's own doing: a tool CALL that came in with it
         (rows after `start`, the channel's last read before it) names the subject and could have
         written it (`writes`). A call that only read the file, or an output that shows it, does not
         hide someone else's change."""
         calls = types.of("tool_call")
-        return any(start < row < row_id and tid in calls and mentions(text, subject) and writes(text, subject)
+        return any(start < row < row_id and tid in calls and mentions(text, subject, cwd) and writes(text, subject)
                    for row, tid, text in texts)
 
     # ---- the rest is the sections: segmentation, ranking, builds, adoption
