@@ -10,6 +10,7 @@
   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --t-call: #1f8a3b; --t-output: #74c487; --t-gatherer: #e8b600;
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --selected: rgba(42,120,214,0.10);
 }
 @media (prefers-color-scheme: dark) {
@@ -18,6 +19,7 @@
     --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
+  --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
   }
 }
 :root[data-theme="dark"] {
@@ -25,6 +27,7 @@
   --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
+  --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -145,7 +148,10 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .chip[aria-pressed="false"] .dot { opacity: .35; }
 .chip[aria-pressed="true"] { background: var(--selected); border-color: transparent; color: var(--ink); }
 .ctx { max-height: 520px; overflow-y: auto; border-top: 1px solid var(--grid); }
-.ctx .run { display: flex; align-items: center; gap: 8px; padding: 10px 4px 4px; font-size: 12px; position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.ctx .cols { display: grid; grid-template-columns: 3px minmax(90px, 150px) minmax(0, 1fr) auto; gap: 10px; height: 26px; align-items: center;
+  padding: 0 4px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--grid); position: sticky; top: 0; background: var(--surface); z-index: 2; }
+.ctx .cols .n { text-align: right; }
+.ctx .run { display: flex; align-items: center; gap: 8px; padding: 10px 4px 4px; font-size: 12px; position: sticky; top: 26px; background: var(--surface); z-index: 1; }
 .ctx .run span:last-child { color: var(--muted); }
 .ctx .item summary { display: grid; grid-template-columns: 3px minmax(90px, 150px) minmax(0, 1fr) auto; gap: 10px; align-items: center;
   margin: 0; padding: 5px 4px; border-bottom: 1px solid var(--grid); color: var(--ink); list-style: none; }
@@ -222,9 +228,11 @@ const span = (a, b) => {
 };
 // The agent's own events by type, as the context card colors and filters them; fixed order, fixed colors.
 const TYPES = [["user_message", "User", "var(--s7)"], ["agent_message", "Assistant", "var(--s1)"],
-  ["tool_call", "Tool call", "var(--s4)"], ["tool_output", "Tool output", "var(--s3)"],
+  ["tool_call", "Tool call", "var(--t-call)"], ["tool_output", "Tool output", "var(--t-output)"],
   ["agent_reasoning", "Reasoning", "var(--s5)"], ["system", "System / developer", "var(--s8)"],
-  ["gatherer", "Gatherer messages", "var(--s2)"]];
+  ["gatherer", "Gatherer messages", "var(--t-gatherer)"]];
+// the harness's preamble is filtered like a type, though it is not among the messages
+const PREAMBLE_TYPE = ["preamble", PREAMBLE, "var(--s8)"];
 const OTHER_TYPE = ["other", "Other", "var(--muted)"];
 // ag's own messages placed among the history -- shown in it, where ag put them
 const INLINE = new Set(["File-change notices", "Other agents' requests", "Stream messages"]);
@@ -236,11 +244,11 @@ const itemType = (it) => GATHERER.has(it.group) || OUTSIDE.has(it.name) ? typeOf
   : it.name === "context" ? typeOf("system") : typeOf(it.name);
 const typeOf = (name) => TYPES.find((t) => t[0] === name) || OTHER_TYPE;
 const HISTORY = new Set(["Recent history", "Kept from before the cut"]);
-const SHOWN_KEY = "ag-dashboard-shown-types-3";   // -3: Gatherer messages got their own type, shown by default
+const SHOWN_KEY = "ag-dashboard-shown-types-4";   // -4: system/developer messages and the preamble hidden by default
 const shownTypes = (() => {                       // the reader's choice, kept in this browser; by default the
-                                                  // conversation: user, assistant, system/developer messages
+                                                  // conversation: user and assistant messages, and the Gatherer's
   try { const v = JSON.parse(localStorage.getItem(SHOWN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
-  return new Set(["user_message", "agent_message", "system", "gatherer"]);
+  return new Set(["user_message", "agent_message", "gatherer"]);
 })();
 function toggleType(type) {
   if (shownTypes.has(type)) shownTypes.delete(type); else shownTypes.add(type);
@@ -565,9 +573,9 @@ function drawCharts() {
 // The row of type chips: which items the lists show, by message type. With counts, only the types present, counted.
 function typeChips(counts) {
   const row = el("div", { class: "filters", role: "group", "aria-label": "Message types shown" }, el("span", { class: "label", text: "Shows" }));
-  for (const [type, name, swatch] of [TYPES[6], ...TYPES.slice(0, 6), OTHER_TYPE]) {   // the Gatherer's first
+  for (const [type, name, swatch] of [TYPES[6], ...TYPES.slice(0, 6), OTHER_TYPE, PREAMBLE_TYPE]) {   // the Gatherer's first
     if (counts && !counts[type]) continue;
-    if (!counts && type === OTHER_TYPE[0]) continue;
+    if (!counts && (type === OTHER_TYPE[0] || type === PREAMBLE_TYPE[0])) continue;
     const on = shownTypes.has(type);
     row.append(el("button", { type: "button", class: "chip", "aria-pressed": on ? "true" : "false", onclick: () => toggleType(type) },
       el("span", { class: "dot", style: `background:${swatch}` }), counts ? `${name} ${counts[type]}` : name));
@@ -599,35 +607,35 @@ function contextCard() {
     ...(ctx.not_counted ? [entry({ name: "not counted", tokens: ctx.not_counted }, NOT_COUNTED)] : [])];
   card.append(decomposition([...extra, ...placed(ctx.items)]));
   const history = ctx.items.filter((i) => HISTORY.has(i.group) || GATHERER.has(i.group));
-  if (history.length) {                              // which items to list, by type
-    const counts = {};
+  if (history.length || pre) {                       // which items to list, by type
+    const counts = { preamble: (ctx.preamble || []).length };
     for (const i of history) { const t = itemType(i)[0]; counts[t] = (counts[t] || 0) + 1; }
     card.append(typeChips(counts));
   }
-  const list = el("div", { class: "ctx tall", "data-keep": "context" });
-  if ((ctx.preamble || []).length) {                 // what the harness sent besides its messages: first, always shown
+  const list = el("div", { class: "ctx tall", "data-keep": "context" }, columns());
+  if ((ctx.preamble || []).length) {                 // what the harness sent besides its messages: first, its parts if chosen
+    const n = ctx.preamble.length, shown = shownTypes.has("preamble");
     list.append(el("div", { class: "run" }, el("span", { class: "key-rect", style: `background:${color(PREAMBLE)}` }), el("strong", { text: PREAMBLE }),
-      el("span", { text: `${ctx.preamble.length} part${ctx.preamble.length > 1 ? "s" : ""} · ${full(ctx.preamble.reduce((n, p) => n + p.tokens, 0))} tokens · `
+      el("span", { text: `${tally(n, shown ? n : 0, pre, shown ? pre : 0, "part")} · `
         + "what the harness sent besides its messages" })));
-    for (const p of ctx.preamble) list.append(contextItem(p));
+    if (shown) for (const p of ctx.preamble) list.append(contextItem(p));
   }
   let run = null;
   const head = (r) => {
-    const hidden = r.items - r.shown;
     r.head.replaceChildren(el("span", { class: "key-rect", style: `background:${color(r.group)}` }), el("strong", { text: label(r.group) }),
-      el("span", { text: `${r.items} item${r.items > 1 ? "s" : ""} · ${full(r.tokens)} tokens${hidden ? ` · ${hidden} not shown` : ""}` }));
+      el("span", { text: tally(r.items, r.shown, r.tokens, r.shownTokens) }));
   };
   for (const it of ctx.items) {                      // one block per run of the same kind, in order
     // ag's messages among the history belong to the run they sit in (the recent history, before any)
     const group = INLINE.has(it.group) ? (run && HISTORY.has(run.group) ? run.group : "Recent history") : it.group;
     if (!run || run.group !== group) {
-      run = { group, items: 0, shown: 0, tokens: 0, head: el("div", { class: "run" }) };
+      run = { group, items: 0, shown: 0, tokens: 0, shownTokens: 0, head: el("div", { class: "run" }) };
       list.append(run.head);
     }
     run.items++; run.tokens += it.tokens;
     const listed = GATHERER.has(it.group) ? shownTypes.has("gatherer")
       : !HISTORY.has(group) || shownTypes.has(itemType(it)[0]);
-    if (listed) { run.shown++; list.append(contextItem(it)); }
+    if (listed) { run.shown++; run.shownTokens += it.tokens; list.append(contextItem(it)); }
     head(run);
   }
   if (ctx.not_counted) {                              // what the provider counted beyond all of it
@@ -740,10 +748,16 @@ function usageCard() {
 // What an item with no words is: Claude's thinking comes back encrypted (the API reads it, no one else);
 // a model's text beside its tool call can be empty.
 const wordless = (it) => it.name === "agent_reasoning" ? "thinking, encrypted: not readable" : "no text";
+const columns = () => el("div", { class: "cols" }, el("span"), el("span", { text: "Type" }), el("span", { text: "Message" }),
+  el("span", { class: "n", text: "Tokens", title: "ag's own count" }));
+// what a run's or list's header counts: all its items and tokens, and of them what the type filters leave shown
+const tally = (n, shown, tokens, shownTokens, noun = "item") => `${full(n)} ${noun}${n !== 1 ? "s" : ""}`
+  + (shown < n ? ` (${full(shown)} shown)` : "") + ` and ${full(tokens)} tokens` + (shown < n ? ` (${full(shownTokens)} shown)` : "");
 function contextItem(it) {
   const preview = it.text.replace(/\s+/g, " ").slice(0, 220);
+  const typed = (HISTORY.has(it.group) || GATHERER.has(it.group)) && it.group !== PREAMBLE;
   const row = el("details", { class: "item" },
-    el("summary", {}, el("span", { class: "bar-key", style: `background:${(HISTORY.has(it.group) || GATHERER.has(it.group)) && it.group !== PREAMBLE ? itemType(it)[2] : color(it.group)}` }),
+    el("summary", {}, el("span", { class: "bar-key", style: `background:${typed ? itemType(it)[2] : color(it.group)}` }),
       el("span", { class: "mono kind", text: it.name }), el("span", { class: "preview" + (preview ? "" : " none"), text: preview || wordless(it) }),
       el("span", { class: "n", text: full(it.tokens) })));
   row.addEventListener("toggle", () => {             // the whole text, only once asked for
@@ -805,8 +819,8 @@ function showMessages(body, h) {
   const items = h.items.map((i) => ({ ...i, group: "Recent history" }));
   const listed = items.filter((it) => shownTypes.has(itemType(it)[0]));
   const tokens = items.reduce((n, i) => n + i.tokens, 0);
-  const box = el("div", { class: "ctx tall" }, el("div", { class: "run" }, el("strong", { text: `${full(items.length)} messages` }),
-    el("span", { text: `${full(tokens)} tokens${items.length - listed.length ? ` · ${items.length - listed.length} not shown` : ""}`
+  const box = el("div", { class: "ctx tall" }, columns(), el("div", { class: "run" }, el("strong", { text: "Messages" }),
+    el("span", { text: tally(items.length, listed.length, tokens, listed.reduce((n, i) => n + i.tokens, 0), "message")
       + (h.more ? ` · ${full(h.more)} more not loaded` : "") })));
   for (const it of listed) box.append(contextItem(it));
   if (!items.length) box.append(el("div", { class: "desc", text: "No messages yet." }));
