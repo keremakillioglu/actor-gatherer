@@ -6,6 +6,7 @@
     made items  make_item, made_items
     read log    Ref, record_read, last_read
     polls       polled_at, mark_polled
+    pending     record_pending, pending, clear_pending
 
 What a property means is not known here: an event carries the values its
 type declares, each in its column, NULL when unset. Two filters read them
@@ -549,3 +550,49 @@ def last_inserted_at(conn: sqlite3.Connection) -> Optional[str]:
     format, whatever its properties), or None when it has none."""
     row = conn.execute("SELECT max(inserted_at) FROM events").fetchone()
     return row[0] if row else None
+
+
+# ---------------------------------------------------------------- pending
+
+def record_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], events: List[dict],
+                   answer: Optional[str] = None) -> int:
+    """Keep an answer's events -- {"type", "payload", "text"?} -- in `_pending` with the
+    properties of the call it answered, until that channel's next call (`clear_pending`).
+    Returns how many were kept."""
+    names, values = _given(conn, properties, "a pending event")
+    rows = [(_now(), answer, e["type"], json.dumps(e["payload"], ensure_ascii=False),
+             e.get("text") if isinstance(e.get("text"), str) else None, *values) for e in events]
+    with conn:
+        conn.executemany(f"INSERT INTO _pending (received_at, answer, type, payload_json, text{_columns(names)}) "
+                         f"VALUES (?, ?, ?, ?, ?{', ?' * len(names)})", rows)
+    return len(rows)
+
+
+def pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = None) -> List[dict]:
+    """The pending events with these properties -- each given one its value (None: unset),
+    those not given any value -- oldest first: {pending_id, received_at, answer, type,
+    payload, text, properties}."""
+    names = property_names(conn)
+    given = {n: v for n, v in (properties or {}).items() if n in names}
+    if any(v is not None for n, v in (properties or {}).items() if n not in names):
+        return []                                  # a property no event has: none has it set
+    out = []
+    for r in conn.execute(f"SELECT pending_id, received_at, answer, type, payload_json, text{_columns(names)} "
+                          f"FROM _pending WHERE {_same(list(given))}1 ORDER BY pending_id",
+                          _unset_is_empty(given.values())):
+        out.append({"pending_id": r[0], "received_at": r[1], "answer": r[2], "type": r[3],
+                    "payload": json.loads(r[4]), "text": r[5],
+                    "properties": {n: v for n, v in zip(names, r[6:]) if v is not None}})
+    return out
+
+
+def clear_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]]) -> int:
+    """Delete the pending events with exactly these properties (`_same`): a call with them
+    has stored its events, the answers they were kept for among them. How many."""
+    names = property_names(conn)
+    if any(v is not None for n, v in (properties or {}).items() if n not in names):
+        return 0
+    values = tuple((properties or {}).get(n) for n in names)
+    with conn:
+        cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}1", _unset_is_empty(values))
+    return cur.rowcount

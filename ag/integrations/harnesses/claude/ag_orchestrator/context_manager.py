@@ -71,7 +71,7 @@ from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
 from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load_adaptor
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, preamble_of, report_measured
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, pending_ag, preamble_of, report_measured
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
 from ..adaptor.to_events import Continuity, blocks_of
@@ -84,6 +84,7 @@ REQUEST_CLASS_HEADER = "x-claude-code-request-class"   # main, subagent, workflo
 SIDE_CLASSES = ("auxiliary", "side_reply")       # Claude Code's side calls, not the session's turns
 SUGGESTION = "[SUGGESTION MODE:"                 # how Claude Code's prompt suggestion asks
 COMPACTION = "CRITICAL: Respond with TEXT ONLY"  # how Claude Code's compaction call asks for its summary
+ANSWERED = "claude_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
 COUNT_FROM = 0.5            # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
@@ -232,9 +233,13 @@ class ClaudeContextManager:
                                         [{"role": "user", "content": instruction}], adaptor, mode, "compaction",
                                         "compaction")
 
+        cwd = cwd_of(messages) or self.cwd
+        if isinstance(getattr(request, "state", None), dict):
+            request.state[ANSWERED] = (gatherer, channel, cwd)
+
         async def read():
             out = {}
-            new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd_of(messages) or self.cwd,
+            new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd,
                                       messages, adaptor, out=out, limit=getattr(request, "limit", None),
                                       preamble=preamble_of({"system": body.get("system"), "tools": body.get("tools")}))
             self.log(gatherer, f"[{channel}] {note}")
@@ -282,6 +287,23 @@ class ClaudeContextManager:
     async def measured(self, request, tokens: Optional[int]) -> None:
         """The hook server's report, once the answer is back: the call's input tokens, to the read."""
         await report_measured(self.ag_clients, request, tokens)
+
+    async def answered(self, request, status: int, answer: dict) -> None:
+        """The hook server's report, once Claude Code has the whole answer to one of the session's
+        own calls: the answer's events kept as pending (the server's `pending`) until the channel's
+        next call stores them as events -- so a reader of the gatherer sees the reply that ends a
+        turn, which no call carries until the user writes again, and a tool call while it runs. A
+        failed answer, or one with no content, is not kept."""
+        kept = (getattr(request, "state", None) or {}).get(ANSWERED)
+        if kept is None or status != 200:
+            return
+        if not isinstance(answer, dict) or answer.get("error") or not answer.get("output_items"):
+            return
+        gatherer, channel, cwd = kept
+        note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
+                                [{"role": "assistant", "content": answer["output_items"]}], self.adaptor,
+                                answer.get("response_id"))
+        self.log(gatherer, f"[{channel}] answered ({answer.get('status')}): {note}")
 
     async def close(self) -> None:
         """Let counts still being taken finish, then stop every gatherer's server."""

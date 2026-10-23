@@ -78,3 +78,29 @@ export async function call_ag<M>(server: Requester, where: Where, messages: M[],
 		return { messages: null, note: `could not make messages: ${(err as Error).message}` };
 	}
 }
+
+/**
+ * What the model answered -- `answer`, the harness's messages it makes -- through the adaptor's `toEvents`, kept by
+ * the server as pending (its `pending`): seen by a reader of the gatherer until the next call with these properties
+ * stores its events. The properties are a call's (CWD from `where.cwd`, as `call_ag` sets it), so that call's are
+ * what clears them. A note; it never throws. call_ag.py's `pending_ag` is the same in Python.
+ */
+export async function pending_ag<M>(server: Requester, where: Where, answer: M[], adaptor: Adaptor<M>,
+	answerId?: string | null): Promise<string> {
+	const properties = where.cwd ? { ...where.properties, [CWD]: where.cwd } : where.properties;
+	let events: Event[];
+	try {
+		events = adaptor.toEvents(answer);
+	} catch (err) {
+		return `could not make events: ${(err as Error).message}; nothing kept`;
+	}
+	if (!events.length) return "no events; nothing kept";
+	const body: Record<string, unknown> = {
+		gatherer: where.gatherer, properties,
+		events: events.map((e) => (e.text === undefined ? { type: e.type, payload: e.payload } : { type: e.type, payload: e.payload, text: e.text })),
+	};
+	if (answerId) body.answer = answerId;
+	const kept = await server.request("pending", body).catch((err: Error) => ({ error: err.message }) as Answer);
+	if (kept.error) return `server: ${kept.error}; nothing kept`;
+	return `${kept.kept} events pending`;
+}

@@ -7,6 +7,8 @@
  *                opencode runs it before every model call and builds the request from the
  *                array it hands it: the context manager's messages are spliced into that
  *                array, and nothing opencode stores changes
+ *   event        each assistant message, once it has completed: kept as pending until the
+ *                session's next call stores it
  *   config       opencode's own automatic compaction and pruning of old tool outputs are
  *                switched off: condensing the history is the context manager's job
  *                (AG_OPENCODE_COMPACTION=allow leaves them as configured)
@@ -46,6 +48,10 @@ async function server(input: { directory: string }, options?: Record<string, unk
 		config: async (cfg: { compaction?: Record<string, unknown> }) => {
 			if (process.env.AG_OPENCODE_COMPACTION === "allow") return;
 			cfg.compaction = { ...cfg.compaction, auto: false, prune: false };
+		},
+
+		event: async ({ event }: { event: unknown }) => {
+			await ag.event(event, input.directory); // the model's answers, once each has completed
 		},
 
 		"experimental.chat.system.transform": async (input: { sessionID?: string }, output: { system: string[] }) => {

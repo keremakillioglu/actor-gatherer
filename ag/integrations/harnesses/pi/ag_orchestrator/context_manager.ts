@@ -18,7 +18,7 @@
  */
 
 import { type Answer, AgClient } from "../../../tools/ag_connection/ag_client.ts";
-import { type Preamble, type Requester, call_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
+import { type Preamble, type Requester, call_ag, pending_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
 import { type Adaptor, CHANNEL } from "../../../tools/ag_orchestrator/adaptor.ts";
 import { Measurements, n } from "../../../tools/ag_orchestrator/measured.ts";
 import { PiAdaptor } from "../adaptor/adaptor.ts";
@@ -79,6 +79,17 @@ export class PiContextManager {
 		this.measurements.keep(channel, routed.messages !== null ? routed.readId : undefined, messages);
 		this.answering = routed.messages !== null;
 		return routed.messages;
+	}
+
+	/**
+	 * pi's message once it has ended (`message_end`): an assistant message -- what the model answered -- kept as
+	 * pending (the server's `pending`) until the session's next call stores it, so a reader of the gatherer sees
+	 * the turn's last reply, which no call carries until the user writes again, and a tool call while it runs.
+	 * pi's other messages, and an answer that failed or was stopped, are not kept. A note, or null for none.
+	 */
+	async answered(message: any, where: Where, cwd?: string): Promise<string | null> {
+		if (message?.role !== "assistant" || message.stopReason === "error" || message.stopReason === "aborted") return null;
+		return pending_ag(this.server, { ...where, cwd }, [message], this.adaptor, message.responseId);
 	}
 
 	/** Stop the server: it finishes what it is answering and exits. */

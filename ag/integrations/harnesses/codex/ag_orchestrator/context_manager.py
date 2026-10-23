@@ -37,12 +37,13 @@ from typing import Callable, Optional, Union
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, preamble_of, report_measured
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, pending_ag, preamble_of, report_measured
 from .ag_clients import AgClients
 from ..adaptor.adaptor import CodexAdaptor
 
 CWD = re.compile(r"<cwd>\s*(.*?)\s*</cwd>", re.S)
 ROOT = re.compile(r"<workspace_roots>\s*<root>\s*(.*?)\s*</root>", re.S)
+ANSWERED = "codex_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
 
 
 def load_adaptor(spec: str) -> Adaptor:
@@ -129,8 +130,11 @@ class CodexContextManager:
             return None
         gatherer, channel = (request.label, thread) if request.label else (thread, thread)
         items, out = body["input"], {}
+        cwd = cwd_of(items) or self.cwd
+        if isinstance(getattr(request, "state", None), dict):
+            request.state[ANSWERED] = (gatherer, channel, cwd)
         messages, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
-                                       cwd_of(items) or self.cwd, items, self.adaptor, out=out,
+                                       cwd, items, self.adaptor, out=out,
                                        limit=getattr(request, "limit", None),
                                        preamble=preamble_of({"instructions": body.get("instructions"), "tools": body.get("tools")}))
         self.log(gatherer, f"[{channel}] {note}")
@@ -142,6 +146,22 @@ class CodexContextManager:
     async def measured(self, request, tokens: Optional[int]) -> None:
         """The hook server's report, once the answer is back: the call's input tokens, to the read."""
         await report_measured(self.ag_clients, request, tokens)
+
+    async def answered(self, request, status: int, answer: dict) -> None:
+        """The hook server's report, once codex has the whole answer to a model call: its output items,
+        as events, kept as pending (the server's `pending`) until the thread's next call stores them
+        -- so a reader of the gatherer sees the turn's last reply, which no call carries until the
+        user writes again, and a tool call while it runs. A failed answer, or one with no output, is
+        not kept."""
+        kept = (getattr(request, "state", None) or {}).get(ANSWERED)
+        if kept is None or status != 200:
+            return
+        if not isinstance(answer, dict) or answer.get("error") or not answer.get("output_items"):
+            return
+        gatherer, channel, cwd = kept
+        note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
+                                answer["output_items"], self.adaptor, answer.get("response_id"))
+        self.log(gatherer, f"[{channel}] answered ({answer.get('status')}): {note}")
 
     async def close(self) -> None:
         """Stop every gatherer's server."""
