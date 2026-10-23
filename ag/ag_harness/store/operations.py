@@ -56,7 +56,8 @@ def register_type(conn: sqlite3.Connection, event_type: EventType) -> int:
         type_id = conn.execute("SELECT event_type_id FROM event_types WHERE name = ?",
                                (event_type.name,)).fetchone()[0]
         conn.executemany("INSERT INTO event_type_properties (event_type_id, name, required, identifies) "
-                         "VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
+                         "VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET identifies = "
+                         "max(identifies, excluded.identifies)",        # declared identifying since: it is
                          [(type_id, p.name, int(bool(p.required)), int(bool(p.identifies)))
                           for p in event_type.properties])
         index(conn, property_names(conn))              # the identity, if this type changed it

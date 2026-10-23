@@ -580,6 +580,12 @@ class PropertiesTest(unittest.TestCase):
         self.assertIsNotNone(self.put(1, "e", user="u", lane="a"))
         self.assertIsNotNone(self.put(1, "e", user="v", lane="a"))           # now user identifies it too
 
+    def test_a_type_declared_again_as_identifying_becomes_so(self):
+        self.m.add_event_type("p", EventType("mark", (Property("topic"),)))
+        self.assertEqual(schema.identifying_names(self.conn), ["lane"])
+        self.m.add_event_type("p", EventType("mark", (Property("topic", identifies=True),)))
+        self.assertEqual(schema.identifying_names(self.conn), ["lane", "topic"])
+
     def test_a_database_holding_one_event_twice_by_a_new_identity_is_refused(self):
         self.m.add_event_type("p", EventType("mark", (Property("topic"),)))
         tid = {t.name: t.id for t in self.m.event_types("p")}["mark"]
