@@ -31,6 +31,18 @@ a later user message does not move it and the context only grows at its end. Req
 before the build's mark are in its index section instead. All three are made items,
 remade on every read and never reused as sections.
 
+Every context opens, after the harness's own set-up, with the GATHERER GUIDE
+(`gatherer_guide`, `layout.guide`): what ag adds to the context -- the sections, the
+parallel requests, notices, stream messages, left-out notes -- and where the full history
+is. On every read, with or without a build; one made item, the same while its text is.
+
+A channel with no build of its own, in a gatherer where another channel has a ready one
+(`tables.joinable`), JOINS at its first user message: a `join` build ranks the other
+channels' tasks against its request and marks their requests as seen, and the read waits
+for it. Its sections are the other channels' requests and related tasks, its own history
+all the running task, verbatim -- so a new session starts from what the gatherer's others
+did, and their requests before the mark are an index within its budget, not a message each.
+
 All the model gets with a call -- the sections, the pinned rows, the running
 task with all of the above among it, the history's preamble, the sections'
 overview, and what the harness sends besides the context (its system prompt
@@ -74,6 +86,7 @@ from .events import CONTEXT_STREAM, ENVIRONMENT_UPDATE, EVENT_TYPES
 PARALLEL_REQUEST = "parallel_request"
 CURRENT_REQUEST = "Current request"   # the running task a `limit` build starts at the last user message
 LEFT_OUT = "left_out"           # a step stubbed to keep the context within max_context_tokens
+GUIDE = "gatherer_guide"        # the guide every context opens with
 AGENT_STEP = ("agent_message", "tool_call", "agent_reasoning")   # what an agent step may start with
 
 # A tool call that could have WRITTEN a file it names. Reading one (cat, head, grep, wc, awk, a script
@@ -116,6 +129,11 @@ def shown(timestamp) -> str:
     if isinstance(timestamp, (int, float)) and not isinstance(timestamp, bool) and timestamp > 10 ** 9:
         return datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     return str(timestamp)
+
+
+def joined(build: Optional[dict]) -> bool:
+    """Whether `build` is a channel's join: its start from the gatherer's other channels."""
+    return bool(build) and build.get("reason") == tables.JOIN
 
 
 def cleaned_of(tasks, turns) -> dict:
@@ -270,8 +288,8 @@ class ProactiveContextManager(Policy):
         if at_user or over:
             latest = tables.build_for(conn, ch)
             started = self.start_due(conn, types, read, rows, latest, build, size, over)
-            # over the limit, the read waits for its build however long it takes (up to build_timeout)
-            seconds = cfg.build_timeout if over and started == "build" else cfg.sync_seconds
+            # over the limit, or joining, the read waits for its build however long it takes (up to build_timeout)
+            seconds = cfg.build_timeout if (over and started == "build") or started == "join" else cfg.sync_seconds
             if started and seconds > 0 and self.wait(conn, ch, rows[-1].row_id, started, seconds):
                 latest = tables.build_for(conn, ch)
                 build, made = self.choose(conn, types, rows, latest, last, True, read)
@@ -303,7 +321,7 @@ class ProactiveContextManager(Policy):
     def assemble(self, conn, rows, build: Optional[dict], made: List[int], types: TypeIds,
                  read: Read, stub: bool = False) -> Tuple[list, list, int, int]:
         """(items, refs, tokens, own): the sectioned context -- preamble, the
-        section items, the pinned rows of the condensed span (the newest that
+        gatherer guide (`guide_item`), the section items, the pinned rows of the condensed span (the newest that
         fit keep_pinned_tokens), the running task verbatim (or the whole
         history before a build; after a build that cut the running task,
         only what came after it) -- with every stream message of the
@@ -319,7 +337,7 @@ class ProactiveContextManager(Policy):
         max_context_tokens are checked against: the context, and what the
         harness sends besides it (`read.fixed_tokens`, its system prompt and
         tools). `own` is the part the policy arranges, logged as the read's
-        size: all of it but the harness's, the history's preamble and the
+        size: all of it but the harness's, the history's preamble, the guide and the
         sections' fixed overview. With `stub`, over the limit, agent steps of
         the verbatim part are replaced by notes naming their rows (`stubbed`):
         the read's last resort, once it has built what it could."""
@@ -336,17 +354,20 @@ class ProactiveContextManager(Policy):
                                         cfg.keep_pinned_tokens)
             tail = [r for r in body if r.row_id >= cut]
             made_items = conn.made_items(made)
-        items = ([r.payload for r in preamble] + [made_items[m][1] for m in made] + [r.payload for r in pinned])
-        refs = ([Ref(row_id=r.row_id) for r in preamble] + [Ref(made_id=m) for m in made]
-                + [Ref(row_id=r.row_id) for r in pinned])
-        fixed = self.tokenizer.count(layout.overview(cfg, conn.path)) if made else 0
+        guide = self.guide_item(conn, channel_of(read))
+        items = ([r.payload for r in preamble] + [g[1] for g in guide] + [made_items[m][1] for m in made]
+                 + [r.payload for r in pinned])
+        refs = ([Ref(row_id=r.row_id) for r in preamble] + [Ref(made_id=g[0]) for g in guide]
+                + [Ref(made_id=m) for m in made] + [Ref(row_id=r.row_id) for r in pinned])
+        fixed = self.tokenizer.count(layout.overview(cfg, joined(build))) if made else 0
         tokens = sum(r.tokens for r in pinned) + sum(made_items[m][2] for m in made) - fixed
         made_here = (self.shown_messages(conn, types, channel_of(read), cut)
                      + self.notices(conn, types, channel_of(read), cut, preamble + pinned + tail, read.properties))
         entries = list(self.interleave(tail, made_here, types))
         shown = self.parallel_requests(conn, types, channel_of(read), build["parallel_mark"] if build else 0)
         tokens += sum(cost[1] if kind == "made" else cost for kind, _, _, cost in entries) + sum(c for _, _, c, _ in shown)
-        outside = sum(r.tokens for r in preamble) + fixed + read.fixed_tokens     # the model gets these too
+        outside = (sum(r.tokens for r in preamble) + sum(g[2] for g in guide) + fixed
+                   + read.fixed_tokens)                                          # the model gets these too
         tokens += outside
         if stub and tokens > cfg.max_context_tokens:
             entries, tokens = self.stubbed(conn, entries, tokens, types, read)
@@ -360,6 +381,22 @@ class ProactiveContextManager(Policy):
                 items.insert(at, item)                       # and the oldest at one place comes first
                 refs.insert(at, Ref(made_id=made_id))
         return items, refs, tokens, tokens - outside
+
+    def guide_item(self, conn, channel_id) -> List[tuple]:
+        """[(made_id, item, tokens)] of the gatherer guide for the channel's reads, or [] with none
+        configured. One made item while its text stays the same: the last one made for the channel,
+        if it is that text, else a new one."""
+        text = layout.guide(self.config, conn.path)
+        if not text:
+            return []
+        item = self.format.make_section(text, GUIDE)
+        col = property_column(CHANNEL)
+        found = conn.execute(f"SELECT made_id FROM _made_items WHERE name = ? AND ifnull({col}, '') = ? "
+                             f"ORDER BY made_id DESC LIMIT 1", (GUIDE, tables.key(channel_id))).fetchone()
+        made_id = found[0] if found else None
+        if made_id is None or conn.made_items([made_id])[made_id][1] != item:
+            made_id = conn.make_item(item, self.tokenizer, properties=channel.of(channel_id), name=GUIDE)
+        return [(made_id, item, conn.made_items([made_id])[made_id][2])]
 
     @staticmethod
     def newest_within(rows: list, budget: int) -> list:
@@ -644,7 +681,7 @@ class ProactiveContextManager(Policy):
         names = conn.made_items(made)
         return tables.get_build(conn, used), [m for m in made
                                               if names[m][0] not in ("context_stream", "environment_update", PARALLEL_REQUEST,
-                                                                     LEFT_OUT)]
+                                                                     LEFT_OUT, GUIDE)]
 
     def adopt(self, conn, types: TypeIds, rows, build: dict, read: Read) -> Optional[List[int]]:
         """Lay `build`'s analysis out as sections and store them as made
@@ -653,7 +690,11 @@ class ProactiveContextManager(Policy):
         cfg, tok, groups, ch = self.config, self.tokenizer, self.groups, channel_of(read)
         _, turns = history.split(rows, types, groups, tok)
         with_cleaned(conn, [t.entries[0] for t in turns])
-        tasks = tasks_tool.locate(tables.tasks_for(conn, ch), turns)
+        joining = joined(build)
+        if joining:                                  # its own history, all of it, is the running task
+            tasks = [self.joined_task(turns, ch)] if turns else []
+        else:
+            tasks = tasks_tool.locate(tables.tasks_for(conn, ch), turns)
         if not tasks:
             tables.settle(conn, build["build_id"], "nothing", error="no tasks at adoption")
             return None
@@ -669,17 +710,18 @@ class ProactiveContextManager(Policy):
         others = [(c, e) for c, e in history.other_requests(conn, types, groups, tok, ch) if e.row_id <= mark]
         with_cleaned(conn, [e for _, e in others])
         sections = layout.build_sections(turns, tasks, ranked, earlier, others, turns_by_channel, ch, cfg, tok,
-                                         conn.path, build["through_row"], mark)
-        cut = self.cut_for(rows, types, tasks[-1], sections, conn.path, read.fixed_tokens)
+                                         conn.path, build["through_row"], mark, joined=joining)
+        cut = self.cut_for(rows, types, tasks[-1], sections, conn.path, read.fixed_tokens, joining)
         if cut != sections.open_from_row:
             sections = layout.build_sections(turns, tasks, ranked, earlier, others, turns_by_channel, ch, cfg, tok,
-                                             conn.path, build["through_row"], mark, cut_row=cut)
-        if len(tasks) < 2 and sections.open_from_row == tasks[-1].first_row:
+                                             conn.path, build["through_row"], mark, cut_row=cut, joined=joining)
+        if not joining and len(tasks) < 2 and sections.open_from_row == tasks[-1].first_row:
             tables.settle(conn, build["build_id"], "nothing", error="fewer than two tasks, and no cut inside the one")
             return None
         if sections.open_from_row != build["open_from_row"]:
             tables.set_cut(conn, build["build_id"], sections.open_from_row)
-        if cfg.require_smaller and build.get("reason") != tables.COMPACTION:   # compacted: not sent whole again
+        # compacted: not sent whole again; joined: the sections replace nothing of its own, they add the others' work
+        if cfg.require_smaller and build.get("reason") not in (tables.COMPACTION, tables.JOIN):
             why = self.not_smaller(sections, rows, turns, types)
             if why:
                 tables.settle(conn, build["build_id"], "nothing", error=why)
@@ -691,7 +733,8 @@ class ProactiveContextManager(Policy):
                 for name, text in sections.sections]
         return made
 
-    def cut_for(self, rows, types: TypeIds, running, sections, db_path, fixed_tokens: int = 0) -> int:
+    def cut_for(self, rows, types: TypeIds, running, sections, db_path, fixed_tokens: int = 0,
+                joining: bool = False) -> int:
         """Where the verbatim part should start: the running task's start -- or, when the sections, the
         pinned rows and the running task from there, with what the model gets besides them (the
         history's preamble, the harness's `fixed_tokens`), would be over max_context_tokens, after the
@@ -702,12 +745,13 @@ class ProactiveContextManager(Policy):
         task_rows = [r for r in body if r.row_id >= running.first_row]
         if not task_rows:
             return running.first_row
-        held = sum(tok.count(text) for _, text in sections.sections) - tok.count(layout.overview(cfg, db_path))
+        overview = tok.count(layout.overview(cfg, joining))
+        held = sum(tok.count(text) for _, text in sections.sections) - overview
         pinned_ids = types.of(*self.groups.pinned)
         pinned = self.newest_within([r for r in body if r.row_id < running.first_row and r.type.id in pinned_ids],
                                     cfg.keep_pinned_tokens)
         whole = held + sum(r.tokens for r in pinned) + sum(r.tokens for r in task_rows) \
-            + sum(r.tokens for r in preamble) + tok.count(layout.overview(cfg, db_path)) + fixed_tokens
+            + sum(r.tokens for r in preamble) + overview + tok.count(layout.guide(cfg, db_path)) + fixed_tokens
         return running.first_row if whole <= cfg.max_context_tokens else task_rows[-1].row_id + 1
 
     def not_smaller(self, sections, rows, turns, types: TypeIds) -> Optional[str]:
@@ -720,12 +764,24 @@ class ProactiveContextManager(Policy):
         return None
 
     def start_due(self, conn, types: TypeIds, read: Read, rows, latest, in_use, size: int, over: bool = False) -> str:
-        """Start what is due in the background: "build", "check" or "" (the build thresholds) -- at a
-        user message, or at any read when the context is `over` max_context_tokens: a build then,
-        or the one already running ("build", to wait for)."""
+        """Start what is due in the background: "build", "check", "join" or "" (the build thresholds) --
+        at a user message, or at any read when the context is `over` max_context_tokens: a build then,
+        or the one already running ("build", to wait for). A channel with no build at all (`latest`
+        None: neither its own nor the no-channel pool's) joins, when another channel has one: a
+        `join` build, whatever the context's size, which the read waits for."""
         cfg, ch = self.config, channel_of(read)
         if self.jobs is None:                      # no background work
             return ""
+        if latest is None and tables.joinable(conn, ch):
+            build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.JOIN)
+            if build_id is None:
+                return ""
+            try:
+                self.jobs.start(read.gatherer_id, channel.of(ch), "build", build_id)
+            except OSError as exc:
+                tables.fail_build(conn, build_id, f"could not start the worker: {exc}")
+                return ""
+            return "join"
         if latest and latest["status"] == "running" and time.time() - latest["started_at"] < cfg.build_timeout:
             return "build" if over else ""
         if latest and latest["status"] == "ready" and (not in_use or latest["build_id"] != in_use["build_id"]):
@@ -789,6 +845,7 @@ class ProactiveContextManager(Policy):
 
     def wait(self, conn, channel_id, row_id: int, started: str, seconds: float) -> bool:
         deadline = time.monotonic() + seconds
+        started = "build" if started == "join" else started
         while True:
             if started == "check":
                 verdict = tables.boundary_verdict(conn, row_id)
@@ -845,7 +902,10 @@ class ProactiveContextManager(Policy):
             through_row = rows[-1].row_id if rows else 0
             mark = conn.high_water()
             preamble, turns = history.split(rows, types, groups, tok)
-            limit = (tables.get_build(conn, build_id) or {}).get("reason") in (tables.LIMIT, tables.COMPACTION)
+            reason = (tables.get_build(conn, build_id) or {}).get("reason")
+            if reason == tables.JOIN:
+                return self.join_build(conn, types, channel_id, turns, build_id, through_row, mark)
+            limit = reason in (tables.LIMIT, tables.COMPACTION)
             if limit:
                 if not turns:
                     return self.nothing(conn, build_id, through_row, "no turns")
@@ -883,6 +943,31 @@ class ProactiveContextManager(Policy):
             return tables.get_build(conn, build_id)
         finally:
             conn.close()
+
+    def join_build(self, conn, types: TypeIds, channel_id, turns, build_id: int, through_row: int,
+                   mark: int) -> Optional[dict]:
+        """A channel's join: no segmentation -- its own history is all the running task -- and the
+        other channels' tasks ranked against it (when parallel_related_tasks), their requests up to
+        `mark` seen. Its tasks are not saved: the channel's first build of its own segments from
+        nothing."""
+        cfg = self.config
+        if not turns:
+            return self.nothing(conn, build_id, through_row, "no turns")
+        candidates = self.other_tasks(conn, types, channel_id)[0] if cfg.parallel_related_tasks else []
+        ranked = ranking.rank(candidates, ranking.rank_target(turns, cfg.ranking), self.llm, cfg.ranking,
+                              own_channel=channel_id, top_n=len(candidates)) if candidates else []
+        tables.settle(conn, build_id, "ready", through_row=through_row, open_from_row=turns[0].first_row,
+                      ranking=[(tables.key(t.channel_id), t.task_index) for t in ranked], parallel_mark=mark)
+        return tables.get_build(conn, build_id)
+
+    @staticmethod
+    def joined_task(turns, channel_id) -> history.Task:
+        """The one task of a channel that joined: all its turns, running."""
+        first, last = turns[0], turns[-1]
+        task = history.Task(CURRENT_REQUEST, first.user_text.strip()[:200], first.first_row, last.last_row,
+                            first.index, last.index)
+        task.channel_id = channel_id
+        return task
 
     def limit_tasks(self, conn, channel_id, turns) -> Tuple[List, bool, List]:
         """(the tasks, whether segmentation failed, the tasks to summarise) of a `limit` build: the

@@ -113,9 +113,10 @@ class Base(unittest.TestCase):
         self.saved = paths.TRACE_DIR
         paths.TRACE_DIR = os.path.join(self.tmp.name, "traces")
         self.llm = ScriptedLLM()
-        # The test histories are tiny: every build is due, none is refused.
+        # The test histories are tiny: every build is due, none is refused. No gatherer guide: these
+        # tests are of the history the context is made from (the guide's own are in test_join.py).
         self.cfg = ProactiveContextManagerConfig(min_context_tokens=0, build_every_request=True, require_smaller=False,
-                                      sync_seconds=0)
+                                      sync_seconds=0, gatherer_guide="")
         self.policy = ProactiveContextManager(codex.FORMAT, self.llm, self.cfg)
         self.m = Manager(self.policy)
         self.m.init("s")
@@ -155,7 +156,7 @@ def note(n, text="<environment_context>cwd</environment_context>"):
 SMALL = dict(min_context_tokens=0, require_smaller=False, sync_seconds=0, max_context_tokens=3000,
              all_task_tokens=400, parallel_index_tokens=200, keep_temporal_relevant_tokens=200,
              keep_task_relevant_tokens=200, keep_previous_task_tokens=300, keep_so_far_tokens=300,
-             keep_pinned_tokens=200, build_timeout=0.3)
+             keep_pinned_tokens=200, build_timeout=0.3, gatherer_guide="")
 
 
 def long_turn(steps, start=1, words=60):
@@ -978,7 +979,8 @@ from test_core import ScriptedLLM
 from ag.ag_harness import Manager
 def make():
     return Manager(ProactiveContextManager(codex.FORMAT, ScriptedLLM(new_task=True),
-                        ProactiveContextManagerConfig(min_context_tokens=0, build_every_request=True, require_smaller=False)))
+                        ProactiveContextManagerConfig(min_context_tokens=0, build_every_request=True, require_smaller=False,
+                                                      gatherer_guide="")))
 """)
         self.policy.jobs = worker.WorkerJobs("factory_mod:make", [self.tmp.name], log=paths.worker_log)
         self.put(PREAMBLE + conversation(8) + [user("q", 50)])
@@ -1160,7 +1162,8 @@ from test_core import ScriptedLLM
 from ag.ag_harness import Manager
 def make():
     return Manager(ProactiveContextManager(codex.FORMAT, ScriptedLLM(new_task={new_task!r}),
-                        ProactiveContextManagerConfig(min_context_tokens=0, build_every_request=True, require_smaller=False)))
+                        ProactiveContextManagerConfig(min_context_tokens=0, build_every_request=True, require_smaller=False,
+                                                      gatherer_guide="")))
 """)
         self.policy.jobs = worker.WorkerJobs("factory_mod:make", [self.tmp.name], log=paths.worker_log)
 
@@ -1216,7 +1219,8 @@ from test_core import ScriptedLLM
 from ag.ag_harness import Manager
 def make():
     return Manager(ProactiveContextManager(codex.FORMAT, ScriptedLLM(new_task=True),
-                        ProactiveContextManagerConfig(min_context_tokens=0, build_every_request=True, require_smaller=False)))
+                        ProactiveContextManagerConfig(min_context_tokens=0, build_every_request=True, require_smaller=False,
+                                                      gatherer_guide="")))
 """)
         self.policy.jobs = worker.WorkerJobs("factory_mod:make", [self.tmp.name], log=paths.worker_log)
         self.put(PREAMBLE + conversation(8) + [user("q", 50)])

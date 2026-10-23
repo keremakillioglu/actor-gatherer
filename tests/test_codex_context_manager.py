@@ -369,12 +369,16 @@ class RealServerTest(ProxyBase):
             fh.write("x = 1\n")
         first = [DEV, env(work), user("please read a.py", 1), *cat("a.py", 1)]
         await self.call(first, thread="real")
-        self.assertEqual(self.received[-1][2]["input"], first)               # nothing to add yet
+        sent = self.received[-1][2]["input"]
+        guide = [i for i in sent if json.dumps(i).find("About this context, from ag.") >= 0]
+        self.assertEqual(len(guide), 1)                                      # the gatherer guide, after the set-up
+        self.assertEqual(sent.index(guide[0]), 2)
+        self.assertEqual([i for i in sent if i not in guide], first)         # nothing else to add yet
         with open(target, "a") as fh:
             fh.write("y = 2\n")
         second = first + [agent("ok", 1), user("and now?", 2)]
         await self.call(second, thread="real")
-        sent = self.received[-1][2]["input"]
+        sent = [i for i in self.received[-1][2]["input"] if i not in guide]
         self.assertEqual(sent[:len(second)], second)
         self.assertEqual(sent[-1]["role"], "developer")
         self.assertTrue(sent[-1]["content"][0]["text"].startswith("File a.py was changed on disk"))

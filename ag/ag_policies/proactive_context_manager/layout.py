@@ -50,12 +50,21 @@ SO_FAR_NOTE = ("The task you are in the middle of, from its request to your late
                "fit. Carry on from where it leaves off; anything after it is verbatim.")
 CLIPPED = "\n\n[...the middle of this section is left out to fit its budget...]\n\n"
 
-OVERVIEW = """\
+OPENING = """\
 This session has run for longer than fits here, so the history before the current task
 has been put together as the sections below, oldest and least detailed first. The
 current task follows them as it happened -- or, if it has run long, its earlier steps are
-in the last section, This task so far, and the rest follows as it happened.
+in the last section, This task so far, and the rest follows as it happened."""
 
+# A session that joined a gatherer whose other sessions had already built: it starts from their work.
+JOINED_OPENING = """\
+This session is new, but the gatherer's other sessions worked before it or alongside it,
+for the same user on the same material. What they did has been put together as the
+sections below: the requests made in them, and their earlier tasks most related to this
+session's work. This session's own history follows them as it happened -- or, if it has
+run long, its earlier steps are in the last section, This task so far."""
+
+OVERVIEW = """\
 The user's messages in these sections are PRUNED: the boilerplate that wraps a request --
 a notice repeated on every message, a standard instruction about how or where to deliver
 the answer -- is removed, and the words of the request itself are kept exactly. The exact
@@ -104,8 +113,8 @@ one."""
 
 DB_HINT = """
 
-Every item is labelled `[id N]`. The full history -- including everything these
-sections leave out -- is in the SQLite database
+Items in the history sections are labelled `[id N]`. The full history of every session in
+this gatherer -- including everything the sections leave out -- is in the SQLite database
 
     {db_path}
 
@@ -120,8 +129,18 @@ here is worth looking for there before concluding it did not happen:
     sqlite3 {db_path} "SELECT e.row_id, t.name, coalesce(e.text, e.payload_json) FROM events e JOIN event_types t USING (event_type_id) WHERE e.row_id BETWEEN A AND B ORDER BY e.row_id;\""""
 
 
-def overview(cfg: ProactiveContextManagerConfig, db_path: Optional[str]) -> str:
-    text = f"{OVERVIEW_HEADER}\n\n{OVERVIEW}"
+def overview(cfg: ProactiveContextManagerConfig, joined: bool = False) -> str:
+    """The sections' fixed preamble: how they are organised. `joined`: for a session that started
+    from the gatherer's other sessions (a `join` build), which has no earlier history of its own."""
+    return f"{OVERVIEW_HEADER}\n\n{JOINED_OPENING if joined else OPENING}\n\n{OVERVIEW}"
+
+
+def guide(cfg: ProactiveContextManagerConfig, db_path: Optional[str]) -> str:
+    """The gatherer guide that opens every context (`config.gatherer_guide`), with where the full
+    history is when db_hint is set; "" for none."""
+    if not cfg.gatherer_guide:
+        return ""
+    text = cfg.gatherer_guide.format(db_path=db_path or "", channel_column=property_column(CHANNEL))
     if cfg.db_hint and db_path:
         text += DB_HINT.format(db_path=db_path, channel_column=property_column(CHANNEL))
     return text
@@ -130,7 +149,8 @@ def overview(cfg: ProactiveContextManagerConfig, db_path: Optional[str]) -> str:
 def every_earlier_request(turns: List[Turn], stop_row: int, other: List[Tuple[Optional[str], Entry]],
                           cfg: ProactiveContextManagerConfig, tok: Tokenizer) -> str:
     """This channel's user requests before `stop_row`, then the other
-    channels' requests."""
+    channels' requests -- within parallel_index_tokens, or, with none of this channel's own (a
+    session that joined the gatherer), within all_task_tokens as well."""
     lines = [REQUESTS_HEADER, "", "Every request the user made in this line of work, in "
              "order, as they wrote them."]
     used = tok.count("\n".join(lines))
@@ -145,7 +165,8 @@ def every_earlier_request(turns: List[Turn], stop_row: int, other: List[Tuple[Op
             break
         lines.append(line)
         used += cost
-    block = index_block(other, cfg.parallel_index_tokens, tok)
+    budget = cfg.parallel_index_tokens + (0 if mine else cfg.all_task_tokens - used)
+    block = index_block(other, budget, tok)
     if block:
         lines += ["", block]
     return "\n".join(lines)
@@ -263,7 +284,8 @@ def index_block(requests: List[Tuple[Optional[str], Entry]], budget: int, tok: T
 def build_sections(turns: List[Turn], tasks: List[Task], ranked: List[Task],
                    earlier: Tuple[str, Set[int]], other_requests, turns_by_channel: Dict,
                    own_channel, cfg: ProactiveContextManagerConfig, tok: Tokenizer, db_path: Optional[str],
-                   through_row: int, parallel_mark: int, cut_row: Optional[int] = None) -> Sections:
+                   through_row: int, parallel_mark: int, cut_row: Optional[int] = None,
+                   joined: bool = False) -> Sections:
     """The sections for a channel with at least one task.
 
     `ranked` are the related-task candidates, most relevant first (the policy
@@ -271,7 +293,9 @@ def build_sections(turns: List[Turn], tasks: List[Task], ranked: List[Task],
     `earlier_messages(tasks[:-2], ...)`. `cut_row`, a row inside the running task, moves the
     verbatim part's start there: the steps before it become "This task so far". Every section
     is within its budget (`clip`); the overview, the agent's view of how the sections work, is
-    the sections' fixed preamble and is not counted.
+    the sections' fixed preamble and is not counted. `joined`: a session that started from the
+    gatherer's other sessions (a `join` build) -- its one task is the running one, and the
+    sections are the other channels' requests and tasks.
     """
     running = tasks[-1]
     previous = tasks[-2] if len(tasks) > 1 else None
@@ -281,7 +305,7 @@ def build_sections(turns: List[Turn], tasks: List[Task], ranked: List[Task],
         [tasks[i].first_row for i in earlier_set]
     out = Sections(open_from_row=cut, through_row=through_row, parallel_mark=parallel_mark)
     requests = every_earlier_request(turns, min(reproduced), other_requests, cfg, tok)
-    out.sections.append(("requests", overview(cfg, db_path) + "\n\n" +
+    out.sections.append(("requests", overview(cfg, joined) + "\n\n" +
                          clip(requests, cfg.all_task_tokens + cfg.parallel_index_tokens, tok)))
     if earlier_text:
         out.sections.append(("earlier", clip(earlier_text, cfg.keep_temporal_relevant_tokens, tok)))

@@ -164,8 +164,11 @@ BUILD_COLUMNS = ("build_id, status, started_at, finished_at, through_row, open_f
                  "ranking_json, parallel_mark, error, reason")
 #: Why a build was started: the context was over max_context_tokens; the boundary check found a new
 #: task; build_every_request; run directly (bulk loading, tests); the harness compacted its own
-#: history (a build that closes the running task, as `limit` does, and is adopted whatever its size).
+#: history (a build that closes the running task, as `limit` does, and is adopted whatever its size); a
+#: channel with no build of its own joined a gatherer where another channel has one (`joinable`): it
+#: starts from their work, its own history all the running task.
 LIMIT, BOUNDARY, REQUEST, DIRECT, COMPACTION = "limit", "boundary", "request", "direct", "compaction"
+JOIN = "join"
 
 
 def _build(row) -> Optional[dict]:
@@ -259,6 +262,14 @@ def build_for(conn, channel_id) -> Optional[dict]:
     if own or channel_id is None:
         return own
     return latest_build(conn, None)
+
+
+def joinable(conn, channel_id) -> bool:
+    """Whether a channel with no build of its own can start from the gatherer's other channels:
+    another channel (not the no-channel pool) has a ready build."""
+    return channel_id is not None and conn.execute(
+        "SELECT 1 FROM _builds WHERE status = 'ready' AND channel_key NOT IN (?, '') LIMIT 1",
+        (key(channel_id),)).fetchone() is not None
 
 
 def get_build(conn, build_id: int) -> Optional[dict]:
