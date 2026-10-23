@@ -302,7 +302,10 @@ class ServerTest(unittest.TestCase):
                            "counts": {i: 1000 for i in stored}, "preamble_counts": [dict(pre[0], tokens=500)]})
         self.assertEqual(found, {"id": 1, "events": len(stored), "made": 0, "preamble": 1})
         again, = self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "events": events, "preamble": pre})
-        self.assertEqual(again["sent_tokens"], 1000 * len(stored) + 500)
+        conn = sqlite3.connect(paths.db_path("s"))                  # the gatherer guide, by ag's count: not counted
+        guide, = conn.execute("SELECT tokens FROM _made_items WHERE name = 'gatherer_guide'").fetchone()
+        conn.close()
+        self.assertEqual(again["sent_tokens"], 1000 * len(stored) + 500 + guide)
         self.assertGreater(again["sent_tokens"], first["sent_tokens"])
         other, = self.ask({"op": "counted", "gatherer": "s", "properties": {"channel": "elsewhere"},
                            "counts": {i: 7 for i in stored}})

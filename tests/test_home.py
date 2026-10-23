@@ -283,7 +283,8 @@ class PluginEndToEndTest(HomeBase):
         manager.init("demo")
         row = manager.insert("demo", {"type": "message", "role": "user", "id": "u1",
                                       "content": [{"type": "input_text", "text": "which numbers?"}]}, channel_id="t")
-        texts = [codex.text(i) for i in manager.read("demo", row, channel_id="t")]
+        texts = [t for t in (codex.text(i) for i in manager.read("demo", row, channel_id="t"))
+                 if not t.startswith("About this context, from ag.")]               # the gatherer guide
         self.assertEqual(texts[0], "which numbers?")
         self.assertIn("Message in ticket 4123 from pat", texts[1])
         conn = sqlite3.connect(paths.db_path("demo"))

@@ -1,7 +1,8 @@
 """Every parameter of the proactive context manager, with its default: when it builds,
 the budgets of its sections, the models the tools call, and how a stream
 message, a request made in another channel and an environment update are shown
-(`message`, `parallel_message`, `notice`). The models default to the LLM's own
+(`message`, `parallel_message`, `notice`), and the guide that opens every
+context (`gatherer_guide`). The models default to the LLM's own
 (`llm.model`, see tools/options.py).
 
 The tools declare what they are told as their own `Params`
@@ -103,8 +104,33 @@ class ProactiveContextManagerConfig:
     # Events: how the policy groups the event types it works from (tools/groups.py).
     groups: Groups = field(default_factory=Groups)
 
-    # Tell the agent where its full history is.
+    # Tell the agent where its full history is (in the gatherer guide, below).
     db_hint: bool = True
+
+    # The gatherer guide: the first item of every context, after the harness's own set-up, on
+    # every read -- with or without a build -- so the agent knows from its first call what ag
+    # adds to its context and where the rest is. `{db_path}` is the context database. With
+    # db_hint, the database's layout follows it (layout.DB_HINT). "" = no guide.
+    gatherer_guide: str = (
+        "About this context, from ag.\n\n"
+        "This session runs inside an ag gatherer: ag puts your context together on every call, and "
+        "other sessions may be working in the same gatherer, in parallel or before you, for the same "
+        "user. Besides the conversation itself, your context may hold these messages from ag:\n\n"
+        "- **History sections**: earlier history, of this session or of the gatherer's other "
+        "sessions, put together to fit. The first of them says how they are organised and how to "
+        "read them.\n"
+        "- **Requests made in parallel** (\"For your context, message from the user in parallel to "
+        "another agent: ...\"): a request the user made to another session. It is not your task, but "
+        "the same user gave it, on the same material: a definition, convention, correction or "
+        "exclusion stated there applies to your work too.\n"
+        "- **File-change notices**: a file you read has been modified by someone else since. What "
+        "you read from it is out of date; read it again before relying on it.\n"
+        "- **Messages from a stream** (\"Message in <stream> from <author> ...\"): information "
+        "from outside the conversation, at the point it arrived.\n"
+        "- **Left-out notes** (\"[Agent steps were left out here ...]\"): steps of this session "
+        "dropped to keep the context within its limit; they name the rows to read them from.\n\n"
+        "None of these is the user speaking to you in this session: the user's own messages are the "
+        "requests you answer.")
 
     # The developer message a stream message (a `context_stream` event in the
     # verbatim part) is shown as, at its place in the history.

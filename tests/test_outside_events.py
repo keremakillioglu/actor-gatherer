@@ -40,7 +40,8 @@ class OutsideBase(Base):
         self.llm = ScriptedLLM()
         self.cfg = ProactiveContextManagerConfig(min_context_tokens=0, build_every_request=True, require_smaller=False, sync_seconds=0,
                                message="@{stream} {author}: {text}", notice="Notice: {what} (at {timestamp}).",
-                               notice_named="Notice: changed: {subjects}.", notice_counted="Notice: {count} changed.")
+                               notice_named="Notice: changed: {subjects}.", notice_counted="Notice: {count} changed.",
+                               gatherer_guide="")
         self.policy = ProactiveContextManager(codex.FORMAT, self.llm, self.cfg)
         self.m = Manager(self.policy)
         self.wrapped = codex.CodexItems(self.m)

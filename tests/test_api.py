@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ag.ag_harness  # noqa: E402
 import codex_items as codex  # noqa: E402
 from ag.ag_harness import Manager  # noqa: E402
-from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
+from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_interface import LLM, ContextManager, Event, EventType, Property  # noqa: E402
 from ag.ag_policies.tools.groups import USER_MESSAGE  # noqa: E402
@@ -206,7 +206,7 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(m.event_types("s")[0].id, 1)
 
     def test_the_manager_gives_the_policy_what_it_was_not_given(self):
-        m = Manager(ProactiveContextManager(codex.FORMAT, NoLLM()))
+        m = Manager(ProactiveContextManager(codex.FORMAT, NoLLM(), ProactiveContextManagerConfig(gatherer_guide="")))
         self.assertIs(m.policy.tokenizer, m.tokenizer)                   # the tokenizer events are counted with
         self.assertIsNotNone(m.policy.gatherers)                             # and a way to open a gatherer's store
         t = EventType("mine")

@@ -18,7 +18,9 @@ from ag.ag_harness import Event, EventType, Manager  # noqa: E402
 import codex_items as codex  # noqa: E402
 from ag.ag_interface import LLM, Context, Policy, Property, Ref  # noqa: E402
 from ag.ag_policies.tools.groups import CONTEXT, TOOL_CALL, TOOL_OUTPUT, USER_MESSAGE  # noqa: E402
-from ag.ag_policies.proactive_context_manager import ProactiveContextManager, events  # noqa: E402
+from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig, events  # noqa: E402
+
+NO_GUIDE = ProactiveContextManagerConfig(gatherer_guide="")     # the store's reads, without the policy's guide
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths, schema  # noqa: E402
 from channels import ch, on  # noqa: E402
@@ -49,7 +51,7 @@ class StoreTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.saved = paths.TRACE_DIR
         paths.TRACE_DIR = os.path.join(self.tmp.name, "traces")
-        self.m = Manager(ProactiveContextManager(codex.FORMAT, NoLLM()))
+        self.m = Manager(ProactiveContextManager(codex.FORMAT, NoLLM(), NO_GUIDE))
         self.m.init("s", TYPES)
 
     def tearDown(self):
@@ -298,7 +300,7 @@ class TextTest(StoreTest):
         conn = sqlite3.connect(path)
         conn.execute("ALTER TABLE events DROP COLUMN text")
         conn.commit(); conn.close()
-        self.m = Manager(ProactiveContextManager(codex.FORMAT, NoLLM()))
+        self.m = Manager(ProactiveContextManager(codex.FORMAT, NoLLM(), NO_GUIDE))
         self.insert(Event(1, A, id="a", text="said"))
         self.assertEqual([r["text"] for r in self.rows()], ["said"])
 

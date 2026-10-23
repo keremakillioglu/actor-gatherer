@@ -43,6 +43,11 @@ def events(*items):
     return codex.to_events(list(items))
 
 
+def without_guide(context):
+    """A read's context without the gatherer guide the default policy opens every context with."""
+    return [e for e in context if e.get("name") != "gatherer_guide"]
+
+
 class HomeBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -71,14 +76,16 @@ class ManagerFunctionsTest(HomeBase):
             {"op": "read", "gatherer": "s", "properties": {"channel": "c"}, "row": 2})
         self.assertEqual((inserted["rows"], inserted["last"]), ([1, 2], 2))
         self.assertEqual((again["rows"], again["last"]), ([None, None], 2))    # stored already; the last found
-        self.assertEqual(read["context"], [{"type": e["type"], "id": e["id"], "payload": e["payload"]}
-                                           for e in sent])                    # events come back as they were sent
+        self.assertEqual(without_guide(read["context"]), [{"type": e["type"], "id": e["id"], "payload": e["payload"]}
+                                                          for e in sent])     # events come back as they were sent
+        guide = read["context"][1]                                             # after the harness's own set-up
+        self.assertEqual((guide["type"], guide["name"]), ("ag", "gatherer_guide"))
 
     def test_rewrite_is_insert_then_read(self):
         sent = events(DEV, user("q", 1))
         answer, = self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "events": sent})
-        self.assertEqual([e["payload"] for e in answer["context"]], [DEV, user("q", 1)])
-        self.assertIn("2 events in (event 2), 2 out", answer["note"])
+        self.assertEqual([e["payload"] for e in without_guide(answer["context"])], [DEV, user("q", 1)])
+        self.assertIn("2 events in (event 2), 3 out (1 ag)", answer["note"])    # the guide is ag's
 
     def test_a_type_the_gatherer_does_not_have_is_added(self):
         self.ask({"op": "insert", "gatherer": "s", "properties": {},
@@ -106,7 +113,7 @@ class ManagerFunctionsTest(HomeBase):
         """No manager outlives a request: two servers on one gatherer agree."""
         self.ask({"op": "insert", "gatherer": "s", "properties": {"channel": "c"}, "events": events(user("q", 1))})
         read, = self.ask({"op": "read", "gatherer": "s", "properties": {"channel": "c"}, "row": 1})       # another server
-        self.assertEqual(read["context"][0]["payload"], user("q", 1))
+        self.assertEqual(without_guide(read["context"])[0]["payload"], user("q", 1))
 
     def test_bad_requests_are_answered(self):
         answers = self.ask({"op": "read", "gatherer": "s"}, {"op": "insert", "gatherer": "s"},
@@ -131,11 +138,11 @@ class ManagerFunctionsTest(HomeBase):
             fh.write("y = 2\n")
         second = first + [agent("ok", 1), user("and now?", 2)]
         answer, = self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "cwd": work, "events": events(*second)})
-        *kept, notice = answer["context"]
+        *kept, notice = without_guide(answer["context"])
         self.assertEqual([e["payload"] for e in kept], second)
         self.assertEqual((notice["type"], notice["name"]), ("ag", "environment_update"))
         self.assertTrue(notice["text"].startswith("File a.py was changed on disk"), notice["text"])
-        self.assertIn("(1 ag)", answer["note"])
+        self.assertIn("(2 ag)", answer["note"])                               # the notice and the guide
 
     def test_a_session_whose_directory_changes_stores_its_history_once(self):
         """making_ag: Claude Code's working directory went back and forth, and each switch stored the
@@ -170,7 +177,7 @@ class ManagerFunctionsTest(HomeBase):
         own = lambda read: [e["payload"] for e in read["context"] if e["type"] != "ag"]  # noqa: E731
         self.assertEqual(own(codex_read), [user("q", 1)])
         self.assertEqual(own(pi_read), [pi_message])
-        shown = lambda read: [e["name"] for e in read["context"] if e["type"] == "ag"]  # noqa: E731
+        shown = lambda read: [e["name"] for e in without_guide(read["context"]) if e["type"] == "ag"]  # noqa: E731
         self.assertEqual((shown(codex_read), shown(pi_read)), (["parallel_request"], ["parallel_request"]))  # each other's
 
     def test_the_gatherer_s_log(self):
@@ -197,7 +204,7 @@ class ProcessTest(unittest.TestCase):
                                          {"id": 2, "op": "ping"}])
             self.assertEqual(done.returncode, 0, done.stderr)
             answers = [json.loads(line) for line in done.stdout.decode().splitlines()]
-            self.assertEqual([e["payload"] for e in answers[0]["context"]], [DEV, user("q", 1)], done.stderr)
+            self.assertEqual([e["payload"] for e in without_guide(answers[0]["context"])], [DEV, user("q", 1)], done.stderr)
             self.assertEqual(answers[1], {"pong": True, "id": 2})
             self.assertTrue(os.path.exists(os.path.join(tmp, "ag", "logs", "gatherers", "s", "server.log")))
 
@@ -225,7 +232,7 @@ class ProcessTest(unittest.TestCase):
                                            PYTHONIOENCODING="latin-1"))
             self.assertEqual(done.returncode, 0, done.stderr)
             answer = json.loads(done.stdout.decode("utf-8"))
-            self.assertEqual(answer["context"][0]["payload"], user("café — naïve ✓", 1))   # not "cafÃ©"
+            self.assertEqual(without_guide(answer["context"])[0]["payload"], user("café — naïve ✓", 1))   # not "cafÃ©"
 
 
 if __name__ == "__main__":
