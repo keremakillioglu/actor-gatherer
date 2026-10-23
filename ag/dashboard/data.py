@@ -487,7 +487,8 @@ def history(gatherer: str, channel: str, first_row: int, last_row: Optional[int]
     """The channel's own events from row `first_row` to `last_row` (None: to its newest), in
     order, as `context` lists items: each one's type, size, time and text (at most
     TEXT_CHARS; `clipped` says how much more), at most HISTORY_ITEMS of them (`more` counts
-    the rest) -- a task's messages, or those since the last task."""
+    the rest) -- a task's messages, or those since the last task. To its newest, they end with
+    the channel's pending events (`_pending`): what the model answered that no call has stored yet."""
     conn = _connect(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
@@ -504,6 +505,8 @@ def history(gatherer: str, channel: str, first_row: int, last_row: Optional[int]
             items.append({"row_id": r["row_id"], "name": r["type"] or "?", "tokens": r["tokens"] or 0,
                           "at": _seconds(r["inserted_at"]), "clipped": max(0, len(text or "") - TEXT_CHARS),
                           "text": (text or "")[:TEXT_CHARS]})
+        if last_row is None:               # to its newest: what the model answered since, no call has carried yet
+            items += _pending(conn, channel, _tables(conn))
         return {"first_row": first_row, "last_row": last_row, "items": items, "more": max(0, n - len(items))}
     finally:
         conn.close()

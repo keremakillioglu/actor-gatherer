@@ -161,6 +161,10 @@ class DataTest(HomeBase):
         since = data.history("g", "c1", tasks[-1]["last_row"] + 1)                 # after the last task: to the end
         self.assertTrue(all(i["row_id"] > tasks[-1]["last_row"] for i in since["items"]))
         self.assertEqual(data.history("g", "c2", 1)["items"][0]["name"], "context")   # only the channel's own
+        reply = {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}
+        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Done."}], "msg_2")
+        self.assertEqual(data.history("g", "c1", tasks[-1]["last_row"] + 1)["items"][-1]["text"], "Done.")   # to the end: the pending answer last
+        self.assertNotIn("Done.", [i["text"] for i in data.history("g", "c1", first["first_row"], first["last_row"])["items"]])
 
     def test_the_gatherer_s_calls_go_to_the_agent_by_job_or_by_time(self):
         build = data.agent("g", "c1", [])["builds"][0]
