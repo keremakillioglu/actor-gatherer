@@ -327,6 +327,28 @@ class NoticeTest(OutsideBase):
         self.assertTrue(mentions('Bash({"command": "cd \\"/w\\" && cat a.py"})', "a.py", "/w"))
         self.assertTrue(mentions("cd /x && cat /w/a.py", "a.py", "/w"))
 
+    def test_a_change_reported_late_is_still_the_agent_s_own(self):
+        """making_ag: the session came back to /home/sep, whose poller had last looked minutes before,
+        and it reported the agent's own Edit of a file under it -- made while it worked elsewhere."""
+        import time
+        for edit, expected in ((True, []), (False, ["Notice: File proj/a.py was changed on disk (at {})."])):
+            with self.subTest(edit=edit):
+                self.setUp()
+                self.put(PREAMBLE + [user("fix /w/proj/a.py", 1)] + opened("/w/proj/a.py", 1))
+                self.read()
+                if edit:
+                    self.put([{"type": "function_call", "id": "fe", "call_id": "ce", "name": "Edit",
+                               "arguments": json.dumps({"file_path": "/w/proj/a.py", "old_string": "a", "new_string": "b"})},
+                              {"type": "function_call_output", "id": "feo", "call_id": "ce", "output": "ok"}])
+                when = time.time()                                       # the file changes here
+                time.sleep(0.01)
+                self.read()
+                self.put([agent("done", 1), user("next", 2)])
+                self.read()
+                self.in_dir("proj/a.py", when, cwd="/w")                 # reported now, by /w's poller
+                from ag.ag_policies.proactive_context_manager.policy import shown
+                self.assertEqual(self.notices(self.read()), [e.format(shown(when)) for e in expected])
+
     def test_no_second_notice_until_the_agent_reads_it_again(self):
         self.put(PREAMBLE + [user("read notes.txt", 1)] + opened("notes.txt", 1) + [agent("X", 1)])
         self.change("notes.txt", 5)

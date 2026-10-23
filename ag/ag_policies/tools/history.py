@@ -16,6 +16,7 @@ of another type is ever seen.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, List, Optional, Tuple
 
 from ag.ag_interface import Tokenizer
@@ -113,6 +114,20 @@ def batch_start(conn, channel_id: Optional[str], row_id: int) -> int:
                          f"(SELECT inserted_at FROM events WHERE row_id = ?) ORDER BY read_id DESC LIMIT 1",
                          (channel_id or "", row_id)).fetchone()
     return (found[0] or 0) if found else 0
+
+
+def batch_at(conn, channel_id: Optional[str], timestamp: float, row_id: int) -> Tuple[int, int]:
+    """(after, through): the rows of the channel that came in with the first request after
+    `timestamp` (seconds since the epoch) -- the channel's rows after `after` up to `through`.
+    What the agent ran while something happened then: its tool calls since the model call before
+    `timestamp`, which came in with the next. `through` is `row_id` when no read came after it yet."""
+    col = property_column(channel.CHANNEL)
+    at = datetime.fromtimestamp(timestamp, timezone.utc).isoformat(timespec="microseconds")
+    before = conn.execute(f"SELECT row_id FROM _reads WHERE ifnull({col}, '') = ? AND read_at < ? "
+                          f"ORDER BY read_id DESC LIMIT 1", (channel_id or "", at)).fetchone()
+    after = conn.execute(f"SELECT row_id FROM _reads WHERE ifnull({col}, '') = ? AND read_at >= ? "
+                         f"ORDER BY read_id LIMIT 1", (channel_id or "", at)).fetchone()
+    return (before[0] or 0) if before else 0, (after[0] or row_id) if after else row_id
 
 
 def split(rows: List[Row], types: TypeIds, groups: Groups, tok: Tokenizer) -> Tuple[List[Entry], List[Turn]]:

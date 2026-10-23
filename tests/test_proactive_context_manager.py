@@ -286,6 +286,34 @@ class OwnChangeTest(ParallelBase):
         self.assertIn("{repeat}", ProactiveContextManagerConfig().notice)
         self.assertTrue(ProactiveContextManagerConfig().notice_repeat.startswith(" This is a new change that just happened"))
 
+    def edited(self, name, args, n=9):
+        self.put([{"type": "function_call", "id": f"fc{n}", "call_id": f"c{n}", "name": name, "arguments": json.dumps(args)},
+                  {"type": "function_call_output", "id": f"fco{n}", "call_id": f"c{n}", "output": "ok"}])
+
+    def test_a_harness_s_own_editing_tool_on_the_file_is_the_agent_s_own(self):
+        # making_ag: Claude Code's Edit of call_ag.py was taken for someone else's change
+        for name, args in (("Edit", {"file_path": "salaries.csv", "old_string": "a", "new_string": "b"}),
+                           ("Write", {"file_path": "salaries.csv", "content": "x"}),
+                           ("MultiEdit", {"file_path": "salaries.csv", "edits": []}),
+                           ("edit", {"path": "salaries.csv", "edits": [{"oldText": "a", "newText": "b"}]}),
+                           ("write", {"filePath": "salaries.csv", "content": "x"})):
+            with self.subTest(name=name):
+                self.setUp()
+                self.put(PREAMBLE + [user("fix salaries.csv", 1)])
+                self.read()
+                self.ran("cat salaries.csv", n=8)
+                self.edited(name, args)
+                self.change("salaries.csv", 5)
+                self.assertEqual(self.notices(self.read()), [])
+
+    def test_an_editing_tool_on_another_file_does_not_hide_the_change(self):
+        self.put(PREAMBLE + [user("fix notes.md", 1)])
+        self.read()
+        self.ran("cat salaries.csv", n=8)
+        self.edited("Write", {"file_path": "notes.md", "content": "see salaries.csv"})
+        self.change("salaries.csv", 5)
+        self.assertEqual(self.notices(self.read()), ["Notice: File salaries.csv was changed on disk (at 5)."])
+
     def test_apply_patch_on_the_file_is_the_agent_s_own(self):
         self.put(PREAMBLE + [user("fix salaries.csv", 1)])
         self.read()

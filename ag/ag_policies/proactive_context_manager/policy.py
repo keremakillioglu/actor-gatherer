@@ -88,11 +88,19 @@ WRITE = re.compile(
     r"|\.write\(|writelines|write_text\(|to_csv\(|\.dump\(|shutil\.(?:copy|move)")
 # `>` alone also matches 2>/dev/null or `x > 5` in a script: a redirect only counts when the file follows it.
 
+# A harness's own file-editing tool (Claude Code's Edit, Write, MultiEdit, NotebookEdit; pi's and
+# opencode's edit, write), as a tool call's text shows it: `Name({...})`. It writes the file its path
+# argument names, and only that one.
+EDIT_TOOL = re.compile(r"(?:Edit|Write|MultiEdit|NotebookEdit|edit|write|multiedit)\(")
+EDIT_PATH = re.compile(r'"(?:file_path|notebook_path|filePath|path)"\s*:\s*"((?:[^"\\]|\\.)*)"')
 
-def writes(call_text: str, subject: str) -> bool:
-    """Whether a tool call that names `subject` could have written it: a redirect INTO it, an
-    in-place editor, a move/copy/remove, an apply_patch, or a script that opens something for
-    writing. Unclear means no."""
+
+def writes(call_text: str, subject: str, cwd=None) -> bool:
+    """Whether a tool call that names `subject` could have written it: a harness's editing tool
+    whose path is the subject (`EDIT_TOOL`), a redirect INTO it, an in-place editor, a move/copy/
+    remove, an apply_patch, or a script that opens something for writing. Unclear means no."""
+    if EDIT_TOOL.match(call_text):
+        return any(mentions(path, subject, cwd) for path in EDIT_PATH.findall(call_text))
     for m in WRITE.finditer(call_text):
         if m.group(0).startswith(">"):                      # a redirect: only into the subject itself
             if re.match(r">>?\s*['\"\\]*[^\s'\"\\]*" + re.escape(subject), call_text[m.start():]):
@@ -539,7 +547,10 @@ class ProactiveContextManager(Policy):
           - it is not the agent's own doing: no tool call that came in with
             it (`history.batch_start`: what the agent ran since its previous
             model call, while the change happened) names the subject and
-            could have written it (`own_change`).
+            could have written it (`own_change`) -- nor one that came in with
+            the first request after the change's own time (`history.batch_at`),
+            for a change reported late: a poller for a directory the agent
+            comes back to reports what changed there since it last looked.
 
         It names them (up to `notice_names`), or counts them. Keyed by the
         first update's row id, so it sorts into its place in the history.
@@ -571,6 +582,11 @@ class ProactiveContextManager(Policy):
                 continue                                     # not seen, or not again since its notice
             if self.own_change(texts, types, start, r.row_id, subject, cwd):
                 continue                                     # the agent's own doing
+            stamp = payload.get("timestamp")
+            if isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and stamp > 10 ** 9:
+                after, through = history.batch_at(conn, channel_id, stamp, r.row_id)
+                if self.own_change(texts, types, after, through + 1, subject, cwd):
+                    continue                                 # its own, made then, reported late
             polls.setdefault(start, {})[subject] = (r.row_id, subject, payload, before is not None)
             noticed[subject] = (r.row_id, start)
         out = []
@@ -604,7 +620,7 @@ class ProactiveContextManager(Policy):
         written it (`writes`). A call that only read the file, or an output that shows it, does not
         hide someone else's change."""
         calls = types.of("tool_call")
-        return any(start < row < row_id and tid in calls and mentions(text, subject, cwd) and writes(text, subject)
+        return any(start < row < row_id and tid in calls and mentions(text, subject, cwd) and writes(text, subject, cwd)
                    for row, tid, text in texts)
 
     # ---- the rest is the sections: segmentation, ranking, builds, adoption
