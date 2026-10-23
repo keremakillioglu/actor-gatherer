@@ -302,7 +302,7 @@ class ClaudeContextManager:
         gatherer, channel, cwd = kept
         note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
                                 [{"role": "assistant", "content": answer["output_items"]}], self.adaptor,
-                                answer.get("response_id"))
+                                answer.get("response_id"), answer.get("status"))
         self.log(gatherer, f"[{channel}] answered ({answer.get('status')}): {note}")
 
     async def close(self) -> None:

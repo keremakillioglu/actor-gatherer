@@ -162,6 +162,8 @@ CREATE TABLE IF NOT EXISTS _pending (
     pending_id  INTEGER PRIMARY KEY,
     received_at TEXT    NOT NULL,   -- (and the properties of the call it answered)
     answer      TEXT,               -- the answer it is part of, as the provider names it; NULL = not named
+    stop        TEXT,               -- why that answer stopped, as the provider says it (Anthropic's stop
+                                    -- reason: end_turn, tool_use, ...; a Responses status); NULL = not said
     type        TEXT    NOT NULL,   -- the event type's name, as the harness gave it
     payload_json TEXT   NOT NULL,   -- the event's payload, as given
     text        TEXT                -- its readable text, as given; NULL = none
@@ -203,6 +205,8 @@ def create(conn: sqlite3.Connection) -> None:
         if column not in read_columns:
             conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} {kind}")
     pending_columns = {c[1] for c in conn.execute("PRAGMA table_info(_pending)")}
+    if "stop" not in pending_columns:                                # a file from before pending kept it
+        conn.execute("ALTER TABLE _pending ADD COLUMN stop TEXT")
     for name in property_names(conn):                                # a file from before _pending: its properties
         if property_column(name) not in pending_columns:
             conn.execute(f"ALTER TABLE _pending ADD COLUMN {property_column(name)}")

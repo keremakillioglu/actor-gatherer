@@ -92,13 +92,14 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 read's context before sending it, taken off the
                                                 read's sent_tokens. How many of each were found
     {"op": "insert", "gatherer", "properties", "events"} -> {"rows": [row id or null, ...], "last"}
-    {"op": "pending", "gatherer", "properties", "events", "answer"?} -> {"kept"}
+    {"op": "pending", "gatherer", "properties", "events", "answer"?, "stop"?} -> {"kept"}
                                                 what the model answered, as events, which no
                                                 call has carried back yet: kept (`_pending`, not
                                                 as events, ids ignored) until the next rewrite,
                                                 context or compaction with the same properties
                                                 stores its events, and then deleted. `answer`
-                                                names the answer (the provider's id)
+                                                names the answer (the provider's id), `stop`
+                                                why it stopped (end_turn, tool_use, ...)
     {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens", "basis"}
     {"op": "locate", "gatherer", "properties", "event_id"} -> {"row"}      (`id` is the request's own)
     {"op": "init", "gatherer", "event_types"?: [TYPE]} -> {"event_types": [TYPE with its id]}
@@ -297,13 +298,14 @@ class Server:
             last = manager.locate(gatherer, stored[-1].id, properties=properties)
         return {"rows": rows, "last": last}
 
-    def pending(self, gatherer: str, properties: Dict[str, Any], events: list, answer=None) -> dict:
+    def pending(self, gatherer: str, properties: Dict[str, Any], events: list, answer=None, stop=None) -> dict:
         """Keep what the model answered until the channel's next call stores its events."""
         for e in events:
             if not isinstance(e, dict) or not isinstance(e.get("type"), str) or not e["type"] or "payload" not in e:
                 raise BadEvent(f"not an event: {str(e)[:120]}")
         kept = self.manager(gatherer).record_pending(gatherer, properties, events,
-                                                     answer if isinstance(answer, str) else None)
+                                                     answer if isinstance(answer, str) else None,
+                                                     stop if isinstance(stop, str) else None)
         self.log(gatherer, tag(properties) + f"{kept} events pending")
         return {"kept": kept}
 
@@ -439,7 +441,7 @@ class Server:
         if op == "pending":
             if not isinstance(events, list):
                 return {"error": "no events"}
-            return self.pending(gatherer, properties, events, request.get("answer"))
+            return self.pending(gatherer, properties, events, request.get("answer"), request.get("stop"))
         if op == "read":
             if not isinstance(request.get("row"), int):
                 return {"error": "no row"}

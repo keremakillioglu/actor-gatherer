@@ -65,14 +65,14 @@ class ServerTest(unittest.TestCase):
 
     def pend(self, properties, answer=REPLY):
         return {"op": "pending", "gatherer": "g", "properties": properties,
-                "events": claude.to_events([answer]), "answer": "msg_1"}
+                "events": claude.to_events([answer]), "answer": "msg_1", "stop": "end_turn"}
 
     def test_an_answer_is_pending_until_its_channel_s_next_call(self):
         first, kept, other = self.ask(self.call(C1, [ask("count the rows")]), self.pend(C1),
                                       self.call(C2, [ask("something else")]))
         self.assertEqual(kept, {"id": 2, "kept": 1})
-        self.assertEqual(self.rows("SELECT type, text, answer, p_channel FROM _pending"),
-                         [("agent_message", "There are 42 rows.", "msg_1", "c1")])   # another channel's call: kept
+        self.assertEqual(self.rows("SELECT type, text, answer, stop, p_channel FROM _pending"),
+                         [("agent_message", "There are 42 rows.", "msg_1", "end_turn", "c1")])   # another channel's call: kept
         before = self.rows("SELECT count(*) FROM events")[0][0]
         self.assertFalse(any("42 rows" in str(t) for (t,) in self.rows("SELECT text FROM events")))  # not history
         self.ask(self.call(C1, [ask("count the rows"), REPLY, ask("and the columns?")]))
@@ -182,6 +182,7 @@ class HookTest(unittest.TestCase):
         self.assertEqual([e["type"] for e in first["events"]], ["tool_call"])
         self.assertEqual([(e["type"], e["text"]) for e in second["events"]], [("agent_message", "There are 42 rows.")])
         self.assertEqual((second["properties"], second["answer"]), ({"channel": "s"}, "msg_1"))
+        self.assertEqual((first["stop"], second["stop"]), ("tool_use", "end_turn"))   # why each answer stopped
         self.assertNotIn("id", second["events"][0])                                # not history: no id
 
     def test_a_failed_answer_is_not_kept(self):
@@ -218,7 +219,7 @@ class CodexHookTest(unittest.TestCase):
         asyncio.run(go(500))                                                          # failed: not kept
         kept = [b for op, b in server.asked if op == "pending"]
         self.assertEqual(len(kept), 1)
-        self.assertEqual((kept[0]["properties"], kept[0]["answer"]), ({"channel": "t1"}, "resp_1"))
+        self.assertEqual((kept[0]["properties"], kept[0]["answer"], kept[0]["stop"]), ({"channel": "t1"}, "resp_1", "completed"))
         self.assertEqual([(e["type"], e["text"]) for e in kept[0]["events"]], [("agent_message", "There are 42 rows.")])
 
 
