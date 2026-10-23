@@ -585,10 +585,11 @@ function typeChips(counts) {
   }
   return row;
 }
-// The latest context as the next call will have it: the model's answers since the latest call (data.py's
-// pending, which that call will carry) at its end, as its recent history.
+// The latest context as the next call will have it: what the channel has since the latest call (data.py's
+// after_read: events stored by a call that logged no read, such as a side call, and the pending answers,
+// which the next call will carry) at its end, as its recent history.
 function withPending(ctx, latest) {
-  const pending = latest && ctx && ctx.items ? (state.agent && state.agent.pending) || [] : [];
+  const pending = latest && ctx && ctx.items ? (state.agent && (state.agent.after_read || state.agent.pending)) || [] : [];
   if (!pending.length) return ctx;
   const items = [...ctx.items, ...pending.map((it, i) => ({ ...it, group: "Recent history", position: ctx.items.length + i }))];
   return { ...ctx, items, tokens: ctx.tokens + pending.reduce((n, i) => n + i.tokens, 0) };

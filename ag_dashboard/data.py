@@ -329,13 +329,17 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
     usage.update(calls=len(reads), real_tokens=sum(r["real_tokens"] or 0 for r in reads),
                  real_calls=sum(1 for r in reads if r["real_tokens"]))
     return {"gatherer": gatherer, "channel": channel, "harness": _harness(conn, channel), "reads": reads,
-            "pending": _pending(conn, channel, tables), "tasks": tasks, "builds": builds,
+            "pending": _pending(conn, channel, tables),
+            "after_read": _after_read(conn, channel, tables, reads[-1]["row_id"] if reads else None),
+            "tasks": tasks, "builds": builds,
             "checks": checks, "rebuilds": sum(1 for r in reads if r["rebuild"]), "llm": _llm_summary(mine), "usage": usage,
             "llm_attributed_by_time": sum(1 for c in mine if not c.get("job"))}
 
 
 #: What the model answered that no call has carried back yet (the store's `_pending`): the latest context's tail.
 PENDING = "Pending"
+#: An event stored after the one the latest read responded to: in no read's context yet.
+AFTER_READ = "Stored since the latest call"
 _tokenizer = None
 
 
@@ -373,6 +377,28 @@ def _pending(conn, channel: str, tables: set) -> List[dict]:
                       "row_id": None, "made_id": None, "at": _seconds(r["received_at"]),
                       "clipped": max(0, len(text or "") - TEXT_CHARS), "text": (text or "")[:TEXT_CHARS]})
     return items
+
+
+def _after_read(conn, channel: str, tables: set, row_id: Optional[int]) -> List[dict]:
+    """What the channel has that its latest read's context does not, oldest first: the events stored
+    after the one that read responded to (`row_id`) -- by a call that logged no read, such as a
+    harness's read-only side call, which stores the turn's final answer and clears it from pending --
+    merged by time (`inserted_at`, `received_at`) with the pending events. Just the pending ones
+    before any read (`row_id` None)."""
+    items = []
+    if row_id is not None:
+        for r in conn.execute(
+                "SELECT e.row_id, t.name AS type, e.tokens, e.text, e.payload_json, e.inserted_at FROM events e "
+                f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.{CHANNEL} = ? AND e.row_id > ? "
+                "ORDER BY e.row_id LIMIT ?", (channel, row_id, HISTORY_ITEMS)):
+            text = r["text"] if r["text"] else readable(r["payload_json"])
+            items.append({"position": None, "group": AFTER_READ, "name": r["type"] or "?", "tokens": r["tokens"] or 0,
+                          "row_id": r["row_id"], "made_id": None, "at": _seconds(r["inserted_at"]),
+                          "clipped": max(0, len(text or "") - TEXT_CHARS), "text": (text or "")[:TEXT_CHARS]})
+    stored = len(items)
+    items += _pending(conn, channel, tables)
+    order = sorted(range(len(items)), key=lambda i: (items[i]["at"] or 0, i >= stored, i))   # a tie: stored first
+    return [items[i] for i in order]
 
 
 # ---------------------------------------------------------------- what a read held

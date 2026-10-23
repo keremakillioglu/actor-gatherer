@@ -22,7 +22,7 @@ from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
 from ag_dashboard import data, server  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 from channels import ch  # noqa: E402
-from test_core import PREAMBLE, ScriptedLLM, conversation, long_turn, user  # noqa: E402
+from test_core import PREAMBLE, ScriptedLLM, agent, conversation, long_turn, user  # noqa: E402
 import codex_items  # noqa: E402
 
 
@@ -154,6 +154,28 @@ class DataTest(HomeBase):
         self.assertEqual(data.agent("g", "c2", [])["pending"], [])                 # another channel's: not this one's
         self.m.clear_pending("g", {"channel": "c1"})                               # the next call carried it
         self.assertEqual(data.agent("g", "c1", [])["pending"], [])
+
+    def test_what_came_after_the_latest_read_follows_it(self):
+        self.assertEqual(data.agent("g", "c1", [])["after_read"], [])           # the latest read has all of it
+        reply = {"role": "assistant", "content": [{"type": "text", "text": "Checking."}]}
+        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Checking."}], "msg_1")
+        self.assertEqual([i["text"] for i in data.agent("g", "c1", [])["after_read"]], ["Checking."])   # pending alone
+        items = codex_items.CodexItems(self.m)
+        items.insert("g", agent("All done.", 91), channel_id="c1")             # a side call stored the answer, logged no read
+        self.m.clear_pending("g", {"channel": "c1"})
+        got = data.agent("g", "c1", [])
+        self.assertEqual(got["pending"], [])
+        after = got["after_read"]
+        self.assertEqual([i["group"] for i in after], [data.AFTER_READ])
+        self.assertIn("All done.", after[0]["text"])
+        self.assertGreater(after[0]["row_id"], got["reads"][-1]["row_id"])
+        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Next."}], "msg_2")
+        self.assertEqual([i["group"] for i in data.agent("g", "c1", [])["after_read"]],
+                         [data.AFTER_READ, data.PENDING])                       # by time: the stored one, then pending
+        self.assertEqual(data.agent("g", "c2", [])["after_read"], [])           # another channel's: not this one's
+        self.reads.append(self.m._context("g", store.high_water(self.m._conn("g")), ch("c1"), 244800)[1])
+        self.m.clear_pending("g", {"channel": "c1"})
+        self.assertEqual(data.agent("g", "c1", [])["after_read"], [])           # a new read: in its context now
 
     def test_a_stretch_of_the_agent_s_own_history(self):
         tasks = data.agent("g", "c1", [])["tasks"]
