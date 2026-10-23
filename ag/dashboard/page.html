@@ -585,6 +585,14 @@ function typeChips(counts) {
   }
   return row;
 }
+// The latest context as the next call will have it: the model's answers since the latest call (data.py's
+// pending, which that call will carry) at its end, as its recent history.
+function withPending(ctx, latest) {
+  const pending = latest && ctx && ctx.items ? (state.agent && state.agent.pending) || [] : [];
+  if (!pending.length) return ctx;
+  const items = [...ctx.items, ...pending.map((it, i) => ({ ...it, group: "Recent history", position: ctx.items.length + i }))];
+  return { ...ctx, items, tokens: ctx.tokens + pending.reduce((n, i) => n + i.tokens, 0) };
+}
 function contextCard() {
   const latest = state.followLatest;
   const title = el("div", { class: "card-title" }, el("h3", { text: latest ? "Context right now" : `Context at read ${state.readId}` }));
@@ -594,7 +602,7 @@ function contextCard() {
     await loadContext(state.readId); keepingPlace(renderMain);
   } }, "Back to the latest"));
   const card = el("section", { class: "card" }, title);
-  const ctx = state.context;
+  const ctx = withPending(state.context, latest);
   if (!ctx || !ctx.items) {
     card.append(el("div", { class: "desc", text: SNAPSHOT && !latest
       ? "A snapshot keeps only each actor's latest context. Run `ag dashboard` live to see older ones." : "No context sent yet." }));

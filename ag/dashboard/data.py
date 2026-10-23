@@ -330,9 +330,39 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
     usage.update(calls=len(reads), real_tokens=sum(r["real_tokens"] or 0 for r in reads),
                  real_calls=sum(1 for r in reads if r["real_tokens"]))
     return {"gatherer": gatherer, "channel": channel, "harness": _harness(conn, channel), "reads": reads,
-            "tasks": tasks, "builds": builds,
+            "pending": _pending(conn, channel, tables), "tasks": tasks, "builds": builds,
             "checks": checks, "rebuilds": sum(1 for r in reads if r["rebuild"]), "llm": _llm_summary(mine), "usage": usage,
             "llm_attributed_by_time": sum(1 for c in mine if not c.get("job"))}
+
+
+#: What the model answered that no call has carried back yet (the store's `_pending`): the latest context's tail.
+PENDING = "Pending"
+_tokenizer = None
+
+
+def _count(text: str) -> int:
+    """ag's own count of a pending event's text (pending rows keep none): tiktoken's, as the store's default."""
+    global _tokenizer
+    if _tokenizer is None:
+        from ag.ag_tools.tokenizers.tiktoken_tokenizer import Tiktoken
+        _tokenizer = Tiktoken()
+    return _tokenizer.count(text) if text else 0
+
+
+def _pending(conn, channel: str, tables: set) -> List[dict]:
+    """The channel's pending events, oldest first, as `context` lists items (group PENDING): each one's
+    type, size by ag's own count, time and text (at most TEXT_CHARS; `clipped` says how much more).
+    [] in a file from before `_pending`, or when the channel has none: its last call carried them all."""
+    if "_pending" not in tables or CHANNEL not in _columns(conn, "_pending"):
+        return []
+    items = []
+    for r in conn.execute(f"SELECT pending_id, received_at, type, payload_json, text FROM _pending "
+                          f"WHERE {CHANNEL} = ? ORDER BY pending_id", (channel,)):
+        text = r["text"] if r["text"] else readable(r["payload_json"])
+        items.append({"position": None, "group": PENDING, "name": r["type"], "tokens": _count(r["text"] or ""),
+                      "row_id": None, "made_id": None, "at": _seconds(r["received_at"]),
+                      "clipped": max(0, len(text or "") - TEXT_CHARS), "text": (text or "")[:TEXT_CHARS]})
+    return items
 
 
 # ---------------------------------------------------------------- what a read held

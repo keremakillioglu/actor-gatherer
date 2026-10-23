@@ -136,6 +136,21 @@ class DataTest(HomeBase):
             data.TEXT_CHARS = old
         self.assertTrue(all(len(i["text"]) <= 5 for i in clipped) and any(i["clipped"] for i in clipped))
 
+    def test_the_pending_answer_follows_the_latest_context(self):
+        self.assertEqual(data.agent("g", "c1", [])["pending"], [])                 # the last call carried all of it
+        reply = {"role": "assistant", "content": [{"type": "text", "text": "There are 42 rows."}]}
+        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply,
+                                                         "text": "There are 42 rows."}], "msg_1")
+        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_reasoning", "payload": {"content": [
+            {"type": "thinking", "thinking": "count them"}]}}])                        # no text: its words
+        got = data.agent("g", "c1", [])["pending"]
+        self.assertEqual([(i["group"], i["name"], i["text"]) for i in got],
+                         [("Pending", "agent_message", "There are 42 rows."), ("Pending", "agent_reasoning", "count them")])
+        self.assertGreater(got[0]["tokens"], 0)
+        self.assertEqual(data.agent("g", "c2", [])["pending"], [])                 # another channel's: not this one's
+        self.m.clear_pending("g", {"channel": "c1"})                               # the next call carried it
+        self.assertEqual(data.agent("g", "c1", [])["pending"], [])
+
     def test_a_stretch_of_the_agent_s_own_history(self):
         tasks = data.agent("g", "c1", [])["tasks"]
         first = tasks[0]
