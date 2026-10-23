@@ -401,7 +401,7 @@ def _preambles(conn, ids) -> Dict[int, dict]:
     return {r[0]: {"name": r[1], "text": r[2], "tokens": r[3] or 0} for r in rows}
 #: ag's own messages by name, as the read's breakdown groups them; any other name is a section of its own.
 AG_KINDS = {"environment_update": "File-change notices", "parallel_request": "Other agents' requests",
-            "context_stream": "Stream messages"}
+            "context_stream": "Stream messages", "gatherer_guide": "Gatherer guide"}
 
 
 def readable(payload_json: Optional[str]) -> str:
