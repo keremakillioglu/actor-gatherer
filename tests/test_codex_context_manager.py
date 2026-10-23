@@ -66,6 +66,13 @@ def agent(text, n):
             "content": [{"type": "output_text", "text": text}]}
 
 
+def cat(name, n):
+    """The agent's own call reading `name`, and its output: what makes a file seen for a notice."""
+    return [{"type": "function_call", "id": f"fc{n}", "call_id": f"c{n}", "name": "exec_command",
+             "arguments": json.dumps({"cmd": f"cat {name}"})},
+            {"type": "function_call_output", "id": f"fco{n}", "call_id": f"c{n}", "output": "x = 1"}]
+
+
 class FakeClient:
     """Stands in for a gatherer's server client (`ag.integrations.tools.ag_connection.ag_client.AgClient`):
     records each request and answers a rewrite with an `ag` message before
@@ -315,8 +322,8 @@ class RealServerTest(ProxyBase):
         target = os.path.join(work, "a.py")
         with open(target, "w") as fh:
             fh.write("x = 1\n")
-        one = [DEV, env(work), user("please read a.py", 1)]
-        two = [DEV, env(work), user("what is in a.py?", 7)]
+        one = [DEV, env(work), user("please read a.py", 1), *cat("a.py", 1)]
+        two = [DEV, env(work), user("what is in a.py?", 7), *cat("a.py", 7)]
         await self.named(one, "th1")
         await self.named(two, "th2")
         with open(target, "a") as fh:
@@ -341,8 +348,8 @@ class RealServerTest(ProxyBase):
             os.makedirs(d)
             with open(os.path.join(d, "notes.txt"), "w") as fh:
                 fh.write("x\n")
-        one = [DEV, env(dirs[0]), user("please read notes.txt", 1)]
-        two = [DEV, env(dirs[1]), user("what is in notes.txt?", 7)]
+        one = [DEV, env(dirs[0]), user("please read notes.txt", 1), *cat("notes.txt", 1)]
+        two = [DEV, env(dirs[1]), user("what is in notes.txt?", 7), *cat("notes.txt", 7)]
         await self.named(one, "th1")
         await self.named(two, "th2")
         with open(os.path.join(dirs[0], "notes.txt"), "a") as fh:            # only repo_a's changes
@@ -360,7 +367,7 @@ class RealServerTest(ProxyBase):
         target = os.path.join(work, "a.py")
         with open(target, "w") as fh:
             fh.write("x = 1\n")
-        first = [DEV, env(work), user("please read a.py", 1)]
+        first = [DEV, env(work), user("please read a.py", 1), *cat("a.py", 1)]
         await self.call(first, thread="real")
         self.assertEqual(self.received[-1][2]["input"], first)               # nothing to add yet
         with open(target, "a") as fh:

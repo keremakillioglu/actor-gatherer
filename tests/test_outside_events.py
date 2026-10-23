@@ -1,6 +1,6 @@
 """The proactive context manager's outside events: stream messages shown
-where they arrived and a notice for every environment update the verbatim
-part refers to."""
+where they arrived and a notice for an environment update to a file the
+agent's own tool calls in the verbatim part opened."""
 
 import json
 import os
@@ -20,6 +20,13 @@ from ag.ag_policies.proactive_context_manager.config import REMEMBER_MANY, REMEM
 from ag.ag_harness.store import operations as store  # noqa: E402
 from test_core import PREAMBLE, Base, ScriptedLLM, agent, call, conversation, output, user  # noqa: E402
 from channels import ch, on  # noqa: E402
+
+
+def opened(names, n):
+    """The agent's own tool call reading `names`, and its output: what makes a file seen."""
+    return [{"type": "function_call", "id": f"fco_{n}", "call_id": f"co{n}", "name": "exec_command",
+             "arguments": json.dumps({"cmd": "cat " + names})},
+            {"type": "function_call_output", "id": f"fcoo_{n}", "call_id": f"co{n}", "output": "..."}]
 
 
 def developer(text, n):
@@ -125,7 +132,7 @@ class StreamTest(OutsideBase):
 
 class NoticeTest(OutsideBase):
     def test_a_referenced_update_becomes_a_notice_at_its_place(self):
-        self.put(PREAMBLE + [user("look at /w/a.py", 1), call(1), output(1), agent("done", 1)])
+        self.put(PREAMBLE + [user("look at /w/a.py", 1)] + opened("/w/a.py", 1) + [agent("done", 1)])
         self.change("/w/a.py", 42)
         self.put([user("and now?", 2)])
         context = self.read()
@@ -139,7 +146,7 @@ class NoticeTest(OutsideBase):
         self.assertEqual([store.made_items(conn, made)[m][0] for m in made], ["environment_update"])
 
     def test_an_unreferenced_update_adds_nothing(self):
-        self.put(PREAMBLE + [user("look at /w/a.py", 1), agent("ok", 1)])
+        self.put(PREAMBLE + [user("look at /w/a.py", 1)] + opened("/w/a.py", 1) + [agent("ok", 1)])
         self.change("/w/other.py", 1)
         self.change("db-primary", 2, what="Service db-primary was restarted")
         context = self.read()
@@ -147,24 +154,24 @@ class NoticeTest(OutsideBase):
         self.assertEqual(self.texts(context)[-1], "ok")
 
     def test_one_notice_per_poll_naming_what_changed(self):
-        self.put(PREAMBLE + [user("edit /w/a.py; watch db-primary", 1), agent("ok", 1)])
+        self.put(PREAMBLE + [user("edit /w/a.py; watch db-primary", 1)] + opened("/w/a.py db-primary", 1) + [agent("ok", 1)])
         self.change("/w/a.py", 10)
         self.change("db-primary", 11, what="Service db-primary was restarted")
         self.change("/w/a.py", 12)                                         # the same one again: named once
         self.assertEqual(self.notices(self.read()), ["Notice: changed: db-primary, /w/a.py."])
 
     def test_one_update_keeps_its_own_wording(self):
-        self.put(PREAMBLE + [user("watch db-primary", 1), agent("ok", 1)])
+        self.put(PREAMBLE + [user("watch db-primary", 1)] + opened("db-primary", 1) + [agent("ok", 1)])
         self.change("db-primary", 11, what="Service db-primary was restarted")
         self.assertEqual(self.notices(self.read()), ["Notice: Service db-primary was restarted (at 11)."])
 
     def test_more_than_five_are_counted(self):
         names = [f"f{i}.py" for i in range(6)]
-        self.put(PREAMBLE + [user("look at " + " ".join(names), 1), agent("ok", 1)])
+        self.put(PREAMBLE + [user("look at them", 1)] + opened(" ".join(names), 1) + [agent("ok", 1)])
         for i, name in enumerate(names[:5]):
             self.change(name, i)
         self.assertEqual(self.notices(self.read()), ["Notice: changed: f0.py, f1.py, f2.py, f3.py, f4.py."])
-        self.put([user("and now?", 2)])
+        self.put([user("and now?", 2)] + opened(" ".join(names), 2))      # read again: news again
         self.read()
         for i, name in enumerate(names):
             self.change(name, 10 + i)
@@ -174,7 +181,7 @@ class NoticeTest(OutsideBase):
     def test_the_default_wordings_for_several(self):
         self.cfg.notice_named, self.cfg.notice_counted = ProactiveContextManagerConfig().notice_named, ProactiveContextManagerConfig().notice_counted
         self.cfg.notice_names = 1
-        self.put(PREAMBLE + [user("look at a.py and b.py", 1), agent("ok", 1)])
+        self.put(PREAMBLE + [user("look at a.py and b.py", 1)] + opened("a.py b.py", 1) + [agent("ok", 1)])
         self.change("a.py", 1)
         self.change("b.py", 2)
         self.assertEqual(self.texts(self.read())[-1],
@@ -190,7 +197,7 @@ class NoticeTest(OutsideBase):
     def test_a_notice_is_news_once_and_history_after(self):
         """The loop this fixes: the notice used to come last on every read,
         asking for yet another read after the model had read the file again."""
-        self.put(PREAMBLE + [user("read notes.txt", 1), call(1), output(1), agent("it says X", 1)])
+        self.put(PREAMBLE + [user("read notes.txt", 1)] + opened("notes.txt", 1) + [agent("it says X", 1)])
         self.change("notes.txt", 5)
         first = self.texts(self.read())
         self.assertEqual(first[-1], "Notice: File notes.txt was changed on disk (at 5).")   # the news
@@ -216,7 +223,7 @@ class NoticeTest(OutsideBase):
         self.assertEqual(self.notices(self.read()), [])                  # nor later
 
     def test_a_change_while_the_agent_did_something_else_is_a_notice(self):
-        self.put(PREAMBLE + [user("read notes.txt", 1), call(1), output(1), agent("ok", 1), user("now run the tests", 2)])
+        self.put(PREAMBLE + [user("read notes.txt", 1)] + opened("notes.txt", 1) + [agent("ok", 1), user("now run the tests", 2)])
         self.read()
         self.put([{"type": "function_call", "id": "fc9", "call_id": "c9", "name": "exec_command",
                    "arguments": '{"cmd": "pytest"}'},
@@ -237,7 +244,7 @@ class NoticeTest(OutsideBase):
         """The file poller names files relative to its directory: notes.txt
         in /b is not the notes.txt a read in /a has seen."""
         from dataclasses import replace
-        self.put(PREAMBLE + [user("read notes.txt", 1), agent("ok", 1)])
+        self.put(PREAMBLE + [user("read notes.txt", 1)] + opened("notes.txt", 1) + [agent("ok", 1)])
         in_dir = lambda cwd, ts: self.m.insert("w", replace(                          # noqa: E731
             environment_update(self.ids["environment_update"], "notes.txt", "File notes.txt was changed on disk",
                                ts, "files"), properties={"cwd": cwd}))
@@ -255,7 +262,7 @@ class NoticeTest(OutsideBase):
 
     def test_the_default_wording(self):
         self.cfg.notice = ProactiveContextManagerConfig().notice
-        self.put(PREAMBLE + [user("look at notes.txt", 1), agent("ok", 1)])
+        self.put(PREAMBLE + [user("look at notes.txt", 1)] + opened("notes.txt", 1) + [agent("ok", 1)])
         self.change("notes.txt", 1790284011.49)
         self.assertEqual(self.texts(self.read())[-1],
                          "File notes.txt was changed on disk at 2026-09-24 21:06:51 UTC, after you last read it. What "
@@ -267,19 +274,82 @@ class NoticeTest(OutsideBase):
         self.assertTrue(mentions("cat /w/notes.txt", "notes.txt"))
         self.assertFalse(mentions("open data.py", "a.py"))
         self.assertFalse(mentions("a.pyc is stale", "a.py"))
-        self.put(PREAMBLE + [user("look at data.py", 1), agent("ok", 1)])
+        self.put(PREAMBLE + [user("look at data.py", 1)] + opened("data.py", 1) + [agent("ok", 1)])
         self.change("a.py", 1)
         self.assertEqual(self.notices(self.read()), [])
-        self.put([user("and /w/a.py?", 2)])
+        self.put([user("and a.py?", 2)] + opened("/w/a.py", 2))
         self.change("a.py", 2)
         self.assertEqual(self.notices(self.read()), ["Notice: File a.py was changed on disk (at 2)."])
 
-    def test_a_pinned_instruction_counts_as_a_reference(self):
+    def test_only_the_agent_s_own_tool_calls_count_as_seeing_it(self):
+        """build_ag: a session saw page.html only in `git status` output, and the user and a pinned
+        instruction can name files the agent never opened: no notice for any of them."""
         self.put(PREAMBLE + conversation(2))
-        self.put([developer("Always keep /w/rules.md in mind.", 1)])
-        self.put(conversation(2, start=3))
-        self.change("/w/rules.md", 5)
-        self.assertEqual(self.notices(self.read()), ["Notice: File /w/rules.md was changed on disk (at 5)."])
+        self.put([developer("Always keep /w/rules.md in mind.", 1), user("what about notes.txt?", 3)])
+        self.put([{"type": "function_call", "id": "fc8", "call_id": "c8", "name": "exec_command",
+                   "arguments": '{"cmd": "git status --short"}'},
+                  {"type": "function_call_output", "id": "fco8", "call_id": "c8", "output": " M ag/page.html"},
+                  agent("notes.txt and ag/page.html", 3)])
+        for name in ("/w/rules.md", "notes.txt", "ag/page.html"):
+            self.change(name, 5)
+        self.assertEqual(self.notices(self.read()), [])
+        self.put(opened("ag/page.html", 4))
+        self.change("ag/page.html", 6)
+        self.assertEqual(self.notices(self.read()), ["Notice: File ag/page.html was changed on disk (at 6)."])
+
+    def in_dir(self, subject, ts, cwd="/w/proj"):
+        from dataclasses import replace
+        return self.m.insert("w", replace(environment_update(
+            self.ids["environment_update"], subject, f"File {subject} was changed on disk", ts, "files"),
+            properties=dict(ch("c1"), cwd=cwd)))
+
+    def test_an_absolute_path_counts_only_under_the_update_s_directory(self):
+        """build_ag: the agent edited page.html in another worktree; the poller watched its own."""
+        self.put(PREAMBLE + [user("q", 1)] + opened("/w/other/ag/page.html", 1) + [agent("ok", 1)])
+        self.in_dir("ag/page.html", 1)
+        self.assertEqual(self.notices(self.read()), [])
+        self.put([user("and this one?", 2)] + opened("/w/proj/ag/page.html", 2))
+        self.in_dir("ag/page.html", 2)
+        self.assertEqual(self.notices(self.read()), ["Notice: File ag/page.html was changed on disk (at 2)."])
+
+    def test_a_relative_path_is_the_file_itself(self):
+        from ag.ag_policies.proactive_context_manager.policy import mentions
+        self.assertTrue(mentions("cat ./a.py", "a.py", "/w"))
+        self.assertTrue(mentions('Read({"file_path": "/w/a.py"})', "a.py", "/w"))
+        self.assertTrue(mentions("cat /w/./src/a.py", "src/a.py", "/w/"))
+        self.assertFalse(mentions("cat src/a.py", "a.py", "/w"))
+        self.assertFalse(mentions("cat /x/a.py", "a.py", "/w"))
+        self.assertTrue(mentions("cat src/a.py", "a.py"))                 # no directory known: as before
+        self.assertTrue(mentions("cat a.py /x/a.py", "a.py", "/w"))
+        self.assertFalse(mentions("cd /x && wc -l a.py", "a.py", "/w"))     # build_ag: another worktree's file
+        self.assertFalse(mentions("cd src; cat a.py", "a.py", "/w"))
+        self.assertTrue(mentions("cd /w && cat a.py", "a.py", "/w"))
+        self.assertTrue(mentions('Bash({"command": "cd \\"/w\\" && cat a.py"})', "a.py", "/w"))
+        self.assertTrue(mentions("cd /x && cat /w/a.py", "a.py", "/w"))
+
+    def test_no_second_notice_until_the_agent_reads_it_again(self):
+        self.put(PREAMBLE + [user("read notes.txt", 1)] + opened("notes.txt", 1) + [agent("X", 1)])
+        self.change("notes.txt", 5)
+        self.assertEqual(self.notices(self.read()), ["Notice: File notes.txt was changed on disk (at 5)."])
+        self.put([agent("ok", 2), user("go on", 3)])
+        self.change("notes.txt", 6)                                       # not read since: the notice stands
+        self.assertEqual(self.notices(self.read()), ["Notice: File notes.txt was changed on disk (at 5)."])
+        self.put(opened("notes.txt", 4))
+        self.change("notes.txt", 7)                                       # read again, then changed: news
+        self.assertEqual(self.notices(self.read()), ["Notice: File notes.txt was changed on disk (at 5).",
+                                                     "Notice: File notes.txt was changed on disk (at 7)."])
+
+    def test_after_a_build_only_what_is_left_counts(self):
+        self.put(PREAMBLE + [user("read /w/a.py", 1)] + opened("/w/a.py", 1) + [agent("ok", 1)])
+        self.change("/w/a.py", 1)
+        self.put(conversation(12, start=2))
+        self.run_build("w", "c1")
+        self.put([user("next", 50)])
+        self.change("/w/a.py", 2)                                         # its reading was condensed away
+        self.assertEqual(self.notices(self.read()), [])
+        self.put(opened("/w/a.py", 51))
+        self.change("/w/a.py", 3)                                         # the earlier notice is gone: a first one
+        self.assertEqual(self.notices(self.read()), ["Notice: File /w/a.py was changed on disk (at 3)."])
 
     def test_a_shown_message_does_not_count_as_a_reference(self):
         self.put(PREAMBLE + [user("q", 1), agent("ok", 1)])
@@ -292,7 +362,7 @@ class NoticeTest(OutsideBase):
 
 class BothTest(OutsideBase):
     def test_messages_and_notices_in_place(self):
-        self.put(PREAMBLE + [user("read notes.txt", 1), agent("it says X", 1)])
+        self.put(PREAMBLE + [user("read notes.txt", 1)] + opened("notes.txt", 1) + [agent("it says X", 1)])
         self.post("the numbers changed, by the way", 10)
         self.change("notes.txt", 11)
         self.put([user("so what was it?", 2)])
@@ -311,7 +381,7 @@ class BothTest(OutsideBase):
         self.assertEqual(self.texts(after)[len(before):], ["a", "q2", "@#analytics alice: second"])
 
     def test_remade_on_every_read_and_never_condensed(self):
-        self.put(PREAMBLE + [user("read notes.txt", 1)])
+        self.put(PREAMBLE + [user("read notes.txt", 1)] + opened("notes.txt", 1))
         self.post("hi", 1)
         self.change("notes.txt", 2)
         for _ in range(2):
@@ -330,7 +400,7 @@ class AfterABuildTest(OutsideBase):
         self.put([user("open /w/old.py and /w/new.py", 7), agent("ok", 7)])
         self.put(conversation(5, start=8))
         self.run_build("w", "c1")
-        self.put([user("go on with /w/old.py and /w/new.py", 50)])
+        self.put(opened("/w/old.py /w/new.py", 49) + [user("go on with /w/old.py and /w/new.py", 50)])
         self.post("new", 2)
         self.change("/w/new.py", 2)
         context = self.read()
@@ -346,7 +416,7 @@ class AfterABuildTest(OutsideBase):
     def test_the_sections_are_reused_and_the_rest_remade(self):
         self.put(PREAMBLE + conversation(12))
         self.run_build("w", "c1")
-        self.put([user("q about /w/a.py", 50)])
+        self.put([user("q about /w/a.py", 50)] + opened("/w/a.py", 50))
         first = self.read()
         self.post("later", 3)
         self.change("/w/a.py", 3)

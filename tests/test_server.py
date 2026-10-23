@@ -31,6 +31,13 @@ def agent(text, n):
             "content": [{"type": "output_text", "text": text}]}
 
 
+def cat(name, n):
+    """The agent's own call reading `name`, and its output: what makes a file seen for a notice."""
+    return [{"type": "function_call", "id": f"fc{n}", "call_id": f"c{n}", "name": "exec_command",
+             "arguments": json.dumps({"cmd": f"cat {name}"})},
+            {"type": "function_call_output", "id": f"fco{n}", "call_id": f"c{n}", "output": "x = 1"}]
+
+
 def events(*items):
     return codex.to_events(list(items))
 
@@ -116,7 +123,7 @@ class ManagerFunctionsTest(HomeBase):
         target = os.path.join(work, "a.py")
         with open(target, "w") as fh:
             fh.write("x = 1\n")
-        first = [DEV, user("please read a.py", 1)]
+        first = [DEV, user("please read a.py", 1), *cat("a.py", 1)]
         self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "cwd": work, "events": events(*first)})
         time.sleep(0.01)
         with open(target, "a") as fh:
