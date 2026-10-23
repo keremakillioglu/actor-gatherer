@@ -515,7 +515,7 @@ class Declared(Policy):
     """A policy whose types declare properties the harness knows nothing of:
     `note` may carry a `lane` and must carry a `user`; `tick` carries none."""
     name = "declared"
-    event_types = (EventType("note", (Property("lane"), Property("user", required=True))), EventType("tick"))
+    event_types = (EventType("note", (Property("lane", identifies=True), Property("user", required=True))), EventType("tick"))
 
     def read(self, conn, read):
         rows = conn.rows(match=read.properties)
@@ -546,7 +546,7 @@ class PropertiesTest(unittest.TestCase):
         for table in schema.PROPERTY_TABLES:
             columns = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")]
             self.assertEqual([c for c in columns if c.startswith("p_")], ["p_lane", "p_user"], table)
-        self.assertEqual(self.m.event_types("p")[0].properties, (Property("lane"), Property("user", True)))
+        self.assertEqual(self.m.event_types("p")[0].properties, (Property("lane", identifies=True), Property("user", True)))
 
     def test_what_an_insert_may_carry(self):
         with self.assertRaisesRegex(ValueError, "requires the property 'user'"):
@@ -562,13 +562,35 @@ class PropertiesTest(unittest.TestCase):
         self.assertEqual(self.conn.execute("SELECT p_lane, p_user FROM events ORDER BY row_id").fetchall(),
                          [(None, "u"), (None, None)])
 
-    def test_an_event_id_is_one_event_per_combination_of_properties(self):
+    def test_an_event_is_its_id_and_its_identifying_properties(self):
         self.assertIsNotNone(self.put(1, "e", user="u", lane="a"))
         self.assertIsNone(self.put(1, "e", user="u", lane="a"))           # the same event
-        self.assertIsNotNone(self.put(1, "e", user="u", lane="b"))
+        self.assertIsNotNone(self.put(1, "e", user="u", lane="b"))         # lane identifies it
         self.assertIsNotNone(self.put(1, "e", user="u"))                  # lane unset is a value of its own
         self.assertIsNone(self.put(1, "e", user="u", lane=None))
-        self.assertIsNotNone(self.put(1, "e", user="v", lane="a"))
+        self.assertIsNone(self.put(1, "e", user="v", lane="a"))           # user only describes it: the same event
+        self.assertEqual(self.conn.execute("SELECT p_user FROM events WHERE p_lane = 'a'").fetchall(), [("u",)])
+        self.assertEqual(self.m.locate("p", "e", properties={"lane": "a", "user": "v"}), 1)   # found by its identity
+
+    def test_the_identity_is_what_any_type_declares(self):
+        self.m.add_event_type("p", EventType("mark", (Property("lane"),)))          # lane plainly: still identifying
+        self.assertEqual(schema.identifying_names(self.conn), ["lane"])
+        self.m.add_event_type("p", EventType("tag", (Property("user", identifies=True),)))
+        self.assertEqual(schema.identifying_names(self.conn), ["lane", "user"])
+        self.assertIsNotNone(self.put(1, "e", user="u", lane="a"))
+        self.assertIsNotNone(self.put(1, "e", user="v", lane="a"))           # now user identifies it too
+
+    def test_a_database_holding_one_event_twice_by_a_new_identity_is_refused(self):
+        self.m.add_event_type("p", EventType("mark", (Property("topic"),)))
+        tid = {t.name: t.id for t in self.m.event_types("p")}["mark"]
+        self.m.insert("p", Event(tid, 1, id="x", properties={"topic": "a"}))
+        self.m.insert("p", Event(tid, 1, id="x", properties={"topic": "a"}))
+        self.conn.execute("DROP INDEX events_id")                            # as an older file was indexed
+        self.conn.execute("INSERT INTO events (inserted_at, event_id, event_type_id, payload_json, tokens, p_topic) "
+                          "VALUES ('t', 'x', ?, '1', 1, 'b')", (tid,))
+        self.conn.commit()
+        with self.assertRaisesRegex(schema.OutdatedDatabase, "delete the gatherer"):
+            self.m.add_event_type("p", EventType("again", (Property("lane"),)))
 
     def test_the_filters(self):
         self.put("a1", "1", user="u", lane="a")
@@ -611,7 +633,7 @@ class PropertiesTest(unittest.TestCase):
 
     def test_a_type_added_later_adds_its_properties(self):
         self.put(1, "e", user="u")
-        tid = self.m.add_event_type("p", EventType("tag", (Property("topic"),)))
+        tid = self.m.add_event_type("p", EventType("tag", (Property("topic", identifies=True),)))
         self.assertIn("p_topic", [r[1] for r in self.conn.execute("PRAGMA table_info(events)")])
         self.assertIsNotNone(self.m.insert("p", Event(tid, 1, id="e", properties={"topic": "t"})))
         self.assertIsNone(self.m.insert("p", Event(tid, 1, id="e", properties={"topic": "t"})))   # the index covers it

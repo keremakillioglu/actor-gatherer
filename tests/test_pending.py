@@ -79,6 +79,14 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.rows("SELECT count(*) FROM _pending"), [(0,)])
         self.assertEqual(self.rows("SELECT count(*) FROM events")[0][0], before + 2)   # the reply, the request: once
 
+    def test_a_call_from_another_directory_of_the_channel_clears_them(self):
+        """cwd only describes where an event happened: the channel's next call carries the answer back
+        whatever directory it comes from."""
+        self.ask(self.call(C1, [ask("count the rows")]), self.pend(C1),
+                 self.call(dict(C1, cwd="/w/sub"), [ask("count the rows"), REPLY, ask("and the columns?")]))
+        self.assertEqual(self.rows("SELECT count(*) FROM _pending"), [(0,)])
+        self.assertEqual(self.rows("SELECT count(*) FROM events WHERE text = 'There are 42 rows.'"), [(1,)])
+
     def test_a_read_only_call_clears_them_too(self):
         self.ask(self.call(C1, [ask("count the rows")]), self.pend(C1),
                  dict(self.call(C1, [ask("count the rows"), REPLY]), op="context"))   # a suggestion's

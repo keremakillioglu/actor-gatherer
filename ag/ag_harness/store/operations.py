@@ -25,7 +25,7 @@ from ag.ag_interface import Event, EventType, Property, Tokenizer, property_colu
 from ag.ag_interface.event import PROPERTY_NAME
 from ag.ag_interface.store import Ref, Row, event_text  # noqa: F401 - the interface's, used here too
 
-from .schema import add_properties, property_names
+from .schema import add_properties, identifying_names, index, property_names
 
 
 def _now() -> str:
@@ -55,16 +55,19 @@ def register_type(conn: sqlite3.Connection, event_type: EventType) -> int:
                      (event_type.name, _now()))
         type_id = conn.execute("SELECT event_type_id FROM event_types WHERE name = ?",
                                (event_type.name,)).fetchone()[0]
-        conn.executemany("INSERT INTO event_type_properties (event_type_id, name, required) VALUES (?, ?, ?) "
-                         "ON CONFLICT DO NOTHING", [(type_id, p.name, int(bool(p.required)))
-                                                    for p in event_type.properties])
+        conn.executemany("INSERT INTO event_type_properties (event_type_id, name, required, identifies) "
+                         "VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
+                         [(type_id, p.name, int(bool(p.required)), int(bool(p.identifies)))
+                          for p in event_type.properties])
+        index(conn, property_names(conn))              # the identity, if this type changed it
     return type_id
 
 
 def _declared(conn: sqlite3.Connection) -> Dict[int, Tuple[Property, ...]]:
     out: Dict[int, list] = {}
-    for i, n, r in conn.execute("SELECT event_type_id, name, required FROM event_type_properties ORDER BY rowid"):
-        out.setdefault(i, []).append(Property(n, bool(r)))
+    for i, n, r, k in conn.execute("SELECT event_type_id, name, required, identifies FROM event_type_properties "
+                                   "ORDER BY rowid"):
+        out.setdefault(i, []).append(Property(n, bool(r), bool(k)))
     return {i: tuple(ps) for i, ps in out.items()}
 
 
@@ -92,12 +95,14 @@ class Spec:
     kept while no type is added."""
     names: List[str] = field(default_factory=list)
     types: Dict[int, Tuple[str, Dict[str, bool]]] = field(default_factory=dict)   # id -> (name, {property: required})
+    identifying: List[str] = field(default_factory=list)   # those of `names` that are part of an event's identity
 
 
 def spec(conn: sqlite3.Connection) -> Spec:
     declared = _declared(conn)
     return Spec(property_names(conn), {i: (n, {p.name: p.required for p in declared.get(i, ())})
-                                       for i, n in conn.execute("SELECT event_type_id, name FROM event_types")})
+                                       for i, n in conn.execute("SELECT event_type_id, name FROM event_types")},
+                identifying_names(conn))
 
 
 def _value(name: str, value: Any) -> Any:
@@ -230,19 +235,22 @@ def insert_sql(names: List[str]) -> str:
             f"VALUES (?, ?, ?, ?, ?, ?{', ?' * len(names)}) ON CONFLICT DO NOTHING RETURNING row_id")
 
 
-def stored(conn: sqlite3.Connection, names: List[str], values: tuple, event_id: str) -> bool:
-    """Whether an event with this id and exactly these properties is stored."""
-    return conn.execute(f"SELECT 1 FROM events WHERE {_same(names)}event_id = ?",
-                        (*_unset_is_empty(values), event_id)).fetchone() is not None
+def stored(conn: sqlite3.Connection, sp: Spec, values: tuple, event_id: str) -> bool:
+    """Whether an event with this id and these identifying properties (of `values`, in `sp.names`'
+    order) is stored: the same event, whatever its other properties."""
+    keyed = [v for n, v in zip(sp.names, values) if n in sp.identifying]
+    return conn.execute(f"SELECT 1 FROM events WHERE {_same(sp.identifying)}event_id = ?",
+                        (*_unset_is_empty(keyed), event_id)).fetchone() is not None
 
 
 def locate(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], event_id: str) -> Optional[int]:
     """The row id of the event with this id as a read with `properties` sees
-    it -- with each property its value or unset (one not given: unset) --
-    whichever was stored first (the one `rows` returns), or None."""
+    it -- with each identifying property its value or unset (one not given:
+    unset); the others are not the event's identity -- whichever was stored
+    first (the one `rows` returns), or None."""
     if not event_id:
         return None
-    names = property_names(conn)
+    names = identifying_names(conn)
     given = properties or {}
     where, params = _filter(names, "", {n: given.get(n) for n in names}, None, True)
     row = conn.execute(f"SELECT min(row_id) FROM events WHERE {where}event_id = ?", (*params, event_id)).fetchone()
@@ -251,7 +259,7 @@ def locate(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], event
 
 def insert(conn: sqlite3.Connection, event: Event, tokenizer: Tokenizer, spec_: Optional[Spec] = None) -> Optional[int]:
     """Store one event in its own transaction. Returns its row id, or None if
-    it was already stored (same id, same properties). An event without an
+    it was already stored (same id, same identifying properties). An event without an
     id is always stored. `spec_`: the gatherer's (`spec`), if the caller keeps it.
 
     A re-sent event is recognised by its id BEFORE it is serialized and
@@ -270,7 +278,7 @@ def insert(conn: sqlite3.Connection, event: Event, tokenizer: Tokenizer, spec_: 
     check(event)
     sp = spec_ or spec(conn)
     values = property_values(event, sp)
-    if event.id and stored(conn, sp.names, values, event.id):
+    if event.id and stored(conn, sp, values, event.id):
         return None
     row_values = row_of(event, values, tokenizer)
     try:
@@ -283,7 +291,7 @@ def insert(conn: sqlite3.Connection, event: Event, tokenizer: Tokenizer, spec_: 
 
 def insert_many(conn: sqlite3.Connection, events, tokenizer: Tokenizer) -> None:
     """Store a whole history in ONE transaction (a bulk load). Events already
-    stored (same id, same properties) are skipped, as `insert` skips them.
+    stored (same id, same identifying properties) are skipped, as `insert` skips them.
 
     Raises:
         TypeError, LookupError, ValueError: as `insert`. Nothing is stored.
@@ -460,7 +468,7 @@ def record_counts(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]]
     parts (name, text, tokens). Each is marked `counted`. `left_out`, {read_id: tokens}: what the
     harness left out of a read's context before sending it, taken off the read's `sent_tokens`.
     How many of each were found."""
-    names = [n for n in property_names(conn) if properties and n in properties]
+    names = [n for n in identifying_names(conn) if properties and n in properties]   # the events' identity
     where = "".join(f" AND {property_column(n)} = ?" for n in names)
     values = [properties[n] for n in names]
     found = {"events": 0, "made": 0, "preamble": 0}
@@ -587,11 +595,12 @@ def pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = Non
 
 
 def clear_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]]) -> int:
-    """Delete the pending events with exactly these properties (`_same`): a call with them
-    has stored its events, the answers they were kept for among them. How many."""
-    names = property_names(conn)
-    if any(v is not None for n, v in (properties or {}).items() if n not in names):
+    """Delete the pending events with these identifying properties (`identifying_names`: the
+    channel's, whatever directory the call came from): a call with them has stored its events,
+    the answers they were kept for among them. How many."""
+    if any(v is not None for n, v in (properties or {}).items() if n not in property_names(conn)):
         return 0
+    names = identifying_names(conn)
     values = tuple((properties or {}).get(n) for n in names)
     with conn:
         cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}1", _unset_is_empty(values))

@@ -66,7 +66,7 @@ class ContextManager(ABC):
         recorded (`locate` finds the row id it has).
 
         Must be safe to call again with an event id already recorded with
-        the same properties: a caller that sees the whole conversation on
+        the same identifying properties (`Property.identifies`): a caller that sees the whole conversation on
         every model call inserts every event every time.
 
         Args:

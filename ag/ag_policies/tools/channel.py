@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 from ag.ag_interface import Property
 
 CHANNEL = "channel"
-CHANNEL_PROPERTY = Property(CHANNEL)
+CHANNEL_PROPERTY = Property(CHANNEL, identifies=True)      # the same id in two channels: two events
 
 
 def channel_of(x) -> Optional[str]:

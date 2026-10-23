@@ -4,6 +4,7 @@ functions over stdio, on generic events, the same for every harness."""
 import io
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -135,6 +136,29 @@ class ManagerFunctionsTest(HomeBase):
         self.assertEqual((notice["type"], notice["name"]), ("ag", "environment_update"))
         self.assertTrue(notice["text"].startswith("File a.py was changed on disk"), notice["text"])
         self.assertIn("(1 ag)", answer["note"])
+
+    def test_a_session_whose_directory_changes_stores_its_history_once(self):
+        """making_ag: Claude Code's working directory went back and forth, and each switch stored the
+        whole re-sent history again under the other directory -- the other session was shown each of
+        its requests as many times."""
+        dirs = [os.path.join(self.tmp.name, d) for d in ("home", "worktree")]
+        for d in dirs:
+            os.makedirs(d)
+        say = lambda channel, cwd, *items: self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": channel, "cwd": cwd},  # noqa: E731
+                                                     "cwd": cwd, "events": events(*items)})[0]
+        history = [DEV, user("can we do the same for all the harnesses?", 1)]
+        say("a", dirs[0], *history)
+        say("a", dirs[1], *history, agent("yes", 1))                       # the same history, from the worktree
+        say("a", dirs[0], *history, agent("yes", 1), user("and now?", 2))  # and back
+        conn = sqlite3.connect(paths.db_path("s"))
+        rows = conn.execute("SELECT event_id, p_cwd FROM events WHERE p_channel = 'a' ORDER BY row_id").fetchall()
+        self.assertEqual(len(rows), len({e for e, _ in rows}))                          # each event once
+        self.assertEqual([c for _, c in rows], [dirs[0], dirs[0], dirs[1], dirs[0]])    # where it first came
+        answer = say("b", dirs[0], DEV, user("hi", 7))
+        shown = [e for e in answer["context"] if "can we do the same" in json.dumps(e)]
+        self.assertEqual(len(shown), 1)                                    # shown to the other session once
+        self.assertEqual(len(say("b", dirs[0], DEV, user("hi", 7))["context"]), len(answer["context"]))
+        self.assertEqual(conn.execute("SELECT count(*) FROM events WHERE p_channel = 'b'").fetchone()[0], 2)
 
     def test_any_harness_may_share_a_gatherer_in_channels_of_its_own(self):
         pi_message = {"role": "user", "content": "hi from pi", "timestamp": 1}

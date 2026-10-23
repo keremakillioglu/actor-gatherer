@@ -6,7 +6,8 @@ types, or list them.
     python3 -m ag.ag_harness event-types <gatherer_id>
 
 PROPERTIES are the type's, comma-separated, each `name` (optional) or
-`name!` (required).
+`name!` (required), with `*` after it when it identifies an event (`channel*`,
+`channel!*`).
 
 `init` is idempotent: calling it again for the same gatherer changes nothing; a type already defined keeps its id. All of this
 works on the storage alone: no model, no Format.
@@ -26,12 +27,13 @@ def parse_type(spec: str) -> EventType:
     name, _, props = spec.partition(":")
     if not name:
         raise argparse.ArgumentTypeError(f"an event type needs a name: {spec!r}")
-    return EventType(name, tuple(Property(p.rstrip("!"), p.endswith("!"))
-                                               for p in props.split(",") if p.strip("!")))
+    return EventType(name, tuple(Property(p.rstrip("!*"), "!" in p, p.endswith("*"))
+                                 for p in props.split(",") if p.strip("!*")))
 
 
 def shown(t: EventType) -> str:
-    return ",".join(p.name + ("!" if p.required else "") for p in t.properties) or "-"
+    return ",".join(p.name + ("!" if p.required else "") + ("*" if p.identifies else "")
+                    for p in t.properties) or "-"
 
 
 def main(argv=None) -> int:

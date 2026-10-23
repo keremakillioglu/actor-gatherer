@@ -158,7 +158,8 @@ def contract(h, gatherer, policy, pollers, none: bool = False) -> dict:
     if unknown:
         raise ConfigError(f"no poller {', '.join(unknown)}; `list` shows them")
     return {"policy": policy,
-            "event_types": [{"name": t.name, "properties": [{"name": p.name, "required": p.required}
+            "event_types": [{"name": t.name, "properties": [{"name": p.name, "required": p.required,
+                                                             "identifies": p.identifies}
                                                             for p in t.properties]}
                             for t in h.policy_class(spec).event_types],
             "pollers": {name: list(h.poller_class(known[name]).outputs) for name in names},
