@@ -97,6 +97,30 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     return routed, note
 
 
+async def pending_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], answer: list,
+                     adaptor: Adaptor, answer_id: Optional[str] = None) -> str:
+    """What the model answered -- `answer`, the harness's messages it makes -- through the adaptor's
+    `to_events`, kept by the server as pending (its `pending`): seen by a reader of the gatherer
+    until the next call with these properties stores its events. The properties are a call's (CWD
+    from `cwd`, as `call_ag` sets it), so that call's are what clears them. A note; never raises."""
+    if cwd:
+        properties = {**properties, CWD: cwd}
+    try:
+        events = adaptor.to_events(answer)
+    except Exception as exc:  # noqa: BLE001
+        return f"could not make events: {exc!r}; nothing kept"
+    if not events:
+        return "no events; nothing kept"
+    body = {"gatherer": gatherer, "properties": properties,
+            "events": [{k: e[k] for k in ("type", "payload", "text") if k in e} for e in events if isinstance(e, dict)]}
+    if answer_id:
+        body["answer"] = answer_id
+    kept = await client.request("pending", body)
+    if not isinstance(kept, dict) or kept.get("error"):
+        return f"server: {kept.get('error') if isinstance(kept, dict) else repr(kept)}; nothing kept"
+    return f"{kept.get('kept')} events pending"
+
+
 READ = "ag_read"      # a proxy hook's key in the hook server's `request.state`: (gatherer, read_id)
 
 

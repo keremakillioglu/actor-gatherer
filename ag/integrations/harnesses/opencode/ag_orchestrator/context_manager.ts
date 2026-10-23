@@ -19,7 +19,7 @@
  */
 
 import { AgClient } from "../../../tools/ag_connection/ag_client.ts";
-import { type Preamble, type Requester, call_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
+import { type Preamble, type Requester, call_ag, pending_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
 import type { Message } from "../adaptor/to_events.ts";
 import { type Adaptor, CHANNEL } from "../../../tools/ag_orchestrator/adaptor.ts";
 import { Measurements, n } from "../../../tools/ag_orchestrator/measured.ts";
@@ -53,6 +53,8 @@ export class OpencodeContextManager {
 	/** What opencode sends besides the messages: each session's system prompt, every tool's definition. */
 	readonly systems = new Map<string, string>();
 	readonly tools = new Map<string, { description: string; parameters: unknown }>();
+	/** The parts of each assistant message still being answered, by message id, as opencode's events report them. */
+	readonly parts = new Map<string, Map<string, any>>();
 
 	constructor(options: { named?: string; timeoutMs?: number; server?: Client; adaptor?: Adaptor<Message> } = {}) {
 		this.named = options.named || undefined;
@@ -97,6 +99,37 @@ export class OpencodeContextManager {
 	preamble(sessionID: string): Preamble {
 		const tools = [...this.tools].sort(([a], [b]) => a.localeCompare(b)).map(([name, d]) => ({ name, ...d }));
 		return [{ name: "system", text: this.systems.get(sessionID) || "" }, { name: "tools", text: tools.length ? JSON.stringify(tools) : "" }];
+	}
+
+	/**
+	 * One of opencode's events (the plugin's `event` hook). A part of an assistant message is kept (`message.part.updated`)
+	 * until the message has completed (`message.updated`, with `time.completed`): then the message -- what the model
+	 * answered -- is kept as pending (the server's `pending`) until the session's next call stores it, so a reader of the
+	 * gatherer sees the turn's last reply, which no call carries until the user writes again, and a tool call while it
+	 * runs. An answer that failed is not kept. `directory` is the one the calls state (the plugin's), so the next call's
+	 * properties are the pending events' and clear them. A note, or null for none.
+	 */
+	async event(event: any, directory?: string): Promise<string | null> {
+		const props = event?.properties;
+		if (event?.type === "message.part.updated" && props?.part?.messageID && props.part.id) {
+			const parts = this.parts.get(props.part.messageID) ?? new Map<string, any>();
+			parts.set(props.part.id, props.part);
+			this.parts.set(props.part.messageID, parts);
+			return null;
+		}
+		if (event?.type === "message.part.removed" && props?.messageID) {
+			this.parts.get(props.messageID)?.delete(props.partID);
+			return null;
+		}
+		const info = event?.type === "message.updated" ? props?.info : undefined;
+		if (!info || info.role !== "assistant" || !info.time?.completed) return null;
+		const parts = [...(this.parts.get(info.id)?.values() ?? [])];
+		this.parts.delete(info.id);
+		if (info.error || !parts.length) return null;
+		const where = this.where([{ info, parts } as Message]);
+		if (!where) return null;
+		return pending_ag(this.server, { ...where, cwd: directory },
+			[{ info, parts } as Message], this.adaptor, info.id);
 	}
 
 	/** Stop the server: it finishes what it is answering and exits. */

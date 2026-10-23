@@ -4,6 +4,7 @@
  * hook (context_manager.ts) and adds what pi needs besides:
  *
  *   the `context` event     before every model call: the context manager's messages, or pi's own
+ *   message_end             the model's answer, once it has ended: kept as pending until the next call
  *   --ag-gatherer NAME          a named base gatherer (or AG_GATHERER), each pi session a channel in it
  *   session_start           set the gatherer up; the footer shows `ag: <policy>` (`ag: off` and a
  *                           warning if it cannot)
@@ -73,6 +74,12 @@ export default async function (pi: ExtensionAPI) {
 			return undefined;
 		}
 		return { messages: messages as typeof event.messages };
+	});
+
+	pi.on("message_end", async (event, ctx) => {
+		if (failed) return undefined;
+		await ag.answered(event.message, where(ctx), ctx.cwd);
+		return undefined;
 	});
 
 	pi.on("session_before_compact", async () => {

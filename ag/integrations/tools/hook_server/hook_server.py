@@ -30,7 +30,10 @@ a POST's answer has come back whole, before the harness sees its end: `tokens`
 is the call's input tokens as the answer reports them, cached ones included
 (trace.py's reading of a Responses or Anthropic Messages answer), or None; the
 `request` is the one it was given, with whatever it kept in `request.state`
-(only a request it kept something on is measured). A URL starting
+(only a request it kept something on is measured). A hook with an `answered(request, status, answer)`
+has it called (awaited) once a POST's answer has come back whole and the harness has seen its end,
+for the same requests as `measured`: the HTTP status, and the answer as trace.py reads it
+(`response_of`: {response_id, status, token_usage, output_items, error}). A URL starting
 `/h/<label>/` gives the hook that label (the prefix is stripped before
 forwarding): what the label means is the hook's to decide. `request.upstream` is
 where the request goes (its path after it), for a hook that asks the same
@@ -157,7 +160,8 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
             call = (trace.started(n, path_qs, label, thread, sent, new is not None), thread)
 
         measured = getattr(hook, "measured", None) if request.method == "POST" and given.state else None
-        answer = [] if call or measured else None
+        answered = getattr(hook, "answered", None) if request.method == "POST" and given.state else None
+        answer = [] if call or measured or answered else None
         timeout = ClientTimeout(total=None, sock_read=1800)
         status, error = None, None
         try:
@@ -184,6 +188,13 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                             print(f"#{n:04d} measured failed: {exc!r}", file=sys.stderr, flush=True)
                     await resp.write_eof()
                     record["status"] = up.status
+                    if answered:                              # after the harness has the answer: it waits on nothing
+                        try:
+                            result = answered(given, status, response_of(whole))
+                            if inspect.isawaitable(result):
+                                await result
+                        except Exception as exc:  # noqa: BLE001 - the answer is already the harness's
+                            print(f"#{n:04d} answered failed: {exc!r}", file=sys.stderr, flush=True)
         except Exception as exc:
             error = repr(exc)
             raise

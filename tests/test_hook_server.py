@@ -139,6 +139,29 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((self.hook.seen[-1].label, self.hook.seen[-1].path), ("demo", "/v1/chat"))
         self.assertEqual(self.received[-1][1], "/v1/chat")
 
+    async def test_answered_gets_the_whole_answer_after_the_harness_has_it(self):
+        class Answered(ToyHook):
+            async def __call__(self, request):
+                request.state["kept"] = True                 # only a request the hook kept something on
+                return await super().__call__(request)
+
+            async def answered(self, request, status, answer):
+                self.answers.append((request.path, status, answer))
+
+        hook = Answered()
+        hook.answers = []
+        client = TestClient(TestServer(hook_server.make_app(str(self.upstream.make_url("")).rstrip("/"), hook)))
+        await client.start_server()
+        try:
+            resp = await client.post("/v1/chat", json={"messages": ["hi"]})
+            self.assertEqual(await resp.read(), STREAM)
+            await client.get("/v1/models")                                           # not a POST: not reported
+        finally:
+            await client.close()
+        (path, status, answer), = hook.answers
+        self.assertEqual((path, status), ("/v1/chat", 200))
+        self.assertEqual(answer["output_items"], [])                                 # not a model's answer: nothing in it
+
     async def test_the_hook_is_closed_with_the_server(self):
         await self.client.close()
         self.assertTrue(self.hook.closed)

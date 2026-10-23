@@ -373,6 +373,28 @@ class Manager(ContextManager):
             return {"events": 0, "made": 0, "preamble": 0}
         return store.record_counts(self._conn(gatherer_id), properties, events, made, preamble, left_out)
 
+    def record_pending(self, gatherer_id: str, properties: Optional[dict], events: List[dict],
+                       answer: Optional[str] = None) -> int:
+        """Not part of the interface: keep what the model answered -- its events, {"type",
+        "payload", "text"?} -- until the next call with these properties stores its events
+        (`clear_pending`): what a reader of the gatherer can see of an answer no call has
+        carried back yet (`store.record_pending`). How many were kept."""
+        return store.record_pending(self._conn(gatherer_id), properties, events, answer)
+
+    def pending(self, gatherer_id: str, *, properties: Optional[dict] = None) -> List[dict]:
+        """Not part of the interface: the pending events with these properties, oldest first
+        (`store.pending`)."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return []
+        return store.pending(self._conn(gatherer_id), properties)
+
+    def clear_pending(self, gatherer_id: str, properties: Optional[dict]) -> int:
+        """Not part of the interface: delete the pending events with exactly these properties,
+        once a call with them has stored its events (`store.clear_pending`). How many."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return 0
+        return store.clear_pending(self._conn(gatherer_id), properties)
+
     def bulk_load(self, gatherer_id: str, events, *, properties: Optional[dict] = None):
         """Not part of the interface: store a whole recorded history in one
         transaction (`store.insert_many`: duplicates skipped, nothing stored

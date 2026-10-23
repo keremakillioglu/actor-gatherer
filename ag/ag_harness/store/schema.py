@@ -16,9 +16,12 @@ One SQLite file per gatherer (paths.py):
                          definitions), each text once; a read names its own (internal)
     _polls               when each poller (a source of events from outside the
                          conversation) was last asked (internal)
+    _pending             what the model answered that no model call has carried back
+                         yet, as events, per channel: kept until that channel's next
+                         call stores its events (internal)
 
 A leading underscore marks a table internal to the manager (`_made_items`,
-`_reads`, `_read_items`, `_polls`), which the agent has no reason to know about; the
+`_reads`, `_read_items`, `_polls`, `_pending`), which the agent has no reason to know about; the
 others (`event_types`, `events`) it may be pointed at. Operations on these
 tables are in operations.py.
 
@@ -27,8 +30,8 @@ calls after `create`; none of them are here.
 
 Event types are not enumerated here or anywhere else in the package: they are
 the rows a caller puts in `event_types`, at init or later, and every event
-points at one of them. Nor are their PROPERTIES: `events`, `_made_items` and
-`_reads` get a column for each property a registered type declares
+points at one of them. Nor are their PROPERTIES: `events`, `_made_items`, `_reads`
+and `_pending` get a column for each property a registered type declares
 (`add_properties`, `p_<name>`, NULL = unset), and the unique index on events
 covers them all, so an event id is one event per combination of properties.
 """
@@ -146,6 +149,19 @@ CREATE TABLE IF NOT EXISTS _polls (
     name        TEXT    PRIMARY KEY,    -- the poller's name
     polled_at   REAL    NOT NULL        -- seconds since the epoch
 );
+
+-- What the model answered that no model call has carried back yet: the answer's events as
+-- the harness made them, kept from when the answer came back until the next call with the
+-- same properties (the same channel) stores its events -- the answer among them -- and
+-- deletes them. Not history: never read back as events, never in a context.
+CREATE TABLE IF NOT EXISTS _pending (
+    pending_id  INTEGER PRIMARY KEY,
+    received_at TEXT    NOT NULL,   -- (and the properties of the call it answered)
+    answer      TEXT,               -- the answer it is part of, as the provider names it; NULL = not named
+    type        TEXT    NOT NULL,   -- the event type's name, as the harness gave it
+    payload_json TEXT   NOT NULL,   -- the event's payload, as given
+    text        TEXT                -- its readable text, as given; NULL = none
+);
 """
 
 
@@ -156,7 +172,7 @@ class OutdatedDatabase(RuntimeError):
 
 
 #: The tables that carry the properties.
-PROPERTY_TABLES = ("events", "_made_items", "_reads")
+PROPERTY_TABLES = ("events", "_made_items", "_reads", "_pending")
 
 
 def create(conn: sqlite3.Connection) -> None:
@@ -181,6 +197,10 @@ def create(conn: sqlite3.Connection) -> None:
                          ("preamble_json", "TEXT"), ("sent_tokens", "INTEGER")):   # a file from before reads had them
         if column not in read_columns:
             conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} {kind}")
+    pending_columns = {c[1] for c in conn.execute("PRAGMA table_info(_pending)")}
+    for name in property_names(conn):                                # a file from before _pending: its properties
+        if property_column(name) not in pending_columns:
+            conn.execute(f"ALTER TABLE _pending ADD COLUMN {property_column(name)}")
     if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'events_id'").fetchone() is None:
         index(conn, property_names(conn))            # a new file: over no property yet
 
