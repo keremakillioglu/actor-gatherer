@@ -25,8 +25,10 @@ the build.
 
 The third: each request the user made to another channel since the build in
 use (since the start, before one) is a developer message (`parallel_message`)
-placed just before this channel's latest user message. Requests before the
-build's mark are in its index section instead. All three are made items,
+placed, the first time it is shown, just before this channel's latest user
+message -- and kept there after (`tables.record_shown`), so a later user
+message does not move it and the context only grows at its end. Requests
+before the build's mark are in its index section instead. All three are made items,
 remade on every read and never reused as sections.
 
 All the model gets with a call -- the sections, the pinned rows, the running
@@ -301,8 +303,9 @@ class ProactiveContextManager(Policy):
         and a notice at the place of each environment update of the verbatim
         part whose subject the agent's tool calls before it opened (`notices`). Messages and notices
         are made items; the events are never returned. Then the requests made
-        to the other channels (`parallel_requests`), right before this
-        channel's latest user message.
+        to the other channels (`parallel_requests`): each before the user
+        message it was first shown before, a new one before this channel's
+        latest (`parallel_places`).
 
         `tokens` is all the model gets with the context, what min_ and
         max_context_tokens are checked against: the context, and what the
@@ -334,7 +337,7 @@ class ProactiveContextManager(Policy):
                      + self.notices(conn, types, channel_of(read), cut, preamble + pinned + tail, read.properties))
         entries = list(self.interleave(tail, made_here, types))
         shown = self.parallel_requests(conn, types, channel_of(read), build["parallel_mark"] if build else 0)
-        tokens += sum(cost[1] if kind == "made" else cost for kind, _, _, cost in entries) + sum(c for _, _, c in shown)
+        tokens += sum(cost[1] if kind == "made" else cost for kind, _, _, cost in entries) + sum(c for _, _, c, _ in shown)
         outside = sum(r.tokens for r in preamble) + fixed + read.fixed_tokens     # the model gets these too
         tokens += outside
         if stub and tokens > cfg.max_context_tokens:
@@ -343,9 +346,10 @@ class ProactiveContextManager(Policy):
             items.append(item)
             refs.append(Ref(row_id=row_id) if kind == "row" else Ref(made_id=cost[0]))
         if shown:
-            at = self.latest_request(refs, rows, types, channel_of(read))
-            for made_id, item, cost in reversed(shown):
-                items.insert(at, item)
+            places = self.parallel_places(conn, refs, len(refs) - len(entries), rows, types, channel_of(read), shown)
+            for at, i in sorted(((at, i) for i, at in enumerate(places)), reverse=True):
+                made_id, item, _, _ = shown[i]              # the last first: the earlier places stay put,
+                items.insert(at, item)                       # and the oldest at one place comes first
                 refs.insert(at, Ref(made_id=made_id))
         return items, refs, tokens, tokens - outside
 
@@ -433,17 +437,30 @@ class ProactiveContextManager(Policy):
                 tokens -= stub(run_indices)
         return [replaced.get(i, e) for i, e in enumerate(entries) if replaced.get(i, e) is not None], tokens
 
-    def latest_request(self, refs: list, rows, types: TypeIds, channel_id) -> int:
-        """The position in the context of this channel's latest user message
-        (the end, if it has none)."""
+    def parallel_places(self, conn, refs: list, tail_from: int, rows, types: TypeIds, channel_id,
+                        shown: List[tuple]) -> List[int]:
+        """Where in the context each of `shown` goes, before any is inserted: before the user message
+        of this channel it was first shown before (`tables.shown_at`) -- or, that one condensed away,
+        before the first row of the verbatim part (`refs[tail_from:]`) after it -- and a request
+        not shown before goes before this channel's latest user message (the end, if it has none),
+        which is then recorded as its place."""
         own = [r.row_id for r in rows if channel_of(r) == channel_id and history.opens_turn(r, types, self.groups)]
-        if not own:
-            return len(refs)
-        return next((i for i, ref in enumerate(refs) if ref.row_id == own[-1]), len(refs))
+        anchors = tables.shown_at(conn, channel_id, [row for _, _, _, row in shown])
+        new = {row: own[-1] for _, _, _, row in shown if row not in anchors and own}
+        tables.record_shown(conn, channel_id, new)
+        anchors.update(new)
+        places = []
+        for _, _, _, row in shown:
+            anchor = anchors.get(row)
+            at = len(refs) if anchor is None else next(
+                (i for i in range(tail_from, len(refs)) if refs[i].row_id is not None and refs[i].row_id >= anchor),
+                len(refs))
+            places.append(at)
+        return places
 
     def parallel_requests(self, conn, types: TypeIds, channel_id, after_row: int) -> List[tuple]:
-        """(made_id, item, tokens) for each user message stored in another
-        channel after `after_row`, oldest first."""
+        """(made_id, item, tokens, its row id) for each user message stored in
+        another channel after `after_row`, oldest first."""
         out = []
         for r in conn.rows(after_row, types.of(*self.groups.user), differ=channel.of(channel_id)):
             other = channel_of(r)
@@ -454,7 +471,7 @@ class ProactiveContextManager(Policy):
             item = self.format.make_section(text, PARALLEL_REQUEST)
             made_id = conn.make_item(item, self.tokenizer, properties=channel.of(channel_id), name=PARALLEL_REQUEST,
                                      source=f"request {r.row_id}")
-            out.append((made_id, item, conn.made_items([made_id])[made_id][2]))
+            out.append((made_id, item, conn.made_items([made_id])[made_id][2], r.row_id))
         return out
 
     def interleave(self, tail, made_here: List[tuple], types: TypeIds) -> List[tuple]:
