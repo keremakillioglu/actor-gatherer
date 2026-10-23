@@ -83,6 +83,40 @@ class ShownTest(ParallelBase):
         self.assertEqual(texts.count("P[c2]: their task"), 1)
         self.assertEqual(texts[texts.index("P[c2]: their task") + 1], "my next task")
 
+    def test_once_shown_it_stays_where_it_was(self):
+        self.put(PREAMBLE + [user("my task", 1), call(1), output(1)])
+        self.put(PREAMBLE + [user("their task", 2)], channel="c2")
+        first = self.texts(self.read())
+        self.put([agent("done", 1), user("my next task", 3)])
+        second = self.texts(self.read())
+        self.assertEqual(second[:len(first)], first)                 # a prefix: nothing moved
+        self.assertEqual(second[second.index("P[c2]: their task") + 1], "my task")
+        self.assertEqual(second[len(first):], ["done", "my next task"])
+
+    def test_a_new_one_goes_before_the_latest_and_the_old_ones_stay(self):
+        self.put(PREAMBLE + [user("my task", 1), call(1), output(1)])
+        self.put(PREAMBLE + [user("first", 2)], channel="c2")
+        self.read()
+        self.put([agent("done", 1), user("my next task", 3)])
+        self.put([user("second", 4)], channel="c2")
+        texts = self.texts(self.read())
+        self.assertEqual(texts[texts.index("P[c2]: first") + 1], "my task")
+        self.assertEqual(texts[texts.index("P[c2]: second") + 1], "my next task")
+        self.assertEqual(self.parallel(self.read()), ["P[c2]: first", "P[c2]: second"])
+
+    def test_each_channel_has_its_own_places(self):
+        self.put(PREAMBLE + [user("my task", 1)])
+        self.put(PREAMBLE + [user("their task", 2)], channel="c2")
+        self.read()                                                  # c1 is shown c2's request
+        self.put(PREAMBLE + [user("c3 task", 5)], channel="c3")
+        self.put([agent("ok", 1), user("my next task", 3)])
+        texts = self.texts(self.read())
+        self.assertEqual(texts[texts.index("P[c2]: their task") + 1], "my task")
+        self.assertEqual(texts[texts.index("P[c3]: c3 task") + 1], "my next task")
+        three = self.texts(self.read("c3"))                          # c3 is shown both, before its own
+        at = three.index("c3 task")
+        self.assertEqual(three[at - 3:at], ["P[c1]: my task", "P[c2]: their task", "P[c1]: my next task"])
+
     def test_remade_on_every_read_not_reused(self):
         self.put(PREAMBLE + [user("my task", 1)])
         self.put(PREAMBLE + [user("their task", 2)], channel="c2")
@@ -124,6 +158,24 @@ class BuildTest(ParallelBase):
         sections = "\n".join(t for t in texts if t.startswith("# "))
         self.assertIn("before the build", sections)             # the index carries it, as before
         self.assertNotIn("# Recent requests made in a parallel session", sections)
+
+
+    def test_shown_before_a_message_a_build_condensed_it_comes_first_in_the_verbatim_part(self):
+        self.put(PREAMBLE + conversation(12))
+        self.run_build()
+        self.put([user("my task", 50)])
+        self.put(PREAMBLE + [user("their task", 100)], channel="c2")
+        self.read()                                                  # shown before "my task"
+        self.put([agent("ok", 50)])
+        conn = self.m._conn("w")
+        last = store.last_read(conn, ch("c1"))["read_id"]
+        conn.execute("UPDATE _read_items SET row_id = 3 WHERE read_id = ? AND row_id = "
+                     "(SELECT max(row_id) FROM _read_items WHERE read_id = ?)", (last, last))
+        conn.commit()                                                # as if it had come before a row condensed away
+        texts = self.texts(self.read())
+        last_section = max(i for i, t in enumerate(texts) if t.startswith("# "))
+        self.assertEqual(texts.index("P[c2]: their task"), last_section + 1)   # the verbatim part's first
+        self.assertEqual(self.parallel(self.read()), ["P[c2]: their task"])
 
 
 class WordingTest(ParallelBase):
