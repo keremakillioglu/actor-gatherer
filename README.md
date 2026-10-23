@@ -298,3 +298,13 @@ gathered from every Actor and from the environment.
 - [add a harness](https://ucbepic.github.io/actor-gatherer/docs.html#write-adaptor), so another coding agent can run with `ag`.
 
 See [Extending ag](https://ucbepic.github.io/actor-gatherer/docs.html#extending) in the docs.
+
+## Dashboard
+
+To see each agent's context over time:
+
+```bash
+ag dashboard                                             # http://127.0.0.1:4200
+ag dashboard --port 4300                                 # another port
+ag dashboard --out snapshot.html                         # one page, its data inside it
+```
