@@ -272,6 +272,16 @@ def stop(settings) -> int:
     return 0
 
 
+def dashboard(args: List[str]) -> int:
+    """`ag dashboard [--host H] [--port N] [--out FILE]`: the dashboard (its own package,
+    ag_dashboard, which reads the home's files and imports nothing of ag), on this home."""
+    from ag_dashboard.__main__ import main as dashboard_main
+    try:
+        return dashboard_main(["--home", config.home(), *args])
+    except SystemExit as exc:                 # its argument errors: the usage is printed
+        return exc.code if isinstance(exc.code, int) else 2
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     try:
@@ -292,6 +302,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return status(settings)
         if cmd == "stop":
             return stop(settings)
+        if cmd == "dashboard":
+            return dashboard(rest)
         raise AgError(f"no command {cmd!r}: one of {', '.join(settings['harnesses'])} (the harnesses in "
                       f"{config.path()}), or {', '.join(c for c in config.RESERVED if c != 'help')}")
     except (AgError, config.ConfigError) as exc:

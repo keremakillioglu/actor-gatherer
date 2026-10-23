@@ -1,7 +1,7 @@
 """What a harness sends besides its messages -- its system prompt, its tool definitions --
 stated with each call (`rewrite`'s `preamble`), kept once per distinct text
 (`_preambles`) and named by the read (`_reads.preamble_json`); the proxy hooks take it
-from the request."""
+from the request, and the dashboard shows it with the provider's count beyond it all."""
 import io
 import json
 import os
@@ -22,6 +22,8 @@ from ag.ag_harness import home as ag_home  # noqa: E402
 from ag.ag_harness.server import serve  # noqa: E402
 from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
+from ag_dashboard import data  # noqa: E402
+from ag_dashboard import home as dashboard_home  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.call_ag import preamble_of  # noqa: E402
 
@@ -42,10 +44,12 @@ class HomeBase(unittest.TestCase):
         self.saved = paths.TRACE_DIR, paths.AG_HOME
         paths.AG_HOME = os.path.join(self.tmp.name, "ag")
         paths.TRACE_DIR = os.path.join(paths.AG_HOME, "gatherers")
+        self.saved_home, dashboard_home.HOME = dashboard_home.HOME, paths.AG_HOME   # the dashboard reads the same home
         ag_home._HOMES.clear()
 
     def tearDown(self):
         paths.TRACE_DIR, paths.AG_HOME = self.saved
+        dashboard_home.HOME = self.saved_home
         ag_home._HOMES.clear()
         self.tmp.cleanup()
 
@@ -76,6 +80,20 @@ class StoredTest(HomeBase):
         per_read = [json.loads(r[0]) for r in conn.execute("SELECT preamble_json FROM _reads ORDER BY read_id")]
         self.assertEqual(per_read, [[1, 2], [1, 2], [1, 3]])     # what was not a part is left out
         conn.close()
+
+    def test_the_dashboard_shows_it_first_and_what_the_provider_counted_beyond_it(self):
+        pre = [{"name": "instructions", "text": "You are codex. " * 50}]
+        first, = self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c1"},
+                           "events": codex.to_events([DEV, user("q", 1)]), "preamble": pre})
+        self.ask({"op": "measured", "gatherer": "s", "read_id": first["read_id"], "tokens": 5000})
+        c = data.context("s", first["read_id"])
+        self.assertEqual([p["name"] for p in c["preamble"]], ["instructions"])
+        self.assertEqual(c["not_counted"], 5000 - c["tokens"] - c["preamble"][0]["tokens"])
+        a = data.agent("s", "c1", [])
+        self.assertEqual(a["reads"][0]["preamble_tokens"], c["preamble"][0]["tokens"])   # in the chart's count too
+        u = a["usage"]
+        self.assertIn("Harness preamble", {e["group"] for e in u["entries"]})
+        self.assertEqual(u["not_counted"], c["not_counted"])
 
 
 class PartsTest(unittest.TestCase):
