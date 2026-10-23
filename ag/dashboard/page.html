@@ -189,6 +189,9 @@ const POLL_MS = 5000;
 const LABELS = { "ag's sections": "Summarized history", "Recent history": "Recent raw history", "Other agents' requests": "Other actors' requests" };
 const label = (group) => LABELS[group] || group;
 const PREAMBLE = "Harness preamble", NOT_COUNTED = "Not counted by ag";
+// the provider's count beyond ag's, shown only when the gap is more than this: smaller is tokenizer noise
+const NOT_COUNTED_MIN = 50000;
+const uncounted = (n) => n > NOT_COUNTED_MIN ? n : 0;
 const GROUP_ORDER = [PREAMBLE, "Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages", NOT_COUNTED];
 let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, timer: null,
   tab: (() => { try { return localStorage.getItem("ag-dashboard-tab") === "gatherer" ? "gatherer" : "actor"; } catch (e) { return "actor"; } })() };
@@ -604,7 +607,7 @@ function contextCard() {
     + (ctx.cut ? ` Built from build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet: the whole history, verbatim.")
     + (latest ? " Click the size chart to see an earlier call's." : "") }));
   const extra = [...(ctx.preamble || []).map((p) => entry(p, PREAMBLE)),
-    ...(ctx.not_counted ? [entry({ name: "not counted", tokens: ctx.not_counted }, NOT_COUNTED)] : [])];
+    ...(uncounted(ctx.not_counted) ? [entry({ name: "not counted", tokens: ctx.not_counted }, NOT_COUNTED)] : [])];
   card.append(decomposition([...extra, ...placed(ctx.items)]));
   const history = ctx.items.filter((i) => HISTORY.has(i.group) || GATHERER.has(i.group));
   if (history.length || pre) {                       // which items to list, by type
@@ -638,7 +641,7 @@ function contextCard() {
     if (listed) { run.shown++; run.shownTokens += it.tokens; list.append(contextItem(it)); }
     head(run);
   }
-  if (ctx.not_counted) {                              // what the provider counted beyond all of it
+  if (uncounted(ctx.not_counted)) {                   // what the provider counted beyond all of it
     list.append(el("div", { class: "run" }, el("span", { class: "key-rect", style: `background:${color(NOT_COUNTED)}` }), el("strong", { text: NOT_COUNTED }),
       el("span", { text: `${full(ctx.not_counted)} tokens` })));
     list.append(el("div", { class: "uncounted", text: "The provider's count for this call, less everything above: what ag cannot see or count -- "
@@ -738,9 +741,9 @@ function usageCard() {
   const real = u.real_calls ? ` The provider counted ${full(u.real_tokens)} over the ${full(u.real_calls)} calls it reported.` : "";
   card.append(el("div", { class: "desc", text: `Everything sent to the model over this actor's ${full(u.calls)} calls, by kind: `
     + `${full(u.tokens)} tokens by ag's own count, each message (and the harness's preamble) counted once for every call it went in.${real}`
-    + (u.not_counted ? ` ${full(u.not_counted)} of the provider's count is in none of them: "Not counted by ag".` : "") }));
+    + (uncounted(u.not_counted) ? ` ${full(u.not_counted)} of the provider's count is in none of them: "Not counted by ag".` : "") }));
   // ag's messages among the history count in the recent raw history, where they sit
-  const notCounted = u.not_counted ? [entry({ name: "not counted", tokens: u.not_counted }, NOT_COUNTED, u.real_calls)] : [];
+  const notCounted = uncounted(u.not_counted) ? [entry({ name: "not counted", tokens: u.not_counted }, NOT_COUNTED, u.real_calls)] : [];
   card.append(decomposition([...u.entries.map((e) => entry(e, INLINE.has(e.group) ? "Recent history" : e.group, e.items)), ...notCounted],
     "all calls"));
   return card;
