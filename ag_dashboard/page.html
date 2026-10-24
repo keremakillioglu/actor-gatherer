@@ -252,6 +252,17 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .term .md hr { border: 0; border-top: 1px solid var(--term-rule); }
 .term .earlier { display: block; margin: 0 auto 14px; color: var(--term-dim); background: var(--term-user); border-color: var(--term-rule); }
 .term .status-line { color: var(--term-accent); margin-top: 6px; }
+/* while the agent works, the status line's glyph turns, as Claude Code's does */
+.term .status-line .spin::before { content: "✻"; display: inline-block; width: 1.2em; animation: term-spin 1.2s steps(1) infinite; }
+@keyframes term-spin { 0% { content: "·"; } 16% { content: "✢"; } 33% { content: "✳"; } 50% { content: "✶"; } 66% { content: "✻"; } 83% { content: "✽"; } }
+/* a stretch of tool calls, folded into one line: what they did, the calls themselves behind a click */
+.term .run > details > summary { color: var(--term-dim); }
+.term .run > details > summary:hover { color: var(--term-ink); }
+.term .run > details > summary .hint { color: var(--term-faint); margin-left: 8px; }
+.term .run > details > summary .bad { color: var(--term-err); }
+.term .run > details[open] > summary { margin-bottom: 8px; }
+.term .run .calls { border-left: 1px solid var(--term-rule); padding-left: 10px; }
+.term .run .now { color: var(--term-dim); }
 .term .empty-term { color: var(--term-faint); }
 @media (max-width: 760px) { .term { height: 70vh; padding: 10px 12px 14px; font-size: 12px; } }
 .aside-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 16px 6px; }
@@ -1559,7 +1570,7 @@ function todoView(todos) {
 // and (optionally) what goes under it instead of its plain result. Any other tool: its name and inputs.
 const shell = (i) => Array.isArray(i.command) ? i.command.join(" ") : str(i.command ?? i.cmd ?? i);
 const SUMMARIES = {
-  Bash: (i) => ({ title: "Bash", arg: firstLine(i.command, 200), note: i.description }),
+  Bash: (i) => ({ title: "Bash", arg: firstLine(i.command, 200), note: i.description, doing: i.description }),
   shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
   exec_command: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
   local_shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
@@ -1613,13 +1624,68 @@ function callBlock(call, result, id, running) {
   for (const u of under) blk.append(el("div", { class: "res" }, el("span", { class: "g", text: "⎿" }), u));
   return blk;
 }
-// The transcript's blocks, in order: each result drawn under its call, wherever it was stored.
+// What a stretch of tool calls did, in Claude Code's words: each kind of tool, a verb for it done and
+// one for it under way (Claude Code's "Read 3 files, ran 2 shell commands"). A tool not here: "used".
+const VERBS = [
+  [["Bash", "shell", "exec_command", "local_shell", "BashOutput", "KillShell"], "ran", "running", "shell command"],
+  [["Read"], "read", "reading", "file"],
+  [["Grep", "Glob"], "searched for", "searching for", "pattern"],
+  [["Edit", "MultiEdit", "NotebookEdit", "apply_patch"], "edited", "editing", "file"],
+  [["Write"], "wrote", "writing", "file"],
+  [["WebFetch"], "fetched", "fetching", "page"],
+  [["WebSearch", "web_search"], "searched the web", "searching the web", "time"],
+  [["Agent", "Task"], "ran", "running", "agent"],
+  [["TodoWrite", "update_plan"], "updated the todo list", "updating the todo list", null],
+];
+const verbOf = (name) => VERBS.find(([names]) => names.includes(name));
+function didWhat(calls, underWay) {
+  const counts = new Map();
+  for (const c of calls) {
+    const v = verbOf(c.name), k = v ? v[1] : `used ${summary(c).title}`;
+    const e = counts.get(k) || { v, title: summary(c).title, n: 0 };
+    e.n++; counts.set(k, e);
+  }
+  const parts = [...counts.values()].map(({ v, title, n }) => !v ? `${underWay ? "using" : "used"} ${title}${n > 1 ? ` ${n} times` : ""}`
+    : !v[3] ? (underWay ? v[2] : v[1]) : `${underWay ? v[2] : v[1]} ${n} ${v[3]}${n === 1 ? "" : "s"}`);
+  return parts.join(", ");
+}
+// The line for a stretch: what its finished calls did, then, while some are under way, what those are doing.
+function runLine(done, open) {
+  const text = [done.length ? didWhat(done, false) : "", open.length ? didWhat(open, true) + "…" : ""].filter(Boolean).join(", ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+// What a call under way is doing, as one line: its description where it has one, else its title and argument.
+const doing = (call) => { const s = summary(call); return s.doing || (s.arg ? `${s.title}(${s.arg})` : s.title); };
+
+// A stretch of tool calls between two messages, as Claude Code shows it: one line saying what they did,
+// the calls and their outputs folded under it; while one is still under way, the line in the present
+// tense under a blinking dot, and what that call is doing beneath.
+function runBlock(run, results, running) {
+  const calls = run.filter((x) => x.part.kind === "call").map((x) => x.part);
+  const open = calls.filter((c) => !(c.id && results.get(c.id)));
+  const underWay = running && run.last && open.length > 0;
+  const failed = calls.filter((c) => c.id && results.get(c.id) && results.get(c.id).error).length;
+  const inside = el("div", { class: "calls" }, ...run.map(({ part, id }) => part.kind === "call"
+    ? callBlock(part, part.id ? results.get(part.id) : null, id, running && run.last)
+    : el("div", { class: "blk think-blk" }, el("span", { class: "g think", text: "✻" }),
+      el("details", { id }, el("summary", { text: "Thinking…" }), el("div", { class: "body", text: part.text })))));
+  const line = el("summary", {}, underWay ? runLine(calls.filter((c) => !open.includes(c)), open) : runLine(calls, []),
+    failed ? el("span", { class: "bad", text: ` · ${failed} failed` }) : null,
+    el("span", { class: "hint", text: "(click to expand)" }));
+  const blk = el("div", { class: "blk run" }, el("span", { class: "g " + (underWay ? "dot-run" : failed ? "dot-err" : "dot-ok"), text: "●" }),
+    el("details", { id: `${run[0].id}-run` }, line, inside));
+  if (underWay) blk.append(el("div", { class: "res now" }, el("span", { class: "g", text: "⎿" }), el("span", { text: doing(open[open.length - 1]) })));
+  return blk;
+}
+
+// The transcript's blocks, in order: messages as they are; each stretch of tool calls between two
+// of them folded into one line (runBlock), each result drawn with its call wherever it was stored.
 function transcriptBlocks(items, running) {
   const results = new Map();
   for (const it of items) for (const p of it.parts) if (p.kind === "result" && p.id) results.set(p.id, p);
   const calls = new Set(items.flatMap((it) => it.parts.filter((p) => p.kind === "call" && p.id).map((p) => p.id)));
   const out = [];
-  let notes = [];
+  let notes = [], run = [];
   const flushNotes = () => {
     if (!notes.length) return;
     const id = `tx-n-${notes[0].id}`;
@@ -1628,24 +1694,29 @@ function transcriptBlocks(items, running) {
         ...notes.map((n) => el("pre", { text: `${n.name}\n${n.text}` })))));
     notes = [];
   };
+  const flushRun = (last = false) => {
+    if (!run.length) return;
+    if (run.some((x) => x.part.kind === "call")) { run.last = last; out.push(runBlock(run, results, running)); }
+    else for (const { part, id } of run) out.push(el("div", { class: "blk think-blk" }, el("span", { class: "g think", text: "✻" }),
+      el("details", { id }, el("summary", { text: "Thinking…" }), el("div", { class: "body", text: part.text }))));
+    run = [];
+  };
   items.forEach((it, n) => {
     const base = it.row_id !== null ? `r${it.row_id}` : `p${n}`;
     it.parts.forEach((p, j) => {
       const id = `tx-${base}-${j}`;
       const isNote = p.kind === "note" || (p.kind === "text" && p.role === "system");
       if (isNote) { if (showNotes) notes.push({ id, name: p.name || "system", text: p.text }); return; }
-      flushNotes();
+      if (p.kind === "call" || (p.kind === "thinking" && p.text.trim())) { flushNotes(); run.push({ part: p, id }); return; }
+      if (p.kind === "thinking" || (p.kind === "result" && p.id && calls.has(p.id))) return;   // encrypted; or drawn with its call
+      flushRun(); flushNotes();
       if (p.kind === "text" && p.role === "user") out.push(el("div", { class: "user" }, el("span", { class: "g", text: "❯" }), el("div", { class: "body", text: p.text })));
       else if (p.kind === "text") out.push(el("div", { class: "blk" }, el("span", { class: "g text", text: "●" }), markdown(p.text)));
-      else if (p.kind === "thinking") {                // encrypted thinking has nothing to show: left out, as the harness does
-        if (p.text.trim()) out.push(el("div", { class: "blk think-blk" }, el("span", { class: "g think", text: "✻" }),
-          el("details", { id }, el("summary", { text: "Thinking…" }), el("div", { class: "body", text: p.text }))));
-      }
-      else if (p.kind === "call") out.push(callBlock(p, p.id ? results.get(p.id) : null, id, running));
-      else if (p.kind === "result" && !(p.id && calls.has(p.id)))   // its call is not loaded: shown alone
+      else if (p.kind === "result")                    // its call is not loaded: shown alone
         out.push(el("div", { class: "blk" }, el("span", { class: "g", text: " " }), el("div", { class: "res" }, el("span", { class: "g", text: "⎿" }), foldedOutput(p.text, id, p.error ? "err" : ""))));
     });
   });
+  flushRun(true);
   flushNotes();
   return out;
 }
@@ -1682,7 +1753,7 @@ function transcriptView(info) {
     const running = ["running", "building"].includes(statusOf(info)[0]);   // not finished, closed or idle
     term.append(...transcriptBlocks(items, running));
     if (!items.length) term.append(el("div", { class: "empty-term", text: "No messages yet." }));
-    if (running) term.append(el("div", { class: "status-line", text: `✻ Working… (last activity ${ago(info.last)})` }));
+    if (running) term.append(el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }), `Working… (last activity ${ago(info.last)})`));
   }
   card.append(term);
   return card;
@@ -1776,7 +1847,7 @@ addChatView({
     return [
       data.earlier ? el("button", { type: "button", class: "earlier", onclick: loadEarlier }, "Load earlier messages") : null,
       ...transcriptBlocks([...data.items, ...data.pending], running),
-      running ? el("div", { class: "status-line", text: `✻ Working… (last activity ${ago(info.last)})` }) : null,
+      running ? el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }), `Working… (last activity ${ago(info.last)})`) : null,
     ].filter(Boolean);
   },
   composer: (ctx) => {
