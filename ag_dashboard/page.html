@@ -279,6 +279,10 @@ button.primary:hover { filter: brightness(1.06); background: var(--s1); }
 button:disabled { opacity: .5; cursor: default; }
 .agent .chat-icon { margin-left: auto; flex: none; display: inline-flex; color: var(--s1); }
 .agent .chat-icon.held { color: var(--axis); }
+.agent .close-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+  margin-left: auto; border-radius: 4px; color: var(--muted); cursor: pointer; }
+.agent .close-btn + .chat-icon { margin-left: 0; }
+.agent .close-btn:hover, .agent .close-btn:focus-visible { color: var(--critical); background: var(--surface); }
 .chat .chat-frame { height: calc(100vh - 400px); min-height: 280px; overflow-y: auto; }
 .chat .chat-frame.ctx { max-height: none; }
 .chat .chat-frame.term { padding-bottom: 12px; }
@@ -447,6 +451,21 @@ function chatIcon(held) {
   svg.append(svgEl("path", { d: "M2.5 4a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 13.5 4v5.5A1.5 1.5 0 0 1 12 11H7l-3 2.5V11a1.5 1.5 0 0 1-1.5-1.5z" }));
   if (held) svg.append(svgEl("line", { x1: 2, y1: 14, x2: 14, y2: 2 }));
   return svg;
+}
+// A circled cross: end the dashboard's own idle agent for a session, which then shows Closed.
+function closeIcon() {
+  const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 12, height: 12, "aria-hidden": "true", fill: "none", stroke: "currentColor",
+    "stroke-width": 1.5, "stroke-linecap": "round" });
+  svg.append(svgEl("circle", { cx: 8, cy: 8, r: 6 }), svgEl("line", { x1: 5.8, y1: 5.8, x2: 10.2, y2: 10.2 }),
+    svgEl("line", { x1: 10.2, y1: 5.8, x2: 5.8, y2: 10.2 }));
+  return svg;
+}
+// Whether the dashboard's own agent holds the session between turns (no other process has it open):
+// it can be closed from the list.
+const closable = (a) => !SNAPSHOT && !!a.session && a.session.status === "idle" && !(a.session.queued && a.session.queued.length);
+async function closeSession(a) {
+  try { await post("/api/stop", { session_id: a.session.session_id }); }
+  catch (err) { setLive(`Not closed: ${err.message}`); }
 }
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; a build
 // running for it shows over the first, and one that stopped since the reader last looked shows Finished
@@ -847,6 +866,10 @@ function agentRow(g, a) {
       el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: a.last_user_message || "No message yet" }),
       el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label }),
         el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
+        closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent)",
+          "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); closeSession(a); },
+          onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); closeSession(a); } } },
+          closeIcon()) : null,
         !hasChat(a) ? null : a.chattable === false
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
           : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false)))));

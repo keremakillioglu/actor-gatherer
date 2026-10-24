@@ -133,6 +133,24 @@ class AgentTest(SessionsBase):
         self.assertEqual((self.session(sid)["status"], self.session(sid)["last_error"]), ("idle", None))   # kept, giving way
         self.assertTrue(os.path.exists(sessions.log_path(sid)))
 
+    def test_an_idle_agent_closed_from_the_page_ends_and_the_next_message_resumes_it(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        with self.assertRaises(sessions.SessionError):                      # no process yet
+            self.s.stop(sid)
+        os.environ["FAKE_AG_DELAY"] = "0.4"
+        self.s.send(sid, "one")
+        with self.assertRaises(sessions.SessionError):                      # its turn runs
+            self.s.stop(sid)
+        self.until(lambda: self.s.agents.get(sid) and self.s.agents[sid].yielding)
+        self.s.stop(sid)
+        self.until(lambda: self.session(sid)["status"] == "stopped" and sid not in self.s.agents)
+        self.assertIsNone(self.session(sid)["last_error"])
+        self.s.send(sid, "two")
+        self.until(lambda: self.session(sid)["turns"] == 2)
+        runs = [x["argv"] for x in self.logged() if "argv" in x and x["argv"][:1] == ["--gatherer"]]
+        self.assertEqual(len(runs), 2)
+        self.assertEqual(runs[1][runs[1].index("--resume") + 1], sid)
+
     def test_one_agent_takes_every_turn_and_a_message_waits_for_the_turn(self):
         os.environ["FAKE_AG_DELAY"] = "0.4"
         sid = self.s.create("g", self.work)["session_id"]
@@ -291,6 +309,8 @@ class EndpointTest(SessionsBase):
 
     def test_what_it_refuses(self):
         self.assertEqual(self.post("/api/gatherers", {"name": "x"}, {"Origin": "https://evil.example"})[0], 403)
+        self.assertEqual(self.post("/api/stop", {"session_id": "none"})[0], 400)
+        self.assertEqual(self.post("/api/stop", {"session_id": "x"}, {"Origin": "https://evil.example"})[0], 403)
         self.assertEqual(self.post("/api/sessions", {"gatherer": "a b", "cwd": self.work})[0], 400)
         self.assertEqual(self.post("/api/send", {"session_id": "none", "text": "hi"})[0], 400)
         self.assertEqual(self.post("/api/sessions", {"gatherer": "g"}, {"Origin": "https://evil.example"})[0], 403)
