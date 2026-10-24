@@ -407,7 +407,7 @@ button:disabled { opacity: .5; cursor: default; }
             <button type="button" data-theme-pick="system">System</button><button type="button" data-theme-pick="light">Light</button><button type="button" data-theme-pick="dark">Dark</button></div></div>
         <div id="screen-pick" hidden><h4>Terminal</h4>
           <div class="views" id="screen" role="group" aria-label="Terminal screen"
-               title="Claude Code's classic screen or its full screen, in the Terminal view. An open terminal is reopened in it, the session resumed.">
+               title="Claude Code's classic screen or its full screen, in the Terminal view. An open terminal is reopened in it, the session resumed, once you confirm.">
             <button type="button" data-screen-pick="classic">Classic</button><button type="button" data-screen-pick="full">Full screen</button></div></div>
         <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
       </div>
@@ -2108,13 +2108,25 @@ function showScreenPick() {
   for (const b of document.querySelectorAll("[data-screen-pick]"))
     b.setAttribute("aria-pressed", (b.dataset.screenPick === "full") === termFullscreen ? "true" : "false");
 }
+// The terminal shown, open in the other screen, is reopened in this one -- once the reader agrees: reopening
+// hangs up Claude Code, whatever it is doing (a turn, its background tasks). Whether it is open is asked of
+// the server at that moment, not taken from the page's last copy.
 async function setScreen(full) {
+  const info = selectedInfo();
+  let open = null;
+  if (info && info.session && term.sid === info.channel) {
+    try {
+      const now = (await (await fetch("/api/sessions")).json()).find((x) => x.session_id === info.session.session_id);
+      if (now && now.terminal && !!now.fullscreen !== full) open = now;
+    } catch (e) { /* not known: nothing reopened */ }
+  }
+  if (open && !confirm(`This terminal is open. Switching to ${full ? "full screen" : "the classic screen"} closes it and resumes the session `
+      + "in the new screen: anything Claude Code is doing now -- a reply, a running command, its background tasks -- is stopped. Switch anyway?")) return;
   termFullscreen = full;
   try { localStorage.setItem(FULLSCREEN_KEY, full ? "1" : "0"); } catch (e) { /* this page only */ }
   showScreenPick();
-  const info = selectedInfo();                       // the terminal shown, open in the other screen: reopened in this one
-  if (!info || !info.session || !info.session.terminal || !!info.session.fullscreen === full || term.sid !== info.channel) return;
-  try { await post("/api/stop", { session_id: info.session.session_id }); } catch (err) { term.error = err.message; await refresh(); return; }
+  if (!open) return;
+  try { await post("/api/stop", { session_id: open.session_id }); } catch (err) { term.error = err.message; await refresh(); return; }
   await termOpen(info);
 }
 // A mouse report for the pointer moving with no button held (SGR: ESC [ < b;x;y M, motion bit 32, button 3):
