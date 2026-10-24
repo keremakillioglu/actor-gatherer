@@ -385,7 +385,7 @@ class KeptTest(SessionsBase):
         self.s.close()
         os.remove(sessions.db_path())
         conn = sqlite3.connect(sessions.db_path())
-        conn.execute(sessions.SCHEMA.replace(",\n    kept            REAL NOT NULL DEFAULT 0", ""))
+        conn.execute(sessions.SCHEMA[:sessions.SCHEMA.index(",\n    kept")] + "\n)")     # the columns before `kept`
         conn.execute("INSERT INTO sessions VALUES ('x', 'g', 'claude', '/', 'auto', 'now', 1, 'idle', NULL)")
         conn.commit()
         conn.close()
