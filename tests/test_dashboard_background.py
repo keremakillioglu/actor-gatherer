@@ -219,6 +219,7 @@ class BackgroundTest(unittest.TestCase):
         self.assertEqual(len(self.actor([self.session(since=time.time() - 120)])["background"]), 1)
         self.assertEqual(self.actor([self.session(since=time.time() - 10)])["background"], [])   # started after it: not its
         self.assertEqual(self.actor([self.session(pid=None, kept=time.time())])["background"], [])   # the dashboard's end took it
+        self.assertEqual(self.actor([self.session(pid=None, ended=time.time())])["background"], [])   # seen ending: closed
         a = {"status": data.IDLE, "alive": False, "background": [{"id": "b1", "started": time.time(), "output": None}]}
         data._settle_background(a, time.time())
         self.assertEqual((a["status"], a["background"]), (data.IDLE, []))
