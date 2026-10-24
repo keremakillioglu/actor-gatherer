@@ -321,6 +321,11 @@ button:disabled { opacity: .5; cursor: default; }
 .chat .chat-frame { flex: 1; min-height: 120px; overflow-y: auto; }
 .chat .chat-frame.ctx { max-height: none; border: 0; padding: 0 16px; }
 .chat .chat-frame.term { border: 0; border-radius: 0; }
+/* a long history's older messages are laid out only when scrolled to: an actor's chat opens in a fraction
+   of the time. The size the browser assumes for one until then: a short message's. The newest are always
+   laid out, so the end the chat opens at does not move as they are. */
+.chat .chat-frame > * { content-visibility: auto; contain-intrinsic-size: auto 48px; }
+.chat .chat-frame > :nth-last-child(-n+30) { content-visibility: visible; }
 /* the Context view's panel, under the message box: the size chart, and how the picked context divides */
 .ctx-panel { flex: none; border-top: 1px solid var(--ring); padding: 8px 16px 10px; }
 .ctx-panel-head { display: flex; align-items: center; gap: 16px; font-size: 12px; }
@@ -614,7 +619,7 @@ async function loadAgent() {
 }
 // The selected agent, fetched or pushed: its calls' counts, and the context of the call shown.
 async function takeAgent(agent) {
-  state.agent = agent;
+  state.agent = agent; state.agentVersion = (state.agentVersion || 0) + 1;
   const reads = (state.agent && state.agent.reads) || [];
   for (const r of reads)                             // ag's count of all a call sent: its messages, and the preamble where recorded
     r.counted_tokens = r.sent_tokens === null || r.sent_tokens === undefined ? null : r.sent_tokens + (r.preamble_tokens || 0);
@@ -725,8 +730,16 @@ async function refresh(userAction = false) {
   }
 }
 // Draw what changed since the last draw (everything, for what the reader asked for).
+let lastKey = 0, heldDraw = null;
+document.addEventListener("input", (ev) => { if (ev.target && ev.target.id === "composer-text") lastKey = performance.now(); }, true);
+const TYPING_MS = 300;                               // an update that comes while the reader types waits this long after a key
 function render(userAction = false) {
   if (!state.home) return;
+  const since = performance.now() - lastKey;
+  if (!userAction && since < TYPING_MS) {
+    if (!heldDraw) heldDraw = setTimeout(() => { heldDraw = null; render(); }, TYPING_MS - since + 10);
+    return;
+  }
   const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.selected, Math.floor(Date.now() / AGO_MS)]);
   // "ago" texts: every 30 s; not while a form in the list is open, which a redraw would empty
   if ((userAction || agents !== drawn.agents) && !(state.adding && !userAction)) { renderAgents(); drawn.agents = agents; }
@@ -738,7 +751,7 @@ function render(userAction = false) {
 // What the main view draws from: drawn again only when it changed.
 const mainSignature = () => {
   const info = selectedInfo();
-  return signature([state.selected, state.agent, state.readId, state.context && state.context.read_id, info && info.session,
+  return signature([state.selected, state.agentVersion, state.readId, state.context && state.context.read_id, info && info.session,
     info && [info.chattable, info.holder], state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     state.details && state.detailsTab]);
 };
@@ -776,7 +789,7 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") setAbout
 const atEnd = (n) => n.scrollHeight - n.scrollTop - n.clientHeight < 40;
 function keepingPlace(draw) {
   const main = document.getElementById("main");
-  const open = [...main.querySelectorAll("details[id]")].filter((d) => d.open).map((d) => d.id);
+  const open = [...main.querySelectorAll("details[open][id]")].map((d) => d.id);
   const scrolled = [...main.querySelectorAll("[data-keep]")].map((n) => [n.dataset.keep, n.scrollTop, n.scrollLeft]);
   // a list that follows its end (data-follow), read to its end: kept at its end as it grows
   const following = [...main.querySelectorAll("[data-follow]")].filter(atEnd).map((n) => n.dataset.keep);
@@ -788,7 +801,7 @@ function keepingPlace(draw) {
   draw();
   if (refocus && refocus.isConnected && refocus.agFocus) refocus.agFocus();
   const again = document.getElementById("composer-text");
-  if (again && typed) { again.value = typed[0]; if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
+  if (again && typed && again !== box) { again.value = typed[0]; if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
   for (const id of open) { const d = document.getElementById(id); if (d) d.open = true; }
   for (const [k, top, left] of scrolled) {
     const n = main.querySelector(`[data-keep="${k}"]`);
@@ -1014,11 +1027,18 @@ function agentRow(g, a) {
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
           : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false)))));
 }
+// Selecting an actor draws its chat as soon as it is loaded; its calls and context (the details) follow
+// on the stream, which starts with them. The actor list is the stream's already.
 async function select(g, c) {
-  state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null;
+  state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null; state.agent = null;
+  state.agentVersion = (state.agentVersion || 0) + 1;
   markSeen();
-  await refresh(true); connect();
-  chatToEnd();
+  if (SNAPSHOT || state.paused) { await refresh(true); chatToEnd(); return; }
+  connect();
+  const main = document.getElementById("main");
+  main.classList.add("stale");
+  try { await loadChat(); } finally { main.classList.remove("stale"); }
+  if (state.selected[0] === g && state.selected[1] === c) { render(true); chatToEnd(); }
 }
 // The forms in the agent list: a new gatherer's ("+ New gatherer", gatherer ""), a new session's in a gatherer (its "+").
 function openForm(gatherer) {
@@ -1185,8 +1205,41 @@ function renderMain() {
     return;
   }
   const info = selectedInfo() || {};
-  main.replaceChildren(chatCard(info), ...(state.details ? [detailsPanel(info)] : []));
+  const kids = [chatCard(info), ...(state.details ? [detailsPanel(info)] : [])];
+  const open = new Set([...main.querySelectorAll("details[open][id]")].map((d) => d.id));
+  for (const k of kids) for (const d of k.querySelectorAll("details[id]")) if (open.has(d.id)) d.open = true;
+  patch(main, kids);
   if (document.getElementById("size-chart") && state.agent && state.agent.reads) drawCharts();
+}
+// Put `kids` in `parent`, keeping each node already there that is the same as its new one: the browser
+// lays out again only what changed (a long transcript takes it a third of a second), and a kept node
+// keeps its focus, its typed text and its scroll. Matched by position, as the chat grows at its end.
+// A node marked data-morph with the same attributes is patched inside the same way; one marked data-sig
+// (a message box) is kept while its data-sig is unchanged, whatever was typed in it.
+// A node built with its children held apart (`kids`, the chat frame's) gets them here: it is one marked
+// data-morph, or in one.
+const fill = (n) => {
+  if (n.nodeType !== 1) return n;
+  if (n.kids) { n.append(...n.kids); n.kids = null; }
+  for (const c of n.children) if ("morph" in c.dataset) fill(c);
+  return n;
+};
+function patch(parent, kids) {
+  const old = [...parent.childNodes];
+  const same = (o, n) => o.attributes.length === n.attributes.length && [...o.attributes].every((a) => n.getAttribute(a.name) === a.value);
+  const final = kids.map((n, i) => {
+    const o = old[i];
+    if (!o || o === n) return n;
+    if (o.nodeType !== 1 || n.nodeType !== 1) return o.isEqualNode(n) ? o : n;
+    if ("sig" in o.dataset || "sig" in n.dataset) return o.dataset.sig === n.dataset.sig && o.tagName === n.tagName ? o : n;
+    if ("morph" in o.dataset && o.tagName === n.tagName && same(o, n)) { patch(o, n.kids || [...n.childNodes]); return o; }
+    return o.isEqualNode(fill(n)) ? o : n;
+  });
+  const was = new Set(old);
+  for (const n of final) if (!was.has(n)) fill(n);
+  if (final.some((n, i) => n !== old[i] && was.has(n))) { parent.replaceChildren(...final); return; }   // moved: drawn whole
+  final.forEach((n, i) => { if (i >= old.length) parent.append(n); else if (n !== old[i]) parent.replaceChild(n, old[i]); });
+  for (const o of old.slice(final.length)) o.remove();
 }
 function setDetails(open, tab) {
   state.details = open;
@@ -1282,7 +1335,8 @@ function chatCard(info) {
       const m = document.getElementById("chat-list"); if (m) m.scrollTop = m.scrollHeight - from;
     },
     rerender: () => keepingPlace(renderMain), api: agDashboard };
-  const card = el("section", { class: "chat", "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${state.selected[0]}` });
+  const card = el("section", { class: "chat", "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${state.selected[0]}`,
+    "data-morph": "", "data-for": signature([state.selected, view.id, writable, held, !!info.session]) });
   const safely = (what, fallback) => {
     try { return [].concat(what() || []); }
     catch (err) { console.error(err); return fallback ? [el("div", { class: "warn", text: `The ${view.name} view failed: ${err.message}` })] : []; }
@@ -1295,12 +1349,14 @@ function chatCard(info) {
     el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false",
       title: "What ag saw and did for this actor: its context, calls, history and builds", onclick: () => setDetails(!state.details) },
       infoIcon(), "Details"));
-  const frame = el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1",
-    role: "log", "aria-label": `Chat history, ${view.name}` }, ...safely(() => view.render(ctx), true));
+  const frame = el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1", "data-morph": "",
+    role: "log", "aria-label": `Chat history, ${view.name}` });
+  // its blocks, put in by patch(): a block kept from the last draw is still on the page, and is left there
+  const blocks = frame.kids = safely(() => view.render(ctx), true);
   if (view.feed !== "none") {                        // a view that draws the history: what waits, or that there is none yet
-    for (const q of ctx.queued) frame.append(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
+    for (const q of ctx.queued) blocks.push(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
     if (!data.items.length && !data.pending.length && !ctx.queued.length)
-      frame.append(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation: run `ag dashboard` live to see it."
+      blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation: run `ag dashboard` live to see it."
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
   card.append(frame);
@@ -1322,7 +1378,8 @@ function chatCard(info) {
       await post("/api/send", info.session ? { session_id: s.session_id, text: t }
         : { gatherer: state.selected[0], channel: state.selected[1], text: t });
       const box = document.getElementById("composer-text"); if (box) box.value = "";
-      await refresh(); chatToEnd();
+      if (state.paused || !state.stream) await refresh(); else { await loadChat(); render(); }
+      chatToEnd();
       return true;
     } catch (e) { err.textContent = e.message; return false; }
     finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = !!held; }
@@ -1335,7 +1392,11 @@ function chatCard(info) {
     box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ctx.send(box.value); } });
     return box;
   };
-  card.append(...safely(() => (view.composer || defaultComposer)(ctx), true), err, ...safely(() => view.footer && view.footer(ctx)));
+  // the box kept across redraws while what it shows is unchanged: no redraw under the reader's typing
+  const sig = signature([ctx.running, held, s.status, s.last_error, s.permission_mode, s.cwd]);
+  const composer = safely(() => (view.composer || defaultComposer)(ctx), true);
+  for (const n of composer) if (n.nodeType === 1) n.dataset.sig = sig;
+  card.append(...composer, err, ...safely(() => view.footer && view.footer(ctx)));
   if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
   return card;
 }
@@ -1888,9 +1949,25 @@ function runBlock(run, results, running) {
     ...lines.slice(-RUN_SHOWN)];
 }
 
+// Blocks already drawn, by their id, with what they were drawn from (`sig`): handed back as the same nodes
+// while that is unchanged, so a redraw builds only what is new and patch() keeps the rest in place. One
+// per view, emptied when the actor changes; a block not asked for in a draw is forgotten.
+function blockCache() {
+  let owner = null, now = new Map(), before = new Map();
+  return {
+    begin(key) { if (key !== owner) { owner = key; before = new Map(); } else before = now; now = new Map(); },
+    get(k, sig, make) {
+      const had = before.get(k);
+      const v = had && had.sig === sig ? had.v : make();
+      now.set(k, { sig, v });
+      return v;
+    },
+  };
+}
 // The transcript's blocks, in order: messages as they are; each stretch of tool calls between two
 // of them folded into one line (runBlock), each result drawn with its call wherever it was stored.
-function transcriptBlocks(items, running) {
+function transcriptBlocks(items, running, cache = null) {
+  const keep = (k, sig, make) => cache ? cache.get(k, sig, make) : make();
   const results = new Map();
   for (const it of items) for (const p of it.parts) if (p.kind === "result" && p.id) results.set(p.id, p);
   const calls = new Set(items.flatMap((it) => it.parts.filter((p) => p.kind === "call" && p.id).map((p) => p.id)));
@@ -1898,17 +1975,22 @@ function transcriptBlocks(items, running) {
   let notes = [], run = [];
   const flushNotes = () => {
     if (!notes.length) return;
-    const id = `tx-n-${notes[0].id}`;
-    out.push(el("div", { class: "blk notes" }, el("span", { class: "g", text: "※" }),
-      el("details", { id }, el("summary", { text: notes.length === 1 ? `${notes[0].name}: ${firstLine(notes[0].text, 120)}` : `${notes.length} notes: ${[...new Set(notes.map((n) => n.name))].join(", ")}` }),
-        ...notes.map((n) => el("pre", { text: `${n.name}\n${n.text}` })))));
+    const id = `tx-n-${notes[0].id}`, these = notes;
+    out.push(keep(id, these.map((n) => n.id + ":" + n.text.length).join(","), () => el("div", { class: "blk notes" }, el("span", { class: "g", text: "※" }),
+      el("details", { id }, el("summary", { text: these.length === 1 ? `${these[0].name}: ${firstLine(these[0].text, 120)}` : `${these.length} notes: ${[...new Set(these.map((n) => n.name))].join(", ")}` }),
+        ...these.map((n) => el("pre", { text: `${n.name}\n${n.text}` }))))));
     notes = [];
   };
   const flushRun = (last = false) => {
     if (!run.length) return;
-    if (run.some((x) => x.part.kind === "call")) { run.last = last; out.push(...runBlock(run, results, running)); }
-    else for (const { part, id } of run) out.push(el("div", { class: "blk think-blk" }, el("span", { class: "g think", text: "✻" }),
-      el("details", { id }, el("summary", { text: "Thinking…" }), el("div", { class: "body", text: part.text }))));
+    if (run.some((x) => x.part.kind === "call")) {
+      run.last = last;
+      const these = run;                             // the same calls with the same results: the same lines
+      const sig = these.map(({ part }) => { const r = part.id && results.get(part.id); return `${part.kind}${r ? (r.error ? "!" : "+") + r.text.length : "-"}`; }).join(",")
+        + (running && last ? ",running" : "");
+      out.push(...keep(`${these[0].id}-run`, sig, () => runBlock(these, results, running)));
+    } else for (const { part, id } of run) out.push(keep(id, part.text.length, () => el("div", { class: "blk think-blk" }, el("span", { class: "g think", text: "✻" }),
+      el("details", { id }, el("summary", { text: "Thinking…" }), el("div", { class: "body", text: part.text })))));
     run = [];
   };
   items.forEach((it, n) => {
@@ -1920,10 +2002,11 @@ function transcriptBlocks(items, running) {
       if (p.kind === "call" || (p.kind === "thinking" && p.text.trim())) { flushNotes(); run.push({ part: p, id }); return; }
       if (p.kind === "thinking" || (p.kind === "result" && p.id && calls.has(p.id))) return;   // encrypted; or drawn with its call
       flushRun(); flushNotes();
-      if (p.kind === "text" && p.role === "user") out.push(el("div", { class: "user" }, el("span", { class: "g", text: "❯" }), el("div", { class: "body", text: p.text })));
-      else if (p.kind === "text") out.push(el("div", { class: "blk" }, el("span", { class: "g text", text: "●" }), markdown(p.text)));
+      const sig = `${p.kind}${p.role}${p.error ? "!" : ""}:${p.text}`;
+      if (p.kind === "text" && p.role === "user") out.push(keep(id, sig, () => el("div", { class: "user" }, el("span", { class: "g", text: "❯" }), el("div", { class: "body", text: p.text }))));
+      else if (p.kind === "text") out.push(keep(id, sig, () => el("div", { class: "blk" }, el("span", { class: "g text", text: "●" }), markdown(p.text))));
       else if (p.kind === "result")                    // its call is not loaded: shown alone
-        out.push(el("div", { class: "blk" }, el("span", { class: "g", text: " " }), el("div", { class: "res" }, el("span", { class: "g", text: "⎿" }), foldedOutput(p.text, id, p.error ? "err" : ""))));
+        out.push(keep(id, sig, () => el("div", { class: "blk" }, el("span", { class: "g", text: " " }), el("div", { class: "res" }, el("span", { class: "g", text: "⎿" }), foldedOutput(p.text, id, p.error ? "err" : "")))));
     });
   });
   flushRun(true);
@@ -2027,18 +2110,21 @@ addChatView({
     const listed = items.filter((it) => shownTypes.has(itemType(it)[0]));
     return [columns(), el("div", { class: "run" }, el("strong", { text: "Messages" }),
       el("span", { text: tally(items.length, listed.length, items.reduce((n, i) => n + i.tokens, 0), listed.reduce((n, i) => n + i.tokens, 0), "message") })),
-      ...listed.map(contextItem)];
+      ...(msgRows.begin(signature(state.selected)), listed.map((it) => it.row_id === null || it.row_id === undefined ? contextItem(it)
+        : msgRows.get(it.row_id, `${it.tokens}:${it.clipped}:${it.text.length}`, () => contextItem(it))))];
   },
 });
+const txBlocks = blockCache(), msgRows = blockCache();
 addChatView({
   id: "transcript", name: "Transcript", feed: "transcript", frame: "term",
   description: "The conversation as Claude Code's terminal shows it.",
   tools: () => notesSwitch(),
   render: ({ info, data, running, loadEarlier }) => {
     state.txCwd = info.cwd || "";
+    txBlocks.begin(signature([state.selected, showNotes, state.txCwd]));
     return [
       data.earlier ? el("button", { type: "button", class: "earlier", onclick: loadEarlier }, "Load earlier messages") : null,
-      ...transcriptBlocks([...data.items, ...data.pending], running),
+      ...transcriptBlocks([...data.items, ...data.pending], running, txBlocks),
       running ? el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }), `Working… (last activity ${ago(info.last)})`) : null,
     ].filter(Boolean);
   },
