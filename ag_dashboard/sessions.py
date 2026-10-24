@@ -557,8 +557,9 @@ class Sessions:
 
     def terminal(self, session_id: str, cols: int = 120, rows: int = 32, fullscreen: bool = False) -> dict:
         """The session opened in a terminal, `cols` x `rows`: its interactive Claude Code, started unless
-        it runs already -- in its classic screen, or with `fullscreen` the screen its settings choose. Its idle `-p` agent is ended first; refused while that one's turn runs, or
-        while another process has the session open. The session as `list` has it."""
+        it runs already -- in its classic screen, or with `fullscreen` the screen its settings choose. Its
+        idle `-p` agent is ended first; refused while that one's turn runs, or while another process has
+        the session open. The session as `list` has it."""
         if not TERMINALS:
             raise SessionError("a terminal needs a Unix pseudo-terminal, which this system does not have")
         with self.lock:
