@@ -11,6 +11,8 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+import urllib.error
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -243,17 +245,33 @@ class ClaudeContextTest(unittest.TestCase):
     def test_the_probe_asks_claude_code_with_the_run_s_flags_and_no_api(self):
         with tempfile.TemporaryDirectory() as d:
             fake, seen = os.path.join(d, "claude"), os.path.join(d, "seen")
-            with open(fake, "w") as fh:          # a stand-in: records its arguments and API, prints a report
-                fh.write(f"#!/bin/sh\necho \"$*\" > {seen}\necho \"$ANTHROPIC_BASE_URL\" >> {seen}\n"
+            with open(fake, "w") as fh:          # a stand-in: records its arguments, API and traffic, what its
+                fh.write(f"#!/bin/sh\necho \"$*\" > {seen}\necho \"$ANTHROPIC_BASE_URL\" >> {seen}\n"   # API answers,
+                         f"echo \"$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC\" >> {seen}\n"            # prints a report
+                         f"curl -s -o /dev/null -w '%{{http_code}}\\n' -X POST -d '{{}}' "
+                         f"\"$ANTHROPIC_BASE_URL/v1/messages/count_tokens\" >> {seen}\n"
                          "printf '**Tokens:** 1k / 500k\\n| Autocompact buffer | 33k | 6%% |\\n'\n")
             os.chmod(fake, 0o755)
             got = claude.probe([fake], ["--model", "m1", "--autocompact=500k", "-c", "--verbose", "hi"],
                                {"ANTHROPIC_BASE_URL": "https://api.anthropic.com"})
             with open(seen) as fh:
-                args, api = fh.read().splitlines()
+                args, api, quiet, status = fh.read().splitlines()
         self.assertEqual(got, (500_000, 33_000))
         self.assertEqual(args, "-p /context --no-session-persistence --strict-mcp-config --model m1 --autocompact 500k")
-        self.assertEqual(api, claude.DEAD_API)  # whatever the run's API: nothing is billed
+        self.assertRegex(api, r"^http://127\.0\.0\.1:\d+$")   # whatever the run's API: nothing is billed
+        self.assertEqual(status, "404")                        # answered at once, relayed nowhere
+        self.assertEqual(quiet, "1")
+
+    def test_no_api_answers_every_request_at_once_and_stops_with_its_block(self):
+        with claude.NoAPI() as url:
+            for method in ("HEAD", "GET", "POST"):
+                req = urllib.request.Request(url + "/v1/messages/count_tokens", data=b"{}" if method == "POST" else None,
+                                             method=method)
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    urllib.request.urlopen(req, timeout=5)
+                self.assertEqual(caught.exception.code, 404)
+        with self.assertRaises(urllib.error.URLError):
+            urllib.request.urlopen(url, timeout=5)
 
 
 if __name__ == "__main__":
