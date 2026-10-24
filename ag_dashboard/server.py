@@ -113,6 +113,13 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                 "terminals": sessions.TERMINALS}
 
     class Handler(BaseHTTPRequestHandler):
+        # One connection kept for many requests (HTTP/1.1): each key typed in a terminal is a request, and a
+        # connection opened for each costs a round trip more -- through an SSH tunnel, a whole one.
+        # Small writes sent at once (no Nagle). A connection idle this long is closed.
+        protocol_version = "HTTP/1.1"
+        disable_nagle_algorithm = True
+        timeout = 120
+
         def log_message(self, fmt, *args):      # quiet: one line per request is noise
             pass
 
@@ -184,6 +191,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")      # it has no length: it ends when the connection does
+            self.close_connection = True
             self.end_headers()
             watch = hub.watch(gatherer, channel)
             sent = {}
@@ -219,6 +228,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")      # it has no length: it ends when the connection does
+            self.close_connection = True
             self.end_headers()
             at = -1                                      # nothing yet: all that is kept
             try:
@@ -254,12 +265,18 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
 
         def do_POST(self):  # noqa: N802 - http.server's name
             url = urlsplit(self.path)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            raw = self.rfile.read(length) if 0 < length <= MAX_BODY else b""
+            if not 0 <= length <= MAX_BODY:              # its body left unread: the connection is not used again
+                self.close_connection = True
             if not self.own_page():
                 return self.send(403, json.dumps({"error": "only the dashboard's own page may do that"}).encode(),
                                  "application/json")
             try:
-                length = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(length) or b"{}") if 0 < length <= MAX_BODY else None
+                body = json.loads(raw or b"{}") if 0 < length <= MAX_BODY else None
                 if not isinstance(body, dict):
                     return self.send(400, json.dumps({"error": "a JSON object, please"}).encode(), "application/json")
                 if url.path == "/api/gatherers":
