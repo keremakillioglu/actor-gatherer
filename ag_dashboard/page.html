@@ -295,6 +295,9 @@ button:disabled { opacity: .5; cursor: default; }
 .term-prompt textarea:disabled { opacity: .5; }
 .term-prompt .foot { display: flex; justify-content: space-between; gap: 10px; color: var(--term-dim); font-size: 11px; padding: 4px 2px 0; }
 .term-prompt .foot .mode { color: var(--term-accent); }
+/* under the Transcript view's history: one terminal, the prompt its last lines */
+.chat .chat-frame.term:has(+ .term-prompt) { border-bottom: 0; border-radius: 10px 10px 0 0; padding-bottom: 8px; }
+.chat .chat-frame.term + .term-prompt { margin-top: 0; border: 1px solid var(--ring); border-top: 0; border-radius: 0 0 10px 10px; padding: 4px 18px 10px; }
 </style>
 </head>
 <body>
@@ -1731,7 +1734,7 @@ addChatView({
     return el("div", { class: "term-prompt" },
       el("label", { class: "box" }, el("span", { class: "g", text: "❯" }), box),
       el("div", { class: "foot" },
-        el("span", {}, el("span", { class: "mode", text: `⏵⏵ ${ctx.session.permission_mode}` }), ` · ${ctx.session.cwd}`),
+        el("span", {}, el("span", { class: "mode", text: `» ${ctx.session.permission_mode}` }), ` · ${ctx.session.cwd}`),
         el("span", { text: "enter to send · shift+enter for a new line" })));
   },
 });
