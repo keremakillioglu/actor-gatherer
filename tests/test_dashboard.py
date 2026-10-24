@@ -80,6 +80,9 @@ class DataTest(HomeBase):
         self.assertEqual(c1["last_user_message"], "the next request")        # what it was last asked
         self.assertTrue(c1["running"])                      # read just now
         self.assertFalse(agents["c2"]["running"] and agents["c2"]["reads"])
+        created = [a["created"] for a in g["agents"]]                      # in place: newest created first,
+        self.assertEqual(created, sorted(created, reverse=True))          # whatever happened since
+        self.assertEqual(g["created"], min(created))
 
     def test_an_agent_over_time(self):
         a = data.agent("g", "c1", [])

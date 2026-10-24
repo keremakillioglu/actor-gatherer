@@ -40,23 +40,45 @@ button:hover { background: var(--wash); }
 .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: calc(100vh - 50px); }
 aside { border-right: 1px solid var(--ring); background: var(--surface); padding: 12px 0; overflow-y: auto; max-height: calc(100vh - 50px); position: sticky; top: 50px; }
 aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
-.gatherer { margin-bottom: 6px; }
-.gatherer > .name { padding: 4px 16px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
-  width: 100%; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
-.gatherer > .name:hover { background: var(--wash); }
-.gatherer > .name:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
-.gatherer > .name .caret { display: inline-block; width: 12px; color: var(--muted); font-weight: 400; transition: transform .15s; }
-.gatherer > .name[aria-expanded="true"] .caret { transform: rotate(90deg); }
-.gatherer > .name span { color: var(--muted); font-weight: 400; font-size: 12px; }
-.agent { display: block; width: 100%; text-align: left; border: 0; border-radius: 0; background: none; padding: 7px 16px 7px 24px; cursor: pointer; }
+.gatherer { padding: 6px 0 8px; border-top: 1px solid var(--grid); }
+.gatherer-row { display: flex; align-items: stretch; }
+.gatherer-row .name { flex: 1; min-width: 0; padding: 6px 4px 6px 12px; display: flex; align-items: center; gap: 8px;
+  border: 0; border-radius: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.gatherer-row .name:hover { background: var(--wash); }
+.gatherer-row .name:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
+.gatherer-row .caret { display: inline-block; width: 10px; color: var(--muted); font-size: 10px; transition: transform .15s; }
+.gatherer-row .name[aria-expanded="true"] .caret { transform: rotate(90deg); }
+.gatherer-row .gname { font-size: 14px; font-weight: 600; letter-spacing: -.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.gatherer-row .count { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2);
+  background: var(--wash); border-radius: 999px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gatherer-row .count i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); display: inline-block; }
+.gatherer-row .act { border: 0; border-radius: 6px; background: none; color: var(--muted); padding: 0 8px; margin: 2px 0; line-height: 1;
+  display: inline-flex; align-items: center; }
+.gatherer-row .act:last-child { margin-right: 8px; }
+.gatherer-row .act:hover { color: var(--ink); background: var(--wash); }
+.gatherer-row .act.hide { opacity: 0; }
+.gatherer-row:hover .act.hide, .gatherer-row .act.hide:focus-visible { opacity: 1; }
+@media (hover: none) { .gatherer-row .act.hide { opacity: 1; } }
+.agent-group { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 6px 18px 2px 40px; }
+.agent { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; text-align: left; border: 0; border-radius: 8px;
+  background: none; padding: 8px 10px; margin: 2px 8px; width: calc(100% - 16px); cursor: pointer; color: var(--ink); }
 .agent:hover { background: var(--wash); }
 .agent[aria-current="true"] { background: var(--selected); }
-.agent .top { display: flex; align-items: center; gap: 8px; }
-.agent .harness { font-weight: 600; white-space: nowrap; }
-.agent .id { color: var(--ink-2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
-.agent .asked { font-size: 12px; color: var(--ink-2); margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+.agent .logo { width: 22px; height: 22px; margin-top: 1px; display: block; }
+.agent .asked { font-size: 13px; line-height: 1.4; font-weight: 500; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere; }
-.agent .meta { color: var(--muted); font-size: 12px; padding-left: 0; margin-top: 2px; }
+.agent .asked.none { color: var(--muted); font-weight: 400; font-style: italic; }
+.agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
+.agent .meta .dot.running { background: var(--good); } .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
+.hidden-list { border-top: 1px solid var(--grid); padding: 8px 0 4px; }
+.hidden-list > summary { margin: 0; padding: 4px 16px; font-size: 12px; color: var(--muted); list-style: none; }
+.hidden-list > summary::-webkit-details-marker { display: none; }
+.hidden-list > summary:hover { color: var(--ink-2); }
+.hidden-row { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 34px; font-size: 13px; }
+.hidden-row .gname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.hidden-row .why { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.hidden-row button { margin-left: auto; }
 .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
 .status i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--axis); }
 .status.running i { background: var(--good); }
@@ -261,11 +283,36 @@ function toggleType(type) {
 }
 const GROUP_COLORS = { [PREAMBLE]: "var(--s8)", [NOT_COUNTED]: "var(--axis)" };
 const color = (group) => GROUP_COLORS[group] || `var(--s${GROUP_ORDER.indexOf(group) || 6})`;
-const short = (id) => id && id.length > 18 ? id.slice(0, 8) + "…" + id.slice(-6) : (id || "(none)");
-const base = (p) => p ? p.replace(/\/+$/, "").split("/").pop() : "";
 const usd = (v) => v === null || v === undefined ? "–" : v > 0 && v < 0.01 ? "<$0.01" : "$" + v.toFixed(2);
 const HARNESS = { codex: "Codex", claude: "Claude Code", pi: "Pi", opencode: "OpenCode" };
 const harnessName = (h) => HARNESS[h] || "Unknown harness";
+// Each harness's mark, drawn small: Claude's spark, and simple stand-ins for the others.
+function harnessLogo(h) {
+  const svg = svgEl("svg", { viewBox: "0 0 24 24", class: "logo", role: "img", "aria-label": harnessName(h) });
+  const title = svgEl("title"); title.textContent = harnessName(h); svg.append(title);
+  if (h === "claude") {
+    for (let i = 0; i < 12; i++) {
+      const a = i * Math.PI / 6, r = i % 2 ? 7.5 : 10;
+      svg.append(svgEl("line", { x1: 12 + 2.2 * Math.cos(a), y1: 12 + 2.2 * Math.sin(a), x2: 12 + r * Math.cos(a), y2: 12 + r * Math.sin(a),
+        stroke: "#d97757", "stroke-width": 2.4, "stroke-linecap": "round" }));
+    }
+    return svg;
+  }
+  const glyph = { codex: ">_", pi: "π", opencode: "{}" }[h] || "?";
+  svg.append(svgEl("rect", { x: 1, y: 1, width: 22, height: 22, rx: 6, fill: h in HARNESS ? "var(--ink)" : "var(--axis)" }));
+  const t = svgEl("text", { x: 12, y: 16.5, "text-anchor": "middle", fill: "var(--surface)", "font-size": glyph.length > 1 ? 10.5 : 14,
+    "font-weight": 700, "font-family": "ui-monospace, SFMono-Regular, Menlo, monospace" });
+  t.textContent = glyph; svg.append(t);
+  return svg;
+}
+// An eye with a stroke through it: hide.
+function hideIcon() {
+  const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 14, height: 14, "aria-hidden": "true", fill: "none", stroke: "currentColor",
+    "stroke-width": 1.5, "stroke-linecap": "round" });
+  svg.append(svgEl("path", { d: "M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z" }),
+    svgEl("circle", { cx: 8, cy: 8, r: 2 }), svgEl("line", { x1: 2.5, y1: 13.5, x2: 13.5, y2: 2.5 }));
+  return svg;
+}
 const statusOf = (a) => a.building ? ["building", "Building"] : a.running ? ["running", "Running"] : ["idle", "Idle"];
 const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
 
@@ -316,7 +363,7 @@ async function refresh(userAction = false) {
   try {
     await loadHome();
     if (!state.selected) {
-      const first = state.home.gatherers.find((g) => g.agents.length);
+      const first = state.home.gatherers.find((g) => g.agents.length && !isHidden(g)) || state.home.gatherers.find((g) => g.agents.length);
       if (first) state.selected = [first.name, first.agents[0].channel];
     }
     await loadAgent();
@@ -398,40 +445,84 @@ function toggleGatherer(name) {
   try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
   renderAgents();
 }
+// Hidden gatherers, kept in this browser: those the reader hid, and those with nothing for a week
+// (STALE_SECONDS) unless the reader showed them again.
+const HIDDEN_KEY = "ag-dashboard-hidden-gatherers";
+const STALE_SECONDS = 7 * 86400;
+const hiding = (() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(HIDDEN_KEY));
+    if (v && Array.isArray(v.hidden) && Array.isArray(v.shown)) return { hidden: new Set(v.hidden), shown: new Set(v.shown) };
+  } catch (e) { /* none kept */ }
+  return { hidden: new Set(), shown: new Set() };
+})();
+const stale = (g) => !!g.last && (state.home.now || Date.now() / 1000) - g.last > STALE_SECONDS;
+const isHidden = (g) => hiding.hidden.has(g.name) || (stale(g) && !hiding.shown.has(g.name));
+function setHidden(g, hide) {
+  if (hide) { hiding.hidden.add(g.name); hiding.shown.delete(g.name); }
+  else { hiding.hidden.delete(g.name); if (stale(g)) hiding.shown.add(g.name); }
+  try { localStorage.setItem(HIDDEN_KEY, JSON.stringify({ hidden: [...hiding.hidden], shown: [...hiding.shown] })); }
+  catch (e) { /* kept for this page only */ }
+  renderAgents();
+}
 function renderAgents() {
   const aside = document.getElementById("agents");
   document.getElementById("home").textContent = state.home.home;
-  const running = state.home.gatherers.reduce((n, g) => n + g.agents.filter((a) => a.running).length, 0);
-  const total = state.home.gatherers.reduce((n, g) => n + g.agents.length, 0);
+  const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
+  const running = shown.reduce((n, g) => n + g.agents.filter((a) => a.running).length, 0);
+  const total = shown.reduce((n, g) => n + g.agents.length, 0);
   aside.replaceChildren(el("h2", { text: `Actors · ${running} running of ${total}` }));
   if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No gatherers in this home yet." }));
-  for (const g of state.home.gatherers) {
+  else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every gatherer is hidden." }));
+  for (const g of shown) {
     const open = !collapsed.has(g.name);
     const live = g.agents.filter((a) => a.running).length;
     const box = el("div", { class: "gatherer" },
-      el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name) },
-        el("strong", {}, el("span", { class: "caret", text: "▸" }), g.name),
-        el("span", { text: open ? g.policy || "" : `${g.agents.length} actor${g.agents.length === 1 ? "" : "s"}${live ? ` · ${live} running` : ""}` })));
+      el("div", { class: "gatherer-row" },
+        el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name),
+          title: g.policy ? `${g.name} · policy ${g.policy}` : g.name },
+          el("span", { class: "caret", text: "▶" }), el("span", { class: "gname", text: g.name }),
+          el("span", { class: "count", title: `${g.agents.length} actor${g.agents.length === 1 ? "" : "s"}${live ? `, ${live} running` : ""}` },
+            live ? el("i", { "aria-hidden": "true" }) : null, live ? `${live} / ${g.agents.length}` : String(g.agents.length))),
+        el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
+          hideIcon())));
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
-    for (const a of open ? g.agents : []) {
-      const [cls, label] = statusOf(a);
-      const current = state.selected && state.selected[0] === g.name && state.selected[1] === a.channel;
-      const size = a.real_tokens ?? a.sent_tokens;
-      const btn = el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false",
-        title: a.channel, onclick: () => select(g.name, a.channel) },
-        el("div", { class: "top" }, el("span", { class: "harness", text: harnessName(a.harness) }),
-          el("span", { class: "id", text: short(a.channel) }), statusEl(cls, label)),
-        el("div", { class: "meta", text: [base(a.cwd), `${a.reads} reads`, `${a.tasks} tasks`,
-          size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
-        a.last_user_message ? el("div", { class: "asked", text: a.last_user_message, title: a.last_user_message }) : null);
-      box.append(btn);
+    // running first, then idle; each in the order the data has them, newest created first, so an
+    // actor stays in its place, and moves only between the two
+    const busy = (a) => statusOf(a)[1] !== "Idle";
+    const groups = [["Running", g.agents.filter(busy)], ["Idle", g.agents.filter((a) => !busy(a))]].filter(([, list]) => list.length);
+    for (const [name, list] of open ? groups : []) {
+      if (groups.length > 1) box.append(el("div", { class: "agent-group", text: name }));
+      for (const a of list) box.append(agentRow(g, a));
     }
     aside.append(box);
+  }
+  if (hidden.length) {
+    const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
+      el("summary", { text: `${hidden.length} hidden gatherer${hidden.length === 1 ? "" : "s"}` }));
+    for (const g of hidden) list.append(el("div", { class: "hidden-row" }, el("span", { class: "gname", text: g.name }),
+      el("span", { class: "why", text: hiding.hidden.has(g.name) ? "hidden" : `nothing for ${ago(g.last).replace(" ago", "")}` }),
+      el("button", { type: "button", onclick: () => setHidden(g, false) }, "Show")));
+    const wasOpen = document.getElementById("hidden-gatherers");
+    if (wasOpen && wasOpen.open) list.open = true;
+    aside.append(list);
   }
   aside.append(el("h2", { text: "Hook servers" }));
   const servers = state.home.hook_servers || [];
   aside.append(el("div", { class: "servers", text: servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running." }));
+}
+function agentRow(g, a) {
+  const [cls, label] = statusOf(a);
+  const current = state.selected && state.selected[0] === g.name && state.selected[1] === a.channel;
+  const size = a.real_tokens ?? a.sent_tokens;
+  return el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false",
+    title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}`, onclick: () => select(g.name, a.channel) },
+    harnessLogo(a.harness),
+    el("div", {},
+      el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: a.last_user_message || "No message yet" }),
+      el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label }),
+        el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }))));
 }
 async function select(g, c) {
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null;

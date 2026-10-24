@@ -103,7 +103,8 @@ def _hook_servers() -> List[dict]:
 
 
 def home() -> dict:
-    """Every gatherer and its agents, newest activity first, and the hook servers ag started."""
+    """Every gatherer and its agents, each newest created first (`created`: its first event), and
+    the hook servers ag started."""
     now = time.time()
     gatherers = []
     for name in gatherer_names():
@@ -113,13 +114,15 @@ def home() -> dict:
         try:
             agents = _agents(conn, now)
         except sqlite3.Error as exc:
-            gatherers.append({"name": name, "policy": _policy(name), "error": str(exc), "agents": []})
+            gatherers.append({"name": name, "policy": _policy(name), "error": str(exc), "agents": [], "last": None})
             continue
         finally:
             conn.close()
         gatherers.append({"name": name, "policy": _policy(name), "agents": agents,
                           "last": max((a["last"] or 0 for a in agents), default=0) or None})
-    gatherers.sort(key=lambda g: g.get("last") or 0, reverse=True)
+    for g in gatherers:                  # when it was made: its first event
+        g["created"] = min((a["created"] for a in g["agents"] if a.get("created")), default=None)
+    gatherers.sort(key=lambda g: g.get("created") or 0, reverse=True)
     return {"home": paths.HOME, "now": now, "running_seconds": RUNNING_SECONDS, "gatherers": gatherers,
             "hook_servers": _hook_servers()}
 
@@ -129,9 +132,9 @@ def _agents(conn, now: float) -> List[dict]:
         return []
     sizes = [c for c in ("est_tokens", "real_tokens", "limit_tokens") if c in _columns(conn, "_reads")]
     out: Dict[str, dict] = {}
-    for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, max(inserted_at) AS last FROM events "
+    for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, min(inserted_at) AS first, max(inserted_at) AS last FROM events "
                           f"WHERE {CHANNEL} IS NOT NULL GROUP BY {CHANNEL}"):
-        out[r["ch"]] = {"channel": r["ch"], "events": r["n"], "last_event": _seconds(r["last"]), "reads": 0,
+        out[r["ch"]] = {"channel": r["ch"], "events": r["n"], "created": _seconds(r["first"]), "last_event": _seconds(r["last"]), "reads": 0,
                         "last_read": None, "cwd": None, "tasks": 0, "est_tokens": None, "real_tokens": None,
                         "limit_tokens": None, "sent_tokens": None}
     if CHANNEL in _columns(conn, "_reads"):
@@ -163,7 +166,7 @@ def _agents(conn, now: float) -> List[dict]:
         a["last"] = max(a["last_read"] or 0, a["last_event"] or 0) or None
         a["building"] = ch in building
         a["running"] = a["building"] or bool(a["last_read"] and now - a["last_read"] < RUNNING_SECONDS)
-    return sorted(out.values(), key=lambda a: a["last"] or 0, reverse=True)
+    return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
 
 
 CODEX_TYPES = {"message", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output",
