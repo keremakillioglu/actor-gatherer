@@ -261,6 +261,7 @@ class _Agent:
         self.busy = False               # a turn was sent and its result has not come back
         self.yielding = False           # between turns: gives way to another process opening the session
         self.taken = False              # another process took the session over: it is being stopped
+        self.ended = False              # the page ended it (`stop`), whatever it was doing
         self.queue: List[str] = []      # messages waiting for the turn to end
         self.reader: Optional[threading.Thread] = None
 
@@ -411,10 +412,10 @@ class Sessions:
             return next(x for x in self.list() if x["session_id"] == session_id)
 
     def stop(self, session_id: str) -> dict:
-        """The session's agent ended between turns: its stdin closed, so it exits and the session
-        shows Closed until the next message resumes it. Refused while a turn runs or a message
-        waits. A terminal is closed as a terminal window is: hung up, whatever it was doing. The
-        session as `list` has it."""
+        """The session's agent ended: its stdin closed, so it exits and the session shows Closed until
+        the next message resumes it. In the middle of a turn, the turn is cut off (its process group
+        terminated) and what waits is dropped. A terminal is closed as a terminal window is: hung up,
+        whatever it was doing. The session as `list` has it."""
         with self.lock:
             s = self._row(session_id)
             if s is None:
@@ -426,12 +427,17 @@ class Sessions:
             a = self.agents.get(session_id)
             if a is None or a.proc.poll() is not None:
                 raise SessionError("the dashboard has no process open for this session")
-            if a.busy or a.queue:
-                raise SessionError("a turn is running: wait for it to end")
+            a.ended = True
+            a.queue.clear()
             try:
                 a.proc.stdin.close()             # the reader records its end: stopped
             except OSError:
                 pass
+            if a.busy:                           # mid-turn: it would finish the turn first
+                try:
+                    os.killpg(a.proc.pid, signal.SIGTERM)
+                except OSError:
+                    pass
             return next(x for x in self.list() if x["session_id"] == session_id)
 
     def _start(self, s: dict) -> _Agent:
@@ -527,7 +533,10 @@ class Sessions:
             if self.agents.get(session_id) is a:
                 del self.agents[session_id]
                 waiting = bool(a.queue) and not a.taken
-                ok = (code == 0 or a.yielding or a.taken) and not a.busy          # stopped as it gave way: as asked
+                ok = a.ended or ((code == 0 or a.yielding or a.taken) and not a.busy)   # ended or given way: as asked
+                s = self._row(session_id)
+                if a.ended and a.busy and s and not s["turns"] and _has_calls(s["gatherer"], session_id):
+                    self._set(session_id, turns=1)   # cut off in its first turn, after a call: Claude Code kept it, resumed
                 self._set(session_id, status="stopped" if ok else "failed",
                           **({} if ok else {"last_error": _why(session_id) or
                                             f"the agent exited ({code}); see {log_path(session_id)}"}))
