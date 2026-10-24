@@ -6,6 +6,10 @@ lays it out -- the dashboard's only knowledge of ag, which it never imports:
     logs/llm/*.json                      the Gatherer's model calls, one file each
     hook_server/<port>.json              each hook server ag started: pid, port, upstream
 
+and the dashboard's own, beside them:
+
+    dashboard/views/*.js                 the reader's own chat views, which the page loads
+
 and, of each read, the harness's process that made the call (`_reads.pid`, `pid_started`: the
 boot's id and the process's start in clock ticks, as /proc gives them), to tell whether it runs.
 
@@ -37,6 +41,25 @@ def db_path(gatherer: str) -> str:
 
 def llm_log_dir() -> str:
     return os.path.join(HOME, "logs", "llm")
+
+
+VIEW_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.js")
+
+
+def views_dir() -> str:
+    return os.path.join(HOME, "dashboard", "views")
+
+
+def view_names() -> List[str]:
+    """The reader's own chat views: the .js files in views_dir(), by name; [] when there is none."""
+    d = views_dir()
+    return sorted(n for n in os.listdir(d) if VIEW_FILE.fullmatch(n) and os.path.isfile(os.path.join(d, n))) \
+        if os.path.isdir(d) else []
+
+
+def view_file(name: str) -> Optional[str]:
+    """The path of the view named `name`, None when it is not one of view_names() (no other path is served)."""
+    return os.path.join(views_dir(), name) if name in view_names() else None
 
 
 def _alive(pid) -> bool:

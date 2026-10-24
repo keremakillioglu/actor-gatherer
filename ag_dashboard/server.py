@@ -13,6 +13,8 @@ context manager's home (data.py), read-only. Standard library only.
         each time they change -- woken by ag's notifications or the fallback check (live.py) --
         and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle)
     GET /api/sessions                     the sessions started from the page (sessions.py)
+    GET /api/views                        the reader's own chat views: <home>/dashboard/views/*.js, by name
+    GET /views/<name>.js                  one of them, which the page loads (page.html: chat views)
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
     POST /api/sessions {gatherer, cwd?, permission_mode?}  a new one -> the session
     POST /api/send {session_id, text}     a message to its agent -> the session
@@ -36,7 +38,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import data, live, sessions
+from . import data, home, live, sessions
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 VENDOR = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor", n) for n in ("marked.min.js", "purify.min.js")]
@@ -117,6 +119,14 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.answer(home_view())
                 if url.path == "/api/sessions":
                     return self.answer(started.list())
+                if url.path == "/api/views":
+                    return self.answer(home.view_names())
+                if url.path.startswith("/views/"):
+                    path = home.view_file(url.path[len("/views/"):])
+                    if path is None:
+                        return self.send(404, b"not found", "text/plain")
+                    with open(path, "rb") as fh:
+                        return self.send(200, fh.read(), "text/javascript; charset=utf-8")
                 if url.path == "/api/agent" and q.get("gatherer") and "channel" in q:
                     return self.answer(data.agent(q["gatherer"], q["channel"], calls.get()))
                 if url.path == "/api/read" and q.get("gatherer") and q.get("read_id", "").isdigit():
