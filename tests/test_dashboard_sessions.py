@@ -405,6 +405,65 @@ class KeptTest(SessionsBase):
         self.assertEqual(shown(100.0, 0), data.CLOSED)
 
 
+class EndedTest(SessionsBase):
+    """Where ag cannot tell whether a process runs (no /proc: macOS), what the dashboard saw end shows Closed."""
+
+    def test_closed_from_the_list_or_its_terminal_hung_up_it_has_ended(self):
+        chat = self.s.create("g", self.work)["session_id"]
+        self.s.send(chat, "hi")
+        self.until(lambda: self.session(chat)["status"] == "idle")
+        self.assertEqual(self.session(chat)["ended"], 0)        # running: not ended
+        before = time.time()
+        self.s.stop(chat)
+        self.until(lambda: self.session(chat)["ended"] >= before)
+        term = self.s.create("g", self.work)["session_id"]
+        self.s.terminal(term)
+        self.s.stop(term)                                    # its end recorded before this returns
+        self.assertGreaterEqual(self.session(term)["ended"], before)
+
+    def test_a_kept_session_closed_from_the_list_ended_when_it_was_kept(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s._set(sid, kept=123.0)
+        self.s.stop(sid)
+        self.assertEqual((self.session(sid)["kept"], self.session(sid)["ended"]), (0, 123.0))
+
+    def test_shown_closed_until_used_again_where_its_process_cannot_be_told(self):
+        def shown(last, ended, status=data.IDLE, alive=None, **session):     # `status`: the actor's, as the gatherer says
+            g = [{"name": "g", "agents": [{"channel": "c", "created": 1.0, "last": last, "status": status, "alive": alive,
+                                           "running": status == data.RUNNING, "building": False, "harness": "claude",
+                                           "cwd": "/"}], "last": last}]
+            data._with_started(g, [{"session_id": "c", "gatherer": "g", "cwd": "/", "harness": "claude", "pid": None,
+                                    "created_at": "2026-10-24T00:00:00+00:00", "status": "stopped", "kept": 0,
+                                    "ended": ended, **session}])
+            a = g[0]["agents"][0]
+            return a["status"], a["running"]
+        self.assertEqual(shown(100.0, 200.0), (data.CLOSED, False))
+        self.assertEqual(shown(100.0, 200.0, data.RUNNING), (data.CLOSED, False))   # cut off mid-turn
+        self.assertEqual(shown(300.0, 200.0), (data.IDLE, False))   # used since, elsewhere: as the gatherer says
+        self.assertEqual(shown(100.0, 0), (data.IDLE, False))       # never had a process here
+        self.assertEqual(shown(100.0, 200.0, alive=True), (data.IDLE, False))   # the gatherer can tell: it runs
+        self.assertEqual(shown(100.0, 200.0, kept=150.0), (data.IDLE, False))   # the dashboard's own end: kept
+        self.assertEqual(shown(100.0, 200.0, pid=42), (data.IDLE, False))       # open here again
+
+    def test_a_table_from_before_ended_gets_it_set_for_what_had_run_and_stopped(self):
+        self.s.close()
+        os.remove(sessions.db_path())
+        conn = sqlite3.connect(sessions.db_path())
+        conn.execute(sessions.SCHEMA[:sessions.SCHEMA.index(",\n    ended")] + "\n)")    # the columns before `ended`
+        conn.executemany("INSERT INTO sessions VALUES (?, 'g', 'claude', '/', 'auto', 'now', ?, ?, NULL, ?, NULL, NULL)",
+                         [("ran", 1, "stopped", 0), ("never", 0, "stopped", 0), ("kept", 1, "stopped", 5.0),
+                          ("open", 1, "terminal", 0)])
+        conn.commit()
+        conn.close()
+        self.assertEqual({r["session_id"]: r["ended"] for r in sessions.stored()},
+                         {"ran": 0, "never": 0, "kept": 0, "open": 0})   # read as it is: none
+        before = time.time()
+        self.s = sessions.Sessions()
+        ended = {r["session_id"]: r["ended"] for r in sessions.stored()}
+        self.assertGreaterEqual(ended.pop("ran"), before)
+        self.assertEqual(ended, {"never": 0, "kept": 0, "open": 0})
+
+
 class HomeTest(SessionsBase):
     def test_a_session_with_no_calls_yet_is_listed_in_its_new_gatherer(self):
         made = self.s.create("brand_new", self.work)

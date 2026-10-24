@@ -20,6 +20,9 @@ ones it started:
     kept             when (epoch seconds) its process was ended by the dashboard stopping -- a restart, a
                      crash -- not closed: it shows Idle, not Closed, until it is opened again (here or
                      elsewhere) or closed from the list; 0 when not kept
+    ended            when (epoch seconds) the dashboard's last process for it ended -- closed from the list,
+                     exited, hung up; not a codex turn's own end -- what tells it Closed where ag cannot tell
+                     whether a process runs (no /proc: macOS); 0 when none has
 
 The agent is one long-running process, `ag --gatherer G claude -p --input-format stream-json
 --output-format stream-json ...`: each message is a line on its stdin, a turn, and each turn
@@ -111,11 +114,13 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS sessions (
     last_error      TEXT,
     kept            REAL NOT NULL DEFAULT 0,
     model           TEXT,
-    started_as      TEXT
+    started_as      TEXT,
+    ended           REAL NOT NULL DEFAULT 0
 )"""
 COLUMNS = ("session_id", "gatherer", "harness", "cwd", "permission_mode", "created_at", "turns", "status", "last_error",
-           "kept", "model", "started_as")
-ADDED = (("kept", "REAL NOT NULL DEFAULT 0"), ("model", "TEXT"), ("started_as", "TEXT"))   # columns a table from before lacks
+           "kept", "model", "started_as", "ended")
+ADDED = (("kept", "REAL NOT NULL DEFAULT 0"), ("model", "TEXT"), ("started_as", "TEXT"),
+         ("ended", "REAL NOT NULL DEFAULT 0"))   # columns a table from before lacks
 
 
 class SessionError(ValueError):
@@ -136,8 +141,8 @@ def stored() -> List[dict]:
         return []
     conn = sqlite3.connect(f"file:{db_path()}?mode=ro", uri=True, timeout=8)
     conn.row_factory = sqlite3.Row
-    try:                                # a table from before `kept`, `model`, `started_as`: none
-        return [{"kept": 0, "model": None, "started_as": None, **dict(r)}
+    try:                                # a table from before `kept`, `model`, `started_as`, `ended`: none
+        return [{"kept": 0, "model": None, "started_as": None, "ended": 0, **dict(r)}
                 for r in conn.execute("SELECT * FROM sessions ORDER BY created_at DESC")]
     except sqlite3.Error:
         return []
@@ -412,7 +417,10 @@ class Sessions:
                 try:
                     conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {kind}")
                 except sqlite3.OperationalError:     # another process added it meanwhile
-                    pass
+                    continue
+                if name == "ended":              # what had run and stopped, not kept: ended by now
+                    conn.execute("UPDATE sessions SET ended = ? WHERE status IN ('stopped', 'failed') AND kept = 0 "
+                                 "AND turns > 0", (time.time(),))
         return conn
 
     def _row(self, session_id: str) -> Optional[dict]:
@@ -473,7 +481,7 @@ class Sessions:
         session_id = str(uuid.uuid4())
         conn = self._db()
         try:
-            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?)",
+            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?, 0)",
                          (session_id, gatherer, harness, cwd, permission_mode, _now(), model,
                           session_id if harness == "codex" else None))
         finally:
@@ -496,7 +504,7 @@ class Sessions:
                                    + (f" ({cwd})" if cwd else ""))
             conn = self._db()
             try:
-                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, 'auto', ?, 1, 'stopped', NULL, 0, NULL, NULL)",
+                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, 'auto', ?, 1, 'stopped', NULL, 0, NULL, NULL, 0)",
                              (session_id, gatherer, _session_harness(gatherer, session_id), cwd, _now()))
             finally:
                 conn.close()
@@ -556,7 +564,7 @@ class Sessions:
                 self._hang_up(t)
             a = self.agents.get(session_id)
             if t is None and s["kept"] and (a is None or a.proc.poll() is not None):
-                self._set(session_id, kept=0)        # kept, with no process: closed now, as asked
+                self._set(session_id, kept=0, ended=s["kept"])   # kept, with no process: closed now, as asked
                 return next(x for x in self.list() if x["session_id"] == session_id)
         if t is not None:                            # its end recorded by its reader, which takes the lock
             self._gone(t)
@@ -668,6 +676,7 @@ class Sessions:
                 s["turns"] += 1 if done else 0
             ok = done and not error
             self._set(session_id, turns=s["turns"], status="stopped" if ok or a.ended else "failed",
+                      **({"ended": time.time()} if a.ended else {}),   # a turn's own end leaves it ready, not closed
                       **({} if ok or a.ended else {"last_error": error or _why(session_id) or
                                                    f"codex exited ({code}); see {log_path(session_id)}"}))
             if a.queue and not a.ended and not self.closing:     # what was sent meanwhile: the next turn
@@ -774,7 +783,7 @@ class Sessions:
                 s = self._row(session_id)
                 if a.ended and a.busy and s and not s["turns"] and _has_calls(s["gatherer"], session_id):
                     self._set(session_id, turns=1)   # cut off in its first turn, after a call: Claude Code kept it, resumed
-                self._set(session_id, status="stopped" if ok else "failed",
+                self._set(session_id, status="stopped" if ok else "failed", ended=time.time(),
                           kept=time.time() if self.closing and not a.taken else 0,
                           **({} if ok else {"last_error": _why(session_id) or
                                             f"the agent exited ({code}); see {log_path(session_id)}"}))
@@ -918,7 +927,7 @@ class Sessions:
             if self.terms.get(session_id) is t:
                 del self.terms[session_id]
                 s = self._row(session_id)
-                self._set(session_id, status="stopped", kept=time.time() if self.closing else 0,
+                self._set(session_id, status="stopped", ended=time.time(), kept=time.time() if self.closing else 0,
                           **({"turns": max(1, s["turns"])} if s and _has_calls(s["gatherer"], session_id) else {}))
 
     def output(self, session_id: str, since: int, wait: float = 0.0):
