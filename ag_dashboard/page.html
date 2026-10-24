@@ -71,6 +71,7 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
 .agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
 .agent .meta .dot.running { background: var(--good); } .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
+.agent .meta .dot.finished { background: var(--s1); }
 .hidden-list { border-top: 1px solid var(--grid); padding: 8px 0 4px; }
 .hidden-list > summary { margin: 0; padding: 4px 16px; font-size: 12px; color: var(--muted); list-style: none; }
 .hidden-list > summary::-webkit-details-marker { display: none; }
@@ -83,6 +84,7 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
 .status i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--axis); }
 .status.running i { background: var(--good); }
 .status.building i { background: var(--warning); }
+.status.finished i { background: var(--s1); }
 .status.failed i { background: var(--critical); }
 .servers { padding: 0 16px; color: var(--ink-2); font-size: 12px; }
 main { padding: 20px; min-width: 0; }
@@ -313,7 +315,8 @@ function hideIcon() {
     svgEl("circle", { cx: 8, cy: 8, r: 2 }), svgEl("line", { x1: 2.5, y1: 13.5, x2: 13.5, y2: 2.5 }));
   return svg;
 }
-const statusOf = (a) => a.building ? ["building", "Building"] : a.running ? ["running", "Running"] : ["idle", "Idle"];
+const statusOf = (a) => a.building ? ["building", "Building"] : a.running ? ["running", "Running"]
+  : unseen(a) ? ["finished", "Finished"] : ["idle", "Idle"];
 const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
 
 async function get(path) {
@@ -325,7 +328,7 @@ const key = (g, c) => g + "\u0000" + c;
 
 // ------------------------------------------------------------------ data
 async function loadHome() {
-  state.home = SNAPSHOT ? SNAPSHOT.home : await get("/api/home");
+  takeHome(SNAPSHOT ? SNAPSHOT.home : await get("/api/home"));
 }
 async function loadAgent() {
   if (!state.selected) return;
@@ -421,7 +424,7 @@ function connect() {
     });
   });
   on("home", async (home) => {
-    state.home = home;
+    takeHome(home);
     if (!state.selected) {                           // the first agent to appear: shown, and watched
       const first = home.gatherers.find((g) => g.agents.length);
       if (first) { state.selected = [first.name, first.agents[0].channel]; await loadAgent(); render(true); connect(); }
@@ -433,6 +436,40 @@ function connect() {
   es.addEventListener("open", () => { if (mine()) render(); });
   es.addEventListener("error", () => { if (mine() && !state.paused) setLive("Reconnecting…"); });
 }
+
+// ------------------------------------------------------------------ finished, not yet looked at
+// When the reader last looked at each actor, kept in this browser: its `last` (data.py: its latest
+// activity, in the server's clock) at that moment. An actor that has stopped with activity after
+// that is FINISHED: done, and not yet seen. Looking means having it selected while the page is
+// visible. The first time this browser opens the dashboard, every actor there is taken as seen.
+const SEEN_KEY = "ag-dashboard-seen";
+const seen = (() => {
+  try { const v = JSON.parse(localStorage.getItem(SEEN_KEY)); if (v && typeof v === "object") return { at: v, fresh: false }; }
+  catch (e) { /* none kept */ }
+  return { at: {}, fresh: true };
+})();
+const unseen = (a) => !!a.key && !!a.last && a.last > (seen.at[a.key] || 0);
+function keepSeen() { try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen.at)); } catch (e) { /* this page only */ } }
+// Each actor's key, and what this browser has seen of a new home: everything, the first time;
+// the selected actor, while the page is visible.
+function takeHome(home) {
+  for (const g of home.gatherers) for (const a of g.agents) a.key = key(g.name, a.channel);
+  if (seen.fresh) {
+    for (const g of home.gatherers) for (const a of g.agents) if (a.last) seen.at[a.key] = a.last;
+    seen.fresh = false;
+  }
+  state.home = home;
+  markSeen();
+}
+function markSeen() {
+  if (SNAPSHOT || !state.home || !state.selected || document.visibilityState !== "visible") return;
+  const g = state.home.gatherers.find((x) => x.name === state.selected[0]);
+  const a = g && g.agents.find((x) => x.channel === state.selected[1]);
+  if (!a || !a.last || (seen.at[a.key] || 0) >= a.last) return;
+  seen.at[a.key] = a.last;
+  keepSeen();
+}
+document.addEventListener("visibilitychange", () => { if (state.home && document.visibilityState === "visible") { markSeen(); renderAgents(); } });
 
 // ------------------------------------------------------------------ the agent list
 const COLLAPSED_KEY = "ag-dashboard-collapsed-gatherers";
@@ -471,7 +508,8 @@ function renderAgents() {
   const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
   const running = shown.reduce((n, g) => n + g.agents.filter((a) => a.running).length, 0);
   const total = shown.reduce((n, g) => n + g.agents.length, 0);
-  aside.replaceChildren(el("h2", { text: `Actors · ${running} running of ${total}` }));
+  const finished = shown.reduce((n, g) => n + g.agents.filter((a) => statusOf(a)[1] === "Finished").length, 0);
+  aside.replaceChildren(el("h2", { text: `Actors · ${running} running${finished ? `, ${finished} finished` : ""} of ${total}` }));
   if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No gatherers in this home yet." }));
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every gatherer is hidden." }));
   for (const g of shown) {
@@ -487,10 +525,11 @@ function renderAgents() {
         el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
           hideIcon())));
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
-    // running first, then idle; each in the order the data has them, newest created first, so an
-    // actor stays in its place, and moves only between the two
-    const busy = (a) => statusOf(a)[1] !== "Idle";
-    const groups = [["Running", g.agents.filter(busy)], ["Idle", g.agents.filter((a) => !busy(a))]].filter(([, list]) => list.length);
+    // running first, then finished (not yet looked at), then idle; each in the order the data has
+    // them, newest created first, so an actor stays in its place, and moves only between the three
+    const groupOf = (a) => ({ Building: "Running", Running: "Running", Finished: "Finished" })[statusOf(a)[1]] || "Idle";
+    const groups = ["Running", "Finished", "Idle"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
+      .filter(([, list]) => list.length);
     for (const [name, list] of open ? groups : []) {
       if (groups.length > 1) box.append(el("div", { class: "agent-group", text: name }));
       for (const a of list) box.append(agentRow(g, a));
@@ -526,6 +565,7 @@ function agentRow(g, a) {
 }
 async function select(g, c) {
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null;
+  markSeen();
   await refresh(true); connect();
 }
 

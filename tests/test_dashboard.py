@@ -143,6 +143,16 @@ class DataTest(HomeBase):
             data.TEXT_CHARS = old
         self.assertTrue(all(len(i["text"]) <= 5 for i in clipped) and any(i["clipped"] for i in clipped))
 
+    def test_a_pending_answer_is_the_agent_s_latest_activity(self):
+        c1 = lambda: next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")   # noqa: E731
+        before = c1()["last"]
+        time.sleep(0.01)
+        reply = {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}
+        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Done."}], "msg_1")
+        self.assertGreater(c1()["last"], before)                                  # the turn's answer: something new to look at
+        self.assertEqual(next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c2")["last"],
+                         next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c2")["last_event"])
+
     def test_the_pending_answer_follows_the_latest_context(self):
         self.assertEqual(data.agent("g", "c1", [])["pending"], [])                 # the last call carried all of it
         reply = {"role": "assistant", "content": [{"type": "text", "text": "There are 42 rows."}]}
