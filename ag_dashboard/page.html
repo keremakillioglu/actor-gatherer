@@ -319,7 +319,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .term .earlier { display: block; margin: 0 auto 14px; color: var(--term-dim); background: var(--term-user); border-color: var(--term-rule); }
 .term .status-line { color: var(--term-accent); margin-top: 6px; }
 /* while the agent works, the status line's glyph turns, as Claude Code's does */
-.term .status-line .spin::before { content: "✻"; display: inline-block; width: 1.2em; animation: term-spin 1.2s steps(1) infinite; }
+.term .status-line .spin::before, .files .fl-status .spin::before { content: "✻"; display: inline-block; width: 1.2em; animation: term-spin 1.2s steps(1) infinite; }
 @keyframes term-spin { 0% { content: "·"; } 16% { content: "✢"; } 33% { content: "✳"; } 50% { content: "✶"; } 66% { content: "✻"; } 83% { content: "✽"; } }
 /* a stretch of tool calls: one line each, what it is for; the call and its output behind a click */
 .term .call-line, .term .more { margin-bottom: 4px; }
@@ -437,11 +437,11 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-grid.open { grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
 .files .fl-grid:not(.open) .fl-talk { font-size: 13px; border-left: 0; }
 .files .fl-talk { position: relative; overflow: auto; border-left: 1px solid var(--ring); padding: 6px 0 24px; font-size: 12.5px; }
-.files .fl-turn { padding: 6px 12px 8px; border-bottom: 1px solid var(--ring); }
-.files .fl-turn.on { background: var(--selected); }
+.files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px; border-radius: 0 6px 6px 0; }
+.files .fl-turn.on { background: color-mix(in srgb, var(--ink) 4%, transparent); box-shadow: inset 2px 0 0 var(--muted); }   /* the turn picked: a shade and a grey bar, no colour */
 .files .fl-user { display: flex; gap: 8px; width: 100%; text-align: left; background: var(--wash); border: 1px solid var(--ring);
   border-radius: 6px; padding: 6px 8px; margin: 0; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink); cursor: pointer; }
-.files .fl-user:hover { border-color: var(--axis); } .files .fl-turn.on .fl-user { border-color: var(--s1); }
+.files .fl-user:hover { border-color: var(--axis); }
 .files .fl-user .n { flex: none; color: var(--muted); font: 11px/1.7 var(--mono); }
 .files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .files .fl-turn.on .fl-user .tx { -webkit-line-clamp: unset; }
@@ -451,12 +451,25 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-reply > summary .dot { flex: none; color: var(--muted); font-size: 9px; line-height: 18px; }
 .files .fl-reply > summary .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-reply > summary:hover .first { color: var(--ink); }
-.files .fl-reply[open] > summary .dot { color: var(--s1); }
+.files .fl-reply[open] > summary .dot { color: var(--ink-2); } .files .fl-reply > summary:hover .dot { color: var(--s1); }
 .files .fl-reply[open] > summary .first { display: none; }
 .files .fl-reply > .md { margin: -18px 0 4px 15px; }
 .files .fl-reply .md > :first-child { margin-top: 0; } .files .fl-reply .md > :last-child { margin-bottom: 0; }
 .files .fl-reply .md pre { overflow: auto; max-width: 100%; }
 .files .fl-none { margin: 4px 0 0 2px; color: var(--muted); font-style: italic; }
+.files .fl-think { margin: 4px 0 0 2px; color: var(--muted); font-size: 12px; }
+.files .fl-think > summary { display: flex; gap: 6px; margin: 0; list-style: none; cursor: pointer; }
+.files .fl-think > summary::-webkit-details-marker { display: none; }
+.files .fl-think .g { flex: none; color: var(--term-accent); font-size: 11px; line-height: 18px; }
+.files .fl-think .lbl { flex: none; font-style: italic; }
+.files .fl-think .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .fl-think > summary:hover .lbl, .files .fl-think > summary:hover .first { color: var(--ink-2); }
+.files .fl-think[open] > summary .first { display: none; }
+.files .fl-think .body { margin: 2px 0 4px 15px; padding-left: 8px; border-left: 2px solid var(--ring); white-space: pre-wrap; overflow-wrap: anywhere; font-style: italic; }
+.files .fl-think .body + .body { margin-top: 6px; }
+.files .fl-status { display: flex; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: 12px; }
+.files .fl-status .spin { flex: none; }
+.files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ring); }
 .files .fl-sec { display: flex; flex-direction: column; min-height: 0; }
 .files .fl-sec.files-sec { flex: 3 1 0; } .files .fl-sec.cmds-sec { flex: 2 1 0; border-top: 1px solid var(--ring); }
@@ -2832,7 +2845,7 @@ function filesRender({ info, running }) {
   if (!d.files.length) list.append(el("div", { class: "fv-note", text: running && d.turn === d.turns.length - 1
     ? "No files yet in this turn." : "The agent touched no files in this turn." }));
   // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one)
-  const cmds = el("div", { class: "fl-scroll", "data-keep": "files-cmds" });
+  const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
   d.commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
     el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), firstLine(c.text, 140)),
@@ -2840,6 +2853,13 @@ function filesRender({ info, running }) {
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, rel(p).split("/").pop()))) : null,
       el("pre", { class: "call", text: callText(c.call) }), c.output ? el("pre", { class: "out", text: c.output }) : null))));
   if (!d.commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
+  const shown = `${state.files.key}:${d.turn}`;
+  if (cmdsShown !== shown && state.files.turn === null) requestAnimationFrame(() => {   // once per turn: at its end
+    const n = document.querySelector(`[data-keep="files-cmds-${d.turn}"]`);
+    if (!n) return;
+    cmdsShown = shown;
+    n.scrollTop = n.scrollHeight;
+  });
   // two sections, each its own size and scrolling, each with the legend of its colours
   const legend = (pairs) => el("div", { class: "fl-legend" }, ...pairs.map(([name, color]) =>
     el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
@@ -2853,31 +2873,49 @@ function filesRender({ info, running }) {
       legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])));
   // the file view only while a file is picked: the files and the conversation have the page until then
   const pane = sel ? el("div", { class: "fl-pane", "data-keep": "files-pane" }, fileView(sel, rel, `fl-${d.turn}-${d.files.indexOf(sel)}`)) : null;
-  return el("div", { class: "fl-grid" + (sel ? " open" : "") }, side, pane, filesTalk(d, running));
+  return el("div", { class: "fl-grid" + (sel ? " open" : "") }, side, pane, filesTalk(d, info, running));
 }
-// The conversation, at the right: each of the user's messages a turn, the agent's replies under it.
-// Clicking a message shows its turn's files.
+let cmdsShown = null;
+// The conversation, at the right: each of the user's messages a turn, the agent's replies under it, open
+// (a click folds one to its first line), and its thinking between them, folded to a line; while the turn
+// runs, what the agent is doing at its end, as the Transcript's status line. Clicking a message shows its
+// turn's files.
 let talkShown = null;
-function filesTalk(d, running) {
-  const box = el("div", { class: "fl-talk", "data-keep": "files-talk" });
+function filesTalk(d, info, running) {
+  const box = el("div", { class: "fl-talk", "data-keep": "files-talk", "data-follow": "1" });
+  const closed = state.files.closed || (state.files.closed = new Set());   // the replies folded by a click
+  const fold = (ev) => { const n = ev.currentTarget; if (n.open) closed.delete(n.id); else closed.add(n.id); };
   for (const t of d.turns) {
     const on = t.n === d.turn;
     const live = running && t.n === d.turns.length - 1;
+    const said = t.replies || [];
+    const reply = (r, i) => {
+      const id = `fl-r-${t.n}-${i}`;
+      if (r.kind === "text") return el("details", { class: "fl-reply", id, open: closed.has(id) ? null : "", ontoggle: fold },
+        el("summary", { title: "Fold or show the whole message" }, el("span", { class: "dot", text: "●" }), el("span", { class: "first", text: firstLine(r.text, 200) })),
+        markdown(r.text));
+      if (!r.texts.length) return null;              // encrypted: nothing to read (the status line says it thinks)
+      return el("details", { class: "fl-think", id },
+        el("summary", { title: "Show what it thought" }, el("span", { class: "g", "aria-hidden": "true", text: "✻" }),
+          el("span", { class: "lbl", text: "Thought" }), el("span", { class: "first", text: firstLine(r.texts[r.texts.length - 1], 200) })),
+        ...r.texts.map((x) => el("div", { class: "body", text: x })));
+    };
+    const now = !live ? "" : !t.now ? "Working…" : t.now.kind === "thinking" ? "Thinking…" : `Running: ${t.now.text}`;
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
       el("button", { type: "button", class: "fl-user", "aria-pressed": on ? "true" : "false",
         title: on ? "The turn shown" : "Show this turn's files", onclick: () => setFilesTurn(t.n) },
         el("span", { class: "n", text: `${t.n + 1}` }), el("span", { class: "tx", text: t.text })),
-      ...(t.replies || []).map((r, i) => el("details", { class: "fl-reply", id: `fl-r-${t.n}-${i}` },   // folded: its first line
-        el("summary", { title: "Show the whole message" }, el("span", { class: "dot", text: "●" }), el("span", { class: "first", text: firstLine(r, 200) })),
-        markdown(r))),
-      !(t.replies || []).length ? el("div", { class: "fl-none", text: live ? "Working…" : "No reply in words." }) : null));
+      ...said.map(reply),
+      live ? el("div", { class: "fl-status", role: "status" }, el("span", { class: "spin", "aria-hidden": "true" }),
+        el("span", { class: "tx", title: now, text: `${now} (last activity ${ago(info.last)})` }))
+        : !said.some((r) => r.kind === "text") ? el("div", { class: "fl-none", text: "No reply in words." }) : null));
   }
   const at = `${state.files && state.files.key}:${d.turn}`;
-  if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick
+  if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick: the latest at its end
     const cur = document.querySelector(".fl-talk .fl-turn.on");
     if (!cur) return;
     talkShown = at;
-    cur.parentElement.scrollTop = cur.offsetTop;     // .fl-talk is its offset parent
+    cur.parentElement.scrollTop = state.files.turn === null ? cur.parentElement.scrollHeight : cur.offsetTop;   // .fl-talk is its offset parent
   });
   return box;
 }

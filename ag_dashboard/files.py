@@ -703,7 +703,7 @@ def _runs(numbered: List[tuple]) -> List[tuple]:
 
 class _Turn:
     def __init__(self, n, row_id, at, text):
-        self.head = {"n": n, "row_id": row_id, "at": at, "text": text[:REPLY_CHARS], "replies": []}
+        self.head = {"n": n, "row_id": row_id, "at": at, "text": text[:REPLY_CHARS], "replies": [], "now": None}
         self.files: Dict[str, dict] = {}
         self.commands: List[dict] = []
         self.order: List[str] = []
@@ -758,8 +758,10 @@ def _call_view(part: dict) -> dict:
 
 
 def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = "") -> dict:
-    """The session's turns ({n, row_id, at, text, replies}: what the user asked, and what the agent
-    said back), and for turn `turn` (None:
+    """The session's turns ({n, row_id, at, text, replies, now}: what the user asked; what the agent
+    said back and thought, in order -- each {kind: "text", text} or {kind: "thinking", texts} (a run of
+    thinking between two replies, its readable words: none when encrypted); and what it was doing
+    last -- {kind: "thinking"}, {kind: "call", id, text} (a call with no result yet), or None), and for turn `turn` (None:
     the latest) the files it worked on, in the order first touched, each
         {path, kinds (read, edit, write, hit), created,
          sources: [{via, kind, kinds, error, call, blocks}]: the calls that touched it, in order, each
@@ -941,15 +943,28 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     results: Dict[str, dict] = {}
     for i, (row_id, typ, at, parts) in enumerate(evs):
         cur = begins.get(i, cur)
+        head = cur.head if cur is not None else {"replies": [], "now": None}   # before the first message: kept nowhere
         for p in parts:
             if p["kind"] == "call":
                 order.append((cur, p))
                 if p.get("id"):
                     calls[p["id"]] = p
+                inp = p.get("input") if isinstance(p.get("input"), dict) else {"input": p.get("input")}
+                head["now"] = {"kind": "call", "id": p.get("id"), "text": _label(p.get("name") or "", inp, p.get("input"), cwd)}
             elif p["kind"] == "result" and p.get("id"):
                 results[p["id"]] = dict(p, row_id=row_id)      # where it is stored: its image is fetched from there
-            elif p["kind"] == "text" and p.get("role") == "assistant" and cur is not None and p["text"].strip():
-                cur.head["replies"].append(p["text"][:REPLY_CHARS])
+                if (head["now"] or {}).get("id") == p["id"]:
+                    head["now"] = None
+            elif p["kind"] == "text" and p.get("role") == "assistant" and p["text"].strip():
+                head["replies"].append({"kind": "text", "text": p["text"][:REPLY_CHARS]})
+                head["now"] = None
+            elif p["kind"] == "thinking":                    # a run of thinking between two replies: one, its words gathered
+                said = head["replies"]
+                if not said or said[-1]["kind"] != "thinking":
+                    said.append({"kind": "thinking", "texts": []})
+                if p["text"].strip():
+                    said[-1]["texts"].append(p["text"][:REPLY_CHARS])
+                head["now"] = {"kind": "thinking"}
     for t, p in order:
         apply(t, p, results.get(p.get("id")) if p.get("id") else None)
     out = {"turns": [h.head for h in heads], "turn": pick if heads else None, "files": [], "commands": []}
