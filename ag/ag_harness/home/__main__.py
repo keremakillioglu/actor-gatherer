@@ -12,6 +12,9 @@
     python -m ag.ag_harness.home contract [--gatherer S] [--policy P] [--poller X ... | --no-pollers]
                                                         what a run would take, as JSON: the policy,
                                                         its event types, each poller's outputs
+    python -m ag.ag_harness.home claim <gatherer> <session> --pid N [--by WHAT]
+                                                        process N opens the session (as JSON: claimed,
+                                                        or the process that has it); exit 3 when held
 
 `ag home ...` runs the same.
 """
@@ -210,6 +213,24 @@ def cmd_model(h, model, api_base, key_env) -> int:
     return 0
 
 
+def cmd_claim(gatherer: str, session: str, pid: int, by: str) -> int:
+    """Process `pid` opens `session` in `gatherer`'s database -- made if there is none yet -- unless
+    another running process has it: {"claimed": true}, or {"claimed": false, "holder": {...}} (exit 3);
+    {"claimed": null} when the process cannot be told (no /proc): nothing is recorded."""
+    from ..store import operations
+    from ..store.notify import notify
+    from ..store.processes import identity
+    process = identity(pid)
+    if process is None:
+        print(json.dumps({"claimed": None}))
+        return 0
+    held = operations.claim(schema.connect(gatherer), session, process, by)
+    if held is None:
+        notify(gatherer, "open")
+    print(json.dumps({"claimed": True} if held is None else {"claimed": False, "holder": held}))
+    return 0 if held is None else 3
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m ag.ag_harness.home")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -233,6 +254,11 @@ def main(argv=None) -> int:
     con.add_argument("--policy")
     con.add_argument("--poller", action="append", default=[])
     con.add_argument("--no-pollers", action="store_true")
+    cl = sub.add_parser("claim")
+    cl.add_argument("gatherer")
+    cl.add_argument("session")
+    cl.add_argument("--pid", type=int, required=True)
+    cl.add_argument("--by", default="launcher")
     a = ap.parse_args(argv)
     h = home()
     try:
@@ -247,6 +273,8 @@ def main(argv=None) -> int:
         if a.cmd == "contract":
             print(json.dumps(contract(h, a.gatherer, a.policy, a.poller, a.no_pollers)))
             return 0
+        if a.cmd == "claim":
+            return cmd_claim(a.gatherer, a.session, a.pid, a.by)
         if a.cmd == "show":
             return cmd_show(h, a.gatherer)
         if a.cmd == "model":

@@ -436,6 +436,9 @@ const sessionStatus = (s) => !s ? null : s.status === "starting" ? ["building", 
 const statusOf = (a) => sessionStatus(a.session) || (a.building ? ["building", "Building"]
   : (a.status ? a.status === "running" : a.running) ? ["running", "Running"]
   : unseen(a) ? ["finished", "Finished"] : a.status === "closed" ? ["closed", "Closed"] : ["idle", "Idle"]);
+// Whether an actor has a Chat tab: a session the page started, or any Claude Code session with a directory
+// to resume it in. Its message box works while no other process has it open (data.py's `chattable`).
+const hasChat = (a) => !!a && (!!a.session || (a.harness === "claude" && !!a.cwd));
 const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
 
 async function get(path) {
@@ -533,11 +536,11 @@ function loadChatHistory() {
   chatLoading = chatLoading.then(loadChatHistoryNow, loadChatHistoryNow);
   return chatLoading;
 }
-// What the Chat tab shows, loaded: the feed its view draws from (chat views, below), only for a session
-// started from the page, with its tab open.
+// What the Chat tab shows, loaded: the feed its view draws from (chat views, below), for a session with a
+// Chat tab (`hasChat`), with its tab open.
 async function loadChat() {
   const info = selectedInfo();
-  if (!info || !info.session || state.tab !== "chat" || SNAPSHOT) return;
+  if (!hasChat(info) || state.tab !== "chat" || SNAPSHOT) return;
   try { await chatFeed().load(); } catch (err) { /* no database yet: the gatherer is made on the first call */ }
 }
 async function loadChatHistoryNow() {
@@ -597,7 +600,7 @@ function render(userAction = false) {
 const mainSignature = () => {
   const info = selectedInfo();
   return signature([state.selected, state.agent, state.readId, state.context && state.context.read_id, info && info.session,
-    state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), state.tab === "chat" && chatView().id]);
+    info && [info.chattable, info.holder], state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), state.tab === "chat" && chatView().id]);
 };
 const setLive = (text) => { document.getElementById("live").textContent = text; };
 // Redraw the main view where the reader left it: the same tables open, the same lists scrolled.
@@ -829,7 +832,7 @@ async function select(g, c) {
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null;
   markSeen();
   const info = selectedInfo();
-  if (state.tab === "chat" && !(info && info.session)) state.tab = "actor";
+  if (state.tab === "chat" && !hasChat(info)) state.tab = "actor";
   await refresh(true); connect();
   if (state.tab === "transcript") toEnd();
 }
@@ -986,13 +989,13 @@ function renderMain() {
   const info = selectedInfo() || {};
   const [cls, label] = statusOf(info);
   const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Views of this actor" });
-  for (const [id, name] of [["actor", "Actor"], ["transcript", "Transcript"], ["gatherer", "Gatherer"], ...(info.session ? [["chat", "Chat"]] : [])]) {
+  for (const [id, name] of [["actor", "Actor"], ["transcript", "Transcript"], ["gatherer", "Gatherer"], ...(hasChat(info) ? [["chat", "Chat"]] : [])]) {
     tabs.append(el("button", { type: "button", role: "tab", class: "tab", "aria-selected": state.tab === id ? "true" : "false",
       onclick: () => setTab(id) }, name));
   }
   const title = el("div", { class: "title" }, el("h2", { text: `${harnessName(info.harness || (a && a.harness))} · ${g}` }), statusEl(cls, label),
     el("span", { class: "sub", text: `channel ${c}${info.cwd ? " · " + info.cwd : ""}` }));
-  if (state.tab === "chat" && info.session) { main.replaceChildren(title, tabs, chatCard(info)); return; }
+  if (state.tab === "chat" && hasChat(info)) { main.replaceChildren(title, tabs, chatCard(info)); return; }
   if (!a || a.error || !a.reads) {
     main.replaceChildren(...(info.session ? [title, tabs] : []), el("div", { class: "empty", text: info.session
       ? "No calls yet: send the agent a message in the Chat tab." : (a && a.error) || "No data for this actor." }));
@@ -1041,11 +1044,17 @@ async function setTab(id) {
 
 // ------------------------------------------------------------------ the Chat tab
 // The session's history, as the chosen chat view draws it (chat views, below), in a frame that follows
-// its newest; then what was sent and waits for the turn to end; then the box to write the next.
+// its newest; then what was sent and waits for the turn to end; then the box to write the next. A session
+// not started here is resumed by the dashboard on its first message (in the directory its calls named);
+// while another process has it open -- a terminal -- the box is off (`ctx.held`).
 function chatCard(info) {
-  const s = info.session, view = chatView(), feed = chatFeed(view);
+  const s = info.session || { cwd: info.cwd, permission_mode: "auto", queued: [], status: "stopped" };
+  const view = chatView(), feed = chatFeed(view);
+  const held = info.chattable === false
+    ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}: `
+      + "close it there to message it here." : "";
   const data = feed.data() || { items: [], pending: [], earlier: false };
-  const ctx = { info, session: s, data, running: ["running", "building"].includes(statusOf(info)[0]), queued: s.queued || [],
+  const ctx = { info, session: s, data, running: ["running", "building"].includes(statusOf(info)[0]), queued: s.queued || [], held,
     loadEarlier: async () => {                         // the view's "earlier" control: kept where the reader was
       if (!feed.loadEarlier) return;
       const n = document.getElementById("chat-list"), from = n ? n.scrollHeight - n.scrollTop : 0;
@@ -1055,8 +1064,9 @@ function chatCard(info) {
     rerender: () => keepingPlace(renderMain), api: agDashboard };
   const card = el("section", { class: "card chat" },
     el("div", { class: "card-title" }, el("h3", { text: "Chat" }), viewSwitcher(view)),
-    el("div", { class: "desc", text: `A Claude Code session run by the dashboard in ${s.cwd}, permissions ${s.permission_mode}. `
-      + (view.description || "") }));
+    el("div", { class: "desc", text: (info.session ? `A Claude Code session run by the dashboard in ${s.cwd}, permissions ${s.permission_mode}. `
+      : `A Claude Code session started elsewhere: a message resumes it here, in ${s.cwd}, permissions auto. `)
+      + "The dashboard lets the session go after each turn. " + (view.description || "") }));
   const safely = (what, fallback) => {
     try { return [].concat(what() || []); }
     catch (err) { console.error(err); return fallback ? [el("div", { class: "warn", text: `The ${view.name} view failed: ${err.message}` })] : []; }
@@ -1071,29 +1081,32 @@ function chatCard(info) {
   card.append(frame);
   // Sending, for every view's message box: the box is the view's (`composer`), what it sends and the
   // error it gets are the tab's.
-  const err = el("div", { class: "err", role: "alert", text: s.status === "failed" && s.last_error ? s.last_error : "" });
+  const err = el("div", { class: "err", role: "alert", text: held || (s.status === "failed" && s.last_error ? s.last_error : "") });
   let sending = false;
   ctx.send = async (t) => {
     t = String(t ?? "").trim();
-    if (!t || sending) return false;
+    if (!t || sending || held) return false;
     sending = true; err.textContent = "";
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
     try {
-      await post("/api/send", { session_id: s.session_id, text: t });
+      await post("/api/send", info.session ? { session_id: s.session_id, text: t }
+        : { gatherer: state.selected[0], channel: state.selected[1], text: t });
       const box = document.getElementById("composer-text"); if (box) box.value = "";
       await refresh(); chatToEnd();
       return true;
     } catch (e) { err.textContent = e.message; return false; }
-    finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = false; }
+    finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = !!held; }
   };
   // The text box a composer is built around: Enter sends it, Shift+Enter starts a new line, and what is
   // typed in it survives the tab being drawn again (keepingPlace finds it by its id).
   ctx.input = (attrs = {}) => {
-    const box = el("textarea", { rows: "3", placeholder: "Message the agent", "aria-label": "Message the agent", ...attrs, id: "composer-text" });
+    const box = el("textarea", { rows: "3", placeholder: "Message the agent", "aria-label": "Message the agent", ...attrs, id: "composer-text",
+      ...(held ? { disabled: "", placeholder: "Open in another process" } : {}) });
     box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ctx.send(box.value); } });
     return box;
   };
   card.append(...safely(() => (view.composer || defaultComposer)(ctx), true), err);
+  if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
   return card;
 }
 // The message box a view gets unless it brings its own: a text box and a Send button.
@@ -1700,11 +1713,12 @@ function transcriptView(info) {
 //
 // `ctx`: {info (the actor), session (its row: status, cwd, ...), data: {items, pending (what the model
 // answered that no call has stored yet: row_id null), earlier (older items not loaded)}, running,
-// queued, loadEarlier(), rerender(), api (agDashboard: el, markdown, the page's other helpers)}, and for
+// queued, held (why the session cannot be messaged here -- another process has it open -- or ""),
+// loadEarlier(), rerender(), api (agDashboard: el, markdown, the page's other helpers)}, and for
 // a composer: input(attrs), the text box to build it around (Enter sends, Shift+Enter a new line, what
 // is typed kept across redraws), and send(text), which sends it, clears the box, and shows an error
 // under the composer when the send fails (true when it was sent). Controls marked data-send are
-// disabled while a message is being sent. A view that throws is shown as having failed; the others
+// disabled while a message is being sent, and while the session is held. A view that throws is shown as having failed; the others
 // still work.
 const CHAT_VIEWS = new Map();
 const CHAT_VIEW_KEY = "ag-dashboard-chat-view";

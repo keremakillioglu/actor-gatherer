@@ -119,7 +119,9 @@ class AgentTest(SessionsBase):
         self.assertNotIn("--resume", run["argv"])
         self.assertEqual(os.path.realpath(run["cwd"]), os.path.realpath(self.work))
         self.assertEqual(said, {"message": "hello"})
-        self.assertEqual((self.session(sid)["status"], self.session(sid)["last_error"]), ("idle", None))
+        self.until(lambda: self.session(sid)["status"] == "stopped")        # no message waits: it lets the session go
+        self.assertEqual(self.session(sid)["last_error"], None)
+        self.assertNotIn(sid, self.s.agents)
         self.assertTrue(os.path.exists(sessions.log_path(sid)))
 
     def test_one_agent_takes_every_turn_and_a_message_waits_for_the_turn(self):
@@ -133,12 +135,11 @@ class AgentTest(SessionsBase):
         self.assertEqual([x["message"] for x in got if "message" in x], ["one", "two"])
         self.assertEqual(self.session(sid)["queued"], [])
 
-    def test_an_agent_gone_is_started_again_resuming_the_session(self):
+    def test_the_next_message_starts_the_agent_again_resuming_the_session(self):
         sid = self.s.create("g", self.work)["session_id"]
         self.s.send(sid, "one")
         self.until(lambda: self.session(sid)["turns"] == 1)
-        self.s.agents[sid].proc.stdin.close()                               # it ends, as on a dashboard restart
-        self.until(lambda: self.session(sid)["status"] == "stopped")
+        self.until(lambda: self.session(sid)["status"] == "stopped")        # the turn over: the session let go
         self.s.send(sid, "two")
         self.until(lambda: self.session(sid)["turns"] == 2)
         second = [x for x in self.logged() if "argv" in x][1]["argv"]

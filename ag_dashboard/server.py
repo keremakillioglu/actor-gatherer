@@ -18,6 +18,8 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
     POST /api/sessions {gatherer, cwd?, permission_mode?}  a new one -> the session
     POST /api/send {session_id, text}     a message to its agent -> the session
+    POST /api/send {gatherer, channel, text}  the same to a Claude Code session not started here,
+                                          taken into the table first (sessions.py's `adopt`)
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
 
 The POSTs are the only writes, and only to the dashboard's own tables, the agents it runs, and the
@@ -219,7 +221,10 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.answer(started.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
                                                       str(body.get("permission_mode") or "auto")))
                 if url.path == "/api/send":
-                    return self.answer(started.send(str(body.get("session_id") or ""), str(body.get("text") or "")))
+                    sid = str(body.get("session_id") or "")
+                    if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
+                        sid = started.adopt(str(body["gatherer"]), str(body["channel"]))["session_id"]
+                    return self.answer(started.send(sid, str(body.get("text") or "")))
                 if url.path == "/api/hiding":
                     kept = hiding.choose(str(body.get("gatherer") or ""), str(body.get("choice") or ""))
                     hub.ring(None)                       # every open page's list

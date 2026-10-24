@@ -29,6 +29,12 @@ set and smaller replaces it (CLAUDE_CODE_AUTO_COMPACT_WINDOW, `--autocompact`, t
 `modelSettings.<model>.autoCompactWindow`, `autoCompactWindow`, first found); less BUFFER.
 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, which `/context` does not show, lowers it further. A model
 switched to inside the session is not followed.
+
+The run's session is known to ag (`Launch.session`), which claims it, so no other process -- a
+terminal, the dashboard's chat -- runs it at once: `--session-id <id>`, `--resume <id>`, and
+`--continue`, which ag turns into `--resume` with the newest session of the directory, as Claude
+Code would pick it (`session_args`). `--resume` with no id (Claude Code's picker) is refused: ag
+could not tell which session it opens. `--fork-session` opens a new one, claimed on its first call.
 """
 
 import json
@@ -88,6 +94,68 @@ def flag(args: List[str], name: str) -> Optional[str]:
         elif a.startswith(name + "="):
             found = a[len(name) + 1:]
     return found
+
+
+SESSION_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def projects_dir(env: Dict[str, str], cwd: str) -> str:
+    """Where Claude Code keeps the sessions of `cwd`: $CLAUDE_CONFIG_DIR (else ~/.claude)/projects/<cwd,
+    each character but a letter or a digit made '-'>."""
+    config = env.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    return os.path.join(config, "projects", re.sub(r"[^A-Za-z0-9]", "-", cwd))
+
+
+def newest_session(env: Dict[str, str], cwd: str) -> Optional[str]:
+    """The session `--continue` would resume in `cwd`: the one written last there; None if none."""
+    d = projects_dir(env, cwd)
+    try:
+        found = [(os.path.getmtime(os.path.join(d, f)), f[:-6]) for f in os.listdir(d)
+                 if f.endswith(".jsonl") and SESSION_ID.fullmatch(f[:-6])]
+    except OSError:
+        return None
+    return max(found)[1] if found else None
+
+
+def session_args(args: List[str], env: Dict[str, str], cwd: str) -> Tuple[List[str], Optional[str]]:
+    """(the arguments to run Claude Code with, the session they open: None for a new one with no id
+    given). `--continue` becomes `--resume <the newest session>`. Raises LaunchError for `--resume`
+    with no session id (the picker, or a search for one)."""
+    out, session, forks, i = [], None, False, 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            out += args[i:]
+            break
+        name, value, given = a, None, False
+        if a.startswith("--") and "=" in a:
+            name, value, given = a.split("=", 1)[0], a.split("=", 1)[1], True
+        if name in ("--resume", "-r"):
+            if not given and i + 1 < len(args) and not args[i + 1].startswith("-"):
+                value, i = args[i + 1], i + 1
+            if not value or not SESSION_ID.fullmatch(value):
+                raise LaunchError("--resume needs the session's id (`ag claude --resume <id>`): ag makes sure no "
+                                  "other process -- another terminal, the dashboard's chat -- has the session open, "
+                                  "and Claude Code's picker does not say which session it opens")
+            session = value
+            out += ["--resume", value]
+        elif name in ("--continue", "-c") and not given:
+            found = newest_session(env, cwd)
+            if found is None:
+                out.append(a)                      # none to continue: Claude Code says so
+            else:
+                session = found
+                out += ["--resume", found]
+        elif name == "--session-id":
+            if not given and i + 1 < len(args):
+                value, i = args[i + 1], i + 1
+            session = value or None
+            out += ["--session-id", value] if value else [a]
+        else:
+            forks = forks or a == "--fork-session"
+            out.append(a)
+        i += 1
+    return out, None if forks else session
 
 
 def claude_settings(env: Dict[str, str]) -> Dict[str, Any]:
@@ -187,6 +255,7 @@ class ClaudeLauncher(Launcher):
     def launch(self, run: Run) -> Launch:
         """Claude Code, ANTHROPIC_BASE_URL pointed at the hook server -- started if none with its upstream
         is running (not in a dry run)."""
+        args, session = session_args(run.args, run.env, getattr(run, "cwd", None) or os.getcwd())   # before anything starts
         origin, path = upstream_of(self.settings, run.env)
         log_dir = os.path.expanduser(str(self.settings.get("log_dir") or ""))
         trace_root = os.path.expanduser(str(self.settings.get("trace_root") or ""))
@@ -210,8 +279,8 @@ class ClaudeLauncher(Launcher):
             except RuntimeError as exc:
                 raise LaunchError(str(exc)) from exc
         command = list(run.command)
-        limit, how = harness_limit(run.args, run.env, claude_settings(run.env),
-                                   lambda: probe(command, run.args, run.env))
+        limit, how = harness_limit(args, run.env, claude_settings(run.env),
+                                   lambda: probe(command, args, run.env))
         url = base_url(server_url, run.gatherer, path, limit)
         notes.append(f"ANTHROPIC_BASE_URL={url} -> {origin}{path}")
         notes.append(f"Claude Code's own limit: {limit} tokens, {how}; the context manager keeps under it")
@@ -221,7 +290,7 @@ class ClaudeLauncher(Launcher):
         if first_party and "ENABLE_TOOL_SEARCH" not in run.env:
             env["ENABLE_TOOL_SEARCH"] = "true"
             notes.append("ENABLE_TOOL_SEARCH=true (the hook server forwards to Anthropic's API)")
-        return Launch([*run.command, *run.args], env, notes)
+        return Launch([*run.command, *args], env, notes, session)
 
     def describe(self, env: Dict[str, str]) -> List[str]:
         try:

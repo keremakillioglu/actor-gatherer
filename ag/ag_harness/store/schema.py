@@ -170,6 +170,18 @@ CREATE TABLE IF NOT EXISTS _pending (
     payload_json TEXT   NOT NULL,   -- the event's payload, as given
     text        TEXT                -- its readable text, as given; NULL = none
 );
+
+-- Which process has each session open: one per session, so two processes (a terminal, the
+-- dashboard's chat) never run it at once. Claimed by ag's launcher as it starts the harness on a
+-- known session, and by each model call of a process the hook server could tell (`claim`); a row
+-- whose process has ended holds nothing. A process holds one session: claiming another drops it.
+CREATE TABLE IF NOT EXISTS _open (
+    session     TEXT    PRIMARY KEY,   -- the session: its calls' `channel`
+    pid         INTEGER NOT NULL,      -- the harness's process, and when it started
+    pid_started TEXT    NOT NULL,      -- ("<boot id>:<start ticks>", as _reads has it)
+    opened_at   TEXT    NOT NULL,
+    opened_by   TEXT                   -- what claimed it: "launcher", "call"
+);
 """
 
 

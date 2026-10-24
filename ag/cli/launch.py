@@ -56,6 +56,8 @@ class Launch:
     argv: List[str]
     env: Dict[str, str]
     notes: List[str] = field(default_factory=list)
+    session: Optional[str] = None   # the harness's session the run opens, when it is known: ag claims it, so
+                                    # no other process runs it at once (a launcher that cannot tell: None)
 
 
 class Launcher(ABC):

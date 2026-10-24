@@ -611,3 +611,39 @@ def clear_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]]
     with conn:
         cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}1", _unset_is_empty(values))
     return cur.rowcount
+
+
+# ---------------------------------------------------------------- which process has a session open
+
+def claim(conn: sqlite3.Connection, session: str, process: Dict[str, Any], by: str) -> Optional[dict]:
+    """`process` ({"pid", "started"}) opens `session` (`_open`), unless another process that still runs
+    has it: then that one, {"pid", "started", "opened_at", "opened_by"}, and nothing changes. A process
+    holds one session: one it held before is let go. None when claimed."""
+    from .processes import alive
+    pid, started = process["pid"], process["started"]
+    conn.execute("BEGIN IMMEDIATE")              # read and write as one: two claims never both win
+    try:
+        row = conn.execute("SELECT pid, pid_started, opened_at, opened_by FROM _open WHERE session = ?",
+                           (session,)).fetchone()
+        if row is not None and (row[0], row[1]) != (pid, started) and alive(row[0], row[1]) is not False:
+            conn.execute("ROLLBACK")
+            return {"pid": row[0], "started": row[1], "opened_at": row[2], "opened_by": row[3]}
+        conn.execute("DELETE FROM _open WHERE pid = ? AND pid_started = ? AND session != ?", (pid, started, session))
+        if row is None or (row[0], row[1]) != (pid, started):
+            conn.execute("INSERT OR REPLACE INTO _open (session, pid, pid_started, opened_at, opened_by) "
+                         "VALUES (?, ?, ?, ?, ?)", (session, pid, started, _now(), by))
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    return None
+
+
+def holder(conn: sqlite3.Connection, session: str) -> Optional[dict]:
+    """The process that has `session` open and still runs (`claim`'s), or None."""
+    from .processes import alive
+    row = conn.execute("SELECT pid, pid_started, opened_at, opened_by FROM _open WHERE session = ?", (session,)).fetchone()
+    if row is None or alive(row[0], row[1]) is False:
+        return None
+    return {"pid": row[0], "started": row[1], "opened_at": row[2], "opened_by": row[3]}
