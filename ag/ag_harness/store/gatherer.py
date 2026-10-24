@@ -4,6 +4,7 @@ database, as a policy is given it -- the shared tables' operations
 methods for the tables the policy keeps itself.
 
     Store(conn, gatherer, path)         over an open connection (the manager's)
+    Store(..., quiet=True)              over a copy of the database: its writes are told to no one
     StoreGatherers().open(gatherer)         a new connection, for a background job; closed after
 """
 
@@ -14,13 +15,16 @@ from ag.ag_interface import EventType, Tokenizer
 from ag.ag_interface.store import Row, Gatherers, GathererStore
 
 from . import operations, schema
+from .notify import notify
 from .paths import db_path
 
 
 class Store(GathererStore):
-    def __init__(self, conn: sqlite3.Connection, gatherer: str, path: str = "", owned: bool = False):
+    def __init__(self, conn: sqlite3.Connection, gatherer: str, path: str = "", owned: bool = False,
+                 quiet: bool = False):
         self.conn, self.gatherer, self.path = conn, gatherer, path or db_path(gatherer)
         self.owned = owned                                  # close() closes the connection
+        self.quiet = quiet                                  # changed() tells no one
 
     # the shared tables
     def event_types(self) -> List[EventType]:
@@ -44,6 +48,10 @@ class Store(GathererStore):
 
     def high_water(self) -> int:
         return operations.high_water(self.conn)
+
+    def changed(self, what: str, properties: Optional[Dict[str, Any]] = None, row: Optional[int] = None) -> None:
+        if not self.quiet:
+            notify(self.gatherer, what, properties, row)
 
     # the policy's own tables: the connection's methods
     def __getattr__(self, name: str):

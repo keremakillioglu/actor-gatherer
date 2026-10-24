@@ -37,6 +37,7 @@ from .store import operations as store
 from .store import schema
 from .store.paths import db_path
 from .store.gatherer import Store, StoreGatherers
+from .store.notify import notify
 from ag.ag_tools.log import warn
 from ag.ag_tools.tokenizers import Tiktoken
 
@@ -127,7 +128,10 @@ class Manager(ContextManager):
             ValueError: its properties are not what its type declares.
         """
         conn = self._conn(gatherer_id)
-        return store.insert(conn, event, self.tokenizer, self._spec(gatherer_id, getattr(event, "type_id", None)))
+        row_id = store.insert(conn, event, self.tokenizer, self._spec(gatherer_id, getattr(event, "type_id", None)))
+        if row_id is not None:
+            notify(gatherer_id, "events", event.properties, row_id)
+        return row_id
 
     def locate(self, gatherer_id: str, event_id: str, *, properties: Optional[dict] = None) -> Optional[int]:
         """The row id of the event with this id that a read with `properties`
@@ -212,6 +216,7 @@ class Manager(ContextManager):
                 warn(f"poller {poller.name!r} failed: {exc!r}")
                 continue
             store.mark_polled(conn, poller.name, now)
+            last = None
             for event in events:
                 if names.get(event.type_id) not in poller.outputs:
                     warn(f"poller {poller.name!r}: an event of type {names.get(event.type_id, event.type_id)!r}, "
@@ -225,10 +230,13 @@ class Manager(ContextManager):
                          f"dropped")
                     continue
                 try:
-                    if store.insert(conn, event, self.tokenizer) is not None:
-                        stored += 1
+                    row_id = store.insert(conn, event, self.tokenizer)
+                    if row_id is not None:
+                        stored, last = stored + 1, row_id
                 except (TypeError, LookupError, ValueError) as exc:
                     warn(f"poller {poller.name!r}: event refused: {exc}")
+            if last is not None:
+                notify(gatherer_id, "events", None, last)        # no one read's (above): every channel's
         return stored
 
     # ------------------------------------------------------------ reads
@@ -259,6 +267,7 @@ class Manager(ContextManager):
             read_id = store.record_read(conn, properties, ctx.refs, manager=self.policy.name, basis=ctx.basis,
                                         row_id=row_id, est_tokens=ctx.tokens, limit_tokens=limit, preamble_ids=ids,
                                         sent_tokens=self.sent_tokens(conn, ctx, preamble))
+            notify(gatherer_id, "read", properties, read_id)
         return ctx, read_id
 
     @staticmethod
@@ -299,7 +308,7 @@ class Manager(ContextManager):
             conn.backup(copy)                       # the policy reads, and writes, the copy alone
             jobs, self.policy.jobs = getattr(self.policy, "jobs", None), None
             try:
-                ctx = self.policy.read(Store(copy, gatherer_id, db_path(gatherer_id)),
+                ctx = self.policy.read(Store(copy, gatherer_id, db_path(gatherer_id), quiet=True),
                                        Read(gatherer_id, dict(properties or {}), row_id, limit,
                                             fixed_tokens=store.preamble_tokens(conn, preamble)))
             finally:
@@ -363,7 +372,10 @@ class Manager(ContextManager):
         read exists."""
         if not os.path.exists(db_path(gatherer_id)):
             return False
-        return store.record_real_tokens(self._conn(gatherer_id), read_id, tokens)
+        found = store.record_real_tokens(self._conn(gatherer_id), read_id, tokens)
+        if found:
+            notify(gatherer_id, "counts", None, read_id)
+        return found
 
     def record_counts(self, gatherer_id: str, properties: Optional[dict], events: dict, made: dict,
                       preamble: list, left_out: Optional[dict] = None) -> dict:
@@ -372,7 +384,10 @@ class Manager(ContextManager):
         tokenizer's (`store.record_counts`): what the policy then sizes contexts by."""
         if not os.path.exists(db_path(gatherer_id)):
             return {"events": 0, "made": 0, "preamble": 0}
-        return store.record_counts(self._conn(gatherer_id), properties, events, made, preamble, left_out)
+        counted = store.record_counts(self._conn(gatherer_id), properties, events, made, preamble, left_out)
+        if any(counted.values()) or left_out:
+            notify(gatherer_id, "counts", properties)
+        return counted
 
     def record_pending(self, gatherer_id: str, properties: Optional[dict], events: List[dict],
                        answer: Optional[str] = None, stop: Optional[str] = None) -> int:
@@ -380,7 +395,10 @@ class Manager(ContextManager):
         "payload", "text"?}, and why it stopped -- until the next call with these properties stores its events
         (`clear_pending`): what a reader of the gatherer can see of an answer no call has
         carried back yet (`store.record_pending`). How many were kept."""
-        return store.record_pending(self._conn(gatherer_id), properties, events, answer, stop)
+        kept = store.record_pending(self._conn(gatherer_id), properties, events, answer, stop)
+        if kept:
+            notify(gatherer_id, "pending", properties)
+        return kept
 
     def pending(self, gatherer_id: str, *, properties: Optional[dict] = None) -> List[dict]:
         """Not part of the interface: the pending events with these properties, oldest first
@@ -394,7 +412,10 @@ class Manager(ContextManager):
         once a call with them has stored its events (`store.clear_pending`). How many."""
         if not os.path.exists(db_path(gatherer_id)):
             return 0
-        return store.clear_pending(self._conn(gatherer_id), properties)
+        cleared = store.clear_pending(self._conn(gatherer_id), properties)
+        if cleared:
+            notify(gatherer_id, "pending", properties)
+        return cleared
 
     def bulk_load(self, gatherer_id: str, events, *, properties: Optional[dict] = None):
         """Not part of the interface: store a whole recorded history in one
@@ -408,4 +429,5 @@ class Manager(ContextManager):
         events = [replace(e, properties={**given, **(e.properties or {})}) if given and isinstance(e, Event) else e
                   for e in events]
         store.insert_many(conn, events, self.tokenizer)
+        notify(gatherer_id, "events", given)
         return self.policy.bulk_loaded(Store(conn, gatherer_id), gatherer_id, given)

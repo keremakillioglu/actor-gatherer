@@ -28,6 +28,8 @@ cannot be a key.
 import json
 import sqlite3
 import time
+
+from ag.ag_policies.tools.channel import CHANNEL
 from typing import List, Optional
 
 from ..tools.history import Task
@@ -98,6 +100,20 @@ def key(channel_id: Optional[str]) -> str:
     return channel_id or ""
 
 
+def changed(conn, what: str, channel_id=None, row: Optional[int] = None) -> None:
+    """Tell whoever watches the gatherer that `what` of these tables was written, for the channel
+    (None: no channel, or not at hand), after it committed (GathererStore.changed). A bare
+    connection (a test's) tells no one."""
+    tell = getattr(conn, "changed", None)
+    if tell is not None:
+        tell(what, {CHANNEL: channel_id} if channel_id else None, row)
+
+
+def _build_changed(conn, build_id: int) -> None:
+    row = conn.execute("SELECT channel_key FROM _builds WHERE build_id = ?", (build_id,)).fetchone()
+    changed(conn, "build", row[0] if row else None, build_id)
+
+
 # ---------------------------------------------------------------- tasks
 
 def save_tasks(conn, channel_id, tasks: list) -> None:
@@ -108,6 +124,7 @@ def save_tasks(conn, channel_id, tasks: list) -> None:
             "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [(key(channel_id), i, t.name, t.description, t.first_row, t.last_row, t.tokens,
               json.dumps(t.retention)) for i, t in enumerate(tasks)])
+    changed(conn, "tasks", channel_id)
 
 
 # ---------------------------------------------------------------- cleaned messages
@@ -120,6 +137,7 @@ def save_cleaned(conn, build_id: int, texts: dict) -> None:
         conn.executemany("INSERT INTO cleaned_messages VALUES (?, ?, ?) ON CONFLICT (row_id) DO UPDATE "
                          "SET text = excluded.text, build_id = excluded.build_id",
                          [(row_id, text, build_id) for row_id, text in texts.items()])
+    changed(conn, "tasks", row=build_id)
 
 
 def cleaned_texts(conn, row_ids) -> dict:
@@ -195,10 +213,11 @@ def claim_build(conn, channel_id, timeout: float, reason: str = DIRECT) -> Optio
         cur = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
                            "VALUES (?, 'running', ?, ?)", (key(channel_id), now, reason))
         conn.execute("COMMIT")
-        return cur.lastrowid
     except Exception:
         conn.execute("ROLLBACK")
         raise
+    changed(conn, "build", channel_id, cur.lastrowid)
+    return cur.lastrowid
 
 
 def new_build(conn, channel_id, reason: str = DIRECT) -> int:
@@ -206,6 +225,7 @@ def new_build(conn, channel_id, reason: str = DIRECT) -> int:
     with conn:
         cur = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
                            "VALUES (?, 'running', ?, ?)", (key(channel_id), time.time(), reason))
+    changed(conn, "build", channel_id, cur.lastrowid)
     return cur.lastrowid
 
 
@@ -233,6 +253,7 @@ def settle(conn, build_id: int, status: str, **fields) -> None:
             values.append(value)
     with conn:
         conn.execute(f"UPDATE _builds SET {', '.join(sets)} WHERE build_id = ?", (*values, build_id))
+    _build_changed(conn, build_id)
 
 
 def set_cut(conn, build_id: int, open_from_row: int) -> None:
@@ -240,6 +261,7 @@ def set_cut(conn, build_id: int, open_from_row: int) -> None:
     decided when the build is adopted (policy.cut_for)."""
     with conn:
         conn.execute("UPDATE _builds SET open_from_row = ? WHERE build_id = ?", (open_from_row, build_id))
+    _build_changed(conn, build_id)
 
 
 def fail_build(conn, build_id: int, error: str, through_row: Optional[int] = None) -> None:
@@ -303,9 +325,10 @@ def claim_boundary(conn, row_id: int, channel_id) -> bool:
         with conn:
             conn.execute("INSERT INTO _boundaries (row_id, channel_key, asked_at) VALUES (?, ?, ?)",
                          (row_id, key(channel_id), time.time()))
-        return True
     except sqlite3.IntegrityError:
         return False
+    changed(conn, "boundary", channel_id, row_id)
+    return True
 
 
 def record_boundary(conn, row_id: int, new_task: bool, why: str, channel_id=None) -> None:
@@ -318,6 +341,7 @@ def record_boundary(conn, row_id: int, new_task: bool, why: str, channel_id=None
                         ON CONFLICT (row_id) DO UPDATE SET decided_at = excluded.decided_at,
                             new_task = excluded.new_task, why = excluded.why""",
                      (row_id, key(channel_id), now, now, 1 if new_task else 0, (why or "")[:2000]))
+    changed(conn, "boundary", channel_id, row_id)
 
 
 def boundary_verdict(conn, row_id: int) -> Optional[dict]:

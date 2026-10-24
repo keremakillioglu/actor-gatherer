@@ -5,7 +5,8 @@ definitions and nothing of the harness.
     GathererStore  one gatherer's open database: the shared tables' operations
                    a policy needs (reading the history, storing what it makes),
                    and -- for the tables the policy keeps itself -- the sqlite3
-                   connection's own methods (execute, commit, `with store:`)
+                   connection's own methods (execute, commit, `with store:`),
+                   and `changed`, to say it wrote them
     Gatherers      opens a gatherer's store, for work outside a read (a
                    background job): `gatherers.open(gatherer_id)`, closed after
     Jobs           starts a policy's background job in another process:
@@ -107,6 +108,12 @@ class GathererStore(ABC):
     @abstractmethod
     def high_water(self) -> int:
         """The highest row id stored."""
+
+    def changed(self, what: str, properties: Optional[Dict[str, Any]] = None, row: Optional[int] = None) -> None:
+        """Tell whoever watches the gatherer (the dashboard) that the policy wrote `what` of its own
+        tables -- e.g. "build", "tasks" -- for `properties` (e.g. {"channel": ...}; None: unknown), with
+        `row` the id of what it wrote, if any. Call it after the write commits. The shared tables'
+        writes are told by the harness itself. Never raises; the default tells no one."""
 
     def close(self) -> None:
         """Close it (a store `Gatherers.open` gave)."""

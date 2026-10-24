@@ -48,17 +48,19 @@ BASE_URLS = ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "CODEX_OSS_BASE_URL")
 
 class CLIClient(LLM):
     def __init__(self, *, claude_command: str = "claude", codex_command: str = "codex",
-                 home: Optional[str] = None, log_dir: Optional[str] = None, log_prompts: bool = False):
+                 home: Optional[str] = None, log_dir: Optional[str] = None, log_prompts: bool = False,
+                 listeners: Optional[str] = None):
         """
         Args:
             claude_command, codex_command: the executables ([policies.llm]
                 claude_command / codex_command), found on PATH.
             home: ag's home, to know its hook servers (AG_HOME, else ~/.ag).
-            log_dir, log_prompts: as LiteLLMClient's -- one JSON file per call.
+            log_dir, log_prompts, listeners: as LiteLLMClient's -- one JSON file per call,
+                told to the listeners.
         """
         self.commands = {"claude-code": claude_command or "claude", "codex": codex_command or "codex"}
         self.home = os.path.expanduser(home or os.environ.get("AG_HOME") or "~/.ag")
-        self._calllog = CallLog(log_dir, log_prompts)
+        self._calllog = CallLog(log_dir, log_prompts, listeners)
         self._codex_client = None                      # the long-running Codex, once a codex/ call starts it
         self._codex_dir = None                         # its empty working directory
         self._codex_lock = threading.Lock()            # one codex call at a time
