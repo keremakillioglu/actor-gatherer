@@ -244,6 +244,33 @@ class AdoptTest(SessionsBase):
         self.s.send(SID, "hello")                                         # closed there: messaged here
         self.until(lambda: self.session(SID)["turns"] == 2)
 
+    @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
+    def test_a_closed_session_is_opened_in_a_terminal_where_it_worked(self):
+        self.gatherer_with(SID, self.work)
+        self.s.adopt("g", SID)
+        self.s.terminal(SID, 100, 30)
+        self.until(lambda: b"fake terminal" in (self.s.output(SID, -1) or (b"",))[0])
+        run = [x for x in self.logged() if "argv" in x][0]
+        self.assertNotIn("-p", run["argv"])
+        self.assertEqual(run["argv"][-2:], ["--resume", SID])                # it had calls: resumed
+        self.assertEqual(os.path.realpath(run["cwd"]), os.path.realpath(self.work))
+        self.assertEqual(self.session(SID)["status"], "terminal")
+
+    @unittest.skipUnless(LINUX and sessions.TERMINALS, "no /proc, or no pseudo-terminal")
+    def test_a_session_open_elsewhere_is_not_opened_in_a_terminal(self):
+        child, other = sleeper()
+        self.addCleanup(child.kill)
+        conn = self.gatherer_with(SID, self.work)
+        store.claim(conn, SID, other, "launcher")
+        self.s.adopt("g", SID)
+        with self.assertRaises(sessions.SessionError):
+            self.s.terminal(SID)
+        self.assertFalse(os.path.exists(self.log))                        # nothing started
+        child.kill()
+        child.wait()
+        self.s.terminal(SID)                                              # closed there: opened here
+        self.until(lambda: self.session(SID)["terminal"])
+
     def test_what_it_refuses(self):
         with self.assertRaises(sessions.SessionError):
             self.s.adopt("g", "not-a-session")

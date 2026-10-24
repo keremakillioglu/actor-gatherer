@@ -13,6 +13,9 @@ context manager's home (data.py), read-only. Standard library only.
         each time they change -- woken by ag's notifications or the fallback check (live.py) --
         and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle)
     GET /api/sessions                     the sessions started from the page (sessions.py)
+    GET /api/terminal?session_id=S        server-sent events, until the page goes: what the session's
+        terminal prints, `out` {data (base64), at (where it ends), reset (all that is kept: start over)},
+        then `exit` {code} when its process ends; `none` when it has no terminal
     GET /api/views                        the reader's own chat views: <home>/dashboard/views/*.js, by name
     GET /views/<name>.js                  one of them, which the page loads (page.html: chat views)
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
@@ -20,7 +23,11 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/send {session_id, text}     a message to its agent -> the session
     POST /api/send {gatherer, channel, text}  the same to a Claude Code session not started here,
                                           taken into the table first (sessions.py's `adopt`)
-    POST /api/stop {session_id}           its agent, idle, ended: the session closed -> the session
+    POST /api/stop {session_id}           its agent, idle, ended -- or its terminal closed -> the session
+    POST /api/terminal {session_id | gatherer, channel, cols, rows}  the session opened in a terminal,
+                                          Claude Code's own UI (sessions.py's `terminal`) -> the session
+    POST /api/terminal/input {session_id, data}       what was typed in it
+    POST /api/terminal/resize {session_id, cols, rows}  its new size
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
 
 The POSTs are the only writes, and only to the dashboard's own tables, the agents it runs, and the
@@ -29,9 +36,11 @@ the gatherers' databases are only read. They are taken from the dashboard's own 
 (`own_page`), and the server listens on localhost unless told otherwise.
 
 `page(snapshot)` is the page itself, the libraries it renders markdown with (VENDOR: marked,
-and DOMPurify to make what it makes safe) inside it, never fetched; with a snapshot
-(data.snapshot()) it stands alone, its data inside it (`ag dashboard --out`)."""
+and DOMPurify to make what it makes safe) and draws terminals with (TERMINAL: xterm.js and its
+fit add-on, and its stylesheet) inside it, never fetched; with a snapshot (data.snapshot()) it
+stands alone, its data inside it (`ag dashboard --out`), and no terminal: it has none to draw."""
 
+import base64
 import json
 import os
 import select
@@ -45,7 +54,9 @@ from urllib.parse import parse_qs, urlsplit
 from . import data, hiding, home, live, sessions
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
-VENDOR = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor", n) for n in ("marked.min.js", "purify.min.js")]
+_VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
+VENDOR = [os.path.join(_VENDOR_DIR, n) for n in ("marked.min.js", "purify.min.js")]
+TERMINAL = [os.path.join(_VENDOR_DIR, n) for n in ("xterm.js", "addon-fit.js", "xterm.css")]
 LLM_SECONDS = 10.0          # how long the Gatherer's call log is reused before it is read again
 KEEPALIVE = 15.0            # the most a stream stays silent
 COALESCE = 0.03             # after a wake, how long to wait for the rest of a burst (a call stores many events)
@@ -56,9 +67,12 @@ def page(snapshot: Optional[dict] = None) -> str:
     with open(PAGE, encoding="utf-8") as fh:
         text = fh.read()
     scripts = []
-    for path in VENDOR:
+    for path in VENDOR + (TERMINAL if snapshot is None else []):
         with open(path, encoding="utf-8") as fh:
-            scripts.append("<script>" + fh.read().replace("</script", "<\\/script") + "</script>")
+            if path.endswith(".css"):
+                scripts.append("<style>" + fh.read().replace("</style", "<\\/style") + "</style>")
+            else:
+                scripts.append("<script>" + fh.read().replace("</script", "<\\/script") + "</script>")
     text = text.replace("<!--VENDOR-->", "\n".join(scripts), 1)
     if snapshot is None:
         return text
@@ -94,7 +108,8 @@ def _signature(value) -> str:
 def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
     def home_view() -> dict:
         """The home as the page gets it: with the sessions' state, and what the new-session form starts from."""
-        return {**data.home(started.list()), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES)}
+        return {**data.home(started.list()), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
+                "terminals": sessions.TERMINALS}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):      # quiet: one line per request is noise
@@ -123,6 +138,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.answer(home_view())
                 if url.path == "/api/sessions":
                     return self.answer(started.list())
+                if url.path == "/api/terminal":
+                    return self.terminal(q.get("session_id") or "")
                 if url.path == "/api/views":
                     return self.answer(home.view_names())
                 if url.path.startswith("/views/"):
@@ -196,6 +213,34 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
             finally:
                 hub.drop(watch)
 
+        def terminal(self, session_id: str) -> None:
+            """What the session's terminal prints, as it prints it: all that is kept first."""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            at = -1                                      # nothing yet: all that is kept
+            try:
+                while True:
+                    got = started.output(session_id, at, KEEPALIVE)
+                    if got is None:
+                        self.event("none" if at < 0 else "exit", {"code": None})
+                        return self.wfile.flush()
+                    out, end, reset, code = got
+                    if out or reset:
+                        self.event("out", {"data": base64.b64encode(out).decode("ascii"), "at": end, "reset": reset})
+                        at = end
+                    if code is not None:
+                        self.event("exit", {"code": code})
+                        return self.wfile.flush()
+                    if not out and not reset:
+                        if self.gone():
+                            return
+                        self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+            except OSError:                              # the page went away
+                pass
+
         def own_page(self) -> bool:
             """Whether a POST comes from the dashboard's own page: JSON (which a page elsewhere can
             send only after a preflight this server never answers), from no other origin, to this
@@ -228,6 +273,17 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.answer(started.send(sid, str(body.get("text") or "")))
                 if url.path == "/api/stop":
                     return self.answer(started.stop(str(body.get("session_id") or "")))
+                if url.path == "/api/terminal":
+                    sid = str(body.get("session_id") or "")
+                    if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
+                        sid = started.adopt(str(body["gatherer"]), str(body["channel"]))["session_id"]
+                    return self.answer(started.terminal(sid, int(body.get("cols") or 120), int(body.get("rows") or 32)))
+                if url.path == "/api/terminal/input":
+                    started.type(str(body.get("session_id") or ""), str(body.get("data") or ""))
+                    return self.answer({})
+                if url.path == "/api/terminal/resize":
+                    started.resize(str(body.get("session_id") or ""), int(body.get("cols") or 0), int(body.get("rows") or 0))
+                    return self.answer({})
                 if url.path == "/api/hiding":
                     kept = hiding.choose(str(body.get("gatherer") or ""), str(body.get("choice") or ""))
                     hub.ring(None)                       # every open page's list

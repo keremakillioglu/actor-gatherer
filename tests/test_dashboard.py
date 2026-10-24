@@ -329,11 +329,17 @@ class PageTest(HomeBase):
         self.assertNotIn("<!--VENDOR-->", text)
         self.assertIn("marked v15", text)
         self.assertIn("DOMPurify", text)
-        self.assertEqual(text.count("<script>"), 3)                          # the two libraries, then the page's own
+        self.assertEqual(text.count("<script>"), 5)          # the two libraries, xterm.js and its fit add-on, then the page's own
+        self.assertIn(".xterm-helper-textarea", text)                       # xterm.js's stylesheet
+
+    def test_a_snapshot_has_no_terminal(self):
+        text = server.page(data.snapshot())
+        self.assertEqual(text.count("<script>"), 3)
+        self.assertNotIn(".xterm-helper-textarea", text)
 
     def test_a_snapshot_cannot_close_its_script(self):
         text = server.page({"home": {"x": "</script><script>alert(1)</script>"}})
-        self.assertEqual(text.count("</script>"), server.page().count("</script>"))
+        self.assertEqual(text.count("</script>"), server.page({}).count("</script>"))
 
     def test_the_server_answers_the_page_and_its_data(self):
         httpd = server.serve("127.0.0.1", 0)
