@@ -321,6 +321,11 @@ button:disabled { opacity: .5; cursor: default; }
 .chat .chat-frame { flex: 1; min-height: 120px; overflow-y: auto; }
 .chat .chat-frame.ctx { max-height: none; border: 0; padding: 0 16px; }
 .chat .chat-frame.term { border: 0; border-radius: 0; }
+/* a long history's older messages are laid out only when scrolled to: an actor's chat opens in a fraction
+   of the time. The size the browser assumes for one until then: a short message's. The newest are always
+   laid out, so the end the chat opens at does not move as they are. */
+.chat .chat-frame > * { content-visibility: auto; contain-intrinsic-size: auto 48px; }
+.chat .chat-frame > :nth-last-child(-n+30) { content-visibility: visible; }
 /* the Context view's panel, under the message box: the size chart, and how the picked context divides */
 .ctx-panel { flex: none; border-top: 1px solid var(--ring); padding: 8px 16px 10px; }
 .ctx-panel-head { display: flex; align-items: center; gap: 16px; font-size: 12px; }
@@ -788,7 +793,7 @@ function keepingPlace(draw) {
   draw();
   if (refocus && refocus.isConnected && refocus.agFocus) refocus.agFocus();
   const again = document.getElementById("composer-text");
-  if (again && typed) { again.value = typed[0]; if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
+  if (again && typed && again !== box) { again.value = typed[0]; if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
   for (const id of open) { const d = document.getElementById(id); if (d) d.open = true; }
   for (const [k, top, left] of scrolled) {
     const n = main.querySelector(`[data-keep="${k}"]`);
@@ -1014,11 +1019,17 @@ function agentRow(g, a) {
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
           : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false)))));
 }
+// Selecting an actor draws its chat as soon as it is loaded; its calls and context (the details) follow
+// on the stream, which starts with them. The actor list is the stream's already.
 async function select(g, c) {
-  state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null;
+  state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null; state.agent = null;
   markSeen();
-  await refresh(true); connect();
-  chatToEnd();
+  if (SNAPSHOT || state.paused) { await refresh(true); chatToEnd(); return; }
+  connect();
+  const main = document.getElementById("main");
+  main.classList.add("stale");
+  try { await loadChat(); } finally { main.classList.remove("stale"); }
+  if (state.selected[0] === g && state.selected[1] === c) { render(true); chatToEnd(); }
 }
 // The forms in the agent list: a new gatherer's ("+ New gatherer", gatherer ""), a new session's in a gatherer (its "+").
 function openForm(gatherer) {
@@ -1185,8 +1196,31 @@ function renderMain() {
     return;
   }
   const info = selectedInfo() || {};
-  main.replaceChildren(chatCard(info), ...(state.details ? [detailsPanel(info)] : []));
+  const kids = [chatCard(info), ...(state.details ? [detailsPanel(info)] : [])];
+  const open = new Set([...main.querySelectorAll("details[open][id]")].map((d) => d.id));
+  for (const k of kids) for (const d of k.querySelectorAll("details[id]")) if (open.has(d.id)) d.open = true;
+  patch(main, kids);
   if (document.getElementById("size-chart") && state.agent && state.agent.reads) drawCharts();
+}
+// Put `kids` in `parent`, keeping each node already there that is the same as its new one: the browser
+// lays out again only what changed (a long transcript takes it a third of a second), and a kept node
+// keeps its focus, its typed text and its scroll. Matched by position, as the chat grows at its end.
+// A node marked data-morph with the same attributes is patched inside the same way; one marked data-sig
+// (a message box) is kept while its data-sig is unchanged, whatever was typed in it.
+function patch(parent, kids) {
+  const old = [...parent.childNodes];
+  const same = (o, n) => o.attributes.length === n.attributes.length && [...o.attributes].every((a) => n.getAttribute(a.name) === a.value);
+  const final = kids.map((n, i) => {
+    const o = old[i];
+    if (!o || o === n) return n;
+    if (o.nodeType !== 1 || n.nodeType !== 1) return o.isEqualNode(n) ? o : n;
+    if ("sig" in o.dataset || "sig" in n.dataset) return o.dataset.sig === n.dataset.sig && o.tagName === n.tagName ? o : n;
+    if ("morph" in o.dataset && o.tagName === n.tagName && same(o, n)) { patch(o, [...n.childNodes]); return o; }
+    return o.isEqualNode(n) ? o : n;
+  });
+  if (final.some((n, i) => n !== old[i] && old.includes(n))) { parent.replaceChildren(...final); return; }   // moved: drawn whole
+  final.forEach((n, i) => { if (i >= old.length) parent.append(n); else if (n !== old[i]) parent.replaceChild(n, old[i]); });
+  for (const o of old.slice(final.length)) o.remove();
 }
 function setDetails(open, tab) {
   state.details = open;
@@ -1282,7 +1316,8 @@ function chatCard(info) {
       const m = document.getElementById("chat-list"); if (m) m.scrollTop = m.scrollHeight - from;
     },
     rerender: () => keepingPlace(renderMain), api: agDashboard };
-  const card = el("section", { class: "chat", "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${state.selected[0]}` });
+  const card = el("section", { class: "chat", "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${state.selected[0]}`,
+    "data-morph": "", "data-for": signature([state.selected, view.id, writable, held, !!info.session]) });
   const safely = (what, fallback) => {
     try { return [].concat(what() || []); }
     catch (err) { console.error(err); return fallback ? [el("div", { class: "warn", text: `The ${view.name} view failed: ${err.message}` })] : []; }
@@ -1295,7 +1330,7 @@ function chatCard(info) {
     el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false",
       title: "What ag saw and did for this actor: its context, calls, history and builds", onclick: () => setDetails(!state.details) },
       infoIcon(), "Details"));
-  const frame = el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1",
+  const frame = el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1", "data-morph": "",
     role: "log", "aria-label": `Chat history, ${view.name}` }, ...safely(() => view.render(ctx), true));
   if (view.feed !== "none") {                        // a view that draws the history: what waits, or that there is none yet
     for (const q of ctx.queued) frame.append(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
@@ -1322,7 +1357,8 @@ function chatCard(info) {
       await post("/api/send", info.session ? { session_id: s.session_id, text: t }
         : { gatherer: state.selected[0], channel: state.selected[1], text: t });
       const box = document.getElementById("composer-text"); if (box) box.value = "";
-      await refresh(); chatToEnd();
+      if (state.paused || !state.stream) await refresh(); else { await loadChat(); render(); }
+      chatToEnd();
       return true;
     } catch (e) { err.textContent = e.message; return false; }
     finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = !!held; }
@@ -1335,7 +1371,11 @@ function chatCard(info) {
     box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ctx.send(box.value); } });
     return box;
   };
-  card.append(...safely(() => (view.composer || defaultComposer)(ctx), true), err, ...safely(() => view.footer && view.footer(ctx)));
+  // the box kept across redraws while what it shows is unchanged: no redraw under the reader's typing
+  const sig = signature([ctx.running, held, s.status, s.last_error, s.permission_mode, s.cwd]);
+  const composer = safely(() => (view.composer || defaultComposer)(ctx), true);
+  for (const n of composer) if (n.nodeType === 1) n.dataset.sig = sig;
+  card.append(...composer, err, ...safely(() => view.footer && view.footer(ctx)));
   if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
   return card;
 }
