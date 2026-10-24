@@ -2159,6 +2159,8 @@ async function termOpen(info) {
     t.xterm.reset();
   } catch (err) { t.error = err.message; }
   await refresh();
+  if (termRunning(info.channel) && (t.xterm.cols !== dims.cols || t.xterm.rows !== dims.rows))   // fitted again meanwhile
+    post("/api/terminal/resize", { session_id: info.channel, cols: t.xterm.cols, rows: t.xterm.rows }).catch(() => {});
   t.xterm.focus();
 }
 if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
@@ -2170,11 +2172,13 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
       return el("div", { class: "xterm-cover" }, el("div", { class: "desc", text: "A terminal needs a Unix pseudo-terminal, which the dashboard's system does not have." }));
     const t = termFor(info.channel), running = !!(info.session && info.session.terminal);
     if (running) termListen(info.channel);
-    else if (!held && !t.tried && hasChat(info)) { t.tried = true; requestAnimationFrame(() => termOpen(info)); }   // fitted first: at its size
+    const open = !running && !held && !t.tried && hasChat(info);
+    if (open) t.tried = true;
     requestAnimationFrame(() => {                      // drawn into the page: opened there once, then fitted to it
       if (!t.host.isConnected) return;
       if (!t.opened) { t.xterm.open(t.host); t.opened = true; }
       try { t.fit.fit(); } catch (e) { /* not shown */ }
+      if (open) termOpen(info);                        // the session's terminal, at the size it was just fitted to
     });
     const cover = running ? null : el("div", { class: "xterm-cover" },
       el("div", { class: "desc", text: held || (!hasChat(info) ? "This session cannot be opened from the dashboard."
