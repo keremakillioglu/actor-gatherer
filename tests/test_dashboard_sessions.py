@@ -1,6 +1,7 @@
 """Sessions started from the dashboard (ag_dashboard/sessions.py): its table, the agent it runs
 for each through ag -- here a fake ag that answers each message with a result line -- and the
 server's endpoints for them. No real agent runs."""
+import base64
 import json
 import os
 import sqlite3
@@ -35,6 +36,22 @@ FAKE_AG = textwrap.dedent("""
     log.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(),
                           "base_url": os.environ.get("ANTHROPIC_BASE_URL"), "claudecode": os.environ.get("CLAUDECODE")}) + "\\n")
     log.flush()
+    if "-p" not in sys.argv:                            # interactive, in a terminal: says its size, echoes what is typed
+        import signal, tty
+        tty.setraw(0)
+        size = lambda: "%dx%d" % tuple(os.get_terminal_size(0))
+        signal.signal(signal.SIGWINCH, lambda *_: os.write(1, ("[resized %s]\\r\\n" % size()).encode()))
+        os.write(1, ("fake terminal %s tty=%s term=%s alt=%s\\r\\n" % (size(), os.isatty(0), os.environ.get("TERM"),
+                                                                     os.environ.get("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"))).encode())
+        while True:
+            try:
+                got = os.read(0, 1024)
+            except InterruptedError:
+                continue
+            if not got or got == b"\\x04":
+                sys.exit(0)
+            log.write(json.dumps({"typed": got.decode()}) + "\\n"); log.flush()
+            os.write(1, b"[got " + got.replace(b"\\x1b", b"ESC") + b"]\\r\\n")
     for line in sys.stdin:
         message = json.loads(line)["message"]["content"]
         log.write(json.dumps({"message": message}) + "\\n"); log.flush()
@@ -208,6 +225,84 @@ class AgentTest(SessionsBase):
         self.assertEqual(own["ANTHROPIC_BASE_URL"], "https://gateway.example.com")
 
 
+@unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
+class TerminalTest(SessionsBase):
+    def screen(self, sid):
+        got = self.s.output(sid, -1)
+        return got[0].decode("utf-8", "replace") if got else ""
+
+    def started(self, sid, cols=120, rows=32):
+        self.s.terminal(sid, cols, rows)
+        self.until(lambda: "fake terminal" in self.screen(sid))
+
+    def test_a_terminal_runs_the_interactive_ui_through_ag_in_a_pseudo_terminal(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid, 100, 30)
+        self.assertIn("fake terminal 100x30 tty=True term=xterm-256color alt=1", self.screen(sid))     # Claude Code's classic screen
+        run = self.logged()[0]
+        self.assertNotIn("-p", run["argv"])
+        self.assertEqual(run["argv"][:3], ["--gatherer", "g", "claude"])
+        self.assertEqual(run["argv"][-2:], ["--session-id", sid])
+        self.assertEqual(run["cwd"], self.work)
+        self.assertEqual(self.session(sid)["status"], "terminal")
+        self.assertTrue(self.session(sid)["terminal"])
+        self.assertEqual(self.session(sid)["pid"], self.s.terms[sid].pid)
+
+    def test_what_is_typed_and_the_size_reach_it_and_what_it_prints_comes_back(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid, 100, 30)
+        _, at, _, _ = self.s.output(sid, -1)
+        self.s.type(sid, "\x1b")                       # Esc, as typed
+        self.until(lambda: "[got ESC]" in self.screen(sid))
+        out, end, reset, code = self.s.output(sid, at)
+        self.assertFalse(reset)
+        self.assertEqual(out.decode(), "[got ESC]\r\n")
+        self.assertIsNone(code)
+        self.s.resize(sid, 90, 20)
+        self.until(lambda: "[resized 90x20]" in self.screen(sid))
+        self.assertTrue(self.s.output(sid, end + 10_000)[2])      # past its end: all of it again
+
+    def test_a_message_from_another_view_is_pasted_into_it_then_entered(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid)
+        self.s.send(sid, "two\nlines")
+        self.until(lambda: "[got \r]" in self.screen(sid))
+        typed = "".join(x.get("typed", "") for x in self.logged())
+        self.assertEqual(typed, "\x1b[200~two\nlines\x1b[201~\r")
+
+    def test_closing_it_hangs_it_up_and_the_session_shows_stopped(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid)
+        self.s.stop(sid)
+        self.until(lambda: self.session(sid)["status"] == "stopped")
+        self.assertFalse(self.session(sid)["terminal"])
+        self.assertIsNone(self.s.output(sid, 0))
+        with self.assertRaises(sessions.SessionError):
+            self.s.type(sid, "x")
+
+    def test_it_ends_the_idle_agent_first_and_is_refused_mid_turn(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.send(sid, "hi")
+        self.until(lambda: self.session(sid)["status"] == "idle")
+        self.started(sid)
+        argvs = [x["argv"] for x in self.logged() if "argv" in x]
+        self.assertEqual(len(argvs), 2)
+        self.assertIn("-p", argvs[0])
+        self.assertEqual(argvs[1][-2:], ["--resume", sid])        # it had a turn: resumed
+        self.assertNotIn(sid, self.s.agents)
+        self.s.stop(sid)
+        self.until(lambda: self.session(sid)["status"] == "stopped")
+        os.environ["FAKE_AG_DELAY"] = "0.6"
+        self.s.send(sid, "slow")
+        with self.assertRaises(sessions.SessionError):
+            self.s.terminal(sid)
+
+    def test_a_dashboard_restarted_finds_its_terminals_stopped(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s._set(sid, status="terminal")
+        self.assertEqual([x["status"] for x in sessions.Sessions().list()], ["stopped"])
+
+
 class HomeTest(SessionsBase):
     def test_a_session_with_no_calls_yet_is_listed_in_its_new_gatherer(self):
         made = self.s.create("brand_new", self.work)
@@ -262,6 +357,36 @@ class EndpointTest(SessionsBase):
         home = json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))
         self.assertEqual(home["gatherers"][0]["agents"][0]["session"]["session_id"], made["session_id"])
         self.assertIn("auto", home["permission_modes"])
+
+    @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
+    def test_a_terminal_opened_typed_into_and_streamed_from_the_page(self):
+        sid = self.post("/api/sessions", {"gatherer": "g", "cwd": self.work})[1]["session_id"]
+        code, opened = self.post("/api/terminal", {"session_id": sid, "cols": 80, "rows": 24})
+        self.assertEqual((code, opened["terminal"], opened["status"]), (200, True, "terminal"))
+        stream = urllib.request.urlopen(self.url + f"/api/terminal?session_id={sid}", timeout=10)
+        seen = b""
+
+        def until_seen(what):
+            nonlocal seen
+            while what not in seen:
+                line = stream.readline()
+                if line.startswith(b"data: "):
+                    seen += base64.b64decode(json.loads(line[6:])["data"])
+        until_seen(b"fake terminal 80x24")                 # it is up: what is typed now reaches it
+        self.assertEqual(self.post("/api/terminal/input", {"session_id": sid, "data": "hi"}), (200, {}))
+        until_seen(b"[got hi]")
+        self.assertEqual(self.post("/api/terminal/resize", {"session_id": sid, "cols": 100, "rows": 30}), (200, {}))
+        until_seen(b"[resized 100x30]")
+        self.post("/api/stop", {"session_id": sid})
+        events = []
+        while "exit" not in events:
+            line = stream.readline().decode()
+            if line.startswith("event: "):
+                events.append(line[7:].strip())
+        stream.close()
+        self.assertEqual(self.post("/api/terminal/input", {"session_id": sid, "data": "x"})[0], 400)
+        none = urllib.request.urlopen(self.url + f"/api/terminal?session_id={sid}", timeout=10).read().decode()
+        self.assertIn("event: none", none)
 
     def test_a_gatherer_made_from_the_page(self):
         self.assertEqual(self.post("/api/gatherers", {"name": "fresh"}), (200, {"name": "fresh"}))

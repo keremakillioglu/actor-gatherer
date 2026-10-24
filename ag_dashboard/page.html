@@ -313,6 +313,14 @@ button:disabled { opacity: .5; cursor: default; }
 .term-prompt textarea:disabled { opacity: .5; }
 .term-prompt .foot { display: flex; justify-content: space-between; gap: 10px; color: var(--term-dim); font-size: 11px; padding: 4px 2px 0; }
 .term-prompt .foot .mode { color: var(--term-accent); }
+/* The Terminal view: Claude Code's own UI, drawn by xterm.js */
+.chat .chat-frame.xterm-frame { position: relative; overflow: hidden; background: #151514; border-radius: 10px;
+  border: 1px solid var(--ring); padding: 8px 4px 8px 10px; }
+.xterm-host { position: absolute; inset: 8px 4px 8px 10px; }
+.xterm-host .xterm-viewport { background: #151514 !important; }
+.xterm-cover { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center;
+  background: rgba(21, 21, 20, .82); color: #e8e6e0; font-size: 13px; padding: 20px; }
+.xterm-cover .desc { color: #b9b6ae; max-width: 46ch; }
 /* under the Transcript view's history: one terminal, the prompt its last lines */
 .chat .chat-frame.term:has(+ .term-prompt) { border-bottom: 0; border-radius: 10px 10px 0 0; padding-bottom: 8px; }
 .chat .chat-frame.term + .term-prompt { margin-top: 0; border: 1px solid var(--ring); border-top: 0; border-radius: 0 0 10px 10px; padding: 4px 18px 10px; }
@@ -460,9 +468,10 @@ function closeIcon() {
     svgEl("line", { x1: 10.2, y1: 5.8, x2: 5.8, y2: 10.2 }));
   return svg;
 }
-// Whether the dashboard's own agent holds the session between turns (no other process has it open):
-// it can be closed from the list.
-const closable = (a) => !SNAPSHOT && !!a.session && a.session.status === "idle" && !(a.session.queued && a.session.queued.length);
+// Whether the dashboard's own agent holds the session between turns (no other process has it open), or
+// its terminal has it: it can be closed from the list.
+const closable = (a) => !SNAPSHOT && !!a.session && (a.session.terminal
+  || (a.session.status === "idle" && !(a.session.queued && a.session.queued.length)));
 async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
   catch (err) { setLive(`Not closed: ${err.message}`); }
@@ -654,7 +663,10 @@ function keepingPlace(draw) {
   const pageY = window.scrollY;
   const box = document.getElementById("composer-text"), focused = box && document.activeElement === box;
   const typed = box ? [box.value, box.selectionStart, box.selectionEnd] : null;
+  // what keeps its own node across draws (a terminal, data-refocus) and had the focus: given it back
+  const refocus = document.activeElement && document.activeElement.closest && document.activeElement.closest("[data-refocus]");
   draw();
+  if (refocus && refocus.isConnected && refocus.agFocus) refocus.agFocus();
   const again = document.getElementById("composer-text");
   if (again && typed) { again.value = typed[0]; if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
   for (const id of open) { const d = document.getElementById(id); if (d) d.open = true; }
@@ -1112,7 +1124,8 @@ function chatCard(info) {
     el("div", { class: "card-title" }, el("h3", { text: "Chat" }), viewSwitcher(view)),
     el("div", { class: "desc", text: (info.session ? `A Claude Code session run by the dashboard in ${s.cwd}, permissions ${s.permission_mode}. `
       : `A Claude Code session started elsewhere: a message resumes it here, in ${s.cwd}, permissions auto. `)
-      + "The dashboard lets the session go after each turn. " + (view.description || "") }));
+      + (s.terminal ? "It is open in the dashboard's terminal: a message from any view is typed there. "
+        : "The dashboard lets the session go after each turn. ") + (view.description || "") }));
   const safely = (what, fallback) => {
     try { return [].concat(what() || []); }
     catch (err) { console.error(err); return fallback ? [el("div", { class: "warn", text: `The ${view.name} view failed: ${err.message}` })] : []; }
@@ -1121,9 +1134,11 @@ function chatCard(info) {
   if (tools.length) card.append(el("div", { class: "chat-tools" }, ...tools));
   const frame = el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1",
     role: "log", "aria-label": `Chat history, ${view.name}` }, ...safely(() => view.render(ctx), true));
-  for (const q of ctx.queued) frame.append(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
-  if (!data.items.length && !data.pending.length && !ctx.queued.length)
-    frame.append(el("div", { class: "desc", text: s.status === "starting" ? "Starting the agent…" : "No messages yet. Write one below." }));
+  if (view.feed !== "none") {                        // a view that draws the history: what waits, or that there is none yet
+    for (const q of ctx.queued) frame.append(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
+    if (!data.items.length && !data.pending.length && !ctx.queued.length)
+      frame.append(el("div", { class: "desc", text: s.status === "starting" ? "Starting the agent…" : "No messages yet. Write one below." }));
+  }
   card.append(frame);
   // Sending, for every view's message box: the box is the view's (`composer`), what it sends and the
   // error it gets are the tab's.
@@ -1779,9 +1794,10 @@ function transcriptView(info) {
 //     name: "Bubbles",                  // on the switch
 //     description: "User and assistant messages only.",
 //     feed: "history",                  // what it draws (CHAT_FEEDS): "history", the gatherer's events --
-//                                       // {row_id, name (its type), text, tokens, at, clipped}; or
+//                                       // {row_id, name (its type), text, tokens, at, clipped};
 //                                       // "transcript", each event's parts as the Transcript tab draws
-//                                       // them -- {row_id, type, at, parts: [{kind, role, text, ...}]}
+//                                       // them -- {row_id, type, at, parts: [{kind, role, text, ...}]};
+//                                       // or "none", for a view that is not the history (the Terminal)
 //     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own
 //     tools(ctx) { return [nodes] },    // optional: controls above the frame (filters, switches)
 //     render(ctx) { return node or [nodes] },
@@ -1829,6 +1845,7 @@ const CHAT_FEEDS = {
     data: () => state.tx && state.selected && state.tx.key === key(...state.selected)
       ? { items: state.tx.items, pending: state.tx.pending, earlier: state.tx.earlier } : null,
   },
+  none: { load: async () => {}, data: () => ({ items: [], pending: [], earlier: false }) },
 };
 const chatFeed = (view = chatView()) => CHAT_FEEDS[view.feed] || CHAT_FEEDS.history;
 
@@ -1868,6 +1885,119 @@ addChatView({
         el("span", {}, el("span", { class: "mode", text: `» ${ctx.session.permission_mode}` }), ` · ${ctx.session.cwd}`),
         el("span", { text: "enter to send · shift+enter for a new line" })));
   },
+});
+
+// ------------------------------------------------------------------ the Terminal view
+// The session in Claude Code's own UI: its interactive process, run by the dashboard in a
+// pseudo-terminal (sessions.py's `terminal`), drawn by xterm.js. The terminal keeps one node across
+// the tab's draws (moved, never made again), so what it shows, its scroll and its focus stay. It is
+// opened only when asked (a button): choosing the view does not start a process for every session
+// looked at. Once open it has the session -- the other views' message boxes type into it -- until it
+// is closed (the list's close button, or the view's) or exits.
+const term = { sid: null, xterm: null, fit: null, host: null, es: null, opened: false, exited: null, unsent: "", sending: false, error: "" };
+function termFor(sid) {
+  if (term.sid === sid && term.xterm) return term;
+  termDrop();
+  const xterm = new Terminal({ cursorBlink: true, fontSize: 13, scrollback: 5000, allowProposedApi: false,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', theme: { background: "#151514", foreground: "#e8e6e0", cursor: "#e8e6e0" } });
+  const fit = new FitAddon.FitAddon();
+  xterm.loadAddon(fit);
+  const host = el("div", { class: "xterm-host", id: "xterm-host", "data-refocus": "1" });
+  host.agFocus = () => xterm.focus();
+  Object.assign(term, { sid, xterm, fit, host, opened: false, exited: null, error: "" });
+  xterm.onData((d) => termType(sid, d));
+  xterm.onResize(({ cols, rows }) => {
+    if (termRunning(sid)) post("/api/terminal/resize", { session_id: sid, cols, rows }).catch(() => {});
+  });
+  new ResizeObserver(() => { if (host.isConnected && host.clientWidth) { try { fit.fit(); } catch (e) { /* not shown yet */ } } }).observe(host);
+  return term;
+}
+function termDrop() {
+  if (term.es) term.es.close();
+  if (term.xterm) term.xterm.dispose();
+  Object.assign(term, { sid: null, xterm: null, fit: null, host: null, es: null, opened: false, exited: null, unsent: "" });
+}
+const termRunning = (sid) => { const info = selectedInfo(); return !!(info && info.channel === sid && info.session && info.session.terminal); };
+// What is typed, to the process, in order: one request at a time (two at once could arrive swapped), and
+// what is typed while one is on its way goes together in the next -- fast typing is a few requests, not a queue.
+function termType(sid, data) {
+  if (!termRunning(sid)) return;
+  term.unsent += data;
+  if (!term.sending) termSend();
+}
+async function termSend() {
+  term.sending = true;
+  while (term.unsent && term.sid) {                  // each batch to the terminal shown when it goes
+    const data = term.unsent, sid = term.sid;
+    term.unsent = "";
+    try { await post("/api/terminal/input", { session_id: sid, data }); } catch (err) { /* the terminal is gone: its end shows */ }
+  }
+  term.sending = false;
+}
+// What the process prints: everything kept at first (a page that comes back sees the screen), then as it comes.
+function termListen(sid) {
+  if (term.es || SNAPSHOT) return;
+  const es = new EventSource(`/api/terminal?session_id=${encodeURIComponent(sid)}`);
+  term.es = es;
+  const mine = () => term.es === es && term.sid === sid;
+  es.addEventListener("out", (ev) => {
+    if (!mine()) return;
+    const got = JSON.parse(ev.data);
+    if (got.reset) term.xterm.reset();
+    term.xterm.write(Uint8Array.from(atob(got.data), (c) => c.charCodeAt(0)));
+  });
+  const ended = (ev) => {
+    if (!mine()) return;
+    es.close(); term.es = null;
+    if (ev.type === "exit") { term.exited = JSON.parse(ev.data).code; term.xterm.write("\r\n\x1b[2m[the session's process ended]\x1b[0m\r\n"); }
+    refresh();
+  };
+  es.addEventListener("exit", ended);
+  es.addEventListener("none", ended);
+}
+async function termOpen(info) {
+  const t = termFor(info.channel);
+  const dims = (t.fit && t.fit.proposeDimensions()) || { cols: 120, rows: 32 };
+  t.error = ""; t.exited = null;
+  try {
+    await post("/api/terminal", { ...(info.session ? { session_id: info.session.session_id } : { gatherer: state.selected[0], channel: info.channel }),
+      cols: dims.cols, rows: dims.rows });
+    t.xterm.reset();
+  } catch (err) { t.error = err.message; }
+  await refresh();
+  t.xterm.focus();
+}
+async function termClose(info) {
+  try { await post("/api/stop", { session_id: info.session.session_id }); } catch (err) { term.error = err.message; }
+  await refresh();
+}
+if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
+  id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame",
+  description: "Claude Code's own interface, in a terminal: what it would show and ask in one outside, its keys included.",
+  tools: ({ info }) => info.session && info.session.terminal
+    ? [el("button", { type: "button", onclick: () => termClose(info), title: "Close the terminal, as closing its window would" }, "Close terminal")] : [],
+  render: (ctx) => {
+    const { info, held } = ctx;
+    if (state.home && state.home.terminals === false)
+      return el("div", { class: "xterm-cover" }, el("div", { class: "desc", text: "A terminal needs a Unix pseudo-terminal, which the dashboard's system does not have." }));
+    const t = termFor(info.channel), running = !!(info.session && info.session.terminal);
+    if (running) termListen(info.channel);
+    requestAnimationFrame(() => {                      // drawn into the page: opened there once, then fitted to it
+      if (!t.host.isConnected) return;
+      if (!t.opened) { t.xterm.open(t.host); t.opened = true; }
+      try { t.fit.fit(); } catch (e) { /* not shown */ }
+    });
+    const cover = running ? null : el("div", { class: "xterm-cover" },
+      el("div", { class: "desc", text: held ? held
+        : (t.exited !== null ? "The terminal's process ended. " : "")
+          + "Open the session in Claude Code's own interface here. While the terminal is open it has the session: "
+          + "the other views' message boxes type into it." }),
+      held ? null : el("button", { type: "button", class: "primary", onclick: () => termOpen(info) },
+        info.session && info.session.status === "idle" ? "Open in terminal (ends the idle agent)" : "Open in terminal"),
+      t.error ? el("div", { class: "err", text: t.error }) : null);
+    return [t.host, cover].filter(Boolean);
+  },
+  composer: () => [],
 });
 
 // What a view gets to draw with -- and, for one in a file of its own, how it adds itself.

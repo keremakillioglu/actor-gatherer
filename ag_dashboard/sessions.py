@@ -10,7 +10,7 @@ ones it started:
     permission_mode  Claude Code's --permission-mode: auto (the default), acceptEdits, plan, ...
     created_at       when it was started (ISO, UTC)
     turns            how many of its turns have ended: after the first, a restart resumes it
-    status           starting / running / idle / stopped / failed, as last seen
+    status           starting / running / idle / terminal / stopped / failed, as last seen
     last_error       why its last turn or process failed, if one did
 
 The agent is one long-running process, `ag --gatherer G claude -p --input-format stream-json
@@ -31,6 +31,15 @@ dashboard never takes a session from another live process, idle or not: only onc
 the page reads it from the gatherer, like every actor's history. Its stderr, and every line it
 printed, go to <home>/logs/dashboard/<session_id>.log.
 
+A session can be opened in a TERMINAL instead (`terminal`): Claude Code's own interactive UI,
+`ag --gatherer G claude ...` with no `-p`, in a pseudo-terminal the page draws (xterm.js) -- the
+same process a terminal outside would run, so it shows and asks what it would there (the trust
+dialog, permission prompts) and its keys are its own. The page gets what it prints (`output`, kept
+the last TERM_KEEP bytes so a page that comes back redraws it) and sends what is typed (`type`) and
+the window's size (`resize`). Opening it ends the session's idle `-p` agent first; from then on the
+terminal has the session, and a message sent from any view is typed into it -- pasted, then Enter --
+until it is closed (`stop`) or exits. Unix only: it needs `pty` (TERMINALS).
+
 A new gatherer, with no session yet, is made by `ag new <name>` (`new_gatherer`).
 
 ag is run as a command (AG_COMMAND, else `ag` on the PATH), never imported."""
@@ -40,7 +49,9 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import sqlite3
+import struct
 import subprocess
 import threading
 import uuid
@@ -49,6 +60,14 @@ from typing import Callable, Dict, List, Optional
 from urllib.parse import urlsplit
 
 from . import home
+
+try:                                    # a terminal needs a pseudo-terminal: Unix only
+    import fcntl
+    import pty
+    import termios
+    TERMINALS = True
+except ImportError:
+    TERMINALS = False
 
 HARNESSES = ("claude",)
 PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "manual")
@@ -94,6 +113,28 @@ def stored() -> List[dict]:
         return [dict(r) for r in conn.execute(f"SELECT {', '.join(COLUMNS)} FROM sessions ORDER BY created_at DESC")]
     except sqlite3.Error:
         return []
+    finally:
+        conn.close()
+
+
+OUTER_TERMINAL = ("TMUX", "TMUX_PANE", "STY", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "WINDOWID",
+                  "VTE_VERSION", "KITTY_WINDOW_ID", "WEZTERM_PANE", "ITERM_SESSION_ID")   # the dashboard's own terminal: not the page's
+# Claude Code's classic screen, not its full screen: what it prints goes into the page terminal's own
+# scrollback, scrolled there; full screen would send every wheel tick to it and back to redraw.
+CLASSIC = {"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"}
+TERM_KEEP = 512 * 1024             # how much of a terminal's output is kept, for a page that comes back
+PASTE_ENTER = 0.15                 # after a message is pasted into a terminal, how long before its Enter
+
+
+def _has_calls(gatherer: str, session_id: str) -> bool:
+    """Whether the session made a model call: Claude Code has saved it, so it can be resumed."""
+    conn = _gatherer_db(gatherer)
+    if conn is None:
+        return False
+    try:
+        return conn.execute("SELECT 1 FROM _reads WHERE p_channel = ? LIMIT 1", (session_id,)).fetchone() is not None
+    except sqlite3.Error:
+        return False
     finally:
         conn.close()
 
@@ -224,6 +265,18 @@ class _Agent:
         self.reader: Optional[threading.Thread] = None
 
 
+class _Term:
+    """One session's terminal: the process in its pseudo-terminal, and what it printed."""
+
+    def __init__(self, pid: int, fd: int, log):
+        self.pid, self.fd, self.log = pid, fd, log
+        self.out = bytearray()          # the last TERM_KEEP bytes it printed
+        self.end = 0                    # how many it printed in all: `out` ends there
+        self.exited: Optional[int] = None
+        self.changed = threading.Condition()
+        self.reader: Optional[threading.Thread] = None
+
+
 class Sessions:
     """The sessions started from the page, and their agents. Thread-safe: the server's handlers
     share one. `on_change(gatherer, session_id)` is told each time a session's state changes (the
@@ -233,9 +286,10 @@ class Sessions:
         self.on_change = on_change
         self.lock = threading.RLock()
         self.agents: Dict[str, _Agent] = {}
+        self.terms: Dict[str, _Term] = {}
         conn = self._db()               # a process from before is gone: what it was running stopped
         try:
-            conn.execute("UPDATE sessions SET status = 'stopped' WHERE status IN ('starting', 'running', 'idle')")
+            conn.execute("UPDATE sessions SET status = 'stopped' WHERE status IN ('starting', 'running', 'idle', 'terminal')")
         finally:
             conn.close()
 
@@ -273,12 +327,14 @@ class Sessions:
                 pass
 
     def list(self) -> List[dict]:
-        """Every session the table has, newest first, each with `queued`: its messages waiting."""
+        """Every session the table has, newest first, each with `queued` (its messages waiting), `pid` (the
+        dashboard's process for it) and `terminal` (whether that is a terminal)."""
         with self.lock:
             out = []
             for s in stored():
-                a = self.agents.get(s["session_id"])
-                out.append({**s, "queued": list(a.queue) if a else [], "pid": a.proc.pid if a else None})
+                a, t = self.agents.get(s["session_id"]), self.terms.get(s["session_id"])
+                out.append({**s, "queued": list(a.queue) if a else [], "terminal": t is not None,
+                            "pid": t.pid if t else a.proc.pid if a else None})
             return out
 
     def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = "claude") -> dict:
@@ -336,6 +392,9 @@ class Sessions:
             s = self._row(session_id)
             if s is None:
                 raise SessionError(f"no session {session_id} started from the dashboard")
+            if session_id in self.terms:             # its terminal has it: typed there
+                self._paste(self.terms[session_id], text)
+                return next(x for x in self.list() if x["session_id"] == session_id)
             a = self.agents.get(session_id)
             if a is not None and a.taken:
                 raise SessionError("the session was taken over by another process: close it there first")
@@ -354,11 +413,16 @@ class Sessions:
     def stop(self, session_id: str) -> dict:
         """The session's agent ended between turns: its stdin closed, so it exits and the session
         shows Closed until the next message resumes it. Refused while a turn runs or a message
-        waits. The session as `list` has it."""
+        waits. A terminal is closed as a terminal window is: hung up, whatever it was doing. The
+        session as `list` has it."""
         with self.lock:
             s = self._row(session_id)
             if s is None:
                 raise SessionError(f"no session {session_id} started from the dashboard")
+            t = self.terms.get(session_id)
+            if t is not None:
+                self._hang_up(t)
+                return next(x for x in self.list() if x["session_id"] == session_id)
             a = self.agents.get(session_id)
             if a is None or a.proc.poll() is not None:
                 raise SessionError("the dashboard has no process open for this session")
@@ -476,10 +540,181 @@ class Sessions:
                     except SessionError:
                         pass
 
+    def terminal(self, session_id: str, cols: int = 120, rows: int = 32) -> dict:
+        """The session opened in a terminal, `cols` x `rows`: its interactive Claude Code, started unless
+        it runs already. Its idle `-p` agent is ended first; refused while that one's turn runs, or
+        while another process has the session open. The session as `list` has it."""
+        if not TERMINALS:
+            raise SessionError("a terminal needs a Unix pseudo-terminal, which this system does not have")
+        with self.lock:
+            s = self._row(session_id)
+            if s is None:
+                raise SessionError(f"no session {session_id} started from the dashboard")
+            if session_id not in self.terms:
+                a = self.agents.get(session_id)
+                if a is not None and a.proc.poll() is None:
+                    if a.busy or a.queue:
+                        raise SessionError("a turn is running: wait for it to end")
+                    a.queue.clear()
+                    try:
+                        a.proc.stdin.close()
+                    except OSError:
+                        pass
+            else:
+                a = None
+        if a is not None:                            # its end recorded outside the lock: the reader takes it
+            try:
+                a.proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                a.proc.terminate()
+            if a.reader is not None:
+                a.reader.join(timeout=5)
+        with self.lock:
+            if session_id not in self.terms:
+                held = holder(s["gatherer"], session_id)
+                if held is not None:
+                    raise SessionError(f"the session is open in another process ({held['pid']}): close it there first")
+                self._start_terminal(self._row(session_id), cols, rows)
+            else:
+                self.resize(session_id, cols, rows)
+            return next(x for x in self.list() if x["session_id"] == session_id)
+
+    def _start_terminal(self, s: dict, cols: int, rows: int) -> _Term:
+        sid = s["session_id"]
+        resume = bool(s["turns"]) or _has_calls(s["gatherer"], sid)
+        argv = [*ag_command(), "--gatherer", s["gatherer"], s["harness"], "--permission-mode", s["permission_mode"],
+                *(["--resume", sid] if resume else ["--session-id", sid])]
+        env = {**{k: v for k, v in agent_env().items() if k not in OUTER_TERMINAL}, "TERM": "xterm-256color", "COLORTERM": "truecolor",
+               **CLASSIC}
+        os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
+        log = open(log_path(sid), "a", encoding="utf-8", buffering=1)
+        log.write(f"--- {_now()} terminal {shlex.join(argv)}\n")
+        try:
+            pid, fd = pty.fork()
+        except OSError as exc:
+            log.close()
+            self._set(sid, status="failed", last_error=f"could not open a terminal: {exc}")
+            raise SessionError(f"could not open a terminal: {exc}") from exc
+        if pid == 0:                                 # the child: its terminal sized, then ag
+            try:
+                fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+                os.chdir(s["cwd"])
+                os.execvpe(argv[0], argv, env)
+            finally:
+                os._exit(127)
+        t = _Term(pid, fd, log)
+        self.terms[sid] = t
+        if resume and not s["turns"]:
+            self._set(sid, turns=1)
+        self._set(sid, status="terminal", last_error=None)
+        t.reader = threading.Thread(target=self._read_terminal, args=(sid, t), daemon=True)
+        t.reader.start()
+        return t
+
+    def _read_terminal(self, session_id: str, t: _Term) -> None:
+        """What the terminal prints, until it exits: kept, and the pages watching it woken."""
+        while True:
+            try:
+                chunk = os.read(t.fd, 65536)
+            except OSError:                          # EIO: the process and its terminal are gone
+                chunk = b""
+            if not chunk:
+                break
+            with t.changed:
+                t.out += chunk
+                t.end += len(chunk)
+                if len(t.out) > TERM_KEEP:
+                    del t.out[:len(t.out) - TERM_KEEP]
+                t.changed.notify_all()
+        try:
+            _, status = os.waitpid(t.pid, 0)
+            code = os.waitstatus_to_exitcode(status)
+        except ChildProcessError:
+            code = -1
+        try:
+            os.close(t.fd)
+        except OSError:
+            pass
+        with t.changed:
+            t.exited = code
+            t.changed.notify_all()
+        with self.lock:
+            t.log.write(f"--- {_now()} terminal exited {code}\n")
+            t.log.close()
+            if self.terms.get(session_id) is t:
+                del self.terms[session_id]
+                s = self._row(session_id)
+                self._set(session_id, status="stopped",
+                          **({"turns": max(1, s["turns"])} if s and _has_calls(s["gatherer"], session_id) else {}))
+
+    def output(self, session_id: str, since: int, wait: float = 0.0):
+        """What the session's terminal printed after byte `since`, waiting up to `wait` seconds for
+        something: (bytes, where they end, whether they start further back than asked -- what was
+        kept, all of it; exit code or None). None when it has no terminal."""
+        t = self.terms.get(session_id)
+        if t is None:
+            return None
+        with t.changed:
+            if t.end <= since and t.exited is None and wait > 0:
+                t.changed.wait(wait)
+            start = t.end - len(t.out)
+            reset = since < start or since > t.end
+            data = bytes(t.out) if reset else bytes(t.out[since - start:])
+            return data, t.end, reset, t.exited
+
+    def type(self, session_id: str, data: str) -> None:
+        """What was typed in the page, to the session's terminal, as typed."""
+        t = self.terms.get(session_id)
+        if t is None:
+            raise SessionError("the session has no terminal open")
+        self._write(t, data.encode("utf-8"))
+
+    def resize(self, session_id: str, cols: int, rows: int) -> None:
+        """The terminal is `cols` x `rows` now: its process is told (SIGWINCH)."""
+        t = self.terms.get(session_id)
+        if t is None:
+            raise SessionError("the session has no terminal open")
+        cols, rows = max(20, min(int(cols), 500)), max(5, min(int(rows), 200))
+        try:
+            fcntl.ioctl(t.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        except OSError:
+            pass
+
+    def _write(self, t: _Term, data: bytes) -> None:
+        try:
+            while data:
+                data = data[os.write(t.fd, data):]
+        except OSError as exc:
+            raise SessionError(f"the terminal is gone: {exc}") from exc
+
+    def _paste(self, t: _Term, text: str) -> None:
+        """A message from a view's message box, typed into the terminal: pasted as one block (so its
+        new lines stay in it), then Enter once the paste has landed."""
+        self._write(t, b"\x1b[200~" + text.replace("\x1b", "").encode("utf-8") + b"\x1b[201~")
+        threading.Timer(PASTE_ENTER, lambda: self._write_quietly(t, b"\r")).start()
+
+    def _write_quietly(self, t: _Term, data: bytes) -> None:
+        try:
+            self._write(t, data)
+        except SessionError:
+            pass
+
+    def _hang_up(self, t: _Term) -> None:
+        """The terminal closed as a window is: its process group hung up."""
+        for sig in (signal.SIGHUP, signal.SIGCONT):
+            try:
+                os.killpg(t.pid, sig)
+            except OSError:
+                pass
+
     def close(self) -> None:
         """Every agent's stdin closed, so each ends after its turn; any still running after 5 s is
-        stopped. Returns once each one's end is recorded."""
+        stopped; every terminal hung up, and killed if still there after 5 s. Returns once each one's
+        end is recorded."""
         with self.lock:
+            terms = list(self.terms.values())
+            for t in terms:
+                self._hang_up(t)
             agents = list(self.agents.values())
             for a in agents:
                 a.queue.clear()          # nothing more to send: not started again
@@ -496,3 +731,12 @@ class Sessions:
         for a in agents:
             if a.reader is not None:
                 a.reader.join(timeout=5)
+        for t in terms:
+            if t.reader is not None:
+                t.reader.join(timeout=5)
+                if t.reader.is_alive():
+                    try:
+                        os.killpg(t.pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                    t.reader.join(timeout=2)
