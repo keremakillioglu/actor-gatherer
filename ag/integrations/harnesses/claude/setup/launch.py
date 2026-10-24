@@ -21,7 +21,7 @@ Claude Code keeps its own automatic compaction; the run states where it compacts
 for the context manager to keep under (`harness_limit`): its auto-compact window less the
 auto-compact buffer it keeps, as Claude Code itself reports them -- `/context` in print mode, a
 local command that calls no model, run with the run's model and auto-compact flags and
-environment (`probe`). When that cannot be asked, Claude Code's documented rules stand in
+environment (`probe`; about 0.3 s). When that cannot be asked, Claude Code's documented rules stand in
 (`documented`): the model (`--model`, else ANTHROPIC_MODEL, else settings.json `model` in
 $CLAUDE_CONFIG_DIR or ~/.claude) has CLAUDE_CODE_MAX_CONTEXT_TOKENS, else 1M for a `[1m]` model
 or a native 1M one (unless CLAUDE_CODE_DISABLE_1M_CONTEXT), else 200K; an auto-compact window
@@ -37,10 +37,12 @@ Code would pick it (`session_args`). `--resume` with no id (Claude Code's picker
 could not tell which session it opens. `--fork-session` opens a new one, claimed on its first call.
 """
 
+import http.server
 import json
 import os
 import re
 import subprocess
+import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -171,8 +173,51 @@ def claude_settings(env: Dict[str, str]) -> Dict[str, Any]:
 
 CONTEXT_TOKENS = re.compile(r"\*\*Tokens:\*\*\s*[0-9.]+\s*[km]?\s*/\s*([0-9.]+\s*[km]?)", re.I)
 CONTEXT_BUFFER = re.compile(r"^\|\s*Autocompact buffer\s*\|\s*([0-9.]+\s*[km]?)\s*\|", re.I | re.M)
-DEAD_API = "http://127.0.0.1:9"       # where the probe's Claude Code would call the model: nothing answers
+DEAD_API = "http://127.0.0.1:9"       # where the probe's Claude Code would call the model when NoAPI cannot listen
 PROBED_FLAGS = ("--model", "--autocompact", "--settings", "--setting-sources")
+#: The probe's Claude Code sends nothing it does not need -- telemetry, error reports, update checks --
+#: which it otherwise finishes sending, after printing its report, before it exits (about 0.75 s).
+PROBE_ENV = {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+
+
+class _NotFound(http.server.BaseHTTPRequestHandler):
+    def answer(self) -> None:
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        body = b'{"type":"error","error":{"type":"not_found_error","message":"no API here: ag\'s /context probe"}}'
+        self.send_response(404)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_GET = do_HEAD = do_POST = answer
+
+    def log_message(self, *args) -> None:
+        pass
+
+
+class NoAPI:
+    """Where the probe's Claude Code calls the model: a local address answering every request at once
+    with a 404, relaying nothing, so nothing is billed. `/context` asks the API to count its tokens
+    (some sixty requests) before it reports; an address nothing listens on (DEAD_API) keeps it
+    waiting about 1.3 s on them, an answer at once does not. `with NoAPI() as url:` -- DEAD_API when
+    it cannot listen."""
+
+    def __enter__(self) -> str:
+        try:
+            self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _NotFound)
+        except OSError:
+            self.server = None
+            return DEAD_API
+        self.server.daemon_threads = True
+        # polled every 0.02 s, not 0.5: its shutdown, once the probe is done, waits for a poll
+        threading.Thread(target=self.server.serve_forever, args=(0.02,), daemon=True).start()
+        return f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def __exit__(self, *exc) -> None:
+        if self.server is not None:
+            self.server.shutdown()
+            self.server.server_close()
 
 
 def context_of(text: str) -> Optional[Tuple[int, Optional[int]]]:
@@ -187,13 +232,15 @@ def context_of(text: str) -> Optional[Tuple[int, Optional[int]]]:
 
 def probe(command: List[str], args: List[str], env: Dict[str, str]) -> Optional[Tuple[int, Optional[int]]]:
     """Ask Claude Code itself: `/context` in print mode, a local command that calls no model, with the
-    run's model and auto-compact flags and its environment, its API pointed at an address nothing
-    answers (DEAD_API) and its session not kept. (window, buffer) as `context_of`, or None."""
+    run's model and auto-compact flags and its environment, its API pointed at an address that relays
+    nothing (NoAPI), no traffic it does not need (PROBE_ENV) and its session not kept. (window, buffer)
+    as `context_of`, or None."""
     given = [x for name in PROBED_FLAGS if flag(args, name) is not None for x in (name, flag(args, name))]
     try:
-        done = subprocess.run([*command, "-p", "/context", "--no-session-persistence", "--strict-mcp-config", *given],
-                              env={**os.environ, **env, "ANTHROPIC_BASE_URL": DEAD_API}, capture_output=True,
-                              text=True, timeout=60, stdin=subprocess.DEVNULL)
+        with NoAPI() as api:
+            done = subprocess.run([*command, "-p", "/context", "--no-session-persistence", "--strict-mcp-config",
+                                   *given], env={**os.environ, **env, **PROBE_ENV, "ANTHROPIC_BASE_URL": api},
+                                  capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
         return None
     return context_of(done.stdout) if done.returncode == 0 else None
