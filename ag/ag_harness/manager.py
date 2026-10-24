@@ -411,6 +411,20 @@ class Manager(ContextManager):
             notify(gatherer_id, "pending", properties)
         return kept
 
+    def record_recap(self, gatherer_id: str, session: str, text: str) -> int:
+        """Not part of the interface: keep a harness's recap of `session` (`store.record_recap`),
+        for a reader of the gatherer; never history. Its recap_id."""
+        recap_id = store.record_recap(self._conn(gatherer_id), session, text)
+        notify(gatherer_id, "recap", None, recap_id)   # no property named: every stream of the gatherer looks
+        return recap_id
+
+    def recaps(self, gatherer_id: str, session: Optional[str] = None) -> List[dict]:
+        """Not part of the interface: each session's newest recap, or one session's every recap
+        (`store.recaps`)."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return []
+        return store.recaps(self._conn(gatherer_id), session)
+
     def pending(self, gatherer_id: str, *, properties: Optional[dict] = None) -> List[dict]:
         """Not part of the interface: the pending events with these properties, oldest first
         (`store.pending`)."""

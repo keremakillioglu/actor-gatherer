@@ -12,6 +12,7 @@ when it stops. Every write sends each socket there one datagram, a JSON object:
     what        what was written:
                   events    rows in `events` (an insert, a poll, a bulk load); `row`: the last one
                   pending   `_pending` rows kept or cleared
+                  recap     a recap of a session kept in `_recaps`; `row`: its recap_id
                   read      a read logged in `_reads` (its made items with it); `row`: its read_id
                   counts    sizes recorded after a call (`record_counts`, `record_real_tokens`)
                   build     a row of the policy's `_builds` claimed or settled; `row`: its build_id

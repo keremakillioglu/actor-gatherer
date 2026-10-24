@@ -22,6 +22,11 @@ What it decides, Claude Code's own:
                    the context the next call would get is made read only (the server's `context`:
                    nothing else of the gatherer changes, no read), the suggestion's own message is
                    put after it, and that is sent -- nothing of it stored, counted or measured
+    a recap        Claude Code's "while you were away" recap: its conversation so far with a user
+                   message asking for a short summary (`The user stepped away and is coming
+                   back.`). Sent as a suggestion is -- the context read only, the recap's message
+                   after it, no events of its own -- and its answer, once back, kept as the
+                   session's recap (the server's `recap`: `_recaps`, never history)
     a compaction   Claude Code compacting its history (/compact, or its own at its limit): its
                    conversation with, at the end of its last user message, the instruction to
                    summarize it (`CRITICAL: Respond with TEXT ONLY. ...`). The gatherer builds in
@@ -84,8 +89,10 @@ AGENT_HEADER = "x-claude-code-agent-id"           # set on a subagent's calls on
 REQUEST_CLASS_HEADER = "x-claude-code-request-class"   # main, subagent, workflow, compaction, auxiliary, side_reply
 SIDE_CLASSES = ("auxiliary", "side_reply")       # Claude Code's side calls, not the session's turns
 SUGGESTION = "[SUGGESTION MODE:"                 # how Claude Code's prompt suggestion asks
+RECAP = "The user stepped away and is coming back."   # how Claude Code's away recap asks
 COMPACTION = "CRITICAL: Respond with TEXT ONLY"  # how Claude Code's compaction call asks for its summary
 ANSWERED = "claude_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
+RECAPPED = "claude_recap"      # the same, for a recap: (gatherer, session), its answer kept as the session's recap
 COUNT_FROM = 0.5            # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
@@ -116,15 +123,20 @@ def request_class(headers) -> Optional[str]:
     return next((str(v).lower() for k, v in (headers or {}).items() if k.lower() == REQUEST_CLASS_HEADER and v), None)
 
 
-def suggestion_at(messages: list) -> Optional[int]:
+def suggestion_at(messages: list, opening: str = SUGGESTION) -> Optional[int]:
     """Where a prompt suggestion's own message is -- the last, a user message of text alone opening
-    with `[SUGGESTION MODE:`, after the conversation it forks -- or None: not a suggestion."""
+    with `opening` (`[SUGGESTION MODE:`), after the conversation it forks -- or None: not a suggestion."""
     if len(messages) < 2 or not isinstance(messages[-1], dict) or messages[-1].get("role") != "user":
         return None
     blocks = blocks_of(messages[-1])
     if not blocks or any(b.get("type") != "text" for b in blocks):
         return None
-    return len(messages) - 1 if str(blocks[0].get("text") or "").lstrip().startswith(SUGGESTION) else None
+    return len(messages) - 1 if str(blocks[0].get("text") or "").lstrip().startswith(opening) else None
+
+
+def recap_at(messages: list) -> Optional[int]:
+    """Where a recap's own message is, as `suggestion_at` finds a suggestion's; None: not a recap."""
+    return suggestion_at(messages, RECAP)
 
 
 def compaction_split(messages: list) -> Optional[Tuple[list, list]]:
@@ -219,7 +231,8 @@ class ClaudeContextManager:
         if refused is not None:
             return refused
         messages = body["messages"]
-        at = suggestion_at(messages)
+        recap = recap_at(messages)
+        at = suggestion_at(messages) if recap is None else recap
         if at is None and request_class(request.headers) in SIDE_CLASSES:
             return None                                   # a side call of Claude Code's own: as it is
         mode = self.system_messages if self.system_messages != "auto" else \
@@ -227,9 +240,11 @@ class ClaudeContextManager:
         adaptor = self.adaptors[mode]
         if isinstance(adaptor, ClaudeAdaptor):                    # its ids carry on from the channel's last call
             adaptor = adaptor.for_channel(self.continuity.setdefault((gatherer, channel), Continuity()))
+        if recap is not None and isinstance(getattr(request, "state", None), dict):
+            request.state[RECAPPED] = (gatherer, channel)
         if at is not None:
             return await self.side_call(request, client, gatherer, channel, body, messages[:at], messages[at:],
-                                        adaptor, mode, "context", "suggestion")
+                                        adaptor, mode, "context", "recap" if recap is not None else "suggestion")
         compaction = compaction_split(messages)
         if compaction is not None:
             history, instruction = compaction
@@ -317,7 +332,12 @@ class ClaudeContextManager:
         own calls: the answer's events kept as pending (the server's `pending`) until the channel's
         next call stores them as events -- so a reader of the gatherer sees the reply that ends a
         turn, which no call carries until the user writes again, and a tool call while it runs. A
-        failed answer, or one with no content, is not kept."""
+        failed answer, or one with no content, is not kept. A recap's answer is kept as the
+        session's recap instead (the server's `recap`), never as events."""
+        recapped = (getattr(request, "state", None) or {}).get(RECAPPED)
+        if recapped is not None:
+            await self.recapped(recapped, status, answer)
+            return
         kept = (getattr(request, "state", None) or {}).get(ANSWERED)
         if kept is None or status != 200:
             return
@@ -328,6 +348,23 @@ class ClaudeContextManager:
                                 [{"role": "assistant", "content": answer["output_items"]}], self.adaptor,
                                 answer.get("response_id"), answer.get("status"))
         self.log(gatherer, f"[{channel}] answered ({answer.get('status')}): {note}")
+
+    async def recapped(self, recapped: Tuple[str, str], status: int, answer: dict) -> None:
+        """A recap's answer, kept as its session's recap: the text of its answer, if any."""
+        if status != 200 or not isinstance(answer, dict) or answer.get("error"):
+            return
+        text = "\n".join(str(b.get("text") or "") for b in answer.get("output_items") or []
+                         if isinstance(b, dict) and b.get("type") == "text").strip()
+        if not text:
+            return
+        gatherer, session = recapped
+        try:
+            got = await self.ag_clients.client(gatherer).request("recap", {"gatherer": gatherer, "session": session,
+                                                                           "text": text})
+        except Exception as exc:  # noqa: BLE001 - a lost recap never breaks the call
+            got = {"error": repr(exc)}
+        self.log(gatherer, f"[{session}] recap: " + (f"kept ({got.get('recap_id')})" if isinstance(got, dict)
+                                                     and not got.get("error") else f"not kept: {got}"))
 
     async def close(self) -> None:
         """Let counts still being taken finish, then stop every gatherer's server."""

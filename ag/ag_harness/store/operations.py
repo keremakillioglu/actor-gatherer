@@ -7,6 +7,7 @@
     read log    Ref, record_read, last_read
     polls       polled_at, mark_polled
     pending     record_pending, pending, clear_pending
+    recaps      record_recap, recaps
 
 What a property means is not known here: an event carries the values its
 type declares, each in its column, NULL when unset. Two filters read them
@@ -612,6 +613,27 @@ def clear_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]]
     with conn:
         cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}1", _unset_is_empty(values))
     return cur.rowcount
+
+
+# ---------------------------------------------------------------- recaps
+
+def record_recap(conn: sqlite3.Connection, session: str, text: str) -> int:
+    """Keep a recap of `session` (`_recaps`), made now. Its recap_id."""
+    with conn:
+        cur = conn.execute("INSERT INTO _recaps (session, made_at, text) VALUES (?, ?, ?)", (session, _now(), text))
+    return cur.lastrowid
+
+
+def recaps(conn: sqlite3.Connection, session: Optional[str] = None) -> List[dict]:
+    """Each session's newest recap -- or, given one, that session's every recap, oldest first:
+    {recap_id, session, made_at, text}."""
+    if session is not None:
+        rows = conn.execute("SELECT recap_id, session, made_at, text FROM _recaps WHERE session = ? "
+                            "ORDER BY recap_id", (session,))
+    else:
+        rows = conn.execute("SELECT recap_id, session, made_at, text FROM _recaps WHERE recap_id IN "
+                            "(SELECT max(recap_id) FROM _recaps GROUP BY session) ORDER BY recap_id")
+    return [{"recap_id": r[0], "session": r[1], "made_at": r[2], "text": r[3]} for r in rows]
 
 
 # ---------------------------------------------------------------- which process has a session open
