@@ -173,12 +173,28 @@ def _with_started(gatherers: List[dict], started: List[dict]) -> None:
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
         a["session"] = s
+        if a.get("holder") and a["holder"]["pid"] == s.get("pid"):
+            a["holder"]["dashboard"] = True          # the dashboard's own agent, mid-turn
         a["created"] = min((x for x in (a["created"], _seconds(s["created_at"])) if x), default=None)
         if s["status"] in ("starting", "running") or s.get("queued"):   # its agent works, or a message waits for it
             a["status"], a["running"] = RUNNING, True
         g["last"] = max(g["last"] or 0, a["last"] or 0) or None
     for g in gatherers:                  # newest created first, as `_agents` has them
+        for a in g["agents"]:
+            a["chattable"] = chattable(a)
         g["agents"].sort(key=lambda a: a.get("created") or 0, reverse=True)
+
+
+def chattable(a: dict) -> bool:
+    """Whether the page may message the agent: a Claude Code session (the only harness the dashboard
+    runs), with a directory to resume it in, that no other process has open (its `holder`, else the
+    process its last call named) -- the dashboard's own agent aside."""
+    if a.get("harness") not in ("claude", None) or not (a.get("cwd") or a.get("session")):
+        return False
+    held = a.get("holder")
+    if held:
+        return bool(held.get("dashboard"))
+    return a.get("alive") is not True or bool(a.get("session") and a["session"].get("pid") == a.get("pid"))
 
 
 def _agents(conn, now: float) -> List[dict]:
@@ -210,6 +226,11 @@ def _agents(conn, now: float) -> List[dict]:
                                  f"ORDER BY read_id DESC LIMIT 1", (ch,)).fetchone()
                 if p is not None:
                     a["pid"], a["alive"] = p["pid"], paths.process_alive(p["pid"], p["pid_started"])
+    if "_open" in _tables(conn):                     # which process has each session open (ag's launcher, its calls)
+        for ch, pid, started, by in conn.execute("SELECT session, pid, pid_started, opened_by FROM _open"):
+            if ch in out and paths.process_alive(pid, started) is not False:
+                out[ch]["holder"] = {"pid": pid, "by": by}
+                out[ch]["pid"], out[ch]["alive"] = pid, True
     if "tasks" in _tables(conn):
         for r in conn.execute("SELECT channel_key AS ch, count(*) AS n FROM tasks GROUP BY channel_key"):
             if r["ch"] in out:

@@ -103,6 +103,15 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 names the answer (the provider's id), `stop`
                                                 why it stopped (end_turn, tool_use, ...)
     {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?, "process"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens", "basis"}
+    {"op": "claim", "gatherer", "session", "process", "by"?} -> {"claimed": true, "took_over"?} or {"claimed": false, "holder"}
+                                                `process` ({"pid", "started"}) opens the session
+                                                (`_open`), unless another process that still runs
+                                                has it and does not yield: then `holder`, that one
+                                                ({"pid", "started", "opened_at", "opened_by"}), and
+                                                nothing changes. One that yields (idle: the
+                                                dashboard's agent between turns) is stopped, and
+                                                named `took_over`. A harness's call is refused when
+                                                it is not claimed
     {"op": "locate", "gatherer", "properties", "event_id"} -> {"row"}      (`id` is the request's own)
     {"op": "init", "gatherer", "event_types"?: [TYPE]} -> {"event_types": [TYPE with its id]}
     {"op": "event_types", "gatherer"} -> {"event_types": [...]}
@@ -463,6 +472,11 @@ class Server:
                 return {"error": "no row"}
             return self.read(gatherer, properties, cwd, request["row"], limit=limit_of(request.get("limit")),
                              process=process_of(request.get("process")))
+        if op == "claim":
+            process, session = process_of(request.get("process")), request.get("session")
+            if process is None or not isinstance(session, str) or not session:
+                return {"error": "no session and process"}
+            return self.manager(gatherer).claim(gatherer, session, process, str(request.get("by") or "call")[:40])
         if op == "locate":
             if not isinstance(request.get("event_id"), str):
                 return {"error": "no event_id"}

@@ -15,9 +15,19 @@ ones it started:
 
 The agent is one long-running process, `ag --gatherer G claude -p --input-format stream-json
 --output-format stream-json ...`: each message is a line on its stdin, a turn, and each turn
-ends with a `result` line on its stdout. A message sent while a turn runs waits for it. A
-process that is gone (it exited, the dashboard restarted) is started again on the next message,
-resuming the session (`--resume`) once it has had a turn. What the agent said is not kept here:
+ends with a `result` line on its stdout. A message sent while a turn runs waits for it. Between
+turns it gives way (`ag home hold ... --yields`): another process opening the session -- a terminal
+resuming it -- stops it and takes the session over; before the next turn it stops giving way
+(`--keeps`), and if it was taken meanwhile the message is refused. A process that is gone (taken
+over, exited, the dashboard restarted) is started again on the next message, resuming the session
+(`--resume`) once it has had a turn.
+
+Any Claude Code session of a gatherer can be messaged so, not only one started here (`adopt`: it
+joins the table, to be resumed in the directory its calls named) -- while no other process has it
+open. ag records which process has each session open (`_open` in the gatherer's database: its
+launcher's claim, and each call's), and refuses a second one; the dashboard asks the same before
+it starts one (`holder`), and its own agent, run through ag, is refused like any other. The
+dashboard never takes a session from another live process, idle or not: only once it has ended. What the agent said is not kept here:
 the page reads it from the gatherer, like every actor's history. Its stderr, and every line it
 printed, go to <home>/logs/dashboard/<session_id>.log.
 
@@ -88,6 +98,72 @@ def stored() -> List[dict]:
         conn.close()
 
 
+SESSION_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def _gatherer_db(gatherer: str) -> Optional[sqlite3.Connection]:
+    path = home.db_path(gatherer)
+    if not os.path.exists(path):
+        return None
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def holder(gatherer: str, session_id: str) -> Optional[dict]:
+    """The process that has the session open, as the gatherer says, and still runs: {pid, by} -- its
+    `_open` row (ag's launcher's claim, or a call's), else the process its newest call named. None:
+    none, or none that can be told."""
+    conn = _gatherer_db(gatherer)
+    if conn is None:
+        return None
+    try:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        rows = []
+        if "_open" in tables:
+            rows += [(r["pid"], r["pid_started"], r["opened_by"]) for r in conn.execute(
+                "SELECT pid, pid_started, opened_by FROM _open WHERE session = ?", (session_id,))]
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(_reads)")} if "_reads" in tables else set()
+        if {"pid", "pid_started", "p_channel"} <= cols:
+            rows += [(r["pid"], r["pid_started"], "call") for r in conn.execute(
+                "SELECT pid, pid_started FROM _reads WHERE p_channel = ? AND pid IS NOT NULL ORDER BY read_id DESC LIMIT 1",
+                (session_id,))]
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    for pid, started, by in rows:
+        if home.process_alive(pid, started):
+            return {"pid": pid, "by": by}
+    return None
+
+
+def _session_cwd(gatherer: str, session_id: str) -> Optional[str]:
+    """Where the session's calls said it works: the newest read's `cwd`."""
+    conn = _gatherer_db(gatherer)
+    if conn is None:
+        return None
+    try:
+        r = conn.execute("SELECT p_cwd FROM _reads WHERE p_channel = ? AND p_cwd IS NOT NULL ORDER BY read_id DESC LIMIT 1",
+                         (session_id,)).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    return r[0] if r else None
+
+
+def _why(session_id: str) -> Optional[str]:
+    """What ag said last, in the session's log ("ag: ..."): why its process ended, if it said."""
+    try:
+        with open(log_path(session_id), encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()[-200:]
+    except OSError:
+        return None
+    said = [l.strip()[4:] for l in lines if l.startswith("ag: ")]
+    return said[-1] if said else None
+
+
 def ag_command() -> List[str]:
     """How ag is run: AG_COMMAND (split as a shell would), else `ag` on the PATH."""
     given = os.environ.get("AG_COMMAND")
@@ -142,6 +218,8 @@ class _Agent:
     def __init__(self, proc: subprocess.Popen, log):
         self.proc, self.log = proc, log
         self.busy = False               # a turn was sent and its result has not come back
+        self.yielding = False           # between turns: gives way to another process opening the session
+        self.taken = False              # another process took the session over: it is being stopped
         self.queue: List[str] = []      # messages waiting for the turn to end
         self.reader: Optional[threading.Thread] = None
 
@@ -200,7 +278,7 @@ class Sessions:
             out = []
             for s in stored():
                 a = self.agents.get(s["session_id"])
-                out.append({**s, "queued": list(a.queue) if a else []})
+                out.append({**s, "queued": list(a.queue) if a else [], "pid": a.proc.pid if a else None})
             return out
 
     def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = "claude") -> dict:
@@ -226,6 +304,28 @@ class Sessions:
         self._changed(gatherer, session_id)
         return self._row(session_id)
 
+    def adopt(self, gatherer: str, session_id: str) -> dict:
+        """A session of `gatherer` not started here, taken into the table so the page can message it:
+        resumed in the directory its calls named, permissions auto. The one there already, if it is."""
+        if not GATHERER.fullmatch(gatherer or "") or not SESSION_ID.fullmatch(session_id or ""):
+            raise SessionError("not a Claude Code session of a gatherer")
+        with self.lock:
+            s = self._row(session_id)
+            if s is not None:
+                return s
+            cwd = _session_cwd(gatherer, session_id)
+            if not cwd or not os.path.isdir(cwd):
+                raise SessionError(f"session {session_id} named no directory that is still there to resume it in"
+                                   + (f" ({cwd})" if cwd else ""))
+            conn = self._db()
+            try:
+                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, 'claude', ?, 'auto', ?, 1, 'stopped', NULL)",
+                             (session_id, gatherer, cwd, _now()))
+            finally:
+                conn.close()
+            self._changed(gatherer, session_id)
+            return self._row(session_id)
+
     def send(self, session_id: str, text: str) -> dict:
         """The message to the session's agent: a turn now, or, while one runs, after it. Starts the
         agent if it is not running. The session as `list` has it."""
@@ -237,7 +337,12 @@ class Sessions:
             if s is None:
                 raise SessionError(f"no session {session_id} started from the dashboard")
             a = self.agents.get(session_id)
+            if a is not None and a.taken:
+                raise SessionError("the session was taken over by another process: close it there first")
             if a is None or a.proc.poll() is not None:
+                held = holder(s["gatherer"], session_id)
+                if held is not None:
+                    raise SessionError(f"the session is open in another process ({held['pid']}): close it there first")
                 a = self._start(s)
             a.queue.append(text)
             if not a.busy:
@@ -269,10 +374,33 @@ class Sessions:
         a.reader.start()
         return a
 
+    def _hold(self, session_id: str, a: _Agent, yields: bool) -> Optional[bool]:
+        """The agent's process gives way to another opening the session (`yields`), or stops giving
+        way: `ag home hold`. Whether it still has the session; None when ag could not be asked."""
+        s = self._row(session_id)
+        if s is None:
+            return None
+        try:
+            done = subprocess.run([*ag_command(), "home", "hold", s["gatherer"], session_id, "--pid", str(a.proc.pid),
+                                   "--yields" if yields else "--keeps"], env=agent_env(), capture_output=True,
+                                  timeout=30, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError, SessionError):
+            return None
+        return {0: True, 3: False}.get(done.returncode)
+
     def _next(self, session_id: str, a: _Agent) -> None:
-        """The next waiting message to the agent, as a turn (the lock held)."""
+        """The next waiting message to the agent, as a turn (the lock held). One that was giving way
+        stops first; if another process took the session meanwhile, the message is refused."""
         if not a.queue:
             return
+        if a.yielding:
+            if self._hold(session_id, a, False) is False:
+                a.taken = True
+                a.queue.clear()
+                self._set(session_id, status="failed",
+                          last_error="the session was taken over by another process: close it there first")
+                return
+            a.yielding = False
         text = a.queue.pop(0)
         try:
             a.proc.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": text}}) + "\n")
@@ -300,7 +428,10 @@ class Sessions:
                 error = None if event.get("subtype") == "success" and not event.get("is_error") \
                     else str(event.get("result") or event.get("subtype") or "the turn failed")[:2000]
                 self._set(session_id, turns=s["turns"] + 1, status="idle", last_error=error)
-                self._next(session_id, a)
+                if a.queue:
+                    self._next(session_id, a)
+                else:                                # nothing waits: idle, it gives way
+                    a.yielding = self._hold(session_id, a, True) is True
         code = a.proc.wait()
         for pipe in (a.proc.stdin, a.proc.stdout):
             try:
@@ -312,10 +443,11 @@ class Sessions:
             a.log.close()
             if self.agents.get(session_id) is a:
                 del self.agents[session_id]
-                waiting = bool(a.queue)
-                self._set(session_id, status="stopped" if code == 0 and not a.busy else "failed",
-                          **({} if code == 0 and not a.busy else
-                             {"last_error": f"the agent exited ({code}); see {log_path(session_id)}"}))
+                waiting = bool(a.queue) and not a.taken
+                ok = (code == 0 or a.yielding or a.taken) and not a.busy          # stopped as it gave way: as asked
+                self._set(session_id, status="stopped" if ok else "failed",
+                          **({} if ok else {"last_error": _why(session_id) or
+                                            f"the agent exited ({code}); see {log_path(session_id)}"}))
                 if waiting:                  # messages sent while it was ending: a new process takes them
                     s = self._row(session_id)
                     try:

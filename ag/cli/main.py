@@ -219,8 +219,38 @@ def launch(harness: str, args: List[str], opts, settings) -> int:
     if not shutil.which(out.argv[0], path=out.env.get("PATH")):
         raise AgError(f"no {out.argv[0]} to run; install {harness} or set [cli.harnesses.{harness}] command "
                       f"in {config.path()}")
+    if out.session:
+        claim(gatherer or out.session, out.session)
     os.execvpe(out.argv[0], out.argv, out.env)
     return 127  # not reached
+
+
+def claim(gatherer: str, session: str) -> None:
+    """This process -- the harness, once exec'd: the same pid -- opens `session`, unless another
+    process that still runs has it open (another terminal, the dashboard's chat mid-turn): then refused.
+    The dashboard's chat agent between its turns yields: it is stopped, and the session taken over."""
+    got = home_cli(["claim", gatherer, session, "--pid", str(os.getpid()), "--by", "launcher"], capture=True)
+    try:
+        answer = json.loads(got.stdout)
+    except ValueError:
+        raise AgError((got.stderr or got.stdout).strip() or f"could not claim session {session}") from None
+    if answer.get("claimed") is False:
+        held = answer.get("holder") or {}
+        raise AgError(f"session {session} is open in another process, {held.get('pid')}"
+                      f"{shown_process(held.get('pid'))}, since {held.get('opened_at')}: close it there first "
+                      f"(the dashboard's chat gives it up once its turn is over)")
+    if answer.get("took_over"):
+        say(f"session {session}: took it over from the dashboard's idle agent ({answer['took_over'].get('pid')})")
+
+
+def shown_process(pid) -> str:
+    """` (its command line)`, as /proc has it; "" when it cannot be read."""
+    try:
+        with open(f"/proc/{int(pid)}/cmdline", "rb") as fh:
+            line = fh.read().replace(b"\0", b" ").decode(errors="replace").strip()
+    except (OSError, ValueError, TypeError):
+        return ""
+    return f" ({line[:160]})" if line else ""
 
 
 def extra_env(section) -> Dict[str, str]:

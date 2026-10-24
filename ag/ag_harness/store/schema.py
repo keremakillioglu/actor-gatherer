@@ -170,6 +170,21 @@ CREATE TABLE IF NOT EXISTS _pending (
     payload_json TEXT   NOT NULL,   -- the event's payload, as given
     text        TEXT                -- its readable text, as given; NULL = none
 );
+
+-- Which process has each session open: one per session, so two processes (a terminal, the
+-- dashboard's chat) never run it at once. Claimed by ag's launcher as it starts the harness on a
+-- known session, and by each model call of a process the hook server could tell (`claim`); a row
+-- whose process has ended holds nothing. A process holds one session: claiming another drops it.
+-- A holder that `yields` (the dashboard's chat agent, between its turns: `hold`) gives way: another
+-- process's claim stops it and takes the session.
+CREATE TABLE IF NOT EXISTS _open (
+    session     TEXT    PRIMARY KEY,   -- the session: its calls' `channel`
+    pid         INTEGER NOT NULL,      -- the harness's process, and when it started
+    pid_started TEXT    NOT NULL,      -- ("<boot id>:<start ticks>", as _reads has it)
+    opened_at   TEXT    NOT NULL,
+    opened_by   TEXT,                  -- what claimed it: "launcher", "call"
+    yields      INTEGER NOT NULL DEFAULT 0   -- 1: idle, and gives way to another process's claim
+);
 """
 
 
@@ -207,6 +222,8 @@ def create(conn: sqlite3.Connection) -> None:
                          ("pid_started", "TEXT")):                     # a file from before reads had them
         if column not in read_columns:
             conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} {kind}")
+    if "yields" not in {c[1] for c in conn.execute("PRAGMA table_info(_open)")}:     # a file from before holders yielded
+        conn.execute("ALTER TABLE _open ADD COLUMN yields INTEGER NOT NULL DEFAULT 0")
     pending_columns = {c[1] for c in conn.execute("PRAGMA table_info(_pending)")}
     if "stop" not in pending_columns:                                # a file from before pending kept it
         conn.execute("ALTER TABLE _pending ADD COLUMN stop TEXT")

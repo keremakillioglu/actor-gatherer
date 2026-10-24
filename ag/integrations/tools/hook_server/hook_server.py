@@ -38,6 +38,8 @@ for the same requests as `measured`: the HTTP status, and the answer as trace.py
 forwarding): what the label means is the hook's to decide. `request.upstream` is
 where the request goes (its path after it), for a hook that asks the same
 endpoint something first, with the request's own headers.
+A hook may answer the request itself, not relaying it, by returning an `Answer`
+(its HTTP status and JSON body): a refusal, say.
 With `--log-dir`, each request the hook changed is written there as
 NNNN.json: its body before and after, then the status and duration. With
 `--trace-root`, every model call -- as the model got it, and its answer -- is
@@ -82,6 +84,13 @@ class Request:
     state: dict = field(default_factory=dict)   # the hook's own, kept until its `measured` for this request
     process: Optional[dict] = None              # who sent it: {"pid", "started"} of the harness's process
                                                 # (peer.py); None: not told (not Linux, not this machine)
+
+
+@dataclass
+class Answer:
+    """What a hook returns to answer the request itself: nothing is relayed."""
+    status: int
+    body: Any
 
 
 def route_of(path: str):
@@ -161,6 +170,9 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         except Exception as exc:  # noqa: BLE001 - a failing hook never blocks the call
             print(f"#{n:04d} hook failed: {exc!r}; request unchanged", file=sys.stderr, flush=True)
             new = None
+        if isinstance(new, Answer):
+            print(f"#{n:04d} {request.method} {request.path_qs} answered by the hook: {new.status}", flush=True)
+            return web.json_response(new.body, status=new.status)
         record = {"n": n, "method": request.method, "path": request.path_qs, "label": label, "t_start": time.time()}
         if new is not None:
             raw = json.dumps(new).encode()

@@ -71,6 +71,7 @@ from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
 from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load_adaptor
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
+from ag.integrations.tools.hook_server.hook_server import Answer
 from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, pending_ag, preamble_of, report_measured
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
@@ -213,6 +214,10 @@ class ClaudeContextManager:
             print("a model call with no session id; request unchanged", file=sys.stderr, flush=True)
             return None
         gatherer, channel = (request.label, session) if request.label else (session, session)
+        client = self.ag_clients.client(gatherer)
+        refused = await self.refused(client, gatherer, channel, getattr(request, "process", None))
+        if refused is not None:
+            return refused
         messages = body["messages"]
         at = suggestion_at(messages)
         if at is None and request_class(request.headers) in SIDE_CLASSES:
@@ -222,7 +227,6 @@ class ClaudeContextManager:
         adaptor = self.adaptors[mode]
         if isinstance(adaptor, ClaudeAdaptor):                    # its ids carry on from the channel's last call
             adaptor = adaptor.for_channel(self.continuity.setdefault((gatherer, channel), Continuity()))
-        client = self.ag_clients.client(gatherer)
         if at is not None:
             return await self.side_call(request, client, gatherer, channel, body, messages[:at], messages[at:],
                                         adaptor, mode, "context", "suggestion")
@@ -267,6 +271,25 @@ class ClaudeContextManager:
         if new is None or new == messages:
             return None                                   # nothing to change: Claude Code's own bytes go through
         return dict(body, messages=new)
+
+    async def refused(self, client, gatherer: str, channel: str, process: Optional[dict]):
+        """None when the call may go on: its process opens the session (the server's `claim`), or it
+        cannot be told. Else the hook server's Answer refusing it: another process that still runs
+        has the session open -- after a /resume to it, say -- and two must never write one session."""
+        if not process:
+            return None
+        try:
+            answer = await client.request("claim", {"gatherer": gatherer, "session": channel, "process": process})
+        except Exception as exc:  # noqa: BLE001 - a claim that cannot be made never blocks the call
+            self.log(gatherer, f"[{channel}] could not claim the session: {exc!r}")
+            return None
+        if not isinstance(answer, dict) or answer.get("claimed") is not False:
+            return None
+        held = answer.get("holder") or {}
+        why = (f"ag: session {channel} is open in another process ({held.get('pid')}, since "
+               f"{held.get('opened_at')}): close it there first, or resume another session")
+        self.log(gatherer, f"[{channel}] refused: {why}")
+        return Answer(400, {"type": "error", "error": {"type": "invalid_request_error", "message": why}})
 
     async def side_call(self, request, client, gatherer: str, channel: str, body: dict, history: list,
                         prompt: list, adaptor, mode: str, op: str, what: str) -> Optional[dict]:

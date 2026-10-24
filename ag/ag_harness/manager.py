@@ -367,6 +367,15 @@ class Manager(ContextManager):
                 out.append(dict(ag, made_id=ref.made_id) if made_ids else ag)
         return out
 
+    def claim(self, gatherer_id: str, session: str, process: dict, by: str = "call") -> dict:
+        """Not part of the interface: `process` ({"pid", "started"}) opens `session`, unless another
+        process that still runs has it open and does not yield (`store.claim`): {"claimed", "holder"?,
+        "took_over"?}."""
+        got = store.claim(self._conn(gatherer_id), session, process, by)
+        if got["claimed"]:
+            notify(gatherer_id, "open")          # no property named: every stream of the gatherer looks
+        return got
+
     def record_real_tokens(self, gatherer_id: str, read_id: int, tokens: int) -> bool:
         """Not part of the interface: record the provider's count of the context
         read `read_id` returned -- the model call's input tokens, reported after
