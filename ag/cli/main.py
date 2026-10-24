@@ -227,7 +227,8 @@ def launch(harness: str, args: List[str], opts, settings) -> int:
 
 def claim(gatherer: str, session: str) -> None:
     """This process -- the harness, once exec'd: the same pid -- opens `session`, unless another
-    process that still runs has it open (another terminal, the dashboard's chat): then refused."""
+    process that still runs has it open (another terminal, the dashboard's chat mid-turn): then refused.
+    The dashboard's chat agent between its turns yields: it is stopped, and the session taken over."""
     got = home_cli(["claim", gatherer, session, "--pid", str(os.getpid()), "--by", "launcher"], capture=True)
     try:
         answer = json.loads(got.stdout)
@@ -237,7 +238,9 @@ def claim(gatherer: str, session: str) -> None:
         held = answer.get("holder") or {}
         raise AgError(f"session {session} is open in another process, {held.get('pid')}"
                       f"{shown_process(held.get('pid'))}, since {held.get('opened_at')}: close it there first "
-                      f"(the dashboard's chat lets it go when its turn ends)")
+                      f"(the dashboard's chat gives it up once its turn is over)")
+    if answer.get("took_over"):
+        say(f"session {session}: took it over from the dashboard's idle agent ({answer['took_over'].get('pid')})")
 
 
 def shown_process(pid) -> str:

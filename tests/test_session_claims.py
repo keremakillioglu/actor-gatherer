@@ -46,16 +46,38 @@ class ClaimTest(HomeBase):
         child, other = sleeper()
         self.addCleanup(child.kill)
         me = identity(os.getpid())
-        self.assertIsNone(store.claim(self.conn(), "s1", other, "launcher"))
-        self.assertIsNone(store.claim(self.conn(), "s1", other, "call"))         # again: still its
-        held = store.claim(self.conn(), "s1", me, "launcher")
+        self.assertTrue(store.claim(self.conn(), "s1", other, "launcher")["claimed"])
+        self.assertTrue(store.claim(self.conn(), "s1", other, "call")["claimed"])         # again: still its
+        held = store.claim(self.conn(), "s1", me, "launcher")["holder"]
         self.assertEqual((held["pid"], held["opened_by"]), (child.pid, "launcher"))
         self.assertEqual(store.holder(self.conn(), "s1")["pid"], child.pid)
         child.kill()
         child.wait()
         self.assertIsNone(store.holder(self.conn(), "s1"))                         # it ended: holds nothing
-        self.assertIsNone(store.claim(self.conn(), "s1", me, "launcher"))
+        self.assertTrue(store.claim(self.conn(), "s1", me, "launcher")["claimed"])
         self.assertEqual(store.holder(self.conn(), "s1")["pid"], os.getpid())
+
+    def test_an_idle_holder_that_yields_is_stopped_and_the_session_taken(self):
+        child, other = sleeper()
+        self.addCleanup(child.kill)
+        me = identity(os.getpid())
+        store.claim(self.conn(), "s1", other, "launcher")
+        self.assertTrue(store.hold(self.conn(), "s1", other, True))                  # between turns: gives way
+        got = store.claim(self.conn(), "s1", me, "launcher")
+        self.assertEqual((got["claimed"], got["took_over"]["pid"]), (True, child.pid))
+        self.assertEqual(child.wait(timeout=5), -15)                                 # stopped
+        self.assertEqual(store.holder(self.conn(), "s1")["pid"], os.getpid())
+        self.assertFalse(store.hold(self.conn(), "s1", other, False))                # its next turn: refused
+
+    def test_a_holder_that_stopped_giving_way_keeps_it(self):
+        child, other = sleeper()
+        self.addCleanup(child.kill)
+        store.claim(self.conn(), "s1", other, "launcher")
+        store.hold(self.conn(), "s1", other, True)
+        self.assertTrue(store.hold(self.conn(), "s1", other, False))                 # a turn begins
+        got = store.claim(self.conn(), "s1", identity(os.getpid()), "launcher")
+        self.assertEqual((got["claimed"], got["holder"]["pid"]), (False, child.pid))
+        self.assertIsNone(child.poll())
 
     def test_a_process_holds_one_session(self):
         me = identity(os.getpid())
@@ -73,13 +95,19 @@ class ClaimTest(HomeBase):
         self.assertEqual((got["claimed"], got["holder"]["pid"]), (False, child.pid))
         self.assertIn("error", srv.handle({"op": "claim", "gatherer": "g", "session": "s1", "process": {"pid": "x"}}))
 
-    def test_the_home_command_the_launcher_runs(self):
+    def test_the_home_commands(self):
         child, other = sleeper()
         self.addCleanup(child.kill)
+        self.assertEqual(home_main(["hold", "g", "s1", "--pid", str(child.pid), "--yields"]), 3)    # not its yet
         with unittest.mock.patch("sys.stdout"):
             self.assertEqual(home_main(["claim", "g", "s1", "--pid", str(child.pid)]), 0)
             self.assertEqual(home_main(["claim", "g", "s1", "--pid", str(os.getpid())]), 3)     # held: refused
         self.assertEqual(store.holder(self.conn(), "s1")["opened_by"], "launcher")
+        self.assertEqual(home_main(["hold", "g", "s1", "--pid", str(child.pid), "--yields"]), 0)
+        self.assertTrue(store.holder(self.conn(), "s1")["yields"])
+        with unittest.mock.patch("sys.stdout"):
+            self.assertEqual(home_main(["claim", "g", "s1", "--pid", str(os.getpid())]), 0)        # took it over
+        self.assertEqual(child.wait(timeout=5), -15)
 
     def test_the_dashboard_sees_who_has_it_open(self):
         child, other = sleeper()
@@ -190,13 +218,13 @@ class AdoptTest(SessionsBase):
         conn.commit()
         return conn
 
-    def test_a_closed_session_is_resumed_where_it_worked_and_let_go(self):
+    def test_a_closed_session_is_resumed_where_it_worked(self):
         self.gatherer_with(SID, self.work)
         s = self.s.adopt("g", SID)
         self.assertEqual((s["cwd"], s["turns"], s["permission_mode"]), (self.work, 1, "auto"))
         self.s.send(SID, "hello")
         self.until(lambda: self.session(SID)["turns"] == 2)
-        self.until(lambda: self.session(SID)["status"] == "stopped")
+        self.until(lambda: self.s.agents[SID].yielding)                   # kept running, giving way
         run = [x for x in self.logged() if "argv" in x][0]["argv"]
         self.assertEqual(run[run.index("--resume") + 1], SID)
         self.assertEqual(os.path.realpath([x for x in self.logged() if "argv" in x][0]["cwd"]), os.path.realpath(self.work))

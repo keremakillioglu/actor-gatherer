@@ -24,6 +24,9 @@ from ag_dashboard import home as dashboard_home  # noqa: E402
 # config in $AG_HOME, as ag's does.
 FAKE_AG = textwrap.dedent("""
     import json, os, sys, time
+    if sys.argv[1:2] == ["home"]:                       # `ag home hold ...`: it has the session
+        open(os.environ["FAKE_AG_LOG"] + ".home", "a").write(json.dumps(sys.argv[2:]) + "\\n")
+        sys.exit(0)
     if sys.argv[1:2] == ["new"]:
         os.makedirs(os.path.join(os.environ["AG_HOME"], "gatherers", sys.argv[2]))
         open(os.path.join(os.environ["AG_HOME"], "gatherers", sys.argv[2], "gatherer.toml"), "w").write('policy = "p"\\n')
@@ -76,6 +79,13 @@ class SessionsBase(unittest.TestCase):
             time.sleep(0.05)
         self.fail("timed out")
 
+    def held(self):
+        try:
+            with open(self.log + ".home") as fh:
+                return [json.loads(line) for line in fh]
+        except OSError:
+            return []
+
     def session(self, sid):
         return next(x for x in self.s.list() if x["session_id"] == sid)
 
@@ -119,9 +129,8 @@ class AgentTest(SessionsBase):
         self.assertNotIn("--resume", run["argv"])
         self.assertEqual(os.path.realpath(run["cwd"]), os.path.realpath(self.work))
         self.assertEqual(said, {"message": "hello"})
-        self.until(lambda: self.session(sid)["status"] == "stopped")        # no message waits: it lets the session go
-        self.assertEqual(self.session(sid)["last_error"], None)
-        self.assertNotIn(sid, self.s.agents)
+        self.until(lambda: self.held()[-1:] == [["hold", "g", sid, "--pid", str(self.s.agents[sid].proc.pid), "--yields"]])
+        self.assertEqual((self.session(sid)["status"], self.session(sid)["last_error"]), ("idle", None))   # kept, giving way
         self.assertTrue(os.path.exists(sessions.log_path(sid)))
 
     def test_one_agent_takes_every_turn_and_a_message_waits_for_the_turn(self):
@@ -135,11 +144,22 @@ class AgentTest(SessionsBase):
         self.assertEqual([x["message"] for x in got if "message" in x], ["one", "two"])
         self.assertEqual(self.session(sid)["queued"], [])
 
-    def test_the_next_message_starts_the_agent_again_resuming_the_session(self):
+    def test_the_next_message_goes_on_the_same_process_which_stops_giving_way_first(self):
         sid = self.s.create("g", self.work)["session_id"]
         self.s.send(sid, "one")
-        self.until(lambda: self.session(sid)["turns"] == 1)
-        self.until(lambda: self.session(sid)["status"] == "stopped")        # the turn over: the session let go
+        self.until(lambda: self.s.agents[sid].yielding)
+        self.s.send(sid, "two")
+        self.until(lambda: self.session(sid)["turns"] == 2)
+        self.assertEqual(len([x for x in self.logged() if "argv" in x]), 1)
+        self.assertEqual([h[-1] for h in self.held()][:3], ["--yields", "--keeps", "--yields"])
+
+    def test_an_agent_gone_is_started_again_resuming_the_session(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.send(sid, "one")
+        self.until(lambda: self.s.agents[sid].yielding)
+        self.s.agents[sid].proc.terminate()                                  # taken over: stopped as it gave way
+        self.until(lambda: self.session(sid)["status"] == "stopped")
+        self.assertIsNone(self.session(sid)["last_error"])
         self.s.send(sid, "two")
         self.until(lambda: self.session(sid)["turns"] == 2)
         second = [x for x in self.logged() if "argv" in x][1]["argv"]

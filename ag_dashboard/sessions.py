@@ -13,18 +13,21 @@ ones it started:
     status           starting / running / idle / stopped / failed, as last seen
     last_error       why its last turn or process failed, if one did
 
-The agent is a process, `ag --gatherer G claude -p --input-format stream-json --output-format
-stream-json ...`, started for a message: the message is a line on its stdin, a turn, which ends
-with a `result` line on its stdout. A message sent while a turn runs waits for it, and goes on the
-same process; once no message waits, its stdin is closed and it exits, letting the session go, so
-it can be resumed elsewhere (a terminal). The next message starts it again, resuming the session
+The agent is one long-running process, `ag --gatherer G claude -p --input-format stream-json
+--output-format stream-json ...`: each message is a line on its stdin, a turn, and each turn
+ends with a `result` line on its stdout. A message sent while a turn runs waits for it. Between
+turns it gives way (`ag home hold ... --yields`): another process opening the session -- a terminal
+resuming it -- stops it and takes the session over; before the next turn it stops giving way
+(`--keeps`), and if it was taken meanwhile the message is refused. A process that is gone (taken
+over, exited, the dashboard restarted) is started again on the next message, resuming the session
 (`--resume`) once it has had a turn.
 
 Any Claude Code session of a gatherer can be messaged so, not only one started here (`adopt`: it
 joins the table, to be resumed in the directory its calls named) -- while no other process has it
 open. ag records which process has each session open (`_open` in the gatherer's database: its
 launcher's claim, and each call's), and refuses a second one; the dashboard asks the same before
-it starts one (`holder`), and its own agent, run through ag, is refused like any other. What the agent said is not kept here:
+it starts one (`holder`), and its own agent, run through ag, is refused like any other. The
+dashboard never takes a session from another live process, idle or not: only once it has ended. What the agent said is not kept here:
 the page reads it from the gatherer, like every actor's history. Its stderr, and every line it
 printed, go to <home>/logs/dashboard/<session_id>.log.
 
@@ -215,7 +218,8 @@ class _Agent:
     def __init__(self, proc: subprocess.Popen, log):
         self.proc, self.log = proc, log
         self.busy = False               # a turn was sent and its result has not come back
-        self.closing = False            # no message waited after its turn: its stdin is closed, it is ending
+        self.yielding = False           # between turns: gives way to another process opening the session
+        self.taken = False              # another process took the session over: it is being stopped
         self.queue: List[str] = []      # messages waiting for the turn to end
         self.reader: Optional[threading.Thread] = None
 
@@ -333,10 +337,8 @@ class Sessions:
             if s is None:
                 raise SessionError(f"no session {session_id} started from the dashboard")
             a = self.agents.get(session_id)
-            if a is not None and a.closing:          # ending: the message waits for the next process
-                a.queue.append(text)
-                self._changed(s["gatherer"], session_id)
-                return next(x for x in self.list() if x["session_id"] == session_id)
+            if a is not None and a.taken:
+                raise SessionError("the session was taken over by another process: close it there first")
             if a is None or a.proc.poll() is not None:
                 held = holder(s["gatherer"], session_id)
                 if held is not None:
@@ -372,10 +374,33 @@ class Sessions:
         a.reader.start()
         return a
 
+    def _hold(self, session_id: str, a: _Agent, yields: bool) -> Optional[bool]:
+        """The agent's process gives way to another opening the session (`yields`), or stops giving
+        way: `ag home hold`. Whether it still has the session; None when ag could not be asked."""
+        s = self._row(session_id)
+        if s is None:
+            return None
+        try:
+            done = subprocess.run([*ag_command(), "home", "hold", s["gatherer"], session_id, "--pid", str(a.proc.pid),
+                                   "--yields" if yields else "--keeps"], env=agent_env(), capture_output=True,
+                                  timeout=30, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError, SessionError):
+            return None
+        return {0: True, 3: False}.get(done.returncode)
+
     def _next(self, session_id: str, a: _Agent) -> None:
-        """The next waiting message to the agent, as a turn (the lock held)."""
+        """The next waiting message to the agent, as a turn (the lock held). One that was giving way
+        stops first; if another process took the session meanwhile, the message is refused."""
         if not a.queue:
             return
+        if a.yielding:
+            if self._hold(session_id, a, False) is False:
+                a.taken = True
+                a.queue.clear()
+                self._set(session_id, status="failed",
+                          last_error="the session was taken over by another process: close it there first")
+                return
+            a.yielding = False
         text = a.queue.pop(0)
         try:
             a.proc.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": text}}) + "\n")
@@ -405,12 +430,8 @@ class Sessions:
                 self._set(session_id, turns=s["turns"] + 1, status="idle", last_error=error)
                 if a.queue:
                     self._next(session_id, a)
-                else:                                # nothing waits: let the session go
-                    a.closing = True
-                    try:
-                        a.proc.stdin.close()
-                    except OSError:
-                        pass
+                else:                                # nothing waits: idle, it gives way
+                    a.yielding = self._hold(session_id, a, True) is True
         code = a.proc.wait()
         for pipe in (a.proc.stdin, a.proc.stdout):
             try:
@@ -422,8 +443,8 @@ class Sessions:
             a.log.close()
             if self.agents.get(session_id) is a:
                 del self.agents[session_id]
-                waiting = bool(a.queue)
-                ok = code == 0 and not a.busy
+                waiting = bool(a.queue) and not a.taken
+                ok = (code == 0 or a.yielding or a.taken) and not a.busy          # stopped as it gave way: as asked
                 self._set(session_id, status="stopped" if ok else "failed",
                           **({} if ok else {"last_error": _why(session_id) or
                                             f"the agent exited ({code}); see {log_path(session_id)}"}))

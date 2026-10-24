@@ -15,6 +15,10 @@
     python -m ag.ag_harness.home claim <gatherer> <session> --pid N [--by WHAT]
                                                         process N opens the session (as JSON: claimed,
                                                         or the process that has it); exit 3 when held
+    python -m ag.ag_harness.home hold <gatherer> <session> --pid N (--yields | --keeps)
+                                                        process N, which has the session open, gives way
+                                                        to another's claim (idle) or not; exit 3 when it
+                                                        no longer has it
 
 `ag home ...` runs the same.
 """
@@ -224,11 +228,26 @@ def cmd_claim(gatherer: str, session: str, pid: int, by: str) -> int:
     if process is None:
         print(json.dumps({"claimed": None}))
         return 0
-    held = operations.claim(schema.connect(gatherer), session, process, by)
-    if held is None:
+    got = operations.claim(schema.connect(gatherer), session, process, by)
+    if got["claimed"]:
         notify(gatherer, "open")
-    print(json.dumps({"claimed": True} if held is None else {"claimed": False, "holder": held}))
-    return 0 if held is None else 3
+    print(json.dumps(got))
+    return 0 if got["claimed"] else 3
+
+
+def cmd_hold(gatherer: str, session: str, pid: int, yields: bool) -> int:
+    """Process `pid`, which has `session` open, yields to another's claim or not (`operations.hold`):
+    exit 0 while it has the session, 3 once another took it (or it never had it)."""
+    from ..store import operations
+    from ..store.notify import notify
+    from ..store.processes import identity
+    process = identity(pid)
+    if process is None or not os.path.exists(paths.db_path(gatherer)):
+        return 3
+    kept = operations.hold(schema.connect(gatherer), session, process, yields)
+    if kept:
+        notify(gatherer, "open")
+    return 0 if kept else 3
 
 
 def main(argv=None) -> int:
@@ -259,6 +278,13 @@ def main(argv=None) -> int:
     cl.add_argument("session")
     cl.add_argument("--pid", type=int, required=True)
     cl.add_argument("--by", default="launcher")
+    ho = sub.add_parser("hold")
+    ho.add_argument("gatherer")
+    ho.add_argument("session")
+    ho.add_argument("--pid", type=int, required=True)
+    yields = ho.add_mutually_exclusive_group(required=True)
+    yields.add_argument("--yields", action="store_true")
+    yields.add_argument("--keeps", action="store_true")
     a = ap.parse_args(argv)
     h = home()
     try:
@@ -273,6 +299,8 @@ def main(argv=None) -> int:
         if a.cmd == "contract":
             print(json.dumps(contract(h, a.gatherer, a.policy, a.poller, a.no_pollers)))
             return 0
+        if a.cmd == "hold":
+            return cmd_hold(a.gatherer, a.session, a.pid, a.yields)
         if a.cmd == "claim":
             return cmd_claim(a.gatherer, a.session, a.pid, a.by)
         if a.cmd == "show":

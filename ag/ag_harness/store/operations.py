@@ -16,6 +16,7 @@ or unset -- and `differ`, set to anything else.
 
 import hashlib
 import json
+import os
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -615,35 +616,57 @@ def clear_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]]
 
 # ---------------------------------------------------------------- which process has a session open
 
-def claim(conn: sqlite3.Connection, session: str, process: Dict[str, Any], by: str) -> Optional[dict]:
-    """`process` ({"pid", "started"}) opens `session` (`_open`), unless another process that still runs
-    has it: then that one, {"pid", "started", "opened_at", "opened_by"}, and nothing changes. A process
-    holds one session: one it held before is let go. None when claimed."""
+def claim(conn: sqlite3.Connection, session: str, process: Dict[str, Any], by: str) -> dict:
+    """`process` ({"pid", "started"}) opens `session` (`_open`): {"claimed": True}, and "took_over",
+    the holder it stopped, when that one yielded (idle, `hold`). Refused while another process that
+    still runs has it and does not yield: {"claimed": False, "holder": that one ({"pid", "started",
+    "opened_at", "opened_by"})}, and nothing changes. A process holds one session: one it held before is
+    let go."""
+    import signal
     from .processes import alive
     pid, started = process["pid"], process["started"]
+    out = {"claimed": True}
     conn.execute("BEGIN IMMEDIATE")              # read and write as one: two claims never both win
     try:
-        row = conn.execute("SELECT pid, pid_started, opened_at, opened_by FROM _open WHERE session = ?",
+        row = conn.execute("SELECT pid, pid_started, opened_at, opened_by, yields FROM _open WHERE session = ?",
                            (session,)).fetchone()
-        if row is not None and (row[0], row[1]) != (pid, started) and alive(row[0], row[1]) is not False:
+        other = row is not None and (row[0], row[1]) != (pid, started) and alive(row[0], row[1]) is not False
+        held = {"pid": row[0], "started": row[1], "opened_at": row[2], "opened_by": row[3]} if other else None
+        if other and not row[4]:
             conn.execute("ROLLBACK")
-            return {"pid": row[0], "started": row[1], "opened_at": row[2], "opened_by": row[3]}
+            return {"claimed": False, "holder": held}
+        if other:                                # idle, and yields: stopped, under the lock (its `hold` waits)
+            try:
+                os.kill(row[0], signal.SIGTERM)
+            except OSError:
+                pass
+            out["took_over"] = held
         conn.execute("DELETE FROM _open WHERE pid = ? AND pid_started = ? AND session != ?", (pid, started, session))
         if row is None or (row[0], row[1]) != (pid, started):
-            conn.execute("INSERT OR REPLACE INTO _open (session, pid, pid_started, opened_at, opened_by) "
-                         "VALUES (?, ?, ?, ?, ?)", (session, pid, started, _now(), by))
+            conn.execute("INSERT OR REPLACE INTO _open (session, pid, pid_started, opened_at, opened_by, yields) "
+                         "VALUES (?, ?, ?, ?, ?, 0)", (session, pid, started, _now(), by))
         conn.execute("COMMIT")
     except BaseException:
         if conn.in_transaction:
             conn.execute("ROLLBACK")
         raise
-    return None
+    return out
+
+
+def hold(conn: sqlite3.Connection, session: str, process: Dict[str, Any], yields: bool) -> bool:
+    """`process`, which has `session` open, says whether it yields to another's claim (idle: it may be
+    stopped) or not (a turn begins). Whether it still has the session: False when another took it."""
+    with conn:
+        cur = conn.execute("UPDATE _open SET yields = ? WHERE session = ? AND pid = ? AND pid_started = ?",
+                           (1 if yields else 0, session, process["pid"], process["started"]))
+    return cur.rowcount == 1
 
 
 def holder(conn: sqlite3.Connection, session: str) -> Optional[dict]:
     """The process that has `session` open and still runs (`claim`'s), or None."""
     from .processes import alive
-    row = conn.execute("SELECT pid, pid_started, opened_at, opened_by FROM _open WHERE session = ?", (session,)).fetchone()
+    row = conn.execute("SELECT pid, pid_started, opened_at, opened_by, yields FROM _open WHERE session = ?",
+                       (session,)).fetchone()
     if row is None or alive(row[0], row[1]) is False:
         return None
-    return {"pid": row[0], "started": row[1], "opened_at": row[2], "opened_by": row[3]}
+    return {"pid": row[0], "started": row[1], "opened_at": row[2], "opened_by": row[3], "yields": bool(row[4])}
