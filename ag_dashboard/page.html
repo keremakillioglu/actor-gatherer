@@ -373,14 +373,14 @@ button:disabled { opacity: .5; cursor: default; }
 .term-prompt textarea:disabled { opacity: .5; }
 .term-prompt .foot { display: flex; justify-content: space-between; gap: 10px; color: var(--term-dim); font-size: 11px; padding: 4px 2px 0; }
 .term-prompt .foot .mode { color: var(--term-accent); }
-/* The Terminal view: Claude Code's own UI, drawn by xterm.js -- dark in either theme, since Claude Code
-   draws its own colors for a dark terminal */
-.chat .chat-frame.xterm-frame { position: relative; overflow: hidden; background: #1a1a19; padding: 8px 4px 8px 10px; }
+/* The Terminal view: Claude Code's own UI, drawn by xterm.js on the page's terminal colors, so it follows
+   the theme (Claude Code's own colors follow its /theme) */
+.chat .chat-frame.xterm-frame { position: relative; overflow: hidden; background: var(--term-bg); padding: 8px 4px 8px 10px; }
 .xterm-host { position: absolute; inset: 8px 4px 8px 10px; }
-.xterm-host .xterm-viewport { background: #1a1a19 !important; }
+.xterm-host .xterm-viewport { background: var(--term-bg) !important; }
 .xterm-cover { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center;
-  background: rgba(26, 26, 25, .82); color: #e8e6e0; font-size: 13px; padding: 20px; }
-.xterm-cover .desc { color: #b9b6ae; max-width: 46ch; }
+  background: color-mix(in srgb, var(--term-bg) 82%, transparent); color: var(--term-ink); font-size: 13px; padding: 20px; }
+.xterm-cover .desc { color: var(--term-dim); max-width: 46ch; }
 /* under the Transcript view's history: one terminal, the prompt its last lines */
 .chat .chat-frame.term:has(+ .term-prompt) { padding-bottom: 8px; }
 .chat .chat-frame.term + .term-prompt { margin-top: 0; border: 0; border-radius: 0; padding: 4px 18px 10px; }
@@ -753,7 +753,9 @@ function setTheme(pick, keep) {
   if (pick === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = pick;
   for (const b of document.querySelectorAll("[data-theme-pick]")) b.setAttribute("aria-pressed", b.dataset.themePick === pick ? "true" : "false");
   if (keep) { try { localStorage.setItem(THEME_KEY, pick); } catch (e) { /* this page only */ } }
+  window.dispatchEvent(new Event("ag-theme"));
 }
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => window.dispatchEvent(new Event("ag-theme")));
 setTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })() || "dark", false);
 document.getElementById("theme").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-theme-pick]");
@@ -2061,12 +2063,27 @@ addChatView({
 // opened only when asked (a button): choosing the view does not start a process for every session
 // looked at. Once open it has the session -- the other views' message boxes type into it -- until it
 // is closed (the list's close button, or the view's) or exits.
+// The terminal's colors: the page's terminal colors, and a 16-color palette for each theme made from them.
+const XTERM_ANSI = {
+  dark: { black: "#3a3935", red: "#ff6b80", green: "#4eba65", yellow: "#e8b600", blue: "#7cb7ff", magenta: "#e58fb6", cyan: "#4fc1c9", white: "#c3c2b7",
+    brightBlack: "#8f8c84", brightRed: "#ff8fa0", brightGreen: "#7fd492", brightYellow: "#f2cc3a", brightBlue: "#a6cdff", brightMagenta: "#f0a8c8",
+    brightCyan: "#7fd8de", brightWhite: "#ecebe7", selectionBackground: "rgba(124,183,255,.28)" },
+  light: { black: "#2b2a27", red: "#cf3a50", green: "#2f9a4c", yellow: "#a87700", blue: "#2468c8", magenta: "#b8437a", cyan: "#13858d", white: "#a09d95",
+    brightBlack: "#6f6c65", brightRed: "#a5293d", brightGreen: "#1b6b34", brightYellow: "#8a6200", brightBlue: "#1a4f9c", brightMagenta: "#8f2f5d",
+    brightCyan: "#0e6870", brightWhite: "#55544f", selectionBackground: "rgba(36,104,200,.20)" },
+};
+function xtermTheme() {
+  const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
+  const ink = v("--term-ink");
+  return { ...XTERM_ANSI[css.colorScheme === "dark" ? "dark" : "light"], background: v("--term-bg"), foreground: ink, cursor: ink, cursorAccent: v("--term-bg") };
+}
+window.addEventListener("ag-theme", () => { if (term.xterm) term.xterm.options.theme = xtermTheme(); });
 const term = { sid: null, xterm: null, fit: null, host: null, es: null, opened: false, exited: null, unsent: "", sending: false, error: "" };
 function termFor(sid) {
   if (term.sid === sid && term.xterm) return term;
   termDrop();
   const xterm = new Terminal({ cursorBlink: true, fontSize: 13, scrollback: 5000, allowProposedApi: false,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', theme: { background: "#1a1a19", foreground: "#e8e6e0", cursor: "#e8e6e0" } });
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', theme: xtermTheme() });
   const fit = new FitAddon.FitAddon();
   xterm.loadAddon(fit);
   const host = el("div", { class: "xterm-host", id: "xterm-host", "data-refocus": "1" });
