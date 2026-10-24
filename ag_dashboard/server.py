@@ -7,22 +7,30 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/read?gatherer=G&read_id=N    data.read(G, N)
     GET /api/context?gatherer=G&read_id=N data.context(G, N)
     GET /api/history?gatherer=G&channel=C&from=A[&to=B]   data.history(G, C, A, B)
+    GET /api/stream[?gatherer=G&channel=C]                 server-sent events, until the page goes:
+        `home` (data.home()) and, with a channel, `agent` (data.agent(G, C)) at once, then again
+        each time they change -- woken by ag's notifications or the fallback check (live.py) --
+        and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle)
 
 `page(snapshot)` is the page itself; with a snapshot (data.snapshot()) it stands alone,
 its data inside it (`ag dashboard --out`)."""
 
 import json
 import os
+import select
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import data
+from . import data, live
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 LLM_SECONDS = 10.0          # how long the Gatherer's call log is reused before it is read again
+KEEPALIVE = 15.0            # the most a stream stays silent
+COALESCE = 0.03             # after a wake, how long to wait for the rest of a burst (a call stores many events)
 
 
 def page(snapshot: Optional[dict] = None) -> str:
@@ -47,10 +55,22 @@ class _Calls:
                 self.calls, self.at = data.llm_calls(), time.time()
             return self.calls
 
+    def changed(self) -> None:
+        """A call was logged: read the log again next time."""
+        with self.lock:
+            self.at = 0.0
 
-def handler(calls: _Calls):
+
+def _signature(value) -> str:
+    """What a stream compares to send only a change: the value, less the time it was read at."""
+    if isinstance(value, dict):
+        value = {k: v for k, v in value.items() if k != "now"}
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def handler(calls: _Calls, hub: live.Hub):
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, fmt, *args):      # quiet: the page polls every few seconds
+        def log_message(self, fmt, *args):      # quiet: one line per request is noise
             pass
 
         def send(self, status: int, body: bytes, kind: str) -> None:
@@ -70,6 +90,8 @@ def handler(calls: _Calls):
             try:
                 if url.path in ("/", "/index.html"):
                     return self.send(200, page().encode("utf-8"), "text/html; charset=utf-8")
+                if url.path == "/api/stream":
+                    return self.stream(q.get("gatherer"), q.get("channel"))
                 if url.path == "/api/home":
                     return self.answer(data.home())
                 if url.path == "/api/agent" and q.get("gatherer") and "channel" in q:
@@ -86,9 +108,75 @@ def handler(calls: _Calls):
             except Exception as exc:  # noqa: BLE001 - the page shows the error and keeps its last view
                 return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
 
+        def event(self, name: str, value) -> None:
+            self.wfile.write(f"event: {name}\ndata: {json.dumps(value)}\n\n".encode("utf-8"))
+
+        def gone(self) -> bool:
+            """Whether the page closed the connection: it sends nothing more, so readable means closed."""
+            try:
+                if not select.select([self.connection], [], [], 0)[0]:
+                    return False
+                return self.connection.recv(1, socket.MSG_PEEK) == b""
+            except (OSError, ValueError):
+                return True
+
+        def stream(self, gatherer: Optional[str], channel: Optional[str]) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            watch = hub.watch(gatherer, channel)
+            sent = {}
+            try:
+                while True:
+                    woken = watch.wake.wait(KEEPALIVE)
+                    if self.gone():
+                        return
+                    if woken:
+                        time.sleep(COALESCE)
+                    home, agent = watch.take()
+                    out = []
+                    if home or not woken:                # unwoken: the time alone may have changed it
+                        out.append(("home", data.home()))
+                    if agent and gatherer and channel is not None:
+                        out.append(("agent", data.agent(gatherer, channel, calls.get())))
+                    wrote = False
+                    for name, value in out:
+                        sig = _signature(value)
+                        if sent.get(name) != sig:
+                            self.event(name, value)
+                            sent[name], wrote = sig, True
+                    if not wrote and not woken:
+                        self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+            except OSError:                              # the page went away
+                pass
+            finally:
+                hub.drop(watch)
+
     return Handler
 
 
-def serve(host: str = "127.0.0.1", port: int = 4200) -> ThreadingHTTPServer:
-    """The server, bound and ready (`serve_forever()` runs it)."""
-    return ThreadingHTTPServer((host, port), handler(_Calls()))
+class Server(ThreadingHTTPServer):
+    """The HTTP server, with what wakes its streams (live.py): stopped with it."""
+
+    daemon_threads = True               # an open stream never holds up the exit
+
+    def __init__(self, address, live_updates: bool = True):
+        self.calls, self.hub = _Calls(), live.Hub()
+        self.hub.on_llm = self.calls.changed
+        super().__init__(address, handler(self.calls, self.hub))
+        self.listener = live.Listener(self.hub) if live_updates else None
+        self.fallback = live.Fallback(self.hub) if live_updates else None
+
+    def server_close(self) -> None:
+        for part in (self.listener, self.fallback):
+            if part is not None:
+                part.close()
+        super().server_close()
+
+
+def serve(host: str = "127.0.0.1", port: int = 4200, live_updates: bool = True) -> Server:
+    """The server, bound and ready (`serve_forever()` runs it); `server_close()` stops it, and
+    its listener. Without `live_updates`, streams are woken by nothing but their keep-alive."""
+    return Server((host, port), live_updates)

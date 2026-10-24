@@ -6,7 +6,7 @@ import os
 import sys
 from typing import List, Optional
 
-from . import data, home, server
+from . import data, home, live, server
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -28,7 +28,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     except (OSError, ValueError) as exc:
         print(f"ag dashboard: cannot listen on {args.host}:{args.port}: {exc}", file=sys.stderr)
         return 1
-    print(f"dashboard: http://{args.host}:{httpd.server_port}/  (home {home.HOME}; Ctrl-C to stop)", file=sys.stderr)
+    updates = "ag's notifications" if httpd.listener and httpd.listener.ok else \
+        f"a check of the files every {live.FALLBACK_SECONDS:g}s"
+    print(f"dashboard: http://{args.host}:{httpd.server_port}/  (home {home.HOME}; live from {updates}; "
+          f"Ctrl-C to stop)", file=sys.stderr)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

@@ -1,0 +1,195 @@
+"""The dashboard, live: a stream (`/api/stream`) sends the home and the selected agent at once,
+then again each time they change -- woken by ag's notifications (live.Listener), or, without
+them, by a check of the files (live.Fallback)."""
+import json
+import os
+import socket
+import sys
+import threading
+import time
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from ag.ag_harness.store import operations as store  # noqa: E402
+from ag_dashboard import live, server  # noqa: E402
+from channels import ch  # noqa: E402
+from test_core import user  # noqa: E402
+from test_dashboard import HomeBase  # noqa: E402
+import codex_items  # noqa: E402
+
+
+class Events:
+    """A stream's server-sent events, read as they come."""
+
+    def __init__(self, port, query):
+        self.sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+        self.sock.sendall(f"GET /api/stream{query} HTTP/1.1\r\nHost: x\r\n\r\n".encode())
+        self.fp = self.sock.makefile("rb")
+        head = []
+        while (line := self.fp.readline().decode().rstrip("\r\n")):
+            head.append(line)
+        assert " 200 " in head[0] and "Content-Type: text/event-stream" in head, head
+
+    def next(self, timeout=5.0):
+        """(name, value) of the next event, skipping comments; None if none comes in `timeout`."""
+        self.sock.settimeout(timeout)
+        name, payload = None, []
+        try:
+            while True:
+                line = self.fp.readline().decode()
+                if not line:
+                    return None
+                line = line.rstrip("\n")
+                if line.startswith("event: "):
+                    name = line[7:]
+                elif line.startswith("data: "):
+                    payload.append(line[6:])
+                elif line == "" and name:
+                    return name, json.loads("\n".join(payload))
+        except (socket.timeout, OSError):
+            return None
+
+    def until(self, test, timeout=5.0):
+        """The first event `test` accepts, within `timeout`; None if none."""
+        end = time.time() + timeout
+        while time.time() < end:
+            got = self.next(max(0.1, end - time.time()))
+            if got and test(*got):
+                return got
+        return None
+
+    def close(self):
+        self.fp.close()
+        self.sock.close()
+
+
+class HubTest(unittest.TestCase):
+    def test_a_change_wakes_the_streams_it_concerns(self):
+        hub = live.Hub()
+        c1, c2, other, none = hub.watch("g", "c1"), hub.watch("g", "c2"), hub.watch("h", "c1"), hub.watch(None, None)
+        for w in (c1, c2, other, none):
+            self.assertEqual(w.take(), (True, True))           # a new stream: both at once
+        hub.ring("g", "c1", "events")
+        self.assertEqual([w.take() for w in (c1, c2, other, none)],
+                         [(True, True), (True, False), (True, False), (True, False)])
+        hub.ring("g", None, "events")                          # no channel: every channel of g
+        self.assertEqual([w.take()[1] for w in (c1, c2, other)], [True, True, False])
+        hub.ring(None)                                         # no gatherer: every one
+        self.assertEqual([w.take()[1] for w in (c1, c2, other)], [True, True, True])
+        hub.drop(c1)
+        hub.ring("g", "c1")
+        self.assertFalse(c1.wake.is_set())
+
+    def test_a_gatherer_named_as_ag_was_given_it(self):
+        hub = live.Hub()
+        w = hub.watch("my_gatherer", "c1")
+        w.take()
+        hub.ring("my gatherer", "c1")                          # its directory: my_gatherer
+        self.assertTrue(w.take()[1])
+
+    def test_a_logged_call_resets_the_call_log_cache(self):
+        hub, told = live.Hub(), []
+        hub.on_llm = lambda: told.append(1)
+        hub.ring("g", "c1", "llm")
+        hub.ring("g", "c1", "events")
+        self.assertEqual(told, [1])
+
+
+class ListenerTest(HomeBase):
+    def test_ag_s_notifications_ring_the_hub_and_its_socket_goes_with_it(self):
+        hub = live.Hub()
+        listener = live.Listener(hub)
+        self.addCleanup(listener.close)
+        self.assertTrue(listener.ok)
+        self.assertTrue(os.path.exists(listener.path))
+        w = hub.watch("g", "c1")
+        w.take()
+        codex_items.CodexItems(self.m).insert("g", user("one more", 91), channel_id="c1")   # ag notifies
+        self.assertTrue(w.wake.wait(2))
+        self.assertEqual(w.take(), (True, True))
+        listener.close()
+        self.assertFalse(os.path.exists(listener.path))
+
+
+class FallbackTest(HomeBase):
+    def test_a_write_with_no_notification_is_found_by_the_files(self):
+        hub = live.Hub()
+        fallback = live.Fallback(hub, seconds=3600)            # checked by hand
+        self.addCleanup(fallback.close)
+        w = hub.watch("g", "c1")
+        w.take()
+        fallback.check()
+        self.assertEqual(w.take(), (False, False))             # nothing changed
+        self.m._conn("g").execute("UPDATE events SET tokens = tokens + 1 WHERE row_id = 1")
+        self.m._conn("g").commit()
+        fallback.check()
+        self.assertEqual(w.take(), (True, True))
+        os.makedirs(os.path.join(self.tmp.name, "ag", "logs", "llm"), exist_ok=True)   # the call log
+        fallback.check()
+        self.assertEqual(w.take(), (True, True))
+
+
+class StreamTest(HomeBase):
+    def start(self, live_updates=True):
+        httpd = server.serve("127.0.0.1", 0, live_updates)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(httpd.shutdown)
+        return httpd
+
+    def open(self, httpd, query):
+        events = Events(httpd.server_port, query)
+        self.addCleanup(events.close)
+        return events
+
+    def test_home_and_the_agent_at_once_then_each_change_as_it_is_stored(self):
+        httpd = self.start()
+        s = self.open(httpd, "?gatherer=g&channel=c1")
+        first = {s.next()[0], s.next()[0]}
+        self.assertEqual(first, {"home", "agent"})
+        top = store.high_water(self.m._conn("g"))
+        self.m._context("g", top, ch("c1"))                    # a read: a new call on the chart
+        got = s.until(lambda name, a: name == "agent" and len(a["reads"]) == 4, 2)
+        self.assertIsNotNone(got)
+        self.m.record_pending("g", ch("c1"), [{"type": "agent_message", "payload": {"x": 1}, "text": "Done."}], "a1")
+        got = s.until(lambda name, a: name == "agent" and a["pending"], 2)
+        self.assertEqual(got[1]["pending"][-1]["text"], "Done.")
+
+    def test_another_channel_s_change_sends_its_agent_nothing(self):
+        httpd = self.start()
+        s = self.open(httpd, "?gatherer=g&channel=c1")
+        s.next(), s.next()
+        codex_items.CodexItems(self.m).insert("g", user("for c2", 92), channel_id="c2")
+        got = s.until(lambda name, v: True, 1)
+        self.assertIn(got and got[0], ("home", None))           # the home may change; c1 does not
+        self.assertIsNone(s.until(lambda name, v: name == "agent", 0.5))
+
+    def test_a_stream_with_no_agent_sends_the_home(self):
+        httpd = self.start()
+        s = self.open(httpd, "")
+        name, home = s.next()
+        self.assertEqual((name, home["gatherers"][0]["name"]), ("home", "g"))
+
+    def test_a_closed_page_s_stream_is_let_go(self):
+        httpd = self.start()
+        s = self.open(httpd, "?gatherer=g&channel=c1")
+        s.next(), s.next()
+        self.assertEqual(len(httpd.hub.watches), 1)
+        s.close()
+        end = time.time() + 5
+        while httpd.hub.watches and time.time() < end:          # found at its next write
+            httpd.hub.ring("g", "c1")
+            time.sleep(0.1)
+        self.assertEqual(len(httpd.hub.watches), 0)
+
+    def test_closing_the_server_removes_its_socket(self):
+        httpd = server.serve("127.0.0.1", 0)
+        path = httpd.listener.path
+        self.assertTrue(os.path.exists(path))
+        httpd.server_close()
+        self.assertFalse(os.path.exists(path))
+
+
+if __name__ == "__main__":
+    unittest.main()
