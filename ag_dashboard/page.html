@@ -2093,19 +2093,26 @@ function xtermTheme() {
   return { ...XTERM_ANSI[css.colorScheme === "dark" ? "dark" : "light"], background: v("--term-bg"), foreground: ink, cursor: ink, cursorAccent: v("--term-bg") };
 }
 window.addEventListener("ag-theme", () => { if (term.xterm) term.xterm.options.theme = xtermTheme(); });
-// Claude Code's full screen, or its classic one (the default): chosen for the next terminal opened, kept in
-// the browser. Full screen scrolls by sending each wheel tick to Claude Code, which redraws; classic prints
+// Claude Code's full screen, or its classic one (the default): kept in the browser, for the next terminal
+// opened -- or, changed while one is open, that one reopened in it (the session resumed, its history kept).
+// Full screen scrolls by sending each wheel tick to Claude Code, which redraws; classic prints
 // into xterm's own scrollback, scrolled here.
 const FULLSCREEN_KEY = "ag-dashboard-term-fullscreen";
 let termFullscreen = (() => { try { return localStorage.getItem(FULLSCREEN_KEY) === "1"; } catch (e) { return false; } })();
-function fullscreenSwitch() {
+function fullscreenSwitch(info) {
+  const open = !!(info.session && info.session.terminal);
   const box = el("input", { type: "checkbox" });
-  box.checked = termFullscreen;
-  box.addEventListener("change", () => {
+  box.checked = open ? !!info.session.fullscreen : termFullscreen;
+  box.addEventListener("change", async () => {
     termFullscreen = box.checked;
     try { localStorage.setItem(FULLSCREEN_KEY, termFullscreen ? "1" : "0"); } catch (e) { /* this page only */ }
+    if (!open) return;
+    box.disabled = true;
+    try { await post("/api/stop", { session_id: info.session.session_id }); } catch (err) { term.error = err.message; await refresh(); return; }
+    await termOpen(info);
   });
-  return el("label", { title: "Claude Code's full screen instead of its classic one, for the next terminal opened" }, box, "Full screen");
+  return el("label", { title: open ? "Reopen this terminal in Claude Code's " + (info.session.fullscreen ? "classic screen" : "full screen") + " (the session resumes)"
+    : "Claude Code's full screen instead of its classic one, for the next terminal opened" }, box, "Full screen");
 }
 // A mouse report for the pointer moving with no button held (SGR: ESC [ < b;x;y M, motion bit 32, button 3):
 // with any-motion tracking on, every move over the terminal is one, and each would share the one-at-a-time

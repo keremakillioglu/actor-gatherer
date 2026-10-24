@@ -416,7 +416,8 @@ class Sessions:
         """The session's agent ended: its stdin closed, so it exits and the session shows Closed until
         the next message resumes it. In the middle of a turn, the turn is cut off (its process group
         terminated) and what waits is dropped. A terminal is closed as a terminal window is: hung up,
-        whatever it was doing. The session as `list` has it."""
+        whatever it was doing, and its end recorded before this returns, so the session can be opened
+        again straight away. The session as `list` has it."""
         with self.lock:
             s = self._row(session_id)
             if s is None:
@@ -424,7 +425,11 @@ class Sessions:
             t = self.terms.get(session_id)
             if t is not None:
                 self._hang_up(t)
+        if t is not None:                            # its end recorded by its reader, which takes the lock
+            self._gone(t)
+            with self.lock:
                 return next(x for x in self.list() if x["session_id"] == session_id)
+        with self.lock:
             a = self.agents.get(session_id)
             if a is None or a.proc.poll() is not None:
                 raise SessionError("the dashboard has no process open for this session")
@@ -708,6 +713,18 @@ class Sessions:
             self._write(t, data)
         except SessionError:
             pass
+
+    def _gone(self, t: _Term) -> None:
+        """Once a hung-up terminal's end is recorded: killed if it is still there after 5 s."""
+        if t.reader is None:
+            return
+        t.reader.join(timeout=5)
+        if t.reader.is_alive():
+            try:
+                os.killpg(t.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            t.reader.join(timeout=5)
 
     def _hang_up(self, t: _Term) -> None:
         """The terminal closed as a window is: its process group hung up."""

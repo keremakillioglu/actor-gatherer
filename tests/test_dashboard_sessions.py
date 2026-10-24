@@ -303,6 +303,18 @@ class TerminalTest(SessionsBase):
         with self.assertRaises(sessions.SessionError):
             self.s.type(sid, "x")
 
+    def test_once_closed_it_can_be_opened_again_straight_away_in_the_other_screen(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid)
+        first = self.s.terms[sid]
+        self.s.stop(sid)                                                # returns once it has gone
+        self.assertNotIn(sid, self.s.terms)
+        self.assertEqual(self.session(sid)["status"], "stopped")
+        self.s.terminal(sid, fullscreen=True)
+        self.assertIsNot(self.s.terms[sid], first)
+        self.until(lambda: "alt=None" in self.screen(sid))
+        self.assertTrue(self.session(sid)["fullscreen"])
+
     def test_it_ends_the_idle_agent_first_and_is_refused_mid_turn(self):
         sid = self.s.create("g", self.work)["session_id"]
         self.s.send(sid, "hi")
