@@ -240,7 +240,7 @@ class PageTest(HomeBase):
     def test_a_snapshot_stands_alone(self):
         text = server.page(data.snapshot())
         self.assertNotIn("/*SNAPSHOT*/null", text)
-        embedded = text.split("const SNAPSHOT = ", 1)[1].split(";\nconst POLL_MS", 1)[0]
+        embedded = text.split("const SNAPSHOT = ", 1)[1].split(";\n", 1)[0]
         snap = json.loads(embedded.replace("<\\/", "</"))
         self.assertIn("g\u0000c1", snap["agents"])
         self.assertIn(f"g\u0000{self.reads[-1]}", snap["reads"])     # the last read's contents, inside

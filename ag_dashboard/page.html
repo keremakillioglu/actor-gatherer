@@ -184,7 +184,8 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 <script>
 "use strict";
 const SNAPSHOT = /*SNAPSHOT*/null;
-const POLL_MS = 5000;
+// The server pushes each change (/api/stream); this is only how often the "ago" texts are redrawn.
+const AGO_MS = 30000;
 // What the page calls each kind the data names (data.py's group names stay as they are).
 const LABELS = { "ag's sections": "Summarized history", "Recent history": "Recent raw history", "Other agents' requests": "Other actors' requests" };
 const label = (group) => LABELS[group] || group;
@@ -193,7 +194,7 @@ const PREAMBLE = "Harness preamble", NOT_COUNTED = "Not counted by ag";
 const NOT_COUNTED_MIN = 50000;
 const uncounted = (n) => n > NOT_COUNTED_MIN ? n : 0;
 const GROUP_ORDER = [PREAMBLE, "Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages", NOT_COUNTED];
-let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, timer: null,
+let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, stream: null,
   tab: (() => { try { return localStorage.getItem("ag-dashboard-tab") === "gatherer" ? "gatherer" : "actor"; } catch (e) { return "actor"; } })() };
 
 // ------------------------------------------------------------------ helpers
@@ -282,8 +283,12 @@ async function loadHome() {
 async function loadAgent() {
   if (!state.selected) return;
   const [g, c] = state.selected;
-  state.agent = SNAPSHOT ? SNAPSHOT.agents[key(g, c)] || null
-    : await get(`/api/agent?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`);
+  await takeAgent(SNAPSHOT ? SNAPSHOT.agents[key(g, c)] || null
+    : await get(`/api/agent?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`));
+}
+// The selected agent, fetched or pushed: its calls' counts, and the context of the call shown.
+async function takeAgent(agent) {
+  state.agent = agent;
   const reads = (state.agent && state.agent.reads) || [];
   for (const r of reads)                             // ag's count of all a call sent: its messages, and the preamble where recorded
     r.counted_tokens = r.sent_tokens === null || r.sent_tokens === undefined ? null : r.sent_tokens + (r.preamble_tokens || 0);
@@ -301,7 +306,7 @@ async function loadContext(readId) {
     : await get(`/api/context?gatherer=${encodeURIComponent(g)}&read_id=${readId}`);
   state.context = got ? { ...got, gatherer: g } : null;
 }
-// What was last drawn, so a poll that brings nothing new draws nothing: no flash, and an open
+// What was last drawn, so an update that brings nothing new draws nothing: no flash, and an open
 // table, a scrolled list or a tooltip stays as it is.
 const drawn = { agents: null, main: null };
 const signature = (value) => JSON.stringify(value);
@@ -315,18 +320,24 @@ async function refresh(userAction = false) {
       if (first) state.selected = [first.name, first.agents[0].channel];
     }
     await loadAgent();
-    const agents = signature([state.home.gatherers, state.home.hook_servers, state.selected, Math.floor(Date.now() / 30000)]);
-    if (userAction || agents !== drawn.agents) { renderAgents(); drawn.agents = agents; }    // "ago" texts: every 30 s
-    const view = signature([state.selected, state.agent, state.readId, state.context && state.context.read_id]);
-    if (userAction || view !== drawn.main) { keepingPlace(renderMain); drawn.main = view; }
-    document.getElementById("live").textContent = SNAPSHOT ? `Snapshot · ${clock(state.home.now, true)}`
-      : state.paused ? "Paused" : `Live · updated ${clock(Date.now() / 1000)}`;
+    render(userAction);
   } catch (err) {
-    document.getElementById("live").textContent = `Not updated: ${err.message}`;
+    setLive(`Not updated: ${err.message}`);
   } finally {
     main.classList.remove("stale");
   }
 }
+// Draw what changed since the last draw (everything, for what the reader asked for).
+function render(userAction = false) {
+  if (!state.home) return;
+  const agents = signature([state.home.gatherers, state.home.hook_servers, state.selected, Math.floor(Date.now() / AGO_MS)]);
+  if (userAction || agents !== drawn.agents) { renderAgents(); drawn.agents = agents; }    // "ago" texts: every 30 s
+  const view = signature([state.selected, state.agent, state.readId, state.context && state.context.read_id]);
+  if (userAction || view !== drawn.main) { keepingPlace(renderMain); drawn.main = view; }
+  setLive(SNAPSHOT ? `Snapshot · ${clock(state.home.now, true)}` : state.paused ? "Paused"
+    : !state.stream ? "Connecting…" : state.stream.readyState === EventSource.OPEN ? `Live · updated ${clock(Date.now() / 1000)}` : "Reconnecting…");
+}
+const setLive = (text) => { document.getElementById("live").textContent = text; };
 // Redraw the main view where the reader left it: the same tables open, the same lists scrolled.
 function keepingPlace(draw) {
   const main = document.getElementById("main");
@@ -341,9 +352,39 @@ function keepingPlace(draw) {
   }
   window.scrollTo(0, pageY);
 }
-function schedule() {
-  clearTimeout(state.timer);
-  if (!SNAPSHOT && !state.paused) state.timer = setTimeout(async () => { await refresh(); schedule(); }, POLL_MS);
+// The server's stream for the selected agent: `home` and `agent` at once, then each time one changes
+// (the server is woken by ag's notifications). EventSource reconnects by itself, and a new stream
+// starts with both again, so nothing is missed while it was down. Reopened when the selection
+// changes; closed while paused. A message for an agent no longer selected is dropped.
+function connect() {
+  if (state.stream) { state.stream.close(); state.stream = null; }
+  if (SNAPSHOT || state.paused) return;
+  const sel = state.selected;
+  const es = new EventSource("/api/stream" + (sel ? `?gatherer=${encodeURIComponent(sel[0])}&channel=${encodeURIComponent(sel[1])}` : ""));
+  state.stream = es;
+  const mine = () => state.stream === es;
+  let queue = Promise.resolve();                     // one message at a time, in order
+  const on = (name, take) => es.addEventListener(name, (ev) => {
+    queue = queue.then(async () => {
+      if (!mine() || state.paused) return;
+      try {
+        await take(JSON.parse(ev.data));
+        render();
+      } catch (err) { setLive(`Not updated: ${err.message}`); }
+    });
+  });
+  on("home", async (home) => {
+    state.home = home;
+    if (!state.selected) {                           // the first agent to appear: shown, and watched
+      const first = home.gatherers.find((g) => g.agents.length);
+      if (first) { state.selected = [first.name, first.agents[0].channel]; await loadAgent(); render(true); connect(); }
+    }
+  });
+  on("agent", async (agent) => {
+    if (sel && state.selected && sel[0] === state.selected[0] && sel[1] === state.selected[1]) await takeAgent(agent);
+  });
+  es.addEventListener("open", () => { if (mine()) render(); });
+  es.addEventListener("error", () => { if (mine() && !state.paused) setLive("Reconnecting…"); });
 }
 
 // ------------------------------------------------------------------ the agent list
@@ -394,7 +435,7 @@ function renderAgents() {
 }
 async function select(g, c) {
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null;
-  await refresh(true); schedule();
+  await refresh(true); connect();
 }
 
 // ------------------------------------------------------------------ charts
@@ -780,6 +821,9 @@ function contextItem(it) {
   return row;
 }
 const historyCache = new Map();                    // a task's messages, once loaded: closed stretches never change
+// What each open task last showed, and how far its list was scrolled: a redraw reopens the task and
+// shows these at once, while the current task's newest messages load -- no "Loading…", no jump.
+const shown = new Map(), scrolledTo = new Map();
 async function loadHistory(first, last) {
   const [g, c] = state.selected;
   const k = [g, c, first, last].join("\u0000");
@@ -818,16 +862,22 @@ function historyCard(tasks) {
     row.addEventListener("toggle", async () => {
       if (!row.open) return;
       if (SNAPSHOT) { body.replaceChildren(el("div", { class: "warn", text: "A snapshot has no messages: run `ag dashboard` live to open a task." })); return; }
-      body.replaceChildren(el("div", { class: "desc", text: "Loading…" }));
-      try { showMessages(body, await loadHistory(t.first_row, t.last_row)); }
-      catch (err) { body.replaceChildren(el("div", { class: "warn", text: `Not loaded: ${err.message}` })); }
+      const k = [...state.selected, t.key].join("\u0000");
+      if (shown.has(k)) showMessages(body, shown.get(k), k);
+      else body.replaceChildren(el("div", { class: "desc", text: "Loading…" }));
+      try {
+        const got = await loadHistory(t.first_row, t.last_row);
+        if (!row.isConnected) return;                // redrawn meanwhile: the new row loads its own
+        shown.set(k, got);
+        showMessages(body, got, k);
+      } catch (err) { if (!shown.has(k)) body.replaceChildren(el("div", { class: "warn", text: `Not loaded: ${err.message}` })); }
     });
     list.append(row);
   }
   card.append(list);
   return card;
 }
-function showMessages(body, h) {
+function showMessages(body, h, k) {
   const items = h.items.map((i) => ({ ...i, group: "Recent history" }));
   const listed = items.filter((it) => shownTypes.has(itemType(it)[0]));
   const tokens = items.reduce((n, i) => n + i.tokens, 0);
@@ -836,7 +886,11 @@ function showMessages(body, h) {
       + (h.more ? ` · ${full(h.more)} more not loaded` : "") })));
   for (const it of listed) box.append(contextItem(it));
   if (!items.length) box.append(el("div", { class: "desc", text: "No messages yet." }));
+  const old = body.querySelector(".ctx");
+  const top = old ? old.scrollTop : scrolledTo.get(k) || 0;
   body.replaceChildren(box);
+  box.scrollTop = top;
+  box.addEventListener("scroll", () => scrolledTo.set(k, box.scrollTop));
 }
 function buildsCard(builds) {
   const card = el("section", { class: "card" }, el("h3", { text: `Builds · ${builds.length}` }),
@@ -882,12 +936,14 @@ document.getElementById("pause").addEventListener("click", async (ev) => {
   state.paused = !state.paused;
   ev.target.textContent = state.paused ? "Resume" : "Pause";
   if (!state.paused) await refresh(true);
-  schedule();
+  connect();
+  if (state.paused) render();
 });
 if (SNAPSHOT) document.getElementById("pause").style.display = "none";
 let resizeTimer = null;
 window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => state.agent && drawCharts(), 150); });
-refresh(true).then(schedule);
+refresh(true).then(connect);
+if (!SNAPSHOT) setInterval(() => { if (!state.paused) render(); }, AGO_MS);
 </script>
 </body>
 </html>
