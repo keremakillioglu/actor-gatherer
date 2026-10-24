@@ -11,6 +11,7 @@ database, opened read-only, and ag's own logs -- as plain JSON-ready dicts.
     read(gatherer, read_id)       what one read put in the agent's context, by kind
     context(gatherer, read_id)    every item of it, in order, with its text
     history(gatherer, channel, a, b)  the agent's own events from row a to b: a task's messages
+    transcript(gatherer, channel, ...)  its conversation, each event as harness-free parts
 
 An agent is a channel of a gatherer: one harness session (codex's thread, Claude Code's
 session, ...); which harness, its events' shape tells (`harness_of`). Its STATUS (`status_of`):
@@ -608,6 +609,162 @@ def history(gatherer: str, channel: str, first_row: int, last_row: Optional[int]
         if last_row is None:               # to its newest: what the model answered since, no call has carried yet
             items += _pending(conn, channel, _tables(conn))
         return {"first_row": first_row, "last_row": last_row, "items": items, "more": max(0, n - len(items))}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------- the transcript: the conversation as parts
+
+TRANSCRIPT_ITEMS = 400      # the most events `transcript` returns at once
+#: Which role an event's text has, by its type: what the transcript shows it as.
+ROLES = {"user_message": "user", "agent_message": "assistant", "agent_reasoning": "thinking",
+         "tool_call": "assistant", "tool_output": "user"}
+
+
+def _clip(value, chars: int = TEXT_CHARS):
+    """`value` with every string in it at most `chars` long: a tool's input, as the page shows it."""
+    if isinstance(value, str):
+        return value if len(value) <= chars else value[:chars] + f"\n… ({len(value) - chars:,} more characters)"
+    if isinstance(value, list):
+        return [_clip(v, chars) for v in value]
+    if isinstance(value, dict):
+        return {k: _clip(v, chars) for k, v in value.items()}
+    return value
+
+
+def _output(value) -> str:
+    """A tool result's words: a string, or the text of its blocks ("[image]" for an image)."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        words = []
+        for b in value:
+            if isinstance(b, str):
+                words.append(b)
+            elif isinstance(b, dict):
+                if isinstance(b.get("text"), str):
+                    words.append(b["text"])
+                elif b.get("type") in ("image", "input_image"):
+                    words.append("[image]")
+        return "\n".join(words)
+    if isinstance(value, dict):
+        for k in ("output", "content", "text"):
+            if k in value:
+                return _output(value[k])
+    return "" if value is None else json.dumps(value, ensure_ascii=False)
+
+
+def _arguments(raw):
+    """A codex call's arguments: a JSON string, read as its object when it is one."""
+    if isinstance(raw, str):
+        try:
+            got = json.loads(raw)
+            return got if isinstance(got, dict) else raw
+        except ValueError:
+            return raw
+    return raw
+
+
+def parts(event_type: str, payload_json: Optional[str], text: Optional[str]) -> List[dict]:
+    """An event as the transcript shows it, whatever harness wrote it: its parts, each one of
+        {"kind": "text", "role": user/assistant/system, "text"}
+        {"kind": "thinking", "text"}                ("" when it is encrypted)
+        {"kind": "call", "id", "name", "input"}     a tool call (input: its object, or a string)
+        {"kind": "result", "id", "error", "text"}   a tool's result, `id` its call's
+        {"kind": "note", "name", "text"}            anything else: the harness's or ag's own messages
+    The harness's own format is read here (Claude Code's content blocks, codex's Responses items),
+    and nowhere else: anything this does not know shows as its readable text."""
+    try:
+        p = json.loads(payload_json) if payload_json else None
+    except ValueError:
+        p = None
+    role = ROLES.get(event_type)
+    if role is None:                         # not the conversation: a system message, ag's notices
+        return [{"kind": "note", "name": event_type, "text": text or readable(payload_json)}]
+    out: List[dict] = []
+    if isinstance(p, dict) and p.get("type") in CODEX_TYPES | {"tool_search_call", "tool_search_output"}:
+        kind = p["type"]
+        if kind in ("function_call", "custom_tool_call", "tool_search_call"):
+            out.append({"kind": "call", "id": p.get("call_id") or p.get("id"), "name": p.get("name") or kind,
+                        "input": _arguments(p.get("arguments", p.get("input")))})
+        elif kind == "local_shell_call":
+            out.append({"kind": "call", "id": p.get("call_id") or p.get("id"), "name": "local_shell",
+                        "input": (p.get("action") or {})})
+        elif kind == "web_search_call":
+            out.append({"kind": "call", "id": p.get("id"), "name": "web_search", "input": p.get("action") or {}})
+        elif kind.endswith("_output"):
+            out.append({"kind": "result", "id": p.get("call_id"), "error": False,
+                        "text": _output(p.get("output", p.get("tools")))})
+        elif kind == "reasoning":
+            out.append({"kind": "thinking", "text": "\n\n".join(s.get("text", "") for s in p.get("summary") or []
+                                                                if isinstance(s, dict))})
+    elif isinstance(p, dict) and isinstance(p.get("content"), list):
+        speaker = "system" if p.get("role") in ("system", "developer") else role
+        for b in p["content"]:
+            if not isinstance(b, dict):
+                continue
+            t = b.get("type")
+            if t in ("text", "input_text", "output_text"):
+                if (b.get("text") or "").strip():
+                    out.append({"kind": "text", "role": speaker, "text": b["text"]})
+            elif t in ("thinking", "redacted_thinking", "reasoning_text"):
+                out.append({"kind": "thinking", "text": b.get("thinking") or b.get("text") or ""})
+            elif t in ("tool_use", "server_tool_use"):
+                out.append({"kind": "call", "id": b.get("id"), "name": b.get("name") or "tool", "input": b.get("input")})
+            elif t in ("tool_result", "web_search_tool_result"):
+                out.append({"kind": "result", "id": b.get("tool_use_id"), "error": bool(b.get("is_error")),
+                            "text": _output(b.get("content"))})
+            elif t in ("image", "input_image"):
+                out.append({"kind": "note", "name": "image", "text": "[image]"})
+    if not out:                              # a format this does not read: its words, as its type says
+        words = text or readable(payload_json)
+        if event_type == "agent_reasoning":
+            out.append({"kind": "thinking", "text": words if words != payload_json else ""})
+        elif words:
+            out.append({"kind": "text", "role": role, "text": words})
+    for part in out:
+        for k in ("text", "input"):
+            if k in part:
+                part[k] = _clip(part[k])
+    return out
+
+
+def transcript(gatherer: str, channel: str, after: Optional[int] = None, before: Optional[int] = None) -> dict:
+    """The channel's conversation as the transcript shows it: each event's row, type, time and
+    `parts` (`parts`), oldest first, at most TRANSCRIPT_ITEMS of them -- those after row `after`,
+    else the newest before row `before` (None: the newest of all). `earlier` says whether the
+    channel has events before the first; reaching its newest, the items end with its pending
+    events (row None): what the model answered that no call has stored yet."""
+    conn = _connect(gatherer)
+    if conn is None:
+        return {"error": f"no database for gatherer {gatherer!r}"}
+    try:
+        cols = ("SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at FROM events e "
+                f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.{CHANNEL} = ? ")
+        if after is not None:
+            rows = conn.execute(cols + "AND e.row_id > ? ORDER BY e.row_id LIMIT ?",
+                                (channel, after, TRANSCRIPT_ITEMS + 1)).fetchall()
+            newest = len(rows) <= TRANSCRIPT_ITEMS
+            rows = rows[:TRANSCRIPT_ITEMS]
+        else:
+            rows = conn.execute(cols + "AND e.row_id < ? ORDER BY e.row_id DESC LIMIT ?",
+                                (channel, before if before is not None else 2 ** 62, TRANSCRIPT_ITEMS)).fetchall()[::-1]
+            newest = before is None
+        items = [{"row_id": r["row_id"], "type": r["type"] or "?", "at": _seconds(r["inserted_at"]),
+                  "parts": parts(r["type"] or "?", r["payload_json"], r["text"])} for r in rows]
+        earlier = False
+        if items:
+            earlier = conn.execute(f"SELECT 1 FROM events WHERE {CHANNEL} = ? AND row_id < ? LIMIT 1",
+                                   (channel, items[0]["row_id"])).fetchone() is not None
+        elif after is not None:
+            earlier = True
+        tables = _tables(conn)
+        if newest and "_pending" in tables and CHANNEL in _columns(conn, "_pending"):
+            for r in conn.execute(f"SELECT received_at, type, payload_json, text FROM _pending WHERE {CHANNEL} = ? "
+                                  "ORDER BY pending_id", (channel,)):
+                items.append({"row_id": None, "type": r["type"], "at": _seconds(r["received_at"]),
+                              "parts": parts(r["type"], r["payload_json"], r["text"])})
+        return {"items": items, "earlier": earlier, "newest": newest}
     finally:
         conn.close()
 

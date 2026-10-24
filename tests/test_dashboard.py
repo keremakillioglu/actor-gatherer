@@ -205,6 +205,31 @@ class DataTest(HomeBase):
         self.assertEqual(data.history("g", "c1", tasks[-1]["last_row"] + 1)["items"][-1]["text"], "Done.")   # to the end: the pending answer last
         self.assertNotIn("Done.", [i["text"] for i in data.history("g", "c1", first["first_row"], first["last_row"])["items"]])
 
+    def test_the_conversation_as_the_transcript_shows_it(self):
+        everything = data.transcript("g", "c1")
+        rows = [i["row_id"] for i in everything["items"]]
+        self.assertEqual(rows, sorted(rows))
+        self.assertTrue(all(i["parts"] for i in everything["items"]))
+        self.assertFalse(everything["earlier"])
+        self.assertTrue(everything["newest"])
+        with unittest.mock.patch.object(data, "TRANSCRIPT_ITEMS", 3):
+            newest = data.transcript("g", "c1")                                 # the newest few, and earlier ones said
+            self.assertEqual([i["row_id"] for i in newest["items"]], rows[-3:])
+            self.assertTrue(newest["earlier"])
+            before = data.transcript("g", "c1", before=rows[-3])
+            self.assertEqual([i["row_id"] for i in before["items"]], rows[-6:-3])
+            self.assertFalse(before["newest"])
+            after = data.transcript("g", "c1", after=rows[0])                  # a page after a row: not the newest yet
+            self.assertEqual([i["row_id"] for i in after["items"]], rows[1:4])
+            self.assertFalse(after["newest"])
+        reply = {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}
+        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Done."}], "msg_2")
+        since = data.transcript("g", "c1", after=rows[-1])                      # nothing stored since: the pending answer
+        self.assertEqual(since["items"], [{"row_id": None, "type": "agent_message", "at": since["items"][0]["at"],
+                                           "parts": [{"kind": "text", "role": "assistant", "text": "Done."}]}])
+        self.assertNotIn(None, [i["row_id"] for i in data.transcript("g", "c1", before=rows[-1])["items"]])
+        self.assertIn("error", data.transcript("nope", "c1"))
+
     def test_the_gatherer_s_calls_go_to_the_agent_by_job_or_by_time(self):
         build = data.agent("g", "c1", [])["builds"][0]
         self.log_call("1-a-1-summarize.json", purpose="summarize", model="openai/gpt-4o-mini",
@@ -233,6 +258,46 @@ class ReadableTest(unittest.TestCase):
         self.assertEqual(data.readable('{"a": 1}'), '{"a": 1}')                 # no blocks: the payload itself
 
 
+class PartsTest(unittest.TestCase):
+    """Each harness's events as the transcript's parts: the same parts whoever wrote them."""
+
+    def test_claude_code_s_blocks(self):
+        call = {"role": "assistant", "content": [{"type": "thinking", "thinking": "Look first.", "signature": "s"},
+                                                 {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}}]}
+        self.assertEqual(data.parts("tool_call", json.dumps(call), None),
+                         [{"kind": "thinking", "text": "Look first."},
+                          {"kind": "call", "id": "t1", "name": "Bash", "input": {"command": "ls"}}])
+        out = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True,
+                                            "content": [{"type": "text", "text": "no such file"}, {"type": "image"}]}]}
+        self.assertEqual(data.parts("tool_output", json.dumps(out), None),
+                         [{"kind": "result", "id": "t1", "error": True, "text": "no such file\n[image]"}])
+        said = {"role": "assistant", "content": [{"type": "text", "text": "**Done.**"}]}
+        self.assertEqual(data.parts("agent_message", json.dumps(said), None), [{"kind": "text", "role": "assistant", "text": "**Done.**"}])
+        system = {"role": "system", "content": [{"type": "text", "text": "env"}]}
+        self.assertEqual(data.parts("context", json.dumps(system), "env"), [{"kind": "note", "name": "context", "text": "env"}])
+
+    def test_codex_s_items(self):
+        call = {"type": "function_call", "name": "shell", "arguments": json.dumps({"command": ["ls"]}), "call_id": "c1"}
+        self.assertEqual(data.parts("tool_call", json.dumps(call), None),
+                         [{"kind": "call", "id": "c1", "name": "shell", "input": {"command": ["ls"]}}])
+        out = {"type": "function_call_output", "call_id": "c1", "output": "a\nb"}
+        self.assertEqual(data.parts("tool_output", json.dumps(out), None), [{"kind": "result", "id": "c1", "error": False, "text": "a\nb"}])
+        patch = {"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch", "call_id": "c2"}
+        self.assertEqual(data.parts("tool_call", json.dumps(patch), None)[0]["input"], "*** Begin Patch")
+        said = {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Done."}]}
+        self.assertEqual(data.parts("agent_message", json.dumps(said), None), [{"kind": "text", "role": "assistant", "text": "Done."}])
+        hidden = {"type": "reasoning", "summary": [], "encrypted_content": "zz"}
+        self.assertEqual(data.parts("agent_reasoning", json.dumps(hidden), None), [{"kind": "thinking", "text": ""}])
+
+    def test_an_unknown_shape_shows_its_words_and_long_text_is_clipped(self):
+        self.assertEqual(data.parts("user_message", json.dumps({"info": {}, "text": "x"}), "hello"),
+                         [{"kind": "text", "role": "user", "text": "hello"}])
+        long = {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "Write",
+                                                  "input": {"content": "x" * (data.TEXT_CHARS + 10)}}]}
+        got = data.parts("tool_call", json.dumps(long), None)[0]["input"]["content"]
+        self.assertTrue(got.startswith("x" * data.TEXT_CHARS) and got.endswith("(10 more characters)"))
+
+
 class HarnessTest(unittest.TestCase):
     """Which harness an agent runs on, from its events' shape."""
 
@@ -259,6 +324,13 @@ class PageTest(HomeBase):
         self.assertIn(f"g\u0000{self.reads[-1]}", snap["reads"])     # the last read's contents, inside
         self.assertIn(f"g\u0000{self.reads[-1]}", snap["contexts"])
 
+    def test_the_page_carries_its_markdown_libraries(self):
+        text = server.page()
+        self.assertNotIn("<!--VENDOR-->", text)
+        self.assertIn("marked v15", text)
+        self.assertIn("DOMPurify", text)
+        self.assertEqual(text.count("<script>"), 3)                          # the two libraries, then the page's own
+
     def test_a_snapshot_cannot_close_its_script(self):
         text = server.page({"home": {"x": "</script><script>alert(1)</script>"}})
         self.assertEqual(text.count("</script>"), server.page().count("</script>"))
@@ -276,6 +348,8 @@ class PageTest(HomeBase):
         self.assertTrue(json.load(get(f"/api/read?gatherer=g&read_id={self.reads[0]}"))["groups"])
         self.assertTrue(json.load(get(f"/api/context?gatherer=g&read_id={self.reads[0]}"))["items"])
         self.assertTrue(json.load(get("/api/history?gatherer=g&channel=c1&from=1&to=5"))["items"])
+        self.assertTrue(json.load(get("/api/transcript?gatherer=g&channel=c1"))["items"])
+        self.assertTrue(json.load(get("/api/transcript?gatherer=g&channel=c1&after=1"))["items"])
         with self.assertRaises(urllib.error.HTTPError) as caught:
             get("/api/read?gatherer=g&read_id=x")
         self.assertEqual(caught.exception.code, 404)

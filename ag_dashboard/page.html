@@ -194,6 +194,64 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .warn { color: var(--ink-2); font-size: 12px; margin-top: 8px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .stale { opacity: .55; transition: opacity .2s; }
+/* The Transcript tab: the conversation as a terminal shows it -- dark in either theme */
+.term-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; color: var(--ink-2); }
+.term-bar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.term-bar .grow { flex: 1; }
+.term { --term-bg: #151514; --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #5c5a55; --term-user: #262522; --term-ok: #4eba65;
+  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #1f1e1c; --term-rule: #2e2d2a;
+  --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-link: #7cb7ff;
+  background: var(--term-bg); color: var(--term-ink); border-radius: 10px; border: 1px solid var(--ring);
+  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 14px 18px 18px;
+  height: calc(100vh - 230px); min-height: 360px; overflow-y: auto; overflow-x: hidden; }
+.term .blk { margin: 0 0 12px; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 4px; }
+.term .g { user-select: none; }
+.term .g.dot-ok { color: var(--term-ok); } .term .g.dot-err { color: var(--term-err); } .term .g.dot-run { color: var(--term-run); animation: term-blink 1s steps(2) infinite; }
+.term .g.text { color: var(--term-ink); } .term .g.think { color: var(--term-accent); }
+@keyframes term-blink { 50% { opacity: .25; } }
+.term .user { background: var(--term-user); border-radius: 6px; padding: 6px 10px; margin: 4px 0 14px; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 4px; }
+.term .user .g { color: var(--term-dim); }
+.term .user .body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.term .head { overflow-wrap: anywhere; }
+.term .head b { font-weight: 700; }
+.term .head .arg { color: var(--term-ink); }
+.term .head .note { color: var(--term-dim); margin-left: 10px; }
+.term .res { grid-column: 2; display: grid; grid-template-columns: 22px minmax(0, 1fr); color: var(--term-dim); }
+.term .res .g { color: var(--term-faint); }
+.term .res pre, .term pre.out { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--term-dim); }
+.term .res .err { color: var(--term-err); }
+.term details > summary { list-style: none; cursor: pointer; color: var(--term-faint); }
+.term details > summary::-webkit-details-marker { display: none; }
+.term details > summary:hover { color: var(--term-dim); }
+.term .more { color: var(--term-faint); cursor: pointer; }
+.term .think-blk summary { color: var(--term-dim); font-style: italic; }
+.term .think-blk .body { color: var(--term-dim); font-style: italic; white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0 0; }
+.term .notes { color: var(--term-faint); font-size: 12px; }
+.term .notes pre { margin: 4px 0 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.term .diff { margin-top: 2px; border-radius: 4px; overflow: hidden; }
+.term .diff div { white-space: pre-wrap; overflow-wrap: anywhere; padding: 0 6px; }
+.term .diff .add { background: var(--term-add); color: #b6e8c0; } .term .diff .del { background: var(--term-del); color: #ffc2cb; }
+.term .diff .ctx { color: var(--term-dim); } .term .diff .hunk { color: var(--term-faint); }
+.term .todo { white-space: pre-wrap; } .term .todo .done { color: var(--term-dim); text-decoration: line-through; } .term .todo .doing { color: var(--term-ink); font-weight: 700; }
+.term .md { overflow-wrap: anywhere; }
+.term .md > :first-child { margin-top: 0; } .term .md > :last-child { margin-bottom: 0; }
+.term .md p, .term .md ul, .term .md ol, .term .md pre, .term .md table, .term .md blockquote { margin: 0 0 8px; }
+.term .md h1, .term .md h2, .term .md h3, .term .md h4 { font-size: 13px; font-weight: 700; margin: 10px 0 4px; }
+.term .md h1, .term .md h2 { text-decoration: underline; text-underline-offset: 3px; }
+.term .md ul, .term .md ol { padding-left: 22px; }
+.term .md code { color: #c9b6ff; font: inherit; }
+.term .md pre { background: var(--term-code); border: 1px solid var(--term-rule); border-radius: 6px; padding: 8px 10px; overflow-x: auto; white-space: pre; }
+.term .md pre code { color: var(--term-ink); }
+.term .md a { color: var(--term-link); }
+.term .md blockquote { border-left: 2px solid var(--term-rule); padding-left: 10px; color: var(--term-dim); }
+.term .md table { border-collapse: collapse; width: auto; font-size: 12.5px; display: block; overflow-x: auto; }
+.term .md th, .term .md td { border: 1px solid var(--term-rule); padding: 2px 8px; color: var(--term-ink); text-align: left; }
+.term .md th { color: var(--term-ink); font-weight: 700; }
+.term .md hr { border: 0; border-top: 1px solid var(--term-rule); }
+.term .earlier { display: block; margin: 0 auto 14px; color: var(--term-dim); background: var(--term-user); border-color: var(--term-rule); }
+.term .status-line { color: var(--term-accent); margin-top: 6px; }
+.term .empty-term { color: var(--term-faint); }
+@media (max-width: 760px) { .term { height: 70vh; padding: 10px 12px 14px; font-size: 12px; } }
 </style>
 </head>
 <body>
@@ -207,6 +265,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
   <aside id="agents"></aside>
   <main id="main"><div class="empty">Loading…</div></main>
 </div>
+<!--VENDOR-->
 <script>
 "use strict";
 const SNAPSHOT = /*SNAPSHOT*/null;
@@ -221,7 +280,8 @@ const NOT_COUNTED_MIN = 50000;
 const uncounted = (n) => n > NOT_COUNTED_MIN ? n : 0;
 const GROUP_ORDER = [PREAMBLE, "Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages", NOT_COUNTED];
 let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, stream: null,
-  tab: (() => { try { return localStorage.getItem("ag-dashboard-tab") === "gatherer" ? "gatherer" : "actor"; } catch (e) { return "actor"; } })() };
+  tx: null,             // the Transcript tab's events, loaded as they come: {key, items, pending, first_row, last_row, earlier}
+  tab: (() => { try { const t = localStorage.getItem("ag-dashboard-tab"); return t === "gatherer" || t === "transcript" ? t : "actor"; } catch (e) { return "actor"; } })() };
 
 // ------------------------------------------------------------------ helpers
 const el = (tag, attrs = {}, ...kids) => {
@@ -348,6 +408,7 @@ async function takeAgent(agent) {
   const reads = (state.agent && state.agent.reads) || [];
   for (const r of reads)                             // ag's count of all a call sent: its messages, and the preamble where recorded
     r.counted_tokens = r.sent_tokens === null || r.sent_tokens === undefined ? null : r.sent_tokens + (r.preamble_tokens || 0);
+  if (state.tab === "transcript") await loadTranscript();
   if (!reads.length) { state.readId = null; state.context = null; return; }
   const followLatest = state.readId === null || state.followLatest;
   const want = followLatest ? reads[reads.length - 1].read_id : state.readId;
@@ -355,6 +416,49 @@ async function takeAgent(agent) {
   state.followLatest = followLatest;
   await loadContext(want);
 }
+// The Transcript tab's events: the newest TRANSCRIPT_ITEMS at first, then each time only those
+// after the last one kept, so an event is never listed twice; the pending ones replaced each time.
+// One load at a time: a stream message and the reader's own action can ask at once.
+let txLoading = Promise.resolve();
+function loadTranscript(earlier = false) {
+  txLoading = txLoading.then(() => loadTranscriptNow(earlier), () => loadTranscriptNow(earlier));
+  return txLoading;
+}
+async function loadTranscriptNow(earlier) {
+  if (!state.selected || SNAPSHOT) return;
+  const [g, c] = state.selected, k = key(g, c);
+  const url = (q) => `/api/transcript?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}${q}`;
+  const take = (got) => {
+    const stored = got.items.filter((i) => i.row_id !== null);
+    if (got.newest) state.tx.pending = got.items.filter((i) => i.row_id === null);
+    return stored;
+  };
+  if (!state.tx || state.tx.key !== k) {
+    const got = await get(url(""));
+    if (got.error) { state.tx = null; return; }
+    state.tx = { key: k, items: [], pending: [], first_row: null, last_row: 0, earlier: got.earlier };
+    state.tx.items = take(got);
+  } else if (earlier) {
+    if (!state.tx.first_row) return;
+    const got = await get(url(`&before=${state.tx.first_row}`));
+    if (got.error || state.tx.key !== k) return;
+    state.tx.items = [...got.items.filter((i) => i.row_id !== null && i.row_id < state.tx.first_row), ...state.tx.items];
+    state.tx.earlier = got.earlier;
+  } else {
+    for (;;) {                                       // all that came since, a page at a time
+      const got = await get(url(`&after=${state.tx.last_row}`));
+      if (got.error || state.tx.key !== k) return;
+      const stored = take(got).filter((i) => i.row_id > state.tx.last_row);
+      state.tx.items.push(...stored);
+      if (stored.length) state.tx.last_row = stored[stored.length - 1].row_id;
+      if (got.newest || !stored.length) break;
+    }
+  }
+  const items = state.tx.items;
+  if (items.length) { state.tx.first_row = items[0].row_id; state.tx.last_row = Math.max(state.tx.last_row, items[items.length - 1].row_id); }
+}
+const txSignature = () => state.tab === "transcript" && state.tx
+  ? [state.tx.key, state.tx.items.length, state.tx.last_row, state.tx.first_row, signature(state.tx.pending)] : null;
 async function loadContext(readId) {
   const [g] = state.selected;
   if (state.context && state.context.read_id === readId && state.context.gatherer === g) return;   // unchanged
@@ -388,17 +492,20 @@ function render(userAction = false) {
   if (!state.home) return;
   const agents = signature([state.home.gatherers, state.home.hook_servers, state.selected, Math.floor(Date.now() / AGO_MS)]);
   if (userAction || agents !== drawn.agents) { renderAgents(); drawn.agents = agents; }    // "ago" texts: every 30 s
-  const view = signature([state.selected, state.agent, state.readId, state.context && state.context.read_id]);
+  const view = signature([state.selected, state.agent, state.readId, state.context && state.context.read_id, txSignature()]);
   if (userAction || view !== drawn.main) { keepingPlace(renderMain); drawn.main = view; }
   setLive(SNAPSHOT ? `Snapshot · ${clock(state.home.now, true)}` : state.paused ? "Paused"
     : !state.stream ? "Connecting…" : state.stream.readyState === EventSource.OPEN ? `Live · updated ${clock(Date.now() / 1000)}` : "Reconnecting…");
 }
 const setLive = (text) => { document.getElementById("live").textContent = text; };
 // Redraw the main view where the reader left it: the same tables open, the same lists scrolled.
+const atEnd = (n) => n.scrollHeight - n.scrollTop - n.clientHeight < 40;
 function keepingPlace(draw) {
   const main = document.getElementById("main");
   const open = [...main.querySelectorAll("details[id]")].filter((d) => d.open).map((d) => d.id);
   const scrolled = [...main.querySelectorAll("[data-keep]")].map((n) => [n.dataset.keep, n.scrollTop, n.scrollLeft]);
+  // a list that follows its end (data-follow), read to its end: kept at its end as it grows
+  const following = [...main.querySelectorAll("[data-follow]")].filter(atEnd).map((n) => n.dataset.keep);
   const pageY = window.scrollY;
   draw();
   for (const id of open) { const d = document.getElementById(id); if (d) d.open = true; }
@@ -406,6 +513,7 @@ function keepingPlace(draw) {
     const n = main.querySelector(`[data-keep="${k}"]`);
     if (n) { n.scrollTop = top; n.scrollLeft = left; }
   }
+  for (const k of following) { const n = main.querySelector(`[data-keep="${k}"]`); if (n) n.scrollTop = n.scrollHeight; }
   window.scrollTo(0, pageY);
 }
 // The server's stream for the selected agent: `home` and `agent` at once, then each time one changes
@@ -573,6 +681,7 @@ async function select(g, c) {
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null;
   markSeen();
   await refresh(true); connect();
+  if (state.tab === "transcript") toEnd();
 }
 
 // ------------------------------------------------------------------ charts
@@ -675,11 +784,11 @@ function renderMain() {
   const builds = a.builds || [], failed = builds.filter((b) => b.status === "failed").length;
   const llm = a.llm.total;
   const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Views of this actor" });
-  for (const [id, name] of [["actor", "Actor"], ["gatherer", "Gatherer"]]) {
+  for (const [id, name] of [["actor", "Actor"], ["transcript", "Transcript"], ["gatherer", "Gatherer"]]) {
     tabs.append(el("button", { type: "button", role: "tab", class: "tab", "aria-selected": state.tab === id ? "true" : "false",
       onclick: () => setTab(id) }, name));
   }
-  const view = state.tab === "gatherer" ? [         // what ag did for the agent
+  const view = state.tab === "transcript" ? [transcriptView(info)] : state.tab === "gatherer" ? [         // what ag did for the agent
     el("div", { class: "tiles" },
       tile("Rebuilds", full(a.rebuilds), "reads on a new build"),
       tile("Builds", full(builds.length), failed ? `${failed} failed` : "none failed"),
@@ -706,11 +815,16 @@ function renderMain() {
   drawCharts();
 }
 const TAB_KEY = "ag-dashboard-tab";
-function setTab(id) {
+async function setTab(id) {
   state.tab = id;
   try { localStorage.setItem(TAB_KEY, id); } catch (e) { /* this page only */ }
+  if (id === "transcript") {
+    try { await loadTranscript(); } catch (err) { setLive(`Not updated: ${err.message}`); }
+    drawn.main = null;
+  }
   renderMain();
   window.scrollTo(0, 0);
+  if (id === "transcript") toEnd();
 }
 function tile(labelText, value, note) {
   return el("div", { class: "tile" }, el("div", { class: "label", text: labelText }), el("div", { class: "value", text: value }), el("div", { class: "note", text: note }));
@@ -743,7 +857,7 @@ function drawCharts() {
     state.readId = id; state.followLatest = id === reads[reads.length - 1].read_id;
     await loadContext(id);
     keepingPlace(renderMain);
-    drawn.main = signature([state.selected, state.agent, state.readId, state.context && state.context.read_id]);
+    drawn.main = signature([state.selected, state.agent, state.readId, state.context && state.context.read_id, txSignature()]);
   };
   const sizeHost = document.getElementById("size-chart");
   const series = [];
@@ -1065,6 +1179,207 @@ function llmCard(a) {
   card.append(el("div", { class: "scroll" }, table));
   if (t.unpriced) card.append(el("div", { class: "warn", text: `* ${t.unpriced} calls on models LiteLLM has no price for are not in the cost.` }));
   if (a.llm_attributed_by_time) card.append(el("div", { class: "warn", text: `${a.llm_attributed_by_time} calls predate job tags and were matched to this actor by time.` }));
+  return card;
+}
+
+// ------------------------------------------------------------------ the Transcript tab
+// The conversation as a terminal running the harness shows it: what was asked, what the agent said
+// (markdown), each tool call with its result under it, its thinking folded away. The data has made
+// every harness's events the same parts (data.parts); only the tools' names differ, and SUMMARIES
+// says how to show the ones it knows.
+const NOTES_KEY = "ag-dashboard-transcript-notes";
+let showNotes = (() => { try { return localStorage.getItem(NOTES_KEY) === "1"; } catch (e) { return false; } })();
+const RESULT_LINES = 4;                            // a result's lines shown before "+N lines"
+const mdCache = new Map();                         // a text's rendered markdown: the same text renders the same
+const escapeHtml = (t) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const markdownReady = typeof marked !== "undefined" && typeof DOMPurify !== "undefined";
+if (markdownReady) {
+  // raw HTML in a message is shown as the agent wrote it, not rendered; links open apart
+  marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text) } });
+  DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } });
+}
+function markdown(text) {
+  const box = el("div", { class: "md" });
+  if (!markdownReady) { box.style.whiteSpace = "pre-wrap"; box.textContent = text; return box; }
+  let html = mdCache.get(text);
+  if (html === undefined) {
+    try { html = DOMPurify.sanitize(marked.parse(text)); } catch (e) { html = escapeHtml(text); }
+    if (mdCache.size > 2000) mdCache.clear();
+    mdCache.set(text, html);
+  }
+  box.innerHTML = html;                            // sanitized by DOMPurify, raw HTML escaped before it
+  return box;
+}
+const firstLine = (t, n = 160) => { const l = String(t ?? "").split("\n")[0]; return l.length > n ? l.slice(0, n) + "…" : l; };
+// a tool's output as lines, less the terminal's escape codes (colors, line clears) it may have printed
+const lines = (t) => (t ? String(t).replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\n+$/, "").split("\n") : []);
+const plural = (n, w) => `${full(n)} ${w}${n === 1 ? "" : "s"}`;
+const str = (v) => typeof v === "string" ? v : v === undefined || v === null ? "" : JSON.stringify(v);
+const shortPath = (p) => { const s = str(p); const cwd = (state.txCwd || "").replace(/\/$/, ""); return cwd && s.startsWith(cwd + "/") ? s.slice(cwd.length + 1) : s; };
+// A result folded to its first lines; the rest one click away. `id` keeps it open across redraws.
+function foldedOutput(text, id, cls = "") {
+  const all = lines(text);
+  if (!all.length) return el("pre", { class: cls, text: "(no output)" });
+  if (all.length <= RESULT_LINES + 1) return el("pre", { class: cls, text: all.join("\n") });
+  return el("details", { id }, el("summary", {}, el("pre", { class: cls, text: all.slice(0, RESULT_LINES).join("\n") }),
+    el("span", { class: "more", text: `… +${plural(all.length - RESULT_LINES, "line")} (click to expand)` })),
+    el("pre", { class: cls, text: all.slice(RESULT_LINES).join("\n") }));
+}
+// A change as lines taken out and put in, what both share at either end left as context.
+function diffLines(before, after) {
+  const a = lines(before), b = lines(after);
+  let s = 0; while (s < a.length && s < b.length && a[s] === b[s]) s++;
+  let e = 0; while (e < a.length - s && e < b.length - s && a[a.length - 1 - e] === b[b.length - 1 - e]) e++;
+  const box = el("div", { class: "diff" });
+  const keep = (l) => box.append(el("div", { class: "ctx", text: "  " + l }));
+  a.slice(Math.max(0, s - 2), s).forEach(keep);
+  for (const l of a.slice(s, a.length - e)) box.append(el("div", { class: "del", text: "- " + l }));
+  for (const l of b.slice(s, b.length - e)) box.append(el("div", { class: "add", text: "+ " + l }));
+  a.slice(a.length - e, a.length - e + 2).forEach(keep);
+  return { box, added: b.length - s - e, removed: a.length - s - e };
+}
+// A patch (codex's apply_patch, a unified diff) colored by its lines' marks.
+function patchView(text) {
+  const box = el("div", { class: "diff" });
+  for (const l of lines(text)) box.append(el("div", { class: l.startsWith("+") && !l.startsWith("+++") ? "add"
+    : l.startsWith("-") && !l.startsWith("---") ? "del" : l.startsWith("@@") || l.startsWith("***") ? "hunk" : "ctx", text: l }));
+  return box;
+}
+function todoView(todos) {
+  const box = el("div", { class: "todo" });
+  for (const t of Array.isArray(todos) ? todos : []) {
+    const st = t.status || "";
+    const done = st === "completed", doing = st === "in_progress";
+    box.append(el("div", { class: done ? "done" : doing ? "doing" : "", text: `${done ? "☒" : "☐"} ${t.content || t.step || t.activeForm || str(t)}` }));
+  }
+  return box;
+}
+// How each tool the harnesses have is shown: its title, the argument beside it, a note on the right,
+// and (optionally) what goes under it instead of its plain result. Any other tool: its name and inputs.
+const shell = (i) => Array.isArray(i.command) ? i.command.join(" ") : str(i.command ?? i.cmd ?? i);
+const SUMMARIES = {
+  Bash: (i) => ({ title: "Bash", arg: firstLine(i.command, 200), note: i.description }),
+  shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
+  exec_command: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
+  local_shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
+  Read: (i) => ({ title: "Read", arg: shortPath(i.file_path) + (i.offset ? ` (from line ${i.offset})` : ""),
+    result: (text, id) => { const n = lines(text).length; return el("details", { id }, el("summary", { text: `Read ${plural(n, "line")}` }), el("pre", { text })); } }),
+  Write: (i) => ({ title: "Write", arg: shortPath(i.file_path),
+    body: (id) => { const l = lines(i.content); return el("details", { id: id + "-w" }, el("summary", { text: `Wrote ${plural(l.length, "line")}` }), diffLines("", i.content).box); },
+    quiet: true }),
+  Edit: (i) => { const d = diffLines(i.old_string, i.new_string); return { title: "Update", arg: shortPath(i.file_path),
+    body: () => el("div", {}, el("div", { text: `${plural(d.added, "addition")}, ${plural(d.removed, "removal")}${i.replace_all ? " (all)" : ""}` }), d.box), quiet: true }; },
+  MultiEdit: (i) => ({ title: "Update", arg: shortPath(i.file_path), quiet: true,
+    body: () => el("div", {}, ...(i.edits || []).map((x) => diffLines(x.old_string, x.new_string).box)) }),
+  NotebookEdit: (i) => ({ title: "Update", arg: shortPath(i.notebook_path), quiet: true, body: () => diffLines("", i.new_source).box }),
+  apply_patch: (i) => ({ title: "Patch", arg: (str(i.input ?? i).match(/\*\*\* (?:Update|Add|Delete) File: (.+)/) || [, ""])[1],
+    body: () => patchView(str(i.input ?? i)), quiet: true }),
+  Grep: (i) => ({ title: "Search", arg: `pattern: "${str(i.pattern)}"${i.path ? `, path: "${shortPath(i.path)}"` : ""}${i.glob ? `, glob: "${i.glob}"` : ""}`,
+    result: (text, id) => { const n = lines(text).length; return el("details", { id }, el("summary", { text: `Found ${plural(n, "line")}` }), el("pre", { text })); } }),
+  Glob: (i) => ({ title: "Search", arg: `pattern: "${str(i.pattern)}"${i.path ? `, path: "${shortPath(i.path)}"` : ""}`,
+    result: (text, id) => { const n = lines(text).length; return el("details", { id }, el("summary", { text: `Found ${plural(n, "file")}` }), el("pre", { text })); } }),
+  WebFetch: (i) => ({ title: "Fetch", arg: str(i.url) }),
+  WebSearch: (i) => ({ title: "Web Search", arg: `"${str(i.query)}"` }),
+  web_search: (i) => ({ title: "Web Search", arg: `"${str(i.query ?? (i.action && i.action.query))}"` }),
+  Agent: (i) => ({ title: i.subagent_type ? `${i.subagent_type}` : "Agent", arg: str(i.description) }),
+  Task: (i) => ({ title: i.subagent_type ? `${i.subagent_type}` : "Task", arg: str(i.description) }),
+  TodoWrite: (i) => ({ title: "Update Todos", body: () => todoView(i.todos), quiet: true }),
+  update_plan: (i) => ({ title: "Update Plan", body: () => todoView(i.plan), quiet: true }),
+  Skill: (i) => ({ title: "Skill", arg: str(i.skill) }),
+  ToolSearch: (i) => ({ title: "Tool Search", arg: str(i.query) }),
+};
+function summary(call) {
+  const input = call.input && typeof call.input === "object" ? call.input : { input: call.input };
+  const known = SUMMARIES[call.name];
+  if (known) { try { return known(input); } catch (e) { /* shown as any other */ } }
+  const args = typeof call.input === "string" ? call.input : Object.entries(input).map(([k, v]) => `${k}: ${firstLine(str(v), 60)}`).join(", ");
+  return { title: call.name.replace(/^mcp__([^_]+(?:_[^_]+)*)__/, "$1 · "), arg: firstLine(args, 200) };
+}
+// One tool call and, under it, its result: running while there is none and the agent is.
+function callBlock(call, result, id, running) {
+  const s = summary(call);
+  const glyph = result ? (result.error ? "dot-err" : "dot-ok") : running ? "dot-run" : "dot-ok";
+  const head = el("div", { class: "head" }, el("b", { text: s.title }), s.arg !== undefined && s.arg !== "" ? el("span", { class: "arg", text: `(${s.arg})` }) : null,
+    s.note ? el("span", { class: "note", text: s.note }) : null);
+  const blk = el("div", { class: "blk" }, el("span", { class: "g " + glyph, text: "●" }), head);
+  const under = [];
+  if (s.body) under.push(s.body(id));
+  if (result && result.error) under.push(foldedOutput(result.text, id + "-r", "err"));
+  else if (result && s.result) under.push(s.result(result.text, id + "-r"));
+  else if (result && !s.quiet) under.push(foldedOutput(result.text, id + "-r"));
+  else if (!result && !running) under.push(el("pre", { text: "(no result recorded)" }));
+  else if (!result) under.push(el("pre", { text: "Running…" }));
+  for (const u of under) blk.append(el("div", { class: "res" }, el("span", { class: "g", text: "⎿" }), u));
+  return blk;
+}
+// The transcript's blocks, in order: each result drawn under its call, wherever it was stored.
+function transcriptBlocks(items, running) {
+  const results = new Map();
+  for (const it of items) for (const p of it.parts) if (p.kind === "result" && p.id) results.set(p.id, p);
+  const calls = new Set(items.flatMap((it) => it.parts.filter((p) => p.kind === "call" && p.id).map((p) => p.id)));
+  const out = [];
+  let notes = [];
+  const flushNotes = () => {
+    if (!notes.length) return;
+    const id = `tx-n-${notes[0].id}`;
+    out.push(el("div", { class: "blk notes" }, el("span", { class: "g", text: "※" }),
+      el("details", { id }, el("summary", { text: notes.length === 1 ? `${notes[0].name}: ${firstLine(notes[0].text, 120)}` : `${notes.length} notes: ${[...new Set(notes.map((n) => n.name))].join(", ")}` }),
+        ...notes.map((n) => el("pre", { text: `${n.name}\n${n.text}` })))));
+    notes = [];
+  };
+  items.forEach((it, n) => {
+    const base = it.row_id !== null ? `r${it.row_id}` : `p${n}`;
+    it.parts.forEach((p, j) => {
+      const id = `tx-${base}-${j}`;
+      const isNote = p.kind === "note" || (p.kind === "text" && p.role === "system");
+      if (isNote) { if (showNotes) notes.push({ id, name: p.name || "system", text: p.text }); return; }
+      flushNotes();
+      if (p.kind === "text" && p.role === "user") out.push(el("div", { class: "user" }, el("span", { class: "g", text: "❯" }), el("div", { class: "body", text: p.text })));
+      else if (p.kind === "text") out.push(el("div", { class: "blk" }, el("span", { class: "g text", text: "●" }), markdown(p.text)));
+      else if (p.kind === "thinking") {                // encrypted thinking has nothing to show: left out, as the harness does
+        if (p.text.trim()) out.push(el("div", { class: "blk think-blk" }, el("span", { class: "g think", text: "✻" }),
+          el("details", { id }, el("summary", { text: "Thinking…" }), el("div", { class: "body", text: p.text }))));
+      }
+      else if (p.kind === "call") out.push(callBlock(p, p.id ? results.get(p.id) : null, id, running));
+      else if (p.kind === "result" && !(p.id && calls.has(p.id)))   // its call is not loaded: shown alone
+        out.push(el("div", { class: "blk" }, el("span", { class: "g", text: " " }), el("div", { class: "res" }, el("span", { class: "g", text: "⎿" }), foldedOutput(p.text, id, p.error ? "err" : ""))));
+    });
+  });
+  flushNotes();
+  return out;
+}
+const toEnd = () => { const n = document.getElementById("tx"); if (n) n.scrollTop = n.scrollHeight; };
+function transcriptView(info) {
+  const card = el("div", {});
+  const notesBox = el("input", { type: "checkbox" });
+  notesBox.checked = showNotes;
+  notesBox.addEventListener("change", () => {
+    showNotes = notesBox.checked;
+    try { localStorage.setItem(NOTES_KEY, showNotes ? "1" : "0"); } catch (e) { /* this page only */ }
+    keepingPlace(renderMain);
+  });
+  const tx = state.tx && state.selected && state.tx.key === key(...state.selected) ? state.tx : null;
+  const items = tx ? [...tx.items, ...tx.pending] : [];
+  card.append(el("div", { class: "term-bar" },
+    el("span", { text: tx ? `${plural(tx.items.length, "event")}${tx.earlier ? " (newest)" : ""}${tx.pending.length ? ` · ${tx.pending.length} pending` : ""}` : "" }),
+    el("span", { class: "grow" }),
+    el("label", { title: "The harness's system messages and ag's own notices, between the messages" }, notesBox, "Show system and ag notes")));
+  state.txCwd = info.cwd || "";
+  const term = el("div", { class: "term", id: "tx", "data-keep": "tx", "data-follow": "1", role: "log", "aria-label": "Transcript" });
+  if (SNAPSHOT) term.append(el("div", { class: "empty-term", text: "A snapshot has no transcript: run `ag dashboard` live to see it." }));
+  else if (!tx) term.append(el("div", { class: "empty-term", text: "Loading…" }));
+  else {
+    if (tx.earlier) term.append(el("button", { type: "button", class: "earlier", onclick: async () => {
+      const n = document.getElementById("tx"), from = n ? n.scrollHeight - n.scrollTop : 0;
+      await loadTranscript(true); renderMain();
+      const m = document.getElementById("tx"); if (m) m.scrollTop = m.scrollHeight - from;
+    } }, "Load earlier messages"));
+    const running = ["running", "building"].includes(statusOf(info)[0]);   // not finished, closed or idle
+    term.append(...transcriptBlocks(items, running));
+    if (!items.length) term.append(el("div", { class: "empty-term", text: "No messages yet." }));
+    if (running) term.append(el("div", { class: "status-line", text: `✻ Working… (last activity ${ago(info.last)})` }));
+  }
+  card.append(term);
   return card;
 }
 
