@@ -31,16 +31,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     except (OSError, ValueError) as exc:
         print(f"ag dashboard: cannot listen on {args.host}:{args.port}: {exc}", file=sys.stderr)
         return 1
-    updates = "ag's notifications" if httpd.listener and httpd.listener.ok else \
-        f"a check of the files every {live.FALLBACK_SECONDS:g}s"
-    print(f"dashboard: http://{args.host}:{httpd.server_port}/  (home {home.HOME}; live from {updates}; "
-          f"Ctrl-C to stop)", file=sys.stderr)
     stopping = {}
     for name in ("SIGTERM", "SIGHUP"):             # a kill, a closed terminal: stopped as Ctrl-C stops it
-        sig = getattr(signal, name, None)          # (Windows has no SIGHUP)
+        sig = getattr(signal, name, None)          # (Windows has no SIGHUP); before it says it is up
         if sig is not None:
             stopping[sig] = signal.signal(sig, _interrupt)
-    try:
+    try:                                           # a stop from here on, even mid-print, closes it
+        updates = "ag's notifications" if httpd.listener and httpd.listener.ok else \
+            f"a check of the files every {live.FALLBACK_SECONDS:g}s"
+        print(f"dashboard: http://{args.host}:{httpd.server_port}/  (home {home.HOME}; live from {updates}; "
+              f"Ctrl-C to stop)", file=sys.stderr)
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass

@@ -237,8 +237,12 @@ class FakeServerTest(ProxyBase):
         self.assertEqual(sent["input"], [MANAGED] + items)                    # the model gets the server's context
         self.assertEqual((sent["model"], sent["stream"]), ("m", True))       # the rest of the body kept
         client, = FakeClient.made
-        self.assertEqual(client.requests, [("rewrite", {"gatherer": "t1", "properties": {"channel": "t1", "cwd": "/w"}, "cwd": "/w",
-                                                        "events": codex_format.to_events(items)})])   # the cwd from the environment context
+        (op, request), = client.requests
+        process = request.pop("process", None)                                  # who called: this test, on Linux
+        self.assertEqual((op, request), ("rewrite", {"gatherer": "t1", "properties": {"channel": "t1", "cwd": "/w"}, "cwd": "/w",
+                                                     "events": codex_format.to_events(items)}))   # the cwd from the environment context
+        if os.path.isdir("/proc/net"):
+            self.assertEqual(process["pid"], os.getpid())
         self.assertEqual(self.lines, [("t1", "[t1] 3 items in")])
         with open(os.path.join(self.dir, "0001.json")) as fh:
             record = json.load(fh)                                        # the hook server's log of the change

@@ -408,19 +408,23 @@ def made_items(conn: sqlite3.Connection, made_ids) -> dict:
 def record_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], refs, *,
                 manager: str, basis: Optional[str] = None, row_id: Optional[int] = None,
                 est_tokens: Optional[int] = None, limit_tokens: Optional[int] = None,
-                preamble_ids: Optional[List[int]] = None, sent_tokens: Optional[int] = None) -> int:
+                preamble_ids: Optional[List[int]] = None, sent_tokens: Optional[int] = None,
+                process: Optional[Dict[str, Any]] = None) -> int:
     """Log one read: a `_reads` row (with its properties, `row_id`, the
     event it responded to, `est_tokens`, the context's size by the
     manager's count, `limit_tokens`, the harness's own limit the call
     stated, `preamble_ids`, the _preambles it sent besides its messages, and
-    `sent_tokens`, all of it as counted now), and a `_read_items` row per item
-    it returned, in order. Returns the read_id."""
+    `sent_tokens`, all of it as counted now, and `process`, {"pid", "started"}, the harness's process
+    that made the call), and a `_read_items` row per item it returned, in order. Returns the read_id."""
     names, values = _given(conn, properties, "a read")
     preamble = json.dumps(list(preamble_ids)) if preamble_ids else None
+    pid, started = (process.get("pid"), process.get("started")) if isinstance(process, dict) else (None, None)
     with conn:
         cur = conn.execute(f"INSERT INTO _reads (read_at, row_id, manager, basis, est_tokens, limit_tokens, preamble_json, "
-                           f"sent_tokens{_columns(names)}) VALUES (?, ?, ?, ?, ?, ?, ?, ?{', ?' * len(names)})",
-                           (_now(), row_id, manager, basis, est_tokens, limit_tokens, preamble, sent_tokens, *values))
+                           f"sent_tokens, pid, pid_started{_columns(names)}) "
+                           f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?{', ?' * len(names)})",
+                           (_now(), row_id, manager, basis, est_tokens, limit_tokens, preamble, sent_tokens,
+                            pid, started, *values))
         read_id = cur.lastrowid
         conn.executemany("INSERT INTO _read_items (read_id, position, row_id, made_id) VALUES (?, ?, ?, ?)",
                          [(read_id, i, r.row_id, r.made_id) for i, r in enumerate(refs)])

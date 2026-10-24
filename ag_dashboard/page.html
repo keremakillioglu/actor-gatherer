@@ -72,6 +72,7 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
 .agent .meta .dot.running { background: var(--good); } .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
 .agent .meta .dot.finished { background: var(--s1); }
+.agent .meta .dot.closed { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
 .hidden-list { border-top: 1px solid var(--grid); padding: 8px 0 4px; }
 .hidden-list > summary { margin: 0; padding: 4px 16px; font-size: 12px; color: var(--muted); list-style: none; }
 .hidden-list > summary::-webkit-details-marker { display: none; }
@@ -86,6 +87,7 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
 .status.building i { background: var(--warning); }
 .status.finished i { background: var(--s1); }
 .status.failed i { background: var(--critical); }
+.status.closed i { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
 .servers { padding: 0 16px; color: var(--ink-2); font-size: 12px; }
 main { padding: 20px; min-width: 0; }
 .empty { color: var(--muted); padding: 40px; text-align: center; }
@@ -315,8 +317,12 @@ function hideIcon() {
     svgEl("circle", { cx: 8, cy: 8, r: 2 }), svgEl("line", { x1: 2.5, y1: 13.5, x2: 13.5, y2: 2.5 }));
   return svg;
 }
-const statusOf = (a) => a.building ? ["building", "Building"] : a.running ? ["running", "Running"]
-  : unseen(a) ? ["finished", "Finished"] : ["idle", "Idle"];
+// what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; a build
+// running for it shows over the first, and one that stopped since the reader last looked shows Finished
+// until they do. A server from before `status`: running or idle by `running`.
+const statusOf = (a) => a.building ? ["building", "Building"]
+  : (a.status ? a.status === "running" : a.running) ? ["running", "Running"]
+  : unseen(a) ? ["finished", "Finished"] : a.status === "closed" ? ["closed", "Closed"] : ["idle", "Idle"];
 const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
 
 async function get(path) {
@@ -525,10 +531,10 @@ function renderAgents() {
         el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
           hideIcon())));
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
-    // running first, then finished (not yet looked at), then idle; each in the order the data has
-    // them, newest created first, so an actor stays in its place, and moves only between the three
-    const groupOf = (a) => ({ Building: "Running", Running: "Running", Finished: "Finished" })[statusOf(a)[1]] || "Idle";
-    const groups = ["Running", "Finished", "Idle"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
+    // running first, then finished (not yet looked at), then idle, then closed; each in the order the
+    // data has them, newest created first, so an actor stays in its place, and moves only between them
+    const groupOf = (a) => ({ Building: "Running", Running: "Running", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
+    const groups = ["Running", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
       .filter(([, list]) => list.length);
     for (const [name, list] of open ? groups : []) {
       if (groups.length > 1) box.append(el("div", { class: "agent-group", text: name }));

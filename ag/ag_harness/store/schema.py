@@ -119,9 +119,11 @@ CREATE TABLE IF NOT EXISTS _reads (
                                     -- or its window ends); NULL = none
     preamble_json TEXT,             -- the harness's preamble the call stated: the _preambles it
                                     -- sent besides its messages, as a JSON list of ids; NULL = none
-    sent_tokens INTEGER             -- all the call sent -- every item and the preamble -- as the
+    sent_tokens INTEGER,            -- all the call sent -- every item and the preamble -- as the
                                     -- manager counted it at the read (less what the harness then
                                     -- left out, as it reports); NULL = not known
+    pid         INTEGER,            -- the harness's process that made the call, and when it started
+    pid_started TEXT                -- ("<boot id>:<start ticks>", so a reused pid is not it); NULL = not known
 );
 
 -- What a harness sends besides its messages -- its system prompt, its tool definitions --
@@ -201,7 +203,8 @@ def create(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN counted INTEGER")
     read_columns = {c[1] for c in conn.execute("PRAGMA table_info(_reads)")}
     for column, kind in (("est_tokens", "INTEGER"), ("real_tokens", "INTEGER"), ("limit_tokens", "INTEGER"),
-                         ("preamble_json", "TEXT"), ("sent_tokens", "INTEGER")):   # a file from before reads had them
+                         ("preamble_json", "TEXT"), ("sent_tokens", "INTEGER"), ("pid", "INTEGER"),
+                         ("pid_started", "TEXT")):                     # a file from before reads had them
         if column not in read_columns:
             conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} {kind}")
     pending_columns = {c[1] for c in conn.execute("PRAGMA table_info(_pending)")}

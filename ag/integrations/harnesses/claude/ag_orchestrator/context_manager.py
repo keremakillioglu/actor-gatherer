@@ -241,7 +241,8 @@ class ClaudeContextManager:
             out = {}
             new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd,
                                       messages, adaptor, out=out, limit=getattr(request, "limit", None),
-                                      preamble=preamble_of({"system": body.get("system"), "tools": body.get("tools")}))
+                                      preamble=preamble_of({"system": body.get("system"), "tools": body.get("tools")}),
+                                      process=getattr(request, "process", None))
             self.log(gatherer, f"[{channel}] {note}")
             return new, out
 
