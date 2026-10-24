@@ -363,6 +363,7 @@ class PageTest(HomeBase):
         self.assertTrue(json.load(get("/api/history?gatherer=g&channel=c1&from=1&to=5"))["items"])
         self.assertTrue(json.load(get("/api/transcript?gatherer=g&channel=c1"))["items"])
         self.assertTrue(json.load(get("/api/transcript?gatherer=g&channel=c1&after=1"))["items"])
+        self.assertIn("turns", json.load(get("/api/files?gatherer=g&channel=c1")))
         with self.assertRaises(urllib.error.HTTPError) as caught:
             get("/api/read?gatherer=g&read_id=x")
         self.assertEqual(caught.exception.code, 404)

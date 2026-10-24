@@ -747,7 +747,8 @@ def _arguments(raw):
     return raw
 
 
-def parts(event_type: str, payload_json: Optional[str], text: Optional[str]) -> List[dict]:
+def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
+          chars: Optional[int] = TEXT_CHARS) -> List[dict]:
     """An event as the transcript shows it, whatever harness wrote it: its parts, each one of
         {"kind": "text", "role": user/assistant/system, "text"}
         {"kind": "thinking", "text"}                ("" when it is encrypted)
@@ -755,7 +756,8 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str]) -> 
         {"kind": "result", "id", "error", "text"}   a tool's result, `id` its call's
         {"kind": "note", "name", "text"}            anything else: the harness's or ag's own messages
     The harness's own format is read here (Claude Code's content blocks, codex's Responses items),
-    and nowhere else: anything this does not know shows as its readable text."""
+    and nowhere else: anything this does not know shows as its readable text. Each text and input is
+    clipped at `chars` (None: kept whole)."""
     try:
         p = json.loads(payload_json) if payload_json else None
     except ValueError:
@@ -804,10 +806,10 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str]) -> 
             out.append({"kind": "thinking", "text": words if words != payload_json else ""})
         elif words:
             out.append({"kind": "text", "role": role, "text": words})
-    for part in out:
+    for part in out if chars is not None else []:
         for k in ("text", "input"):
             if k in part:
-                part[k] = _clip(part[k])
+                part[k] = _clip(part[k], chars)
     return out
 
 
