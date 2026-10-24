@@ -99,7 +99,9 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 call has carried back yet: kept (`_pending`, not
                                                 as events, ids ignored) until the next rewrite,
                                                 context or compaction with the same properties
-                                                stores its events, and then deleted. `answer`
+                                                stores new events, and then deleted; a call that
+                                                stores none (Claude Code's idle compaction, whose
+                                                history ends before the reply) keeps them. `answer`
                                                 names the answer (the provider's id), `stop`
                                                 why it stopped (end_turn, tool_use, ...)
     {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?, "process"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens", "basis"}
@@ -385,13 +387,15 @@ class Server:
                 self.log(gatherer, prefix + f"could not record the measured size: {exc!r}")
         try:
             manager = self.manager(gatherer)
-            last = self.insert(gatherer, properties, events, manager)["last"]
+            inserted = self.insert(gatherer, properties, events, manager)
+            last = inserted["last"]
         except Exception as exc:  # noqa: BLE001 - never block the model call
             note = f"insert failed: {exc!r}; messages unchanged"
             self.log(gatherer, prefix + note)
             return {"context": None, "note": note}
         try:
-            manager.clear_pending(gatherer, properties)          # the answers kept are among its events now
+            if any(r is not None for r in inserted["rows"]):    # it stored something: the answers kept with it
+                manager.clear_pending(gatherer, properties)
         except Exception as exc:  # noqa: BLE001 - stale pending events never block the call
             self.log(gatherer, prefix + f"could not clear the pending events: {exc!r}")
         if last is None:

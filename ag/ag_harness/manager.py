@@ -419,8 +419,8 @@ class Manager(ContextManager):
         return store.pending(self._conn(gatherer_id), properties)
 
     def clear_pending(self, gatherer_id: str, properties: Optional[dict]) -> int:
-        """Not part of the interface: delete the pending events with exactly these properties,
-        once a call with them has stored its events (`store.clear_pending`). How many."""
+        """Not part of the interface: delete the pending events with these identifying properties,
+        once a call with them has stored new events (`store.clear_pending`). How many."""
         if not os.path.exists(db_path(gatherer_id)):
             return 0
         cleared = store.clear_pending(self._conn(gatherer_id), properties)
