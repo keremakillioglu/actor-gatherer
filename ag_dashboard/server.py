@@ -12,6 +12,15 @@ context manager's home (data.py), read-only. Standard library only.
         `home` (data.home()) and, with a channel, `agent` (data.agent(G, C)) at once, then again
         each time they change -- woken by ag's notifications or the fallback check (live.py) --
         and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle)
+    GET /api/sessions                     the sessions started from the page (sessions.py)
+    POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
+    POST /api/sessions {gatherer, cwd?, permission_mode?}  a new one -> the session
+    POST /api/send {session_id, text}     a message to its agent -> the session
+
+The POSTs are the only writes, and only to the dashboard's own table, the agents it runs, and the
+gatherers `ag new` makes:
+the gatherers' databases are only read. They are taken from the dashboard's own page only
+(`own_page`), and the server listens on localhost unless told otherwise.
 
 `page(snapshot)` is the page itself, the libraries it renders markdown with (VENDOR: marked,
 and DOMPurify to make what it makes safe) inside it, never fetched; with a snapshot
@@ -27,7 +36,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import data, live
+from . import data, live, sessions
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 VENDOR = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor", n) for n in ("marked.min.js", "purify.min.js")]
@@ -76,7 +85,11 @@ def _signature(value) -> str:
     return json.dumps(value, sort_keys=True, default=str)
 
 
-def handler(calls: _Calls, hub: live.Hub):
+def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
+    def home_view() -> dict:
+        """The home as the page gets it: with the sessions' state, and what the new-session form starts from."""
+        return {**data.home(started.list()), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES)}
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):      # quiet: one line per request is noise
             pass
@@ -101,7 +114,9 @@ def handler(calls: _Calls, hub: live.Hub):
                 if url.path == "/api/stream":
                     return self.stream(q.get("gatherer"), q.get("channel"))
                 if url.path == "/api/home":
-                    return self.answer(data.home())
+                    return self.answer(home_view())
+                if url.path == "/api/sessions":
+                    return self.answer(started.list())
                 if url.path == "/api/agent" and q.get("gatherer") and "channel" in q:
                     return self.answer(data.agent(q["gatherer"], q["channel"], calls.get()))
                 if url.path == "/api/read" and q.get("gatherer") and q.get("read_id", "").isdigit():
@@ -150,7 +165,7 @@ def handler(calls: _Calls, hub: live.Hub):
                     home, agent = watch.take()
                     out = []
                     if home or not woken:                # unwoken: the time alone may have changed it
-                        out.append(("home", data.home()))
+                        out.append(("home", home_view()))
                     if agent and gatherer and channel is not None:
                         out.append(("agent", data.agent(gatherer, channel, calls.get())))
                     wrote = False
@@ -167,18 +182,56 @@ def handler(calls: _Calls, hub: live.Hub):
             finally:
                 hub.drop(watch)
 
+        def own_page(self) -> bool:
+            """Whether a POST comes from the dashboard's own page: JSON (which a page elsewhere can
+            send only after a preflight this server never answers), from no other origin, to this
+            host as named (not a name rebound to it)."""
+            host = self.headers.get("Host") or ""
+            origin = self.headers.get("Origin")
+            return (self.headers.get("Content-Type") or "").split(";")[0].strip() == "application/json" \
+                and (origin is None or urlsplit(origin).netloc == host) \
+                and urlsplit("//" + host).hostname in ("127.0.0.1", "localhost", "::1", self.server.server_address[0])
+
+        def do_POST(self):  # noqa: N802 - http.server's name
+            url = urlsplit(self.path)
+            if not self.own_page():
+                return self.send(403, json.dumps({"error": "only the dashboard's own page may do that"}).encode(),
+                                 "application/json")
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(length) or b"{}") if 0 < length <= MAX_BODY else None
+                if not isinstance(body, dict):
+                    return self.send(400, json.dumps({"error": "a JSON object, please"}).encode(), "application/json")
+                if url.path == "/api/gatherers":
+                    return self.answer(sessions.new_gatherer(str(body.get("name") or "")))
+                if url.path == "/api/sessions":
+                    return self.answer(started.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
+                                                      str(body.get("permission_mode") or "auto")))
+                if url.path == "/api/send":
+                    return self.answer(started.send(str(body.get("session_id") or ""), str(body.get("text") or "")))
+                return self.send(404, b"not found", "text/plain")
+            except (sessions.SessionError, ValueError) as exc:
+                return self.send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
+            except Exception as exc:  # noqa: BLE001
+                return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
+
     return Handler
 
 
+MAX_BODY = 1_000_000        # the largest request body taken: a message, not a file
+
+
 class Server(ThreadingHTTPServer):
-    """The HTTP server, with what wakes its streams (live.py): stopped with it."""
+    """The HTTP server, with what wakes its streams (live.py) and the sessions started from the page
+    (sessions.py), whose agents it runs: stopped with it."""
 
     daemon_threads = True               # an open stream never holds up the exit
 
     def __init__(self, address, live_updates: bool = True):
         self.calls, self.hub = _Calls(), live.Hub()
         self.hub.on_llm = self.calls.changed
-        super().__init__(address, handler(self.calls, self.hub))
+        self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
+        super().__init__(address, handler(self.calls, self.hub, self.sessions))
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
 
@@ -187,9 +240,11 @@ class Server(ThreadingHTTPServer):
             if part is not None:
                 part.close()
         super().server_close()
+        self.sessions.close()
 
 
 def serve(host: str = "127.0.0.1", port: int = 4200, live_updates: bool = True) -> Server:
-    """The server, bound and ready (`serve_forever()` runs it); `server_close()` stops it, and
-    its listener. Without `live_updates`, streams are woken by nothing but their keep-alive."""
+    """The server, bound and ready (`serve_forever()` runs it); `server_close()` stops it, its
+    listener and its sessions' agents. Without `live_updates`, streams are woken by nothing but
+    their keep-alive (and the sessions' own changes)."""
     return Server((host, port), live_updates)

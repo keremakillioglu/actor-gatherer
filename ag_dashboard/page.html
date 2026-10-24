@@ -252,6 +252,25 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .term .status-line { color: var(--term-accent); margin-top: 6px; }
 .term .empty-term { color: var(--term-faint); }
 @media (max-width: 760px) { .term { height: 70vh; padding: 10px 12px 14px; font-size: 12px; } }
+.aside-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 16px 6px; }
+.aside-head h2 { margin: 0; }
+.gatherer-row .act.add { font-size: 16px; }
+.newform { margin: 4px 16px 12px; padding: 10px 12px; border: 1px solid var(--ring); border-radius: 8px; background: var(--page); display: grid; gap: 8px; }
+.newform label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); }
+.newform input, .newform select, .composer textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--ring); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+.newform .row { display: flex; gap: 8px; justify-content: flex-end; }
+.newform .err, .composer .err { color: var(--critical); font-size: 12px; }
+button.primary { background: var(--s1); border-color: var(--s1); color: #fff; }
+button.primary:hover { filter: brightness(1.06); background: var(--s1); }
+button:disabled { opacity: .5; cursor: default; }
+.agent .chat-badge { font-size: 10px; font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; line-height: 14px; margin-left: auto; }
+.chat .ctx { max-height: calc(100vh - 380px); min-height: 240px; }
+.composer { display: grid; gap: 6px; margin-top: 12px; }
+.composer textarea { width: 100%; min-height: 64px; resize: vertical; }
+.composer .row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.composer .hint { color: var(--muted); font-size: 12px; }
+.queued { color: var(--muted); font-size: 12px; padding: 6px 4px 6px 17px; border-bottom: 1px solid var(--grid); }
 </style>
 </head>
 <body>
@@ -281,7 +300,9 @@ const uncounted = (n) => n > NOT_COUNTED_MIN ? n : 0;
 const GROUP_ORDER = [PREAMBLE, "Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages", NOT_COUNTED];
 let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, stream: null,
   tx: null,             // the Transcript tab's events, loaded as they come: {key, items, pending, first_row, last_row, earlier}
-  tab: (() => { try { const t = localStorage.getItem("ag-dashboard-tab"); return t === "gatherer" || t === "transcript" ? t : "actor"; } catch (e) { return "actor"; } })() };
+  tab: (() => { try { const t = localStorage.getItem("ag-dashboard-tab"); return t === "gatherer" || t === "transcript" ? t : "actor"; } catch (e) { return "actor"; } })(),
+  chat: null,           // the Chat tab's messages: {key, items (stored, append-only), pending, last_row}
+  adding: null };       // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
 
 // ------------------------------------------------------------------ helpers
 const el = (tag, attrs = {}, ...kids) => {
@@ -380,9 +401,12 @@ function hideIcon() {
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; a build
 // running for it shows over the first, and one that stopped since the reader last looked shows Finished
 // until they do. A server from before `status`: running or idle by `running`.
-const statusOf = (a) => a.building ? ["building", "Building"]
+// A session started from the page says first what its agent is doing: starting, a message waiting, failed.
+const sessionStatus = (s) => !s ? null : s.status === "starting" ? ["building", "Starting"]
+  : s.status === "running" || (s.queued && s.queued.length) ? ["running", "Running"] : s.status === "failed" ? ["failed", "Failed"] : null;
+const statusOf = (a) => sessionStatus(a.session) || (a.building ? ["building", "Building"]
   : (a.status ? a.status === "running" : a.running) ? ["running", "Running"]
-  : unseen(a) ? ["finished", "Finished"] : a.status === "closed" ? ["closed", "Closed"] : ["idle", "Idle"];
+  : unseen(a) ? ["finished", "Finished"] : a.status === "closed" ? ["closed", "Closed"] : ["idle", "Idle"]);
 const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
 
 async function get(path) {
@@ -390,6 +414,17 @@ async function get(path) {
   if (!r.ok) throw new Error(`${path}: ${r.status}`);
   return r.json();
 }
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const got = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(got.error || `${path}: ${r.status}`);
+  return got;
+}
+const selectedInfo = () => {
+  if (!state.selected || !state.home) return null;
+  const [g, c] = state.selected;
+  return (state.home.gatherers.find((x) => x.name === g) || { agents: [] }).agents.find((x) => x.channel === c) || null;
+};
 const key = (g, c) => g + "\u0000" + c;
 
 // ------------------------------------------------------------------ data
@@ -459,6 +494,28 @@ async function loadTranscriptNow(earlier) {
 }
 const txSignature = () => state.tab === "transcript" && state.tx
   ? [state.tx.key, state.tx.items.length, state.tx.last_row, state.tx.first_row, signature(state.tx.pending)] : null;
+// The Chat tab's messages, append-only: the stored ones since the last loaded, then what is pending.
+// One load at a time (a stream message and the reader's own action can ask at once), and only rows
+// past the last one kept are added: a message is never listed twice.
+let chatLoading = Promise.resolve();
+function loadChat() {
+  chatLoading = chatLoading.then(loadChatNow, loadChatNow);
+  return chatLoading;
+}
+async function loadChatNow() {
+  const info = selectedInfo();
+  if (!info || !info.session || state.tab !== "chat" || SNAPSHOT) return;
+  const [g, c] = state.selected, k = key(g, c);
+  if (!state.chat || state.chat.key !== k) state.chat = { key: k, items: [], pending: [], last_row: 0 };
+  let got;
+  try { got = await get(`/api/history?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}&from=${state.chat.last_row + 1}`); }
+  catch (err) { return; }                           // no database yet: the gatherer is made on the first call
+  if (!got || got.error || state.chat.key !== k) return;
+  const stored = got.items.filter((i) => i.row_id !== undefined && i.row_id !== null && i.row_id > state.chat.last_row);
+  state.chat.items.push(...stored);
+  if (stored.length) state.chat.last_row = stored[stored.length - 1].row_id;
+  state.chat.pending = got.items.filter((i) => i.row_id === undefined || i.row_id === null);
+}
 async function loadContext(readId) {
   const [g] = state.selected;
   if (state.context && state.context.read_id === readId && state.context.gatherer === g) return;   // unchanged
@@ -479,7 +536,8 @@ async function refresh(userAction = false) {
       const first = state.home.gatherers.find((g) => g.agents.length && !isHidden(g)) || state.home.gatherers.find((g) => g.agents.length);
       if (first) state.selected = [first.name, first.agents[0].channel];
     }
-    await loadAgent();
+    await loadAgent().catch(() => { state.agent = null; });   // a session started here may have no database yet
+    await loadChat();
     render(userAction);
   } catch (err) {
     setLive(`Not updated: ${err.message}`);
@@ -491,12 +549,19 @@ async function refresh(userAction = false) {
 function render(userAction = false) {
   if (!state.home) return;
   const agents = signature([state.home.gatherers, state.home.hook_servers, state.selected, Math.floor(Date.now() / AGO_MS)]);
-  if (userAction || agents !== drawn.agents) { renderAgents(); drawn.agents = agents; }    // "ago" texts: every 30 s
-  const view = signature([state.selected, state.agent, state.readId, state.context && state.context.read_id, txSignature()]);
-  if (userAction || view !== drawn.main) { keepingPlace(renderMain); drawn.main = view; }
+  // "ago" texts: every 30 s; not while a form in the list is open, which a redraw would empty
+  if ((userAction || agents !== drawn.agents) && !(state.adding && !userAction)) { renderAgents(); drawn.agents = agents; }
+  const view = mainSignature();
+  if (userAction || view !== drawn.main) { const end = chatAtEnd(); keepingPlace(renderMain); drawn.main = view; if (end) chatToEnd(); }
   setLive(SNAPSHOT ? `Snapshot · ${clock(state.home.now, true)}` : state.paused ? "Paused"
     : !state.stream ? "Connecting…" : state.stream.readyState === EventSource.OPEN ? `Live · updated ${clock(Date.now() / 1000)}` : "Reconnecting…");
 }
+// What the main view draws from: drawn again only when it changed.
+const mainSignature = () => {
+  const info = selectedInfo();
+  return signature([state.selected, state.agent, state.readId, state.context && state.context.read_id, info && info.session,
+    state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature()]);
+};
 const setLive = (text) => { document.getElementById("live").textContent = text; };
 // Redraw the main view where the reader left it: the same tables open, the same lists scrolled.
 const atEnd = (n) => n.scrollHeight - n.scrollTop - n.clientHeight < 40;
@@ -507,7 +572,11 @@ function keepingPlace(draw) {
   // a list that follows its end (data-follow), read to its end: kept at its end as it grows
   const following = [...main.querySelectorAll("[data-follow]")].filter(atEnd).map((n) => n.dataset.keep);
   const pageY = window.scrollY;
+  const box = document.getElementById("composer-text"), focused = box && document.activeElement === box;
+  const typed = box ? [box.value, box.selectionStart, box.selectionEnd] : null;
   draw();
+  const again = document.getElementById("composer-text");
+  if (again && typed) { again.value = typed[0]; if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
   for (const id of open) { const d = document.getElementById(id); if (d) d.open = true; }
   for (const [k, top, left] of scrolled) {
     const n = main.querySelector(`[data-keep="${k}"]`);
@@ -539,13 +608,14 @@ function connect() {
   });
   on("home", async (home) => {
     takeHome(home);
+    await loadChat();                                // a session's state: its messages may have moved on too
     if (!state.selected) {                           // the first agent to appear: shown, and watched
       const first = home.gatherers.find((g) => g.agents.length);
       if (first) { state.selected = [first.name, first.agents[0].channel]; await loadAgent(); render(true); connect(); }
     }
   });
   on("agent", async (agent) => {
-    if (sel && state.selected && sel[0] === state.selected[0] && sel[1] === state.selected[1]) await takeAgent(agent);
+    if (sel && state.selected && sel[0] === state.selected[0] && sel[1] === state.selected[1]) { await takeAgent(agent); await loadChat(); }
   });
   es.addEventListener("open", () => { if (mine()) render(); });
   es.addEventListener("error", () => { if (mine() && !state.paused) setLive("Reconnecting…"); });
@@ -623,7 +693,9 @@ function renderAgents() {
   const running = shown.reduce((n, g) => n + g.agents.filter((a) => a.running).length, 0);
   const total = shown.reduce((n, g) => n + g.agents.length, 0);
   const finished = shown.reduce((n, g) => n + g.agents.filter((a) => statusOf(a)[1] === "Finished").length, 0);
-  aside.replaceChildren(el("h2", { text: `Actors · ${running} running${finished ? `, ${finished} finished` : ""} of ${total}` }));
+  aside.replaceChildren(el("div", { class: "aside-head" }, el("h2", { text: `Actors · ${running} running${finished ? `, ${finished} finished` : ""} of ${total}` }),
+    SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new gatherer" }, "+ New gatherer")));
+  if (state.adding && state.adding.gatherer === "") aside.append(gathererForm());
   if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No gatherers in this home yet." }));
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every gatherer is hidden." }));
   for (const g of shown) {
@@ -637,7 +709,10 @@ function renderAgents() {
           el("span", { class: "count", title: `${g.agents.length} actor${g.agents.length === 1 ? "" : "s"}${live ? `, ${live} running` : ""}` },
             live ? el("i", { "aria-hidden": "true" }) : null, live ? `${live} / ${g.agents.length}` : String(g.agents.length))),
         el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
-          hideIcon())));
+          hideIcon()),
+        SNAPSHOT ? null : el("button", { class: "act add", type: "button", title: `New session in ${g.name}`, "aria-label": `New session in ${g.name}`,
+          onclick: () => openForm(g.name) }, "+")));
+    if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
     // running first, then finished (not yet looked at), then idle, then closed; each in the order the
     // data has them, newest created first, so an actor stays in its place, and moves only between them
@@ -675,13 +750,73 @@ function agentRow(g, a) {
     el("div", {},
       el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: a.last_user_message || "No message yet" }),
       el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label }),
-        el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }))));
+        el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
+        a.session ? el("span", { class: "chat-badge", text: "Chat", title: "Started from the dashboard" }) : null)));
 }
 async function select(g, c) {
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null;
   markSeen();
+  const info = selectedInfo();
+  if (state.tab === "chat" && !(info && info.session)) state.tab = "actor";
   await refresh(true); connect();
   if (state.tab === "transcript") toEnd();
+}
+// The forms in the agent list: a new gatherer's ("+ New gatherer", gatherer ""), a new session's in a gatherer (its "+").
+function openForm(gatherer) {
+  state.adding = state.adding && state.adding.gatherer === gatherer ? null : { gatherer };
+  renderAgents();
+  const first = document.querySelector(".newform input, .newform select");
+  if (first) first.focus();
+}
+function gathererForm() {
+  const name = el("input", { name: "name", required: "", placeholder: "letters, digits, . _ -", pattern: "[A-Za-z0-9._\\-]+",
+    spellcheck: "false", autocomplete: "off" });
+  const err = el("div", { class: "err", role: "alert" });
+  const make = el("button", { type: "submit", class: "primary" }, "Create");
+  const form = el("form", { class: "newform", "aria-label": "New gatherer" },
+    el("label", {}, "Gatherer name", name),
+    el("div", { class: "desc", text: "Made with ag's default policy and pollers. Agents in it share context with each other." }),
+    err,
+    el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), make));
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    make.disabled = true; err.textContent = "";
+    try {
+      const g = await post("/api/gatherers", { name: name.value.trim() });
+      collapsed.delete(g.name);
+      await loadHome();
+      state.adding = null;
+      openForm(g.name);                              // next: its first session
+    } catch (e) { err.textContent = e.message; make.disabled = false; }
+  });
+  return form;
+}
+function newForm() {
+  const fixed = state.adding.gatherer;
+  const cwd = el("input", { name: "cwd", value: state.home.cwd || "", spellcheck: "false" });
+  const mode = el("select", { name: "permission_mode" }, ...(state.home.permission_modes || ["auto"]).map((m) => el("option", { value: m, text: m })));
+  const err = el("div", { class: "err", role: "alert" });
+  const start = el("button", { type: "submit", class: "primary" }, "Start");
+  const form = el("form", { class: "newform", "aria-label": "New session" },
+    el("div", { class: "desc", text: `A new Claude Code session in ${fixed}` }),
+    el("label", {}, "Working directory", cwd),
+    el("label", { title: "Claude Code's --permission-mode. auto: a classifier allows routine actions and refuses risky ones" }, "Permissions", mode),
+    err,
+    el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), start));
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    start.disabled = true; err.textContent = "";
+    try {
+      const s = await post("/api/sessions", { gatherer: fixed, cwd: cwd.value.trim(), permission_mode: mode.value });
+      state.adding = null;
+      collapsed.delete(s.gatherer);
+      state.tab = "chat";
+      await select(s.gatherer, s.session_id);
+      const box = document.getElementById("composer-text");
+      if (box) box.focus();
+    } catch (e) { err.textContent = e.message; start.disabled = false; }
+  });
+  return form;
 }
 
 // ------------------------------------------------------------------ charts
@@ -775,19 +910,26 @@ function renderMain() {
   const main = document.getElementById("main");
   if (!state.selected) { main.replaceChildren(el("div", { class: "empty", text: "No actors yet. Run a harness through ag and it appears here." })); return; }
   const a = state.agent;
-  if (!a || a.error) { main.replaceChildren(el("div", { class: "empty", text: (a && a.error) || "No data for this actor." })); return; }
   const [g, c] = state.selected;
-  const info = (state.home.gatherers.find((x) => x.name === g) || { agents: [] }).agents.find((x) => x.channel === c) || {};
+  const info = selectedInfo() || {};
   const [cls, label] = statusOf(info);
+  const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Views of this actor" });
+  for (const [id, name] of [["actor", "Actor"], ["transcript", "Transcript"], ["gatherer", "Gatherer"], ...(info.session ? [["chat", "Chat"]] : [])]) {
+    tabs.append(el("button", { type: "button", role: "tab", class: "tab", "aria-selected": state.tab === id ? "true" : "false",
+      onclick: () => setTab(id) }, name));
+  }
+  const title = el("div", { class: "title" }, el("h2", { text: `${harnessName(info.harness || (a && a.harness))} · ${g}` }), statusEl(cls, label),
+    el("span", { class: "sub", text: `channel ${c}${info.cwd ? " · " + info.cwd : ""}` }));
+  if (state.tab === "chat" && info.session) { main.replaceChildren(title, tabs, chatCard(info)); return; }
+  if (!a || a.error || !a.reads) {
+    main.replaceChildren(...(info.session ? [title, tabs] : []), el("div", { class: "empty", text: info.session
+      ? "No calls yet: send the agent a message in the Chat tab." : (a && a.error) || "No data for this actor." }));
+    return;
+  }
   const reads = a.reads, last = reads[reads.length - 1] || {};
   const hasReal = reads.some((r) => typeof r.real_tokens === "number");
   const builds = a.builds || [], failed = builds.filter((b) => b.status === "failed").length;
   const llm = a.llm.total;
-  const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Views of this actor" });
-  for (const [id, name] of [["actor", "Actor"], ["transcript", "Transcript"], ["gatherer", "Gatherer"]]) {
-    tabs.append(el("button", { type: "button", role: "tab", class: "tab", "aria-selected": state.tab === id ? "true" : "false",
-      onclick: () => setTab(id) }, name));
-  }
   const view = state.tab === "transcript" ? [transcriptView(info)] : state.tab === "gatherer" ? [         // what ag did for the agent
     el("div", { class: "tiles" },
       tile("Rebuilds", full(a.rebuilds), "reads on a new build"),
@@ -808,16 +950,14 @@ function renderMain() {
     usageCard(),
     historyCard(a.tasks),
   ];
-  main.replaceChildren(
-    el("div", { class: "title" }, el("h2", { text: `${harnessName(a.harness)} · ${g}` }), statusEl(cls, label),
-      el("span", { class: "sub", text: `channel ${c}${info.cwd ? " · " + info.cwd : ""}` })),
-    tabs, ...view);
+  main.replaceChildren(title, tabs, ...view);
   drawCharts();
 }
 const TAB_KEY = "ag-dashboard-tab";
 async function setTab(id) {
   state.tab = id;
-  try { localStorage.setItem(TAB_KEY, id); } catch (e) { /* this page only */ }
+  try { if (id !== "chat") localStorage.setItem(TAB_KEY, id); } catch (e) { /* this page only */ }
+  if (id === "chat") { refresh(true).then(chatToEnd); return; }
   if (id === "transcript") {
     try { await loadTranscript(); } catch (err) { setLive(`Not updated: ${err.message}`); }
     drawn.main = null;
@@ -826,6 +966,49 @@ async function setTab(id) {
   window.scrollTo(0, 0);
   if (id === "transcript") toEnd();
 }
+
+// ------------------------------------------------------------------ the Chat tab
+// The session's messages as the gatherer has them, oldest first, appended as they come; what the model
+// answered that no call has stored yet at the end; then what was sent and waits for the turn to end.
+function chatCard(info) {
+  const s = info.session, chat = state.chat || { items: [], pending: [] };
+  const items = [...chat.items, ...chat.pending].map((i) => ({ ...i, group: "Recent history" }));
+  const listed = items.filter((it) => shownTypes.has(itemType(it)[0]));
+  const card = el("section", { class: "card chat" }, el("h3", { text: "Chat" }),
+    el("div", { class: "desc", text: `A Claude Code session run by the dashboard in ${s.cwd}, permissions ${s.permission_mode}. `
+      + "Its messages as the gatherer has them, newest last." }));
+  card.append(typeChips(null));
+  const box = el("div", { class: "ctx", id: "chat-list", "data-keep": "chat-list" }, columns(),
+    el("div", { class: "run" }, el("strong", { text: "Messages" }),
+      el("span", { text: tally(items.length, listed.length, items.reduce((n, i) => n + i.tokens, 0), listed.reduce((n, i) => n + i.tokens, 0), "message") })));
+  for (const it of listed) box.append(contextItem(it));
+  for (const q of s.queued || []) box.append(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
+  if (!items.length && !(s.queued || []).length) box.append(el("div", { class: "desc", text: s.status === "starting"
+    ? "Starting the agent…" : "No messages yet. Write one below." }));
+  card.append(box);
+  const text = el("textarea", { id: "composer-text", placeholder: "Message the agent", "aria-label": "Message the agent", rows: "3" });
+  const err = el("div", { class: "err", role: "alert", text: s.status === "failed" && s.last_error ? s.last_error : "" });
+  const sendBtn = el("button", { type: "submit", class: "primary" }, "Send");
+  const form = el("form", { class: "composer" }, text,
+    el("div", { class: "row" }, el("span", { class: "hint", text: "Enter sends · Shift+Enter for a new line" }), sendBtn), err);
+  const send = async () => {
+    const t = text.value.trim();
+    if (!t) return;
+    sendBtn.disabled = true; err.textContent = "";
+    try {
+      await post("/api/send", { session_id: s.session_id, text: t });
+      text.value = "";
+      await refresh(); chatToEnd();
+    } catch (e) { err.textContent = e.message; }
+    finally { const b = document.querySelector(".composer button.primary"); if (b) b.disabled = false; }
+  };
+  form.addEventListener("submit", (ev) => { ev.preventDefault(); send(); });
+  text.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); send(); } });
+  card.append(form);
+  return card;
+}
+const chatAtEnd = () => { const n = document.getElementById("chat-list"); return !!n && n.scrollHeight - n.scrollTop - n.clientHeight < 40; };
+const chatToEnd = () => { const n = document.getElementById("chat-list"); if (n) n.scrollTop = n.scrollHeight; };
 function tile(labelText, value, note) {
   return el("div", { class: "tile" }, el("div", { class: "label", text: labelText }), el("div", { class: "value", text: value }), el("div", { class: "note", text: note }));
 }
@@ -857,7 +1040,7 @@ function drawCharts() {
     state.readId = id; state.followLatest = id === reads[reads.length - 1].read_id;
     await loadContext(id);
     keepingPlace(renderMain);
-    drawn.main = signature([state.selected, state.agent, state.readId, state.context && state.context.read_id, txSignature()]);
+    drawn.main = mainSignature();
   };
   const sizeHost = document.getElementById("size-chart");
   const series = [];

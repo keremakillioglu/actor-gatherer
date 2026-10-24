@@ -14,7 +14,7 @@ database, opened read-only, and ag's own logs -- as plain JSON-ready dicts.
     transcript(gatherer, channel, ...)  its conversation, each event as harness-free parts
 
 An agent is a channel of a gatherer: one harness session (codex's thread, Claude Code's
-session, ...); which harness, its events' shape tells (`harness_of`). Its STATUS (`status_of`):
+session, ...), some of them started from the page (sessions.py); which harness, its events' shape tells (`harness_of`). Its STATUS (`status_of`):
 CLOSED when the harness's process that made its last call no longer runs; else IDLE when its turn
 is over -- its last answer ended without a tool call -- and RUNNING when it is not (waiting on a
 tool, or on the model). Where the process is not known (a call from before ag recorded it, not
@@ -42,6 +42,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from . import home as paths
+from . import sessions
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
@@ -90,7 +91,16 @@ def gatherer_names() -> List[str]:
     root = paths.gatherers_dir()
     if not os.path.isdir(root):
         return []
-    return sorted(n for n in os.listdir(root) if os.path.exists(os.path.join(root, n, "context.db")))
+    return sorted(n for n in os.listdir(root)                 # a database, or a config: made, no session yet
+                  if any(os.path.exists(os.path.join(root, n, f)) for f in ("context.db", "gatherer.toml")))
+
+
+def _made(gatherer: str) -> Optional[float]:
+    """When the gatherer's config was written: when it was made, for one no session has run in yet."""
+    try:
+        return os.path.getmtime(os.path.join(paths.gatherer_dir(gatherer), "gatherer.toml"))
+    except OSError:
+        return None
 
 
 def _policy(gatherer: str) -> Optional[str]:
@@ -117,14 +127,17 @@ def _hook_servers() -> List[dict]:
         return []
 
 
-def home() -> dict:
+def home(started: Optional[List[dict]] = None) -> dict:
     """Every gatherer and its agents, each newest created first (`created`: its first event), and
-    the hook servers ag started."""
+    the hook servers ag started. `started` is the sessions started from the page (sessions.py's
+    `list`; else its table, read): each one's agent carries it as `session`, and one with no events
+    yet -- its gatherer perhaps not made yet -- is listed all the same."""
     now = time.time()
     gatherers = []
     for name in gatherer_names():
         conn = _connect(name)
-        if conn is None:
+        if conn is None:                 # made (`ag new`), no session has run in it yet
+            gatherers.append({"name": name, "policy": _policy(name), "agents": [], "last": None})
             continue
         try:
             agents = _agents(conn, now)
@@ -135,11 +148,36 @@ def home() -> dict:
             conn.close()
         gatherers.append({"name": name, "policy": _policy(name), "agents": agents,
                           "last": max((a["last"] or 0 for a in agents), default=0) or None})
-    for g in gatherers:                  # when it was made: its first event
-        g["created"] = min((a["created"] for a in g["agents"] if a.get("created")), default=None)
+    _with_started(gatherers, sessions.stored() if started is None else started)
+    for g in gatherers:                  # when it was made: its first event, else its config's time
+        g["created"] = min((a["created"] for a in g["agents"] if a.get("created")), default=None) or _made(g["name"])
     gatherers.sort(key=lambda g: g.get("created") or 0, reverse=True)
     return {"home": paths.HOME, "now": now, "running_seconds": RUNNING_SECONDS, "gatherers": gatherers,
             "hook_servers": _hook_servers()}
+
+
+def _with_started(gatherers: List[dict], started: List[dict]) -> None:
+    by_name = {g["name"]: g for g in gatherers}
+    for s in started:
+        g = by_name.get(s["gatherer"])
+        if g is None:                    # a new gatherer: ag makes it on the session's first call
+            g = by_name[s["gatherer"]] = {"name": s["gatherer"], "policy": None, "agents": [], "last": None}
+            gatherers.append(g)
+        a = next((x for x in g["agents"] if x["channel"] == s["session_id"]), None)
+        if a is None:
+            a = {"channel": s["session_id"], "events": 0, "last_event": None, "reads": 0, "last_read": None,
+                 "cwd": s["cwd"], "tasks": 0, "est_tokens": None, "real_tokens": None, "limit_tokens": None,
+                 "sent_tokens": None, "harness": s["harness"], "last_user_message": None,
+                 "created": None, "last": _seconds(s["created_at"]), "building": False, "running": False,
+                 "turn_over": True, "status": IDLE}
+            g["agents"].append(a)
+        a["session"] = s
+        a["created"] = min((x for x in (a["created"], _seconds(s["created_at"])) if x), default=None)
+        if s["status"] in ("starting", "running") or s.get("queued"):   # its agent works, or a message waits for it
+            a["status"], a["running"] = RUNNING, True
+        g["last"] = max(g["last"] or 0, a["last"] or 0) or None
+    for g in gatherers:                  # newest created first, as `_agents` has them
+        g["agents"].sort(key=lambda a: a.get("created") or 0, reverse=True)
 
 
 def _agents(conn, now: float) -> List[dict]:
