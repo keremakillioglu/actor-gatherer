@@ -455,8 +455,10 @@ const selectedInfo = () => {
 const key = (g, c) => g + "\u0000" + c;
 
 // ------------------------------------------------------------------ data
+let hidingMoved = false;
 async function loadHome() {
   takeHome(SNAPSHOT ? SNAPSHOT.home : await get("/api/home"));
+  if (!hidingMoved) { hidingMoved = true; await moveHidingToServer(); }
 }
 async function loadAgent() {
   if (!state.selected) return;
@@ -581,7 +583,7 @@ async function refresh(userAction = false) {
 // Draw what changed since the last draw (everything, for what the reader asked for).
 function render(userAction = false) {
   if (!state.home) return;
-  const agents = signature([state.home.gatherers, state.home.hook_servers, state.selected, Math.floor(Date.now() / AGO_MS)]);
+  const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.selected, Math.floor(Date.now() / AGO_MS)]);
   // "ago" texts: every 30 s; not while a form in the list is open, which a redraw would empty
   if ((userAction || agents !== drawn.agents) && !(state.adding && !userAction)) { renderAgents(); drawn.agents = agents; }
   const view = mainSignature();
@@ -699,24 +701,36 @@ function toggleGatherer(name) {
   try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
   renderAgents();
 }
-// Hidden gatherers, kept in this browser: those the reader hid, and those with nothing for a week
-// (STALE_SECONDS) unless the reader showed them again.
-const HIDDEN_KEY = "ag-dashboard-hidden-gatherers";
+// Hidden gatherers, kept by the server (hiding.py, `home.hiding`) so every dashboard on this home
+// hides the same ones: those the reader hid ("hidden"), and those with nothing for a week
+// (STALE_SECONDS) unless the reader kept them in view ("shown").
+const HIDDEN_KEY = "ag-dashboard-hidden-gatherers";   // where this browser kept them before
 const STALE_SECONDS = 7 * 86400;
-const hiding = (() => {
-  try {
-    const v = JSON.parse(localStorage.getItem(HIDDEN_KEY));
-    if (v && Array.isArray(v.hidden) && Array.isArray(v.shown)) return { hidden: new Set(v.hidden), shown: new Set(v.shown) };
-  } catch (e) { /* none kept */ }
-  return { hidden: new Set(), shown: new Set() };
-})();
+const choiceOf = (g) => (state.home.hiding || {})[g.name] || "";
 const stale = (g) => !!g.last && (state.home.now || Date.now() / 1000) - g.last > STALE_SECONDS;
-const isHidden = (g) => hiding.hidden.has(g.name) || (stale(g) && !hiding.shown.has(g.name));
-function setHidden(g, hide) {
-  if (hide) { hiding.hidden.add(g.name); hiding.shown.delete(g.name); }
-  else { hiding.hidden.delete(g.name); if (stale(g)) hiding.shown.add(g.name); }
-  try { localStorage.setItem(HIDDEN_KEY, JSON.stringify({ hidden: [...hiding.hidden], shown: [...hiding.shown] })); }
-  catch (e) { /* kept for this page only */ }
+const isHidden = (g) => choiceOf(g) === "hidden" || (stale(g) && choiceOf(g) !== "shown");
+async function keepChoice(name, choice) {
+  state.home.hiding = { ...(state.home.hiding || {}) };
+  if (choice) state.home.hiding[name] = choice; else delete state.home.hiding[name];
+  if (SNAPSHOT) return;                            // a snapshot has no server: this page only
+  try { state.home.hiding = await post("/api/hiding", { gatherer: name, choice }); }
+  catch (err) { setLive(`Not saved: ${err.message}`); }
+}
+async function setHidden(g, hide) {
+  const kept = keepChoice(g.name, hide ? "hidden" : stale(g) ? "shown" : "");
+  renderAgents();
+  await kept;
+  renderAgents();
+}
+// Choices this browser kept before the server did: handed to the server once, then dropped here.
+async function moveHidingToServer() {
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(HIDDEN_KEY)); } catch (e) { /* none kept */ }
+  if (SNAPSHOT || !v) return;
+  const had = state.home.hiding || {};
+  for (const name of v.hidden || []) if (!had[name]) await keepChoice(name, "hidden");
+  for (const name of v.shown || []) if (!had[name]) await keepChoice(name, "shown");
+  try { localStorage.removeItem(HIDDEN_KEY); } catch (e) { /* stays; the server's choices win */ }
   renderAgents();
 }
 function renderAgents() {
@@ -762,7 +776,7 @@ function renderAgents() {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
       el("summary", { text: `${hidden.length} hidden gatherer${hidden.length === 1 ? "" : "s"}` }));
     for (const g of hidden) list.append(el("div", { class: "hidden-row" }, el("span", { class: "gname", text: g.name }),
-      el("span", { class: "why", text: hiding.hidden.has(g.name) ? "hidden" : `nothing for ${ago(g.last).replace(" ago", "")}` }),
+      el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `nothing for ${ago(g.last).replace(" ago", "")}` }),
       el("button", { type: "button", onclick: () => setHidden(g, false) }, "Show")));
     const wasOpen = document.getElementById("hidden-gatherers");
     if (wasOpen && wasOpen.open) list.open = true;

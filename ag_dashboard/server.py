@@ -18,8 +18,9 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
     POST /api/sessions {gatherer, cwd?, permission_mode?}  a new one -> the session
     POST /api/send {session_id, text}     a message to its agent -> the session
+    POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
 
-The POSTs are the only writes, and only to the dashboard's own table, the agents it runs, and the
+The POSTs are the only writes, and only to the dashboard's own tables, the agents it runs, and the
 gatherers `ag new` makes:
 the gatherers' databases are only read. They are taken from the dashboard's own page only
 (`own_page`), and the server listens on localhost unless told otherwise.
@@ -38,7 +39,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import data, home, live, sessions
+from . import data, hiding, home, live, sessions
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 VENDOR = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor", n) for n in ("marked.min.js", "purify.min.js")]
@@ -219,6 +220,10 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                                                       str(body.get("permission_mode") or "auto")))
                 if url.path == "/api/send":
                     return self.answer(started.send(str(body.get("session_id") or ""), str(body.get("text") or "")))
+                if url.path == "/api/hiding":
+                    kept = hiding.choose(str(body.get("gatherer") or ""), str(body.get("choice") or ""))
+                    hub.ring(None)                       # every open page's list
+                    return self.answer(kept)
                 return self.send(404, b"not found", "text/plain")
             except (sessions.SessionError, ValueError) as exc:
                 return self.send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
