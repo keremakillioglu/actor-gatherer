@@ -988,6 +988,11 @@ function renderAgents() {
   document.getElementById("servers").textContent = servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";
 }
+// A message the user sent mid-turn, as Claude Code wraps it ("The user sent a new message while you were
+// working: ... This is how Claude Code surfaces messages ..."): just the message, for the list. The stored
+// message is left as it is.
+const MID_TURN = /^\s*The user sent a new message while you were working:\s*([\s\S]*?)\s*This is how Claude Code surfaces messages the user sends mid-turn\b[\s\S]*$/;
+const asked = (text) => { const m = text && MID_TURN.exec(text); return m && m[1] ? m[1] : text; };
 function agentRow(g, a) {
   const [cls, label] = statusOf(a);
   const current = state.selected && state.selected[0] === g.name && state.selected[1] === a.channel;
@@ -996,7 +1001,7 @@ function agentRow(g, a) {
     title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}`, onclick: () => select(g.name, a.channel) },
     harnessLogo(a.harness),
     el("div", {},
-      el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: a.last_user_message || "No message yet" }),
+      el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: asked(a.last_user_message) || "No message yet" }),
       a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
         el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
       el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label }),
