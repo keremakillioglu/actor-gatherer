@@ -45,7 +45,8 @@
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   height: 100vh; display: flex; flex-direction: column; }
-header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--ring); background: var(--surface); flex: none; z-index: 2; }
+header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--ring); background: var(--surface); flex: none;
+  position: relative; z-index: 30; }   /* above the page (the terminal's own layers reach 11), so its Settings panel is too */
 header h1 { font-size: 16px; margin: 0; font-weight: 600; white-space: nowrap; }
 /* the page's name and home, and under them, small, whether it is live (and its pause) */
 header .brand { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 12px; row-gap: 1px; flex: 0 1 auto; min-width: 0; }
@@ -81,7 +82,7 @@ header .about-btn:hover, header .about-btn[aria-expanded="true"] { color: var(--
 .cfg-path { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .cfg-flag { color: var(--warning); }
 #cfg-edit { white-space: nowrap; flex: none; }
-.cfg-file { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 16px; }
+.cfg-file { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 16px; }
 .cfg-file[hidden] { display: none; }
 .cfg-file-box { width: min(900px, 100%); height: min(85vh, 900px); background: var(--surface); border: 1px solid var(--ring); border-radius: 10px;
   padding: 12px 14px; display: grid; grid-template-rows: auto 1fr auto; gap: 8px; }
