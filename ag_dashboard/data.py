@@ -28,7 +28,7 @@ read whose context comes from another build than the agent's read before it: the
 history was replaced.
 
 A BACKGROUND TASK is one Claude Code started and went on without (`background`): a command run in the
-background, an agent, a monitor. Its tool's result says it started (STARTS) -- an agent that ended
+background, an agent, a monitor, a workflow. Its tool's result says it started (STARTS) -- an agent that ended
 starts again when SendMessage resumes it (RESUMED); Claude Code tells the
 model it ended in a `<task-notification>` with a `<status>`, which reaches the gatherer with the next
 call -- an agent's end, as soon as it ends, by its report, handed back as a message from it (HANDBACK),
@@ -37,7 +37,8 @@ notified too, but WAITING, not ended; a monitor's end may come as its last event
 (MONITOR_END) -- or TaskStop's result says it was stopped. One with none still runs, while its
 session's process does: none when that process is known gone, or started after the task (a process
 the dashboard runs, `session.since`; else the reads that named it). Where the process is not known,
-one with no sign of life (its start, its output file changing, a monitor's event) for STALE_SECONDS
+one with no sign of life (its start, its output file changing -- a workflow's, any file in its transcript
+folder -- a monitor's event) for STALE_SECONDS
 counts as over.
 
 Each read has these sizes: `sent_tokens`, ag's own count of everything it sent (what the
@@ -67,7 +68,9 @@ RUNNING, IDLE, CLOSED, BACKGROUND = "running", "idle", "closed", "background"
 #: A background task's start, as its tool's result begins (Claude Code's words): its kind, and its id.
 STARTS = ((re.compile(r"Command running in background with ID: ([\w-]+)"), "command"),
           (re.compile(r"Async agent launched successfully\.[\s\S]*?\bagentId: ([\w-]+)"), "agent"),
-          (re.compile(r"Monitor started \(task ([\w-]+)"), "monitor"))
+          (re.compile(r"Monitor started \(task ([\w-]+)"), "monitor"),
+          (re.compile(r"Workflow launched in background\. Task ID: ([\w-]+)"), "workflow"))
+SUMMARY = re.compile(r"^Summary: (.+)$", re.M)        # a workflow's: what it is for (its call has no description)
 RESUMED = re.compile(r'\{[^\n]*?"resumedAgentId":\s*"([\w-]+)"')    # SendMessage's result, when it resumed an agent
 #: Its end: Claude Code's notification with a status (one without is a monitor's event), an agent's report
 #: handed back, or TaskStop's result.
@@ -78,7 +81,7 @@ TASK_EVENT = re.compile(r"<event>([\s\S]*?)</event>")
 WAITING = re.compile(r"waiting on its own background work|stopped with background work of its own still running")
 MONITOR_END = re.compile(r"^\s*\[Monitor (?:expired|stopped)\b")
 STOPPED = re.compile(r'^(?:\{"message":\s*")?Successfully stopped task: ([\w-]+)')
-OUTPUT_FILE = re.compile(r"(?:Output is being written to: |output_file: )(\S+?\.output)\b")
+OUTPUT_FILE = re.compile(r"(?:Output is being written to: |output_file: )(\S+?\.output)\b|^Transcript dir: (\S+)$", re.M)
 #: An answer's stop reason, as the provider gives it: the turn goes on (a tool to run, a paused
 #: turn), or is over. Any other (Codex's `completed` on every answer, none) tells nothing: its
 #: last event does.
@@ -354,6 +357,7 @@ BACKGROUND_SCAN = ("SELECT e.row_id, e.{ch} AS ch, t.name AS type, e.text, e.pay
                    "JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.row_id > ? AND e.row_id <= ? "
                    "AND e.{ch} IS NOT NULL AND ((t.name = 'tool_output' AND (e.text LIKE 'Command running in background%' "
                    "OR e.text LIKE 'Async agent launched%' OR e.text LIKE 'Monitor started (task %' "
+                   "OR e.text LIKE 'Workflow launched in background%' "
                    "OR e.text LIKE '%Successfully stopped task: %' OR e.text LIKE '{{%\"resumedAgentId\"%')) "
                    "OR (t.name IN ('context', 'user_message') AND (e.text LIKE '%<task-notification>%' "
                    "OR e.text LIKE '%[Subagent hand-back]%'))) ORDER BY e.row_id")
@@ -395,10 +399,11 @@ def _background_event(conn, tasks: Dict[str, dict], r) -> None:
         for pattern, kind in STARTS:
             m = pattern.match(text)
             if m:
-                out = OUTPUT_FILE.search(text)
+                out, summary = OUTPUT_FILE.search(text), SUMMARY.search(text)
                 tasks[m.group(1)] = {"id": m.group(1), "kind": kind, "started": _seconds(r["inserted_at"]),
-                                     "output": out.group(1) if out else None, "event": None, "event_at": None,
-                                     "label": _task_label(conn, r["ch"], r["row_id"], r["payload_json"]), "open": True}
+                                     "output": (out.group(1) or out.group(2)) if out else None, "event": None, "event_at": None,
+                                     "label": summary.group(1).strip()[:160] if summary
+                                     else _task_label(conn, r["ch"], r["row_id"], r["payload_json"]), "open": True}
                 return
         return
     for back in HANDBACK.finditer(text):             # an agent's report: it has ended
@@ -448,6 +453,19 @@ def _task_label(conn, channel: str, row_id: int, payload_json: Optional[str]) ->
     return None
 
 
+def _written(path: Optional[str]) -> Optional[float]:
+    """When a task's output was last written: its file's time, or a folder's (a workflow's transcripts) newest file's."""
+    try:
+        if not path:
+            return None
+        if not os.path.isdir(path):
+            return os.stat(path).st_mtime
+        with os.scandir(path) as found:
+            return max((e.stat().st_mtime for e in found if e.is_file()), default=None)
+    except OSError:
+        return None
+
+
 def _settle_background(a: dict, now: float) -> None:
     """The agent's background tasks that still run (module doc), each with `active`, its last sign of
     life; an IDLE agent with any is BACKGROUND, and running."""
@@ -461,10 +479,7 @@ def _settle_background(a: dict, now: float) -> None:
     for t in tasks:
         if since and t["started"] and t["started"] < since:
             continue                                 # an earlier process's
-        try:
-            wrote = os.stat(t["output"]).st_mtime if t.get("output") else None
-        except OSError:
-            wrote = None
+        wrote = _written(t.get("output"))
         active = max((x for x in (t["started"], t.get("event_at"), wrote) if x), default=None)
         if not known and (active is None or now - active > STALE_SECONDS):
             continue

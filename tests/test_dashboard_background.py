@@ -64,6 +64,12 @@ def monitor(cid, task_id, description="errors in the log"):
             result(cid, f"Monitor started (task {task_id}, expires in 1m unless the source ends first).")]
 
 
+def workflow(cid, task_id, transcripts, summary="Two agents count to 20"):
+    return [call(cid, "Workflow", {"script": "export const meta = { name: 'count' }\n..."}),
+            result(cid, f"Workflow launched in background. Task ID: {task_id}\nSummary: {summary}\nTranscript dir: {transcripts}\n"
+                        "Script file: /x/count.js\nRun ID: wf_1")]
+
+
 class BackgroundTest(unittest.TestCase):
     """A gatherer database of the test's own, its events written as Claude Code's reach ag."""
 
@@ -147,6 +153,20 @@ class BackgroundTest(unittest.TestCase):
         a = self.actor([self.session()])
         self.assertEqual((a["status"], a["background"]), (data.IDLE, []))
         self.add([notice("a7f3", "completed")])                                    # the notification, later: nothing more
+        self.assertEqual(self.actor([self.session()])["background"], [])
+
+    def test_a_workflow_runs_until_its_notification_its_agents_transcripts_its_activity(self):
+        transcripts = os.path.join(self.tmp.name, "wf_1")
+        os.makedirs(transcripts)
+        self.add(workflow("t1", "w1", transcripts) + [said("It runs.")], at=time.time() - 120)
+        with open(os.path.join(transcripts, "agent-a1.jsonl"), "w") as fh:          # an agent of it writes
+            fh.write("{}")
+        a = self.actor([self.session()])
+        self.assertEqual(a["status"], data.BACKGROUND)
+        (task,) = a["background"]
+        self.assertEqual((task["id"], task["kind"], task["label"], task["output"]), ("w1", "workflow", "Two agents count to 20", transcripts))
+        self.assertGreater(task["active"], time.time() - 30)
+        self.add([notice("w1", "completed"), said("Both counted.")])
         self.assertEqual(self.actor([self.session()])["background"], [])
 
     def test_an_agent_resumed_by_a_message_runs_again_until_it_reports(self):

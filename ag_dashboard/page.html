@@ -1759,9 +1759,9 @@ function chatCard(info) {
   return card;
 }
 // What Claude Code still runs in the background for the actor (data.py's `background`): the commands,
-// agents and monitors it started and has not been told have ended, each with what it is for and its
+// agents, monitors and workflows it started and has not been told have ended, each with what it is for and its
 // last sign of life. Null when none runs. `term`: drawn as a terminal's status line.
-const TASK_KINDS = { command: "Command", agent: "Agent", monitor: "Monitor" };
+const TASK_KINDS = { command: "Command", agent: "Agent", monitor: "Monitor", workflow: "Workflow" };
 function backgroundNote(info, term = false) {
   const tasks = (info && info.background) || [];
   if (!tasks.length) return null;
