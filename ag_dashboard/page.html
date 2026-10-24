@@ -105,6 +105,10 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .logo { width: 22px; height: 22px; margin-top: 1px; display: block; }
 .agent .asked { font-size: 13px; line-height: 1.4; font-weight: 500; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere; }
+/* Claude Code's recap of the session, under what it was last asked: smaller, quieter, newer than the message */
+.agent .recap { font-size: 12px; line-height: 1.4; color: var(--ink-2); margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.agent .recap .lbl { color: var(--muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; margin-right: 5px; }
 .agent .asked.none { color: var(--muted); font-weight: 400; font-style: italic; }
 .agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
@@ -986,6 +990,8 @@ function agentRow(g, a) {
     harnessLogo(a.harness),
     el("div", {},
       el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: a.last_user_message || "No message yet" }),
+      a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
+        el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
       el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label }),
         el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
         closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",

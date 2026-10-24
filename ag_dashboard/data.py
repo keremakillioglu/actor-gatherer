@@ -168,7 +168,7 @@ def _with_started(gatherers: List[dict], started: List[dict]) -> None:
         if a is None:
             a = {"channel": s["session_id"], "events": 0, "last_event": None, "reads": 0, "last_read": None,
                  "cwd": s["cwd"], "tasks": 0, "est_tokens": None, "real_tokens": None, "limit_tokens": None,
-                 "sent_tokens": None, "harness": s["harness"], "last_user_message": None,
+                 "sent_tokens": None, "harness": s["harness"], "last_user_message": None, "recap": None,
                  "created": None, "last": _seconds(s["created_at"]), "building": False, "running": False,
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
@@ -247,9 +247,15 @@ def _agents(conn, now: float) -> List[dict]:
             f"JOIN event_types t2 ON t2.event_type_id = e2.event_type_id WHERE t2.name = 'user_message' GROUP BY e2.{CHANNEL})"):
         last_user[ch] = (text if text else readable(payload)) or ""
     tables = _tables(conn)
+    recaps = {}                                      # each agent's newest recap (Claude Code's, while the user was away)
+    if "_recaps" in tables:
+        for ch, made, text in conn.execute("SELECT session, made_at, text FROM _recaps WHERE recap_id IN "
+                                           "(SELECT max(recap_id) FROM _recaps GROUP BY session)"):
+            recaps[ch] = {"text": " ".join((text or "").split())[:600], "at": _seconds(made)}
     for ch, a in out.items():
         a["harness"] = _harness(conn, ch)
         a["last_user_message"] = " ".join(last_user.get(ch, "").split())[:600] or None
+        a["recap"] = recaps.get(ch)
         a["last"] = max(a["last_read"] or 0, a["last_event"] or 0, answered.get(ch) or 0) or None   # its latest activity
         a["building"] = ch in building
         a["turn_over"] = turn_over(conn, ch, tables)[0]

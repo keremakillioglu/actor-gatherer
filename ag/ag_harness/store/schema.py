@@ -20,9 +20,11 @@ One SQLite file per gatherer (paths.py):
     _pending             what the model answered that no model call has carried back
                          yet, as events, per channel: kept until that channel's next
                          call stores its events (internal)
+    _recaps              the harness's recaps of a session (Claude Code's "while you were
+                         away" summary), each with when it was made: never history (internal)
 
 A leading underscore marks a table internal to the manager (`_made_items`,
-`_reads`, `_read_items`, `_polls`, `_pending`), which the agent has no reason to know about; the
+`_reads`, `_read_items`, `_polls`, `_pending`, `_recaps`), which the agent has no reason to know about; the
 others (`event_types`, `events`) it may be pointed at. Operations on these
 tables are in operations.py.
 
@@ -170,6 +172,17 @@ CREATE TABLE IF NOT EXISTS _pending (
     payload_json TEXT   NOT NULL,   -- the event's payload, as given
     text        TEXT                -- its readable text, as given; NULL = none
 );
+
+-- A harness's recap of a session: Claude Code's "while you were away" summary, which it asks its model
+-- for after a turn when the user has left. Not a turn and not history: never read back as events, never
+-- in a context; kept for a reader of the gatherer (the dashboard's actor list), newest last.
+CREATE TABLE IF NOT EXISTS _recaps (
+    recap_id    INTEGER PRIMARY KEY,
+    session     TEXT    NOT NULL,   -- the session: its calls' `channel`
+    made_at     TEXT    NOT NULL,   -- when its answer came back (UTC, ISO)
+    text        TEXT    NOT NULL    -- the recap, as the model wrote it
+);
+CREATE INDEX IF NOT EXISTS _recaps_session ON _recaps (session, recap_id);
 
 -- Which process has each session open: one per session, so two processes (a terminal, the
 -- dashboard's chat) never run it at once. Claimed by ag's launcher as it starts the harness on a

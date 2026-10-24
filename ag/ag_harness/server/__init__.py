@@ -104,6 +104,11 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 history ends before the reply) keeps them. `answer`
                                                 names the answer (the provider's id), `stop`
                                                 why it stopped (end_turn, tool_use, ...)
+    {"op": "recap", "gatherer", "session", "text"} -> {"recap_id"}
+                                                the harness's recap of a session (Claude Code's
+                                                "while you were away" summary), kept with when it
+                                                was made (`_recaps`): never an event, never in a
+                                                context; for a reader of the gatherer
     {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?, "process"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens", "basis"}
     {"op": "claim", "gatherer", "session", "process", "by"?} -> {"claimed": true, "took_over"?} or {"claimed": false, "holder"}
                                                 `process` ({"pid", "started"}) opens the session
@@ -471,6 +476,13 @@ class Server:
             if not isinstance(events, list):
                 return {"error": "no events"}
             return self.pending(gatherer, properties, events, request.get("answer"), request.get("stop"))
+        if op == "recap":
+            session, text = request.get("session"), request.get("text")
+            if not isinstance(session, str) or not session or not isinstance(text, str) or not text.strip():
+                return {"error": "no session and text"}
+            recap_id = self.manager(gatherer).record_recap(gatherer, session, text.strip())
+            self.log(gatherer, f"[{session}] recap kept")
+            return {"recap_id": recap_id}
         if op == "read":
             if not isinstance(request.get("row"), int):
                 return {"error": "no row"}
