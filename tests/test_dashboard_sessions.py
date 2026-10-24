@@ -262,6 +262,15 @@ class TerminalTest(SessionsBase):
         self.assertTrue(self.session(sid)["terminal"])
         self.assertEqual(self.session(sid)["pid"], self.s.terms[sid].pid)
 
+    def test_a_terminal_asked_for_full_screen_runs_the_screen_its_settings_choose(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.assertFalse(self.session(sid)["fullscreen"])
+        with unittest.mock.patch.dict(os.environ, sessions.CLASSIC):             # the dashboard's own environment classic
+            self.s.terminal(sid, 100, 30, fullscreen=True)
+        self.until(lambda: "fake terminal" in self.screen(sid))
+        self.assertIn("fake terminal 100x30 tty=True term=xterm-256color alt=None", self.screen(sid))
+        self.assertTrue(self.session(sid)["fullscreen"])
+
     def test_what_is_typed_and_the_size_reach_it_and_what_it_prints_comes_back(self):
         sid = self.s.create("g", self.work)["session_id"]
         self.started(sid, 100, 30)
@@ -293,6 +302,18 @@ class TerminalTest(SessionsBase):
         self.assertIsNone(self.s.output(sid, 0))
         with self.assertRaises(sessions.SessionError):
             self.s.type(sid, "x")
+
+    def test_once_closed_it_can_be_opened_again_straight_away_in_the_other_screen(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid)
+        first = self.s.terms[sid]
+        self.s.stop(sid)                                                # returns once it has gone
+        self.assertNotIn(sid, self.s.terms)
+        self.assertEqual(self.session(sid)["status"], "stopped")
+        self.s.terminal(sid, fullscreen=True)
+        self.assertIsNot(self.s.terms[sid], first)
+        self.until(lambda: "alt=None" in self.screen(sid))
+        self.assertTrue(self.session(sid)["fullscreen"])
 
     def test_it_ends_the_idle_agent_first_and_is_refused_mid_turn(self):
         sid = self.s.create("g", self.work)["session_id"]

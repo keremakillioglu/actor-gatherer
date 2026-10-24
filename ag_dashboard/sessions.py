@@ -119,8 +119,8 @@ def stored() -> List[dict]:
 
 OUTER_TERMINAL = ("TMUX", "TMUX_PANE", "STY", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "WINDOWID",
                   "VTE_VERSION", "KITTY_WINDOW_ID", "WEZTERM_PANE", "ITERM_SESSION_ID")   # the dashboard's own terminal: not the page's
-# Claude Code's classic screen, not its full screen: what it prints goes into the page terminal's own
-# scrollback, scrolled there; full screen would send every wheel tick to it and back to redraw.
+# Claude Code's classic screen, unless full screen is asked for: what it prints goes into the page terminal's
+# own scrollback, scrolled there; full screen sends every wheel tick to it and back to redraw.
 CLASSIC = {"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"}
 TERM_KEEP = 512 * 1024             # how much of a terminal's output is kept, for a page that comes back
 PASTE_ENTER = 0.15                 # after a message is pasted into a terminal, how long before its Enter
@@ -269,8 +269,8 @@ class _Agent:
 class _Term:
     """One session's terminal: the process in its pseudo-terminal, and what it printed."""
 
-    def __init__(self, pid: int, fd: int, log):
-        self.pid, self.fd, self.log = pid, fd, log
+    def __init__(self, pid: int, fd: int, log, fullscreen: bool = False):
+        self.pid, self.fd, self.log, self.fullscreen = pid, fd, log, fullscreen
         self.out = bytearray()          # the last TERM_KEEP bytes it printed
         self.end = 0                    # how many it printed in all: `out` ends there
         self.exited: Optional[int] = None
@@ -329,13 +329,14 @@ class Sessions:
 
     def list(self) -> List[dict]:
         """Every session the table has, newest first, each with `queued` (its messages waiting), `pid` (the
-        dashboard's process for it) and `terminal` (whether that is a terminal)."""
+        dashboard's process for it), `terminal` (whether that is a terminal) and `fullscreen` (whether it
+        runs Claude Code's full screen)."""
         with self.lock:
             out = []
             for s in stored():
                 a, t = self.agents.get(s["session_id"]), self.terms.get(s["session_id"])
                 out.append({**s, "queued": list(a.queue) if a else [], "terminal": t is not None,
-                            "pid": t.pid if t else a.proc.pid if a else None})
+                            "fullscreen": bool(t and t.fullscreen), "pid": t.pid if t else a.proc.pid if a else None})
             return out
 
     def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = "claude") -> dict:
@@ -415,7 +416,8 @@ class Sessions:
         """The session's agent ended: its stdin closed, so it exits and the session shows Closed until
         the next message resumes it. In the middle of a turn, the turn is cut off (its process group
         terminated) and what waits is dropped. A terminal is closed as a terminal window is: hung up,
-        whatever it was doing. The session as `list` has it."""
+        whatever it was doing, and its end recorded before this returns, so the session can be opened
+        again straight away. The session as `list` has it."""
         with self.lock:
             s = self._row(session_id)
             if s is None:
@@ -423,7 +425,11 @@ class Sessions:
             t = self.terms.get(session_id)
             if t is not None:
                 self._hang_up(t)
+        if t is not None:                            # its end recorded by its reader, which takes the lock
+            self._gone(t)
+            with self.lock:
                 return next(x for x in self.list() if x["session_id"] == session_id)
+        with self.lock:
             a = self.agents.get(session_id)
             if a is None or a.proc.poll() is not None:
                 raise SessionError("the dashboard has no process open for this session")
@@ -549,10 +555,11 @@ class Sessions:
                     except SessionError:
                         pass
 
-    def terminal(self, session_id: str, cols: int = 120, rows: int = 32) -> dict:
+    def terminal(self, session_id: str, cols: int = 120, rows: int = 32, fullscreen: bool = False) -> dict:
         """The session opened in a terminal, `cols` x `rows`: its interactive Claude Code, started unless
-        it runs already. Its idle `-p` agent is ended first; refused while that one's turn runs, or
-        while another process has the session open. The session as `list` has it."""
+        it runs already -- in its classic screen, or with `fullscreen` the screen its settings choose. Its
+        idle `-p` agent is ended first; refused while that one's turn runs, or while another process has
+        the session open. The session as `list` has it."""
         if not TERMINALS:
             raise SessionError("a terminal needs a Unix pseudo-terminal, which this system does not have")
         with self.lock:
@@ -583,21 +590,21 @@ class Sessions:
                 held = holder(s["gatherer"], session_id)
                 if held is not None:
                     raise SessionError(f"the session is open in another process ({held['pid']}): close it there first")
-                self._start_terminal(self._row(session_id), cols, rows)
+                self._start_terminal(self._row(session_id), cols, rows, fullscreen)
             else:
                 self.resize(session_id, cols, rows)
             return next(x for x in self.list() if x["session_id"] == session_id)
 
-    def _start_terminal(self, s: dict, cols: int, rows: int) -> _Term:
+    def _start_terminal(self, s: dict, cols: int, rows: int, fullscreen: bool = False) -> _Term:
         sid = s["session_id"]
         resume = bool(s["turns"]) or _has_calls(s["gatherer"], sid)
         argv = [*ag_command(), "--gatherer", s["gatherer"], s["harness"], "--permission-mode", s["permission_mode"],
                 *(["--resume", sid] if resume else ["--session-id", sid])]
-        env = {**{k: v for k, v in agent_env().items() if k not in OUTER_TERMINAL}, "TERM": "xterm-256color", "COLORTERM": "truecolor",
-               **CLASSIC}
+        env = {**{k: v for k, v in agent_env().items() if k not in OUTER_TERMINAL and not (fullscreen and k in CLASSIC)},
+               "TERM": "xterm-256color", "COLORTERM": "truecolor", **({} if fullscreen else CLASSIC)}   # full screen even if the dashboard's own is classic
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
         log = open(log_path(sid), "a", encoding="utf-8", buffering=1)
-        log.write(f"--- {_now()} terminal {shlex.join(argv)}\n")
+        log.write(f"--- {_now()} terminal{' (full screen)' if fullscreen else ''} {shlex.join(argv)}\n")
         try:
             pid, fd = pty.fork()
         except OSError as exc:
@@ -611,7 +618,7 @@ class Sessions:
                 os.execvpe(argv[0], argv, env)
             finally:
                 os._exit(127)
-        t = _Term(pid, fd, log)
+        t = _Term(pid, fd, log, fullscreen)
         self.terms[sid] = t
         if resume and not s["turns"]:
             self._set(sid, turns=1)
@@ -707,6 +714,18 @@ class Sessions:
             self._write(t, data)
         except SessionError:
             pass
+
+    def _gone(self, t: _Term) -> None:
+        """Once a hung-up terminal's end is recorded: killed if it is still there after 5 s."""
+        if t.reader is None:
+            return
+        t.reader.join(timeout=5)
+        if t.reader.is_alive():
+            try:
+                os.killpg(t.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            t.reader.join(timeout=5)
 
     def _hang_up(self, t: _Term) -> None:
         """The terminal closed as a window is: its process group hung up."""

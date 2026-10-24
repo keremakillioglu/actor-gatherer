@@ -396,7 +396,7 @@ button:disabled { opacity: .5; cursor: default; }
     <h1>ag dashboard</h1>
     <div class="home" id="home"></div>
     <div class="about-wrap">
-      <button class="about-btn" id="about-btn" type="button" aria-expanded="false" aria-controls="about" title="The dashboard: live or paused, and ag's hook servers">
+      <button class="about-btn" id="about-btn" type="button" aria-expanded="false" aria-controls="about" title="The dashboard: live or paused, its theme, the terminal's screen, and ag's hook servers">
         <span class="state-dot" id="state-dot"></span>Dashboard ▾</button>
       <div class="about" id="about" hidden>
         <div><h4>Updates</h4>
@@ -405,6 +405,10 @@ button:disabled { opacity: .5; cursor: default; }
         <div><h4>Theme</h4>
           <div class="views" id="theme" role="group" aria-label="Theme">
             <button type="button" data-theme-pick="system">System</button><button type="button" data-theme-pick="light">Light</button><button type="button" data-theme-pick="dark">Dark</button></div></div>
+        <div id="screen-pick" hidden><h4>Terminal</h4>
+          <div class="views" id="screen" role="group" aria-label="Terminal screen"
+               title="Claude Code's classic screen or its full screen, in the Terminal view. An open terminal is reopened in it, the session resumed, once you confirm.">
+            <button type="button" data-screen-pick="classic">Classic</button><button type="button" data-screen-pick="full">Full screen</button></div></div>
         <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
       </div>
     </div>
@@ -742,7 +746,7 @@ const setLive = (text) => {
   document.getElementById("live").textContent = text;
   const st = /^Live/.test(text) ? "live" : text === "Paused" ? "paused" : /^Not /.test(text) ? "error" : "";
   for (const id of ["state-dot", "state-dot-2"]) document.getElementById(id).dataset.state = st;
-  document.getElementById("about-btn").title = `${text}. The dashboard: live or paused, and ag's hook servers`;
+  document.getElementById("about-btn").title = `${text}. The dashboard: live or paused, its theme, the terminal's screen, and ag's hook servers`;
 };
 // The dashboard's panel: opened by its button, closed by it again, by a click elsewhere, or by Esc.
 function setAbout(open) {
@@ -2093,6 +2097,43 @@ function xtermTheme() {
   return { ...XTERM_ANSI[css.colorScheme === "dark" ? "dark" : "light"], background: v("--term-bg"), foreground: ink, cursor: ink, cursorAccent: v("--term-bg") };
 }
 window.addEventListener("ag-theme", () => { if (term.xterm) term.xterm.options.theme = xtermTheme(); });
+// Claude Code's full screen, or its classic one (the default): kept in the browser, for the next terminal
+// opened -- or, changed while one is open, that one reopened in it (the session resumed, its history kept).
+// Full screen scrolls by sending each wheel tick to Claude Code, which redraws; classic prints
+// into xterm's own scrollback, scrolled here.
+const FULLSCREEN_KEY = "ag-dashboard-term-fullscreen";
+let termFullscreen = (() => { try { return localStorage.getItem(FULLSCREEN_KEY) === "1"; } catch (e) { return false; } })();
+// The choice is in the dashboard's panel (Terminal: Classic | Full screen).
+function showScreenPick() {
+  for (const b of document.querySelectorAll("[data-screen-pick]"))
+    b.setAttribute("aria-pressed", (b.dataset.screenPick === "full") === termFullscreen ? "true" : "false");
+}
+// The terminal shown, open in the other screen, is reopened in this one -- once the reader agrees: reopening
+// hangs up Claude Code, whatever it is doing (a turn, its background tasks). Whether it is open is asked of
+// the server at that moment, not taken from the page's last copy.
+async function setScreen(full) {
+  const info = selectedInfo();
+  let open = null;
+  if (info && info.session && term.sid === info.channel) {
+    try {
+      const now = (await (await fetch("/api/sessions")).json()).find((x) => x.session_id === info.session.session_id);
+      if (now && now.terminal && !!now.fullscreen !== full) open = now;
+    } catch (e) { /* not known: nothing reopened */ }
+  }
+  if (open && !confirm(`This terminal is open. Switching to ${full ? "full screen" : "the classic screen"} closes it and resumes the session `
+      + "in the new screen: anything Claude Code is doing now -- a reply, a running command, its background tasks -- is stopped. Switch anyway?")) return;
+  termFullscreen = full;
+  try { localStorage.setItem(FULLSCREEN_KEY, full ? "1" : "0"); } catch (e) { /* this page only */ }
+  showScreenPick();
+  if (!open) return;
+  try { await post("/api/stop", { session_id: open.session_id }); } catch (err) { term.error = err.message; await refresh(); return; }
+  await termOpen(info);
+}
+// A mouse report for the pointer moving with no button held (SGR: ESC [ < b;x;y M, motion bit 32, button 3):
+// with any-motion tracking on, every move over the terminal is one, and each would share the one-at-a-time
+// input with the wheel. Claude Code is given clicks, drags and the wheel, not the bare moves.
+const BARE_MOVE = /\x1b\[<(\d+);\d+;\d+M/g;
+const dropBareMoves = (d) => d.includes("\x1b[<") ? d.replace(BARE_MOVE, (m, b) => ((b & 32) && (b & 3) === 3 ? "" : m)) : d;
 const term = { sid: null, xterm: null, fit: null, host: null, es: null, opened: false, exited: null, unsent: "", sending: false, error: "", tried: false };
 function termFor(sid) {
   if (term.sid === sid && term.xterm) return term;
@@ -2104,12 +2145,22 @@ function termFor(sid) {
   const host = el("div", { class: "xterm-host", id: "xterm-host", "data-refocus": "1" });
   host.agFocus = () => xterm.focus();
   Object.assign(term, { sid, xterm, fit, host, opened: false, exited: null, error: "", tried: false });
-  xterm.onData((d) => termType(sid, d));
+  xterm.onData((d) => { d = dropBareMoves(d); if (d) termType(sid, d); });
   xterm.onResize(({ cols, rows }) => {
     if (termRunning(sid)) post("/api/terminal/resize", { session_id: sid, cols, rows }).catch(() => {});
   });
   new ResizeObserver(() => { if (host.isConnected && host.clientWidth) { try { fit.fit(); } catch (e) { /* not shown yet */ } } }).observe(host);
   return term;
+}
+// Drawn with WebGL where the browser has it: far faster than the DOM when the whole screen is redrawn, as
+// full screen does on every scroll. Without it, or once its context is lost, the DOM draws.
+function termWebgl(t) {
+  if (!window.WebglAddon) return;
+  try {
+    const gl = new WebglAddon.WebglAddon();
+    gl.onContextLoss(() => gl.dispose());
+    t.xterm.loadAddon(gl);
+  } catch (e) { /* no WebGL here: the DOM draws */ }
 }
 function termDrop() {
   if (term.es) term.es.close();
@@ -2161,13 +2212,21 @@ async function termOpen(info) {
   t.error = ""; t.exited = null;
   try {
     await post("/api/terminal", { ...(info.session ? { session_id: info.session.session_id } : { gatherer: state.selected[0], channel: info.channel }),
-      cols: dims.cols, rows: dims.rows });
+      cols: dims.cols, rows: dims.rows, fullscreen: termFullscreen });
     t.xterm.reset();
   } catch (err) { t.error = err.message; }
   await refresh();
   if (termRunning(info.channel) && (t.xterm.cols !== dims.cols || t.xterm.rows !== dims.rows))   // fitted again meanwhile
     post("/api/terminal/resize", { session_id: info.channel, cols: t.xterm.cols, rows: t.xterm.rows }).catch(() => {});
   t.xterm.focus();
+}
+if (!SNAPSHOT && window.Terminal && window.FitAddon) {
+  document.getElementById("screen-pick").hidden = false;
+  showScreenPick();
+  document.getElementById("screen").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-screen-pick]");
+    if (b) setScreen(b.dataset.screenPick === "full");
+  });
 }
 if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
   id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame",
@@ -2182,7 +2241,7 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
     if (open) t.tried = true;
     requestAnimationFrame(() => {                      // drawn into the page: opened there once, then fitted to it
       if (!t.host.isConnected) return;
-      if (!t.opened) { t.xterm.open(t.host); t.opened = true; }
+      if (!t.opened) { t.xterm.open(t.host); t.opened = true; termWebgl(t); }
       try { t.fit.fit(); } catch (e) { /* not shown */ }
       if (open) termOpen(info);                        // the session's terminal, at the size it was just fitted to
     });

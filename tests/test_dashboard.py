@@ -336,7 +336,7 @@ class PageTest(HomeBase):
         self.assertNotIn("<!--VENDOR-->", text)
         self.assertIn("marked v15", text)
         self.assertIn("DOMPurify", text)
-        self.assertEqual(text.count("<script>"), 5)          # the two libraries, xterm.js and its fit add-on, then the page's own
+        self.assertEqual(text.count("<script>"), 6)          # the two libraries, xterm.js and its fit and WebGL add-ons, then the page's own
         self.assertIn(".xterm-helper-textarea", text)                       # xterm.js's stylesheet
 
     def test_a_snapshot_has_no_terminal(self):

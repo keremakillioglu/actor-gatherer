@@ -24,8 +24,9 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/send {gatherer, channel, text}  the same to a Claude Code session not started here,
                                           taken into the table first (sessions.py's `adopt`)
     POST /api/stop {session_id}           its agent, idle, ended -- or its terminal closed -> the session
-    POST /api/terminal {session_id | gatherer, channel, cols, rows}  the session opened in a terminal,
-                                          Claude Code's own UI (sessions.py's `terminal`) -> the session
+    POST /api/terminal {session_id | gatherer, channel, cols, rows, fullscreen?}  the session opened in a
+                                          terminal, Claude Code's own UI (sessions.py's `terminal`), in its
+                                          classic screen unless `fullscreen` -> the session
     POST /api/terminal/input {session_id, data}       what was typed in it
     POST /api/terminal/resize {session_id, cols, rows}  its new size
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
@@ -36,8 +37,8 @@ the gatherers' databases are only read. They are taken from the dashboard's own 
 (`own_page`), and the server listens on localhost unless told otherwise.
 
 `page(snapshot)` is the page itself, the libraries it renders markdown with (VENDOR: marked,
-and DOMPurify to make what it makes safe) and draws terminals with (TERMINAL: xterm.js and its
-fit add-on, and its stylesheet) inside it, never fetched; with a snapshot (data.snapshot()) it
+and DOMPurify to make what it makes safe) and draws terminals with (TERMINAL: xterm.js, its
+fit and WebGL add-ons, and its stylesheet) inside it, never fetched; with a snapshot (data.snapshot()) it
 stands alone, its data inside it (`ag dashboard --out`), and no terminal: it has none to draw."""
 
 import base64
@@ -56,7 +57,7 @@ from . import data, hiding, home, live, sessions
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 VENDOR = [os.path.join(_VENDOR_DIR, n) for n in ("marked.min.js", "purify.min.js")]
-TERMINAL = [os.path.join(_VENDOR_DIR, n) for n in ("xterm.js", "addon-fit.js", "xterm.css")]
+TERMINAL = [os.path.join(_VENDOR_DIR, n) for n in ("xterm.js", "addon-fit.js", "addon-webgl.js", "xterm.css")]
 LLM_SECONDS = 10.0          # how long the Gatherer's call log is reused before it is read again
 KEEPALIVE = 15.0            # the most a stream stays silent
 COALESCE = 0.03             # after a wake, how long to wait for the rest of a burst (a call stores many events)
@@ -277,7 +278,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     sid = str(body.get("session_id") or "")
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
                         sid = started.adopt(str(body["gatherer"]), str(body["channel"]))["session_id"]
-                    return self.answer(started.terminal(sid, int(body.get("cols") or 120), int(body.get("rows") or 32)))
+                    return self.answer(started.terminal(sid, int(body.get("cols") or 120), int(body.get("rows") or 32),
+                                                         bool(body.get("fullscreen"))))
                 if url.path == "/api/terminal/input":
                     started.type(str(body.get("session_id") or ""), str(body.get("data") or ""))
                     return self.answer({})
