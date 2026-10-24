@@ -277,7 +277,8 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 button.primary { background: var(--s1); border-color: var(--s1); color: #fff; }
 button.primary:hover { filter: brightness(1.06); background: var(--s1); }
 button:disabled { opacity: .5; cursor: default; }
-.agent .chat-badge { font-size: 10px; font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; line-height: 14px; margin-left: auto; }
+.agent .chat-icon { margin-left: auto; flex: none; display: inline-flex; color: var(--s1); }
+.agent .chat-icon.held { color: var(--axis); }
 .chat .chat-frame { height: calc(100vh - 400px); min-height: 280px; overflow-y: auto; }
 .chat .chat-frame.ctx { max-height: none; }
 .chat .chat-frame.term { padding-bottom: 12px; }
@@ -436,6 +437,15 @@ function hideIcon() {
     "stroke-width": 1.5, "stroke-linecap": "round" });
   svg.append(svgEl("path", { d: "M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z" }),
     svgEl("circle", { cx: 8, cy: 8, r: 2 }), svgEl("line", { x1: 2.5, y1: 13.5, x2: 13.5, y2: 2.5 }));
+  return svg;
+}
+// A speech bubble: the actor can be messaged from the page; struck through, it could be but another
+// process has it open.
+function chatIcon(held) {
+  const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 13, height: 13, "aria-hidden": "true", fill: "none", stroke: "currentColor",
+    "stroke-width": 1.5, "stroke-linecap": "round", "stroke-linejoin": "round" });
+  svg.append(svgEl("path", { d: "M2.5 4a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 13.5 4v5.5A1.5 1.5 0 0 1 12 11H7l-3 2.5V11a1.5 1.5 0 0 1-1.5-1.5z" }));
+  if (held) svg.append(svgEl("line", { x1: 2, y1: 14, x2: 14, y2: 2 }));
   return svg;
 }
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; a build
@@ -837,7 +847,9 @@ function agentRow(g, a) {
       el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: a.last_user_message || "No message yet" }),
       el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label }),
         el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
-        a.session ? el("span", { class: "chat-badge", text: "Chat", title: "Started from the dashboard" }) : null)));
+        !hasChat(a) ? null : a.chattable === false
+          ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
+          : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false)))));
 }
 async function select(g, c) {
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null;
