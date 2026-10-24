@@ -28,7 +28,8 @@ read whose context comes from another build than the agent's read before it: the
 history was replaced.
 
 A BACKGROUND TASK is one Claude Code started and went on without (`background`): a command run in the
-background, an agent, a monitor. Its tool's result says it started (STARTS); Claude Code tells the
+background, an agent, a monitor. Its tool's result says it started (STARTS) -- an agent that ended
+starts again when SendMessage resumes it (RESUMED); Claude Code tells the
 model it ended in a `<task-notification>` with a `<status>`, which reaches the gatherer with the next
 call -- an agent's end, as soon as it ends, by its report, handed back as a message from it (HANDBACK),
 its notification perhaps much later; an agent that stopped while background work of its own runs is
@@ -67,6 +68,7 @@ RUNNING, IDLE, CLOSED, BACKGROUND = "running", "idle", "closed", "background"
 STARTS = ((re.compile(r"Command running in background with ID: ([\w-]+)"), "command"),
           (re.compile(r"Async agent launched successfully\.[\s\S]*?\bagentId: ([\w-]+)"), "agent"),
           (re.compile(r"Monitor started \(task ([\w-]+)"), "monitor"))
+RESUMED = re.compile(r'\{[^\n]*?"resumedAgentId":\s*"([\w-]+)"')    # SendMessage's result, when it resumed an agent
 #: Its end: Claude Code's notification with a status (one without is a monitor's event), an agent's report
 #: handed back, or TaskStop's result.
 HANDBACK = re.compile(r'<agent-message from="([\w-]+)">\s*\[Subagent hand-back\]')
@@ -345,13 +347,14 @@ def status_of(alive: Optional[bool], over: bool, last: Optional[float], now: flo
     return RUNNING
 
 
-_BACKGROUND: Dict[str, dict] = {}   # database -> {row: the last row read, tasks: {channel: {id: task}}}
+_BACKGROUND: Dict[str, dict] = {}   # database -> {row: the last row read, tasks: {channel: {id: task}}}, ended ones
+                                    # kept (`open` False): an agent resumed is the same task, its file the same
 _BACKGROUND_LOCK = threading.Lock()
 BACKGROUND_SCAN = ("SELECT e.row_id, e.{ch} AS ch, t.name AS type, e.text, e.payload_json, e.inserted_at FROM events e "
                    "JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.row_id > ? AND e.row_id <= ? "
                    "AND e.{ch} IS NOT NULL AND ((t.name = 'tool_output' AND (e.text LIKE 'Command running in background%' "
                    "OR e.text LIKE 'Async agent launched%' OR e.text LIKE 'Monitor started (task %' "
-                   "OR e.text LIKE '%Successfully stopped task: %')) "
+                   "OR e.text LIKE '%Successfully stopped task: %' OR e.text LIKE '{{%\"resumedAgentId\"%')) "
                    "OR (t.name IN ('context', 'user_message') AND (e.text LIKE '%<task-notification>%' "
                    "OR e.text LIKE '%[Subagent hand-back]%'))) ORDER BY e.row_id")
 
@@ -370,16 +373,24 @@ def _background(conn) -> Dict[str, List[dict]]:
             for r in conn.execute(BACKGROUND_SCAN.format(ch=CHANNEL), (seen["row"], top)):
                 _background_event(conn, seen["tasks"].setdefault(r["ch"], {}), r)
             seen["row"] = top
-        return {ch: [dict(t) for t in tasks.values()] for ch, tasks in seen["tasks"].items() if tasks}
+        out = {ch: [{k: v for k, v in t.items() if k != "open"} for t in tasks.values() if t["open"]]
+               for ch, tasks in seen["tasks"].items()}
+        return {ch: open_ for ch, open_ in out.items() if open_}
 
 
 def _background_event(conn, tasks: Dict[str, dict], r) -> None:
-    """One event of the scan, on its channel's open `tasks`: a start, an end, or a monitor's event."""
+    """One event of the scan, on its channel's `tasks`: a start, an end, or a monitor's event."""
     text = r["text"] or ""
     if r["type"] == "tool_output":
         stopped = STOPPED.match(text)
         if stopped:
-            tasks.pop(stopped.group(1), None)
+            _end(tasks, stopped.group(1))
+            return
+        resumed = RESUMED.match(text)
+        if resumed:                                  # an agent sent a message after it ended: it runs again
+            before = tasks.get(resumed.group(1)) or {"id": resumed.group(1), "kind": "agent", "output": None, "label": None}
+            tasks[before["id"]] = {**before, "open": True, "started": _seconds(r["inserted_at"]), "event": None, "event_at": None,
+                                   "label": _task_label(conn, r["ch"], r["row_id"], r["payload_json"]) or before["label"]}
             return
         for pattern, kind in STARTS:
             m = pattern.match(text)
@@ -387,29 +398,35 @@ def _background_event(conn, tasks: Dict[str, dict], r) -> None:
                 out = OUTPUT_FILE.search(text)
                 tasks[m.group(1)] = {"id": m.group(1), "kind": kind, "started": _seconds(r["inserted_at"]),
                                      "output": out.group(1) if out else None, "event": None, "event_at": None,
-                                     "label": _task_label(conn, r["ch"], r["row_id"], r["payload_json"])}
+                                     "label": _task_label(conn, r["ch"], r["row_id"], r["payload_json"]), "open": True}
                 return
         return
     for back in HANDBACK.finditer(text):             # an agent's report: it has ended
-        tasks.pop(back.group(1), None)
+        _end(tasks, back.group(1))
     for note in NOTIFICATION.finditer(text):
         found = TASK_ID.search(note.group(1))
         task = tasks.get(found.group(1)) if found else None
-        if task is None:
+        if task is None or not task["open"]:
             continue
         event = TASK_EVENT.search(note.group(1))
         if WAITING.search(note.group(1)):            # an agent stopped, its own background work running: not ended
             task["event"], task["event_at"] = "waiting on its own background work", _seconds(r["inserted_at"])
         elif TASK_STATUS.search(note.group(1)) or (event and MONITOR_END.match(event.group(1))):
-            tasks.pop(task["id"])                    # it ended: completed, failed, killed; a monitor expired
+            _end(tasks, task["id"])                  # it ended: completed, failed, killed; a monitor expired
         else:                                        # a monitor's event: it lives
             task["event"] = " ".join(event.group(1).split())[:200] if event else None
             task["event_at"] = _seconds(r["inserted_at"])
 
 
+def _end(tasks: Dict[str, dict], task_id: str) -> None:
+    if task_id in tasks:
+        tasks[task_id]["open"] = False
+
+
 def _task_label(conn, channel: str, row_id: int, payload_json: Optional[str]) -> Optional[str]:
     """What the tool call that started a task said it was for: its `description` (Bash, Agent, Monitor
-    take one), else the start of its command or prompt. None when the call is not found."""
+    take one; SendMessage, its `summary`), else the start of its command or prompt. None when the call
+    is not found."""
     try:
         blocks = (json.loads(payload_json) or {}).get("content") or []
         call_id = next(b.get("tool_use_id") for b in blocks if isinstance(b, dict) and b.get("tool_use_id"))
@@ -422,7 +439,7 @@ def _task_label(conn, channel: str, row_id: int, payload_json: Optional[str]) ->
             for b in (json.loads(raw) or {}).get("content") or []:
                 if isinstance(b, dict) and b.get("id") == call_id and isinstance(b.get("input"), dict):
                     given = b["input"]
-                    for k in ("description", "command", "prompt"):
+                    for k in ("description", "summary", "command", "prompt", "message"):
                         if isinstance(given.get(k), str) and given[k].strip():
                             return " ".join(given[k].split())[:160]
                     return b.get("name")

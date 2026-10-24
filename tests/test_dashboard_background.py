@@ -149,6 +149,23 @@ class BackgroundTest(unittest.TestCase):
         self.add([notice("a7f3", "completed")])                                    # the notification, later: nothing more
         self.assertEqual(self.actor([self.session()])["background"], [])
 
+    def test_an_agent_resumed_by_a_message_runs_again_until_it_reports(self):
+        out = self.output("a7f3")
+        self.add(subagent("t1", "a7f3", out) + [said("It runs."),
+                 asked('Another Claude session sent a message:\n<agent-message from="a7f3">\n[Subagent hand-back] Done.\n</agent-message>'),
+                 said("It reported.")])
+        self.assertEqual(self.actor([self.session()])["status"], data.IDLE)
+        self.add([asked("ask it to count again"),
+                  call("t2", "SendMessage", {"to": "a7f3", "summary": "Count again", "message": "Count to 100."}),
+                  result("t2", '{"success":true,"message":"Resuming agent a7f3","resumedAgentId":"a7f3","pin":{"id":"a7f3"}}'),
+                  said("Asked it.")])
+        a = self.actor([self.session()])
+        self.assertEqual(a["status"], data.BACKGROUND)
+        self.assertEqual([(t["id"], t["kind"], t["label"], t["output"]) for t in a["background"]], [("a7f3", "agent", "Count again", out)])
+        self.add([asked('Another Claude session sent a message:\n<agent-message from="a7f3">\n[Subagent hand-back] Counted.\n</agent-message>'),
+                  said("It counted.")])
+        self.assertEqual(self.actor([self.session()])["background"], [])
+
     def test_an_agent_waiting_on_its_own_background_work_has_not_ended(self):
         self.add(subagent("t1", "a7f3", self.output("a7f3")) + [said("It runs.")])
         self.add([notice("a7f3", "completed", waiting=True), said("It waits on its own work.")])
