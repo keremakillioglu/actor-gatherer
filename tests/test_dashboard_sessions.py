@@ -16,7 +16,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import data, server, sessions  # noqa: E402
+from ag_dashboard import data, hiding, server, sessions  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 # A fake `ag`: writes its arguments, then each message it is sent, to $FAKE_AG_LOG; answers each
@@ -247,6 +247,26 @@ class EndpointTest(SessionsBase):
             with self.assertRaises(urllib.error.HTTPError) as caught:
                 get(path)
             self.assertEqual(caught.exception.code, 404, path)
+
+    def test_a_gatherer_hidden_stays_hidden_for_every_dashboard_on_the_home(self):
+        self.assertEqual(json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))["hiding"], {})
+        self.assertEqual(self.post("/api/hiding", {"gatherer": "old", "choice": "hidden"}), (200, {"old": "hidden"}))
+        self.assertEqual(self.post("/api/hiding", {"gatherer": "quiet", "choice": "shown"}),
+                         (200, {"old": "hidden", "quiet": "shown"}))
+        other = server.serve("127.0.0.1", 0)         # another dashboard: a new port, its own page origin
+        threading.Thread(target=other.serve_forever, daemon=True).start()
+        try:
+            home = json.load(urllib.request.urlopen(f"http://127.0.0.1:{other.server_port}/api/home", timeout=10))
+            self.assertEqual(home["hiding"], {"old": "hidden", "quiet": "shown"})
+        finally:
+            other.shutdown()
+            other.server_close()
+        self.assertEqual(self.post("/api/hiding", {"gatherer": "old", "choice": ""}), (200, {"quiet": "shown"}))
+        self.assertEqual(data.home([])["hiding"], {"quiet": "shown"})      # snapshots carry it too
+        self.assertEqual(self.post("/api/hiding", {"gatherer": "old", "choice": "gone"})[0], 400)
+        self.assertEqual(self.post("/api/hiding", {"gatherer": "", "choice": "hidden"})[0], 400)
+        self.assertEqual(self.post("/api/hiding", {"gatherer": "x", "choice": "hidden"}, {"Origin": "https://evil.example"})[0], 403)
+        self.assertEqual(hiding.stored(), {"quiet": "shown"})
 
     def test_what_it_refuses(self):
         self.assertEqual(self.post("/api/gatherers", {"name": "x"}, {"Origin": "https://evil.example"})[0], 403)

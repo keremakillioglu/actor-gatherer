@@ -42,7 +42,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from . import home as paths
-from . import sessions
+from . import hiding, sessions
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
@@ -129,9 +129,10 @@ def _hook_servers() -> List[dict]:
 
 def home(started: Optional[List[dict]] = None) -> dict:
     """Every gatherer and its agents, each newest created first (`created`: its first event), and
-    the hook servers ag started. `started` is the sessions started from the page (sessions.py's
-    `list`; else its table, read): each one's agent carries it as `session`, and one with no events
-    yet -- its gatherer perhaps not made yet -- is listed all the same."""
+    the hook servers ag started, and which gatherers the reader hid or kept (`hiding`, hiding.py).
+    `started` is the sessions started from the page (sessions.py's `list`; else its table, read):
+    each one's agent carries it as `session`, and one with no events yet -- its gatherer perhaps
+    not made yet -- is listed all the same."""
     now = time.time()
     gatherers = []
     for name in gatherer_names():
@@ -153,7 +154,7 @@ def home(started: Optional[List[dict]] = None) -> dict:
         g["created"] = min((a["created"] for a in g["agents"] if a.get("created")), default=None) or _made(g["name"])
     gatherers.sort(key=lambda g: g.get("created") or 0, reverse=True)
     return {"home": paths.HOME, "now": now, "running_seconds": RUNNING_SECONDS, "gatherers": gatherers,
-            "hook_servers": _hook_servers()}
+            "hook_servers": _hook_servers(), "hiding": hiding.stored()}
 
 
 def _with_started(gatherers: List[dict], started: List[dict]) -> None:
