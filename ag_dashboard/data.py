@@ -14,8 +14,11 @@ database, opened read-only, and ag's own logs -- as plain JSON-ready dicts.
 
 An agent is a channel of a gatherer: one harness session (codex's thread, Claude Code's
 session, ...); which harness, its events' shape tells (`harness_of`). It is RUNNING when its last read is recent (RUNNING_SECONDS) or a build is
-running for it, else idle. A REBUILD is a read whose context comes from another build
-than the agent's read before it: the condensed history was replaced.
+running for it, else idle. Its `last` is its latest activity: a read, an event, or a pending
+answer (the reply that ends a turn, which no call stores until the user writes again) -- what
+the page compares with when the reader last looked at it, to show it FINISHED. A REBUILD is a
+read whose context comes from another build than the agent's read before it: the condensed
+history was replaced.
 
 Each read has these sizes: `sent_tokens`, ag's own count of everything it sent (what the
 read returned, `_read_items`, added up -- what read() breaks down); `preamble_tokens`, its
@@ -153,6 +156,10 @@ def _agents(conn, now: float) -> List[dict]:
         for r in conn.execute("SELECT channel_key AS ch, count(*) AS n FROM tasks GROUP BY channel_key"):
             if r["ch"] in out:
                 out[r["ch"]]["tasks"] = r["n"]
+    answered = {}                                    # each agent's newest pending answer: one no call has carried yet
+    if "_pending" in _tables(conn) and CHANNEL in _columns(conn, "_pending"):
+        answered = {ch: _seconds(t) for ch, t in conn.execute(
+            f"SELECT {CHANNEL}, max(received_at) FROM _pending WHERE {CHANNEL} IS NOT NULL GROUP BY {CHANNEL}")}
     building = _running_builds(conn)
     last_user = {}                                   # each agent's newest user message: what it was last asked
     for ch, text, payload in conn.execute(
@@ -163,7 +170,7 @@ def _agents(conn, now: float) -> List[dict]:
     for ch, a in out.items():
         a["harness"] = _harness(conn, ch)
         a["last_user_message"] = " ".join(last_user.get(ch, "").split())[:600] or None
-        a["last"] = max(a["last_read"] or 0, a["last_event"] or 0) or None
+        a["last"] = max(a["last_read"] or 0, a["last_event"] or 0, answered.get(ch) or 0) or None   # its latest activity
         a["building"] = ch in building
         a["running"] = a["building"] or bool(a["last_read"] and now - a["last_read"] < RUNNING_SECONDS)
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
