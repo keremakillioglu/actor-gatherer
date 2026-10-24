@@ -1,6 +1,6 @@
 """Pending events: what the model answered that no model call has carried back yet. The proxy hook
 keeps each answer of a session's own call, as events, in `_pending` with the call's properties; the
-next call with those properties stores its events -- the answer among them -- and deletes them. So a
+next call with those properties that stores new events -- the answer among them -- deletes them. So a
 reader of the gatherer sees the reply that ends a turn, which no call carries until the user writes
 again, without it ever being history twice."""
 import asyncio
@@ -91,6 +91,17 @@ class ServerTest(unittest.TestCase):
         self.ask(self.call(C1, [ask("count the rows")]), self.pend(C1),
                  dict(self.call(C1, [ask("count the rows"), REPLY]), op="context"))   # a suggestion's
         self.assertEqual(self.rows("SELECT count(*) FROM _pending"), [(0,)])
+
+    def test_a_call_that_stores_nothing_keeps_them(self):
+        """Claude Code's idle compaction sends the history before the reply, all of it stored: the
+        reply stays pending until the call that carries it back. (A compaction inserts as a context
+        call does, and then builds.)"""
+        self.ask(self.call(C1, [ask("count the rows")]), self.pend(C1),
+                 dict(self.call(C1, [ask("count the rows")]), op="context"))
+        self.assertEqual(self.rows("SELECT text FROM _pending"), [("There are 42 rows.",)])
+        self.ask(self.call(C1, [ask("count the rows"), REPLY, ask("and the columns?")]))
+        self.assertEqual(self.rows("SELECT count(*) FROM _pending"), [(0,)])
+        self.assertEqual(self.rows("SELECT count(*) FROM events WHERE text = 'There are 42 rows.'"), [(1,)])
 
     def test_a_pending_event_must_be_one(self):
         answer, = self.ask({"op": "pending", "gatherer": "g", "properties": C1, "events": [{"text": "x"}]})
