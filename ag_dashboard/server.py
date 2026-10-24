@@ -30,9 +30,13 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/terminal/input {session_id, data}       what was typed in it
     POST /api/terminal/resize {session_id, cols, rows}  its new size
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
+    GET /api/settings                     ag's settings, its config.toml (settings.py)
+    POST /api/settings/model {model, api_base?, key_env?}   the Gatherer's model, by `ag model` -> the settings
+    POST /api/settings/defaults {version, policy?, pollers?, gatherer?}   a new gatherer's defaults -> the settings
+    POST /api/settings/file {version, text}   config.toml as the reader edited it -> the settings
 
-The POSTs are the only writes, and only to the dashboard's own tables, the agents it runs, and the
-gatherers `ag new` makes:
+The POSTs are the only writes, and only to the dashboard's own tables, the agents it runs, the
+gatherers `ag new` makes, and ag's config.toml:
 the gatherers' databases are only read. They are taken from the dashboard's own page only
 (`own_page`), and the server listens on localhost unless told otherwise.
 
@@ -52,7 +56,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import data, hiding, home, live, sessions
+from . import data, hiding, home, live, sessions, settings
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -150,6 +154,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.terminal(q.get("session_id") or "")
                 if url.path == "/api/views":
                     return self.answer(home.view_names())
+                if url.path == "/api/settings":
+                    return self.answer(settings.read())
                 if url.path.startswith("/views/"):
                     path = home.view_file(url.path[len("/views/"):])
                     if path is None:
@@ -208,7 +214,10 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     if home or not woken:                # unwoken: the time alone may have changed it
                         out.append(("home", home_view()))
                     if agent and gatherer and channel is not None:
-                        out.append(("agent", data.agent(gatherer, channel, calls.get())))
+                        try:
+                            out.append(("agent", data.agent(gatherer, channel, calls.get())))
+                        except Exception as exc:  # noqa: BLE001 - the page shows it; the stream stays up
+                            out.append(("agent", {"error": f"{type(exc).__name__}: {exc}"}))
                     wrote = False
                     for name, value in out:
                         sig = _signature(value)
@@ -307,6 +316,17 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     kept = hiding.choose(str(body.get("gatherer") or ""), str(body.get("choice") or ""))
                     hub.ring(None)                       # every open page's list
                     return self.answer(kept)
+                if url.path == "/api/settings/model":
+                    opt = lambda k: None if body.get(k) is None else str(body[k])    # noqa: E731
+                    return self.answer(settings.set_model(str(body.get("model") or ""), opt("api_base"), opt("key_env")))
+                if url.path == "/api/settings/defaults":
+                    pollers = body.get("pollers")
+                    return self.answer(settings.set_defaults(
+                        str(body.get("version") or ""), None if body.get("policy") is None else str(body["policy"]),
+                        None if pollers is None else [str(p) for p in pollers] if isinstance(pollers, list) else [],
+                        None if body.get("gatherer") is None else str(body["gatherer"])))
+                if url.path == "/api/settings/file":
+                    return self.answer(settings.save_text(str(body.get("text") or ""), str(body.get("version") or "")))
                 return self.send(404, b"not found", "text/plain")
             except (sessions.SessionError, ValueError) as exc:
                 return self.send(400, json.dumps({"error": str(exc)}).encode(), "application/json")

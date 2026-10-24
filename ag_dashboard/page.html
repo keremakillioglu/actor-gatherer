@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ag dashboard</title>
+<title>ag agent manager</title>
 <style>
 :root {
   color-scheme: light;
@@ -57,12 +57,38 @@ header .about-btn:hover, header .about-btn[aria-expanded="true"] { color: var(--
 .state-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--axis); display: inline-block; flex: none; }
 .state-dot[data-state="live"] { background: var(--good); } .state-dot[data-state="error"] { background: var(--critical); }
 .state-dot[data-state="paused"] { background: var(--warning); }
-.about { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; width: 340px; background: var(--surface); border: 1px solid var(--ring);
-  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 12px 14px; font-size: 12px; display: grid; gap: 10px; }
+.about { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 90px); overflow: auto; background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 12px 14px; font-size: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; overflow-x: hidden; }
 .about[hidden] { display: none; }
 .about h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
 .about .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .about .live { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+/* ag's own settings, at the top of the panel; the file itself in a dialog over the page */
+.about h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--ring); padding-bottom: 4px; }
+.about .cfg, .about .cfg form, .about .cfg-more { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.about .cfg { gap: 12px; }
+.about .cfg label, .about .cfg-label { display: grid; gap: 3px; color: var(--ink-2); }
+.about .cfg input, .about .cfg select, .cfg-file textarea { font: inherit; font-size: 12px; color: var(--ink); background: var(--page);
+  border: 1px solid var(--ring); border-radius: 6px; padding: 4px 8px; min-width: 0; }
+.about .cfg .row input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.about .cfg-more summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.cfg-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ink); }
+.cfg-checks label { display: inline-flex !important; align-items: center; gap: 4px; }
+.cfg-note { color: var(--muted); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cfg-note.bad { color: var(--warning); } .cfg-note.err { color: var(--critical); }
+.cfg-harnesses { display: grid; gap: 2px; font-size: 11px; color: var(--ink-2); }
+.cfg-harnesses code, .about code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.cfg-path { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cfg-flag { color: var(--warning); }
+#cfg-edit { white-space: nowrap; flex: none; }
+.cfg-file { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 16px; }
+.cfg-file[hidden] { display: none; }
+.cfg-file-box { width: min(900px, 100%); height: min(85vh, 900px); background: var(--surface); border: 1px solid var(--ring); border-radius: 10px;
+  padding: 12px 14px; display: grid; grid-template-rows: auto 1fr auto; gap: 8px; }
+.cfg-file-box .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cfg-file-box h3 { margin: 0; font-size: 14px; }
+.cfg-file textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.45; resize: none; white-space: pre; tab-size: 4; }
+.cfg-file .err { color: var(--critical); font-size: 12px; }
 .about .servers { padding: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 /* the selected actor's controls: how its history is shown, and its details */
 /* they take the room right of the page's name, wrapping there when they need more */
@@ -398,12 +424,32 @@ button:disabled { opacity: .5; cursor: default; }
 <body>
 <header>
   <div class="brand">
-    <h1>ag dashboard</h1>
+    <h1>ag agent manager</h1>
     <div class="home" id="home"></div>
     <div class="about-wrap">
-      <button class="about-btn" id="about-btn" type="button" aria-expanded="false" aria-controls="about" title="The dashboard: live or paused, its theme, the terminal's screen, and ag's hook servers">
-        <span class="state-dot" id="state-dot"></span>Dashboard ▾</button>
+      <button class="about-btn" id="about-btn" type="button" aria-expanded="false" aria-controls="about" title="Settings: ag's, and this page's">
+        <span class="state-dot" id="state-dot"></span>Settings<span class="cfg-flag" id="cfg-flag" hidden>· no model set</span> ▾</button>
       <div class="about" id="about" hidden>
+        <section class="cfg" id="cfg" hidden>
+          <h3>ag</h3>
+          <form id="cfg-model"><h4>Gatherer model</h4>
+            <div class="row"><input id="cfg-model-name" list="cfg-models" placeholder="claude-code/sonnet" spellcheck="false" autocomplete="off" aria-label="Gatherer model">
+              <button class="primary" type="submit">Set</button></div>
+            <datalist id="cfg-models"><option value="claude-code/sonnet"><option value="claude-code/haiku"><option value="claude-code/opus">
+              <option value="codex/gpt-5-mini"><option value="gemini/gemini-3.8-flash"></datalist>
+            <details class="cfg-more"><summary>API base and key (LiteLLM models only)</summary>
+              <label>API base<input id="cfg-api-base" placeholder="the provider's own API" spellcheck="false"></label>
+              <label>Key variable<input id="cfg-key-env" placeholder="the provider's own, e.g. GEMINI_API_KEY" spellcheck="false"></label></details>
+            <div class="cfg-note" id="cfg-model-note"></div></form>
+          <form id="cfg-defaults"><h4>Gatherer defaults</h4>
+            <label>Policy<select id="cfg-policy"></select></label>
+            <div class="cfg-label">Pollers<span class="cfg-checks" id="cfg-pollers"></span></div>
+            <label title="[cli] gatherer: where `ag claude` files a run that names no --gatherer (&quot;.&quot;: one per session)"><span>Gatherer for <code>ag &lt;harness&gt;</code> runs</span><input id="cfg-gatherer" spellcheck="false" placeholder="default"></label>
+            <div class="row"><span class="cfg-note" id="cfg-defaults-note"></span><button type="submit">Save</button></div></form>
+          <div><h4>Harnesses</h4><div class="cfg-harnesses" id="cfg-harnesses"></div></div>
+          <div class="row"><span class="cfg-path" id="cfg-path"></span><button type="button" id="cfg-edit">Edit config.toml…</button></div>
+          <h3>This page</h3>
+        </section>
         <div><h4>Updates</h4>
           <div class="row"><span class="live"><span class="state-dot" id="state-dot-2"></span><span id="live" role="status"></span></span>
             <button id="pause" type="button" title="Stop updating this page; the agents and the server go on">Pause</button></div></div>
@@ -423,6 +469,15 @@ button:disabled { opacity: .5; cursor: default; }
 <div class="layout">
   <aside id="agents"></aside>
   <main id="main"><div class="empty">Loading…</div></main>
+</div>
+<!-- config.toml, edited over the whole page: outside the header, whose layer would keep it under the page -->
+<div class="cfg-file" id="cfg-file" hidden role="dialog" aria-modal="true" aria-labelledby="cfg-file-title">
+  <form class="cfg-file-box" id="cfg-file-form">
+    <div class="row"><h3 id="cfg-file-title">config.toml</h3><span class="cfg-path" id="cfg-file-path"></span></div>
+    <textarea id="cfg-file-text" spellcheck="false" aria-label="config.toml"></textarea>
+    <div class="row"><span class="err" id="cfg-file-err"></span>
+      <span><button type="button" id="cfg-file-cancel">Cancel</button> <button class="primary" type="submit">Save</button></span></div>
+  </form>
 </div>
 <!--VENDOR-->
 <script>
@@ -760,7 +815,7 @@ const setLive = (text) => {
   document.getElementById("live").textContent = text;
   const st = /^Live/.test(text) ? "live" : text === "Paused" ? "paused" : /^Not /.test(text) ? "error" : "";
   for (const id of ["state-dot", "state-dot-2"]) document.getElementById(id).dataset.state = st;
-  document.getElementById("about-btn").title = `${text}. The dashboard: live or paused, its theme, the terminal's screen, and ag's hook servers`;
+  document.getElementById("about-btn").title = `${text}. Settings: ag's, and this page's`;
 };
 // The dashboard's panel: opened by its button, closed by it again, by a click elsewhere, or by Esc.
 function setAbout(open) {
@@ -782,9 +837,96 @@ document.getElementById("theme").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-theme-pick]");
   if (b) setTheme(b.dataset.themePick, true);
 });
-document.getElementById("about-btn").addEventListener("click", () => setAbout(document.getElementById("about").hidden));
-document.addEventListener("click", (ev) => { if (!ev.target.closest(".about-wrap")) setAbout(false); });
-document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") setAbout(false); });
+document.getElementById("about-btn").addEventListener("click", () => {
+  const open = document.getElementById("about").hidden;
+  setAbout(open);
+  if (open) loadSettings().catch(() => {});
+});
+document.addEventListener("click", (ev) => { if (!ev.target.closest(".about-wrap, .cfg-file")) setAbout(false); });
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape") return;
+  if (!document.getElementById("cfg-file").hidden) { document.getElementById("cfg-file").hidden = true; return; }
+  setAbout(false);
+});
+
+// ------------------------------------------------------------------ ag's settings
+// ag's config.toml (settings.py): the Gatherer's model, set by `ag model`; a new gatherer's defaults; the
+// file itself. Read when the panel opens; on the first load with no model set, the panel opens by itself.
+let cfg = null;
+const $ = (id) => document.getElementById(id);
+function cfgNote(id, text, kind) { const n = $(id); n.textContent = text || ""; n.className = "cfg-note" + (kind ? " " + kind : ""); }
+function showSettings(s, said) {
+  cfg = s;
+  const env = s.env || {};
+  const unset = !s.llm.model && !env.AG_LLM_MODEL;
+  $("cfg-flag").hidden = !unset;
+  if (document.activeElement !== $("cfg-model-name")) $("cfg-model-name").value = s.llm.model;
+  $("cfg-api-base").value = s.llm.api_base; $("cfg-key-env").value = s.llm.key_env;
+  if (s.llm.api_base || s.llm.key_env) $("cfg-api-base").closest("details").open = true;
+  const notes = Object.entries(env).map(([k, v]) => `${k}=${v} is set for this dashboard and overrides the file here.`);
+  if (said) cfgNote("cfg-model-note", [said, ...notes].join("\n"));
+  else if (unset) cfgNote("cfg-model-note", "No model set: every Gatherer call fails until one is. A coding agent on its own login (claude-code/…, codex/…), or any LiteLLM provider/model.", "bad");
+  else cfgNote("cfg-model-note", notes.join("\n"));
+  const pol = $("cfg-policy");
+  pol.replaceChildren(...s.policies.available.map((p) => el("option", { value: p, text: p })));
+  pol.value = s.policies.default;
+  $("cfg-pollers").replaceChildren(...(s.pollers.available.length ? s.pollers.available.map((p) => el("label", {},
+    el("input", { type: "checkbox", value: p, ...(s.pollers.default.includes(p) ? { checked: "" } : {}) }), p))
+    : [el("span", { class: "cfg-note", text: "none available" })]));
+  $("cfg-gatherer").value = s.cli.gatherer;
+  $("cfg-defaults").querySelector("button").disabled = !s.exists;
+  if (!s.exists) cfgNote("cfg-defaults-note", "ag makes config.toml once the model is set, or on its first run.");
+  else if (s.error) cfgNote("cfg-defaults-note", "config.toml does not parse: " + s.error, "err");
+  else cfgNote("cfg-defaults-note", "");
+  const hs = Object.entries(s.cli.harnesses);
+  $("cfg-harnesses").replaceChildren(...(hs.length ? hs.map(([name, h]) => el("div", {}, el("code", { text: name }),
+    " runs ", el("code", { text: (Array.isArray(h.command) ? h.command : [name]).join(" ") }),
+    h.port ? ` · hook port ${h.port}` : "", h.upstream ? ` · upstream ${h.upstream}` : ""))
+    : [el("span", { class: "cfg-note", text: "ag writes them here the first time it runs a harness." })]));
+  $("cfg-path").textContent = s.path; $("cfg-path").title = s.path;
+}
+async function loadSettings() {
+  if (SNAPSHOT) return;
+  showSettings(await get("/api/settings"));
+}
+async function cfgSubmit(ev, note, run) {
+  ev.preventDefault();
+  const button = ev.target.querySelector("button[type=submit]");
+  button.disabled = true; cfgNote(note, "Saving…");
+  try { await run(); } catch (e) { cfgNote(note, e.message, "err"); } finally { button.disabled = false; }
+}
+$("cfg-model").addEventListener("submit", (ev) => cfgSubmit(ev, "cfg-model-note", async () => {
+  const got = await post("/api/settings/model", { model: $("cfg-model-name").value,
+    api_base: $("cfg-api-base").value, key_env: $("cfg-key-env").value });
+  showSettings(got, got.said);
+}));
+$("cfg-defaults").addEventListener("submit", (ev) => cfgSubmit(ev, "cfg-defaults-note", async () => {
+  showSettings(await post("/api/settings/defaults", { version: cfg.version, policy: $("cfg-policy").value || null,
+    pollers: [...$("cfg-pollers").querySelectorAll("input:checked")].map((b) => b.value), gatherer: $("cfg-gatherer").value }));
+  cfgNote("cfg-defaults-note", "Saved: new gatherers get these.");
+}));
+$("cfg-edit").addEventListener("click", async () => {
+  await loadSettings().catch(() => {});
+  if (!cfg) return;
+  $("cfg-file-text").value = cfg.text; $("cfg-file-path").textContent = cfg.path; $("cfg-file-err").textContent = "";
+  $("cfg-file").hidden = false;
+  const box = $("cfg-file-text"); box.focus(); box.setSelectionRange(0, 0); box.scrollTop = 0;
+});
+$("cfg-file-cancel").addEventListener("click", () => { $("cfg-file").hidden = true; });
+$("cfg-file").addEventListener("click", (ev) => { if (ev.target === $("cfg-file")) $("cfg-file").hidden = true; });
+$("cfg-file-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    showSettings(await post("/api/settings/file", { version: cfg.version, text: $("cfg-file-text").value }));
+    $("cfg-file").hidden = true;
+  } catch (e) { $("cfg-file-err").textContent = e.message; }
+});
+if (!SNAPSHOT) {
+  $("cfg").hidden = false;
+  loadSettings().then(() => {
+    if (cfg && !cfg.llm.model && !(cfg.env || {}).AG_LLM_MODEL) { setAbout(true); $("cfg-model-name").focus(); }
+  }).catch(() => {});
+}
 // Redraw the main view where the reader left it: the same tables open, the same lists scrolled.
 const atEnd = (n) => n.scrollHeight - n.scrollTop - n.clientHeight < 40;
 function keepingPlace(draw) {
