@@ -2628,6 +2628,7 @@ function termListen(sid) {
     if (!mine()) return;
     es.close(); term.es = null;
     if (ev.type === "exit") { term.exited = JSON.parse(ev.data).code; term.xterm.write("\r\n\x1b[2m[the session's process ended]\x1b[0m\r\n"); }
+    else if (term.exited === null) term.exited = -1;  // gone before it was listened to: ended all the same
     refresh();
   };
   es.addEventListener("exit", ended);
@@ -2664,7 +2665,7 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
     if (state.home && state.home.terminals === false)
       return el("div", { class: "xterm-cover" }, el("div", { class: "desc", text: "A terminal needs a Unix pseudo-terminal, which the dashboard's system does not have." }));
     const t = termFor(info.channel), running = !!(info.session && info.session.terminal);
-    if (running) termListen(info.channel);
+    if (running) { termListen(info.channel); t.tried = true; }   // seen open: once it ends (closed), not opened again here
     const open = !running && !held && !t.tried && hasChat(info);
     if (open) t.tried = true;
     requestAnimationFrame(() => {                      // drawn into the page: opened there once, then fitted to it
