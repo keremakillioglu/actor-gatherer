@@ -262,6 +262,15 @@ class TerminalTest(SessionsBase):
         self.assertTrue(self.session(sid)["terminal"])
         self.assertEqual(self.session(sid)["pid"], self.s.terms[sid].pid)
 
+    def test_a_terminal_asked_for_full_screen_runs_the_screen_its_settings_choose(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.assertFalse(self.session(sid)["fullscreen"])
+        with unittest.mock.patch.dict(os.environ, sessions.CLASSIC):             # the dashboard's own environment classic
+            self.s.terminal(sid, 100, 30, fullscreen=True)
+        self.until(lambda: "fake terminal" in self.screen(sid))
+        self.assertIn("fake terminal 100x30 tty=True term=xterm-256color alt=None", self.screen(sid))
+        self.assertTrue(self.session(sid)["fullscreen"])
+
     def test_what_is_typed_and_the_size_reach_it_and_what_it_prints_comes_back(self):
         sid = self.s.create("g", self.work)["session_id"]
         self.started(sid, 100, 30)

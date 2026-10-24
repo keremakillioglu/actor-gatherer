@@ -2093,6 +2093,25 @@ function xtermTheme() {
   return { ...XTERM_ANSI[css.colorScheme === "dark" ? "dark" : "light"], background: v("--term-bg"), foreground: ink, cursor: ink, cursorAccent: v("--term-bg") };
 }
 window.addEventListener("ag-theme", () => { if (term.xterm) term.xterm.options.theme = xtermTheme(); });
+// Claude Code's full screen, or its classic one (the default): chosen for the next terminal opened, kept in
+// the browser. Full screen scrolls by sending each wheel tick to Claude Code, which redraws; classic prints
+// into xterm's own scrollback, scrolled here.
+const FULLSCREEN_KEY = "ag-dashboard-term-fullscreen";
+let termFullscreen = (() => { try { return localStorage.getItem(FULLSCREEN_KEY) === "1"; } catch (e) { return false; } })();
+function fullscreenSwitch() {
+  const box = el("input", { type: "checkbox" });
+  box.checked = termFullscreen;
+  box.addEventListener("change", () => {
+    termFullscreen = box.checked;
+    try { localStorage.setItem(FULLSCREEN_KEY, termFullscreen ? "1" : "0"); } catch (e) { /* this page only */ }
+  });
+  return el("label", { title: "Claude Code's full screen instead of its classic one, for the next terminal opened" }, box, "Full screen");
+}
+// A mouse report for the pointer moving with no button held (SGR: ESC [ < b;x;y M, motion bit 32, button 3):
+// with any-motion tracking on, every move over the terminal is one, and each would share the one-at-a-time
+// input with the wheel. Claude Code is given clicks, drags and the wheel, not the bare moves.
+const BARE_MOVE = /\x1b\[<(\d+);\d+;\d+M/g;
+const dropBareMoves = (d) => d.includes("\x1b[<") ? d.replace(BARE_MOVE, (m, b) => ((b & 32) && (b & 3) === 3 ? "" : m)) : d;
 const term = { sid: null, xterm: null, fit: null, host: null, es: null, opened: false, exited: null, unsent: "", sending: false, error: "", tried: false };
 function termFor(sid) {
   if (term.sid === sid && term.xterm) return term;
@@ -2104,12 +2123,22 @@ function termFor(sid) {
   const host = el("div", { class: "xterm-host", id: "xterm-host", "data-refocus": "1" });
   host.agFocus = () => xterm.focus();
   Object.assign(term, { sid, xterm, fit, host, opened: false, exited: null, error: "", tried: false });
-  xterm.onData((d) => termType(sid, d));
+  xterm.onData((d) => { d = dropBareMoves(d); if (d) termType(sid, d); });
   xterm.onResize(({ cols, rows }) => {
     if (termRunning(sid)) post("/api/terminal/resize", { session_id: sid, cols, rows }).catch(() => {});
   });
   new ResizeObserver(() => { if (host.isConnected && host.clientWidth) { try { fit.fit(); } catch (e) { /* not shown yet */ } } }).observe(host);
   return term;
+}
+// Drawn with WebGL where the browser has it: far faster than the DOM when the whole screen is redrawn, as
+// full screen does on every scroll. Without it, or once its context is lost, the DOM draws.
+function termWebgl(t) {
+  if (!window.WebglAddon) return;
+  try {
+    const gl = new WebglAddon.WebglAddon();
+    gl.onContextLoss(() => gl.dispose());
+    t.xterm.loadAddon(gl);
+  } catch (e) { /* no WebGL here: the DOM draws */ }
 }
 function termDrop() {
   if (term.es) term.es.close();
@@ -2161,7 +2190,7 @@ async function termOpen(info) {
   t.error = ""; t.exited = null;
   try {
     await post("/api/terminal", { ...(info.session ? { session_id: info.session.session_id } : { gatherer: state.selected[0], channel: info.channel }),
-      cols: dims.cols, rows: dims.rows });
+      cols: dims.cols, rows: dims.rows, fullscreen: termFullscreen });
     t.xterm.reset();
   } catch (err) { t.error = err.message; }
   await refresh();
@@ -2182,7 +2211,7 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
     if (open) t.tried = true;
     requestAnimationFrame(() => {                      // drawn into the page: opened there once, then fitted to it
       if (!t.host.isConnected) return;
-      if (!t.opened) { t.xterm.open(t.host); t.opened = true; }
+      if (!t.opened) { t.xterm.open(t.host); t.opened = true; termWebgl(t); }
       try { t.fit.fit(); } catch (e) { /* not shown */ }
       if (open) termOpen(info);                        // the session's terminal, at the size it was just fitted to
     });
