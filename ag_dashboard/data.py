@@ -183,8 +183,8 @@ def _with_started(gatherers: List[dict], started: List[dict]) -> None:
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
         a["session"] = s
-        if a.get("holder") and a["holder"]["pid"] == s.get("pid"):
-            a["holder"]["dashboard"] = True          # the dashboard's own agent, mid-turn
+        if a.get("holder") and paths.runs_under(a["holder"]["pid"], s.get("pid")):
+            a["holder"]["dashboard"] = True          # the dashboard's own agent or terminal (or a process under it)
         a["created"] = min((x for x in (a["created"], _seconds(s["created_at"])) if x), default=None)
         if s["status"] in ("starting", "running") or s.get("queued"):   # its agent works, or a message waits for it
             a["status"], a["running"] = RUNNING, True
@@ -198,15 +198,16 @@ def _with_started(gatherers: List[dict], started: List[dict]) -> None:
 
 
 def chattable(a: dict) -> bool:
-    """Whether the page may message the agent: a Claude Code session (the only harness the dashboard
+    """Whether the page may message the agent: a Claude Code or codex session (the harnesses the dashboard
     runs), with a directory to resume it in, that no other process has open (its `holder`, else the
-    process its last call named) -- the dashboard's own agent aside."""
-    if a.get("harness") not in ("claude", None) or not (a.get("cwd") or a.get("session")):
+    process its last call named) -- the dashboard's own agent or terminal aside, and any process under it
+    (codex's real codex, under its wrapper)."""
+    if a.get("harness") not in (*sessions.HARNESSES, None) or not (a.get("cwd") or a.get("session")):
         return False
     held = a.get("holder")
     if held:
         return bool(held.get("dashboard"))
-    return a.get("alive") is not True or bool(a.get("session") and a["session"].get("pid") == a.get("pid"))
+    return a.get("alive") is not True or bool(a.get("session") and paths.runs_under(a.get("pid"), a["session"].get("pid")))
 
 
 def _agents(conn, now: float) -> List[dict]:

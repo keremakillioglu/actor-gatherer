@@ -200,7 +200,8 @@ class ChattableTest(unittest.TestCase):
         self.assertFalse(data.chattable({**base, "alive": True}))                            # its last call's process runs
         self.assertFalse(data.chattable({**base, "holder": {"pid": 9}}))
         self.assertTrue(data.chattable({**base, "holder": {"pid": 9, "dashboard": True}}))  # the dashboard's own
-        self.assertFalse(data.chattable({**base, "harness": "codex"}))
+        self.assertTrue(data.chattable({**base, "harness": "codex"}))                        # codex too
+        self.assertFalse(data.chattable({**base, "harness": "pi"}))
         self.assertFalse(data.chattable({"harness": "claude"}))                              # nowhere to resume it
 
 

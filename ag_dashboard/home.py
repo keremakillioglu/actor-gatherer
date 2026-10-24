@@ -80,6 +80,25 @@ def _boot_id() -> Optional[str]:
         return None
 
 
+def runs_under(pid, root) -> bool:
+    """Whether process `pid` is `root` or runs under it (Linux's /proc): a harness whose command is a
+    wrapper -- codex's `codex` starts the real codex as its child -- makes its calls from below the
+    process the dashboard started. False when either is not known, or it cannot be told."""
+    if not isinstance(pid, int) or not isinstance(root, int):
+        return False
+    for _ in range(16):
+        if pid == root:
+            return True
+        try:
+            with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as fh:
+                pid = int(fh.read().rsplit(")", 1)[1].split()[1])     # its parent
+        except (OSError, ValueError, IndexError):
+            return False
+        if pid <= 1:
+            return False
+    return False
+
+
 def process_alive(pid, started) -> Optional[bool]:
     """Whether the process ag recorded -- `pid`, started at `started` ("<boot id>:<start ticks>") --
     still runs: False when no process has that pid, or a later one does (another start, another

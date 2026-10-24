@@ -16,15 +16,17 @@ context manager's home (data.py), read-only. Standard library only.
         each time they change -- woken by ag's notifications or the fallback check (live.py) --
         and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle)
     GET /api/sessions                     the sessions started from the page (sessions.py)
+    GET /api/models?harness=H             the models a new session of H can run on (sessions.py's `models`)
     GET /api/terminal?session_id=S        server-sent events, until the page goes: what the session's
         terminal prints, `out` {data (base64), at (where it ends), reset (all that is kept: start over)},
         then `exit` {code} when its process ends; `none` when it has no terminal
     GET /api/views                        the reader's own chat views: <home>/dashboard/views/*.js, by name
     GET /views/<name>.js                  one of them, which the page loads (page.html: chat views)
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
-    POST /api/sessions {gatherer, cwd?, permission_mode?}  a new one -> the session
+    POST /api/sessions {gatherer, cwd?, permission_mode?, harness?, model?}  a new one (harness claude, the
+                                          default, or codex) -> the session
     POST /api/send {session_id, text}     a message to its agent -> the session
-    POST /api/send {gatherer, channel, text}  the same to a Claude Code session not started here,
+    POST /api/send {gatherer, channel, text}  the same to a Claude Code or codex session not started here,
                                           taken into the table first (sessions.py's `adopt`)
     POST /api/stop {session_id}           its agent, idle, ended -- or its terminal closed -> the session
     POST /api/terminal {session_id | gatherer, channel, cols, rows, fullscreen?}  the session opened in a
@@ -154,6 +156,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.answer(home_view())
                 if url.path == "/api/sessions":
                     return self.answer(started.list())
+                if url.path == "/api/models":
+                    return self.answer(sessions.models(q.get("harness") or ""))
                 if url.path == "/api/terminal":
                     return self.terminal(q.get("session_id") or "")
                 if url.path == "/api/views":
@@ -320,7 +324,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.answer(sessions.new_gatherer(str(body.get("name") or "")))
                 if url.path == "/api/sessions":
                     return self.answer(started.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
-                                                      str(body.get("permission_mode") or "auto")))
+                                                      str(body.get("permission_mode") or "auto"),
+                                                      str(body.get("harness") or "claude"), str(body.get("model") or "") or None))
                 if url.path == "/api/send":
                     sid = str(body.get("session_id") or "")
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
