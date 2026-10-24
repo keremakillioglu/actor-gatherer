@@ -1388,7 +1388,7 @@ function drawCharts() {
   const sizeHost = document.getElementById("size-chart");
   const series = [];
   if (reads.some((r) => typeof r.real_tokens === "number")) series.push({ field: "real_tokens", color: "var(--s1)", label: "provider's count" });
-  series.push({ field: "counted_tokens", color: "var(--s2)", label: "ag's own count" });
+  if (!series.length || !sizeHost || !("providerOnly" in sizeHost.dataset)) series.push({ field: "counted_tokens", color: "var(--s2)", label: "ag's own count" });
   if (sizeHost) lineChart(sizeHost, { reads, series, onPick: pick, picked: state.readId, height: +sizeHost.dataset.height || 220 });
 }
 // The row of type chips: which items the lists show, by message type. With counts, only the types present, counted.
@@ -2071,9 +2071,9 @@ addChatView({
       el("div", { class: "ctx-panel-head" },
         el("strong", { text: state.followLatest ? "Context size" : `Context size · read ${state.readId}` }),
         ctx && ctx.items ? el("span", { class: "sub", text: `${compact(ctx.real_tokens ?? ctx.tokens)} tokens ${state.followLatest ? "now" : "at that call"}` }) : null,
-        legend([...(hasReal ? [{ label: "Provider's count", color: "var(--s1)" }] : []), { label: "ag's own count", color: "var(--s2)" },
+        legend([hasReal ? { label: "Provider's count", color: "var(--s1)" } : { label: "ag's own count", color: "var(--s2)" },
           { label: "Rebuild", kind: "rule" }])),
-      el("div", { id: "size-chart", "data-height": "120", title: "Click a call to see its context" }),
+      el("div", { id: "size-chart", "data-height": "120", ...(hasReal ? { "data-provider-only": "" } : {}), title: "Click a call to see its context" }),
       ctx && ctx.items ? contextSplit(ctx, true) : null);
   },
 });
