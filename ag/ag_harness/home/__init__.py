@@ -65,6 +65,8 @@ import tomllib
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from ag.ag_tools.notify import LISTENERS
+
 from ..store import paths
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -464,7 +466,7 @@ class Home:
 
     def llm(self):
         """The LLM the policies call: llm_class(), built with whichever of these
-        its constructor takes -- api_base, api_key, log_dir, log_prompts, home,
+        its constructor takes -- api_base, api_key, log_dir, log_prompts, listeners, home,
         and [policies.llm]'s other keys (e.g. claude_command) -- and the model
         a policy's calls default to set on it.
 
@@ -479,7 +481,8 @@ class Home:
             key = "sk-local"                                 # a server of our own may want some key
         offered = {k: v for k, v in cfg.items() if k not in LLM_KEYS}
         offered.update(api_base=base, api_key=key, log_dir=os.path.join(self.root, "logs", "llm"),
-                       log_prompts=bool(cfg.get("log_prompts")), home=self.root)
+                       log_prompts=bool(cfg.get("log_prompts")), listeners=os.path.join(self.root, LISTENERS),
+                       home=self.root)
         cls = self.llm_class()
         try:
             params = inspect.signature(cls).parameters

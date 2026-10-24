@@ -23,7 +23,7 @@ from .calllog import CallLog
 
 class LiteLLMClient(LLM):
     def __init__(self, *, api_base: Optional[str] = None, api_key: Optional[str] = None,
-                 log_dir: Optional[str] = None, log_prompts: bool = False):
+                 log_dir: Optional[str] = None, log_prompts: bool = False, listeners: Optional[str] = None):
         """
         Args:
             api_base: a server to send every call to (a LiteLLM proxy, an
@@ -34,12 +34,14 @@ class LiteLLMClient(LLM):
                 characters) -- so a build can be priced and checked.
             log_prompts: also keep the system text and the prompt, whole, so
                 the log is a complete record of every call.
+            listeners: the home's listeners/ folder: each call logged is told
+                to them (ag/ag_tools/notify.py).
         """
         self.api_base = api_base or None
         self.api_key = api_key or None
         self.log_dir = log_dir
         self.log_prompts = log_prompts
-        self._calllog = CallLog(log_dir, log_prompts)
+        self._calllog = CallLog(log_dir, log_prompts, listeners)
 
     def route(self, model: str) -> str:
         """The model as LiteLLM is asked for it: "openai/<model>" for a server
