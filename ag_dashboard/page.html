@@ -953,10 +953,12 @@ function renderAgents() {
     if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
     // running first, then finished (not yet looked at), then idle, then closed; each in the order the
-    // data has them, newest created first, so an actor stays in its place, and moves only between them
+    // data has them, newest created first, so an actor stays in its place, and moves only between them --
+    // but closed, the latest active first: nothing moves there once closed
     const groupOf = (a) => ({ Building: "Running", Running: "Running", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
     const groups = ["Running", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
       .filter(([, list]) => list.length);
+    for (const [name, list] of groups) if (name === "Closed") list.sort((x, y) => (y.last || 0) - (x.last || 0));
     for (const [name, list] of open ? groups : []) {
       if (name === "Closed") {
         const shownClosed = closedOpen.has(g.name);
