@@ -43,7 +43,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from . import home as paths
-from . import hiding, sessions
+from . import avatars, hiding, sessions
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
@@ -957,8 +957,10 @@ def _llm_summary(calls: List[dict]) -> dict:
 
 def snapshot() -> dict:
     """Everything, for a page that stands alone (`ag dashboard --out`): the home, every
-    agent over time, and the last read's contents of each (by kind, and item by item)."""
-    h = home()
+    agent over time, and the last read's contents of each (by kind, and item by item); and the
+    avatars the actors were given (avatars.py), each picture inside it."""
+    pool = avatars.pictures()
+    h = avatars.attach(home(), avatars.stored(), pool)
     llm = llm_calls()
     agents, reads, contexts = {}, {}, {}
     for g in h["gatherers"]:
@@ -969,4 +971,8 @@ def snapshot() -> dict:
                 rid = detail["reads"][-1]["read_id"]
                 reads[f"{g['name']}\u0000{rid}"] = read(g["name"], rid)
                 contexts[f"{g['name']}\u0000{rid}"] = context(g["name"], rid)
-    return {"home": h, "agents": agents, "reads": reads, "contexts": contexts}
+    pictures = {}
+    for name in {a["avatar"] for g in h["gatherers"] for a in g["agents"] if a["avatar"]}:
+        with open(avatars.path(name), encoding="utf-8") as fh:
+            pictures[name] = fh.read()
+    return {"home": h, "agents": agents, "reads": reads, "contexts": contexts, "avatars": pictures}
