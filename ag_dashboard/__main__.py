@@ -1,8 +1,11 @@
 """`python -m ag_dashboard [--home DIR] [--host H] [--port N] [--out FILE]` (or `ag dashboard`):
-the page on localhost until interrupted, or, with --out, written to FILE with its data inside it."""
+the page on localhost until interrupted (Ctrl-C, SIGTERM or SIGHUP: each one stops it the same
+way, removing its socket in the home's listeners/), or, with --out, written to FILE with its
+data inside it."""
 
 import argparse
 import os
+import signal
 import sys
 from typing import List, Optional
 
@@ -32,13 +35,24 @@ def main(argv: Optional[List[str]] = None) -> int:
         f"a check of the files every {live.FALLBACK_SECONDS:g}s"
     print(f"dashboard: http://{args.host}:{httpd.server_port}/  (home {home.HOME}; live from {updates}; "
           f"Ctrl-C to stop)", file=sys.stderr)
+    stopping = {}
+    for name in ("SIGTERM", "SIGHUP"):             # a kill, a closed terminal: stopped as Ctrl-C stops it
+        sig = getattr(signal, name, None)          # (Windows has no SIGHUP)
+        if sig is not None:
+            stopping[sig] = signal.signal(sig, _interrupt)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         httpd.server_close()
+        for sig, before in stopping.items():
+            signal.signal(sig, before)
     return 0
+
+
+def _interrupt(signum, frame):
+    raise KeyboardInterrupt
 
 
 if __name__ == "__main__":
