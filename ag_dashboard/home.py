@@ -6,12 +6,15 @@ lays it out -- the dashboard's only knowledge of ag, which it never imports:
     logs/llm/*.json                      the Gatherer's model calls, one file each
     hook_server/<port>.json              each hook server ag started: pid, port, upstream
 
+and, of each read, the harness's process that made the call (`_reads.pid`, `pid_started`: the
+boot's id and the process's start in clock ticks, as /proc gives them), to tell whether it runs.
+
 HOME is a module attribute, so a test (or `--home`) can point it elsewhere."""
 
 import json
 import os
 import re
-from typing import List
+from typing import List, Optional
 
 HOME = os.path.abspath(os.path.expanduser(os.environ.get("AG_HOME") or "~/.ag"))
 
@@ -44,6 +47,31 @@ def _alive(pid) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _boot_id() -> Optional[str]:
+    try:
+        with open("/proc/sys/kernel/random/boot_id", encoding="ascii") as fh:
+            return fh.read().strip()
+    except OSError:
+        return None
+
+
+def process_alive(pid, started) -> Optional[bool]:
+    """Whether the process ag recorded -- `pid`, started at `started` ("<boot id>:<start ticks>") --
+    still runs: False when no process has that pid, or a later one does (another start, another
+    boot); None when it cannot be told (nothing recorded, no /proc)."""
+    if not isinstance(pid, int) or not isinstance(started, str) or not os.path.isdir("/proc"):
+        return None
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as fh:
+            fields = fh.read().rsplit(")", 1)[-1].split()
+    except OSError:
+        return False
+    boot = _boot_id()
+    if boot is None or len(fields) < 20:
+        return None
+    return started == f"{boot}:{fields[19]}"
 
 
 def hook_servers() -> List[dict]:

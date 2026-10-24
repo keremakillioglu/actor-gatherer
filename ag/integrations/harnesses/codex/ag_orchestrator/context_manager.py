@@ -136,7 +136,8 @@ class CodexContextManager:
         messages, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
                                        cwd, items, self.adaptor, out=out,
                                        limit=getattr(request, "limit", None),
-                                       preamble=preamble_of({"instructions": body.get("instructions"), "tools": body.get("tools")}))
+                                       preamble=preamble_of({"instructions": body.get("instructions"), "tools": body.get("tools")}),
+                                       process=getattr(request, "process", None))
         self.log(gatherer, f"[{channel}] {note}")
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
         if messages is None or messages == items:

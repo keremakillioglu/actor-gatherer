@@ -101,6 +101,15 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((record["body_in"]["messages"], record["body_out"]["messages"]),
                          (["hi", "there"], ["HI", "THERE"]))
 
+    async def test_each_request_names_the_process_that_sent_it(self):
+        await self.client.post("/v1/chat", json={"model": "m", "messages": ["hi"]})
+        await self.client.post("/v1/chat", json={"model": "m", "messages": ["again"]})
+        from ag.integrations.tools.hook_server import peer
+        if not os.path.isdir("/proc/net"):
+            self.skipTest("no /proc: the process cannot be told")
+        me = peer.identity(os.getpid())                     # the test's client is this process
+        self.assertEqual([r.process for r in self.hook.seen[-2:]], [me, me])
+
     async def test_none_forwards_the_original_bytes(self):
         raw = b'{"model": "m",   "other": [1, 2]}'                                   # odd spacing, kept
         await self.client.post("/v1/chat", data=raw, headers={"Content-Type": "application/json"})

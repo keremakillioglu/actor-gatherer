@@ -13,8 +13,12 @@ database, opened read-only, and ag's own logs -- as plain JSON-ready dicts.
     history(gatherer, channel, a, b)  the agent's own events from row a to b: a task's messages
 
 An agent is a channel of a gatherer: one harness session (codex's thread, Claude Code's
-session, ...); which harness, its events' shape tells (`harness_of`). It is RUNNING when its last read is recent (RUNNING_SECONDS) or a build is
-running for it, else idle. Its `last` is its latest activity: a read, an event, or a pending
+session, ...); which harness, its events' shape tells (`harness_of`). Its STATUS (`status_of`):
+CLOSED when the harness's process that made its last call no longer runs; else IDLE when its turn
+is over -- its last answer ended without a tool call -- and RUNNING when it is not (waiting on a
+tool, or on the model). Where the process is not known (a call from before ag recorded it, not
+Linux), a turn left unfinished for more than STALE_SECONDS counts as over. `running` is RUNNING,
+or a build running for it. Its `last` is its latest activity: a read, an event, or a pending
 answer (the reply that ends a turn, which no call stores until the user writes again) -- what
 the page compares with when the reader last looked at it, to show it FINISHED. A REBUILD is a
 read whose context comes from another build than the agent's read before it: the condensed
@@ -38,7 +42,14 @@ from typing import Any, Dict, List, Optional
 
 from . import home as paths
 
-RUNNING_SECONDS = 120          # a read this recent: the agent is running
+RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
+STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
+RUNNING, IDLE, CLOSED = "running", "idle", "closed"
+#: An answer's stop reason, as the provider gives it: the turn goes on (a tool to run, a paused
+#: turn), or is over. Any other (Codex's `completed` on every answer, none) tells nothing: its
+#: last event does.
+GOES_ON = {"tool_use", "pause_turn"}
+OVER = {"end_turn", "stop_sequence", "max_tokens", "refusal"}
 CHANNEL = "p_channel"          # the channel property's column (ag.ag_policies.tools.channel)
 
 
@@ -139,19 +150,26 @@ def _agents(conn, now: float) -> List[dict]:
                           f"WHERE {CHANNEL} IS NOT NULL GROUP BY {CHANNEL}"):
         out[r["ch"]] = {"channel": r["ch"], "events": r["n"], "created": _seconds(r["first"]), "last_event": _seconds(r["last"]), "reads": 0,
                         "last_read": None, "cwd": None, "tasks": 0, "est_tokens": None, "real_tokens": None,
-                        "limit_tokens": None, "sent_tokens": None}
+                        "limit_tokens": None, "sent_tokens": None, "pid": None, "alive": None}
     if CHANNEL in _columns(conn, "_reads"):
         for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, max(read_at) AS last FROM _reads "
                               f"GROUP BY {CHANNEL}"):
             if r["ch"] in out:
                 out[r["ch"]].update(reads=r["n"], last_read=_seconds(r["last"]))
-        cwd = "p_cwd" in _columns(conn, "_reads")
+        cols = _columns(conn, "_reads")
+        cwd = "p_cwd" in cols
+        process = [c for c in ("pid", "pid_started") if c in cols]
         for ch, a in out.items():
             last = conn.execute(f"SELECT {', '.join(['read_id'] + sizes + (['p_cwd'] if cwd else []))} FROM _reads "
                                 f"WHERE {CHANNEL} = ? ORDER BY read_id DESC LIMIT 1", (ch,)).fetchone()
             if last is not None:
                 a.update({k: last[k] for k in sizes}, cwd=last["p_cwd"] if cwd else None,
                          sent_tokens=_sent(conn, last["read_id"]))
+            if len(process) == 2:                    # the newest call that named its process
+                p = conn.execute(f"SELECT pid, pid_started FROM _reads WHERE {CHANNEL} = ? AND pid IS NOT NULL "
+                                 f"ORDER BY read_id DESC LIMIT 1", (ch,)).fetchone()
+                if p is not None:
+                    a["pid"], a["alive"] = p["pid"], paths.process_alive(p["pid"], p["pid_started"])
     if "tasks" in _tables(conn):
         for r in conn.execute("SELECT channel_key AS ch, count(*) AS n FROM tasks GROUP BY channel_key"):
             if r["ch"] in out:
@@ -167,13 +185,49 @@ def _agents(conn, now: float) -> List[dict]:
             f"WHERE t.name = 'user_message' AND e.row_id IN (SELECT max(e2.row_id) FROM events e2 "
             f"JOIN event_types t2 ON t2.event_type_id = e2.event_type_id WHERE t2.name = 'user_message' GROUP BY e2.{CHANNEL})"):
         last_user[ch] = (text if text else readable(payload)) or ""
+    tables = _tables(conn)
     for ch, a in out.items():
         a["harness"] = _harness(conn, ch)
         a["last_user_message"] = " ".join(last_user.get(ch, "").split())[:600] or None
         a["last"] = max(a["last_read"] or 0, a["last_event"] or 0, answered.get(ch) or 0) or None   # its latest activity
         a["building"] = ch in building
-        a["running"] = a["building"] or bool(a["last_read"] and now - a["last_read"] < RUNNING_SECONDS)
+        a["turn_over"] = turn_over(conn, ch, tables)[0]
+        a["status"] = status_of(a.get("alive"), a["turn_over"], a["last"], now)
+        a["running"] = a["building"] or a["status"] == RUNNING
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
+
+
+def turn_over(conn, channel: str, tables: set):
+    """(whether the channel's turn is over, the time of what says so): from its pending answer --
+    its stop reason (GOES_ON / OVER), else its last event: an assistant message ends a turn, a tool
+    call does not -- else, with none pending, from its newest stored event: an assistant message
+    (a turn stored whole), or else not (a user message or a tool's output: the model is answering)."""
+    if "_pending" in tables and CHANNEL in _columns(conn, "_pending"):
+        stop = "stop" in _columns(conn, "_pending")
+        last = conn.execute(f"SELECT type, received_at{', stop' if stop else ''} FROM _pending WHERE {CHANNEL} = ? "
+                            "ORDER BY pending_id DESC LIMIT 1", (channel,)).fetchone()
+        if last is not None:
+            why = last["stop"] if stop else None
+            over = False if why in GOES_ON else True if why in OVER else last["type"] == "agent_message"
+            return over, _seconds(last["received_at"])
+    last = conn.execute(f"SELECT t.name, e.inserted_at FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+                        f"WHERE e.{CHANNEL} = ? AND t.name NOT IN ('environment_update', 'context_stream') "
+                        "ORDER BY e.row_id DESC LIMIT 1", (channel,)).fetchone()
+    if last is None:
+        return True, None
+    return last[0] == "agent_message", _seconds(last[1])
+
+
+def status_of(alive: Optional[bool], over: bool, last: Optional[float], now: float) -> str:
+    """CLOSED, IDLE or RUNNING (module doc): `alive`, whether the harness's process runs (None:
+    not known); `over`, whether the turn is; `last`, when anything last happened for it."""
+    if alive is False:
+        return CLOSED
+    if over:
+        return IDLE
+    if alive is None and (last is None or now - last > STALE_SECONDS):
+        return IDLE
+    return RUNNING
 
 
 CODEX_TYPES = {"message", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output",

@@ -61,6 +61,7 @@ from typing import Any, Callable, Optional
 
 from aiohttp import ClientSession, ClientTimeout, web
 
+from . import peer
 from .trace import ModelTrace, response_of
 
 HOP = {"host", "content-length", "transfer-encoding", "connection", "content-encoding", "accept-encoding"}
@@ -79,6 +80,8 @@ class Request:
     limit: Optional[int] = None                 # the <n> of /l/<n>/..., if the URL had one
     upstream: Optional[str] = None              # where the request is forwarded (path_qs after it)
     state: dict = field(default_factory=dict)   # the hook's own, kept until its `measured` for this request
+    process: Optional[dict] = None              # who sent it: {"pid", "started"} of the harness's process
+                                                # (peer.py); None: not told (not Linux, not this machine)
 
 
 def route_of(path: str):
@@ -119,6 +122,19 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
     (e.g. http://127.0.0.1:4011)."""
     counter = itertools.count(1)
     trace = ModelTrace(trace_root) if trace_root else None
+    senders = {}                                # connection -> its process: found once, on its first request
+
+    def sender(request: web.Request) -> Optional[dict]:
+        transport = request.transport
+        if transport is None:
+            return None
+        at, me = transport.get_extra_info("peername"), transport.get_extra_info("sockname")
+        key = (id(transport), tuple(at) if isinstance(at, (tuple, list)) else at)
+        if key not in senders or senders[key] is not None and not peer.alive(senders[key]):
+            if len(senders) > 1000:             # connections long closed
+                senders.clear()
+            senders[key] = peer.process_of(at, me)
+        return senders[key]
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
 
@@ -139,7 +155,7 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         except ValueError:
             body = None                                    # not JSON (e.g. compressed): as it is
         given = Request(request.method, path_qs.split("?", 1)[0], label, dict(request.headers), body, limit,
-                        upstream=upstream)
+                        upstream=upstream, process=sender(request))
         try:
             new = await _call(hook, given)
         except Exception as exc:  # noqa: BLE001 - a failing hook never blocks the call

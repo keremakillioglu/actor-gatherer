@@ -251,10 +251,12 @@ class Manager(ContextManager):
         return self._context(gatherer_id, row_id, properties)[0].items
 
     def _context(self, gatherer_id: str, row_id: int, properties: Optional[dict],
-                 limit: Optional[int] = None, preamble: Optional[List[dict]] = None) -> Tuple[Context, Optional[int]]:
+                 limit: Optional[int] = None, preamble: Optional[List[dict]] = None,
+                 process: Optional[dict] = None) -> Tuple[Context, Optional[int]]:
         """(the policy's context, the read_id it was logged as; None: an empty context, not logged).
         `limit` is the harness's own limit the call stated (`Read.limit`); `preamble` what it sends
-        besides its messages ([{name, text}]), kept with the read."""
+        besides its messages ([{name, text}]), kept with the read, as is `process`, the harness's process
+        that made the call ({"pid", "started"})."""
         if not os.path.exists(db_path(gatherer_id)):
             return Context(), None
         self.poll(gatherer_id)
@@ -266,7 +268,7 @@ class Manager(ContextManager):
         if ctx.items:
             read_id = store.record_read(conn, properties, ctx.refs, manager=self.policy.name, basis=ctx.basis,
                                         row_id=row_id, est_tokens=ctx.tokens, limit_tokens=limit, preamble_ids=ids,
-                                        sent_tokens=self.sent_tokens(conn, ctx, preamble))
+                                        sent_tokens=self.sent_tokens(conn, ctx, preamble), process=process)
             notify(gatherer_id, "read", properties, read_id)
         return ctx, read_id
 
@@ -331,8 +333,8 @@ class Manager(ContextManager):
         return self.read_logged(gatherer_id, row_id, properties=properties)[0]
 
     def read_logged(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None,
-                    limit: Optional[int] = None, preamble: Optional[List[dict]] = None
-                    ) -> Tuple[List[dict], Optional[int], dict]:
+                    limit: Optional[int] = None, preamble: Optional[List[dict]] = None,
+                    process: Optional[dict] = None) -> Tuple[List[dict], Optional[int], dict]:
         """Not part of the interface: `read_events`, with the read_id the read
         was logged as (None: nothing returned, nothing logged) -- what the
         provider's count of the call is later recorded against (`record_real_tokens`) --
@@ -340,8 +342,8 @@ class Manager(ContextManager):
         policy budgets, its budget, and what it was built from), and "sent_tokens", all the call sends -- every
         item and the preamble -- as the provider counts it too. `limit` is the harness's
         own limit the call stated (`Read.limit`); `preamble`, what it sends besides its
-        messages ([{name, text}])."""
-        ctx, read_id = self._context(gatherer_id, row_id, properties, limit, preamble)
+        messages ([{name, text}]); `process`, the harness's process that made the call ({"pid", "started"})."""
+        ctx, read_id = self._context(gatherer_id, row_id, properties, limit, preamble, process)
         sizes = {"tokens": ctx.tokens, "budget": ctx.budget, "basis": ctx.basis}
         if not ctx.items:
             return [], None, sizes
