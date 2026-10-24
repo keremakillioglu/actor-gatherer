@@ -156,8 +156,6 @@ class AgentTest(SessionsBase):
             self.s.stop(sid)
         os.environ["FAKE_AG_DELAY"] = "0.4"
         self.s.send(sid, "one")
-        with self.assertRaises(sessions.SessionError):                      # its turn runs
-            self.s.stop(sid)
         self.until(lambda: self.s.agents.get(sid) and self.s.agents[sid].yielding)
         self.s.stop(sid)
         self.until(lambda: self.session(sid)["status"] == "stopped" and sid not in self.s.agents)
@@ -167,6 +165,22 @@ class AgentTest(SessionsBase):
         runs = [x["argv"] for x in self.logged() if "argv" in x and x["argv"][:1] == ["--gatherer"]]
         self.assertEqual(len(runs), 2)
         self.assertEqual(runs[1][runs[1].index("--resume") + 1], sid)
+
+    def test_an_agent_closed_mid_turn_is_cut_off_and_the_next_message_starts_it_again(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        os.environ["FAKE_AG_DELAY"] = "5"
+        self.s.send(sid, "one")
+        self.s.send(sid, "two")                                             # waits: dropped with the turn
+        self.until(lambda: os.path.exists(self.log) and {"message": "one"} in self.logged())   # its turn runs
+        self.s.stop(sid)
+        self.until(lambda: self.session(sid)["status"] == "stopped" and sid not in self.s.agents, timeout=3)
+        self.assertIsNone(self.session(sid)["last_error"])
+        self.assertEqual(self.session(sid)["turns"], 0)                    # no call through ag: nothing to resume
+        os.environ["FAKE_AG_DELAY"] = "0"
+        self.s.send(sid, "three")
+        self.until(lambda: self.session(sid)["turns"] == 1)
+        runs = [x["argv"] for x in self.logged() if "argv" in x and x["argv"][:1] == ["--gatherer"]]
+        self.assertEqual(runs[1][runs[1].index("--session-id") + 1], sid)
 
     def test_one_agent_takes_every_turn_and_a_message_waits_for_the_turn(self):
         os.environ["FAKE_AG_DELAY"] = "0.4"

@@ -552,10 +552,9 @@ function closeIcon() {
     svgEl("line", { x1: 10.2, y1: 5.8, x2: 5.8, y2: 10.2 }));
   return svg;
 }
-// Whether the dashboard's own agent holds the session between turns (no other process has it open), or
-// its terminal has it: it can be closed from the list.
-const closable = (a) => !SNAPSHOT && !!a.session && (a.session.terminal
-  || (a.session.status === "idle" && !(a.session.queued && a.session.queued.length)));
+// Whether the dashboard runs a process for the session -- its agent, mid-turn or not, or its terminal -- and
+// no process outside has it: it can be closed from the list.
+const closable = (a) => !SNAPSHOT && !!a.session && !!(a.session.terminal || a.session.pid) && a.chattable !== false;
 async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
   catch (err) { setLive(`Not closed: ${err.message}`); }
@@ -941,7 +940,7 @@ function renderAgents() {
         el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
           hideIcon()),
         SNAPSHOT ? null : el("button", { class: "act add", type: "button", title: `New session in ${g.name}`, "aria-label": `New session in ${g.name}`,
-          onclick: () => openForm(g.name) }, "+")));
+          onclick: () => addSession(g) }, "+")));
     if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
     // running first, then finished (not yet looked at), then idle, then closed; each in the order the
@@ -989,7 +988,7 @@ function agentRow(g, a) {
       el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: a.last_user_message || "No message yet" }),
       el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label }),
         el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
-        closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent)",
+        closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",
           "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); closeSession(a); },
           onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); closeSession(a); } } },
           closeIcon()) : null,
@@ -1033,29 +1032,39 @@ function gathererForm() {
   });
   return form;
 }
+// A gatherer's "+": a new session in the directory of its most recently active actor, at once; the form,
+// asking for a directory, only when no actor has one (or starting there failed).
+async function addSession(g) {
+  const last = g.agents.filter((a) => a.cwd).sort((x, y) => (y.last || 0) - (x.last || 0))[0];
+  if (!last || (state.adding && state.adding.gatherer === g.name)) return openForm(g.name);
+  try { await startSession(g.name, last.cwd); }
+  catch (e) { state.adding = { gatherer: g.name, cwd: last.cwd, error: e.message }; renderAgents(); }
+}
+// The new session shown in a terminal, opened there (the Terminal view opens it), where the terminal can be.
+async function startSession(gatherer, cwd) {
+  const s = await post("/api/sessions", { gatherer, cwd });
+  state.adding = null;
+  collapsed.delete(s.gatherer);
+  if (CHAT_VIEWS.has("terminal") && state.home.terminals !== false) { chatViewId = "terminal"; try { localStorage.setItem(CHAT_VIEW_KEY, "terminal"); } catch (e) { /* this page only */ } }
+  await select(s.gatherer, s.session_id);
+  const box = chatViewId === "terminal" ? null : document.getElementById("composer-text");
+  if (box) box.focus();
+}
 function newForm() {
   const fixed = state.adding.gatherer;
-  const cwd = el("input", { name: "cwd", value: state.home.cwd || "", spellcheck: "false" });
-  const mode = el("select", { name: "permission_mode" }, ...(state.home.permission_modes || ["auto"]).map((m) => el("option", { value: m, text: m })));
-  const err = el("div", { class: "err", role: "alert" });
+  const cwd = el("input", { name: "cwd", value: state.adding.cwd || state.home.cwd || "", spellcheck: "false" });
+  const err = el("div", { class: "err", role: "alert", text: state.adding.error || "" });
   const start = el("button", { type: "submit", class: "primary" }, "Start");
   const form = el("form", { class: "newform", "aria-label": "New session" },
     el("div", { class: "desc", text: `A new Claude Code session in ${fixed}` }),
     el("label", {}, "Working directory", cwd),
-    el("label", { title: "Claude Code's --permission-mode. auto: a classifier allows routine actions and refuses risky ones" }, "Permissions", mode),
     err,
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), start));
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     start.disabled = true; err.textContent = "";
-    try {
-      const s = await post("/api/sessions", { gatherer: fixed, cwd: cwd.value.trim(), permission_mode: mode.value });
-      state.adding = null;
-      collapsed.delete(s.gatherer);
-      await select(s.gatherer, s.session_id);
-      const box = document.getElementById("composer-text");
-      if (box) box.focus();
-    } catch (e) { err.textContent = e.message; start.disabled = false; }
+    try { await startSession(fixed, cwd.value.trim()); }
+    catch (e) { err.textContent = e.message; start.disabled = false; }
   });
   return form;
 }
@@ -2059,10 +2068,10 @@ addChatView({
 // ------------------------------------------------------------------ the Terminal view
 // The session in Claude Code's own UI: its interactive process, run by the dashboard in a
 // pseudo-terminal (sessions.py's `terminal`), drawn by xterm.js. The terminal keeps one node across
-// the tab's draws (moved, never made again), so what it shows, its scroll and its focus stay. It is
-// opened only when asked (a button): choosing the view does not start a process for every session
-// looked at. Once open it has the session -- the other views' message boxes type into it -- until it
-// is closed (the list's close button, or the view's) or exits.
+// the tab's draws (moved, never made again), so what it shows, its scroll and its focus stay. Showing a
+// session in the view opens its terminal, once each time the session is chosen: one that exits or fails
+// to open is not opened again until asked (a button). Once open it has the session -- the other views'
+// message boxes type into it -- until it is closed (the list's close button) or exits.
 // The terminal's colors: the page's terminal colors, and a 16-color palette for each theme made from them.
 const XTERM_ANSI = {
   dark: { black: "#3a3935", red: "#ff6b80", green: "#4eba65", yellow: "#e8b600", blue: "#7cb7ff", magenta: "#e58fb6", cyan: "#4fc1c9", white: "#c3c2b7",
@@ -2078,7 +2087,7 @@ function xtermTheme() {
   return { ...XTERM_ANSI[css.colorScheme === "dark" ? "dark" : "light"], background: v("--term-bg"), foreground: ink, cursor: ink, cursorAccent: v("--term-bg") };
 }
 window.addEventListener("ag-theme", () => { if (term.xterm) term.xterm.options.theme = xtermTheme(); });
-const term = { sid: null, xterm: null, fit: null, host: null, es: null, opened: false, exited: null, unsent: "", sending: false, error: "" };
+const term = { sid: null, xterm: null, fit: null, host: null, es: null, opened: false, exited: null, unsent: "", sending: false, error: "", tried: false };
 function termFor(sid) {
   if (term.sid === sid && term.xterm) return term;
   termDrop();
@@ -2088,7 +2097,7 @@ function termFor(sid) {
   xterm.loadAddon(fit);
   const host = el("div", { class: "xterm-host", id: "xterm-host", "data-refocus": "1" });
   host.agFocus = () => xterm.focus();
-  Object.assign(term, { sid, xterm, fit, host, opened: false, exited: null, error: "" });
+  Object.assign(term, { sid, xterm, fit, host, opened: false, exited: null, error: "", tried: false });
   xterm.onData((d) => termType(sid, d));
   xterm.onResize(({ cols, rows }) => {
     if (termRunning(sid)) post("/api/terminal/resize", { session_id: sid, cols, rows }).catch(() => {});
@@ -2099,7 +2108,7 @@ function termFor(sid) {
 function termDrop() {
   if (term.es) term.es.close();
   if (term.xterm) term.xterm.dispose();
-  Object.assign(term, { sid: null, xterm: null, fit: null, host: null, es: null, opened: false, exited: null, unsent: "" });
+  Object.assign(term, { sid: null, xterm: null, fit: null, host: null, es: null, opened: false, exited: null, unsent: "", tried: false });
 }
 const termRunning = (sid) => { const info = selectedInfo(); return !!(info && info.channel === sid && info.session && info.session.terminal); };
 // What is typed, to the process, in order: one request at a time (two at once could arrive swapped), and
@@ -2141,6 +2150,7 @@ function termListen(sid) {
 }
 async function termOpen(info) {
   const t = termFor(info.channel);
+  t.tried = true;
   const dims = (t.fit && t.fit.proposeDimensions()) || { cols: 120, rows: 32 };
   t.error = ""; t.exited = null;
   try {
@@ -2151,33 +2161,26 @@ async function termOpen(info) {
   await refresh();
   t.xterm.focus();
 }
-async function termClose(info) {
-  try { await post("/api/stop", { session_id: info.session.session_id }); } catch (err) { term.error = err.message; }
-  await refresh();
-}
 if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
   id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame",
   description: "Claude Code's own interface, in a terminal: what it would show and ask in one outside, its keys included.",
-  tools: ({ info }) => info.session && info.session.terminal
-    ? [el("button", { type: "button", onclick: () => termClose(info), title: "Close the terminal, as closing its window would" }, "Close terminal")] : [],
   render: (ctx) => {
     const { info, held } = ctx;
     if (state.home && state.home.terminals === false)
       return el("div", { class: "xterm-cover" }, el("div", { class: "desc", text: "A terminal needs a Unix pseudo-terminal, which the dashboard's system does not have." }));
     const t = termFor(info.channel), running = !!(info.session && info.session.terminal);
     if (running) termListen(info.channel);
+    else if (!held && !t.tried && hasChat(info)) { t.tried = true; requestAnimationFrame(() => termOpen(info)); }   // fitted first: at its size
     requestAnimationFrame(() => {                      // drawn into the page: opened there once, then fitted to it
       if (!t.host.isConnected) return;
       if (!t.opened) { t.xterm.open(t.host); t.opened = true; }
       try { t.fit.fit(); } catch (e) { /* not shown */ }
     });
     const cover = running ? null : el("div", { class: "xterm-cover" },
-      el("div", { class: "desc", text: held ? held
-        : (t.exited !== null ? "The terminal's process ended. " : "")
-          + "Open the session in Claude Code's own interface here. While the terminal is open it has the session: "
-          + "the other views' message boxes type into it." }),
-      held ? null : el("button", { type: "button", class: "primary", onclick: () => termOpen(info) },
-        info.session && info.session.status === "idle" ? "Open in terminal (ends the idle agent)" : "Open in terminal"),
+      el("div", { class: "desc", text: held || (!hasChat(info) ? "This session cannot be opened from the dashboard."
+        : t.exited !== null ? "The session's process ended." : t.error ? "The terminal did not open." : "Opening the terminal…") }),
+      held || !hasChat(info) || (!t.error && t.exited === null) ? null
+        : el("button", { type: "button", class: "primary", onclick: () => termOpen(info) }, "Open again"),
       t.error ? el("div", { class: "err", text: t.error }) : null);
     return [t.host, cover].filter(Boolean);
   },
