@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -746,7 +746,7 @@ function setAbout(open) {
   document.getElementById("about").hidden = !open;
   document.getElementById("about-btn").setAttribute("aria-expanded", open ? "true" : "false");
 }
-// Light, dark, or the system's: kept in this browser, the page follows the system until one is picked.
+// Light, dark, or the system's: kept in this browser, the page is dark until one is picked.
 const THEME_KEY = "ag-dashboard-theme";
 function setTheme(pick, keep) {
   if (pick !== "light" && pick !== "dark") pick = "system";
@@ -754,7 +754,7 @@ function setTheme(pick, keep) {
   for (const b of document.querySelectorAll("[data-theme-pick]")) b.setAttribute("aria-pressed", b.dataset.themePick === pick ? "true" : "false");
   if (keep) { try { localStorage.setItem(THEME_KEY, pick); } catch (e) { /* this page only */ } }
 }
-setTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })(), false);
+setTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })() || "dark", false);
 document.getElementById("theme").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-theme-pick]");
   if (b) setTheme(b.dataset.themePick, true);
