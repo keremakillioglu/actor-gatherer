@@ -10,7 +10,26 @@ leave the request as it is.
 What it decides, codex's own:
 
     a model call   a POST to .../responses whose `input` list holds a user
-                   message (the Responses API codex speaks); anything else: None
+                   message (the Responses API codex speaks); anything else: None.
+                   Codex says what each call is for in its turn metadata (the
+                   `x-codex-turn-metadata` header, else the body's `client_metadata`):
+                   `thread_source` user is the thread's own turn; any other is a
+                   side call of codex's own, in a thread of its own, and goes through
+                   as it is, nothing of it stored --
+        thread_title     a title for the thread, after its first message
+        system           a "catch-up" recap of the thread, its conversation pasted in
+        subagent         a subagent's thread (`parent_thread_id`): an agent it spawned,
+                         /review's reviewer; what it found reaches the thread as a message
+        guardian_review  the reviewer that approves an action for --approve-for-me
+        memory_consolidation  codex's memories, written in the background
+                   A call with no metadata (an older codex) is a turn.
+    a compaction   codex compacting its thread's history (/compact, or its own at
+                   its limit): `request_kind` compaction, its input ending with a
+                   `compaction_trigger` item. The gatherer builds in its place (the
+                   server's `compaction`: the history's events inserted, a build that
+                   closes the running task), and the call gets that context read only,
+                   the trigger after it, for the summary codex goes on from -- which
+                   ag does not store, holding the history itself (to_events.py)
     the thread     the `thread-id` header (then `session-id`, then the body's
                    `prompt_cache_key`), the same when a thread is resumed; none: None
     gatherer       the request's label (/h/<label>/ in the URL codex was pointed
@@ -30,10 +49,11 @@ to each gatherer's server.
 """
 
 import importlib
+import json
 import os
 import re
 import sys
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Tuple, Union
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
@@ -44,6 +64,9 @@ from ..adaptor.adaptor import CodexAdaptor
 CWD = re.compile(r"<cwd>\s*(.*?)\s*</cwd>", re.S)
 ROOT = re.compile(r"<workspace_roots>\s*<root>\s*(.*?)\s*</root>", re.S)
 ANSWERED = "codex_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
+METADATA = "x-codex-turn-metadata"   # codex's header (and client_metadata key) saying what a call is for
+TURN = "user"                         # the thread_source of a thread's own turn; any other is a side call
+TRIGGER = "compaction_trigger"        # a compaction call's last item, which codex requires last
 
 
 def load_adaptor(spec: str) -> Adaptor:
@@ -70,6 +93,39 @@ def thread_of(headers, body: dict) -> Optional[str]:
     """The codex thread id the request belongs to, or None."""
     lower = {k.lower(): v for k, v in (headers or {}).items()}
     return lower.get("thread-id") or lower.get("session-id") or body.get("prompt_cache_key") or None
+
+
+def metadata_of(headers, body: dict) -> dict:
+    """What codex says of the call (its turn metadata: thread_source, request_kind, parent_thread_id,
+    ...), from its header, else the body's client_metadata; {} when it says nothing."""
+    lower = {k.lower(): v for k, v in (headers or {}).items()}
+    raw = lower.get(METADATA) or ((body.get("client_metadata") or {}) if isinstance(body.get("client_metadata"), dict)
+                                  else {}).get(METADATA)
+    try:
+        found = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
+def side_call(metadata: dict) -> Optional[str]:
+    """The kind of codex's own side call this is (its thread_source: thread_title, system, subagent,
+    guardian_review, ...), or None: the thread's own turn -- a user source, or none said."""
+    source = metadata.get("thread_source")
+    if metadata.get("parent_thread_id") and source in (None, TURN):
+        source = "subagent"
+    return None if source in (None, TURN) else str(source)
+
+
+def compaction_split(metadata: dict, items: list) -> Optional[Tuple[list, list]]:
+    """(the history, the trigger) of a compaction call -- `request_kind` compaction, or an input ending
+    with a `compaction_trigger` -- else None."""
+    last = items[-1] if items else None
+    if isinstance(last, dict) and last.get("type") == TRIGGER:
+        return items[:-1], [last]
+    if metadata.get("request_kind") == "compaction":
+        return items, []
+    return None
 
 
 def texts_of(item) -> list:
@@ -129,8 +185,16 @@ class CodexContextManager:
             print("a model call with no thread id; request unchanged", file=sys.stderr, flush=True)
             return None
         gatherer, channel = (request.label, thread) if request.label else (thread, thread)
+        metadata = metadata_of(request.headers, body)
+        kind = side_call(metadata)
+        if kind is not None:
+            self.log(gatherer, f"[{channel}] codex's own {kind} call: as it is, not stored")
+            return None
         items, out = body["input"], {}
         cwd = cwd_of(items) or self.cwd
+        compaction = compaction_split(metadata, items)
+        if compaction is not None:
+            return await self.compaction(request, gatherer, channel, body, cwd, *compaction)
         if isinstance(getattr(request, "state", None), dict):
             request.state[ANSWERED] = (gatherer, channel, cwd)
         messages, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
@@ -143,6 +207,19 @@ class CodexContextManager:
         if messages is None or messages == items:
             return None                                   # nothing to change: codex's own bytes go through
         return dict(body, input=messages)
+
+    async def compaction(self, request, gatherer: str, channel: str, body: dict, cwd: Optional[str], history: list,
+                         trigger: list) -> Optional[dict]:
+        """A compaction call's body: the gatherer built in codex's place (the server's `compaction`), its
+        context read only, with codex's trigger after it (codex requires it last); None (codex's own)
+        when there is none."""
+        new, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd, history,
+                                  self.adaptor, limit=getattr(request, "limit", None), op="compaction",
+                                  preamble=preamble_of({"instructions": body.get("instructions"), "tools": body.get("tools")}))
+        self.log(gatherer, f"[{channel}] compaction: {note}")
+        if new is None:
+            return None
+        return dict(body, input=new + [dict(t) for t in trigger])
 
     async def measured(self, request, tokens: Optional[int]) -> None:
         """The hook server's report, once the answer is back: the call's input tokens, to the read."""

@@ -13,6 +13,12 @@ status or wrappers, which the API never shows the model. A reasoning item
 costs 0 tokens and has no text: its content is an encrypted blob, sent back
 to the model as it is, but nothing to read or count.
 
+After codex compacts its history, it starts its input again: its preamble re-sent
+under new ids, the user messages it kept, and its encrypted summary (a
+`compaction` item), then what comes after. None of that up to the summary is an
+event: the gatherer holds the history the summary stands for, and built in its
+place (the hook's `compaction`). Nor is the compaction call's own `compaction_trigger`.
+
 Codex item types are defined in codex-rs/protocol/src/models.rs
 (`ResponseItem`). Nothing of the context manager is imported here.
 """
@@ -182,6 +188,20 @@ def event(item) -> dict:
     return out
 
 
+#: Codex's summary of the history it compacted: what its input starts again from.
+COMPACTED = ("compaction", "compaction_summary", "context_compaction")
+TRIGGER = "compaction_trigger"   # the compaction call's last item: what asks for the summary
+
+
+def after_compaction(items: list) -> list:
+    """The items after codex's summary of its compacted history (`COMPACTED`) -- the last one, if any
+    is there -- with no compaction trigger: what is new since; all of them when it compacted nothing."""
+    at = max((i for i, item in enumerate(items) if isinstance(item, dict) and item.get("type") in COMPACTED),
+             default=-1)
+    return [item for item in items[at + 1:] if not (isinstance(item, dict) and item.get("type") == TRIGGER)]
+
+
 def to_events(items: list) -> List[dict]:
-    """The events codex's request items are, in order."""
-    return [event(item) for item in items]
+    """The events codex's request items are, in order: those after its summary of a compacted history
+    (`after_compaction`)."""
+    return [event(item) for item in after_compaction(items)]
