@@ -420,6 +420,107 @@ button:disabled { opacity: .5; cursor: default; }
 /* under the Transcript view's history: one terminal, the prompt its last lines */
 .chat .chat-frame.term:has(+ .term-prompt) { padding-bottom: 8px; }
 .chat .chat-frame.term + .term-prompt { margin-top: 0; border: 0; border-radius: 0; padding: 4px 18px 10px; }
+/* the Files view: a turn's files, each as the agent saw it (files.py) */
+.chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.files .fl-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }
+.files .fl-grid.open { grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
+.files .fl-grid:not(.open) .fl-talk { font-size: 13px; border-left: 0; }
+.files .fl-talk { position: relative; overflow: auto; border-left: 1px solid var(--ring); padding: 6px 0 24px; font-size: 12.5px; }
+.files .fl-turn { padding: 6px 12px 8px; border-bottom: 1px solid var(--ring); }
+.files .fl-turn.on { background: var(--selected); }
+.files .fl-user { display: flex; gap: 8px; width: 100%; text-align: left; background: var(--wash); border: 1px solid var(--ring);
+  border-radius: 6px; padding: 6px 8px; margin: 0; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink); cursor: pointer; }
+.files .fl-user:hover { border-color: var(--axis); } .files .fl-turn.on .fl-user { border-color: var(--s1); }
+.files .fl-user .n { flex: none; color: var(--muted); font: 11px/1.7 var(--mono); }
+.files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.files .fl-turn.on .fl-user .tx { -webkit-line-clamp: unset; }
+.files .fl-reply { margin: 4px 0 0 2px; color: var(--ink-2); overflow-wrap: anywhere; }
+.files .fl-reply > summary { display: flex; gap: 6px; margin: 0; font-size: 12.5px; cursor: pointer; list-style: none; }
+.files .fl-reply > summary::-webkit-details-marker { display: none; }
+.files .fl-reply > summary .dot { flex: none; color: var(--muted); font-size: 9px; line-height: 18px; }
+.files .fl-reply > summary .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .fl-reply > summary:hover .first { color: var(--ink); }
+.files .fl-reply[open] > summary .dot { color: var(--s1); }
+.files .fl-reply[open] > summary .first { display: none; }
+.files .fl-reply > .md { margin: -18px 0 4px 15px; }
+.files .fl-reply .md > :first-child { margin-top: 0; } .files .fl-reply .md > :last-child { margin-bottom: 0; }
+.files .fl-reply .md pre { overflow: auto; max-width: 100%; }
+.files .fl-none { margin: 4px 0 0 2px; color: var(--muted); font-style: italic; }
+.files .fl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ring); }
+.files .fl-sec { display: flex; flex-direction: column; min-height: 0; }
+.files .fl-sec.files-sec { flex: 3 1 0; } .files .fl-sec.cmds-sec { flex: 2 1 0; border-top: 1px solid var(--ring); }
+.files .fl-sec > .fl-h { flex: none; }
+.files .fl-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
+.files .fl-sec > .fl-legend { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--ring); }
+.files .fl-h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 10px 12px 4px; }
+.files .fl-dir { display: flex; align-items: center; gap: 4px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
+  padding: 3px 12px; font: 11.5px var(--mono); color: var(--ink-2); text-align: left; cursor: pointer; }
+.files .fl-dir:hover { background: var(--wash); }
+.files .fl-dir .tw { flex: none; width: 10px; color: var(--muted); font-size: 10px; }
+.files .fl-dir .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .fl-dir .n { flex: none; color: var(--muted); font-size: 10.5px; }
+.files .fl-file { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
+  padding: 3px 12px 3px 22px; text-align: left; cursor: pointer; font: 12px/1.5 var(--mono); color: var(--ink); }
+.files .fl-file:hover { background: var(--wash); } .files .fl-file.on { background: var(--selected); }
+.files .fl-file .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .badges { display: flex; gap: 3px; flex: none; }
+.files .fb { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.files .fl-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); }
+.files .fl-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.files .fl-cmd summary .k { display: inline-block; min-width: 18px; color: var(--muted); font: 10.5px var(--mono); }
+.files .fl-cmd-files { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.files .fl-cmd-files button { margin: 0; padding: 1px 6px; font: 11px var(--mono); background: var(--wash); border: 1px solid var(--ring); border-radius: 4px; color: var(--ink-2); cursor: pointer; }
+.files .fl-cmd-files button:hover { color: var(--ink); border-color: var(--axis); }
+.files .fl-cmd { display: flex; gap: 8px; padding: 2px 12px; font-size: 12px; }
+.files .fl-cmd .g { flex: none; font-size: 10px; line-height: 18px; }
+.files .fl-cmd .g.ok { color: var(--good); } .files .fl-cmd .g.err { color: var(--critical); }
+.files .fl-cmd .g.run { color: var(--warning); animation: term-blink 1s steps(2) infinite; }
+.files .fl-cmd details { min-width: 0; flex: 1; } .files .fl-cmd summary { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.files pre.call, .files pre.out { font: 11px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--wash);
+  border-radius: 4px; padding: 6px 8px; margin: 4px 0; max-height: 320px; overflow: auto; }
+.files .fl-pane { overflow: auto; min-width: 0; }
+.files .fv-h { position: sticky; top: 0; z-index: 1; background: var(--surface); padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--ring);
+  display: flex; align-items: center; gap: 8px; }
+.files .fv-h .fv-path { flex: 1; min-width: 0; }
+.files .fv-close { flex: none; background: none; border: 0; margin: 0; padding: 0 6px; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; border-radius: 4px; }
+.files .fv-close:hover { color: var(--ink); background: var(--wash); }
+.files .fv-path { font: 600 12.5px var(--mono); overflow-wrap: anywhere; }
+.files .fv-call { border-bottom: 1px solid var(--ring); }
+.files .fv-call > summary { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 6px 16px; font-size: 12.5px; cursor: pointer; list-style: none; }
+.files .fv-call > summary::-webkit-details-marker { display: none; }
+.files .fv-call > summary:hover { background: var(--wash); } .files .fv-call > summary:hover .via { color: var(--ink); }
+.files .fv-call > summary .tw { flex: none; width: 10px; color: var(--muted); font-size: 10px; }
+.files .fv-call[open] > summary .tw { transform: rotate(90deg); }
+.files .fv-call[open] { padding-bottom: 8px; }
+.files .fv-call .k { flex: none; min-width: 16px; color: var(--muted); font: 11px var(--mono); }
+.files .fv-call .kinds { flex: none; display: flex; gap: 3px; align-self: center; }
+.files .fv-call .via { flex: 1; min-width: 0; color: var(--ink-2); font-weight: 500; overflow-wrap: anywhere; }
+.files .fv-call .what { flex: none; color: var(--muted); font-size: 11.5px; }
+.files .fv-call.err .what { color: var(--critical); }
+.files .fv-cmd { margin: 0 16px 2px 58px; } .files .fv-cmd > summary { margin: 0; font-size: 11.5px; color: var(--muted); cursor: pointer; }
+.files .fv-cmd pre.call { margin: 4px 0; }
+.files .code { font: 12px/1.5 var(--mono); padding: 4px 0 0; }
+.files .code .sep { height: 6px; }
+.files .fv-img { display: block; margin: 4px 16px 0 58px; }
+.files .fv-img img { display: block; max-width: 100%; max-height: 70vh; border: 1px solid var(--ring); border-radius: 4px; background: #fff; }
+.files .code .sep:last-child { display: none; }
+.files .ln.ctx .tx { color: var(--muted); }
+.files .ln { display: grid; grid-template-columns: 56px 18px minmax(0, 1fr); padding-right: 12px; }
+.files .ln .no { text-align: right; color: var(--muted); padding-right: 10px; user-select: none; }
+.files .ln .mk { color: var(--muted); user-select: none; }
+.files .ln .tx { white-space: pre-wrap; overflow-wrap: anywhere; }
+.files .ln.add { background: color-mix(in srgb, var(--good) 15%, transparent); } .files .ln.add .mk { color: var(--good); }
+.files .ln.del { background: color-mix(in srgb, var(--critical) 15%, transparent); } .files .ln.del .mk { color: var(--critical); }
+.files .ln.hit .mk { color: var(--s4); font-weight: 700; }
+.files .ln.hit .tx { background: color-mix(in srgb, var(--s4) 14%, transparent); }
+.files .gap { color: var(--muted); font-size: 11px; padding: 1px 0 1px 74px; margin: 3px 0; background: var(--wash); }
+.files .fv-note { color: var(--muted); font-size: 12px; padding: 10px 16px 0; }
+.files .fv-block { margin: 10px 16px 0; } .files .fv-block .diff div { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--mono); padding: 0 6px; }
+.files .fv-block .diff .add { background: color-mix(in srgb, var(--good) 15%, transparent); }
+.files .fv-block .diff .del { background: color-mix(in srgb, var(--critical) 15%, transparent); }
+.files .fv-block .diff .ctx { color: var(--muted); }
+@media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
+@media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } }
 </style>
 </head>
 <body>
@@ -809,6 +910,7 @@ const mainSignature = () => {
   const info = selectedInfo();
   return signature([state.selected, state.agentVersion, state.readId, state.context && state.context.read_id, info && info.session,
     info && [info.chattable, info.holder], state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
+    chatFeed().signature ? chatFeed().signature() : null,
     state.details && state.detailsTab]);
 };
 // The page's state, small under its name: its dot green while live, amber paused, red on an error.
@@ -2184,6 +2286,7 @@ function notesSwitch() {
 //                                       // {row_id, name (its type), text, tokens, at, clipped};
 //                                       // "transcript", each event's parts as the Transcript view draws
 //                                       // them -- {row_id, type, at, parts: [{kind, role, text, ...}]};
+//                                       // "files", the turns and the picked turn's files (files.py);
 //                                       // or "none", for a view that is not the history (the Terminal)
 //     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own
 //     tools(ctx) { return [nodes] },    // optional: controls in the page's header (filters, switches)
@@ -2491,6 +2594,223 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
     return [t.host, cover].filter(Boolean);
   },
   composer: () => [],
+});
+
+// ------------------------------------------------------------------ the Files view
+// A turn's files instead of its conversation: each file the agent read, searched or changed in it, the
+// lines it saw at their numbers and its changes in place among them (files.py); the commands that were
+// not just reading a file listed under them. One turn at a time: the latest, followed, unless one is picked.
+const FILE_KINDS = { read: ["read", "var(--s1)"], hit: ["search hit", "var(--s4)"], edit: ["edited", "var(--s2)"],
+  write: ["written", "var(--s3)"] };
+let filesLoading = Promise.resolve();
+function loadFiles() {
+  filesLoading = filesLoading.then(loadFilesNow, loadFilesNow);
+  return filesLoading;
+}
+async function loadFilesNow() {
+  if (!state.selected || SNAPSHOT) return;
+  const [g, c] = state.selected, k = key(g, c);
+  if (!state.files || state.files.key !== k) state.files = { key: k, turn: null, sel: null, data: null };
+  const f = state.files, info = selectedInfo();
+  const cwd = (info && (info.cwd || (info.session && info.session.cwd))) || "";
+  const got = await get(`/api/files?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`
+    + `${f.turn === null ? "" : `&turn=${f.turn}`}&cwd=${encodeURIComponent(cwd)}`);
+  if (got.error || state.files !== f) return;
+  f.data = got;
+}
+CHAT_FEEDS.files = {
+  load: loadFiles,
+  data: () => state.files && state.selected && state.files.key === key(...state.selected) && state.files.data
+    ? { items: state.files.data.turns, pending: [], earlier: false } : null,
+  signature: () => state.files ? [state.files.key, state.files.turn, state.files.sel, signature(state.files.data)] : null,
+};
+async function setFilesTurn(n) {
+  if (!state.files || !state.files.data) return;
+  const last = state.files.data.turns.length - 1;
+  state.files.turn = n === null || n >= last ? null : Math.max(0, n);
+  state.files.sel = null;
+  await loadFiles();
+  keepingPlace(renderMain);
+}
+// Turns are picked in the conversation at the right; the header only offers going back to the latest.
+function filesTools() {
+  const d = state.files && state.files.data;
+  if (!d || !d.turns.length || state.files.turn === null) return [];
+  return [el("button", { type: "button", title: "Show the latest turn, and follow it", onclick: () => setFilesTurn(null) }, "Latest")];
+}
+// A call as its source shows it: a shell call's command, else its input.
+const callText = (call) => !call ? "" : call.input && typeof call.input === "object"
+  ? (typeof call.input.command === "string" ? call.input.command : JSON.stringify(call.input, null, 1)) : str(call.input);
+// A file, call by call: each call that touched it in the turn, in order, with what it did to the file --
+// the lines it read or found, or its change, at their line numbers.
+function fileView(f, rel, id) {
+  const box = el("div", { class: "fv" }, el("div", { class: "fv-h" }, el("div", { class: "fv-path", text: rel(f.path) }),
+    el("button", { type: "button", class: "fv-close", title: "Close the file", "aria-label": "Close the file",
+      onclick: () => { state.files.sel = null; keepingPlace(renderMain); } }, "×")));
+  f.sources.forEach((s, i) => {
+    const kinds = s.kinds.map((k) => k === "write" ? (s.blocks.some((b) => b.created) ? "created" : "written") : (FILE_KINDS[k] || [k])[0]);
+    // folded to its header until clicked; opened, what it did to the file, and its exact call behind "command"
+    const code = el("div", { class: "code" });
+    for (const b of s.blocks) code.append(...fileBlock(b));
+    if (s.error && !s.blocks.length) code.append(el("div", { class: "fv-note", text: "The call failed." }));
+    box.append(el("details", { class: "fv-call" + (s.error ? " err" : ""), id: `${id}-s${i}` },
+      el("summary", {}, el("span", { class: "tw", text: "▸" }), el("span", { class: "k", text: `${i + 1}` }),
+        el("span", { class: "kinds" }, ...s.kinds.map((k) => el("i", { class: "fb", style: `background: ${(FILE_KINDS[k] || [k, "var(--muted)"])[1]}` }))),
+        el("span", { class: "via", text: firstLine(s.via, 160) }),
+        el("span", { class: "what", text: kinds.join(", ") + (s.error ? " · failed" : "") })),
+      el("details", { class: "fv-cmd", id: `${id}-s${i}-c` }, el("summary", { text: "command" }), el("pre", { class: "call", text: callText(s.call) })),
+      code));
+  });
+  return box;
+}
+// One line of a file as a call saw it: its number (null: not known), a mark (+ − ›), its text.
+const fileLine = (n, cls, mark, text) => el("div", { class: "ln " + cls },
+  el("span", { class: "no", text: n === null || n === undefined ? "" : String(n) }), el("span", { class: "mk", text: mark }), el("span", { class: "tx", text }));
+const fileGap = (text) => el("div", { class: "gap", text });
+function fileBlock(b) {
+  const out = [];
+  const cut = () => { if (b.cut) out.push(fileGap(`+${plural(b.cut, "more line")} not shown`)); };
+  if (b.t === "lines") {
+    if (b.start === null) out.push(fileGap("where in the file is not known"));
+    b.lines.forEach((t, i) => out.push(fileLine(b.start === null ? null : b.start + i, "read", "", t)));
+    cut();
+  } else if (b.t === "hits") {
+    let prev = null;
+    for (const [n, t] of b.rows) {
+      if (prev !== null && n > prev + 1) out.push(fileGap("⋯"));
+      out.push(fileLine(n, "hit", "›", t));
+      prev = n;
+    }
+    cut();
+  } else if (b.t === "diff") {
+    if (b.at === null) out.push(fileGap("where in the file is not known: its lines were not seen"));
+    for (const [n, t] of b.above || []) out.push(fileLine(n, "ctx", "", t));
+    b.old.forEach((t, i) => out.push(fileLine(b.at === null ? null : b.at + i, "del", "−", t)));
+    b.new.forEach((t, i) => out.push(fileLine(b.at === null ? null : b.at + i, "add", "+", t)));
+    for (const [n, t] of b.below || []) out.push(fileLine(n, "ctx", "", t));
+    out.push(el("div", { class: "sep" }));
+  } else if (b.t === "write") {
+    b.lines.forEach((t, i) => out.push(fileLine(i + 1, "add", "+", t)));
+    cut();
+  } else if (b.t === "append") {
+    out.push(fileGap("added at the end of the file"));
+    b.lines.forEach((t) => out.push(fileLine(null, "add", "+", t)));
+    cut();
+  } else if (b.t === "image") {
+    const [g] = state.selected || [];
+    out.push(el("a", { class: "fv-img", target: "_blank", rel: "noopener",
+      href: `/api/image?gatherer=${encodeURIComponent(g)}&row_id=${b.row_id}&id=${encodeURIComponent(b.id)}` },
+      el("img", { alt: "the image the agent viewed", loading: "lazy",
+        src: `/api/image?gatherer=${encodeURIComponent(g)}&row_id=${b.row_id}&id=${encodeURIComponent(b.id)}` })));
+  } else if (b.t === "note") {
+    out.push(el("div", { class: "fv-note", text: b.text }));
+  }
+  return out;
+}
+function filesRender({ info, running }) {
+  const d = state.files && state.files.data;
+  if (!d) return el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" });
+  if (!d.turns.length) return [];
+  const t = d.turns[d.turn];
+  const cwd = (info.cwd || "").replace(/\/$/, "");
+  const rel = (p) => cwd && p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : p.replace(/^\/home\/[^/]+\//, "~/");
+  const sel = d.files.find((f) => f.path === state.files.sel) || null;   // none until one is clicked
+  const list = el("div", { class: "fl-scroll", "data-keep": "files-list" });
+  // the files as a tree of their folders: a folder with one child folder and no files shown as one
+  // ("ag_dashboard/vendor/"), each folder folded or opened (opened unless folded by a click)
+  const root = { dirs: new Map(), files: [] };
+  for (const f of d.files) {
+    const parts = rel(f.path).split("/"), name = parts.pop();
+    let node = root;
+    parts.forEach((p, i) => {
+      if (!node.dirs.has(p)) node.dirs.set(p, { dirs: new Map(), files: [], path: parts.slice(0, i + 1).join("/") });
+      node = node.dirs.get(p);
+    });
+    node.files.push([f, name]);
+  }
+  const fileRow = (f, name, depth) => el("button", { type: "button", class: "fl-file" + (f === sel ? " on" : ""), title: f.path,
+    style: `padding-left: ${12 + depth * 14}px`, "aria-pressed": f === sel ? "true" : "false",
+    onclick: () => { state.files.sel = f === sel ? null : f.path; keepingPlace(renderMain); } },   // again: closed
+    el("span", { class: "name", text: name }),
+    el("span", { class: "badges" }, ...f.kinds.map((k) => el("i", { class: "fb", style: `background: ${(FILE_KINDS[k] || [k, "var(--muted)"])[1]}`,
+      title: k === "write" && f.created ? "created" : (FILE_KINDS[k] || [k])[0] }))));
+  const folded = state.files.folded || (state.files.folded = new Set());
+  const grow = (node, into, depth) => {
+    for (const [name0, sub] of [...node.dirs].sort((x, y) => x[0].localeCompare(y[0]))) {
+      let name = name0, dir = sub;
+      while (!dir.files.length && dir.dirs.size === 1) {            // a chain of single folders: one row
+        const [n, next] = [...dir.dirs][0];
+        name += "/" + n; dir = next;
+      }
+      const count = (x) => x.files.length + [...x.dirs.values()].reduce((a, y) => a + count(y), 0);
+      const open = !folded.has(dir.path);
+      into.append(el("button", { type: "button", class: "fl-dir", title: dir.path, style: `padding-left: ${12 + depth * 14}px`,
+        "aria-expanded": open ? "true" : "false",
+        onclick: () => { open ? folded.add(dir.path) : folded.delete(dir.path); keepingPlace(renderMain); } },
+        el("span", { class: "tw", text: open ? "▾" : "▸" }), el("span", { class: "name", text: name + "/" }),
+        open ? null : el("span", { class: "n", text: `${count(dir)}` })));
+      if (open) grow(dir, into, depth + 1);
+    }
+    for (const [f, name] of node.files.sort((x, y) => x[1].localeCompare(y[1]))) into.append(fileRow(f, name, depth));
+  };
+  grow(root, list, 0);
+  if (!d.files.length) list.append(el("div", { class: "fv-note", text: running && d.turn === d.turns.length - 1
+    ? "No files yet in this turn." : "The agent touched no files in this turn." }));
+  // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one)
+  const cmds = el("div", { class: "fl-scroll", "data-keep": "files-cmds" });
+  d.commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
+    el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
+    el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), firstLine(c.text, 140)),
+      (c.files || []).length ? el("div", { class: "fl-cmd-files" }, ...c.files.map((p) => el("button", { type: "button", title: p,
+        onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, rel(p).split("/").pop()))) : null,
+      el("pre", { class: "call", text: callText(c.call) }), c.output ? el("pre", { class: "out", text: c.output }) : null))));
+  if (!d.commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
+  // two sections, each its own size and scrolling, each with the legend of its colours
+  const legend = (pairs) => el("div", { class: "fl-legend" }, ...pairs.map(([name, color]) =>
+    el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
+  const failed = d.commands.filter((c) => c.error).length;
+  const side = el("div", { class: "fl-side" },
+    el("section", { class: "fl-sec files-sec" },
+      el("div", { class: "fl-h", text: d.files.length ? plural(d.files.length, "file") : "No files" }), list,
+      legend(Object.values(FILE_KINDS))),
+    el("section", { class: "fl-sec cmds-sec" },
+      el("div", { class: "fl-h", text: plural(d.commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
+      legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])));
+  // the file view only while a file is picked: the files and the conversation have the page until then
+  const pane = sel ? el("div", { class: "fl-pane", "data-keep": "files-pane" }, fileView(sel, rel, `fl-${d.turn}-${d.files.indexOf(sel)}`)) : null;
+  return el("div", { class: "fl-grid" + (sel ? " open" : "") }, side, pane, filesTalk(d, running));
+}
+// The conversation, at the right: each of the user's messages a turn, the agent's replies under it.
+// Clicking a message shows its turn's files.
+let talkShown = null;
+function filesTalk(d, running) {
+  const box = el("div", { class: "fl-talk", "data-keep": "files-talk" });
+  for (const t of d.turns) {
+    const on = t.n === d.turn;
+    const live = running && t.n === d.turns.length - 1;
+    box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
+      el("button", { type: "button", class: "fl-user", "aria-pressed": on ? "true" : "false",
+        title: on ? "The turn shown" : "Show this turn's files", onclick: () => setFilesTurn(t.n) },
+        el("span", { class: "n", text: `${t.n + 1}` }), el("span", { class: "tx", text: t.text })),
+      ...(t.replies || []).map((r, i) => el("details", { class: "fl-reply", id: `fl-r-${t.n}-${i}` },   // folded: its first line
+        el("summary", { title: "Show the whole message" }, el("span", { class: "dot", text: "●" }), el("span", { class: "first", text: firstLine(r, 200) })),
+        markdown(r))),
+      !(t.replies || []).length ? el("div", { class: "fl-none", text: live ? "Working…" : "No reply in words." }) : null));
+  }
+  const at = `${state.files && state.files.key}:${d.turn}`;
+  if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick
+    const cur = document.querySelector(".fl-talk .fl-turn.on");
+    if (!cur) return;
+    talkShown = at;
+    cur.parentElement.scrollTop = cur.offsetTop;     // .fl-talk is its offset parent
+  });
+  return box;
+}
+addChatView({
+  id: "files", name: "Files", feed: "files", frame: "files",
+  description: "One turn at a time: the files the agent read, searched and changed, each with the lines it saw and its changes in place.",
+  tools: filesTools,
+  render: filesRender,
 });
 
 // What a view gets to draw with -- and, for one in a file of its own, how it adds itself.

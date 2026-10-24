@@ -8,6 +8,8 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/context?gatherer=G&read_id=N data.context(G, N)
     GET /api/history?gatherer=G&channel=C&from=A[&to=B]   data.history(G, C, A, B)
     GET /api/transcript?gatherer=G&channel=C[&after=A|&before=B]   data.transcript(G, C, A, B)
+    GET /api/files?gatherer=G&channel=C[&turn=N][&cwd=D]   files.files(G, C, N, D): a turn's files
+    GET /api/image?gatherer=G&row_id=R&id=I                files.image(G, R, I): the image call I's result holds
     GET /api/stream[?gatherer=G&channel=C]                 server-sent events, until the page goes:
         `home` (data.home()) and, with a channel, `agent` (data.agent(G, C)) at once, then again
         each time they change -- woken by ag's notifications or the fallback check (live.py) --
@@ -56,7 +58,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import data, hiding, home, live, sessions, settings
+from . import data, files, hiding, home, live, sessions, settings
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -177,6 +179,12 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.answer(data.transcript(q["gatherer"], q["channel"],
                                                        int(q["after"]) if "after" in q else None,
                                                        int(q["before"]) if "before" in q else None))
+                if url.path == "/api/files" and q.get("gatherer") and "channel" in q and q.get("turn", "0").isdigit():
+                    return self.answer(files.files(q["gatherer"], q["channel"],
+                                                   int(q["turn"]) if "turn" in q else None, q.get("cwd", "")))
+                if url.path == "/api/image" and q.get("gatherer") and q.get("row_id", "").isdigit() and q.get("id"):
+                    got = files.image(q["gatherer"], int(q["row_id"]), q["id"])
+                    return self.send(200, got[1], got[0]) if got else self.send(404, b"no image", "text/plain")
                 return self.send(404, b"not found", "text/plain")
             except Exception as exc:  # noqa: BLE001 - the page shows the error and keeps its last view
                 return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
