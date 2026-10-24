@@ -30,15 +30,38 @@
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--ring); background: var(--surface); position: sticky; top: 0; z-index: 2; }
-header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-header .home { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
-header .live { color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  height: 100vh; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--ring); background: var(--surface); flex: none; z-index: 2; }
+header h1 { font-size: 16px; margin: 0; font-weight: 600; white-space: nowrap; }
+/* the page's name and home, and under them, small, whether it is live (and its pause) */
+header .brand { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 12px; row-gap: 1px; flex: 0 1 auto; min-width: 0; }
+header .home { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* a small button under the name: the page's state at a glance (its dot), and a panel with the dashboard's own details */
+header .about-wrap { grid-column: 1 / -1; position: relative; justify-self: start; }
+header .about-btn { border: 0; background: none; padding: 0 4px 0 0; font-size: 11px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+header .about-btn:hover, header .about-btn[aria-expanded="true"] { color: var(--ink); background: none; }
+.state-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--axis); display: inline-block; flex: none; }
+.state-dot[data-state="live"] { background: var(--good); } .state-dot[data-state="error"] { background: var(--critical); }
+.state-dot[data-state="paused"] { background: var(--warning); }
+.about { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; width: 340px; background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 12px 14px; font-size: 12px; display: grid; gap: 10px; }
+.about[hidden] { display: none; }
+.about h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+.about .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.about .live { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+.about .servers { padding: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+/* the selected actor's controls: how its history is shown, and its details */
+/* they take the room right of the page's name, wrapping there when they need more */
+header .controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 0; min-width: 0; }
+header .controls:empty { visibility: hidden; }
+header .details-btn { display: inline-flex; align-items: center; gap: 6px; }
+header .details-btn[aria-expanded="true"] { background: var(--selected); border-color: transparent; }
 button { font: inherit; font-size: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 button:hover { background: var(--wash); }
-.layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: calc(100vh - 50px); }
-aside { border-right: 1px solid var(--ring); background: var(--surface); padding: 12px 0; overflow-y: auto; max-height: calc(100vh - 50px); position: sticky; top: 50px; }
+/* the page is the screen's height: the agent list and the chat each scroll in their own place */
+.layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); flex: 1; min-height: 0; }
+aside { border-right: 1px solid var(--ring); background: var(--surface); padding: 12px 0; overflow-y: auto; }
 aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
 .gatherer { padding: 6px 0 8px; border-top: 1px solid var(--grid); }
 .gatherer-row { display: flex; align-items: stretch; }
@@ -90,8 +113,8 @@ button.agent-group:hover { color: var(--ink-2); }
 .status.finished i { background: var(--s1); }
 .status.failed i { background: var(--critical); }
 .status.closed i { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
-.servers { padding: 0 16px; color: var(--ink-2); font-size: 12px; }
-main { padding: 20px; min-width: 0; }
+.servers { color: var(--ink-2); font-size: 12px; }
+main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relative; overflow: hidden; }
 .empty { color: var(--muted); padding: 40px; text-align: center; }
 .title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .title h2 { margin: 0; font-size: 18px; font-weight: 600; }
@@ -119,7 +142,8 @@ main { padding: 20px; min-width: 0; }
 .tooltip .row span { color: var(--ink-2); }
 .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 1100px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 760px) { .layout { grid-template-columns: minmax(0, 1fr); } aside { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--ring); } main { padding: 16px; } }
+@media (max-width: 760px) { body { height: auto; display: block; } .layout { display: block; } aside { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--ring); }
+  main { overflow: visible; } }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 td { padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
@@ -150,10 +174,6 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .task .messages { padding: 4px 0 10px 44px; }
 @media (max-width: 760px) { .tasks .thead { display: none; } .task > summary { grid-template-columns: 24px minmax(0, 1fr); }
   .task > summary > span:nth-child(n+3) { grid-column: 2; } .task .messages { padding-left: 0; } }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--ring); margin: -4px 0 16px; }
-.tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 14px; font-size: 13px; color: var(--ink-2); margin-bottom: -1px; }
-.tab:hover { background: var(--wash); }
-.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--s1); font-weight: 600; }
 .card-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .decomp { position: relative; margin: 6px 0 14px; display: grid; gap: 8px; }
 .drow { display: grid; grid-template-columns: 210px minmax(0, 1fr); align-items: center; gap: 12px; }
@@ -196,16 +216,13 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .warn { color: var(--ink-2); font-size: 12px; margin-top: 8px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .stale { opacity: .55; transition: opacity .2s; }
-/* The Transcript tab: the conversation as a terminal shows it -- dark in either theme */
-.term-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; color: var(--ink-2); }
-.term-bar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.term-bar .grow { flex: 1; }
+/* The Transcript view: the conversation as a terminal shows it -- dark in either theme */
 .term { --term-bg: #151514; --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #5c5a55; --term-user: #262522; --term-ok: #4eba65;
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #1f1e1c; --term-rule: #2e2d2a;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-link: #7cb7ff;
   background: var(--term-bg); color: var(--term-ink); border-radius: 10px; border: 1px solid var(--ring);
   font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 14px 18px 18px;
-  height: calc(100vh - 230px); min-height: 360px; overflow-y: auto; overflow-x: hidden; }
+  overflow-y: auto; overflow-x: hidden; }
 .term .blk { margin: 0 0 12px; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 4px; }
 .term .g { user-select: none; }
 .term .g.dot-ok { color: var(--term-ok); } .term .g.dot-err { color: var(--term-err); } .term .g.dot-run { color: var(--term-run); animation: term-blink 1s steps(2) infinite; }
@@ -264,7 +281,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .term .call-line .calls { border-left: 1px solid var(--term-rule); padding-left: 10px; margin-bottom: 8px; }
 .term .more > details[open] > summary { margin-bottom: 4px; }
 .term .empty-term { color: var(--term-faint); }
-@media (max-width: 760px) { .term { height: 70vh; padding: 10px 12px 14px; font-size: 12px; } }
+@media (max-width: 760px) { .term { padding: 10px 12px 14px; font-size: 12px; } }
 .aside-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 16px 6px; }
 .aside-head h2 { margin: 0; }
 .gatherer-row .act.add { font-size: 16px; }
@@ -283,13 +300,45 @@ button:disabled { opacity: .5; cursor: default; }
   margin-left: auto; border-radius: 4px; color: var(--muted); cursor: pointer; }
 .agent .close-btn + .chat-icon { margin-left: 0; }
 .agent .close-btn:hover, .agent .close-btn:focus-visible { color: var(--critical); background: var(--surface); }
-.chat .chat-frame { height: calc(100vh - 400px); min-height: 280px; overflow-y: auto; }
-.chat .chat-frame.ctx { max-height: none; }
+/* the chat: all of the main view -- its line on top, the history taking what is left, the message box at the bottom */
+.chat { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
+.chat .desc { color: var(--muted); font-size: 12px; padding: 10px 4px; }
+.chat .chat-frame { flex: 1; min-height: 120px; overflow-y: auto; }
+.chat .chat-frame.ctx { max-height: none; border: 0; padding: 0 16px; }
+.chat .chat-frame.term { border: 0; border-radius: 0; }
+/* the Context view's panel, under the message box: the size chart, and how the picked context divides */
+.ctx-panel { flex: none; border-top: 1px solid var(--ring); padding: 8px 16px 10px; }
+.ctx-panel-head { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+.ctx-panel-head .legend { margin: 0; }
+.ctx-panel .decomp { margin: 6px 0 0; gap: 6px; }
+/* the bars under the chart's plot: label column and gap as wide as its axis (lineChart's m.l, 48), as far from the right (m.r) */
+.ctx-panel .decomp { padding-right: 12px; }
+.ctx-panel .drow { grid-template-columns: 40px minmax(0, 1fr); gap: 8px; }
+.ctx-panel .dlabel { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ctx-panel-head .sub { color: var(--muted); }
+.ctx-panel .dbar { height: 18px; }
+.chat .composer, .chat .term-prompt, .chat .readonly, .chat .err { flex: none; }
+.chat .composer { margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--ring); }
+.chat .readonly { color: var(--muted); font-size: 12px; padding: 8px 16px; border-top: 1px solid var(--ring); }
+.chat > .err { color: var(--critical); font-size: 12px; padding: 6px 16px; }
+@media (max-width: 760px) { .chat .chat-frame { flex: none; height: 70vh; } header { flex-wrap: wrap; } header .controls { order: 5; } }
+/* Actor and Gatherer: a panel at the chat's right, the chat still live beside it; over it where the window is narrow */
+.drawer { flex: 0 0 min(55%, 760px); min-width: 0; background: var(--page);
+  border-left: 1px solid var(--ring); display: flex; flex-direction: column; }
+@media (max-width: 1250px) { .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(100%, 600px); box-shadow: -8px 0 24px rgba(0,0,0,.10); z-index: 3; } }
+.drawer-head { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--ring); background: var(--surface); flex: none; }
+.drawer-head .grow { flex: 1; }
+.drawer-head .close { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 8px; color: var(--muted); }
+.drawer-head .close:hover { color: var(--ink); background: var(--wash); }
+.drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+.drawer .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; font-size: 12px; margin: 0 0 16px; }
+.drawer .facts dt { color: var(--muted); } .drawer .facts dd { margin: 0; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+@media (max-width: 760px) { .drawer { position: fixed; inset: 0; width: auto; } }
 .chat .chat-frame.term { padding-bottom: 12px; }
 .chat .chat-frame.term .queued { color: var(--term-dim); border-color: var(--term-rule); padding-left: 22px; }
-.chat .chat-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 10px; font-size: 12px; color: var(--ink-2); }
-.chat .chat-tools .filters { margin: 0; }
-.chat .chat-tools label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.chat-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+.chat-tools .filters { margin: 0; }
+.chat-tools label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .views { display: inline-flex; border: 1px solid var(--ring); border-radius: 8px; padding: 2px; gap: 2px; }
 .views button { border: 0; border-radius: 6px; background: none; padding: 3px 10px; color: var(--ink-2); }
 .views button[aria-pressed="true"] { background: var(--selected); color: var(--ink); font-weight: 600; }
@@ -314,24 +363,34 @@ button:disabled { opacity: .5; cursor: default; }
 .term-prompt .foot { display: flex; justify-content: space-between; gap: 10px; color: var(--term-dim); font-size: 11px; padding: 4px 2px 0; }
 .term-prompt .foot .mode { color: var(--term-accent); }
 /* The Terminal view: Claude Code's own UI, drawn by xterm.js */
-.chat .chat-frame.xterm-frame { position: relative; overflow: hidden; background: #151514; border-radius: 10px;
-  border: 1px solid var(--ring); padding: 8px 4px 8px 10px; }
+.chat .chat-frame.xterm-frame { position: relative; overflow: hidden; background: #151514; padding: 8px 4px 8px 10px; }
 .xterm-host { position: absolute; inset: 8px 4px 8px 10px; }
 .xterm-host .xterm-viewport { background: #151514 !important; }
 .xterm-cover { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center;
   background: rgba(21, 21, 20, .82); color: #e8e6e0; font-size: 13px; padding: 20px; }
 .xterm-cover .desc { color: #b9b6ae; max-width: 46ch; }
 /* under the Transcript view's history: one terminal, the prompt its last lines */
-.chat .chat-frame.term:has(+ .term-prompt) { border-bottom: 0; border-radius: 10px 10px 0 0; padding-bottom: 8px; }
-.chat .chat-frame.term + .term-prompt { margin-top: 0; border: 1px solid var(--ring); border-top: 0; border-radius: 0 0 10px 10px; padding: 4px 18px 10px; }
+.chat .chat-frame.term:has(+ .term-prompt) { padding-bottom: 8px; }
+.chat .chat-frame.term + .term-prompt { margin-top: 0; border: 0; border-radius: 0; padding: 4px 18px 10px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>ag dashboard</h1>
-  <div class="home" id="home"></div>
-  <div class="live" id="live"></div>
-  <button id="pause" type="button">Pause</button>
+  <div class="brand">
+    <h1>ag dashboard</h1>
+    <div class="home" id="home"></div>
+    <div class="about-wrap">
+      <button class="about-btn" id="about-btn" type="button" aria-expanded="false" aria-controls="about" title="The dashboard: live or paused, and ag's hook servers">
+        <span class="state-dot" id="state-dot"></span>Dashboard ▾</button>
+      <div class="about" id="about" hidden>
+        <div><h4>Updates</h4>
+          <div class="row"><span class="live"><span class="state-dot" id="state-dot-2"></span><span id="live" role="status"></span></span>
+            <button id="pause" type="button" title="Stop updating this page; the agents and the server go on">Pause</button></div></div>
+        <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="controls" id="controls"></div>
 </header>
 <div class="layout">
   <aside id="agents"></aside>
@@ -351,10 +410,12 @@ const PREAMBLE = "Harness preamble", NOT_COUNTED = "Not counted by ag";
 const NOT_COUNTED_MIN = 50000;
 const uncounted = (n) => n > NOT_COUNTED_MIN ? n : 0;
 const GROUP_ORDER = [PREAMBLE, "Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages", NOT_COUNTED];
+const DETAILS_KEY = "ag-dashboard-details";   // which side of the details panel the reader last chose
 let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, stream: null,
-  tx: null,             // the Transcript tab's events, loaded as they come: {key, items, pending, first_row, last_row, earlier}
-  tab: (() => { try { const t = localStorage.getItem("ag-dashboard-tab"); return t === "gatherer" || t === "transcript" ? t : "actor"; } catch (e) { return "actor"; } })(),
-  chat: null,           // the Chat tab's messages: {key, items (stored, append-only), pending, last_row}
+  tx: null,             // the transcript feed's events, loaded as they come: {key, items, pending, first_row, last_row, earlier}
+  details: !!SNAPSHOT,  // the details panel open beside the chat: at first in a snapshot, which has no conversation
+  detailsTab: (() => { try { return localStorage.getItem(DETAILS_KEY) === "gatherer" ? "gatherer" : "actor"; } catch (e) { return "actor"; } })(),
+  chat: null,           // the history feed's messages: {key, items (stored, append-only), pending, last_row}
   adding: null };       // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
 
 // ------------------------------------------------------------------ helpers
@@ -419,8 +480,9 @@ function toggleType(type) {
   try { localStorage.setItem(SHOWN_KEY, JSON.stringify([...shownTypes])); } catch (e) { /* kept for this page only */ }
   keepingPlace(renderMain);
 }
-const GROUP_COLORS = { [PREAMBLE]: "var(--s8)", [NOT_COUNTED]: "var(--axis)" };
-const color = (group) => GROUP_COLORS[group] || `var(--s${GROUP_ORDER.indexOf(group) || 6})`;
+const GROUP_COLORS = { [PREAMBLE]: "var(--s8)", [NOT_COUNTED]: "var(--axis)", "Gatherer guide": "var(--t-gatherer)" };
+// a group GROUP_ORDER does not name (or its first, index 0) takes --s6: there is no --s-1
+const color = (group) => GROUP_COLORS[group] || `var(--s${GROUP_ORDER.indexOf(group) > 0 ? GROUP_ORDER.indexOf(group) : 6})`;
 const usd = (v) => v === null || v === undefined ? "–" : v > 0 && v < 0.01 ? "<$0.01" : "$" + v.toFixed(2);
 const HARNESS = { codex: "Codex", claude: "Claude Code", pi: "Pi", opencode: "OpenCode" };
 const harnessName = (h) => HARNESS[h] || "Unknown harness";
@@ -460,6 +522,13 @@ function chatIcon(held) {
   if (held) svg.append(svgEl("line", { x1: 2, y1: 14, x2: 14, y2: 2 }));
   return svg;
 }
+// A circled "i": the details panel's button.
+function infoIcon() {
+  const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 14, height: 14, "aria-hidden": "true", fill: "none", stroke: "currentColor",
+    "stroke-width": 1.5, "stroke-linecap": "round" });
+  svg.append(svgEl("circle", { cx: 8, cy: 8, r: 6.25 }), svgEl("line", { x1: 8, y1: 7.25, x2: 8, y2: 11.25 }), svgEl("circle", { cx: 8, cy: 4.9, r: .4, fill: "currentColor" }));
+  return svg;
+}
 // A circled cross: end the dashboard's own idle agent for a session, which then shows Closed.
 function closeIcon() {
   const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 12, height: 12, "aria-hidden": "true", fill: "none", stroke: "currentColor",
@@ -485,7 +554,7 @@ const sessionStatus = (s) => !s ? null : s.status === "starting" ? ["building", 
 const statusOf = (a) => sessionStatus(a.session) || (a.building ? ["building", "Building"]
   : (a.status ? a.status === "running" : a.running) ? ["running", "Running"]
   : unseen(a) ? ["finished", "Finished"] : a.status === "closed" ? ["closed", "Closed"] : ["idle", "Idle"]);
-// Whether an actor has a Chat tab: a session the page started, or any Claude Code session with a directory
+// Whether an actor can be messaged here: a session the page started, or any Claude Code session with a directory
 // to resume it in. Its message box works while no other process has it open (data.py's `chattable`).
 const hasChat = (a) => !!a && (!!a.session || (a.harness === "claude" && !!a.cwd));
 const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
@@ -526,7 +595,6 @@ async function takeAgent(agent) {
   const reads = (state.agent && state.agent.reads) || [];
   for (const r of reads)                             // ag's count of all a call sent: its messages, and the preamble where recorded
     r.counted_tokens = r.sent_tokens === null || r.sent_tokens === undefined ? null : r.sent_tokens + (r.preamble_tokens || 0);
-  if (state.tab === "transcript") await loadTranscript();
   if (!reads.length) { state.readId = null; state.context = null; return; }
   const followLatest = state.readId === null || state.followLatest;
   const want = followLatest ? reads[reads.length - 1].read_id : state.readId;
@@ -534,7 +602,7 @@ async function takeAgent(agent) {
   state.followLatest = followLatest;
   await loadContext(want);
 }
-// The Transcript tab's events: the newest TRANSCRIPT_ITEMS at first, then each time only those
+// The transcript feed's events: the newest TRANSCRIPT_ITEMS at first, then each time only those
 // after the last one kept, so an event is never listed twice; the pending ones replaced each time.
 // One load at a time: a stream message and the reader's own action can ask at once.
 let txLoading = Promise.resolve();
@@ -575,9 +643,9 @@ async function loadTranscriptNow(earlier) {
   const items = state.tx.items;
   if (items.length) { state.tx.first_row = items[0].row_id; state.tx.last_row = Math.max(state.tx.last_row, items[items.length - 1].row_id); }
 }
-const txSignature = () => (state.tab === "transcript" || (state.tab === "chat" && chatView().feed === "transcript")) && state.tx
+const txSignature = () => chatView().feed === "transcript" && state.tx
   ? [state.tx.key, state.tx.items.length, state.tx.last_row, state.tx.first_row, signature(state.tx.pending)] : null;
-// The Chat tab's messages, append-only: the stored ones since the last loaded, then what is pending.
+// The history feed's messages, append-only: the stored ones since the last loaded, then what is pending.
 // One load at a time (a stream message and the reader's own action can ask at once), and only rows
 // past the last one kept are added: a message is never listed twice.
 let chatLoading = Promise.resolve();
@@ -585,11 +653,10 @@ function loadChatHistory() {
   chatLoading = chatLoading.then(loadChatHistoryNow, loadChatHistoryNow);
   return chatLoading;
 }
-// What the Chat tab shows, loaded: the feed its view draws from (chat views, below), for a session with a
-// Chat tab (`hasChat`), with its tab open.
+// What the chat shows, loaded: the feed its view draws from (chat views, below), for the selected actor --
+// any actor: one that cannot be messaged here is shown all the same, without the message box.
 async function loadChat() {
-  const info = selectedInfo();
-  if (!hasChat(info) || state.tab !== "chat" || SNAPSHOT) return;
+  if (!state.selected || SNAPSHOT) return;
   try { await chatFeed().load(); } catch (err) { /* no database yet: the gatherer is made on the first call */ }
 }
 async function loadChatHistoryNow() {
@@ -649,9 +716,24 @@ function render(userAction = false) {
 const mainSignature = () => {
   const info = selectedInfo();
   return signature([state.selected, state.agent, state.readId, state.context && state.context.read_id, info && info.session,
-    info && [info.chattable, info.holder], state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), state.tab === "chat" && chatView().id]);
+    info && [info.chattable, info.holder], state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
+    state.details && state.detailsTab]);
 };
-const setLive = (text) => { document.getElementById("live").textContent = text; };
+// The page's state, small under its name: its dot green while live, amber paused, red on an error.
+const setLive = (text) => {
+  document.getElementById("live").textContent = text;
+  const st = /^Live/.test(text) ? "live" : text === "Paused" ? "paused" : /^Not /.test(text) ? "error" : "";
+  for (const id of ["state-dot", "state-dot-2"]) document.getElementById(id).dataset.state = st;
+  document.getElementById("about-btn").title = `${text}. The dashboard: live or paused, and ag's hook servers`;
+};
+// The dashboard's panel: opened by its button, closed by it again, by a click elsewhere, or by Esc.
+function setAbout(open) {
+  document.getElementById("about").hidden = !open;
+  document.getElementById("about-btn").setAttribute("aria-expanded", open ? "true" : "false");
+}
+document.getElementById("about-btn").addEventListener("click", () => setAbout(document.getElementById("about").hidden));
+document.addEventListener("click", (ev) => { if (!ev.target.closest(".about-wrap")) setAbout(false); });
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") setAbout(false); });
 // Redraw the main view where the reader left it: the same tables open, the same lists scrolled.
 const atEnd = (n) => n.scrollHeight - n.scrollTop - n.clientHeight < 40;
 function keepingPlace(draw) {
@@ -862,10 +944,9 @@ function renderAgents() {
     if (wasOpen && wasOpen.open) list.open = true;
     aside.append(list);
   }
-  aside.append(el("h2", { text: "Hook servers" }));
-  const servers = state.home.hook_servers || [];
-  aside.append(el("div", { class: "servers", text: servers.length
-    ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running." }));
+  const servers = state.home.hook_servers || [];     // in the dashboard's panel (the header's button)
+  document.getElementById("servers").textContent = servers.length
+    ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";
 }
 function agentRow(g, a) {
   const [cls, label] = statusOf(a);
@@ -889,10 +970,8 @@ function agentRow(g, a) {
 async function select(g, c) {
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null;
   markSeen();
-  const info = selectedInfo();
-  if (state.tab === "chat" && !hasChat(info)) state.tab = "actor";
   await refresh(true); connect();
-  if (state.tab === "transcript") toEnd();
+  chatToEnd();
 }
 // The forms in the agent list: a new gatherer's ("+ New gatherer", gatherer ""), a new session's in a gatherer (its "+").
 function openForm(gatherer) {
@@ -943,7 +1022,6 @@ function newForm() {
       const s = await post("/api/sessions", { gatherer: fixed, cwd: cwd.value.trim(), permission_mode: mode.value });
       state.adding = null;
       collapsed.delete(s.gatherer);
-      state.tab = "chat";
       await select(s.gatherer, s.session_id);
       const box = document.getElementById("composer-text");
       if (box) box.focus();
@@ -1039,31 +1117,81 @@ function legend(items) {
 }
 
 // ------------------------------------------------------------------ the selected agent
+// The main view is the actor's conversation (chatCard): all of it, with the message box under it where
+// the actor can be messaged here. What ag saw and did for it -- the Actor and Gatherer views -- is the
+// details panel (detailsPanel), opened from the page's header, at the chat's right.
 function renderMain() {
   const main = document.getElementById("main");
-  if (!state.selected) { main.replaceChildren(el("div", { class: "empty", text: "No actors yet. Run a harness through ag and it appears here." })); return; }
-  const a = state.agent;
-  const [g, c] = state.selected;
-  const info = selectedInfo() || {};
-  const [cls, label] = statusOf(info);
-  const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Views of this actor" });
-  for (const [id, name] of [["actor", "Actor"], ["transcript", "Transcript"], ["gatherer", "Gatherer"], ...(hasChat(info) ? [["chat", "Chat"]] : [])]) {
-    tabs.append(el("button", { type: "button", role: "tab", class: "tab", "aria-selected": state.tab === id ? "true" : "false",
-      onclick: () => setTab(id) }, name));
-  }
-  const title = el("div", { class: "title" }, el("h2", { text: `${harnessName(info.harness || (a && a.harness))} · ${g}` }), statusEl(cls, label),
-    el("span", { class: "sub", text: `channel ${c}${info.cwd ? " · " + info.cwd : ""}` }));
-  if (state.tab === "chat" && hasChat(info)) { main.replaceChildren(title, tabs, chatCard(info)); return; }
-  if (!a || a.error || !a.reads) {
-    main.replaceChildren(...(info.session ? [title, tabs] : []), el("div", { class: "empty", text: info.session
-      ? "No calls yet: send the agent a message in the Chat tab." : (a && a.error) || "No data for this actor." }));
+  if (!state.selected) {
+    document.getElementById("controls").replaceChildren();
+    main.replaceChildren(el("div", { class: "empty", text: "No actors yet. Run a harness through ag and it appears here." }));
     return;
   }
+  const info = selectedInfo() || {};
+  main.replaceChildren(chatCard(info), ...(state.details ? [detailsPanel(info)] : []));
+  if (document.getElementById("size-chart") && state.agent && state.agent.reads) drawCharts();
+}
+function setDetails(open, tab) {
+  state.details = open;
+  if (tab) {
+    state.detailsTab = tab;
+    try { localStorage.setItem(DETAILS_KEY, tab); } catch (e) { /* this page only */ }
+  }
+  keepingPlace(renderMain);
+  drawn.main = mainSignature();
+  if (open) { const b = document.querySelector(".drawer-body"); if (b && tab) b.scrollTop = 0; }
+}
+// Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn.
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")) setDetails(false);
+});
+function detailsPanel(info) {
+  const a = state.agent;
+  const switcher = el("div", { class: "views", role: "group", "aria-label": "Details shown" },
+    ...[["actor", "Actor", "What the agent saw and did: its context, its calls, its history"],
+      ["gatherer", "Gatherer", "What ag did for the agent: its builds and its own model calls"]].map(([id, name, title]) =>
+      el("button", { type: "button", title, "aria-pressed": state.detailsTab === id ? "true" : "false", onclick: () => setDetails(true, id) }, name)));
+  const head = el("div", { class: "drawer-head" }, switcher, el("span", { class: "grow" }),
+    el("button", { type: "button", class: "close", title: "Close (Esc)", "aria-label": "Close details", onclick: () => setDetails(false) }, "×"));
+  const body = el("div", { class: "drawer-body", "data-keep": "details" }, facts(info));
+  if (!a || a.error || !a.reads) body.append(el("div", { class: "empty", text: (a && a.error) || (info.session
+    ? "No calls yet: send the agent a message." : "No data for this actor.") }));
+  else body.append(...(state.detailsTab === "gatherer" ? gathererDetails(a) : actorDetails(a)));
+  return el("aside", { class: "drawer", role: "complementary", "aria-label": "Details" }, head, body);
+}
+// The actor's own facts: where it runs, as what, and how the dashboard can reach it.
+function facts(info) {
+  const s = info.session;
+  const rows = [
+    ["Harness", harnessName(info.harness || (state.agent && state.agent.harness))],
+    ["Gatherer", state.selected[0]], ["Channel", state.selected[1]], ["Directory", info.cwd || (s && s.cwd)],
+    ["Process", info.pid ? `PID ${info.pid}` : null],
+    ["Chat", !hasChat(info) ? "Not from the dashboard: only Claude Code sessions with a directory can be messaged here"
+      : s && s.terminal ? "Open in the dashboard's terminal: a message from any view is typed there"
+      : s ? `Run by the dashboard, permissions ${s.permission_mode}; let go after each turn`
+      : "Started elsewhere: a message resumes it here, permissions auto"],
+  ].filter(([, v]) => v);
+  return el("dl", { class: "facts" }, ...rows.flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })]));
+}
+function actorDetails(a) {                           // what the agent saw and did
   const reads = a.reads, last = reads[reads.length - 1] || {};
   const hasReal = reads.some((r) => typeof r.real_tokens === "number");
+  return [
+    el("div", { class: "tiles" },
+      tile("Context now", compact(last.real_tokens ?? last.counted_tokens),
+        last.real_tokens !== null && last.real_tokens !== undefined ? `provider's count · ag counted ${compact(last.counted_tokens)}` : "ag's count"),
+      tile("Harness limit", compact(last.limit_tokens), last.limit_tokens ? "where the harness compacts" : "none stated"),
+      tile("Tasks", full(a.tasks.length), "as ag has segmented the history"),
+      tile("Reads", full(reads.length), last.at ? `last ${ago(last.at)}` : "")),
+    ...(chatView().id === "context" ? [] : [sizeCard(reads, hasReal), contextCard()]),   // shown in the chat already
+    usageCard(),
+    historyCard(a.tasks),
+  ];
+}
+function gathererDetails(a) {                        // what ag did for the agent
   const builds = a.builds || [], failed = builds.filter((b) => b.status === "failed").length;
   const llm = a.llm.total;
-  const view = state.tab === "transcript" ? [transcriptView(info)] : state.tab === "gatherer" ? [         // what ag did for the agent
+  return [
     el("div", { class: "tiles" },
       tile("Rebuilds", full(a.rebuilds), "reads on a new build"),
       tile("Builds", full(builds.length), failed ? `${failed} failed` : "none failed"),
@@ -1071,43 +1199,20 @@ function renderMain() {
       tile("ag's model calls", full(llm.calls), `${usd(llm.cost)}${llm.unpriced ? ` + ${llm.unpriced} unpriced` : ""}`)),
     buildsCard(builds),
     llmCard(a),
-  ] : [                                              // what the agent saw and did
-    el("div", { class: "tiles" },
-      tile("Context now", compact(last.real_tokens ?? last.counted_tokens),
-        last.real_tokens !== null && last.real_tokens !== undefined ? `provider's count · ag counted ${compact(last.counted_tokens)}` : "ag's count"),
-      tile("Harness limit", compact(last.limit_tokens), last.limit_tokens ? "where the harness compacts" : "none stated"),
-      tile("Tasks", full(a.tasks.length), "as ag has segmented the history"),
-      tile("Reads", full(reads.length), last.at ? `last ${ago(last.at)}` : "")),
-    sizeCard(reads, hasReal),
-    contextCard(),
-    usageCard(),
-    historyCard(a.tasks),
   ];
-  main.replaceChildren(title, tabs, ...view);
-  drawCharts();
-}
-const TAB_KEY = "ag-dashboard-tab";
-async function setTab(id) {
-  state.tab = id;
-  try { if (id !== "chat") localStorage.setItem(TAB_KEY, id); } catch (e) { /* this page only */ }
-  if (id === "chat") { refresh(true).then(chatToEnd); return; }
-  if (id === "transcript") {
-    try { await loadTranscript(); } catch (err) { setLive(`Not updated: ${err.message}`); }
-    drawn.main = null;
-  }
-  renderMain();
-  window.scrollTo(0, 0);
-  if (id === "transcript") toEnd();
 }
 
-// ------------------------------------------------------------------ the Chat tab
-// The session's history, as the chosen chat view draws it (chat views, below), in a frame that follows
-// its newest; then what was sent and waits for the turn to end; then the box to write the next. A session
-// not started here is resumed by the dashboard on its first message (in the directory its calls named);
-// while another process has it open -- a terminal -- the box is off (`ctx.held`).
+// ------------------------------------------------------------------ the chat
+// The actor's history, as the chosen chat view draws it (chat views, below), in a frame that follows
+// its newest and takes all the height there is; then what was sent and waits for the turn to end; then
+// the box to write the next. A session not started here is resumed by the dashboard on its first message
+// (in the directory its calls named); while another process has it open -- a terminal -- the box is off
+// (`ctx.held`). An actor that cannot be messaged from here at all (not Claude Code, or no directory; or
+// a snapshot) has its history and no box.
 function chatCard(info) {
   const s = info.session || { cwd: info.cwd, permission_mode: "auto", queued: [], status: "stopped" };
   const view = chatView(), feed = chatFeed(view);
+  const writable = hasChat(info) && !SNAPSHOT;
   const held = info.chattable === false
     ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}: `
       + "close it there to message it here." : "";
@@ -1120,26 +1225,33 @@ function chatCard(info) {
       const m = document.getElementById("chat-list"); if (m) m.scrollTop = m.scrollHeight - from;
     },
     rerender: () => keepingPlace(renderMain), api: agDashboard };
-  const card = el("section", { class: "card chat" },
-    el("div", { class: "card-title" }, el("h3", { text: "Chat" }), viewSwitcher(view)),
-    el("div", { class: "desc", text: (info.session ? `A Claude Code session run by the dashboard in ${s.cwd}, permissions ${s.permission_mode}. `
-      : `A Claude Code session started elsewhere: a message resumes it here, in ${s.cwd}, permissions auto. `)
-      + (s.terminal ? "It is open in the dashboard's terminal: a message from any view is typed there. "
-        : "The dashboard lets the session go after each turn. ") + (view.description || "") }));
+  const card = el("section", { class: "chat", "aria-label": `${harnessName(info.harness || (state.agent && state.agent.harness))} · ${state.selected[0]}` });
   const safely = (what, fallback) => {
     try { return [].concat(what() || []); }
     catch (err) { console.error(err); return fallback ? [el("div", { class: "warn", text: `The ${view.name} view failed: ${err.message}` })] : []; }
   };
+  // its controls go in the page's header: the view's own (tools), which view, and the details panel
   const tools = safely(() => view.tools && view.tools(ctx));
-  if (tools.length) card.append(el("div", { class: "chat-tools" }, ...tools));
+  document.getElementById("controls").replaceChildren(
+    ...(tools.length ? [el("div", { class: "chat-tools" }, ...tools)] : []),
+    ...[viewSwitcher(view)].filter(Boolean),
+    el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false",
+      title: "What ag saw and did for this actor: its context, calls, history and builds", onclick: () => setDetails(!state.details) },
+      infoIcon(), "Details"));
   const frame = el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1",
     role: "log", "aria-label": `Chat history, ${view.name}` }, ...safely(() => view.render(ctx), true));
   if (view.feed !== "none") {                        // a view that draws the history: what waits, or that there is none yet
     for (const q of ctx.queued) frame.append(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
     if (!data.items.length && !data.pending.length && !ctx.queued.length)
-      frame.append(el("div", { class: "desc", text: s.status === "starting" ? "Starting the agent…" : "No messages yet. Write one below." }));
+      frame.append(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation: run `ag dashboard` live to see it."
+        : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
   card.append(frame);
+  if (!writable) {
+    if (!SNAPSHOT) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code sessions with a known directory." }));
+    card.append(...safely(() => view.footer && view.footer(ctx)));
+    return card;
+  }
   // Sending, for every view's message box: the box is the view's (`composer`), what it sends and the
   // error it gets are the tab's.
   const err = el("div", { class: "err", role: "alert", text: held || (s.status === "failed" && s.last_error ? s.last_error : "") });
@@ -1166,7 +1278,7 @@ function chatCard(info) {
     box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ctx.send(box.value); } });
     return box;
   };
-  card.append(...safely(() => (view.composer || defaultComposer)(ctx), true), err);
+  card.append(...safely(() => (view.composer || defaultComposer)(ctx), true), err, ...safely(() => view.footer && view.footer(ctx)));
   if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
   return card;
 }
@@ -1225,7 +1337,7 @@ function drawCharts() {
   const series = [];
   if (reads.some((r) => typeof r.real_tokens === "number")) series.push({ field: "real_tokens", color: "var(--s1)", label: "provider's count" });
   series.push({ field: "counted_tokens", color: "var(--s2)", label: "ag's own count" });
-  if (sizeHost) lineChart(sizeHost, { reads, series, onPick: pick, picked: state.readId });
+  if (sizeHost) lineChart(sizeHost, { reads, series, onPick: pick, picked: state.readId, height: +sizeHost.dataset.height || 220 });
 }
 // The row of type chips: which items the lists show, by message type. With counts, only the types present, counted.
 function typeChips(counts) {
@@ -1251,13 +1363,9 @@ function withPending(ctx, latest) {
 function contextCard() {
   const latest = state.followLatest;
   const title = el("div", { class: "card-title" }, el("h3", { text: latest ? "Context right now" : `Context at read ${state.readId}` }));
-  if (!latest) title.append(el("button", { type: "button", onclick: async () => {
-    const reads = state.agent.reads;
-    state.readId = reads[reads.length - 1].read_id; state.followLatest = true;
-    await loadContext(state.readId); keepingPlace(renderMain);
-  } }, "Back to the latest"));
+  if (!latest) title.append(el("button", { type: "button", onclick: backToLatest }, "Back to the latest"));
   const card = el("section", { class: "card" }, title);
-  const ctx = withPending(state.context, latest);
+  const ctx = pickedContext();
   if (!ctx || !ctx.items) {
     card.append(el("div", { class: "desc", text: SNAPSHOT && !latest
       ? "A snapshot keeps only each actor's latest context. Run `ag dashboard` live to see older ones." : "No context sent yet." }));
@@ -1269,16 +1377,39 @@ function contextCard() {
     + (pre ? `the harness's preamble (${full(pre)} tokens), then ` : "") + `${full(ctx.items.length)} items, ${full(ctx.tokens)} tokens by ag's own count${real}.`
     + (ctx.cut ? ` Built from build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet: the whole history, verbatim.")
     + (latest ? " Click the size chart to see an earlier call's." : "") }));
+  card.append(contextSplit(ctx));
+  const chips = contextChips(ctx);
+  if (chips) card.append(chips);
+  card.append(el("div", { class: "ctx tall", "data-keep": "context" }, columns(), ...contextRuns(ctx)));
+  return card;
+}
+// The context the size chart has picked: the latest call's, with what is pending, or an earlier one's.
+const pickedContext = () => withPending(state.context, state.followLatest);
+// Back to the latest call's context, from an earlier one picked on the chart.
+async function backToLatest() {
+  const reads = state.agent.reads;
+  state.readId = reads[reads.length - 1].read_id; state.followLatest = true;
+  await loadContext(state.readId); keepingPlace(renderMain);
+}
+// How a context divides by kind and by part, by ag's own count (a decomposition).
+function contextSplit(ctx, bare = false) {
   const extra = [...(ctx.preamble || []).map((p) => entry(p, PREAMBLE)),
     ...(uncounted(ctx.not_counted) ? [entry({ name: "not counted", tokens: ctx.not_counted }, NOT_COUNTED)] : [])];
-  card.append(decomposition([...extra, ...placed(ctx.items)]));
+  return decomposition([...extra, ...placed(ctx.items)], "the context", bare);
+}
+// Which of a context's items to list, by type: the chips, counted; none when it has nothing to choose.
+function contextChips(ctx) {
   const history = ctx.items.filter((i) => HISTORY.has(i.group) || GATHERER.has(i.group));
-  if (history.length || pre) {                       // which items to list, by type
-    const counts = { preamble: (ctx.preamble || []).length };
-    for (const i of history) { const t = itemType(i)[0]; counts[t] = (counts[t] || 0) + 1; }
-    card.append(typeChips(counts));
-  }
-  const list = el("div", { class: "ctx tall", "data-keep": "context" }, columns());
+  if (!history.length && !(ctx.preamble || []).length) return null;
+  const counts = { preamble: (ctx.preamble || []).length };
+  for (const i of history) { const t = itemType(i)[0]; counts[t] = (counts[t] || 0) + 1; }
+  return typeChips(counts);
+}
+// A context's items, in the order the model got them: a heading for each run of one kind, and the items
+// of it the chips let through.
+function contextRuns(ctx) {
+  const pre = (ctx.preamble || []).reduce((n, p) => n + p.tokens, 0);
+  const list = el("div", {});
   if ((ctx.preamble || []).length) {                 // what the harness sent besides its messages: first, its parts if chosen
     const n = ctx.preamble.length, shown = shownTypes.has("preamble");
     list.append(el("div", { class: "run" }, el("span", { class: "key-rect", style: `background:${color(PREAMBLE)}` }), el("strong", { text: PREAMBLE }),
@@ -1310,8 +1441,7 @@ function contextCard() {
     list.append(el("div", { class: "uncounted", text: "The provider's count for this call, less everything above: what ag cannot see or count -- "
       + "the model's tokenizer differing from ag's, reasoning and hidden payloads (signatures in tool-call ids), message framing." }));
   }
-  card.append(list);
-  return card;
+  return [...list.childNodes];
 }
 // Where each item goes in the figure: its run's group -- ag's messages among the history in the
 // history they sit in, as the list shows them -- and its part: a type for the history, a name for the summary.
@@ -1330,7 +1460,8 @@ function placed(items) {                          // one context's items, in ord
     return entry(it, group);
   });
 }
-function decomposition(entries, what = "the context") {
+// `bare`: each row named only, not totalled again (its total is said once elsewhere).
+function decomposition(entries, what = "the context", bare = false) {
   const total = entries.reduce((n, e) => n + e.tokens, 0) || 1;
   const groups = new Map();
   for (const p of entries) {
@@ -1365,11 +1496,11 @@ function decomposition(entries, what = "the context") {
     return seg;
   };
   const row = (name, tokens, bar) => el("div", { class: "drow" },
-    el("div", { class: "dlabel" }, el("span", { text: name }), el("span", { class: "dval", text: `${compact(tokens)} · ${pct(tokens)}` })), bar);
+    el("div", { class: "dlabel" }, el("span", { text: name }), bare ? null : el("span", { class: "dval", text: `${compact(tokens)} · ${pct(tokens)}` })), bar);
   const whole = el("div", { class: "dbar" });       // the whole context, by kind
   for (const g of ordered) if (g.tokens > 0) whole.append(segment({ name: label(g.group), short: label(g.group), color: color(g.group),
     tokens: g.tokens, items: g.items }, g.tokens / total * 100));
-  fig.append(row(what === "the context" ? "Whole context" : "All calls", total, whole));
+  fig.append(row(bare ? "Kind" : what === "the context" ? "Whole context" : "All calls", total, whole));
   // every kind's parts on one line, each kind where it sits in the line above: a finer split of the whole
   const parts = el("div", { class: "dbar" });
   const zero = [];
@@ -1382,7 +1513,7 @@ function decomposition(entries, what = "the context") {
     parts.append(inner);
     for (const p of g.parts.values()) if (!p.tokens) zero.push(`${p.items} ${p.label.toLowerCase()}`);
   }
-  const r = row("By part", total, parts);
+  const r = row(bare ? "Part" : "By part", total, parts);
   if (zero.length) r.append(el("div", { class: "dzero", text: `also ${zero.join(", ")}, at 0 tokens by ag's count` }));
   fig.append(r);
   fig.append(tip);
@@ -1544,7 +1675,7 @@ function llmCard(a) {
   return card;
 }
 
-// ------------------------------------------------------------------ the Transcript tab
+// ------------------------------------------------------------------ the Transcript view
 // The conversation as a terminal running the harness shows it: what was asked, what the agent said
 // (markdown), each tool call with its result under it, its thinking folded away. The data has made
 // every harness's events the same parts (data.parts); only the tools' names differ, and SUMMARIES
@@ -1742,7 +1873,6 @@ function transcriptBlocks(items, running) {
   flushNotes();
   return out;
 }
-const toEnd = () => { const n = document.getElementById("tx"); if (n) n.scrollTop = n.scrollHeight; };
 // The switch for the harness's system messages and ag's notes, between a transcript's messages.
 function notesSwitch() {
   const box = el("input", { type: "checkbox" });
@@ -1754,37 +1884,11 @@ function notesSwitch() {
   });
   return el("label", { title: "The harness's system messages and ag's own notices, between the messages" }, box, "Show system and ag notes");
 }
-function transcriptView(info) {
-  const card = el("div", {});
-  const tx = state.tx && state.selected && state.tx.key === key(...state.selected) ? state.tx : null;
-  const items = tx ? [...tx.items, ...tx.pending] : [];
-  card.append(el("div", { class: "term-bar" },
-    el("span", { text: tx ? `${plural(tx.items.length, "event")}${tx.earlier ? " (newest)" : ""}${tx.pending.length ? ` · ${tx.pending.length} pending` : ""}` : "" }),
-    el("span", { class: "grow" }),
-    notesSwitch()));
-  state.txCwd = info.cwd || "";
-  const term = el("div", { class: "term", id: "tx", "data-keep": "tx", "data-follow": "1", role: "log", "aria-label": "Transcript" });
-  if (SNAPSHOT) term.append(el("div", { class: "empty-term", text: "A snapshot has no transcript: run `ag dashboard` live to see it." }));
-  else if (!tx) term.append(el("div", { class: "empty-term", text: "Loading…" }));
-  else {
-    if (tx.earlier) term.append(el("button", { type: "button", class: "earlier", onclick: async () => {
-      const n = document.getElementById("tx"), from = n ? n.scrollHeight - n.scrollTop : 0;
-      await loadTranscript(true); renderMain();
-      const m = document.getElementById("tx"); if (m) m.scrollTop = m.scrollHeight - from;
-    } }, "Load earlier messages"));
-    const running = ["running", "building"].includes(statusOf(info)[0]);   // not finished, closed or idle
-    term.append(...transcriptBlocks(items, running));
-    if (!items.length) term.append(el("div", { class: "empty-term", text: "No messages yet." }));
-    if (running) term.append(el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }), `Working… (last activity ${ago(info.last)})`));
-  }
-  card.append(term);
-  return card;
-}
-
 // ------------------------------------------------------------------ chat views
-// How the Chat tab shows a session's history: one VIEW of several, the reader's choice (kept in this
+// How the chat shows an actor's history: one VIEW of several, the reader's choice (kept in this
 // browser). A view names the FEED it draws from and draws it; the tab loads that feed, gives the view a
-// frame that follows its newest, and adds what waits to be sent and the box to write the next.
+// frame that follows its newest, and adds what waits to be sent and the box to write the next (for an actor
+// that can be messaged here).
 //
 // A view is added with agDashboard.chatView({...}): here, or from a file of its own in
 // <home>/dashboard/views/*.js, which the page loads when it starts (server.py: /api/views):
@@ -1795,14 +1899,15 @@ function transcriptView(info) {
 //     description: "User and assistant messages only.",
 //     feed: "history",                  // what it draws (CHAT_FEEDS): "history", the gatherer's events --
 //                                       // {row_id, name (its type), text, tokens, at, clipped};
-//                                       // "transcript", each event's parts as the Transcript tab draws
+//                                       // "transcript", each event's parts as the Transcript view draws
 //                                       // them -- {row_id, type, at, parts: [{kind, role, text, ...}]};
 //                                       // or "none", for a view that is not the history (the Terminal)
 //     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own
-//     tools(ctx) { return [nodes] },    // optional: controls above the frame (filters, switches)
+//     tools(ctx) { return [nodes] },    // optional: controls in the page's header (filters, switches)
 //     render(ctx) { return node or [nodes] },
 //     composer(ctx) { return node },    // optional: the box to write the next message, under the frame;
 //                                       // without it, a text box and a Send button (defaultComposer)
+//     footer(ctx) { return node },      // optional: under the message box, at the bottom of the page
 //   });
 //
 // `ctx`: {info (the actor), session (its row: status, cwd, ...), data: {items, pending (what the model
@@ -1816,8 +1921,8 @@ function transcriptView(info) {
 // still work.
 const CHAT_VIEWS = new Map();
 const CHAT_VIEW_KEY = "ag-dashboard-chat-view";
-let chatViewId = (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "messages"; } catch (e) { return "messages"; } })();
-const chatView = () => CHAT_VIEWS.get(chatViewId) || CHAT_VIEWS.get("messages");
+let chatViewId = (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "transcript"; } catch (e) { return "transcript"; } })();
+const chatView = () => CHAT_VIEWS.get(chatViewId) || CHAT_VIEWS.get("transcript");
 async function setChatView(id) {
   chatViewId = id;
   try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
@@ -1830,7 +1935,7 @@ function addChatView(view) {
     throw new Error("a chat view needs an id and a render(ctx)");
   if (!CHAT_FEEDS[view.feed || "history"]) throw new Error(`no feed ${view.feed}: one of ${Object.keys(CHAT_FEEDS).join(", ")}`);
   CHAT_VIEWS.set(view.id, { name: view.id, feed: "history", ...view });
-  if (state.home && state.tab === "chat") { drawn.main = null; loadChat().then(() => render()); }
+  if (state.home) { drawn.main = null; loadChat().then(() => render()); }
 }
 // What a view can draw from: each loads its data for the selected session, and says what it has.
 const CHAT_FEEDS = {
@@ -1846,6 +1951,12 @@ const CHAT_FEEDS = {
       ? { items: state.tx.items, pending: state.tx.pending, earlier: state.tx.earlier } : null,
   },
   none: { load: async () => {}, data: () => ({ items: [], pending: [], earlier: false }) },
+};
+// "agent": what ag recorded of the actor's calls -- each read (items), and the context the chart has picked
+// (state.context) -- loaded with the actor already.
+CHAT_FEEDS.agent = {
+  load: async () => {},
+  data: () => state.agent && state.agent.reads ? { items: state.agent.reads, pending: [], earlier: false } : null,
 };
 const chatFeed = (view = chatView()) => CHAT_FEEDS[view.feed] || CHAT_FEEDS.history;
 
@@ -1864,7 +1975,7 @@ addChatView({
 });
 addChatView({
   id: "transcript", name: "Transcript", feed: "transcript", frame: "term",
-  description: "The conversation as a terminal shows it, as in the Transcript tab.",
+  description: "The conversation as Claude Code's terminal shows it.",
   tools: () => notesSwitch(),
   render: ({ info, data, running, loadEarlier }) => {
     state.txCwd = info.cwd || "";
@@ -1884,6 +1995,34 @@ addChatView({
       el("div", { class: "foot" },
         el("span", {}, el("span", { class: "mode", text: `» ${ctx.session.permission_mode}` }), ` · ${ctx.session.cwd}`),
         el("span", { text: "enter to send · shift+enter for a new line" })));
+  },
+});
+addChatView({
+  id: "context", name: "Context", feed: "agent", frame: "ctx",
+  description: "What the model was sent: the picked call's context, item by item; its size over time and how it divides, under the message box.",
+  tools: () => {
+    const ctx = state.agent && state.agent.reads ? pickedContext() : null;
+    return [ctx && ctx.items ? contextChips(ctx) : null,
+      state.followLatest ? null : el("button", { type: "button", title: `Read ${state.readId} is shown`, onclick: backToLatest }, "Back to the latest")];
+  },
+  render: ({ data }) => {
+    const ctx = data.items.length ? pickedContext() : null;
+    if (!ctx || !ctx.items) return el("div", { class: "desc", text: (state.agent && state.agent.error) || "No context sent yet." });
+    return [columns(), ...contextRuns(ctx)];
+  },
+  footer: ({ data }) => {
+    const reads = data.items;
+    if (!reads.length) return null;
+    const hasReal = reads.some((r) => typeof r.real_tokens === "number");
+    const ctx = pickedContext();
+    return el("div", { class: "ctx-panel" },
+      el("div", { class: "ctx-panel-head" },
+        el("strong", { text: state.followLatest ? "Context size" : `Context size · read ${state.readId}` }),
+        ctx && ctx.items ? el("span", { class: "sub", text: `${compact(ctx.real_tokens ?? ctx.tokens)} tokens ${state.followLatest ? "now" : "at that call"}` }) : null,
+        legend([...(hasReal ? [{ label: "Provider's count", color: "var(--s1)" }] : []), { label: "ag's own count", color: "var(--s2)" },
+          { label: "Rebuild", kind: "rule" }])),
+      el("div", { id: "size-chart", "data-height": "120", title: "Click a call to see its context" }),
+      ctx && ctx.items ? contextSplit(ctx, true) : null);
   },
 });
 
@@ -2004,7 +2143,7 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
 const agDashboard = window.agDashboard = Object.freeze({
   chatView: addChatView,
   el, svgEl, markdown, clock, ago, full, compact, plural, firstLine,
-  contextItem, columns, typeChips, itemType, transcriptBlocks, foldedOutput, notesSwitch,
+  contextItem, columns, typeChips, itemType, transcriptBlocks, foldedOutput, notesSwitch, sizeCard, contextCard,
   statusOf, harnessName, harnessLogo,
 });
 // The reader's own views: each file in <home>/dashboard/views/, loaded once the page is up. One that
@@ -2027,14 +2166,16 @@ async function loadOwnViews() {
 // ------------------------------------------------------------------ start
 document.getElementById("pause").addEventListener("click", async (ev) => {
   state.paused = !state.paused;
-  ev.target.textContent = state.paused ? "Resume" : "Pause";
+  const b = ev.currentTarget;
+  b.textContent = state.paused ? "Resume" : "Pause";
+  b.title = state.paused ? "Update this page again" : "Stop updating this page; the agents and the server go on";
   if (!state.paused) await refresh(true);
   connect();
   if (state.paused) render();
 });
 if (SNAPSHOT) document.getElementById("pause").style.display = "none";
 let resizeTimer = null;
-window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => state.agent && drawCharts(), 150); });
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => document.getElementById("size-chart") && state.agent && state.agent.reads && drawCharts(), 150); });
 refresh(true).then(connect).then(loadOwnViews);
 if (!SNAPSHOT) setInterval(() => { if (!state.paused) render(); }, AGO_MS);
 </script>
