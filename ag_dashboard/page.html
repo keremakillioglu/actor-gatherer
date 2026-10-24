@@ -433,8 +433,8 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-grid.open { grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
 .files .fl-grid:not(.open) .fl-talk { font-size: 13px; border-left: 0; }
 .files .fl-talk { position: relative; overflow: auto; border-left: 1px solid var(--ring); padding: 6px 0 24px; font-size: 12.5px; }
-.files .fl-turn { margin: 2px 6px; padding: 6px 6px 8px; border: 1.5px solid transparent; border-radius: 8px; }
-.files .fl-turn.on { border-color: var(--s1); }
+.files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px; border-radius: 0 6px 6px 0; }
+.files .fl-turn.on { background: color-mix(in srgb, var(--ink) 4%, transparent); box-shadow: inset 2px 0 0 var(--muted); }   /* the turn picked: a shade and a grey bar, no colour */
 .files .fl-user { display: flex; gap: 8px; width: 100%; text-align: left; background: var(--wash); border: 1px solid var(--ring);
   border-radius: 6px; padding: 6px 8px; margin: 0; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink); cursor: pointer; }
 .files .fl-user:hover { border-color: var(--axis); }
