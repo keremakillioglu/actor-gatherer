@@ -230,6 +230,24 @@ class EndpointTest(SessionsBase):
         home = json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))
         self.assertIn("fresh", [g["name"] for g in home["gatherers"]])
 
+    def test_the_reader_s_own_chat_views_are_listed_and_served(self):
+        get = lambda path: urllib.request.urlopen(self.url + path, timeout=10)  # noqa: E731
+        self.assertEqual(json.load(get("/api/views")), [])                   # none yet
+        views = os.path.join(dashboard_home.HOME, "dashboard", "views")
+        os.makedirs(views)
+        for name, text in (("mine.js", "agDashboard.chatView({});"), ("notes.txt", "x"), (".hidden.js", "x")):
+            with open(os.path.join(views, name), "w") as fh:
+                fh.write(text)
+        self.assertEqual(json.load(get("/api/views")), ["mine.js"])          # .js files, by name
+        r = get("/views/mine.js")
+        self.assertEqual((r.headers["Content-Type"].split(";")[0], r.read()), ("text/javascript", b"agDashboard.chatView({});"))
+        with open(os.path.join(self.tmp.name, "secret.js"), "w") as fh:
+            fh.write("x")
+        for path in ("/views/notes.txt", "/views/.hidden.js", "/views/../secret.js", "/views/%2e%2e%2fsecret.js", "/views/none.js"):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                get(path)
+            self.assertEqual(caught.exception.code, 404, path)
+
     def test_what_it_refuses(self):
         self.assertEqual(self.post("/api/gatherers", {"name": "x"}, {"Origin": "https://evil.example"})[0], 403)
         self.assertEqual(self.post("/api/sessions", {"gatherer": "a b", "cwd": self.work})[0], 400)

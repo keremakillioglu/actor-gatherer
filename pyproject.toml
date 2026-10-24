@@ -43,4 +43,4 @@ include = ["ag*"]
 # what runs from the installed package besides Python: ag's harness entries, and the TypeScript
 # plugins (Pi, OpenCode) with the shared harness-side code they import; and the dashboard's page
 ag = ["cli/harnesses.toml", "integrations/**/*.ts"]
-ag_dashboard = ["page.html", "vendor/*"]
+ag_dashboard = ["page.html", "vendor/*", "examples/*.js"]
