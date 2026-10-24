@@ -69,6 +69,15 @@ def _columns(conn, table: str) -> set:
     return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
 
 
+#: What an actor's views answer before its gatherer has stored anything: ag adds the channel's column
+#: with the first event, so a gatherer made (`ag new`) whose first session has sent nothing has none.
+NOTHING_YET = {"error": "Nothing stored yet: the session has sent no message through ag."}
+
+
+def _channels_kept(conn) -> bool:
+    return CHANNEL in _columns(conn, "events")
+
+
 def _tables(conn) -> set:
     return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 
@@ -404,6 +413,8 @@ def agent(gatherer: str, channel: str, llm: Optional[List[dict]] = None) -> dict
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
+        if not _channels_kept(conn):
+            return dict(NOTHING_YET)
         return _agent(conn, gatherer, channel, llm if llm is not None else llm_calls())
     finally:
         conn.close()
@@ -663,6 +674,8 @@ def history(gatherer: str, channel: str, first_row: int, last_row: Optional[int]
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
+        if not _channels_kept(conn):
+            return dict(NOTHING_YET)
         top = last_row if last_row is not None else 2 ** 62
         where = f"e.{CHANNEL} = ? AND e.row_id >= ? AND e.row_id <= ?"
         n = conn.execute(f"SELECT count(*) FROM events e WHERE {where}", (channel, first_row, top)).fetchone()[0]
@@ -808,6 +821,8 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
+        if not _channels_kept(conn):
+            return dict(NOTHING_YET)
         cols = ("SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at FROM events e "
                 f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.{CHANNEL} = ? ")
         if after is not None:
