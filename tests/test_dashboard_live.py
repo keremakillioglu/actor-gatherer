@@ -183,6 +183,21 @@ class StreamTest(HomeBase):
             time.sleep(0.1)
         self.assertEqual(len(httpd.hub.watches), 0)
 
+    def test_a_dashboard_killed_or_hung_up_on_removes_its_socket(self):
+        import signal
+        import subprocess
+        folder = os.path.join(self.tmp.name, "ag", "listeners")
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            proc = subprocess.Popen([sys.executable, "-m", "ag_dashboard", "--home", os.path.join(self.tmp.name, "ag"),
+                                     "--port", "0"], cwd=repo, stderr=subprocess.PIPE, text=True)
+            self.assertIn("live from ag's notifications", proc.stderr.readline())    # up, its socket bound
+            self.assertEqual(len(os.listdir(folder)), 1)
+            proc.send_signal(sig)
+            self.assertEqual(proc.wait(10), 0, sig)
+            proc.stderr.close()
+            self.assertEqual(os.listdir(folder), [], sig)
+
     def test_closing_the_server_removes_its_socket(self):
         httpd = server.serve("127.0.0.1", 0)
         path = httpd.listener.path
