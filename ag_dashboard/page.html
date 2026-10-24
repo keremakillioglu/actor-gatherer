@@ -7,29 +7,42 @@
 <style>
 :root {
   color-scheme: light;
-  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
-  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
+  --page: #f6f6f4; --surface: #fcfcfb; --side: #f4f4f2; --side-rule: var(--ring); --ink: #1d1d1b; --ink-2: #55544f; --muted: #898781;
+  --grid: #e4e3dc; --axis: #c3c2b7; --ring: rgba(20,20,18,0.09); --wash: rgba(20,20,18,0.04);
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --t-call: #1f8a3b; --t-output: #74c487; --t-gatherer: #e8b600;
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --selected: rgba(42,120,214,0.10);
+  /* the Transcript view's terminal: the page's own surface, so the history is part of the page in either theme */
+  --term-bg: var(--surface); --term-ink: #2b2a27; --term-dim: #6f6c65; --term-faint: #a09d95; --term-user: #efeee9; --term-ok: #2f9a4c;
+  --term-err: #cf3a50; --term-run: #c08a00; --term-accent: #c4643f; --term-code: #f2f1ed; --term-rule: #e2e0d9; --term-box: #d6d4cc;
+  --term-add: rgba(47,154,76,.12); --term-del: rgba(207,58,80,.10); --term-add-ink: #1b6b34; --term-del-ink: #a5293d; --term-link: #2468c8;
+  --scroll: rgba(0,0,0,.16);
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --page: #111110; --surface: #1f1f1d; --side: #121211; --side-rule: rgba(255,255,255,0.14); --ink: #ecebe7; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
+  --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
+  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-box: #3a3935;
+  --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
+  --scroll: rgba(255,255,255,.16);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --page: #111110; --surface: #1f1f1d; --side: #121211; --side-rule: rgba(255,255,255,0.14); --ink: #ecebe7; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
+  --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
+  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-box: #3a3935;
+  --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
+  --scroll: rgba(255,255,255,.16);
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   height: 100vh; display: flex; flex-direction: column; }
 header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--ring); background: var(--surface); flex: none; z-index: 2; }
@@ -61,7 +74,7 @@ button { font: inherit; font-size: 12px; color: var(--ink); background: var(--su
 button:hover { background: var(--wash); }
 /* the page is the screen's height: the agent list and the chat each scroll in their own place */
 .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); flex: 1; min-height: 0; }
-aside { border-right: 1px solid var(--ring); background: var(--surface); padding: 12px 0; overflow-y: auto; }
+aside { border-right: 1px solid var(--side-rule); background: var(--side); padding: 12px 0; overflow-y: auto; }
 aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
 .gatherer { padding: 6px 0 8px; border-top: 1px solid var(--grid); }
 .gatherer-row { display: flex; align-items: stretch; }
@@ -216,10 +229,8 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .warn { color: var(--ink-2); font-size: 12px; margin-top: 8px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .stale { opacity: .55; transition: opacity .2s; }
-/* The Transcript view: the conversation as a terminal shows it -- dark in either theme */
-.term { --term-bg: #151514; --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #5c5a55; --term-user: #262522; --term-ok: #4eba65;
-  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #1f1e1c; --term-rule: #2e2d2a;
-  --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-link: #7cb7ff;
+/* The Transcript view: the conversation as a terminal shows it, in the page's theme (the --term-* colors above) */
+.term {
   background: var(--term-bg); color: var(--term-ink); border-radius: 10px; border: 1px solid var(--ring);
   font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 14px 18px 18px;
   overflow-y: auto; overflow-x: hidden; }
@@ -249,7 +260,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .term .notes pre { margin: 4px 0 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 .term .diff { margin-top: 2px; border-radius: 4px; overflow: hidden; }
 .term .diff div { white-space: pre-wrap; overflow-wrap: anywhere; padding: 0 6px; }
-.term .diff .add { background: var(--term-add); color: #b6e8c0; } .term .diff .del { background: var(--term-del); color: #ffc2cb; }
+.term .diff .add { background: var(--term-add); color: var(--term-add-ink); } .term .diff .del { background: var(--term-del); color: var(--term-del-ink); }
 .term .diff .ctx { color: var(--term-dim); } .term .diff .hunk { color: var(--term-faint); }
 .term .todo { white-space: pre-wrap; } .term .todo .done { color: var(--term-dim); text-decoration: line-through; } .term .todo .doing { color: var(--term-ink); font-weight: 700; }
 .term .md { overflow-wrap: anywhere; }
@@ -349,11 +360,11 @@ button:disabled { opacity: .5; cursor: default; }
 .queued { color: var(--muted); font-size: 12px; padding: 6px 4px 6px 17px; border-bottom: 1px solid var(--grid); }
 .chat .err:empty { display: none; }
 /* The Transcript view's prompt: a terminal's input box under the terminal */
-.term-prompt { --term-bg: #151514; --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-rule: #3a3935; --term-accent: #d97757;
+.term-prompt {
   background: var(--term-bg); color: var(--term-ink); border-radius: 10px; margin-top: 8px; padding: 8px 12px 6px;
   font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .term-prompt .box { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 4px; align-items: start;
-  border: 1px solid var(--term-rule); border-radius: 8px; padding: 6px 10px; }
+  border: 1px solid var(--term-box); border-radius: 8px; padding: 6px 10px; }
 .term-prompt .box:focus-within { border-color: var(--term-dim); }
 .term-prompt .g { color: var(--term-dim); user-select: none; }
 .term-prompt textarea { background: none; border: 0; outline: 0; color: var(--term-ink); font: inherit; resize: none;
@@ -362,12 +373,13 @@ button:disabled { opacity: .5; cursor: default; }
 .term-prompt textarea:disabled { opacity: .5; }
 .term-prompt .foot { display: flex; justify-content: space-between; gap: 10px; color: var(--term-dim); font-size: 11px; padding: 4px 2px 0; }
 .term-prompt .foot .mode { color: var(--term-accent); }
-/* The Terminal view: Claude Code's own UI, drawn by xterm.js */
-.chat .chat-frame.xterm-frame { position: relative; overflow: hidden; background: #151514; padding: 8px 4px 8px 10px; }
+/* The Terminal view: Claude Code's own UI, drawn by xterm.js -- dark in either theme, since Claude Code
+   draws its own colors for a dark terminal */
+.chat .chat-frame.xterm-frame { position: relative; overflow: hidden; background: #1a1a19; padding: 8px 4px 8px 10px; }
 .xterm-host { position: absolute; inset: 8px 4px 8px 10px; }
-.xterm-host .xterm-viewport { background: #151514 !important; }
+.xterm-host .xterm-viewport { background: #1a1a19 !important; }
 .xterm-cover { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center;
-  background: rgba(21, 21, 20, .82); color: #e8e6e0; font-size: 13px; padding: 20px; }
+  background: rgba(26, 26, 25, .82); color: #e8e6e0; font-size: 13px; padding: 20px; }
 .xterm-cover .desc { color: #b9b6ae; max-width: 46ch; }
 /* under the Transcript view's history: one terminal, the prompt its last lines */
 .chat .chat-frame.term:has(+ .term-prompt) { padding-bottom: 8px; }
@@ -386,6 +398,9 @@ button:disabled { opacity: .5; cursor: default; }
         <div><h4>Updates</h4>
           <div class="row"><span class="live"><span class="state-dot" id="state-dot-2"></span><span id="live" role="status"></span></span>
             <button id="pause" type="button" title="Stop updating this page; the agents and the server go on">Pause</button></div></div>
+        <div><h4>Theme</h4>
+          <div class="views" id="theme" role="group" aria-label="Theme">
+            <button type="button" data-theme-pick="system">System</button><button type="button" data-theme-pick="light">Light</button><button type="button" data-theme-pick="dark">Dark</button></div></div>
         <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
       </div>
     </div>
@@ -731,6 +746,19 @@ function setAbout(open) {
   document.getElementById("about").hidden = !open;
   document.getElementById("about-btn").setAttribute("aria-expanded", open ? "true" : "false");
 }
+// Light, dark, or the system's: kept in this browser, the page follows the system until one is picked.
+const THEME_KEY = "ag-dashboard-theme";
+function setTheme(pick, keep) {
+  if (pick !== "light" && pick !== "dark") pick = "system";
+  if (pick === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = pick;
+  for (const b of document.querySelectorAll("[data-theme-pick]")) b.setAttribute("aria-pressed", b.dataset.themePick === pick ? "true" : "false");
+  if (keep) { try { localStorage.setItem(THEME_KEY, pick); } catch (e) { /* this page only */ } }
+}
+setTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })(), false);
+document.getElementById("theme").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-theme-pick]");
+  if (b) setTheme(b.dataset.themePick, true);
+});
 document.getElementById("about-btn").addEventListener("click", () => setAbout(document.getElementById("about").hidden));
 document.addEventListener("click", (ev) => { if (!ev.target.closest(".about-wrap")) setAbout(false); });
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") setAbout(false); });
@@ -2038,7 +2066,7 @@ function termFor(sid) {
   if (term.sid === sid && term.xterm) return term;
   termDrop();
   const xterm = new Terminal({ cursorBlink: true, fontSize: 13, scrollback: 5000, allowProposedApi: false,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', theme: { background: "#151514", foreground: "#e8e6e0", cursor: "#e8e6e0" } });
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', theme: { background: "#1a1a19", foreground: "#e8e6e0", cursor: "#e8e6e0" } });
   const fit = new FitAddon.FitAddon();
   xterm.loadAddon(fit);
   const host = el("div", { class: "xterm-host", id: "xterm-host", "data-refocus": "1" });
