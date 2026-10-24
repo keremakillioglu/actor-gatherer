@@ -351,6 +351,25 @@ class Sessions:
                 self._changed(s["gatherer"], session_id)        # it waits: shown as waiting
             return next(x for x in self.list() if x["session_id"] == session_id)
 
+    def stop(self, session_id: str) -> dict:
+        """The session's agent ended between turns: its stdin closed, so it exits and the session
+        shows Closed until the next message resumes it. Refused while a turn runs or a message
+        waits. The session as `list` has it."""
+        with self.lock:
+            s = self._row(session_id)
+            if s is None:
+                raise SessionError(f"no session {session_id} started from the dashboard")
+            a = self.agents.get(session_id)
+            if a is None or a.proc.poll() is not None:
+                raise SessionError("the dashboard has no process open for this session")
+            if a.busy or a.queue:
+                raise SessionError("a turn is running: wait for it to end")
+            try:
+                a.proc.stdin.close()             # the reader records its end: stopped
+            except OSError:
+                pass
+            return next(x for x in self.list() if x["session_id"] == session_id)
+
     def _start(self, s: dict) -> _Agent:
         sid = s["session_id"]
         argv = [*ag_command(), "--gatherer", s["gatherer"], s["harness"], "-p",
