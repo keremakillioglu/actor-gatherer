@@ -148,6 +148,11 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
 .agent .meta .dot.running { background: var(--good); } .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
 .agent .meta .dot.finished { background: var(--s1); }
+/* its turn over, but something it started still runs: a ring of Running's colour round a paler middle */
+.agent .meta .dot.background, .status.background i { background: color-mix(in srgb, var(--good) 30%, transparent); box-shadow: inset 0 0 0 1.5px var(--good); }
+/* what it runs in the background, under its facts: how many, and what they are for */
+.agent .bgline { font-size: 12px; color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent .bgline .spin::before { content: "✻"; display: inline-block; width: 1.2em; color: var(--good); animation: term-spin 1.2s steps(1) infinite; }
 .agent .meta .dot.closed { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
 .hidden-list { border-top: 1px solid var(--grid); padding: 8px 0 4px; }
 .hidden-list > summary { margin: 0; padding: 4px 16px; font-size: 12px; color: var(--muted); list-style: none; }
@@ -379,6 +384,20 @@ button:disabled { opacity: .5; cursor: default; }
 .chat .composer { margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--ring); }
 .chat .readonly { color: var(--muted); font-size: 12px; padding: 8px 16px; border-top: 1px solid var(--ring); }
 .chat > .err { color: var(--critical); font-size: 12px; padding: 6px 16px; }
+/* what Claude Code still runs in the background (backgroundNote): under the chat, or a terminal's status line in it */
+.bg-tasks { flex: none; font-size: 12px; color: var(--ink-2); padding: 6px 16px 8px; border-top: 1px solid var(--ring); background: var(--wash); }
+.bg-tasks .head { color: var(--ink); font-weight: 600; margin-bottom: 2px; }
+.bg-tasks .task { display: flex; gap: 8px; align-items: baseline; min-width: 0; padding-left: 1.2em; }
+.bg-tasks .kind { color: var(--muted); flex: none; width: 5.6em; }
+.bg-tasks .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bg-tasks .when { color: var(--muted); flex: none; margin-left: auto; font-variant-numeric: tabular-nums; }
+.bg-tasks .spin::before { content: "✻"; display: inline-block; width: 1.2em; color: var(--good); animation: term-spin 1.2s steps(1) infinite; }
+.term .bg-tasks { border: 0; background: none; padding: 0; margin-top: 6px; font-size: inherit; }
+.term .bg-tasks .head { color: var(--term-accent); font-weight: 400; }
+.term .bg-tasks .spin::before { color: inherit; }
+.term .bg-tasks .task, .term .bg-tasks .kind, .term .bg-tasks .when { color: var(--term-dim); }
+.term .bg-tasks .label { color: var(--term-ink); }
+@media (max-width: 760px) { .bg-tasks .when { display: none; } }
 @media (max-width: 760px) { .chat .chat-frame { flex: none; height: 70vh; } header { flex-wrap: wrap; } header .controls { order: 5; } }
 /* Actor and Gatherer: a panel at the chat's right, the chat still live beside it; over it where the window is narrow */
 .drawer { flex: 0 0 min(55%, 760px); min-width: 0; background: var(--page);
@@ -782,12 +801,14 @@ async function closeSession(a) {
 }
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; a build
 // running for it shows over the first, and one that stopped since the reader last looked shows Finished
-// until they do. A server from before `status`: running or idle by `running`.
+// until they do -- but not while something it started runs in the background: Background, its turn over
+// and not done. A server from before `status`: running or idle by `running`.
 // A session started from the page says first what its agent is doing: starting, a message waiting, failed.
 const sessionStatus = (s) => !s ? null : s.status === "starting" ? ["building", "Starting"]
   : s.status === "running" || (s.queued && s.queued.length) ? ["running", "Running"] : s.status === "failed" ? ["failed", "Failed"] : null;
 const statusOf = (a) => sessionStatus(a.session) || (a.building ? ["building", "Building"]
   : (a.status ? a.status === "running" : a.running) ? ["running", "Running"]
+  : a.status === "background" ? ["background", "Background"]
   : unseen(a) ? ["finished", "Finished"] : a.status === "closed" ? ["closed", "Closed"] : ["idle", "Idle"]);
 // Whether an actor can be messaged here: a session the page started, or any Claude Code or codex session with a directory
 // to resume it in. Its message box works while no other process has it open (data.py's `chattable`).
@@ -1274,7 +1295,7 @@ function renderAgents() {
     // running first, then finished (not yet looked at), then idle, then closed; each in the order the
     // data has them, newest created first, so an actor stays in its place, and moves only between them --
     // but closed, the latest active first: nothing moves there once closed
-    const groupOf = (a) => ({ Building: "Running", Running: "Running", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
+    const groupOf = (a) => ({ Building: "Running", Running: "Running", Background: "Running", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
     const groups = ["Running", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
       .filter(([, list]) => list.length);
     for (const [name, list] of groups) if (name === "Closed") list.sort((x, y) => (y.last || 0) - (x.last || 0));
@@ -1331,7 +1352,10 @@ function agentRow(g, a) {
           closeIcon()) : null,
         !hasChat(a) ? null : a.chattable === false
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
-          : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false)))));
+          : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false))),
+      (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
+        el("span", { class: "spin", "aria-hidden": "true" }),
+        `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null));
 }
 // Selecting an actor draws its chat as soon as it is loaded; its calls and context (the details) follow
 // on the stream, which starts with them. The actor list is the stream's already.
@@ -1693,6 +1717,7 @@ function chatCard(info) {
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
   card.append(frame);
+  if (view.feed !== "none" && view.frame !== "term") { const note = backgroundNote(info); if (note) card.append(note); }
   if (!writable) {
     if (!SNAPSHOT) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code and codex sessions with a known directory." }));
     card.append(...safely(() => view.footer && view.footer(ctx)));
@@ -1732,6 +1757,23 @@ function chatCard(info) {
   card.append(...composer, err, ...safely(() => view.footer && view.footer(ctx)));
   if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
   return card;
+}
+// What Claude Code still runs in the background for the actor (data.py's `background`): the commands,
+// agents and monitors it started and has not been told have ended, each with what it is for and its
+// last sign of life. Null when none runs. `term`: drawn as a terminal's status line.
+const TASK_KINDS = { command: "Command", agent: "Agent", monitor: "Monitor" };
+function backgroundNote(info, term = false) {
+  const tasks = (info && info.background) || [];
+  if (!tasks.length) return null;
+  return el("div", { class: term ? "status-line bg-tasks" : "bg-tasks", role: "status" },
+    el("div", { class: "head" }, el("span", { class: "spin", "aria-hidden": "true" }),
+      `${plural(tasks.length, "background task")} running${info.status === "background" ? ": the turn is over, the work is not" : ""}`),
+    ...tasks.map((t) => el("div", { class: "task", title: [t.label, t.output].filter(Boolean).join("\n") },
+      el("span", { class: "kind", text: TASK_KINDS[t.kind] || t.kind }),
+      el("span", { class: "label", text: t.label || t.id }),
+      el("span", { class: "when", text: [`started ${ago(t.started)}`,
+        t.event ? `last event ${ago(t.event_at)}: ${t.event}` : t.active && t.active - t.started > 2 ? `active ${ago(t.active)}` : null]
+        .filter(Boolean).join(" · ") }))));
 }
 // The message box a view gets unless it brings its own: a text box and a Send button.
 function defaultComposer(ctx) {
@@ -2376,7 +2418,9 @@ function notesSwitch() {
 //                                       // them -- {row_id, type, at, parts: [{kind, role, text, ...}]};
 //                                       // "files", the turns and the picked turn's files (files.py);
 //                                       // or "none", for a view that is not the history (the Terminal)
-//     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own
+//     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own;
+//                                       // under any but "term", what runs in the background (backgroundNote) --
+//                                       // a "term" view draws it itself, with api.backgroundNote(ctx.info, true)
 //     tools(ctx) { return [nodes] },    // optional: controls in the page's header (filters, switches)
 //     render(ctx) { return node or [nodes] },
 //     composer(ctx) { return node },    // optional: the box to write the next message, under the frame;
@@ -2460,6 +2504,7 @@ addChatView({
       data.earlier ? el("button", { type: "button", class: "earlier", onclick: loadEarlier }, "Load earlier messages") : null,
       ...transcriptBlocks([...data.items, ...data.pending], running, txBlocks),
       running ? el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }), `Working… (last activity ${ago(info.last)})`) : null,
+      backgroundNote(info, true),
     ].filter(Boolean);
   },
   composer: (ctx) => {
@@ -2931,7 +2976,7 @@ const agDashboard = window.agDashboard = Object.freeze({
   chatView: addChatView,
   el, svgEl, markdown, clock, ago, full, compact, plural, firstLine,
   contextItem, columns, typeChips, itemType, transcriptBlocks, foldedOutput, notesSwitch, sizeCard, contextCard,
-  statusOf, harnessName, harnessLogo, harnessBadge, actorLogo,
+  statusOf, harnessName, harnessLogo, harnessBadge, actorLogo, backgroundNote,
 });
 // The reader's own views: each file in <home>/dashboard/views/, loaded once the page is up. One that
 // does not load, or throws, is reported and left out.

@@ -363,6 +363,7 @@ class _Agent:
 
     def __init__(self, proc: subprocess.Popen, log):
         self.proc, self.log = proc, log
+        self.since = time.time()        # when it started: what Claude Code started in the background before was not its
         self.busy = False               # a turn was sent and its result has not come back
         self.yielding = False           # between turns: gives way to another process opening the session
         self.taken = False              # another process took the session over: it is being stopped
@@ -376,6 +377,7 @@ class _Term:
 
     def __init__(self, pid: int, fd: int, log, fullscreen: bool = False):
         self.pid, self.fd, self.log, self.fullscreen = pid, fd, log, fullscreen
+        self.since = time.time()        # when it started
         self.out = bytearray()          # the last TERM_KEEP bytes it printed
         self.end = 0                    # how many it printed in all: `out` ends there
         self.exited: Optional[int] = None
@@ -443,14 +445,15 @@ class Sessions:
 
     def list(self) -> List[dict]:
         """Every session the table has, newest first, each with `queued` (its messages waiting), `pid` (the
-        dashboard's process for it), `terminal` (whether that is a terminal) and `fullscreen` (whether it
-        runs Claude Code's full screen)."""
+        dashboard's process for it), `since` (when that started), `terminal` (whether that is a terminal) and
+        `fullscreen` (whether it runs Claude Code's full screen)."""
         with self.lock:
             out = []
             for s in stored():
                 a, t = self.agents.get(s["session_id"]), self.terms.get(s["session_id"])
                 out.append({**s, "queued": list(a.queue) if a else [], "terminal": t is not None,
-                            "fullscreen": bool(t and t.fullscreen), "pid": t.pid if t else a.proc.pid if a else None})
+                            "fullscreen": bool(t and t.fullscreen), "pid": t.pid if t else a.proc.pid if a else None,
+                            "since": t.since if t else a.since if a else None})
             return out
 
     def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = "claude",
