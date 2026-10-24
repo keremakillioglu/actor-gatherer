@@ -560,9 +560,10 @@ function closeIcon() {
     svgEl("line", { x1: 10.2, y1: 5.8, x2: 5.8, y2: 10.2 }));
   return svg;
 }
-// Whether the dashboard runs a process for the session -- its agent, mid-turn or not, or its terminal -- and
-// no process outside has it: it can be closed from the list.
-const closable = (a) => !SNAPSHOT && !!a.session && !!(a.session.terminal || a.session.pid) && a.chattable !== false;
+// Whether the dashboard runs a process for the session -- its agent, mid-turn or not, or its terminal -- or kept
+// it, idle, from a restart, and no process outside has it: it can be closed from the list.
+const closable = (a) => !SNAPSHOT && !!a.session && !!(a.session.terminal || a.session.pid || a.session.kept)
+  && a.chattable !== false;
 async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
   catch (err) { setLive(`Not closed: ${err.message}`); }

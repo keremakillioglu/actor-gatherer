@@ -12,6 +12,9 @@ ones it started:
     turns            how many of its turns have ended: after the first, a restart resumes it
     status           starting / running / idle / terminal / stopped / failed, as last seen
     last_error       why its last turn or process failed, if one did
+    kept             when (epoch seconds) its process was ended by the dashboard stopping -- a restart, a
+                     crash -- not closed: it shows Idle, not Closed, until it is opened again (here or
+                     elsewhere) or closed from the list; 0 when not kept
 
 The agent is one long-running process, `ag --gatherer G claude -p --input-format stream-json
 --output-format stream-json ...`: each message is a line on its stdin, a turn, and each turn
@@ -40,6 +43,10 @@ the window's size (`resize`). Opening it ends the session's idle `-p` agent firs
 terminal has the session, and a message sent from any view is typed into it -- pasted, then Enter --
 until it is closed (`stop`) or exits. Unix only: it needs `pty` (TERMINALS).
 
+A session whose process the dashboard's own end took (`close`, or a dashboard gone without one: what
+it last recorded running) is KEPT: not closed by anyone, so shown Idle with no process, to be picked
+up by its next message or terminal. Closing it (`stop`), or its process ending any other way, clears it.
+
 A new gatherer, with no session yet, is made by `ag new <name>` (`new_gatherer`).
 
 ag is run as a command (AG_COMMAND, else `ag` on the PATH), never imported."""
@@ -54,6 +61,7 @@ import sqlite3
 import struct
 import subprocess
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
@@ -86,9 +94,11 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS sessions (
     created_at      TEXT NOT NULL,
     turns           INTEGER NOT NULL DEFAULT 0,
     status          TEXT NOT NULL,
-    last_error      TEXT
+    last_error      TEXT,
+    kept            REAL NOT NULL DEFAULT 0
 )"""
-COLUMNS = ("session_id", "gatherer", "harness", "cwd", "permission_mode", "created_at", "turns", "status", "last_error")
+COLUMNS = ("session_id", "gatherer", "harness", "cwd", "permission_mode", "created_at", "turns", "status", "last_error",
+           "kept")
 
 
 class SessionError(ValueError):
@@ -109,8 +119,8 @@ def stored() -> List[dict]:
         return []
     conn = sqlite3.connect(f"file:{db_path()}?mode=ro", uri=True, timeout=8)
     conn.row_factory = sqlite3.Row
-    try:
-        return [dict(r) for r in conn.execute(f"SELECT {', '.join(COLUMNS)} FROM sessions ORDER BY created_at DESC")]
+    try:                                # a table from before `kept`: none kept
+        return [{"kept": 0, **dict(r)} for r in conn.execute("SELECT * FROM sessions ORDER BY created_at DESC")]
     except sqlite3.Error:
         return []
     finally:
@@ -288,9 +298,11 @@ class Sessions:
         self.lock = threading.RLock()
         self.agents: Dict[str, _Agent] = {}
         self.terms: Dict[str, _Term] = {}
-        conn = self._db()               # a process from before is gone: what it was running stopped
+        self.closing = False            # the dashboard stopping: what ends now is kept
+        conn = self._db()               # a process from before is gone: what it was running stopped, and kept
         try:
-            conn.execute("UPDATE sessions SET status = 'stopped' WHERE status IN ('starting', 'running', 'idle', 'terminal')")
+            conn.execute("UPDATE sessions SET status = 'stopped', kept = ? "
+                         "WHERE status IN ('starting', 'running', 'idle', 'terminal')", (time.time(),))
         finally:
             conn.close()
 
@@ -299,6 +311,11 @@ class Sessions:
         conn = sqlite3.connect(db_path(), timeout=8, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute(SCHEMA)
+        if "kept" not in {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}:   # a table from before it
+            try:
+                conn.execute("ALTER TABLE sessions ADD COLUMN kept REAL NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:     # another process added it meanwhile
+                pass
         return conn
 
     def _row(self, session_id: str) -> Optional[dict]:
@@ -355,7 +372,7 @@ class Sessions:
         session_id = str(uuid.uuid4())
         conn = self._db()
         try:
-            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL)",
+            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0)",
                          (session_id, gatherer, harness, cwd, permission_mode, _now()))
         finally:
             conn.close()
@@ -377,7 +394,7 @@ class Sessions:
                                    + (f" ({cwd})" if cwd else ""))
             conn = self._db()
             try:
-                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, 'claude', ?, 'auto', ?, 1, 'stopped', NULL)",
+                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, 'claude', ?, 'auto', ?, 1, 'stopped', NULL, 0)",
                              (session_id, gatherer, cwd, _now()))
             finally:
                 conn.close()
@@ -414,8 +431,8 @@ class Sessions:
 
     def stop(self, session_id: str) -> dict:
         """The session's agent ended: its stdin closed, so it exits and the session shows Closed until
-        the next message resumes it. In the middle of a turn, the turn is cut off (its process group
-        terminated) and what waits is dropped. A terminal is closed as a terminal window is: hung up,
+        the next message resumes it; a kept session with no process is closed so at once. In the middle
+        of a turn, the turn is cut off (its process group terminated) and what waits is dropped. A terminal is closed as a terminal window is: hung up,
         whatever it was doing, and its end recorded before this returns, so the session can be opened
         again straight away. The session as `list` has it."""
         with self.lock:
@@ -425,6 +442,10 @@ class Sessions:
             t = self.terms.get(session_id)
             if t is not None:
                 self._hang_up(t)
+            a = self.agents.get(session_id)
+            if t is None and s["kept"] and (a is None or a.proc.poll() is not None):
+                self._set(session_id, kept=0)        # kept, with no process: closed now, as asked
+                return next(x for x in self.list() if x["session_id"] == session_id)
         if t is not None:                            # its end recorded by its reader, which takes the lock
             self._gone(t)
             with self.lock:
@@ -464,7 +485,7 @@ class Sessions:
             raise SessionError(f"could not run ag: {exc}") from exc
         a = _Agent(proc, log)
         self.agents[sid] = a
-        self._set(sid, status="starting", last_error=None)
+        self._set(sid, status="starting", last_error=None, kept=0)
         a.reader = threading.Thread(target=self._read, args=(sid, a), daemon=True)
         a.reader.start()
         return a
@@ -539,11 +560,12 @@ class Sessions:
             if self.agents.get(session_id) is a:
                 del self.agents[session_id]
                 waiting = bool(a.queue) and not a.taken
-                ok = a.ended or ((code == 0 or a.yielding or a.taken) and not a.busy)   # ended or given way: as asked
+                ok = a.ended or self.closing or ((code == 0 or a.yielding or a.taken) and not a.busy)   # as asked
                 s = self._row(session_id)
                 if a.ended and a.busy and s and not s["turns"] and _has_calls(s["gatherer"], session_id):
                     self._set(session_id, turns=1)   # cut off in its first turn, after a call: Claude Code kept it, resumed
                 self._set(session_id, status="stopped" if ok else "failed",
+                          kept=time.time() if self.closing and not a.taken else 0,
                           **({} if ok else {"last_error": _why(session_id) or
                                             f"the agent exited ({code}); see {log_path(session_id)}"}))
                 if waiting:                  # messages sent while it was ending: a new process takes them
@@ -622,7 +644,7 @@ class Sessions:
         self.terms[sid] = t
         if resume and not s["turns"]:
             self._set(sid, turns=1)
-        self._set(sid, status="terminal", last_error=None)
+        self._set(sid, status="terminal", last_error=None, kept=0)
         t.reader = threading.Thread(target=self._read_terminal, args=(sid, t), daemon=True)
         t.reader.start()
         return t
@@ -660,7 +682,7 @@ class Sessions:
             if self.terms.get(session_id) is t:
                 del self.terms[session_id]
                 s = self._row(session_id)
-                self._set(session_id, status="stopped",
+                self._set(session_id, status="stopped", kept=time.time() if self.closing else 0,
                           **({"turns": max(1, s["turns"])} if s and _has_calls(s["gatherer"], session_id) else {}))
 
     def output(self, session_id: str, since: int, wait: float = 0.0):
@@ -738,8 +760,9 @@ class Sessions:
     def close(self) -> None:
         """Every agent's stdin closed, so each ends after its turn; any still running after 5 s is
         stopped; every terminal hung up, and killed if still there after 5 s. Returns once each one's
-        end is recorded."""
+        end is recorded. Each is kept: the dashboard's end did not close it."""
         with self.lock:
+            self.closing = True
             terms = list(self.terms.values())
             for t in terms:
                 self._hang_up(t)
