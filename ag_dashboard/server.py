@@ -7,13 +7,15 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/read?gatherer=G&read_id=N    data.read(G, N)
     GET /api/context?gatherer=G&read_id=N data.context(G, N)
     GET /api/history?gatherer=G&channel=C&from=A[&to=B]   data.history(G, C, A, B)
+    GET /api/transcript?gatherer=G&channel=C[&after=A|&before=B]   data.transcript(G, C, A, B)
     GET /api/stream[?gatherer=G&channel=C]                 server-sent events, until the page goes:
         `home` (data.home()) and, with a channel, `agent` (data.agent(G, C)) at once, then again
         each time they change -- woken by ag's notifications or the fallback check (live.py) --
         and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle)
 
-`page(snapshot)` is the page itself; with a snapshot (data.snapshot()) it stands alone,
-its data inside it (`ag dashboard --out`)."""
+`page(snapshot)` is the page itself, the libraries it renders markdown with (VENDOR: marked,
+and DOMPurify to make what it makes safe) inside it, never fetched; with a snapshot
+(data.snapshot()) it stands alone, its data inside it (`ag dashboard --out`)."""
 
 import json
 import os
@@ -28,6 +30,7 @@ from urllib.parse import parse_qs, urlsplit
 from . import data, live
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
+VENDOR = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor", n) for n in ("marked.min.js", "purify.min.js")]
 LLM_SECONDS = 10.0          # how long the Gatherer's call log is reused before it is read again
 KEEPALIVE = 15.0            # the most a stream stays silent
 COALESCE = 0.03             # after a wake, how long to wait for the rest of a burst (a call stores many events)
@@ -37,6 +40,11 @@ def page(snapshot: Optional[dict] = None) -> str:
     """The page; with `snapshot`, its data inside it."""
     with open(PAGE, encoding="utf-8") as fh:
         text = fh.read()
+    scripts = []
+    for path in VENDOR:
+        with open(path, encoding="utf-8") as fh:
+            scripts.append("<script>" + fh.read().replace("</script", "<\\/script") + "</script>")
+    text = text.replace("<!--VENDOR-->", "\n".join(scripts), 1)
     if snapshot is None:
         return text
     embedded = json.dumps(snapshot).replace("</", "<\\/")      # never closes the script it sits in
@@ -104,6 +112,11 @@ def handler(calls: _Calls, hub: live.Hub):
                         and q.get("to", "0").isdigit():
                     return self.answer(data.history(q["gatherer"], q["channel"], int(q["from"]),
                                                     int(q["to"]) if "to" in q else None))
+                if url.path == "/api/transcript" and q.get("gatherer") and "channel" in q \
+                        and q.get("after", "0").isdigit() and q.get("before", "0").isdigit():
+                    return self.answer(data.transcript(q["gatherer"], q["channel"],
+                                                       int(q["after"]) if "after" in q else None,
+                                                       int(q["before"]) if "before" in q else None))
                 return self.send(404, b"not found", "text/plain")
             except Exception as exc:  # noqa: BLE001 - the page shows the error and keeps its last view
                 return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
