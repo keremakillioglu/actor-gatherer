@@ -18,7 +18,8 @@ session, ...), some of them started from the page (sessions.py); which harness, 
 CLOSED when the harness's process that made its last call no longer runs; else IDLE when its turn
 is over -- its last answer ended without a tool call -- and RUNNING when it is not (waiting on a
 tool, or on the model). Where the process is not known (a call from before ag recorded it, not
-Linux), a turn left unfinished for more than STALE_SECONDS counts as over. `running` is RUNNING,
+Linux), a turn left unfinished for more than STALE_SECONDS counts as over. A session the dashboard
+started whose process its own end took (sessions.py's `kept`) is IDLE, not CLOSED. `running` is RUNNING,
 or a build running for it. Its `last` is its latest activity: a read, an event, or a pending
 answer (the reply that ends a turn, which no call stores until the user writes again) -- what
 the page compares with when the reader last looked at it, to show it FINISHED. A REBUILD is a
@@ -178,6 +179,8 @@ def _with_started(gatherers: List[dict], started: List[dict]) -> None:
         a["created"] = min((x for x in (a["created"], _seconds(s["created_at"])) if x), default=None)
         if s["status"] in ("starting", "running") or s.get("queued"):   # its agent works, or a message waits for it
             a["status"], a["running"] = RUNNING, True
+        elif s.get("kept") and a["status"] == CLOSED and (a["last"] or 0) <= s["kept"]:
+            a["status"] = IDLE                   # ended by the dashboard's own end, not closed, nor used since
         g["last"] = max(g["last"] or 0, a["last"] or 0) or None
     for g in gatherers:                  # newest created first, as `_agents` has them
         for a in g["agents"]:

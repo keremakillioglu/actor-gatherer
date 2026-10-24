@@ -338,6 +338,73 @@ class TerminalTest(SessionsBase):
         self.assertEqual([x["status"] for x in sessions.Sessions().list()], ["stopped"])
 
 
+class KeptTest(SessionsBase):
+    """What the dashboard's own end takes is kept -- shown Idle after a restart -- and what is closed is not."""
+
+    def test_the_dashboard_s_end_keeps_its_idle_agent_and_its_terminal(self):
+        chat = self.s.create("g", self.work)["session_id"]
+        self.s.send(chat, "hi")
+        self.until(lambda: self.session(chat)["status"] == "idle")
+        term = self.s.create("g", self.work)["session_id"]
+        self.s.terminal(term)
+        self.until(lambda: self.s.output(term, -1) and b"fake terminal" in self.s.output(term, -1)[0])
+        before = time.time()
+        self.s.close()
+        again = sessions.Sessions()
+        for sid in (chat, term):
+            row = next(x for x in again.list() if x["session_id"] == sid)
+            self.assertEqual(row["status"], "stopped")
+            self.assertGreaterEqual(row["kept"], before)
+
+    def test_closed_from_the_list_or_exited_by_itself_it_is_not_kept(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.send(sid, "hi")
+        self.until(lambda: self.session(sid)["status"] == "idle")
+        self.s.stop(sid)
+        self.until(lambda: self.session(sid)["status"] == "stopped")
+        self.s.close()
+        self.assertEqual(self.session(sid)["kept"], 0)
+
+    def test_a_dashboard_gone_without_closing_keeps_what_it_last_had_running(self):
+        live, closed = (self.s.create("g", self.work)["session_id"] for _ in range(2))
+        self.s._set(live, status="terminal")
+        rows = {x["session_id"]: x for x in sessions.Sessions().list()}
+        self.assertGreater(rows[live]["kept"], 0)
+        self.assertEqual(rows[closed]["kept"], 0)
+
+    def test_a_kept_session_is_closed_from_the_list_or_cleared_by_opening_it(self):
+        a, b = (self.s.create("g", self.work)["session_id"] for _ in range(2))
+        for sid in (a, b):
+            self.s._set(sid, kept=time.time())
+        self.s.stop(a)                                       # no process: closed at once
+        self.assertEqual(self.session(a)["kept"], 0)
+        self.s.send(b, "hi")
+        self.assertEqual(self.session(b)["kept"], 0)
+
+    def test_a_table_from_before_kept_gets_it(self):
+        self.s.close()
+        os.remove(sessions.db_path())
+        conn = sqlite3.connect(sessions.db_path())
+        conn.execute(sessions.SCHEMA.replace(",\n    kept            REAL NOT NULL DEFAULT 0", ""))
+        conn.execute("INSERT INTO sessions VALUES ('x', 'g', 'claude', '/', 'auto', 'now', 1, 'idle', NULL)")
+        conn.commit()
+        conn.close()
+        self.assertEqual(sessions.stored()[0]["kept"], 0)       # read as it is: none kept
+        self.s = sessions.Sessions()
+        self.assertGreater(sessions.stored()[0]["kept"], 0)     # it was idle, with a process: kept
+
+    def test_a_kept_session_whose_process_is_gone_shows_idle_until_used_again(self):
+        def shown(last, kept):
+            g = [{"name": "g", "agents": [{"channel": "c", "created": 1.0, "last": last, "status": data.CLOSED,
+                                           "running": False, "harness": "claude", "cwd": "/"}], "last": last}]
+            data._with_started(g, [{"session_id": "c", "gatherer": "g", "cwd": "/", "harness": "claude",
+                                    "created_at": "2026-10-24T00:00:00+00:00", "status": "stopped", "kept": kept}])
+            return g[0]["agents"][0]["status"]
+        self.assertEqual(shown(100.0, 200.0), data.IDLE)
+        self.assertEqual(shown(300.0, 200.0), data.CLOSED)     # used since, elsewhere, and closed there
+        self.assertEqual(shown(100.0, 0), data.CLOSED)
+
+
 class HomeTest(SessionsBase):
     def test_a_session_with_no_calls_yet_is_listed_in_its_new_gatherer(self):
         made = self.s.create("brand_new", self.work)
