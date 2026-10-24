@@ -222,7 +222,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .term .res .g { color: var(--term-faint); }
 .term .res pre, .term pre.out { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--term-dim); }
 .term .res .err { color: var(--term-err); }
-.term details > summary { list-style: none; cursor: pointer; color: var(--term-faint); }
+.term details > summary { list-style: none; cursor: pointer; color: var(--term-faint); font-size: inherit; margin-top: 0; }
 .term details > summary::-webkit-details-marker { display: none; }
 .term details > summary:hover { color: var(--term-dim); }
 .term .more { color: var(--term-faint); cursor: pointer; }
@@ -252,6 +252,17 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .term .md hr { border: 0; border-top: 1px solid var(--term-rule); }
 .term .earlier { display: block; margin: 0 auto 14px; color: var(--term-dim); background: var(--term-user); border-color: var(--term-rule); }
 .term .status-line { color: var(--term-accent); margin-top: 6px; }
+/* while the agent works, the status line's glyph turns, as Claude Code's does */
+.term .status-line .spin::before { content: "✻"; display: inline-block; width: 1.2em; animation: term-spin 1.2s steps(1) infinite; }
+@keyframes term-spin { 0% { content: "·"; } 16% { content: "✢"; } 33% { content: "✳"; } 50% { content: "✶"; } 66% { content: "✻"; } 83% { content: "✽"; } }
+/* a stretch of tool calls: one line each, what it is for; the call and its output behind a click */
+.term .call-line, .term .more { margin-bottom: 4px; }
+.term .call-line > details > summary, .term .more > details > summary { color: var(--term-dim); }
+.term .call-line > details > summary:hover, .term .more > details > summary:hover { color: var(--term-ink); }
+.term .call-line > details > summary.bad { color: var(--term-err); }
+.term .call-line > details[open] > summary { margin-bottom: 6px; }
+.term .call-line .calls { border-left: 1px solid var(--term-rule); padding-left: 10px; margin-bottom: 8px; }
+.term .more > details[open] > summary { margin-bottom: 4px; }
 .term .empty-term { color: var(--term-faint); }
 @media (max-width: 760px) { .term { height: 70vh; padding: 10px 12px 14px; font-size: 12px; } }
 .aside-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 16px 6px; }
@@ -1559,7 +1570,7 @@ function todoView(todos) {
 // and (optionally) what goes under it instead of its plain result. Any other tool: its name and inputs.
 const shell = (i) => Array.isArray(i.command) ? i.command.join(" ") : str(i.command ?? i.cmd ?? i);
 const SUMMARIES = {
-  Bash: (i) => ({ title: "Bash", arg: firstLine(i.command, 200), note: i.description }),
+  Bash: (i) => ({ title: "Bash", arg: firstLine(i.command, 200), note: i.description, doing: i.description }),
   shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
   exec_command: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
   local_shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
@@ -1613,13 +1624,40 @@ function callBlock(call, result, id, running) {
   for (const u of under) blk.append(el("div", { class: "res" }, el("span", { class: "g", text: "⎿" }), u));
   return blk;
 }
-// The transcript's blocks, in order: each result drawn under its call, wherever it was stored.
+// A tool call as one line, in the agent's words: its description where it gave one (Bash does), else
+// its title and argument ("Read y.py").
+const callLine = (call) => { const s = summary(call); return firstLine(s.doing || (s.arg ? `${s.title} ${s.arg}` : s.title), 160); };
+const RUN_SHOWN = 5;                                 // a stretch's last calls listed; the earlier ones behind "+N more"
+
+// A stretch of tool calls between two messages, as Claude Code shows it: each call one line saying
+// what it is for, its dot green, red when it failed, blinking while it runs; the call itself and its
+// output folded under the line. Thinking in the stretch is a folded line of its own.
+function runBlock(run, results, running) {
+  const line = ({ part, id }) => {
+    if (part.kind !== "call") return el("div", { class: "blk think-blk" }, el("span", { class: "g think", text: "✻" }),
+      el("details", { id }, el("summary", { text: "Thinking…" }), el("div", { class: "body", text: part.text })));
+    const result = part.id ? results.get(part.id) : null;
+    const glyph = result ? (result.error ? "dot-err" : "dot-ok") : running && run.last ? "dot-run" : "dot-ok";
+    return el("div", { class: "blk call-line" }, el("span", { class: "g " + glyph, text: "●" }),
+      el("details", { id: id + "-l" }, el("summary", { class: result && result.error ? "bad" : "" }, callLine(part)),
+        el("div", { class: "calls" }, callBlock(part, result, id, running && run.last))));
+  };
+  const lines = run.map(line);
+  if (lines.length <= RUN_SHOWN + 1) return lines;
+  const earlier = lines.slice(0, lines.length - RUN_SHOWN);
+  return [el("div", { class: "blk more" }, el("span", { class: "g", text: " " }),
+    el("details", { id: `${run[0].id}-more` }, el("summary", { text: `+${earlier.length} more` }), ...earlier)),
+    ...lines.slice(-RUN_SHOWN)];
+}
+
+// The transcript's blocks, in order: messages as they are; each stretch of tool calls between two
+// of them folded into one line (runBlock), each result drawn with its call wherever it was stored.
 function transcriptBlocks(items, running) {
   const results = new Map();
   for (const it of items) for (const p of it.parts) if (p.kind === "result" && p.id) results.set(p.id, p);
   const calls = new Set(items.flatMap((it) => it.parts.filter((p) => p.kind === "call" && p.id).map((p) => p.id)));
   const out = [];
-  let notes = [];
+  let notes = [], run = [];
   const flushNotes = () => {
     if (!notes.length) return;
     const id = `tx-n-${notes[0].id}`;
@@ -1628,24 +1666,29 @@ function transcriptBlocks(items, running) {
         ...notes.map((n) => el("pre", { text: `${n.name}\n${n.text}` })))));
     notes = [];
   };
+  const flushRun = (last = false) => {
+    if (!run.length) return;
+    if (run.some((x) => x.part.kind === "call")) { run.last = last; out.push(...runBlock(run, results, running)); }
+    else for (const { part, id } of run) out.push(el("div", { class: "blk think-blk" }, el("span", { class: "g think", text: "✻" }),
+      el("details", { id }, el("summary", { text: "Thinking…" }), el("div", { class: "body", text: part.text }))));
+    run = [];
+  };
   items.forEach((it, n) => {
     const base = it.row_id !== null ? `r${it.row_id}` : `p${n}`;
     it.parts.forEach((p, j) => {
       const id = `tx-${base}-${j}`;
       const isNote = p.kind === "note" || (p.kind === "text" && p.role === "system");
       if (isNote) { if (showNotes) notes.push({ id, name: p.name || "system", text: p.text }); return; }
-      flushNotes();
+      if (p.kind === "call" || (p.kind === "thinking" && p.text.trim())) { flushNotes(); run.push({ part: p, id }); return; }
+      if (p.kind === "thinking" || (p.kind === "result" && p.id && calls.has(p.id))) return;   // encrypted; or drawn with its call
+      flushRun(); flushNotes();
       if (p.kind === "text" && p.role === "user") out.push(el("div", { class: "user" }, el("span", { class: "g", text: "❯" }), el("div", { class: "body", text: p.text })));
       else if (p.kind === "text") out.push(el("div", { class: "blk" }, el("span", { class: "g text", text: "●" }), markdown(p.text)));
-      else if (p.kind === "thinking") {                // encrypted thinking has nothing to show: left out, as the harness does
-        if (p.text.trim()) out.push(el("div", { class: "blk think-blk" }, el("span", { class: "g think", text: "✻" }),
-          el("details", { id }, el("summary", { text: "Thinking…" }), el("div", { class: "body", text: p.text }))));
-      }
-      else if (p.kind === "call") out.push(callBlock(p, p.id ? results.get(p.id) : null, id, running));
-      else if (p.kind === "result" && !(p.id && calls.has(p.id)))   // its call is not loaded: shown alone
+      else if (p.kind === "result")                    // its call is not loaded: shown alone
         out.push(el("div", { class: "blk" }, el("span", { class: "g", text: " " }), el("div", { class: "res" }, el("span", { class: "g", text: "⎿" }), foldedOutput(p.text, id, p.error ? "err" : ""))));
     });
   });
+  flushRun(true);
   flushNotes();
   return out;
 }
@@ -1682,7 +1725,7 @@ function transcriptView(info) {
     const running = ["running", "building"].includes(statusOf(info)[0]);   // not finished, closed or idle
     term.append(...transcriptBlocks(items, running));
     if (!items.length) term.append(el("div", { class: "empty-term", text: "No messages yet." }));
-    if (running) term.append(el("div", { class: "status-line", text: `✻ Working… (last activity ${ago(info.last)})` }));
+    if (running) term.append(el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }), `Working… (last activity ${ago(info.last)})`));
   }
   card.append(term);
   return card;
@@ -1776,7 +1819,7 @@ addChatView({
     return [
       data.earlier ? el("button", { type: "button", class: "earlier", onclick: loadEarlier }, "Load earlier messages") : null,
       ...transcriptBlocks([...data.items, ...data.pending], running),
-      running ? el("div", { class: "status-line", text: `✻ Working… (last activity ${ago(info.last)})` }) : null,
+      running ? el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }), `Working… (last activity ${ago(info.last)})`) : null,
     ].filter(Boolean);
   },
   composer: (ctx) => {
