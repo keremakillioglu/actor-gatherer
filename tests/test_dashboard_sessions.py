@@ -75,6 +75,7 @@ class SessionsBase(unittest.TestCase):
         self.env = unittest.mock.patch.dict(os.environ, {"AG_COMMAND": f"{sys.executable} {fake}", "FAKE_AG_LOG": self.log,
                                                          "FAKE_AG_DELAY": "0"})
         self.env.start()
+        self.chat("headless")                     # a message to the agent with no screen; ChatTerminalTest: the default
         self.s = sessions.Sessions()
 
     def tearDown(self):
@@ -82,6 +83,17 @@ class SessionsBase(unittest.TestCase):
         self.env.stop()
         dashboard_home.HOME = self.saved
         self.tmp.cleanup()
+
+    def chat(self, mode):
+        """The home's `[dashboard] chat` (sessions.py's `chat_mode`), in its config.toml; None: no config.toml."""
+        path = os.path.join(dashboard_home.HOME, "config.toml")
+        if mode is None:
+            if os.path.exists(path):
+                os.remove(path)
+            return
+        os.makedirs(dashboard_home.HOME, exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write(f'[dashboard]\nchat = "{mode}"\n')
 
     def logged(self):
         with open(self.log) as fh:
@@ -336,6 +348,87 @@ class TerminalTest(SessionsBase):
         sid = self.s.create("g", self.work)["session_id"]
         self.s._set(sid, status="terminal")
         self.assertEqual([x["status"] for x in sessions.Sessions().list()], ["stopped"])
+
+
+@unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
+class ChatTerminalTest(SessionsBase):
+    """A message to a session with no terminal open opens one, the message its first prompt (the default,
+    `[dashboard] chat = "terminal"`); a turn of its agent's running takes it after the turn."""
+
+    def setUp(self):
+        super().setUp()
+        self.chat(None)
+
+    def screen(self, sid):
+        got = self.s.output(sid, -1)
+        return got[0].decode("utf-8", "replace") if got else ""
+
+    def argvs(self):
+        return [x["argv"] for x in self.logged() if "argv" in x]
+
+    def test_which_the_config_says(self):
+        self.assertEqual(sessions.chat_mode(), "terminal")              # no config.toml
+        self.chat("headless")
+        self.assertEqual(sessions.chat_mode(), "headless")
+        for text in ('[dashboard]\nchat = "tmux"\n', "[cli]\n", "[dashboard\n"):   # none of them, none said, not TOML
+            with open(os.path.join(dashboard_home.HOME, "config.toml"), "w") as fh:
+                fh.write(text)
+            self.assertEqual(sessions.chat_mode(), "terminal", text)
+        with unittest.mock.patch.object(sessions, "TERMINALS", False):  # no pseudo-terminals here
+            self.assertEqual(sessions.chat_mode(), "headless")
+
+    def test_a_message_opens_its_terminal_with_the_message_as_its_first_prompt(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        s = self.s.send(sid, "-p is not an option\nhere", 90, 25, fullscreen=True)
+        self.assertEqual((s["terminal"], s["status"], s["fullscreen"]), (True, "terminal", True))
+        self.until(lambda: "fake terminal" in self.screen(sid))
+        self.assertIn("fake terminal 90x25 tty=True term=xterm-256color alt=None", self.screen(sid))
+        [argv] = self.argvs()
+        self.assertEqual(argv[:4], ["--quiet", "--gatherer", "g", "claude"])
+        self.assertEqual(argv[-4:], ["--session-id", sid, "--", "-p is not an option\nhere"])   # after --: the prompt
+        self.assertNotIn(sid, self.s.agents)                             # no agent with no screen
+        with open(sessions.log_path(sid)) as fh:
+            self.assertNotIn("not an option", fh.read())                 # the message is not in its log
+        self.s.send(sid, "next")                                         # open now: typed into it
+        self.until(lambda: "[got \r]" in self.screen(sid))
+        self.assertEqual("".join(x.get("typed", "") for x in self.logged()), "\x1b[200~next\x1b[201~\r")
+        self.assertEqual(len(self.argvs()), 1)
+
+    def test_one_closed_is_opened_again_resuming_the_session(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.terminal(sid)
+        self.until(lambda: "fake terminal" in self.screen(sid))
+        self.s._set(sid, turns=1)                                        # it had a turn
+        self.s.stop(sid)
+        self.s.send(sid, "again")
+        self.until(lambda: len(self.argvs()) == 2)
+        self.assertEqual(self.argvs()[1][-4:], ["--resume", sid, "--", "again"])
+        self.assertTrue(self.session(sid)["terminal"])
+
+    def test_an_idle_agent_is_ended_and_the_terminal_takes_the_session(self):
+        self.chat("headless")
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.send(sid, "one")
+        self.until(lambda: self.session(sid)["status"] == "idle")
+        self.chat("terminal")
+        self.s.send(sid, "two")
+        argvs = self.until(lambda: len(self.argvs()) == 2 and self.argvs())
+        self.assertEqual((len(argvs), "-p" in argvs[0], "-p" in argvs[1]), (2, True, False))
+        self.assertEqual(argvs[1][-4:], ["--resume", sid, "--", "two"])
+        self.assertNotIn(sid, self.s.agents)
+        self.assertEqual(self.session(sid)["status"], "terminal")       # the agent's end did not overwrite it
+        self.assertEqual([x["message"] for x in self.logged() if "message" in x], ["one"])
+
+    def test_a_turn_running_takes_the_message_after_it(self):
+        self.chat("headless")
+        os.environ["FAKE_AG_DELAY"] = "0.5"
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.send(sid, "one")
+        self.chat("terminal")
+        self.assertEqual(self.s.send(sid, "two")["queued"], ["two"])    # waits for the turn, in the agent
+        self.until(lambda: self.session(sid)["turns"] == 2)
+        self.assertEqual([x["message"] for x in self.logged() if "message" in x], ["one", "two"])
+        self.assertFalse(self.session(sid)["terminal"])
 
 
 class KeptTest(SessionsBase):
@@ -613,6 +706,10 @@ class GathererTest(SessionsBase):
 class AvailableTest(SessionsBase):
     """The harnesses a gatherer's start buttons offer: those config.toml has, whose command is installed."""
 
+    def setUp(self):
+        super().setUp()
+        self.chat(None)
+
     def config(self, text):
         os.makedirs(dashboard_home.HOME, exist_ok=True)
         with open(os.path.join(dashboard_home.HOME, "config.toml"), "w") as fh:
@@ -671,6 +768,15 @@ class EndpointTest(SessionsBase):
         home = json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))
         self.assertEqual(home["gatherers"][0]["agents"][0]["session"]["session_id"], made["session_id"])
         self.assertIn("auto", home["permission_modes"])
+
+    @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
+    def test_a_message_opens_its_terminal_at_the_size_and_screen_the_page_sends(self):
+        self.chat(None)
+        sid = self.post("/api/sessions", {"gatherer": "g", "cwd": self.work})[1]["session_id"]
+        code, sent = self.post("/api/send", {"session_id": sid, "text": "hello", "cols": 88, "rows": 22, "fullscreen": True})
+        self.assertEqual((code, sent["terminal"], sent["fullscreen"]), (200, True, True))
+        self.until(lambda: b"fake terminal 88x22" in (self.httpd.sessions.output(sid, -1) or (b"",))[0])
+        self.assertEqual([x["argv"] for x in self.logged() if "argv" in x][0][-2:], ["--", "hello"])
 
     @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
     def test_a_terminal_opened_typed_into_and_streamed_from_the_page(self):

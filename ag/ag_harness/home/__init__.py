@@ -77,6 +77,10 @@ TEMPLATE = '''# This home's settings, by who reads them:
 #                           the policies call
 #   [cli]                   ag, the command line: how it launches each harness
 #                           (added by ag the first time it runs)
+#   [dashboard]             ag dashboard: `chat = "headless"` sends a message to an
+#                           actor with no terminal open to an agent with no screen
+#                           (`claude -p`, `codex exec`); the default, "terminal",
+#                           opens the actor's terminal with it
 #
 # The policies and pollers below are a CATALOG -- what is AVAILABLE, not what
 # runs. What a gatherer runs is its own gatherers/<name>/gatherer.toml, made when
