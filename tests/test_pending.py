@@ -103,6 +103,24 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.rows("SELECT count(*) FROM _pending"), [(0,)])
         self.assertEqual(self.rows("SELECT count(*) FROM events WHERE text = 'There are 42 rows.'"), [(1,)])
 
+    def test_when_the_answer_came_stays_on_its_read_once_a_side_call_stores_it(self):
+        """The answer names the read its call's context came from: when it came is kept on that read
+        (`_reads.answered_at`), and stays once a read-only call -- Claude Code's recap, a prompt
+        suggestion -- stores the reply and clears it, minutes later perhaps."""
+        first, = self.ask(self.call(C1, [ask("count the rows")]))
+        kept, = self.ask(dict(self.pend(C1), read_id=first["read_id"]))
+        self.assertEqual(kept["kept"], 1)
+        (received,), = self.rows("SELECT received_at FROM _pending")
+        answered = f"SELECT answered_at FROM _reads WHERE read_id = {first['read_id']}"
+        self.assertEqual(self.rows(answered), [(received,)])
+        self.ask(dict(self.call(C1, [ask("count the rows"), REPLY]), op="context"))      # a recap's
+        self.assertEqual(self.rows("SELECT count(*) FROM _pending"), [(0,)])
+        self.assertEqual(self.rows("SELECT count(*) FROM events WHERE text = 'There are 42 rows.'"), [(1,)])
+        self.assertEqual(self.rows(answered), [(received,)])                             # not the side call's time
+        self.assertEqual(self.rows("SELECT count(*) FROM _reads"), [(1,)])               # which logs no read
+        self.ask(dict(self.pend(C2), read_id=True), dict(self.pend(C2), read_id="1"), self.pend(C2))
+        self.assertEqual(self.rows(answered), [(received,)])                             # no read named: none set
+
     def test_a_pending_event_must_be_one(self):
         answer, = self.ask({"op": "pending", "gatherer": "g", "properties": C1, "events": [{"text": "x"}]})
         self.assertIn("not an event", answer["error"])
@@ -119,9 +137,11 @@ class ServerTest(unittest.TestCase):
         self.ask(self.call(C1, [ask("count the rows")]))
         conn = sqlite3.connect(paths.db_path("g"))
         conn.execute("DROP TABLE _pending")
+        conn.execute("ALTER TABLE _reads DROP COLUMN answered_at")
         conn.commit()
         schema.create(conn)
         self.assertTrue({"p_channel", "p_cwd"} <= {c[1] for c in conn.execute("PRAGMA table_info(_pending)")})
+        self.assertIn("answered_at", {c[1] for c in conn.execute("PRAGMA table_info(_reads)")})
         conn.close()
 
 
@@ -196,6 +216,12 @@ class HookTest(unittest.TestCase):
         self.assertEqual((first["stop"], second["stop"]), ("tool_use", "end_turn"))   # why each answer stopped
         self.assertNotIn("id", second["events"][0])                                # not history: no id
 
+    def test_each_answer_names_the_read_its_call_s_context_came_from(self):
+        self.call([ask("count the rows")], sse([CALL], "tool_use"))
+        self.call([ask("count the rows")], sse([TEXT], "end_turn"))
+        reads = [i for i, (op, _) in enumerate(self.server.asked, 1) if op == "rewrite"]   # the read_id each was given
+        self.assertEqual([b["read_id"] for b in self.kept()], reads)
+
     def test_a_failed_answer_is_not_kept(self):
         self.call([ask("count the rows")], sse([TEXT], "end_turn"), status=529)
         self.call([ask("count the rows")], sse([TEXT], "end_turn", error={"type": "overloaded_error"}))
@@ -231,6 +257,7 @@ class CodexHookTest(unittest.TestCase):
         kept = [b for op, b in server.asked if op == "pending"]
         self.assertEqual(len(kept), 1)
         self.assertEqual((kept[0]["properties"], kept[0]["answer"], kept[0]["stop"]), ({"channel": "t1"}, "resp_1", "completed"))
+        self.assertEqual(kept[0]["read_id"], [i for i, (op, _) in enumerate(server.asked, 1) if op == "rewrite"][0])
         self.assertEqual([(e["type"], e["text"]) for e in kept[0]["events"]], [("agent_message", "There are 42 rows.")])
 
 

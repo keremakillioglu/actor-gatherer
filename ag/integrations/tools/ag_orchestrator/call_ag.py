@@ -102,11 +102,13 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
 
 
 async def pending_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], answer: list,
-                     adaptor: Adaptor, answer_id: Optional[str] = None, stop: Optional[str] = None) -> str:
+                     adaptor: Adaptor, answer_id: Optional[str] = None, stop: Optional[str] = None,
+                     read_id: Optional[int] = None) -> str:
     """What the model answered -- `answer`, the harness's messages it makes -- through the adaptor's
     `to_events`, kept by the server as pending (its `pending`): seen by a reader of the gatherer
     until the next call with these properties stores its events, with why it stopped (`stop`: the
-    provider's end_turn, tool_use, ...). The properties are a call's (CWD
+    provider's end_turn, tool_use, ...), and on `read_id`, the read the call's context came from
+    (`keep_read`), when it came. The properties are a call's (CWD
     from `cwd`, as `call_ag` sets it), so that call's are what clears them. A note; never raises."""
     if cwd:
         properties = {**properties, CWD: cwd}
@@ -122,6 +124,8 @@ async def pending_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Opt
         body["answer"] = answer_id
     if stop:
         body["stop"] = stop
+    if isinstance(read_id, int):
+        body["read_id"] = read_id
     kept = await client.request("pending", body)
     if not isinstance(kept, dict) or kept.get("error"):
         return f"server: {kept.get('error') if isinstance(kept, dict) else repr(kept)}; nothing kept"
@@ -152,10 +156,16 @@ def preamble_of(parts) -> list:
 
 def keep_read(request, gatherer: str, out: dict) -> None:
     """For a proxy hook: keep the read this request's context came from (`call_ag`'s `out`)
-    on the request, for `report_measured` once the answer is back."""
+    on the request, for `report_measured` once the answer is back (and `read_of`)."""
     state = getattr(request, "state", None)
     if isinstance(state, dict) and isinstance(out.get("read_id"), int):
         state[READ] = (gatherer, out["read_id"])
+
+
+def read_of(request) -> Optional[int]:
+    """The read this request's context came from (`keep_read`); None when not known."""
+    kept = (getattr(request, "state", None) or {}).get(READ)
+    return kept[1] if kept else None
 
 
 async def report_measured(ag_clients, request, tokens: Optional[int]) -> None:

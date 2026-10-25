@@ -60,8 +60,8 @@ from typing import Callable, Optional, Tuple, Union
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import (call_ag, keep_read, pending_ag, preamble_of, report_failed,
-                                                    report_measured)
+from ag.integrations.tools.ag_orchestrator.call_ag import (call_ag, keep_read, pending_ag, preamble_of, read_of,
+                                                    report_failed, report_measured)
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from .ag_clients import AgClients
 from ..adaptor.adaptor import CodexAdaptor
@@ -270,7 +270,7 @@ class CodexContextManager:
         gatherer, channel, cwd = kept
         note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
                                 answer["output_items"], self.adaptor, answer.get("response_id"),
-                                answer.get("status"))
+                                answer.get("status"), read_of(request))
         self.log(gatherer, f"[{channel}] answered ({answer.get('status')}): {note}")
 
     async def close(self) -> None:

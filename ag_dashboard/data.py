@@ -41,9 +41,13 @@ tries spent, or the error not one to try again -- is ERROR; the user's interrupt
 call, IDLE. A failed call with no try since for GIVE_UP_SECONDS counts as given up too -- with no record to
 read (codex; a session of another machine), or one that says nothing: Esc while Claude Code waits to try again
 stops it without a word -- ERROR; GIVE_UP_LONG where the record could still say, the endpoint having answered
-an error that may ask for a longer wait (Retry-After). `running` is RUNNING or BACKGROUND, or a build running for it. Its `last` is its latest activity: a read, an event, or a pending
-answer (the reply that ends a turn, which no call stores until the user writes again) -- what
-the page compares with when the reader last looked at it, to show it FINISHED. A REBUILD is a
+an error that may ask for a longer wait (Retry-After). `running` is RUNNING or BACKGROUND, or a build running for it. Its `last` is its latest activity: a call (its read), or an
+answer to one -- pending (the reply that ends a turn, which no call stores until the user writes again), or
+kept on its read (`answered_at`) once a call stored it -- what the page compares with when the reader last
+looked at it, to show it FINISHED. Not the events stored: a side call of Claude Code's (a recap, a prompt
+suggestion) stores the conversation's -- the reply that ended the turn among them, minutes after it came --
+which is no activity of the agent's; only an agent with no reads (a history loaded whole) goes by its newest
+event. A REBUILD is a
 read whose context comes from another build than the agent's read before it: the condensed
 history was replaced.
 
@@ -337,11 +341,12 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
                         "last_read": None, "cwd": None, "tasks": 0, "est_tokens": None, "real_tokens": None,
                         "limit_tokens": None, "sent_tokens": None, "pid": None, "alive": None}
     if CHANNEL in _columns(conn, "_reads"):
-        for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, max(read_at) AS last FROM _reads "
-                              f"GROUP BY {CHANNEL}"):
-            if r["ch"] in out:
-                out[r["ch"]].update(reads=r["n"], last_read=_seconds(r["last"]))
         cols = _columns(conn, "_reads")
+        answer = "max(answered_at)" if "answered_at" in cols else "NULL"
+        for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, max(read_at) AS last, {answer} AS answered "
+                              f"FROM _reads GROUP BY {CHANNEL}"):
+            if r["ch"] in out:
+                out[r["ch"]].update(reads=r["n"], last_read=_seconds(r["last"]), last_answer=_seconds(r["answered"]))
         cwd = "p_cwd" in cols
         process = [c for c in ("pid", "pid_started") if c in cols]
         for ch, a in out.items():
@@ -389,7 +394,8 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         a["harness"] = _harness(conn, ch)
         a["last_user_message"] = " ".join(last_user.get(ch, "").split())[:600] or None
         a["recap"] = recaps.get(ch)
-        a["last"] = max(a["last_read"] or 0, a["last_event"] or 0, answered.get(ch) or 0) or None   # its latest activity
+        a["last"] = max(a["last_read"] or 0, a.get("last_answer") or 0, answered.get(ch) or 0,   # its latest activity:
+                        0 if a["reads"] else a["last_event"] or 0) or None                     # not a side call's events
         a["building"] = ch in building
         a["turn_over"] = turn_over(conn, ch, tables)[0]
         a["status"] = status_of(a.get("alive"), a["turn_over"], a["last"], now)
