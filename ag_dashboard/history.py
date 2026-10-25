@@ -10,6 +10,7 @@ them:
                                          channel's latest build
     build(gatherer, channel)             ag asked to build the channel's history again, in its background
                                          worker, once there is enough new (BUILD_MESSAGES)
+    event(gatherer, row_id)              one event, as the transcript shows it: a tool call, opened
     search(gatherer, channel, q)         the events whose words hold `q`, each with the words around it
     render(gatherer, rows, clip)         those events as one Markdown transcript, by actor, task and turn
     export(gatherer, rows, fmt)          that, whole, or the events as JSON: a file to save
@@ -46,7 +47,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-from . import data, home, sessions
+from . import data, files, home, sessions
 
 CHANNEL = data.CHANNEL
 PREVIEW = 300               # the characters of an event's words the outline carries
@@ -145,6 +146,15 @@ class HistoryError(ValueError):
 
 # ---------------------------------------------------------------- the outline, and search
 
+def _call_label(payload: Optional[str], text: Optional[str], cwd: str) -> str:
+    """A tool call in a line, as the Files view names it: its own description, else its command, else its tool
+    and what it worked on; "" when the event holds no call."""
+    labels = [files._label(p.get("name") or "", p["input"] if isinstance(p.get("input"), dict) else {"input": p.get("input")},
+                           p.get("input"), cwd)
+              for p in data.parts("tool_call", payload, text, chars=None) if p.get("kind") == "call"]
+    return "; ".join(x for x in labels if x)[:PREVIEW]
+
+
 def _preview(text: Optional[str], payload: Optional[str]) -> str:
     words = text if text else data.readable(payload)
     return " ".join((words or "").split())[:PREVIEW]
@@ -195,8 +205,9 @@ def _builds(conn, channel: Optional[str]) -> Dict[str, dict]:
 def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dict:
     """The gatherer's events after row `after` -- the channel's only, when one is named -- oldest first,
     at most OUTLINE_ITEMS of them (`more`: there are others after): each one's row, channel, type,
-    size, time and the first PREVIEW characters of its words; every task ag has made of them; and
-    each channel's latest build (`_builds`)."""
+    size, time and the first PREVIEW characters of its words -- a tool call's, what it is for (`_call_label`),
+    its input left for when it is opened; every task ag has made of them; and each channel's latest build
+    (`_builds`)."""
     conn = data._connect(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
@@ -208,14 +219,36 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
             where, args = where + f" AND e.{CHANNEL} = ?", args + [channel]
         rows = conn.execute(
             f"SELECT e.row_id, e.{CHANNEL} AS ch, t.name AS type, e.tokens, e.inserted_at, substr(e.text, 1, {PREVIEW * 2}) AS text, "
-            f"CASE WHEN e.text IS NULL OR e.text = '' THEN e.payload_json END AS payload FROM events e "
+            f"CASE WHEN e.text IS NULL OR e.text = '' OR t.name = 'tool_call' THEN e.payload_json END AS payload FROM events e "
             f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE {where} ORDER BY e.row_id LIMIT ?",
             (*args, OUTLINE_ITEMS + 1)).fetchall()
+        cwd = {}
+        if "p_cwd" in data._columns(conn, "_reads") and CHANNEL in data._columns(conn, "_reads"):
+            cwd = dict(conn.execute(f"SELECT {CHANNEL}, p_cwd FROM _reads WHERE read_id IN "
+                                    f"(SELECT max(read_id) FROM _reads WHERE p_cwd IS NOT NULL GROUP BY {CHANNEL})"))
         events = [{"row_id": r["row_id"], "channel": r["ch"], "type": r["type"] or "?", "tokens": r["tokens"] or 0,
-                   "at": data._seconds(r["inserted_at"]), "text": _preview(r["text"], r["payload"])}
+                   "at": data._seconds(r["inserted_at"]),
+                   "text": (_call_label(r["payload"], r["text"], cwd.get(r["ch"]) or "") if r["type"] == "tool_call" else "")
+                   or _preview(r["text"], r["payload"])}
                   for r in rows[:OUTLINE_ITEMS]]
         return {"events": events, "tasks": _tasks(conn, channel), "builds": _builds(conn, channel),
                 "more": len(rows) > OUTLINE_ITEMS}
+    finally:
+        conn.close()
+
+
+def event(gatherer: str, row_id: int) -> dict:
+    """One event as the transcript shows it -- {row_id, type, parts} (data.parts, each text clipped at TEXT_CHARS):
+    a tool call opened in the list, its input whole where its stored text is cut."""
+    conn = data._connect(gatherer)
+    if conn is None:
+        return {"error": f"no database for gatherer {gatherer!r}"}
+    try:
+        r = conn.execute("SELECT e.row_id, t.name AS type, e.text, e.payload_json FROM events e "
+                         "LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.row_id = ?", (row_id,)).fetchone()
+        if r is None:
+            return {"error": f"no event {row_id}"}
+        return {"row_id": r["row_id"], "type": r["type"], "parts": data.parts(r["type"] or "?", r["payload_json"], r["text"])}
     finally:
         conn.close()
 

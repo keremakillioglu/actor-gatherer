@@ -12,6 +12,7 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/files?gatherer=G&channel=C[&turn=N][&cwd=D]   files.files(G, C, N, D): a turn's files
     GET /api/image?gatherer=G&row_id=R&id=I                files.image(G, R, I): the image call I's result holds
     GET /api/outline?gatherer=G[&channel=C][&after=A]      history.outline(G, C, A): the events, light, and the tasks
+    GET /api/event?gatherer=G&row_id=R                     history.event(G, R): one event, as the transcript shows it
     GET /api/search?gatherer=G[&channel=C]&q=Q             history.search(G, C, Q): the events whose words hold Q
     GET /api/extracts?gatherer=G                           history.extracts(G): what the model made of the history
     GET /api/stream[?gatherer=G&channel=C]                 server-sent events, until the page goes:
@@ -207,6 +208,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.send(200, got[1], got[0]) if got else self.send(404, b"no image", "text/plain")
                 if url.path == "/api/outline" and q.get("gatherer") and q.get("after", "0").isdigit():
                     return self.answer(history.outline(q["gatherer"], q.get("channel"), int(q.get("after", "0"))))
+                if url.path == "/api/event" and q.get("gatherer") and q.get("row_id", "").isdigit():
+                    return self.answer(history.event(q["gatherer"], int(q["row_id"])))
                 if url.path == "/api/search" and q.get("gatherer"):
                     return self.answer(history.search(q["gatherer"], q.get("channel"), q.get("q", "")))
                 if url.path == "/api/extracts" and q.get("gatherer"):

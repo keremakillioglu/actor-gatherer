@@ -70,6 +70,7 @@ class HistoryTest(HistoryBase):
         self.assertEqual(got["events"][1], {"row_id": 2, "channel": "c1", "type": "user_message", "tokens": 5,
                                             "at": got["events"][1]["at"], "text": "deploy the site"})
         self.assertEqual([t["name"] for t in got["tasks"]], ["Deploy", "Roll back"])
+        self.assertEqual(got["events"][2]["text"], "make deploy")             # a call: what it is for (a shell call with no description: its command), not its JSON
         mine = history.outline("g", "c1", after=4)
         self.assertEqual([e["row_id"] for e in mine["events"]], [5, 7, 8])
         self.assertEqual({e["channel"] for e in mine["events"]}, {"c1"})
@@ -98,6 +99,11 @@ class HistoryTest(HistoryBase):
         self.assertEqual(run.call_args[0][0], ["ag", "home", "build", "g", "--properties", '{"channel": "c1"}', "--min-messages", "10"])
         with self.assertRaises(history.HistoryError):
             history.build("g", "")
+
+    def test_one_event_as_the_transcript_shows_it(self):
+        got = history.event("g", 3)
+        self.assertEqual(got["parts"], [{"kind": "call", "id": "t1", "name": "Bash", "input": {"command": "make deploy"}}])
+        self.assertIn("error", history.event("g", 99))
 
     def test_search_finds_words_and_what_only_the_payload_holds(self):
         hits = history.search("g", None, "ROLL")["hits"]
