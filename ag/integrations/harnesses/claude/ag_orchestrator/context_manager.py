@@ -18,10 +18,12 @@ What it decides, Claude Code's own:
                    they are too, but for one:
     a suggestion   Claude Code's prompt suggestion: its conversation so far (the session's last
                    call, as it was) with a user message asking what the user might type next
-                   (`[SUGGESTION MODE: ...`). Not a turn: the conversation's events are inserted,
-                   the context the next call would get is made read only (the server's `context`:
-                   nothing else of the gatherer changes, no read), the suggestion's own message is
-                   put after it, and that is sent -- nothing of it stored, counted or measured
+                   (`[SUGGESTION MODE: ...`), and after it any tool call the suggestion's model
+                   made with Claude Code's refusal of it. Not a turn: the conversation's events are
+                   inserted, the context the next call would get is made read only (the server's
+                   `context`: nothing else of the gatherer changes, no read), the suggestion's own
+                   messages are put after it, and that is sent -- nothing of it stored, counted or
+                   measured
     a recap        Claude Code's "while you were away" recap: its conversation so far with a user
                    message asking for a short summary (`The user stepped away and is coming
                    back.`). Sent as a suggestion is -- the context read only, the recap's message
@@ -124,14 +126,21 @@ def request_class(headers) -> Optional[str]:
 
 
 def suggestion_at(messages: list, opening: str = SUGGESTION) -> Optional[int]:
-    """Where a prompt suggestion's own message is -- the last, a user message of text alone opening
-    with `opening` (`[SUGGESTION MODE:`), after the conversation it forks -- or None: not a suggestion."""
+    """Where a prompt suggestion's own message is -- a user message of text alone opening with
+    `opening` (`[SUGGESTION MODE:`), after the conversation it forks -- or None: not a suggestion.
+    It is the last message, or followed only by the suggestion's own tool calls, each an assistant
+    message and the user message of its results: Claude Code refuses a tool the suggestion's model
+    calls (`No tools needed for suggestion`) and asks it again, the refusal after the call."""
     if len(messages) < 2 or not isinstance(messages[-1], dict) or messages[-1].get("role") != "user":
         return None
-    blocks = blocks_of(messages[-1])
-    if not blocks or any(b.get("type") != "text" for b in blocks):
+    at = len(messages) - 1
+    while at >= 2 and any(b.get("type") == "tool_result" for b in blocks_of(messages[at])) and \
+            isinstance(messages[at - 1], dict) and messages[at - 1].get("role") == "assistant":
+        at -= 2                                           # a call of the suggestion's own, and its refusal
+    blocks = blocks_of(messages[at])
+    if at < 1 or not blocks or messages[at].get("role") != "user" or any(b.get("type") != "text" for b in blocks):
         return None
-    return len(messages) - 1 if str(blocks[0].get("text") or "").lstrip().startswith(opening) else None
+    return at if str(blocks[0].get("text") or "").lstrip().startswith(opening) else None
 
 
 def recap_at(messages: list) -> Optional[int]:
