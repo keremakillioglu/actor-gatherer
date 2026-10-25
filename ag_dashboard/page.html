@@ -3142,7 +3142,7 @@ async function loadOutlineNow() {
 }
 // Opening History on an actor -- the view, or another actor in it -- asks ag to build its history (an ordinary
 // build, which the actor takes up at its next user message: history.build), once it has HIST_BUILD_MESSAGES
-// user and agent messages since its last build; fewer, and they are its running task as they are. ag
+// user messages since its last build; fewer, and they are its running task as they are. ag
 // checks it again; the page only spares it the asking. While the build runs, the outline is looked at
 // every few seconds: its tasks come in when it is done.
 const HIST_BUILD_MESSAGES = 10;
@@ -3429,12 +3429,12 @@ function histSwitch(label, pairs, current, pick) {
 function histBuildNote(h) {
   const c = state.selected && state.selected[1], b = c && (h.builds || {})[c];
   if (!b) return null;
-  const since = `${plural(b.since, "message")} since`;
+  const since = `${plural(b.since, "user message")} since`;
   const asked = hist.built && hist.built.for === key(h.gatherer, c) ? hist.built : null;
   const [cls, text, title] = b.status === "running" ? ["run", "Building tasks…", "ag is splitting this actor's history into tasks; they show here when it is done"]
     : asked && asked.failed ? ["bad", "Build not started", asked.failed]
     : b.status === "failed" ? ["bad", `Last build failed · ${since}`, b.error || ""]
-    : !b.build_id ? ["", `No tasks yet · ${plural(b.since, "message")}`, `ag builds tasks once an actor has ${HIST_BUILD_MESSAGES} user and agent messages`]
+    : !b.build_id ? ["", `No tasks yet · ${plural(b.since, "user message")}`, `ag builds tasks once an actor has ${HIST_BUILD_MESSAGES} user messages`]
     : ["", `Tasks as of ${clock(b.finished || b.started, true)} · ${since}`,
       b.since < HIST_BUILD_MESSAGES ? `Built again once ${HIST_BUILD_MESSAGES} have come in; until then they are the running task` : ""];
   return el("span", { class: "h-build " + cls, title }, cls === "run" ? el("span", { class: "spin", "aria-hidden": "true" }) : null, text);

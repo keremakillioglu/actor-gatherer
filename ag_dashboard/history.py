@@ -160,14 +160,14 @@ def _tasks(conn, channel: Optional[str]) -> List[dict]:
                                   f"FROM tasks {where} ORDER BY channel_key, task_index", args)]
 
 
-#: The user and agent messages a channel needs since its last build before the History view asks ag
-#: for another (`build`): fewer, and they stay the running task as they are.
+#: The user messages a channel needs since its last build before the History view asks ag for another
+#: (`build`): fewer, and they and their answers stay the running task as they are.
 BUILD_MESSAGES = 10
 
 
 def _builds(conn, channel: Optional[str]) -> Dict[str, dict]:
     """Each channel's latest build -- {build_id, status, reason, started, finished, error} -- and how many
-    user and agent messages it has after the last row its builds went through (`since`)."""
+    user messages it has after the last row its builds went through (`since`)."""
     tables = data._tables(conn)
     where, args = (f"WHERE e.{CHANNEL} = ?", (channel,)) if channel is not None else (f"WHERE e.{CHANNEL} IS NOT NULL", ())
     through = dict(conn.execute("SELECT channel_key, max(through_row) FROM _builds GROUP BY channel_key")) \
@@ -175,7 +175,7 @@ def _builds(conn, channel: Optional[str]) -> Dict[str, dict]:
     out: Dict[str, dict] = {}
     for ch, row_id in conn.execute(
             f"SELECT e.{CHANNEL}, e.row_id FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
-            f"{where} AND t.name IN ('user_message', 'agent_message')", args):
+            f"{where} AND t.name = 'user_message'", args):
         o = out.setdefault(ch, {"since": 0})
         o["since"] += row_id > (through.get(ch) or 0)
     if "_builds" in tables:
@@ -419,7 +419,7 @@ def export(gatherer: str, rows, fmt: str = "md") -> dict:
 def build(gatherer: str, channel: str) -> dict:
     """ag asked to build the channel's history (`ag home build`, the channel named as its property): an
     ordinary build, in ag's background worker, adopted at the channel's next user message -- once it has
-    BUILD_MESSAGES user and agent messages since its last. What ag says came of it: {started},
+    BUILD_MESSAGES user messages since its last. What ag says came of it: {started},
     {running}, {few}, {failed} or {}."""
     if not channel:
         raise HistoryError("which actor's history to build")

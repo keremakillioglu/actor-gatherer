@@ -78,7 +78,7 @@ class HistoryTest(HistoryBase):
 
     def test_each_actor_s_build_and_its_messages_since(self):
         builds = history.outline("g")["builds"]
-        self.assertEqual(builds, {"c1": {"since": 4}, "c2": {"since": 1}})      # no builds: every message
+        self.assertEqual(builds, {"c1": {"since": 2}, "c2": {"since": 1}})      # no builds: every user message
         conn = sqlite3.connect(os.path.join(self.tmp.name, "gatherers", "g", "context.db"))
         conn.executescript("""CREATE TABLE _builds (build_id INTEGER PRIMARY KEY, channel_key TEXT, status TEXT, started_at REAL,
             finished_at REAL, through_row INTEGER, open_from_row INTEGER, ranking_json TEXT, parallel_mark INTEGER, error TEXT, reason TEXT);
@@ -86,7 +86,7 @@ class HistoryTest(HistoryBase):
         conn.commit()
         conn.close()
         got = history.outline("g", "c1")["builds"]["c1"]
-        self.assertEqual((got["since"], got["status"], got["reason"], got["build_id"]), (2, "ready", "asked", 1))
+        self.assertEqual((got["since"], got["status"], got["reason"], got["build_id"]), (1, "ready", "asked", 1))
 
     def test_a_build_is_ag_s_to_start(self):
         class Done:

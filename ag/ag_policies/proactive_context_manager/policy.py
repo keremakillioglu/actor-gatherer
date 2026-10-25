@@ -851,8 +851,8 @@ class ProactiveContextManager(Policy):
     def requested(self, conn, read: Read, min_messages: int = 0) -> dict:
         """A build a reader asked for from outside any call (the dashboard's History view): an ordinary
         build (reason `asked`), started in the background and not waited for -- once the channel has at
-        least `min_messages` user and agent messages since the last its builds went through (since its
-        start, before any). Adopted as any build is: at the channel's next user message. What came of it:
+        least `min_messages` user messages since the last its builds went through (since its start,
+        before any). Adopted as any build is: at the channel's next user message. What came of it:
         {"started": build_id, "messages": n}; {"running": build_id}, one already is; {"few": n}, only n
         such messages since; {"failed": why}; {} with no background work."""
         cfg, ch = self.config, channel_of(read)
@@ -864,8 +864,8 @@ class ProactiveContextManager(Policy):
         types = TypeIds.load(conn)
         since = conn.execute("SELECT max(through_row) FROM _builds WHERE channel_key = ?",
                              (tables.key(ch),)).fetchone()[0] or 0
-        messages = types.of(*self.groups.messages)
-        n = sum(1 for r in history.rows(conn, types, self.groups, ch) if r.row_id > since and r.type.id in messages)
+        n = sum(1 for r in history.rows(conn, types, self.groups, ch)
+                if r.row_id > since and history.opens_turn(r, types, self.groups))
         if n < min_messages:
             return {"few": n}
         build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.ASKED)
@@ -876,7 +876,7 @@ class ProactiveContextManager(Policy):
         except OSError as exc:
             tables.fail_build(conn, build_id, f"could not start the worker: {exc}")
             return {"failed": str(exc)}
-        self.log(f"[{ch}] build {build_id} asked for, {n} messages since the last")
+        self.log(f"[{ch}] build {build_id} asked for, {n} user messages since the last")
         return {"started": build_id, "messages": n}
 
     def wait(self, conn, channel_id, row_id: int, started: str, seconds: float) -> bool:

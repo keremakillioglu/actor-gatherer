@@ -1007,11 +1007,11 @@ class RequestedTest(Base):
     def ask(self, n=10):
         return self.m.requested("s", properties=ch("c1"), min_messages=n)
 
-    def test_started_once_there_are_enough_messages_since_the_last(self):
-        self.put(PREAMBLE + conversation(4))                       # 8 user and agent messages
-        self.assertEqual(self.ask(), {"few": 8})
+    def test_started_once_there_are_enough_user_messages_since_the_last(self):
+        self.put(PREAMBLE + conversation(9))                       # 9 user messages (their answers not counted)
+        self.assertEqual(self.ask(), {"few": 9})
         self.assertEqual(self.spawned, [])
-        self.put(conversation(1, start=5))
+        self.put(conversation(1, start=10))
         got = self.ask()
         self.assertEqual((got["messages"], self.spawned), (10, [("build", got["started"])]))
         build = tables.latest_build(self.m._conn("s"), "c1")
@@ -1020,8 +1020,8 @@ class RequestedTest(Base):
         self.policy.build("s", ch("c1"), got["started"])                    # as the worker runs it: an ordinary build
         self.assertEqual(tables.latest_build(self.m._conn("s"), "c1")["status"], "ready")
         self.assertEqual(self.ask(), {"few": 0})                            # counted from what it went through
-        self.put(conversation(3, start=6))
-        self.assertEqual(self.ask(), {"few": 6})
+        self.put(conversation(3, start=11))
+        self.assertEqual(self.ask(), {"few": 3})
 
     def test_it_is_adopted_at_the_next_user_message_not_before(self):
         self.put(PREAMBLE + conversation(6))
@@ -1029,7 +1029,7 @@ class RequestedTest(Base):
         self.policy.jobs = None                                             # no build of the read's own
         before = store.last_read(self.m._conn("s"), ch("c1"))["basis"]
         self.policy.jobs = Recording(lambda *a: None)
-        build_id = self.ask()["started"]
+        build_id = self.ask(0)["started"]
         self.policy.build("s", ch("c1"), build_id)
         self.policy.jobs = None
         self.put([call(60), output(60)])                                    # mid-turn: the context it had

@@ -28,8 +28,8 @@
                                                         a build of the history these properties name (a
                                                         channel's, e.g.) started in the background -- an
                                                         ordinary one, adopted at its next user message --
-                                                        once it has N user and agent messages since the
-                                                        last; what came of it, as JSON (`Manager.requested`)
+                                                        once it has N user messages since the last; what
+                                                        came of it, as JSON (`Manager.requested`)
 
 `ag home ...` runs the same.
 """
@@ -359,7 +359,7 @@ def main(argv=None) -> int:
     bu = sub.add_parser("build")
     bu.add_argument("gatherer")
     bu.add_argument("--properties", default="{}", help="the events' properties, as a JSON object")
-    bu.add_argument("--min-messages", type=int, default=0, help="only with this many user and agent messages since the last build")
+    bu.add_argument("--min-messages", type=int, default=0, help="only with this many user messages since the last build")
     co = sub.add_parser("complete")
     co.add_argument("--purpose", default="ask", help="the call's name in the call log")
     co.add_argument("--system", default="", help="the system message")
