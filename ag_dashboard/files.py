@@ -36,6 +36,23 @@ LINE_CHARS = 400           # the most of one line's text sent
 COMMAND_OUTPUT = 4000      # the most of a command's output sent
 CONTEXT = 2                # the lines known around a change shown with it
 REPLY_CHARS = 4000         # the most of a user message or one of the agent's replies sent
+# as the hook server's file_touches/check.py has them: Claude Code's note after a command's output, codex's header before it
+SHELL_CWD_NOTE = re.compile(r"\n?Shell cwd was reset to [^\n]*\s*$")
+CODEX_HEADER = re.compile(r"^(?:Chunk ID: [^\n]*\n)?(?:Wall time: [^\n]*\n)?(?:Process exited with code [^\n]*\n)?"
+                          r"(?:Original token count: [^\n]*\n)?Output:\n")
+
+
+def _unsplit(name: str, text: str) -> dict:
+    """A file a call read whose lines can't be told apart from the rest of its output (`cat a; cat b`),
+    or one a Read showed no numbered lines of: the call's whole output, said to be that."""
+    text = SHELL_CWD_NOTE.sub("", text or "")
+    m = CODEX_HEADER.match(text)
+    text = (text[m.end():] if m else text).rstrip("\n")
+    if not text:
+        return {"t": "note", "text": "read, but the output was empty"}
+    note = ("the command's whole output: this file's lines are in it, but which ones can't be told apart from the rest"
+            if name in SHELLS else "the call's whole output: it shows none of the file's lines by number")
+    return {"t": "output", "note": note, "lines": text.split("\n")}
 
 
 def _temporary_roots() -> tuple:
@@ -310,7 +327,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 if d.get("image") and result.get("row_id") is not None:
                     rec.block(f, src, {"t": "image", "row_id": result["row_id"], "id": part.get("id")})
                 elif d.get("unsplit"):
-                    rec.block(f, src, {"t": "note", "text": "read, but its lines can't be told apart from the rest of the output"})
+                    rec.block(f, src, _unsplit(part.get("name") or "", result.get("text") or ""))
                 for start, lines in d.get("lines") or []:
                     rec.block(f, src, {"t": "lines", "start": start, "lines": lines})
             elif how == "hit":
@@ -438,7 +455,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                         if how == "lines":                  # start None: where in the file is not known
                             rec.block(f, src, {"t": "lines", "start": n, "lines": got})
                         else:
-                            rec.block(f, src, {"t": "note", "text": "read, but its lines can't be told apart from the rest of the output"})
+                            rec.block(f, src, _unsplit(name, text))
             return
         if name in ("Grep", "Glob") and rec is None:
             return
@@ -505,7 +522,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         room = MAX_ROWS                              # the most lines one file shows, over all its calls
         for src in f["sources"]:
             for b in src["blocks"]:
-                key = "rows" if b["t"] == "hits" else "lines" if b["t"] in ("lines", "append") else None
+                key = "rows" if b["t"] == "hits" else "lines" if b["t"] in ("lines", "append", "output") else None
                 if key:
                     b["cut"] = max(0, len(b[key]) - room)
                     b[key] = [x[:LINE_CHARS] if isinstance(x, str) else x for x in b[key][:room]]

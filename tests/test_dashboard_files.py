@@ -238,6 +238,30 @@ class FilesTest(unittest.TestCase):
         for f in got["files"]:
             self.assertEqual([b["t"] for b in f["sources"][0]["blocks"]], ["note"])
 
+    def test_files_read_one_after_another_in_one_output_show_all_of_it_said_so(self):
+        self.add(asked("read both"), call("u1", "Bash", {"command": "cat a.py && cat b.py"}),
+                 result("u1", "def f():\n    return 1\nx = 1\nShell cwd was reset to /r"),
+                 call("u2", "Bash", {"command": "cat c.py; cat d.py"}), result("u2", "def c():\n    pass\n"),
+                 call("u3", "Bash", {"command": "cat e.py; cat f.py"}), result("u3", "\n"))
+        got = files.files("g", "c1", 2, cwd="/w")
+        by = {f["path"]: f["sources"][0]["blocks"] for f in got["files"]}
+        for path in ("/w/a.py", "/w/b.py"):                             # which lines are whose: not known
+            out, = by[path]
+            self.assertEqual((out["t"], out["lines"]), ("output", ["def f():", "    return 1", "x = 1"]))
+            self.assertIn("can't be told apart", out["note"])
+        self.assertEqual(by["/w/e.py"], [{"t": "note", "text": "read, but the output was empty"}])
+        conn = sqlite3.connect(self.db)                                 # checked on disk as it ran: the same
+        conn.execute("CREATE TABLE _touches (touch_id INTEGER PRIMARY KEY, session TEXT, call_id TEXT, at TEXT, path TEXT, "
+                     "how TEXT, checked INTEGER, named INTEGER, detail_json TEXT)")
+        for path in ("/w/c.py", "/w/d.py"):
+            conn.execute("INSERT INTO _touches (session, call_id, at, path, how, checked, named, detail_json) "
+                         "VALUES ('c1', 'u2', '', ?, 'read', NULL, 1, ?)", (path, json.dumps({"unsplit": True})))
+        conn.commit()
+        conn.close()
+        got = files.files("g", "c1", 2, cwd="/w")
+        by = {f["path"]: f["sources"][0]["blocks"] for f in got["files"]}
+        self.assertEqual([(b["t"], b["lines"]) for b in by["/w/d.py"]], [("output", ["def c():", "    pass"])])
+
     def test_files_in_temporary_folders_and_commands_touching_only_them_are_marked(self):
         tmp = os.path.join(files.TEMPORARY[0], "scratch", "x.txt")
         self.add(asked("scratch"), call("s1", "Bash", {"command": f"cat {tmp}", "description": "Read scratch"}), result("s1", "hi"),

@@ -3539,6 +3539,10 @@ function fileBlock(b) {
     if (b.start === null) out.push(fileGap("where in the file is not known"));
     b.lines.forEach((t, i) => out.push(fileLine(b.start === null ? null : b.start + i, "read", "", t)));
     cut();
+  } else if (b.t === "output") {                 // the file's lines are somewhere in it: which, not known
+    out.push(fileGap(b.note));
+    b.lines.forEach((t) => out.push(fileLine(null, "read", "", t)));
+    cut();
   } else if (b.t === "hits") {
     let prev = null;
     for (const [n, t] of b.rows) {
