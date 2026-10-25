@@ -3161,6 +3161,7 @@ async function loadOutlineNow() {
     if (fresh.length) h.last = fresh[fresh.length - 1].row_id;
     if (!got.more) break;
   }
+  if (!h.loaded) { h.loaded = true; h.version++; }  // what the actor had when opened is in: tasks after it came in later
   if (hist.recs.gatherer !== g || Date.now() - hist.recs.at > 10000) await loadExtracts(g);   // another page's, too
   if (chatView().id === "history" && hist.askedFor !== key(g, c)) { hist.askedFor = key(g, c); askBuild(h, c); }
   if (((h.builds || {})[c] || {}).status === "running") pollBuild();
@@ -3760,7 +3761,7 @@ function histSide(h) {
 }
 function histRender() {
   const h = state.hist;
-  if (!h || h.key !== histKey()) return el("div", { class: "h-note", text: "Loading…" });
+  if (!h || h.key !== histKey() || !h.loaded) return el("div", { class: "h-note", text: "Loading…" });
   if (hist.selFor !== h.gatherer) { hist.sel = new Map(); hist.selFor = h.gatherer; hist.last = null; hist.panel = false; }
   const tree = histTree(h);
   const hasTasks = h.tasks.length > 0;
