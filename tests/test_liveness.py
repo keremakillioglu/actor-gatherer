@@ -92,6 +92,39 @@ class AgentsTest(HomeBase):
         self.pend([{"type": "agent_message", "payload": {}, "text": "Done."}], "completed")
         self.assertEqual(self.status()[1], True)
 
+    def test_a_turn_that_asks_the_user_waits_for_them(self):
+        question = {"type": "tool_use", "id": "t1", "name": "AskUserQuestion", "input": {"questions": [
+            {"header": "Layout", "question": "Which layout?", "multiSelect": False,
+             "options": [{"label": "Side by side", "description": "Two panes"}, {"label": "Tabs"}]}]}}
+        self.pend([{"type": "agent_message", "payload": {}, "text": "One question first."},
+                   {"type": "tool_call", "payload": {"role": "assistant", "content": [question]}, "text": "AskUserQuestion(...)"}],
+                  "tool_use")
+        a = next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")
+        self.assertEqual((a["status"], a["running"], a["turn_over"]), (data.ASKING, False, False))
+        self.assertEqual((a["asking"]["kind"], a["asking"]["call"]), ("question", "t1"))
+        self.assertEqual(a["asking"]["questions"], [{"header": "Layout", "question": "Which layout?", "multiSelect": False,
+                                                     "options": [{"label": "Side by side", "description": "Two panes"},
+                                                                 {"label": "Tabs", "description": None}]}])
+        self.m.clear_pending("g", ch("c1"))                                     # answered: the next call carried it
+        self.pend([{"type": "tool_call", "payload": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t2", "name": "Bash", "input": {"command": "ls"}}]}, "text": "Bash(ls)"}], "tool_use")
+        self.assertEqual(self.status()[0], data.RUNNING)                         # any other tool: it runs
+        self.m.clear_pending("g", ch("c1"))
+        self.pend([{"type": "tool_call", "payload": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t3", "name": "ExitPlanMode", "input": {"plan": "1. Split the pane"}}]}, "text": "ExitPlanMode"}],
+                  "tool_use")
+        a = next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")
+        self.assertEqual((a["status"], a["asking"]["kind"], a["asking"]["plan"]), (data.ASKING, "plan", "1. Split the pane"))
+        self.assertIsNone(next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c2")["asking"])
+
+    def test_an_earlier_answer_s_question_is_not_asked_again(self):
+        ask = {"type": "tool_call", "payload": {"content": [{"type": "tool_use", "id": "t1", "name": "AskUserQuestion",
+                                                             "input": {"questions": []}}]}}
+        self.m.record_pending("g", ch("c1"), [ask], "a1", "tool_use")
+        self.m.record_pending("g", ch("c1"), [{"type": "tool_call", "payload": {"content": [
+            {"type": "tool_use", "id": "t2", "name": "Bash", "input": {}}]}}], "a2", "tool_use")   # answered, not yet stored
+        self.assertEqual(self.status()[0], data.RUNNING)
+
     def test_with_none_pending_from_the_newest_event(self):
         items = codex_items.CodexItems(self.m)
         items.insert("g", agent("all done", 95), channel_id="c1")

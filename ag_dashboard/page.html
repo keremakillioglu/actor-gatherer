@@ -130,6 +130,7 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
 .gatherer-row .count { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2);
   background: var(--wash); border-radius: 999px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .gatherer-row .count i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); display: inline-block; }
+.gatherer-row .count.asking i { background: var(--warning); }
 .gatherer-row .act { border: 0; border-radius: 6px; background: none; color: var(--muted); padding: 0 8px; margin: 2px 0; line-height: 1;
   display: inline-flex; align-items: center; }
 .gatherer-row .act:last-child { margin-right: 8px; }
@@ -169,6 +170,8 @@ button.agent-group:hover { color: var(--ink-2); }
 /* its turn under way: the glyph turns, as Claude Code's does while it works */
 .agent .meta .dot.running { width: 9px; height: auto; border-radius: 0; background: none; color: var(--good); font-size: 12px; line-height: 1; text-align: center; }
 .agent .meta .dot.running::before { content: "✻"; animation: term-spin 1.2s steps(1) infinite; animation-delay: var(--spin-at, 0s); }
+/* its turn waits on the user: a question asked, a plan to approve, in its terminal */
+.agent .meta .dot.asking, .status.asking i { background: var(--warning); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 35%, transparent); }
 /* its turn over, but something it started still runs: Running's colour, holding still */
 .agent .meta .dot.background, .status.background i { background: var(--good); }
 /* what it runs in the background, under its facts: how many, and what they are for */
@@ -481,6 +484,87 @@ button:disabled { opacity: .5; cursor: default; }
 .term .bg-tasks .task, .term .bg-tasks .kind, .term .bg-tasks .when { color: var(--term-dim); }
 .term .bg-tasks .label { color: var(--term-ink); }
 @media (max-width: 760px) { .bg-tasks .when { display: none; } }
+/* what the agent waits on the user for (askingNote): a card under the chat, over the message box -- its head, what
+   it asks (several questions answered here: one at a time, as the terminal asks them) and a foot that stays in view */
+.asking-note { flex: none; display: flex; flex-direction: column; max-height: min(58vh, 560px); margin: 8px 16px 10px; overflow: hidden;
+  font-size: 13px; color: var(--ink-2); background: var(--surface); border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--ring));
+  border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px -12px rgba(0,0,0,.18); container-type: inline-size; }
+.chat .asking-note + .composer { border-top: 0; padding-top: 0; }
+.asking-note .head { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-width: 0; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--ring); }
+.asking-note .pill { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--ink);
+  background: color-mix(in srgb, var(--warning) 22%, var(--surface)); border-radius: 999px; padding: 2px 9px 2px 7px; }
+.asking-note .pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
+.asking-note .what { flex: 1 1 auto; min-width: 0; color: var(--ink); font-weight: 600; }
+.asking-note .ago { flex: none; color: var(--muted); font-size: 12px; }
+.asking-note .head .end { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.asking-note .to-term { display: inline-flex; align-items: center; gap: 5px; border-color: transparent; background: none; color: var(--ink-2); }
+.asking-note .to-term:hover { background: var(--wash); color: var(--ink); }
+.asking-note .qtabs { flex: none; display: flex; gap: 4px; padding: 8px 12px 0; overflow-x: auto; }
+.asking-note .qtab { flex: none; display: inline-flex; align-items: center; gap: 7px; border: 0; background: none; border-radius: 999px;
+  padding: 3px 11px 3px 4px; color: var(--ink-2); }
+.asking-note .qtab:hover { background: var(--wash); }
+.asking-note .qtab[aria-selected="true"] { background: var(--selected); color: var(--ink); font-weight: 600; }
+.asking-note .qtab .n { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; color: var(--muted); box-shadow: inset 0 0 0 1.5px var(--axis); }
+.asking-note .qtab[aria-selected="true"] .n { color: var(--s1); box-shadow: inset 0 0 0 1.5px var(--s1); }
+.asking-note .qtab .n.done { color: #fff; background: var(--good); box-shadow: none; }
+.asking-note .qtab .n svg { stroke-width: 2.2; }
+.asking-note .body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 14px 14px; }
+.asking-note .q + .q { margin-top: 18px; }
+.asking-note .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+.asking-note .qline { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.asking-note .qline .text { color: var(--ink); font-size: 14px; font-weight: 600; line-height: 1.4; }
+.asking-note .qline .hint { font-size: 11px; color: var(--ink-2); background: var(--wash); border-radius: 999px; padding: 1px 8px; }
+.asking-note .opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; max-width: 900px;
+  margin: 10px 0 0; padding: 0; list-style: none; }
+.asking-note .opt { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-content: start; gap: 2px 10px; margin: 0; text-align: left;
+  font-size: 13px; padding: 9px 12px 10px 10px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; }
+.asking-note button.opt:hover:not(:disabled) { border-color: var(--axis); background: var(--wash); }
+.asking-note .opt .box { grid-row: 1 / span 2; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 1.5px var(--axis); }
+.asking-note .opts.multi .opt .box { border-radius: 4px; }
+.asking-note .opt .lbl { color: var(--ink); font-weight: 600; line-height: 1.4; }
+.asking-note .opt .odesc { grid-column: 2; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.asking-note .opt[aria-checked="true"] { border-color: var(--s1); background: var(--selected); box-shadow: inset 0 0 0 1px var(--s1); }
+.asking-note .opt[aria-checked="true"] .box { background: var(--s1); box-shadow: none; }
+.asking-note .opt[aria-checked="true"] .box::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+.asking-note .opts.multi .opt[aria-checked="true"] .box::after { width: 7px; height: 4px; border-radius: 0; background: none;
+  border: solid #fff; border-width: 0 0 1.75px 1.75px; transform: translateY(-1px) rotate(-45deg); }
+.asking-note .opt:disabled { opacity: 1; }
+.asking-note .opt:disabled:not([aria-checked="true"]) { opacity: .5; }
+/* not answered here: the options numbered as its terminal numbers them */
+.asking-note .opt.ro .box { width: 16px; height: 16px; margin-top: 1px; border-radius: 4px; box-shadow: none; background: var(--wash);
+  font-size: 11px; font-weight: 600; color: var(--ink-2); }
+.asking-note .own { display: block; width: 100%; max-width: 900px; margin-top: 8px; font: inherit; font-size: 13px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; }
+.asking-note .own::placeholder { color: var(--muted); }
+.asking-note .own:focus { outline: none; border-color: var(--s1); box-shadow: 0 0 0 3px var(--selected); }
+.asking-note details > summary { cursor: pointer; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.asking-note .plan { max-width: 900px; margin-top: 8px; padding: 2px 14px 10px; background: var(--page); border: 1px solid var(--ring); border-radius: 8px; }
+.asking-note .md :is(h1, h2, h3) { font-size: 14px; margin: 10px 0 4px; }
+.asking-note .foot { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 8px 10px 8px 14px;
+  border-top: 1px solid var(--ring); background: var(--wash); }
+.asking-note .foot .say { flex: 1 1 220px; min-width: 0; color: var(--muted); font-size: 12px; }
+.asking-note .foot .say.sent { color: var(--ink-2); }
+.asking-note .foot .say.err { color: var(--critical); }
+.asking-note .foot .say.full { flex-basis: 100%; }
+.asking-note .foot .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.asking-note .foot button { padding: 5px 14px; font-weight: 500; }
+.asking-note .foot .change { flex: 1 1 320px; display: flex; gap: 6px; min-width: 0; }
+.asking-note .foot .change .own { flex: 1; min-width: 0; margin: 0; padding: 5px 10px; }
+.asking-note .foot .acts { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.asking-note .foot .count { margin-right: 6px; }
+/* what Claude Code recorded is not what was picked here (answeredNote) */
+.asking-note.answered { border-color: color-mix(in srgb, var(--critical) 55%, var(--ring)); }
+.asking-note.answered .pill { background: color-mix(in srgb, var(--critical) 16%, var(--surface)); }
+.asking-note.answered .pill i { background: var(--critical); }
+.asking-note .pair { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; }
+.asking-note .pair .k { color: var(--muted); }
+.asking-note .pair .v { color: var(--ink); }
+@media (max-width: 760px) { .asking-note { margin: 6px 8px 8px; } }
+/* a narrow card (the Chat view's column, beside a file): the terminal's button its icon, no time */
+@container (max-width: 480px) { .asking-note .to-term .lbl, .asking-note .head .ago, .asking-note .foot .count { display: none; }
+  .asking-note .to-term { padding: 4px 6px; } .asking-note .head .what { order: 1; flex-basis: 100%; } }
 @media (max-width: 760px) { .chat .chat-frame { flex: none; height: 70vh; } }
 /* Actor and Gatherer: a panel at the chat's right, the chat still live beside it; over it where the window is narrow */
 .drawer { flex: 0 0 min(55%, 760px); min-width: 0; background: var(--page);
@@ -556,8 +640,12 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }
 .files .fl-grid.open { grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
 /* --lh: a line of the conversation, which a reply's dot and its first line share */
-.files .fl-talk { position: relative; overflow: auto; border-left: 1px solid var(--ring); padding: 6px 0 24px; font-size: 13.5px; --lh: 20px; line-height: var(--lh); }
-.files .fl-grid:not(.open) .fl-talk { font-size: 14px; --lh: 21px; border-left: 0; }
+/* the right column: the conversation, and under it what the agent waits on the user for (askingNote) */
+.files .fl-right { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--ring); }
+.files .fl-grid:not(.open) .fl-right { border-left: 0; }
+.files .fl-right > .asking-note { flex-shrink: 1; min-height: 0; max-height: min(560px, 75%); }
+.files .fl-talk { flex: 1; min-height: 0; position: relative; overflow: auto; padding: 6px 0 24px; font-size: 13.5px; --lh: 20px; line-height: var(--lh); }
+.files .fl-grid:not(.open) .fl-talk { font-size: 14px; --lh: 21px; }
 .files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px 10px; }
 .files .fl-turn.on { box-shadow: inset 2px 0 0 var(--muted); }   /* the turn picked: a grey bar at its left, no colour */
 /* the user's message: at the right, in the colour the page gives the user (--s7), as a chat shows it */
@@ -731,10 +819,10 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fv-block .diff .del { background: color-mix(in srgb, var(--critical) 15%, transparent); }
 .files .fv-block .diff .ctx { color: var(--muted); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
-@media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } }
+@media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; } }
 /* the same by the pane's width: one of several side by side is narrower than the window */
 @container pane (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
-@container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } }
+@container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; } }
 /* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
@@ -1165,14 +1253,16 @@ async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
   catch (err) { setLive(`Not closed: ${err.message}`); }
 }
-// what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; a build
+// what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; asking, its
+// turn waiting on the user (a question asked, a plan to approve, in its terminal), which shows before all else; a build
 // running for it shows over the first, and one that stopped since the reader last looked shows Finished
 // until they do -- but not while something it started runs in the background: Background, its turn over
 // and not done. A server from before `status`: running or idle by `running`.
 // A session started from the page says first what its agent is doing: starting, a message waiting, failed.
 const sessionStatus = (s) => !s ? null : s.status === "starting" ? ["building", "Starting"]
   : s.status === "running" || (s.queued && s.queued.length) ? ["running", "Running"] : s.status === "failed" ? ["failed", "Failed"] : null;
-const statusOf = (a) => sessionStatus(a.session) || (a.building ? ["building", "Building"]
+const statusOf = (a) => sessionStatus(a.session) || (a.status === "asking" ? ["asking", "Waiting for you"]
+  : a.building ? ["building", "Building"]
   : (a.status ? a.status === "running" : a.running) ? ["running", "Running"]
   : a.status === "background" ? ["background", "Background"]
   : unseen(a) ? ["finished", "Finished"] : a.status === "closed" ? ["closed", "Closed"] : ["idle", "Idle"]);
@@ -1664,15 +1754,16 @@ function renderAgents() {
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every gatherer is hidden." }));
   for (const g of shown) {
     const open = !collapsed.has(g.name);
-    // running first, then those whose turn is over but something they started still runs, then finished
+    // those waiting on the user first, then running, then those whose turn is over but something they started still runs, then finished
     // (not yet looked at), then idle, then closed; each in the order the data has them, newest created
     // first, so an actor stays in its place, and moves only between them -- but closed, the latest active
     // first: nothing moves there once closed
-    const groupOf = (a) => ({ Building: "Running", Running: "Running", Starting: "Running", Background: "Background",
-      Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
-    const groups = ["Running", "Background", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
+    const groupOf = (a) => ({ "Waiting for you": "Waiting for you", Building: "Running", Running: "Running", Starting: "Running",
+      Background: "Background", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
+    const groups = ["Waiting for you", "Running", "Background", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
       .filter(([, list]) => list.length);
     const live = g.agents.filter((a) => groupOf(a) === "Running").length;
+    const waiting = g.agents.filter((a) => groupOf(a) === "Waiting for you").length;
     const box = el("div", { class: "gatherer" },
       el("div", { class: "gatherer-row", "data-key": g.name },
         el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name),
@@ -1680,8 +1771,10 @@ function renderAgents() {
           el("span", { class: "caret", text: "▶" }), el("span", { class: "gname", text: g.name })),
         el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
           hideIcon()),
-        // how many of its actors run now; nothing while none does
+        // how many of its actors wait on the user, and how many run now; nothing while none does
         el("span", { class: "fill", onclick: () => toggleGatherer(g.name) },
+          waiting ? el("span", { class: "count asking", title: `${waiting} of ${plural(g.agents.length, "actor")} waiting for you` },
+            el("i", { "aria-hidden": "true" }), String(waiting)) : null,
           live ? el("span", { class: "count", title: `${live} of ${plural(g.agents.length, "actor")} running` },
             el("i", { "aria-hidden": "true" }), String(live)) : null),
         ...(SNAPSHOT ? [] : startButtons(g))));
@@ -2419,6 +2512,7 @@ function chatCard(info) {
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
   }
+  if (view.feed !== "none" && view.asking !== false) { const note = askingNote(info) || answeredNote(info); if (note) card.append(note); }   // the terminal shows it itself
   if (view.background) { const note = backgroundNote(info); if (note) card.append(note); }
   if (!writable) {
     if (!SNAPSHOT) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code and codex sessions with a known directory." }));
@@ -2476,6 +2570,143 @@ function backgroundNote(info, term = false) {
       el("span", { class: "when", text: [`started ${ago(t.started)}`,
         t.event ? `last event ${ago(t.event_at)}: ${t.event}` : t.active && t.active - t.started > 2 ? `active ${ago(t.active)}` : null]
         .filter(Boolean).join(" · ") }))));
+}
+// What the agent waits on the user for (data.py's `asking`): the questions it asked, each with its options,
+// or the plan it asks them to approve. Where the dashboard runs the session's terminal, answered here: what is
+// picked is typed into the terminal's dialog (POST /api/answer, sessions.py's `answer`), and the terminal shows
+// it answered as if it had been picked there; elsewhere it is answered in the terminal that runs the session.
+// Null while it waits on nothing.
+function askingNote(info) {
+  const ask = info && info.status === "asking" ? info.asking : null;
+  if (!ask) return null;
+  const qs = ask.questions || [];
+  const s = info.session || {};
+  // the dashboard's terminal, and nothing typed into it since it asked: answered from here
+  const touched = !!(s.terminal && s.typed && s.typed >= ask.at);
+  const here = !SNAPSHOT && !!s.terminal && !touched;
+  const sent = info.answer && info.answer.call === ask.call ? info.answer : null;
+  const who = info.harness ? harnessName(info.harness) : "The agent";
+  const what = ask.kind === "plan" ? `${who} has a plan for you to approve`
+    : `${who} asked you ${qs.length > 1 ? plural(qs.length, "question") : "a question"}`;
+  const d = draftOf(ask);
+  const late = sent && Date.now() / 1000 - sent.at > ANSWER_LATE;
+  if (sent && !late && !lateTimers.has(sent.call)) {   // drawn again once it would count as lost
+    lateTimers.add(sent.call);
+    setTimeout(() => keepingPlace(renderMain), Math.max(0, (sent.at + ANSWER_LATE) * 1000 - Date.now()) + 200);
+  }
+  const redraw = () => keepingPlace(renderMain);
+  const send = async (choice) => {
+    d.sending = true; d.error = ""; redraw();
+    try { await post("/api/answer", { session_id: s.session_id, call: ask.call, choice }); await refresh(); }
+    catch (err) { d.error = `Not answered: ${err.message}`; }
+    finally { d.sending = false; redraw(); }
+  };
+  const busy = d.sending || !!sent;
+  const own = (i, placeholder, onEnter) => el("input", { class: "own", type: "text", placeholder, "data-sig": `${ask.call}:${i}:${d.cleared[i] || 0}`,
+    value: i === "plan" ? d.change : d.answers[i].text, disabled: busy ? "" : null, "aria-label": placeholder,
+    oninput: (ev) => { if (i === "plan") d.change = ev.target.value;
+      else { d.answers[i].text = ev.target.value; if (ev.target.value) d.answers[i].options = []; } redraw(); },
+    onkeydown: (ev) => { if (ev.key === "Enter" && !ev.isComposing && onEnter) { ev.preventDefault(); onEnter(); } } });
+  const done = (i) => !!(d.answers[i].options.length || d.answers[i].text.trim());
+  const ready = qs.length && qs.every((q, i) => done(i));
+  const choice = () => ({ answers: d.answers.map((a) => a.text.trim() ? { text: a.text.trim() } : { options: a.options }) });
+  const tab = Math.min(d.tab, Math.max(0, qs.length - 1));
+  const go = (i) => { d.tab = i; redraw(); };
+  // the next question not answered yet, after the one shown (then from the first): -1 if every one is
+  const nextOpen = () => [...qs.keys()].map((k) => (tab + 1 + k) % qs.length).find((k) => !done(k)) ?? -1;
+  const pick = (i, j, multi) => {
+    const a = d.answers[i];
+    a.options = multi ? (a.options.includes(j) ? a.options.filter((x) => x !== j) : [...a.options, j]) : [j];
+    if (a.text) { a.text = ""; d.cleared[i] = (d.cleared[i] || 0) + 1; }
+    if (!multi && qs.length > 1) { const n = nextOpen(); if (n >= 0) d.tab = n; }   // as the terminal's dialog does
+    redraw();
+  };
+  const option = (q, i) => (o, j) => {
+    const body = [el("span", { class: "lbl", text: o.label || "" }),
+      o.description && o.description !== o.label ? el("span", { class: "odesc", text: o.description }) : null];
+    if (!here) return el("li", { class: "opt ro" }, el("span", { class: "box", "aria-hidden": "true", text: String(j + 1) }), ...body);
+    const on = d.answers[i].options.includes(j);
+    return el("button", { type: "button", class: "opt", role: q.multiSelect ? "checkbox" : "radio", "aria-checked": on ? "true" : "false",
+      disabled: busy ? "" : null, onclick: () => pick(i, j, q.multiSelect) }, el("span", { class: "box", "aria-hidden": "true" }), ...body);
+  };
+  const question = (q, i) => el("div", { class: "q", "data-morph": "", "data-q": String(i) },
+    q.header && (!here || qs.length < 2) ? el("div", { class: "eyebrow", text: q.header }) : null,
+    el("div", { class: "qline" }, el("span", { class: "text", text: q.question || "" }),
+      q.multiSelect ? el("span", { class: "hint", text: "Pick any" }) : null),
+    el(here ? "div" : "ol", { class: "opts" + (q.multiSelect ? " multi" : ""), role: here ? (q.multiSelect ? "group" : "radiogroup") : null,
+      "aria-label": q.question || null }, ...(q.options || []).map(option(q, i))),
+    here && !q.multiSelect ? own(i, "Or type your own answer", () => { const n = nextOpen(); if (n >= 0) go(n); else if (ready && !busy) send(choice()); }) : null);
+  // answered here, several questions: one at a time, as the terminal asks them, a tab each
+  const tabs = here && qs.length > 1 ? el("div", { class: "qtabs", role: "tablist", "aria-label": "Questions" }, ...qs.map((q, i) =>
+    el("button", { type: "button", class: "qtab", role: "tab", "aria-selected": i === tab ? "true" : "false", onclick: () => go(i) },
+      el("span", { class: "n" + (done(i) ? " done" : "") }, done(i) ? strokeIcon(CHECK, 11) : String(i + 1)),
+      el("span", { text: q.header || `Question ${i + 1}` })))) : null;
+  const plan = ask.kind === "plan" && ask.plan ? el("details", { id: "asking-plan", class: "plan", open: "" },
+    el("summary", { text: "The plan" }), markdown(ask.plan)) : null;
+  // the foot's line: how the answer sent goes, or why it is not answered here
+  const said = (full) => {
+    const [cls, text] = sent ? [late ? "err" : "sent", late ? `Your answer (${sent.summary}) has not reached ${who}: answer it in the terminal.`
+        : `Typing your answer into the terminal: ${sent.summary}`]
+      : d.error ? ["err", d.error]
+      : !here ? ["", touched ? "Something was typed into its terminal since it asked: finish answering there."
+        : SNAPSHOT ? "Answered in the terminal that runs the session." : "Answer it in the terminal that runs the session."]
+      : [null, null];
+    return text ? el("span", { class: ["say", cls, full ? "full" : ""].filter(Boolean).join(" "), role: cls === "err" ? "alert" : "status", text }) : null;
+  };
+  let foot = null;
+  if (here && ask.kind === "plan") {
+    const change = () => d.change.trim() && send({ plan: "change", text: d.change.trim() });
+    foot = el("div", { class: "foot", "data-morph": "" },
+      said(true),
+      el("div", { class: "change", "data-morph": "" }, own("plan", "Or tell Claude what to change", change),
+        el("button", { type: "button", disabled: busy || !d.change.trim() ? "" : null, onclick: change }, "Ask for changes")),
+      el("div", { class: "acts" },
+        el("button", { type: "button", disabled: busy ? "" : null, onclick: () => send({ plan: "manual" }),
+          title: "Claude Code's “Yes, manually approve edits”" }, "Approve, I'll approve edits"),
+        el("button", { type: "button", class: "primary", disabled: busy ? "" : null, onclick: () => send({ plan: "auto" }),
+          title: "Claude Code's “Yes, and use auto mode”" }, "Approve, auto mode")));
+  } else if (here && qs.length) {
+    const n = nextOpen();
+    foot = el("div", { class: "foot", "data-morph": "" },
+      said(),
+      el("div", { class: "acts" },
+        qs.length > 1 ? el("span", { class: "count", text: `${qs.filter((q, i) => done(i)).length} of ${qs.length} answered` }) : null,
+        qs.length > 1 && done(tab) && n >= 0 ? el("button", { type: "button", disabled: busy ? "" : null, onclick: () => go(n) }, "Next") : null,
+        el("button", { type: "button", class: "primary", disabled: !ready || busy ? "" : null,
+          onclick: () => send(choice()) }, d.sending ? "Answering…" : "Answer")));
+  } else if (said()) foot = el("div", { class: "foot" }, said());
+  return el("div", { class: "asking-note", role: "group", "aria-label": `Waiting for you: ${what}`, "data-morph": "" },
+    el("div", { class: "head" }, el("span", { class: "pill" }, el("i", { "aria-hidden": "true" }), "Waiting for you"),
+      el("span", { class: "what", text: what }), el("span", { class: "ago", text: ago(ask.at) }),
+      s.terminal && CHAT_VIEWS.has("terminal") ? el("span", { class: "end" }, el("button", { type: "button", class: "to-term",
+        title: "Open the terminal", onclick: () => setChatView("terminal") }, strokeIcon(ICONS.terminal, 14), el("span", { class: "lbl", text: "Open the terminal" }))) : null),
+    tabs,
+    el("div", { class: "body", "data-keep": "asking-note", "data-morph": "" },
+      ...(here && qs.length > 1 ? [question(qs[tab], tab)] : qs.map(question)), plan),
+    foot);
+}
+const CHECK = "M3.5 8.5l3 3 6-7";
+// The reader's answers as they make them, by the call they answer: kept across the page's redraws.
+const answerDrafts = new Map(), lateTimers = new Set(), answersSeen = new Set();
+const ANSWER_LATE = 12;                              // seconds after an answer is sent before it counts as lost
+function draftOf(ask) {
+  let d = answerDrafts.get(ask.call);
+  if (!d) answerDrafts.set(ask.call, d = { answers: (ask.questions || []).map(() => ({ options: [], text: "" })), change: "",
+    cleared: {}, sending: false, error: "", tab: 0 });
+  return d;
+}
+// Once a question answered here has its answer recorded: what Claude Code recorded, when it is not what was
+// picked (the dialog was not as it first showed, or Claude Code takes its keys otherwise). Null otherwise.
+function answeredNote(info) {
+  const a = info && info.answer;
+  if (!a || a.recorded !== false || info.status === "asking" || answersSeen.has(a.call)) return null;
+  return el("div", { class: "asking-note answered", role: "alert" },
+    el("div", { class: "head" }, el("span", { class: "pill" }, el("i", { "aria-hidden": "true" }), "Check the answer"),
+      el("span", { class: "what", text: "What was recorded is not what you picked" }),
+      el("span", { class: "end" }, el("button", { type: "button", onclick: () => { answersSeen.add(a.call); keepingPlace(renderMain); } }, "Dismiss"))),
+    el("div", { class: "body" }, el("div", { class: "pair" },
+      el("span", { class: "k", text: "You picked" }), el("span", { class: "v", text: a.summary }),
+      el("span", { class: "k", text: "Claude Code recorded" }), el("span", { class: "v", text: a.result || "nothing" }))));
 }
 // The message box a view gets unless it brings its own: a text box and a Send button.
 function defaultComposer(ctx) {
@@ -3139,6 +3370,8 @@ function notesSwitch() {
 //                                       // false to draw it itself (api.backgroundNote(ctx.info), or (.., true) as a
 //                                       // terminal's status line) or not at all. By default, under any view of the
 //                                       // history but a "term" one
+//     asking: false,                    // optional: false to draw what the agent waits on the user for itself
+//                                       // (api.askingNote(ctx.info)); by default under the frame of a view of the history
 //     tools(ctx) { return [nodes] },    // optional: controls in the page's header (filters, switches)
 //     render(ctx) { return node or [nodes] },
 //     composer(ctx) { return node },    // optional: the box to write the next message, under the frame;
@@ -3610,8 +3843,9 @@ function fileBlock(b) {
 }
 function filesRender({ info, running }) {
   const d = state.files && state.files.data;
-  if (!d) return el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" });
-  if (!d.turns.length) return [];
+  const asking = askingNote(info) || answeredNote(info);
+  if (!d) return [el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" }), asking];
+  if (!d.turns.length) return asking ? [asking] : [];
   // the view opened afresh (from another view, or the page's first draw): the conversation and the
   // commands start where they would for a new turn -- the commands at their end, the conversation at its end or at the turn picked
   if (!document.querySelector("#main .files .fl-grid")) cmdsShown = talkShown = null;
@@ -3713,7 +3947,9 @@ function filesRender({ info, running }) {
     filesBackground(info));
   // the file view only while a file is picked: the files and the conversation have the page until then
   const pane = sel ? el("div", { class: "fl-pane", "data-keep": "files-pane" }, fileView(sel, rel, `fl-${d.turn}-${d.files.indexOf(sel)}`)) : null;
-  return el("div", { class: "fl-grid" + (sel ? " open" : "") }, side, pane, filesTalk(d, info, running));
+  // patched in place to the note (data-morph): what is typed in it keeps its focus as the page draws again
+  return el("div", { class: "fl-grid" + (sel ? " open" : ""), "data-morph": "" }, side, pane,
+    el("div", { class: "fl-right", "data-morph": "" }, filesTalk(d, info, running), asking));
 }
 let cmdsShown = null;
 // What runs in the background, under the commands: one line, the tasks themselves (backgroundNote) over
@@ -3797,6 +4033,7 @@ addChatView({
   // "files": named so once, and kept as its id, with the readers' choices of it
   id: "files", name: "Chat", feed: "files", frame: "files", icon: ICONS.bubble,
   background: false,                                 // drawn under its commands
+  asking: false,                                     // drawn under its conversation, at the right
   description: "The conversation, and beside it each turn's files and commands: what the agent read, searched and changed, with the lines it saw and its changes in place.",
   tools: filesTools,
   render: filesRender,
@@ -4526,7 +4763,7 @@ const agDashboard = window.agDashboard = Object.freeze({
   chatView: addChatView,
   el, svgEl, markdown, clock, ago, full, compact, plural, firstLine,
   contextItem, columns, typeChips, itemType, transcriptBlocks, foldedOutput, notesSwitch, sizeCard, contextCard,
-  statusOf, harnessName, harnessLogo, harnessBadge, actorLogo, backgroundNote,
+  statusOf, harnessName, harnessLogo, harnessBadge, actorLogo, backgroundNote, askingNote,
 });
 // The reader's own views: each file in <home>/dashboard/views/, loaded once the page is up. One that
 // does not load, or throws, is reported and left out.

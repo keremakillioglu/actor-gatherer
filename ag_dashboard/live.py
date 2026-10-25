@@ -7,7 +7,10 @@
                "properties": {"channel"}, "row"} (ag/ag_tools/notify.py) -- rung on the hub
     Fallback   every FALLBACK_SECONDS, the size and time of each gatherer's context.db and
                its -wal, and of the call log: rung on a change. It covers a writer that sends
-               nothing (an older ag; Windows, which has no Unix datagram sockets) and a lost message
+               nothing (an older ag; Windows, which has no Unix datagram sockets) and a lost message;
+               and every RECORD_SECONDS, Claude Code's own record of each session waiting on the user
+               (`watch_records`, data.py's): a question answered or dismissed in its terminal is written
+               there and nowhere ag sees -- a dismissal makes no call -- rung on a change
 
 A message only says that something changed; the stream reads what from the database. So a
 lost message delays an update and never makes one wrong. Standard library only; nothing of
@@ -18,11 +21,14 @@ import os
 import socket
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional, Tuple
 
 from . import home
 
 FALLBACK_SECONDS = 5.0
+RECORD_SECONDS = 1.0
+_RECORDS: Dict[str, Tuple[str, object]] = {}    # Claude Code's records watched: path -> (gatherer, as last read)
+_RECORDS_LOCK = threading.Lock()
 LISTENERS = "listeners"         # the folder in the home ag sends to
 
 
@@ -145,6 +151,16 @@ def _stat(path: str):
         return None
 
 
+def watch_records(found: Dict[str, Tuple[str, object]]) -> None:
+    """Claude Code's records of the sessions waiting on the user, to watch from now on in place of those before:
+    {path: (gatherer, its `_stat` when it was read)} -- a change since rings the gatherer. One watched already keeps
+    what it was last seen as."""
+    with _RECORDS_LOCK:
+        kept = {p: _RECORDS[p] for p in found if p in _RECORDS}
+        _RECORDS.clear()
+        _RECORDS.update({**found, **kept})
+
+
 def files() -> dict:
     """What the fallback compares: {gatherer: (context.db's, its -wal's)}, and the call log's folder."""
     seen = {}
@@ -164,6 +180,7 @@ class Fallback:
         self.stop = threading.Event()
         self.last = files()
         threading.Thread(target=self._run, name="ag-fallback", daemon=True).start()
+        threading.Thread(target=self._records, name="ag-records", daemon=True).start()
 
     def check(self) -> None:
         now = files()
@@ -174,6 +191,24 @@ class Fallback:
                 else:
                     self.hub.ring(name)
         self.last = now
+
+    def check_records(self) -> None:
+        with _RECORDS_LOCK:
+            watched = dict(_RECORDS)
+        for path, (gatherer, seen) in watched.items():
+            now = _stat(path)
+            if now != seen:
+                with _RECORDS_LOCK:
+                    if path in _RECORDS:
+                        _RECORDS[path] = (gatherer, now)
+                self.hub.ring(gatherer)
+
+    def _records(self) -> None:
+        while not self.stop.wait(RECORD_SECONDS):
+            try:
+                self.check_records()
+            except Exception:  # noqa: BLE001 - never stop watching
+                pass
 
     def _run(self) -> None:
         while not self.stop.wait(self.seconds):

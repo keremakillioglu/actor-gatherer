@@ -22,7 +22,14 @@ Linux), a turn left unfinished for more than STALE_SECONDS counts as over. A ses
 started whose process its own end took (sessions.py's `kept`) is IDLE, not CLOSED; one whose process
 the dashboard saw end otherwise (closed from the list, exited: sessions.py's `ended`) is CLOSED where
 the process cannot be told, unless something happened for it since. An IDLE agent whose BACKGROUND
-tasks still run (`background`) is BACKGROUND: its turn is over, but Claude Code is not done. `running`
+tasks still run (`background`) is BACKGROUND: its turn is over, but Claude Code is not done. A RUNNING
+agent whose turn waits on the user (`asking`) is ASKING: its newest answer, not yet carried back by a
+call, calls a tool of Claude Code's that asks the user in its terminal (ASKS) -- a question, a plan to
+approve -- and nothing comes until they answer. Until, that is, Claude Code's own record of the session
+says the call has its result (`settled`): answered there, the turn goes on and ag hears of it with the next
+call; dismissed there (Esc), no call comes, so ag's record would go on asking -- IDLE instead, its turn over.
+Answered from the page (sessions.py's `answer`), its `answer`
+says whether Claude Code's result for the call holds what was picked (`recorded`; None: no result yet). `running`
 is RUNNING or BACKGROUND, or a build running for it. Its `last` is its latest activity: a read, an event, or a pending
 answer (the reply that ends a turn, which no call stores until the user writes again) -- what
 the page compares with when the reader last looked at it, to show it FINISHED. A REBUILD is a
@@ -62,11 +69,24 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from . import home as paths
-from . import avatars, hiding, sessions
+from . import answers, avatars, hiding, live, sessions
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
-RUNNING, IDLE, CLOSED, BACKGROUND = "running", "idle", "closed", "background"
+RUNNING, IDLE, CLOSED, BACKGROUND, ASKING = "running", "idle", "closed", "background", "asking"
+#: Claude Code's tools that wait for the user in its terminal before the turn goes on: a question, with
+#: options to pick from; a plan, to approve. What each asks, `asking` returns.
+ASKS = {"AskUserQuestion": "question", "ExitPlanMode": "plan"}
+ASK_CHARS = 4000               # the most of a question's words `asking` returns
+PLAN_CHARS = 20000             # the most of a plan it returns
+#: Claude Code's own record of a session, a line per message as it is made: <its config dir>/projects/<the session's
+#: directory, each character but a letter or a digit made '-'>/<session>.jsonl. A question's result is in it the moment
+#: it is answered or dismissed; dismissed (Esc), Claude Code's note that the user interrupted it follows.
+CLAUDE_TAIL = 1 << 20          # how much of its end is read: what came since the question
+INTERRUPTED = "[Request interrupted by user"
+#: Where Claude Code writes the plan it asks to have approved (ExitPlanMode's call carries none): the file
+#: of its plans its latest write to one names.
+PLAN_FILE = re.compile(r"/\.claude/plans/[^/\\]+\.md$")
 #: A background task's start, as its tool's result begins (Claude Code's words): its kind, and its id.
 STARTS = ((re.compile(r"Command running in background with ID: ([\w-]+)"), "command"),
           (re.compile(r"Async agent launched successfully\.[\s\S]*?\bagentId: ([\w-]+)"), "agent"),
@@ -196,6 +216,13 @@ def home(started: Optional[List[dict]] = None) -> dict:
         gatherers.append({"name": name, "policy": _policy(name), "agents": agents,
                           "last": max((a["last"] or 0 for a in agents), default=0) or None})
     _with_started(gatherers, sessions.stored() if started is None else started, now)
+    records = {}                         # the records of the sessions waiting on the user: watched from now on
+    for g in gatherers:
+        for a in g["agents"]:
+            record = a.pop("record", None)
+            if record:
+                records[record[0]] = (g["name"], record[1])
+    live.watch_records(records)
     for g in gatherers:                  # when it was made: its first event, else its config's time
         g["created"] = min((a["created"] for a in g["agents"] if a.get("created")), default=None) or _made(g["name"])
     gatherers.sort(key=lambda g: g.get("created") or 0, reverse=True)
@@ -219,6 +246,10 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
         a["session"] = s
+        if s.get("answer"):                      # the last answer typed from the page: what Claude Code made of it
+            result = _result(s["gatherer"], a["channel"], s["answer"]["call"])
+            a["answer"] = {**s["answer"], "result": _clip(result, ASK_CHARS) if result else None,
+                           "recorded": answers.recorded(result, s["answer"]["expect"])}
         if a.get("holder") and paths.runs_under(a["holder"]["pid"], s.get("pid")):
             a["holder"]["dashboard"] = True          # the dashboard's own agent or terminal (or a process under it)
         a["created"] = min((x for x in (a["created"], _seconds(s["created_at"])) if x), default=None)
@@ -317,6 +348,18 @@ def _agents(conn, now: float) -> List[dict]:
         a["building"] = ch in building
         a["turn_over"] = turn_over(conn, ch, tables)[0]
         a["status"] = status_of(a.get("alive"), a["turn_over"], a["last"], now)
+        a["asking"] = asking(conn, ch, tables) if a["status"] == RUNNING else None
+        record = _claude_record(ch, a.get("cwd")) if a["asking"] and a["harness"] in ("claude", None) else None
+        seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
+        how = settled(ch, a.get("cwd"), a["asking"]["call"], record) if record else None
+        if a["asking"] and not how and record:
+            a["record"] = (record, seen)                 # watched (live.py) while it asks
+        if how:
+            a["asking"] = None
+            if how == "dismissed":
+                a["status"], a["turn_over"] = IDLE, True
+        if a["asking"]:
+            a["status"] = ASKING
         a["running"] = a["building"] or a["status"] == RUNNING
         a["background"] = background.get(ch, [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
@@ -341,6 +384,149 @@ def turn_over(conn, channel: str, tables: set):
     if last is None:
         return True, None
     return last[0] == "agent_message", _seconds(last[1])
+
+
+def asking(conn, channel: str, tables: set) -> Optional[dict]:
+    """What the agent waits on the user for (module doc), None if nothing: from its newest pending answer,
+    its calls to a tool of ASKS -- {kind: "question" or "plan", at: when it was answered, call: the call's
+    id, questions: [{header, question, multiSelect, options: [{label, description}]}] or plan: its text}."""
+    if "_pending" not in tables or CHANNEL not in _columns(conn, "_pending"):
+        return None
+    rows = conn.execute(f"SELECT answer, received_at, type, payload_json FROM _pending WHERE {CHANNEL} = ? "
+                        "ORDER BY pending_id DESC", (channel,)).fetchall()
+    for r in rows:
+        if r["answer"] != rows[0]["answer"]:
+            break                                    # an earlier answer's
+        if r["type"] != "tool_call":
+            continue
+        try:
+            content = json.loads(r["payload_json"]).get("content")
+        except (ValueError, AttributeError):
+            continue
+        for b in content if isinstance(content, list) else []:
+            if not isinstance(b, dict) or b.get("type") != "tool_use" or b.get("name") not in ASKS:
+                continue
+            got = b.get("input") if isinstance(b.get("input"), dict) else {}
+            out = {"kind": ASKS[b["name"]], "at": _seconds(r["received_at"]), "call": b.get("id")}
+            if out["kind"] == "plan":
+                out["plan"] = _clip(got["plan"], PLAN_CHARS) if isinstance(got.get("plan"), str) else _plan(conn, channel, [x["payload_json"] for x in rows])
+            else:
+                out["questions"] = [{"header": q.get("header"), "question": _clip(q.get("question"), ASK_CHARS),
+                                     "multiSelect": bool(q.get("multiSelect")),
+                                     "options": [{"label": o.get("label"), "description": _clip(o.get("description"), ASK_CHARS)}
+                                                 for o in q.get("options") or [] if isinstance(o, dict)]}
+                                    for q in got.get("questions") or [] if isinstance(q, dict)]
+            return out
+    return None
+
+
+def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optional[dict]:
+    """What the agent waits on the user for now (`asking`, less what Claude Code's record says is `settled`), None if
+    nothing; `cwd`, where the session runs."""
+    conn = _connect(gatherer)
+    if conn is None:
+        return None
+    try:
+        ask = asking(conn, channel, _tables(conn)) if _channels_kept(conn) else None
+    finally:
+        conn.close()
+    return None if ask is None or settled(channel, cwd, ask["call"]) else ask
+
+
+def _claude_record(session: str, cwd: Optional[str]) -> Optional[str]:
+    """Claude Code's record of the session (CLAUDE_TAIL's note): under its directory's folder, else wherever it is."""
+    config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    if cwd:
+        path = os.path.join(config, "projects", re.sub(r"[^A-Za-z0-9]", "-", cwd), f"{session}.jsonl")
+        if os.path.isfile(path):
+            return path
+    found = glob.glob(os.path.join(glob.escape(config), "projects", "*", glob.escape(session) + ".jsonl"))
+    return found[0] if found else None
+
+
+def settled(session: str, cwd: Optional[str], call: Optional[str], path: Optional[str] = None) -> Optional[str]:
+    """How Claude Code's own record of the session (`path`, else found) says the call ended: "answered", "dismissed"
+    (its result, then Claude Code's note that the user interrupted it: Esc), or None -- no result yet, or no record."""
+    path = (path or _claude_record(session, cwd)) if call else None
+    if path is None:
+        return None
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(max(0, os.path.getsize(path) - CLAUDE_TAIL))
+            lines = fh.read().split(b"\n")
+    except OSError:
+        return None
+    key = call.encode()
+    for i, line in enumerate(lines):
+        if key not in line:
+            continue
+        blocks = _blocks(line)
+        if not any(b.get("type") == "tool_result" and b.get("tool_use_id") == call for b in blocks):
+            continue
+        for after in lines[i + 1:i + 6]:                  # what Claude Code wrote right after it
+            got = _blocks(after, role="user")
+            if any(b.get("type") == "text" and str(b.get("text", "")).startswith(INTERRUPTED) for b in got):
+                return "dismissed"
+            if _blocks(after, role="assistant"):
+                break
+        return "answered"
+    return None
+
+
+def _blocks(line: bytes, role: Optional[str] = None) -> List[dict]:
+    """The content blocks of a line of Claude Code's record, if it is a message (of `role`); else none."""
+    try:
+        m = json.loads(line)
+    except ValueError:
+        return []
+    msg = m.get("message") if isinstance(m, dict) else None
+    if not isinstance(msg, dict) or (role and msg.get("role") != role):
+        return []
+    content = msg.get("content")
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}]
+    return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
+
+
+def _result(gatherer: str, channel: str, call: Optional[str]) -> Optional[str]:
+    """The words of the tool's result for `call` once a call has carried it, None before."""
+    conn = _connect(gatherer) if call else None
+    if conn is None:
+        return None
+    try:
+        if not _channels_kept(conn):
+            return None
+        r = conn.execute(f"SELECT e.text, e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+                         f"WHERE t.name = 'tool_output' AND e.{CHANNEL} = ? AND instr(e.payload_json, ?) > 0 "
+                         "ORDER BY e.row_id DESC LIMIT 1", (channel, json.dumps(call))).fetchone()
+        return (r["text"] or readable(r["payload_json"]) or "") if r else None
+    finally:
+        conn.close()
+
+
+def _plan(conn, channel: str, pending: List[str]) -> Optional[str]:
+    """The plan the agent asks to have approved, where its call does not carry it: the file of Claude Code's
+    plans (PLAN_FILE) it last wrote to -- in the answer that asks (`pending`, its events' payloads, newest
+    first), else before it -- as it is now, else as that write had it. None: none written."""
+    stored = (p for (p,) in conn.execute(
+        f"SELECT payload_json FROM events WHERE {CHANNEL} = ? AND payload_json LIKE '%/.claude/plans/%' "
+        "ORDER BY row_id DESC LIMIT 20", (channel,)))
+    for payload in [*pending, *stored]:
+        try:
+            content = json.loads(payload).get("content")
+        except (ValueError, AttributeError):
+            continue
+        for b in reversed(content if isinstance(content, list) else []):
+            got = b.get("input") if isinstance(b, dict) and b.get("type") == "tool_use" else None
+            path = got.get("file_path") if isinstance(got, dict) else None
+            if not isinstance(path, str) or not PLAN_FILE.search(path):
+                continue
+            try:
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    return _clip(fh.read(PLAN_CHARS + 1), PLAN_CHARS)
+            except OSError:
+                return _clip(got["content"], PLAN_CHARS) if isinstance(got.get("content"), str) else None
+    return None
 
 
 def status_of(alive: Optional[bool], over: bool, last: Optional[float], now: float) -> str:
