@@ -5,7 +5,8 @@ what it changed, at the lines where: by an edit tool, or by a shell command whos
 read from it (`cat > F <<EOF`, `tee`, `sed -i`, a Python script that replaces constant strings in a
 file and writes it back).
 
-A turn is what follows one of the user's messages, up to the next. Each call is read from the
+A turn is what follows one of the user's messages, up to the next -- not counting one written while
+the turn ran (Claude Code sent it mid-turn, or held it until the turn ended), which is part of it. Each call is read from the
 event's parts (data.parts), so whichever harness wrote it; only the tools' names differ.
 
 Where ag's hook server checked a call against the disk as it ran (`_touches`, written by
@@ -28,13 +29,14 @@ import re
 import tempfile
 from typing import Dict, List, Optional
 
-from . import data
+from . import data, queued
 from . import home as paths
 from .commands import (  # noqa: F401 - python_changes: tested here
     EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, python_changes, shell_changes,
     shell_reads)
 
 MAX_ROWS = 4000            # the most lines one file shows in a turn
+HELD_SECONDS = 30          # a message held until its turn ended: stored this close to when Claude Code sent it
 LINE_CHARS = 400           # the most of one line's text sent
 COMMAND_OUTPUT = 4000      # the most of a command's output sent
 CONTEXT = 2                # the lines known around a change shown with it
@@ -190,7 +192,7 @@ def _runs(numbered: List[tuple]) -> List[tuple]:
 
 class _Turn:
     def __init__(self, n, row_id, at, text):
-        self.head = {"n": n, "row_id": row_id, "at": at, "text": text[:REPLY_CHARS], "replies": [], "now": None}
+        self.head = {"n": n, "row_id": row_id, "at": at, "text": text[:REPLY_CHARS], "replies": [], "now": None, "more": []}
         self.files: Dict[str, dict] = {}
         self.commands: List[dict] = []
         self.order: List[str] = []
@@ -256,7 +258,8 @@ def _call_view(part: dict) -> dict:
 
 
 def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = "") -> dict:
-    """The session's turns ({n, row_id, at, text, replies, now}: what the user asked; what the agent
+    """The session's turns ({n, row_id, at, text, more, replies, now}: what the user asked, and what they wrote while it
+    ran ({row_id, at, text}: sent mid-turn, or held until it ended; queued.py) -- part of it, not a turn of its own; what the agent
     said back and thought, in order -- each {kind: "text", text} or {kind: "thinking", texts} (a run of
     thinking between two replies, its readable words: none when encrypted); and what it was doing
     last -- {kind: "thinking"}, {kind: "call", id, text} (a call with no result yet), or None), and for turn `turn` (None:
@@ -503,13 +506,29 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                               {"t": "note", "text": "listed by name"})
             return
 
-    # the turns, first: which one is wanted
-    starts = []
+    # the turns, first: which one is wanted. A message the user wrote while a turn ran is part of it, not a turn of
+    # its own: one Claude Code sent mid-turn (wrapped), or held until the turn ended and sent then, as its record
+    # says (queued.py's `meanwhile`: matched by its words, stored as it was sent)
+    held = queued.meanwhile(channel, cwd)
+    starts, more = [], {}                            # more: what was written while a turn ran, by the turn it is part of
     for i, (row_id, typ, at, parts) in enumerate(evs):
         said = [p["text"] for p in parts if p["kind"] == "text" and p.get("role") == "user"]
         if said and typ == "user_message":
-            starts.append((i, row_id, at, said[0]))
+            text = queued.mid_turn(said[0])
+            meanwhile = text is not None
+            if not meanwhile and at is not None:
+                q = next((q for q in held if q["text"].strip() == said[0].strip() and abs(at - q["sent"]) <= HELD_SECONDS), None)
+                if q is not None:
+                    held.remove(q)
+                    meanwhile = True
+            text = said[0] if text is None else text
+            if meanwhile and starts:
+                more.setdefault(len(starts) - 1, []).append({"row_id": row_id, "at": at, "text": text.rstrip()[:REPLY_CHARS]})
+            else:
+                starts.append((i, row_id, at, text))
     heads = [_Turn(n, row_id, at, t) for n, (i, row_id, at, t) in enumerate(starts)]
+    for n, got in more.items():
+        heads[n].head["more"] = got
     pick = len(heads) - 1 if turn is None or not heads else max(0, min(turn, len(heads) - 1))
     want = heads[pick] if heads else None
     # then every call, in order, each with its result, keeping what is known of each file
