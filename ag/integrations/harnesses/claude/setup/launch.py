@@ -10,7 +10,10 @@ Each Claude Code session is a channel in the run's gatherer.
 
 When the upstream is Anthropic's own API, ag also sets ENABLE_TOOL_SEARCH=true (unless the environment
 sets it): Claude Code turns tool search off for a base URL that is not a first-party host, and then
-sends every tool in full on every call, which breaks the cache.
+sends every tool in full on every call, which breaks the cache. And it sets
+CLAUDE_CODE_GATEWAY_HINT_HEADERS=true (unless the environment sets it): Claude Code says what each call
+is (`X-Claude-Code-Request-Class`: main, subagent, auxiliary, ...) only to a first-party host unless
+asked, and the context manager tells the session's turns from Claude Code's side calls by it.
 
 `system_messages` ("keep" or "user") forces how the hook sends system messages back for every request;
 unset, the hook chooses by each request's model. `trace_root` traces every model call there (the
@@ -53,6 +56,7 @@ SETUP = "ag.integrations.harnesses.claude.setup.setup"     # Claude Code's setup
 DEFAULT_API = "https://api.anthropic.com"
 FIRST_PARTY = ("api.anthropic.com",)                    # hosts Claude Code's tool search works with
 SESSION_HEADER = "x-claude-code-session-id"             # the trace files each call under its session
+HINT_HEADERS = "CLAUDE_CODE_GATEWAY_HINT_HEADERS"       # what has Claude Code say what each call is, to any host
 WINDOW, WINDOW_1M = 200_000, 1_000_000                  # Claude Code's windows: the default, and extended
 BUFFER = 33_000                                         # the auto-compact buffer Claude Code keeps below its window
 NATIVE_1M = re.compile(r"fable|sonnet-(?:[5-9]|\d{2,})|haiku-(?:5-5|[6-9]|\d{2,})|opus-(?:4-(?:[7-9]|\d{2,})|[5-9]|\d{2,})"
@@ -337,6 +341,8 @@ class ClaudeLauncher(Launcher):
         if first_party and "ENABLE_TOOL_SEARCH" not in run.env:
             env["ENABLE_TOOL_SEARCH"] = "true"
             notes.append("ENABLE_TOOL_SEARCH=true (the hook server forwards to Anthropic's API)")
+        if HINT_HEADERS not in run.env:
+            env[HINT_HEADERS] = "true"
         return Launch([*run.command, *args], env, notes, session)
 
     def describe(self, env: Dict[str, str]) -> List[str]:

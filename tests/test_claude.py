@@ -313,6 +313,14 @@ class HookDecisionsTest(unittest.TestCase):
         self.assertFalse(claude_ag.is_model_call("POST", "/v1/models", body))
         self.assertFalse(claude_ag.is_model_call("POST", "/v1/messages", {"messages": [ENV], "tools": [{}]}))
 
+    def test_web_search_s_own_call_is_not_a_turn(self):
+        search = {"type": "web_search_20250305", "name": "web_search", "max_uses": 8}
+        body = {"messages": [{"role": "user", "content": "Perform a web search for the query: p vs np"}],
+                "tools": [search], "tool_choice": {"type": "tool", "name": "web_search"}}
+        self.assertFalse(claude_ag.is_model_call("POST", "/v1/messages?beta=true", body))
+        turn = {"messages": first_turn(), "tools": [{"name": "Bash"}, search]}     # a turn offering it: a turn
+        self.assertTrue(claude_ag.is_model_call("POST", "/v1/messages?beta=true", turn))
+
     def test_the_session_from_the_header_then_the_metadata(self):
         meta = {"metadata": {"user_id": json.dumps({"device_id": "d", "session_id": "s-meta"})}}
         self.assertEqual(claude_ag.session_of({"X-Claude-Code-Session-Id": "s-hdr"}, meta), "s-hdr")
@@ -366,6 +374,20 @@ class HookTest(unittest.TestCase):
                               body={"messages": first_turn(), "tools": [{"name": "Bash"}]})
         self.assertIsNone(self.run_hook(req, client))
         self.assertEqual(client.asked, [])
+
+    def test_web_search_s_own_call_goes_through_as_it_is(self):
+        """Claude Code's WebSearch tool calls the model itself, with only the web search server tool,
+        and does not say what the call is to a host that is not first party: not the session's turn."""
+        body = {"model": "m", "messages": [{"role": "user", "content": [
+                    {"type": "text", "text": "Perform a web search for the query: Avishay Tal homepage"}]}],
+                "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 8}],
+                "tool_choice": {"type": "tool", "name": "web_search"}}
+        for headers in ({}, {"X-Claude-Code-Request-Class": "auxiliary"}):
+            client = FakeClient()
+            req = SimpleNamespace(method="POST", path="/v1/messages?beta=true", label="ag-x",
+                                  headers={"X-Claude-Code-Session-Id": "sess", **headers}, body=body)
+            self.assertIsNone(self.run_hook(req, client))
+            self.assertEqual(client.asked, [], headers)
 
     def test_no_session_leaves_the_request_alone(self):
         client = FakeClient()
@@ -643,6 +665,25 @@ class LauncherTraceTest(unittest.TestCase):
         self.assertEqual(seen["kwargs"]["trace_root"], "/tmp/tr")
         self.assertEqual(seen["kwargs"]["thread_headers"], ("x-claude-code-session-id",))
         self.assertIn("model trace: /tmp/tr", out.notes)
+
+    def test_claude_code_is_asked_to_say_what_each_call_is(self):
+        from ag.integrations.harnesses.claude.setup import launch
+
+        class Servers:
+            def running(self):
+                return []
+
+            def start(self, *args, **kwargs):
+                return SimpleNamespace(url="http://127.0.0.1:4113")
+        for upstream, env, want in (("https://api.anthropic.com", {}, "true"),
+                                    ("http://127.0.0.1:4011", {}, "true"),          # any upstream
+                                    ("http://127.0.0.1:4011", {launch.HINT_HEADERS: "0"}, "0")):   # the user's own
+            launcher = launch.ClaudeLauncher({**launch.ClaudeLauncher.defaults, "upstream": upstream}, "/tmp/home")
+            launcher.servers = Servers()
+            run = SimpleNamespace(args=[], command=["claude"], env=env, gatherer="h", adaptor="", dry_run=False)
+            with mock.patch.object(launch, "probe", lambda *a: None):       # no Claude Code to ask
+                out = launcher.launch(run)
+            self.assertEqual(out.env["CLAUDE_CODE_GATEWAY_HINT_HEADERS"], want, (upstream, env))
 
 
 if __name__ == "__main__":
