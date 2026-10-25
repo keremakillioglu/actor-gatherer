@@ -221,7 +221,7 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
             where, args = where + f" AND e.{CHANNEL} = ?", args + [channel]
         # a user message as ag stored it cleaned -- the harness's wrapper around it taken off -- where it has
         cleaned = "cleaned_messages" in data._tables(conn)
-        words = f"coalesce({'c.text, ' if cleaned else ''}e.text)"
+        words = "coalesce(c.text, e.text)" if cleaned else "e.text"
         rows = conn.execute(
             f"SELECT e.row_id, e.{CHANNEL} AS ch, t.name AS type, e.tokens, e.inserted_at, substr({words}, 1, {PREVIEW * 2}) AS text, "
             f"CASE WHEN e.text IS NULL OR e.text = '' OR t.name = 'tool_call' THEN e.payload_json END AS payload FROM events e "
