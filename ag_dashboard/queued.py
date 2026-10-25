@@ -8,7 +8,7 @@ a letter or a digit made '-'>/<session>.jsonl) the moment it happens, a line
 written; "remove", with reason "absorbed_mid_turn", when it goes to the model with the turn's next
 call (wrapped: MID_TURN), or "dequeue" when the turn ended first and it opens the next. ag hears of it
 only with that call, which can be minutes later, after a long command; and its notes (a background
-task's end: NOTES) are queued too, in the user's name.
+task's end, a subagent's report as it hands back: NOTES) are queued too, in the user's name.
 
     typed(session)   the queue as it stands: [{text, at, sent, joins}] -- the messages not sent yet (`sent`
                      None), and the ones sent in the last SENT_SECONDS (`sent`: when), which ag may not
@@ -33,7 +33,7 @@ SENT_SECONDS = 30.0
 POLL_SECONDS = 1.0
 BUSY_SECONDS = 1.0              # held longer than this: written while a turn ran (one written between turns goes at once)
 CHUNK = 1 << 22                 # a record is read this much at a time
-NOTES = ("<task-notification>",)
+NOTES = ("<task-notification>", "<agent-message ", "Another Claude session sent a message:")
 #: A message sent mid-turn, as Claude Code wraps it for the model (its words, 2.1.x).
 MID_TURN = re.compile(r"^\s*The user sent a new message while you were working:\s*([\s\S]*?)\s*"
                       r"This is how Claude Code surfaces messages the user sends mid-turn\b[\s\S]*$")

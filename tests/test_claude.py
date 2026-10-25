@@ -112,6 +112,69 @@ class EventsTest(unittest.TestCase):
         said = {"role": "user", "content": [{"type": "text", "text": "Tool loaded. Now use it"}]}
         self.assertEqual(claude.classify(said), USER_MESSAGE)                         # the user's own words
 
+    # as Claude Code 2.1.310 sends them (saved from a live session)
+    SKILL_TEXT = ("Base directory for this skill: /w/.claude/skills/greet\n\n# Greeting in the house style\n\n"
+                  'Reply with exactly: "Ahoy, <name>! Welcome aboard." and nothing else.\n\n\nARGUMENTS: {}')
+    TYPED = "<command-message>greet</command-message>\n<command-name>/greet</command-name>\n<command-args>Bob</command-args>\n"
+
+    def test_a_skill_s_instructions_are_claude_code_s(self):
+        sent = [{"role": "user", "content": "Greet Alice. Use the greet skill."},
+                {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_3", "name": "Skill",
+                                                   "input": {"skill": "greet", "args": "Alice"}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_3", "content": "Launching skill: greet"},
+                                             {"type": "text", "text": self.SKILL_TEXT.format("Alice")}]}]
+        events = claude.to_events(sent)
+        self.assertEqual([e["type"] for e in events], [USER_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT])   # the user spoke once
+        self.assertEqual(back.to_messages(events, sent)[-1]["content"], sent[-1]["content"])
+
+    def test_a_command_the_user_typed_is_theirs_and_its_prompt_claude_code_s(self):
+        earlier = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": [{"type": "text", "text": "hello"}]}]
+        skill = {"role": "user", "content": [{"type": "text", "text": self.TYPED}, {"type": "text", "text": self.SKILL_TEXT.format("Bob")}]}
+        events = claude.to_events(earlier + [skill])
+        self.assertEqual([e["type"] for e in events][2:], [USER_MESSAGE, CONTEXT])
+        self.assertEqual(events[2]["text"], "/greet Bob")                             # as they typed it
+        self.assertEqual(events[2]["payload"]["content"][0]["text"], self.TYPED)      # sent back as Claude Code sent it
+        own = {"role": "user", "content": [{"type": "text", "text": "<command-message>review</command-message>\n"
+                                            "<command-name>/review</command-name>\n<command-args></command-args>\n"},
+                                           {"type": "text", "text": "Review the open pull request for bugs."}]}
+        events = claude.to_events(earlier + [own])                                    # a command file's: its text is the prompt
+        self.assertEqual([(e["type"], e["text"]) for e in events][2:],
+                         [(USER_MESSAGE, "/review"), (CONTEXT, "Review the open pull request for bugs.")])
+
+    def test_a_typed_command_opening_a_session_is_its_request_the_notes_before_it(self):
+        sent = [{"role": "user", "content": [REMINDER, {"type": "text", "text": self.TYPED},
+                                             {"type": "text", "text": self.SKILL_TEXT.format("Bob")}]}, ENV]
+        events = claude.to_events(sent)
+        self.assertEqual([e["type"] for e in events], [CONTEXT, CONTEXT, USER_MESSAGE, CONTEXT])
+        self.assertTrue(events[1]["text"].startswith("# Environment"))               # before the request, as for words typed
+        self.assertTrue(events[3]["text"].startswith("Base directory"))              # its prompt stays right after it
+        self.assertEqual(back.to_messages(events, sent), sent)                       # sent as Claude Code sent it
+
+    def test_a_command_claude_code_runs_and_what_it_says_are_its_own(self):
+        ran = {"role": "user", "content": [
+            {"type": "text", "text": "<command-name>/context</command-name>\n            <command-message>context</command-message>\n"
+                                     "            <command-args></command-args>\n"},
+            {"type": "text", "text": "<local-command-stdout> Context Usage\n⛀ ⛁ ⛁</local-command-stdout>"},
+            {"type": "text", "text": "## Context Usage\n\n**Model:** claude-haiku-5-5  \n**Tokens:** 48.9k / 1m (5%)\n"},
+            {"type": "text", "text": "Thanks, that is all."}]}
+        self.assertEqual([e["type"] for e in claude.to_events([ran])], [CONTEXT, CONTEXT, CONTEXT, USER_MESSAGE])
+
+    def test_a_subagents_report_is_not_the_user_speaking(self):
+        report = {"role": "user", "content": [{"type": "text", "text":
+                  'Another Claude session sent a message:\n<agent-message from="ab81ae34ccf4a6078">\n[Subagent hand-back] The text '
+                  "below is the final report of a subagent this session delegated to. ... The report follows:\n  Ran ls.\n"
+                  "</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session ..."}]}
+        self.assertEqual(claude.classify(report), CONTEXT)
+
+    def test_after_a_compaction_the_prompt_of_a_command_typed_stays(self):
+        summary = {"type": "text", "text": "This session is being continued from a previous conversation that ran out of context. ..."}
+        sent = [{"role": "user", "content": [summary]},
+                {"role": "user", "content": [REMINDER, {"type": "text", "text": self.TYPED}, {"type": "text", "text": self.SKILL_TEXT.format("Bob")}]},
+                ENV, {"role": "assistant", "content": [{"type": "text", "text": "Ahoy, Bob! Welcome aboard."}]}]
+        events = claude.to_events(sent)                                               # the summary and the notes again: left out
+        self.assertEqual([(e["type"], e["text"][:14]) for e in events],
+                         [(USER_MESSAGE, "/greet Bob"), (CONTEXT, "Base directory"), (AGENT_MESSAGE, "Ahoy, Bob! Wel")])
+
     def test_ids_do_not_move_with_cache_control(self):
         a = claude.to_events(first_turn(cache=True))
         b = claude.to_events(first_turn(cache=False))

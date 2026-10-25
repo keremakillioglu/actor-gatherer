@@ -27,6 +27,7 @@ import json
 import os
 import re
 import tempfile
+import textwrap
 from typing import Dict, List, Optional
 
 from . import data, queued
@@ -246,11 +247,43 @@ def _label(name: str, inp: dict, raw, cwd: str) -> str:
     if name in SHELLS:
         command, _ = _shell_text(name, raw)
         return re.sub(r"^cd \S+ && ", "", command.strip().split("\n")[0])[:200]
-    target = inp.get("file_path") or inp.get("notebook_path") or inp.get("pattern") or inp.get("query") \
+    if name == "Skill" and isinstance(inp.get("skill"), str):
+        args = inp.get("args") if isinstance(inp.get("args"), str) else ""
+        return f"Load skill {inp['skill']}{' ' + args if args.strip() else ''}"[:200]
+    if name == "ToolSearch" and isinstance(inp.get("query"), str):    # Claude Code loading tools it was told of by name
+        q = inp["query"].strip()
+        picked = [tool_name(t.strip()) for t in q[len("select:"):].split(",") if t.strip()] if q.startswith("select:") else []
+        return (f"Load {', '.join(picked)}" if picked else f"Search tools: {q}")[:200]
+    path = inp.get("file_path") or inp.get("notebook_path")
+    target = path if isinstance(path, str) and path else inp.get("pattern") or inp.get("query") \
         or inp.get("url") or inp.get("skill") or inp.get("prompt") or ""
-    if isinstance(target, str) and cwd and target.startswith(cwd.rstrip("/") + "/"):
+    if isinstance(target, str) and target == path:
+        target = short_path(target, cwd)
+    elif isinstance(target, str) and cwd and target.startswith(cwd.rstrip("/") + "/"):
         target = target[len(cwd.rstrip("/")) + 1:]
-    return f"{name} {target if isinstance(target, str) else ''}".strip()[:200]
+    return f"{tool_name(name)} {target if isinstance(target, str) else ''}".strip()[:200]
+
+
+MCP_TOOL = re.compile(r"^mcp__([^_]+(?:_[^_]+)*)__(.+)$")                # an MCP server's tool: mcp__<server>__<tool>
+MEMORY = re.compile(r"/\.claude/projects/[^/]+/memory(/.*)?$")           # Claude Code's memory of a project's directory
+
+
+def tool_name(name: str) -> str:
+    """A tool's name as read: an MCP server's as "server · tool"."""
+    m = MCP_TOOL.match(name or "")
+    return f"{m.group(1)} · {m.group(2)}" if m else name
+
+
+def short_path(path: str, cwd: str) -> str:
+    """A file's path in a call's line: from the session's directory; a file of Claude Code's memory as
+    memory/<file>; else from the home folder (~), or whole."""
+    if cwd and path.startswith(cwd.rstrip("/") + "/"):
+        return path[len(cwd.rstrip("/")) + 1:]
+    m = MEMORY.search(path)
+    if m:
+        return "memory" + (m.group(1) or "")
+    home = os.path.expanduser("~")
+    return "~" + path[len(home):] if path.startswith(home + "/") else path
 
 
 def _call_view(part: dict) -> dict:
@@ -258,11 +291,80 @@ def _call_view(part: dict) -> dict:
     return {"name": part.get("name"), "input": data._clip(part.get("input"), COMMAND_OUTPUT)}
 
 
+# ------------------------------------------------------------------ Claude Code's notes, as the conversation shows them
+
+SKILL = re.compile(r"^\s*Base directory for this skill: ([^\n]*)\n+([\s\S]*?)(?:\n+ARGUMENTS: ([\s\S]*?))?\s*$")
+AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]*)"[^>]*>\n?([\s\S]*?)\n?</agent-message>')
+REPORT_FOLLOWS = "The report follows:\n"
+RAN = re.compile(r"^\s*<command-name>/?([^<]*)</command-name>\s*<command-message>[^<]*</command-message>"
+                 r"\s*(?:<command-args>([\s\S]*?)</command-args>)?\s*$")
+PRINTED = re.compile(r"^\s*<bash-stdout>([\s\S]*?)</bash-stdout>\s*(?:<bash-stderr>([\s\S]*?)</bash-stderr>)?\s*$")
+AGENT_ID = re.compile(r"\bagentId: ([\w-]+)")
+MENTIONED = re.compile(r"Called the Read tool with the following input: (\{[^\n]*\})\nResult of calling the Read tool:\n")
+LOADED = re.compile(r"(?:^|\n)Contents of (/[^\n]*?)(?: \([^)\n]*\))?:\n\n")
+
+
+def _note(text: str) -> Optional[dict]:
+    """What a note of Claude Code's in the conversation is, as the Chat view shows it; None for one it doesn't:
+        {kind: "skill", name, args, text}   a skill's instructions, loaded by the Skill tool or the user's /name
+        {kind: "report", from, text}        another session's message: a subagent's report as it hands back
+        {kind: "command", name}             a command the user ran that Claude Code runs itself (/context, /mcp): not
+                                            shown, only matched with what was sent from the page
+        {kind: "printed", text}             what a command the user ran with ! printed"""
+    m = SKILL.match(text)
+    if m:
+        return {"kind": "skill", "name": os.path.basename(m.group(1).strip().rstrip("/")), "args": (m.group(3) or "").strip(),
+                "text": m.group(2).strip()[:REPLY_CHARS]}
+    m = AGENT_MESSAGE.search(text) if text.lstrip().startswith(("Another Claude session sent a message:", "<agent-message ")) else None
+    if m:
+        body = m.group(2)
+        if REPORT_FOLLOWS in body:                   # a hand-back: the report, each of its lines indented by Claude Code
+            body = textwrap.dedent(body.split(REPORT_FOLLOWS, 1)[1])
+        return {"kind": "report", "from": m.group(1), "text": body.strip()[:REPLY_CHARS]}
+    m = RAN.match(text)
+    if m:
+        args = (m.group(2) or "").strip()
+        return {"kind": "command", "name": "/" + m.group(1).strip() + (f" {args}" if args else "")}
+    m = PRINTED.match(text)
+    if m:
+        return {"kind": "printed", "text": "\n".join(x for x in (m.group(1).rstrip("\n"), (m.group(2) or "").rstrip("\n")) if x)[:COMMAND_OUTPUT]}
+    return None
+
+
+def _loaded(text: str) -> List[tuple]:
+    """The files a note of Claude Code's gives the agent the lines of, not by a call of its own: one the user
+    @-mentioned (read as the Read tool reads it), the CLAUDE.md files and memory it loads ("Contents of <path>:")
+    -- each (path, [(n, line)], how)."""
+    out = []
+    for m in MENTIONED.finditer(text):
+        try:
+            path = json.loads(m.group(1)).get("file_path")
+        except (ValueError, AttributeError):
+            continue
+        rows = []
+        for line in text[m.end():].split("\n"):
+            r = READ_LINE.match(line)
+            if not r:
+                break
+            rows.append((int(r.group(1)), r.group(2)))
+        if isinstance(path, str) and path:
+            out.append((path, rows, "@-mentioned: read into the message by Claude Code"))
+    found = list(LOADED.finditer(text))
+    for k, m in enumerate(found):
+        body = text[m.end():found[k + 1].start() if k + 1 < len(found) else len(text)]
+        body = re.sub(r"\n*</system-reminder>[\s\S]*$", "", body).rstrip("\n")
+        out.append((m.group(1), list(enumerate(body.split("\n"), 1)), "loaded into the context by Claude Code"))
+    return out
+
+
 def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = "") -> dict:
     """The session's turns ({n, row_id, at, text, more, replies, now, last}: what the user asked, and what they wrote while it
     ran ({row_id, at, text}: sent mid-turn, or held until it ended; queued.py) -- part of it, not a turn of its own; what the agent
     said back and thought, in order -- each {kind: "text", text} or {kind: "thinking", texts} (a run of
-    thinking between two replies, its readable words: none when encrypted); what it was doing
+    thinking between two replies, its readable words: none when encrypted), and among them a subagent's report
+    handed back (`_note`): {kind: "report", name (what the subagent was started for, else ""), text}; `ran`, the commands the user ran that Claude Code runs itself (/context,
+    /mcp: not shown, but what was sent from the page is matched with them); `output`, what a command the user
+    ran with ! printed, when it is one; what it was doing
     last -- {kind: "thinking"}, {kind: "call", id, text} (a call with no result yet), or None; and its latest
     call while nothing readable was said or thought after it -- {id, text, call, running, error, output} -- or
     None), and for turn `turn` (None:
@@ -272,8 +374,10 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
          with what it did to it -- blocks of {t: "lines", start (None: not known), lines} (read),
          {t: "hits", rows: [[n, text]]}, {t: "diff", at (None: not found), old, new, above, below
          ([[n, text]]: known lines around it)}, {t: "write", lines, created}, {t: "append", lines},
-         {t: "image", row_id, id} (fetched by `image`), {t: "note", text}}
-    and every call it made, in order: {text, error, running, call, output, files (the paths it touched)}.
+         {t: "image", row_id, id} (fetched by `image`), {t: "note", text}}; `call` None for a file Claude Code
+         gave the agent the lines of itself (`_loaded`: one the user @-mentioned, a CLAUDE.md, its memory)
+    and every call it made, in order: {text, error, running, call, output, files (the paths it touched)} -- a skill
+    loaded with them, as its Skill call, its instructions its output, or as a call of its own when the user typed its /name.
     A source the hook server checked on disk also has `checked` (True: what the call showed of the file
     is on disk; False: it is not; None: nothing to match), and `unnamed` when the file changed while
     the call ran but the call doesn't name it; its kinds may be "delete" too. A file in a temporary
@@ -385,6 +489,37 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                                                             "or isn't text)"})
             else:
                 rec.block(f, src, {"t": "note", "text": "deleted"})
+
+    def loaded(t: Optional[_Turn], part: dict) -> None:
+        """A file Claude Code gave the agent the lines of in a note (`_loaded`): read, at its line numbers."""
+        path = part["path"]
+        for n, line in part["rows"]:
+            knows(path).rows[n] = {"text": line}
+        rec = t if t is not None and t is want else None
+        if rec:
+            rec.current = None                                  # no call of the agent's
+            f = rec.file(path)
+            src = rec.source(f, part["via"], "read", None, False)
+            for start, lines in _runs(part["rows"]):
+                rec.block(f, src, {"t": "lines", "start": start, "lines": lines})
+
+    def skilled(t: Optional[_Turn], n: dict) -> None:
+        """A skill Claude Code loaded (`_note`), among the turn's calls: the Skill call that loaded it, its instructions
+        as its output; else, the user having typed its /name, a call of its own."""
+        rec = t if t is not None and t is want else None
+        if rec is None:
+            return
+        rec.current = None
+        last = rec.commands[-1] if rec.commands else None
+        call = (last or {}).get("call") or {}
+        inp = call.get("input") if isinstance(call.get("input"), dict) else {}
+        asked = str(inp.get("skill") or "") if call.get("name") == "Skill" else ""
+        if asked and (asked == n["name"] or asked.endswith(":" + n["name"])) and not last.get("loaded"):
+            last.update(output=n["text"][:COMMAND_OUTPUT], loaded=True)
+            return
+        rec.commands.append({"text": f"Load skill {n['name']}{' ' + n['args'] if n['args'] else ''}"[:200], "error": False,
+                             "running": False, "call": {"name": "Skill", "input": {"skill": n["name"], "args": n["args"]}},
+                             "output": n["text"][:COMMAND_OUTPUT], "files": [], "loaded": True})
 
     def apply(t: Optional[_Turn], part: dict, result: Optional[dict]) -> None:
         name, inp = part.get("name") or "", part.get("input")
@@ -536,9 +671,19 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     want = heads[pick] if heads else None
     # then every call, in order, each with its result, keeping what is known of each file
     begins = {i: heads[n] for n, (i, *_rest) in enumerate(starts)}
+    # Claude Code's notes stored just before a user's message came with it (ag stores them ahead of it): the files they
+    # give the agent are that turn's
+    ahead, nxt = [None] * len(evs), None
+    for i in range(len(evs) - 1, -1, -1):
+        if i in begins:
+            nxt = begins[i]
+        elif any(p["kind"] != "note" for p in evs[i][3]):
+            nxt = None
+        ahead[i] = nxt
     cur: Optional[_Turn] = None
     order: List[tuple] = []                          # (turn, call part), in the order called
     results: Dict[str, dict] = {}
+    agents: Dict[str, str] = {}                      # a subagent's id: what it was started for (its call's description)
     for i, (row_id, typ, at, parts) in enumerate(evs):
         cur = begins.get(i, cur)
         head = cur.head if cur is not None else {"replies": [], "now": None, "last": None}   # before the first message: kept nowhere
@@ -557,6 +702,10 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     head["now"] = None
                 if (head["last"] or {}).get("id") == p["id"]:
                     head["last"].update(running=False, error=bool(p.get("error")), output=(p.get("text") or "")[:COMMAND_OUTPUT])
+                started = calls.get(p["id"]) or {}
+                m = AGENT_ID.search(p.get("text") or "") if started.get("name") in ("Agent", "Task") else None
+                if m:
+                    agents[m.group(1)] = str((started.get("input") or {}).get("description") or "")
             elif p["kind"] == "text" and p.get("role") == "assistant" and p["text"].strip():
                 head["replies"].append({"kind": "text", "text": p["text"][:REPLY_CHARS]})
                 head["now"] = head["last"] = None
@@ -568,8 +717,30 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     said[-1]["texts"].append(p["text"][:REPLY_CHARS])
                     head["last"] = None                      # shown after the call: the call is no longer the last
                 head["now"] = {"kind": "thinking"}
+            elif p["kind"] == "note":                        # Claude Code's own: a report, a skill loaded, a ! command's output
+                n = _note(p.get("text") or "")
+                if n is None:
+                    pass
+                elif n["kind"] == "report":
+                    n["name"] = agents.get(n.pop("from"), "")
+                    head["replies"].append(n)
+                elif n["kind"] == "skill":                   # among the calls, not the conversation (skilled)
+                    order.append((cur, n))
+                    if ((head["last"] or {}).get("call") or {}).get("name") == "Skill":
+                        head["last"]["output"] = n["text"][:COMMAND_OUTPUT]
+                elif n["kind"] == "command":
+                    head.setdefault("ran", []).append(n["name"])
+                else:
+                    head["output"] = n["text"]               # what a ! command printed: under it
+                for path, rows, how in _loaded(p.get("text") or ""):
+                    order.append((ahead[i] or cur, {"kind": "loaded", "path": path, "rows": rows, "via": how}))
     for t, p in order:
-        apply(t, p, results.get(p.get("id")) if p.get("id") else None)
+        if p["kind"] == "loaded":
+            loaded(t, p)
+        elif p["kind"] == "skill":
+            skilled(t, p)
+        else:
+            apply(t, p, results.get(p.get("id")) if p.get("id") else None)
     out = {"turns": [h.head for h in heads], "turn": pick if heads else None, "files": [], "commands": [],
            "home": os.path.expanduser("~")}
     if want is None:

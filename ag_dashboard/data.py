@@ -1288,7 +1288,8 @@ def _clip(value, chars: int = TEXT_CHARS):
 
 
 def _output(value) -> str:
-    """A tool result's words: a string, or the text of its blocks ("[image]" for an image)."""
+    """A tool result's words: a string, or the text of its blocks ("[image]" for an image, "Loaded <tool>" for a
+    tool a tool search loaded)."""
     if isinstance(value, str):
         return value
     if isinstance(value, list):
@@ -1301,6 +1302,8 @@ def _output(value) -> str:
                     words.append(b["text"])
                 elif b.get("type") in ("image", "input_image"):
                     words.append("[image]")
+                elif b.get("type") == "tool_reference" and b.get("tool_name"):    # Claude Code's tool search: a tool loaded
+                    words.append(f"Loaded {b['tool_name']}")
         return "\n".join(words)
     if isinstance(value, dict):
         for k in ("output", "content", "text"):
