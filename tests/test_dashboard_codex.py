@@ -143,6 +143,8 @@ class ExecTest(CodexBase):
         self.assertIsNone(self.session(first))
         self.assertEqual(done["started_as"], first)
         self.assertEqual(self.session(THREAD)["status"], "stopped")
+        self.assertGreater(self.session(THREAD)["kept"], 0)  # its process gone with its turn: Idle, not Closed
+        self.assertEqual(self.session(THREAD)["ended"], 0)
         self.assertTrue(os.path.exists(sessions.log_path(THREAD)))
 
         self.s.send(THREAD, "again")                    # the next: the thread resumed

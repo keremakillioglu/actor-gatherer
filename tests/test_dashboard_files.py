@@ -301,6 +301,8 @@ class FilesTest(unittest.TestCase):
         got = files.files("g", "c1", 2, cwd="/w")
         self.assertEqual({f["path"]: f["temporary"] for f in got["files"]}, {tmp: True, "/w/a.py": False})
         self.assertEqual([(c["text"], c["temporary"]) for c in got["commands"]], [("Read scratch", True), ("Both", False)])
+        # TODO: fails on Linux -- /private/tmp is temporary only where /tmp resolves to it (macOS); `_temporary_roots`
+        # adds a root's realpath, not /private/tmp itself. Either list /private/tmp, or check it only on macOS.
         self.assertTrue(files.temporary("/tmp/x") and files.temporary("/private/tmp/x") and not files.temporary("/tmpx/y"))
 
     def test_every_call_is_listed_in_order_with_its_files(self):

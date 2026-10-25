@@ -126,6 +126,16 @@ class Plan(Home):
         self.codex_config('model_provider = "c"\n[model_providers.c]\nbase_url = "http://h/v1"\nwire_api = "chat"\n')
         self.assertIn("wire_api", codex.plan([], {}, dict(os.environ)).notes[0])
 
+    def test_the_thread_a_resume_opens_is_known_so_ag_claims_it(self):
+        self.codex_config(GEMINI)
+        env, thread = dict(os.environ), "01a174b3-97cf-7663-9a49-842b19cf2a67"
+        for args in (["resume", thread], ["-m", "m", "--no-alt-screen", "resume", thread],
+                     ["exec", "--json", "-m", "resume", "resume", thread, "-"]):         # a model named "resume"
+            self.assertEqual(codex.plan(args, {}, env).session, thread, args)
+        for args in ([], ["exec", "hi"], ["resume"], ["resume", "--last"], ["exec", "resume", "--last", "-"],
+                     ["-m", "resume", thread]):                                          # new, or not said which
+            self.assertIsNone(codex.plan(args, {}, env).session, args)
+
     def test_dry_run_writes_nothing_codex_reads(self):
         path = self.codex_config(GEMINI)
         before = self.read(path)

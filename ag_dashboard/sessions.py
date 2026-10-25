@@ -756,7 +756,8 @@ class Sessions:
                 s["turns"] += 1 if done else 0
             ok = done and not error
             self._set(session_id, turns=s["turns"], status="stopped" if ok or a.ended else "failed",
-                      **({"ended": time.time()} if a.ended else {}),   # a turn's own end leaves it ready, not closed
+                      **({"ended": time.time()} if a.ended else      # a turn's own end leaves it ready, not closed:
+                         {"kept": time.time()} if ok else {}),       # Idle, though its process is gone
                       **({} if ok or a.ended else {"last_error": error or _why(session_id) or
                                                    f"codex exited ({code}); see {log_path(session_id)}"}))
             if a.queue and not a.ended and not self.closing:     # what was sent meanwhile: the next turn

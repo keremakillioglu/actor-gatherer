@@ -194,6 +194,43 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
             await client.close()
         self.assertEqual(hook.order, [("before_end", 200, True), ("answered", 200)])   # when the answer began: known
 
+    async def test_answered_even_when_the_harness_hangs_up_before_the_stream_s_end(self):
+        import asyncio
+
+        class HangUp(ToyHook):                               # codex closes once it has the whole answer
+            async def __call__(self, request):
+                request.state["kept"] = True
+                return await super().__call__(request)
+
+            async def before_end(self, request, status, answer):
+                await asyncio.sleep(0.3)                     # the harness hangs up meanwhile
+
+            async def answered(self, request, status, answer):
+                self.answers.append(status)
+
+        hook = HangUp()
+        hook.answers = []
+        runner = web.AppRunner(hook_server.make_app(str(self.upstream.make_url("")).rstrip("/"), hook))
+        await runner.setup()                                 # as run_app serves it: a hang-up cancels no handler
+        site = web.TCPSite(runner, "127.0.0.1", 0)           # (TestServer's would)
+        await site.start()
+        try:
+            reader, writer = await asyncio.open_connection(*runner.addresses[0][:2])
+            body = json.dumps({"messages": ["hi"]}).encode()
+            writer.write(b"POST /v1/chat HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                         + f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+            got = b""
+            while b"data: two" not in got:                   # the whole answer, not yet its end
+                got += await asyncio.wait_for(reader.read(4096), 5)
+            writer.close()
+            for _ in range(50):
+                if hook.answers:
+                    break
+                await asyncio.sleep(0.05)
+        finally:
+            await runner.cleanup()
+        self.assertEqual(hook.answers, [200])
+
     async def test_the_hook_is_closed_with_the_server(self):
         await self.client.close()
         self.assertTrue(self.hook.closed)

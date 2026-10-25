@@ -63,3 +63,28 @@ Not covered yet:
 - [ ] **Calls with no read** (Claude Code's compaction, recaps) are not kept when they fail.
 - [ ] **A session whose record is elsewhere** (another `CLAUDE_CONFIG_DIR`, another machine) waits GIVE_UP_SECONDS
   for Error, and an interruption there is not seen.
+
+## Codex
+
+Checked live on codex 0.164 (gpt-5.6-luna, a ChatGPT login): a new session in the Terminal view, the message box
+(closed, and into an open terminal), tool calls, `/compact` and a follow-up, a subagent, a second session reading
+the first's history through the gatherer, stopping a turn, and `ag codex exec` from the command line.
+
+Not covered yet:
+
+- [ ] **Files and file notices miss codex's file work in code mode.** Codex's default tool is `exec`, a script that
+  calls `tools.apply_patch(...)` and `tools.exec_command({cmd: ...})`; ag knows the `apply_patch` and shell tools
+  only when they are called directly (file_touches, files.py). A file codex created and changed showed in neither
+  the Files view nor the notices. The script's calls need reading out of it: the patch is a string literal, the
+  command a `cmd` field.
+- [ ] **A new codex thread is not claimed.** The launcher claims a thread resumed by its id (`resume <id>`), but a new
+  thread's id is codex's to choose, so it is known only at its first call. Claude Code's hook claims at every call
+  (its `refused`); codex's hook does not, so a second process can still open a new thread, and `resume --last` or
+  the picker, while it runs.
+- [ ] **Codex's recap** (`thread_source=system`) is passed through but not kept, so the left panel shows none for
+  codex, where it shows Claude Code's.
+- [ ] **Codex's warning** "Running without the shared background server" shows in every session: ag's `-c`
+  overrides (the hook's URL, the compaction limit) put codex in embedded mode. Harmless, but each session starts
+  with it; the base URL could go by the environment or a profile instead of `-c`.
+- [ ] **`memory_consolidation`** side calls are passed through on the strength of the codex binary's strings
+  alone: not seen live.

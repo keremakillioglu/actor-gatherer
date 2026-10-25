@@ -36,7 +36,8 @@ reads it -- for a hook that acts before the harness acts on the answer (runs the
 A hook with an `answered(request, status, answer)`
 has it called (awaited) once a POST's answer has come back whole and the harness has seen its end,
 for the same requests as `measured`: the HTTP status, and the answer as trace.py reads it
-(`response_of`: {response_id, status, token_usage, output_items, error}). A hook with a
+(`response_of`: {response_id, status, token_usage, output_items, error}) -- even if the harness
+hung up before the stream's end was written, as a harness may once its answer is complete. A hook with a
 `failed(request, status, error)` has it called (awaited), for the same requests, when the call failed:
 its endpoint answered an error -- a status other than 200, or an error in the answer (`status` that
 status, `error` the endpoint's message) -- once the harness has it; or no answer came at all -- the
@@ -264,7 +265,10 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                                 await result
                         except Exception as exc:  # noqa: BLE001 - never breaks the answer
                             print(f"#{n:04d} before_end failed: {exc!r}", file=sys.stderr, flush=True)
-                    await resp.write_eof()
+                    try:
+                        await resp.write_eof()
+                    except ConnectionResetError:              # the harness hung up once it had the whole answer
+                        pass                                  # (as some do, at its end): the answer is still its
                     record["status"] = up.status
                     if failed and (status != 200 or (read or {}).get("error")):   # after the harness has it
                         await _report(n, "failed", failed, given, status, error_of(status, read, whole))

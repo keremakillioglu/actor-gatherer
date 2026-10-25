@@ -39,10 +39,16 @@ the profile's, config.toml's), else of the model's in codex's catalog (`codex de
 models`), else of the window codex gives a model it does not know (FALLBACK_WINDOW); a
 limit set in the arguments, the profile or config.toml, when lower. The model is `-m`/`--model`,
 else `-c model=`, the profile's, config.toml's.
+
+A run that resumes a thread by its id -- `resume <id>`, interactive or `exec ... resume <id>` -- has it
+known to ag (`Launch.session`), which claims it, so no other process -- a terminal, the dashboard's
+chat -- runs it at once. A new thread's id is codex's to choose, and is not known until its first call;
+`resume --last` and the picker do not say which thread they open: neither is claimed.
 """
 
 import json
 import os
+import re
 import subprocess
 import tomllib
 from dataclasses import dataclass, field
@@ -113,6 +119,7 @@ class Plan:
     window: Optional[int] = None    # model_context_window, when set
     own_limit: Optional[int] = None  # model_auto_compact_token_limit, when set
     limit: Optional[int] = None     # where codex compacts by itself (`harness_limit`), stated in the base URL
+    session: Optional[str] = None   # the thread the run resumes (`resume <id>`), claimed by ag; None: a new one
 
     @property
     def setting(self) -> str:
@@ -144,6 +151,9 @@ def _value(raw: str) -> Any:
         return raw
 
 
+THREAD_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
 @dataclass
 class Scan:
     overrides: Dict[str, Tuple[int, Any]]   # each `-c` key -> (index of its value, value)
@@ -151,11 +161,12 @@ class Scan:
     oss: bool = False
     local_provider: Optional[str] = None
     model: Optional[str] = None
+    session: Optional[str] = None           # the thread `resume <id>` opens (interactive or exec's)
 
 
 def scan(args: List[str]) -> Scan:
     """The `-c` overrides in codex's arguments, the profile, whether --oss is
-    given and the --local-provider."""
+    given, the --local-provider and the thread a `resume <id>` opens."""
     found = Scan({})
     i = 0
     while i < len(args):
@@ -185,6 +196,9 @@ def scan(args: List[str]) -> Scan:
             found.model = a[len("--model="):]
         elif a == "--oss":
             found.oss = True
+        elif a == "resume" and i + 1 < len(args) and THREAD_ID.fullmatch(args[i + 1]):
+            found.session = args[i + 1]
+            i += 1
         if raw is not None and "=" in raw:
             key, _, value = raw.partition("=")
             found.overrides[key.strip()] = (at, _value(value.strip()))
@@ -277,7 +291,7 @@ def plan(args: List[str], settings: Dict[str, Any], env: Dict[str, str]) -> Plan
     return Plan(provider, f"{parts.scheme}://{parts.netloc}", parts.path.rstrip("/"), args, codex_home, notes,
                 compaction_off=not limit, model=str(model) if model else None,
                 window=window if isinstance(window, int) and window > 0 else None,
-                own_limit=limit if isinstance(limit, int) and limit > 0 else None)
+                own_limit=limit if isinstance(limit, int) and limit > 0 else None, session=found.session)
 
 
 def catalog(command: List[str], env: Dict[str, str]) -> Dict[str, dict]:
@@ -351,7 +365,8 @@ class CodexLauncher(Launcher):
         if p.compaction_off:
             notes.append(f"codex's own automatic compaction: off for the run ({COMPACT_LIMIT}={NO_COMPACTION})")
         notes.append(f"codex's own limit: {p.limit} tokens, {how}; the context manager keeps under it")
-        return Launch(p.argv(run.command, server_url, run.gatherer), p.env(run.env, server_url, run.gatherer), notes)
+        return Launch(p.argv(run.command, server_url, run.gatherer), p.env(run.env, server_url, run.gatherer), notes,
+                      p.session)
 
     def describe(self, env: Dict[str, str]) -> List[str]:
         try:
