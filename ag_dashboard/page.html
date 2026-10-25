@@ -447,6 +447,15 @@ button:disabled { opacity: .5; cursor: default; }
   margin-left: auto; border-radius: 4px; color: var(--muted); cursor: pointer; }
 .agent .close-btn + .chat-icon { margin-left: 0; }
 .agent .close-btn:hover, .agent .close-btn:focus-visible { color: var(--critical); background: var(--surface); }
+/* saved for later: a bookmark beside the close button -- filled, and always there, once saved; else only while
+   the row is hovered, in focus or selected, so the list stays quiet */
+.agent .save-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+  margin-left: auto; border-radius: 4px; color: var(--muted); cursor: pointer; opacity: 0; }
+.agent .save-btn + :is(.close-btn, .chat-icon) { margin-left: 0; }
+.agent:is(:hover, :focus-visible, [aria-current="true"]) .save-btn, .agent .save-btn:focus-visible, .agent .save-btn.on { opacity: 1; }
+@media (hover: none) { .agent .save-btn { opacity: 1; } }
+.agent .save-btn.on { color: var(--s1); }
+.agent .save-btn:hover, .agent .save-btn:focus-visible { color: var(--s1); background: var(--surface); }
 /* the chat: all of the main view -- its line on top, the history taking what is left, the message box at the bottom */
 .chat { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
 .chat .desc { color: var(--muted); font-size: 12px; padding: 10px 4px; }
@@ -1274,6 +1283,13 @@ function closeIcon() {
     svgEl("line", { x1: 10.2, y1: 5.8, x2: 5.8, y2: 10.2 }));
   return svg;
 }
+// A bookmark: the actor saved for later (filled), or to be.
+function saveIcon(on) {
+  const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 12, height: 12, "aria-hidden": "true", fill: on ? "currentColor" : "none",
+    stroke: "currentColor", "stroke-width": 1.5, "stroke-linejoin": "round" });
+  svg.append(svgEl("path", { d: "M4.25 2.25h7.5v11.5L8 11l-3.75 2.75z" }));
+  return svg;
+}
 // Whether the dashboard runs a process for the session -- its agent, mid-turn or not, or its terminal -- or kept
 // it, idle, from a restart, and no process outside has it: it can be closed from the list.
 const closable = (a) => !SNAPSHOT && !!a.session && !!(a.session.terminal || a.session.pid || a.session.kept)
@@ -1457,7 +1473,7 @@ function render(userAction = false) {
     if (!heldDraw) heldDraw = setTimeout(() => { heldDraw = null; render(); }, TYPING_MS - since + 10);
     return;
   }
-  const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.harnesses, paneSig(),
+  const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.saved, state.home.harnesses, paneSig(),
     Math.floor(Date.now() / AGO_MS)]);
   // "ago" texts: every 30 s; not while a form in the list is open, which a redraw would empty
   if ((userAction || agents !== drawn.agents) && !(state.adding && !userAction)) { renderAgents(); drawn.agents = agents; }
@@ -1723,16 +1739,17 @@ const collapsed = (() => {                        // gatherers the reader folded
   try { const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
   return new Set();
 })();
-// Closed actors (their process gone) are folded away under a "N closed" line, unless the reader
-// opened that gatherer's closed ones, kept in this browser. A selected closed actor stays in view.
-const CLOSED_OPEN_KEY = "ag-dashboard-closed-shown";
-const closedOpen = (() => {
-  try { const v = JSON.parse(localStorage.getItem(CLOSED_OPEN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
-  return new Set();
-})();
-function toggleClosed(name) {
-  if (closedOpen.has(name)) closedOpen.delete(name); else closedOpen.add(name);
-  try { localStorage.setItem(CLOSED_OPEN_KEY, JSON.stringify([...closedOpen])); } catch (e) { /* kept for this page only */ }
+// Closed actors (their process gone), and those saved for later, are each folded away under a line ("N closed",
+// "N saved"), unless the reader opened that gatherer's, kept in this browser. A selected one stays in view.
+const FOLD_KEYS = { Closed: "ag-dashboard-closed-shown", Saved: "ag-dashboard-saved-shown" };
+const foldOpen = Object.fromEntries(Object.entries(FOLD_KEYS).map(([group, key]) => {
+  try { const v = JSON.parse(localStorage.getItem(key)); if (Array.isArray(v)) return [group, new Set(v)]; } catch (e) { /* none kept */ }
+  return [group, new Set()];
+}));
+function toggleFold(group, name) {
+  const open = foldOpen[group];
+  if (open.has(name)) open.delete(name); else open.add(name);
+  try { localStorage.setItem(FOLD_KEYS[group], JSON.stringify([...open])); } catch (e) { /* kept for this page only */ }
   renderAgents();
 }
 // The actor shown when none is chosen: the newest not closed, else the newest.
@@ -1749,7 +1766,7 @@ const HIDDEN_KEY = "ag-dashboard-hidden-gatherers";   // where this browser kept
 const STALE_SECONDS = 7 * 86400;
 const choiceOf = (g) => (state.home.hiding || {})[g.name] || "";
 const stale = (g) => !!g.last && (state.home.now || Date.now() / 1000) - g.last > STALE_SECONDS;
-const isHidden = (g) => choiceOf(g) === "hidden" || (stale(g) && choiceOf(g) !== "shown");
+const isHidden = (g) => choiceOf(g) === "hidden" || (stale(g) && choiceOf(g) !== "shown" && !g.agents.some((a) => savedAs(g.name, a)));
 async function keepChoice(name, choice) {
   state.home.hiding = { ...(state.home.hiding || {}) };
   if (choice) state.home.hiding[name] = choice; else delete state.home.hiding[name];
@@ -1761,6 +1778,26 @@ async function setHidden(g, hide) {
   const kept = keepChoice(g.name, hide ? "hidden" : stale(g) ? "shown" : "");
   renderAgents();
   await kept;
+  renderAgents();
+}
+// Actors saved for later, kept by the server (saved.py, `home.saved`: {gatherer: {channel: when}}) so every
+// dashboard on this home shows the same. One saved is listed under Saved in its gatherer while it has nothing
+// for the reader (so not running, waiting or finished), not with the idle or closed ones, and keeps its
+// gatherer from being hidden for having had nothing for a week. The channel it was saved as: a codex
+// session's, renamed to its thread since, its first.
+const savedAs = (gname, a) => {
+  const kept = (state.home.saved || {})[gname] || {};
+  return a.channel in kept ? a.channel : a.session && a.session.started_as in kept ? a.session.started_as : null;
+};
+async function setSaved(gname, a, save) {
+  const channel = savedAs(gname, a) || a.channel;
+  const kept = { ...((state.home.saved || {})[gname] || {}) };
+  if (save) kept[channel] = new Date().toISOString(); else delete kept[channel];
+  state.home.saved = { ...(state.home.saved || {}), [gname]: kept };
+  renderAgents();
+  if (SNAPSHOT) return;                            // a snapshot has no server: this page only
+  try { state.home.saved = await post("/api/saved", { gatherer: gname, channel, saved: save }); }
+  catch (err) { setLive(`Not saved: ${err.message}`); }
   renderAgents();
 }
 // Choices this browser kept before the server did: handed to the server once, then dropped here.
@@ -1787,14 +1824,14 @@ function renderAgents() {
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every gatherer is hidden." }));
   for (const g of shown) {
     const open = !collapsed.has(g.name);
-    // those waiting on the user first, then those stopped on an error, then running, then those whose turn is over but something they
-    // started still runs, then finished
-    // (not yet looked at), then idle, then closed; each in the order the data has them, newest created
-    // first, so an actor stays in its place, and moves only between them -- but closed, the latest active
-    // first: nothing moves there once closed
-    const groupOf = (a) => ({ "Waiting for you": "Waiting for you", Error: "Error", Failed: "Error", Building: "Running", Running: "Running",
+    // those waiting on the user first, then those stopped on an error, then saved for later (idle or closed, saved by the reader),
+    // then running, then those whose turn is over but something they started still runs, then finished (not yet looked at), then
+    // idle, then closed; each in the order the data has them, newest created first, so an actor stays in its place, and moves only
+    // between them -- but closed, the latest active first: nothing moves there once closed
+    const byStatus = (a) => ({ "Waiting for you": "Waiting for you", Error: "Error", Failed: "Error", Building: "Running", Running: "Running",
       Starting: "Running", Background: "Background", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
-    const groups = ["Waiting for you", "Error", "Running", "Background", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
+    const groupOf = (a) => { const by = byStatus(a); return (by === "Idle" || by === "Closed") && savedAs(g.name, a) ? "Saved" : by; };
+    const groups = ["Waiting for you", "Error", "Saved", "Running", "Background", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
       .filter(([, list]) => list.length);
     const live = g.agents.filter((a) => groupOf(a) === "Running").length;
     const waiting = g.agents.filter((a) => groupOf(a) === "Waiting for you").length;
@@ -1820,17 +1857,17 @@ function renderAgents() {
     for (const [name, list] of groups) if (name === "Closed") list.sort((x, y) => (y.last || 0) - (x.last || 0));
     keepOrder(g.name, groups);   // so drawn first; from then on, each group in the order its actors were last in
     for (const [name, list] of open ? groups : []) {
-      if (name === "Closed") {
-        const shownClosed = closedOpen.has(g.name);
+      if (name in FOLD_KEYS) {
+        const shown = foldOpen[name].has(g.name), what = name.toLowerCase();
         const selected = list.filter((a) => openActors().some((sel) => isAt(sel, g.name, a.channel)));
-        box.append(el("button", { class: "agent-group", type: "button", "aria-expanded": shownClosed ? "true" : "false", "data-key": `${g.name}/Closed`,
-          title: shownClosed ? "Hide closed actors" : "Show closed actors", onclick: () => toggleClosed(g.name) },
-          `${shownClosed ? "▾" : "▸"} ${list.length} closed`));
-        for (const a of shownClosed ? list : selected) box.append(agentRow(g, a));
+        box.append(el("button", { class: "agent-group", type: "button", "aria-expanded": shown ? "true" : "false", "data-key": `${g.name}/${name}`,
+          title: shown ? `Hide ${what} actors` : `Show ${what} actors`, onclick: () => toggleFold(name, g.name) },
+          `${shown ? "▾" : "▸"} ${list.length} ${what}`));
+        for (const a of shown ? list : selected) box.append(agentRow(g, a, name));
         continue;
       }
       if (groups.length > 1) box.append(el("div", { class: "agent-group", "data-key": `${g.name}/${name}`, text: name }));
-      for (const a of list) box.append(agentRow(g, a));
+      for (const a of list) box.append(agentRow(g, a, name));
     }
     aside.append(box);
   }
@@ -1863,12 +1900,13 @@ const asked = (text) => {
 };
 // A user's message in a chat bubble: as asked() gives it, a `!` command in the terminal's type.
 const userWords = (text) => el("span", { class: "tx" + (text && BANG.test(text) ? " bang" : ""), text: asked(text) });
-function agentRow(g, a) {
+function agentRow(g, a, group) {
   const [cls, label] = statusOf(a);
+  const saved = !!savedAs(g.name, a);
   const current = isAt(focusedActor(), g.name, a.channel);
   const open = !current && openActors().some((sel) => isAt(sel, g.name, a.channel));
   const size = a.real_tokens ?? a.sent_tokens;
-  return el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false", "data-key": `${g.name}/${a.channel}`,
+  return el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false", "data-key": `${g.name}/${a.channel}`, "data-group": group,
     ...(open ? { "data-open": "true" } : {}),
     title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: open beside the one shown`}`,
     onclick: (ev) => pick(g.name, a.channel, ev), oncontextmenu: (ev) => pickBeside(g.name, a.channel, ev) },
@@ -1880,6 +1918,12 @@ function agentRow(g, a) {
       // the list is drawn again on every change: the glyph's turn set by the clock, not restarted each time
       el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label, style: `--spin-at: -${Date.now() % 1200}ms` }),
         el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
+        SNAPSHOT ? (saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null)
+          : el("span", { class: "save-btn" + (saved ? " on" : ""), role: "button", tabindex: "0", "aria-pressed": saved ? "true" : "false",
+            title: saved ? "Saved for later: click to unsave" : "Save for later: kept under Saved, at the top of its gatherer",
+            "aria-label": saved ? "Unsave" : "Save for later", onclick: (ev) => { ev.stopPropagation(); setSaved(g.name, a, !saved); },
+            onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); setSaved(g.name, a, !saved); } } },
+            saveIcon(saved)),
         closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",
           "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); closeSession(a); },
           onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); closeSession(a); } } },
@@ -1912,7 +1956,7 @@ function listPlaces(root) {
   const places = new Map();
   for (const n of root.querySelectorAll("[data-key]")) {
     const dot = n.querySelector(".meta .dot");
-    places.set(n.dataset.key, { top: n.getBoundingClientRect().top, status: dot && dot.getAttribute("aria-label") });
+    places.set(n.dataset.key, { top: n.getBoundingClientRect().top, status: dot && dot.getAttribute("aria-label"), group: n.dataset.group });
   }
   return places;
 }
@@ -1923,10 +1967,11 @@ function slideList(root, was) {
     const before = was.get(n.dataset.key);
     if (!before) { n.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, easing: "ease-out" }); continue; }
     const dot = n.querySelector(".meta .dot"), changed = dot && before.status && dot.getAttribute("aria-label") !== before.status;
+    const regrouped = changed || (before.group && n.dataset.group !== before.group);
     const dy = before.top - n.getBoundingClientRect().top;
     if (Math.abs(dy) >= 1) {
       const frames = [{ transform: `translateY(${dy}px)` }, { transform: "none" }];
-      if (changed) {     // past the rows between: over them, on the list's own background if it has none
+      if (regrouped) {     // past the rows between: over them, on the list's own background if it has none
         n.style.position = "relative"; n.style.zIndex = "1";
         const bg = getComputedStyle(n).backgroundColor;
         if (bg === "rgba(0, 0, 0, 0)" || bg === "transparent") { frames[0].backgroundColor = side; frames[1].backgroundColor = side; }
@@ -1973,7 +2018,7 @@ function paneOf(win) { return panes.others.find((p) => p.frame.contentWindow ===
 // A row of the list clicked: shown in the pane in focus, or (Ctrl/⌘) beside it.
 function pick(g, c, ev) { return ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT ? openBeside(g, c) : show(g, c); }
 function pickBeside(g, c, ev) {
-  if (!MAC || !ev.ctrlKey || SNAPSHOT || ev.target.closest(".close-btn")) return;   // a Mac's Ctrl+click: a right click, no click after it
+  if (!MAC || !ev.ctrlKey || SNAPSHOT || ev.target.closest(".close-btn, .save-btn")) return;   // a Mac's Ctrl+click: a right click, no click after it
   ev.preventDefault();
   openBeside(g, c);
 }
