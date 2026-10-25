@@ -293,6 +293,17 @@ class Manager(ContextManager):
         return hook(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), row_id, limit,
                                                    fixed_tokens=store.preamble_tokens(conn, preamble)))
 
+    def requested(self, gatherer_id: str, *, properties: Optional[dict] = None, min_messages: int = 0) -> dict:
+        """Not part of the interface: a build a reader asked for, outside any call -- the policy's
+        `requested`, if it has one: started in the background, not waited for. What came of it, in the
+        policy's words; {} for a policy that does not build, or a gatherer with no database."""
+        hook = getattr(self.policy, "requested", None)
+        if hook is None or not os.path.exists(db_path(gatherer_id)):
+            return {}
+        conn = self._conn(gatherer_id)
+        return hook(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), store.high_water(conn)),
+                    min_messages=min_messages)
+
     def context_only(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None,
                      limit: Optional[int] = None, preamble: Optional[List[dict]] = None) -> Tuple[List[dict], dict]:
         """Not part of the interface: the policy's context for `properties` in response to the event

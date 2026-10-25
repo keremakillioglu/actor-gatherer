@@ -19,6 +19,17 @@
                                                         process N, which has the session open, gives way
                                                         to another's claim (idle) or not; exit 3 when it
                                                         no longer has it
+    python -m ag.ag_harness.home complete [--purpose P] [--system TEXT] [--effort E] [--timeout S] [--json]
+                                                        the Gatherer's model asked once, as a policy asks
+                                                        it: the prompt on stdin, its answer on stdout
+                                                        (--json: {"text", "model", "error"}); exit 1 when
+                                                        the call failed
+    python -m ag.ag_harness.home build <gatherer> --properties JSON [--min-messages N]
+                                                        a build of the history these properties name (a
+                                                        channel's, e.g.) started in the background -- an
+                                                        ordinary one, adopted at its next user message --
+                                                        once it has N user messages since the last; what
+                                                        came of it, as JSON (`Manager.requested`)
 
 `ag home ...` runs the same.
 """
@@ -250,6 +261,66 @@ def cmd_hold(gatherer: str, session: str, pid: int, yields: bool) -> int:
     return 0 if kept else 3
 
 
+def cmd_complete(h, purpose: str, system: str, effort: str, timeout: float, as_json: bool) -> int:
+    """The Gatherer's model, [policies.llm]'s, asked once with the prompt on stdin, the call logged
+    with the policies' own (and put to the job AG_JOB names). A client never raises: a failed call
+    answers "", and its error is read back from the call's own record in the log."""
+    prompt = sys.stdin.read()
+    model, error, text = h.model(), "", ""
+    if not prompt.strip():
+        error = "no prompt: give it on stdin"
+    else:
+        error = h.llm_problem()
+    if not error:
+        text = h.llm().complete(prompt, system=system or None, model=model, effort=effort, timeout=timeout,
+                                purpose=purpose)
+        if not text.strip():
+            error = logged_error(h.root, purpose) or "the model answered nothing"
+    if as_json:
+        print(json.dumps({"text": text, "model": model, "error": error}))
+    elif text:
+        print(text)
+    if error and not as_json:
+        print(error, file=sys.stderr)
+    return 1 if error else 0
+
+
+def cmd_build(h, gatherer: str, properties: str, min_messages: int) -> int:
+    """A build the reader asked for: started in the background, not waited for (the policy's
+    `requested`), for the events `properties` (a JSON object, in the policy's own names) name; what
+    came of it on stdout, as JSON. Exit 1 when the gatherer has no database, or the properties do not
+    read as an object."""
+    try:
+        props = json.loads(properties or "{}")
+    except ValueError:
+        props = None
+    if not isinstance(props, dict):
+        print(json.dumps({"error": "--properties is a JSON object"}))
+        return 1
+    if not os.path.exists(paths.db_path(gatherer)):
+        print(json.dumps({"error": f"no database for gatherer {gatherer}"}))
+        return 1
+    manager = h.manager(gatherer)
+    manager.init(gatherer)
+    print(json.dumps(manager.requested(gatherer, properties=props, min_messages=min_messages)))
+    return 0
+
+
+def logged_error(root: str, purpose: str) -> str:
+    """The error this process's last call for `purpose` logged (CallLog names each record after the
+    process and the purpose), or "" when it logged none."""
+    folder = os.path.join(root, "logs", "llm")
+    mine = sorted(n for n in os.listdir(folder) if f"-{os.getpid()}-" in n and n.endswith(f"-{purpose}.json")) \
+        if os.path.isdir(folder) else []
+    if not mine:
+        return ""
+    try:
+        with open(os.path.join(folder, mine[-1]), encoding="utf-8") as fh:
+            return str(json.load(fh).get("error") or "")
+    except (OSError, ValueError):
+        return ""
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m ag.ag_harness.home")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -285,6 +356,16 @@ def main(argv=None) -> int:
     yields = ho.add_mutually_exclusive_group(required=True)
     yields.add_argument("--yields", action="store_true")
     yields.add_argument("--keeps", action="store_true")
+    bu = sub.add_parser("build")
+    bu.add_argument("gatherer")
+    bu.add_argument("--properties", default="{}", help="the events' properties, as a JSON object")
+    bu.add_argument("--min-messages", type=int, default=0, help="only with this many user messages since the last build")
+    co = sub.add_parser("complete")
+    co.add_argument("--purpose", default="ask", help="the call's name in the call log")
+    co.add_argument("--system", default="", help="the system message")
+    co.add_argument("--effort", default="", help="reasoning effort (low, medium, high, ...): the model's own when not given")
+    co.add_argument("--timeout", type=float, default=900)
+    co.add_argument("--json", action="store_true", help='print {"text", "model", "error"}')
     a = ap.parse_args(argv)
     h = home()
     try:
@@ -307,6 +388,10 @@ def main(argv=None) -> int:
             return cmd_show(h, a.gatherer)
         if a.cmd == "model":
             return cmd_model(h, a.model, a.api_base, a.key_env)
+        if a.cmd == "build":
+            return cmd_build(h, a.gatherer, a.properties, a.min_messages)
+        if a.cmd == "complete":
+            return cmd_complete(h, a.purpose, a.system, a.effort, a.timeout, a.json)
         return cmd_new(h, a.gatherer, a.policy, a.poller, a.force, a.no_pollers)
     except ConfigError as exc:
         print(exc, file=sys.stderr)

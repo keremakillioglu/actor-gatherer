@@ -62,7 +62,7 @@ def view_file(name: str) -> Optional[str]:
     return os.path.join(views_dir(), name) if name in view_names() else None
 
 
-def _alive(pid) -> bool:
+def alive(pid) -> bool:
     try:
         os.kill(int(pid), 0)
     except (ProcessLookupError, ValueError, TypeError):
@@ -129,6 +129,6 @@ def hook_servers() -> List[dict]:
                 s = json.load(fh)
         except (OSError, ValueError):
             continue
-        if isinstance(s, dict) and _alive(s.get("pid")):
+        if isinstance(s, dict) and alive(s.get("pid")):
             found.append({"port": s.get("port"), "pid": s.get("pid"), "upstream": s.get("upstream")})
     return found
