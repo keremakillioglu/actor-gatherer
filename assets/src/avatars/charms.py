@@ -1,7 +1,7 @@
 """Charms: Japanese lucky things and folk figures. Daruma, omamori and kokeshi come in every hue (ICONS:
 <name>-<hue>); the rest each in its own, the default of its `p`."""
 
-from kit import CREAM, INK, PALETTE, P, face, shine, svg
+from kit import CREAM, INK, PALETTE, P, face, moving, shine, svg
 
 SKIN = "#fff1e3"
 
@@ -151,5 +151,12 @@ def kitsune(p=P("red")):
 
 EVERY_HUE = [daruma, omamori, kokeshi]
 SINGLE = [maneki_neko, kappa, furin, teru_teru, yuki_daruma, uchiwa, sakura, chochin, kitsune]
-ICONS = {**{f"{f.__name__}-{hue}": f(P(hue)) for f in EVERY_HUE for hue in PALETTE},
-         **{f.__name__.replace("_", "-"): f() for f in SINGLE}}
+# How each moves while its actor works, in the dashboard's Chat view: a move, then an effect round it if
+# any (ag_dashboard/avatars/README.md names them all).
+MOTIONS = {
+    "daruma": "wobble", "omamori": "swing sparkle", "kokeshi": "sway", "maneki-neko": "beckon sparkle",
+    "kappa": "float ripple", "furin": "swing notes", "teru-teru": "swing", "yuki-daruma": "wobble snow",
+    "uchiwa": "fan breeze", "sakura": "spin petals", "chochin": "swing glow", "kitsune": "lookabout sparkle",
+}
+ICONS = {**{f"{f.__name__}-{hue}": moving(f(P(hue)), MOTIONS[f.__name__]) for f in EVERY_HUE for hue in PALETTE},
+         **{f.__name__.replace("_", "-"): moving(f(), MOTIONS[f.__name__.replace("_", "-")]) for f in SINGLE}}

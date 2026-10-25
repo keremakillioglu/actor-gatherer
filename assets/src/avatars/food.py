@@ -1,6 +1,6 @@
 """Food: East Asian sweets, dishes and fruit, each in its own hue, the default of its `p`."""
 
-from kit import CREAM, INK, P, face, shine, svg
+from kit import CREAM, INK, P, face, moving, shine, svg
 
 LEAF = "#5a9e3a"
 WOOD = "#e3b778"
@@ -215,4 +215,13 @@ def mooncake(p=P("brown")):
 
 ICONS_FN = [nigiri, dorayaki, mikan, taiyaki, bao, melon_pan, edamame, bok_choy, matcha, ramune, kakigori,
             boba, yaki_imo, sakura_mochi, peach_bun, ramen, lychee, onigiri, mitarashi, mooncake]
-ICONS = {f.__name__.replace("_", "-"): f() for f in ICONS_FN}
+# How each moves while its actor works, in the dashboard's Chat view: a move, then an effect round it if
+# any (ag_dashboard/avatars/README.md names them all).
+MOTIONS = {
+    "nigiri": "squish", "dorayaki": "flip", "mikan": "roll", "taiyaki": "swim steam", "bao": "squish steam",
+    "melon-pan": "puff", "edamame": "hop", "bok-choy": "sway", "matcha": "whisk steam", "ramune": "wiggle bubbles",
+    "kakigori": "bob snow", "boba": "bob bubbles", "yaki-imo": "roll steam", "sakura-mochi": "squish petals",
+    "peach-bun": "puff steam", "ramen": "bob steam", "lychee": "hop", "onigiri": "waddle", "mitarashi": "sway",
+    "mooncake": "float glow",
+}
+ICONS = {f.__name__.replace("_", "-"): moving(f(), MOTIONS[f.__name__.replace("_", "-")]) for f in ICONS_FN}

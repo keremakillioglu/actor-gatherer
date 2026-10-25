@@ -32,6 +32,7 @@
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
   --md-link: #3fb1c5; --md-code: #f3c7ee;
   --scroll: rgba(255,255,255,.16);
+  --buddy-edge: rgba(255,255,255,.28); --buddy-edge2: transparent;
   }
 }
 :root[data-theme="dark"] {
@@ -45,6 +46,7 @@
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
   --md-link: #3fb1c5; --md-code: #f3c7ee;
   --scroll: rgba(255,255,255,.16);
+  --buddy-edge: rgba(255,255,255,.28); --buddy-edge2: transparent;
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -751,9 +753,125 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-reply.noted > summary .lbl { flex: none; color: var(--muted); }
 .files .fl-reply.noted[open] > summary .first { display: block; }
 .files .fl-reply.noted > .md, .files .fl-reply.noted > .fl-none { margin: 4px 0 6px 15px; }
-.files .fl-status { display: flex; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: .93em; }
+.files .fl-status { display: flex; align-items: center; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: .93em; }
 .files .fl-status .spin { flex: none; }
 .files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .fl-status .buddy { margin: 2px 2px 0 0; }
+/* the actor at work, in the Chat view (buddy()): its avatar's character out of its circle, moving as it would -- its
+   data-motion, a move and an effect (avatars/README.md) -- small and slow. Every animation runs on the page's clock
+   (--t), so a redraw does not restart it. */
+.buddy { position: relative; display: inline-block; width: 24px; height: 24px; flex: none; isolation: isolate; --t: 0s; }
+/* a soft edge round it, so a white character stands out on a light page (--buddy-edge: the theme's) */
+.buddy img { width: 100%; height: 100%; display: block; transform-origin: var(--o, 50% 50%);
+  filter: drop-shadow(0 0 .7px var(--buddy-edge, rgba(0, 0, 0, .45))) drop-shadow(0 1px 1px var(--buddy-edge2, rgba(0, 0, 0, .12)));
+  animation: var(--m, b-bob) var(--d, 2.4s) var(--e, ease-in-out) infinite var(--t); }
+.buddy i { position: absolute; pointer-events: none; opacity: 0; font-style: normal; line-height: 1;
+  animation: var(--f, none) var(--fd, 2.4s) var(--fe, ease-out) infinite; }
+.buddy i:nth-of-type(1) { --k: 0; animation-delay: var(--t); }
+.buddy i:nth-of-type(2) { --k: 1; animation-delay: calc(var(--t) - var(--fd, 2.4s) / 3); }
+.buddy i:nth-of-type(3) { --k: 2; animation-delay: calc(var(--t) - var(--fd, 2.4s) * 2 / 3); }
+.buddy.still img, .buddy.still i, .buddy.still::before { animation: none; }
+.buddy.still { opacity: .55; filter: grayscale(.6); }
+@media (prefers-reduced-motion: reduce) { .buddy img, .buddy i, .buddy::before { animation: none !important; } }
+
+/* moves: the whole avatar, about its middle, its foot (50% 100%) or the string it hangs from (50% 0) */
+.buddy.m-bob { --m: b-bob; --d: 2.4s; }
+@keyframes b-bob { 50% { transform: translateY(-2px); } }
+.buddy.m-float { --m: b-float; --d: 3.6s; }
+@keyframes b-float { 25% { transform: translateY(-1.5px) rotate(-3deg); } 75% { transform: translateY(.5px) rotate(3deg); } }
+.buddy.m-hop { --m: b-hop; --d: 2.2s; --e: ease-out; --o: 50% 100%; }
+@keyframes b-hop { 0%, 55%, 100% { transform: none; } 8% { transform: scale(1.08, .9); } 24% { transform: translateY(-5px) scale(.96, 1.05); }
+  42% { transform: translateY(0) scale(1.07, .93); } }
+.buddy.m-swim { --m: b-swim; --d: 3s; }
+@keyframes b-swim { 0%, 100% { transform: translateX(-1.5px) rotate(4deg); } 50% { transform: translate(1.5px, -.5px) rotate(-4deg); } }
+.buddy.m-glide { --m: b-glide; --d: 5s; }
+@keyframes b-glide { 0%, 100% { transform: translateX(-2.5px) rotate(1deg); } 50% { transform: translateX(2.5px) rotate(-1deg); } }
+.buddy.m-pulse { --m: b-pulse; --d: 2.6s; --o: 50% 100%; }
+@keyframes b-pulse { 0%, 100% { transform: none; } 25% { transform: scale(1.08, .88); } 50% { transform: translateY(-3px) scale(.95, 1.06); }
+  75% { transform: translateY(-1px); } }
+.buddy.m-puff { --m: b-puff; --d: 3.2s; }
+@keyframes b-puff { 0%, 30%, 100% { transform: none; } 45% { transform: scale(1.15); } 70% { transform: scale(1.13); } 85% { transform: scale(.98); } }
+.buddy.m-waddle { --m: b-waddle; --d: 1.3s; --e: linear; --o: 50% 100%; }
+@keyframes b-waddle { 0%, 100% { transform: rotate(-6deg); } 25% { transform: translateY(-1px); } 50% { transform: rotate(6deg); } 75% { transform: translateY(-1px); } }
+.buddy.m-wobble { --m: b-wobble; --d: 3s; --o: 50% 100%; }
+@keyframes b-wobble { 0%, 70%, 100% { transform: none; } 10% { transform: rotate(-11deg); } 25% { transform: rotate(8deg); } 40% { transform: rotate(-5deg); }
+  55% { transform: rotate(2deg); } }
+.buddy.m-swing { --m: b-swing; --d: 3s; --o: 50% 0; }
+@keyframes b-swing { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+.buddy.m-sway { --m: b-sway; --d: 4s; --o: 50% 100%; }
+@keyframes b-sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+.buddy.m-nod { --m: b-nod; --d: 2.8s; --o: 50% 100%; }
+@keyframes b-nod { 0%, 60%, 100% { transform: none; } 70% { transform: translateY(1px) rotate(7deg); } 80% { transform: none; } 88% { transform: translateY(.5px) rotate(5deg); } }
+.buddy.m-peck { --m: b-peck; --d: 2.2s; --o: 50% 100%; }
+@keyframes b-peck { 0%, 50%, 100% { transform: none; } 10%, 30% { transform: rotate(-13deg); } 20%, 40% { transform: none; } }
+.buddy.m-roll { --m: b-roll; --d: 3.6s; }
+@keyframes b-roll { 0%, 100% { transform: translateX(-3px) rotate(-17deg); } 50% { transform: translateX(3px) rotate(17deg); } }
+.buddy.m-fan { --m: b-fan; --d: 1.2s; --o: 50% 90%; }
+@keyframes b-fan { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(10deg); } }
+.buddy.m-beckon { --m: b-beckon; --d: 2.6s; --o: 50% 100%; }
+@keyframes b-beckon { 0%, 45%, 100% { transform: none; } 10%, 30% { transform: translateY(-1px) rotate(-7deg); } 20% { transform: none; } }
+.buddy.m-squish { --m: b-squish; --d: 2.4s; --o: 50% 100%; }
+@keyframes b-squish { 0%, 100% { transform: none; } 30% { transform: scale(1.09, .91); } 60% { transform: scale(.96, 1.05); } 80% { transform: scale(1.02, .98); } }
+.buddy.m-crawl { --m: b-crawl; --d: 6s; }
+@keyframes b-crawl { 0%, 100% { transform: translateX(-2.5px); } 25%, 75% { transform: translateY(-.5px); } 50% { transform: translateX(2.5px); } }
+.buddy.m-wag { --m: b-wag; --d: 2s; }
+@keyframes b-wag { 0%, 50%, 100% { transform: none; } 10%, 30% { transform: rotate(6deg); } 20% { transform: rotate(-6deg); } 40% { transform: rotate(-3deg); } }
+.buddy.m-patter { --m: b-patter; --d: 1.8s; --o: 50% 100%; }
+@keyframes b-patter { 0%, 45%, 100% { transform: none; } 8%, 24% { transform: translateY(-1.5px) scale(1.02, .98); } 16%, 32% { transform: none; } }
+.buddy.m-flutter { --m: b-flutter; --d: 2.6s; }
+@keyframes b-flutter { 0%, 100% { transform: none; } 6% { transform: translateY(-2px); } 12% { transform: translateY(-1px); } 18% { transform: translateY(-3px); }
+  24% { transform: translateY(-2px); } 30% { transform: translateY(-3.5px); } 55% { transform: translateY(-2.5px) rotate(-3deg); } 80% { transform: none; } }
+.buddy.m-lookabout { --m: b-lookabout; --d: 4.4s; --o: 50% 100%; }
+@keyframes b-lookabout { 0%, 100% { transform: none; } 15%, 75% { transform: translateY(-1.5px); } 30% { transform: translateY(-1.5px) rotate(-8deg); }
+  55% { transform: translateY(-1.5px) rotate(8deg); } 90% { transform: none; } }
+.buddy.m-flip { --m: b-flip; --d: 4s; }
+@keyframes b-flip { 0%, 72% { transform: none; } 84% { transform: translateY(-4px) rotateY(180deg); } 96%, 100% { transform: rotateY(360deg); } }
+.buddy.m-whisk { --m: b-whisk; --d: 2s; --e: linear; }
+@keyframes b-whisk { 0%, 50%, 100% { transform: none; } 6%, 18%, 30%, 42% { transform: translateX(-1px); } 12%, 24%, 36% { transform: translateX(1px); } }
+.buddy.m-wiggle { --m: b-wiggle; --d: 1.6s; }
+@keyframes b-wiggle { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+.buddy.m-spin { --m: b-spin; --d: 10s; --e: linear; }
+@keyframes b-spin { 100% { transform: rotate(360deg); } }
+
+/* effects: three of each, a third of the way apart (or, a spout, together), around the avatar */
+.buddy.f-steam { --f: b-steam; --fd: 2.4s; }
+.buddy.f-steam i { top: -3px; left: calc(30% + var(--k) * 20%); width: 2px; height: 6px; border-radius: 2px; background: var(--muted); }
+@keyframes b-steam { 0% { opacity: 0; transform: translateY(2px); } 30% { opacity: .55; } 60% { transform: translate(1.5px, -5px); }
+  100% { opacity: 0; transform: translate(-.5px, -10px) scaleY(1.4); } }
+.buddy.f-bubbles { --f: b-bubbles; --fd: 2.6s; }
+.buddy.f-bubbles i { top: 15%; left: calc(15% + var(--k) * 30%); width: 4px; height: 4px; border: 1px solid #5fb0e6; border-radius: 50%; }
+@keyframes b-bubbles { 0% { opacity: 0; transform: scale(.4); } 20% { opacity: .85; } 100% { opacity: 0; transform: translate(1px, -13px) scale(1); } }
+.buddy.f-spout { --f: b-spout; --fd: 3.6s; }
+.buddy.f-spout i { top: 0; left: 45%; width: 2.5px; height: 2.5px; border-radius: 50%; background: #5fb0e6; --x: calc((var(--k) - 1) * 4px);
+  animation-delay: var(--t); }
+@keyframes b-spout { 0%, 60% { opacity: 0; transform: none; } 66% { opacity: .9; } 80% { transform: translate(calc(var(--x) * .6), -8px); }
+  100% { opacity: 0; transform: translate(var(--x), -3px); } }
+.buddy.f-petals { --f: b-petals; --fd: 3.6s; --fe: linear; }
+.buddy.f-petals i { top: -6px; left: calc(var(--k) * 35%); width: 4px; height: 3px; border-radius: 3px 0; background: #f6a5c8; }
+@keyframes b-petals { 0% { opacity: 0; transform: none; } 15% { opacity: .9; } 50% { transform: translate(4px, 12px) rotate(120deg); }
+  100% { opacity: 0; transform: translate(1px, 25px) rotate(260deg); } }
+.buddy.f-snow { --f: b-snow; --fd: 3.4s; --fe: linear; }
+.buddy.f-snow i { top: -5px; left: calc(5% + var(--k) * 40%); width: 2.5px; height: 2.5px; border-radius: 50%; background: #9cc3ef; }
+@keyframes b-snow { 0% { opacity: 0; transform: none; } 15% { opacity: .95; } 50% { transform: translate(2px, 12px); } 100% { opacity: 0; transform: translate(-1px, 26px); } }
+.buddy.f-sparkle { --f: b-sparkle; --fd: 2.7s; --fe: ease-in-out; }
+.buddy.f-sparkle i { font-size: 7px; color: #f2b01e; }
+.buddy.f-sparkle i::before { content: "✦"; }
+.buddy.f-sparkle i:nth-of-type(1) { top: -4px; left: -4px; } .buddy.f-sparkle i:nth-of-type(2) { top: -5px; right: -4px; }
+.buddy.f-sparkle i:nth-of-type(3) { bottom: 1px; right: -6px; }
+@keyframes b-sparkle { 0%, 60%, 100% { opacity: 0; transform: scale(.3); } 30% { opacity: 1; transform: scale(1) rotate(45deg); } }
+.buddy.f-notes { --f: b-notes; --fd: 3.3s; }
+.buddy.f-notes i { top: -2px; left: 62%; font-size: 8px; color: var(--muted); }
+.buddy.f-notes i::before { content: "♪"; } .buddy.f-notes i:nth-of-type(2)::before { content: "♫"; }
+@keyframes b-notes { 0% { opacity: 0; transform: none; } 20% { opacity: .85; } 100% { opacity: 0; transform: translate(6px, -10px) rotate(15deg); } }
+.buddy.f-breeze { --f: b-breeze; --fd: 1.8s; }
+.buddy.f-breeze i { right: 100%; top: calc(28% + var(--k) * 20%); width: 6px; height: 1.2px; border-radius: 1px; background: var(--muted); transform-origin: right; }
+@keyframes b-breeze { 0% { opacity: 0; transform: scaleX(.3); } 30% { opacity: .7; } 100% { opacity: 0; transform: translateX(-6px) scaleX(1); } }
+.buddy.f-ripple { --f: b-ripple; --fd: 3s; }
+.buddy.f-ripple i { left: 50%; bottom: -3px; width: 20px; height: 5px; margin-left: -10px; border: 1px solid #6aaee0; border-radius: 50%; }
+@keyframes b-ripple { 0% { opacity: .75; transform: scale(.35); } 100% { opacity: 0; transform: scale(1.35); } }
+.buddy.f-glow::before { content: ""; position: absolute; inset: -5px; z-index: -1; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 166, 64, .6), transparent 68%); animation: b-glow 2.8s ease-in-out infinite var(--t); }
+@keyframes b-glow { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.08); } }
 .files .fl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ring); }
 /* the files and commands folded: a thin bar of their numbers, opened again by a click */
 .files .fl-grid.folded { grid-template-columns: 30px minmax(0, 1fr); }
@@ -1257,6 +1375,26 @@ function actorLogo(a) {
   const src = !a.avatar ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg) : `/avatars/${a.avatar}.svg`;
   if (!src) return harnessLogo(a.harness);
   return el("span", { class: "logo avatar" }, el("img", { src, alt: "", draggable: "false" }), harnessBadge(a.harness));
+}
+// The words an actor at work says, in its avatar's hue (avatars/README.md's hues, assets/src/avatars/kit.py's
+// shades): its dark shade on a light page, halfway from its main shade to its light one on a dark page.
+const HUE_INK = { red: ["#b91c1c", "#f57474"], orange: ["#c2410c", "#fb9645"], yellow: ["#b45309", "#fcd257"],
+  lime: ["#4d7c0f", "#aee259"], green: ["#166534", "#54ca83"], teal: ["#0f766e", "#56d7c5"], sky: ["#0369a1", "#79d1fa"],
+  blue: ["#1e40af", "#7095f9"], purple: ["#5b21b6", "#a788f9"], pink: ["#be185d", "#f7a0cf"], brown: ["#6b4226", "#c1966c"],
+  gray: ["#334155", "#aab4c2"] };
+const hueInk = (a) => { const ink = a && HUE_INK[a.avatar_hue]; return ink ? `color: light-dark(${ink[0]}, ${ink[1]})` : null; };
+// The actor at work, in the Chat view: its avatar's character out of its circle, moving as it does (its
+// avatar_motion: a move, then an effect round it, if any -- the .buddy CSS), on the page's clock so a redraw does
+// not start it over; `still`, its calls failing: not moving. An actor with no avatar has the turning glyph.
+function buddy(a, still) {
+  const svg = SNAPSHOT && a && a.avatar && (SNAPSHOT.avatars || {})[a.avatar];
+  const src = !a || !a.avatar ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg.replace(/<circle cx="32" cy="32" r="32"[^>]*\/>/, ""))
+    : `/avatars/${a.avatar}.svg?bare=1`;
+  if (!src) return el("span", { class: "spin", "aria-hidden": "true" });
+  const [move, fx] = (a.avatar_motion || "").split(/\s+/).map((w) => /^[a-z0-9-]+$/.test(w) ? w : "");
+  return el("span", { class: ["buddy", move && `m-${move}`, fx && `f-${fx}`, still && "still"].filter(Boolean).join(" "),
+    style: `--t: -${Math.round(performance.now())}ms`, "aria-hidden": "true" },
+    el("img", { src, alt: "", draggable: "false" }), ...(fx ? [el("i"), el("i"), el("i")] : []));
 }
 // An eye with a stroke through it: hide.
 function hideIcon() {
@@ -2547,7 +2685,7 @@ function setDetails(open, tab) {
 }
 // The dashboard's own commands, typed in a message box: done here, not sent to the agent. Any other "/" goes to the
 // agent as written -- Claude Code's own commands, skills and command files -- so the dashboard takes only these; one
-// typed into a terminal the dashboard runs shows the reader that terminal (the composer's send).
+// that reaches the session's terminal shows the reader that terminal (the composer's send).
 //   /context   ag's context for the actor -- what the model was really sent, which under ag is not what Claude Code's
 //              own /context counts -- in the details panel, beside the chat
 const DASHBOARD_COMMANDS = { "/context": () => setDetails(true, "context") };
@@ -2700,11 +2838,12 @@ function chatCard(info) {
     if (!t || sending || held) return false;
     sending = true; err.textContent = "";
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
-    // a "/" command of the harness's own (dashboardCommand took the page's): typed into the session's terminal, and the
-    // terminal shown -- what it does (a dialog, a report) is drawn there, and may never come back as a message
-    const toTerminal = t.startsWith("/") && !!(s.terminal && CHAT_VIEWS.has("terminal"));
+    // a "/" command of the harness's own (dashboardCommand took the page's): what it does (a dialog, a report) is drawn
+    // in the session's terminal, and may never come back as a message -- not shown pending; the terminal shown once
+    // the session has one (its own, or one the message opened)
+    const slash = t.startsWith("/");
     // else shown at once, pending, until the session's own record of it shows (sentHere)
-    const mine = toTerminal ? null : { key: key(...state.selected), text: t, base: heardCount(heard(info), t), at: Date.now() };
+    const mine = slash ? null : { key: key(...state.selected), text: t, base: heardCount(heard(info), t), at: Date.now() };
     const box = document.getElementById("composer-text"), was = box ? box.value : "";
     if (mine) sentHere.push(mine);
     if (box) box.value = "";
@@ -2712,10 +2851,12 @@ function chatCard(info) {
       keepingPlace(renderMain); talkToEnd();
       setTimeout(() => { if (sentHere.includes(mine)) keepingPlace(renderMain); }, UNSEEN_MS + 100);
     }
+    // a terminal the message opens (sessions.py's `send`): the Terminal view's screen, at its size if it was drawn
+    const opens = { fullscreen: fullscreenFor(info), ...(term.sid === info.channel && term.opened ? { cols: term.xterm.cols, rows: term.xterm.rows } : {}) };
     try {
-      await post("/api/send", info.session ? { session_id: s.session_id, text: t }
-        : { gatherer: state.selected[0], channel: state.selected[1], text: t });
-      if (toTerminal) { await setChatView("terminal"); return true; }
+      const got = await post("/api/send", info.session ? { session_id: s.session_id, text: t, ...opens }
+        : { gatherer: state.selected[0], channel: state.selected[1], text: t, ...opens });
+      if (slash && got && got.terminal && CHAT_VIEWS.has("terminal")) { await setChatView("terminal"); return true; }
       if (state.paused || !state.stream) await refresh(); else { await loadChat(); render(); }
       chatToEnd();
       return true;
@@ -3734,7 +3875,8 @@ addChatView({
 // the tab's draws (moved, never made again), so what it shows, its scroll and its focus stay. Showing a
 // session in the view opens its terminal, once each time the session is chosen: one that exits or fails
 // to open is not opened again until asked (a button). Once open it has the session -- the Chat view's
-// message box types into it -- until it is closed (the list's close button) or exits.
+// message box types into it -- until it is closed (the list's close button) or exits. A message sent while
+// none is open opens it too (unless the home's config says `[dashboard] chat = "headless"`), the message its first.
 // The terminal's colors: the page's terminal colors, and a 16-color palette for each theme made from them.
 const XTERM_ANSI = {
   dark: { black: "#3a3935", red: "#ff6b80", green: "#4eba65", yellow: "#e8b600", blue: "#7cb7ff", magenta: "#e58fb6", cyan: "#4fc1c9", white: "#c3c2b7",
@@ -3813,6 +3955,8 @@ function termListen(sid) {
   if (term.es || SNAPSHOT) return;
   const es = new EventSource(`/api/terminal?session_id=${encodeURIComponent(sid)}`);
   term.es = es;
+  if (term.opened)                                   // one opened elsewhere (a message sent): at the size drawn here
+    post("/api/terminal/resize", { session_id: sid, cols: term.xterm.cols, rows: term.xterm.rows }).catch(() => {});
   const mine = () => term.es === es && term.sid === sid;
   es.addEventListener("out", (ev) => {
     if (!mine()) return;
@@ -4294,7 +4438,7 @@ function filesTalk(d, info, running) {
       last < 0 ? null : reply(said[last], true),
       after.length ? el("div", { class: "fl-minor" }, ...after.map((x) => reply(x, false))) : null,
       t.last ? el("div", { class: "fl-minor" }, lastCall(t, live, info ? statusOf(info)[0] : "")) : null,
-      live ? el("div", { class: "fl-status", role: "status" }, el("span", { class: "spin", "aria-hidden": "true" }),
+      live ? el("div", { class: "fl-status", role: "status", style: hueInk(info) }, buddy(info, !!(info && info.failing)),
         el("span", { class: "tx", title: now, text: `${now} (last activity ${ago(info.last)})` }))
         : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null,
       t.n === d.turns.length - 1 ? pendingTalk(info, h) : null));

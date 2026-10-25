@@ -1,7 +1,7 @@
 """What every avatar shares: the palette of hues, the face, and the frame (a 64x64 SVG on a circle of
 its hue). An avatar is drawn in one hue -- its circle and most of its character -- so color alone tells
 actors apart; the hue is named on its root (data-hue), which the dashboard reads to keep the actors in
-view in different hues (ag_dashboard/avatars.py). The face is the kawaii one: small solid eyes set low
+view in different hues (ag_dashboard/avatars.py), and so is how it moves while its actor works (data-motion). The face is the kawaii one: small solid eyes set low
 and wide, a tiny mouth between them and blush below."""
 
 INK = "#3a2a2a"        # eyes, mouths, noses: a soft near-black
@@ -73,3 +73,8 @@ def svg(p, body):
     """The avatar: `body` on the circle of p's hue."""
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" data-hue="{p.hue}">'
             f'<circle cx="32" cy="32" r="32" fill="{p.bg}"/>{body}</svg>\n')
+
+
+def moving(text, motion):
+    """The avatar `text` (svg()'s) with how it moves while its actor works named on its root: "swim bubbles"."""
+    return text.replace(">", f' data-motion="{motion}">', 1)
