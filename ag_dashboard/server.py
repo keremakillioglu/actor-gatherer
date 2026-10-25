@@ -3,7 +3,7 @@ context manager's home (data.py), read-only. Standard library only.
 
     GET /                                 the page
     GET /api/home                         data.home(), each actor with its avatar (avatars.py's `assign`)
-    GET /avatars/<kind>/<name>.svg        an avatar's picture (ag_dashboard/avatars/)
+    GET /avatars/<kind>/<name>.svg        an avatar's picture (ag_dashboard/avatars/); ?bare=1: without its circle
     GET /api/agent?gatherer=G&channel=C   data.agent(G, C)
     GET /api/read?gatherer=G&read_id=N    data.read(G, N)
     GET /api/context?gatherer=G&read_id=N data.context(G, N)
@@ -187,7 +187,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                 if url.path == "/api/settings":
                     return self.answer(settings.read())
                 if url.path.startswith("/avatars/") and url.path.endswith(".svg"):
-                    return self.avatar(url.path[len("/avatars/"):-len(".svg")])
+                    return self.avatar(url.path[len("/avatars/"):-len(".svg")], "bare" in q)
                 if url.path.startswith("/views/"):
                     path = home.view_file(url.path[len("/views/"):])
                     if path is None:
@@ -227,14 +227,17 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
             except Exception as exc:  # noqa: BLE001 - the page shows the error and keeps its last view
                 return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
 
-        def avatar(self, name: str) -> None:
+        def avatar(self, name: str, bare: bool = False) -> None:
             """A picture, kept by the browser a while (the list is drawn again often), its scripts never run
-            even opened on its own: a picture put in the folder by hand is the reader's, not ours."""
+            even opened on its own: a picture put in the folder by hand is the reader's, not ours. `bare`
+            (?bare=1): without its circle, the character alone (the Chat view's, at work)."""
             found = avatars.path(name)
             if found is None:
                 return self.send(404, b"not found", "text/plain")
             with open(found, "rb") as fh:
                 body = fh.read()
+            if bare:
+                body = avatars.bare(body)
             self.send_response(200)
             self.send_header("Content-Type", "image/svg+xml")
             self.send_header("Content-Length", str(len(body)))

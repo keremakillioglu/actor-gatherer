@@ -3,7 +3,7 @@
 
 import math
 
-from kit import BLUSH, CREAM, INK, PALETTE, P, face, nose_w, shine, svg
+from kit import BLUSH, CREAM, INK, PALETTE, P, face, moving, nose_w, shine, svg
 
 BEAK = "#fb923c"
 
@@ -302,5 +302,15 @@ def jellyfish(p):
 
 SINGLE = [red_panda, octopus, goldfish, shiba, hamster, koi, chick, pufferfish, mejiro, frog, turtle, whale,
           seal, penguin, shark, mochi_usagi, axolotl, capybara, bear, deer, tanuki, enaga, panda, koala]
-ICONS = {**{f.__name__.replace("_", "-"): f() for f in SINGLE},
-         **{f"jellyfish-{hue}": jellyfish(P(hue)) for hue in PALETTE}}
+# How each moves while its actor works, in the dashboard's Chat view: a move, then an effect round it if
+# any (ag_dashboard/avatars/README.md names them all).
+MOTIONS = {
+    "red-panda": "hop", "octopus": "float bubbles", "goldfish": "swim bubbles", "shiba": "wag", "hamster": "patter",
+    "koi": "swim ripple", "chick": "peck", "pufferfish": "puff bubbles", "mejiro": "hop notes", "frog": "hop ripple",
+    "turtle": "crawl", "whale": "float spout", "seal": "bob ripple", "penguin": "waddle", "shark": "glide",
+    "mochi-usagi": "hop sparkle", "axolotl": "wiggle bubbles", "capybara": "float steam", "bear": "sway",
+    "deer": "lookabout", "tanuki": "patter notes", "enaga": "flutter", "panda": "roll", "koala": "nod",
+    "jellyfish": "pulse",
+}
+ICONS = {**{f.__name__.replace("_", "-"): moving(f(), MOTIONS[f.__name__.replace("_", "-")]) for f in SINGLE},
+         **{f"jellyfish-{hue}": moving(jellyfish(P(hue)), MOTIONS["jellyfish"]) for hue in PALETTE}}

@@ -1,5 +1,5 @@
 """Each actor's avatar (ag_dashboard/avatars.py): the pictures in the folder, who is given which and
-kept, the open actors of a gatherer in different hues, and the server serving them."""
+kept, the open actors of a gatherer in different hues, how each moves at work, and the server serving them."""
 import os
 import re
 import sys
@@ -9,7 +9,8 @@ import unittest
 import urllib.error
 import urllib.request
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
 from ag_dashboard import avatars, server  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
@@ -100,6 +101,44 @@ class AvatarsTest(AvatarsBase):
         os.rmdir(os.path.join(avatars.DIR, "robot"))
         self.assertEqual(self.given(avatars.assign(home))[("g", "c1")], None)   # none left: the harness's mark
 
+    def test_each_actor_carries_its_pictures_hue_and_motion(self):
+        self.pictures({"robot/plain": "red"})
+        with open(os.path.join(avatars.DIR, "robot", "fish.svg"), "w") as fh:
+            fh.write(CIRCLE.format(' data-hue="sky" data-motion="swim bubbles"'))
+        home = {"gatherers": [{"name": "g", "agents": [actor("c1", 1), actor("c2", 2), actor("c3", 3)]}]}
+        avatars.attach(home, {("g", "c1"): "robot/fish", ("g", "c2"): "robot/plain", ("g", "c3"): "robot/gone"}, avatars.pictures())
+        got = {a["channel"]: (a["avatar"], a["avatar_hue"], a["avatar_motion"]) for a in home["gatherers"][0]["agents"]}
+        self.assertEqual(got, {"c1": ("robot/fish", "sky", "swim bubbles"), "c2": ("robot/plain", "red", ""),
+                               "c3": (None, None, None)})
+
+    def test_a_bare_picture_is_its_character_without_its_circle(self):
+        drawn = b'<svg data-hue="red"><circle cx="32" cy="32" r="32" fill="#fdd"/><circle cx="32" cy="32" r="32" fill="#f00"/></svg>'
+        self.assertEqual(avatars.bare(drawn), b'<svg data-hue="red"><circle cx="32" cy="32" r="32" fill="#f00"/></svg>')
+        self.assertEqual(avatars.bare(b'<svg><rect/></svg>'), b'<svg><rect/></svg>')    # none: as it is
+
+    def test_the_drawn_avatars_move_as_the_page_and_the_readme_know(self):
+        avatars.DIR = self.saved[1]
+        pool = avatars.pictures()
+        with open(os.path.join(ROOT, "ag_dashboard", "page.html"), encoding="utf-8") as fh:
+            page = fh.read()
+        with open(os.path.join(avatars.DIR, "README.md"), encoding="utf-8") as fh:
+            readme = fh.read()
+        moves = set(re.findall(r"\.buddy\.m-([a-z-]+) \{ --m: b-\1;", page))
+        effects = set(re.findall(r"\.buddy\.f-([a-z-]+)[ :]", page))
+        listed = lambda kind: set(re.findall(r"`([a-z]+)`", re.search(rf"^- {kind}: (.*?)(?:^- |\n\n)", readme, re.M | re.S).group(1)))
+        self.assertEqual(listed("moves"), moves)
+        self.assertEqual(listed("effects"), effects)
+        used = set()
+        for name in pool:
+            words = avatars.motion(name).split()
+            self.assertIn(len(words), (1, 2), name)
+            self.assertIn(words[0], moves, name)
+            self.assertTrue(len(words) == 1 or words[1] in effects, name)
+            used.update(words)
+        self.assertEqual(used, moves | effects)                              # each drawn, each used
+        ink = re.search(r"const HUE_INK = \{(.*?)\};", page, re.S).group(1)
+        self.assertEqual(set(re.findall(r"(\w+): \[", ink)), set(pool.values()))   # every hue's words in its color
+
     def test_the_drawn_avatars_are_in_one_hue_of_the_palette_each(self):
         avatars.DIR = self.saved[1]
         pool = avatars.pictures()
@@ -131,6 +170,9 @@ class ServerAvatarsTest(AvatarsBase):
         self.assertEqual(r.headers["Content-Type"], "image/svg+xml")
         self.assertIn("default-src 'none'", r.headers["Content-Security-Policy"])
         self.assertIn(b'data-hue="lime"', r.read())
+        bare = urllib.request.urlopen(self.url + "/avatars/food/pear.svg?bare=1", timeout=10)   # its character alone
+        self.assertIn("default-src 'none'", bare.headers["Content-Security-Policy"])
+        self.assertEqual(bare.read(), CIRCLE.format(' data-hue="lime"').replace('<circle cx="32" cy="32" r="32"/>', "").encode())
         with open(os.path.join(self.tmp.name, "secret.svg"), "w") as fh:
             fh.write("x")
         for path in ("/avatars/food/none.svg", "/avatars/../secret.svg", "/avatars/%2e%2e/secret.svg", "/avatars/food/pear.txt"):
