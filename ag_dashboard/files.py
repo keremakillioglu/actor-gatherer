@@ -192,7 +192,8 @@ def _runs(numbered: List[tuple]) -> List[tuple]:
 
 class _Turn:
     def __init__(self, n, row_id, at, text):
-        self.head = {"n": n, "row_id": row_id, "at": at, "text": text[:REPLY_CHARS], "replies": [], "now": None, "more": []}
+        self.head = {"n": n, "row_id": row_id, "at": at, "text": text[:REPLY_CHARS], "replies": [], "now": None, "more": [],
+                     "last": None}
         self.files: Dict[str, dict] = {}
         self.commands: List[dict] = []
         self.order: List[str] = []
@@ -258,11 +259,13 @@ def _call_view(part: dict) -> dict:
 
 
 def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = "") -> dict:
-    """The session's turns ({n, row_id, at, text, more, replies, now}: what the user asked, and what they wrote while it
+    """The session's turns ({n, row_id, at, text, more, replies, now, last}: what the user asked, and what they wrote while it
     ran ({row_id, at, text}: sent mid-turn, or held until it ended; queued.py) -- part of it, not a turn of its own; what the agent
     said back and thought, in order -- each {kind: "text", text} or {kind: "thinking", texts} (a run of
-    thinking between two replies, its readable words: none when encrypted); and what it was doing
-    last -- {kind: "thinking"}, {kind: "call", id, text} (a call with no result yet), or None), and for turn `turn` (None:
+    thinking between two replies, its readable words: none when encrypted); what it was doing
+    last -- {kind: "thinking"}, {kind: "call", id, text} (a call with no result yet), or None; and its latest
+    call while nothing readable was said or thought after it -- {id, text, call, running, error, output} -- or
+    None), and for turn `turn` (None:
     the latest) the files it worked on, in the order first touched, each
         {path, kinds (read, edit, write, hit), created,
          sources: [{via, kind, kinds, error, call, blocks}]: the calls that touched it, in order, each
@@ -538,27 +541,32 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     results: Dict[str, dict] = {}
     for i, (row_id, typ, at, parts) in enumerate(evs):
         cur = begins.get(i, cur)
-        head = cur.head if cur is not None else {"replies": [], "now": None}   # before the first message: kept nowhere
+        head = cur.head if cur is not None else {"replies": [], "now": None, "last": None}   # before the first message: kept nowhere
         for p in parts:
             if p["kind"] == "call":
                 order.append((cur, p))
                 if p.get("id"):
                     calls[p["id"]] = p
                 inp = p.get("input") if isinstance(p.get("input"), dict) else {"input": p.get("input")}
-                head["now"] = {"kind": "call", "id": p.get("id"), "text": _label(p.get("name") or "", inp, p.get("input"), cwd)}
+                label = _label(p.get("name") or "", inp, p.get("input"), cwd)
+                head["now"] = {"kind": "call", "id": p.get("id"), "text": label}
+                head["last"] = {"id": p.get("id"), "text": label, "call": _call_view(p), "running": True, "error": False, "output": ""}
             elif p["kind"] == "result" and p.get("id"):
                 results[p["id"]] = dict(p, row_id=row_id)      # where it is stored: its image is fetched from there
                 if (head["now"] or {}).get("id") == p["id"]:
                     head["now"] = None
+                if (head["last"] or {}).get("id") == p["id"]:
+                    head["last"].update(running=False, error=bool(p.get("error")), output=(p.get("text") or "")[:COMMAND_OUTPUT])
             elif p["kind"] == "text" and p.get("role") == "assistant" and p["text"].strip():
                 head["replies"].append({"kind": "text", "text": p["text"][:REPLY_CHARS]})
-                head["now"] = None
+                head["now"] = head["last"] = None
             elif p["kind"] == "thinking":                    # a run of thinking between two replies: one, its words gathered
                 said = head["replies"]
                 if not said or said[-1]["kind"] != "thinking":
                     said.append({"kind": "thinking", "texts": []})
                 if p["text"].strip():
                     said[-1]["texts"].append(p["text"][:REPLY_CHARS])
+                    head["last"] = None                      # shown after the call: the call is no longer the last
                 head["now"] = {"kind": "thinking"}
     for t, p in order:
         apply(t, p, results.get(p.get("id")) if p.get("id") else None)
