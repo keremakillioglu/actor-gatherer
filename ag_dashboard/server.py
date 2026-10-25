@@ -32,8 +32,10 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
     POST /api/sessions {gatherer, cwd?, permission_mode?, harness?, model?}  a new one (harness claude, the
                                           default, or codex) -> the session
-    POST /api/send {session_id, text}     a message to its agent -> the session
-    POST /api/send {gatherer, channel, text}  the same to a Claude Code or codex session not started here,
+    POST /api/send {session_id, text, cols?, rows?, fullscreen?}  a message to it -> the session: typed into
+                                          its terminal, or one opened for it (that size, that screen), or to
+                                          its agent (sessions.py's `send`)
+    POST /api/send {gatherer, channel, text, ...}  the same to a Claude Code or codex session not started here,
                                           taken into the table first (sessions.py's `adopt`)
     POST /api/stop {session_id}           its agent, idle, ended -- or its terminal closed -> the session
     POST /api/terminal {session_id | gatherer, channel, cols, rows, fullscreen?}  the session opened in a
@@ -369,7 +371,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     sid = str(body.get("session_id") or "")
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
                         sid = started.adopt(str(body["gatherer"]), str(body["channel"]))["session_id"]
-                    return self.answer(started.send(sid, str(body.get("text") or "")))
+                    return self.answer(started.send(sid, str(body.get("text") or ""), int(body.get("cols") or 120),
+                                                    int(body.get("rows") or 32), bool(body.get("fullscreen"))))
                 if url.path == "/api/stop":
                     return self.answer(started.stop(str(body.get("session_id") or "")))
                 if url.path == "/api/terminal":

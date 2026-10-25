@@ -2795,9 +2795,11 @@ function chatCard(info) {
     if (box) box.value = "";
     keepingPlace(renderMain); talkToEnd();
     setTimeout(() => { if (sentHere.includes(mine)) keepingPlace(renderMain); }, UNSEEN_MS + 100);
+    // a terminal the message opens (sessions.py's `send`): the Terminal view's screen, at its size if it was drawn
+    const opens = { fullscreen: fullscreenFor(info), ...(term.sid === info.channel && term.opened ? { cols: term.xterm.cols, rows: term.xterm.rows } : {}) };
     try {
-      await post("/api/send", info.session ? { session_id: s.session_id, text: t }
-        : { gatherer: state.selected[0], channel: state.selected[1], text: t });
+      await post("/api/send", info.session ? { session_id: s.session_id, text: t, ...opens }
+        : { gatherer: state.selected[0], channel: state.selected[1], text: t, ...opens });
       if (state.paused || !state.stream) await refresh(); else { await loadChat(); render(); }
       chatToEnd();
       return true;
@@ -3814,7 +3816,8 @@ addChatView({
 // the tab's draws (moved, never made again), so what it shows, its scroll and its focus stay. Showing a
 // session in the view opens its terminal, once each time the session is chosen: one that exits or fails
 // to open is not opened again until asked (a button). Once open it has the session -- the Chat view's
-// message box types into it -- until it is closed (the list's close button) or exits.
+// message box types into it -- until it is closed (the list's close button) or exits. A message sent while
+// none is open opens it too (unless the home's config says `[dashboard] chat = "headless"`), the message its first.
 // The terminal's colors: the page's terminal colors, and a 16-color palette for each theme made from them.
 const XTERM_ANSI = {
   dark: { black: "#3a3935", red: "#ff6b80", green: "#4eba65", yellow: "#e8b600", blue: "#7cb7ff", magenta: "#e58fb6", cyan: "#4fc1c9", white: "#c3c2b7",
@@ -3893,6 +3896,8 @@ function termListen(sid) {
   if (term.es || SNAPSHOT) return;
   const es = new EventSource(`/api/terminal?session_id=${encodeURIComponent(sid)}`);
   term.es = es;
+  if (term.opened)                                   // one opened elsewhere (a message sent): at the size drawn here
+    post("/api/terminal/resize", { session_id: sid, cols: term.xterm.cols, rows: term.xterm.rows }).catch(() => {});
   const mine = () => term.es === es && term.sid === sid;
   es.addEventListener("out", (ev) => {
     if (!mine()) return;
