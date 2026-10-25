@@ -10,6 +10,9 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/transcript?gatherer=G&channel=C[&after=A|&before=B]   data.transcript(G, C, A, B)
     GET /api/files?gatherer=G&channel=C[&turn=N][&cwd=D]   files.files(G, C, N, D): a turn's files
     GET /api/image?gatherer=G&row_id=R&id=I                files.image(G, R, I): the image call I's result holds
+    GET /api/outline?gatherer=G[&channel=C][&after=A]      history.outline(G, C, A): the events, light, and the tasks
+    GET /api/search?gatherer=G[&channel=C]&q=Q             history.search(G, C, Q): the events whose words hold Q
+    GET /api/extracts?gatherer=G                           history.extracts(G): what the model made of the history
     GET /api/stream[?gatherer=G&channel=C]                 server-sent events, until the page goes:
         `home` (data.home()) and, with a channel, `agent` (data.agent(G, C)) at once, then again
         each time they change -- woken by ag's notifications or the fallback check (live.py) --
@@ -32,13 +35,17 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/terminal/input {session_id, data}       what was typed in it
     POST /api/terminal/resize {session_id, cols, rows}  its new size
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
+    POST /api/history/export {gatherer, rows, format}   those events as a file: {name, text} (history.py)
+    POST /api/history/extract {gatherer, rows, kind, ask?}  the Gatherer's model asked for a summary, memory
+                                          or skill of them, in the background -> its record
+    POST /api/history/delete {id}         a record removed, its job stopped -> {id}
     GET /api/settings                     ag's settings, its config.toml (settings.py)
     POST /api/settings/model {model, api_base?, key_env?}   the Gatherer's model, by `ag model` -> the settings
     POST /api/settings/defaults {version, policy?, pollers?, gatherer?}   a new gatherer's defaults -> the settings
     POST /api/settings/file {version, text}   config.toml as the reader edited it -> the settings
 
-The POSTs are the only writes, and only to the dashboard's own tables, the agents it runs, the
-gatherers `ag new` makes, and ag's config.toml:
+The POSTs are the only writes, and only to the dashboard's own tables and records, the agents it
+runs, the gatherers `ag new` makes, the model calls `ag home complete` makes, and ag's config.toml:
 the gatherers' databases are only read. They are taken from the dashboard's own page only
 (`own_page`), and the server listens on localhost unless told otherwise.
 
@@ -58,7 +65,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import data, files, hiding, home, live, sessions, settings
+from . import data, files, hiding, history, home, live, sessions, settings
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -185,6 +192,12 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                 if url.path == "/api/image" and q.get("gatherer") and q.get("row_id", "").isdigit() and q.get("id"):
                     got = files.image(q["gatherer"], int(q["row_id"]), q["id"])
                     return self.send(200, got[1], got[0]) if got else self.send(404, b"no image", "text/plain")
+                if url.path == "/api/outline" and q.get("gatherer") and q.get("after", "0").isdigit():
+                    return self.answer(history.outline(q["gatherer"], q.get("channel"), int(q.get("after", "0"))))
+                if url.path == "/api/search" and q.get("gatherer"):
+                    return self.answer(history.search(q["gatherer"], q.get("channel"), q.get("q", "")))
+                if url.path == "/api/extracts" and q.get("gatherer"):
+                    return self.answer(history.extracts(q["gatherer"]))
                 return self.send(404, b"not found", "text/plain")
             except Exception as exc:  # noqa: BLE001 - the page shows the error and keeps its last view
                 return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
@@ -324,6 +337,14 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     kept = hiding.choose(str(body.get("gatherer") or ""), str(body.get("choice") or ""))
                     hub.ring(None)                       # every open page's list
                     return self.answer(kept)
+                if url.path == "/api/history/export":
+                    return self.answer(history.export(str(body.get("gatherer") or ""), body.get("rows"),
+                                                      str(body.get("format") or "md")))
+                if url.path == "/api/history/extract":
+                    return self.answer(history.start(str(body.get("gatherer") or ""), str(body.get("kind") or ""),
+                                                     body.get("rows"), str(body.get("ask") or "")))
+                if url.path == "/api/history/delete":
+                    return self.answer(history.delete(str(body.get("id") or "")))
                 if url.path == "/api/settings/model":
                     opt = lambda k: None if body.get(k) is None else str(body[k])    # noqa: E731
                     return self.answer(settings.set_model(str(body.get("model") or ""), opt("api_base"), opt("key_env")))

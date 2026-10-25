@@ -521,6 +521,83 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fv-block .diff .ctx { color: var(--muted); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } }
+/* the History view: the history to pick from at the left, at the grain picked; what the Gatherer made of it at the right */
+.chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
+.hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 420px); }
+.hist .h-left { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.hist .h-bar { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 8px 16px; border-bottom: 1px solid var(--ring); font-size: 12px; color: var(--ink-2); }
+.hist .h-search { flex: 1 1 260px; display: flex; align-items: center; gap: 6px; min-width: 0; border: 1px solid var(--ring); border-radius: 6px;
+  background: var(--page); padding: 0 8px; }
+.hist .h-search:focus-within { border-color: var(--axis); }
+.hist .h-search svg { flex: none; color: var(--muted); }
+.hist .h-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 13px; padding: 5px 0; }
+.hist .h-found { white-space: nowrap; }
+.hist .h-found:empty { display: none; }
+.hist .h-list { flex: 1; min-height: 0; overflow: auto; padding-bottom: 16px; }
+.hist .h-row { display: grid; grid-template-columns: 18px 14px minmax(0, 1fr) auto; column-gap: 6px; align-items: start;
+  padding: 6px 16px 6px calc(16px + var(--depth, 0) * 20px); border-bottom: 1px solid var(--grid); content-visibility: auto; contain-intrinsic-size: auto 46px; }
+.hist .h-row:hover { background: var(--wash); }
+.hist .h-row.on { background: var(--selected); }
+.hist .h-row.head { background: var(--wash); }
+.hist .h-row.head.on { background: var(--selected); }
+.hist .h-row input[type=checkbox] { margin: 2px 0 0; cursor: pointer; accent-color: var(--s1); }
+.hist .h-tw { border: 0; background: none; padding: 0; margin: 0; width: 14px; color: var(--ink-2); font-size: 13px; line-height: 18px; cursor: pointer; }
+.hist .h-tw:hover { color: var(--ink); background: none; }
+.hist .h-main { min-width: 0; cursor: pointer; }
+.hist .h-main.leaf { cursor: default; }
+.hist .h-label { font-size: 13px; line-height: 1.4; color: var(--ink); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.hist .h-row.open:not(.head) > .h-main .h-label { -webkit-line-clamp: 6; }
+.hist .h-row.head .h-label { font-weight: 600; }
+.hist .h-label.dim { color: var(--muted); font-style: italic; }
+.hist .h-kind { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 6px; }
+.hist .h-kind i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+.hist .h-badge { display: inline-block; font-size: 10px; font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-right: 6px; line-height: 15px; }
+.hist .h-sub { font-size: 12px; color: var(--ink-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .h-sub.dim { color: var(--muted); }
+.hist .h-hit { font-size: 12px; color: var(--ink-2); margin-top: 3px; overflow-wrap: anywhere; }
+.hist mark { background: color-mix(in srgb, var(--s4) 35%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
+.hist .h-meta { font-size: 11px; color: var(--muted); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.hist .h-full { grid-column: 3 / -1; margin: 6px 0 2px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+  color: var(--ink-2); background: var(--page); border: 1px solid var(--grid); border-radius: 6px; padding: 8px 10px; max-height: 360px; overflow: auto; }
+.hist .h-more { display: block; margin: 12px auto; }
+.hist .h-note { color: var(--muted); font-size: 12px; padding: 14px 16px; }
+.hist .h-pick { flex: none; border-top: 1px solid var(--ring); padding: 10px 16px 12px; display: grid; gap: 8px; }
+.hist .h-pick textarea { width: 100%; min-height: 38px; max-height: 30vh; resize: vertical; font: inherit; font-size: 13px; color: var(--ink); background: var(--page);
+  border: 1px solid var(--ring); border-radius: 6px; padding: 6px 8px; field-sizing: content; }
+.hist .h-pick .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hist .h-pick .grow { flex: 1; }
+.hist .h-picked { font-size: 12px; color: var(--ink-2); }
+.hist .h-picked b { color: var(--ink); font-weight: 600; }
+.hist .h-pick .err { color: var(--critical); font-size: 12px; }
+.hist .h-pick .err:empty { display: none; }
+.hist .h-side { border-left: 1px solid var(--ring); overflow: auto; min-height: 0; background: var(--page); }
+.hist .h-side-h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 12px 14px 6px; }
+.hist .h-side .h-note { padding: 4px 14px 12px; }
+.hist .h-rec { margin: 0 10px 10px; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; }
+.hist .h-rec > summary { list-style: none; margin: 0; padding: 8px 10px; cursor: pointer; display: grid; gap: 2px; color: var(--ink); }
+.hist .h-rec > summary::-webkit-details-marker { display: none; }
+.hist .h-rec > summary .top { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.hist .h-rec > summary .top .when { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.hist .h-rec > summary .what { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .h-rec > summary .ask { font-size: 12px; color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .h-rec .chip-k { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-radius: 999px; padding: 1px 7px; color: #fff; }
+.hist .h-rec .chip-k.summary { background: var(--s1); } .hist .h-rec .chip-k.memory { background: var(--s7); } .hist .h-rec .chip-k.skill { background: var(--s3); }
+.hist .h-rec .body { border-top: 1px solid var(--grid); padding: 8px 12px 10px; font-size: 13px; overflow-wrap: anywhere; }
+.hist .h-rec .body .md > :first-child { margin-top: 0; } .hist .h-rec .body .md > :last-child { margin-bottom: 0; }
+.hist .h-rec .body .md pre { overflow: auto; background: var(--page); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+.hist .h-rec .body .md code { font-size: 12px; }
+.hist .h-rec .body .md h1 { font-size: 16px; } .hist .h-rec .body .md h2 { font-size: 14px; } .hist .h-rec .body .md h3, .hist .h-rec .body .md h4 { font-size: 13px; }
+.hist .h-rec .body .md h1, .hist .h-rec .body .md h2, .hist .h-rec .body .md h3 { margin: 12px 0 4px; }
+.hist .h-rec .body .md ul, .hist .h-rec .body .md ol { padding-left: 20px; }
+.hist .h-rec .front { margin: 0 0 8px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; background: var(--page);
+  border: 1px solid var(--grid); border-radius: 6px; padding: 6px 8px; color: var(--ink-2); }
+.hist .h-rec .acts { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 10px; }
+.hist .h-rec .fail { color: var(--critical); font-size: 12px; white-space: pre-wrap; }
+.hist .h-rec .working { color: var(--ink-2); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.hist .h-rec .working .spin::before { content: "✻"; display: inline-block; color: var(--term-accent); animation: term-spin 1.2s steps(1) infinite; }
+@media (max-width: 1100px) { .hist .h-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 38%); }
+  .hist .h-side { border-left: 0; border-top: 1px solid var(--ring); } }
 </style>
 </head>
 <body>
@@ -1598,13 +1675,17 @@ function chatCard(info) {
     role: "log", "aria-label": `Chat history, ${view.name}` });
   // its blocks, put in by patch(): a block kept from the last draw is still on the page, and is left there
   const blocks = frame.kids = safely(() => view.render(ctx), true);
-  if (view.feed !== "none") {                        // a view that draws the history: what waits, or that there is none yet
+  if (view.feed !== "none" && view.chat !== false) {  // a view that draws the history: what waits, or that there is none yet
     for (const q of ctx.queued) blocks.push(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
     if (!data.items.length && !data.pending.length && !ctx.queued.length)
       blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation: run `ag dashboard` live to see it."
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
   card.append(frame);
+  if (view.chat === false) {                         // not the conversation: no message box, and no word that there is none
+    card.append(...safely(() => view.footer && view.footer(ctx)));
+    return card;
+  }
   if (!writable) {
     if (!SNAPSHOT) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code sessions with a known directory." }));
     card.append(...safely(() => view.footer && view.footer(ctx)));
@@ -2294,6 +2375,8 @@ function notesSwitch() {
 //     composer(ctx) { return node },    // optional: the box to write the next message, under the frame;
 //                                       // without it, a text box and a Send button (defaultComposer)
 //     footer(ctx) { return node },      // optional: under the message box, at the bottom of the page
+//     chat: false,                      // optional: a view that is not the conversation (the History) --
+//                                       // no message box under it, and nothing it did not draw itself
 //   });
 //
 // `ctx`: {info (the actor), session (its row: status, cwd, ...), data: {items, pending (what the model
@@ -2811,6 +2894,476 @@ addChatView({
   description: "One turn at a time: the files the agent read, searched and changed, each with the lines it saw and its changes in place.",
   tools: filesTools,
   render: filesRender,
+});
+
+// ------------------------------------------------------------------ the History view
+// The history to look through and pick from, at the grain the reader chooses -- the actors, the tasks ag
+// segmented each one's history into, the turns (a user message and all that answered it), the messages --
+// of the selected actor or of its whole gatherer, searched (history.py). What is picked is exported, or
+// given to the Gatherer's model to summarize, or to make a memory or a skill of, with what the reader asks
+// of it; what the model made is listed at the right, kept by the server (<home>/dashboard/extracts/).
+// What is picked is the gatherer's: it stays picked across its actors, and across the grains.
+const HIST_KEY = "ag-dashboard-history";
+const HIST_GRAINS = [["actors", "Actors"], ["tasks", "Tasks"], ["turns", "Turns"], ["messages", "Messages"]];
+const HIST_LEVEL = { actors: 0, tasks: 1, turns: 2, messages: 3, actor: 0, task: 1, turn: 2, message: 3 };
+const HIST_KINDS = { summary: ["Summarize", "Summary", "summary.md"], memory: ["Generate memory", "Memory", "memory.md"],
+  skill: ["Generate skill", "Skill", "SKILL.md"] };
+const HIST_PAGES = 10;                              // the pages of history.py's OUTLINE_ITEMS loaded at once
+const HIST_SHOWN = 2000;                            // the rows drawn before "show more"
+const hist = (() => {
+  let kept = {};
+  try { kept = JSON.parse(localStorage.getItem(HIST_KEY)) || {}; } catch (e) { /* none kept */ }
+  return { scope: kept.scope === "all" ? "all" : "actor", grain: HIST_GRAINS.some(([g]) => g === kept.grain) ? kept.grain : null,
+    q: "", hits: null, hitsMore: false, open: new Set(), shut: new Set(), sel: new Map(), selFor: null, last: null,
+    ask: "", err: "", busy: false, full: new Map(), recs: { gatherer: null, list: [], at: 0 }, recOpen: null, limit: HIST_SHOWN,
+    byId: new Map(), flat: [], tops: [], version: 0 };
+})();
+const keepHist = () => { try { localStorage.setItem(HIST_KEY, JSON.stringify({ scope: hist.scope, grain: hist.grain })); } catch (e) { /* this page only */ } };
+const enc = encodeURIComponent;
+const histKey = () => state.selected ? key(state.selected[0], hist.scope === "all" ? "\u0001" : state.selected[1]) : null;
+// The history's events, light (history.outline): all at first, a page at a time, then each time only those
+// after the last one kept. One load at a time.
+let histLoading = Promise.resolve();
+function loadOutline() {
+  histLoading = histLoading.then(loadOutlineNow, loadOutlineNow);
+  return histLoading;
+}
+async function loadOutlineNow() {
+  if (!state.selected || SNAPSHOT) return;
+  const [g, c] = state.selected, k = histKey();
+  if (!state.hist || state.hist.key !== k)
+    state.hist = { key: k, gatherer: g, channel: hist.scope === "all" ? null : c, events: [], tasks: [], last: 0, more: false, error: "", version: 0 };
+  const h = state.hist;
+  for (let page = 0; page < HIST_PAGES; page++) {
+    let got;
+    try { got = await get(`/api/outline?gatherer=${enc(g)}${h.channel === null ? "" : `&channel=${enc(h.channel)}`}&after=${h.last}`); }
+    catch (err) { got = { error: `Not loaded: ${err.message}` }; }
+    if (state.hist !== h) return;
+    if (got.error) { if (h.error !== got.error) { h.error = got.error; h.version++; } break; }
+    const fresh = got.events.filter((e) => e.row_id > h.last);
+    if (fresh.length || signature(got.tasks) !== signature(h.tasks) || h.error || h.more !== got.more) h.version++;
+    h.error = ""; h.tasks = got.tasks; h.more = got.more;
+    h.events.push(...fresh);
+    if (fresh.length) h.last = fresh[fresh.length - 1].row_id;
+    if (!got.more) break;
+  }
+  if (hist.recs.gatherer !== g || Date.now() - hist.recs.at > 10000) await loadExtracts(g);   // another page's, too
+}
+CHAT_FEEDS.outline = {
+  load: loadOutline,
+  data: () => state.hist && state.hist.key === histKey() ? { items: state.hist.events, pending: [], earlier: false } : null,
+  signature: () => [state.hist && state.hist.key, state.hist && state.hist.version, hist.version],
+};
+// What the Gatherer's model made of the gatherer's history, newest first; looked at again every
+// 2 s while one is being made.
+let extractsTimer = null;
+async function loadExtracts(g) {
+  try {
+    const list = await get(`/api/extracts?gatherer=${enc(g)}`);
+    if (hist.recs.gatherer !== g || signature(list) !== signature(hist.recs.list)) { hist.recs = { gatherer: g, list }; hist.version++; }
+    hist.recs.at = Date.now();
+  } catch (err) { /* kept as it was */ }
+  if (hist.recs.list.some((r) => r.status === "running")) pollExtracts();
+}
+function pollExtracts() {
+  clearTimeout(extractsTimer);
+  extractsTimer = setTimeout(async () => {
+    const g = hist.recs.gatherer;
+    if (!g || state.paused) return;
+    await loadExtracts(g);
+    histRedraw();
+  }, 2000);
+}
+function histRedraw() {
+  if (chatView().id !== "history") return;
+  keepingPlace(renderMain);
+  drawn.main = mainSignature();
+}
+// The history as a tree: actor > task (where ag has segmented its history) > turn > message, each node with
+// the rows it holds. A task holds the events from its first row to the next task's; a turn, a user message
+// and all after it until the next. Built again only when the events or tasks change.
+let histTreeOf = { h: null, v: -1, tree: [] };
+function histTree(h) {
+  if (histTreeOf.h === h && histTreeOf.v === h.version) return histTreeOf.tree;
+  const tasksBy = new Map();
+  for (const t of h.tasks) (tasksBy.get(t.channel) || tasksBy.set(t.channel, []).get(t.channel)).push(t);
+  for (const ts of tasksBy.values()) ts.sort((a, b) => a.first_row - b.first_row);
+  const node = (kind, id, extra) => ({ kind, id, children: [], rows: [], tokens: 0, first: null, ...extra });
+  const add = (n, e) => { n.rows.push(e.row_id); n.tokens += e.tokens; if (n.first === null) n.first = e.at; };
+  const actors = new Map(), byId = new Map();
+  for (const e of h.events) {
+    let a = actors.get(e.channel);
+    if (!a) {
+      a = node("actor", `a:${e.channel}`, { channel: e.channel, tasks: tasksBy.get(e.channel) || [], ti: -2, turnN: 0, task: null, turn: null, ask: "" });
+      if (!a.tasks.length) a.task = a;               // not segmented: its turns are the actor's own
+      actors.set(e.channel, a); byId.set(a.id, a);
+    }
+    if (a.tasks.length) {
+      let ti = a.ti < -1 ? -1 : a.ti;
+      while (ti + 1 < a.tasks.length && a.tasks[ti + 1].first_row <= e.row_id) ti++;
+      if (ti !== a.ti) {
+        a.ti = ti;
+        a.task = node("task", `k:${e.channel}:${ti}`, { channel: e.channel, task: ti >= 0 ? a.tasks[ti] : null, current: ti === a.tasks.length - 1 });
+        a.children.push(a.task); byId.set(a.task.id, a.task); a.turn = null;
+      }
+    }
+    if (e.type === "user_message") { a.turnN++; a.turn = null; }
+    if (!a.turn) {
+      const asks = e.type === "user_message";
+      a.turn = node("turn", `t:${e.channel}:${a.ti}:${a.turnN}`, { channel: e.channel, n: a.turnN, ask: asks ? e.text : "", cont: !asks && a.turnN > 0, reply: "" });
+      a.task.children.push(a.turn); byId.set(a.turn.id, a.turn);
+      if (asks && !a.ask) a.ask = e.text;
+    }
+    if (e.type === "agent_message" && e.text) a.turn.reply = e.text;
+    const m = node("message", `m:${e.row_id}`, { channel: e.channel, event: e });
+    byId.set(m.id, m);
+    add(m, e); a.turn.children.push(m); add(a.turn, e);
+    if (a.task !== a) add(a.task, e);
+    add(a, e);
+  }
+  for (const a of actors.values()) a.turns = a.turnN;
+  histTreeOf = { h, v: h.version, tree: [...actors.values()] };
+  hist.byId = byId;
+  return histTreeOf.tree;
+}
+// A node's descendants at a grain: itself when it is that grain or finer (an actor ag has not segmented
+// has its turns at the tasks' grain).
+const histAt = (n, level) => HIST_LEVEL[n.kind] >= level ? [n] : n.children.flatMap((c) => histAt(c, level));
+const histHas = (n) => !hist.hits || n.rows.some((r) => hist.hits.has(r));
+// The rows the list shows, in order: [node, depth, header]. The units of the grain, each opened to its parts
+// where the reader opened it; across a whole gatherer, under a header for each actor. A search keeps those
+// with a match.
+function histVisible(tree, grain, grouped) {
+  const out = [], tops = [], level = HIST_LEVEL[grain];
+  const walk = (n, depth) => {
+    if (!histHas(n)) return;
+    out.push([n, depth, false]);
+    if (hist.open.has(n.id) && n.kind !== "message") for (const c of n.children) walk(c, depth + 1);
+  };
+  for (const a of tree) {
+    if (!histHas(a)) continue;
+    const units = histAt(a, level).filter(histHas);
+    tops.push(...units);
+    if (grouped) {
+      out.push([a, 0, true]);
+      if (!hist.shut.has(a.id)) for (const n of units) walk(n, 1);
+    } else for (const n of units) walk(n, 0);
+  }
+  hist.tops = tops;
+  return out;
+}
+const histState = (n) => {
+  let on = 0;
+  for (const r of n.rows) if (hist.sel.has(r)) on++;
+  return on === 0 ? "none" : on === n.rows.length ? "all" : "some";
+};
+// Pick a node -- all of it, or, picked already, none of it -- or with shift, every row from the last one
+// picked to it.
+function histPick(id, range) {
+  const n = hist.byId.get(id);
+  if (!n) return;
+  const on = histState(n) !== "all";
+  let nodes = [n];
+  const a = hist.flat.indexOf(hist.last), b = hist.flat.indexOf(id);
+  if (range && a >= 0 && b >= 0) nodes = hist.flat.slice(Math.min(a, b), Math.max(a, b) + 1).map((x) => hist.byId.get(x)).filter(Boolean);
+  hist.last = id;
+  for (const x of nodes) for (const r of x.rows) {
+    if (!on) { hist.sel.delete(r); continue; }
+    const e = hist.byId.get(`m:${r}`);
+    hist.sel.set(r, e ? [e.channel, e.tokens] : [x.channel, 0]);
+  }
+  hist.version++;
+  histRedraw();
+}
+function histPickAll(on) {
+  if (on) for (const n of hist.tops) for (const r of n.rows) { const e = hist.byId.get(`m:${r}`); hist.sel.set(r, [n.channel, e ? e.tokens : 0]); }
+  else hist.sel.clear();
+  hist.version++;
+  histRedraw();
+}
+// The rows picked, as [first, last] runs: what the server takes.
+function histRanges(rows = [...hist.sel.keys()]) {
+  const out = [];
+  for (const r of rows.sort((x, y) => x - y)) if (out.length && r === out[out.length - 1][1] + 1) out[out.length - 1][1] = r; else out.push([r, r]);
+  return out;
+}
+async function histOpen(id, header) {
+  const set = header ? hist.shut : hist.open;
+  if (set.has(id)) set.delete(id); else set.add(id);
+  hist.version++;
+  histRedraw();
+  const n = hist.byId.get(id);
+  if (!header && n && n.kind === "message" && hist.open.has(id) && !hist.full.has(n.event.row_id)) {
+    const [g] = state.selected, e = n.event;
+    try {
+      const got = await get(`/api/history?gatherer=${enc(g)}&channel=${enc(e.channel)}&from=${e.row_id}&to=${e.row_id}`);
+      const it = got.items && got.items[0];
+      hist.full.set(e.row_id, it ? (it.text || `(${wordless(it)})`) + (it.clipped ? `\n… ${full(it.clipped)} more characters not shown` : "") : "(not found)");
+    } catch (err) { hist.full.set(e.row_id, `Not loaded: ${err.message}`); }
+    hist.version++;
+    histRedraw();
+  }
+}
+let histSearchTimer = null;
+function histSearch(q) {
+  hist.q = q;
+  clearTimeout(histSearchTimer);
+  histSearchTimer = setTimeout(runHistSearch, 250);
+}
+async function runHistSearch() {
+  const h = state.hist, q = hist.q.trim();
+  if (!h) return;
+  hist.limit = HIST_SHOWN;
+  if (!q) { hist.hits = null; hist.version++; return histRedraw(); }
+  let got;
+  try { got = await get(`/api/search?gatherer=${enc(h.gatherer)}${h.channel === null ? "" : `&channel=${enc(h.channel)}`}&q=${enc(q)}`); }
+  catch (err) { got = { hits: [], more: false }; }
+  if (state.hist !== h || hist.q.trim() !== q) return;
+  hist.hits = new Map((got.hits || []).map((x) => [x.row_id, x.snippet]));
+  hist.hitsMore = !!got.more;
+  hist.version++;
+  histRedraw();
+}
+async function setHistScope(scope) {
+  hist.scope = scope; hist.limit = HIST_SHOWN; keepHist();
+  await loadOutline();
+  histRedraw();
+  if (hist.q.trim()) runHistSearch();
+}
+function setHistGrain(grain) { hist.grain = grain; hist.limit = HIST_SHOWN; keepHist(); hist.version++; histRedraw(); }
+// `text` with each match of `q` marked.
+function histMark(text, q, cls = "h-hit") {
+  const out = el("div", { class: cls });
+  const low = text.toLowerCase(), ql = (q || "").toLowerCase();
+  let i = 0;
+  if (ql) for (let j = low.indexOf(ql); j >= 0; j = low.indexOf(ql, i)) { out.append(text.slice(i, j), el("mark", { text: text.slice(j, j + ql.length) })); i = j + ql.length; }
+  out.append(text.slice(i));
+  return out;
+}
+function histLabel(n, hits) {
+  const kind = (t, ...more) => el("span", { class: "h-kind" }, ...more, t);
+  const first = hits.length ? hist.hits.get(hits[0]) : null;
+  const hit = first ? histMark(first, hist.q.trim()) : null;
+  if (n.kind === "actor") {
+    const a = (selectedGatherer() || { agents: [] }).agents.find((x) => x.channel === n.channel);
+    const mine = state.selected && state.selected[1] === n.channel;
+    return [el("div", { class: "h-label" }, kind(`Actor${mine ? " · selected" : ""}`), n.ask || (a && a.last_user_message) || n.channel),
+      el("div", { class: "h-sub dim", text: [a ? harnessName(a.harness) : null, plural(n.turns, "turn"),
+        n.tasks.length ? plural(n.tasks.length, "task") : null, n.channel].filter(Boolean).join(" · ") }), hit];
+  }
+  if (n.kind === "task") {
+    const t = n.task;
+    return [el("div", { class: "h-label" }, kind(t ? `Task ${t.index + 1}` : "Before the first task"),
+      ...(n.current ? [el("span", { class: "h-badge", text: "Current" })] : []), t ? t.name : "What came before ag's first task"),
+      t && t.description ? el("div", { class: "h-sub", text: t.description }) : null, hit];
+  }
+  if (n.kind === "turn") {
+    return [el("div", { class: "h-label" }, kind(n.n ? `Turn ${n.n}${n.cont ? ", continued" : ""}` : "Before the first message"),
+      n.n ? (n.ask || (n.cont ? "" : "(no words)")) : "The harness's setup: its system text, tools and environment"),
+      n.reply ? el("div", { class: "h-sub dim", text: "→ " + n.reply }) : null, hit];
+  }
+  const e = n.event, [, name, swatch] = itemType({ name: e.type, group: "Recent history" });
+  return [el("div", { class: "h-label" + (e.text ? "" : " dim") }, kind(name, el("i", { style: `background:${swatch}` })),
+    e.text || wordless({ name: e.type })), hit];
+}
+function histMeta(n, hits) {
+  const bits = n.kind === "message" ? [`${compact(n.tokens)} tok`] : n.kind === "turn" ? [plural(n.rows.length, "msg"), `${compact(n.tokens)} tok`]
+    : [plural(n.kind === "actor" ? n.turns : n.children.length, "turn"), `${compact(n.tokens)} tok`];
+  if (hits.length && n.kind !== "message") bits.unshift(`${full(hits.length)} match${hits.length === 1 ? "" : "es"}`);
+  return [el("div", { text: bits.join(" · ") }), el("div", { text: n.first ? clock(n.first, true) : "" })];
+}
+const histRows = blockCache(), histRecs = blockCache();
+function histRow(n, depth, header) {
+  const st = histState(n);
+  const open = header ? !hist.shut.has(n.id) : hist.open.has(n.id);
+  const hits = hist.hits ? n.rows.filter((r) => hist.hits.has(r)) : [];
+  const fullText = n.kind === "message" ? hist.full.get(n.event.row_id) : undefined;
+  const sig = [st, open, depth, n.rows.length, n.tokens, n.reply || "", hits.length, hist.q.trim(), fullText === undefined ? "" : fullText.length].join("|");
+  return histRows.get(n.id + (header ? "/h" : ""), sig, () => {
+    const cb = el("input", { type: "checkbox", "aria-label": "Pick it", "data-state": st, ...(st === "all" ? { checked: "" } : {}) });
+    cb.indeterminate = st === "some";
+    cb.addEventListener("click", (ev) => { ev.preventDefault(); histPick(n.id, ev.shiftKey && !header); });
+    const what = n.kind === "message" ? (open ? "Hide its whole text" : "Show its whole text") : (open ? "Fold" : "Open: its parts");
+    const row = el("div", { class: `h-row ${n.kind}${header ? " head" : ""}${st !== "none" ? " on" : ""}${open ? " open" : ""}`,
+      style: `--depth:${depth}`, "data-state": st },
+      cb, el("button", { type: "button", class: "h-tw", title: what, "aria-label": what, "aria-expanded": open ? "true" : "false",
+        onclick: () => histOpen(n.id, header) }, open ? "▾" : "▸"),
+      el("div", { class: "h-main", title: what, onclick: (ev) => { if (!getSelection().toString()) histOpen(n.id, header); } }, ...histLabel(n, hits)),
+      el("div", { class: "h-meta" }, ...histMeta(n, hits)));
+    if (n.kind === "message" && open) row.append(el("pre", { class: "h-full", text: fullText ?? "Loading…" }));
+    return row;
+  });
+}
+const selectedGatherer = () => state.home && state.selected ? state.home.gatherers.find((g) => g.name === state.selected[0]) : null;
+function searchIcon() {
+  const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 13, height: 13, "aria-hidden": "true", fill: "none", stroke: "currentColor", "stroke-width": 1.6, "stroke-linecap": "round" });
+  svg.append(svgEl("circle", { cx: 7, cy: 7, r: 4.75 }), svgEl("line", { x1: 10.5, y1: 10.5, x2: 14, y2: 14 }));
+  return svg;
+}
+function histSwitch(label, pairs, current, pick) {
+  return el("div", { class: "views", role: "group", "aria-label": label }, ...pairs.map(([id, name, ok = true, why = ""]) =>
+    el("button", { type: "button", "aria-pressed": id === current ? "true" : "false", ...(ok ? {} : { disabled: "" }), title: ok ? "" : why,
+      onclick: () => pick(id) }, name)));
+}
+function histBar(h, grains, grain) {
+  const box = el("input", { type: "search", placeholder: `Search ${h.channel === null ? "the gatherer's" : "this actor's"} history`,
+    "aria-label": "Search the history", spellcheck: "false", value: hist.q });
+  box.addEventListener("input", () => histSearch(box.value));
+  box.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && box.value) { ev.stopPropagation(); box.value = ""; histSearch(""); } });
+  const q = hist.q.trim();
+  return el("div", { class: "h-bar", "data-morph": "" },
+    el("label", { class: "h-search", "data-sig": `search:${h.key}` }, searchIcon(), box),
+    el("span", { class: "h-found", text: hist.hits ? `${full(hist.hits.size)}${hist.hitsMore ? "+" : ""} matching message${hist.hits.size === 1 ? "" : "s"}` : "" }),
+    histSwitch("Whose history", [["actor", "This actor"], ["all", "Whole gatherer"]], hist.scope, setHistScope),
+    histSwitch("Grain", grains.map(([g, name, ok]) => [g, name, ok, g === "actors" ? "Across the whole gatherer only" : "ag has not segmented this history into tasks yet"]),
+      grain, setHistGrain),
+    q && !hist.hits ? el("span", { class: "h-found", text: "Searching…" }) : null);
+}
+function histPickBar(h) {
+  const rows = [...hist.sel.values()], n = rows.length;
+  const tokens = rows.reduce((t, [, k]) => t + k, 0), actors = new Set(rows.map(([c]) => c)).size;
+  const ask = el("textarea", { id: "hist-ask", rows: "1", "data-sig": "hist-ask", "aria-label": "What you want from it",
+    placeholder: "Optional: what you want from it — e.g. “only the deployment steps”, “as a checklist”, “for a new teammate”" });
+  ask.value = hist.ask;
+  ask.addEventListener("input", () => { hist.ask = ask.value; });
+  ask.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); histMake("summary"); } });
+  const off = !n || hist.busy ? { disabled: "" } : {};
+  return el("div", { class: "h-pick", "data-morph": "" },
+    el("div", { class: "row" },
+      el("span", { class: "h-picked" }, ...(n ? [el("b", { text: plural(n, "message") }), ` picked · about ${compact(tokens)} tokens`
+        + (actors > 1 ? ` · from ${actors} actors` : "")] : ["Pick tasks, turns or messages with their boxes — shift-click picks a run."])),
+      el("span", { class: "grow" }),
+      el("button", { type: "button", onclick: () => histPickAll(true), ...(hist.tops.length ? {} : { disabled: "" }) }, hist.hits ? "Pick all listed" : "Pick all"),
+      el("button", { type: "button", onclick: () => histPickAll(false), ...(n ? {} : { disabled: "" }) }, "Clear")),
+    ask,
+    el("div", { class: "row" },
+      ...Object.entries(HIST_KINDS).map(([k, [label]], i) => el("button", { type: "button", class: i === 0 ? "primary" : "", ...off,
+        title: `Give the picked history to the Gatherer's model: ${label.toLowerCase()}`, onclick: () => histMake(k) }, label)),
+      el("span", { class: "grow" }),
+      el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the picked history as a Markdown transcript", onclick: () => histExport("md") }, "Export .md"),
+      el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the picked events as stored, as JSON", onclick: () => histExport("json") }, "Export .json")),
+    el("div", { class: "err", role: "alert", text: hist.err }));
+}
+function saveFile(name, text, type = "text/markdown") {
+  const a = el("a", { href: URL.createObjectURL(new Blob([text], { type: type + ";charset=utf-8" })), download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+async function histExport(fmt) {
+  const h = state.hist;
+  if (!h || !hist.sel.size) return;
+  try {
+    const got = await post("/api/history/export", { gatherer: h.gatherer, rows: histRanges(), format: fmt });
+    saveFile(got.name, got.text, fmt === "json" ? "application/json" : "text/markdown");
+    hist.err = "";
+  } catch (err) { hist.err = `Not exported: ${err.message}`; }
+  hist.version++; histRedraw();
+}
+async function histMake(kind, again = null) {
+  const h = state.hist;
+  if (!h || hist.busy || (!again && !hist.sel.size)) return;
+  hist.busy = true; hist.err = ""; hist.version++; histRedraw();
+  try {
+    const rec = await post("/api/history/extract", again ? { gatherer: again.gatherer, kind: again.kind, rows: again.rows, ask: again.ask }
+      : { gatherer: h.gatherer, kind, rows: histRanges(), ask: hist.ask.trim() });
+    hist.recs = { gatherer: rec.gatherer, list: [rec, ...(hist.recs.gatherer === rec.gatherer ? hist.recs.list : [])], at: Date.now() };
+    hist.recOpen = rec.id;
+    const side = document.querySelector(".hist .h-side"); if (side) side.scrollTop = 0;
+    pollExtracts();
+  } catch (err) { hist.err = err.message; }
+  finally { hist.busy = false; hist.version++; histRedraw(); }
+}
+async function histDelete(r) {
+  try { await post("/api/history/delete", { id: r.id }); } catch (err) { /* gone already */ }
+  hist.recs.list = hist.recs.list.filter((x) => x.id !== r.id);
+  hist.version++; histRedraw();
+}
+// What the model made, as it reads: a skill's front matter apart, the rest as Markdown.
+function recContent(r) {
+  const m = r.kind === "skill" && /^---\n([\s\S]*?)\n---\n?/.exec(r.output);
+  return m ? [el("pre", { class: "front", text: m[1] }), markdown(r.output.slice(m[0].length))] : [markdown(r.output)];
+}
+function copyButton(text) {
+  const b = el("button", { type: "button" }, "Copy");
+  b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch (e) { b.textContent = "Not copied"; }
+    setTimeout(() => { b.textContent = "Copy"; }, 1500);
+  });
+  return b;
+}
+function recCard(r) {
+  const running = r.status === "running", now = Date.now() / 1000;
+  const sig = [r.status, r.output.length, r.error, r.model, running ? Math.floor((now - r.created) / 2) : 0].join("|");
+  return histRecs.get(r.id, sig, () => {
+    const [, name, file] = HIST_KINDS[r.kind] || ["", r.kind, "extract.md"];
+    const body = el("div", { class: "body" });
+    if (running) body.append(el("div", { class: "working" }, el("span", { class: "spin", "aria-hidden": "true" }),
+      `Asking ${r.model || "the Gatherer's model"}… ${span(r.created, now)}`));
+    else if (r.status === "failed") body.append(el("div", { class: "fail", text: r.error || "The call failed." }));
+    else body.append(...recContent(r));
+    const done = r.status === "done";
+    const acts = el("div", { class: "acts" },
+      done ? copyButton(r.output) : null,
+      done ? el("button", { type: "button", title: `Save it as ${file}`, onclick: () => saveFile(file, r.output) }, "Download") : null,
+      el("button", { type: "button", title: "Pick the history it was made from again", onclick: () => {
+        hist.sel.clear();
+        for (const [a, b] of r.rows) for (let x = a; x <= b; x++) { const e = hist.byId.get(`m:${x}`); hist.sel.set(x, e ? [e.channel, e.tokens] : [r.channels[0], 0]); }
+        hist.ask = r.ask || ""; const box = document.getElementById("hist-ask"); if (box) box.value = hist.ask;
+        hist.version++; histRedraw();
+      } }, "Pick again"),
+      r.status === "failed" ? el("button", { type: "button", onclick: () => histMake(r.kind, r) }, "Try again") : null,
+      el("button", { type: "button", title: running ? "Stop it, and remove it" : "Remove it", onclick: () => histDelete(r) }, running ? "Stop" : "Delete"));
+    const what = [plural(r.messages, "message"), plural(r.turns, "turn"), r.channels.length > 1 ? `${r.channels.length} actors` : null,
+      r.model && !running ? r.model : null].filter(Boolean).join(" · ");
+    return el("details", { class: "h-rec", id: `rec-${r.id}`, ...(r.id === hist.recOpen ? { open: "" } : {}) },
+      el("summary", {},
+        el("div", { class: "top" }, el("span", { class: `chip-k ${r.kind}`, text: name }),
+          running ? statusEl("building", "Working") : r.status === "failed" ? statusEl("failed", "Failed") : null,
+          el("span", { class: "when", text: clock(r.created, true) })),
+        el("div", { class: "what", text: what }),
+        r.ask ? el("div", { class: "ask", text: `“${r.ask}”` }) : null),
+      body, acts);
+  });
+}
+function histSide(h) {
+  const list = hist.recs.gatherer === h.gatherer ? hist.recs.list : [];
+  histRecs.begin(h.gatherer);
+  const side = el("div", { class: "h-side", "data-keep": "hist-side", "data-morph": "" });
+  side.kids = [el("div", { class: "h-side-h", text: "Made by the Gatherer" }),
+    ...(list.length ? list.map(recCard) : [el("div", { class: "h-note",
+      text: "Pick part of the history, say what you want from it if you like, then Summarize, Generate memory or Generate skill: "
+        + "the Gatherer's model gets that history, and what it makes shows here." })])];
+  return side;
+}
+function histRender() {
+  const h = state.hist;
+  if (!h || h.key !== histKey()) return el("div", { class: "h-note", text: "Loading…" });
+  if (hist.selFor !== h.gatherer) { hist.sel = new Map(); hist.selFor = h.gatherer; hist.last = null; }
+  const tree = histTree(h);
+  const hasTasks = h.tasks.length > 0, all = h.channel === null;
+  const grains = HIST_GRAINS.map(([g, name]) => [g, name, g === "actors" ? all : g === "tasks" ? hasTasks : true]);
+  let grain = hist.grain || (hasTasks ? "tasks" : "turns");
+  if (!grains.find((x) => x[0] === grain)[2]) grain = grain === "actors" && hasTasks ? "tasks" : "turns";
+  const vis = h.error ? [] : histVisible(tree, grain, all && grain !== "actors");
+  hist.flat = vis.filter(([, , head]) => !head).map(([n]) => n.id);
+  histRows.begin(h.key);
+  const shown = vis.slice(0, hist.limit);
+  const list = el("div", { class: "h-list", "data-keep": `hist-list:${h.key}:${grain}`, "data-morph": "" });
+  const q = hist.q.trim();
+  list.kids = h.error ? [el("div", { class: "h-note", text: h.error })]
+    : !h.events.length ? [el("div", { class: "h-note", text: "No history yet." })]
+    : hist.hits && !vis.length ? [el("div", { class: "h-note", text: `Nothing in this history matches “${q}”.` })]
+    : [...shown.map(([n, depth, head]) => histRow(n, depth, head)),
+      vis.length > shown.length ? el("button", { type: "button", class: "h-more", onclick: () => { hist.limit += HIST_SHOWN; hist.version++; histRedraw(); } },
+        `Show ${full(Math.min(HIST_SHOWN, vis.length - shown.length))} more of ${full(vis.length - shown.length)}`) : null,
+      h.more ? el("button", { type: "button", class: "h-more", onclick: async () => { await loadOutline(); histRedraw(); } }, "Load more of the history") : null].filter(Boolean);
+  const left = el("div", { class: "h-left", "data-morph": "" }, histBar(h, grains, grain), list, histPickBar(h));
+  return el("div", { class: "h-grid", "data-morph": "" }, left, histSide(h));
+}
+if (!SNAPSHOT) addChatView({
+  id: "history", name: "History", feed: "outline", frame: "hist", chat: false,
+  description: "The history, searched, and picked by actor, task, turn or message: exported, or given to the Gatherer's model to summarize, or to make a memory or a skill of.",
+  render: histRender,
 });
 
 // What a view gets to draw with -- and, for one in a file of its own, how it adds itself.
