@@ -146,13 +146,15 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .asked.none { color: var(--muted); font-weight: 400; font-style: italic; }
 .agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
-.agent .meta .dot.running { background: var(--good); } .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
+.agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
 .agent .meta .dot.finished { background: var(--s1); }
-/* its turn over, but something it started still runs: a ring of Running's colour round a paler middle */
-.agent .meta .dot.background, .status.background i { background: color-mix(in srgb, var(--good) 30%, transparent); box-shadow: inset 0 0 0 1.5px var(--good); }
+/* its turn under way: the glyph turns, as Claude Code's does while it works */
+.agent .meta .dot.running { width: 9px; height: auto; border-radius: 0; background: none; color: var(--good); font-size: 12px; line-height: 1; text-align: center; }
+.agent .meta .dot.running::before { content: "✻"; animation: term-spin 1.2s steps(1) infinite; animation-delay: var(--spin-at, 0s); }
+/* its turn over, but something it started still runs: Running's colour, holding still */
+.agent .meta .dot.background, .status.background i { background: var(--good); }
 /* what it runs in the background, under its facts: how many, and what they are for */
 .agent .bgline { font-size: 12px; color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agent .bgline .spin::before { content: "✻"; display: inline-block; width: 1.2em; color: var(--good); animation: term-spin 1.2s steps(1) infinite; }
 .agent .meta .dot.closed { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
 .hidden-list { border-top: 1px solid var(--grid); padding: 8px 0 4px; }
 .hidden-list > summary { margin: 0; padding: 4px 16px; font-size: 12px; color: var(--muted); list-style: none; }
@@ -398,10 +400,10 @@ button:disabled { opacity: .5; cursor: default; }
 .bg-tasks .kind { color: var(--muted); flex: none; width: 5.6em; }
 .bg-tasks .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bg-tasks .when { color: var(--muted); flex: none; margin-left: auto; font-variant-numeric: tabular-nums; }
-.bg-tasks .spin::before { content: "✻"; display: inline-block; width: 1.2em; color: var(--good); animation: term-spin 1.2s steps(1) infinite; }
+.bg-tasks .mark { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin: 0 calc(1.2em - 7px) 1px 0; vertical-align: middle; }
 .term .bg-tasks { border: 0; background: none; padding: 0; margin-top: 6px; font-size: inherit; }
 .term .bg-tasks .head { color: var(--term-accent); font-weight: 400; }
-.term .bg-tasks .spin::before { color: inherit; }
+.term .bg-tasks .mark { background: currentColor; }
 .term .bg-tasks .task, .term .bg-tasks .kind, .term .bg-tasks .when { color: var(--term-dim); }
 .term .bg-tasks .label { color: var(--term-ink); }
 @media (max-width: 760px) { .bg-tasks .when { display: none; } }
@@ -1274,6 +1276,7 @@ async function moveHidingToServer() {
 }
 function renderAgents() {
   const aside = document.getElementById("agents");
+  const was = listPlaces(aside);
   document.getElementById("home").textContent = state.home.home;
   const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
   const running = shown.reduce((n, g) => n + g.agents.filter((a) => a.running).length, 0);
@@ -1288,7 +1291,7 @@ function renderAgents() {
     const open = !collapsed.has(g.name);
     const live = g.agents.filter((a) => a.running).length;
     const box = el("div", { class: "gatherer" },
-      el("div", { class: "gatherer-row" },
+      el("div", { class: "gatherer-row", "data-key": g.name },
         el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name),
           title: g.policy ? `${g.name} · policy ${g.policy}` : g.name },
           el("span", { class: "caret", text: "▶" }), el("span", { class: "gname", text: g.name }),
@@ -1306,17 +1309,18 @@ function renderAgents() {
     const groups = ["Running", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
       .filter(([, list]) => list.length);
     for (const [name, list] of groups) if (name === "Closed") list.sort((x, y) => (y.last || 0) - (x.last || 0));
+    keepOrder(g.name, groups);   // so drawn first; from then on, each group in the order its actors were last in
     for (const [name, list] of open ? groups : []) {
       if (name === "Closed") {
         const shownClosed = closedOpen.has(g.name);
         const selected = list.filter((a) => state.selected && state.selected[0] === g.name && state.selected[1] === a.channel);
-        box.append(el("button", { class: "agent-group", type: "button", "aria-expanded": shownClosed ? "true" : "false",
+        box.append(el("button", { class: "agent-group", type: "button", "aria-expanded": shownClosed ? "true" : "false", "data-key": `${g.name}/Closed`,
           title: shownClosed ? "Hide closed actors" : "Show closed actors", onclick: () => toggleClosed(g.name) },
           `${shownClosed ? "▾" : "▸"} ${list.length} closed`));
         for (const a of shownClosed ? list : selected) box.append(agentRow(g, a));
         continue;
       }
-      if (groups.length > 1) box.append(el("div", { class: "agent-group", text: name }));
+      if (groups.length > 1) box.append(el("div", { class: "agent-group", "data-key": `${g.name}/${name}`, text: name }));
       for (const a of list) box.append(agentRow(g, a));
     }
     aside.append(box);
@@ -1331,6 +1335,7 @@ function renderAgents() {
     if (wasOpen && wasOpen.open) list.open = true;
     aside.append(list);
   }
+  slideList(aside, was);
   const servers = state.home.hook_servers || [];     // in the dashboard's panel (the header's button)
   document.getElementById("servers").textContent = servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";
@@ -1344,14 +1349,15 @@ function agentRow(g, a) {
   const [cls, label] = statusOf(a);
   const current = state.selected && state.selected[0] === g.name && state.selected[1] === a.channel;
   const size = a.real_tokens ?? a.sent_tokens;
-  return el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false",
+  return el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false", "data-key": `${g.name}/${a.channel}`,
     title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}`, onclick: () => select(g.name, a.channel) },
     actorLogo(a),
     el("div", {},
       el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: asked(a.last_user_message) || "No message yet" }),
       a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
         el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
-      el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label }),
+      // the list is drawn again on every change: the glyph's turn set by the clock, not restarted each time
+      el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label, style: `--spin-at: -${Date.now() % 1200}ms` }),
         el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
         closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",
           "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); closeSession(a); },
@@ -1361,8 +1367,54 @@ function agentRow(g, a) {
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
           : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false))),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
-        el("span", { class: "spin", "aria-hidden": "true" }),
         `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null));
+}
+// Where each gatherer's actors were put when the list was last drawn: channel -> place, top first.
+const listOrder = new Map();
+// Each group's actors in the order they were last in, so an actor moves no further than it must: one that
+// stays in its group keeps its place, and one that comes to it from another lands at the end nearest where it
+// was -- the bottom of a group above it, the top of one below. One not seen before goes first, as the data has it.
+function keepOrder(gatherer, groups) {
+  const before = listOrder.get(gatherer) || new Map(), now = new Map();
+  for (const [, list] of groups) {
+    list.sort((x, y) => (before.get(x.channel) ?? -1) - (before.get(y.channel) ?? -1));
+    for (const a of list) now.set(a.channel, now.size);
+  }
+  listOrder.set(gatherer, now);
+}
+// The list is drawn whole each time; so that an actor changing status does not jump to its new place, each
+// row, group heading and gatherer is keyed (data-key), its place and status taken before the list is drawn
+// again (listPlaces), and after it (slideList) set back where it was and moved to where it is now. An actor
+// whose status changed, and so its group, slides over the others; one new to the list fades in; its status dot
+// grows into its new state. None of it for a reader who asks for less motion.
+function listPlaces(root) {
+  const places = new Map();
+  for (const n of root.querySelectorAll("[data-key]")) {
+    const dot = n.querySelector(".meta .dot");
+    places.set(n.dataset.key, { top: n.getBoundingClientRect().top, status: dot && dot.getAttribute("aria-label") });
+  }
+  return places;
+}
+function slideList(root, was) {
+  if (!was.size || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const side = getComputedStyle(root).backgroundColor;
+  for (const n of root.querySelectorAll("[data-key]")) {
+    const before = was.get(n.dataset.key);
+    if (!before) { n.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, easing: "ease-out" }); continue; }
+    const dot = n.querySelector(".meta .dot"), changed = dot && before.status && dot.getAttribute("aria-label") !== before.status;
+    const dy = before.top - n.getBoundingClientRect().top;
+    if (Math.abs(dy) >= 1) {
+      const frames = [{ transform: `translateY(${dy}px)` }, { transform: "none" }];
+      if (changed) {     // past the rows between: over them, on the list's own background if it has none
+        n.style.position = "relative"; n.style.zIndex = "1";
+        const bg = getComputedStyle(n).backgroundColor;
+        if (bg === "rgba(0, 0, 0, 0)" || bg === "transparent") { frames[0].backgroundColor = side; frames[1].backgroundColor = side; }
+      }
+      n.animate(frames, { duration: 380, easing: "cubic-bezier(.2, .8, .2, 1)" }).onfinish = () => { n.style.position = n.style.zIndex = ""; };
+    }
+    if (changed)
+      dot.animate([{ transform: "scale(.2)", opacity: 0 }, { transform: "scale(1)", opacity: 1 }], { duration: 320, delay: 120, easing: "ease-out", fill: "backwards" });
+  }
 }
 // Selecting an actor draws its chat as soon as it is loaded; its calls and context (the details) follow
 // on the stream, which starts with them. The actor list is the stream's already.
@@ -1774,7 +1826,7 @@ function backgroundNote(info, term = false) {
   const tasks = (info && info.background) || [];
   if (!tasks.length) return null;
   return el("div", { class: term ? "status-line bg-tasks" : "bg-tasks", role: "status" },
-    el("div", { class: "head" }, el("span", { class: "spin", "aria-hidden": "true" }),
+    el("div", { class: "head" }, el("span", { class: "mark", "aria-hidden": "true" }),
       `${plural(tasks.length, "background task")} running${info.status === "background" ? ": the turn is over, the work is not" : ""}`),
     ...tasks.map((t) => el("div", { class: "task", title: [t.label, t.output].filter(Boolean).join("\n") },
       el("span", { class: "kind", text: TASK_KINDS[t.kind] || t.kind }),
