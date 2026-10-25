@@ -53,17 +53,19 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 sy
 header { display: flex; flex-direction: column; justify-content: center; min-height: var(--top-h, 0px); border-bottom: 1px solid var(--ring); flex: none;
   position: relative; z-index: 30; }   /* above the page (the terminal's own layers reach 11), so its Settings panel is too */
 header h1 { font-size: 16px; margin: 0; font-weight: 600; white-space: nowrap; }
-/* the page's name and home, and under them, small, whether it is live (and its pause) */
-header .brand { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 12px; row-gap: 1px; min-width: 0; padding: 12px 16px 12px 20px; }
-header .home { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-/* a small button under the name: the page's state at a glance (its dot), and a panel with the dashboard's own details */
-header .about-wrap { grid-column: 1 / -1; position: relative; justify-self: start; }
-header .about-btn { border: 0; background: none; padding: 0 4px 0 0; font-size: 11px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
-header .about-btn:hover, header .about-btn[aria-expanded="true"] { color: var(--ink); background: none; }
+/* the page's name, its home, and at the end of the line the settings' button: the page's state at a glance (its dot on
+   the icon), and a panel with the dashboard's own details, opened under the column */
+header .brand { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px 8px 20px; }
+header .home { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 0; }
+header .about-btn { border: 0; background: none; padding: 5px; border-radius: 6px; font-size: 11px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; flex: none; }
+header .about-btn:hover, header .about-btn[aria-expanded="true"] { color: var(--ink); background: var(--wash); }
+header .about-btn .gear { position: relative; display: block; }
+header .about-btn .gear svg { display: block; }
+header .about-btn .gear .state-dot { position: absolute; right: -2px; bottom: -1px; box-shadow: 0 0 0 1.5px var(--side); }
 .state-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--axis); display: inline-block; flex: none; }
 .state-dot[data-state="live"] { background: var(--good); } .state-dot[data-state="error"] { background: var(--critical); }
 .state-dot[data-state="paused"] { background: var(--warning); }
-.about { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 90px); overflow: auto; background: var(--surface); border: 1px solid var(--ring);
+.about { position: absolute; top: calc(100% + 6px); left: 12px; z-index: 5; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 90px); overflow: auto; background: var(--surface); border: 1px solid var(--ring);
   border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 12px 14px; font-size: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; overflow-x: hidden; }
 .about[hidden] { display: none; }
 .about h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
@@ -97,10 +99,11 @@ header .about-btn:hover, header .about-btn[aria-expanded="true"] { color: var(--
 .cfg-file .err { color: var(--critical); font-size: 12px; }
 .about .servers { padding: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 /* the selected actor's controls: how its history is shown, and its details */
-/* they take the top row right of the left column (or, split in panes, of the pane's actor), wrapping there when they need more */
-.controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 0; min-width: 0; }
+/* they take the top row right of the actor's name, wrapping there when they need more */
+.controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; flex: 0 1 auto; min-width: 0; }
 .controls:empty { visibility: hidden; }
-.controls .details-btn { display: inline-flex; align-items: center; gap: 6px; }
+.controls .details-btn { display: inline-flex; align-items: center; padding: 5px 7px; }
+.controls .details-btn svg { display: block; }
 .controls .details-btn[aria-expanded="true"] { background: var(--selected); border-color: transparent; }
 button { font: inherit; font-size: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 button:hover { background: var(--wash); }
@@ -204,13 +207,13 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 .pane-gutter::after { content: ""; position: absolute; inset: 0 2px; background: var(--ring); }
 .pane-gutter:hover::after, .panes.resizing .pane-gutter::after { inset: 0 1px; background: var(--axis); }
 /* A pane's top: its head, in the page's top row, as tall as the row (--top-h: the tallest of the page's name and
-   the heads), so the rule under the row runs straight across. Alone, the head is the actor's controls, at the
-   right, as a header's; split, each pane's says whose it is and has its ×: who, the view's switch and Details,
-   the ×, and the view's own tools (filters, switches) on a line under them -- a narrow pane's, who and the × on
-   a line, the switch and Details under them, then the tools */
+   the heads), so the rule under the row runs straight across. Alone, the head is one line: the actor's controls,
+   at the right, as a header's; split, each pane's says whose it is and has its ×: who, the view's switch and Details,
+   the ×, and the view's own tools (filters, switches) on a line under them -- a narrow pane's, who and the × on a
+   line, the switch and Details under them, then the tools */
 .pane-top { flex: none; display: flex; flex-direction: column; justify-content: center; min-height: var(--top-h, 0px); background: var(--surface);
   border-bottom: 1px solid var(--ring); }
-.pane-head { display: flex; align-items: center; justify-content: flex-end; padding: 12px 20px; }
+.pane-head { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 6px 12px 6px 16px; }
 .pane-who, .pane-close { display: none; }
 :is(.panes.split, :root.pane-mode .panes) .pane-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto;
   grid-template-areas: "who views details close" "tools tools tools tools"; column-gap: 8px; padding: 6px 6px 6px 12px; }
@@ -219,7 +222,7 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 .pane-who { grid-area: who; } .pane-close { grid-area: close; }
 .pane-head .views { grid-area: views; flex-wrap: wrap; } .pane-head .details-btn { grid-area: details; }
 :is(.panes.split, :root.pane-mode .panes) .chat-tools { grid-area: tools; justify-content: flex-end; margin-top: 6px; }
-@container pane (max-width: 640px) {
+@container pane (max-width: 460px) {
   :is(.panes.split, :root.pane-mode .panes) .pane-head { grid-template-columns: auto auto minmax(0, 1fr) auto;
     grid-template-areas: "who who who close" "views details . ." "tools tools tools tools"; }
   :is(.panes.split, :root.pane-mode .panes) :is(.views, .details-btn) { margin-top: 6px; }
@@ -230,10 +233,8 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 .pane.focused .pane-who, :root.pane-focused .pane-who { color: var(--ink); font-weight: 500; }
 .pane-who .logo, .pane-who .avatar img { width: 20px; height: 20px; display: block; flex: none; }
 .pane-who .badge { display: none; }
-.pane-who .tx { min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pane-who .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :is(.panes.split, :root.pane-mode .panes) .views button { padding: 3px 8px; }
-:is(.panes.split, :root.pane-mode .panes) .details-btn { padding: 4px 7px; }
-:is(.panes.split, :root.pane-mode .panes) .details-btn .lbl { display: none; }
 .pane-close { flex: none; border: 0; background: none; font-size: 18px; line-height: 1; padding: 5px 7px; color: var(--muted); }
 .pane-close:hover { color: var(--ink); background: var(--wash); }
 /* in a frame, the page is one pane: no header or list of its own, and never the phone's page-long layout, however narrow */
@@ -494,13 +495,26 @@ button:disabled { opacity: .5; cursor: default; }
 .drawer .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; font-size: 12px; margin: 0 0 16px; }
 .drawer .facts dt { color: var(--muted); } .drawer .facts dd { margin: 0; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 @media (max-width: 760px) { .drawer { position: fixed; inset: 0; width: auto; } }
+/* the history's other views, at the top of the panel: each its icon, its name and what it shows */
+.more-views { display: grid; gap: 2px; margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--grid); }
+.more-views h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+.more-views button { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 10px; align-items: center; text-align: left;
+  border: 0; background: none; padding: 6px 8px; border-radius: 6px; color: var(--ink-2); }
+.more-views button:hover { background: var(--wash); color: var(--ink); }
+.more-views button[aria-pressed="true"] { background: var(--selected); color: var(--ink); }
+.more-views .name { font-size: 13px; font-weight: 500; color: var(--ink); }
+.more-views .desc { grid-column: 2; font-size: 11.5px; color: var(--muted); line-height: 1.35; }
 .chat .chat-frame.term { padding-bottom: 12px; }
 .chat .chat-frame.term .queued { color: var(--term-dim); border-color: var(--term-rule); padding-left: 22px; }
 .chat-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
 .chat-tools .filters { margin: 0; }
 .chat-tools label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .views { display: inline-flex; border: 1px solid var(--ring); border-radius: 8px; padding: 2px; gap: 2px; }
-.views button { border: 0; border-radius: 6px; background: none; padding: 3px 10px; color: var(--ink-2); }
+.views button { border: 0; border-radius: 6px; background: none; padding: 4px 10px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+.views button svg { display: block; flex: none; }
+/* a narrow pane's (a phone's, or one of several side by side): the views by their icons, named on hover */
+@container pane (max-width: 560px) { .pane-head .views { flex-wrap: nowrap; } .pane-head .views button:has(svg) .lbl { display: none; }
+  .pane-head .views button:has(svg) { padding: 5px 8px; } }
 .views button[aria-pressed="true"] { background: var(--selected); color: var(--ink); font-weight: 600; }
 /* a choice that just became there to make: a few pulses of the accent */
 .views button.flash, .hist .h-group.flash { animation: views-flash .65s ease-in-out 4; }
@@ -881,8 +895,10 @@ button:disabled { opacity: .5; cursor: default; }
         <h1>ag agent manager</h1>
         <div class="home" id="home"></div>
         <div class="about-wrap">
-          <button class="about-btn" id="about-btn" type="button" aria-expanded="false" aria-controls="about" title="Settings: ag's, and this page's">
-            <span class="state-dot" id="state-dot"></span>Settings<span class="cfg-flag" id="cfg-flag" hidden>· no model set</span> ▾</button>
+          <button class="about-btn" id="about-btn" type="button" aria-expanded="false" aria-controls="about" aria-label="Settings" title="Settings: ag's, and this page's">
+            <span class="cfg-flag" id="cfg-flag" hidden>No model set</span><span class="gear"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"
+              fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 4.5h6.75M12.25 4.5H14M2 11.5h1.75M7.25 11.5H14"/>
+              <circle cx="10.5" cy="4.5" r="1.75"/><circle cx="5.5" cy="11.5" r="1.75"/></svg><span class="state-dot" id="state-dot"></span></span></button>
           <div class="about" id="about" hidden>
             <section class="cfg" id="cfg" hidden>
               <h3>ag</h3>
@@ -1100,20 +1116,29 @@ function hideIcon() {
     svgEl("circle", { cx: 8, cy: 8, r: 2 }), svgEl("line", { x1: 2.5, y1: 13.5, x2: 13.5, y2: 2.5 }));
   return svg;
 }
+// An icon drawn as a stroke: `d`, an SVG path in a 16x16 box.
+function strokeIcon(d, size = 15) {
+  const svg = svgEl("svg", { viewBox: "0 0 16 16", width: size, height: size, "aria-hidden": "true", fill: "none", stroke: "currentColor",
+    "stroke-width": 1.4, "stroke-linecap": "round", "stroke-linejoin": "round" });
+  svg.append(svgEl("path", { d }));
+  return svg;
+}
+const ICONS = {
+  bubble: "M2.5 4a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 13.5 4v5.5A1.5 1.5 0 0 1 12 11H7l-3 2.5V11a1.5 1.5 0 0 1-1.5-1.5z",
+  terminal: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5z"
+    + "M4.5 6.25l2 1.75-2 1.75M8.25 10.25h3.25",
+  history: "M2.6 8a5.4 5.4 0 1 0 1.58-3.82M2.4 2.6v2.6H5M8 5.2v3l2 1.3",
+  list: "M5.75 4h7.75M5.75 8h7.75M5.75 12h7.75M2.5 4h.01M2.5 8h.01M2.5 12h.01",
+  page: "M4.25 1.75h5l3 3v9a.5.5 0 0 1-.5.5h-7.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5zM9 1.75v3.25h3.25M5.75 8.25h4.5M5.75 11h4.5",
+  layers: "M8 2.25l6 3-6 3-6-3zM2 8l6 3 6-3M2 10.75l6 3 6-3",
+  panel: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM9.75 2.75v10.5",
+};
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
 function chatIcon(held) {
-  const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 13, height: 13, "aria-hidden": "true", fill: "none", stroke: "currentColor",
-    "stroke-width": 1.5, "stroke-linecap": "round", "stroke-linejoin": "round" });
-  svg.append(svgEl("path", { d: "M2.5 4a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 13.5 4v5.5A1.5 1.5 0 0 1 12 11H7l-3 2.5V11a1.5 1.5 0 0 1-1.5-1.5z" }));
+  const svg = strokeIcon(ICONS.bubble, 13);
+  svg.setAttribute("stroke-width", 1.5);
   if (held) svg.append(svgEl("line", { x1: 2, y1: 14, x2: 14, y2: 2 }));
-  return svg;
-}
-// A circled "i": the details panel's button.
-function infoIcon() {
-  const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 14, height: 14, "aria-hidden": "true", fill: "none", stroke: "currentColor",
-    "stroke-width": 1.5, "stroke-linecap": "round" });
-  svg.append(svgEl("circle", { cx: 8, cy: 8, r: 6.25 }), svgEl("line", { x1: 8, y1: 7.25, x2: 8, y2: 11.25 }), svgEl("circle", { cx: 8, cy: 4.9, r: .4, fill: "currentColor" }));
   return svg;
 }
 // A circled cross: end the dashboard's own idle agent for a session, which then shows Closed.
@@ -1919,7 +1944,7 @@ function drawWho() {
   drawn.who = sig;
   const who = document.getElementById("pane-who");
   who.replaceChildren(...(info ? [actorLogo(info), el("span", { class: "tx", text: asked(info.last_user_message) || info.channel })] : []));
-  who.title = info ? `${harnessName(info.harness)} · ${state.selected[0]} · ${info.channel}` : "";
+  who.title = info ? [asked(info.last_user_message), `${harnessName(info.harness)} · ${state.selected[0]} · ${info.channel}`].filter(Boolean).join("\n") : "";
 }
 // The bar at a pane's left: dragged, it gives the two panes beside it their widths, each at least MIN_PANE.
 function gutterFor(p) {
@@ -2280,7 +2305,7 @@ function detailsPanel(info) {
       el("button", { type: "button", title, "aria-pressed": state.detailsTab === id ? "true" : "false", onclick: () => setDetails(true, id) }, name)));
   const head = el("div", { class: "drawer-head" }, switcher, el("span", { class: "grow" }),
     el("button", { type: "button", class: "close", title: "Close (Esc)", "aria-label": "Close details", onclick: () => setDetails(false) }, "×"));
-  const body = el("div", { class: "drawer-body", "data-keep": "details" }, facts(info));
+  const body = el("div", { class: "drawer-body", "data-keep": "details" }, ...[moreViews(), facts(info)].filter(Boolean));
   if (!a || a.error || !a.reads) body.append(el("div", { class: "empty", text: (a && a.error) || (info.session
     ? "No calls yet: send the agent a message." : "No data for this actor.") }));
   else body.append(...(state.detailsTab === "gatherer" ? gathererDetails(a) : actorDetails(a)));
@@ -2363,9 +2388,9 @@ function chatCard(info) {
   const controls = document.getElementById("controls");
   const heading = [...(tools.length ? [el("div", { class: "chat-tools" }, ...tools)] : []),
     ...[viewSwitcher(view)].filter(Boolean),
-    el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false",
-      title: "What ag saw and did for this actor: its context, calls, history and builds", onclick: () => setDetails(!state.details) },
-      infoIcon(), el("span", { class: "lbl", text: "Details" }))];
+    el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false", "aria-label": "Details",
+      title: "Details: what ag saw and did for this actor (its context, calls, history and builds), and the history's other views",
+      onclick: () => setDetails(!state.details) }, strokeIcon(ICONS.panel, 16))];
   // the page's own buttons, unchanged, kept as they are: a view that redraws every few seconds (History, while
   // the Gatherer works) does not make them flash under the pointer. A view's own tools are made again each
   // draw: what they do may be the draw's.
@@ -2453,12 +2478,24 @@ function defaultComposer(ctx) {
   form.addEventListener("submit", (ev) => { ev.preventDefault(); ctx.send(text.value); });
   return form;
 }
+// The switch in the page's header: the views on the bar, and the one shown, if it is one of the others (in Details).
 function viewSwitcher(current) {
-  const views = [...CHAT_VIEWS.values()];
+  const views = [...CHAT_VIEWS.values()].filter((v) => !v.more || v.id === current.id);
   if (views.length < 2) return null;
   return el("div", { class: "views", role: "group", "aria-label": "How the history is shown" },
     ...views.map((v) => el("button", { type: "button", "aria-pressed": v.id === current.id ? "true" : "false", title: v.description || v.name,
-      onclick: () => setChatView(v.id) }, v.name)));
+      "aria-label": v.name, onclick: () => setChatView(v.id) }, v.icon ? strokeIcon(v.icon) : null, el("span", { class: "lbl", text: v.name }))));
+}
+// The other views (`more`), in the details panel: one picked is shown in place of the chat, and the panel closed.
+function moreViews() {
+  const more = [...CHAT_VIEWS.values()].filter((v) => v.more);
+  if (!more.length) return null;
+  const now = chatView().id;
+  return el("section", { class: "more-views" }, el("h4", { text: "Show the history as" }),
+    ...more.map((v) => el("button", { type: "button", "aria-pressed": v.id === now ? "true" : "false",
+      onclick: () => { setDetails(false); setChatView(v.id); } },
+      v.icon ? strokeIcon(v.icon, 16) : el("span"), el("span", { class: "name", text: v.name }),
+      v.description ? el("span", { class: "desc", text: v.description }) : null)));
 }
 const chatAtEnd = () => { const n = document.getElementById("chat-list"); return !!n && n.scrollHeight - n.scrollTop - n.clientHeight < 40; };
 const chatToEnd = () => { const n = document.getElementById("chat-list"); if (n) n.scrollTop = n.scrollHeight; };
@@ -3080,6 +3117,8 @@ function notesSwitch() {
 //   agDashboard.chatView({
 //     id: "bubbles",                    // unique; the reader's choice is kept by it
 //     name: "Bubbles",                  // on the switch
+//     icon: "M2 4h12M2 8h12M2 12h8",    // optional: its icon beside its name, an SVG path in a 16x16 box, stroked
+//     more: true,                       // optional: not on the bar but with the history's other views, in Details
 //     description: "User and assistant messages only.",
 //     feed: "history",                  // what it draws (CHAT_FEEDS): "history", the gatherer's events --
 //                                       // {row_id, name (its type), text, tokens, at, clipped};
@@ -3112,8 +3151,8 @@ function notesSwitch() {
 // still work.
 const CHAT_VIEWS = new Map();
 const CHAT_VIEW_KEY = "ag-dashboard-chat-view";
-let chatViewId = (PANE && PANE_URL.get("view")) || (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "transcript"; } catch (e) { return "transcript"; } })();
-const chatView = () => CHAT_VIEWS.get(chatViewId) || CHAT_VIEWS.get("transcript");
+let chatViewId = (PANE && PANE_URL.get("view")) || (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "files"; } catch (e) { return "files"; } })();
+const chatView = () => CHAT_VIEWS.get(chatViewId) || CHAT_VIEWS.get("files");
 async function setChatView(id) {
   if (id === "history" && chatViewId !== "history") hist.askedFor = hist.group = hist.stay = null;   // opened again: built again
                                                      // if due, and at its tasks if it has them
@@ -3156,7 +3195,7 @@ const chatFeed = (view = chatView()) => CHAT_FEEDS[view.feed] || CHAT_FEEDS.hist
 
 // The views that come with the page.
 addChatView({
-  id: "messages", name: "Messages", feed: "history", frame: "ctx",
+  id: "messages", name: "Messages", feed: "history", frame: "ctx", icon: ICONS.list, more: true,
   description: "The session's events as the gatherer has them, one row each, filtered by type.",
   tools: () => typeChips(null),
   render: ({ data }) => {
@@ -3170,7 +3209,7 @@ addChatView({
 });
 const txBlocks = blockCache(), msgRows = blockCache();
 addChatView({
-  id: "transcript", name: "Transcript", feed: "transcript", frame: "term",
+  id: "transcript", name: "Transcript", feed: "transcript", frame: "term", icon: ICONS.page, more: true,
   description: "The conversation as Claude Code's terminal shows it.",
   tools: () => notesSwitch(),
   render: ({ info, data, running, loadEarlier }) => {
@@ -3196,7 +3235,8 @@ addChatView({
   },
 });
 addChatView({
-  id: "context", name: "Context", feed: "agent", frame: "ctx", background: false,   // the model's context, not what runs
+  id: "context", name: "Context", feed: "agent", frame: "ctx", icon: ICONS.layers, more: true,
+  background: false,                                 // the model's context, not what runs
   description: "What the model was sent: the picked call's context, item by item; its size over time and how it divides, under the message box.",
   tools: () => {
     const ctx = state.agent && state.agent.reads ? pickedContext() : null;
@@ -3379,7 +3419,7 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) {
   });
 }
 if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
-  id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame",
+  id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame", icon: ICONS.terminal,
   description: "The harness's own interface (Claude Code's, codex's), in a terminal: what it would show and ask in one outside, its keys included.",
   render: (ctx) => {
     const { info, held } = ctx;
@@ -3704,8 +3744,10 @@ function filesTalk(d, info, running) {
   return box;
 }
 addChatView({
-  id: "files", name: "Files", feed: "files", frame: "files", background: false,   // drawn under its commands
-  description: "One turn at a time: the files the agent read, searched and changed, each with the lines it saw and its changes in place.",
+  // "files": named so once, and kept as its id, with the readers' choices of it
+  id: "files", name: "Chat", feed: "files", frame: "files", icon: ICONS.bubble,
+  background: false,                                 // drawn under its commands
+  description: "The conversation, and beside it each turn's files and commands: what the agent read, searched and changed, with the lines it saw and its changes in place.",
   tools: filesTools,
   render: filesRender,
 });
@@ -4424,7 +4466,7 @@ function histRender() {
   return el("div", { class: "h-grid", "data-morph": "" }, left, histSide(h));
 }
 if (!SNAPSHOT) addChatView({
-  id: "history", name: "History", feed: "outline", frame: "hist", chat: false,
+  id: "history", name: "History", feed: "outline", frame: "hist", chat: false, icon: ICONS.history,
   description: "The history, searched, and picked by actor, task, turn or message: exported, or given to the Gatherer's model to summarize, or to make a memory or a skill of.",
   render: histRender,
 });
