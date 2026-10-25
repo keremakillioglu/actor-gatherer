@@ -81,6 +81,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from . import home as paths
+from . import seen as looked                    # `seen` names a file's stat here
 from . import answers, avatars, hiding, live, queued, saved, sessions
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
@@ -213,8 +214,9 @@ def _hook_servers() -> List[dict]:
 
 def home(started: Optional[List[dict]] = None) -> dict:
     """Every gatherer and its agents, each newest created first (`created`: its first event), and
-    the hook servers ag started, which gatherers the reader hid or kept (`hiding`, hiding.py), and which
-    actors they saved for later (`saved`, saved.py).
+    the hook servers ag started, which gatherers the reader hid or kept (`hiding`, hiding.py), which
+    actors they saved for later (`saved`, saved.py), and when they last looked at each (`seen`, seen.py:
+    None, never kept).
     `started` is the sessions started from the page (sessions.py's `list`; else its table, read):
     each one's agent carries it as `session`, and one with no events yet -- its gatherer perhaps
     not made yet -- is listed all the same."""
@@ -250,7 +252,8 @@ def home(started: Optional[List[dict]] = None) -> dict:
         g["created"] = min((a["created"] for a in g["agents"] if a.get("created")), default=None) or _made(g["name"])
     gatherers.sort(key=lambda g: g.get("created") or 0, reverse=True)
     return {"home": paths.HOME, "now": now, "running_seconds": RUNNING_SECONDS, "gatherers": gatherers,
-            "hook_servers": _hook_servers(), "hiding": hiding.stored(), "saved": saved.stored()}
+            "hook_servers": _hook_servers(), "hiding": hiding.stored(), "saved": saved.stored(),
+            "seen": looked.stored()}
 
 
 def _with_started(gatherers: List[dict], started: List[dict], now: Optional[float] = None) -> None:
