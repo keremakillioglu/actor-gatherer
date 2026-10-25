@@ -125,11 +125,18 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
 .agent-group { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 6px 18px 2px 40px; }
 button.agent-group { display: block; width: 100%; text-align: left; background: none; border: 0; cursor: pointer; font-family: inherit; }
 button.agent-group:hover { color: var(--ink-2); }
-.agent { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; text-align: left; border: 0; border-radius: 8px;
+.agent { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; text-align: left; border: 0; border-radius: 8px;
   background: none; padding: 8px 10px; margin: 2px 8px; width: calc(100% - 16px); cursor: pointer; color: var(--ink); }
 .agent:hover { background: var(--wash); }
 .agent[aria-current="true"] { background: var(--selected); }
-.agent .logo { width: 22px; height: 22px; margin-top: 1px; display: block; }
+.agent .logo { width: 28px; height: 28px; margin-top: 1px; display: block; }
+/* an actor's avatar, its harness's badge small at the corner: the avatar cut away around the badge, so
+   whatever is behind the row (hovered, selected) shows between them */
+.agent .avatar { position: relative; }
+.agent .avatar img { width: 28px; height: 28px; display: block;
+  -webkit-mask-image: radial-gradient(circle at 24.5px 24.5px, transparent 8px, #000 8.5px);
+  mask-image: radial-gradient(circle at 24.5px 24.5px, transparent 8px, #000 8.5px); }
+.agent .avatar .badge { position: absolute; right: -3px; bottom: -3px; width: 13px; height: 13px; display: block; }
 .agent .asked { font-size: 13px; line-height: 1.4; font-weight: 500; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere; }
 /* Claude Code's recap of the session, under what it was last asked: smaller, quieter, newer than the message */
@@ -141,6 +148,11 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
 .agent .meta .dot.running { background: var(--good); } .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
 .agent .meta .dot.finished { background: var(--s1); }
+/* its turn over, but something it started still runs: a ring of Running's colour round a paler middle */
+.agent .meta .dot.background, .status.background i { background: color-mix(in srgb, var(--good) 30%, transparent); box-shadow: inset 0 0 0 1.5px var(--good); }
+/* what it runs in the background, under its facts: how many, and what they are for */
+.agent .bgline { font-size: 12px; color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent .bgline .spin::before { content: "✻"; display: inline-block; width: 1.2em; color: var(--good); animation: term-spin 1.2s steps(1) infinite; }
 .agent .meta .dot.closed { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
 .hidden-list { border-top: 1px solid var(--grid); padding: 8px 0 4px; }
 .hidden-list > summary { margin: 0; padding: 4px 16px; font-size: 12px; color: var(--muted); list-style: none; }
@@ -312,7 +324,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .term .earlier { display: block; margin: 0 auto 14px; color: var(--term-dim); background: var(--term-user); border-color: var(--term-rule); }
 .term .status-line { color: var(--term-accent); margin-top: 6px; }
 /* while the agent works, the status line's glyph turns, as Claude Code's does */
-.term .status-line .spin::before { content: "✻"; display: inline-block; width: 1.2em; animation: term-spin 1.2s steps(1) infinite; }
+.term .status-line .spin::before, .files .fl-status .spin::before { content: "✻"; display: inline-block; width: 1.2em; animation: term-spin 1.2s steps(1) infinite; }
 @keyframes term-spin { 0% { content: "·"; } 16% { content: "✢"; } 33% { content: "✳"; } 50% { content: "✶"; } 66% { content: "✻"; } 83% { content: "✽"; } }
 /* a stretch of tool calls: one line each, what it is for; the call and its output behind a click */
 .term .call-line, .term .more { margin-bottom: 4px; }
@@ -332,6 +344,10 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .newform input, .newform select, .composer textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
   border: 1px solid var(--ring); border-radius: 6px; padding: 5px 8px; min-width: 0; }
 .newform .row { display: flex; gap: 8px; justify-content: flex-end; }
+.newform .seg { display: flex; gap: 6px; }
+.newform .seg button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; }
+.newform .seg button[aria-pressed="true"] { border-color: var(--s1); color: var(--ink); box-shadow: inset 0 0 0 1px var(--s1); }
+.newform .seg .logo { width: 14px; height: 14px; }
 .newform .err, .composer .err { color: var(--critical); font-size: 12px; }
 button.primary { background: var(--s1); border-color: var(--s1); color: #fff; }
 button.primary:hover { filter: brightness(1.06); background: var(--s1); }
@@ -368,6 +384,20 @@ button:disabled { opacity: .5; cursor: default; }
 .chat .composer { margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--ring); }
 .chat .readonly { color: var(--muted); font-size: 12px; padding: 8px 16px; border-top: 1px solid var(--ring); }
 .chat > .err { color: var(--critical); font-size: 12px; padding: 6px 16px; }
+/* what Claude Code still runs in the background (backgroundNote): under the chat, or a terminal's status line in it */
+.bg-tasks { flex: none; font-size: 12px; color: var(--ink-2); padding: 6px 16px 8px; border-top: 1px solid var(--ring); background: var(--wash); }
+.bg-tasks .head { color: var(--ink); font-weight: 600; margin-bottom: 2px; }
+.bg-tasks .task { display: flex; gap: 8px; align-items: baseline; min-width: 0; padding-left: 1.2em; }
+.bg-tasks .kind { color: var(--muted); flex: none; width: 5.6em; }
+.bg-tasks .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bg-tasks .when { color: var(--muted); flex: none; margin-left: auto; font-variant-numeric: tabular-nums; }
+.bg-tasks .spin::before { content: "✻"; display: inline-block; width: 1.2em; color: var(--good); animation: term-spin 1.2s steps(1) infinite; }
+.term .bg-tasks { border: 0; background: none; padding: 0; margin-top: 6px; font-size: inherit; }
+.term .bg-tasks .head { color: var(--term-accent); font-weight: 400; }
+.term .bg-tasks .spin::before { color: inherit; }
+.term .bg-tasks .task, .term .bg-tasks .kind, .term .bg-tasks .when { color: var(--term-dim); }
+.term .bg-tasks .label { color: var(--term-ink); }
+@media (max-width: 760px) { .bg-tasks .when { display: none; } }
 @media (max-width: 760px) { .chat .chat-frame { flex: none; height: 70vh; } header { flex-wrap: wrap; } header .controls { order: 5; } }
 /* Actor and Gatherer: a panel at the chat's right, the chat still live beside it; over it where the window is narrow */
 .drawer { flex: 0 0 min(55%, 760px); min-width: 0; background: var(--page);
@@ -426,11 +456,11 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-grid.open { grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
 .files .fl-grid:not(.open) .fl-talk { font-size: 13px; border-left: 0; }
 .files .fl-talk { position: relative; overflow: auto; border-left: 1px solid var(--ring); padding: 6px 0 24px; font-size: 12.5px; }
-.files .fl-turn { padding: 6px 12px 8px; border-bottom: 1px solid var(--ring); }
-.files .fl-turn.on { background: var(--selected); }
+.files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px; border-radius: 0 6px 6px 0; }
+.files .fl-turn.on { background: color-mix(in srgb, var(--ink) 4%, transparent); box-shadow: inset 2px 0 0 var(--muted); }   /* the turn picked: a shade and a grey bar, no colour */
 .files .fl-user { display: flex; gap: 8px; width: 100%; text-align: left; background: var(--wash); border: 1px solid var(--ring);
   border-radius: 6px; padding: 6px 8px; margin: 0; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink); cursor: pointer; }
-.files .fl-user:hover { border-color: var(--axis); } .files .fl-turn.on .fl-user { border-color: var(--s1); }
+.files .fl-user:hover { border-color: var(--axis); }
 .files .fl-user .n { flex: none; color: var(--muted); font: 11px/1.7 var(--mono); }
 .files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .files .fl-turn.on .fl-user .tx { -webkit-line-clamp: unset; }
@@ -440,12 +470,25 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-reply > summary .dot { flex: none; color: var(--muted); font-size: 9px; line-height: 18px; }
 .files .fl-reply > summary .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-reply > summary:hover .first { color: var(--ink); }
-.files .fl-reply[open] > summary .dot { color: var(--s1); }
+.files .fl-reply[open] > summary .dot { color: var(--ink-2); } .files .fl-reply > summary:hover .dot { color: var(--s1); }
 .files .fl-reply[open] > summary .first { display: none; }
 .files .fl-reply > .md { margin: -18px 0 4px 15px; }
 .files .fl-reply .md > :first-child { margin-top: 0; } .files .fl-reply .md > :last-child { margin-bottom: 0; }
 .files .fl-reply .md pre { overflow: auto; max-width: 100%; }
 .files .fl-none { margin: 4px 0 0 2px; color: var(--muted); font-style: italic; }
+.files .fl-think { margin: 4px 0 0 2px; color: var(--muted); font-size: 12px; }
+.files .fl-think > summary { display: flex; gap: 6px; margin: 0; list-style: none; cursor: pointer; }
+.files .fl-think > summary::-webkit-details-marker { display: none; }
+.files .fl-think .g { flex: none; color: var(--term-accent); font-size: 11px; line-height: 18px; }
+.files .fl-think .lbl { flex: none; font-style: italic; }
+.files .fl-think .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .fl-think > summary:hover .lbl, .files .fl-think > summary:hover .first { color: var(--ink-2); }
+.files .fl-think[open] > summary .first { display: none; }
+.files .fl-think .body { margin: 2px 0 4px 15px; padding-left: 8px; border-left: 2px solid var(--ring); white-space: pre-wrap; overflow-wrap: anywhere; font-style: italic; }
+.files .fl-think .body + .body { margin-top: 6px; }
+.files .fl-status { display: flex; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: 12px; }
+.files .fl-status .spin { flex: none; }
+.files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ring); }
 .files .fl-sec { display: flex; flex-direction: column; min-height: 0; }
 .files .fl-sec.files-sec { flex: 3 1 0; } .files .fl-sec.cmds-sec { flex: 2 1 0; border-top: 1px solid var(--ring); }
@@ -767,6 +810,32 @@ function harnessLogo(h) {
   t.textContent = glyph; svg.append(t);
   return svg;
 }
+// Each harness's badge, at the corner of an actor's avatar: its mark in white on its color, as the README's
+// works-with badge has them (assets/src/works_with.py: the marks, their sources), each in a 12x12 box.
+const BADGES = {
+  claude: ["#d97757", "<path transform=\"scale(0.5)\" d=\"m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z\"/>"],
+  codex: ["#10a37f", "<path transform=\"scale(0.5)\" d=\"M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z\"/>"],
+  opencode: ["#3a3633", "<g transform=\"translate(1.2 0) scale(0.04)\"><path fill-rule=\"evenodd\" d=\"M180 60H60V240H180V60ZM240 300H0V0H240V300Z\"/><path opacity=\"0.55\" d=\"M180 240H60V120H180V240Z\"/></g>"],
+  pi: ["#24292f", "<g transform=\"scale(0.02553) translate(-165.29 -165.29)\"><path fill=\"#F09082\" d=\"M165.29 165.29H517.36V400H400V282.65H165.29Z\"/><path fill=\"#4D9ABF\" d=\"M165.29 282.65H282.65V400H400V517.36H282.65V634.72H165.29Z\"/><path fill=\"#F1BE58\" d=\"M517.36 400H634.72V634.72H517.36Z\"/></g>"],
+};
+function harnessBadge(h) {
+  const [color, mark] = BADGES[h] || ["#898781", null];
+  const svg = svgEl("svg", { viewBox: "0 0 24 24", class: "badge", role: "img", "aria-label": harnessName(h) });
+  const title = svgEl("title"); title.textContent = harnessName(h);
+  const g = svgEl("g", { transform: "translate(4.8 4.8) scale(1.2)", fill: "#fff" });
+  if (mark) g.innerHTML = mark;
+  else { const t = svgEl("text", { x: 6, y: 9.5, "text-anchor": "middle", "font-size": 10, "font-weight": 700, "font-family": "system-ui, sans-serif" }); t.textContent = "?"; g.append(t); }
+  svg.append(title, svgEl("circle", { cx: 12, cy: 12, r: 12, fill: color }), g);
+  return svg;
+}
+// The actor's avatar (avatars.py), its harness's badge small at the corner; an actor with none (no
+// picture to give, or a snapshot from before them) has its harness's mark alone.
+function actorLogo(a) {
+  const svg = SNAPSHOT && a.avatar && (SNAPSHOT.avatars || {})[a.avatar];
+  const src = !a.avatar ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg) : `/avatars/${a.avatar}.svg`;
+  if (!src) return harnessLogo(a.harness);
+  return el("span", { class: "logo avatar" }, el("img", { src, alt: "", draggable: "false" }), harnessBadge(a.harness));
+}
 // An eye with a stroke through it: hide.
 function hideIcon() {
   const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 14, height: 14, "aria-hidden": "true", fill: "none", stroke: "currentColor",
@@ -809,16 +878,19 @@ async function closeSession(a) {
 }
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; a build
 // running for it shows over the first, and one that stopped since the reader last looked shows Finished
-// until they do. A server from before `status`: running or idle by `running`.
+// until they do -- but not while something it started runs in the background: Background, its turn over
+// and not done. A server from before `status`: running or idle by `running`.
 // A session started from the page says first what its agent is doing: starting, a message waiting, failed.
 const sessionStatus = (s) => !s ? null : s.status === "starting" ? ["building", "Starting"]
   : s.status === "running" || (s.queued && s.queued.length) ? ["running", "Running"] : s.status === "failed" ? ["failed", "Failed"] : null;
 const statusOf = (a) => sessionStatus(a.session) || (a.building ? ["building", "Building"]
   : (a.status ? a.status === "running" : a.running) ? ["running", "Running"]
+  : a.status === "background" ? ["background", "Background"]
   : unseen(a) ? ["finished", "Finished"] : a.status === "closed" ? ["closed", "Closed"] : ["idle", "Idle"]);
-// Whether an actor can be messaged here: a session the page started, or any Claude Code session with a directory
+// Whether an actor can be messaged here: a session the page started, or any Claude Code or codex session with a directory
 // to resume it in. Its message box works while no other process has it open (data.py's `chattable`).
-const hasChat = (a) => !!a && (!!a.session || (a.harness === "claude" && !!a.cwd));
+const CHAT_HARNESSES = ["claude", "codex"];
+const hasChat = (a) => !!a && (!!a.session || (CHAT_HARNESSES.includes(a.harness) && !!a.cwd));
 const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
 
 async function get(path) {
@@ -1185,6 +1257,16 @@ function keepSeen() { try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen.a
 // the selected actor, while the page is visible.
 function takeHome(home) {
   for (const g of home.gatherers) for (const a of g.agents) a.key = key(g.name, a.channel);
+  if (state.selected) {                              // a codex session renamed to its thread: followed there
+    const g = home.gatherers.find((x) => x.name === state.selected[0]);
+    const moved = g && !g.agents.some((a) => a.channel === state.selected[1])
+      && g.agents.find((a) => a.session && a.session.started_as === state.selected[1]);
+    if (moved) {
+      if (term.sid === state.selected[1]) { term.sid = moved.channel; if (term.es) { term.es.close(); term.es = null; } }   // listened to again, under its new id
+      state.selected = [g.name, moved.channel];
+      setTimeout(connect);
+    }
+  }
   if (seen.fresh) {
     for (const g of home.gatherers) for (const a of g.agents) if (a.last) seen.at[a.key] = a.last;
     seen.fresh = false;
@@ -1290,7 +1372,7 @@ function renderAgents() {
     // running first, then finished (not yet looked at), then idle, then closed; each in the order the
     // data has them, newest created first, so an actor stays in its place, and moves only between them --
     // but closed, the latest active first: nothing moves there once closed
-    const groupOf = (a) => ({ Building: "Running", Running: "Running", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
+    const groupOf = (a) => ({ Building: "Running", Running: "Running", Background: "Running", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
     const groups = ["Running", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
       .filter(([, list]) => list.length);
     for (const [name, list] of groups) if (name === "Closed") list.sort((x, y) => (y.last || 0) - (x.last || 0));
@@ -1334,7 +1416,7 @@ function agentRow(g, a) {
   const size = a.real_tokens ?? a.sent_tokens;
   return el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false",
     title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}`, onclick: () => select(g.name, a.channel) },
-    harnessLogo(a.harness),
+    actorLogo(a),
     el("div", {},
       el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: asked(a.last_user_message) || "No message yet" }),
       a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
@@ -1347,7 +1429,10 @@ function agentRow(g, a) {
           closeIcon()) : null,
         !hasChat(a) ? null : a.chattable === false
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
-          : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false)))));
+          : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false))),
+      (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
+        el("span", { class: "spin", "aria-hidden": "true" }),
+        `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null));
 }
 // Selecting an actor draws its chat as soon as it is loaded; its calls and context (the details) follow
 // on the stream, which starts with them. The actor list is the stream's already.
@@ -1387,22 +1472,34 @@ function gathererForm() {
       collapsed.delete(g.name);
       await loadHome();
       state.adding = null;
-      openForm(g.name);                              // next: its first session
+      addSession(state.home.gatherers.find((x) => x.name === g.name) || { name: g.name, agents: [] });   // next: its first session
     } catch (e) { err.textContent = e.message; make.disabled = false; }
   });
   return form;
 }
-// A gatherer's "+": a new session in the directory of its most recently active actor, at once; the form,
-// asking for a directory, only when no actor has one (or starting there failed).
-async function addSession(g) {
+// A gatherer's "+": the form, to choose the harness (and codex's model); the session runs in the directory of
+// the gatherer's most recently active actor -- asked for only when no actor has one (or starting there failed).
+// The harness and model last chosen are chosen again.
+const PICK_KEY = "ag-dashboard-new-session";
+const lastPick = () => { try { return JSON.parse(localStorage.getItem(PICK_KEY)) || {}; } catch (e) { return {}; } };
+const models = {};                                   // harness -> its models (/api/models), asked once
+async function modelsOf(harness) {
+  if (!(harness in models)) { try { models[harness] = await get(`/api/models?harness=${harness}`); } catch (e) { models[harness] = { models: [] }; } }
+  return models[harness];
+}
+function addSession(g) {
+  if (state.adding && state.adding.gatherer === g.name) { state.adding = null; return renderAgents(); }
   const last = g.agents.filter((a) => a.cwd).sort((x, y) => (y.last || 0) - (x.last || 0))[0];
-  if (!last || (state.adding && state.adding.gatherer === g.name)) return openForm(g.name);
-  try { await startSession(g.name, last.cwd); }
-  catch (e) { state.adding = { gatherer: g.name, cwd: last.cwd, error: e.message }; renderAgents(); }
+  const pick = lastPick();
+  state.adding = { gatherer: g.name, cwd: last ? last.cwd : "", askCwd: !last, harness: pick.harness || "claude", model: pick.model || "" };
+  renderAgents();
+  const first = document.querySelector(".newform [aria-pressed=true], .newform input");
+  if (first) first.focus();
 }
 // The new session shown in a terminal, opened there (the Terminal view opens it), where the terminal can be.
-async function startSession(gatherer, cwd) {
-  const s = await post("/api/sessions", { gatherer, cwd });
+async function startSession(gatherer, cwd, harness = "claude", model = "") {
+  const s = await post("/api/sessions", { gatherer, cwd, harness, model });
+  try { localStorage.setItem(PICK_KEY, JSON.stringify({ harness, model: harness === "codex" ? model : (lastPick().model || "") })); } catch (e) { /* this page only */ }
   state.adding = null;
   collapsed.delete(s.gatherer);
   if (CHAT_VIEWS.has("terminal") && state.home.terminals !== false) { chatViewId = "terminal"; try { localStorage.setItem(CHAT_VIEW_KEY, "terminal"); } catch (e) { /* this page only */ } }
@@ -1411,20 +1508,35 @@ async function startSession(gatherer, cwd) {
   if (box) box.focus();
 }
 function newForm() {
-  const fixed = state.adding.gatherer;
-  const cwd = el("input", { name: "cwd", value: state.adding.cwd || state.home.cwd || "", spellcheck: "false" });
-  const err = el("div", { class: "err", role: "alert", text: state.adding.error || "" });
+  const adding = state.adding, fixed = adding.gatherer;
+  const cwd = el("input", { name: "cwd", value: adding.cwd || state.home.cwd || "", spellcheck: "false" });
+  const err = el("div", { class: "err", role: "alert", text: adding.error || "" });
   const start = el("button", { type: "submit", class: "primary" }, "Start");
+  const harnessPick = el("div", { class: "seg", role: "group", "aria-label": "Harness" },
+    ...["claude", "codex"].map((h) => el("button", { type: "button", "aria-pressed": adding.harness === h ? "true" : "false",
+      onclick: () => { adding.harness = h; adding.cwd = cwd.value; renderAgents(); } }, harnessLogo(h), harnessName(h))));
+  const model = el("select", { name: "model", disabled: "" }, el("option", { value: adding.model, text: adding.model || "Loading…" }));
+  model.addEventListener("change", () => { adding.model = model.value; });
+  if (adding.harness === "codex") modelsOf("codex").then(({ models: list, default: dflt }) => {
+    if (!model.isConnected) return;
+    const slugs = list.map((m) => m.slug);
+    if (!slugs.includes(adding.model)) adding.model = slugs.includes(dflt) ? dflt : (slugs[0] || "");
+    model.replaceChildren(...(list.length ? list : [{ slug: "", name: "Codex's default", description: "" }])
+      .map((m) => el("option", { value: m.slug, text: m.name, title: m.description, ...(m.slug === adding.model ? { selected: "" } : {}) })));
+    model.disabled = false;
+  });
   const form = el("form", { class: "newform", "aria-label": "New session" },
-    el("div", { class: "desc", text: `A new Claude Code session in ${fixed}` }),
-    el("label", {}, "Working directory", cwd),
+    el("div", { class: "desc", text: `A new session in ${fixed}${adding.askCwd ? "" : `, in ${adding.cwd}`}` }),
+    harnessPick,
+    adding.harness === "codex" ? el("label", {}, "Model", model) : null,
+    adding.askCwd ? el("label", {}, "Working directory", cwd) : null,
     err,
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), start));
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     start.disabled = true; err.textContent = "";
-    try { await startSession(fixed, cwd.value.trim()); }
-    catch (e) { err.textContent = e.message; start.disabled = false; }
+    try { await startSession(fixed, cwd.value.trim(), adding.harness, adding.harness === "codex" ? adding.model : ""); }
+    catch (e) { err.textContent = e.message; start.disabled = false; adding.askCwd = true; }
   });
   return form;
 }
@@ -1598,7 +1710,7 @@ function facts(info) {
     ["Harness", harnessName(info.harness || (state.agent && state.agent.harness))],
     ["Gatherer", state.selected[0]], ["Channel", state.selected[1]], ["Directory", info.cwd || (s && s.cwd)],
     ["Process", info.pid ? `PID ${info.pid}` : null],
-    ["Chat", !hasChat(info) ? "Not from the dashboard: only Claude Code sessions with a directory can be messaged here"
+    ["Chat", !hasChat(info) ? "Not from the dashboard: only Claude Code and codex sessions with a directory can be messaged here"
       : s && s.terminal ? "Open in the dashboard's terminal: a message from any view is typed there"
       : s ? `Run by the dashboard, permissions ${s.permission_mode}; let go after each turn`
       : "Started elsewhere: a message resumes it here, permissions auto"],
@@ -1686,8 +1798,9 @@ function chatCard(info) {
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
   }
+  if (view.feed !== "none" && view.frame !== "term") { const note = backgroundNote(info); if (note) card.append(note); }
   if (!writable) {
-    if (!SNAPSHOT) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code sessions with a known directory." }));
+    if (!SNAPSHOT) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code and codex sessions with a known directory." }));
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
   }
@@ -1725,6 +1838,23 @@ function chatCard(info) {
   card.append(...composer, err, ...safely(() => view.footer && view.footer(ctx)));
   if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
   return card;
+}
+// What Claude Code still runs in the background for the actor (data.py's `background`): the commands,
+// agents, monitors and workflows it started and has not been told have ended, each with what it is for and its
+// last sign of life. Null when none runs. `term`: drawn as a terminal's status line.
+const TASK_KINDS = { command: "Command", agent: "Agent", monitor: "Monitor", workflow: "Workflow" };
+function backgroundNote(info, term = false) {
+  const tasks = (info && info.background) || [];
+  if (!tasks.length) return null;
+  return el("div", { class: term ? "status-line bg-tasks" : "bg-tasks", role: "status" },
+    el("div", { class: "head" }, el("span", { class: "spin", "aria-hidden": "true" }),
+      `${plural(tasks.length, "background task")} running${info.status === "background" ? ": the turn is over, the work is not" : ""}`),
+    ...tasks.map((t) => el("div", { class: "task", title: [t.label, t.output].filter(Boolean).join("\n") },
+      el("span", { class: "kind", text: TASK_KINDS[t.kind] || t.kind }),
+      el("span", { class: "label", text: t.label || t.id }),
+      el("span", { class: "when", text: [`started ${ago(t.started)}`,
+        t.event ? `last event ${ago(t.event_at)}: ${t.event}` : t.active && t.active - t.started > 2 ? `active ${ago(t.active)}` : null]
+        .filter(Boolean).join(" · ") }))));
 }
 // The message box a view gets unless it brings its own: a text box and a Send button.
 function defaultComposer(ctx) {
@@ -2369,7 +2499,9 @@ function notesSwitch() {
 //                                       // them -- {row_id, type, at, parts: [{kind, role, text, ...}]};
 //                                       // "files", the turns and the picked turn's files (files.py);
 //                                       // or "none", for a view that is not the history (the Terminal)
-//     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own
+//     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own;
+//                                       // under any but "term", what runs in the background (backgroundNote) --
+//                                       // a "term" view draws it itself, with api.backgroundNote(ctx.info, true)
 //     tools(ctx) { return [nodes] },    // optional: controls in the page's header (filters, switches)
 //     render(ctx) { return node or [nodes] },
 //     composer(ctx) { return node },    // optional: the box to write the next message, under the frame;
@@ -2455,6 +2587,7 @@ addChatView({
       data.earlier ? el("button", { type: "button", class: "earlier", onclick: loadEarlier }, "Load earlier messages") : null,
       ...transcriptBlocks([...data.items, ...data.pending], running, txBlocks),
       running ? el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }), `Working… (last activity ${ago(info.last)})`) : null,
+      backgroundNote(info, true),
     ].filter(Boolean);
   },
   composer: (ctx) => {
@@ -2623,6 +2756,7 @@ function termListen(sid) {
     if (!mine()) return;
     es.close(); term.es = null;
     if (ev.type === "exit") { term.exited = JSON.parse(ev.data).code; term.xterm.write("\r\n\x1b[2m[the session's process ended]\x1b[0m\r\n"); }
+    else if (term.exited === null) term.exited = -1;  // gone before it was listened to: ended all the same
     refresh();
   };
   es.addEventListener("exit", ended);
@@ -2653,13 +2787,13 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) {
 }
 if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
   id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame",
-  description: "Claude Code's own interface, in a terminal: what it would show and ask in one outside, its keys included.",
+  description: "The harness's own interface (Claude Code's, codex's), in a terminal: what it would show and ask in one outside, its keys included.",
   render: (ctx) => {
     const { info, held } = ctx;
     if (state.home && state.home.terminals === false)
       return el("div", { class: "xterm-cover" }, el("div", { class: "desc", text: "A terminal needs a Unix pseudo-terminal, which the dashboard's system does not have." }));
     const t = termFor(info.channel), running = !!(info.session && info.session.terminal);
-    if (running) termListen(info.channel);
+    if (running) { termListen(info.channel); t.tried = true; }   // seen open: once it ends (closed), not opened again here
     const open = !running && !held && !t.tried && hasChat(info);
     if (open) t.tried = true;
     requestAnimationFrame(() => {                      // drawn into the page: opened there once, then fitted to it
@@ -2840,7 +2974,7 @@ function filesRender({ info, running }) {
   if (!d.files.length) list.append(el("div", { class: "fv-note", text: running && d.turn === d.turns.length - 1
     ? "No files yet in this turn." : "The agent touched no files in this turn." }));
   // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one)
-  const cmds = el("div", { class: "fl-scroll", "data-keep": "files-cmds" });
+  const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
   d.commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
     el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), firstLine(c.text, 140)),
@@ -2848,6 +2982,13 @@ function filesRender({ info, running }) {
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, rel(p).split("/").pop()))) : null,
       el("pre", { class: "call", text: callText(c.call) }), c.output ? el("pre", { class: "out", text: c.output }) : null))));
   if (!d.commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
+  const shown = `${state.files.key}:${d.turn}`;
+  if (cmdsShown !== shown && state.files.turn === null) requestAnimationFrame(() => {   // once per turn: at its end
+    const n = document.querySelector(`[data-keep="files-cmds-${d.turn}"]`);
+    if (!n) return;
+    cmdsShown = shown;
+    n.scrollTop = n.scrollHeight;
+  });
   // two sections, each its own size and scrolling, each with the legend of its colours
   const legend = (pairs) => el("div", { class: "fl-legend" }, ...pairs.map(([name, color]) =>
     el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
@@ -2861,31 +3002,49 @@ function filesRender({ info, running }) {
       legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])));
   // the file view only while a file is picked: the files and the conversation have the page until then
   const pane = sel ? el("div", { class: "fl-pane", "data-keep": "files-pane" }, fileView(sel, rel, `fl-${d.turn}-${d.files.indexOf(sel)}`)) : null;
-  return el("div", { class: "fl-grid" + (sel ? " open" : "") }, side, pane, filesTalk(d, running));
+  return el("div", { class: "fl-grid" + (sel ? " open" : "") }, side, pane, filesTalk(d, info, running));
 }
-// The conversation, at the right: each of the user's messages a turn, the agent's replies under it.
-// Clicking a message shows its turn's files.
+let cmdsShown = null;
+// The conversation, at the right: each of the user's messages a turn, the agent's replies under it, open
+// (a click folds one to its first line), and its thinking between them, folded to a line; while the turn
+// runs, what the agent is doing at its end, as the Transcript's status line. Clicking a message shows its
+// turn's files.
 let talkShown = null;
-function filesTalk(d, running) {
-  const box = el("div", { class: "fl-talk", "data-keep": "files-talk" });
+function filesTalk(d, info, running) {
+  const box = el("div", { class: "fl-talk", "data-keep": "files-talk", "data-follow": "1" });
+  const closed = state.files.closed || (state.files.closed = new Set());   // the replies folded by a click
+  const fold = (ev) => { const n = ev.currentTarget; if (n.open) closed.delete(n.id); else closed.add(n.id); };
   for (const t of d.turns) {
     const on = t.n === d.turn;
     const live = running && t.n === d.turns.length - 1;
+    const said = t.replies || [];
+    const reply = (r, i) => {
+      const id = `fl-r-${t.n}-${i}`;
+      if (r.kind === "text") return el("details", { class: "fl-reply", id, open: closed.has(id) ? null : "", ontoggle: fold },
+        el("summary", { title: "Fold or show the whole message" }, el("span", { class: "dot", text: "●" }), el("span", { class: "first", text: firstLine(r.text, 200) })),
+        markdown(r.text));
+      if (!r.texts.length) return null;              // encrypted: nothing to read (the status line says it thinks)
+      return el("details", { class: "fl-think", id },
+        el("summary", { title: "Show what it thought" }, el("span", { class: "g", "aria-hidden": "true", text: "✻" }),
+          el("span", { class: "lbl", text: "Thought" }), el("span", { class: "first", text: firstLine(r.texts[r.texts.length - 1], 200) })),
+        ...r.texts.map((x) => el("div", { class: "body", text: x })));
+    };
+    const now = !live ? "" : !t.now ? "Working…" : t.now.kind === "thinking" ? "Thinking…" : `Running: ${t.now.text}`;
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
       el("button", { type: "button", class: "fl-user", "aria-pressed": on ? "true" : "false",
         title: on ? "The turn shown" : "Show this turn's files", onclick: () => setFilesTurn(t.n) },
         el("span", { class: "n", text: `${t.n + 1}` }), el("span", { class: "tx", text: t.text })),
-      ...(t.replies || []).map((r, i) => el("details", { class: "fl-reply", id: `fl-r-${t.n}-${i}` },   // folded: its first line
-        el("summary", { title: "Show the whole message" }, el("span", { class: "dot", text: "●" }), el("span", { class: "first", text: firstLine(r, 200) })),
-        markdown(r))),
-      !(t.replies || []).length ? el("div", { class: "fl-none", text: live ? "Working…" : "No reply in words." }) : null));
+      ...said.map(reply),
+      live ? el("div", { class: "fl-status", role: "status" }, el("span", { class: "spin", "aria-hidden": "true" }),
+        el("span", { class: "tx", title: now, text: `${now} (last activity ${ago(info.last)})` }))
+        : !said.some((r) => r.kind === "text") ? el("div", { class: "fl-none", text: "No reply in words." }) : null));
   }
   const at = `${state.files && state.files.key}:${d.turn}`;
-  if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick
+  if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick: the latest at its end
     const cur = document.querySelector(".fl-talk .fl-turn.on");
     if (!cur) return;
     talkShown = at;
-    cur.parentElement.scrollTop = cur.offsetTop;     // .fl-talk is its offset parent
+    cur.parentElement.scrollTop = state.files.turn === null ? cur.parentElement.scrollHeight : cur.offsetTop;   // .fl-talk is its offset parent
   });
   return box;
 }
@@ -3371,7 +3530,7 @@ const agDashboard = window.agDashboard = Object.freeze({
   chatView: addChatView,
   el, svgEl, markdown, clock, ago, full, compact, plural, firstLine,
   contextItem, columns, typeChips, itemType, transcriptBlocks, foldedOutput, notesSwitch, sizeCard, contextCard,
-  statusOf, harnessName, harnessLogo,
+  statusOf, harnessName, harnessLogo, harnessBadge, actorLogo, backgroundNote,
 });
 // The reader's own views: each file in <home>/dashboard/views/, loaded once the page is up. One that
 // does not load, or throws, is reported and left out.

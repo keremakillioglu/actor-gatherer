@@ -3,11 +3,16 @@ sends messages to. Each is an ordinary ag session -- a channel of its gatherer, 
 other actor -- and the dashboard's own table, `sessions` in <home>/dashboard.db, keeps which
 ones it started:
 
-    session_id       Claude Code's session id, which ag makes the gatherer's channel
+    session_id       the harness's session id, which ag makes the gatherer's channel: Claude Code's, chosen
+                     here; codex's thread id, which codex chooses -- until its first call, the id it was
+                     started under, then renamed to the thread's (`started_as` keeps the first)
     gatherer         the gatherer it joined (ag makes a new one on its first call)
-    harness          "claude" (the only one for now)
+    harness          "claude" or "codex"
     cwd              where the agent runs
-    permission_mode  Claude Code's --permission-mode: auto (the default), acceptEdits, plan, ...
+    permission_mode  Claude Code's --permission-mode: auto (the default), acceptEdits, plan, ...; for codex,
+                     auto is --approve-for-me, bypassPermissions its bypass, any other none (codex asks)
+    model            the model it runs (-m), NULL: the harness's own default
+    started_as       the id it was started under, when that was not its harness's (codex's, renamed); else NULL
     created_at       when it was started (ISO, UTC)
     turns            how many of its turns have ended: after the first, a restart resumes it
     status           starting / running / idle / terminal / stopped / failed, as last seen
@@ -15,6 +20,9 @@ ones it started:
     kept             when (epoch seconds) its process was ended by the dashboard stopping -- a restart, a
                      crash -- not closed: it shows Idle, not Closed, until it is opened again (here or
                      elsewhere) or closed from the list; 0 when not kept
+    ended            when (epoch seconds) the dashboard's last process for it ended -- closed from the list,
+                     exited, hung up; not a codex turn's own end -- what tells it Closed where ag cannot tell
+                     whether a process runs (no /proc: macOS); 0 when none has
 
 The agent is one long-running process, `ag --gatherer G claude -p --input-format stream-json
 --output-format stream-json ...`: each message is a line on its stdin, a turn, and each turn
@@ -47,6 +55,13 @@ A session whose process the dashboard's own end took (`close`, or a dashboard go
 it last recorded running) is KEPT: not closed by anyone, so shown Idle with no process, to be picked
 up by its next message or terminal. Closing it (`stop`), or its process ending any other way, clears it.
 
+CODEX runs the same ways, through `ag ... codex`: in a terminal, its own interactive UI (`codex
+[resume <id>]`); from a message box with no terminal open, a process per turn, `codex exec --json
+[resume <id>] -` with the message on its stdin, ending with the turn. Codex chooses its thread's id,
+so a codex session starts under an id of the dashboard's and is renamed to its thread's once known:
+from `codex exec`'s `thread.started`, or, in a terminal, the gatherer's first call from the terminal's
+process that names a directory (codex's side calls -- a title for the thread -- name none).
+
 A new gatherer, with no session yet, is made by `ag new <name>` (`new_gatherer`).
 
 ag is run as a command (AG_COMMAND, else `ag` on the PATH), never imported."""
@@ -77,7 +92,9 @@ try:                                    # a terminal needs a pseudo-terminal: Un
 except ImportError:
     TERMINALS = False
 
-HARNESSES = ("claude",)
+HARNESSES = ("claude", "codex")
+# codex's flags for each permission mode: what it has (else none: codex asks, in a terminal)
+CODEX_PERMISSIONS = {"auto": ["--approve-for-me"], "bypassPermissions": ["--dangerously-bypass-approvals-and-sandbox"]}
 PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "manual")
 GATHERER = re.compile(r"[A-Za-z0-9._-]+")      # the names ag takes
 # What says the dashboard itself runs inside a Claude Code session; its agents are sessions of their own.
@@ -95,10 +112,15 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS sessions (
     turns           INTEGER NOT NULL DEFAULT 0,
     status          TEXT NOT NULL,
     last_error      TEXT,
-    kept            REAL NOT NULL DEFAULT 0
+    kept            REAL NOT NULL DEFAULT 0,
+    model           TEXT,
+    started_as      TEXT,
+    ended           REAL NOT NULL DEFAULT 0
 )"""
 COLUMNS = ("session_id", "gatherer", "harness", "cwd", "permission_mode", "created_at", "turns", "status", "last_error",
-           "kept")
+           "kept", "model", "started_as", "ended")
+ADDED = (("kept", "REAL NOT NULL DEFAULT 0"), ("model", "TEXT"), ("started_as", "TEXT"),
+         ("ended", "REAL NOT NULL DEFAULT 0"))   # columns a table from before lacks
 
 
 class SessionError(ValueError):
@@ -119,8 +141,9 @@ def stored() -> List[dict]:
         return []
     conn = sqlite3.connect(f"file:{db_path()}?mode=ro", uri=True, timeout=8)
     conn.row_factory = sqlite3.Row
-    try:                                # a table from before `kept`: none kept
-        return [{"kept": 0, **dict(r)} for r in conn.execute("SELECT * FROM sessions ORDER BY created_at DESC")]
+    try:                                # a table from before `kept`, `model`, `started_as`, `ended`: none
+        return [{"kept": 0, "model": None, "started_as": None, "ended": 0, **dict(r)}
+                for r in conn.execute("SELECT * FROM sessions ORDER BY created_at DESC")]
     except sqlite3.Error:
         return []
     finally:
@@ -133,6 +156,7 @@ OUTER_TERMINAL = ("TMUX", "TMUX_PANE", "STY", "TERM_PROGRAM", "TERM_PROGRAM_VERS
 # own scrollback, scrolled there; full screen sends every wheel tick to it and back to redraw.
 CLASSIC = {"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"}
 TERM_KEEP = 512 * 1024             # how much of a terminal's output is kept, for a page that comes back
+THREAD_POLL = 1.0                  # how often a new codex terminal's thread is looked for in the gatherer
 PASTE_ENTER = 0.15                 # after a message is pasted into a terminal, how long before its Enter
 
 
@@ -204,6 +228,46 @@ def _session_cwd(gatherer: str, session_id: str) -> Optional[str]:
     return r[0] if r else None
 
 
+def _session_harness(gatherer: str, session_id: str) -> str:
+    """The harness a session of the gatherer runs on, as its events' shape tells: claude when none shows."""
+    from .data import harness_of        # data imports this module: asked here, once it is loaded
+    conn = _gatherer_db(gatherer)
+    if conn is None:
+        return "claude"
+    try:
+        rows = conn.execute("SELECT payload_json FROM events WHERE p_channel = ? ORDER BY row_id LIMIT 60", (session_id,))
+        payloads = []
+        for (raw,) in rows:
+            try:
+                payloads.append(json.loads(raw))
+            except (TypeError, ValueError):
+                pass
+    except sqlite3.Error:
+        return "claude"
+    finally:
+        conn.close()
+    return harness_of(payloads) if harness_of(payloads) in HARNESSES else "claude"
+
+
+def _thread_of(gatherer: str, pid: int, known) -> Optional[str]:
+    """The codex thread a process (a terminal's) works in, as the gatherer's calls say: the channel of the
+    first call from `pid`, or a process under it, that names a directory -- codex's side calls, a title for
+    the thread, name none -- and is not among `known` (the sessions the table has)."""
+    conn = _gatherer_db(gatherer)
+    if conn is None:
+        return None
+    try:
+        for channel, by in conn.execute("SELECT p_channel, pid FROM _reads WHERE pid IS NOT NULL AND p_cwd IS NOT NULL "
+                                        "AND p_cwd != '' ORDER BY read_id DESC LIMIT 200"):
+            if channel and channel not in known and home.runs_under(by, pid):
+                return channel
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    return None
+
+
 def _why(session_id: str) -> Optional[str]:
     """What ag said last, in the session's log ("ag: ..."): why its process ended, if it said."""
     try:
@@ -259,6 +323,42 @@ def new_gatherer(name: str) -> dict:
     return {"name": name}
 
 
+_models: Dict[str, dict] = {}           # harness -> {"at": when asked, "models": [...]}
+MODELS_KEEP = 600                       # how long a harness's list of models is kept before it is asked again
+
+
+def models(harness: str) -> dict:
+    """The models a new session of `harness` can run on, as the harness says: {"models": [{slug, name,
+    description}], "default": the one its config names, if any}. Codex's from its catalog (`codex debug
+    models`, the ones it lists); none for Claude Code, which runs its own default."""
+    if harness != "codex":
+        return {"models": [], "default": None}
+    kept = _models.get(harness)
+    if kept and time.time() - kept["at"] < MODELS_KEEP:
+        return kept["value"]
+    found = []
+    try:
+        done = subprocess.run(["codex", "debug", "models"], env=agent_env(), capture_output=True, text=True, timeout=30,
+                              stdin=subprocess.DEVNULL)
+        listed = json.loads(done.stdout).get("models") if done.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        listed = None
+    for m in listed if isinstance(listed, list) else []:
+        if isinstance(m, dict) and m.get("slug") and m.get("visibility", "list") == "list":
+            found.append({"slug": m["slug"], "name": m.get("display_name") or m["slug"], "description": m.get("description") or ""})
+    default = None
+    try:
+        import tomllib
+        with open(os.path.join(os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex"), "config.toml"), "rb") as fh:
+            default = tomllib.load(fh).get("model")
+    except (OSError, ValueError, ImportError):
+        pass
+    value = {"models": found, "default": default}
+    if found:
+        _models[harness] = {"at": time.time(), "value": value}
+    return value
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -268,6 +368,7 @@ class _Agent:
 
     def __init__(self, proc: subprocess.Popen, log):
         self.proc, self.log = proc, log
+        self.since = time.time()        # when it started: what Claude Code started in the background before was not its
         self.busy = False               # a turn was sent and its result has not come back
         self.yielding = False           # between turns: gives way to another process opening the session
         self.taken = False              # another process took the session over: it is being stopped
@@ -281,6 +382,7 @@ class _Term:
 
     def __init__(self, pid: int, fd: int, log, fullscreen: bool = False):
         self.pid, self.fd, self.log, self.fullscreen = pid, fd, log, fullscreen
+        self.since = time.time()        # when it started
         self.out = bytearray()          # the last TERM_KEEP bytes it printed
         self.end = 0                    # how many it printed in all: `out` ends there
         self.exited: Optional[int] = None
@@ -311,11 +413,16 @@ class Sessions:
         conn = sqlite3.connect(db_path(), timeout=8, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute(SCHEMA)
-        if "kept" not in {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}:   # a table from before it
-            try:
-                conn.execute("ALTER TABLE sessions ADD COLUMN kept REAL NOT NULL DEFAULT 0")
-            except sqlite3.OperationalError:     # another process added it meanwhile
-                pass
+        have = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
+        for name, kind in ADDED:                 # a table from before them
+            if name not in have:
+                try:
+                    conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {kind}")
+                except sqlite3.OperationalError:     # another process added it meanwhile
+                    continue
+                if name == "ended":              # what had run and stopped, not kept: ended by now
+                    conn.execute("UPDATE sessions SET ended = ? WHERE status IN ('stopped', 'failed') AND kept = 0 "
+                                 "AND turns > 0", (time.time(),))
         return conn
 
     def _row(self, session_id: str) -> Optional[dict]:
@@ -346,19 +453,21 @@ class Sessions:
 
     def list(self) -> List[dict]:
         """Every session the table has, newest first, each with `queued` (its messages waiting), `pid` (the
-        dashboard's process for it), `terminal` (whether that is a terminal) and `fullscreen` (whether it
-        runs Claude Code's full screen)."""
+        dashboard's process for it), `since` (when that started), `terminal` (whether that is a terminal) and
+        `fullscreen` (whether it runs Claude Code's full screen)."""
         with self.lock:
             out = []
             for s in stored():
                 a, t = self.agents.get(s["session_id"]), self.terms.get(s["session_id"])
                 out.append({**s, "queued": list(a.queue) if a else [], "terminal": t is not None,
-                            "fullscreen": bool(t and t.fullscreen), "pid": t.pid if t else a.proc.pid if a else None})
+                            "fullscreen": bool(t and t.fullscreen), "pid": t.pid if t else a.proc.pid if a else None,
+                            "since": t.since if t else a.since if a else None})
             return out
 
-    def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = "claude") -> dict:
-        """A new session in `gatherer` (a new gatherer if none has the name), to run in `cwd`. Its agent
-        starts with its first message."""
+    def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = "claude",
+               model: Optional[str] = None) -> dict:
+        """A new session of `harness` in `gatherer` (a new gatherer if none has the name), to run in `cwd`
+        on `model` (None: the harness's default). Its agent starts with its first message."""
         gatherer = (gatherer or "").strip()
         if not GATHERER.fullmatch(gatherer):
             raise SessionError("a gatherer's name may hold letters, digits, '.', '_' and '-' only")
@@ -368,12 +477,16 @@ class Sessions:
         if permission_mode not in PERMISSION_MODES:
             raise SessionError(f"permission mode {permission_mode!r}: one of {', '.join(PERMISSION_MODES)}")
         if harness not in HARNESSES:
-            raise SessionError(f"harness {harness!r}: only {', '.join(HARNESSES)} for now")
+            raise SessionError(f"harness {harness!r}: one of {', '.join(HARNESSES)}")
+        model = (model or "").strip() or None
+        if model and not re.fullmatch(r"[A-Za-z0-9._:/@-]+", model):
+            raise SessionError(f"model {model!r}: not a model's name")
         session_id = str(uuid.uuid4())
         conn = self._db()
         try:
-            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0)",
-                         (session_id, gatherer, harness, cwd, permission_mode, _now()))
+            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?, 0)",
+                         (session_id, gatherer, harness, cwd, permission_mode, _now(), model,
+                          session_id if harness == "codex" else None))
         finally:
             conn.close()
         self._changed(gatherer, session_id)
@@ -383,7 +496,7 @@ class Sessions:
         """A session of `gatherer` not started here, taken into the table so the page can message it:
         resumed in the directory its calls named, permissions auto. The one there already, if it is."""
         if not GATHERER.fullmatch(gatherer or "") or not SESSION_ID.fullmatch(session_id or ""):
-            raise SessionError("not a Claude Code session of a gatherer")
+            raise SessionError("not a Claude Code or codex session of a gatherer")
         with self.lock:
             s = self._row(session_id)
             if s is not None:
@@ -394,8 +507,8 @@ class Sessions:
                                    + (f" ({cwd})" if cwd else ""))
             conn = self._db()
             try:
-                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, 'claude', ?, 'auto', ?, 1, 'stopped', NULL, 0)",
-                             (session_id, gatherer, cwd, _now()))
+                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, 'auto', ?, 1, 'stopped', NULL, 0, NULL, NULL, 0)",
+                             (session_id, gatherer, _session_harness(gatherer, session_id), cwd, _now()))
             finally:
                 conn.close()
             self._changed(gatherer, session_id)
@@ -415,6 +528,16 @@ class Sessions:
                 self._paste(self.terms[session_id], text)
                 return next(x for x in self.list() if x["session_id"] == session_id)
             a = self.agents.get(session_id)
+            if s["harness"] == "codex":                  # a process per turn: this one now, or after the one running
+                if a is not None and a.proc.poll() is None:
+                    a.queue.append(text)
+                    self._changed(s["gatherer"], session_id)
+                else:
+                    held = holder(s["gatherer"], session_id) if s["turns"] else None
+                    if held is not None:
+                        raise SessionError(f"the session is open in another process ({held['pid']}): close it there first")
+                    self._exec(s, text)
+                return next(x for x in self.list() if x["session_id"] == s["session_id"] or x["session_id"] == session_id)
             if a is not None and a.taken:
                 raise SessionError("the session was taken over by another process: close it there first")
             if a is None or a.proc.poll() is not None:
@@ -444,7 +567,7 @@ class Sessions:
                 self._hang_up(t)
             a = self.agents.get(session_id)
             if t is None and s["kept"] and (a is None or a.proc.poll() is not None):
-                self._set(session_id, kept=0)        # kept, with no process: closed now, as asked
+                self._set(session_id, kept=0, ended=s["kept"])   # kept, with no process: closed now, as asked
                 return next(x for x in self.list() if x["session_id"] == session_id)
         if t is not None:                            # its end recorded by its reader, which takes the lock
             self._gone(t)
@@ -458,7 +581,7 @@ class Sessions:
             a.queue.clear()
             try:
                 a.proc.stdin.close()             # the reader records its end: stopped
-            except OSError:
+            except (OSError, ValueError):
                 pass
             if a.busy:                           # mid-turn: it would finish the turn first
                 try:
@@ -489,6 +612,105 @@ class Sessions:
         a.reader = threading.Thread(target=self._read, args=(sid, a), daemon=True)
         a.reader.start()
         return a
+
+    def _exec(self, s: dict, text: str) -> _Agent:
+        """A codex turn: `ag ... codex exec --json [resume <id>] -`, the message on its stdin (the lock held)."""
+        sid = s["session_id"]
+        argv = [*ag_command(), "--gatherer", s["gatherer"], "codex", "exec", "--json", "--skip-git-repo-check",
+                *(["-m", s["model"]] if s.get("model") else []), *CODEX_PERMISSIONS.get(s["permission_mode"], []),
+                *(["resume", sid] if s["turns"] else []), "-"]
+        os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
+        log = open(log_path(sid), "a", encoding="utf-8", buffering=1)
+        log.write(f"--- {_now()} {shlex.join(argv)}\n")
+        try:
+            proc = subprocess.Popen(argv, cwd=s["cwd"], env=agent_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=log, text=True, bufsize=1, start_new_session=True)
+        except OSError as exc:
+            log.close()
+            self._set(sid, status="failed", last_error=f"could not run ag: {exc}")
+            raise SessionError(f"could not run ag: {exc}") from exc
+        a = _Agent(proc, log)
+        a.busy = True
+        self.agents[sid] = a
+        try:
+            proc.stdin.write(text)
+            proc.stdin.close()
+        except OSError:
+            pass
+        self._set(sid, status="running", last_error=None, kept=0)
+        a.reader = threading.Thread(target=self._read_exec, args=(sid, a), daemon=True)
+        a.reader.start()
+        return a
+
+    def _read_exec(self, session_id: str, a: _Agent) -> None:
+        """A codex turn's output, until it exits: its thread's id (the session renamed to it), its end; then
+        the next waiting message, as a turn of its own."""
+        error = None
+        done = False
+        for line in a.proc.stdout:
+            a.log.write(line)
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            kind = event.get("type") if isinstance(event, dict) else None
+            if kind == "thread.started" and event.get("thread_id"):
+                with self.lock:
+                    session_id = self._rename(session_id, str(event["thread_id"]))
+            elif kind == "turn.completed":
+                done = True
+            elif kind in ("turn.failed", "error"):
+                error = str((event.get("error") or {}).get("message") if kind == "turn.failed" else event.get("message"))[:2000]
+        code = a.proc.wait()
+        try:
+            a.proc.stdout.close()
+        except OSError:
+            pass
+        with self.lock:
+            a.log.write(f"--- {_now()} exited {code}\n")
+            a.log.close()
+            session_id = next((k for k, v in self.agents.items() if v is a), session_id)
+            if self.agents.get(session_id) is a:
+                del self.agents[session_id]
+            s = self._row(session_id)
+            if s is None:
+                return
+            if done or error:
+                s["turns"] += 1 if done else 0
+            ok = done and not error
+            self._set(session_id, turns=s["turns"], status="stopped" if ok or a.ended else "failed",
+                      **({"ended": time.time()} if a.ended else {}),   # a turn's own end leaves it ready, not closed
+                      **({} if ok or a.ended else {"last_error": error or _why(session_id) or
+                                                   f"codex exited ({code}); see {log_path(session_id)}"}))
+            if a.queue and not a.ended and not self.closing:     # what was sent meanwhile: the next turn
+                b = self._exec(self._row(session_id), a.queue.pop(0))
+                b.queue = a.queue
+
+    def _rename(self, old: str, new: str) -> str:
+        """The session started as `old`, now known as its harness's `new` (codex's thread): its row, its
+        process, its log moved over, `started_as` kept. The id it has now (the lock held)."""
+        if old == new or not SESSION_ID.fullmatch(new):
+            return old
+        conn = self._db()
+        try:
+            if conn.execute("SELECT 1 FROM sessions WHERE session_id = ?", (new,)).fetchone():
+                return old                       # another row has it already
+            conn.execute("UPDATE sessions SET session_id = ?, started_as = coalesce(started_as, ?) WHERE session_id = ?",
+                         (new, old, old))
+            row = conn.execute("SELECT gatherer FROM sessions WHERE session_id = ?", (new,)).fetchone()
+        finally:
+            conn.close()
+        for table in (self.agents, self.terms):
+            if old in table:
+                table[new] = table.pop(old)
+        try:
+            os.replace(log_path(old), log_path(new))
+        except OSError:
+            pass
+        if row is not None:
+            self._changed(row["gatherer"], old)
+            self._changed(row["gatherer"], new)
+        return new
 
     def _hold(self, session_id: str, a: _Agent, yields: bool) -> Optional[bool]:
         """The agent's process gives way to another opening the session (`yields`), or stops giving
@@ -564,7 +786,7 @@ class Sessions:
                 s = self._row(session_id)
                 if a.ended and a.busy and s and not s["turns"] and _has_calls(s["gatherer"], session_id):
                     self._set(session_id, turns=1)   # cut off in its first turn, after a call: Claude Code kept it, resumed
-                self._set(session_id, status="stopped" if ok else "failed",
+                self._set(session_id, status="stopped" if ok else "failed", ended=time.time(),
                           kept=time.time() if self.closing and not a.taken else 0,
                           **({} if ok else {"last_error": _why(session_id) or
                                             f"the agent exited ({code}); see {log_path(session_id)}"}))
@@ -620,8 +842,13 @@ class Sessions:
     def _start_terminal(self, s: dict, cols: int, rows: int, fullscreen: bool = False) -> _Term:
         sid = s["session_id"]
         resume = bool(s["turns"]) or _has_calls(s["gatherer"], sid)
-        argv = [*ag_command(), "--gatherer", s["gatherer"], s["harness"], "--permission-mode", s["permission_mode"],
-                *(["--resume", sid] if resume else ["--session-id", sid])]
+        if s["harness"] == "codex":                  # codex's own UI; its classic screen is inline, not alternate
+            argv = [*ag_command(), "--gatherer", s["gatherer"], "codex", *(["-m", s["model"]] if s.get("model") else []),
+                    *CODEX_PERMISSIONS.get(s["permission_mode"], []), *([] if fullscreen else ["--no-alt-screen"]),
+                    *(["resume", sid] if resume else [])]
+        else:
+            argv = [*ag_command(), "--gatherer", s["gatherer"], s["harness"], "--permission-mode", s["permission_mode"],
+                    *(["--model", s["model"]] if s.get("model") else []), *(["--resume", sid] if resume else ["--session-id", sid])]
         env = {**{k: v for k, v in agent_env().items() if k not in OUTER_TERMINAL and not (fullscreen and k in CLASSIC)},
                "TERM": "xterm-256color", "COLORTERM": "truecolor", **({} if fullscreen else CLASSIC)}   # full screen even if the dashboard's own is classic
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
@@ -647,7 +874,27 @@ class Sessions:
         self._set(sid, status="terminal", last_error=None, kept=0)
         t.reader = threading.Thread(target=self._read_terminal, args=(sid, t), daemon=True)
         t.reader.start()
+        if s["harness"] == "codex" and not resume:  # its thread's id, once its first call names it
+            threading.Thread(target=self._find_thread, args=(sid, s["gatherer"], t), daemon=True).start()
         return t
+
+    def _find_thread(self, session_id: str, gatherer: str, t: _Term) -> None:
+        """A new codex terminal's thread, looked for in the gatherer's calls each second while it runs:
+        the session renamed to it once found."""
+        while t.exited is None:
+            with self.lock:
+                if self.terms.get(session_id) is not t:
+                    session_id = next((k for k, v in self.terms.items() if v is t), None)
+                    if session_id is None:
+                        return
+                found = _thread_of(gatherer, t.pid, {x["session_id"] for x in stored()})
+                if found:
+                    self._rename(session_id, found)
+                    s = self._row(found)
+                    if s is not None and not s["turns"]:
+                        self._set(found, turns=1)
+                    return
+            time.sleep(THREAD_POLL)
 
     def _read_terminal(self, session_id: str, t: _Term) -> None:
         """What the terminal prints, until it exits: kept, and the pages watching it woken."""
@@ -679,10 +926,11 @@ class Sessions:
         with self.lock:
             t.log.write(f"--- {_now()} terminal exited {code}\n")
             t.log.close()
+            session_id = next((k for k, v in self.terms.items() if v is t), session_id)   # renamed meanwhile (codex)
             if self.terms.get(session_id) is t:
                 del self.terms[session_id]
                 s = self._row(session_id)
-                self._set(session_id, status="stopped", kept=time.time() if self.closing else 0,
+                self._set(session_id, status="stopped", ended=time.time(), kept=time.time() if self.closing else 0,
                           **({"turns": max(1, s["turns"])} if s and _has_calls(s["gatherer"], session_id) else {}))
 
     def output(self, session_id: str, since: int, wait: float = 0.0):

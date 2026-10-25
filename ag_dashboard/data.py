@@ -19,12 +19,29 @@ CLOSED when the harness's process that made its last call no longer runs; else I
 is over -- its last answer ended without a tool call -- and RUNNING when it is not (waiting on a
 tool, or on the model). Where the process is not known (a call from before ag recorded it, not
 Linux), a turn left unfinished for more than STALE_SECONDS counts as over. A session the dashboard
-started whose process its own end took (sessions.py's `kept`) is IDLE, not CLOSED. `running` is RUNNING,
-or a build running for it. Its `last` is its latest activity: a read, an event, or a pending
+started whose process its own end took (sessions.py's `kept`) is IDLE, not CLOSED; one whose process
+the dashboard saw end otherwise (closed from the list, exited: sessions.py's `ended`) is CLOSED where
+the process cannot be told, unless something happened for it since. An IDLE agent whose BACKGROUND
+tasks still run (`background`) is BACKGROUND: its turn is over, but Claude Code is not done. `running`
+is RUNNING or BACKGROUND, or a build running for it. Its `last` is its latest activity: a read, an event, or a pending
 answer (the reply that ends a turn, which no call stores until the user writes again) -- what
 the page compares with when the reader last looked at it, to show it FINISHED. A REBUILD is a
 read whose context comes from another build than the agent's read before it: the condensed
 history was replaced.
+
+A BACKGROUND TASK is one Claude Code started and went on without (`background`): a command run in the
+background, an agent, a monitor, a workflow. Its tool's result says it started (STARTS) -- an agent that ended
+starts again when SendMessage resumes it (RESUMED); Claude Code tells the
+model it ended in a `<task-notification>` with a `<status>`, which reaches the gatherer with the next
+call -- an agent's end, as soon as it ends, by its report, handed back as a message from it (HANDBACK),
+its notification perhaps much later; an agent that stopped while background work of its own runs is
+notified too, but WAITING, not ended; a monitor's end may come as its last event, that it expired
+(MONITOR_END) -- or TaskStop's result says it was stopped. One with none still runs, while its
+session's process does: none when that process is known gone, or started after the task (a process
+the dashboard runs, `session.since`; else the reads that named it). Where the process is not known,
+one with no sign of life (its start, its output file changing -- a workflow's, any file in its transcript
+folder -- a monitor's event) for STALE_SECONDS
+counts as over.
 
 Each read has these sizes: `sent_tokens`, ag's own count of everything it sent (what the
 read returned, `_read_items`, added up -- what read() breaks down); `preamble_tokens`, its
@@ -37,17 +54,36 @@ before a column existed reads as None there. Nothing here writes anything.
 import glob
 import json
 import os
+import re
 import sqlite3
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from . import home as paths
-from . import hiding, sessions
+from . import avatars, hiding, sessions
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
-RUNNING, IDLE, CLOSED = "running", "idle", "closed"
+RUNNING, IDLE, CLOSED, BACKGROUND = "running", "idle", "closed", "background"
+#: A background task's start, as its tool's result begins (Claude Code's words): its kind, and its id.
+STARTS = ((re.compile(r"Command running in background with ID: ([\w-]+)"), "command"),
+          (re.compile(r"Async agent launched successfully\.[\s\S]*?\bagentId: ([\w-]+)"), "agent"),
+          (re.compile(r"Monitor started \(task ([\w-]+)"), "monitor"),
+          (re.compile(r"Workflow launched in background\. Task ID: ([\w-]+)"), "workflow"))
+SUMMARY = re.compile(r"^Summary: (.+)$", re.M)        # a workflow's: what it is for (its call has no description)
+RESUMED = re.compile(r'\{[^\n]*?"resumedAgentId":\s*"([\w-]+)"')    # SendMessage's result, when it resumed an agent
+#: Its end: Claude Code's notification with a status (one without is a monitor's event), an agent's report
+#: handed back, or TaskStop's result.
+HANDBACK = re.compile(r'<agent-message from="([\w-]+)">\s*\[Subagent hand-back\]')
+NOTIFICATION = re.compile(r"<task-notification>([\s\S]*?)</task-notification>")
+TASK_ID, TASK_STATUS = re.compile(r"<task-id>([\w-]+)</task-id>"), re.compile(r"<status>(\w+)</status>")
+TASK_EVENT = re.compile(r"<event>([\s\S]*?)</event>")
+WAITING = re.compile(r"waiting on its own background work|stopped with background work of its own still running")
+MONITOR_END = re.compile(r"^\s*\[Monitor (?:expired|stopped)\b")
+STOPPED = re.compile(r'^(?:\{"message":\s*")?Successfully stopped task: ([\w-]+)')
+OUTPUT_FILE = re.compile(r"(?:Output is being written to: |output_file: )(\S+?\.output)\b|^Transcript dir: (\S+)$", re.M)
 #: An answer's stop reason, as the provider gives it: the turn goes on (a tool to run, a paused
 #: turn), or is over. Any other (Codex's `completed` on every answer, none) tells nothing: its
 #: last event does.
@@ -159,7 +195,7 @@ def home(started: Optional[List[dict]] = None) -> dict:
             conn.close()
         gatherers.append({"name": name, "policy": _policy(name), "agents": agents,
                           "last": max((a["last"] or 0 for a in agents), default=0) or None})
-    _with_started(gatherers, sessions.stored() if started is None else started)
+    _with_started(gatherers, sessions.stored() if started is None else started, now)
     for g in gatherers:                  # when it was made: its first event, else its config's time
         g["created"] = min((a["created"] for a in g["agents"] if a.get("created")), default=None) or _made(g["name"])
     gatherers.sort(key=lambda g: g.get("created") or 0, reverse=True)
@@ -167,7 +203,7 @@ def home(started: Optional[List[dict]] = None) -> dict:
             "hook_servers": _hook_servers(), "hiding": hiding.stored()}
 
 
-def _with_started(gatherers: List[dict], started: List[dict]) -> None:
+def _with_started(gatherers: List[dict], started: List[dict], now: Optional[float] = None) -> None:
     by_name = {g["name"]: g for g in gatherers}
     for s in started:
         g = by_name.get(s["gatherer"])
@@ -183,30 +219,35 @@ def _with_started(gatherers: List[dict], started: List[dict]) -> None:
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
         a["session"] = s
-        if a.get("holder") and a["holder"]["pid"] == s.get("pid"):
-            a["holder"]["dashboard"] = True          # the dashboard's own agent, mid-turn
+        if a.get("holder") and paths.runs_under(a["holder"]["pid"], s.get("pid")):
+            a["holder"]["dashboard"] = True          # the dashboard's own agent or terminal (or a process under it)
         a["created"] = min((x for x in (a["created"], _seconds(s["created_at"])) if x), default=None)
         if s["status"] in ("starting", "running") or s.get("queued"):   # its agent works, or a message waits for it
             a["status"], a["running"] = RUNNING, True
         elif s.get("kept") and a["status"] == CLOSED and (a["last"] or 0) <= s["kept"]:
             a["status"] = IDLE                   # ended by the dashboard's own end, not closed, nor used since
+        elif s.get("ended") and not s.get("kept") and not s.get("pid") and a.get("alive") is None and not a.get("holder") \
+                and (a["last"] or 0) <= s["ended"]:
+            a["status"], a["running"] = CLOSED, bool(a.get("building"))   # its process gone, seen ending here, not used since
         g["last"] = max(g["last"] or 0, a["last"] or 0) or None
     for g in gatherers:                  # newest created first, as `_agents` has them
         for a in g["agents"]:
             a["chattable"] = chattable(a)
+            _settle_background(a, time.time() if now is None else now)
         g["agents"].sort(key=lambda a: a.get("created") or 0, reverse=True)
 
 
 def chattable(a: dict) -> bool:
-    """Whether the page may message the agent: a Claude Code session (the only harness the dashboard
+    """Whether the page may message the agent: a Claude Code or codex session (the harnesses the dashboard
     runs), with a directory to resume it in, that no other process has open (its `holder`, else the
-    process its last call named) -- the dashboard's own agent aside."""
-    if a.get("harness") not in ("claude", None) or not (a.get("cwd") or a.get("session")):
+    process its last call named) -- the dashboard's own agent or terminal aside, and any process under it
+    (codex's real codex, under its wrapper)."""
+    if a.get("harness") not in (*sessions.HARNESSES, None) or not (a.get("cwd") or a.get("session")):
         return False
     held = a.get("holder")
     if held:
         return bool(held.get("dashboard"))
-    return a.get("alive") is not True or bool(a.get("session") and a["session"].get("pid") == a.get("pid"))
+    return a.get("alive") is not True or bool(a.get("session") and paths.runs_under(a.get("pid"), a["session"].get("pid")))
 
 
 def _agents(conn, now: float) -> List[dict]:
@@ -238,11 +279,13 @@ def _agents(conn, now: float) -> List[dict]:
                                  f"ORDER BY read_id DESC LIMIT 1", (ch,)).fetchone()
                 if p is not None:
                     a["pid"], a["alive"] = p["pid"], paths.process_alive(p["pid"], p["pid_started"])
+                    a["since"] = _seconds(conn.execute(f"SELECT min(read_at) FROM _reads WHERE {CHANNEL} = ? AND pid = ? "
+                                                       "AND pid_started = ?", (ch, p["pid"], p["pid_started"])).fetchone()[0])
     if "_open" in _tables(conn):                     # which process has each session open (ag's launcher, its calls)
-        for ch, pid, started, by in conn.execute("SELECT session, pid, pid_started, opened_by FROM _open"):
+        for ch, pid, started, by, opened in conn.execute("SELECT session, pid, pid_started, opened_by, opened_at FROM _open"):
             if ch in out and paths.process_alive(pid, started) is not False:
                 out[ch]["holder"] = {"pid": pid, "by": by}
-                out[ch]["pid"], out[ch]["alive"] = pid, True
+                out[ch]["pid"], out[ch]["alive"], out[ch]["since"] = pid, True, _seconds(opened)
     if "tasks" in _tables(conn):
         for r in conn.execute("SELECT channel_key AS ch, count(*) AS n FROM tasks GROUP BY channel_key"):
             if r["ch"] in out:
@@ -252,11 +295,13 @@ def _agents(conn, now: float) -> List[dict]:
         answered = {ch: _seconds(t) for ch, t in conn.execute(
             f"SELECT {CHANNEL}, max(received_at) FROM _pending WHERE {CHANNEL} IS NOT NULL GROUP BY {CHANNEL}")}
     building = _running_builds(conn)
-    last_user = {}                                   # each agent's newest user message: what it was last asked
-    for ch, text, payload in conn.execute(
+    background = _background(conn)
+    last_user = {}                                   # each agent's newest user message: what it was last asked --
+    for ch, text, payload in conn.execute(           # not a background agent's report, which comes as one (HANDBACK)
             f"SELECT e.{CHANNEL}, e.text, e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
             f"WHERE t.name = 'user_message' AND e.row_id IN (SELECT max(e2.row_id) FROM events e2 "
-            f"JOIN event_types t2 ON t2.event_type_id = e2.event_type_id WHERE t2.name = 'user_message' GROUP BY e2.{CHANNEL})"):
+            f"JOIN event_types t2 ON t2.event_type_id = e2.event_type_id WHERE t2.name = 'user_message' "
+            f"AND ifnull(e2.text, '') NOT LIKE '%[Subagent hand-back]%' GROUP BY e2.{CHANNEL})"):
         last_user[ch] = (text if text else readable(payload)) or ""
     tables = _tables(conn)
     recaps = {}                                      # each agent's newest recap (Claude Code's, while the user was away)
@@ -273,6 +318,7 @@ def _agents(conn, now: float) -> List[dict]:
         a["turn_over"] = turn_over(conn, ch, tables)[0]
         a["status"] = status_of(a.get("alive"), a["turn_over"], a["last"], now)
         a["running"] = a["building"] or a["status"] == RUNNING
+        a["background"] = background.get(ch, [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
 
 
@@ -307,6 +353,145 @@ def status_of(alive: Optional[bool], over: bool, last: Optional[float], now: flo
     if alive is None and (last is None or now - last > STALE_SECONDS):
         return IDLE
     return RUNNING
+
+
+_BACKGROUND: Dict[str, dict] = {}   # database -> {row: the last row read, tasks: {channel: {id: task}}}, ended ones
+                                    # kept (`open` False): an agent resumed is the same task, its file the same
+_BACKGROUND_LOCK = threading.Lock()
+BACKGROUND_SCAN = ("SELECT e.row_id, e.{ch} AS ch, t.name AS type, e.text, e.payload_json, e.inserted_at FROM events e "
+                   "JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.row_id > ? AND e.row_id <= ? "
+                   "AND e.{ch} IS NOT NULL AND ((t.name = 'tool_output' AND (e.text LIKE 'Command running in background%' "
+                   "OR e.text LIKE 'Async agent launched%' OR e.text LIKE 'Monitor started (task %' "
+                   "OR e.text LIKE 'Workflow launched in background%' "
+                   "OR e.text LIKE '%Successfully stopped task: %' OR e.text LIKE '{{%\"resumedAgentId\"%')) "
+                   "OR (t.name IN ('context', 'user_message') AND (e.text LIKE '%<task-notification>%' "
+                   "OR e.text LIKE '%[Subagent hand-back]%'))) ORDER BY e.row_id")
+
+
+def _background(conn) -> Dict[str, List[dict]]:
+    """Each channel's background tasks that started and have not ended (module doc), oldest first:
+    {id, kind, label, started, output (its file, None: none named), event (a monitor's last), event_at}.
+    The database's events are read once: kept, each time only the rows added since are."""
+    path = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
+    top = conn.execute("SELECT max(row_id) FROM events").fetchone()[0] or 0
+    with _BACKGROUND_LOCK:
+        seen = _BACKGROUND.get(path)
+        if seen is None or top < seen["row"]:           # new, or not the database it was
+            seen = _BACKGROUND[path] = {"row": 0, "tasks": {}}
+        if top > seen["row"]:
+            for r in conn.execute(BACKGROUND_SCAN.format(ch=CHANNEL), (seen["row"], top)):
+                _background_event(conn, seen["tasks"].setdefault(r["ch"], {}), r)
+            seen["row"] = top
+        out = {ch: [{k: v for k, v in t.items() if k != "open"} for t in tasks.values() if t["open"]]
+               for ch, tasks in seen["tasks"].items()}
+        return {ch: open_ for ch, open_ in out.items() if open_}
+
+
+def _background_event(conn, tasks: Dict[str, dict], r) -> None:
+    """One event of the scan, on its channel's `tasks`: a start, an end, or a monitor's event."""
+    text = r["text"] or ""
+    if r["type"] == "tool_output":
+        stopped = STOPPED.match(text)
+        if stopped:
+            _end(tasks, stopped.group(1))
+            return
+        resumed = RESUMED.match(text)
+        if resumed:                                  # an agent sent a message after it ended: it runs again
+            before = tasks.get(resumed.group(1)) or {"id": resumed.group(1), "kind": "agent", "output": None, "label": None}
+            tasks[before["id"]] = {**before, "open": True, "started": _seconds(r["inserted_at"]), "event": None, "event_at": None,
+                                   "label": _task_label(conn, r["ch"], r["row_id"], r["payload_json"]) or before["label"]}
+            return
+        for pattern, kind in STARTS:
+            m = pattern.match(text)
+            if m:
+                out, summary = OUTPUT_FILE.search(text), SUMMARY.search(text)
+                tasks[m.group(1)] = {"id": m.group(1), "kind": kind, "started": _seconds(r["inserted_at"]),
+                                     "output": (out.group(1) or out.group(2)) if out else None, "event": None, "event_at": None,
+                                     "label": summary.group(1).strip()[:160] if summary
+                                     else _task_label(conn, r["ch"], r["row_id"], r["payload_json"]), "open": True}
+                return
+        return
+    for back in HANDBACK.finditer(text):             # an agent's report: it has ended
+        _end(tasks, back.group(1))
+    for note in NOTIFICATION.finditer(text):
+        found = TASK_ID.search(note.group(1))
+        task = tasks.get(found.group(1)) if found else None
+        if task is None or not task["open"]:
+            continue
+        event = TASK_EVENT.search(note.group(1))
+        if WAITING.search(note.group(1)):            # an agent stopped, its own background work running: not ended
+            task["event"], task["event_at"] = "waiting on its own background work", _seconds(r["inserted_at"])
+        elif TASK_STATUS.search(note.group(1)) or (event and MONITOR_END.match(event.group(1))):
+            _end(tasks, task["id"])                  # it ended: completed, failed, killed; a monitor expired
+        else:                                        # a monitor's event: it lives
+            task["event"] = " ".join(event.group(1).split())[:200] if event else None
+            task["event_at"] = _seconds(r["inserted_at"])
+
+
+def _end(tasks: Dict[str, dict], task_id: str) -> None:
+    if task_id in tasks:
+        tasks[task_id]["open"] = False
+
+
+def _task_label(conn, channel: str, row_id: int, payload_json: Optional[str]) -> Optional[str]:
+    """What the tool call that started a task said it was for: its `description` (Bash, Agent, Monitor
+    take one; SendMessage, its `summary`), else the start of its command or prompt. None when the call
+    is not found."""
+    try:
+        blocks = (json.loads(payload_json) or {}).get("content") or []
+        call_id = next(b.get("tool_use_id") for b in blocks if isinstance(b, dict) and b.get("tool_use_id"))
+    except (ValueError, AttributeError, StopIteration):
+        return None
+    for (raw,) in conn.execute(f"SELECT e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+                               f"WHERE e.{CHANNEL} = ? AND t.name = 'tool_call' AND e.row_id < ? AND e.row_id >= ? "
+                               "ORDER BY e.row_id DESC", (channel, row_id, row_id - 400)):
+        try:
+            for b in (json.loads(raw) or {}).get("content") or []:
+                if isinstance(b, dict) and b.get("id") == call_id and isinstance(b.get("input"), dict):
+                    given = b["input"]
+                    for k in ("description", "summary", "command", "prompt", "message"):
+                        if isinstance(given.get(k), str) and given[k].strip():
+                            return " ".join(given[k].split())[:160]
+                    return b.get("name")
+        except (ValueError, AttributeError):
+            continue
+    return None
+
+
+def _written(path: Optional[str]) -> Optional[float]:
+    """When a task's output was last written: its file's time, or a folder's (a workflow's transcripts) newest file's."""
+    try:
+        if not path:
+            return None
+        if not os.path.isdir(path):
+            return os.stat(path).st_mtime
+        with os.scandir(path) as found:
+            return max((e.stat().st_mtime for e in found if e.is_file()), default=None)
+    except OSError:
+        return None
+
+
+def _settle_background(a: dict, now: float) -> None:
+    """The agent's background tasks that still run (module doc), each with `active`, its last sign of
+    life; an IDLE agent with any is BACKGROUND, and running."""
+    s = a.get("session") or {}
+    tasks = a.get("background") or []
+    if a.get("alive") is False or a.get("status") == CLOSED or (s.get("kept") and not s.get("pid")):
+        tasks = []                                   # its process is gone (or seen ending: `ended`), and they with it
+    since = s.get("since") if s.get("pid") else a.get("since")     # when the process that has it now started
+    known = bool(s.get("pid")) or a.get("alive") is True
+    out = []
+    for t in tasks:
+        if since and t["started"] and t["started"] < since:
+            continue                                 # an earlier process's
+        wrote = _written(t.get("output"))
+        active = max((x for x in (t["started"], t.get("event_at"), wrote) if x), default=None)
+        if not known and (active is None or now - active > STALE_SECONDS):
+            continue
+        out.append({**t, "active": active})
+    a["background"] = out
+    if out and a.get("status") == IDLE:
+        a["status"], a["running"] = BACKGROUND, True
 
 
 CODEX_TYPES = {"message", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output",
@@ -957,8 +1142,10 @@ def _llm_summary(calls: List[dict]) -> dict:
 
 def snapshot() -> dict:
     """Everything, for a page that stands alone (`ag dashboard --out`): the home, every
-    agent over time, and the last read's contents of each (by kind, and item by item)."""
-    h = home()
+    agent over time, and the last read's contents of each (by kind, and item by item); and the
+    avatars the actors were given (avatars.py), each picture inside it."""
+    pool = avatars.pictures()
+    h = avatars.attach(home(), avatars.stored(), pool)
     llm = llm_calls()
     agents, reads, contexts = {}, {}, {}
     for g in h["gatherers"]:
@@ -969,4 +1156,8 @@ def snapshot() -> dict:
                 rid = detail["reads"][-1]["read_id"]
                 reads[f"{g['name']}\u0000{rid}"] = read(g["name"], rid)
                 contexts[f"{g['name']}\u0000{rid}"] = context(g["name"], rid)
-    return {"home": h, "agents": agents, "reads": reads, "contexts": contexts}
+    pictures = {}
+    for name in {a["avatar"] for g in h["gatherers"] for a in g["agents"] if a["avatar"]}:
+        with open(avatars.path(name), encoding="utf-8") as fh:
+            pictures[name] = fh.read()
+    return {"home": h, "agents": agents, "reads": reads, "contexts": contexts, "avatars": pictures}

@@ -93,6 +93,10 @@ def said(text):
     return ("agent_message", {"role": "assistant", "content": [{"type": "text", "text": text}]})
 
 
+def thought(text):
+    return ("agent_reasoning", {"role": "assistant", "content": [{"type": "thinking", "thinking": text, "signature": "s"}]})
+
+
 def asked(text):
     return ("user_message", {"role": "user", "content": [{"type": "text", "text": text}]})
 
@@ -106,13 +110,15 @@ class FilesTest(unittest.TestCase):
         self.saved, dashboard_home.HOME = dashboard_home.HOME, self.tmp.name
         self.addCleanup(setattr, dashboard_home, "HOME", self.saved)
         os.makedirs(os.path.join(self.tmp.name, "gatherers", "g"))
-        conn = sqlite3.connect(os.path.join(self.tmp.name, "gatherers", "g", "context.db"))
+        self.db = os.path.join(self.tmp.name, "gatherers", "g", "context.db")
+        conn = sqlite3.connect(self.db)
         conn.executescript("""CREATE TABLE event_types (event_type_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
             CREATE TABLE events (row_id INTEGER PRIMARY KEY, inserted_at TEXT NOT NULL, event_id TEXT, event_type_id INTEGER NOT NULL,
               payload_json TEXT NOT NULL, tokens INTEGER NOT NULL, text TEXT, counted INTEGER, p_channel);""")
-        types = {}
-        for typ, payload in [
+        conn.close()
+        self.add(
             asked("look at a.py"),
+            thought("Read it first."), thought(""),
             call("r1", "Read", {"file_path": "/w/a.py"}), result("r1", "1\tdef f():\n2\t    return 1\n3\t\n4\tdef g():\n5\t    return 2"),
             said("It returns 1."),
             asked("change g"),
@@ -128,11 +134,16 @@ class FilesTest(unittest.TestCase):
             call("i1", "Read", {"file_path": "/w/shot.png"}),
             ("tool_output", {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "i1", "content": [
                 {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}}]}]}),
-        ]:
-            if typ not in types:
-                types[typ] = conn.execute("INSERT INTO event_types (name, created_at) VALUES (?, '')", (typ,)).lastrowid
+        )
+
+    def add(self, *events):
+        """Events of channel c1, after those there."""
+        conn = sqlite3.connect(self.db)
+        for typ, payload in events:
+            got = conn.execute("SELECT event_type_id FROM event_types WHERE name = ?", (typ,)).fetchone()
+            tid = got[0] if got else conn.execute("INSERT INTO event_types (name, created_at) VALUES (?, '')", (typ,)).lastrowid
             conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, p_channel) VALUES "
-                         "('2026-10-24 08:00:00', ?, ?, 1, 'c1')", (types[typ], json.dumps(payload)))
+                         "('2026-10-24 08:00:00', ?, ?, 1, 'c1')", (tid, json.dumps(payload)))
         conn.commit()
         conn.close()
 
@@ -140,9 +151,20 @@ class FilesTest(unittest.TestCase):
         got = files.files("g", "c1", cwd="/w")
         self.assertEqual([t["text"] for t in got["turns"]], ["look at a.py", "change g"])
         self.assertEqual(got["turn"], 1)
-        self.assertEqual([t["replies"] for t in got["turns"]], [["It returns 1."], []])   # what the agent said back
+        self.assertEqual([t["replies"] for t in got["turns"]],              # what the agent thought and said back
+                         [[{"kind": "thinking", "texts": ["Read it first."]}, {"kind": "text", "text": "It returns 1."}], []])
+        self.assertEqual([t["now"] for t in got["turns"]], [None, None])    # done: nothing under way
         self.assertEqual([f["path"] for f in got["files"]], ["/w/a.py", "/w/b.py", "/w/new.py", "/w/notes.md", "/w/shot.png"])
         self.assertIn("error", files.files("nope", "c1"))
+
+    def test_what_the_agent_is_doing_while_its_turn_runs(self):
+        self.add(asked("and now?"), thought(""))
+        self.assertEqual(files.files("g", "c1")["turns"][-1]["replies"], [{"kind": "thinking", "texts": []}])   # encrypted
+        self.assertEqual(files.files("g", "c1")["turns"][-1]["now"], {"kind": "thinking"})
+        self.add(call("b9", "Bash", {"command": "make", "description": "Build it"}))
+        self.assertEqual(files.files("g", "c1")["turns"][-1]["now"], {"kind": "call", "id": "b9", "text": "Build it"})
+        self.add(result("b9", "ok"))
+        self.assertIsNone(files.files("g", "c1")["turns"][-1]["now"])        # its result in: the model's turn again
 
     def test_a_read_shows_its_lines_at_their_numbers(self):
         a = files.files("g", "c1", 0)["files"][0]

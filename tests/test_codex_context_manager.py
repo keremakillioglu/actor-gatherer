@@ -168,6 +168,61 @@ class HookTest(unittest.TestCase):
                           for c in FakeClient.made], [("demo", "demo", "t1"), ("t1", "t1", "t1")])
 
 
+def meta(**fields):
+    """Codex's turn metadata header, as it sends it."""
+    return {"thread-id": "t1", "x-codex-turn-metadata": json.dumps({"thread_id": "t1", "request_kind": "turn", **fields})}
+
+
+TRIGGER = {"type": "compaction_trigger"}
+SUMMARY = {"type": "compaction", "id": "cmp_1", "encrypted_content": "gAAAA"}
+
+
+class SideCallTest(HookTest):
+    """Codex's own side calls, by what its turn metadata says they are for: passed through, nothing
+    stored; and its compaction, built in its place."""
+
+    def test_what_codex_says_a_call_is_for(self):
+        self.assertEqual(codex_ag.metadata_of(meta(thread_source="user"), {})["thread_source"], "user")
+        inside = {"client_metadata": {"x-codex-turn-metadata": json.dumps({"thread_source": "system"})}}
+        self.assertEqual(codex_ag.metadata_of({}, inside), {"thread_source": "system"})       # the body's copy
+        self.assertEqual(codex_ag.metadata_of({"x-codex-turn-metadata": "not json"}, {}), {})
+        for fields, kind in (({"thread_source": "user"}, None), ({}, None),             # a turn; an older codex's
+                             ({"thread_source": "thread_title"}, "thread_title"), ({"thread_source": "system"}, "system"),
+                             ({"thread_source": "subagent", "parent_thread_id": "t0"}, "subagent"),
+                             ({"thread_source": "guardian_review"}, "guardian_review"),
+                             ({"thread_source": "memory_consolidation"}, "memory_consolidation"),
+                             ({"parent_thread_id": "t0"}, "subagent")):
+            self.assertEqual(codex_ag.side_call(fields), kind, fields)
+
+    def test_a_side_call_goes_through_as_it_is_and_nothing_is_stored(self):
+        title = user("Generate a concise, single-line task title of at most 36 characters", 1)
+        for source in ("thread_title", "system", "subagent", "guardian_review"):
+            hook = self.hook()
+            request = self.request({"input": [DEV, title]}, headers=meta(thread_source=source))
+            request.state = {}
+            self.assertIsNone(self.call(hook, request), source)
+            self.assertEqual(FakeClient.made, [], source)                # no server asked: nothing stored
+            self.assertNotIn(codex_ag.ANSWERED, request.state)           # its answer not kept either
+
+    def test_a_turn_is_rewritten(self):
+        out = self.call(self.hook(), self.request({"input": [DEV, user("q", 1)]}, headers=meta(thread_source="user")))
+        self.assertEqual(out["input"], [MANAGED, DEV, user("q", 1)])
+
+    def test_a_compaction_builds_and_gets_the_context_with_the_trigger_last(self):
+        hook = self.hook()
+        items = [DEV, user("q", 1), agent("a", 1), TRIGGER]
+        out = self.call(hook, self.request({"input": items}, headers=meta(thread_source="user", request_kind="compaction")))
+        op, body = FakeClient.made[0].requests[0]
+        self.assertEqual(op, "compaction")
+        self.assertEqual([e["payload"] for e in body["events"]], items[:-1])   # the trigger is no event
+        self.assertEqual(out["input"], [MANAGED] + items[:-1] + [TRIGGER])
+
+    def test_after_a_compaction_only_what_follows_its_summary_is_new(self):
+        again = [{**DEV, "id": "dev2"}, user("q", 1), SUMMARY, user("next", 2)]   # codex's window, started again
+        self.assertEqual([e["payload"] for e in codex_format.to_events(again)], [user("next", 2)])
+        self.assertEqual(len(codex_format.to_events([DEV, user("q", 1)])), 2)       # nothing compacted: all of it
+
+
 if web is not None:
     class ProxyBase(unittest.IsolatedAsyncioTestCase):
         async def asyncSetUp(self):
