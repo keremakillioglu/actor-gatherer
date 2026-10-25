@@ -157,6 +157,27 @@ class HookTest(unittest.TestCase):
         self.assertEqual(out["messages"][0]["content"][0]["text"], "SUMMARY")      # the context, before it
         self.assertEqual(claude_ag.suggestion_at(conversation_so_far()), None)
 
+    def test_a_suggestion_that_called_a_tool_is_still_the_suggestion(self):
+        server = Server()
+        hook = self.hook(server)
+        called = [{"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "ScheduleWakeup",
+                                                     "input": {"stop": True}}]},
+                  {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "is_error": True,
+                                                "content": "No tools needed for suggestion"}]}]
+        req = SimpleNamespace(method="POST", path="/v1/messages", label="g", limit=None, state={}, upstream=None,
+                              headers={"X-Claude-Code-Session-Id": "s"},
+                              body={"model": "m", "tools": [{"name": "Bash"}],
+                                    "messages": conversation_so_far() + [SUGGEST] + called})
+        out = asyncio.run(hook(req))                                    # asked again, the refusal after the call
+        self.assertEqual([op for op, _ in server.asked], ["context"])
+        sent = json.dumps(server.asked[0][1]["events"])
+        self.assertNotIn("SUGGESTION MODE", sent)                         # none of it stored
+        self.assertNotIn("No tools needed", sent)
+        self.assertEqual(out["messages"][-3:], [SUGGEST] + called)
+        self.assertNotIn(claude_ag.ANSWERED, req.state)                   # its answer is not kept as the session's
+        self.assertIsNone(claude_ag.suggestion_at(conversation_so_far() + [{"role": "user", "content": "next"}]
+                                                  + called))              # a turn's own tool call: a turn
+
     def test_the_next_turn_carries_on_from_the_conversation_not_the_suggestion(self):
         server = Server()
         hook = self.hook(server)
