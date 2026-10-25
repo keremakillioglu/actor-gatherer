@@ -581,17 +581,16 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-build.bad { color: var(--warning); }
 .hist .h-build .spin::before { content: "✻"; color: var(--term-accent); animation: term-spin 1.2s steps(1) infinite; }
 .hist .h-list { flex: 1; min-height: 0; overflow: auto; padding-bottom: 16px; }
-.hist .h-row { display: grid; grid-template-columns: 18px 14px minmax(0, 1fr) auto; column-gap: 6px; align-items: start;
+.hist .h-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 6px; align-items: start; cursor: default; user-select: none;
   padding: 6px 16px 6px calc(16px + var(--depth, 0) * 20px); border-bottom: 1px solid var(--grid); content-visibility: auto; contain-intrinsic-size: auto 46px; }
 .hist .h-row:hover { background: var(--wash); }
-.hist .h-row.on { background: var(--selected); }
 .hist .h-row.head { background: var(--wash); }
-.hist .h-row.head.on { background: var(--selected); }
-.hist .h-row input[type=checkbox] { margin: 2px 0 0; cursor: pointer; accent-color: var(--s1); }
+.hist .h-row.on, .hist .h-row.on:hover { background: var(--selected); }      /* selected; a part of it: half as strong */
+.hist .h-row.some { background: color-mix(in srgb, var(--selected) 50%, transparent); }
+.hist .h-full { user-select: text; cursor: text; }
 .hist .h-tw { border: 0; background: none; padding: 0; margin: 0; width: 14px; color: var(--ink-2); font-size: 13px; line-height: 18px; cursor: pointer; }
 .hist .h-tw:hover { color: var(--ink); background: none; }
-.hist .h-main { min-width: 0; cursor: pointer; }
-.hist .h-main.leaf { cursor: default; }
+.hist .h-main { min-width: 0; }
 .hist .h-label { font-size: 13px; line-height: 1.4; color: var(--ink); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .hist .h-row.open:not(.head) > .h-main .h-label { -webkit-line-clamp: 6; }
@@ -608,21 +607,27 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-hit { font-size: 12px; color: var(--ink-2); margin-top: 3px; overflow-wrap: anywhere; }
 .hist mark { background: color-mix(in srgb, var(--s4) 35%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
 .hist .h-meta { font-size: 11px; color: var(--muted); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; padding-top: 2px; }
-.hist .h-full { grid-column: 3 / -1; margin: 6px 0 2px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+.hist .h-full { grid-column: 2 / -1; margin: 6px 0 2px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
   color: var(--ink-2); background: var(--page); border: 1px solid var(--grid); border-radius: 6px; padding: 8px 10px; max-height: 360px; overflow: auto; }
 .hist .h-more { display: block; margin: 12px auto; }
 .hist .h-note { color: var(--muted); font-size: 12px; padding: 14px 16px; }
-.hist .h-pick { flex: none; border-top: 1px solid var(--ring); padding: 10px 16px 12px; display: grid; gap: 8px; }
-.hist .h-pick textarea { width: 100%; min-height: 38px; max-height: 30vh; resize: vertical; font: inherit; font-size: 13px; color: var(--ink); background: var(--page);
+.hist .h-act { padding: 12px 14px; display: grid; gap: 8px; border-bottom: 1px solid var(--ring); margin-bottom: 10px; }
+.hist .h-act textarea { width: 100%; min-height: 38px; max-height: 30vh; resize: vertical; font: inherit; font-size: 13px; color: var(--ink); background: var(--page);
   border: 1px solid var(--ring); border-radius: 6px; padding: 6px 8px; field-sizing: content; }
-.hist .h-pick .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.hist .h-pick .grow { flex: 1; }
+.hist .h-act .row { display: flex; align-items: center; gap: 8px; }
+.hist .h-act .row .h-picked:first-child { flex: 1; }
+.hist .h-act .kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.hist .h-act .h-x { border: 0; background: none; font-size: 18px; line-height: 1; padding: 0 6px; color: var(--muted); }
+.hist .h-act .h-x:hover { color: var(--ink); background: var(--wash); }
 .hist .h-picked { font-size: 12px; color: var(--ink-2); }
 .hist .h-picked b { color: var(--ink); font-weight: 600; }
-.hist .h-pick .err { color: var(--critical); font-size: 12px; }
-.hist .h-pick .err:empty { display: none; }
+.hist .h-act .err { color: var(--critical); font-size: 12px; }
+.hist .h-act .err:empty { display: none; }
 .hist .h-side { border-left: 1px solid var(--ring); overflow: auto; min-height: 0; background: var(--page); }
-.hist .h-side { padding-top: 10px; }
+.hist .h-side.empty { border-left-color: transparent; background: none; }      /* its room kept, until something is selected */
+.hist .h-side.open { animation: h-side-in .18s ease-out; }
+@keyframes h-side-in { from { opacity: 0; transform: translateX(14px); } }
+@media (prefers-reduced-motion: reduce) { .hist .h-side.open { animation: none; } }
 .hist .h-side .h-note { padding: 4px 14px 12px; }
 .hist .h-rec { margin: 0 10px 10px; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; }
 .hist .h-rec > summary { list-style: none; margin: 0; padding: 8px 10px; cursor: pointer; display: grid; gap: 2px; color: var(--ink); }
@@ -674,7 +679,7 @@ button:disabled { opacity: .5; cursor: default; }
 /* a time that counts up: its digits all one width, at the end of its line, where it moves nothing */
 .hist .ticking { font-variant-numeric: tabular-nums; color: var(--muted); }
 @media (max-width: 1100px) { .hist .h-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 38%); }
-  .hist .h-side { border-left: 0; border-top: 1px solid var(--ring); } }
+  .hist .h-side { border-left: 0; border-top: 1px solid var(--ring); } .hist .h-side.empty { display: none; } }
 </style>
 </head>
 <body>
@@ -3292,30 +3297,102 @@ const histState = (n) => {
   for (const r of n.rows) if (hist.sel.has(r)) on++;
   return on === 0 ? "none" : on === n.rows.length ? "all" : "some";
 };
-// Pick a node -- all of it, or, picked already, none of it -- or with shift, every row from the last one
-// picked to it.
-function histPick(id, range) {
-  const n = hist.byId.get(id);
-  if (!n) return;
-  const on = histState(n) !== "all";
-  let nodes = [n];
-  const a = hist.flat.indexOf(hist.last), b = hist.flat.indexOf(id);
-  if (range && a >= 0 && b >= 0) nodes = hist.flat.slice(Math.min(a, b), Math.max(a, b) + 1).map((x) => hist.byId.get(x)).filter(Boolean);
-  hist.last = id;
-  for (const x of nodes) for (const r of x.rows) {
-    if (!on) { hist.sel.delete(r); continue; }
-    const e = hist.byId.get(`m:${r}`);
-    hist.sel.set(r, e ? [e.channel, e.tokens] : [x.channel, 0]);
+// Selecting, as text is selected: a click on a row selects it -- all it holds -- and a drag, the rows from where it
+// began to where it is; with ⌘ (Ctrl) they are added to what is selected already (a click on a selected row takes
+// it out), with shift, from the row last clicked. A row's twisty, or a double click, opens it; Esc, or a click
+// below the rows, clears it; ⌘A selects every row listed. Rows are named by `data-key`: a node's id, "/h" after
+// an actor's heading. While a drag goes on only the rows' marks change; the page is drawn again when it ends.
+const histNode = (k) => hist.byId.get(String(k).replace(/\/h$/, ""));
+function histWith(nodes, base) {
+  const sel = new Map(base);
+  for (const n of nodes) for (const r of n.rows) { const e = hist.byId.get(`m:${r}`); sel.set(r, [e ? e.channel : n.channel, e ? e.tokens : 0]); }
+  return sel;
+}
+function histRange(a, b) {
+  const i = hist.flat.indexOf(a), j = hist.flat.indexOf(b);
+  const keys = i < 0 || j < 0 ? [b] : hist.flat.slice(Math.min(i, j), Math.max(i, j) + 1);
+  return keys.map(histNode).filter(Boolean);
+}
+function histSelect(sel) {
+  hist.sel = sel;
+  if (sel.size) hist.panel = true;
+  else if (!hist.recOpen && !hist.recs.list.some((r) => r.status === "running")) hist.panel = false;
+  hist.version++;
+  histRedraw();
+}
+function histPaint() {                              // each row's mark, from what is selected now
+  for (const row of document.querySelectorAll(".hist .h-list .h-row")) {
+    const n = histNode(row.dataset.key);
+    if (!n) continue;
+    const st = histState(n);
+    row.classList.toggle("on", st === "all"); row.classList.toggle("some", st === "some");
   }
-  hist.version++;
-  histRedraw();
 }
-function histPickAll(on) {
-  if (on) for (const n of hist.tops) for (const r of n.rows) { const e = hist.byId.get(`m:${r}`); hist.sel.set(r, [n.channel, e ? e.tokens : 0]); }
-  else hist.sel.clear();
-  hist.version++;
-  histRedraw();
+let histDrag = null;
+function histDragTo(k) {
+  const d = histDrag;
+  if (!d || k === d.at) return;
+  d.at = k;
+  if (k !== d.from) d.moved = true;
+  hist.sel = histWith(histRange(d.anchor, k), d.base);
+  histPaint();
 }
+function histScrollWhileDragging() {                 // near the list's top or bottom edge, it scrolls, and the drag goes on
+  const d = histDrag, list = document.querySelector(".hist .h-list");
+  if (!d) return;
+  if (list && d.y !== undefined) {
+    const r = list.getBoundingClientRect(), edge = 36;
+    const by = d.y < r.top + edge ? d.y - (r.top + edge) : d.y > r.bottom - edge ? d.y - (r.bottom - edge) : 0;
+    if (by) {
+      list.scrollTop += Math.max(-24, Math.min(24, by / 2));
+      const under = document.elementFromPoint(d.x, Math.max(r.top + 2, Math.min(r.bottom - 2, d.y)));
+      const row = under && under.closest(".h-row");
+      if (row) histDragTo(row.dataset.key);
+    }
+  }
+  requestAnimationFrame(histScrollWhileDragging);
+}
+document.addEventListener("mousedown", (ev) => {
+  const list = ev.button === 0 && ev.target.closest && ev.target.closest(".hist .h-list");
+  if (!list) return;
+  const row = ev.target.closest(".h-row");
+  if (!row) { if (!ev.target.closest("button, a") && hist.sel.size) histSelect(new Map()); return; }   // below the rows
+  if (ev.target.closest(".h-tw, .h-full, a, button")) return;     // its twisty; its whole text, to select words in
+  ev.preventDefault();                                             // no text selected as the rows are
+  const k = row.dataset.key, add = ev.metaKey || ev.ctrlKey, extend = ev.shiftKey && hist.flat.includes(hist.last);
+  histDrag = { from: k, anchor: extend ? hist.last : k, base: add || extend ? new Map(hist.sel) : new Map(), at: null, moved: false,
+    add, extend, wasOn: row.classList.contains("on"), x: ev.clientX, y: ev.clientY };
+  if (!(add && histDrag.wasOn)) histDragTo(k);                     // a ⌘-click on a selected row: taken out, on release
+  requestAnimationFrame(histScrollWhileDragging);
+});
+document.addEventListener("mousemove", (ev) => {
+  if (!histDrag) return;
+  histDrag.x = ev.clientX; histDrag.y = ev.clientY;
+  const under = document.elementFromPoint(ev.clientX, ev.clientY);
+  const row = under && under.closest && under.closest(".hist .h-list .h-row");
+  if (row) histDragTo(row.dataset.key);
+});
+document.addEventListener("mouseup", () => {
+  const d = histDrag;
+  if (!d) return;
+  histDrag = null;
+  if (d.add && d.wasOn && !d.moved) {                              // ⌘-click on a selected row: out of the selection
+    const n = histNode(d.from), sel = new Map(hist.sel);
+    if (n) for (const r of n.rows) sel.delete(r);
+    hist.sel = sel;
+  }
+  if (!d.extend) hist.last = d.from;
+  histSelect(hist.sel);
+});
+document.addEventListener("dblclick", (ev) => {
+  const row = ev.target.closest && ev.target.closest(".hist .h-list .h-row");
+  if (row && !ev.target.closest(".h-tw, .h-full, a, button")) histOpen(row.dataset.key.replace(/\/h$/, ""), row.dataset.key.endsWith("/h"));
+});
+document.addEventListener("keydown", (ev) => {
+  if (chatView().id !== "history" || (ev.target && ev.target.closest && ev.target.closest("input, textarea, select, [contenteditable]"))) return;
+  if (ev.key === "Escape" && hist.sel.size) { ev.preventDefault(); histSelect(new Map()); }
+  else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "a" && hist.tops.length) { ev.preventDefault(); histSelect(histWith(hist.tops, new Map())); }
+});
 // The rows picked, as [first, last] runs: what the server takes.
 function histRanges(rows = [...hist.sel.keys()]) {
   const out = [];
@@ -3412,18 +3489,15 @@ function histRow(n, depth, header) {
   const hits = hist.hits ? n.rows.filter((r) => hist.hits.has(r)) : [];
   const fullText = n.kind === "message" ? hist.full.get(n.event.row_id) : undefined;
   const sig = [st, open, depth, n.rows.length, n.tokens, n.reply || "", hits.length, hist.q.trim(), fullText === undefined ? "" : fullText.length].join("|");
-  return histRows.get(n.id + (header ? "/h" : ""), sig, () => {
-    const cb = el("input", { type: "checkbox", "aria-label": "Pick it", "data-state": st, ...(st === "all" ? { checked: "" } : {}) });
-    cb.indeterminate = st === "some";
-    cb.addEventListener("click", (ev) => { ev.preventDefault(); histPick(n.id, ev.shiftKey && !header); });
+  const k = n.id + (header ? "/h" : "");
+  return histRows.get(k, sig, () => {
     const what = n.kind === "message" ? (open ? "Hide its whole text" : "Show its whole text") : (open ? "Fold" : "Open: its parts");
-    const row = el("div", { class: `h-row ${n.kind}${header ? " head" : ""}${st !== "none" ? " on" : ""}${open ? " open" : ""}`,
-      style: `--depth:${depth}`, "data-state": st },
-      cb, el("button", { type: "button", class: "h-tw", title: what, "aria-label": what, "aria-expanded": open ? "true" : "false",
+    const row = el("div", { class: `h-row ${n.kind}${header ? " head" : ""}${st === "all" ? " on" : st === "some" ? " some" : ""}${open ? " open" : ""}`,
+      style: `--depth:${depth}`, "data-key": k },
+      el("button", { type: "button", class: "h-tw", title: what, "aria-label": what, "aria-expanded": open ? "true" : "false",
         onclick: () => histOpen(n.id, header) }, open ? "▾" : "▸"),
-      el("div", { class: "h-main" + (n.kind === "message" ? " keyed" : ""), title: what,
-        ...(n.kind === "message" ? { style: `--key:${itemType({ name: n.event.type, group: "Recent history" })[2]}` } : {}),
-        onclick: (ev) => { if (!getSelection().toString()) histOpen(n.id, header); } }, ...histLabel(n, hits)),
+      el("div", { class: "h-main" + (n.kind === "message" ? " keyed" : ""),
+        ...(n.kind === "message" ? { style: `--key:${itemType({ name: n.event.type, group: "Recent history" })[2]}` } : {}) }, ...histLabel(n, hits)),
       el("div", { class: "h-meta" }, ...histMeta(n, hits)));
     if (n.kind === "message" && open) row.append(el("pre", { class: "h-full", text: fullText ?? "Loading…" }));
     return row;
@@ -3474,29 +3548,28 @@ function histBar(h, grains, grain) {
         : `${full(hist.hits.size)}${hist.hitsMore ? "+" : ""} matching message${hist.hits.size === 1 ? "" : "s"}` }) : null,
       histBuildNote(h)));
 }
-function histPickBar(h) {
+// What can be done with what is selected, at the top of the panel at the right: the Gatherer's model asked for
+// one of HIST_KINDS, with what the reader wants of it; or the history saved as a file.
+function histActions() {
   const rows = [...hist.sel.values()], n = rows.length;
   const tokens = rows.reduce((t, [, k]) => t + k, 0), actors = new Set(rows.map(([c]) => c)).size;
-  const ask = el("textarea", { id: "hist-ask", rows: "1", "data-sig": "hist-ask", "aria-label": "What you want from it",
-    placeholder: "Optional: what you want from it — e.g. “only the deployment steps”, “as a checklist”, “for a new teammate”" });
+  const ask = el("textarea", { id: "hist-ask", rows: "2", "data-sig": "hist-ask", "aria-label": "What you want from it",
+    placeholder: "Optional: what you want from it" });
   ask.value = hist.ask;
   ask.addEventListener("input", () => { hist.ask = ask.value; });
-  ask.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); histMake("summary"); } });
   const off = !n || hist.busy ? { disabled: "" } : {};
-  return el("div", { class: "h-pick", "data-morph": "" },
+  return el("div", { class: "h-act", "data-morph": "" },
     el("div", { class: "row" },
-      el("span", { class: "h-picked" }, ...(n ? [el("b", { text: plural(n, "message") }), ` picked · about ${compact(tokens)} tokens`
-        + (actors > 1 ? ` · from ${actors} actors` : "")] : ["Pick tasks, turns or messages with their boxes — shift-click picks a run."])),
-      el("span", { class: "grow" }),
-      el("button", { type: "button", onclick: () => histPickAll(true), ...(hist.tops.length ? {} : { disabled: "" }) }, hist.hits ? "Pick all listed" : "Pick all"),
-      el("button", { type: "button", onclick: () => histPickAll(false), ...(n ? {} : { disabled: "" }) }, "Clear")),
+      el("span", { class: "h-picked" }, ...(n ? [el("b", { text: plural(n, "message") }), ` · about ${compact(tokens)} tokens`
+        + (actors > 1 ? ` · ${actors} actors` : "")] : ["Nothing selected"])),
+      el("button", { type: "button", class: "h-x", title: "Close (Esc clears the selection)", "aria-label": "Close",
+        onclick: () => { hist.panel = false; hist.recOpen = null; hist.saving = null; histSelect(new Map()); } }, "×")),
     ask,
-    el("div", { class: "row" },
-      ...Object.entries(HIST_KINDS).map(([k, [label]]) => el("button", { type: "button", ...off,
-        title: `Give the picked history to the Gatherer's model: ${label.toLowerCase()}`, onclick: () => histMake(k) }, label)),
-      el("span", { class: "grow" }),
-      el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the picked history as a Markdown transcript", onclick: () => histExport("md") }, "Export .md"),
-      el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the picked events as stored, as JSON", onclick: () => histExport("json") }, "Export .json")),
+    el("div", { class: "kinds" }, ...Object.entries(HIST_KINDS).map(([k, [label]]) => el("button", { type: "button", ...off,
+      title: `Give the selected history to the Gatherer's model: ${label.toLowerCase()}`, onclick: () => histMake(k) }, label))),
+    el("div", { class: "row" }, el("span", { class: "h-picked", text: "Export" }),
+      el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the selected history as a Markdown transcript", onclick: () => histExport("md") }, ".md"),
+      el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the selected events as stored, as JSON", onclick: () => histExport("json") }, ".json")),
     el("div", { class: "err", role: "alert", text: hist.err }));
 }
 function saveFile(name, text, type = "text/markdown") {
@@ -3522,7 +3595,7 @@ async function histMake(kind, again = null) {
     const rec = await post("/api/history/extract", again ? { gatherer: again.gatherer, kind: again.kind, rows: again.rows, ask: again.ask }
       : { gatherer: h.gatherer, kind, rows: histRanges(), ask: hist.ask.trim() });
     hist.recs = { gatherer: rec.gatherer, list: [rec, ...(hist.recs.gatherer === rec.gatherer ? hist.recs.list : [])], at: Date.now() };
-    hist.recOpen = rec.id;
+    hist.recOpen = rec.id; hist.panel = true;
     const side = document.querySelector(".hist .h-side"); if (side) side.scrollTop = 0;
     pollExtracts();
   } catch (err) { hist.err = err.message; }
@@ -3631,12 +3704,12 @@ function recCard(r) {
         } }, "Save to…") : null,
       done ? copyButton(recText(r)) : null,
       done ? el("button", { type: "button", title: `Save it as ${file}`, onclick: () => saveFile(file, recText(r)) }, "Download") : null,
-      el("button", { type: "button", title: "Pick the history it was made from again", onclick: () => {
-        hist.sel.clear();
-        for (const [a, b] of r.rows) for (let x = a; x <= b; x++) { const e = hist.byId.get(`m:${x}`); hist.sel.set(x, e ? [e.channel, e.tokens] : [r.channels[0], 0]); }
+      el("button", { type: "button", title: "Select the history it was made from again", onclick: () => {
+        const sel = new Map();
+        for (const [a, b] of r.rows) for (let x = a; x <= b; x++) { const e = hist.byId.get(`m:${x}`); sel.set(x, e ? [e.channel, e.tokens] : [r.channels[0], 0]); }
         hist.ask = r.ask || ""; const box = document.getElementById("hist-ask"); if (box) box.value = hist.ask;
-        hist.version++; histRedraw();
-      } }, "Pick again"),
+        histSelect(sel);
+      } }, "Select again"),
       r.status === "failed" ? el("button", { type: "button", onclick: () => histMake(r.kind, r) }, "Try again") : null,
       el("button", { type: "button", title: running ? "Stop it, and remove it" : "Remove it", onclick: () => histDelete(r) }, running ? "Stop" : "Delete"));
     const what = [plural(r.messages, "message"), plural(r.turns, "turn"), r.channels.length > 1 ? `${r.channels.length} actors` : null,
@@ -3652,24 +3725,27 @@ function recCard(r) {
       ...(r.saved || []).map((x) => el("div", { class: "saved" }, el("b", { text: "Saved " }), `${clock(x.at, true)} · ${x.paths.join(", ")}`)));
   });
 }
+// The panel at the right: its room kept empty until something is selected, then what can be done with it, and what
+// the Gatherer made. It stays while a result it asked for shows, until closed.
 function histSide(h) {
   const list = hist.recs.gatherer === h.gatherer ? hist.recs.list : [];
   histRecs.begin(h.gatherer);
-  const side = el("div", { class: "h-side", "data-keep": "hist-side", "data-morph": "" });
-  side.kids = list.length ? list.map(recCard) : [el("div", { class: "h-note", text: "What you summarize or generate shows here." })];
+  if (!hist.panel) return el("div", { class: "h-side empty", "aria-hidden": "true" });
+  const side = el("div", { class: "h-side open", "data-keep": "hist-side", "data-morph": "", role: "complementary", "aria-label": "Selected history" });
+  side.kids = [histActions(), ...list.map(recCard)];
   return side;
 }
 function histRender() {
   const h = state.hist;
   if (!h || h.key !== histKey()) return el("div", { class: "h-note", text: "Loading…" });
-  if (hist.selFor !== h.gatherer) { hist.sel = new Map(); hist.selFor = h.gatherer; hist.last = null; }
+  if (hist.selFor !== h.gatherer) { hist.sel = new Map(); hist.selFor = h.gatherer; hist.last = null; hist.panel = false; }
   const tree = histTree(h);
   const hasTasks = h.tasks.length > 0, all = h.channel === null;
   const grains = HIST_GRAINS.map(([g, name]) => [g, name, g === "actors" ? all : g === "tasks" ? hasTasks : true]);
   let grain = hist.grain || (hasTasks ? "tasks" : "turns");
   if (!grains.find((x) => x[0] === grain)[2]) grain = grain === "actors" && hasTasks ? "tasks" : "turns";
   const vis = h.error ? [] : histVisible(tree, grain, all && grain !== "actors");
-  hist.flat = vis.filter(([, , head]) => !head).map(([n]) => n.id);
+  hist.flat = vis.map(([n, , head]) => n.id + (head ? "/h" : ""));
   histRows.begin(signature([h.key, [...shownTypes]]));
   const shown = vis.slice(0, hist.limit);
   const list = el("div", { class: "h-list", "data-keep": `hist-list:${h.key}:${grain}`, "data-morph": "" });
@@ -3681,7 +3757,7 @@ function histRender() {
       vis.length > shown.length ? el("button", { type: "button", class: "h-more", onclick: () => { hist.limit += HIST_SHOWN; hist.version++; histRedraw(); } },
         `Show ${full(Math.min(HIST_SHOWN, vis.length - shown.length))} more of ${full(vis.length - shown.length)}`) : null,
       h.more ? el("button", { type: "button", class: "h-more", onclick: async () => { await loadOutline(); histRedraw(); } }, "Load more of the history") : null].filter(Boolean);
-  const left = el("div", { class: "h-left", "data-morph": "" }, histBar(h, grains, grain), list, histPickBar(h));
+  const left = el("div", { class: "h-left", "data-morph": "" }, histBar(h, grains, grain), list);
   return el("div", { class: "h-grid", "data-morph": "" }, left, histSide(h));
 }
 if (!SNAPSHOT) addChatView({
