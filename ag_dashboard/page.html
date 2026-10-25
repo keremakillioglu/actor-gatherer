@@ -598,7 +598,7 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-row.head .h-label { font-weight: 600; }
 .hist .h-label.dim { color: var(--muted); font-style: italic; }
 .hist .h-kind { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 6px; }
-.hist .h-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+.hist .h-main.keyed { border-left: 3px solid var(--key); padding-left: 9px; }   /* a message's type, as the Messages view keys it */
 .hist .h-controls .filters { margin: 0; gap: 4px; }
 .hist .h-controls .filters .label { display: none; }
 .hist .h-controls .chip { padding: 2px 8px; font-size: 11.5px; }
@@ -622,7 +622,7 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-pick .err { color: var(--critical); font-size: 12px; }
 .hist .h-pick .err:empty { display: none; }
 .hist .h-side { border-left: 1px solid var(--ring); overflow: auto; min-height: 0; background: var(--page); }
-.hist .h-side-h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 12px 14px 6px; }
+.hist .h-side { padding-top: 10px; }
 .hist .h-side .h-note { padding: 4px 14px 12px; }
 .hist .h-rec { margin: 0 10px 10px; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; }
 .hist .h-rec > summary { list-style: none; margin: 0; padding: 8px 10px; cursor: pointer; display: grid; gap: 2px; color: var(--ink); }
@@ -3397,8 +3397,7 @@ function histLabel(n, hits) {
     return [el("div", { class: "h-label" + (n.n && n.ask ? "" : " dim") },
       !n.n ? "The harness's setup: its system text, tools and environment" : n.ask || (n.cont ? "Continued from the task before" : "(no words)")), hit];
   const e = n.event, [, name, swatch] = itemType({ name: e.type, group: "Recent history" });
-  return [el("div", { class: "h-label" + (e.text ? "" : " dim") }, el("i", { class: "h-dot", style: `background:${swatch}`, title: name }),
-    e.text || wordless({ name: e.type })), hit];
+  return [el("div", { class: "h-label" + (e.text ? "" : " dim"), title: name }, e.text || wordless({ name: e.type })), hit];
 }
 function histMeta(n, hits) {
   const bits = n.kind === "message" || n.kind === "turn" ? [`${compact(n.tokens)} tok`]
@@ -3422,7 +3421,9 @@ function histRow(n, depth, header) {
       style: `--depth:${depth}`, "data-state": st },
       cb, el("button", { type: "button", class: "h-tw", title: what, "aria-label": what, "aria-expanded": open ? "true" : "false",
         onclick: () => histOpen(n.id, header) }, open ? "▾" : "▸"),
-      el("div", { class: "h-main", title: what, onclick: (ev) => { if (!getSelection().toString()) histOpen(n.id, header); } }, ...histLabel(n, hits)),
+      el("div", { class: "h-main" + (n.kind === "message" ? " keyed" : ""), title: what,
+        ...(n.kind === "message" ? { style: `--key:${itemType({ name: n.event.type, group: "Recent history" })[2]}` } : {}),
+        onclick: (ev) => { if (!getSelection().toString()) histOpen(n.id, header); } }, ...histLabel(n, hits)),
       el("div", { class: "h-meta" }, ...histMeta(n, hits)));
     if (n.kind === "message" && open) row.append(el("pre", { class: "h-full", text: fullText ?? "Loading…" }));
     return row;
@@ -3655,10 +3656,7 @@ function histSide(h) {
   const list = hist.recs.gatherer === h.gatherer ? hist.recs.list : [];
   histRecs.begin(h.gatherer);
   const side = el("div", { class: "h-side", "data-keep": "hist-side", "data-morph": "" });
-  side.kids = [el("div", { class: "h-side-h", text: "Made by the Gatherer" }),
-    ...(list.length ? list.map(recCard) : [el("div", { class: "h-note",
-      text: "Pick part of the history, say what you want from it if you like, then Summarize, or Generate memory, CLAUDE.md or a skill: "
-        + "the Gatherer's model gets that history, and what it makes shows here — to copy, download, or save where Claude Code reads it." })])];
+  side.kids = list.length ? list.map(recCard) : [el("div", { class: "h-note", text: "What you summarize or generate shows here." })];
   return side;
 }
 function histRender() {
