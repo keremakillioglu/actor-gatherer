@@ -274,6 +274,9 @@ def actors(gatherer: str, channels: set, started: List[dict]) -> List[dict]:
             conn.close()
     g = [{"name": gatherer, "agents": agents, "last": None}]
     _with_started(g, [s for s in started if s["gatherer"] == gatherer and s["session_id"] in channels], now)
+    for a in g[0]["agents"]:                     # what home() would watch: not from here
+        a.pop("record", None)
+        a.pop("wake", None)
     return g[0]["agents"]
 
 
