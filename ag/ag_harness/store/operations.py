@@ -4,7 +4,7 @@
     properties  Spec, spec (what each type declares), property_values
     events      row_of, insert, insert_many, locate; Row, rows, read; high_water
     made items  make_item, made_items
-    read log    Ref, record_read, last_read
+    read log    Ref, record_read, last_read, record_failed
     polls       polled_at, mark_polled
     pending     record_pending, pending, clear_pending
     recaps      record_recap, recaps
@@ -536,6 +536,16 @@ def record_real_tokens(conn: sqlite3.Connection, read_id: int, tokens: int) -> b
     cached ones included). Whether that read exists."""
     with conn:
         cur = conn.execute("UPDATE _reads SET real_tokens = ? WHERE read_id = ?", (tokens, read_id))
+    return cur.rowcount > 0
+
+
+def record_failed(conn: sqlite3.Connection, read_id: int, status: Optional[int], error: str) -> bool:
+    """Set read `read_id`'s `error_status` and `error`: the model call it was read for failed -- its
+    endpoint answered `status` (None: no answer came: it could not be reached), and `error` says why.
+    Whether that read exists."""
+    with conn:
+        cur = conn.execute("UPDATE _reads SET error_status = ?, error = ? WHERE read_id = ?",
+                           (status, error, read_id))
     return cur.rowcount > 0
 
 
