@@ -11,10 +11,12 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/transcript?gatherer=G&channel=C[&after=A|&before=B]   data.transcript(G, C, A, B)
     GET /api/files?gatherer=G&channel=C[&turn=N][&cwd=D]   files.files(G, C, N, D): a turn's files
     GET /api/image?gatherer=G&row_id=R&id=I                files.image(G, R, I): the image call I's result holds
-    GET /api/stream[?gatherer=G&channel=C]                 server-sent events, until the page goes:
+    GET /api/stream[?gatherer=G&channel=C][&also=[[G2, C2], ...]]   server-sent events, until the page goes:
         `home` (data.home()) and, with a channel, `agent` (data.agent(G, C)) at once, then again
         each time they change -- woken by ag's notifications or the fallback check (live.py) --
-        and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle)
+        and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle).
+        `also` (JSON): the page's other actors, its other panes, each sent the same way as `actor`
+        {gatherer, channel, agent}: one stream for all a page shows, as a browser keeps few open
     GET /api/sessions                     the sessions started from the page (sessions.py)
     GET /api/models?harness=H             the models a new session of H can run on (sessions.py's `models`)
     GET /api/terminal?session_id=S        server-sent events, until the page goes: what the session's
@@ -152,7 +154,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                 if url.path in ("/", "/index.html"):
                     return self.send(200, page().encode("utf-8"), "text/html; charset=utf-8")
                 if url.path == "/api/stream":
-                    return self.stream(q.get("gatherer"), q.get("channel"))
+                    return self.stream(q.get("gatherer"), q.get("channel"), _pairs(q.get("also")))
                 if url.path == "/api/home":
                     return self.answer(home_view())
                 if url.path == "/api/sessions":
@@ -226,15 +228,21 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
             except (OSError, ValueError):
                 return True
 
-        def stream(self, gatherer: Optional[str], channel: Optional[str]) -> None:
+        def stream(self, gatherer: Optional[str], channel: Optional[str], also=()) -> None:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "close")      # it has no length: it ends when the connection does
             self.close_connection = True
             self.end_headers()
-            watch = hub.watch(gatherer, channel)
+            watch = hub.watch(gatherer, channel, also)
             sent = {}
+
+            def agent_of(g: str, c: str) -> dict:
+                try:
+                    return data.agent(g, c, calls.get())
+                except Exception as exc:  # noqa: BLE001 - the page shows it; the stream stays up
+                    return {"error": f"{type(exc).__name__}: {exc}"}
             try:
                 while True:
                     woken = watch.wake.wait(KEEPALIVE)
@@ -242,21 +250,21 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                         return
                     if woken:
                         time.sleep(COALESCE)
-                    home, agent = watch.take()
-                    out = []
+                    home, agent, others = watch.take()
+                    out = []                             # (event, what it is kept as, value)
                     if home or not woken:                # unwoken: the time alone may have changed it
-                        out.append(("home", home_view()))
+                        out.append(("home", "home", home_view()))
                     if agent and gatherer and channel is not None:
-                        try:
-                            out.append(("agent", data.agent(gatherer, channel, calls.get())))
-                        except Exception as exc:  # noqa: BLE001 - the page shows it; the stream stays up
-                            out.append(("agent", {"error": f"{type(exc).__name__}: {exc}"}))
+                        out.append(("agent", "agent", agent_of(gatherer, channel)))
+                    for i in sorted(others):
+                        g, c = also[i]
+                        out.append(("actor", ("actor", g, c), {"gatherer": g, "channel": c, "agent": agent_of(g, c)}))
                     wrote = False
-                    for name, value in out:
+                    for name, kept, value in out:
                         sig = _signature(value)
-                        if sent.get(name) != sig:
+                        if sent.get(kept) != sig:
                             self.event(name, value)
-                            sent[name], wrote = sig, True
+                            sent[kept], wrote = sig, True
                     if not wrote and not woken:
                         self.wfile.write(b": keepalive\n\n")
                     self.wfile.flush()
@@ -371,6 +379,18 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
 
 
 MAX_BODY = 1_000_000        # the largest request body taken: a message, not a file
+MAX_ALSO = 8                # the most other actors one stream follows (the page shows at most 4 panes)
+
+
+def _pairs(raw: Optional[str]) -> list:
+    """A stream's `also`: [[gatherer, channel], ...] as JSON, each a pair of strings; what is not one is left out."""
+    try:
+        got = json.loads(raw) if raw else []
+    except ValueError:
+        return []
+    if not isinstance(got, list):
+        return []
+    return [tuple(p) for p in got if isinstance(p, list) and len(p) == 2 and all(isinstance(x, str) for x in p) and p[0]][:MAX_ALSO]
 
 
 class Server(ThreadingHTTPServer):

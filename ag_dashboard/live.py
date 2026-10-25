@@ -32,20 +32,23 @@ def gatherer_key(gatherer: Optional[str]) -> str:
 
 
 class Watch:
-    """One open stream: what it shows, and what has changed since it last looked."""
+    """One open stream: what it shows -- the home, the actor picked (`gatherer`, `channel`), and the page's
+    other actors (`also`: [(gatherer, channel)], its other panes) -- and what has changed since it last looked."""
 
-    def __init__(self, gatherer: Optional[str], channel: Optional[str]):
+    def __init__(self, gatherer: Optional[str], channel: Optional[str], also=()):
         self.gatherer = gatherer_key(gatherer) if gatherer else None
         self.channel = channel
+        self.also = [(gatherer_key(g), c) for g, c in also]
         self.wake = threading.Event()
-        self.home = self.agent = True               # a new stream sends both at once
+        self.home = self.agent = True               # a new stream sends them all at once
+        self.others = set(range(len(self.also)))
         self.wake.set()
 
     def take(self):
-        """(home changed, agent changed) since the last take, cleared."""
+        """(home changed, agent changed, which of `also` changed: their indexes) since the last take, cleared."""
         self.wake.clear()
-        got = self.home, self.agent
-        self.home = self.agent = False
+        got = self.home, self.agent, self.others
+        self.home, self.agent, self.others = False, False, set()
         return got
 
 
@@ -55,8 +58,8 @@ class Hub:
         self.watches = set()
         self.on_llm: Optional[Callable[[], None]] = None     # the call log changed (the server's cache)
 
-    def watch(self, gatherer: Optional[str], channel: Optional[str]) -> Watch:
-        w = Watch(gatherer, channel)
+    def watch(self, gatherer: Optional[str], channel: Optional[str], also=()) -> Watch:
+        w = Watch(gatherer, channel, also)
         with self.lock:
             self.watches.add(w)
         return w
@@ -71,12 +74,14 @@ class Hub:
         if what == "llm" and self.on_llm:
             self.on_llm()
         g = gatherer_key(gatherer) if gatherer else None
+        concerns = lambda wg, wc: (g is None or g == wg) and (channel is None or channel == wc)   # noqa: E731
         with self.lock:
             watches = list(self.watches)
         for w in watches:
             w.home = True
-            if w.gatherer is not None and (g is None or g == w.gatherer) and (channel is None or channel == w.channel):
+            if w.gatherer is not None and concerns(w.gatherer, w.channel):
                 w.agent = True
+            w.others.update(i for i, (wg, wc) in enumerate(w.also) if concerns(wg, wc))
             w.wake.set()
 
 
