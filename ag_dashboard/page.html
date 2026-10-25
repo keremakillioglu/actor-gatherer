@@ -577,7 +577,7 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-reply[open] > summary .first { display: none; }
 .files .fl-reply > .md { margin: calc(-1 * var(--lh)) 0 6px 15px; }
 /* a turn's last message, whole, in the page's ink; the ones before it smaller and quieter, each folded to a line,
-   the latest few shown and the earlier behind "+N earlier messages" */
+   the latest few shown and the earlier behind "+ N earlier messages" (folded again by its "−") */
 .files .fl-reply.main { margin-top: 6px; color: var(--ink); }
 .files .fl-reply.main > summary .dot, .files .fl-reply.main[open] > summary .dot { color: var(--ink); }
 .files .fl-minor { font-size: .9em; --lh: 18px; color: var(--muted); }
@@ -586,6 +586,8 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-minor .fl-reply > summary:hover .first { color: var(--ink-2); }
 .files .fl-more, .files .fl-earlier { background: none; border: 0; border-radius: 4px; margin: 4px 0 0 2px; padding: 0 4px 0 15px;
   font-size: .95em; color: var(--muted); cursor: pointer; }
+.files .fl-more { padding-left: 0; }
+.files .fl-more .sg { display: inline-block; width: 15px; text-align: left; }   /* + or −, under the messages' dots */
 .files .fl-more:hover, .files .fl-earlier:hover { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .files .fl-earlier { display: block; margin: 4px 6px 6px; padding: 4px 10px; font-size: 12px; }
 /* a reply's markdown, coloured as the NumPy docs (the PyData theme) colour it, and no more: links teal, inline
@@ -622,16 +624,9 @@ button:disabled { opacity: .5; cursor: default; }
 .files .md th[align="center"], .files .md td[align="center"] { text-align: center; }
 .files .md img { max-width: 100%; }
 .files .fl-none { margin: 4px 0 0 2px; color: var(--muted); font-style: italic; }
-.files .fl-think { margin: 4px 0 0 2px; color: var(--muted); }
-.files .fl-think > summary { display: flex; gap: 6px; margin: 0; font-size: inherit; list-style: none; cursor: pointer; }
-.files .fl-think > summary::-webkit-details-marker { display: none; }
-.files .fl-think .g { flex: none; color: var(--term-accent); font-size: 11px; line-height: var(--lh); }
-.files .fl-think .lbl { flex: none; font-style: italic; }
-.files .fl-think .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.files .fl-think > summary:hover .lbl, .files .fl-think > summary:hover .first { color: var(--ink-2); }
-.files .fl-think[open] > summary .first { display: none; }
-.files .fl-think .body { margin: 2px 0 4px 15px; padding-left: 8px; border-left: 2px solid var(--ring); white-space: pre-wrap; overflow-wrap: anywhere; font-style: italic; }
-.files .fl-think .body + .body { margin-top: 6px; }
+/* a run of thinking: a message as the others are, the word "Thought" before it, dim; opened, its words under the word */
+.files .fl-reply.thought > summary .lbl { flex: none; color: var(--muted); }
+.files .fl-reply.thought > .md { margin-top: 0; }
 .files .fl-status { display: flex; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: .93em; }
 .files .fl-status .spin { flex: none; }
 .files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3582,7 +3577,7 @@ function filesRender({ info, running }) {
   if (!d) return el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" });
   if (!d.turns.length) return [];
   // the view opened afresh (from another view, or the page's first draw): the conversation and the
-  // commands start where they would for a new turn -- at their end, or at the turn picked
+  // commands start where they would for a new turn -- the commands at their end, the conversation at its end or at the turn picked
   if (!document.querySelector("#main .files .fl-grid")) cmdsShown = talkShown = null;
   const t = d.turns[d.turn];
   const cwd = (info.cwd || "").replace(/\/$/, "");
@@ -3643,7 +3638,7 @@ function filesRender({ info, running }) {
   if (!commands.length) cmds.append(el("div", { class: "fv-note", text: d.commands.length ? "Only commands in temporary folders."
     : "No commands in this turn." }));
   const shown = `${state.files.key}:${d.turn}`;
-  if (cmdsShown !== shown && state.files.turn === null) requestAnimationFrame(() => {   // once per turn: at its end
+  if (cmdsShown !== shown) requestAnimationFrame(() => {   // once each time a turn is shown, the latest or one picked: at its end
     const n = document.querySelector(`[data-keep="files-cmds-${d.turn}"]`);
     if (!n) return;
     cmdsShown = shown;
@@ -3677,7 +3672,7 @@ function filesBackground(info) {
 }
 // The conversation, at the right: each of the user's messages a turn, at the right, and under it the agent's:
 // its last message whole (a click folds it to its first line), the ones before it -- what it said on the way,
-// its thinking -- each folded to a line, the latest few shown and the earlier behind a click. The latest turns
+// its thinking -- each folded to a line, the latest few shown and the earlier behind a + (and a − folds them again). The latest turns
 // shown, the earlier behind a click too. While the turn runs, what the agent is doing at its end, as the
 // Transcript's status line. Clicking a message shows its turn's files.
 const MINOR_SHOWN = 2, TURNS_SHOWN = 3;
@@ -3705,28 +3700,29 @@ function filesTalk(d, info, running) {
     const said = (t.replies || []).map((r, i) => [r, i]).filter(([r]) => r.kind === "text" || r.texts.length);
     const last = said.map(([r]) => r.kind).lastIndexOf("text");
     const before = last < 0 ? said : said.slice(0, last), after = last < 0 ? [] : said.slice(last + 1);
-    const hidden = opened.has(t.n) || before.length <= MINOR_SHOWN + 1 ? 0 : before.length - MINOR_SHOWN;
+    const extra = before.length <= MINOR_SHOWN + 1 ? 0 : before.length - MINOR_SHOWN;   // behind the +, or shown under the −
+    const hidden = opened.has(t.n) ? 0 : extra;
+    // a message; or a run of thinking, drawn as one with the word "Thought" before its first line
     const reply = ([r, i], main) => {
-      if (r.kind === "text") {
-        const id = `fl-${main ? "m" : "r"}-${t.n}-${i}`;   // apart: the last, once a message follows it, starts folded
-        return el("details", { class: "fl-reply" + (main ? " main" : ""), id, open: main && !closed.has(id) ? "" : null, ontoggle: main ? fold : null },
-          el("summary", { title: "Fold or show the whole message" }, el("span", { class: "dot", text: "●" }),
-            el("span", { class: "first", text: firstLine(r.text.replace(/`|\*\*|^#{1,6}\s+/gm, ""), 200) })),   // its first line, less the markdown's marks
-          markdown(r.text));
-      }
-      return el("details", { class: "fl-think", id: `fl-r-${t.n}-${i}` },
-        el("summary", { title: "Show what it thought" }, el("span", { class: "g", "aria-hidden": "true", text: "✻" }),
-          el("span", { class: "lbl", text: "Thought" }), el("span", { class: "first", text: firstLine(r.texts[r.texts.length - 1], 200) })),
-        ...r.texts.map((x) => el("div", { class: "body", text: x })));
+      const id = `fl-${main ? "m" : "r"}-${t.n}-${i}`;   // apart: the last, once a message follows it, starts folded
+      const thought = r.kind !== "text", text = thought ? r.texts.join("\n\n") : r.text;
+      return el("details", { class: "fl-reply" + (main ? " main" : "") + (thought ? " thought" : ""), id,
+        open: main && !closed.has(id) ? "" : null, ontoggle: main ? fold : null },
+        el("summary", { title: thought ? "Fold or show what it thought" : "Fold or show the whole message" },
+          el("span", { class: "dot", text: "●" }), thought ? el("span", { class: "lbl", text: "Thought" }) : null,
+          el("span", { class: "first", text: firstLine(text.replace(/`|\*\*|^#{1,6}\s+/gm, ""), 200) })),   // its first line, less the markdown's marks
+        markdown(text));
     };
+    const toggle = () => { opened.has(t.n) ? opened.delete(t.n) : opened.add(t.n); keepingPlace(renderMain); };
     const now = !live ? "" : !t.now ? "Working…" : t.now.kind === "thinking" ? "Thinking…" : `Running: ${t.now.text}`;
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
       el("button", { type: "button", class: "fl-user", "aria-pressed": on ? "true" : "false",
         title: on ? "The turn shown" : "Show this turn's files", onclick: () => setFilesTurn(t.n) },
         el("span", { class: "tx", text: t.text })),
       before.length ? el("div", { class: "fl-minor" },
-        hidden ? el("button", { type: "button", class: "fl-more", title: "Show everything the agent said and thought in this turn",
-          onclick: () => { opened.add(t.n); keepingPlace(renderMain); } }, `+${plural(hidden, "earlier message")}`) : null,
+        extra ? el("button", { type: "button", class: "fl-more", "aria-expanded": hidden ? "false" : "true", onclick: toggle,
+          title: hidden ? "Show everything the agent said and thought in this turn" : "Fold the earlier messages again" },
+          el("span", { class: "sg", "aria-hidden": "true", text: hidden ? "+" : "−" }), plural(extra, "earlier message")) : null,
         ...before.slice(hidden).map((x) => reply(x, false))) : null,
       last < 0 ? null : reply(said[last], true),
       after.length ? el("div", { class: "fl-minor" }, ...after.map((x) => reply(x, false))) : null,
