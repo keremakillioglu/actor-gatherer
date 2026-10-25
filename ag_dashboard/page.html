@@ -16,6 +16,8 @@
   --term-bg: var(--surface); --term-ink: #2b2a27; --term-dim: #6f6c65; --term-faint: #a09d95; --term-user: #efeee9; --term-ok: #2f9a4c;
   --term-err: #cf3a50; --term-run: #c08a00; --term-accent: #c4643f; --term-code: #f2f1ed; --term-rule: #e2e0d9; --term-box: #d6d4cc;
   --term-add: rgba(47,154,76,.12); --term-del: rgba(207,58,80,.10); --term-add-ink: #1b6b34; --term-del-ink: #a5293d; --term-link: #2468c8;
+  /* the Files view's markdown, coloured as the NumPy docs (the PyData theme) colour it: links, inline code */
+  --md-link: #0a7d91; --md-code: #912583;
   --scroll: rgba(0,0,0,.16);
 }
 @media (prefers-color-scheme: dark) {
@@ -28,6 +30,7 @@
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-box: #3a3935;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
+  --md-link: #3fb1c5; --md-code: #f3c7ee;
   --scroll: rgba(255,255,255,.16);
   }
 }
@@ -40,6 +43,7 @@
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-box: #3a3935;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
+  --md-link: #3fb1c5; --md-code: #f3c7ee;
   --scroll: rgba(255,255,255,.16);
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
@@ -461,39 +465,84 @@ button:disabled { opacity: .5; cursor: default; }
 .chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .files .fl-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }
 .files .fl-grid.open { grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
-.files .fl-grid:not(.open) .fl-talk { font-size: 13px; border-left: 0; }
-.files .fl-talk { position: relative; overflow: auto; border-left: 1px solid var(--ring); padding: 6px 0 24px; font-size: 12.5px; }
-.files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px; border-radius: 0 6px 6px 0; }
-.files .fl-turn.on { background: color-mix(in srgb, var(--ink) 4%, transparent); box-shadow: inset 2px 0 0 var(--muted); }   /* the turn picked: a shade and a grey bar, no colour */
-.files .fl-user { display: flex; gap: 8px; width: 100%; text-align: left; background: var(--wash); border: 1px solid var(--ring);
-  border-radius: 6px; padding: 6px 8px; margin: 0; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink); cursor: pointer; }
-.files .fl-user:hover { border-color: var(--axis); }
-.files .fl-user .n { flex: none; color: var(--muted); font: 11px/1.7 var(--mono); }
+/* --lh: a line of the conversation, which a reply's dot and its first line share */
+.files .fl-talk { position: relative; overflow: auto; border-left: 1px solid var(--ring); padding: 6px 0 24px; font-size: 13.5px; --lh: 20px; line-height: var(--lh); }
+.files .fl-grid:not(.open) .fl-talk { font-size: 14px; --lh: 21px; border-left: 0; }
+.files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px 10px; }
+.files .fl-turn.on { box-shadow: inset 2px 0 0 var(--muted); }   /* the turn picked: a grey bar at its left, no colour */
+/* the user's message: at the right, in the colour the page gives the user (--s7), as a chat shows it */
+.files .fl-user { display: flex; gap: 8px; width: fit-content; max-width: min(86%, 680px); margin: 0 0 0 auto; text-align: left;
+  background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--s7) 28%, transparent);
+  border-radius: 12px 12px 4px 12px; padding: 6px 12px; font: inherit; line-height: var(--lh); color: var(--ink); cursor: pointer; }
+.files .fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
 .files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .files .fl-turn.on .fl-user .tx { -webkit-line-clamp: unset; }
 .files .fl-reply { margin: 4px 0 0 2px; color: var(--ink-2); overflow-wrap: anywhere; }
-.files .fl-reply > summary { display: flex; gap: 6px; margin: 0; font-size: 12.5px; cursor: pointer; list-style: none; }
+.files .fl-reply > summary { display: flex; gap: 6px; margin: 0; font-size: inherit; cursor: pointer; list-style: none; }
 .files .fl-reply > summary::-webkit-details-marker { display: none; }
-.files .fl-reply > summary .dot { flex: none; color: var(--muted); font-size: 9px; line-height: 18px; }
+.files .fl-reply > summary .dot { flex: none; color: var(--muted); font-size: 9px; line-height: var(--lh); }
 .files .fl-reply > summary .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-reply > summary:hover .first { color: var(--ink); }
 .files .fl-reply[open] > summary .dot { color: var(--ink-2); } .files .fl-reply > summary:hover .dot { color: var(--s1); }
 .files .fl-reply[open] > summary .first { display: none; }
-.files .fl-reply > .md { margin: -18px 0 4px 15px; }
-.files .fl-reply .md > :first-child { margin-top: 0; } .files .fl-reply .md > :last-child { margin-bottom: 0; }
-.files .fl-reply .md pre { overflow: auto; max-width: 100%; }
+.files .fl-reply > .md { margin: calc(-1 * var(--lh)) 0 6px 15px; }
+/* a turn's last message, whole, in the page's ink; the ones before it smaller and quieter, each folded to a line,
+   the latest few shown and the earlier behind "+N earlier messages" */
+.files .fl-reply.main { margin-top: 6px; color: var(--ink); }
+.files .fl-reply.main > summary .dot, .files .fl-reply.main[open] > summary .dot { color: var(--ink); }
+.files .fl-minor { font-size: .9em; --lh: 18px; color: var(--muted); }
+.files .fl-minor .fl-reply { color: var(--ink-2); }
+.files .fl-minor .fl-reply:not([open]) > summary .first { color: var(--muted); }
+.files .fl-minor .fl-reply > summary:hover .first { color: var(--ink-2); }
+.files .fl-more, .files .fl-earlier { background: none; border: 0; border-radius: 4px; margin: 4px 0 0 2px; padding: 0 4px 0 15px;
+  font-size: .95em; color: var(--muted); cursor: pointer; }
+.files .fl-more:hover, .files .fl-earlier:hover { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.files .fl-earlier { display: block; margin: 4px 6px 6px; padding: 4px 10px; font-size: 12px; }
+/* a reply's markdown, coloured as the NumPy docs (the PyData theme) colour it, and no more: links teal, inline
+   code magenta on grey, a table's header ruled in teal; headings, code and quotes in the text's own colours */
+.files .md { min-width: 0; }
+.files .md > :first-child { margin-top: 0; } .files .md > :last-child { margin-bottom: 0; }
+.files .md p, .files .md ul, .files .md ol, .files .md pre, .files .md table, .files .md blockquote { margin: 0 0 10px; }
+.files .md h1, .files .md h2, .files .md h3, .files .md h4, .files .md h5, .files .md h6 { color: var(--ink); font-weight: 650; line-height: 1.35; margin: 18px 0 6px; }
+.files .md h1 { font-size: 1.35em; } .files .md h2 { font-size: 1.2em; } .files .md h3 { font-size: 1.07em; } .files .md h4, .files .md h5, .files .md h6 { font-size: 1em; }
+.files .md > h1:first-child, .files .md > h2:first-child, .files .md > h3:first-child { line-height: var(--lh); }   /* beside the reply's dot */
+.files .md strong { color: var(--ink); font-weight: 650; }
+.files .md a { color: var(--md-link); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--md-link) 40%, transparent); text-underline-offset: 2px; }
+.files .md a:hover { text-decoration-color: currentColor; }
+.files .md ul, .files .md ol { padding-left: 22px; }
+.files .md li { margin: 3px 0; } .files .md li > ul, .files .md li > ol { margin: 3px 0 0; }
+.files .md li::marker { color: var(--muted); }
+.files .md li:has(> input[type="checkbox"]) { list-style: none; margin-left: -20px; }
+.files .md li > input[type="checkbox"] { margin: 0 6px 0 0; vertical-align: -2px; accent-color: var(--md-link); }
+.files .md code { font: .88em var(--mono); color: var(--md-code); background: color-mix(in srgb, var(--ink) 6%, transparent);
+  border: 1px solid var(--ring); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+.files .md pre { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); border: 1px solid var(--ring);
+  border-radius: 4px; padding: 9px 12px; overflow-x: auto; max-width: 100%; white-space: pre; }
+.files .md pre code { font: 12.5px/1.55 var(--mono); color: var(--ink); background: none; border: 0; padding: 0; border-radius: 0; overflow-wrap: normal; }
+.files .md blockquote { padding: 7px 12px; border-left: 4px solid var(--muted); border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 5%, var(--surface)); color: var(--ink-2); }
+.files .md hr { border: 0; border-top: 1px solid var(--axis); margin: 16px 0; }
+.files .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: .93em; line-height: 1.45; }
+.files .md th, .files .md td { border: 0; border-bottom: 1px solid var(--ring); padding: 5px 12px; text-align: left; vertical-align: top; white-space: normal; }
+.files .md th + th, .files .md td + td { border-left: 1px solid var(--ring); }
+.files .md thead tr { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); }
+.files .md th { color: var(--ink); font-weight: 650; border-bottom: 2px solid var(--md-link); }
+.files .md tbody tr:nth-child(even) { background: var(--wash); }
+.files .md th[align="right"], .files .md td[align="right"] { text-align: right; font-variant-numeric: tabular-nums; }
+.files .md th[align="center"], .files .md td[align="center"] { text-align: center; }
+.files .md img { max-width: 100%; }
 .files .fl-none { margin: 4px 0 0 2px; color: var(--muted); font-style: italic; }
-.files .fl-think { margin: 4px 0 0 2px; color: var(--muted); font-size: 12px; }
-.files .fl-think > summary { display: flex; gap: 6px; margin: 0; list-style: none; cursor: pointer; }
+.files .fl-think { margin: 4px 0 0 2px; color: var(--muted); }
+.files .fl-think > summary { display: flex; gap: 6px; margin: 0; font-size: inherit; list-style: none; cursor: pointer; }
 .files .fl-think > summary::-webkit-details-marker { display: none; }
-.files .fl-think .g { flex: none; color: var(--term-accent); font-size: 11px; line-height: 18px; }
+.files .fl-think .g { flex: none; color: var(--term-accent); font-size: 11px; line-height: var(--lh); }
 .files .fl-think .lbl { flex: none; font-style: italic; }
 .files .fl-think .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-think > summary:hover .lbl, .files .fl-think > summary:hover .first { color: var(--ink-2); }
 .files .fl-think[open] > summary .first { display: none; }
 .files .fl-think .body { margin: 2px 0 4px 15px; padding-left: 8px; border-left: 2px solid var(--ring); white-space: pre-wrap; overflow-wrap: anywhere; font-style: italic; }
 .files .fl-think .body + .body { margin-top: 6px; }
-.files .fl-status { display: flex; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: 12px; }
+.files .fl-status { display: flex; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: .93em; }
 .files .fl-status .spin { flex: none; }
 .files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ring); }
@@ -2853,6 +2902,9 @@ function filesRender({ info, running }) {
   const d = state.files && state.files.data;
   if (!d) return el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" });
   if (!d.turns.length) return [];
+  // the view opened afresh (from another view, or the page's first draw): the conversation and the
+  // commands start where they would for a new turn -- at their end, or at the turn picked
+  if (!document.querySelector("#main .files .fl-grid")) cmdsShown = talkShown = null;
   const t = d.turns[d.turn];
   const cwd = (info.cwd || "").replace(/\/$/, "");
   const rel = (p) => cwd && p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : p.replace(/^\/home\/[^/]+\//, "~/");
@@ -2930,26 +2982,46 @@ function filesRender({ info, running }) {
   return el("div", { class: "fl-grid" + (sel ? " open" : "") }, side, pane, filesTalk(d, info, running));
 }
 let cmdsShown = null;
-// The conversation, at the right: each of the user's messages a turn, the agent's replies under it, open
-// (a click folds one to its first line), and its thinking between them, folded to a line; while the turn
-// runs, what the agent is doing at its end, as the Transcript's status line. Clicking a message shows its
-// turn's files.
+// The conversation, at the right: each of the user's messages a turn, at the right, and under it the agent's:
+// its last message whole (a click folds it to its first line), the ones before it -- what it said on the way,
+// its thinking -- each folded to a line, the latest few shown and the earlier behind a click. The latest turns
+// shown, the earlier behind a click too. While the turn runs, what the agent is doing at its end, as the
+// Transcript's status line. Clicking a message shows its turn's files.
+const MINOR_SHOWN = 2, TURNS_SHOWN = 3;
 let talkShown = null;
+// Show more of the conversation above where the reader is, keeping what they look at in place.
+function showMore(change) {
+  const n = document.querySelector(".fl-talk"), below = n ? n.scrollHeight - n.scrollTop : 0;
+  change();
+  keepingPlace(renderMain);
+  const again = document.querySelector(".fl-talk");
+  if (n && again) again.scrollTop = again.scrollHeight - below;
+}
 function filesTalk(d, info, running) {
   const box = el("div", { class: "fl-talk", "data-keep": "files-talk", "data-follow": "1" });
-  const closed = state.files.closed || (state.files.closed = new Set());   // the replies folded by a click
+  const closed = state.files.closed || (state.files.closed = new Set());   // the last messages folded by a click
+  const opened = state.files.opened || (state.files.opened = new Set());   // the turns whose earlier messages are all shown
   const fold = (ev) => { const n = ev.currentTarget; if (n.open) closed.delete(n.id); else closed.add(n.id); };
-  for (const t of d.turns) {
+  const first = state.files.allTurns ? 0 : Math.max(0, Math.min(d.turn, d.turns.length - TURNS_SHOWN));
+  if (first) box.append(el("button", { type: "button", class: "fl-earlier", title: "Show the conversation's earlier turns",
+    onclick: () => showMore(() => { state.files.allTurns = true; }) }, `Show ${plural(first, "earlier turn")}`));
+  for (const t of d.turns.slice(first)) {
     const on = t.n === d.turn;
     const live = running && t.n === d.turns.length - 1;
-    const said = t.replies || [];
-    const reply = (r, i) => {
-      const id = `fl-r-${t.n}-${i}`;
-      if (r.kind === "text") return el("details", { class: "fl-reply", id, open: closed.has(id) ? null : "", ontoggle: fold },
-        el("summary", { title: "Fold or show the whole message" }, el("span", { class: "dot", text: "●" }), el("span", { class: "first", text: firstLine(r.text, 200) })),
-        markdown(r.text));
-      if (!r.texts.length) return null;              // encrypted: nothing to read (the status line says it thinks)
-      return el("details", { class: "fl-think", id },
+    // its messages, by their place in the turn (their ids keep it); thinking that is encrypted has nothing to read
+    const said = (t.replies || []).map((r, i) => [r, i]).filter(([r]) => r.kind === "text" || r.texts.length);
+    const last = said.map(([r]) => r.kind).lastIndexOf("text");
+    const before = last < 0 ? said : said.slice(0, last), after = last < 0 ? [] : said.slice(last + 1);
+    const hidden = opened.has(t.n) || before.length <= MINOR_SHOWN + 1 ? 0 : before.length - MINOR_SHOWN;
+    const reply = ([r, i], main) => {
+      if (r.kind === "text") {
+        const id = `fl-${main ? "m" : "r"}-${t.n}-${i}`;   // apart: the last, once a message follows it, starts folded
+        return el("details", { class: "fl-reply" + (main ? " main" : ""), id, open: main && !closed.has(id) ? "" : null, ontoggle: main ? fold : null },
+          el("summary", { title: "Fold or show the whole message" }, el("span", { class: "dot", text: "●" }),
+            el("span", { class: "first", text: firstLine(r.text.replace(/`|\*\*|^#{1,6}\s+/gm, ""), 200) })),   // its first line, less the markdown's marks
+          markdown(r.text));
+      }
+      return el("details", { class: "fl-think", id: `fl-r-${t.n}-${i}` },
         el("summary", { title: "Show what it thought" }, el("span", { class: "g", "aria-hidden": "true", text: "✻" }),
           el("span", { class: "lbl", text: "Thought" }), el("span", { class: "first", text: firstLine(r.texts[r.texts.length - 1], 200) })),
         ...r.texts.map((x) => el("div", { class: "body", text: x })));
@@ -2958,11 +3030,16 @@ function filesTalk(d, info, running) {
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
       el("button", { type: "button", class: "fl-user", "aria-pressed": on ? "true" : "false",
         title: on ? "The turn shown" : "Show this turn's files", onclick: () => setFilesTurn(t.n) },
-        el("span", { class: "n", text: `${t.n + 1}` }), el("span", { class: "tx", text: t.text })),
-      ...said.map(reply),
+        el("span", { class: "tx", text: t.text })),
+      before.length ? el("div", { class: "fl-minor" },
+        hidden ? el("button", { type: "button", class: "fl-more", title: "Show everything the agent said and thought in this turn",
+          onclick: () => { opened.add(t.n); keepingPlace(renderMain); } }, `+${plural(hidden, "earlier message")}`) : null,
+        ...before.slice(hidden).map((x) => reply(x, false))) : null,
+      last < 0 ? null : reply(said[last], true),
+      after.length ? el("div", { class: "fl-minor" }, ...after.map((x) => reply(x, false))) : null,
       live ? el("div", { class: "fl-status", role: "status" }, el("span", { class: "spin", "aria-hidden": "true" }),
         el("span", { class: "tx", title: now, text: `${now} (last activity ${ago(info.last)})` }))
-        : !said.some((r) => r.kind === "text") ? el("div", { class: "fl-none", text: "No reply in words." }) : null));
+        : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null));
   }
   const at = `${state.files && state.files.key}:${d.turn}`;
   if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick: the latest at its end
