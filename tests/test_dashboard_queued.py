@@ -82,6 +82,11 @@ class TypedTest(RecordBase):
         self.op("dequeue", ago=queued.SENT_SECONDS + 5)
         self.op("enqueue", "<task-notification>\n<task-id>b1</task-id>", ago=1)
         self.assertEqual(self.typed(), [])
+        # a subagent's report as it hands back, as Claude Code 2.1.310 queues it (saved from a live session)
+        self.op("enqueue", '<agent-message from="a6d10bbb09e189a65">\n[Subagent hand-back] The text below is the final report '
+                           "of a subagent this session delegated to. ... The report follows:\n  It printed all 100 numbers.\n</agent-message>", ago=1)
+        self.op("dequeue", ago=0)
+        self.assertEqual(self.typed(), [])
 
     def test_read_on_from_where_it_was_read_to(self):
         self.op("enqueue", "one", ago=3)
