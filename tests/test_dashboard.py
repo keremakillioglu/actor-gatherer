@@ -160,6 +160,25 @@ class DataTest(HomeBase):
         self.assertEqual(next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c2")["last"],
                          next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c2")["last_event"])
 
+    def test_a_side_call_storing_the_reply_is_no_activity_of_the_agent_s(self):
+        """Claude Code's recap, or prompt suggestion, stores the conversation's events -- the reply that ended
+        the turn among them, which was pending -- minutes after it came. The agent's latest activity stays
+        when the reply came (kept on its read), so a reader who has looked since does not see it Finished
+        again; nor does its status change."""
+        c1 = lambda: next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")   # noqa: E731
+        reply = agent("Done.", 91)
+        self.m.record_pending("g", {"channel": "c1"}, [{"type": "message", "payload": reply, "text": "Done."}],
+                              "msg_1", "end_turn", read_id=self.reads[-1])
+        before = c1()
+        time.sleep(0.01)
+        codex_items.CodexItems(self.m).insert("g", reply, channel_id="c1")      # the side call: stored, and
+        self.m.clear_pending("g", {"channel": "c1"})                            # the pending answer cleared
+        after = c1()
+        self.assertGreater(after["last_event"], before["last"])
+        self.assertEqual((after["last"], after["status"], after["turn_over"]),
+                         (before["last"], before["status"], before["turn_over"]))
+        self.assertEqual(after["last"], after["last_answer"])                   # when the reply came
+
     def test_the_pending_answer_follows_the_latest_context(self):
         self.assertEqual(data.agent("g", "c1", [])["pending"], [])                 # the last call carried all of it
         reply = {"role": "assistant", "content": [{"type": "text", "text": "There are 42 rows."}]}

@@ -424,12 +424,14 @@ class Manager(ContextManager):
         return counted
 
     def record_pending(self, gatherer_id: str, properties: Optional[dict], events: List[dict],
-                       answer: Optional[str] = None, stop: Optional[str] = None) -> int:
+                       answer: Optional[str] = None, stop: Optional[str] = None,
+                       read_id: Optional[int] = None) -> int:
         """Not part of the interface: keep what the model answered -- its events, {"type",
         "payload", "text"?}, and why it stopped -- until the next call with these properties stores its events
         (`clear_pending`): what a reader of the gatherer can see of an answer no call has
-        carried back yet (`store.record_pending`). How many were kept."""
-        kept = store.record_pending(self._conn(gatherer_id), properties, events, answer, stop)
+        carried back yet (`store.record_pending`); and on read `read_id`, the one the answered call's
+        context came from, when the answer came. How many were kept."""
+        kept = store.record_pending(self._conn(gatherer_id), properties, events, answer, stop, read_id)
         if kept:
             notify(gatherer_id, "pending", properties)
         return kept
