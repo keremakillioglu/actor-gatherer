@@ -598,7 +598,10 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-row.head .h-label { font-weight: 600; }
 .hist .h-label.dim { color: var(--muted); font-style: italic; }
 .hist .h-kind { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 6px; }
-.hist .h-kind i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+.hist .h-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+.hist .h-controls .filters { margin: 0; gap: 4px; }
+.hist .h-controls .filters .label { display: none; }
+.hist .h-controls .chip { padding: 2px 8px; font-size: 11.5px; }
 .hist .h-badge { display: inline-block; font-size: 10px; font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-right: 6px; line-height: 15px; }
 .hist .h-sub { font-size: 12px; color: var(--ink-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hist .h-sub.dim { color: var(--muted); }
@@ -3258,7 +3261,10 @@ function histTree(h) {
 // A node's descendants at a grain: itself when it is that grain or finer (an actor ag has not segmented
 // has its turns at the tasks' grain).
 const histAt = (n, level) => HIST_LEVEL[n.kind] >= level ? [n] : n.children.flatMap((c) => histAt(c, level));
-const histHas = (n) => !hist.hits || n.rows.some((r) => hist.hits.has(r));
+// A node is listed when it holds a message of a type the reader shows (the chips: `shownTypes`, the Messages
+// view's too) and, searching, one that matches.
+const histShown = (r) => { const m = hist.byId.get(`m:${r}`); return !m || shownTypes.has(itemType({ name: m.event.type, group: "Recent history" })[0]); };
+const histHas = (n) => n.rows.some((r) => histShown(r) && (!hist.hits || hist.hits.has(r)));
 // The rows the list shows, in order: [node, depth, header]. The units of the grain, each opened to its parts
 // where the reader opened it; across a whole gatherer, under a header for each actor. A search keeps those
 // with a match.
@@ -3376,29 +3382,26 @@ function histLabel(n, hits) {
   if (n.kind === "actor") {
     const a = (selectedGatherer() || { agents: [] }).agents.find((x) => x.channel === n.channel);
     const mine = state.selected && state.selected[1] === n.channel;
-    return [el("div", { class: "h-label" }, kind(`Actor${mine ? " · selected" : ""}`), n.ask || (a && a.last_user_message) || n.channel),
-      el("div", { class: "h-sub dim", text: [a ? harnessName(a.harness) : null, plural(n.turns, "turn"),
-        n.tasks.length ? plural(n.tasks.length, "task") : null, n.channel].filter(Boolean).join(" · ") }), hit];
+    return [el("div", { class: "h-label" }, ...(mine ? [el("span", { class: "h-badge", text: "Selected" })] : []),
+      n.ask || (a && a.last_user_message) || n.channel), hit];
   }
   if (n.kind === "task") {
     const t = n.task;
     if (t && n.current)                              // the build's last task, still open, and all since: as it is
       return [el("div", { class: "h-label" }, kind("Running task")),
-        el("div", { class: "h-sub dim", text: `${plural(n.children.length, "turn")} so far · still going on, not summarized` }), hit];
-    return [el("div", { class: "h-label" }, kind(t ? `Task ${t.index + 1}` : "Before the first task"), t ? t.name : "What came before ag's first task"),
+        el("div", { class: "h-sub dim", text: "Still going on: not summarized" }), hit];
+    return [el("div", { class: "h-label" + (t ? "" : " dim") }, t ? t.name : "Before ag's first task"),
       t && t.description ? el("div", { class: "h-sub", text: t.description }) : null, hit];
   }
-  if (n.kind === "turn") {
-    return [el("div", { class: "h-label" }, kind(n.n ? `Turn ${n.n}${n.cont ? ", continued" : ""}` : "Before the first message"),
-      n.n ? (n.ask || (n.cont ? "" : "(no words)")) : "The harness's setup: its system text, tools and environment"),
-      n.reply ? el("div", { class: "h-sub dim", text: "→ " + n.reply }) : null, hit];
-  }
+  if (n.kind === "turn")
+    return [el("div", { class: "h-label" + (n.n && n.ask ? "" : " dim") },
+      !n.n ? "The harness's setup: its system text, tools and environment" : n.ask || (n.cont ? "Continued from the task before" : "(no words)")), hit];
   const e = n.event, [, name, swatch] = itemType({ name: e.type, group: "Recent history" });
-  return [el("div", { class: "h-label" + (e.text ? "" : " dim") }, kind(name, el("i", { style: `background:${swatch}` })),
+  return [el("div", { class: "h-label" + (e.text ? "" : " dim") }, el("i", { class: "h-dot", style: `background:${swatch}`, title: name }),
     e.text || wordless({ name: e.type })), hit];
 }
 function histMeta(n, hits) {
-  const bits = n.kind === "message" ? [`${compact(n.tokens)} tok`] : n.kind === "turn" ? [plural(n.rows.length, "msg"), `${compact(n.tokens)} tok`]
+  const bits = n.kind === "message" || n.kind === "turn" ? [`${compact(n.tokens)} tok`]
     : [plural(n.kind === "actor" ? n.turns : n.children.length, "turn"), `${compact(n.tokens)} tok`];
   if (hits.length && n.kind !== "message") bits.unshift(`${full(hits.length)} match${hits.length === 1 ? "" : "es"}`);
   return [el("div", { text: bits.join(" · ") }), el("div", { text: n.first ? clock(n.first, true) : "" })];
@@ -3463,7 +3466,8 @@ function histBar(h, grains, grain) {
       el("label", { class: "h-search", "data-sig": `search:${h.key}` }, searchIcon(), box),
       histSwitch("Whose history", [["actor", "This actor"], ["all", "Whole gatherer"]], hist.scope, setHistScope),
       histSwitch("Grain", grains.map(([g, name, ok]) => [g, name, ok, g === "actors" ? "Across the whole gatherer only" : "ag has not segmented this history into tasks yet"]),
-        grain, setHistGrain)),
+        grain, setHistGrain),
+      typeChips(null)),
     el("div", { class: "h-status" },
       q ? el("span", { class: "h-found", text: !hist.hits ? "Searching…"
         : `${full(hist.hits.size)}${hist.hitsMore ? "+" : ""} matching message${hist.hits.size === 1 ? "" : "s"}` }) : null,
@@ -3668,7 +3672,7 @@ function histRender() {
   if (!grains.find((x) => x[0] === grain)[2]) grain = grain === "actors" && hasTasks ? "tasks" : "turns";
   const vis = h.error ? [] : histVisible(tree, grain, all && grain !== "actors");
   hist.flat = vis.filter(([, , head]) => !head).map(([n]) => n.id);
-  histRows.begin(h.key);
+  histRows.begin(signature([h.key, [...shownTypes]]));
   const shown = vis.slice(0, hist.limit);
   const list = el("div", { class: "h-list", "data-keep": `hist-list:${h.key}:${grain}`, "data-morph": "" });
   const q = hist.q.trim();
