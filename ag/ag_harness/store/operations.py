@@ -581,17 +581,22 @@ def last_inserted_at(conn: sqlite3.Connection) -> Optional[str]:
 # ---------------------------------------------------------------- pending
 
 def record_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], events: List[dict],
-                   answer: Optional[str] = None, stop: Optional[str] = None) -> int:
+                   answer: Optional[str] = None, stop: Optional[str] = None, read_id: Optional[int] = None) -> int:
     """Keep an answer's events -- {"type", "payload", "text"?} -- in `_pending` with the
     properties of the call it answered, until that channel's next call (`clear_pending`); `stop`
-    is why the answer stopped, as the provider says it (end_turn, tool_use, ...), on each.
+    is why the answer stopped, as the provider says it (end_turn, tool_use, ...), on each. With
+    `read_id`, the read that call's context came from: its `answered_at` set to when they were kept,
+    which stays once they are cleared -- when the answer came, whatever call stores it later.
     Returns how many were kept."""
     names, values = _given(conn, properties, "a pending event")
-    rows = [(_now(), answer, stop, e["type"], json.dumps(e["payload"], ensure_ascii=False),
+    now = _now()
+    rows = [(now, answer, stop, e["type"], json.dumps(e["payload"], ensure_ascii=False),
              e.get("text") if isinstance(e.get("text"), str) else None, *values) for e in events]
     with conn:
         conn.executemany(f"INSERT INTO _pending (received_at, answer, stop, type, payload_json, text{_columns(names)}) "
                          f"VALUES (?, ?, ?, ?, ?, ?{', ?' * len(names)})", rows)
+        if read_id is not None:
+            conn.execute("UPDATE _reads SET answered_at = ? WHERE read_id = ?", (now, read_id))
     return len(rows)
 
 

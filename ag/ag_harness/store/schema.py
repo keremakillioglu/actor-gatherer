@@ -130,8 +130,10 @@ CREATE TABLE IF NOT EXISTS _reads (
     pid_started TEXT,               -- ("<boot id>:<start ticks>", so a reused pid is not it); NULL = not known
     error_status INTEGER,           -- the call failed: the HTTP status its endpoint answered; NULL = it did not
                                     -- fail, or no answer came at all (`error` says why)
-    error       TEXT                -- why the call failed, as the hook server saw it: the endpoint's message, or
+    error       TEXT,               -- why the call failed, as the hook server saw it: the endpoint's message, or
                                     -- why it could not be reached; NULL = it did not fail, or not known
+    answered_at TEXT                -- UTC time the call's answer came back whole (as `_pending` keeps it, but
+                                    -- not cleared when a call stores it); NULL = not yet, failed, or not known
 );
 
 -- What a harness sends besides its messages -- its system prompt, its tool definitions --
@@ -258,7 +260,7 @@ def create(conn: sqlite3.Connection) -> None:
     for column, kind in (("est_tokens", "INTEGER"), ("real_tokens", "INTEGER"), ("limit_tokens", "INTEGER"),
                          ("preamble_json", "TEXT"), ("sent_tokens", "INTEGER"), ("pid", "INTEGER"),
                          ("pid_started", "TEXT"), ("error_status", "INTEGER"),
-                         ("error", "TEXT")):                           # a file from before reads had them
+                         ("error", "TEXT"), ("answered_at", "TEXT")):                           # a file from before reads had them
         if column not in read_columns:
             conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} {kind}")
     if "yields" not in {c[1] for c in conn.execute("PRAGMA table_info(_open)")}:     # a file from before holders yielded

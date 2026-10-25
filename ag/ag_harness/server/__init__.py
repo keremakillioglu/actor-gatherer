@@ -99,7 +99,7 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 read's context before sending it, taken off the
                                                 read's sent_tokens. How many of each were found
     {"op": "insert", "gatherer", "properties", "events"} -> {"rows": [row id or null, ...], "last"}
-    {"op": "pending", "gatherer", "properties", "events", "answer"?, "stop"?} -> {"kept"}
+    {"op": "pending", "gatherer", "properties", "events", "answer"?, "stop"?, "read_id"?} -> {"kept"}
                                                 what the model answered, as events, which no
                                                 call has carried back yet: kept (`_pending`, not
                                                 as events, ids ignored) until the next rewrite,
@@ -108,7 +108,10 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 stores none (Claude Code's idle compaction, whose
                                                 history ends before the reply) keeps them. `answer`
                                                 names the answer (the provider's id), `stop`
-                                                why it stopped (end_turn, tool_use, ...)
+                                                why it stopped (end_turn, tool_use, ...);
+                                                `read_id`, the read the answered call's
+                                                context came from: when the answer came is
+                                                kept on it (`_reads.answered_at`), for good
     {"op": "recap", "gatherer", "session", "text"} -> {"recap_id"}
                                                 the harness's recap of a session (Claude Code's
                                                 "while you were away" summary), kept with when it
@@ -339,14 +342,18 @@ class Server:
             last = manager.locate(gatherer, stored[-1].id, properties=properties)
         return {"rows": rows, "last": last}
 
-    def pending(self, gatherer: str, properties: Dict[str, Any], events: list, answer=None, stop=None) -> dict:
-        """Keep what the model answered until the channel's next call stores its events."""
+    def pending(self, gatherer: str, properties: Dict[str, Any], events: list, answer=None, stop=None,
+                read_id=None) -> dict:
+        """Keep what the model answered until the channel's next call stores its events; and when it
+        came, on the read its call's context came from."""
         for e in events:
             if not isinstance(e, dict) or not isinstance(e.get("type"), str) or not e["type"] or "payload" not in e:
                 raise BadEvent(f"not an event: {str(e)[:120]}")
         kept = self.manager(gatherer).record_pending(gatherer, properties, events,
                                                      answer if isinstance(answer, str) else None,
-                                                     stop if isinstance(stop, str) else None)
+                                                     stop if isinstance(stop, str) else None,
+                                                     read_id if isinstance(read_id, int) and not isinstance(read_id, bool)
+                                                     else None)
         self.log(gatherer, tag(properties) + f"{kept} events pending")
         return {"kept": kept}
 
@@ -500,7 +507,8 @@ class Server:
         if op == "pending":
             if not isinstance(events, list):
                 return {"error": "no events"}
-            return self.pending(gatherer, properties, events, request.get("answer"), request.get("stop"))
+            return self.pending(gatherer, properties, events, request.get("answer"), request.get("stop"),
+                                request.get("read_id"))
         if op == "recap":
             session, text = request.get("session"), request.get("text")
             if not isinstance(session, str) or not session or not isinstance(text, str) or not text.strip():
