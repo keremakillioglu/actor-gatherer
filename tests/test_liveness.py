@@ -78,6 +78,18 @@ class AgentsTest(HomeBase):
     def pend(self, events, stop=None, channel="c1"):
         self.m.record_pending("g", ch(channel), events, "a1", stop)
 
+    def test_an_agent_read_alone_is_as_the_home_lists_it(self):
+        started = [{"session_id": "c1", "gatherer": "g", "cwd": "/", "harness": "codex", "status": "terminal", "pid": 42,
+                    "created_at": "2026-10-24T00:00:00+00:00", "kept": 0, "ended": 0}]
+        for stop in ("tool_use", "end_turn"):
+            self.m.clear_pending("g", ch("c1"))
+            self.pend([{"type": "tool_call" if stop == "tool_use" else "agent_message", "payload": {}, "text": "x"}], stop)
+            whole = next(a for a in data.home(started)["gatherers"][0]["agents"] if a["channel"] == "c1")
+            alone = data.actors("g", {"c1"}, started)
+            self.assertEqual([a["channel"] for a in alone], ["c1"])          # c2 not read
+            self.assertEqual(alone[0], whole, stop)
+        self.assertEqual(data.actors("none", {"c1"}, []), [])                 # no such gatherer: none
+
     def test_the_turn_from_the_pending_answer_and_its_stop_reason(self):
         self.pend([{"type": "agent_message", "payload": {}, "text": "Done."}], "end_turn")
         self.assertEqual(self.status()[:2], (data.IDLE, True))

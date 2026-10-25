@@ -18,8 +18,8 @@ ones it started:
     status           starting / running / idle / terminal / stopped / failed, as last seen
     last_error       why its last turn or process failed, if one did
     kept             when (epoch seconds) its process was ended by the dashboard stopping -- a restart, a
-                     crash -- not closed: it shows Idle, not Closed, until it is opened again (here or
-                     elsewhere) or closed from the list; 0 when not kept
+                     crash -- or put away by it (`put_away`), not closed: it shows Idle, not Closed, until it
+                     is opened again (here or elsewhere) or closed from the list; 0 when not kept
     ended            when (epoch seconds) the dashboard's last process for it ended -- closed from the list,
                      exited, hung up; not a codex turn's own end -- what tells it Closed where ag cannot tell
                      whether a process runs (no /proc: macOS); 0 when none has
@@ -53,7 +53,9 @@ until it is closed (`stop`) or exits. Unix only: it needs `pty` (TERMINALS).
 
 A session whose process the dashboard's own end took (`close`, or a dashboard gone without one: what
 it last recorded running) is KEPT: not closed by anyone, so shown Idle with no process, to be picked
-up by its next message or terminal. Closing it (`stop`), or its process ending any other way, clears it.
+up by its next message or terminal. So is one whose process the dashboard PUT AWAY (`put_away`): an
+actor saved for later, left unused (saved.py's `Rest`). Closing it (`stop`), or its process ending any
+other way, clears it.
 
 CODEX runs the same ways, through `ag ... codex`: in a terminal, its own interactive UI (`codex
 [resume <id>]`); from a message box with no terminal open, a process per turn, `codex exec --json
@@ -406,6 +408,7 @@ class _Agent:
         self.yielding = False           # between turns: gives way to another process opening the session
         self.taken = False              # another process took the session over: it is being stopped
         self.ended = False              # the page ended it (`stop`), whatever it was doing
+        self.kept = False               # put away (`put_away`): its end is kept, and a message meanwhile waits for the next
         self.queue: List[str] = []      # messages waiting for the turn to end
         self.reader: Optional[threading.Thread] = None
 
@@ -423,6 +426,7 @@ class _Term:
         self.reader: Optional[threading.Thread] = None
         self.typed = 0.0                # when anything was last typed into it (epoch seconds): keys, a message
         self.answering = False          # an answer's keys being typed into it (`answer`)
+        self.kept = False               # put away (`put_away`): its end is kept
 
 
 class Sessions:
@@ -558,6 +562,9 @@ class Sessions:
         text = (text or "").strip()
         if not text:
             raise SessionError("an empty message")
+        t = self.terms.get(session_id)
+        if t is not None and t.kept:                 # its terminal being put away: once it has ended, a process of its own
+            self._gone(t)
         with self.lock:
             s = self._row(session_id)
             if s is None:
@@ -576,6 +583,10 @@ class Sessions:
                         raise SessionError(f"the session is open in another process ({held['pid']}): close it there first")
                     self._exec(s, text)
                 return next(x for x in self.list() if x["session_id"] == s["session_id"] or x["session_id"] == session_id)
+            if a is not None and a.kept and a.proc.poll() is None:   # being put away: the process after it takes it
+                a.queue.append(text)
+                self._changed(s["gatherer"], session_id)
+                return next(x for x in self.list() if x["session_id"] == session_id)
             if a is not None and a.taken:
                 raise SessionError("the session was taken over by another process: close it there first")
             if a is None or a.proc.poll() is not None:
@@ -627,6 +638,34 @@ class Sessions:
                 except OSError:
                     pass
             return next(x for x in self.list() if x["session_id"] == session_id)
+
+    def put_away(self, session_id: str, before: float) -> bool:
+        """The session's process ended as the dashboard's own end ends it, its end KEPT (module doc) -- shown
+        Idle, and resumed by its next message or terminal -- if nothing was done with it since `before`: not
+        started since, nothing typed into its terminal, no answer being typed into it, no turn of its agent's
+        running or waiting. Whether it was put away; a terminal's end is recorded before this returns. Which
+        processes, and when, is saved.py's (`Rest`)."""
+        with self.lock:
+            t, a = self.terms.get(session_id), self.agents.get(session_id)
+            if t is not None:
+                if t.answering or t.since >= before or t.typed >= before:
+                    return False
+                t.kept = True
+                t.log.write(f"--- {_now()} put away\n")
+                self._hang_up(t)
+            elif a is not None and a.proc.poll() is None and a.since < before \
+                    and not (a.busy or a.queue or a.ended or a.taken or a.kept):
+                a.kept = True
+                a.log.write(f"--- {_now()} put away\n")
+                try:
+                    a.proc.stdin.close()             # idle: it exits, and its reader records the end
+                except (OSError, ValueError):
+                    pass
+            else:
+                return False
+        if t is not None:                            # its end recorded by its reader, which takes the lock
+            self._gone(t)
+        return True
 
     def _start(self, s: dict) -> _Agent:
         sid = s["session_id"]
@@ -820,12 +859,12 @@ class Sessions:
             if self.agents.get(session_id) is a:
                 del self.agents[session_id]
                 waiting = bool(a.queue) and not a.taken
-                ok = a.ended or self.closing or ((code == 0 or a.yielding or a.taken) and not a.busy)   # as asked
+                ok = a.ended or self.closing or a.kept or ((code == 0 or a.yielding or a.taken) and not a.busy)   # as asked
                 s = self._row(session_id)
                 if a.ended and a.busy and s and not s["turns"] and _has_calls(s["gatherer"], session_id):
                     self._set(session_id, turns=1)   # cut off in its first turn, after a call: Claude Code kept it, resumed
                 self._set(session_id, status="stopped" if ok else "failed", ended=time.time(),
-                          kept=time.time() if self.closing and not a.taken else 0,
+                          kept=time.time() if (self.closing or a.kept) and not a.taken else 0,
                           **({} if ok else {"last_error": _why(session_id) or
                                             f"the agent exited ({code}); see {log_path(session_id)}"}))
                 if waiting:                  # messages sent while it was ending: a new process takes them
@@ -969,7 +1008,7 @@ class Sessions:
             if self.terms.get(session_id) is t:
                 del self.terms[session_id]
                 s = self._row(session_id)
-                self._set(session_id, status="stopped", ended=time.time(), kept=time.time() if self.closing else 0,
+                self._set(session_id, status="stopped", ended=time.time(), kept=time.time() if self.closing or t.kept else 0,
                           **({"turns": max(1, s["turns"])} if s and _has_calls(s["gatherer"], session_id) else {}))
 
     def output(self, session_id: str, since: int, wait: float = 0.0):

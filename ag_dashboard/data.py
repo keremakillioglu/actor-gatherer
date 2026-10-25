@@ -20,8 +20,9 @@ CLOSED when the harness's process that made its last call no longer runs; else I
 is over -- its last answer ended without a tool call -- and RUNNING when it is not (waiting on a
 tool, or on the model). Where the process is not known (a call from before ag recorded it, not
 Linux), a turn left unfinished for more than STALE_SECONDS counts as over. A session the dashboard
-started whose process its own end took (sessions.py's `kept`) is IDLE, not CLOSED; one whose process
-the dashboard saw end otherwise (closed from the list, exited: sessions.py's `ended`) is CLOSED where
+started whose process its own end took, or it put away (saved.py's `Rest`) -- sessions.py's `kept` --
+is IDLE, not CLOSED; one whose process the dashboard saw end otherwise (closed from the list, exited:
+sessions.py's `ended`) is CLOSED where
 the process cannot be told, unless something happened for it since. An IDLE agent whose BACKGROUND
 tasks still run (`background`) is BACKGROUND: its turn is over, but Claude Code is not done. A RUNNING
 agent whose turn waits on the user (`asking`) is ASKING: its newest answer, not yet carried back by a
@@ -256,6 +257,22 @@ def home(started: Optional[List[dict]] = None) -> dict:
             "seen": looked.stored()}
 
 
+def actors(gatherer: str, channels: set, started: List[dict]) -> List[dict]:
+    """The agents `channels` of `gatherer`, each as home() has it, with `started`'s sessions of them (sessions.py's
+    `list`) -- read for them alone, so at a small part of its cost; nothing is watched from it from now on (home()'s
+    records and wakes stay as they were). sqlite3.Error: the gatherer's database could not be read."""
+    now = time.time()
+    conn = _connect(gatherer)
+    try:
+        agents = _agents(conn, now, set(channels)) if conn is not None else []
+    finally:
+        if conn is not None:
+            conn.close()
+    g = [{"name": gatherer, "agents": agents, "last": None}]
+    _with_started(g, [s for s in started if s["gatherer"] == gatherer and s["session_id"] in channels], now)
+    return g[0]["agents"]
+
+
 def _with_started(gatherers: List[dict], started: List[dict], now: Optional[float] = None) -> None:
     by_name = {g["name"]: g for g in gatherers}
     for s in started:
@@ -307,13 +324,15 @@ def chattable(a: dict) -> bool:
     return a.get("alive") is not True or bool(a.get("session") and paths.runs_under(a.get("pid"), a["session"].get("pid")))
 
 
-def _agents(conn, now: float) -> List[dict]:
+def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
+    """The gatherer's agents (`only`: those channels of them alone)."""
     if CHANNEL not in _columns(conn, "events"):
         return []
     sizes = [c for c in ("est_tokens", "real_tokens", "limit_tokens") if c in _columns(conn, "_reads")]
     out: Dict[str, dict] = {}
+    which = "" if only is None else f" AND {CHANNEL} IN ({', '.join('?' * len(only))})"
     for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, min(inserted_at) AS first, max(inserted_at) AS last FROM events "
-                          f"WHERE {CHANNEL} IS NOT NULL GROUP BY {CHANNEL}"):
+                          f"WHERE {CHANNEL} IS NOT NULL{which} GROUP BY {CHANNEL}", tuple(only or ())):
         out[r["ch"]] = {"channel": r["ch"], "events": r["n"], "created": _seconds(r["first"]), "last_event": _seconds(r["last"]), "reads": 0,
                         "last_read": None, "cwd": None, "tasks": 0, "est_tokens": None, "real_tokens": None,
                         "limit_tokens": None, "sent_tokens": None, "pid": None, "alive": None}
