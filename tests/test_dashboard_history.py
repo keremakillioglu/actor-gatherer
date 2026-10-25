@@ -69,6 +69,12 @@ class HistoryTest(HistoryBase):
         self.assertEqual([e["row_id"] for e in got["events"]], list(range(1, 9)))
         self.assertEqual(got["events"][1], {"row_id": 2, "channel": "c1", "type": "user_message", "tokens": 5,
                                             "at": got["events"][1]["at"], "text": "deploy the site"})
+        conn = sqlite3.connect(os.path.join(self.tmp.name, "gatherers", "g", "context.db"))
+        conn.executescript("CREATE TABLE cleaned_messages (row_id INTEGER PRIMARY KEY, text TEXT NOT NULL, build_id INTEGER);"
+                           "INSERT INTO cleaned_messages VALUES (2, 'deploy it', 1);")
+        conn.commit()
+        conn.close()
+        self.assertEqual(history.outline("g")["events"][1]["text"], "deploy it")   # a request as ag cleaned it
         self.assertEqual([t["name"] for t in got["tasks"]], ["Deploy", "Roll back"])
         self.assertEqual(got["events"][2]["text"], "make deploy")             # a call: what it is for (a shell call with no description: its command), not its JSON
         mine = history.outline("g", "c1", after=4)

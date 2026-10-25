@@ -206,7 +206,8 @@ def _builds(conn, channel: Optional[str]) -> Dict[str, dict]:
 def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dict:
     """The gatherer's events after row `after` -- the channel's only, when one is named -- oldest first,
     at most OUTLINE_ITEMS of them (`more`: there are others after): each one's row, channel, type,
-    size, time and the first PREVIEW characters of its words -- a tool call's, what it is for (`_call_label`),
+    size, time and the first PREVIEW characters of its words -- a user message's as ag cleaned it, where it has; a
+    tool call's, what it is for (`_call_label`),
     its input left for when it is opened; every task ag has made of them; and each channel's latest build
     (`_builds`)."""
     conn = data._connect(gatherer)
@@ -218,10 +219,14 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
         where, args = f"e.row_id > ? AND e.{CHANNEL} IS NOT NULL", [after]
         if channel is not None:
             where, args = where + f" AND e.{CHANNEL} = ?", args + [channel]
+        # a user message as ag stored it cleaned -- the harness's wrapper around it taken off -- where it has
+        cleaned = "cleaned_messages" in data._tables(conn)
+        words = f"coalesce({'c.text, ' if cleaned else ''}e.text)"
         rows = conn.execute(
-            f"SELECT e.row_id, e.{CHANNEL} AS ch, t.name AS type, e.tokens, e.inserted_at, substr(e.text, 1, {PREVIEW * 2}) AS text, "
+            f"SELECT e.row_id, e.{CHANNEL} AS ch, t.name AS type, e.tokens, e.inserted_at, substr({words}, 1, {PREVIEW * 2}) AS text, "
             f"CASE WHEN e.text IS NULL OR e.text = '' OR t.name = 'tool_call' THEN e.payload_json END AS payload FROM events e "
-            f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE {where} ORDER BY e.row_id LIMIT ?",
+            f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id "
+            f"{'LEFT JOIN cleaned_messages c ON c.row_id = e.row_id' if cleaned else ''} WHERE {where} ORDER BY e.row_id LIMIT ?",
             (*args, OUTLINE_ITEMS + 1)).fetchall()
         cwd = {}
         if "p_cwd" in data._columns(conn, "_reads") and CHANNEL in data._columns(conn, "_reads"):

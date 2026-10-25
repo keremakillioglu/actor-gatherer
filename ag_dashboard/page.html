@@ -570,51 +570,80 @@ button:disabled { opacity: .5; cursor: default; }
 @media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } }
 /* the History view: the history to pick from at the left, at the grain picked; what the Gatherer made of it at the right */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
-.hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 420px); }
+.hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
+.hist .h-grid:has(> .h-side.open) { grid-template-columns: minmax(0, 1fr) min(400px, 42%); }   /* the panel: only while open */
+@media (prefers-reduced-motion: reduce) { .hist .h-grid { transition: none; } }
 .hist .h-left { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.hist .h-bar { flex: none; padding: 8px 16px 4px; border-bottom: 1px solid var(--ring); font-size: 12px; color: var(--ink-2); }
-.hist .h-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
-.hist .h-status { display: flex; align-items: center; gap: 14px; height: 20px; margin-top: 4px; font-size: 11.5px; overflow: hidden; white-space: nowrap; }
-.hist .h-search { flex: 1 1 260px; display: flex; align-items: center; gap: 6px; min-width: 0; border: 1px solid var(--ring); border-radius: 6px;
+/* the header: one line -- search, Tasks|Turns, which types are shown -- and at its right, how the tasks stand */
+.hist .h-bar { flex: none; position: relative; z-index: 5; padding: 10px 20px; border-bottom: 1px solid var(--ring); font-size: 12px; color: var(--ink-2); }
+.hist .h-controls { display: flex; align-items: center; gap: 10px; }
+.hist .h-search { flex: 0 1 380px; display: flex; align-items: center; gap: 6px; min-width: 140px; border: 1px solid var(--ring); border-radius: 6px;
   background: var(--page); padding: 0 8px; }
 .hist .h-search:focus-within { border-color: var(--axis); }
 .hist .h-search svg { flex: none; color: var(--muted); }
 .hist .h-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 13px; padding: 5px 0; }
+.hist .h-types { position: relative; flex: none; }
+.hist .h-types > summary { list-style: none; margin: 0; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ring); border-radius: 6px;
+  padding: 4px 10px; font-size: 12px; color: var(--ink); cursor: pointer; white-space: nowrap; }
+.hist .h-types > summary::-webkit-details-marker { display: none; }
+.hist .h-types > summary:hover, .hist .h-types[open] > summary { background: var(--wash); }
+.hist .h-types > summary .lbl { color: var(--muted); }
+.hist .h-types .menu { position: absolute; top: calc(100% + 4px); left: 0; min-width: 190px; padding: 6px; display: grid; gap: 1px; background: var(--surface);
+  border: 1px solid var(--ring); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+.hist .h-types .menu label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 5px; color: var(--ink); cursor: pointer; }
+.hist .h-types .menu label:hover { background: var(--wash); }
+.hist .h-types .menu input { margin: 0; accent-color: var(--s1); }
+.hist .h-types .menu i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.hist .h-status { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 12px; font-size: 11.5px; overflow: hidden; white-space: nowrap; }
 .hist .h-found { white-space: nowrap; color: var(--ink-2); }
 .hist .h-build { white-space: nowrap; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hist .h-build.bad { color: var(--warning); }
 .hist .h-build .spin::before { content: "✻"; color: var(--term-accent); animation: term-spin 1.2s steps(1) infinite; }
-.hist .h-list { flex: 1; min-height: 0; overflow: auto; padding-bottom: 16px; }
-.hist .h-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 6px; align-items: start; cursor: default; user-select: none;
-  padding: 6px 16px 6px calc(16px + var(--depth, 0) * 20px); border-bottom: 1px solid var(--grid); content-visibility: auto; contain-intrinsic-size: auto 46px; }
-.hist .h-row:hover { background: var(--wash); }
-.hist .h-row.head { background: var(--wash); }
-.hist .h-row.on, .hist .h-row.on:hover { background: var(--selected); }      /* selected; a part of it: half as strong */
-.hist .h-row.some { background: color-mix(in srgb, var(--selected) 50%, transparent); }
+/* the list: no rules between rows; a timeline down the left, a dot for each row of the grain (green: the running
+   task); what a row holds nested along a guide, smaller and quieter; when and how big, on hover */
+.hist .h-list { flex: 1; min-height: 0; overflow: auto; padding: 8px 0 28px; }
+.hist .h-row { --row-bg: var(--surface); position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 8px; align-items: start;
+  padding: 8px 20px 8px calc(40px + var(--depth, 0) * 20px); background-color: var(--row-bg); cursor: default; user-select: none;
+  content-visibility: auto; contain-intrinsic-size: auto 46px; }
+.hist .h-row:hover { --row-bg: color-mix(in srgb, var(--surface) 95%, var(--ink)); }
+.hist .h-row.some { --row-bg: color-mix(in srgb, var(--surface) 92%, var(--s1)); }
+.hist .h-row.on, .hist .h-row.on:hover { --row-bg: color-mix(in srgb, var(--surface) 83%, var(--s1)); }   /* selected; a part of it: half as strong */
+.hist .h-row::after { content: ""; position: absolute; left: 24px; top: 0; bottom: 0; width: 1px; background: var(--grid); }
+.hist .h-row:first-child::after { top: 15px; }
+.hist .h-row:last-of-type::after { bottom: calc(100% - 15px); }
+.hist .h-row:first-child:last-of-type::after { display: none; }
+.hist .h-row:not(.nested)::before { content: ""; position: absolute; left: 21px; top: 12px; width: 7px; height: 7px; border-radius: 50%; z-index: 1;
+  background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--axis); }
+.hist .h-row.current::before { background: var(--good); box-shadow: none; }
+.hist .h-row.on:not(.nested)::before { background: var(--s1); box-shadow: none; }
+.hist .h-row.nested { background-image: linear-gradient(var(--grid), var(--grid)); background-repeat: no-repeat; background-size: 1px 100%;
+  background-position: calc(46px + (var(--depth) - 1) * 20px) 0; padding-top: 5px; padding-bottom: 5px; }
 .hist .h-full { user-select: text; cursor: text; }
-.hist .h-tw { border: 0; background: none; padding: 0; margin: 0; width: 14px; color: var(--ink-2); font-size: 13px; line-height: 18px; cursor: pointer; }
+.hist .h-tw { border: 0; background: none; padding: 0; margin: 0; width: 14px; color: var(--muted); font-size: 11px; line-height: 19px; cursor: pointer; }
 .hist .h-tw:hover { color: var(--ink); background: none; }
-.hist .h-main { min-width: 0; }
-.hist .h-label { font-size: 13px; line-height: 1.4; color: var(--ink); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2;
+.hist .h-main { min-width: 0; padding-right: 4px; }
+.hist .h-label { font-size: 13px; line-height: 1.45; color: var(--ink); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow-wrap: anywhere; }
-.hist .h-row.open:not(.head) > .h-main .h-label { -webkit-line-clamp: 6; }
-.hist .h-row.head .h-label { font-weight: 600; }
+.hist .h-row.task:not(.nested) .h-label { font-size: 13.5px; font-weight: 600; letter-spacing: -.005em; }
+.hist .h-row.nested .h-label { font-size: 12.5px; }
+.hist .h-row.message .h-label { color: var(--ink-2); }
+.hist .h-row.open .h-label { -webkit-line-clamp: 6; }
 .hist .h-label.dim { color: var(--muted); font-style: italic; }
-.hist .h-kind { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 6px; }
+.hist .h-kind { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--good); margin-right: 6px; }
 .hist .h-main.keyed { border-left: 3px solid var(--key); padding-left: 9px; }   /* a message's type, as the Messages view keys it */
-.hist .h-controls .filters { margin: 0; gap: 4px; }
-.hist .h-controls .filters .label { display: none; }
-.hist .h-controls .chip { padding: 2px 8px; font-size: 11.5px; }
 .hist .h-badge { display: inline-block; font-size: 10px; font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-right: 6px; line-height: 15px; }
-.hist .h-sub { font-size: 12px; color: var(--ink-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .h-sub { font-size: 12.5px; line-height: 1.45; color: var(--ink-2); margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .hist .h-sub.dim { color: var(--muted); }
 .hist .h-hit { font-size: 12px; color: var(--ink-2); margin-top: 3px; overflow-wrap: anywhere; }
 .hist mark { background: color-mix(in srgb, var(--s4) 35%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
-.hist .h-meta { font-size: 11px; color: var(--muted); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.hist .h-meta { position: absolute; right: 14px; top: 8px; padding: 0 0 0 22px; font-size: 11px; line-height: 19px; color: var(--muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums; background: linear-gradient(to right, transparent, var(--row-bg) 18px); opacity: 0; pointer-events: none; transition: opacity .12s; }
+.hist .h-row.nested .h-meta { top: 5px; }
+.hist .h-row:hover .h-meta { opacity: 1; }
 .hist .h-full { grid-column: 2 / -1; margin: 6px 0 2px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
   color: var(--ink-2); background: var(--page); border: 1px solid var(--grid); border-radius: 6px; padding: 8px 10px; max-height: 360px; overflow: auto; }
 .hist .h-more { display: block; margin: 12px auto; }
-.hist .h-note { color: var(--muted); font-size: 12px; padding: 14px 16px; }
+.hist .h-note { color: var(--muted); font-size: 12px; padding: 14px 20px; }
 .hist .h-act { padding: 12px 14px; display: grid; gap: 8px; border-bottom: 1px solid var(--ring); margin-bottom: 10px; }
 .hist .h-act textarea { width: 100%; min-height: 38px; max-height: 30vh; resize: vertical; font: inherit; font-size: 13px; color: var(--ink); background: var(--page);
   border: 1px solid var(--ring); border-radius: 6px; padding: 6px 8px; field-sizing: content; }
@@ -628,12 +657,12 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-act .err { color: var(--critical); font-size: 12px; }
 .hist .h-act .err:empty { display: none; }
 .hist .h-side { border-left: 1px solid var(--ring); overflow: auto; min-height: 0; background: var(--page); }
-.hist .h-side.empty { border-left-color: transparent; background: none; }
+.hist .h-side.closed { display: none; }
 .hist .h-side-h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 2px 14px 6px; }
 .hist .h-older { display: block; margin: 0 10px 12px; border: 0; background: none; color: var(--muted); padding: 2px 4px; }
-.hist .h-older:hover { color: var(--ink); background: none; text-decoration: underline; }      /* its room kept, until something is selected */
-.hist .h-side.open { animation: h-side-in .18s ease-out; }
-@keyframes h-side-in { from { opacity: 0; transform: translateX(14px); } }
+.hist .h-older:hover { color: var(--ink); background: none; text-decoration: underline; }
+.hist .h-side.open { animation: h-side-in .2s ease-out; }
+@keyframes h-side-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .hist .h-side.open { animation: none; } }
 .hist .h-side .h-note { padding: 4px 14px 12px; }
 .hist .h-rec { margin: 0 10px 10px; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; }
@@ -686,8 +715,9 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-rec .working .spin::before { content: "✻"; color: var(--term-accent); animation: term-spin 1.2s steps(1) infinite; }
 /* a time that counts up: its digits all one width, at the end of its line, where it moves nothing */
 .hist .ticking { font-variant-numeric: tabular-nums; color: var(--muted); }
-@media (max-width: 1100px) { .hist .h-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 38%); }
-  .hist .h-side { border-left: 0; border-top: 1px solid var(--ring); } .hist .h-side.empty { display: none; } }
+@media (max-width: 1100px) { .hist .h-grid, .hist .h-grid:has(> .h-side.open) { grid-template-columns: minmax(0, 1fr); }
+  .hist .h-grid:has(> .h-side.open) { grid-template-rows: minmax(0, 1fr) minmax(0, 42%); }
+  .hist .h-side { border-left: 0; border-top: 1px solid var(--ring); } .hist .h-status { display: none; } }
 </style>
 </head>
 <body>
@@ -3157,6 +3187,7 @@ async function loadOutlineNow() {
     if (fresh.length || signature(got.tasks) !== signature(h.tasks) || signature(got.builds) !== signature(h.builds) || h.error
       || h.more !== got.more) h.version++;
     h.error = ""; h.tasks = got.tasks; h.builds = got.builds || {}; h.more = got.more;
+    for (const e of fresh) if (e.type === "user_message") e.text = asked(e.text);   // ag's cleaned text, else without the wrapper
     h.events.push(...fresh);
     if (fresh.length) h.last = fresh[fresh.length - 1].row_id;
     if (!got.more) break;
@@ -3494,10 +3525,9 @@ function histLabel(n, hits) {
   return [el("div", { class: "h-label" + (e.text ? "" : " dim"), title: name }, e.text || wordless({ name: e.type })), hit];
 }
 function histMeta(n, hits) {
-  const bits = n.kind === "message" || n.kind === "turn" ? [`${compact(n.tokens)} tok`]
-    : [plural(n.kind === "actor" ? n.turns : n.children.length, "turn"), `${compact(n.tokens)} tok`];
-  if (hits.length && n.kind !== "message") bits.unshift(`${full(hits.length)} match${hits.length === 1 ? "" : "es"}`);
-  return [el("div", { text: bits.join(" · ") }), el("div", { text: n.first ? clock(n.first, true) : "" })];
+  const bits = [hits.length && n.kind !== "message" ? `${full(hits.length)} match${hits.length === 1 ? "" : "es"}` : null,
+    n.kind === "task" ? plural(n.children.length, "turn") : null, `${compact(n.tokens)} tok`, n.first ? ago(n.first) : null];
+  return bits.filter(Boolean).join(" · ");
 }
 const histRows = blockCache(), histRecs = blockCache();
 function histRow(n, depth, header) {
@@ -3509,13 +3539,14 @@ function histRow(n, depth, header) {
   const k = n.id + (header ? "/h" : "");
   return histRows.get(k, sig, () => {
     const what = n.kind === "message" ? (open ? "Hide its whole text" : "Show its whole text") : (open ? "Fold" : "Open: its parts");
-    const row = el("div", { class: `h-row ${n.kind}${header ? " head" : ""}${st === "all" ? " on" : st === "some" ? " some" : ""}${open ? " open" : ""}`,
-      style: `--depth:${depth}`, "data-key": k },
+    const row = el("div", { class: `h-row ${n.kind}${header ? " head" : ""}${depth ? " nested" : ""}${n.current ? " current" : ""}`
+        + `${st === "all" ? " on" : st === "some" ? " some" : ""}${open ? " open" : ""}`,
+      style: `--depth:${depth}`, "data-key": k, title: histMeta(n, hits) },
       el("button", { type: "button", class: "h-tw", title: what, "aria-label": what, "aria-expanded": open ? "true" : "false",
         onclick: () => histOpen(n.id, header) }, open ? "▾" : "▸"),
       el("div", { class: "h-main" + (n.kind === "message" ? " keyed" : ""),
         ...(n.kind === "message" ? { style: `--key:${itemType({ name: n.event.type, group: "Recent history" })[2]}` } : {}) }, ...histLabel(n, hits)),
-      el("div", { class: "h-meta" }, ...histMeta(n, hits)));
+      el("div", { class: "h-meta", "aria-hidden": "true", text: histMeta(n, hits) }));
     if (n.kind === "message" && open) row.append(el("pre", { class: "h-full", text: fullText ?? "Loading…" }));
     return row;
   });
@@ -3545,6 +3576,24 @@ function histBuildNote(h) {
       b.since < HIST_BUILD_MESSAGES ? `Built again once ${HIST_BUILD_MESSAGES} have come in; until then they are the running task` : ""];
   return el("span", { class: "h-build " + cls, title }, cls === "run" ? el("span", { class: "spin", "aria-hidden": "true" }) : null, text);
 }
+// Which message types the list shows (the Messages view's choice too): one button, its menu of the types.
+const TYPE_SHORT = { gatherer: "Gatherer", system: "System" };
+function typesMenu() {
+  const all = [TYPES[6], ...TYPES.slice(0, 6)];
+  const on = all.filter(([t]) => shownTypes.has(t)).map(([t, name]) => TYPE_SHORT[t] || name);
+  const said = on.length === all.length ? "All" : on.length > 3 ? `${on.length} types` : on.join(", ") || "Nothing";
+  return el("details", { class: "h-types", id: "hist-types" },
+    el("summary", { title: "Which message types are listed" }, el("span", { class: "lbl", text: "Show" }), said, el("span", { class: "lbl", text: "▾" })),
+    el("div", { class: "menu", role: "group", "aria-label": "Message types shown" }, ...all.map(([type, name, swatch]) => {
+      const box = el("input", { type: "checkbox", ...(shownTypes.has(type) ? { checked: "" } : {}) });
+      box.addEventListener("change", () => toggleType(type));
+      return el("label", {}, box, el("i", { style: `background:${swatch}` }), name);
+    })));
+}
+document.addEventListener("click", (ev) => {                 // the types' menu closes on a click elsewhere
+  const menu = document.getElementById("hist-types");
+  if (menu && menu.open && !menu.contains(ev.target)) menu.open = false;
+});
 function histBar(h, grains, grain) {
   const box = el("input", { type: "search", placeholder: "Search this actor's history",
     "aria-label": "Search the history", spellcheck: "false", value: hist.q });
@@ -3559,11 +3608,11 @@ function histBar(h, grains, grain) {
       histSwitch("Grain", grains.map(([g, name, ok]) => [g, name, ok, "ag has not segmented this history into tasks yet",
         g === "tasks" && hist.flash && hist.flash.key === h.key && Date.now() < hist.flash.until ? "flash" : ""]),
         grain, setHistGrain),
-      typeChips(null)),
-    el("div", { class: "h-status" },
-      q ? el("span", { class: "h-found", text: !hist.hits ? "Searching…"
-        : `${full(hist.hits.size)}${hist.hitsMore ? "+" : ""} matching message${hist.hits.size === 1 ? "" : "s"}` }) : null,
-      histBuildNote(h)));
+      typesMenu(),
+      el("div", { class: "h-status" },
+        q ? el("span", { class: "h-found", text: !hist.hits ? "Searching…"
+          : `${full(hist.hits.size)}${hist.hitsMore ? "+" : ""} matching message${hist.hits.size === 1 ? "" : "s"}` }) : null,
+        histBuildNote(h))));
 }
 // What can be done with what is selected, at the top of the panel at the right: the Gatherer's model asked for
 // one of HIST_KINDS, with what the reader wants of it; or the history saved as a file.
@@ -3751,7 +3800,7 @@ const HIST_RECENT = 3;
 function histSide(h) {
   const list = hist.recs.gatherer === h.gatherer ? hist.recs.list.filter((r) => (r.channels || []).includes(h.channel)) : [];   // this actor's
   histRecs.begin(h.gatherer);
-  if (!hist.panel) return el("div", { class: "h-side empty", "aria-hidden": "true" });
+  if (!hist.panel) return el("div", { class: "h-side closed", "aria-hidden": "true" });
   const side = el("div", { class: "h-side open", "data-keep": "hist-side", "data-morph": "", role: "complementary", "aria-label": "Selected history" });
   const shown = hist.allRecs ? list : list.slice(0, HIST_RECENT);
   side.kids = [histActions(), ...(list.length ? [el("div", { class: "h-side-h", text: "Recent artifacts" })] : []), ...shown.map(recCard),
