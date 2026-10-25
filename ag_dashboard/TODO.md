@@ -42,3 +42,24 @@ Assumptions to check against new Claude Code versions:
 - The session record (`<config>/projects/<dir>/<session>.jsonl`) and the plan files (`<config>/plans/`) are read
   from the dashboard's own `CLAUDE_CONFIG_DIR`. A session run with another config dir keeps showing its question
   until its next model call, and shows no plan text.
+
+## Stopped on an error
+
+A model call that fails is kept on its read (`_reads.error_status`, `_reads.error`) by ag's hook server, whether the
+endpoint answered an error or could not be reached; one that got no answer at all is answered 502 with why, where
+the harness would otherwise get a bare 500. The actor shows Running with a note while the harness tries again
+(data.py's `failing`), and Error once it gives up: Claude Code's record of the session ends with its API error
+(`stopped`), or no try comes for GIVE_UP_SECONDS -- Esc while Claude Code waits to try again stops it without a word
+in its record. The same record shows a turn the user
+interrupted (Esc) as Idle, where ag's record would go on running.
+
+Not covered yet:
+
+- [ ] **An answer that breaks off once it has begun** is not kept as a failure: the hook server can't tell the
+  endpoint breaking it from the harness closing it (an interrupted turn). Claude Code's record still shows the
+  give-up; for codex it shows as Running until its next call.
+- [ ] **Codex's own record** (its rollout file) is not read: Error comes only by time, and an interrupted codex turn
+  shows as Running.
+- [ ] **Calls with no read** (Claude Code's compaction, recaps) are not kept when they fail.
+- [ ] **A session whose record is elsewhere** (another `CLAUDE_CONFIG_DIR`, another machine) waits GIVE_UP_SECONDS
+  for Error, and an interruption there is not seen.

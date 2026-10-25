@@ -29,8 +29,17 @@ approve -- and nothing comes until they answer. Until, that is, Claude Code's ow
 says the call has its result (`settled`): answered there, the turn goes on and ag hears of it with the next
 call; dismissed there (Esc), no call comes, so ag's record would go on asking -- IDLE instead, its turn over.
 Answered from the page (sessions.py's `answer`), its `answer`
-says whether Claude Code's result for the call holds what was picked (`recorded`; None: no result yet). `running`
-is RUNNING or BACKGROUND, or a build running for it. Its `last` is its latest activity: a read, an event, or a pending
+says whether Claude Code's result for the call holds what was picked (`recorded`; None: no result yet).
+A RUNNING agent may also have stopped where ag does not see it. A model call that FAILED is kept on its
+read (`_reads.error`, by ag's hook server): `failing` is the run of them at the newest event the agent's
+calls answered -- the harness tries again, each try a read -- and whether a try is under way. Claude Code's
+own record of the session (CLAUDE_TAIL's note) says how its turn STOPPED, when its last message there came
+after ag last heard of the session (`stopped`): Claude Code's API error -- it gave up on the model call, its
+tries spent, or the error not one to try again -- is ERROR; the user's interruption (Esc), which makes no
+call, IDLE. A failed call with no try since for GIVE_UP_SECONDS counts as given up too -- with no record to
+read (codex; a session of another machine), or one that says nothing: Esc while Claude Code waits to try again
+stops it without a word -- ERROR; GIVE_UP_LONG where the record could still say, the endpoint having answered
+an error that may ask for a longer wait (Retry-After). `running` is RUNNING or BACKGROUND, or a build running for it. Its `last` is its latest activity: a read, an event, or a pending
 answer (the reply that ends a turn, which no call stores until the user writes again) -- what
 the page compares with when the reader last looked at it, to show it FINISHED. A REBUILD is a
 read whose context comes from another build than the agent's read before it: the condensed
@@ -73,7 +82,7 @@ from . import answers, avatars, hiding, live, sessions
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
-RUNNING, IDLE, CLOSED, BACKGROUND, ASKING = "running", "idle", "closed", "background", "asking"
+RUNNING, IDLE, CLOSED, BACKGROUND, ASKING, ERROR = "running", "idle", "closed", "background", "asking", "error"
 #: Claude Code's tools that wait for the user in its terminal before the turn goes on: a question, with
 #: options to pick from; a plan, to approve. What each asks, `asking` returns.
 ASKS = {"AskUserQuestion": "question", "ExitPlanMode": "plan"}
@@ -84,6 +93,12 @@ PLAN_CHARS = 20000             # the most of a plan it returns
 #: it is answered or dismissed; dismissed (Esc), Claude Code's note that the user interrupted it follows.
 CLAUDE_TAIL = 1 << 20          # how much of its end is read: what came since the question
 INTERRUPTED = "[Request interrupted by user"
+STOP_TAIL = 1 << 16            # how much of its end `stopped` reads: its last few lines
+GIVE_UP_SECONDS = 90           # a failed call with no try since: given up (Claude Code waits at most ~40 s
+                               # between its tries)
+GIVE_UP_LONG = 600             # the same for an error answered, where the record could still say (Retry-After)
+FAILED_READS = 50              # how many of its newest reads `failing` looks at
+ERROR_CHARS = 2000             # the most of an error's words it returns
 #: Where Claude Code writes the plan it asks to have approved (ExitPlanMode's call carries none): the file
 #: of its plans its latest write to one names.
 PLAN_FILE = re.compile(r"/\.claude/plans/[^/\\]+\.md$")
@@ -216,13 +231,16 @@ def home(started: Optional[List[dict]] = None) -> dict:
         gatherers.append({"name": name, "policy": _policy(name), "agents": agents,
                           "last": max((a["last"] or 0 for a in agents), default=0) or None})
     _with_started(gatherers, sessions.stored() if started is None else started, now)
-    records = {}                         # the records of the sessions waiting on the user: watched from now on
+    records, wakes = {}, {}              # the records of the sessions waiting on the user, or running: watched from now on
     for g in gatherers:
         for a in g["agents"]:
-            record = a.pop("record", None)
+            record, wake = a.pop("record", None), a.pop("wake", None)
             if record:
-                records[record[0]] = (g["name"], record[1])
+                records[record[0]] = (g["name"], a["channel"], record[1])
+            if wake:
+                wakes[(g["name"], a["channel"])] = wake
     live.watch_records(records)
+    live.wake_at(wakes)
     for g in gatherers:                  # when it was made: its first event, else its config's time
         g["created"] = min((a["created"] for a in g["agents"] if a.get("created")), default=None) or _made(g["name"])
     gatherers.sort(key=lambda g: g.get("created") or 0, reverse=True)
@@ -360,6 +378,19 @@ def _agents(conn, now: float) -> List[dict]:
                 a["status"], a["turn_over"] = IDLE, True
         if a["asking"]:
             a["status"] = ASKING
+        a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
+        claude = a["harness"] in ("claude", None)
+        record = (record or _claude_record(ch, a.get("cwd"))) if a["status"] == RUNNING and claude else None
+        seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
+        a["stopped"] = stopped(record, a["last"]) if record else None
+        if a["stopped"] and a["stopped"]["kind"] == "interrupted":
+            a["status"], a["turn_over"], a["failing"] = IDLE, True, None
+        elif a["stopped"] or (a["failing"] and given_up(a["failing"], bool(record), now)):
+            a["status"], a["turn_over"] = ERROR, True
+        elif a["failing"] and not a["failing"]["retrying"]:
+            a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], bool(record)) + 1   # when it would be given up
+        if a["status"] == RUNNING and record and not a.get("record"):
+            a["record"] = (record, seen)                 # watched (live.py) while it runs: it may stop unseen
         a["running"] = a["building"] or a["status"] == RUNNING
         a["background"] = background.get(ch, [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
@@ -433,14 +464,104 @@ def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optiona
     return None if ask is None or settled(channel, cwd, ask["call"]) else ask
 
 
+def failing(conn, channel: str) -> Optional[dict]:
+    """The agent's model calls failing now (module doc), None if they are not: the run of failed calls at its
+    newest read -- or at the one before, the newest a try under way (no error, no count yet) at the same event
+    -- that answered the same event. {at: when the newest began, first: the run's first, attempts: how many
+    failed, status: the newest's HTTP status (None: no answer came), error: why, retrying: a try under way}."""
+    cols = _columns(conn, "_reads")
+    if "error" not in cols or CHANNEL not in cols:
+        return None                                   # a file from before ag kept failures
+    counted = "real_tokens" if "real_tokens" in cols else "NULL AS real_tokens"
+    rows = conn.execute(f"SELECT read_at, row_id, {counted}, error_status, error FROM _reads WHERE {CHANNEL} = ? "
+                        "ORDER BY read_id DESC LIMIT ?", (channel, FAILED_READS)).fetchall()
+    retrying = bool(rows) and rows[0]["error"] is None
+    if retrying:                                      # a try under way, after a failure at the same event
+        if rows[0]["real_tokens"] is not None or len(rows) < 2 or rows[1]["error"] is None \
+                or rows[1]["row_id"] != rows[0]["row_id"]:
+            return None
+        rows = rows[1:]
+    run = []
+    for r in rows:
+        if r["error"] is None or r["row_id"] != rows[0]["row_id"]:
+            break
+        run.append(r)
+    if not run:
+        return None
+    return {"at": _seconds(run[0]["read_at"]), "first": _seconds(run[-1]["read_at"]), "attempts": len(run),
+            "status": run[0]["error_status"], "error": _clip(run[0]["error"], ERROR_CHARS), "retrying": retrying}
+
+
+def give_up_after(failure: dict, record: bool) -> float:
+    """How long after a failed call (`failing`) with no try since the harness counts as having given up:
+    GIVE_UP_LONG where its endpoint answered an error (it may have asked for a long wait) and Claude Code's
+    record could still say; else GIVE_UP_SECONDS."""
+    return GIVE_UP_LONG if record and failure["status"] is not None else GIVE_UP_SECONDS
+
+
+def given_up(failure: dict, record: bool, now: float) -> bool:
+    """Whether the harness has given up on a failed call (`failing`), as far as time tells: no try under way, and
+    none for `give_up_after`."""
+    return not failure["retrying"] and now - (failure["at"] or now) > give_up_after(failure, record)
+
+
+def stopped(path: str, since: Optional[float]) -> Optional[dict]:
+    """How Claude Code's record of the session (`path`) says its turn stopped, after `since` -- when ag last heard
+    of it -- where ag does not see it: its last message (not a subagent's), if it came after `since`, is Claude
+    Code's API error -- {kind: "error", at, text: its words, status: the HTTP status it names} -- or the user's
+    interruption -- {kind: "interrupted", at}. None: its last message is neither, or is older, or can't be read."""
+    try:
+        with open(path, "rb") as fh:
+            size = os.path.getsize(path)
+            fh.seek(max(0, size - STOP_TAIL))
+            lines = fh.read().split(b"\n")
+    except OSError:
+        return None
+    if size > STOP_TAIL:
+        lines = lines[1:]                             # begun before what was read
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        try:
+            m = json.loads(line)
+        except ValueError:
+            return None                               # a line being written, or cut: can't tell
+        if not isinstance(m, dict) or m.get("type") not in ("user", "assistant") or m.get("isSidechain"):
+            continue                                  # Claude Code's own notes (a turn's length, a title, ...)
+        at = _seconds(m.get("timestamp"))
+        if at is None or (since is not None and at < since):
+            return None
+        if m["type"] == "assistant" and m.get("isApiErrorMessage"):
+            text = " ".join(str(b.get("text") or "") for b in _blocks(line) if b.get("type") == "text").strip()
+            return {"kind": "error", "at": at, "text": _clip(text, ERROR_CHARS) or None,
+                    "status": m.get("apiErrorStatus") if isinstance(m.get("apiErrorStatus"), int) else None}
+        if m["type"] == "user" and any(b.get("type") == "text" and str(b.get("text", "")).startswith(INTERRUPTED)
+                                       for b in _blocks(line, role="user")):
+            return {"kind": "interrupted", "at": at}
+        return None
+    return None
+
+
+_NO_RECORD: Dict[str, float] = {}   # session -> when no record of it was found anywhere: not looked for again for a while
+NO_RECORD_SECONDS = 60
+
+
 def _claude_record(session: str, cwd: Optional[str]) -> Optional[str]:
-    """Claude Code's record of the session (CLAUDE_TAIL's note): under its directory's folder, else wherever it is."""
+    """Claude Code's record of the session (CLAUDE_TAIL's note): under its directory's folder, else wherever it is
+    -- a search of every folder, not made again for NO_RECORD_SECONDS once it found none (asked on every update
+    of the page for each running agent: one of another machine has none)."""
     config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
     if cwd:
         path = os.path.join(config, "projects", re.sub(r"[^A-Za-z0-9]", "-", cwd), f"{session}.jsonl")
         if os.path.isfile(path):
             return path
+    if time.time() - _NO_RECORD.get(session, 0) < NO_RECORD_SECONDS:
+        return None
     found = glob.glob(os.path.join(glob.escape(config), "projects", "*", glob.escape(session) + ".jsonl"))
+    if not found:
+        if len(_NO_RECORD) > 1000:
+            _NO_RECORD.clear()
+        _NO_RECORD[session] = time.time()
     return found[0] if found else None
 
 
