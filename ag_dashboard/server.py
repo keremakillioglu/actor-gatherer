@@ -44,6 +44,7 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/terminal/input {session_id, data}       what was typed in it
     POST /api/terminal/resize {session_id, cols, rows}  its new size
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
+    POST /api/saved {gatherer, channel, saved}  the actor saved for later, or no longer (saved.py) -> every one saved
     POST /api/history/export {gatherer, rows, format}   those events as a file: {name, text} (history.py)
     POST /api/history/extract {gatherer, rows, kind, ask?}  the Gatherer's model asked for a summary, memory
                                           or skill of them, in the background -> its record
@@ -80,7 +81,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import avatars, data, files, hiding, history, home, live, queued, sessions, settings
+from . import avatars, data, files, hiding, history, home, live, queued, saved, sessions, settings
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -391,6 +392,10 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                 if url.path == "/api/hiding":
                     kept = hiding.choose(str(body.get("gatherer") or ""), str(body.get("choice") or ""))
                     hub.ring(None)                       # every open page's list
+                    return self.answer(kept)
+                if url.path == "/api/saved":
+                    kept = saved.choose(str(body.get("gatherer") or ""), str(body.get("channel") or ""), bool(body.get("saved")))
+                    hub.ring(None)
                     return self.answer(kept)
                 if url.path == "/api/history/export":
                     return self.answer(history.export(str(body.get("gatherer") or ""), body.get("rows"),

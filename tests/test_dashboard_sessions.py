@@ -17,7 +17,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import data, hiding, server, sessions  # noqa: E402
+from ag_dashboard import data, hiding, saved, server, sessions  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 # A fake `ag`: writes its arguments, then each message it is sent, to $FAKE_AG_LOG; answers each
@@ -623,6 +623,32 @@ class EndpointTest(SessionsBase):
         self.assertEqual(self.post("/api/hiding", {"gatherer": "", "choice": "hidden"})[0], 400)
         self.assertEqual(self.post("/api/hiding", {"gatherer": "x", "choice": "hidden"}, {"Origin": "https://evil.example"})[0], 403)
         self.assertEqual(hiding.stored(), {"quiet": "shown"})
+
+    def test_an_actor_saved_for_later_stays_saved_for_every_dashboard_on_the_home(self):
+        self.assertEqual(json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))["saved"], {})
+        code, kept = self.post("/api/saved", {"gatherer": "g", "channel": "c1", "saved": True})
+        self.assertEqual((code, list(kept)), (200, ["g"]))
+        first = kept["g"]["c1"]
+        code, kept = self.post("/api/saved", {"gatherer": "g", "channel": "c2", "saved": True})
+        self.assertEqual(sorted(kept["g"]), ["c1", "c2"])
+        code, kept = self.post("/api/saved", {"gatherer": "g", "channel": "c1", "saved": True})
+        self.assertEqual(kept["g"]["c1"], first)                 # saved again: kept from when it was first
+        other = server.serve("127.0.0.1", 0)         # another dashboard: a new port, its own page origin
+        threading.Thread(target=other.serve_forever, daemon=True).start()
+        try:
+            home = json.load(urllib.request.urlopen(f"http://127.0.0.1:{other.server_port}/api/home", timeout=10))
+            self.assertEqual(sorted(home["saved"]["g"]), ["c1", "c2"])
+        finally:
+            other.shutdown()
+            other.server_close()
+        code, kept = self.post("/api/saved", {"gatherer": "g", "channel": "c1", "saved": False})
+        self.assertEqual((code, sorted(kept["g"])), (200, ["c2"]))
+        self.assertEqual(sorted(data.home([])["saved"]["g"]), ["c2"])      # snapshots carry it too
+        self.assertEqual(self.post("/api/saved", {"gatherer": "g", "channel": "", "saved": True})[0], 400)
+        self.assertEqual(self.post("/api/saved", {"gatherer": "", "channel": "c", "saved": True})[0], 400)
+        self.assertEqual(self.post("/api/saved", {"gatherer": "g", "channel": "c3", "saved": True}, {"Origin": "https://evil.example"})[0], 403)
+        self.post("/api/saved", {"gatherer": "g", "channel": "c2", "saved": False})
+        self.assertEqual(saved.stored(), {})
 
     def test_what_it_refuses(self):
         self.assertEqual(self.post("/api/gatherers", {"name": "x"}, {"Origin": "https://evil.example"})[0], 403)
