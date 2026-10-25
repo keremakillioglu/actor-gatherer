@@ -232,6 +232,23 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(out["sources"][0]["blocks"][0]["text"], "changed while this ran; the call doesn't name it")
         self.assertIn(("Run the tests", []), [(c["text"], c["files"]) for c in got["commands"]])
 
+    def test_a_change_found_in_ag_s_home_is_left_out_unless_the_call_says_it_writes_it(self):
+        db, notes = os.path.join(self.tmp.name, "gatherers", "g", "context.db"), os.path.join(self.tmp.name, "notes.txt")
+        self.add(asked("look it up"), call("q1", "Bash", {"command": f"sqlite3 {db} 'SELECT 1'", "description": "Query"}),
+                 result("q1", "1"), call("n1", "Bash", {"command": f"echo hi > {notes}", "description": "Note"}), result("n1", ""))
+        conn = sqlite3.connect(self.db)
+        conn.execute("CREATE TABLE _touches (touch_id INTEGER PRIMARY KEY, session TEXT, call_id TEXT, at TEXT, path TEXT, "
+                     "how TEXT, checked INTEGER, named INTEGER, detail_json TEXT)")
+        for call_id, path in [("q1", db), ("n1", notes)]:                   # as the hook server kept them before
+            conn.execute("INSERT INTO _touches (session, call_id, at, path, how, checked, named, detail_json) "
+                         "VALUES ('c1', ?, '', ?, 'modified', NULL, 1, '{}')", (call_id, path))
+        conn.commit()
+        conn.close()
+        got = files.files("g", "c1", 2, cwd="/w")
+        self.assertEqual([f["path"] for f in got["files"]], [notes])        # the query's: ag's own write
+        self.assertEqual([(c["text"], c["files"]) for c in got["commands"]], [("Query", []), ("Note", [notes])])
+        self.assertEqual(got["home"], os.path.expanduser("~"))
+
     def test_matches_of_files_searched_one_after_another_are_not_guessed(self):
         self.add(asked("find them"), call("g1", "Bash", {"command": "grep -n f a.py; grep -n x b.py"}), result("g1", "1:def f():\n7:x = 1"))
         got = files.files("g", "c1", 2, cwd="/w")

@@ -12,6 +12,8 @@ Where ag's hook server checked a call against the disk as it ran (`_touches`, wr
 ag/integrations/tools/ag_orchestrator/file_touches/), that is what is shown of it: the files it read, kept where the
 file says so, each marked checked (what the call showed of it is on disk) or not; what it changed,
 at the lines the file itself says; and the files that changed while it ran, which it doesn't name.
+A change it found to a file in ag's home (the databases and logs ag writes as calls run) is left out
+unless the call says it writes the file -- as the hook server now does itself, for what it kept before.
 
 Any other call (one from before the hook checked calls) is read from what the model saw alone
 (file_touches/commands.py): a Read's lines carry their numbers, but an edit carries only the text it
@@ -27,6 +29,7 @@ import tempfile
 from typing import Dict, List, Optional
 
 from . import data
+from . import home as paths
 from .commands import (  # noqa: F401 - python_changes: tested here
     EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, python_changes, shell_changes,
     shell_reads)
@@ -64,6 +67,26 @@ def _temporary_roots() -> tuple:
 
 
 TEMPORARY = _temporary_roots()   # the temporary folders: /tmp, macOS's per-user /var/folders/..., $TMPDIR
+
+
+def ags(path: str) -> bool:
+    """Whether `path` is in ag's home (AG_HOME, ~/.ag), whose files ag itself writes as calls run: its
+    databases at every model call, its logs."""
+    roots = {paths.HOME, os.path.realpath(paths.HOME)}
+    return any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots)
+
+
+def says_writes(name: str, raw, cwd: str) -> set:
+    """The files a call (its input, `raw`) says it changes: an edit tool's, or a shell command's that says so."""
+    if name in SHELLS:
+        command, workdir = _shell_text(name, raw)
+        return {p for p, _, _ in shell_changes(command, _resolve(workdir, cwd) if workdir else cwd)[0]}
+    if name not in EDITS:
+        return set()
+    inp = raw if isinstance(raw, dict) else {"input": raw}
+    out = {_resolve(str(inp[k]), cwd) for k in ("file_path", "notebook_path") if isinstance(inp.get(k), str) and inp[k]}
+    body = inp.get("input") if isinstance(inp.get("input"), str) else inp.get("patch") or ""
+    return out | {_resolve(p, cwd) for p, _, _ in _patch_files(str(body))}
 
 
 def temporary(path: str) -> bool:
@@ -249,7 +272,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     is on disk; False: it is not; None: nothing to match), and `unnamed` when the file changed while
     the call ran but the call doesn't name it; its kinds may be "delete" too. A file in a temporary
     folder (`temporary`) has `temporary` true, and so has a call whose every file is in one.
-    Relative paths in shell commands are taken from `cwd` (the session's directory)."""
+    Relative paths in shell commands are taken from `cwd` (the session's directory). `home`: the
+    user's home folder, which the page shows as ~."""
     conn = data._connect(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
@@ -302,6 +326,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
 
     def from_disk(rec, view, via: str, part: dict, result: dict, rows: List[dict], error: bool) -> None:
         """A call as the hook server found it on disk (`_touches`): the files it read and changed."""
+        said = None
         for r in rows:
             path, how, d = r["path"], r["how"], r["detail"]
             if path is None or how not in TOUCH_KINDS:
@@ -315,6 +340,10 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 known[path].rows = {i + 1: {"text": t} for i, t in enumerate(d.get("lines") or [])}
             elif how in ("modified", "deleted"):
                 known.pop(path, None)
+            if how in ("created", "modified", "deleted") and ags(path):
+                said = says_writes(part.get("name") or "", part.get("input"), cwd) if said is None else said
+                if path not in said:
+                    continue                                # ag's own write: kept before the hook server left them out
             if not rec:
                 continue
             f = rec.file(path)
@@ -514,7 +543,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 head["now"] = {"kind": "thinking"}
     for t, p in order:
         apply(t, p, results.get(p.get("id")) if p.get("id") else None)
-    out = {"turns": [h.head for h in heads], "turn": pick if heads else None, "files": [], "commands": []}
+    out = {"turns": [h.head for h in heads], "turn": pick if heads else None, "files": [], "commands": [],
+           "home": os.path.expanduser("~")}
     if want is None:
         return out
     for path in want.order:

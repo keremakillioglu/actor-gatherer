@@ -135,6 +135,24 @@ class CheckTest(unittest.TestCase):
                          (False, {"lines": ["made"]}))
         self.assertNotIn(("e", "out.txt", "created"), got)                     # an edit changes its own file only
 
+    def test_ag_s_own_writes_in_its_home_are_not_a_call_s_change(self):
+        home = os.path.join(self.d, "aghome")
+        os.makedirs(home)
+        db, notes = os.path.join(home, "context.db"), os.path.join(home, "notes.txt")
+        write(db, "rows\n")
+        write(notes, "old\n")
+        saved = os.environ.get("AG_HOME")
+        os.environ["AG_HOME"] = home
+        self.addCleanup(lambda: os.environ.pop("AG_HOME") if saved is None else os.environ.__setitem__("AG_HOME", saved))
+
+        def change():                                                          # ag writes its database as the calls run
+            write(db, "rows\nmore rows\n")
+            write(notes, "new\n")
+        got = self.run_calls(("q", "Bash", {"command": f"sqlite3 {db} 'SELECT 1' || true"}),
+                             ("w", "Bash", {"command": f"echo new > {notes}"}), change=change, watched={db: "modified"})
+        self.assertEqual({k for k in got if k[1] == "context.db"}, set())       # a query names it: not an edit of it
+        self.assertIn(("w", "notes.txt", "modified"), got)                     # a command that says it writes there: is
+
     def test_the_messages_calls_and_results_whichever_harness(self):
         claude = [{"role": "user", "content": "go"},
                   {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}}]},

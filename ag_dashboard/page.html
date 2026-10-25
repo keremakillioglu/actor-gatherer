@@ -653,9 +653,17 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-dir { display: flex; align-items: center; gap: 4px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
   padding: 3px 12px; font: 11.5px var(--mono); color: var(--ink-2); text-align: left; cursor: pointer; }
 .files .fl-dir:hover { background: var(--wash); }
-.files .fl-dir .tw { flex: none; width: 10px; color: var(--muted); font-size: 10px; }
+.files .fl-dir .tw { flex: none; width: 10px; text-align: center; color: var(--muted); font-size: 10px; }
 .files .fl-dir .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.files .fl-dir .n { flex: none; color: var(--muted); font-size: 10.5px; }
+.files .fl-dir .n, .files .fl-dir .wd { flex: none; color: var(--muted); font-size: 10.5px; }
+/* an opened folder's contents, a line down from its caret along them */
+.files .fl-kids { position: relative; }
+.files .fl-kids::before { content: ""; position: absolute; left: var(--guide); top: 0; bottom: 4px; border-left: 1px solid var(--axis);
+  pointer-events: none; }
+/* where the session works, under the files' heading */
+.files .fl-wd { flex: none; display: flex; align-items: baseline; gap: 6px; padding: 0 12px 6px; font-size: 11.5px; color: var(--muted); }
+.files .fl-wd > span:first-child { flex: none; white-space: nowrap; }
+.files .fl-wd .p { min-width: 0; font: 11px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
 .files .fl-file { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
   padding: 3px 12px 3px 22px; text-align: left; cursor: pointer; font: 12px/1.5 var(--mono); color: var(--ink); }
 .files .fl-file:hover { background: var(--wash); } .files .fl-file.on { background: var(--selected); }
@@ -664,6 +672,11 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fb { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .files .fl-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); }
 .files .fl-legend span { display: inline-flex; align-items: center; gap: 4px; }
+/* the files' legend: each kind a switch, the files of the kinds switched off left out of the tree */
+.files .fl-kinds .kind { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; border-radius: 0; margin: 0;
+  padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.files .fl-kinds .kind:hover { color: var(--ink-2); }
+.files .fl-kinds .kind.off { text-decoration: line-through; opacity: .55; }
 .files .fl-cmd summary .k { display: inline-block; min-width: 18px; color: var(--muted); font: 10.5px var(--mono); }
 .files .fl-cmd-files { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
 .files .fl-cmd-files button { margin: 0; padding: 1px 6px; font: 11px var(--mono); background: var(--wash); border: 1px solid var(--ring); border-radius: 4px; color: var(--ink-2); cursor: pointer; }
@@ -3480,6 +3493,25 @@ async function setFilesTurn(n) {
   await loadFiles();
   keepingPlace(renderMain);
 }
+// The kinds of file in the tree, switched in its legend: a file shows while any of its kinds is on. Search
+// hits are off until switched on (a file only matched by a search is left out); the choice kept in this browser.
+const KINDS_KEY = "ag-dashboard-files-hidden-kinds";
+let hiddenKinds = (() => {
+  try { const v = JSON.parse(localStorage.getItem(KINDS_KEY)); return new Set(Array.isArray(v) ? v : ["hit"]); }
+  catch (e) { return new Set(["hit"]); }
+})();
+function kindSwitches() {
+  return el("div", { class: "fl-legend fl-kinds" }, ...Object.entries(FILE_KINDS).map(([k, [name, color]]) => {
+    const on = !hiddenKinds.has(k);
+    return el("button", { type: "button", class: "kind" + (on ? "" : " off"), "aria-pressed": on ? "true" : "false",
+      title: on ? `Leave out the files only ${name}` : `Show the files ${name}`,
+      onclick: () => {
+        on ? hiddenKinds.add(k) : hiddenKinds.delete(k);
+        try { localStorage.setItem(KINDS_KEY, JSON.stringify([...hiddenKinds])); } catch (e) { /* this page only */ }
+        keepingPlace(renderMain);
+      } }, el("i", { class: "fb", style: `background: ${color}` }), name);
+  }));
+}
 // The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched
 // only them: hidden until asked for, the choice kept in this browser.
 const TMP_KEY = "ag-dashboard-files-tmp";
@@ -3585,17 +3617,24 @@ function filesRender({ info, running }) {
   if (!document.querySelector("#main .files .fl-grid")) cmdsShown = talkShown = null;
   const t = d.turns[d.turn];
   const cwd = (info.cwd || "").replace(/\/$/, "");
-  const rel = (p) => cwd && p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : p.replace(/^\/home\/[^/]+\//, "~/");
+  const home = (d.home || "").replace(/\/$/, "");
+  const under = (p, dir) => !!dir && p !== null && (p === dir || p.startsWith(dir + "/"));
+  const rel = (p) => cwd && p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : under(p, home) ? "~" + p.slice(home.length) : p;
   const sel = d.files.find((f) => f.path === state.files.sel) || null;   // none until one is clicked
   const list = el("div", { class: "fl-scroll", "data-keep": "files-list" });
-  // the files as a tree of their folders: a folder with one child folder and no files shown as one
-  // ("ag_dashboard/vendor/"), each folder folded or opened (opened unless folded by a click)
-  const files = d.files.filter((f) => showTmp || !f.temporary);
+  // the files as one tree of their folders, from / -- the home folder shown as ~, the session's directory
+  // marked -- a folder with one child folder and no files shown as one ("ag_dashboard/vendor/"), each
+  // folder folded or opened (opened unless folded by a click). A path not absolute (the session's
+  // directory not known) goes under a folder of its own. Only the files of the kinds switched on (kindSwitches).
+  const kept = d.files.filter((f) => showTmp || !f.temporary);
+  const files = kept.filter((f) => !f.kinds.length || f.kinds.some((k) => !hiddenKinds.has(k)));
+  const kindHidden = kept.length - files.length;
   const tmpFiles = d.files.filter((f) => f.temporary).length;
   const commands = d.commands.map((c, i) => [c, i]).filter(([c]) => showTmp || !c.temporary);   // each with its index: its id
+  const UNKNOWN = "\0";
   const root = { dirs: new Map(), files: [] };
   for (const f of files) {
-    const parts = rel(f.path).split("/"), name = parts.pop();
+    const parts = ((f.path.startsWith("/") ? "" : UNKNOWN + "/") + f.path).split("/"), name = parts.pop();
     let node = root;
     parts.forEach((p, i) => {
       if (!node.dirs.has(p)) node.dirs.set(p, { dirs: new Map(), files: [], path: parts.slice(0, i + 1).join("/") });
@@ -3610,26 +3649,34 @@ function filesRender({ info, running }) {
     el("span", { class: "badges" }, ...f.kinds.map((k) => el("i", { class: "fb", style: `background: ${(FILE_KINDS[k] || [k, "var(--muted)"])[1]}`,
       title: k === "write" && f.created ? "created" : (FILE_KINDS[k] || [k])[0] }))));
   const folded = state.files.folded || (state.files.folded = new Set());
-  const grow = (node, into, depth) => {
-    for (const [name0, sub] of [...node.dirs].sort((x, y) => x[0].localeCompare(y[0]))) {
-      let name = name0, dir = sub;
-      while (!dir.files.length && dir.dirs.size === 1) {            // a chain of single folders: one row
-        const [n, next] = [...dir.dirs][0];
-        name += "/" + n; dir = next;
+  // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~
+  const label = (above, path) => path === UNKNOWN ? "relative to an unknown folder"
+    : (under(path, home) && !under(above, home) ? "~" + path.slice(home.length)
+      : above === null ? path : path.slice(above.length + 1)) + "/";
+  const grow = (node, into, depth, above) => {
+    for (const [, sub] of [...node.dirs].sort((x, y) => (x[0] === UNKNOWN) - (y[0] === UNKNOWN) || x[0].localeCompare(y[0]))) {
+      let dir = sub;
+      while (!dir.files.length && dir.dirs.size === 1 && !(cwd && dir.path === cwd) && dir.path !== UNKNOWN) {
+        dir = [...dir.dirs.values()][0];                                // a chain of single folders: one row
       }
       const count = (x) => x.files.length + [...x.dirs.values()].reduce((a, y) => a + count(y), 0);
       const open = !folded.has(dir.path);
-      into.append(el("button", { type: "button", class: "fl-dir", title: dir.path, style: `padding-left: ${12 + depth * 14}px`,
-        "aria-expanded": open ? "true" : "false",
+      into.append(el("button", { type: "button", class: "fl-dir", title: dir.path.startsWith(UNKNOWN) ? dir.path.slice(2) : dir.path || "/",
+        style: `padding-left: ${12 + depth * 14}px`, "aria-expanded": open ? "true" : "false",
         onclick: () => { open ? folded.add(dir.path) : folded.delete(dir.path); keepingPlace(renderMain); } },
-        el("span", { class: "tw", text: open ? "▾" : "▸" }), el("span", { class: "name", text: name + "/" }),
+        el("span", { class: "tw", text: open ? "▾" : "▸" }), el("span", { class: "name", text: label(above, dir.path) }),
+        cwd && dir.path === cwd ? el("span", { class: "wd", title: "The session's working directory", text: "cwd" }) : null,
         open ? null : el("span", { class: "n", text: `${count(dir)}` })));
-      if (open) grow(dir, into, depth + 1);
+      if (!open) continue;
+      const kids = el("div", { class: "fl-kids", style: `--guide: ${17 + depth * 14}px` });   // under its caret's middle
+      grow(dir, kids, depth + 1, dir.path);
+      into.append(kids);
     }
     for (const [f, name] of node.files.sort((x, y) => x[1].localeCompare(y[1]))) into.append(fileRow(f, name, depth));
   };
-  grow(root, list, 0);
-  if (!files.length) list.append(el("div", { class: "fv-note", text: tmpFiles ? `Only ${plural(tmpFiles, "file")} in temporary folders.`
+  grow(root, list, 0, null);
+  if (!files.length) list.append(el("div", { class: "fv-note", text: kindHidden ? `Only ${plural(kindHidden, "file")} of the kinds switched off below.`
+    : tmpFiles ? `Only ${plural(tmpFiles, "file")} in temporary folders.`
     : running && d.turn === d.turns.length - 1 ? "No files yet in this turn." : "The agent touched no files in this turn." }));
   // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one)
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
@@ -3654,9 +3701,12 @@ function filesRender({ info, running }) {
   const failed = commands.filter(([c]) => c.error).length;
   const side = el("div", { class: "fl-side" },
     el("section", { class: "fl-sec files-sec" },
-      el("div", { class: "fl-h" }, el("span", { text: files.length ? plural(files.length, "file") : "No files" }),
-        tmpFiles || d.commands.some((c) => c.temporary) ? tmpSwitch(tmpFiles) : null), list,
-      legend(Object.values(FILE_KINDS))),
+      el("div", { class: "fl-h" }, el("span", { text: (files.length ? plural(files.length, "file") : "No files")
+        + (kindHidden ? ` · ${kindHidden} left out` : "") }),
+        tmpFiles || d.commands.some((c) => c.temporary) ? tmpSwitch(tmpFiles) : null),
+      cwd ? el("div", { class: "fl-wd", title: cwd }, el("span", { text: "Working directory" }),
+        el("span", { class: "p", text: under(cwd, home) ? "~" + cwd.slice(home.length) : cwd })) : null, list,
+      kindSwitches()),
     el("section", { class: "fl-sec cmds-sec" },
       el("div", { class: "fl-h", text: plural(commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
       legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])),
