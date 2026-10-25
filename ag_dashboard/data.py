@@ -52,7 +52,9 @@ model it ended in a `<task-notification>` with a `<status>`, which reaches the g
 call -- an agent's end, as soon as it ends, by its report, handed back as a message from it (HANDBACK),
 its notification perhaps much later; an agent that stopped while background work of its own runs is
 notified too, but WAITING, not ended; a monitor's end may come as its last event, that it expired
-(MONITOR_END) -- or TaskStop's result says it was stopped. One with none still runs, while its
+(MONITOR_END) -- or TaskStop's result says it was stopped; or Claude Code's own record of the session has its
+notification already, written after it started (`_ends`): one the user stopped from Claude Code's list of
+them waits there for their next message, and no call carries it till then. One with none still runs, while its
 session's process does: none when that process is known gone, or started after the task (a process
 the dashboard runs, `session.since`; else the reads that named it). Where the process is not known,
 one with no sign of life (its start, its output file changing -- a workflow's, any file in its transcript
@@ -231,7 +233,8 @@ def home(started: Optional[List[dict]] = None) -> dict:
         gatherers.append({"name": name, "policy": _policy(name), "agents": agents,
                           "last": max((a["last"] or 0 for a in agents), default=0) or None})
     _with_started(gatherers, sessions.stored() if started is None else started, now)
-    records, wakes = {}, {}              # the records of the sessions waiting on the user, or running: watched from now on
+    records, wakes = {}, {}              # the records of the sessions waiting on the user, on background work, or running:
+                                         # watched from now on
     for g in gatherers:
         for a in g["agents"]:
             record, wake = a.pop("record", None), a.pop("wake", None)
@@ -728,16 +731,75 @@ def _background_event(conn, tasks: Dict[str, dict], r) -> None:
         event = TASK_EVENT.search(note.group(1))
         if WAITING.search(note.group(1)):            # an agent stopped, its own background work running: not ended
             task["event"], task["event_at"] = "waiting on its own background work", _seconds(r["inserted_at"])
-        elif TASK_STATUS.search(note.group(1)) or (event and MONITOR_END.match(event.group(1))):
+        elif _ending(note.group(1)):
             _end(tasks, task["id"])                  # it ended: completed, failed, killed; a monitor expired
         else:                                        # a monitor's event: it lives
             task["event"] = " ".join(event.group(1).split())[:200] if event else None
             task["event_at"] = _seconds(r["inserted_at"])
 
 
+def _ending(note: str) -> bool:
+    """Whether a task's notification says it ended: a status (completed, failed, killed, stopped), or a monitor's
+    expiry -- not an agent waiting on its own background work."""
+    event = TASK_EVENT.search(note)
+    return not WAITING.search(note) and bool(TASK_STATUS.search(note) or (event and MONITOR_END.match(event.group(1))))
+
+
 def _end(tasks: Dict[str, dict], task_id: str) -> None:
     if task_id in tasks:
         tasks[task_id]["open"] = False
+
+
+_ENDS: Dict[str, tuple] = {}     # Claude Code's record -> (its `_stat` when read, what `_ends` found in it)
+_ENDS_LOCK = threading.Lock()
+
+
+def _ends(path: str):
+    """(the record's `_stat` before it was read, {task id: when Claude Code wrote its latest end}): the background
+    tasks Claude Code's record of a session (CLAUDE_TAIL's end of it) says ended -- a notification `_ending` them,
+    written the moment it is made, whether or not a call has carried it yet. Read again only once it changed."""
+    seen = live._stat(path)
+    with _ENDS_LOCK:
+        kept = _ENDS.get(path)
+        if kept and kept[0] == seen:
+            return kept
+    ends: Dict[str, float] = {}
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(max(0, os.path.getsize(path) - CLAUDE_TAIL))
+            lines = fh.read().split(b"\n")
+    except OSError:
+        return seen, ends
+    for line in lines:
+        if b"<task-notification>" not in line:
+            continue
+        try:
+            m = json.loads(line)
+        except ValueError:
+            continue
+        at = _seconds(m.get("timestamp")) if isinstance(m, dict) else None
+        if at is None:                                   # when, unknown: perhaps before an agent was resumed
+            continue
+        for text in _strings(m):
+            for note in NOTIFICATION.finditer(text):
+                found = TASK_ID.search(note.group(1))
+                if found and _ending(note.group(1)):
+                    ends[found.group(1)] = max(at, ends.get(found.group(1), 0))
+    with _ENDS_LOCK:
+        _ENDS[path] = (seen, ends)
+    return seen, ends
+
+
+def _strings(value):
+    """Every string in a JSON value, at any depth."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _strings(v)
 
 
 def _task_label(conn, channel: str, row_id: int, payload_json: Optional[str]) -> Optional[str]:
@@ -796,6 +858,13 @@ def _settle_background(a: dict, now: float) -> None:
         if not known and (active is None or now - active > STALE_SECONDS):
             continue
         out.append({**t, "active": active})
+    record = _claude_record(a["channel"], a.get("cwd") or s.get("cwd")) \
+        if out and a.get("channel") and a.get("harness") in ("claude", None) else None
+    if record:                                       # ended since it started, as Claude Code's record says (`_ends`)
+        seen, ends = _ends(record)
+        out = [t for t in out if ends.get(t["id"], 0) <= (t["started"] or 0)]
+        if out and a.get("status") == IDLE:
+            a.setdefault("record", (record, seen))   # watched (live.py) while it is BACKGROUND
     a["background"] = out
     if out and a.get("status") == IDLE:
         a["status"], a["running"] = BACKGROUND, True

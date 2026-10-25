@@ -8,11 +8,12 @@
     Fallback   every FALLBACK_SECONDS, the size and time of each gatherer's context.db and
                its -wal, and of the call log: rung on a change. It covers a writer that sends
                nothing (an older ag; Windows, which has no Unix datagram sockets) and a lost message;
-               and every RECORD_SECONDS, Claude Code's own record of each session waiting on the user, or
-               running (`watch_records`, data.py's): a question answered or dismissed in its terminal, a
-               turn interrupted, a model call given up on, is written there and nowhere ag sees -- none of
-               them makes a call -- rung on a change; and each actor whose failed call would count as given
-               up by now, with no word of it (`wake_at`), rung once then
+               and every RECORD_SECONDS, Claude Code's own record of each session waiting on the user, on
+               background work, or running (`watch_records`, data.py's): a question answered or dismissed
+               in its terminal, a background task stopped from its list, a turn interrupted, a model call
+               given up on, is written there and nowhere ag sees -- none of them makes a call -- rung on a
+               change; and each actor whose failed call would count as given up by now, with no word of it
+               (`wake_at`), rung once then
 
 A message only says that something changed; the stream reads what from the database. So a
 lost message delays an update and never makes one wrong. Standard library only; nothing of
@@ -155,9 +156,9 @@ def _stat(path: str):
 
 
 def watch_records(found: Dict[str, Tuple[str, str, object]]) -> None:
-    """Claude Code's records of the sessions waiting on the user or running, to watch from now on in place of those
-    before: {path: (gatherer, channel, its `_stat` when it was read)} -- a change since rings the actor. One watched
-    already keeps what it was last seen as."""
+    """Claude Code's records of the sessions waiting on the user, on background work, or running, to watch from now
+    on in place of those before: {path: (gatherer, channel, its `_stat` when it was read)} -- a change since rings
+    the actor. One watched already keeps what it was last seen as."""
     with _RECORDS_LOCK:
         kept = {p: _RECORDS[p] for p in found if p in _RECORDS}
         _RECORDS.clear()

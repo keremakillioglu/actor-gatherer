@@ -8,12 +8,14 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag_dashboard import data  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
+from ag_dashboard import live  # noqa: E402
 
 NOTICE = ("[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event, NOT a message from the "
           "user.\n\n<task-notification>\n<task-id>{id}</task-id>\n<tool-use-id>toolu_x</tool-use-id>\n{rest}"
@@ -44,6 +46,15 @@ def notice(task_id, status=None, event=None, waiting=False):
            (f"<summary>Monitor event</summary>\n<event>{event}</event>\n" if event else "")
     text = NOTICE.format(id=task_id, rest=rest)
     return ("context", {"role": "user", "content": [{"type": "text", "text": text}]}, text)
+
+
+def queued(task_id, status, at, rest=""):
+    """A notification as Claude Code's own record of the session has it, `at` seconds since the epoch: queued for the
+    model's next call -- where one for a task the user stopped from Claude Code's list of them waits for their message."""
+    return {"type": "queue-operation", "operation": "enqueue", "sessionId": "s1",
+            "timestamp": datetime.fromtimestamp(at, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            "content": f"<task-notification>\n<task-id>{task_id}</task-id>\n<tool-use-id>toolu_x</tool-use-id>\n"
+                       f"<status>{status}</status>\n<summary>Task was stopped by the user</summary>\n{rest}</task-notification>"}
 
 
 def command(cid, task_id, output, description="Run the server"):
@@ -88,6 +99,11 @@ class BackgroundTest(unittest.TestCase):
         conn.close()
         self.out = os.path.join(self.tmp.name, "tasks")
         os.makedirs(self.out)
+        self.config = os.path.join(self.tmp.name, "claude-config")               # Claude Code's, with its records
+        env = unittest.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": self.config})
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(live.watch_records, {})
         self.add([asked("start the server and draw the animals")])
 
     def add(self, events, at=None, channel="s1"):
@@ -101,6 +117,15 @@ class BackgroundTest(unittest.TestCase):
                          "VALUES (?, ?, ?, 1, ?, ?)", (stamp, tid, json.dumps(payload), text, channel))
         conn.commit()
         conn.close()
+
+    def record(self, *lines):
+        """`lines` added to Claude Code's own record of the session, which runs in "/" (`session`)."""
+        path = os.path.join(self.config, "projects", "-", "s1.jsonl")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as fh:
+            for line in lines:
+                fh.write(json.dumps(line) + "\n")
+        return path
 
     def output(self, name, age=0.0):
         """A task's output file, last written `age` seconds ago."""
@@ -231,6 +256,42 @@ class BackgroundTest(unittest.TestCase):
         a = self.actor()                                                           # no session the dashboard runs: not known
         self.assertEqual([t["id"] for t in a["background"]], ["b2"])                # its output written 5 s ago
         self.assertGreater(a["background"][0]["active"], time.time() - 30)
+
+    def test_a_command_stopped_from_claude_code_s_list_ends_once_its_record_says_so(self):
+        self.add(command("t1", "b1", self.output("b1")) + [said("The server is starting.")], at=time.time() - 60)
+        path = self.record({"type": "user", "message": {"role": "user", "content": "start the server"}})
+        self.assertEqual(self.actor([self.session()])["status"], data.BACKGROUND)
+        self.assertEqual(list(live._RECORDS), [path])                              # read: watched from now on
+        hub = live.Hub()
+        rung = []
+        hub.ring = lambda gatherer, channel=None, what="": rung.append(gatherer)
+        fallback = live.Fallback(hub, seconds=3600)
+        self.addCleanup(fallback.close)
+        fallback.check_records()
+        self.assertEqual(rung, [])                                                 # unchanged since it was read
+        time.sleep(0.01)
+        self.record(queued("b1", "killed", time.time()))                           # stopped there: no call tells ag
+        fallback.check_records()
+        self.assertEqual(rung, ["g"])
+        a = self.actor([self.session()])
+        self.assertEqual((a["status"], a["running"], a["background"]), (data.IDLE, False, []))
+        self.assertEqual(live._RECORDS, {})                                        # read again: nothing runs, not watched
+
+    def test_an_end_in_the_record_counts_only_after_the_task_started_again(self):
+        then = time.time() - 120
+        self.add(subagent("t1", "a7f3", self.output("a7f3")) + [said("It runs.")], at=then)
+        self.add([notice("a7f3", "completed"), said("It finished.")], at=then + 30)
+        self.add([asked("ask it to count again"),
+                  call("t2", "SendMessage", {"to": "a7f3", "summary": "Count again", "message": "Count to 100."}),
+                  result("t2", '{"success":true,"message":"Resuming agent a7f3","resumedAgentId":"a7f3"}'),
+                  said("Asked it.")], at=then + 60)
+        self.record(queued("a7f3", "completed", then + 29))                       # its first run's end
+        self.assertEqual(self.actor([self.session()])["status"], data.BACKGROUND)
+        self.record(queued("a7f3", "completed", time.time(), rest="<note>This agent stopped with background work of its "
+                           "own still running.</note>\n"))                       # waiting on its own work: not ended
+        self.assertEqual(self.actor([self.session()])["status"], data.BACKGROUND)
+        self.record(queued("a7f3", "killed", time.time()))
+        self.assertEqual(self.actor([self.session()])["status"], data.IDLE)
 
     def test_only_the_rows_added_since_are_read_again(self):
         self.add(command("t1", "b1", self.output("b1")))
