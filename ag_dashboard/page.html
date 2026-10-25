@@ -146,13 +146,15 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .asked.none { color: var(--muted); font-weight: 400; font-style: italic; }
 .agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
-.agent .meta .dot.running { background: var(--good); } .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
+.agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
 .agent .meta .dot.finished { background: var(--s1); }
-/* its turn over, but something it started still runs: a ring of Running's colour round a paler middle */
-.agent .meta .dot.background, .status.background i { background: color-mix(in srgb, var(--good) 30%, transparent); box-shadow: inset 0 0 0 1.5px var(--good); }
+/* its turn under way: the glyph turns, as Claude Code's does while it works */
+.agent .meta .dot.running { width: 9px; height: auto; border-radius: 0; background: none; color: var(--good); font-size: 12px; line-height: 1; text-align: center; }
+.agent .meta .dot.running::before { content: "✻"; animation: term-spin 1.2s steps(1) infinite; animation-delay: var(--spin-at, 0s); }
+/* its turn over, but something it started still runs: Running's colour, holding still */
+.agent .meta .dot.background, .status.background i { background: var(--good); }
 /* what it runs in the background, under its facts: how many, and what they are for */
 .agent .bgline { font-size: 12px; color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agent .bgline .spin::before { content: "✻"; display: inline-block; width: 1.2em; color: var(--good); animation: term-spin 1.2s steps(1) infinite; }
 .agent .meta .dot.closed { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
 .hidden-list { border-top: 1px solid var(--grid); padding: 8px 0 4px; }
 .hidden-list > summary { margin: 0; padding: 4px 16px; font-size: 12px; color: var(--muted); list-style: none; }
@@ -398,10 +400,10 @@ button:disabled { opacity: .5; cursor: default; }
 .bg-tasks .kind { color: var(--muted); flex: none; width: 5.6em; }
 .bg-tasks .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bg-tasks .when { color: var(--muted); flex: none; margin-left: auto; font-variant-numeric: tabular-nums; }
-.bg-tasks .spin::before { content: "✻"; display: inline-block; width: 1.2em; color: var(--good); animation: term-spin 1.2s steps(1) infinite; }
+.bg-tasks .mark { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin: 0 calc(1.2em - 7px) 1px 0; vertical-align: middle; }
 .term .bg-tasks { border: 0; background: none; padding: 0; margin-top: 6px; font-size: inherit; }
 .term .bg-tasks .head { color: var(--term-accent); font-weight: 400; }
-.term .bg-tasks .spin::before { color: inherit; }
+.term .bg-tasks .mark { background: currentColor; }
 .term .bg-tasks .task, .term .bg-tasks .kind, .term .bg-tasks .when { color: var(--term-dim); }
 .term .bg-tasks .label { color: var(--term-ink); }
 @media (max-width: 760px) { .bg-tasks .when { display: none; } }
@@ -1351,7 +1353,8 @@ function agentRow(g, a) {
       el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: asked(a.last_user_message) || "No message yet" }),
       a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
         el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
-      el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label }),
+      // the list is drawn again on every change: the glyph's turn set by the clock, not restarted each time
+      el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label, style: `--spin-at: -${Date.now() % 1200}ms` }),
         el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
         closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",
           "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); closeSession(a); },
@@ -1361,7 +1364,6 @@ function agentRow(g, a) {
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
           : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false))),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
-        el("span", { class: "spin", "aria-hidden": "true" }),
         `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null));
 }
 // Selecting an actor draws its chat as soon as it is loaded; its calls and context (the details) follow
@@ -1774,7 +1776,7 @@ function backgroundNote(info, term = false) {
   const tasks = (info && info.background) || [];
   if (!tasks.length) return null;
   return el("div", { class: term ? "status-line bg-tasks" : "bg-tasks", role: "status" },
-    el("div", { class: "head" }, el("span", { class: "spin", "aria-hidden": "true" }),
+    el("div", { class: "head" }, el("span", { class: "mark", "aria-hidden": "true" }),
       `${plural(tasks.length, "background task")} running${info.status === "background" ? ": the turn is over, the work is not" : ""}`),
     ...tasks.map((t) => el("div", { class: "task", title: [t.label, t.output].filter(Boolean).join("\n") },
       el("span", { class: "kind", text: TASK_KINDS[t.kind] || t.kind }),
