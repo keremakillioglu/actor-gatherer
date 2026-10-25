@@ -257,7 +257,7 @@ class TerminalTest(SessionsBase):
         self.assertNotIn("-p", run["argv"])
         self.assertEqual(run["argv"][:3], ["--gatherer", "g", "claude"])
         self.assertEqual(run["argv"][-2:], ["--session-id", sid])
-        self.assertEqual(run["cwd"], self.work)
+        self.assertEqual(os.path.realpath(run["cwd"]), os.path.realpath(self.work))   # macOS: /var is /private/var
         self.assertEqual(self.session(sid)["status"], "terminal")
         self.assertTrue(self.session(sid)["terminal"])
         self.assertEqual(self.session(sid)["pid"], self.s.terms[sid].pid)
