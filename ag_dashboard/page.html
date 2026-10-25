@@ -630,6 +630,7 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-row.open .h-label { -webkit-line-clamp: 6; }
 .hist .h-label.dim { color: var(--muted); font-style: italic; }
 .hist .h-kind { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--good); margin-right: 6px; }
+.hist .h-kind.plain { color: var(--muted); }
 .hist .h-main.keyed { border-left: 3px solid var(--key); padding-left: 9px; }   /* a message's type, as the Messages view keys it */
 .hist .h-badge { display: inline-block; font-size: 10px; font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-right: 6px; line-height: 15px; }
 .hist .h-sub { font-size: 12.5px; line-height: 1.45; color: var(--ink-2); margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -3147,7 +3148,6 @@ addChatView({
 // of it; what the model made is listed at the right, kept by the server (<home>/dashboard/extracts/).
 // What is picked is the gatherer's: it stays picked across its actors, and across the grains.
 const HIST_GRAINS = [["tasks", "Tasks"], ["turns", "Turns"]];         // a turn opens to its messages
-const HIST_LEVEL = { actors: 0, tasks: 1, turns: 2, messages: 3, actor: 0, task: 1, turn: 2, message: 3 };
 const HIST_KINDS = { summary: ["Summarize", "Summary", "summary.md"], memory: ["Generate memory", "Memory", "memory.md"],
   agents: ["Generate AGENTS.md", "AGENTS.md", "AGENTS.md"], skill: ["Generate skill", "Skill", "SKILL.md"] };
 HIST_KINDS.claude = ["", "CLAUDE.md", "CLAUDE.md"];      // one made before AGENTS.md: shown, not offered
@@ -3271,7 +3271,10 @@ function histTree(h) {
     let a = actors.get(e.channel);
     if (!a) {
       a = node("actor", `a:${e.channel}`, { channel: e.channel, tasks: tasksBy.get(e.channel) || [], ti: -2, turnN: 0, task: null, turn: null, ask: "" });
-      if (!a.tasks.length) a.task = a;               // not segmented: its turns are the actor's own
+      if (!a.tasks.length) {                         // not split into tasks: its turns under one task of their own
+        a.task = node("task", `k:${e.channel}:all`, { channel: e.channel, task: null, whole: true });
+        a.children.push(a.task); byId.set(a.task.id, a.task);
+      }
       actors.set(e.channel, a); byId.set(a.id, a);
     }
     if (a.tasks.length) {
@@ -3289,13 +3292,13 @@ function histTree(h) {
       a.turn = node("turn", `t:${e.channel}:${a.ti}:${a.turnN}`, { channel: e.channel, n: a.turnN, ask: asks ? e.text : "", cont: !asks && a.turnN > 0, reply: "" });
       a.task.children.push(a.turn); byId.set(a.turn.id, a.turn);
       if (asks && !a.ask) a.ask = e.text;
-      if (asks && a.task !== a && !a.task.ask) a.task.ask = e.text;     // the request a task opens with
+      if (asks && !a.task.ask) a.task.ask = e.text;                     // the request a task opens with
     }
     if (e.type === "agent_message" && e.text) a.turn.reply = e.text;
     const m = node("message", `m:${e.row_id}`, { channel: e.channel, event: e });
     byId.set(m.id, m);
     add(m, e); a.turn.children.push(m); add(a.turn, e);
-    if (a.task !== a) add(a.task, e);
+    add(a.task, e);
     add(a, e);
   }
   for (const a of actors.values()) a.turns = a.turnN;
@@ -3303,31 +3306,26 @@ function histTree(h) {
   hist.byId = byId;
   return histTreeOf.tree;
 }
-// A node's descendants at a grain: itself when it is that grain or finer (an actor ag has not segmented
-// has its turns at the tasks' grain).
-const histAt = (n, level) => HIST_LEVEL[n.kind] >= level ? [n] : n.children.flatMap((c) => histAt(c, level));
 // A node is listed when it holds a message of a type the reader shows (the chips: `shownTypes`, the Messages
 // view's too) and, searching, one that matches.
 const histShown = (r) => { const m = hist.byId.get(`m:${r}`); return !m || shownTypes.has(itemType({ name: m.event.type, group: "Recent history" })[0]); };
 const histHas = (n) => n.rows.some((r) => histShown(r) && (!hist.hits || hist.hits.has(r)));
-// The rows the list shows, in order: [node, depth, header]. The units of the grain, each opened to its parts
-// where the reader opened it; across a whole gatherer, under a header for each actor. A search keeps those
-// with a match.
-function histVisible(tree, grain, grouped) {
-  const out = [], tops = [], level = HIST_LEVEL[grain];
+// The rows the list shows, in order: [node, depth, open-by-default]. One tree in both grains -- its tasks at the
+// left, their turns under them, a turn's messages under it -- so a switch between them only opens or folds the
+// tasks: Tasks lists them folded, each opened where the reader opened it (`open`); Turns, opened, each folded
+// where the reader folded it (`shut`). A search keeps the rows with a match.
+function histVisible(tree, grain) {
+  const out = [], tops = [], turns = grain === "turns";
   const walk = (n, depth) => {
     if (!histHas(n)) return;
     out.push([n, depth, false]);
     if (hist.open.has(n.id) && n.kind !== "message") for (const c of n.children) walk(c, depth + 1);
   };
-  for (const a of tree) {
-    if (!histHas(a)) continue;
-    const units = histAt(a, level).filter(histHas);
-    tops.push(...units);
-    if (grouped) {
-      out.push([a, 0, true]);
-      if (!hist.shut.has(a.id)) for (const n of units) walk(n, 1);
-    } else for (const n of units) walk(n, 0);
+  for (const a of tree) for (const t of a.children) {
+    if (!histHas(t)) continue;
+    out.push([t, 0, turns]);
+    tops.push(...(turns ? t.children.filter(histHas) : [t]));
+    if (turns ? !hist.shut.has(t.id) : hist.open.has(t.id)) for (const c of t.children) walk(c, 1);
   }
   hist.tops = tops;
   return out;
@@ -3515,6 +3513,8 @@ function histLabel(n, hits) {
     if (t && n.current)                              // the build's last task, still open, and all since: as it is
       return [el("div", { class: "h-label" }, kind("Running task")),
         el("div", { class: "h-sub dim", text: "Still going on: not summarized" }), hit];
+    if (n.whole) return [el("div", { class: "h-label" }, el("span", { class: "h-kind plain", text: "All turns" })),
+      el("div", { class: "h-sub dim", text: "ag has not split this history into tasks yet" }), hit];
     return [el("div", { class: "h-label" + (t ? "" : " dim") }, t ? t.name : "Before ag's first task"),
       t && t.description ? el("div", { class: "h-sub", text: t.description }) : null, hit];
   }
@@ -3824,7 +3824,7 @@ function histRender() {
   const grains = HIST_GRAINS.map(([g, name]) => [g, name, g === "tasks" ? hasTasks : true]);
   let grain = hist.grain || (hist.stay && hist.stay.key === h.key ? hist.stay.grain : hasTasks ? "tasks" : "turns");
   if (!grains.find((x) => x[0] === grain)[2]) grain = "turns";
-  const vis = h.error ? [] : histVisible(tree, grain, false);
+  const vis = h.error ? [] : histVisible(tree, grain);
   hist.flat = vis.map(([n, , head]) => n.id + (head ? "/h" : ""));
   histRows.begin(signature([h.key, [...shownTypes]]));
   const shown = vis.slice(0, hist.limit);
