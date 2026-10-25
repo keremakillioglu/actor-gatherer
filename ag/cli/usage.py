@@ -10,6 +10,7 @@ OPTIONS = (
     ("--poller X", "Create the gatherer with poller `X` (repeatable)."),
     ("--no-pollers", "Create the gatherer with no pollers."),
     ("--dry-run", "Print the command and environment that would run, and run nothing."),
+    ("--quiet", "Start the harness without ag's notes on what it set up. Problems still print."),
     ("-h, --help", "Show this help."),
 )
 

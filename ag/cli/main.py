@@ -29,7 +29,7 @@ def say(msg: str) -> None:
 
 def parse(argv: List[str]):
     """ag's own options, then the command and everything after it."""
-    opts = {"gatherer": None, "policy": None, "pollers": [], "no_pollers": False, "dry_run": False}
+    opts = {"gatherer": None, "policy": None, "pollers": [], "no_pollers": False, "dry_run": False, "quiet": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -47,6 +47,8 @@ def parse(argv: List[str]):
             opts["no_pollers"] = True
         elif a == "--dry-run":
             opts["dry_run"] = True
+        elif a == "--quiet":
+            opts["quiet"] = True
         elif a in ("-h", "--help"):
             return opts, "help", []
         elif a.startswith("-"):
@@ -72,16 +74,18 @@ def poller_args(pollers: List[str], none: bool = False) -> List[str]:
     return ["--no-pollers"] if none else [x for p in pollers for x in ("--poller", p)]
 
 
-def prepare_gatherer(gatherer: str, policy: Optional[str], pollers: List[str], none: bool = False) -> None:
+def prepare_gatherer(gatherer: str, policy: Optional[str], pollers: List[str], none: bool = False,
+                     quiet: bool = False) -> None:
     """Make the named gatherer with this policy and pollers (`none`: no pollers),
-    or check the one there is."""
+    or check the one there is (`quiet`: without saying it was made)."""
     shown = home_cli(["show", gatherer], capture=True)
     if shown.returncode != 0:
         made = home_cli(["new", gatherer, *(["--policy", policy] if policy else []), *poller_args(pollers, none)],
                         capture=True)
         if made.returncode != 0:
             raise AgError((made.stderr or made.stdout).strip())
-        say(f"made gatherer {gatherer}: {made.stdout.strip()}")
+        if not quiet:
+            say(f"made gatherer {gatherer}: {made.stdout.strip()}")
         return
     lines = shown.stdout.splitlines()
     has = next((l.split()[1] for l in lines if l.startswith("policy:")), None)
@@ -202,15 +206,16 @@ def launch(harness: str, args: List[str], opts, settings) -> int:
     run = Run(args, [os.path.expanduser(str(c)) for c in section["command"]], env, gatherer, os.getcwd(),
               opts["dry_run"], adaptor)
     if gatherer and (opts["policy"] or opts["pollers"] or opts["no_pollers"]) and not run.dry_run:
-        prepare_gatherer(gatherer, opts["policy"], opts["pollers"], opts["no_pollers"])
+        prepare_gatherer(gatherer, opts["policy"], opts["pollers"], opts["no_pollers"], opts["quiet"])
     try:
         out = the_launcher.launch(run)
     except LaunchError as exc:
         raise AgError(str(exc)) from exc
-    for note in out.notes:
-        say(note)
-    if gatherer:
-        say(f"gatherer {gatherer}")
+    if not opts["quiet"]:                    # what ag set up; its problems and warnings print either way
+        for note in out.notes:
+            say(note)
+        if gatherer:
+            say(f"gatherer {gatherer}")
 
     if run.dry_run:
         changed = {k: v for k, v in out.env.items() if os.environ.get(k) != v}
@@ -220,15 +225,16 @@ def launch(harness: str, args: List[str], opts, settings) -> int:
         raise AgError(f"no {out.argv[0]} to run; install {harness} or set [cli.harnesses.{harness}] command "
                       f"in {config.path()}")
     if out.session:
-        claim(gatherer or out.session, out.session)
+        claim(gatherer or out.session, out.session, opts["quiet"])
     os.execvpe(out.argv[0], out.argv, out.env)
     return 127  # not reached
 
 
-def claim(gatherer: str, session: str) -> None:
+def claim(gatherer: str, session: str, quiet: bool = False) -> None:
     """This process -- the harness, once exec'd: the same pid -- opens `session`, unless another
     process that still runs has it open (another terminal, the dashboard's chat mid-turn): then refused.
-    The dashboard's chat agent between its turns yields: it is stopped, and the session taken over."""
+    The dashboard's chat agent between its turns yields: it is stopped, and the session taken over
+    (`quiet`: without saying so)."""
     got = home_cli(["claim", gatherer, session, "--pid", str(os.getpid()), "--by", "launcher"], capture=True)
     try:
         answer = json.loads(got.stdout)
@@ -239,7 +245,7 @@ def claim(gatherer: str, session: str) -> None:
         raise AgError(f"session {session} is open in another process, {held.get('pid')}"
                       f"{shown_process(held.get('pid'))}, since {held.get('opened_at')}: close it there first "
                       f"(the dashboard's chat gives it up once its turn is over)")
-    if answer.get("took_over"):
+    if answer.get("took_over") and not quiet:
         say(f"session {session}: took it over from the dashboard's idle agent ({answer['took_over'].get('pid')})")
 
 

@@ -43,10 +43,10 @@ the page reads it from the gatherer, like every actor's history. Its stderr, and
 printed, go to <home>/logs/dashboard/<session_id>.log.
 
 A session can be opened in a TERMINAL instead (`terminal`): Claude Code's own interactive UI,
-`ag --gatherer G claude ...` with no `-p`, in a pseudo-terminal the page draws (xterm.js) -- the
-same process a terminal outside would run, so it shows and asks what it would there (the trust
-dialog, permission prompts) and its keys are its own. The page gets what it prints (`output`, kept
-the last TERM_KEEP bytes so a page that comes back redraws it) and sends what is typed (`type`) and
+`ag --quiet --gatherer G claude ...` with no `-p`, in a pseudo-terminal the page draws (xterm.js) --
+the same process a terminal outside would run, less ag's notes on what it set up, so it shows and
+asks what it would there (the trust dialog, permission prompts) and its keys are its own. The page
+gets what it prints (`output`, kept the last TERM_KEEP bytes so a page that comes back redraws it) and sends what is typed (`type`) and
 the window's size (`resize`). Opening it ends the session's idle `-p` agent first; from then on the
 terminal has the session, and a message sent from any view is typed into it -- pasted, then Enter --
 until it is closed (`stop`) or exits. Unix only: it needs `pty` (TERMINALS).
@@ -872,12 +872,13 @@ class Sessions:
         sid = s["session_id"]
         resume = bool(s["turns"]) or _has_calls(s["gatherer"], sid)
         if s["harness"] == "codex":                  # codex's own UI; its classic screen is inline, not alternate
-            argv = [*ag_command(), "--gatherer", s["gatherer"], "codex", *(["-m", s["model"]] if s.get("model") else []),
-                    *CODEX_PERMISSIONS.get(s["permission_mode"], []), *([] if fullscreen else ["--no-alt-screen"]),
-                    *(["resume", sid] if resume else [])]
+            argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], "codex",       # quiet: ag's notes not on its screen
+                    *(["-m", s["model"]] if s.get("model") else []), *CODEX_PERMISSIONS.get(s["permission_mode"], []),
+                    *([] if fullscreen else ["--no-alt-screen"]), *(["resume", sid] if resume else [])]
         else:
-            argv = [*ag_command(), "--gatherer", s["gatherer"], s["harness"], "--permission-mode", s["permission_mode"],
-                    *(["--model", s["model"]] if s.get("model") else []), *(["--resume", sid] if resume else ["--session-id", sid])]
+            argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"], "--permission-mode",
+                    s["permission_mode"], *(["--model", s["model"]] if s.get("model") else []),
+                    *(["--resume", sid] if resume else ["--session-id", sid])]
         env = {**{k: v for k, v in agent_env().items() if k not in OUTER_TERMINAL and not (fullscreen and k in CLASSIC)},
                "TERM": "xterm-256color", "COLORTERM": "truecolor", **({} if fullscreen else CLASSIC)}   # full screen even if the dashboard's own is classic
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)

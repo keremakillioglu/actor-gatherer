@@ -255,7 +255,7 @@ class TerminalTest(SessionsBase):
         self.assertIn("fake terminal 100x30 tty=True term=xterm-256color alt=1", self.screen(sid))     # Claude Code's classic screen
         run = self.logged()[0]
         self.assertNotIn("-p", run["argv"])
-        self.assertEqual(run["argv"][:3], ["--gatherer", "g", "claude"])
+        self.assertEqual(run["argv"][:4], ["--quiet", "--gatherer", "g", "claude"])   # ag's notes not on its screen
         self.assertEqual(run["argv"][-2:], ["--session-id", sid])
         self.assertEqual(os.path.realpath(run["cwd"]), os.path.realpath(self.work))   # macOS: /var is /private/var
         self.assertEqual(self.session(sid)["status"], "terminal")

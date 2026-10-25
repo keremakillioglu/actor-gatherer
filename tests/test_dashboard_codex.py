@@ -180,7 +180,7 @@ class TerminalTest(CodexBase):
         self.assertEqual((s["terminal"], s["started_as"], s["turns"]), (True, first, 1))
         self.assertIsNone(self.session(first))
         argv = self.logged()[0]["argv"]
-        self.assertEqual(argv[:3], ["--gatherer", "g", "codex"])
+        self.assertEqual(argv[:4], ["--quiet", "--gatherer", "g", "codex"])
         self.assertEqual(argv[argv.index("-m") + 1], "gpt-5.6-luna")
         self.assertIn("--no-alt-screen", argv)
         self.assertNotIn("resume", argv)
