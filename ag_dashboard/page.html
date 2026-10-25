@@ -4016,8 +4016,7 @@ function filesRender({ info, running }) {
   const side = sideFolded ? sideBar(files.length, { ok: commands.length - failed - busy, err: failed, run: busy }, info)
     : el("div", { class: "fl-side" },
     el("section", { class: "fl-sec files-sec" },
-      el("div", { class: "fl-h" }, el("span", { text: (files.length ? plural(files.length, "file") : "No files")
-        + (kindHidden ? ` · ${kindHidden} left out` : "") }),
+      el("div", { class: "fl-h" }, el("span", { text: files.length ? plural(files.length, "file") : "No files" }),
         tmpFiles || d.commands.some((c) => c.temporary) ? tmpSwitch(tmpFiles) : null,
         el("button", { type: "button", class: "fold", title: "Fold the files and commands to a bar", "aria-label": "Fold the files and commands",
           onclick: () => foldSide(true) }, strokeIcon(ICONS.sidebar, 14))),
