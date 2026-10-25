@@ -108,21 +108,25 @@ button:hover { background: var(--wash); }
 aside { border-right: 1px solid var(--side-rule); background: var(--side); padding: 12px 0; overflow-y: auto; }
 aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
 .gatherer { padding: 6px 0 8px; border-top: 1px solid var(--grid); }
+/* its name, the hide button beside it (on hover), and at the right how many run and the start buttons; a
+   click on the row, but on its buttons, opens or closes it */
 .gatherer-row { display: flex; align-items: stretch; }
-.gatherer-row .name { flex: 1; min-width: 0; padding: 6px 4px 6px 12px; display: flex; align-items: center; gap: 8px;
+.gatherer-row:hover { background: var(--wash); }
+.gatherer-row .name { flex: 0 1 auto; min-width: 0; padding: 6px 4px 6px 12px; display: flex; align-items: center; gap: 8px;
   border: 0; border-radius: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
-.gatherer-row .name:hover { background: var(--wash); }
+.gatherer-row .fill { flex: 1 0 auto; display: flex; align-items: center; justify-content: flex-end; padding: 0 4px 0 8px; cursor: pointer; }
+.gatherer-row .fill:last-child { padding-right: 16px; }
 .gatherer-row .name:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
 .gatherer-row .caret { display: inline-block; width: 10px; color: var(--muted); font-size: 10px; transition: transform .15s; }
 .gatherer-row .name[aria-expanded="true"] .caret { transform: rotate(90deg); }
 .gatherer-row .gname { font-size: 14px; font-weight: 600; letter-spacing: -.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.gatherer-row .count { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2);
+.gatherer-row .count { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2);
   background: var(--wash); border-radius: 999px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .gatherer-row .count i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); display: inline-block; }
 .gatherer-row .act { border: 0; border-radius: 6px; background: none; color: var(--muted); padding: 0 8px; margin: 2px 0; line-height: 1;
   display: inline-flex; align-items: center; }
 .gatherer-row .act:last-child { margin-right: 8px; }
-.gatherer-row .act:hover { color: var(--ink); background: var(--wash); }
+.gatherer-row .act:hover { color: var(--ink); }
 .gatherer-row .act.hide { opacity: 0; }
 .gatherer-row:hover .act.hide, .gatherer-row .act.hide:focus-visible { opacity: 1; }
 @media (hover: none) { .gatherer-row .act.hide { opacity: 1; } }
@@ -1348,12 +1352,13 @@ function renderAgents() {
       el("div", { class: "gatherer-row", "data-key": g.name },
         el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name),
           title: g.policy ? `${g.name} · policy ${g.policy}` : g.name },
-          el("span", { class: "caret", text: "▶" }), el("span", { class: "gname", text: g.name }),
-          // how many of its actors run now; nothing while none does
-          live ? el("span", { class: "count", title: `${live} of ${plural(g.agents.length, "actor")} running` },
-            el("i", { "aria-hidden": "true" }), String(live)) : null),
+          el("span", { class: "caret", text: "▶" }), el("span", { class: "gname", text: g.name })),
         el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
           hideIcon()),
+        // how many of its actors run now; nothing while none does
+        el("span", { class: "fill", onclick: () => toggleGatherer(g.name) },
+          live ? el("span", { class: "count", title: `${live} of ${plural(g.agents.length, "actor")} running` },
+            el("i", { "aria-hidden": "true" }), String(live)) : null),
         ...(SNAPSHOT ? [] : startButtons(g))));
     if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
