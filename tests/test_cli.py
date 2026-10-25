@@ -28,7 +28,7 @@ class EchoLauncher(Launcher):
 
     def launch(self, run):
         EchoLauncher.launched.append(run)
-        return Launch([*run.command, "via", run.adaptor, *run.args], run.env)
+        return Launch([*run.command, "via", run.adaptor, *run.args], run.env, ["echo set up"])
 '''
 
 ADAPTOR = '''
@@ -239,6 +239,17 @@ class Options(WithPlugins):
         self.assertIn("--ag-gatherer always", out)
         self.assertIn("PI_X=1", out)
         self.assertIn("/opt/pi -e", out)
+
+    def test_quiet_runs_the_same_without_ag_s_notes_but_with_its_warnings(self):
+        self.add_harness("echo")
+        code, out, err = self.run_ag("--dry-run", "echo", "hi")
+        self.assertEqual(code, 0, err)
+        self.assertIn("ag: echo set up\nag: gatherer default", err)
+        quiet = self.run_ag("--dry-run", "--quiet", "echo", "hi")
+        self.assertEqual(quiet[:2], (0, out))
+        self.assertNotIn("set up", quiet[2])
+        self.assertNotIn("gatherer default", quiet[2])
+        self.assertIn("no LLM model set", quiet[2])                         # a warning is not a note
 
     def test_bad_gatherers_and_policies_without_one(self):
         self.assertEqual(self.run_ag("--dry-run", "--gatherer", "a/b", "pi")[0], 1)
