@@ -807,7 +807,12 @@ class ProactiveContextManager(Policy):
         else:
             since_row = 0
         into_task = sum(1 for r in rows if r.row_id > since_row and history.opens_turn(r, types, self.groups))
-        if into_task <= cfg.boundary_cooldown:
+        # a build a reader asked for, made mid-task, may have moved the running task's start (and so the
+        # cooldown's count): the first user message after it is asked about all the same, so a change of
+        # topic gets a build of its own -- its ranking made for the new request, not for the old one
+        after_asked = bool(in_use) and in_use.get("reason") == tables.ASKED \
+            and not tables.checked_since(conn, ch, in_use.get("through_row") or 0)
+        if into_task <= cfg.boundary_cooldown and not after_asked:
             return ""
         row_id = rows[-1].row_id
         if not tables.claim_boundary(conn, row_id, ch):
@@ -842,6 +847,37 @@ class ProactiveContextManager(Policy):
             self.wait(conn, ch, read.row_id, "build", cfg.build_timeout)
             build = tables.get_build(conn, build_id) or {}
             return build.get("status") if build.get("status") in ("ready", "failed", "nothing") else "timeout"
+
+    def requested(self, conn, read: Read, min_messages: int = 0) -> dict:
+        """A build a reader asked for from outside any call (the dashboard's History view): an ordinary
+        build (reason `asked`), started in the background and not waited for -- once the channel has at
+        least `min_messages` user and agent messages since the last its builds went through (since its
+        start, before any). Adopted as any build is: at the channel's next user message. What came of it:
+        {"started": build_id, "messages": n}; {"running": build_id}, one already is; {"few": n}, only n
+        such messages since; {"failed": why}; {} with no background work."""
+        cfg, ch = self.config, channel_of(read)
+        if self.jobs is None:
+            return {}
+        latest = tables.latest_build(conn, ch)
+        if latest and latest["status"] == "running" and time.time() - latest["started_at"] < cfg.build_timeout:
+            return {"running": latest["build_id"]}
+        types = TypeIds.load(conn)
+        since = conn.execute("SELECT max(through_row) FROM _builds WHERE channel_key = ?",
+                             (tables.key(ch),)).fetchone()[0] or 0
+        messages = types.of(*self.groups.messages)
+        n = sum(1 for r in history.rows(conn, types, self.groups, ch) if r.row_id > since and r.type.id in messages)
+        if n < min_messages:
+            return {"few": n}
+        build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.ASKED)
+        if build_id is None:                         # another started one meanwhile
+            return {"running": (tables.latest_build(conn, ch) or {}).get("build_id")}
+        try:
+            self.jobs.start(read.gatherer_id, channel.of(ch), "build", build_id)
+        except OSError as exc:
+            tables.fail_build(conn, build_id, f"could not start the worker: {exc}")
+            return {"failed": str(exc)}
+        self.log(f"[{ch}] build {build_id} asked for, {n} messages since the last")
+        return {"started": build_id, "messages": n}
 
     def wait(self, conn, channel_id, row_id: int, started: str, seconds: float) -> bool:
         deadline = time.monotonic() + seconds

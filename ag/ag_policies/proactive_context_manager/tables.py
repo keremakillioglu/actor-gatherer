@@ -22,7 +22,7 @@ cannot be a key.
     cleaned     save_cleaned, cleaned_texts
     builds      claim_build, new_build, settle, set_cut, fail_build, latest_build, build_for,
                 get_build; basis_of, in_use, waiting
-    boundaries  claim_boundary, record_boundary, boundary_verdict
+    boundaries  claim_boundary, record_boundary, boundary_verdict, checked_since
 """
 
 import json
@@ -184,9 +184,10 @@ BUILD_COLUMNS = ("build_id, status, started_at, finished_at, through_row, open_f
 #: task; build_every_request; run directly (bulk loading, tests); the harness compacted its own
 #: history (a build that closes the running task, as `limit` does, and is adopted whatever its size); a
 #: channel with no build of its own joined a gatherer where another channel has one (`joinable`): it
-#: starts from their work, its own history all the running task.
+#: starts from their work, its own history all the running task; a reader asked for one from outside
+#: any call (the dashboard's History view: `requested`), an ordinary build.
 LIMIT, BOUNDARY, REQUEST, DIRECT, COMPACTION = "limit", "boundary", "request", "direct", "compaction"
-JOIN = "join"
+JOIN, ASKED = "join", "asked"
 
 
 def _build(row) -> Optional[dict]:
@@ -342,6 +343,12 @@ def record_boundary(conn, row_id: int, new_task: bool, why: str, channel_id=None
                             new_task = excluded.new_task, why = excluded.why""",
                      (row_id, key(channel_id), now, now, 1 if new_task else 0, (why or "")[:2000]))
     changed(conn, "boundary", channel_id, row_id)
+
+
+def checked_since(conn, channel_id, row_id: int) -> bool:
+    """Whether a user message of the channel after row `row_id` has been asked about (or is being)."""
+    return conn.execute("SELECT 1 FROM _boundaries WHERE channel_key = ? AND row_id > ? LIMIT 1",
+                        (key(channel_id), row_id)).fetchone() is not None
 
 
 def boundary_verdict(conn, row_id: int) -> Optional[dict]:

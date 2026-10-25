@@ -6,7 +6,10 @@ them:
 
     outline(gatherer, channel, after)    the events after row `after` (every channel's, or one's): each
                                          one's row, channel, type, size, time and first PREVIEW
-                                         characters; and the tasks ag has segmented them into
+                                         characters; the tasks ag has segmented them into, and each
+                                         channel's latest build
+    build(gatherer, channel)             ag asked to build the channel's history again, in its background
+                                         worker, once there is enough new (BUILD_MESSAGES)
     search(gatherer, channel, q)         the events whose words hold `q`, each with the words around it
     render(gatherer, rows, clip)         those events as one Markdown transcript, by actor, task and turn
     export(gatherer, rows, fmt)          that, whole, or the events as JSON: a file to save
@@ -157,10 +160,41 @@ def _tasks(conn, channel: Optional[str]) -> List[dict]:
                                   f"FROM tasks {where} ORDER BY channel_key, task_index", args)]
 
 
+#: The user and agent messages a channel needs since its last build before the History view asks ag
+#: for another (`build`): fewer, and they stay the running task as they are.
+BUILD_MESSAGES = 10
+
+
+def _builds(conn, channel: Optional[str]) -> Dict[str, dict]:
+    """Each channel's latest build -- {build_id, status, reason, started, finished, error} -- and how many
+    user and agent messages it has after the last row its builds went through (`since`)."""
+    tables = data._tables(conn)
+    where, args = (f"WHERE e.{CHANNEL} = ?", (channel,)) if channel is not None else (f"WHERE e.{CHANNEL} IS NOT NULL", ())
+    through = dict(conn.execute("SELECT channel_key, max(through_row) FROM _builds GROUP BY channel_key")) \
+        if "_builds" in tables else {}
+    out: Dict[str, dict] = {}
+    for ch, row_id in conn.execute(
+            f"SELECT e.{CHANNEL}, e.row_id FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+            f"{where} AND t.name IN ('user_message', 'agent_message')", args):
+        o = out.setdefault(ch, {"since": 0})
+        o["since"] += row_id > (through.get(ch) or 0)
+    if "_builds" in tables:
+        cols = data._columns(conn, "_builds")
+        for r in conn.execute(f"SELECT channel_key, build_id, status, started_at, finished_at, error"
+                              f"{', reason' if 'reason' in cols else ''} FROM _builds WHERE build_id IN "
+                              "(SELECT max(build_id) FROM _builds GROUP BY channel_key)"):
+            if r["channel_key"] in out:
+                out[r["channel_key"]].update(build_id=r["build_id"], status=r["status"], started=data._seconds(r["started_at"]),
+                                             finished=data._seconds(r["finished_at"]), error=r["error"],
+                                             reason=r["reason"] if "reason" in cols else None)
+    return out
+
+
 def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dict:
     """The gatherer's events after row `after` -- the channel's only, when one is named -- oldest first,
     at most OUTLINE_ITEMS of them (`more`: there are others after): each one's row, channel, type,
-    size, time and the first PREVIEW characters of its words; and every task ag has made of them."""
+    size, time and the first PREVIEW characters of its words; every task ag has made of them; and
+    each channel's latest build (`_builds`)."""
     conn = data._connect(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
@@ -178,7 +212,8 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
         events = [{"row_id": r["row_id"], "channel": r["ch"], "type": r["type"] or "?", "tokens": r["tokens"] or 0,
                    "at": data._seconds(r["inserted_at"]), "text": _preview(r["text"], r["payload"])}
                   for r in rows[:OUTLINE_ITEMS]]
-        return {"events": events, "tasks": _tasks(conn, channel), "more": len(rows) > OUTLINE_ITEMS}
+        return {"events": events, "tasks": _tasks(conn, channel), "builds": _builds(conn, channel),
+                "more": len(rows) > OUTLINE_ITEMS}
     finally:
         conn.close()
 
@@ -379,6 +414,26 @@ def export(gatherer: str, rows, fmt: str = "md") -> dict:
         raise HistoryError("a format of md or json")
     text, _ = render(gatherer, rows, None)
     return {"name": f"history-{gatherer}-{stamp}.md", "text": text}
+
+
+def build(gatherer: str, channel: str) -> dict:
+    """ag asked to build the channel's history (`ag home build`, the channel named as its property): an
+    ordinary build, in ag's background worker, adopted at the channel's next user message -- once it has
+    BUILD_MESSAGES user and agent messages since its last. What ag says came of it: {started},
+    {running}, {few}, {failed} or {}."""
+    if not channel:
+        raise HistoryError("which actor's history to build")
+    try:
+        done = subprocess.run([*sessions.ag_command(), "home", "build", gatherer, "--properties",
+                               json.dumps({"channel": channel}), "--min-messages", str(BUILD_MESSAGES)],
+                              env=sessions.agent_env(), capture_output=True,
+                              text=True, timeout=60, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError, sessions.SessionError) as exc:
+        raise HistoryError(f"could not run ag: {exc}") from None
+    try:
+        return json.loads(done.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        raise HistoryError((done.stderr or done.stdout).strip()[-300:] or f"ag home build exited {done.returncode}") from None
 
 
 # ---------------------------------------------------------------- the model's extracts, as jobs

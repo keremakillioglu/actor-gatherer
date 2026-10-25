@@ -996,6 +996,55 @@ def make():
         self.assertTrue(any(t.startswith("# Previous task") for t in self.texts(self.read())))
 
 
+class RequestedTest(Base):
+    """A build a reader asks for from outside any call (the dashboard's History view)."""
+
+    def setUp(self):
+        super().setUp()
+        self.spawned = []
+        self.policy.jobs = Recording(lambda s, c, job, job_id: self.spawned.append((job, job_id)))
+
+    def ask(self, n=10):
+        return self.m.requested("s", properties=ch("c1"), min_messages=n)
+
+    def test_started_once_there_are_enough_messages_since_the_last(self):
+        self.put(PREAMBLE + conversation(4))                       # 8 user and agent messages
+        self.assertEqual(self.ask(), {"few": 8})
+        self.assertEqual(self.spawned, [])
+        self.put(conversation(1, start=5))
+        got = self.ask()
+        self.assertEqual((got["messages"], self.spawned), (10, [("build", got["started"])]))
+        build = tables.latest_build(self.m._conn("s"), "c1")
+        self.assertEqual((build["status"], build["reason"]), ("running", tables.ASKED))
+        self.assertEqual(self.ask(), {"running": got["started"]})          # not twice
+        self.policy.build("s", ch("c1"), got["started"])                    # as the worker runs it: an ordinary build
+        self.assertEqual(tables.latest_build(self.m._conn("s"), "c1")["status"], "ready")
+        self.assertEqual(self.ask(), {"few": 0})                            # counted from what it went through
+        self.put(conversation(3, start=6))
+        self.assertEqual(self.ask(), {"few": 6})
+
+    def test_it_is_adopted_at_the_next_user_message_not_before(self):
+        self.put(PREAMBLE + conversation(6))
+        self.read()
+        self.policy.jobs = None                                             # no build of the read's own
+        before = store.last_read(self.m._conn("s"), ch("c1"))["basis"]
+        self.policy.jobs = Recording(lambda *a: None)
+        build_id = self.ask()["started"]
+        self.policy.build("s", ch("c1"), build_id)
+        self.policy.jobs = None
+        self.put([call(60), output(60)])                                    # mid-turn: the context it had
+        self.read()
+        self.assertEqual(store.last_read(self.m._conn("s"), ch("c1"))["basis"], before)
+        self.put([agent("a", 60), user("next", 61)])
+        self.read()
+        self.assertEqual(store.last_read(self.m._conn("s"), ch("c1"))["basis"], str(build_id))
+
+    def test_nothing_without_background_work(self):
+        self.policy.jobs = None
+        self.put(PREAMBLE + conversation(6))
+        self.assertEqual(self.ask(), {})
+
+
 class BoundaryTest(Base):
     """The middle band: between the thresholds a read asks, in the background,
     whether the user message starts a new task, and builds on a yes."""
@@ -1076,6 +1125,18 @@ class BoundaryTest(Base):
         self.cfg.max_context_tokens = size
         self.read()
         self.assertEqual(sorted(self.spawned[-1]), ["build"])      # at max: a build
+
+    def test_the_first_message_after_an_asked_build_is_checked_within_the_cooldown(self):
+        for reason, asked in ((tables.ASKED, True), (tables.DIRECT, False)):
+            with self.subTest(reason=reason):
+                self.setUp()
+                self.put(PREAMBLE + conversation(5))               # tasks 1-2, 3-4, and 5 running
+                conn = self.m._conn("s")
+                self.policy.build("s", ch("c1"), tables.claim_build(conn, "c1", 60, reason))
+                self.put([user("q", 51)])                          # the running task's 2nd: within the cooldown
+                self.read()                                        # the build taken up here
+                self.assertEqual(store.last_read(conn, ch("c1"))["basis"], str(tables.latest_build(conn, "c1")["build_id"]))
+                self.assertEqual(self.spawned, [{"check": self.last_row()}] if asked else [])
 
     def test_checks_are_off_when_disabled(self):
         self.cfg.check_boundaries = False

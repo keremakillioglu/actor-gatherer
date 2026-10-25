@@ -42,6 +42,7 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/history/extract {gatherer, rows, kind, ask?}  the Gatherer's model asked for a summary, memory
                                           or skill of them, in the background -> its record
     POST /api/history/delete {id}         a record removed, its job stopped -> {id}
+    POST /api/history/build {gatherer, channel}   ag asked to build the actor's history (history.build)
     POST /api/history/save {id, target, dir?, version?}  where Claude Code reads it: the plan, without
                                           `version`; with the plan's, the files written -> {saved, where}
     GET /api/settings                     ag's settings, its config.toml (settings.py)
@@ -50,10 +51,10 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/settings/file {version, text}   config.toml as the reader edited it -> the settings
 
 The POSTs are the only writes, and only to the dashboard's own tables and records, the agents it
-runs, the gatherers `ag new` makes, the model calls `ag home complete` makes, the files a History
-extract is saved as (where Claude Code reads them, once the reader has seen them), and ag's config.toml --
-besides the avatar the home gives an actor it has not seen before (avatars.py), kept in the dashboard's
-own table:
+runs, the gatherers `ag new` makes, the builds and model calls `ag home build` and `ag home complete`
+start, the files a History extract is saved as (where Claude Code reads them, once the reader has
+seen them), and ag's config.toml -- besides the avatar the home gives an actor it has not seen before
+(avatars.py), kept in the dashboard's own table:
 the gatherers' databases are only read. They are taken from the dashboard's own page only
 (`own_page`), and the server listens on localhost unless told otherwise.
 
@@ -372,6 +373,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                 if url.path == "/api/history/extract":
                     return self.answer(history.start(str(body.get("gatherer") or ""), str(body.get("kind") or ""),
                                                      body.get("rows"), str(body.get("ask") or "")))
+                if url.path == "/api/history/build":
+                    return self.answer(history.build(str(body.get("gatherer") or ""), str(body.get("channel") or "")))
                 if url.path == "/api/history/delete":
                     return self.answer(history.delete(str(body.get("id") or "")))
                 if url.path == "/api/history/save":

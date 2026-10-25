@@ -576,6 +576,9 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 13px; padding: 5px 0; }
 .hist .h-found { white-space: nowrap; }
 .hist .h-found:empty { display: none; }
+.hist .h-build { white-space: nowrap; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.hist .h-build.bad { color: var(--warning); }
+.hist .h-build .spin::before { content: "✻"; display: inline-block; color: var(--term-accent); animation: term-spin 1.2s steps(1) infinite; }
 .hist .h-list { flex: 1; min-height: 0; overflow: auto; padding-bottom: 16px; }
 .hist .h-row { display: grid; grid-template-columns: 18px 14px minmax(0, 1fr) auto; column-gap: 6px; align-items: start;
   padding: 6px 16px 6px calc(16px + var(--depth, 0) * 20px); border-bottom: 1px solid var(--grid); content-visibility: auto; contain-intrinsic-size: auto 46px; }
@@ -2549,6 +2552,7 @@ const CHAT_VIEW_KEY = "ag-dashboard-chat-view";
 let chatViewId = (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "transcript"; } catch (e) { return "transcript"; } })();
 const chatView = () => CHAT_VIEWS.get(chatViewId) || CHAT_VIEWS.get("transcript");
 async function setChatView(id) {
+  if (id === "history" && chatViewId !== "history") hist.askedFor = null;   // opened again: its actor may be built again
   chatViewId = id;
   try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
   await loadChat();
@@ -3115,7 +3119,8 @@ async function loadOutlineNow() {
   if (!state.selected || SNAPSHOT) return;
   const [g, c] = state.selected, k = histKey();
   if (!state.hist || state.hist.key !== k)
-    state.hist = { key: k, gatherer: g, channel: hist.scope === "all" ? null : c, events: [], tasks: [], last: 0, more: false, error: "", version: 0 };
+    state.hist = { key: k, gatherer: g, channel: hist.scope === "all" ? null : c, events: [], tasks: [], builds: {}, last: 0, more: false,
+      error: "", version: 0 };
   const h = state.hist;
   for (let page = 0; page < HIST_PAGES; page++) {
     let got;
@@ -3124,13 +3129,42 @@ async function loadOutlineNow() {
     if (state.hist !== h) return;
     if (got.error) { if (h.error !== got.error) { h.error = got.error; h.version++; } break; }
     const fresh = got.events.filter((e) => e.row_id > h.last);
-    if (fresh.length || signature(got.tasks) !== signature(h.tasks) || h.error || h.more !== got.more) h.version++;
-    h.error = ""; h.tasks = got.tasks; h.more = got.more;
+    if (fresh.length || signature(got.tasks) !== signature(h.tasks) || signature(got.builds) !== signature(h.builds) || h.error
+      || h.more !== got.more) h.version++;
+    h.error = ""; h.tasks = got.tasks; h.builds = got.builds || {}; h.more = got.more;
     h.events.push(...fresh);
     if (fresh.length) h.last = fresh[fresh.length - 1].row_id;
     if (!got.more) break;
   }
   if (hist.recs.gatherer !== g || Date.now() - hist.recs.at > 10000) await loadExtracts(g);   // another page's, too
+  if (chatView().id === "history" && hist.askedFor !== key(g, c)) { hist.askedFor = key(g, c); askBuild(h, c); }
+  if (((h.builds || {})[c] || {}).status === "running") pollBuild();
+}
+// Opening History on an actor -- the view, or another actor in it -- asks ag to build its history (an ordinary
+// build, which the actor takes up at its next user message: history.build), once it has HIST_BUILD_MESSAGES
+// user and agent messages since its last build; fewer, and they are its running task as they are. ag
+// checks it again; the page only spares it the asking. While the build runs, the outline is looked at
+// every few seconds: its tasks come in when it is done.
+const HIST_BUILD_MESSAGES = 10;
+async function askBuild(h, c) {
+  const b = (h.builds || {})[c];
+  if (!b || b.status === "running" || b.since < HIST_BUILD_MESSAGES) return;
+  h.builds[c] = { ...b, status: "running" };          // asked: not asked again before the outline says how it went
+  let got;
+  try { got = await post("/api/history/build", { gatherer: h.gatherer, channel: c }); }
+  catch (err) { got = { failed: err.message }; }
+  hist.built = { for: key(h.gatherer, c), ...got };
+  if (got.started || got.running) { await loadOutline(); histRedraw(); pollBuild(); }
+  else { hist.version++; histRedraw(); }
+}
+let buildTimer = null;
+function pollBuild() {
+  clearTimeout(buildTimer);
+  buildTimer = setTimeout(async () => {
+    if (chatView().id !== "history" || state.paused) return;
+    await loadOutline();
+    histRedraw();
+  }, 3000);
 }
 CHAT_FEEDS.outline = {
   load: loadOutline,
@@ -3196,6 +3230,7 @@ function histTree(h) {
       a.turn = node("turn", `t:${e.channel}:${a.ti}:${a.turnN}`, { channel: e.channel, n: a.turnN, ask: asks ? e.text : "", cont: !asks && a.turnN > 0, reply: "" });
       a.task.children.push(a.turn); byId.set(a.turn.id, a.turn);
       if (asks && !a.ask) a.ask = e.text;
+      if (asks && a.task !== a && !a.task.ask) a.task.ask = e.text;     // the request a task opens with
     }
     if (e.type === "agent_message" && e.text) a.turn.reply = e.text;
     const m = node("message", `m:${e.row_id}`, { channel: e.channel, event: e });
@@ -3336,8 +3371,10 @@ function histLabel(n, hits) {
   }
   if (n.kind === "task") {
     const t = n.task;
-    return [el("div", { class: "h-label" }, kind(t ? `Task ${t.index + 1}` : "Before the first task"),
-      ...(n.current ? [el("span", { class: "h-badge", text: "Current" })] : []), t ? t.name : "What came before ag's first task"),
+    if (t && n.current)                              // the build's last task, still open, and all since: as it is
+      return [el("div", { class: "h-label" }, kind("Running task"), n.ask || t.name),
+        el("div", { class: "h-sub dim", text: "Not summarized: it is still going on" }), hit];
+    return [el("div", { class: "h-label" }, kind(t ? `Task ${t.index + 1}` : "Before the first task"), t ? t.name : "What came before ag's first task"),
       t && t.description ? el("div", { class: "h-sub", text: t.description }) : null, hit];
   }
   if (n.kind === "turn") {
@@ -3388,6 +3425,20 @@ function histSwitch(label, pairs, current, pick) {
     el("button", { type: "button", "aria-pressed": id === current ? "true" : "false", ...(ok ? {} : { disabled: "" }), title: ok ? "" : why,
       onclick: () => pick(id) }, name)));
 }
+// The selected actor's tasks, as of its latest build: being made, how far behind they are, or why not.
+function histBuildNote(h) {
+  const c = state.selected && state.selected[1], b = c && (h.builds || {})[c];
+  if (!b) return null;
+  const since = `${plural(b.since, "message")} since`;
+  const asked = hist.built && hist.built.for === key(h.gatherer, c) ? hist.built : null;
+  const [cls, text, title] = b.status === "running" ? ["run", "Building tasks…", "ag is splitting this actor's history into tasks; they show here when it is done"]
+    : asked && asked.failed ? ["bad", "Build not started", asked.failed]
+    : b.status === "failed" ? ["bad", `Last build failed · ${since}`, b.error || ""]
+    : !b.build_id ? ["", `No tasks yet · ${plural(b.since, "message")}`, `ag builds tasks once an actor has ${HIST_BUILD_MESSAGES} user and agent messages`]
+    : ["", `Tasks as of ${clock(b.finished || b.started, true)} · ${since}`,
+      b.since < HIST_BUILD_MESSAGES ? `Built again once ${HIST_BUILD_MESSAGES} have come in; until then they are the running task` : ""];
+  return el("span", { class: "h-build " + cls, title }, cls === "run" ? el("span", { class: "spin", "aria-hidden": "true" }) : null, text);
+}
 function histBar(h, grains, grain) {
   const box = el("input", { type: "search", placeholder: `Search ${h.channel === null ? "the gatherer's" : "this actor's"} history`,
     "aria-label": "Search the history", spellcheck: "false", value: hist.q });
@@ -3400,7 +3451,8 @@ function histBar(h, grains, grain) {
     histSwitch("Whose history", [["actor", "This actor"], ["all", "Whole gatherer"]], hist.scope, setHistScope),
     histSwitch("Grain", grains.map(([g, name, ok]) => [g, name, ok, g === "actors" ? "Across the whole gatherer only" : "ag has not segmented this history into tasks yet"]),
       grain, setHistGrain),
-    q && !hist.hits ? el("span", { class: "h-found", text: "Searching…" }) : null);
+    q && !hist.hits ? el("span", { class: "h-found", text: "Searching…" }) : null,
+    histBuildNote(h));
 }
 function histPickBar(h) {
   const rows = [...hist.sel.values()], n = rows.length;

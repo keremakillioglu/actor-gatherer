@@ -76,6 +76,28 @@ class HistoryTest(HistoryBase):
         self.assertFalse(mine["more"])
         self.assertIn("error", history.outline("nope"))
 
+    def test_each_actor_s_build_and_its_messages_since(self):
+        builds = history.outline("g")["builds"]
+        self.assertEqual(builds, {"c1": {"since": 4}, "c2": {"since": 1}})      # no builds: every message
+        conn = sqlite3.connect(os.path.join(self.tmp.name, "gatherers", "g", "context.db"))
+        conn.executescript("""CREATE TABLE _builds (build_id INTEGER PRIMARY KEY, channel_key TEXT, status TEXT, started_at REAL,
+            finished_at REAL, through_row INTEGER, open_from_row INTEGER, ranking_json TEXT, parallel_mark INTEGER, error TEXT, reason TEXT);
+            INSERT INTO _builds VALUES (1, 'c1', 'ready', 1, 2, 5, 2, '[]', 0, NULL, 'asked');""")
+        conn.commit()
+        conn.close()
+        got = history.outline("g", "c1")["builds"]["c1"]
+        self.assertEqual((got["since"], got["status"], got["reason"], got["build_id"]), (2, "ready", "asked", 1))
+
+    def test_a_build_is_ag_s_to_start(self):
+        class Done:
+            returncode, stdout, stderr = 0, '{"few": 4}\n', ""
+        with unittest.mock.patch.object(history.subprocess, "run", return_value=Done()) as run, \
+                unittest.mock.patch.object(history.sessions, "ag_command", return_value=["ag"]):
+            self.assertEqual(history.build("g", "c1"), {"few": 4})
+        self.assertEqual(run.call_args[0][0], ["ag", "home", "build", "g", "--properties", '{"channel": "c1"}', "--min-messages", "10"])
+        with self.assertRaises(history.HistoryError):
+            history.build("g", "")
+
     def test_search_finds_words_and_what_only_the_payload_holds(self):
         hits = history.search("g", None, "ROLL")["hits"]
         self.assertEqual([h["row_id"] for h in hits], [7, 8])                 # any case: "roll it back", "Rolled back."
