@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import unittest
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -69,9 +70,9 @@ class HubTest(unittest.TestCase):
         hub = live.Hub()
         c1, c2, other, none = hub.watch("g", "c1"), hub.watch("g", "c2"), hub.watch("h", "c1"), hub.watch(None, None)
         for w in (c1, c2, other, none):
-            self.assertEqual(w.take(), (True, True))           # a new stream: both at once
+            self.assertEqual(w.take(), (True, True, set()))    # a new stream: both at once
         hub.ring("g", "c1", "events")
-        self.assertEqual([w.take() for w in (c1, c2, other, none)],
+        self.assertEqual([w.take()[:2] for w in (c1, c2, other, none)],
                          [(True, True), (True, False), (True, False), (True, False)])
         hub.ring("g", None, "events")                          # no channel: every channel of g
         self.assertEqual([w.take()[1] for w in (c1, c2, other)], [True, True, False])
@@ -80,6 +81,17 @@ class HubTest(unittest.TestCase):
         hub.drop(c1)
         hub.ring("g", "c1")
         self.assertFalse(c1.wake.is_set())
+
+    def test_a_stream_s_other_actors_are_woken_by_their_own_changes(self):
+        hub = live.Hub()
+        w = hub.watch("g", "c1", [("g", "c2"), ("my gatherer", "c1")])
+        self.assertEqual(w.take(), (True, True, {0, 1}))       # a new stream: all at once
+        hub.ring("g", "c2", "events")
+        self.assertEqual(w.take(), (True, False, {0}))
+        hub.ring("my_gatherer", "c1")                          # its directory: my_gatherer
+        self.assertEqual(w.take(), (True, False, {1}))
+        hub.ring("g", None)                                    # no channel: every channel of g
+        self.assertEqual(w.take(), (True, True, {0}))
 
     def test_a_gatherer_named_as_ag_was_given_it(self):
         hub = live.Hub()
@@ -107,7 +119,7 @@ class ListenerTest(HomeBase):
         w.take()
         codex_items.CodexItems(self.m).insert("g", user("one more", 91), channel_id="c1")   # ag notifies
         self.assertTrue(w.wake.wait(2))
-        self.assertEqual(w.take(), (True, True))
+        self.assertEqual(w.take()[:2], (True, True))
         listener.close()
         self.assertFalse(os.path.exists(listener.path))
 
@@ -120,14 +132,14 @@ class FallbackTest(HomeBase):
         w = hub.watch("g", "c1")
         w.take()
         fallback.check()
-        self.assertEqual(w.take(), (False, False))             # nothing changed
+        self.assertEqual(w.take()[:2], (False, False))         # nothing changed
         self.m._conn("g").execute("UPDATE events SET tokens = tokens + 1 WHERE row_id = 1")
         self.m._conn("g").commit()
         fallback.check()
-        self.assertEqual(w.take(), (True, True))
+        self.assertEqual(w.take()[:2], (True, True))
         os.makedirs(os.path.join(self.tmp.name, "ag", "logs", "llm"), exist_ok=True)   # the call log
         fallback.check()
-        self.assertEqual(w.take(), (True, True))
+        self.assertEqual(w.take()[:2], (True, True))
 
 
 class StreamTest(HomeBase):
@@ -163,6 +175,23 @@ class StreamTest(HomeBase):
         codex_items.CodexItems(self.m).insert("g", user("for c2", 92), channel_id="c2")
         got = s.until(lambda name, v: True, 1)
         self.assertIn(got and got[0], ("home", None))           # the home may change; c1 does not
+        self.assertIsNone(s.until(lambda name, v: name == "agent", 0.5))
+
+    def test_one_stream_for_a_page_s_panes_sends_each_actor_tagged(self):
+        httpd = self.start()
+        also = urllib.parse.quote(json.dumps([["g", "c2"], ["g", "nope"], "not a pair", ["", "c1"]]))
+        s = self.open(httpd, f"?gatherer=g&channel=c1&also={also}")
+        got = [s.next() for _ in range(4)]                     # home, the actor picked, and each other, at once
+        self.assertEqual(sorted(n for n, _ in got), ["actor", "actor", "agent", "home"])
+        actors = {v["channel"]: v for n, v in got if n == "actor"}
+        self.assertEqual(set(actors), {"c2", "nope"})          # what is not a [gatherer, channel] is left out
+        self.assertEqual(actors["c2"]["gatherer"], "g")
+        self.assertIn("reads", actors["c2"]["agent"])
+        codex_items.CodexItems(self.m).insert("g", user("for c2", 93), channel_id="c2")
+        self.m._context("g", store.high_water(self.m._conn("g")), ch("c2"))   # a read: a new call on c2's chart
+        got = s.until(lambda name, v: name in ("actor", "agent"), 3)
+        self.assertEqual((got[0], got[1]["channel"]), ("actor", "c2"))   # c2's change: c2's, not c1's
+        self.assertEqual(len(got[1]["agent"]["reads"]), 1)
         self.assertIsNone(s.until(lambda name, v: name == "agent", 0.5))
 
     def test_a_stream_with_no_agent_sends_the_home(self):
