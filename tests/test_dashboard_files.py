@@ -101,6 +101,11 @@ def asked(text):
     return ("user_message", {"role": "user", "content": [{"type": "text", "text": text}]})
 
 
+def note(text, role="user"):
+    """A note of Claude Code's own, stored as ag's Claude adaptor stores it: context."""
+    return ("context", {"role": role, "content": [{"type": "text", "text": text}]})
+
+
 # As codex 0.164 wrote it live: its code-mode script (`exec`), and what the call gave back
 SCRIPT = ("const r = await tools.exec_command({cmd:\"printf 'one\\\\n' > notes.txt && printf 'two\\\\n' > notes.txt "
           "&& cat notes.txt\",max_output_tokens:1000});\ntext(r.output);\n")
@@ -336,6 +341,73 @@ class FilesTest(unittest.TestCase):
             ("Write new.py", False, ["/w/new.py"]), ("Run the tests", True, []),
             ("Shorten the comment", False, ["/w/a.py"]), ("Write notes", False, ["/w/notes.md"]),
             ("Read shot.png", False, ["/w/shot.png"])])
+
+    # Claude Code's own notes, as Claude Code 2.1.310 sends them (saved from a live session) and ag stores them
+    SKILL = "Base directory for this skill: /w/.claude/skills/greet\n\n# Greeting\n\nReply with exactly: \"Ahoy, <name>!\"\n\n\nARGUMENTS: {}"
+
+    def test_claude_code_s_notes_show_among_the_messages(self):
+        handback = ('Another Claude session sent a message:\n<agent-message from="ab81">\n[Subagent hand-back] The text below is the '
+                    "final report of a subagent ... The report follows:\n  Ran ls.\n  \n  - a.py\n</agent-message>\n\nThat \"other Claude session\" ...")
+        self.add(asked("Greet Alice. Use the greet skill."),
+                 call("k1", "Skill", {"skill": "greet", "args": "Alice"}), result("k1", "Launching skill: greet"),
+                 note(self.SKILL.format("Alice")), said("Ahoy, Alice!"),
+                 asked("<command-message>greet</command-message>\n<command-name>/greet</command-name>\n<command-args>Bob</command-args>\n"),
+                 note(self.SKILL.format("Bob")), said("Ahoy, Bob!"),
+                 asked("<bash-input>echo hi</bash-input>\n"), note("<bash-stdout>hi</bash-stdout><bash-stderr></bash-stderr>"),
+                 said("It printed hi."),
+                 asked("Count the files with a subagent."),
+                 call("a1", "Agent", {"description": "List files", "prompt": "Run ls", "subagent_type": "general-purpose"}),
+                 result("a1", "Async agent launched successfully.\nagentId: ab81 (internal ID - do not mention to user.)"),
+                 said("It runs in the background."), note(handback), said("There is 1 file."),
+                 note("<command-name>/context</command-name>\n            <command-message>context</command-message>\n"
+                      "            <command-args></command-args>\n"),
+                 note("<local-command-stdout> \x1b[1mContext Usage\x1b[22m\n⛀ ⛁</local-command-stdout>"),
+                 note("## Context Usage\n\n**Model:** claude-haiku-5-5\n"),
+                 note("<local-command-stdout>Login successful</local-command-stdout>"))
+        turns = files.files("g", "c1", cwd="/w")["turns"][2:]
+        self.assertEqual([t["text"][:16] for t in turns], ["Greet Alice. Use", "<command-message", "<bash-input>echo", "Count the files "])
+        alice, bob, bang, count = [t["replies"] for t in turns]
+        self.assertEqual((alice, bob), ([{"kind": "text", "text": "Ahoy, Alice!"}], [{"kind": "text", "text": "Ahoy, Bob!"}]))
+        instructions = "# Greeting\n\nReply with exactly: \"Ahoy, <name>!\""             # a skill loaded: among the commands
+        self.assertEqual([(c["text"], c["output"]) for c in files.files("g", "c1", 2, cwd="/w")["commands"]],
+                         [("Load skill greet Alice", instructions)])           # its Skill call
+        self.assertEqual([(c["text"], c["output"]) for c in files.files("g", "c1", 3, cwd="/w")["commands"]],
+                         [("Load skill greet Bob", instructions)])             # the user's /greet: a call of its own
+        self.assertEqual((turns[2]["output"], bang), ("hi", [{"kind": "text", "text": "It printed hi."}]))
+        self.assertEqual(count[1], {"kind": "report", "name": "List files", "text": "Ran ls.\n\n- a.py"})
+        self.assertEqual(len(count), 3)                                     # /context and /login run: not shown
+        self.assertEqual(turns[3]["ran"], ["/context"])                     # only matched with what the page sent
+
+    def test_files_claude_code_gives_the_agent_are_read_in_the_turn(self):
+        start = ("<system-reminder>\nCodebase and user instructions are shown below.\n\nContents of /w/CLAUDE.md (project instructions, "
+                 "checked into the codebase):\n\n# Project\n\nBe brief.\n\nContents of /h/.claude/projects/-w/memory/MEMORY.md (user's "
+                 "auto-memory, persists across conversations):\n\n- [Color](color.md) — teal\n</system-reminder>")
+        mention = ('Called the Read tool with the following input: {"file_path":"/w/facts.txt"}\nResult of calling the Read tool:\n'
+                   "1\tThe number is 42.\n2\t\n\n# Environment\nYou have been invoked in the following environment: ...")
+        self.add(note(start), note(mention, "system"), asked("@facts.txt What is the number?"), said("42."),
+                 asked("Read sub/notes.txt"), call("n1", "Read", {"file_path": "/w/sub/notes.txt"}), result("n1", "1\tThursday."),
+                 note("<system-reminder>\nContents of /w/sub/CLAUDE.md:\n\n# Notes\n\nQuote them.\n</system-reminder>"), said("Thursday."))
+        got = files.files("g", "c1", 2, cwd="/w")                           # the message they came with
+        by = {f["path"]: f for f in got["files"]}
+        self.assertEqual(list(by), ["/w/CLAUDE.md", "/h/.claude/projects/-w/memory/MEMORY.md", "/w/facts.txt"])
+        self.assertEqual(by["/w/facts.txt"]["sources"][0]["blocks"], [{"t": "lines", "start": 1, "lines": ["The number is 42.", ""], "cut": 0}])
+        self.assertEqual((by["/w/CLAUDE.md"]["kinds"], by["/w/CLAUDE.md"]["sources"][0]["call"]), (["read"], None))
+        self.assertEqual(by["/w/CLAUDE.md"]["sources"][0]["blocks"][0]["lines"], ["# Project", "", "Be brief."])
+        self.assertEqual(got["commands"], [])                               # none of the agent's calls
+        got = files.files("g", "c1", 3, cwd="/w")
+        self.assertEqual([(f["path"], f["sources"][-1]["via"]) for f in got["files"]],
+                         [("/w/sub/notes.txt", "Read"), ("/w/sub/CLAUDE.md", "loaded into the context by Claude Code")])
+
+    def test_a_call_s_line_names_mcp_tools_and_memory_files_as_read(self):
+        self.add(asked("add them"), call("t1", "ToolSearch", {"query": "select:mcp__calc__add", "max_results": 1}),
+                 ("tool_output", {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1",
+                                                               "content": [{"type": "tool_reference", "tool_name": "mcp__calc__add"}]}]}),
+                 call("m1", "mcp__calc__add", {"a": 2, "b": 3}), result("m1", "5"),
+                 call("w1", "Write", {"file_path": os.path.expanduser("~/.claude/projects/-w/memory/food.md"), "content": "ramen"}),
+                 result("w1", "ok"), call("r1", "Read", {"file_path": os.path.expanduser("~/notes/todo.md")}), result("r1", "1\tx"))
+        cmds = files.files("g", "c1", 2, cwd="/w")["commands"]
+        self.assertEqual([(c["text"], c["output"]) for c in cmds], [("Load calc · add", "Loaded mcp__calc__add"), ("calc · add", "5"),
+                                                                    ("Write memory/food.md", "ok"), ("Read ~/notes/todo.md", "1\tx")])
 
 
 if __name__ == "__main__":

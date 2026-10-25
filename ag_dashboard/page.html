@@ -14,7 +14,7 @@
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --selected: rgba(42,120,214,0.10);
   /* the Transcript view's terminal: the page's own surface, so the history is part of the page in either theme */
   --term-bg: var(--surface); --term-ink: #2b2a27; --term-dim: #6f6c65; --term-faint: #a09d95; --term-user: #efeee9; --term-ok: #2f9a4c;
-  --term-err: #cf3a50; --term-run: #c08a00; --term-accent: #c4643f; --term-code: #f2f1ed; --term-rule: #e2e0d9;
+  --term-err: #cf3a50; --term-run: #c08a00; --term-accent: #c4643f; --term-code: #f2f1ed; --term-rule: #e2e0d9; --term-bash: #c7307a;
   --term-add: rgba(47,154,76,.12); --term-del: rgba(207,58,80,.10); --term-add-ink: #1b6b34; --term-del-ink: #a5293d; --term-link: #2468c8;
   /* the Files view's markdown, coloured as the NumPy docs (the PyData theme) colour it: links, inline code */
   --md-link: #0a7d91; --md-code: #912583;
@@ -28,7 +28,7 @@
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
-  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a;
+  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-bash: #fd5db1;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
   --md-link: #3fb1c5; --md-code: #f3c7ee;
   --scroll: rgba(255,255,255,.16);
@@ -42,7 +42,7 @@
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
-  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a;
+  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-bash: #fd5db1;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
   --md-link: #3fb1c5; --md-code: #f3c7ee;
   --scroll: rgba(255,255,255,.16);
@@ -671,7 +671,20 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-pending .fl-user { opacity: .55; cursor: default; }
 .files .fl-pending .fl-user:hover { background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 28%, transparent); }
 .files .fl-pending .lbl { color: var(--muted); font-size: 11.5px; margin-right: 4px; }
-.files .fl-user .tx.bang { font: .92em/var(--lh) var(--mono); }   /* a command the user ran with `!` */
+.files .fl-user .tx.bang { font: .92em/var(--lh) var(--mono); }   /* a command the user ran with `!`, or typed as /name */
+/* a bash bubble (bashBubble): a command the user ran with `!`, as a terminal shows it -- its `!` in bash mode's colour,
+   the bubble edged in it -- and under a rule, in the same bubble, what it printed */
+.files .fl-user.bash { background: var(--term-code); border-color: color-mix(in srgb, var(--term-bash) 45%, transparent); }
+.files .fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, var(--term-code)); border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
+.files .fl-user .bash-mark { color: var(--term-bash); font-weight: 700; }
+.files .fl-bash { display: flex; flex-direction: column; width: fit-content; min-width: 0; max-width: min(86%, 680px); margin: 0 0 0 auto;
+  background: var(--term-code); border: 1px solid color-mix(in srgb, var(--term-bash) 45%, transparent); border-radius: 12px 12px 4px 12px; overflow: hidden; }
+.files .fl-bash:hover { border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
+.files .fl-bash > .fl-user.bash { max-width: none; width: 100%; margin: 0; border: 0; border-radius: 0; background: none; }
+.files .fl-bash > .fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, transparent); }
+.files .fl-bash-out { margin: 0; padding: 6px 12px 8px; border-top: 1px solid var(--term-rule); max-height: 15em; overflow: auto;
+  font: 12px/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; background: none; }
+.files .fl-bash-out.none { color: var(--muted); font-style: italic; }
 .files .fl-reply { margin: 4px 0 0 2px; color: var(--ink-2); overflow-wrap: anywhere; }
 .files .fl-reply > summary { display: flex; gap: 6px; margin: 0; font-size: inherit; cursor: pointer; list-style: none; }
 .files .fl-reply > summary::-webkit-details-marker { display: none; }
@@ -740,6 +753,10 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-reply.call > summary .lbl.err { color: var(--critical); }
 .files .fl-reply.call[open] > summary .first { display: block; }
 .files .fl-reply.call > pre { margin: 4px 0 6px 15px; max-height: 280px; overflow: auto; }
+/* Claude Code's notes among the messages (notedReply): a line, what it is in grey; opened, the rest under it */
+.files .fl-reply.noted > summary .lbl { flex: none; color: var(--muted); }
+.files .fl-reply.noted[open] > summary .first { display: block; }
+.files .fl-reply.noted > .md, .files .fl-reply.noted > .fl-none { margin: 4px 0 6px 15px; }
 .files .fl-status { display: flex; align-items: center; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: .93em; }
 .files .fl-status .spin { flex: none; }
 .files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1239,7 +1256,7 @@ const DETAILS_KEY = "ag-dashboard-details";   // which side of the details panel
 let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, stream: null,
   tx: null,             // the transcript feed's events, loaded as they come: {key, items, pending, first_row, last_row, earlier}
   details: !!SNAPSHOT,  // the details panel open beside the chat: at first in a snapshot, which has no conversation
-  detailsTab: (() => { try { return localStorage.getItem(DETAILS_KEY) === "gatherer" ? "gatherer" : "actor"; } catch (e) { return "actor"; } })(),
+  detailsTab: (() => { try { const v = localStorage.getItem(DETAILS_KEY); return v === "gatherer" || v === "context" ? v : "actor"; } catch (e) { return "actor"; } })(),
   chat: null,           // the history feed's messages: {key, items (stored, append-only), pending, last_row}
   adding: null };       // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
 if (PANE) state.selected = [PANE_URL.get("gatherer") || "", PANE_URL.get("channel") || ""];
@@ -2065,13 +2082,26 @@ const MID_TURN = /^\s*The user sent a new message while you were working:\s*([\s
 // A command the user ran with `!`, as Claude Code sends it ("<bash-input>ls -la</bash-input>", its output after it as
 // its own text): as the user typed it, "! ls -la". The closing tag may be cut off with the end of a long one.
 const BANG = /^\s*<bash-input>([\s\S]*?)(?:<\/bash-input>\s*)?$/;
+// A command the user typed that Claude Code expands into a prompt (a skill's /name, a command file's), as it sends it
+// ("<command-message>greet</command-message>\n<command-name>/greet</command-name>\n<command-args>Bob</command-args>"):
+// as the user typed it, "/greet Bob".
+const SLASH = /^\s*<command-message>[^<]*<\/command-message>\s*<command-name>\/?([^<]*)<\/command-name>\s*(?:<command-args>([\s\S]*?)<\/command-args>)?\s*$/;
 const asked = (text) => {
   const b = text && BANG.exec(text);
   if (b) return `! ${b[1].trim()}`;
+  const c = text && SLASH.exec(text);
+  if (c) return `/${c[1].trim()}${c[2] && c[2].trim() ? " " + c[2].trim() : ""}`;
   const m = text && MID_TURN.exec(text); return m && m[1] ? m[1] : text;
 };
-// A user's message in a chat bubble: as asked() gives it, a `!` command in the terminal's type.
-const userWords = (text) => el("span", { class: "tx" + (text && BANG.test(text) ? " bang" : ""), text: asked(text) });
+// A user's message in a chat bubble: as asked() gives it, a command (`!`, or /name) in the terminal's type -- one
+// typed in this page's box ("!ls") too, which Claude Code runs as one. A `!` command's bubble is a bash bubble
+// (bubbleClass): its `!` in bash mode's colour, as Claude Code marks it, and under it, once run, what it printed.
+const isBash = (text) => !!text && (BANG.test(text) || /^\s*!/.test(text));
+const bubbleClass = (text) => isBash(text) ? " bash" : "";
+const userWords = (text) => isBash(text)
+  ? el("span", { class: "tx bang" }, el("span", { class: "bash-mark", "aria-hidden": "true", text: "!" }),
+    " " + asked(text).trim().replace(/^!\s*/, ""))
+  : el("span", { class: "tx" + (text && SLASH.test(text) ? " bang" : ""), text: asked(text) });
 function agentRow(g, a, group) {
   const [cls, label] = statusOf(a);
   const saved = !!savedAs(g.name, a);
@@ -2660,22 +2690,37 @@ function setDetails(open, tab) {
   drawn.main = mainSignature();
   if (open) { const b = document.querySelector(".drawer-body"); if (b && tab) b.scrollTop = 0; }
 }
+// The dashboard's own commands, typed in a message box: done here, not sent to the agent. Any other "/" goes to the
+// agent as written -- Claude Code's own commands, skills and command files -- so the dashboard takes only these; one
+// that reaches the session's terminal shows the reader that terminal (the composer's send).
+//   /context   ag's context for the actor -- what the model was really sent, which under ag is not what Claude Code's
+//              own /context counts -- in the details panel, beside the chat
+const DASHBOARD_COMMANDS = { "/context": () => setDetails(true, "context") };
+function dashboardCommand(text) {
+  const run = DASHBOARD_COMMANDS[String(text ?? "").trim().toLowerCase()];
+  if (run) run();
+  return !!run;
+}
 // Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn.
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")) setDetails(false);
 });
+// Its Context side is the Context view's, beside the chat: what `/context` in the message box opens (dashboardCommand).
 function detailsPanel(info) {
   const a = state.agent;
   const switcher = el("div", { class: "views", role: "group", "aria-label": "Details shown" },
     ...[["actor", "Actor", "What the agent saw and did: its context, its calls, its history"],
+      ["context", "Context", "What the model was sent at the latest call, item by item, and its size over the session"],
       ["gatherer", "Gatherer", "What ag did for the agent: its builds and its own model calls"]].map(([id, name, title]) =>
       el("button", { type: "button", title, "aria-pressed": state.detailsTab === id ? "true" : "false", onclick: () => setDetails(true, id) }, name)));
   const head = el("div", { class: "drawer-head" }, switcher, el("span", { class: "grow" }),
     el("button", { type: "button", class: "close", title: "Close (Esc)", "aria-label": "Close details", onclick: () => setDetails(false) }, "×"));
-  const body = el("div", { class: "drawer-body", "data-keep": "details" }, ...[moreViews(), facts(info)].filter(Boolean));
+  const tab = state.detailsTab;
+  const body = el("div", { class: "drawer-body", "data-keep": `details-${tab === "context" ? "context" : "more"}` },
+    ...(tab === "context" ? [] : [moreViews(), facts(info)]).filter(Boolean));
   if (!a || a.error || !a.reads) body.append(el("div", { class: "empty", text: (a && a.error) || (info.session
     ? "No calls yet: send the agent a message." : "No data for this actor.") }));
-  else body.append(...(state.detailsTab === "gatherer" ? gathererDetails(a) : actorDetails(a)));
+  else body.append(...(tab === "gatherer" ? gathererDetails(a) : tab === "context" ? contextDetails(a) : actorDetails(a)));
   return el("aside", { class: "drawer", role: "complementary", "aria-label": "Details" }, head, body);
 }
 // The actor's own facts: where it runs, as what, and how the dashboard can reach it.
@@ -2706,6 +2751,10 @@ function actorDetails(a) {                           // what the agent saw and d
     usageCard(),
     historyCard(a.tasks),
   ];
+}
+function contextDetails(a) {                         // the Context view, beside the chat
+  if (chatView().id === "context") return [el("div", { class: "desc", text: "The Context view, at the left, shows it." })];
+  return [contextCard(), sizeCard(a.reads, a.reads.some((r) => typeof r.real_tokens === "number"))];
 }
 function gathererDetails(a) {                        // what ag did for the agent
   const builds = a.builds || [], failed = builds.filter((b) => b.status === "failed").length;
@@ -2792,28 +2841,34 @@ function chatCard(info) {
   let sending = false;
   ctx.send = async (t) => {
     t = String(t ?? "").trim();
+    if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) box.value = ""; return true; }
     if (!t || sending || held) return false;
     sending = true; err.textContent = "";
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
-    // shown at once, pending, until the session's own record of it shows (sentHere) -- but a codex command typed into
-    // its terminal (/recap, /status): codex runs it, and it is never one of the session's messages. (Without a terminal
-    // it goes to `codex exec` as a message, and is stored as one.)
-    const mine = { key: key(...state.selected), text: t, base: heardCount(heard(info), t), at: Date.now() };
+    // a "/" command of the harness's own (dashboardCommand took the page's): what it does (a dialog, a report) is drawn
+    // in the session's terminal, and may never come back as a message -- not shown pending; the terminal shown once
+    // the session has one (its own, or one the message opened)
+    const slash = t.startsWith("/");
+    // else shown at once, pending, until the session's own record of it shows (sentHere)
+    const mine = slash ? null : { key: key(...state.selected), text: t, base: heardCount(heard(info), t), at: Date.now() };
     const box = document.getElementById("composer-text"), was = box ? box.value : "";
-    if (!(info.harness === "codex" && info.session && info.session.terminal && CODEX_COMMAND.test(t))) sentHere.push(mine);
+    if (mine) sentHere.push(mine);
     if (box) box.value = "";
-    keepingPlace(renderMain); talkToEnd();
-    setTimeout(() => { if (sentHere.includes(mine)) keepingPlace(renderMain); }, UNSEEN_MS + 100);
+    if (mine) {
+      keepingPlace(renderMain); talkToEnd();
+      setTimeout(() => { if (sentHere.includes(mine)) keepingPlace(renderMain); }, UNSEEN_MS + 100);
+    }
     // a terminal the message opens (sessions.py's `send`): the Terminal view's screen, at its size if it was drawn
     const opens = { fullscreen: fullscreenFor(info), ...(term.sid === info.channel && term.opened ? { cols: term.xterm.cols, rows: term.xterm.rows } : {}) };
     try {
-      await post("/api/send", info.session ? { session_id: s.session_id, text: t, ...opens }
+      const got = await post("/api/send", info.session ? { session_id: s.session_id, text: t, ...opens }
         : { gatherer: state.selected[0], channel: state.selected[1], text: t, ...opens });
+      if (slash && got && got.terminal && CHAT_VIEWS.has("terminal")) { await setChatView("terminal"); return true; }
       if (state.paused || !state.stream) await refresh(); else { await loadChat(); render(); }
       chatToEnd();
       return true;
     } catch (e) {
-      if (sentHere.includes(mine)) sentHere.splice(sentHere.indexOf(mine), 1);
+      if (mine && sentHere.includes(mine)) sentHere.splice(sentHere.indexOf(mine), 1);
       const again = document.getElementById("composer-text"); if (again && !again.value) again.value = was;
       keepingPlace(renderMain);
       err.textContent = e.message; return false;
@@ -3448,14 +3503,16 @@ if (markdownReady) {
   marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text) } });
   DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } });
 }
-function markdown(text) {
+// `breaks`: each line break kept, for text written as lines rather than as markdown (a subagent's report)
+function markdown(text, breaks = false) {
   const box = el("div", { class: "md" });
   if (!markdownReady) { box.style.whiteSpace = "pre-wrap"; box.textContent = text; return box; }
-  let html = mdCache.get(text);
+  const k = (breaks ? "\u0001" : "") + text;
+  let html = mdCache.get(k);
   if (html === undefined) {
-    try { html = DOMPurify.sanitize(marked.parse(text)); } catch (e) { html = escapeHtml(text); }
+    try { html = DOMPurify.sanitize(marked.parse(text, breaks ? { breaks: true } : undefined)); } catch (e) { html = escapeHtml(text); }
     if (mdCache.size > 2000) mdCache.clear();
-    mdCache.set(text, html);
+    mdCache.set(k, html);
   }
   box.innerHTML = html;                            // sanitized by DOMPurify, raw HTML escaped before it
   return box;
@@ -4100,7 +4157,7 @@ function fileView(f, rel, id) {
         el("span", { class: "what", text: kinds.join(", ") + (s.error ? " · failed" : "") },
           CHECKED[s.checked] ? el("span", { class: "chk" + (s.checked ? "" : " off"), title: CHECKED[s.checked][1],
             text: " · " + CHECKED[s.checked][0] }) : null)),
-      el("details", { class: "fv-cmd", id: `${id}-s${i}-c` }, el("summary", { text: "command" }), el("pre", { class: "call", text: callText(s.call) })),
+      s.call ? el("details", { class: "fv-cmd", id: `${id}-s${i}-c` }, el("summary", { text: "command" }), el("pre", { class: "call", text: callText(s.call) })) : null,
       code));
   });
   return box;
@@ -4198,10 +4255,12 @@ function filesRender({ info, running }) {
     el("span", { class: "badges" }, ...f.kinds.map((k) => el("i", { class: "fb", style: `background: ${(FILE_KINDS[k] || [k, "var(--muted)"])[1]}`,
       title: k === "write" && f.created ? "created" : (FILE_KINDS[k] || [k])[0] }))));
   const folded = state.files.folded || (state.files.folded = new Set());
-  // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~
+  // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. Claude
+  // Code's memory of a directory (~/.claude/projects/<the directory, as a name>/memory) marked, its long name cut.
+  const MEMORY = /\/\.claude\/projects\/[^/]+\/memory$/;
   const label = (above, path) => path === UNKNOWN ? "relative to an unknown folder"
     : (under(path, home) && !under(above, home) ? "~" + path.slice(home.length)
-      : above === null ? path : path.slice(above.length + 1)) + "/";
+      : above === null ? path : path.slice(above.length + 1)).replace(/(\.claude\/projects\/)[^/]+(\/memory)$/, "$1…$2") + "/";
   const grow = (node, into, depth, above) => {
     for (const [, sub] of [...node.dirs].sort((x, y) => (x[0] === UNKNOWN) - (y[0] === UNKNOWN) || x[0].localeCompare(y[0]))) {
       let dir = sub;
@@ -4215,6 +4274,7 @@ function filesRender({ info, running }) {
         onclick: () => { open ? folded.add(dir.path) : folded.delete(dir.path); keepingPlace(renderMain); } },
         el("span", { class: "tw", text: open ? "▾" : "▸" }), el("span", { class: "name", text: label(above, dir.path) }),
         cwd && dir.path === cwd ? el("span", { class: "wd", title: "The session's working directory", text: "cwd" }) : null,
+        MEMORY.test(dir.path) ? el("span", { class: "wd", title: "Claude Code's memory of a directory: what it keeps for later sessions there", text: "memory" }) : null,
         open ? null : el("span", { class: "n", text: `${count(dir)}` })));
       if (!open) continue;
       const kids = el("div", { class: "fl-kids", style: `--guide: ${17 + depth * 14}px` });   // under its caret's middle
@@ -4291,22 +4351,26 @@ let talkShown = null;
 // What the selected actor's own records say the user wrote: ag's stored messages (each turn's first, and what was written
 // while it ran), Claude Code's queue less what ag has stored since (the agent's `typed`, queued.py), and the dashboard
 // agent's queue (its session's `queued`).
+// A command the user ran that Claude Code runs itself (/context: no message of theirs is stored, only Claude Code's
+// note of it, files.py's `ran` -- not shown) counts as one of their messages too.
 function heard(info) {
   const d = state.files && state.selected && state.files.key === key(...state.selected) && state.files.data;
-  const stored = d ? d.turns.flatMap((t) => [t, ...(t.more || [])]) : [];
+  const stored = d ? d.turns.flatMap((t) => [t, ...(t.more || []), ...(t.ran || []).map((name) => ({ text: name, at: t.at }))]) : [];
   const typed = ((state.agent && state.selected && state.agent.channel === state.selected[1] && state.agent.typed) || [])
-    .filter((q) => !stored.some((m) => m.at >= (q.at || 0) - 1 && m.text.trim() === q.text.trim()));
+    .filter((q) => !stored.some((m) => m.at >= (q.at || 0) - 1 && sameWords(m.text, q.text)));
   return { stored, typed, queued: (info && info.session && info.session.queued) || [] };
 }
-// how many of them have these words: their start, as a stored message is clipped
-const sameWords = (a, b) => a.trim().slice(0, 200) === b.trim().slice(0, 200);
+// A message as the user typed it, to match what was sent with what is stored: a command as Claude Code stores it
+// ("<bash-input>echo hi</bash-input>", a /name's tags) as typed (asked()), and "!echo hi" the same as "! echo hi".
+const typedAs = (text) => asked(String(text ?? "")).trim().replace(/^!\s*/, "! ");
+// whether two say the same: their start, as a stored message is clipped
+const sameWords = (a, b) => typedAs(a).slice(0, 200) === typedAs(b).slice(0, 200);
 const heardCount = (h, text) => [...h.stored, ...h.typed].filter((m) => sameWords(m.text, text)).length
   + h.queued.filter((q) => sameWords(q, text)).length;
 // Messages sent from this page's box, each {key, text, base, at}: shown pending the moment it is sent, until the
 // actor's records hold one more message of its words than when it was sent (`base`) -- from then on, as they say.
-// One not seen for UNSEEN_MS says so. A codex command typed into its terminal is not one (ctx.send).
+// One not seen for UNSEEN_MS says so.
 const sentHere = [], UNSEEN_MS = 15000;
-const CODEX_COMMAND = /^\/[a-z][\w-]*(?:\s|$)/i;     // "/recap", "/model gpt": a command's name, then what it is given
 // What waits to reach the agent, at the latest turn's end, faded: sent from here and not seen yet; in Claude Code's
 // queue, or sent when a turn ended as the next one's first and not stored yet; in the dashboard agent's queue.
 function pendingTalk(info, h) {
@@ -4318,7 +4382,7 @@ function pendingTalk(info, h) {
   if (!list.length) return null;
   const unseen = mine.some((m) => Date.now() - m.at > UNSEEN_MS);
   return el("div", { class: "fl-pending" }, ...list.map((text) =>
-    el("div", { class: "fl-user", title: "Written while it works: given to the agent at its next step" }, userWords(text))),
+    el("div", { class: "fl-user" + bubbleClass(text), title: "Written while it works: given to the agent at its next step" }, userWords(text))),
     el("span", { class: "lbl", text: unseen ? "Pending · not seen by the session yet" : "Pending" }));
 }
 const talkToEnd = () => { const n = document.querySelector("#main .fl-talk"); if (n) n.scrollTop = n.scrollHeight; };
@@ -4344,7 +4408,8 @@ function filesTalk(d, info, running) {
     const on = t.n === d.turn;
     const live = running && t.n === d.turns.length - 1;
     // its messages, by their place in the turn (their ids keep it); thinking that is encrypted has nothing to read
-    const said = (t.replies || []).map((r, i) => [r, i]).filter(([r]) => r.kind === "text" || r.texts.length);
+    const said = (t.replies || []).map((r, i) => [r, i])
+      .filter(([r]) => r.kind === "text" || NOTED[r.kind] || (r.kind === "thinking" && (r.texts || []).length));
     const last = said.map(([r]) => r.kind).lastIndexOf("text");
     const before = last < 0 ? said : said.slice(0, last), after = last < 0 ? [] : said.slice(last + 1);
     const extra = before.length <= MINOR_SHOWN + 1 ? 0 : before.length - MINOR_SHOWN;   // behind the +, or shown under the −
@@ -4352,6 +4417,7 @@ function filesTalk(d, info, running) {
     // a message; or a run of thinking, drawn as one with "Thought:" before its first line
     const reply = ([r, i], main) => {
       const id = `fl-${main ? "m" : "r"}-${t.n}-${i}`;   // apart: the last, once a message follows it, starts folded
+      if (NOTED[r.kind]) return notedReply(r, id);
       const thought = r.kind !== "text", text = thought ? r.texts.join("\n\n") : r.text;
       return el("details", { class: "fl-reply" + (main ? " main" : "") + (thought ? " thought" : ""), id,
         open: main && !closed.has(id) ? "" : null, ontoggle: main ? fold : null },
@@ -4365,16 +4431,16 @@ function filesTalk(d, info, running) {
     const now = !live ? "" : info && info.failing ? "Retrying…" : t.now && t.now.kind === "thinking" ? "Thinking…" : "Working…";
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
       // a click: this turn's files and commands shown at the left, or folded away when they already are
-      el("button", { type: "button", class: "fl-user", "aria-pressed": on ? "true" : "false",
+      bashBubble(t, el("button", { type: "button", class: "fl-user" + bubbleClass(t.text), "aria-pressed": on ? "true" : "false",
         title: on && !sideFolded ? "Fold this turn's files and commands" : "Show this turn's files and commands",
         onclick: () => {
           if (on && !sideFolded) return foldSide(true);
           if (sideFolded) foldSide(false, on);
           if (!on) setFilesTurn(t.n);
         } },
-        userWords(t.text)),
+        userWords(t.text))),
       ...[...(t.more || []), ...(t.n === d.turns.length - 1 ? joined : [])].map((m) =>
-        el("button", { type: "button", class: "fl-user joined", "aria-pressed": on ? "true" : "false",
+        el("button", { type: "button", class: "fl-user joined" + bubbleClass(m.text), "aria-pressed": on ? "true" : "false",
           title: "Written while it worked, and given to the agent in this turn", onclick: () => setFilesTurn(t.n) },
           userWords(m.text))),
       before.length ? el("div", { class: "fl-minor" },
@@ -4398,6 +4464,23 @@ function filesTalk(d, info, running) {
     cur.parentElement.scrollTop = state.files.turn === null ? cur.parentElement.scrollHeight : cur.offsetTop;   // .fl-talk is its offset parent
   });
   return box;
+}
+// Claude Code's own notes in a turn (files.py's `_note`), each a line among the messages, folded to it: a subagent's
+// report handed back (opened: the report). A skill it loaded is with the turn's commands, not here.
+const NOTED = { report: "Subagent's report:" };
+function notedReply(r, id) {
+  return el("details", { class: `fl-reply noted ${r.kind}`, id },
+    el("summary", { title: "Show or fold the report" },
+      el("span", { class: "dot", text: "●" }), el("span", { class: "lbl", text: NOTED[r.kind] }),
+      el("span", { class: "first", text: firstLine(r.name || r.text, 200) })),
+    r.text ? markdown(r.text, true) : el("div", { class: "fl-none", text: "Empty." }));
+}
+// A turn's first bubble; a command the user ran with `!` in a bash bubble: the command at its top, and under a rule
+// what it printed (files.py's `output`: stdout, then stderr) -- "no output" for none.
+function bashBubble(t, bubble) {
+  if (!isBash(t.text) || t.output === undefined || t.output === null) return bubble;
+  return el("div", { class: "fl-bash" }, bubble,
+    el("pre", { class: "fl-bash-out" + (t.output ? "" : " none"), title: "What it printed", text: t.output || "no output" }));
 }
 // The turn's latest call, while the agent has said and thought nothing readable since: under its messages,
 // above the line saying it works -- running, or how it went, and what it was; opened, its call and its output.
