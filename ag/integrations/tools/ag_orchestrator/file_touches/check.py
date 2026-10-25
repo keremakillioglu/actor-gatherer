@@ -7,6 +7,9 @@ in, with the variables it sets itself and its `cd`s followed (`named`). Once the
 (`check`), the same files are looked at again: one whose text differs was changed by the call
 naming it (`created`, `modified` with the lines that changed, `deleted`). A file changed that no call
 names is one the watcher saw change while they ran (watch.py): it is the calls' too, but not named.
+A change to a file in ag's home (AG_HOME, ~/.ag: its databases, its logs) is ag's own -- it writes them
+as the calls run, a gatherer's database at every model call -- and is left out, unless a call says it
+writes the file: `sqlite3 ~/.ag/.../context.db "SELECT ..."` is not an edit of it.
 
 A read is found by reading the call's output (commands.py), and kept only where the file says so:
 a path is kept when it is a file; a line shown as line 12 of a file, when line 12 of the file is that
@@ -29,6 +32,7 @@ import re
 import shlex
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from ag.integrations.tools.ag_connection.ag_client import home
 from .commands import (EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _expand, _patch_files, _path, _resolve,
                        _shell_text, _simple_commands, shell_changes, shell_reads)
 
@@ -57,6 +61,12 @@ class Look:
         if self.lines is not None and other.lines is not None:
             return self.lines == other.lines and (self.size == other.size or -1 in (self.size, other.size))
         return (self.size, self.mtime) == (other.size, other.mtime)
+
+
+def ags(path: str) -> bool:
+    """Whether `path` is in ag's home (AG_HOME, ~/.ag), whose files ag itself writes as the calls run."""
+    roots = {home(), os.path.realpath(home())}                       # macOS's /var is /private/var
+    return any(path == r or path.startswith(r.rstrip(os.sep) + os.sep) for r in roots)
 
 
 def look(path: str) -> Optional[Look]:
@@ -405,6 +415,8 @@ def check(calls: List[Tuple[str, str, object, str, bool]], cwd: Optional[str],
             how = "modified" if was.get(path) is not None and watched[path] == "created" else watched[path]
             got = change(path, None, seen.get(path), watched=how)   # (a call run as it streamed in): there before,
                                                                      # it was not created
+        if got and ags(path) and not any(path in s for s in says.values()):
+            continue                                        # ag's own writes (its database, its logs), not the calls'
         if got:
             if got[0] == "modified":
                 got[1]["path"] = path                      # for _share; not sent (see below)
