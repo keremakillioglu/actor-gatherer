@@ -645,7 +645,7 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-rec > summary .ask { font-size: 12px; color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hist .h-rec .chip-k { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-radius: 999px; padding: 1px 7px; color: #fff; }
 .hist .h-rec .chip-k.summary { background: var(--s1); } .hist .h-rec .chip-k.memory { background: var(--s7); } .hist .h-rec .chip-k.skill { background: var(--s3); }
-.hist .h-rec .chip-k.claude { background: var(--s2); text-transform: none; letter-spacing: 0; }
+.hist .h-rec .chip-k.agents, .hist .h-rec .chip-k.claude { background: var(--s2); text-transform: none; letter-spacing: 0; }
 /* a memory: its title and type, what decides whether it is read, then the fact */
 .hist .h-mem { border: 1px solid var(--grid); border-radius: 6px; padding: 6px 8px; margin: 0 0 8px; background: var(--page); }
 .hist .h-mem .t { display: flex; align-items: baseline; gap: 6px; font-weight: 600; font-size: 12.5px; }
@@ -667,6 +667,7 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-save .file pre { margin: 0; padding: 6px 8px; border-top: 1px solid var(--grid); font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; color: var(--ink-2); }
 .hist .h-save .err { color: var(--critical); } .hist .h-save .ok { color: var(--good); }
+.hist .h-save .warnline { color: var(--warning); }
 .hist .h-rec .saved { font-size: 11.5px; color: var(--ink-2); padding: 0 12px 8px; overflow-wrap: anywhere; }
 .hist .h-rec .saved b { color: var(--good); font-weight: 600; }
 .hist .h-rec .body { border-top: 1px solid var(--grid); padding: 8px 12px 10px; font-size: 13px; overflow-wrap: anywhere; }
@@ -3118,7 +3119,8 @@ const HIST_KEY = "ag-dashboard-history";
 const HIST_GRAINS = [["tasks", "Tasks"], ["turns", "Turns"]];         // a turn opens to its messages
 const HIST_LEVEL = { actors: 0, tasks: 1, turns: 2, messages: 3, actor: 0, task: 1, turn: 2, message: 3 };
 const HIST_KINDS = { summary: ["Summarize", "Summary", "summary.md"], memory: ["Generate memory", "Memory", "memory.md"],
-  claude: ["Generate CLAUDE.md", "CLAUDE.md", "CLAUDE.md"], skill: ["Generate skill", "Skill", "SKILL.md"] };
+  agents: ["Generate AGENTS.md", "AGENTS.md", "AGENTS.md"], skill: ["Generate skill", "Skill", "SKILL.md"] };
+HIST_KINDS.claude = ["", "CLAUDE.md", "CLAUDE.md"];      // one made before AGENTS.md: shown, not offered
 const HIST_PAGES = 10;                              // the pages of history.py's OUTLINE_ITEMS loaded at once
 const HIST_SHOWN = 2000;                            // the rows drawn before "show more"
 const hist = (() => {
@@ -3580,7 +3582,7 @@ function histActions() {
       el("button", { type: "button", class: "h-x", title: "Close (Esc clears the selection)", "aria-label": "Close",
         onclick: () => { hist.panel = false; hist.recOpen = null; hist.saving = null; histSelect(new Map()); } }, "×")),
     ask,
-    el("div", { class: "kinds" }, ...Object.entries(HIST_KINDS).map(([k, [label]]) => el("button", { type: "button", ...off,
+    el("div", { class: "kinds" }, ...Object.entries(HIST_KINDS).filter(([, [label]]) => label).map(([k, [label]]) => el("button", { type: "button", ...off,
       title: `Give the selected history to the Gatherer's model: ${label.toLowerCase()}`, onclick: () => histMake(k) }, label))),
     el("div", { class: "row" }, el("span", { class: "h-picked", text: "Export" }),
       el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the selected history as a Markdown transcript", onclick: () => histExport("md") }, ".md"),
@@ -3636,7 +3638,8 @@ const recText = (r) => r.kind !== "memory" ? r.output : (r.memories || []).lengt
       "metadata:", `  type: ${m.type}`, "---", "", m.body])].join("\n") + "\n" : "";
 // Saving a record where Claude Code reads it: where to (this directory's sessions, or every session), then
 // what each file would get -- written only once the reader has seen it (history.py's plan and save).
-const SAVE_WHERE = { claude: "every Claude Code session there reads it, in full, at its start",
+const SAVE_WHERE = { agents: "every Codex and Claude Code session there reads it, in full, at its start",
+  claude: "every Codex and Claude Code session there reads it, in full, at its start",
   skill: "Claude Code sessions there can use it: by its description, or as /name",
   memory: "your Claude Code sessions there see each memory's line, and read it when it matters" };
 function recSave(r) {
@@ -3648,7 +3651,7 @@ function recSave(r) {
     ...(sv.target === "user" ? { disabled: "" } : {}) });
   box.addEventListener("input", () => { sv.dir = box.value; sv.plan = null; sv.err = ""; });
   box.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); recPlan(r); } });
-  const targets = [["dir", "A directory"], ...(r.kind === "memory" ? [] : [["user", "All my projects"]])];
+  const targets = [["dir", "A directory"], ...(r.kind === "skill" ? [["user", "All my projects"]] : [])];   // memories, AGENTS.md: a directory's
   const p = sv.plan;
   return el("div", { class: "h-save" },
     el("div", { class: "row" }, histSwitch("Save to", targets, sv.target, (t) => { sv.target = t; sv.plan = null; sv.err = ""; recPlan(r); }),
@@ -3656,6 +3659,7 @@ function recSave(r) {
     sv.target === "dir" ? el("div", { class: "row" }, box, el("datalist", { id: `dirs-${r.id}` }, ...dirs.map((d) => el("option", { value: d }))),
       el("button", { type: "button", onclick: () => recPlan(r) }, "Preview")) : null,
     ...(p ? [el("div", { class: "where", text: `For ${p.where}. ${plural(p.files.length, "file")}, as shown — nothing is written until you press Write:` }),
+      ...(p.note ? [el("div", { class: "warnline", text: p.note })] : []),
       ...p.files.map((f, i) => el("details", { class: "file", id: `save-${r.id}-${i}` },
         el("summary", {}, el("span", { class: `a ${f.action}`, text: f.action === "append" ? "add to end" : f.action }), el("span", { class: "p", text: f.path })),
         el("pre", { text: f.text })))] : []),

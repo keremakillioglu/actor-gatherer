@@ -233,18 +233,23 @@ class SaveTest(HistoryBase):
         with self.assertRaises(history.HistoryError):
             history.memories("Here are your memories: ...")
 
-    def test_a_claude_md_is_added_to_the_end_of_the_one_there(self):
-        rid = self.record("claude", "## Commands\n- Run `make test`.")
-        with open(os.path.join(self.work, "CLAUDE.md"), "w") as fh:
+    def test_an_agents_md_is_added_to_the_end_of_the_one_there(self):
+        rid = self.record("agents", "## Commands\n- Run `make test`.")
+        with open(os.path.join(self.work, "AGENTS.md"), "w") as fh:
             fh.write("# Mine\nkeep this\n")
         p = history.save(rid, "dir", self.work)                     # no version: the plan, nothing written
-        self.assertEqual([(f["path"], f["action"]) for f in p["files"]], [(os.path.join(os.path.realpath(self.work), "CLAUDE.md"), "append")])
-        self.assertEqual(self.read(os.path.join(self.work, "CLAUDE.md")), "# Mine\nkeep this\n")
+        self.assertEqual([(f["path"], f["action"]) for f in p["files"]], [(os.path.join(os.path.realpath(self.work), "AGENTS.md"), "append")])
+        self.assertEqual((self.read(os.path.join(self.work, "AGENTS.md")), p["note"]), ("# Mine\nkeep this\n", ""))
         history.save(rid, "dir", self.work, p["version"])
-        self.assertEqual(self.read(os.path.join(self.work, "CLAUDE.md")), "# Mine\nkeep this\n\n## Commands\n- Run `make test`.\n")
+        self.assertEqual(self.read(os.path.join(self.work, "AGENTS.md")), "# Mine\nkeep this\n\n## Commands\n- Run `make test`.\n")
         self.assertEqual(len(history._record(rid)["saved"]), 1)
-        user = history.save(rid, "user")
-        self.assertEqual(user["files"][0]["path"], os.path.join(self.claude, "CLAUDE.md"))
+        with open(os.path.join(self.work, "CLAUDE.md"), "w") as fh:            # Claude Code reads that one instead
+            fh.write("# Theirs\n")
+        self.assertIn("CLAUDE.md", history.save(rid, "dir", self.work)["note"])
+        with self.assertRaises(history.HistoryError):
+            history.save(rid, "user")                                          # a directory's only
+        old = self.record("claude", "x")                                       # one made as a CLAUDE.md: saved as one now
+        self.assertEqual(os.path.basename(history.save(old, "dir", self.work)["files"][0]["path"]), "AGENTS.md")
 
     def test_a_skill_goes_in_its_own_folder_and_a_change_since_the_preview_is_refused(self):
         rid = self.record("skill", "---\nname: Deploy Site\ndescription: deploy it\n---\n\n# Deploy\n1. make deploy")
@@ -283,12 +288,12 @@ class SaveTest(HistoryBase):
                          "- [Older](deploy.md) — an older memory\n- [Deploy](deploy-2.md) — how to deploy\n")
 
     def test_what_cannot_be_saved(self):
-        for kind, target, where in (("summary", "dir", self.work), ("memory", "user", ""), ("claude", "dir", "relative/dir"),
-                                    ("claude", "dir", os.path.join(self.work, "nope")), ("claude", "elsewhere", self.work)):
+        for kind, target, where in (("summary", "dir", self.work), ("memory", "user", ""), ("agents", "dir", "relative/dir"),
+                                    ("agents", "dir", os.path.join(self.work, "nope")), ("agents", "elsewhere", self.work)):
             with self.subTest(kind=kind, target=target, where=where), self.assertRaises(history.HistoryError):
                 history.save(self.record(kind, "[]" if kind == "memory" else "x", memories=[{"name": "a"}]), target, where)
         with self.assertRaises(history.HistoryError):
-            history.save(self.record("claude", "x", status="running"), "dir", self.work)
+            history.save(self.record("agents", "x", status="running"), "dir", self.work)
         with self.assertRaises(history.HistoryError):
             history.save(self.record("skill", "no front matter"), "dir", self.work)
 

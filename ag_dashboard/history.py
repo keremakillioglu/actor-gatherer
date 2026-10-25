@@ -1,7 +1,7 @@
 """The History view's data (page.html: the History view): a gatherer's history laid out to be looked
 through and picked from -- each event, light, and the tasks ag has segmented it into -- searched; and
 what the reader picks, rendered as one transcript, to export, or to give the Gatherer's model to
-summarize, or to write memories, a CLAUDE.md or a skill from -- and those saved where Claude Code reads
+summarize, or to write memories, an AGENTS.md or a skill from -- and those saved where Claude Code reads
 them:
 
     outline(gatherer, channel, after)    the events after row `after` (every channel's, or one's): each
@@ -29,8 +29,9 @@ is a file in <home>/dashboard/extracts/; nothing here writes to a gatherer's dat
 
 Where Claude Code reads each kind (its config folder: CLAUDE_CONFIG_DIR, else ~/.claude):
 
-    claude   <dir>/CLAUDE.md, every session there; <config>/CLAUDE.md, every session anywhere -- added
-             to the end of the file there is
+    agents   <dir>/AGENTS.md, added to the end of the file there is: read at the start of every session
+             there by Codex, and by Claude Code where the directory has no CLAUDE.md of its own (its
+             default); a directory's only -- no agent reads one file for all of a user's projects
     skill    <dir>/.claude/skills/<name>/SKILL.md; <config>/skills/<name>/SKILL.md
     memory   <config>/projects/<dir, each character not a letter or digit a "-">/memory/: a file for each
              memory, and its line in that folder's MEMORY.md -- the index every session there starts with"""
@@ -102,10 +103,10 @@ Return ONLY a JSON array, no prose and no code fence -- [] when there is nothing
 (the reason the history gives) and a **How to apply:** line>"}]
 
 Say only what the history supports; never invent."""),
-    "claude": ("CLAUDE.md", HISTORY + """
+    "agents": ("AGENTS.md", HISTORY + """
 
-From it, write a CLAUDE.md: the standing instructions an agent reads at the start of EVERY session \
-in this project -- so every line costs every session, and must earn its place. Keep only what outlives \
+From it, write an AGENTS.md: the standing instructions coding agents (Claude Code, Codex, ...) read at the \
+start of EVERY session in this project -- so every line costs every session, and must earn its place. Keep only what outlives \
 the work shown and applies again and again:
 - how to build, run and test, with the exact commands that worked;
 - the project's conventions: layout, naming, style, the tools and libraries to use;
@@ -524,7 +525,7 @@ def start(gatherer: str, kind: str, rows, ask: str = "") -> dict:
         raise HistoryError(f"too much for one call: {len(text) // 4:,} tokens or so, even with tool output cut short "
                            f"(at most {PROMPT_CHARS // 4:,}); pick less")
     name, system = KINDS[kind]
-    prompt = (f"Make the {name if kind == 'claude' else name.lower()} the system message asks for, from the history below."
+    prompt = (f"Make the {name if kind == 'agents' else name.lower()} the system message asks for, from the history below."
               + (f"\n\nWhat the user asks of it -- follow it where it differs from the system message:\n\n{ask}" if ask else "")
               + f"\n\n# The history\n\n{text}")
     rec = {"id": uuid.uuid4().hex[:12], "gatherer": gatherer, "kind": kind, "ask": ask, "status": "running",
@@ -718,18 +719,18 @@ def _skill_name(output: str) -> str:
 def plan(rid: str, target: str, directory: str = "") -> dict:
     """What saving record `rid` at `target` (TARGETS) writes, as it would be written now: {files: [{path,
     action (create / append / replace), text (what the file gets: all of it, or what is added at its end)}],
-    where, version}. `directory` is the directory a "dir" target is; it must exist."""
+    where, note (what may keep it from being read, or ""), version}. `directory` is the directory a "dir" target is; it must exist."""
     rec = _record(rid)
     if rec.get("status") != "done":
         raise HistoryError("only a finished extract can be saved")
-    kind = rec.get("kind")
-    if kind not in ("claude", "skill", "memory"):
+    kind = "agents" if rec.get("kind") == "claude" else rec.get("kind")       # "claude": one made as a CLAUDE.md, before
+    if kind not in ("agents", "skill", "memory"):
         raise HistoryError("a summary is not saved where Claude Code reads it: download it instead")
     if target not in TARGETS:
         raise HistoryError(f"a target of {' or '.join(TARGETS)}")
-    if target == "user" and kind == "memory":
-        raise HistoryError("Claude Code keeps memories per directory: save them to a directory, or make a CLAUDE.md "
-                           "for every session")
+    if target == "user" and kind in ("memory", "agents"):
+        raise HistoryError("Claude Code keeps memories per directory: save them to a directory" if kind == "memory"
+                           else "an AGENTS.md is a directory's: save it to one")
     if target == "dir":
         directory = os.path.expanduser((directory or "").strip())
         if not os.path.isabs(directory):
@@ -739,12 +740,16 @@ def plan(rid: str, target: str, directory: str = "") -> dict:
         directory = os.path.realpath(directory)
     base = claude_dir()
     files = []
-    if kind == "claude":
-        path = os.path.join(directory if target == "dir" else base, "CLAUDE.md")
+    note = ""
+    if kind == "agents":
+        path = os.path.join(directory, "AGENTS.md")
         had, text = _read(path), rec["output"].strip() + "\n"
         gap = "" if not had or had.endswith("\n\n") else "\n" if had.endswith("\n") else "\n\n"   # a blank line before it
         files.append({"path": path, "action": "append" if had else "create", "text": gap + text})
-        where = "every Claude Code session in " + (directory if target == "dir" else "any directory")
+        where = f"every Codex and Claude Code session in {directory}"
+        if any(os.path.exists(os.path.join(directory, n)) for n in ("CLAUDE.md", os.path.join(".claude", "CLAUDE.md"))):
+            note = ("This directory has a CLAUDE.md: Claude Code reads that instead of AGENTS.md (its default), so only "
+                    "Codex would read this -- unless CLAUDE.md imports it (a line @AGENTS.md).")
     elif kind == "skill":
         name = _skill_name(rec["output"])
         path = os.path.join(directory, ".claude", "skills", name, "SKILL.md") if target == "dir" \
@@ -769,7 +774,7 @@ def plan(rid: str, target: str, directory: str = "") -> dict:
                       "text": ("\n" if had and not had.endswith("\n") else "") + "\n".join(lines) + "\n"})
         where = f"your Claude Code sessions in {directory} (memory folder {folder})"
     version = _hash(json.dumps([files, [_read(f["path"]) for f in files]]))
-    return {"files": files, "where": where, "version": version}
+    return {"files": files, "where": where, "note": note, "version": version}
 
 
 def _hash(text: str) -> str:
