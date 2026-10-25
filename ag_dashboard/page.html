@@ -557,6 +557,15 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-sec > .fl-h { flex: none; }
 .files .fl-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
 .files .fl-sec > .fl-legend { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--ring); }
+/* under the commands, what runs in the background: a line, its tasks over the column while it is hovered */
+.files .fl-bg { flex: none; position: relative; display: flex; align-items: center; padding: 5px 12px; border-top: 1px solid var(--ring);
+  font-size: 11.5px; color: var(--ink-2); cursor: default; outline: 0; }
+.files .fl-bg:hover, .files .fl-bg:focus-visible { background: var(--wash); color: var(--ink); }
+.files .fl-bg > .mark { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin-right: 8px; }   /* the Background dot */
+.files .fl-bg > .bg-tasks { display: none; position: absolute; left: 6px; bottom: calc(100% + 4px); z-index: 5;
+  width: max-content; max-width: min(560px, calc(100vw - 48px)); padding: 8px 12px; border: 1px solid var(--ring); border-radius: 8px;
+  background: var(--surface); box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+.files .fl-bg:hover > .bg-tasks, .files .fl-bg:focus-within > .bg-tasks { display: block; }
 .files .fl-h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 10px 12px 4px; }
 .files .fl-dir { display: flex; align-items: center; gap: 4px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
   padding: 3px 12px; font: 11.5px var(--mono); color: var(--ink-2); text-align: left; cursor: pointer; }
@@ -1831,7 +1840,7 @@ function chatCard(info) {
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
   card.append(frame);
-  if (view.feed !== "none" && view.frame !== "term") { const note = backgroundNote(info); if (note) card.append(note); }
+  if (view.background) { const note = backgroundNote(info); if (note) card.append(note); }
   if (!writable) {
     if (!SNAPSHOT) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code and codex sessions with a known directory." }));
     card.append(...safely(() => view.footer && view.footer(ctx)));
@@ -2532,9 +2541,11 @@ function notesSwitch() {
 //                                       // them -- {row_id, type, at, parts: [{kind, role, text, ...}]};
 //                                       // "files", the turns and the picked turn's files (files.py);
 //                                       // or "none", for a view that is not the history (the Terminal)
-//     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own;
-//                                       // under any but "term", what runs in the background (backgroundNote) --
-//                                       // a "term" view draws it itself, with api.backgroundNote(ctx.info, true)
+//     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own
+//     background: true,                 // optional: what runs in the background (backgroundNote) under the frame;
+//                                       // false to draw it itself (api.backgroundNote(ctx.info), or (.., true) as a
+//                                       // terminal's status line) or not at all. By default, under any view of the
+//                                       // history but a "term" one
 //     tools(ctx) { return [nodes] },    // optional: controls in the page's header (filters, switches)
 //     render(ctx) { return node or [nodes] },
 //     composer(ctx) { return node },    // optional: the box to write the next message, under the frame;
@@ -2566,7 +2577,7 @@ function addChatView(view) {
   if (!view || typeof view.id !== "string" || typeof view.render !== "function")
     throw new Error("a chat view needs an id and a render(ctx)");
   if (!CHAT_FEEDS[view.feed || "history"]) throw new Error(`no feed ${view.feed}: one of ${Object.keys(CHAT_FEEDS).join(", ")}`);
-  CHAT_VIEWS.set(view.id, { name: view.id, feed: "history", ...view });
+  CHAT_VIEWS.set(view.id, { name: view.id, feed: "history", background: view.feed !== "none" && view.frame !== "term", ...view });
   if (state.home) { drawn.main = null; loadChat().then(() => render()); }
 }
 // What a view can draw from: each loads its data for the selected session, and says what it has.
@@ -2634,7 +2645,7 @@ addChatView({
   },
 });
 addChatView({
-  id: "context", name: "Context", feed: "agent", frame: "ctx",
+  id: "context", name: "Context", feed: "agent", frame: "ctx", background: false,   // the model's context, not what runs
   description: "What the model was sent: the picked call's context, item by item; its size over time and how it divides, under the message box.",
   tools: () => {
     const ctx = state.agent && state.agent.reads ? pickedContext() : null;
@@ -3033,12 +3044,21 @@ function filesRender({ info, running }) {
       legend(Object.values(FILE_KINDS))),
     el("section", { class: "fl-sec cmds-sec" },
       el("div", { class: "fl-h", text: plural(d.commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
-      legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])));
+      legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])),
+    filesBackground(info));
   // the file view only while a file is picked: the files and the conversation have the page until then
   const pane = sel ? el("div", { class: "fl-pane", "data-keep": "files-pane" }, fileView(sel, rel, `fl-${d.turn}-${d.files.indexOf(sel)}`)) : null;
   return el("div", { class: "fl-grid" + (sel ? " open" : "") }, side, pane, filesTalk(d, info, running));
 }
 let cmdsShown = null;
+// What runs in the background, under the commands: one line, the tasks themselves (backgroundNote) over
+// it while it is hovered or focused. Null when none runs.
+function filesBackground(info) {
+  const note = backgroundNote(info);
+  if (!note) return null;
+  return el("div", { class: "fl-bg", tabindex: "0" },
+    el("span", { class: "mark", "aria-hidden": "true" }), plural(info.background.length, "background task"), note);
+}
 // The conversation, at the right: each of the user's messages a turn, at the right, and under it the agent's:
 // its last message whole (a click folds it to its first line), the ones before it -- what it said on the way,
 // its thinking -- each folded to a line, the latest few shown and the earlier behind a click. The latest turns
@@ -3108,7 +3128,7 @@ function filesTalk(d, info, running) {
   return box;
 }
 addChatView({
-  id: "files", name: "Files", feed: "files", frame: "files",
+  id: "files", name: "Files", feed: "files", frame: "files", background: false,   // drawn under its commands
   description: "One turn at a time: the files the agent read, searched and changed, each with the lines it saw and its changes in place.",
   tools: filesTools,
   render: filesRender,
