@@ -648,6 +648,15 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
 .files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .files .fl-turn.on .fl-user .tx { -webkit-line-clamp: unset; }
+/* what was written while the turn ran, sent to the agent: stacked on its first message, over it a little -- one turn.
+   The ring, in the page's colour, keeps the edge of each it covers. */
+.files .fl-user.joined { position: relative; margin-top: -7px; box-shadow: 0 0 0 2px var(--surface); }
+/* written while it works, not sent yet: at the turn's end, faded, until Claude Code gives it to the agent */
+.files .fl-pending { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-top: 10px; }
+.files .fl-pending .fl-user { opacity: .55; cursor: default; }
+.files .fl-pending .fl-user:hover { background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 28%, transparent); }
+.files .fl-pending .lbl { color: var(--muted); font-size: 11.5px; margin-right: 4px; }
+.files .fl-user .tx.bang { font: .92em/var(--lh) var(--mono); }   /* a command the user ran with `!` */
 .files .fl-reply { margin: 4px 0 0 2px; color: var(--ink-2); overflow-wrap: anywhere; }
 .files .fl-reply > summary { display: flex; gap: 6px; margin: 0; font-size: inherit; cursor: pointer; list-style: none; }
 .files .fl-reply > summary::-webkit-details-marker { display: none; }
@@ -1846,7 +1855,16 @@ function renderAgents() {
 // working: ... This is how Claude Code surfaces messages ..."): just the message, for the list. The stored
 // message is left as it is.
 const MID_TURN = /^\s*The user sent a new message while you were working:\s*([\s\S]*?)\s*This is how Claude Code surfaces messages the user sends mid-turn\b[\s\S]*$/;
-const asked = (text) => { const m = text && MID_TURN.exec(text); return m && m[1] ? m[1] : text; };
+// A command the user ran with `!`, as Claude Code sends it ("<bash-input>ls -la</bash-input>", its output after it as
+// its own text): as the user typed it, "! ls -la". The closing tag may be cut off with the end of a long one.
+const BANG = /^\s*<bash-input>([\s\S]*?)(?:<\/bash-input>\s*)?$/;
+const asked = (text) => {
+  const b = text && BANG.exec(text);
+  if (b) return `! ${b[1].trim()}`;
+  const m = text && MID_TURN.exec(text); return m && m[1] ? m[1] : text;
+};
+// A user's message in a chat bubble: as asked() gives it, a `!` command in the terminal's type.
+const userWords = (text) => el("span", { class: "tx" + (text && BANG.test(text) ? " bang" : ""), text: asked(text) });
 function agentRow(g, a) {
   const [cls, label] = statusOf(a);
   const current = isAt(focusedActor(), g.name, a.channel);
@@ -2532,7 +2550,7 @@ function chatCard(info) {
   // its blocks, put in by patch(): a block kept from the last draw is still on the page, and is left there
   const blocks = frame.kids = safely(() => view.render(ctx), true);
   if (view.feed !== "none" && view.chat !== false) {  // a view that draws the history: what waits, or that there is none yet
-    for (const q of ctx.queued) blocks.push(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
+    if (view.queued !== false) for (const q of ctx.queued) blocks.push(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
     if (!data.items.length && !data.pending.length && !ctx.queued.length)
       blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation: run `ag dashboard` live to see it."
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
@@ -2559,14 +2577,25 @@ function chatCard(info) {
     if (!t || sending || held) return false;
     sending = true; err.textContent = "";
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
+    // shown at once, pending, until the session's own record of it shows (sentHere)
+    const mine = { key: key(...state.selected), text: t, base: heardCount(heard(info), t), at: Date.now() };
+    const box = document.getElementById("composer-text"), was = box ? box.value : "";
+    sentHere.push(mine);
+    if (box) box.value = "";
+    keepingPlace(renderMain); talkToEnd();
+    setTimeout(() => { if (sentHere.includes(mine)) keepingPlace(renderMain); }, UNSEEN_MS + 100);
     try {
       await post("/api/send", info.session ? { session_id: s.session_id, text: t }
         : { gatherer: state.selected[0], channel: state.selected[1], text: t });
-      const box = document.getElementById("composer-text"); if (box) box.value = "";
       if (state.paused || !state.stream) await refresh(); else { await loadChat(); render(); }
       chatToEnd();
       return true;
-    } catch (e) { err.textContent = e.message; return false; }
+    } catch (e) {
+      if (sentHere.includes(mine)) sentHere.splice(sentHere.indexOf(mine), 1);
+      const again = document.getElementById("composer-text"); if (again && !again.value) again.value = was;
+      keepingPlace(renderMain);
+      err.textContent = e.message; return false;
+    }
     finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = !!held; }
   };
   // The text box a composer is built around: Enter sends it, Shift+Enter starts a new line, and what is
@@ -3443,6 +3472,8 @@ function notesSwitch() {
 //     asking: false,                    // optional: false to draw what the agent waits on the user for, and the call
 //                                       // it stopped on, itself (api.askingNote(ctx.info), api.errorNote(ctx.info));
 //                                       // by default under the frame of a view of the history
+//     queued: false,                    // optional: false to draw what waits for the agent's turn to end
+//                                       // (ctx.queued) itself; by default listed after the view's blocks
 //     tools(ctx) { return [nodes] },    // optional: controls in the page's header (filters, switches)
 //     render(ctx) { return node or [nodes] },
 //     composer(ctx) { return node },    // optional: the box to write the next message, under the frame;
@@ -3777,7 +3808,7 @@ CHAT_FEEDS.files = {
   load: loadFiles,
   data: () => state.files && state.selected && state.files.key === key(...state.selected) && state.files.data
     ? { items: state.files.data.turns, pending: [], earlier: false } : null,
-  signature: () => state.files ? [state.files.key, state.files.turn, state.files.sel, signature(state.files.data)] : null,
+  signature: () => state.files ? [state.files.key, state.files.turn, state.files.sel, signature(state.files.data), sentHere.length] : null,
 };
 async function setFilesTurn(n) {
   if (!state.files || !state.files.data) return;
@@ -3932,7 +3963,10 @@ function filesRender({ info, running }) {
   const d = state.files && state.files.data;
   const asking = errorNote(info) || askingNote(info) || answeredNote(info);
   if (!d) return [el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" }), asking];
-  if (!d.turns.length) return asking ? [asking] : [];
+  if (!d.turns.length) {                             // the first message, sent from here: pending
+    const first = pendingTalk(info, heard(info));
+    return [first && el("div", { class: "fl-talk" }, el("div", { class: "fl-turn" }, first)), asking].filter(Boolean);
+  }
   // the view opened afresh (from another view, or the page's first draw): the conversation and the
   // commands start where they would for a new turn -- the commands at their end, the conversation at its end or at the turn picked
   if (!document.querySelector("#main .files .fl-grid")) cmdsShown = talkShown = null;
@@ -4054,9 +4088,45 @@ function filesBackground(info) {
 // its last message whole (a click folds it to its first line), the ones before it -- what it said on the way,
 // its thinking -- each folded to a line, the latest few shown and the earlier behind a + (and a − folds them again). The latest turns
 // shown, the earlier behind a click too. While the turn runs, what the agent is doing at its end, as the
-// Transcript's status line. Clicking a message shows its turn's files.
+// Transcript's status line. Clicking a message shows its turn's files. What the user wrote while a turn ran is
+// part of it: once sent to the agent (`more`; in the latest turn also Claude Code's queue, the agent's `typed`,
+// queued.py), stacked on its first message; until then, at the latest turn's end, faded and marked pending
+// (pendingTalk) -- as is a message sent from this page's box, from the moment it is sent.
 const MINOR_SHOWN = 2, TURNS_SHOWN = 3;
 let talkShown = null;
+// What the selected actor's own records say the user wrote: ag's stored messages (each turn's first, and what was written
+// while it ran), Claude Code's queue less what ag has stored since (the agent's `typed`, queued.py), and the dashboard
+// agent's queue (its session's `queued`).
+function heard(info) {
+  const d = state.files && state.selected && state.files.key === key(...state.selected) && state.files.data;
+  const stored = d ? d.turns.flatMap((t) => [t, ...(t.more || [])]) : [];
+  const typed = ((state.agent && state.selected && state.agent.channel === state.selected[1] && state.agent.typed) || [])
+    .filter((q) => !stored.some((m) => m.at >= (q.at || 0) - 1 && m.text.trim() === q.text.trim()));
+  return { stored, typed, queued: (info && info.session && info.session.queued) || [] };
+}
+// how many of them have these words: their start, as a stored message is clipped
+const sameWords = (a, b) => a.trim().slice(0, 200) === b.trim().slice(0, 200);
+const heardCount = (h, text) => [...h.stored, ...h.typed].filter((m) => sameWords(m.text, text)).length
+  + h.queued.filter((q) => sameWords(q, text)).length;
+// Messages sent from this page's box, each {key, text, base, at}: shown pending the moment it is sent, until the
+// actor's records hold one more message of its words than when it was sent (`base`) -- from then on, as they say.
+// One not seen for UNSEEN_MS says so.
+const sentHere = [], UNSEEN_MS = 15000;
+// What waits to reach the agent, at the latest turn's end, faded: sent from here and not seen yet; in Claude Code's
+// queue, or sent when a turn ended as the next one's first and not stored yet; in the dashboard agent's queue.
+function pendingTalk(info, h) {
+  const k = state.selected && key(...state.selected);
+  for (let i = sentHere.length - 1; i >= 0; i--)
+    if (sentHere[i].key === k && heardCount(h, sentHere[i].text) > sentHere[i].base) sentHere.splice(i, 1);
+  const mine = sentHere.filter((m) => m.key === k);
+  const list = [...h.typed.filter((q) => q.sent === null || !q.joins).map((q) => q.text), ...h.queued, ...mine.map((m) => m.text)];
+  if (!list.length) return null;
+  const unseen = mine.some((m) => Date.now() - m.at > UNSEEN_MS);
+  return el("div", { class: "fl-pending" }, ...list.map((text) =>
+    el("div", { class: "fl-user", title: "Written while it works: given to the agent at its next step" }, userWords(text))),
+    el("span", { class: "lbl", text: unseen ? "Pending · not seen by the session yet" : "Pending" }));
+}
+const talkToEnd = () => { const n = document.querySelector("#main .fl-talk"); if (n) n.scrollTop = n.scrollHeight; };
 // Show more of the conversation above where the reader is, keeping what they look at in place.
 function showMore(change) {
   const n = document.querySelector(".fl-talk"), below = n ? n.scrollHeight - n.scrollTop : 0;
@@ -4073,6 +4143,8 @@ function filesTalk(d, info, running) {
   const first = state.files.allTurns ? 0 : Math.max(0, Math.min(d.turn, d.turns.length - TURNS_SHOWN));
   if (first) box.append(el("button", { type: "button", class: "fl-earlier", title: "Show the conversation's earlier turns",
     onclick: () => showMore(() => { state.files.allTurns = true; }) }, `Show ${plural(first, "earlier turn")}`));
+  // what was written while it worked and sent as part of its turn, not yet stored by ag: stacked on its first message
+  const h = heard(info), joined = h.typed.filter((q) => q.sent !== null && q.joins);
   for (const t of d.turns.slice(first)) {
     const on = t.n === d.turn;
     const live = running && t.n === d.turns.length - 1;
@@ -4105,7 +4177,11 @@ function filesTalk(d, info, running) {
           if (sideFolded) foldSide(false, on);
           if (!on) setFilesTurn(t.n);
         } },
-        el("span", { class: "tx", text: t.text })),
+        userWords(t.text)),
+      ...[...(t.more || []), ...(t.n === d.turns.length - 1 ? joined : [])].map((m) =>
+        el("button", { type: "button", class: "fl-user joined", "aria-pressed": on ? "true" : "false",
+          title: "Written while it worked, and given to the agent in this turn", onclick: () => setFilesTurn(t.n) },
+          userWords(m.text))),
       before.length ? el("div", { class: "fl-minor" },
         extra ? el("button", { type: "button", class: "fl-more", "aria-expanded": hidden ? "false" : "true", onclick: toggle,
           title: hidden ? "Show everything the agent said and thought in this turn" : "Fold the earlier messages again" },
@@ -4116,7 +4192,8 @@ function filesTalk(d, info, running) {
       t.last ? el("div", { class: "fl-minor" }, lastCall(t, live, info ? statusOf(info)[0] : "")) : null,
       live ? el("div", { class: "fl-status", role: "status" }, el("span", { class: "spin", "aria-hidden": "true" }),
         el("span", { class: "tx", title: now, text: `${now} (last activity ${ago(info.last)})` }))
-        : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null));
+        : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null,
+      t.n === d.turns.length - 1 ? pendingTalk(info, h) : null));
   }
   const at = `${state.files && state.files.key}:${d.turn}`;
   if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick: the latest at its end
@@ -4146,6 +4223,7 @@ addChatView({
   id: "files", name: "Chat", feed: "files", frame: "files", icon: ICONS.bubble,
   background: false,                                 // drawn under its commands
   asking: false,                                     // drawn under its conversation, at the right
+  queued: false,                                     // what waits for the turn to end: at its conversation's end, pending
   description: "The conversation, and beside it each turn's files and commands: what the agent read, searched and changed, with the lines it saw and its changes in place.",
   tools: filesTools,
   render: filesRender,

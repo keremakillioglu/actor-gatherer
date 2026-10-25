@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag.ag_harness.store import schema  # noqa: E402
-from ag_dashboard import data, live  # noqa: E402
+from ag_dashboard import data, live, queued  # noqa: E402
 from test_dashboard_answers import GathererBase, event  # noqa: E402
 
 SESSION = "0e1d2c3b-0000-4000-8000-0000000000e1"
@@ -45,7 +45,7 @@ class ErrorsBase(GathererBase):
         self.addCleanup(env.stop)
         self.addCleanup(live.watch_records, {})
         self.addCleanup(live.wake_at, {})
-        data._NO_RECORD.clear()                                              # an earlier test's session had none
+        queued._NO_RECORD.clear()                                            # an earlier test's session had none
         self.cwd = "/work/my repo"
         self.record = os.path.join(self.config, "projects", "-work-my-repo", f"{SESSION}.jsonl")
         self.asked = time.time() - 300

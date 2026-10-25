@@ -7,7 +7,8 @@ database, opened read-only, and ag's own logs -- as plain JSON-ready dicts.
                                   the provider's, the harness's limit), its rebuilds, its
                                   tasks and how many had begun by each read, its builds,
                                   and the Gatherer's model calls made for it; and
-                                  every token it was sent across its calls, by kind
+                                  every token it was sent across its calls, by kind; and
+                                  what the user wrote to it as it worked (queued.py's `typed`)
     read(gatherer, read_id)       what one read put in the agent's context, by kind
     context(gatherer, read_id)    every item of it, in order, with its text
     history(gatherer, channel, a, b)  the agent's own events from row a to b: a task's messages
@@ -80,7 +81,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from . import home as paths
-from . import answers, avatars, hiding, live, sessions
+from . import answers, avatars, hiding, live, queued, sessions
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
@@ -370,7 +371,7 @@ def _agents(conn, now: float) -> List[dict]:
         a["turn_over"] = turn_over(conn, ch, tables)[0]
         a["status"] = status_of(a.get("alive"), a["turn_over"], a["last"], now)
         a["asking"] = asking(conn, ch, tables) if a["status"] == RUNNING else None
-        record = _claude_record(ch, a.get("cwd")) if a["asking"] and a["harness"] in ("claude", None) else None
+        record = queued.record(ch, a.get("cwd")) if a["asking"] and a["harness"] in ("claude", None) else None
         seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
         how = settled(ch, a.get("cwd"), a["asking"]["call"], record) if record else None
         if a["asking"] and not how and record:
@@ -383,7 +384,7 @@ def _agents(conn, now: float) -> List[dict]:
             a["status"] = ASKING
         a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
         claude = a["harness"] in ("claude", None)
-        record = (record or _claude_record(ch, a.get("cwd"))) if a["status"] == RUNNING and claude else None
+        record = (record or queued.record(ch, a.get("cwd"))) if a["status"] == RUNNING and claude else None
         seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
         a["stopped"] = stopped(record, a["last"]) if record else None
         if a["stopped"] and a["stopped"]["kind"] == "interrupted":
@@ -545,33 +546,10 @@ def stopped(path: str, since: Optional[float]) -> Optional[dict]:
     return None
 
 
-_NO_RECORD: Dict[str, float] = {}   # session -> when no record of it was found anywhere: not looked for again for a while
-NO_RECORD_SECONDS = 60
-
-
-def _claude_record(session: str, cwd: Optional[str]) -> Optional[str]:
-    """Claude Code's record of the session (CLAUDE_TAIL's note): under its directory's folder, else wherever it is
-    -- a search of every folder, not made again for NO_RECORD_SECONDS once it found none (asked on every update
-    of the page for each running agent: one of another machine has none)."""
-    config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
-    if cwd:
-        path = os.path.join(config, "projects", re.sub(r"[^A-Za-z0-9]", "-", cwd), f"{session}.jsonl")
-        if os.path.isfile(path):
-            return path
-    if time.time() - _NO_RECORD.get(session, 0) < NO_RECORD_SECONDS:
-        return None
-    found = glob.glob(os.path.join(glob.escape(config), "projects", "*", glob.escape(session) + ".jsonl"))
-    if not found:
-        if len(_NO_RECORD) > 1000:
-            _NO_RECORD.clear()
-        _NO_RECORD[session] = time.time()
-    return found[0] if found else None
-
-
 def settled(session: str, cwd: Optional[str], call: Optional[str], path: Optional[str] = None) -> Optional[str]:
     """How Claude Code's own record of the session (`path`, else found) says the call ended: "answered", "dismissed"
     (its result, then Claude Code's note that the user interrupted it: Esc), or None -- no result yet, or no record."""
-    path = (path or _claude_record(session, cwd)) if call else None
+    path = (path or queued.record(session, cwd)) if call else None
     if path is None:
         return None
     try:
@@ -858,7 +836,7 @@ def _settle_background(a: dict, now: float) -> None:
         if not known and (active is None or now - active > STALE_SECONDS):
             continue
         out.append({**t, "active": active})
-    record = _claude_record(a["channel"], a.get("cwd") or s.get("cwd")) \
+    record = queued.record(a["channel"], a.get("cwd") or s.get("cwd")) \
         if out and a.get("channel") and a.get("harness") in ("claude", None) else None
     if record:                                       # ended since it started, as Claude Code's record says (`_ends`)
         seen, ends = _ends(record)
@@ -1034,8 +1012,10 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
     usage = _usage(conn, channel, tables)
     usage.update(calls=len(reads), real_tokens=sum(r["real_tokens"] or 0 for r in reads),
                  real_calls=sum(1 for r in reads if r["real_tokens"]))
-    return {"gatherer": gatherer, "channel": channel, "harness": _harness(conn, channel), "reads": reads,
+    harness = _harness(conn, channel)
+    return {"gatherer": gatherer, "channel": channel, "harness": harness, "reads": reads,
             "pending": _pending(conn, channel, tables),
+            "typed": queued.typed(channel) if harness in ("claude", None) else [],
             "after_read": _after_read(conn, channel, tables, reads[-1]["row_id"] if reads else None),
             "tasks": tasks, "builds": builds,
             "checks": checks, "rebuilds": sum(1 for r in reads if r["rebuild"]), "llm": _llm_summary(mine), "usage": usage,

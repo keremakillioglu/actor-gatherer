@@ -78,6 +78,12 @@ class Hub:
         with self.lock:
             self.watches.discard(w)
 
+    def shown(self) -> set:
+        """The actors the open streams show: {(gatherer, channel)}, the gatherer as ag names its directory."""
+        with self.lock:
+            watches = list(self.watches)
+        return {(w.gatherer, w.channel) for w in watches if w.gatherer and w.channel} | {a for w in watches for a in w.also}
+
     def ring(self, gatherer: Optional[str], channel: Optional[str] = None, what: str = "") -> None:
         """Something of `gatherer` changed (None: unknown, every gatherer), for `channel` (None:
         unknown, every channel): every stream's home, and the streams watching it."""
