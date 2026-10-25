@@ -2577,7 +2577,8 @@ const CHAT_VIEW_KEY = "ag-dashboard-chat-view";
 let chatViewId = (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "transcript"; } catch (e) { return "transcript"; } })();
 const chatView = () => CHAT_VIEWS.get(chatViewId) || CHAT_VIEWS.get("transcript");
 async function setChatView(id) {
-  if (id === "history" && chatViewId !== "history") hist.askedFor = null;   // opened again: its actor may be built again
+  if (id === "history" && chatViewId !== "history") hist.askedFor = hist.grain = hist.stay = null;   // opened again: built again
+                                                     // if due, and at its tasks if it has them
   chatViewId = id;
   try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
   await loadChat();
@@ -3115,7 +3116,6 @@ addChatView({
 // given to the Gatherer's model to summarize, or to make a memory or a skill of, with what the reader asks
 // of it; what the model made is listed at the right, kept by the server (<home>/dashboard/extracts/).
 // What is picked is the gatherer's: it stays picked across its actors, and across the grains.
-const HIST_KEY = "ag-dashboard-history";
 const HIST_GRAINS = [["tasks", "Tasks"], ["turns", "Turns"]];         // a turn opens to its messages
 const HIST_LEVEL = { actors: 0, tasks: 1, turns: 2, messages: 3, actor: 0, task: 1, turn: 2, message: 3 };
 const HIST_KINDS = { summary: ["Summarize", "Summary", "summary.md"], memory: ["Generate memory", "Memory", "memory.md"],
@@ -3123,15 +3123,12 @@ const HIST_KINDS = { summary: ["Summarize", "Summary", "summary.md"], memory: ["
 HIST_KINDS.claude = ["", "CLAUDE.md", "CLAUDE.md"];      // one made before AGENTS.md: shown, not offered
 const HIST_PAGES = 10;                              // the pages of history.py's OUTLINE_ITEMS loaded at once
 const HIST_SHOWN = 2000;                            // the rows drawn before "show more"
-const hist = (() => {
-  let kept = {};
-  try { kept = JSON.parse(localStorage.getItem(HIST_KEY)) || {}; } catch (e) { /* none kept */ }
-  return { grain: HIST_GRAINS.some(([g]) => g === kept.grain) ? kept.grain : null,
-    q: "", hits: null, hitsMore: false, open: new Set(), shut: new Set(), sel: new Map(), selFor: null, last: null,
-    ask: "", err: "", busy: false, full: new Map(), recs: { gatherer: null, list: [], at: 0 }, recOpen: null, limit: HIST_SHOWN,
-    byId: new Map(), flat: [], tops: [], version: 0 };
-})();
-const keepHist = () => { try { localStorage.setItem(HIST_KEY, JSON.stringify({ grain: hist.grain })); } catch (e) { /* this page only */ } };
+// `grain`: the reader's pick of Tasks or Turns for the actor shown, null until they pick: an actor opens at its tasks
+// when it has them, else at its turns.
+const hist = { grain: null,
+  q: "", hits: null, hitsMore: false, open: new Set(), shut: new Set(), sel: new Map(), selFor: null, last: null,
+  ask: "", err: "", busy: false, full: new Map(), recs: { gatherer: null, list: [], at: 0 }, recOpen: null, limit: HIST_SHOWN,
+  byId: new Map(), flat: [], tops: [], version: 0 };
 const enc = encodeURIComponent;
 const histKey = () => state.selected ? key(...state.selected) : null;
 // The history's events, light (history.outline): all at first, a page at a time, then each time only those
@@ -3144,9 +3141,11 @@ function loadOutline() {
 async function loadOutlineNow() {
   if (!state.selected || SNAPSHOT) return;
   const [g, c] = state.selected, k = histKey();
-  if (!state.hist || state.hist.key !== k)
+  if (!state.hist || state.hist.key !== k) {
     state.hist = { key: k, gatherer: g, channel: c, events: [], tasks: [], builds: {}, last: 0, more: false,
       error: "", version: 0 };
+    hist.grain = hist.stay = null;                   // another actor: at its tasks if it has them
+  }
   const h = state.hist;
   for (let page = 0; page < HIST_PAGES; page++) {
     let got;
@@ -3459,7 +3458,7 @@ async function runHistSearch() {
   hist.version++;
   histRedraw();
 }
-function setHistGrain(grain) { hist.grain = grain; hist.stay = null; hist.limit = HIST_SHOWN; keepHist(); hist.version++; histRedraw(); }
+function setHistGrain(grain) { hist.grain = grain; hist.stay = null; hist.limit = HIST_SHOWN; hist.version++; histRedraw(); }
 // `text` with each match of `q` marked.
 function histMark(text, q, cls = "h-hit") {
   const out = el("div", { class: cls });
