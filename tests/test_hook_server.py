@@ -171,6 +171,29 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((path, status), ("/v1/chat", 200))
         self.assertEqual(answer["output_items"], [])                                 # not a model's answer: nothing in it
 
+    async def test_before_end_gets_the_answer_before_answered(self):
+        class Ending(ToyHook):
+            async def __call__(self, request):
+                request.state["kept"] = True
+                return await super().__call__(request)
+
+            async def before_end(self, request, status, answer):
+                self.order.append(("before_end", status, request.answer_started is not None))
+
+            async def answered(self, request, status, answer):
+                self.order.append(("answered", status))
+
+        hook = Ending()
+        hook.order = []
+        client = TestClient(TestServer(hook_server.make_app(str(self.upstream.make_url("")).rstrip("/"), hook)))
+        await client.start_server()
+        try:
+            resp = await client.post("/v1/chat", json={"messages": ["hi"]})
+            self.assertEqual(await resp.read(), STREAM)
+        finally:
+            await client.close()
+        self.assertEqual(hook.order, [("before_end", 200, True), ("answered", 200)])   # when the answer began: known
+
     async def test_the_hook_is_closed_with_the_server(self):
         await self.client.close()
         self.assertTrue(self.hook.closed)

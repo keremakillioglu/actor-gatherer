@@ -632,7 +632,11 @@ button:disabled { opacity: .5; cursor: default; }
   width: max-content; max-width: min(560px, calc(100vw - 48px)); padding: 8px 12px; border: 1px solid var(--ring); border-radius: 8px;
   background: var(--surface); box-shadow: 0 4px 16px rgba(0,0,0,.12); }
 .files .fl-bg:hover > .bg-tasks, .files .fl-bg:focus-within > .bg-tasks { display: block; }
-.files .fl-h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 10px 12px 4px; }
+.files .fl-h { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); padding: 10px 12px 4px; }
+.files .fl-h .tmp { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0;
+  font-size: 11.5px; cursor: pointer; }
+.files .fl-h .tmp:hover { color: var(--ink-2); } .files .fl-h .tmp input { margin: 0; }
 .files .fl-dir { display: flex; align-items: center; gap: 4px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
   padding: 3px 12px; font: 11.5px var(--mono); color: var(--ink-2); text-align: left; cursor: pointer; }
 .files .fl-dir:hover { background: var(--wash); }
@@ -676,6 +680,7 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fv-call .kinds { flex: none; display: flex; gap: 3px; align-self: center; }
 .files .fv-call .via { flex: 1; min-width: 0; color: var(--ink-2); font-weight: 500; overflow-wrap: anywhere; }
 .files .fv-call .what { flex: none; color: var(--muted); font-size: 11.5px; }
+.files .fv-call .what .chk { color: var(--good); } .files .fv-call .what .chk.off { color: var(--critical); }
 .files .fv-call.err .what { color: var(--critical); }
 .files .fv-cmd { margin: 0 16px 2px 58px; } .files .fv-cmd > summary { margin: 0; font-size: 11.5px; color: var(--muted); cursor: pointer; }
 .files .fv-cmd pre.call { margin: 4px 0; }
@@ -3232,7 +3237,10 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
 // lines it saw at their numbers and its changes in place among them (files.py); the commands that were
 // not just reading a file listed under them. One turn at a time: the latest, followed, unless one is picked.
 const FILE_KINDS = { read: ["read", "var(--s1)"], hit: ["search hit", "var(--s4)"], edit: ["edited", "var(--s2)"],
-  write: ["written", "var(--s3)"] };
+  write: ["written", "var(--s3)"], delete: ["deleted", "var(--critical)"] };
+// What the disk said of a call, where ag's hook server checked it as it ran (files.py's `checked`)
+const CHECKED = { true: ["checked", "What the call showed of this file matched the file on disk right after it ran"],
+  false: ["not as on disk", "What the call showed of this file did not match the file on disk right after it ran"] };
 let filesLoading = Promise.resolve();
 function loadFiles() {
   filesLoading = filesLoading.then(loadFilesNow, loadFilesNow);
@@ -3263,6 +3271,21 @@ async function setFilesTurn(n) {
   await loadFiles();
   keepingPlace(renderMain);
 }
+// The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched
+// only them: hidden until asked for, the choice kept in this browser.
+const TMP_KEY = "ag-dashboard-files-tmp";
+let showTmp = (() => { try { return localStorage.getItem(TMP_KEY) === "1"; } catch (e) { return false; } })();
+function tmpSwitch(n) {
+  const box = el("input", { type: "checkbox" });
+  box.checked = showTmp;
+  box.addEventListener("change", () => {
+    showTmp = box.checked;
+    try { localStorage.setItem(TMP_KEY, showTmp ? "1" : "0"); } catch (e) { /* this page only */ }
+    keepingPlace(renderMain);
+  });
+  return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched only them" },
+    box, `tmp (${n})`);
+}
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
   const d = state.files && state.files.data;
@@ -3288,7 +3311,9 @@ function fileView(f, rel, id) {
       el("summary", {}, el("span", { class: "tw", text: "▸" }), el("span", { class: "k", text: `${i + 1}` }),
         el("span", { class: "kinds" }, ...s.kinds.map((k) => el("i", { class: "fb", style: `background: ${(FILE_KINDS[k] || [k, "var(--muted)"])[1]}` }))),
         el("span", { class: "via", text: firstLine(s.via, 160) }),
-        el("span", { class: "what", text: kinds.join(", ") + (s.error ? " · failed" : "") })),
+        el("span", { class: "what", text: kinds.join(", ") + (s.error ? " · failed" : "") },
+          CHECKED[s.checked] ? el("span", { class: "chk" + (s.checked ? "" : " off"), title: CHECKED[s.checked][1],
+            text: " · " + CHECKED[s.checked][0] }) : null)),
       el("details", { class: "fv-cmd", id: `${id}-s${i}-c` }, el("summary", { text: "command" }), el("pre", { class: "call", text: callText(s.call) })),
       code));
   });
@@ -3352,8 +3377,11 @@ function filesRender({ info, running }) {
   const list = el("div", { class: "fl-scroll", "data-keep": "files-list" });
   // the files as a tree of their folders: a folder with one child folder and no files shown as one
   // ("ag_dashboard/vendor/"), each folder folded or opened (opened unless folded by a click)
+  const files = d.files.filter((f) => showTmp || !f.temporary);
+  const tmpFiles = d.files.filter((f) => f.temporary).length;
+  const commands = d.commands.map((c, i) => [c, i]).filter(([c]) => showTmp || !c.temporary);   // each with its index: its id
   const root = { dirs: new Map(), files: [] };
-  for (const f of d.files) {
+  for (const f of files) {
     const parts = rel(f.path).split("/"), name = parts.pop();
     let node = root;
     parts.forEach((p, i) => {
@@ -3388,17 +3416,18 @@ function filesRender({ info, running }) {
     for (const [f, name] of node.files.sort((x, y) => x[1].localeCompare(y[1]))) into.append(fileRow(f, name, depth));
   };
   grow(root, list, 0);
-  if (!d.files.length) list.append(el("div", { class: "fv-note", text: running && d.turn === d.turns.length - 1
-    ? "No files yet in this turn." : "The agent touched no files in this turn." }));
+  if (!files.length) list.append(el("div", { class: "fv-note", text: tmpFiles ? `Only ${plural(tmpFiles, "file")} in temporary folders.`
+    : running && d.turn === d.turns.length - 1 ? "No files yet in this turn." : "The agent touched no files in this turn." }));
   // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one)
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
-  d.commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
+  commands.forEach(([c, i]) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
     el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), firstLine(c.text, 140)),
       (c.files || []).length ? el("div", { class: "fl-cmd-files" }, ...c.files.map((p) => el("button", { type: "button", title: p,
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, rel(p).split("/").pop()))) : null,
       el("pre", { class: "call", text: callText(c.call) }), c.output ? el("pre", { class: "out", text: c.output }) : null))));
-  if (!d.commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
+  if (!commands.length) cmds.append(el("div", { class: "fv-note", text: d.commands.length ? "Only commands in temporary folders."
+    : "No commands in this turn." }));
   const shown = `${state.files.key}:${d.turn}`;
   if (cmdsShown !== shown && state.files.turn === null) requestAnimationFrame(() => {   // once per turn: at its end
     const n = document.querySelector(`[data-keep="files-cmds-${d.turn}"]`);
@@ -3409,13 +3438,14 @@ function filesRender({ info, running }) {
   // two sections, each its own size and scrolling, each with the legend of its colours
   const legend = (pairs) => el("div", { class: "fl-legend" }, ...pairs.map(([name, color]) =>
     el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
-  const failed = d.commands.filter((c) => c.error).length;
+  const failed = commands.filter(([c]) => c.error).length;
   const side = el("div", { class: "fl-side" },
     el("section", { class: "fl-sec files-sec" },
-      el("div", { class: "fl-h", text: d.files.length ? plural(d.files.length, "file") : "No files" }), list,
+      el("div", { class: "fl-h" }, el("span", { text: files.length ? plural(files.length, "file") : "No files" }),
+        tmpFiles || d.commands.some((c) => c.temporary) ? tmpSwitch(tmpFiles) : null), list,
       legend(Object.values(FILE_KINDS))),
     el("section", { class: "fl-sec cmds-sec" },
-      el("div", { class: "fl-h", text: plural(d.commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
+      el("div", { class: "fl-h", text: plural(commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
       legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])),
     filesBackground(info));
   // the file view only while a file is picked: the files and the conversation have the page until then

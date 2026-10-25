@@ -50,7 +50,7 @@ them: only `messages` is the context manager's. Options: `adaptor` (module:Class
 `path`, as the codex hook takes them; `system_messages`: how the adaptor sends system messages back
 (ClaudeAdaptor), "keep" or "user" for every request, or "auto" (the default): "user" for a Gemini
 model (whose gateway moves system messages into its system instruction), else "keep"; `count`:
-"on" (the default), "check" or "off" -- see Counting.
+"on" (the default), "check" or "off" -- see Counting; `files`: "on" (the default) or "off" -- see Files.
 
 Counting (counting.py). ag's own count of a context is not Claude's: Claude's tokenizer makes about
 half as many tokens again of the same text, and the thinking Claude Code sends back (encrypted) is
@@ -65,6 +65,13 @@ context read again, so the policy, seeing it, switches to a build or makes one. 
 thinking from before the switch is not sent (counting.py says why). Tool search itself, a server
 tool, cannot be counted and is left out (the count then differs from the call's by a few dozen
 tokens); an upstream that cannot count is not asked again.
+
+Files (ag/integrations/tools/ag_orchestrator/file_touches/). With `files` "on", what each of the session's tool calls
+did to files is found on disk as they run, and kept in the gatherer (the server's `touches`) for the
+dashboard's Files view: once an answer is back whole, before Claude Code has its end (`before_end`),
+the files its calls name are looked at; once their results come in, with the session's next call,
+the files are looked at again, and the changes the operating system reported under the session's
+directory taken -- in the background, the call not held up.
 """
 
 import copy
@@ -72,6 +79,7 @@ import json
 import os
 import re
 import sys
+import time
 from typing import Callable, Optional, Tuple, Union
 
 from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
@@ -80,6 +88,7 @@ from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.hook_server.hook_server import Answer
 from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, pending_ag, preamble_of, report_measured
+from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
 from ..adaptor.to_events import Continuity, blocks_of
@@ -95,6 +104,7 @@ RECAP = "The user stepped away and is coming back."   # how Claude Code's away r
 COMPACTION = "CRITICAL: Respond with TEXT ONLY"  # how Claude Code's compaction call asks for its summary
 ANSWERED = "claude_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
 RECAPPED = "claude_recap"      # the same, for a recap: (gatherer, session), its answer kept as the session's recap
+FILES = "claude_files"         # the same, for what the answer's calls do to files: (gatherer, session, cwd, since)
 COUNT_FROM = 0.5            # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
@@ -201,12 +211,14 @@ class ClaudeContextManager:
             "user" -- the adaptor's setting for a request (see ClaudeAdaptor).
         count: "on" (a context near its budget counted before it is sent, and every call's new
             events after it is), "check" (only the first), or "off".
+        files: "on" (what each tool call did to files, found on disk -- see Files) or "off".
         log: (gatherer, line) -> None, for what each model call came to.
     """
 
     def __init__(self, cwd: Optional[str] = None, factory: Optional[str] = None, path: Optional[str] = None,
                  ag_clients: Optional[AgClients] = None, log: Callable[[str, str], None] = _print,
-                 adaptor: Union[Adaptor, str, None] = None, system_messages: str = "auto", count: str = "on"):
+                 adaptor: Union[Adaptor, str, None] = None, system_messages: str = "auto", count: str = "on",
+                 files: str = "on"):
         args = (["--factory", factory] if factory else []) + \
             [x for p in (path.split(os.pathsep) if path else []) for x in ("--path", p)]
         self.ag_clients = ag_clients or AgClients(lambda gatherer: AgClient("claude", args=args))
@@ -219,6 +231,9 @@ class ClaudeContextManager:
             raise ValueError(f"count: {count!r}, not on, check or off")
         self.counter = Counter(enabled=count != "off", log=log)
         self.count_events = count == "on"
+        if files not in ("on", "off"):
+            raise ValueError(f"files: {files!r}, not on or off")
+        self.files = Files(self.ag_clients, log) if files == "on" else None
         self.adaptors = {}                                  # one per mode: requests run concurrently
         self.continuity = {}                                # (gatherer, channel) -> its Continuity (to_events.py)
         for mode in ("keep", "user"):
@@ -227,7 +242,7 @@ class ClaudeContextManager:
             self.adaptors[mode] = a
 
     async def __call__(self, request) -> Optional[dict]:
-        body = request.body
+        body, since = request.body, time.time()
         if not is_model_call(request.method, request.path, body) or is_subagent(request.headers):
             return None
         session = session_of(request.headers, body)
@@ -264,6 +279,10 @@ class ClaudeContextManager:
         cwd = cwd_of(messages) or self.cwd
         if isinstance(getattr(request, "state", None), dict):
             request.state[ANSWERED] = (gatherer, channel, cwd)
+            if self.files is not None:
+                request.state[FILES] = (gatherer, channel, cwd, since)
+        if self.files is not None:                         # the results of the last answer's calls: checked
+            self.files.arrived(gatherer, channel, cwd, messages)
 
         async def read():
             out = {}
@@ -336,6 +355,17 @@ class ClaudeContextManager:
         """The hook server's report, once the answer is back: the call's input tokens, to the read."""
         await report_measured(self.ag_clients, request, tokens)
 
+    async def before_end(self, request, status: int, answer: dict) -> None:
+        """The hook server's report, once the answer to one of the session's own calls is back whole and
+        before Claude Code has its end -- before it runs the tools the answer calls: the files they
+        name, looked at as they are (Files)."""
+        kept = (getattr(request, "state", None) or {}).get(FILES)
+        if kept is None or self.files is None or status != 200 or not isinstance(answer, dict) or answer.get("error"):
+            return
+        gatherer, channel, cwd, since = kept              # the answer's calls can't have run before it began
+        self.files.started(gatherer, channel, cwd, answer.get("output_items") or [],
+                           getattr(request, "answer_started", None) or since)
+
     async def answered(self, request, status: int, answer: dict) -> None:
         """The hook server's report, once Claude Code has the whole answer to one of the session's
         own calls: the answer's events kept as pending (the server's `pending`) until the channel's
@@ -376,6 +406,8 @@ class ClaudeContextManager:
                                                      and not got.get("error") else f"not kept: {got}"))
 
     async def close(self) -> None:
-        """Let counts still being taken finish, then stop every gatherer's server."""
+        """Let counts and file checks still under way finish, then stop every gatherer's server."""
         await self.counter.close()
+        if self.files is not None:
+            await self.files.close()
         await self.ag_clients.close()

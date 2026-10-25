@@ -204,6 +204,49 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(files.image("g", b["row_id"], "i1"), ("image/png", b"\x89PNG\r\n\x1a\n"))
         self.assertIsNone(files.image("g", b["row_id"], "other"))       # another call's: not this one
 
+    def test_a_call_checked_on_disk_is_shown_as_found_there(self):
+        conn = sqlite3.connect(self.db)
+        conn.execute("CREATE TABLE _touches (touch_id INTEGER PRIMARY KEY, session TEXT, call_id TEXT, at TEXT, path TEXT, "
+                     "how TEXT, checked INTEGER, named INTEGER, detail_json TEXT)")
+        for call_id, path, how, checked, named, detail in [
+                ("b1", "/w/a.py", "read", 0, 1, {"lines": [[4, ["def g():", "    return 2"]]]}),
+                ("e2", "/w/b.py", "modified", None, 1, {"hunks": [{"at": 7, "old": ["x = 1"], "new": ["x = 2"],
+                                                                   "above": [[6, "y = 0"]], "below": []}]}),
+                ("p1", "/w/a.py", "modified", None, 1, {}),
+                ("p1", "/w/out.txt", "created", None, 0, {"lines": ["made"]}),
+                ("t1", None, None, None, None, None)]:
+            conn.execute("INSERT INTO _touches (session, call_id, at, path, how, checked, named, detail_json) "
+                         "VALUES ('c1', ?, '', ?, ?, ?, ?, ?)", (call_id, path, how, checked, named,
+                                                                 None if detail is None else json.dumps(detail)))
+        conn.commit()
+        conn.close()
+        got = files.files("g", "c1", 1, cwd="/w")
+        by = {f["path"]: f for f in got["files"]}
+        read, edit, script = by["/w/a.py"]["sources"]
+        self.assertEqual((read["checked"], read["blocks"][0]["start"]), (False, 4))      # not as on disk
+        self.assertEqual(script["blocks"][0]["t"], "note")                               # changed, lines unknown
+        diff, = by["/w/b.py"]["sources"][0]["blocks"]
+        self.assertEqual((diff["at"], diff["new"]), (7, ["x = 2"]))                     # where the file says
+        out = by["/w/out.txt"]
+        self.assertEqual((out["kinds"], out["created"], out["sources"][0].get("unnamed")), (["write"], True, True))
+        self.assertEqual(out["sources"][0]["blocks"][0]["text"], "changed while this ran; the call doesn't name it")
+        self.assertIn(("Run the tests", []), [(c["text"], c["files"]) for c in got["commands"]])
+
+    def test_matches_of_files_searched_one_after_another_are_not_guessed(self):
+        self.add(asked("find them"), call("g1", "Bash", {"command": "grep -n f a.py; grep -n x b.py"}), result("g1", "1:def f():\n7:x = 1"))
+        got = files.files("g", "c1", 2, cwd="/w")
+        for f in got["files"]:
+            self.assertEqual([b["t"] for b in f["sources"][0]["blocks"]], ["note"])
+
+    def test_files_in_temporary_folders_and_commands_touching_only_them_are_marked(self):
+        tmp = os.path.join(files.TEMPORARY[0], "scratch", "x.txt")
+        self.add(asked("scratch"), call("s1", "Bash", {"command": f"cat {tmp}", "description": "Read scratch"}), result("s1", "hi"),
+                 call("s2", "Bash", {"command": f"cat {tmp}; sed -n 1p a.py", "description": "Both"}), result("s2", "hi\ndef f():"))
+        got = files.files("g", "c1", 2, cwd="/w")
+        self.assertEqual({f["path"]: f["temporary"] for f in got["files"]}, {tmp: True, "/w/a.py": False})
+        self.assertEqual([(c["text"], c["temporary"]) for c in got["commands"]], [("Read scratch", True), ("Both", False)])
+        self.assertTrue(files.temporary("/tmp/x") and files.temporary("/private/tmp/x") and not files.temporary("/tmpx/y"))
+
     def test_every_call_is_listed_in_order_with_its_files(self):
         cmds = files.files("g", "c1", 1, cwd="/w")["commands"]
         self.assertEqual([(c["text"], c["error"], c["files"]) for c in cmds], [
