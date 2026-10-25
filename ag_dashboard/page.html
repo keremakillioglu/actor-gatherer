@@ -131,6 +131,7 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
   background: var(--wash); border-radius: 999px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .gatherer-row .count i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); display: inline-block; }
 .gatherer-row .count.asking i { background: var(--warning); }
+.gatherer-row .count.error i { background: var(--critical); }
 .gatherer-row .act { border: 0; border-radius: 6px; background: none; color: var(--muted); padding: 0 8px; margin: 2px 0; line-height: 1;
   display: inline-flex; align-items: center; }
 .gatherer-row .act:last-child { margin-right: 8px; }
@@ -172,6 +173,8 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .meta .dot.running::before { content: "✻"; animation: term-spin 1.2s steps(1) infinite; animation-delay: var(--spin-at, 0s); }
 /* its turn waits on the user: a question asked, a plan to approve, in its terminal */
 .agent .meta .dot.asking, .status.asking i { background: var(--warning); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 35%, transparent); }
+/* its turn stopped on an error: its call to the model failed, and it gave up */
+.agent .meta .dot.error, .status.error i { background: var(--critical); box-shadow: 0 0 0 2px color-mix(in srgb, var(--critical) 30%, transparent); }
 /* its turn over, but something it started still runs: Running's colour, holding still */
 .agent .meta .dot.background, .status.background i { background: var(--good); }
 /* what it runs in the background, under its facts: how many, and what they are for */
@@ -558,6 +561,13 @@ button:disabled { opacity: .5; cursor: default; }
 .asking-note.answered { border-color: color-mix(in srgb, var(--critical) 55%, var(--ring)); }
 .asking-note.answered .pill { background: color-mix(in srgb, var(--critical) 16%, var(--surface)); }
 .asking-note.answered .pill i { background: var(--critical); }
+/* the call the turn stopped on, or keeps failing on (errorNote) */
+.asking-note.error-note { border-color: color-mix(in srgb, var(--critical) 55%, var(--ring)); }
+.asking-note.error-note .pill { background: color-mix(in srgb, var(--critical) 16%, var(--surface)); }
+.asking-note.error-note .pill i { background: var(--critical); }
+.asking-note.error-note.retrying .pill i { animation: term-blink 1s steps(2) infinite; }
+.asking-note.error-note .why { color: var(--ink); overflow-wrap: anywhere; }
+.asking-note.error-note .hint { margin-top: 6px; color: var(--ink-2); }
 .asking-note .pair { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; }
 .asking-note .pair .k { color: var(--muted); }
 .asking-note .pair .v { color: var(--ink); }
@@ -702,6 +712,26 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-status .spin { flex: none; }
 .files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ring); }
+/* the files and commands folded: a thin bar of their numbers, opened again by a click */
+.files .fl-grid.folded { grid-template-columns: 30px minmax(0, 1fr); }
+.files .fl-grid.folded.open { grid-template-columns: 30px minmax(0, 1fr) minmax(240px, 340px); }
+.files .fl-bar { display: flex; flex-direction: column; align-items: center; gap: 14px; min-width: 0; min-height: 0; overflow: hidden;
+  margin: 0; padding: 10px 0; background: none; border: 0; border-right: 1px solid var(--ring); border-radius: 0;
+  font: 10.5px var(--mono); color: var(--muted); cursor: pointer; }
+.files .fl-bar:hover, .files .fl-bar:focus-visible { background: var(--wash); color: var(--ink-2); }
+.files .fl-bar > svg { flex: none; color: var(--ink-2); }
+.files .fl-bar .it { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.files .fl-bar .sub { display: inline-flex; align-items: center; gap: 2px; }
+.files .fl-bar .g { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+.files .fl-bar .g.ok { background: var(--good); } .files .fl-bar .sub.ok { color: var(--ink-2); }
+.files .fl-bar .g.err { background: var(--critical); } .files .fl-bar .sub.err { color: var(--critical); }
+.files .fl-bar .g.run { background: var(--warning); animation: term-blink 1s steps(2) infinite; } .files .fl-bar .sub.run { color: var(--warning); }
+.files .fl-bar .it.bg { padding-top: 12px; border-top: 1px solid var(--ring); width: 18px; }   /* the background apart from the commands */
+.files .fl-bar .g.bg { width: 7px; height: 7px; background: var(--good); }   /* the Background dot */
+.files .fl-h .fold { flex: none; display: inline-flex; margin: -3px -4px -3px auto; padding: 3px; background: none; border: 0; border-radius: 4px;
+  color: var(--muted); cursor: pointer; }
+.files .fl-h .tmp + .fold { margin-left: 0; }
+.files .fl-h .fold:hover { background: var(--wash); color: var(--ink); }
 .files .fl-sec { display: flex; flex-direction: column; min-height: 0; }
 .files .fl-sec.files-sec { flex: 3 1 0; } .files .fl-sec.cmds-sec { flex: 2 1 0; border-top: 1px solid var(--ring); }
 .files .fl-sec > .fl-h { flex: none; }
@@ -802,10 +832,12 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fv-block .diff .del { background: color-mix(in srgb, var(--critical) 15%, transparent); }
 .files .fv-block .diff .ctx { color: var(--muted); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
-@media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; } }
+@media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .it.bg { width: auto; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid var(--ring); } }
 /* the same by the pane's width: one of several side by side is narrower than the window */
 @container pane (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
-@container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; } }
+@container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .it.bg { width: auto; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid var(--ring); } }
 /* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
@@ -1211,6 +1243,7 @@ const ICONS = {
   page: "M4.25 1.75h5l3 3v9a.5.5 0 0 1-.5.5h-7.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5zM9 1.75v3.25h3.25M5.75 8.25h4.5M5.75 11h4.5",
   layers: "M8 2.25l6 3-6 3-6-3zM2 8l6 3 6-3M2 10.75l6 3 6-3",
   panel: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM9.75 2.75v10.5",
+  sidebar: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM6.25 2.75v10.5",
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -1237,7 +1270,8 @@ async function closeSession(a) {
   catch (err) { setLive(`Not closed: ${err.message}`); }
 }
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; asking, its
-// turn waiting on the user (a question asked, a plan to approve, in its terminal), which shows before all else; a build
+// turn waiting on the user (a question asked, a plan to approve, in its terminal), which shows before all else; error,
+// its turn stopped on a model call that failed, given up on (data.py's `failing`, `stopped`), shown next; a build
 // running for it shows over the first, and one that stopped since the reader last looked shows Finished
 // until they do -- but not while something it started runs in the background: Background, its turn over
 // and not done. A server from before `status`: running or idle by `running`.
@@ -1245,6 +1279,7 @@ async function closeSession(a) {
 const sessionStatus = (s) => !s ? null : s.status === "starting" ? ["building", "Starting"]
   : s.status === "running" || (s.queued && s.queued.length) ? ["running", "Running"] : s.status === "failed" ? ["failed", "Failed"] : null;
 const statusOf = (a) => sessionStatus(a.session) || (a.status === "asking" ? ["asking", "Waiting for you"]
+  : a.status === "error" ? ["error", "Error"]
   : a.building ? ["building", "Building"]
   : (a.status ? a.status === "running" : a.running) ? ["running", "Running"]
   : a.status === "background" ? ["background", "Background"]
@@ -1737,16 +1772,18 @@ function renderAgents() {
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every gatherer is hidden." }));
   for (const g of shown) {
     const open = !collapsed.has(g.name);
-    // those waiting on the user first, then running, then those whose turn is over but something they started still runs, then finished
+    // those waiting on the user first, then those stopped on an error, then running, then those whose turn is over but something they
+    // started still runs, then finished
     // (not yet looked at), then idle, then closed; each in the order the data has them, newest created
     // first, so an actor stays in its place, and moves only between them -- but closed, the latest active
     // first: nothing moves there once closed
-    const groupOf = (a) => ({ "Waiting for you": "Waiting for you", Building: "Running", Running: "Running", Starting: "Running",
-      Background: "Background", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
-    const groups = ["Waiting for you", "Running", "Background", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
+    const groupOf = (a) => ({ "Waiting for you": "Waiting for you", Error: "Error", Failed: "Error", Building: "Running", Running: "Running",
+      Starting: "Running", Background: "Background", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
+    const groups = ["Waiting for you", "Error", "Running", "Background", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
       .filter(([, list]) => list.length);
     const live = g.agents.filter((a) => groupOf(a) === "Running").length;
     const waiting = g.agents.filter((a) => groupOf(a) === "Waiting for you").length;
+    const failed = g.agents.filter((a) => groupOf(a) === "Error").length;
     const box = el("div", { class: "gatherer" },
       el("div", { class: "gatherer-row", "data-key": g.name },
         el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name),
@@ -1754,10 +1791,12 @@ function renderAgents() {
           el("span", { class: "caret", text: "▶" }), el("span", { class: "gname", text: g.name })),
         el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
           hideIcon()),
-        // how many of its actors wait on the user, and how many run now; nothing while none does
+        // how many of its actors wait on the user, how many stopped on an error, and how many run now; nothing while none does
         el("span", { class: "fill", onclick: () => toggleGatherer(g.name) },
           waiting ? el("span", { class: "count asking", title: `${waiting} of ${plural(g.agents.length, "actor")} waiting for you` },
             el("i", { "aria-hidden": "true" }), String(waiting)) : null,
+          failed ? el("span", { class: "count error", title: `${failed} of ${plural(g.agents.length, "actor")} stopped on an error` },
+            el("i", { "aria-hidden": "true" }), String(failed)) : null,
           live ? el("span", { class: "count", title: `${live} of ${plural(g.agents.length, "actor")} running` },
             el("i", { "aria-hidden": "true" }), String(live)) : null),
         ...(SNAPSHOT ? [] : startButtons(g))));
@@ -2495,7 +2534,8 @@ function chatCard(info) {
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
   }
-  if (view.feed !== "none" && view.asking !== false) { const note = askingNote(info, !view.readOnly) || answeredNote(info); if (note) card.append(note); }   // the terminal shows it itself
+  if (view.feed !== "none" && view.asking !== false) {          // the terminal shows it itself
+    const note = errorNote(info) || askingNote(info, !view.readOnly) || answeredNote(info); if (note) card.append(note); }
   if (view.background) { const note = backgroundNote(info); if (note) card.append(note); }
   if (!writable) {
     if (!SNAPSHOT && !view.readOnly) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code and codex sessions with a known directory." }));
@@ -2691,6 +2731,42 @@ function answeredNote(info) {
     el("div", { class: "body" }, el("div", { class: "pair" },
       el("span", { class: "k", text: "You picked" }), el("span", { class: "v", text: a.summary }),
       el("span", { class: "k", text: "Claude Code recorded" }), el("span", { class: "v", text: a.result || "nothing" }))));
+}
+// The model call the agent's turn stopped on, or keeps failing on (data.py's `failing`, `stopped`): why, as ag's hook
+// server saw it and as Claude Code put it, and how many tries failed. While the harness tries again, that it does;
+// once it gave up, that a message tries again. Null while no call fails.
+function errorNote(info) {
+  const over = !!info && info.status === "error";
+  const f = info && (over || info.status === "running") ? info.failing : null;
+  const st = over ? info.stopped : null;
+  if (!f && !st) return null;
+  const who = info.harness ? harnessName(info.harness) : "The agent";
+  const why = f ? (f.status ? `The model's endpoint answered ${f.status}: ${f.error}` : `No answer from the model's endpoint: ${f.error}`)
+    : st.text || "Its call to the model failed.";
+  const hint = errorHint(f, st);
+  const tries = f ? `${f.attempts > 1 ? `${f.attempts} tries` : "1 try"} failed, the first ${ago(f.first)}` : null;
+  return el("div", { class: "asking-note error-note" + (over ? "" : " retrying"), role: over ? "alert" : "status" },
+    el("div", { class: "head" }, el("span", { class: "pill" }, el("i", { "aria-hidden": "true" }), over ? "Error" : "Retrying"),
+      el("span", { class: "what", text: over ? `${who} stopped: its call to the model failed` : `${who}'s call to the model failed` }),
+      el("span", { class: "ago", text: ago((f && f.at) || st.at) })),
+    el("div", { class: "body" }, el("div", { class: "why", text: why }), hint ? el("div", { class: "hint", text: hint }) : null,
+      st && st.text && f && !st.text.includes(f.error) ? el("div", { class: "pair", style: "margin-top: 8px" },   // only what it adds
+        el("span", { class: "k", text: `${who} said` }), el("span", { class: "v", text: st.text })) : null),
+    el("div", { class: "foot" }, el("span", { class: "say", text: [tries, over ? `${who} stopped trying. Send a message to try again.`
+      : f.retrying ? "Trying again now." : `${who} will try again.`].filter(Boolean).join(" · ") })));
+}
+// What an error likely means, where its words say: a lookup or a connection that failed, a limit, an overload.
+function errorHint(f, st) {
+  const text = `${(f && f.error) || ""} ${(st && st.text) || ""}`;
+  const status = (f && f.status) || (st && st.status);
+  if (/nodename nor servname|Name or service not known|Temporary failure in name resolution|getaddrinfo/i.test(text))
+    return "This machine couldn't look up the endpoint's address (DNS): check its network connection.";
+  if (/Connection refused|Connect call failed|ECONNREFUSED|Cannot connect to host 127\.0\.0\.1/i.test(text))
+    return "Nothing answered at the endpoint's address.";
+  if (status === 429 || /rate.?limit/i.test(text)) return "Rate limited: the harness waits and tries again.";
+  if (status === 529 || /overloaded/i.test(text)) return "The model's service is overloaded for now.";
+  if (status === 401 || status === 403) return "Not authorized: the harness may need to log in again.";
+  return null;
 }
 // The message box a view gets unless it brings its own: a text box and a Send button.
 function defaultComposer(ctx) {
@@ -3356,8 +3432,9 @@ function notesSwitch() {
 //                                       // false to draw it itself (api.backgroundNote(ctx.info), or (.., true) as a
 //                                       // terminal's status line) or not at all. By default, under any view of the
 //                                       // history but a "term" one
-//     asking: false,                    // optional: false to draw what the agent waits on the user for itself
-//                                       // (api.askingNote(ctx.info)); by default under the frame of a view of the history
+//     asking: false,                    // optional: false to draw what the agent waits on the user for, and the call
+//                                       // it stopped on, itself (api.askingNote(ctx.info), api.errorNote(ctx.info));
+//                                       // by default under the frame of a view of the history
 //     tools(ctx) { return [nodes] },    // optional: controls in the page's header (filters, switches)
 //     render(ctx) { return node or [nodes] },
 //     composer(ctx) { return node },    // optional: the box to write the next message, under the frame;
@@ -3445,7 +3522,8 @@ addChatView({
     return [
       data.earlier ? el("button", { type: "button", class: "earlier", onclick: loadEarlier }, "Load earlier messages") : null,
       ...transcriptBlocks([...data.items, ...data.pending], running, txBlocks),
-      running ? el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }), `Working… (last activity ${ago(info.last)})`) : null,
+      running ? el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }),
+        info.failing ? `Retrying… (last try ${ago(info.failing.at)})` : `Working… (last activity ${ago(info.last)})`) : null,
       backgroundNote(info, true),
     ].filter(Boolean);
   },
@@ -3735,6 +3813,32 @@ function tmpSwitch(n) {
   return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched only them" },
     box, `tmp (${n})`);
 }
+// The files and commands at the left, folded to a thin bar of what they hold by the button in their heading
+// or a click on the message of the turn they show, and opened again by a click on the bar or on a message:
+// the choice kept in this browser.
+const SIDE_KEY = "ag-dashboard-files-side-folded";
+let sideFolded = (() => { try { return localStorage.getItem(SIDE_KEY) === "1"; } catch (e) { return false; } })();
+function foldSide(fold, draw = true) {
+  sideFolded = fold;
+  try { localStorage.setItem(SIDE_KEY, fold ? "1" : "0"); } catch (e) { /* this page only */ }
+  if (draw) keepingPlace(renderMain);
+}
+// The bar: the number of files; of commands, by how they went, in the colours of the commands' dots; of tasks
+// in the background, apart under a line.
+function sideBar(files, cmds, info) {
+  const bg = (info.background || []).length, n = cmds.ok + cmds.err + cmds.run;
+  const how = [[cmds.ok, "ok", "passed"], [cmds.err, "err", "failed"], [cmds.run, "run", "running"]].filter(([k]) => k);
+  const said = [plural(files, "file"), plural(n, "command") + (how.length ? ": " + how.map(([k, , w]) => `${full(k)} ${w}`).join(", ") : ""),
+    bg ? plural(bg, "background task") : null].filter(Boolean).join(" · ");
+  const dot = (cls) => el("i", { class: "g " + cls, "aria-hidden": "true" });
+  return el("button", { type: "button", class: "fl-bar", title: `${said}. Show the files and commands`,
+    "aria-label": `Show the files and commands: ${said}`, onclick: () => foldSide(false) },
+    strokeIcon(ICONS.sidebar, 15),
+    el("span", { class: "it" }, strokeIcon(ICONS.page, 13), el("span", { text: full(files) })),
+    el("span", { class: "it" }, strokeIcon(ICONS.terminal, 13),
+      ...(how.length ? how.map(([k, cls]) => el("span", { class: "sub " + cls }, dot(cls), full(k))) : [el("span", { text: "0" })])),
+    bg ? el("span", { class: "it bg" }, dot("bg"), el("span", { text: full(bg) })) : null);
+}
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
   const d = state.files && state.files.data;
@@ -3818,7 +3922,7 @@ function fileBlock(b) {
 }
 function filesRender({ info, running }) {
   const d = state.files && state.files.data;
-  const asking = askingNote(info) || answeredNote(info);
+  const asking = errorNote(info) || askingNote(info) || answeredNote(info);
   if (!d) return [el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" }), asking];
   if (!d.turns.length) return asking ? [asking] : [];
   // the view opened afresh (from another view, or the page's first draw): the conversation and the
@@ -3908,11 +4012,14 @@ function filesRender({ info, running }) {
   const legend = (pairs) => el("div", { class: "fl-legend" }, ...pairs.map(([name, color]) =>
     el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
   const failed = commands.filter(([c]) => c.error).length;
-  const side = el("div", { class: "fl-side" },
+  const busy = commands.filter(([c]) => !c.error && c.running && running).length;
+  const side = sideFolded ? sideBar(files.length, { ok: commands.length - failed - busy, err: failed, run: busy }, info)
+    : el("div", { class: "fl-side" },
     el("section", { class: "fl-sec files-sec" },
-      el("div", { class: "fl-h" }, el("span", { text: (files.length ? plural(files.length, "file") : "No files")
-        + (kindHidden ? ` · ${kindHidden} left out` : "") }),
-        tmpFiles || d.commands.some((c) => c.temporary) ? tmpSwitch(tmpFiles) : null),
+      el("div", { class: "fl-h" }, el("span", { text: files.length ? plural(files.length, "file") : "No files" }),
+        tmpFiles || d.commands.some((c) => c.temporary) ? tmpSwitch(tmpFiles) : null,
+        el("button", { type: "button", class: "fold", title: "Fold the files and commands to a bar", "aria-label": "Fold the files and commands",
+          onclick: () => foldSide(true) }, strokeIcon(ICONS.sidebar, 14))),
       cwd ? el("div", { class: "fl-wd", title: cwd }, el("span", { text: "Working directory" }),
         el("span", { class: "p", text: under(cwd, home) ? "~" + cwd.slice(home.length) : cwd })) : null, list,
       kindSwitches()),
@@ -3923,7 +4030,7 @@ function filesRender({ info, running }) {
   // the file view only while a file is picked: the files and the conversation have the page until then
   const pane = sel ? el("div", { class: "fl-pane", "data-keep": "files-pane" }, fileView(sel, rel, `fl-${d.turn}-${d.files.indexOf(sel)}`)) : null;
   // patched in place to the note (data-morph): what is typed in it keeps its focus as the page draws again
-  return el("div", { class: "fl-grid" + (sel ? " open" : ""), "data-morph": "" }, side, pane,
+  return el("div", { class: "fl-grid" + (sel ? " open" : "") + (sideFolded ? " folded" : ""), "data-morph": "" }, side, pane,
     el("div", { class: "fl-right", "data-morph": "" }, filesTalk(d, info, running), asking));
 }
 let cmdsShown = null;
@@ -3979,10 +4086,16 @@ function filesTalk(d, info, running) {
         markdown(text));
     };
     const toggle = () => { opened.has(t.n) ? opened.delete(t.n) : opened.add(t.n); keepingPlace(renderMain); };
-    const now = !live ? "" : !t.now ? "Working…" : t.now.kind === "thinking" ? "Thinking…" : `Running: ${t.now.text}`;
+    const now = !live ? "" : info && info.failing ? "Retrying…" : !t.now ? "Working…" : t.now.kind === "thinking" ? "Thinking…" : `Running: ${t.now.text}`;
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
+      // a click: this turn's files and commands shown at the left, or folded away when they already are
       el("button", { type: "button", class: "fl-user", "aria-pressed": on ? "true" : "false",
-        title: on ? "The turn shown" : "Show this turn's files", onclick: () => setFilesTurn(t.n) },
+        title: on && !sideFolded ? "Fold this turn's files and commands" : "Show this turn's files and commands",
+        onclick: () => {
+          if (on && !sideFolded) return foldSide(true);
+          if (sideFolded) foldSide(false, on);
+          if (!on) setFilesTurn(t.n);
+        } },
         el("span", { class: "tx", text: t.text })),
       before.length ? el("div", { class: "fl-minor" },
         extra ? el("button", { type: "button", class: "fl-more", "aria-expanded": hidden ? "false" : "true", onclick: toggle,
@@ -4738,7 +4851,7 @@ const agDashboard = window.agDashboard = Object.freeze({
   chatView: addChatView,
   el, svgEl, markdown, clock, ago, full, compact, plural, firstLine,
   contextItem, columns, typeChips, itemType, transcriptBlocks, foldedOutput, notesSwitch, sizeCard, contextCard,
-  statusOf, harnessName, harnessLogo, harnessBadge, actorLogo, backgroundNote, askingNote,
+  statusOf, harnessName, harnessLogo, harnessBadge, actorLogo, backgroundNote, askingNote, errorNote,
 });
 // The reader's own views: each file in <home>/dashboard/views/, loaded once the page is up. One that
 // does not load, or throws, is reported and left out.

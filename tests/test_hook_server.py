@@ -199,6 +199,99 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.hook.closed)
 
 
+class Failing(ToyHook):
+    """Keeps something on each request (so it is reported), and records each failure reported."""
+
+    def __init__(self):
+        super().__init__()
+        self.failures, self.answers = [], []
+
+    async def __call__(self, request):
+        request.state["kept"] = True
+        return await super().__call__(request)
+
+    async def failed(self, request, status, error):
+        self.failures.append((status, error))
+
+    async def answered(self, request, status, answer):
+        self.answers.append(status)
+
+
+class Unkept(Failing):
+    """The same, but keeps nothing on a request: none of its reports are called."""
+
+    async def __call__(self, request):
+        return await ToyHook.__call__(self, request)
+
+
+@unittest.skipIf(web is None, "the hook server needs aiohttp")
+class FailedTest(unittest.IsolatedAsyncioTestCase):
+    """A call that fails is reported to the hook's `failed`; one that got no answer is answered 502, saying why."""
+
+    async def serve(self, upstream_url: str, hook) -> TestClient:
+        client = TestClient(TestServer(hook_server.make_app(upstream_url, hook)))
+        await client.start_server()
+        self.addAsyncCleanup(client.close)
+        return client
+
+    async def upstream(self, handler) -> str:
+        app = web.Application()
+        app.router.add_route("*", "/{tail:.*}", handler)
+        up = TestServer(app)
+        await up.start_server()
+        self.addAsyncCleanup(up.close)
+        return str(up.make_url("")).rstrip("/")
+
+    async def test_an_endpoint_that_cannot_be_reached_is_reported_and_answered_502(self):
+        hook = Failing()
+        client = await self.serve("http://api.example.invalid", hook)       # .invalid never resolves
+        resp = await client.post("/v1/messages", json={"messages": ["hi"]})
+        self.assertEqual(resp.status, 502)
+        body = await resp.json()
+        self.assertEqual(body["type"], "error")
+        self.assertEqual(body["error"]["type"], "api_error")
+        self.assertIn("ag's hook server got no answer from http://api.example.invalid", body["error"]["message"])
+        (status, error), = hook.failures
+        self.assertIsNone(status)                                            # no answer came at all
+        self.assertIn("api.example.invalid", error)
+        self.assertEqual(hook.answers, [])                                   # nothing was answered
+
+    async def test_an_error_status_reaches_the_harness_as_it_is_and_is_reported(self):
+        overloaded = {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}
+
+        async def upstream(request):
+            if (await request.json()).get("messages") == ["BAD"]:
+                return web.json_response(overloaded, status=529)
+            return web.Response(body=STREAM, content_type="text/event-stream")
+
+        hook = Failing()
+        client = await self.serve(await self.upstream(upstream), hook)
+        resp = await client.post("/v1/messages", json={"messages": ["bad"]})
+        self.assertEqual((resp.status, await resp.json()), (529, overloaded))
+        ok = await client.post("/v1/messages", json={"messages": ["fine"]})
+        self.assertEqual(await ok.read(), STREAM)
+        self.assertEqual(hook.failures, [(529, "overloaded_error: Overloaded")])   # the good call: not a failure
+        self.assertEqual(hook.answers, [529, 200])
+
+    async def test_an_error_in_an_answer_that_came_back_200_is_a_failure_too(self):
+        async def upstream(request):                                         # overloaded once it had begun
+            return web.Response(body=b'event: message_start\ndata: {"type": "message_start", "message": {"id": "m1"}}\n\n'
+                                     b'event: error\ndata: {"type": "error", "error": {"type": "overloaded_error", '
+                                     b'"message": "Overloaded"}}\n\n', content_type="text/event-stream")
+
+        hook = Failing()
+        client = await self.serve(await self.upstream(upstream), hook)
+        await (await client.post("/v1/messages", json={"messages": ["hi"]})).read()
+        self.assertEqual(hook.failures, [(200, "overloaded_error: Overloaded")])
+
+    async def test_a_request_the_hook_kept_nothing_on_is_not_reported(self):
+        hook = Unkept()
+        client = await self.serve("http://api.example.invalid", hook)
+        resp = await client.post("/v1/messages", json={"messages": ["hi"]})
+        self.assertEqual(resp.status, 502)                                   # told why all the same
+        self.assertEqual(hook.failures, [])
+
+
 RESPONSES_STREAM = (
     b'event: response.created\ndata: {"type": "response.created", "response": {"id": "r1"}}\n\n'
     b'event: response.output_item.done\ndata: {"type": "response.output_item.done", '

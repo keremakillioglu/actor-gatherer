@@ -167,3 +167,14 @@ async def report_measured(ag_clients, request, tokens: Optional[int]) -> None:
     gatherer, read_id = kept
     await ag_clients.client(gatherer).request("measured", {"gatherer": gatherer, "read_id": read_id,
                                                            "tokens": tokens})
+
+
+async def report_failed(ag_clients, request, status: Optional[int], error: str) -> None:
+    """For a proxy hook's `failed`: that the request's model call failed -- its endpoint's HTTP status
+    (None: no answer came) and why -- to the read it came from (`keep_read`). Nothing when that is unknown."""
+    kept = (getattr(request, "state", None) or {}).get(READ)
+    if kept is None:
+        return
+    gatherer, read_id = kept
+    await ag_clients.client(gatherer).request("failed", {"gatherer": gatherer, "read_id": read_id,
+                                                         "status": status, "error": error})

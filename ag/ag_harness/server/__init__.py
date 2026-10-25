@@ -84,6 +84,11 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 context: the call's input tokens, cached
                                                 ones included, reported after the call (or
                                                 counted exactly before it)
+    {"op": "failed", "gatherer", "read_id", "status"?, "error"} -> {"recorded": bool}
+                                                the model call read `read_id` was for failed:
+                                                the HTTP status its endpoint answered (none:
+                                                no answer came) and why, kept on the read
+                                                (`_reads`) for a reader of the gatherer
     {"op": "counted", "gatherer", "properties", "counts"?: {event_id: n}, "made"?: {made_id: n},
      "preamble_counts"?: [{"name", "text", "tokens"}], "left_out"?: {read_id: n}}
         -> {"events", "made", "preamble"}       sizes the model's provider counted after the
@@ -357,6 +362,13 @@ class Server:
         """Record the provider's count of the context read `read_id` returned."""
         return {"recorded": self.manager(gatherer).record_real_tokens(gatherer, read_id, tokens)}
 
+    def failed(self, gatherer: str, read_id: int, status: Optional[int], error: str) -> dict:
+        """Record that the model call read `read_id` was for failed: its endpoint's status, and why."""
+        recorded = self.manager(gatherer).record_failed(gatherer, read_id, status, error)
+        if recorded:
+            self.log(gatherer, f"read {read_id}: the call failed ({status or 'no answer'}): {error[:300]}")
+        return {"recorded": recorded}
+
     def counted(self, gatherer: str, properties: Dict[str, Any], events: dict, made: dict, preamble: list,
                 left_out: Optional[dict] = None) -> dict:
         """Record sizes the model's provider counted after the fact, in place of the tokenizer's."""
@@ -470,6 +482,12 @@ class Server:
             if measured is None:
                 return {"error": "no read_id and tokens"}
             return self.measured(gatherer, measured["read_id"], measured["tokens"])
+        if op == "failed":
+            read_id, status, error = request.get("read_id"), request.get("status"), request.get("error")
+            if not isinstance(read_id, int) or isinstance(read_id, bool) or not isinstance(error, str) or not error:
+                return {"error": "no read_id and error"}
+            return self.failed(gatherer, read_id, status if isinstance(status, int) and not isinstance(status, bool) else None,
+                               error)
         if op == "counted":
             sizes = counted_of(request)
             if sizes is None:

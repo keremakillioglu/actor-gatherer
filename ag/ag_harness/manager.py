@@ -399,6 +399,18 @@ class Manager(ContextManager):
             notify(gatherer_id, "counts", None, read_id)
         return found
 
+    def record_failed(self, gatherer_id: str, read_id: int, status: Optional[int], error: str) -> bool:
+        """Not part of the interface: record that the model call read `read_id` was for failed --
+        the HTTP status its endpoint answered (None: none came) and why (`store.record_failed`) --
+        for a reader of the gatherer (the dashboard) to tell a turn that stopped on an error from
+        one under way. Whether that read exists."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return False
+        found = store.record_failed(self._conn(gatherer_id), read_id, status, error)
+        if found:
+            notify(gatherer_id, "failed", None, read_id)
+        return found
+
     def record_counts(self, gatherer_id: str, properties: Optional[dict], events: dict, made: dict,
                       preamble: list, left_out: Optional[dict] = None) -> dict:
         """Not part of the interface: sizes the model's provider counted after the fact -- of
