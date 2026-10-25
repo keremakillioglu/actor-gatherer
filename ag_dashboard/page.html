@@ -656,6 +656,7 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-pending .fl-user { opacity: .55; cursor: default; }
 .files .fl-pending .fl-user:hover { background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 28%, transparent); }
 .files .fl-pending .lbl { color: var(--muted); font-size: 11.5px; margin-right: 4px; }
+.files .fl-user .tx.bang { font: .92em/var(--lh) var(--mono); }   /* a command the user ran with `!` */
 .files .fl-reply { margin: 4px 0 0 2px; color: var(--ink-2); overflow-wrap: anywhere; }
 .files .fl-reply > summary { display: flex; gap: 6px; margin: 0; font-size: inherit; cursor: pointer; list-style: none; }
 .files .fl-reply > summary::-webkit-details-marker { display: none; }
@@ -1846,7 +1847,16 @@ function renderAgents() {
 // working: ... This is how Claude Code surfaces messages ..."): just the message, for the list. The stored
 // message is left as it is.
 const MID_TURN = /^\s*The user sent a new message while you were working:\s*([\s\S]*?)\s*This is how Claude Code surfaces messages the user sends mid-turn\b[\s\S]*$/;
-const asked = (text) => { const m = text && MID_TURN.exec(text); return m && m[1] ? m[1] : text; };
+// A command the user ran with `!`, as Claude Code sends it ("<bash-input>ls -la</bash-input>", its output after it as
+// its own text): as the user typed it, "! ls -la". The closing tag may be cut off with the end of a long one.
+const BANG = /^\s*<bash-input>([\s\S]*?)(?:<\/bash-input>\s*)?$/;
+const asked = (text) => {
+  const b = text && BANG.exec(text);
+  if (b) return `! ${b[1].trim()}`;
+  const m = text && MID_TURN.exec(text); return m && m[1] ? m[1] : text;
+};
+// A user's message in a chat bubble: as asked() gives it, a `!` command in the terminal's type.
+const userWords = (text) => el("span", { class: "tx" + (text && BANG.test(text) ? " bang" : ""), text: asked(text) });
 function agentRow(g, a) {
   const [cls, label] = statusOf(a);
   const current = isAt(focusedActor(), g.name, a.channel);
@@ -4105,7 +4115,7 @@ function pendingTalk(info, h) {
   if (!list.length) return null;
   const unseen = mine.some((m) => Date.now() - m.at > UNSEEN_MS);
   return el("div", { class: "fl-pending" }, ...list.map((text) =>
-    el("div", { class: "fl-user", title: "Written while it works: given to the agent at its next step" }, el("span", { class: "tx", text }))),
+    el("div", { class: "fl-user", title: "Written while it works: given to the agent at its next step" }, userWords(text))),
     el("span", { class: "lbl", text: unseen ? "Pending · not seen by the session yet" : "Pending" }));
 }
 const talkToEnd = () => { const n = document.querySelector("#main .fl-talk"); if (n) n.scrollTop = n.scrollHeight; };
@@ -4158,11 +4168,11 @@ function filesTalk(d, info, running) {
           if (sideFolded) foldSide(false, on);
           if (!on) setFilesTurn(t.n);
         } },
-        el("span", { class: "tx", text: t.text })),
+        userWords(t.text)),
       ...[...(t.more || []), ...(t.n === d.turns.length - 1 ? joined : [])].map((m) =>
         el("button", { type: "button", class: "fl-user joined", "aria-pressed": on ? "true" : "false",
           title: "Written while it worked, and given to the agent in this turn", onclick: () => setFilesTurn(t.n) },
-          el("span", { class: "tx", text: m.text }))),
+          userWords(m.text))),
       before.length ? el("div", { class: "fl-minor" },
         extra ? el("button", { type: "button", class: "fl-more", "aria-expanded": hidden ? "false" : "true", onclick: toggle,
           title: hidden ? "Show everything the agent said and thought in this turn" : "Fold the earlier messages again" },
