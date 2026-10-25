@@ -166,6 +166,10 @@ button.agent-group:hover { color: var(--ink-2); }
   -webkit-box-orient: vertical; overflow: hidden; }
 .agent .recap .lbl { color: var(--muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; margin-right: 5px; }
 .agent .asked.none { color: var(--muted); font-weight: 400; font-style: italic; }
+/* The session's name (codex's title for its thread), over what it was last asked, which then steps back */
+.agent .name { font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.agent .name + .asked { font-size: 12px; font-weight: 400; color: var(--ink-2); -webkit-line-clamp: 2; }
 .agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
 .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
@@ -2080,6 +2084,7 @@ function agentRow(g, a, group) {
     onclick: (ev) => pick(g.name, a.channel, ev), oncontextmenu: (ev) => pickBeside(g.name, a.channel, ev) },
     actorLogo(a),
     el("div", {},
+      a.name && a.name.text ? el("div", { class: "name", text: a.name.text }) : null,
       el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: asked(a.last_user_message) || "No message yet" }),
       a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
         el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
@@ -2295,16 +2300,18 @@ function watchTop(node, who) {
   new ResizeObserver(() => topRow(who, node.getBoundingClientRect().height)).observe(node);
 }
 if (!PANE) NARROW.addEventListener("change", () => { panes.top = null; topRow("brand", tops.get("brand") || 0); });
-// The pane's head: whose it is, as the list has the actor -- its avatar, what it was last asked.
+// The pane's head: whose it is, as the list has the actor -- its avatar, its name or what it was last asked.
 function drawWho() {
   if (!PANE && !panes.others.length) return;
   const info = selectedInfo();
-  const sig = signature([state.selected, info && [info.avatar, info.harness, info.last_user_message]]);
+  const sig = signature([state.selected, info && [info.avatar, info.harness, info.last_user_message, info.name && info.name.text]]);
   if (sig === drawn.who) return;
   drawn.who = sig;
   const who = document.getElementById("pane-who");
-  who.replaceChildren(...(info ? [actorLogo(info), el("span", { class: "tx", text: asked(info.last_user_message) || info.channel })] : []));
-  who.title = info ? [asked(info.last_user_message), `${harnessName(info.harness)} · ${state.selected[0]} · ${info.channel}`].filter(Boolean).join("\n") : "";
+  const named = info && info.name && info.name.text;
+  who.replaceChildren(...(info ? [actorLogo(info), el("span", { class: "tx", text: named || asked(info.last_user_message) || info.channel })] : []));
+  who.title = info ? [named, asked(info.last_user_message), `${harnessName(info.harness)} · ${state.selected[0]} · ${info.channel}`]
+    .filter(Boolean).join("\n") : "";
 }
 // The bar at a pane's left: dragged, it gives the two panes beside it their widths, each at least MIN_PANE.
 function gutterFor(p) {
@@ -2788,10 +2795,12 @@ function chatCard(info) {
     if (!t || sending || held) return false;
     sending = true; err.textContent = "";
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
-    // shown at once, pending, until the session's own record of it shows (sentHere)
+    // shown at once, pending, until the session's own record of it shows (sentHere) -- but a codex command typed into
+    // its terminal (/recap, /status): codex runs it, and it is never one of the session's messages. (Without a terminal
+    // it goes to `codex exec` as a message, and is stored as one.)
     const mine = { key: key(...state.selected), text: t, base: heardCount(heard(info), t), at: Date.now() };
     const box = document.getElementById("composer-text"), was = box ? box.value : "";
-    sentHere.push(mine);
+    if (!(info.harness === "codex" && info.session && info.session.terminal && CODEX_COMMAND.test(t))) sentHere.push(mine);
     if (box) box.value = "";
     keepingPlace(renderMain); talkToEnd();
     setTimeout(() => { if (sentHere.includes(mine)) keepingPlace(renderMain); }, UNSEEN_MS + 100);
@@ -3530,6 +3539,11 @@ const SUMMARIES = {
   ToolSearch: (i) => ({ title: "Tool Search", arg: str(i.query) }),
 };
 function summary(call) {
+  const inner = (call.calls || []).filter((c) => c.input !== null && c.input !== undefined);
+  if (inner.length) {                    // codex's code mode: a script, shown as the calls it makes
+    const first = summary(inner[0]), more = call.calls.length - 1;
+    return more ? { ...first, arg: `${first.arg || ""}${first.arg ? " " : ""}+ ${plural(more, "more call")}`, body: undefined, quiet: false } : first;
+  }
   const input = call.input && typeof call.input === "object" ? call.input : { input: call.input };
   const known = SUMMARIES[call.name];
   if (known) { try { return known(input); } catch (e) { /* shown as any other */ } }
@@ -3852,9 +3866,10 @@ function termFor(sid) {
   const host = el("div", { class: "xterm-host", id: "xterm-host", "data-refocus": "1" });
   host.agFocus = () => xterm.focus();
   Object.assign(term, { sid, xterm, fit, host, opened: false, exited: null, error: "", tried: false });
-  xterm.onData((d) => { d = dropBareMoves(d); if (d) termType(sid, d); });
+  // to the session by its id now, not the one it opened under: a codex session is renamed to its thread
+  xterm.onData((d) => { d = dropBareMoves(d); if (d && term.xterm === xterm) termType(term.sid, d); });
   xterm.onResize(({ cols, rows }) => {
-    if (termRunning(sid)) post("/api/terminal/resize", { session_id: sid, cols, rows }).catch(() => {});
+    if (term.xterm === xterm && termRunning(term.sid)) post("/api/terminal/resize", { session_id: term.sid, cols, rows }).catch(() => {});
   });
   new ResizeObserver(() => { if (host.isConnected && host.clientWidth) { try { fit.fit(); } catch (e) { /* not shown yet */ } } }).observe(host);
   return term;
@@ -4289,8 +4304,9 @@ const heardCount = (h, text) => [...h.stored, ...h.typed].filter((m) => sameWord
   + h.queued.filter((q) => sameWords(q, text)).length;
 // Messages sent from this page's box, each {key, text, base, at}: shown pending the moment it is sent, until the
 // actor's records hold one more message of its words than when it was sent (`base`) -- from then on, as they say.
-// One not seen for UNSEEN_MS says so.
+// One not seen for UNSEEN_MS says so. A codex command typed into its terminal is not one (ctx.send).
 const sentHere = [], UNSEEN_MS = 15000;
+const CODEX_COMMAND = /^\/[a-z][\w-]*(?:\s|$)/i;     // "/recap", "/model gpt": a command's name, then what it is given
 // What waits to reach the agent, at the latest turn's end, faded: sent from here and not seen yet; in Claude Code's
 // queue, or sent when a turn ended as the next one's first and not stored yet; in the dashboard agent's queue.
 function pendingTalk(info, h) {

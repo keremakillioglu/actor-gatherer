@@ -17,7 +17,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag.integrations.tools.ag_orchestrator.file_touches import Files, check as ck, watch  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.file_touches.calls import calls_in, last_results, results_in  # noqa: E402
-from ag.integrations.tools.ag_orchestrator.file_touches.commands import shell_changes, shell_reads  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.file_touches.calls import opened  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.file_touches.commands import (  # noqa: E402
+    opened_script, script_calls, script_output, script_prints_result, shell_changes, shell_reads)
+
+# As codex 0.164 wrote it live: its code-mode script (`exec`), and what the call gave back
+SCRIPT = ("const r = await tools.exec_command({cmd:\"printf 'one\\\\n' > notes.txt && printf 'two\\\\n' > notes.txt "
+          "&& cat notes.txt\",max_output_tokens:1000});\ntext(r.output);\n")
+SCRIPT_OUT = [{"type": "input_text", "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"}, {"type": "input_text", "text": "two\n"}]
 
 
 class CommandsTest(unittest.TestCase):
@@ -379,6 +386,71 @@ class HookTest(unittest.TestCase):
         self.assertIsNone(hook.files)
         with self.assertRaises(ValueError):
             claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda g: Server()), files="maybe")
+
+
+class CodeModeTest(unittest.TestCase):
+    """Codex's code mode: one `exec` call whose JavaScript script makes the calls that touch files."""
+
+    def test_the_calls_a_script_makes_and_what_it_writes_out(self):
+        self.assertEqual(script_calls(SCRIPT), [("exec_command", {"cmd": "printf 'one\\n' > notes.txt && printf 'two\\n' > "
+                                                                       "notes.txt && cat notes.txt", "max_output_tokens": 1000})])
+        patch = '// @exec: {"yield_time_ms": 10000}\nawait tools.apply_patch(`*** Begin Patch\n*** Add File: a.txt\n+hi \\`x\\`\n*** End Patch`);'
+        self.assertEqual(script_calls(patch), [("apply_patch", "*** Begin Patch\n*** Add File: a.txt\n+hi `x`\n*** End Patch")])
+        many = ('for (const f of ["a", "b"]) { const r = await tools.exec_command({cmd: "cat " + f}); text(r.output); }\n'
+                "await tools.exec_command({ 'cmd': 'sed -n 1,5p x.py', workdir: '/w', tty: false, n: 1.5e3, list: [1, 'a'] });")
+        self.assertEqual(script_calls(many), [("exec_command", None), ("exec_command", {"cmd": "sed -n 1,5p x.py", "workdir": "/w",
+                                                                                       "tty": False, "n": 1500.0, "list": [1, "a"]})])
+        tricky = ('const cmd = "ls"; await tools.exec_command({cmd}); mytools.exec_command({cmd: "no"});\n'
+                  '// tools.exec_command({cmd: "a comment"})\nconst s = "tools.exec_command({cmd: 1})"; await tools.exec_command(`ls ${d}`);'
+                  'await tools.exec_command("echo \\u00e9\\uD83D\\uDE00");')
+        self.assertEqual(script_calls(tricky), [("exec_command", None), ("exec_command", None), ("exec_command", "echo \u00e9\U0001F600")])
+        self.assertEqual(script_calls("text(1)"), [])
+
+    def test_a_lone_call_whose_output_is_all_the_script_printed_has_it_as_its_own(self):
+        self.assertTrue(script_prints_result(SCRIPT))
+        self.assertTrue(script_prints_result('text((await tools.exec_command({cmd: "ls"})).output)'))
+        self.assertFalse(script_prints_result('const r = await tools.exec_command({cmd: "ls"}); text("files:"); text(r.output)'))
+        self.assertFalse(script_prints_result('const r = await tools.exec_command({cmd: "ls"}); text(r.output.trim())'))
+        self.assertEqual(script_output("Script completed\nWall time 0.1 seconds\nOutput:\n\ntwo\n"), ("two\n", "completed"))
+        self.assertEqual(script_output("Script failed\nWall time 0.1 seconds\nOutput:\n\nError: x")[1], "failed")
+        self.assertEqual(script_output("plain"), ("plain", None))
+        done = ("Script completed\nWall time 0.1 seconds\nOutput:\ntwo\n", False)
+        (cid, name, inp, got), = opened_script("c1", SCRIPT, done)
+        self.assertEqual((cid, name, inp["cmd"].split(" > ")[0], got), ("c1", "exec_command", "printf 'one\\n'", ("two\n", False)))
+        two = opened_script("c2", 'await tools.exec_command({cmd: "ls"});\nawait tools.exec_command({cmd: "pwd"});', done)
+        self.assertEqual([(i, r) for i, _, _, r in two], [("c2#1", ("", False)), ("c2#2", ("", False))])   # whose output: not known
+        failed = opened_script("c3", SCRIPT, ("Script failed\nWall time 0.1 seconds\nOutput:\n\nError: x", False))
+        self.assertEqual(failed[0][3], ("", True))
+        self.assertEqual(opened_script("c4", SCRIPT), [("c4", "exec_command", script_calls(SCRIPT)[0][1], None)])
+        self.assertEqual(opened_script("c5", "text(1)", done), [])
+
+    def test_a_script_in_a_turn_is_its_calls(self):
+        items = [{"type": "custom_tool_call", "call_id": "c1", "name": "exec", "input": SCRIPT},
+                 {"type": "custom_tool_call_output", "call_id": "c1", "output": SCRIPT_OUT},
+                 {"type": "function_call", "call_id": "f1", "name": "exec_command", "arguments": json.dumps({"cmd": "ls"})},
+                 {"type": "function_call_output", "call_id": "f1", "output": "a"}]
+        calls, results = opened(calls_in(items), results_in(items))
+        self.assertEqual({k: v[0] for k, v in calls.items()}, {"c1": "exec_command", "f1": "exec_command"})
+        self.assertEqual(results["c1"], ("two\n", False))                    # the output under codex's head
+        self.assertEqual(results["f1"], ("a", False))
+
+    def test_a_file_a_script_creates_and_changes_is_found_on_disk(self):
+        server = Server()
+        files = Files(SimpleNamespace(client=lambda g: server), log=lambda g, l: None, watcher=None)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        d = os.path.realpath(tmp.name)
+        call = {"type": "custom_tool_call", "call_id": "c1", "name": "exec", "input": SCRIPT}
+
+        async def go():
+            files.started("g", "s", d, [call])
+            sh("printf 'one\\n' > notes.txt && printf 'two\\n' > notes.txt && cat notes.txt", d)
+            files.arrived("g", "s", d, [call, {"type": "custom_tool_call_output", "call_id": "c1", "output": SCRIPT_OUT}])
+            await files.close()
+        asyncio.run(go())
+        (op, body), = server.asked
+        got = {(t["call_id"], os.path.basename(t["path"]), t["how"]) for t in body["touches"] if t.get("path")}
+        self.assertIn(("c1", "notes.txt", "created"), got)
 
 
 class FilesTrackerTest(unittest.TestCase):

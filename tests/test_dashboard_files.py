@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import files  # noqa: E402
+from ag_dashboard import data, files  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 
@@ -101,6 +101,12 @@ def asked(text):
     return ("user_message", {"role": "user", "content": [{"type": "text", "text": text}]})
 
 
+# As codex 0.164 wrote it live: its code-mode script (`exec`), and what the call gave back
+SCRIPT = ("const r = await tools.exec_command({cmd:\"printf 'one\\\\n' > notes.txt && printf 'two\\\\n' > notes.txt "
+          "&& cat notes.txt\",max_output_tokens:1000});\ntext(r.output);\n")
+SCRIPT_OUT = [{"type": "input_text", "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"}, {"type": "input_text", "text": "two\n"}]
+
+
 class FilesTest(unittest.TestCase):
     """A session of two turns, in a gatherer database of the test's own."""
 
@@ -146,6 +152,26 @@ class FilesTest(unittest.TestCase):
                          "('2026-10-24 08:00:00', ?, ?, 1, 'c1')", (tid, json.dumps(payload)))
         conn.commit()
         conn.close()
+
+    def test_a_codex_script_is_the_calls_it_makes(self):
+        self.add(asked("make notes"),
+                 ("tool_call", {"type": "custom_tool_call", "call_id": "x1", "name": "exec", "input": SCRIPT}),
+                 ("tool_output", {"type": "custom_tool_call_output", "call_id": "x1", "output": SCRIPT_OUT}))
+        got = files.files("g", "c1", cwd="/w")
+        self.add(asked("the same, run directly"),
+                 ("tool_call", {"type": "function_call", "call_id": "f1", "name": "exec_command", "arguments": json.dumps(
+                     {"cmd": "printf 'one\\n' > notes.txt && printf 'two\\n' > notes.txt && cat notes.txt"})}),
+                 ("tool_output", {"type": "function_call_output", "call_id": "f1", "output": "two\n"}))
+        direct = files.files("g", "c1", cwd="/w")
+        self.assertEqual([f["path"] for f in got["files"]], ["/w/notes.txt"])
+        blocks = lambda g: [b for f in g["files"] for s in f["sources"] for b in s["blocks"]]
+        self.assertEqual(blocks(got), blocks(direct))                      # read as its call would be on its own
+        (one,), (other,) = got["commands"], direct["commands"]
+        self.assertEqual({k: one[k] for k in ("text", "output", "files")}, {k: other[k] for k in ("text", "output", "files")})
+        self.assertEqual(one["output"], "two\n")                          # what it printed, without codex's head
+        part, = [p for p in data.parts("tool_call", json.dumps({"type": "custom_tool_call", "call_id": "x1", "name": "exec",
+                                                                "input": SCRIPT}), None) if p["kind"] == "call"]
+        self.assertEqual([c["name"] for c in part["calls"]], ["exec_command"])  # the Chat view titles it by its call
 
     def test_the_turns_and_the_latest_by_default(self):
         got = files.files("g", "c1", cwd="/w")
@@ -301,8 +327,6 @@ class FilesTest(unittest.TestCase):
         got = files.files("g", "c1", 2, cwd="/w")
         self.assertEqual({f["path"]: f["temporary"] for f in got["files"]}, {tmp: True, "/w/a.py": False})
         self.assertEqual([(c["text"], c["temporary"]) for c in got["commands"]], [("Read scratch", True), ("Both", False)])
-        # TODO: fails on Linux -- /private/tmp is temporary only where /tmp resolves to it (macOS); `_temporary_roots`
-        # adds a root's realpath, not /private/tmp itself. Either list /private/tmp, or check it only on macOS.
         self.assertTrue(files.temporary("/tmp/x") and files.temporary("/private/tmp/x") and not files.temporary("/tmpx/y"))
 
     def test_every_call_is_listed_in_order_with_its_files(self):

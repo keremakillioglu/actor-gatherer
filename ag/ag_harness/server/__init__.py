@@ -39,7 +39,7 @@ carries them, and its read is made with them -- {name: value}, the names the
 policy's event types declare (e.g. {"channel": <the harness's thread>});
 none: {}. `cwd` is the working directory the gatherer's pollers look at.
 
-    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?, "preamble"?, "process"?}
+    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?, "preamble"?, "process"?, "run"?}
         -> {"context": [...] or null, "note", "read_id", "tokens", "budget", "sent_tokens", "basis"}
                                                 one model call: insert, then read
                                                 in response to the last event; null: send
@@ -53,7 +53,10 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 harness sends besides its messages (its system
                                                 prompt, its tool definitions), kept with the read,
                                                 as is `process`, {"pid", "started"}: the
-                                                harness's process that made the call.
+                                                harness's process that made the call, and `run`:
+                                                the harness's run that made it, as its launcher
+                                                named it (codex's: the id of the process ag
+                                                started).
                                                 `tokens` is the context's size by the policy's
                                                 count, `budget` the size it keeps it under (null:
                                                 none), `sent_tokens` all the call sends by that
@@ -117,6 +120,11 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 "while you were away" summary), kept with when it
                                                 was made (`_recaps`): never an event, never in a
                                                 context; for a reader of the gatherer
+    {"op": "name", "gatherer", "session", "text", "by"} -> {}
+                                                a session's name as `by` gave it (codex's title
+                                                for its thread), in place of the one `by` gave
+                                                before (`_names`): never an event, never in a
+                                                context; for a reader of the gatherer
     {"op": "touches", "gatherer", "session", "touches": [...]} -> {"kept"}
                                                 what the session's tool calls did to files, as
                                                 the harness side found them on disk once each
@@ -124,7 +132,7 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 file_touches/): each {"call_id", "path"?, "how"?,
                                                 "checked"?, "named"?, "detail"?}, kept (`_touches`)
                                                 for a reader of the gatherer; never history
-    {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?, "process"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens", "basis"}
+    {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?, "process"?, "run"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens", "basis"}
     {"op": "claim", "gatherer", "session", "process", "by"?} -> {"claimed": true, "took_over"?} or {"claimed": false, "holder"}
                                                 `process` ({"pid", "started"}) opens the session
                                                 (`_open`), unless another process that still runs
@@ -153,6 +161,7 @@ gatherer's `server.log` (`logs/gatherers/<gatherer>/`).
 
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
@@ -233,6 +242,11 @@ def process_of(value) -> Optional[dict]:
     if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 and isinstance(started, str) and started:
         return {"pid": pid, "started": started[:200]}
     return None
+
+
+def run_of(value) -> Optional[str]:
+    """A harness's run, as its launcher named it: letters, digits, `.`, `_` and `-`; None if it is not one."""
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", value) else None
 
 
 def counted_of(request) -> Optional[tuple]:
@@ -359,10 +373,10 @@ class Server:
 
     def read(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], row: int, manager=None,
              limit: Optional[int] = None, preamble: Optional[List[dict]] = None,
-             process: Optional[dict] = None) -> dict:
+             process: Optional[dict] = None, run: Optional[str] = None) -> dict:
         manager = self.with_pollers(manager or self.manager(gatherer), gatherer, cwd)
         context, read_id, sizes = manager.read_logged(gatherer, row, properties=properties, limit=limit,
-                                                      preamble=preamble, process=process)
+                                                      preamble=preamble, process=process, run=run)
         return {"context": context, "read_id": read_id, **sizes}
 
     def measured(self, gatherer: str, read_id: int, tokens: int) -> dict:
@@ -401,7 +415,7 @@ class Server:
     def rewrite(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], events: list,
                 measured: Optional[dict] = None, limit: Optional[int] = None,
                 preamble: Optional[List[dict]] = None, read_only: bool = False, compacted: bool = False,
-                process: Optional[dict] = None) -> dict:
+                process: Optional[dict] = None, run: Optional[str] = None) -> dict:
         """Insert `events`, then read in response to the last. `measured`,
         {"read_id", "tokens"}, is the provider's count of an earlier read's
         context, recorded first, so this read sees it. With `read_only`, the
@@ -445,7 +459,7 @@ class Server:
                                                       preamble=preamble)
                 answer = {"context": context, "read_id": None, **sizes}
             else:
-                answer = self.read(gatherer, properties, cwd, last, manager, limit, preamble, process)
+                answer = self.read(gatherer, properties, cwd, last, manager, limit, preamble, process, run)
         except Exception as exc:  # noqa: BLE001
             note = f"read failed: {exc!r}; messages unchanged"
             self.log(gatherer, prefix + note)
@@ -478,7 +492,7 @@ class Server:
                 return {"context": None, "note": "no events; messages unchanged"}
             return self.rewrite(gatherer, properties, cwd, events, measured_of(request.get("measured")),
                                 limit_of(request.get("limit")), preamble_of(request.get("preamble")),
-                                process=process_of(request.get("process")))
+                                process=process_of(request.get("process")), run=run_of(request.get("run")))
         if op in ("context", "compaction"):
             if not isinstance(events, list):
                 return {"context": None, "note": "no events; messages unchanged"}
@@ -516,6 +530,13 @@ class Server:
             recap_id = self.manager(gatherer).record_recap(gatherer, session, text.strip())
             self.log(gatherer, f"[{session}] recap kept")
             return {"recap_id": recap_id}
+        if op == "name":
+            session, text, by = request.get("session"), request.get("text"), request.get("by")
+            if not all(isinstance(x, str) and x.strip() for x in (session, text, by)):
+                return {"error": "no session, text and by"}
+            self.manager(gatherer).record_name(gatherer, session, " ".join(text.split()), by)
+            self.log(gatherer, f"[{session}] named by {by}")
+            return {}
         if op == "touches":
             session, touches = request.get("session"), request.get("touches")
             if not isinstance(session, str) or not session or not isinstance(touches, list):
@@ -527,7 +548,7 @@ class Server:
             if not isinstance(request.get("row"), int):
                 return {"error": "no row"}
             return self.read(gatherer, properties, cwd, request["row"], limit=limit_of(request.get("limit")),
-                             process=process_of(request.get("process")))
+                             process=process_of(request.get("process")), run=run_of(request.get("run")))
         if op == "claim":
             process, session = process_of(request.get("process")), request.get("session")
             if process is None or not isinstance(session, str) or not session:

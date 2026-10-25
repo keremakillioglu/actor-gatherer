@@ -264,15 +264,20 @@ def _session_harness(gatherer: str, session_id: str) -> str:
 
 def _thread_of(gatherer: str, pid: int, known) -> Optional[str]:
     """The codex thread a process (a terminal's) works in, as the gatherer's calls say: the channel of the
-    first call from `pid`, or a process under it, that names a directory -- codex's side calls, a title for
-    the thread, name none -- and is not among `known` (the sessions the table has)."""
+    first call that names a directory -- codex's side calls, a title for the thread, name none -- is not
+    among `known` (the sessions the table has), and came from `pid`: its run is `pid` (codex's launcher
+    names the run by the process ag runs in, which the terminal started and codex then is), or the process
+    that made it is `pid` or runs under it (where that can be told: Linux's /proc)."""
     conn = _gatherer_db(gatherer)
     if conn is None:
         return None
     try:
-        for channel, by in conn.execute("SELECT p_channel, pid FROM _reads WHERE pid IS NOT NULL AND p_cwd IS NOT NULL "
-                                        "AND p_cwd != '' ORDER BY read_id DESC LIMIT 200"):
-            if channel and channel not in known and home.runs_under(by, pid):
+        has_run = "run" in {r[1] for r in conn.execute("PRAGMA table_info(_reads)")}
+        for channel, by, run in conn.execute(
+                f"SELECT p_channel, pid, {'run' if has_run else 'NULL'} FROM _reads WHERE (pid IS NOT NULL"
+                f"{' OR run IS NOT NULL' if has_run else ''}) AND p_cwd IS NOT NULL AND p_cwd != '' "
+                "ORDER BY read_id DESC LIMIT 200"):
+            if channel and channel not in known and (run == str(pid) or home.runs_under(by, pid)):
                 return channel
     except sqlite3.Error:
         return None

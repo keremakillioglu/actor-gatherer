@@ -88,6 +88,7 @@ from typing import Any, Dict, List, Optional
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
 from . import answers, avatars, hiding, live, queued, saved, sessions
+from .commands import CODE_MODE, script_calls
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
@@ -291,7 +292,7 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
         if a is None:
             a = {"channel": s["session_id"], "events": 0, "last_event": None, "reads": 0, "last_read": None,
                  "cwd": s["cwd"], "tasks": 0, "est_tokens": None, "real_tokens": None, "limit_tokens": None,
-                 "sent_tokens": None, "harness": s["harness"], "last_user_message": None, "recap": None,
+                 "sent_tokens": None, "harness": s["harness"], "last_user_message": None, "recap": None, "name": None,
                  "created": None, "last": _seconds(s["created_at"]), "building": False, "running": False,
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
@@ -393,10 +394,15 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         for ch, made, text in conn.execute("SELECT session, made_at, text FROM _recaps WHERE recap_id IN "
                                            "(SELECT max(recap_id) FROM _recaps GROUP BY session)"):
             recaps[ch] = {"text": " ".join((text or "").split())[:600], "at": _seconds(made)}
+    names = {}                                       # each agent's name: the user's, else the newest another gave
+    if "_names" in tables:                           # (codex's title for its thread)
+        for ch, by, text in conn.execute("SELECT session, by, text FROM _names ORDER BY by = 'user', named_at"):
+            names[ch] = {"text": " ".join((text or "").split())[:120], "by": by}
     for ch, a in out.items():
         a["harness"] = _harness(conn, ch)
         a["last_user_message"] = " ".join(last_user.get(ch, "").split())[:600] or None
         a["recap"] = recaps.get(ch)
+        a["name"] = names.get(ch)
         a["last"] = max(a["last_read"] or 0, a.get("last_answer") or 0, answered.get(ch) or 0,   # its latest activity:
                         0 if a["reads"] else a["last_event"] or 0) or None                     # not a side call's events
         a["building"] = ch in building
@@ -1325,7 +1331,9 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
     """An event as the transcript shows it, whatever harness wrote it: its parts, each one of
         {"kind": "text", "role": user/assistant/system, "text"}
         {"kind": "thinking", "text"}                ("" when it is encrypted)
-        {"kind": "call", "id", "name", "input"}     a tool call (input: its object, or a string)
+        {"kind": "call", "id", "name", "input"}     a tool call (input: its object, or a string); a codex
+                                                    code-mode script also has `calls`: [{name, input}], the
+                                                    calls it makes (input None: not written out)
         {"kind": "result", "id", "error", "text"}   a tool's result, `id` its call's
         {"kind": "note", "name", "text"}            anything else: the harness's or ag's own messages
     The harness's own format is read here (Claude Code's content blocks, codex's Responses items),
@@ -1342,8 +1350,11 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
     if isinstance(p, dict) and p.get("type") in CODEX_TYPES | {"tool_search_call", "tool_search_output"}:
         kind = p["type"]
         if kind in ("function_call", "custom_tool_call", "tool_search_call"):
-            out.append({"kind": "call", "id": p.get("call_id") or p.get("id"), "name": p.get("name") or kind,
-                        "input": _arguments(p.get("arguments", p.get("input")))})
+            call = {"kind": "call", "id": p.get("call_id") or p.get("id"), "name": p.get("name") or kind,
+                    "input": _arguments(p.get("arguments", p.get("input")))}
+            if call["name"] == CODE_MODE and isinstance(call["input"], str) and script_calls(call["input"]):
+                call["calls"] = [{"name": n, "input": _clip(a, chars) if chars else a} for n, a in script_calls(call["input"])]
+            out.append(call)
         elif kind == "local_shell_call":
             out.append({"kind": "call", "id": p.get("call_id") or p.get("id"), "name": "local_shell",
                         "input": (p.get("action") or {})})

@@ -136,6 +136,35 @@ class Plan(Home):
                      ["-m", "resume", thread]):                                          # new, or not said which
             self.assertIsNone(codex.plan(args, {}, env).session, args)
 
+    def test_a_run_names_itself_in_the_url_and_a_dry_run_does_not(self):
+        from ag.cli.launch import Run
+        self.codex_config(GEMINI)
+        launcher = codex.CodexLauncher(dict(codex.CodexLauncher.defaults), self.home)
+        launcher.servers.start = lambda *a, **k: type("Server", (), {"url": "http://127.0.0.1:4013"})()
+        launcher.servers.running = lambda: []
+        run = lambda dry: Run(["exec", "hi"], ["codex"], dict(os.environ), "demo", "/w", dry_run=dry)
+        url = 'model_providers.gemini.base_url="http://127.0.0.1:4013/h/demo{}/l/244800/v1"'
+        self.assertIn(url.format(f"/r/{os.getpid()}"), launcher.launch(run(False)).argv)   # codex's process, once exec'd
+        self.assertIn(url.format(""), launcher.launch(run(True)).argv)
+
+    def test_codex_runs_without_its_background_server_where_it_can(self):
+        self.codex_config(GEMINI)
+        env = dict(os.environ)
+        for args, given, first in (([], True, "--no-daemon"), (["exec", "hi"], True, "--no-daemon"),
+                                   (["--no-daemon", "resume", "t"], True, "-c"),       # said already: not twice
+                                   (["exec", "hi"], False, "-c")):                   # a codex without it
+            p = codex.plan(args, {}, env)
+            p.daemonless = given
+            argv = p.argv(["codex"], "http://127.0.0.1:4013", "demo")
+            self.assertEqual((argv[1], argv.count("--no-daemon")), (first, int(given or "--no-daemon" in args)), args)
+        fake = os.path.join(self.tmp, "fake-codex")
+        for helps, expect in (("  --no-daemon  Run without the shared background server", True), ("  --no-daemonize", False)):
+            with open(fake, "w") as fh:
+                fh.write(f"#!/bin/sh\necho '{helps}'\n")
+            os.chmod(fake, 0o755)
+            self.assertEqual(codex.takes([fake], env, "--no-daemon"), expect)
+        self.assertFalse(codex.takes([os.path.join(self.tmp, "none")], env, "--no-daemon"))
+
     def test_dry_run_writes_nothing_codex_reads(self):
         path = self.codex_config(GEMINI)
         before = self.read(path)

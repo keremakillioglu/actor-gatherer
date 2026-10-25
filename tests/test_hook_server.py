@@ -54,6 +54,14 @@ class RouteOfTest(unittest.TestCase):
         self.assertEqual(route_of("/h/bad name/v1"), (None, "/h/bad name/v1"))    # not a label: as it is
         self.assertEqual(route_of("/sx/demo/v1"), (None, "/sx/demo/v1"))
 
+    def test_the_url_s_run(self):
+        run_of = __import__("ag.integrations.tools.hook_server.hook_server", fromlist=["run_of"]).run_of if web else None
+        if run_of is None:
+            self.skipTest("the hook server needs aiohttp")
+        self.assertEqual(run_of("/r/4242/l/100/v1/responses"), ("4242", "/l/100/v1/responses"))
+        self.assertEqual(run_of("/v1/x"), (None, "/v1/x"))
+        self.assertEqual(run_of("/r/bad run/v1"), (None, "/r/bad run/v1"))
+
 
 @unittest.skipIf(web is None, "the hook server needs aiohttp")
 class HookServerTest(unittest.IsolatedAsyncioTestCase):
@@ -146,6 +154,13 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
     async def test_the_label_is_given_to_the_hook_and_stripped(self):
         await self.client.post("/h/demo/v1/chat", json={"messages": ["x"]})
         self.assertEqual((self.hook.seen[-1].label, self.hook.seen[-1].path), ("demo", "/v1/chat"))
+        self.assertEqual(self.received[-1][1], "/v1/chat")
+        self.assertIsNone(self.hook.seen[-1].run)
+
+    async def test_the_run_is_given_to_the_hook_and_stripped_with_the_label_and_limit(self):
+        await self.client.post("/h/demo/r/4242/l/1000/v1/chat", json={"messages": ["x"]})
+        seen = self.hook.seen[-1]
+        self.assertEqual((seen.label, seen.run, seen.limit, seen.path), ("demo", "4242", 1000, "/v1/chat"))
         self.assertEqual(self.received[-1][1], "/v1/chat")
 
     async def test_answered_gets_the_whole_answer_after_the_harness_has_it(self):

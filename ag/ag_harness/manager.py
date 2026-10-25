@@ -252,11 +252,11 @@ class Manager(ContextManager):
 
     def _context(self, gatherer_id: str, row_id: int, properties: Optional[dict],
                  limit: Optional[int] = None, preamble: Optional[List[dict]] = None,
-                 process: Optional[dict] = None) -> Tuple[Context, Optional[int]]:
+                 process: Optional[dict] = None, run: Optional[str] = None) -> Tuple[Context, Optional[int]]:
         """(the policy's context, the read_id it was logged as; None: an empty context, not logged).
         `limit` is the harness's own limit the call stated (`Read.limit`); `preamble` what it sends
-        besides its messages ([{name, text}]), kept with the read, as is `process`, the harness's process
-        that made the call ({"pid", "started"})."""
+        besides its messages ([{name, text}]), kept with the read, as are `process`, the harness's process
+        that made the call ({"pid", "started"}), and `run`, the harness's run that made it."""
         if not os.path.exists(db_path(gatherer_id)):
             return Context(), None
         self.poll(gatherer_id)
@@ -268,7 +268,7 @@ class Manager(ContextManager):
         if ctx.items:
             read_id = store.record_read(conn, properties, ctx.refs, manager=self.policy.name, basis=ctx.basis,
                                         row_id=row_id, est_tokens=ctx.tokens, limit_tokens=limit, preamble_ids=ids,
-                                        sent_tokens=self.sent_tokens(conn, ctx, preamble), process=process)
+                                        sent_tokens=self.sent_tokens(conn, ctx, preamble), process=process, run=run)
             notify(gatherer_id, "read", properties, read_id)
         return ctx, read_id
 
@@ -345,7 +345,7 @@ class Manager(ContextManager):
 
     def read_logged(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None,
                     limit: Optional[int] = None, preamble: Optional[List[dict]] = None,
-                    process: Optional[dict] = None) -> Tuple[List[dict], Optional[int], dict]:
+                    process: Optional[dict] = None, run: Optional[str] = None) -> Tuple[List[dict], Optional[int], dict]:
         """Not part of the interface: `read_events`, with the read_id the read
         was logged as (None: nothing returned, nothing logged) -- what the
         provider's count of the call is later recorded against (`record_real_tokens`) --
@@ -353,8 +353,9 @@ class Manager(ContextManager):
         policy budgets, its budget, and what it was built from), and "sent_tokens", all the call sends -- every
         item and the preamble -- as the provider counts it too. `limit` is the harness's
         own limit the call stated (`Read.limit`); `preamble`, what it sends besides its
-        messages ([{name, text}]); `process`, the harness's process that made the call ({"pid", "started"})."""
-        ctx, read_id = self._context(gatherer_id, row_id, properties, limit, preamble, process)
+        messages ([{name, text}]); `process`, the harness's process that made the call ({"pid", "started"});
+        `run`, the harness's run that made it, as its launcher named it."""
+        ctx, read_id = self._context(gatherer_id, row_id, properties, limit, preamble, process, run)
         sizes = {"tokens": ctx.tokens, "budget": ctx.budget, "basis": ctx.basis}
         if not ctx.items:
             return [], None, sizes
@@ -442,6 +443,18 @@ class Manager(ContextManager):
         recap_id = store.record_recap(self._conn(gatherer_id), session, text)
         notify(gatherer_id, "recap", None, recap_id)   # no property named: every stream of the gatherer looks
         return recap_id
+
+    def record_name(self, gatherer_id: str, session: str, text: str, by: str) -> None:
+        """Not part of the interface: keep `by`'s name for `session` (`store.record_name`), for a reader
+        of the gatherer; never history."""
+        store.record_name(self._conn(gatherer_id), session, text, by)
+        notify(gatherer_id, "name")              # no property named: every stream of the gatherer looks
+
+    def names(self, gatherer_id: str, session: Optional[str] = None) -> List[dict]:
+        """Not part of the interface: every session's names, or one session's (`store.names`)."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return []
+        return store.names(self._conn(gatherer_id), session)
 
     def record_touches(self, gatherer_id: str, session: str, touches: List[dict]) -> int:
         """Not part of the interface: keep what tool calls of `session` did to files, as the hook server

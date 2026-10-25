@@ -144,6 +144,20 @@ class ServerTest(unittest.TestCase):
         self.assertTrue(all(m for _, _, m in recaps))
         self.assertEqual(self.rows("SELECT count(*) FROM events WHERE text IN ('First.', 'Second.')"), [(0,)])
 
+    def test_a_name_is_kept_per_session_and_namer_the_newest_in_place(self):
+        _, first, again, other, bad = self.ask(
+            {"op": "rewrite", "gatherer": "g", "properties": {"channel": "c1"}, "cwd": None,
+             "events": claude.to_events(conversation_so_far())},
+            {"op": "name", "gatherer": "g", "session": "c1", "text": " Tally  things ", "by": "codex"},
+            {"op": "name", "gatherer": "g", "session": "c1", "text": "Tally the things", "by": "codex"},
+            {"op": "name", "gatherer": "g", "session": "c2", "text": "Other", "by": "codex"},
+            {"op": "name", "gatherer": "g", "session": "c1", "text": "No namer"})
+        self.assertEqual((first, again, other), ({"id": 2}, {"id": 3}, {"id": 4}))
+        self.assertIn("error", bad)
+        self.assertEqual(self.rows("SELECT session, by, text FROM _names ORDER BY session"),
+                         [("c1", "codex", "Tally the things"), ("c2", "codex", "Other")])
+        self.assertEqual(self.rows("SELECT count(*) FROM events WHERE text LIKE '%Tally%'"), [(0,)])
+
 
 if __name__ == "__main__":
     unittest.main()

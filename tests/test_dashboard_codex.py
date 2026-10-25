@@ -20,8 +20,8 @@ THREAD = "01a16f39-7f0a-7531-a545-d854579d7d68"
 # A fake `ag ... codex`: writes its arguments (and an exec's stdin) to $FAKE_AG_LOG. `exec` answers as
 # codex exec --json does: the thread (THREAD, or the one resumed), the reply, the turn's end. Run
 # interactively it records a call from a child of its own process (codex's wrapper runs the real codex so)
-# in the gatherer's database, as ag's hook would, with the thread as its channel -- after a side call that
-# names no directory -- then waits for EOF.
+# in the gatherer's database, as ag's hook would, with the thread as its channel and its own process as the
+# run (as codex's launcher names it) -- after a side call that names no directory -- then waits for EOF.
 FAKE_AG = textwrap.dedent("""
     import json, os, sqlite3, sys, time
     log = open(os.environ["FAKE_AG_LOG"], "a")
@@ -43,12 +43,12 @@ FAKE_AG = textwrap.dedent("""
     path = os.path.join(os.environ["AG_HOME"], "gatherers", gatherer, "context.db")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     conn = sqlite3.connect(path)
-    conn.execute("CREATE TABLE IF NOT EXISTS _reads (read_id INTEGER PRIMARY KEY, p_channel TEXT, p_cwd TEXT, pid INTEGER)")
+    conn.execute("CREATE TABLE IF NOT EXISTS _reads (read_id INTEGER PRIMARY KEY, p_channel TEXT, p_cwd TEXT, pid INTEGER, run TEXT)")
     import subprocess
-    child = subprocess.Popen(["sleep", "60"])
-    conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid) VALUES ('side-thread', NULL, ?)", (child.pid,))
-    conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid) VALUES ('elsewhere', '/x', 1)")
-    conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid) VALUES (?, ?, ?)", (%(thread)r, os.getcwd(), child.pid))
+    child, run = subprocess.Popen(["sleep", "60"]), str(os.getpid())
+    conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid, run) VALUES ('side-thread', NULL, ?, ?)", (child.pid, run))
+    conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid, run) VALUES ('elsewhere', '/x', 1, '1')")
+    conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid, run) VALUES (?, ?, ?, ?)", (%(thread)r, os.getcwd(), child.pid, run))
     conn.commit(); conn.close()
     os.write(1, b"fake codex\\r\\n")
     while True:
@@ -174,6 +174,37 @@ class ExecTest(CodexBase):
             self.assertEqual((s["last_error"], s["turns"]), ("model_not_found", 0))
         finally:
             del os.environ["FAKE_AG_FAIL"]
+
+
+class ThreadOfTest(CodexBase):
+    """Which codex thread a terminal's process opened, as the gatherer's calls say: by the run its launcher
+    named (the process the terminal started), on any system; else by the process that made the call."""
+
+    def reads(self, rows, run_column=True):
+        path = os.path.join(dashboard_home.HOME, "gatherers", "g", "context.db")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE _reads (read_id INTEGER PRIMARY KEY, p_channel TEXT, p_cwd TEXT, pid INTEGER"
+                     + (", run TEXT)" if run_column else ")"))
+        for channel, cwd, pid, run in rows:
+            conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid" + (", run) VALUES (?, ?, ?, ?)" if run_column
+                                                                         else ") VALUES (?, ?, ?)"),
+                         (channel, cwd, pid, run) if run_column else (channel, cwd, pid))
+        conn.commit()
+        conn.close()
+
+    def test_a_call_of_the_terminal_s_run_names_its_thread_where_no_process_is_known(self):
+        self.reads([("title", None, None, "4242"),          # codex's own side call: names no directory
+                    ("other", "/w", None, "999"),           # another run's
+                    (THREAD, "/w", None, "4242")])          # macOS: no process recorded, the run is
+        self.assertEqual(sessions._thread_of("g", 4242, set()), THREAD)
+        self.assertIsNone(sessions._thread_of("g", 4242, {THREAD}))       # already a session's
+        self.assertIsNone(sessions._thread_of("g", 777, set()))
+
+    def test_a_gatherer_from_before_runs_is_read_by_process(self):
+        self.reads([(THREAD, "/w", os.getpid(), None)], run_column=False)
+        self.assertEqual(sessions._thread_of("g", os.getpid(), set()), THREAD)             # the process itself
+        self.assertIsNone(sessions._thread_of("g", os.getpid() + 100000, set()))
 
 
 @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a pseudo-terminal")

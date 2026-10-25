@@ -8,13 +8,14 @@ What a call says it did to files, read from the call alone: the files a shell co
 (by a command that only prints part of a file: `sed -n`, `cat`, `head`, `tail`, `nl`, `grep -n`)
 and which of its output lines are each one's; the files it changes, and how, when the command
 says (`cat > F <<EOF`, `tee`, `sed -i`, a Python script that replaces constant strings in a file
-and writes it back); and the files a codex patch adds, changes or deletes. Read, not run."""
+and writes it back); and the files a codex patch adds, changes or deletes; a codex code-mode call
+(`exec`) read as the calls its script makes. Read, not run."""
 import ast
 import fnmatch
 import os
 import re
 import shlex
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 READ_LINE = re.compile(r"^\s*(\d+)(?:\t|→)(.*)$")              # a Read result's line: "12\ttext"
 GREP_LINE = re.compile(r"^(\d+)[:-](.*)$")                       # grep -n on one file: "12:text"
@@ -675,3 +676,238 @@ def _patch_files(text: str):
             hunk[0].append(line[1:]); hunk[1].append(line[1:])
     return out
 
+
+# ------------------------------------------------------------------ codex's code mode: the calls a script makes
+
+CODE_MODE = "exec"          # codex's code-mode tool: a JavaScript script, which calls the others as `tools.<name>(...)`
+TOOL_AT = re.compile(r"tools\s*\.\s*([A-Za-z_$][\w$]*)\s*\(")
+PRINT_AT = re.compile(r"text\s*\(")
+BOUND = re.compile(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*await\s+tools\s*\.")
+KEY = re.compile(r"[A-Za-z_$][\w$]*|\d+")
+NUMBER = re.compile(r"-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+WORDS = {"true": True, "false": False, "null": None, "undefined": None}
+ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f", "v": "\v", "0": "\0"}
+SCRIPT_HEAD = re.compile(r"^Script (completed|failed|terminated|error|running)[^\n]*\n(?:Wall time[^\n]*\n)?"
+                         r"(?:Output:\n\n?)?")
+
+
+class _NotLiteral(Exception):
+    """An argument a script does not write out: a variable, an expression, a template with ${...}."""
+
+
+def _skip(s: str, i: int) -> int:
+    """Where the string at s[i] (', " or `) ends -- a template's ${...} skipped whole -- read loosely:
+    for finding the code around it, not its value."""
+    q, i = s[i], i + 1
+    while i < len(s):
+        c = s[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == q or (c == "\n" and q != "`"):
+            return i + 1
+        if q == "`" and s.startswith("${", i):
+            depth, i = 1, i + 2
+            while i < len(s) and depth:
+                if s[i] in "'\"`":
+                    i = _skip(s, i)
+                    continue
+                depth += {"{": 1, "}": -1}.get(s[i], 0)
+                i += 1
+            continue
+        i += 1
+    return i
+
+
+def _code(s: str):
+    """Each position of a script that is code, not in a string or a comment, in order."""
+    i = 0
+    while i < len(s):
+        if s[i] in "'\"`":
+            i = _skip(s, i)
+        elif s.startswith("//", i):
+            j = s.find("\n", i)
+            i = len(s) if j < 0 else j
+        elif s.startswith("/*", i):
+            j = s.find("*/", i + 2)
+            i = len(s) if j < 0 else j + 2
+        else:
+            yield i
+            i += 1
+
+
+def _space(s: str, i: int) -> int:
+    """Past the spaces and comments at s[i]."""
+    while i < len(s):
+        if s[i].isspace():
+            i += 1
+        elif s.startswith("//", i):
+            j = s.find("\n", i)
+            i = len(s) if j < 0 else j
+        elif s.startswith("/*", i):
+            j = s.find("*/", i + 2)
+            i = len(s) if j < 0 else j + 2
+        else:
+            break
+    return i
+
+
+def _string(s: str, i: int) -> Tuple[str, int]:
+    """The string at s[i] (', " or `) as JavaScript reads it, and where it ends; a template with ${...}
+    in it is not a literal."""
+    q, i, out = s[i], i + 1, []
+    while i < len(s):
+        c = s[i]
+        if c == q:
+            text = "".join(out)
+            try:                                         # a pair of \u escapes: the one character they are
+                return text.encode("utf-16", "surrogatepass").decode("utf-16"), i + 1
+            except UnicodeError:
+                return text, i + 1
+        if c == "\\" and i + 1 < len(s):
+            e = s[i + 1]
+            if e == "u" and s[i + 2:i + 3] == "{":
+                end = s.index("}", i + 3)
+                out.append(chr(int(s[i + 3:end], 16)))
+                i = end + 1
+            elif e in "ux":
+                n = 4 if e == "u" else 2
+                out.append(chr(int(s[i + 2:i + 2 + n], 16)))
+                i += 2 + n
+            elif e in "\r\n":                                  # a line continued
+                i += 3 if s.startswith("\r\n", i + 1) else 2
+            else:
+                out.append(ESCAPES.get(e, e))
+                i += 2
+            continue
+        if q == "`" and s.startswith("${", i) or c == "\n" and q != "`":
+            raise _NotLiteral
+        out.append(c)
+        i += 1
+    raise _NotLiteral
+
+
+def _literal(s: str, i: int) -> Tuple[Any, int]:
+    """The value written at s[i] -- a string, a number, true/false/null, or an array or object of them
+    -- and where it ends; anything else is not a literal."""
+    i = _space(s, i)
+    c = s[i:i + 1]
+    if c in ("'", '"', "`"):
+        return _string(s, i)
+    if c in ("{", "["):
+        close, out, i = "}" if c == "{" else "]", {} if c == "{" else [], i + 1
+        while True:
+            i = _space(s, i)
+            if s[i:i + 1] == close:
+                return out, i + 1
+            if c == "[":
+                value, i = _literal(s, i)
+                out.append(value)
+            else:
+                if s[i:i + 1] in ("'", '"'):
+                    key, i = _string(s, i)
+                else:
+                    m = KEY.match(s, i)
+                    if not m:
+                        raise _NotLiteral                  # a spread, a computed key
+                    key, i = m.group(0), m.end()
+                i = _space(s, i)
+                if s[i:i + 1] != ":":
+                    raise _NotLiteral                      # {cmd}: a variable's value; a method
+                out[key], i = _literal(s, i + 1)
+            i = _space(s, i)
+            if s[i:i + 1] == ",":
+                i += 1
+            elif s[i:i + 1] != close:
+                raise _NotLiteral                          # an expression: "a" + b
+    m = NUMBER.match(s, i)
+    if m:
+        number = float(m.group(0))
+        return int(number) if number.is_integer() and "." not in m.group(0) else number, m.end()
+    m = KEY.match(s, i)
+    if m and m.group(0) in WORDS:
+        return WORDS[m.group(0)], m.end()
+    raise _NotLiteral
+
+
+def _after(s: str, i: int) -> bool:
+    """Whether s[i] starts a name of its own: not the end of a longer one, or a property (`x.tools`)."""
+    return i == 0 or not (s[i - 1].isalnum() or s[i - 1] in "_$.")
+
+
+def script_calls(script: str) -> List[Tuple[str, Any]]:
+    """The tools a codex code-mode script calls (`tools.<name>(...)`), in the order written: (name, its
+    argument -- a string, or an object of literals), the argument None where the script does not write it
+    out (a variable, an expression, a template with ${...}). A call in a loop is listed once."""
+    s, out = script if isinstance(script, str) else "", []
+    for i in _code(s):
+        m = TOOL_AT.match(s, i)
+        if not m or not _after(s, i):
+            continue
+        try:
+            arg, end = _literal(s, m.end())
+            if s[_space(s, end):_space(s, end) + 1] not in (")", ","):
+                raise _NotLiteral                          # "cat " + name
+        except (_NotLiteral, ValueError, IndexError, OverflowError):
+            arg = None
+        out.append((m.group(1), arg))
+    return out
+
+
+def _inside(s: str, i: int) -> str:
+    """What is between the parenthesis at s[i] and the one that closes it."""
+    depth, j = 0, i
+    while j < len(s):
+        c = s[j]
+        if c in "'\"`":
+            j = _skip(s, j)
+            continue
+        depth += {"(": 1, ")": -1}.get(c, 0)
+        if depth == 0:
+            return s[i + 1:j]
+        j += 1
+    return s[i + 1:]
+
+
+def script_prints_result(script: str) -> bool:
+    """Whether a script prints its call's output and nothing else: one `text(...)`, of `r.output` (`r` the
+    call's result: `const r = await tools.exec_command(...)`) or `(await tools.exec_command(...)).output`.
+    What it printed is then the command's own output."""
+    s = script if isinstance(script, str) else ""
+    bound = {m.group(1) for m in BOUND.finditer(s)}
+    said = []
+    for i in _code(s):
+        m = PRINT_AT.match(s, i)
+        if m and _after(s, i):
+            said.append(_inside(s, m.end() - 1).strip())
+    if len(said) != 1:
+        return False
+    m = re.fullmatch(r"([A-Za-z_$][\w$]*)\.output", said[0])
+    return bool(m and m.group(1) in bound or re.fullmatch(r"\(\s*await\s+tools\s*\.[\s\S]*\)\s*\)\.output", said[0]))
+
+
+def script_output(text: str) -> Tuple[str, Optional[str]]:
+    """What a code-mode script printed, without codex's head before it, and how the script ended:
+    "completed", "failed" (failed, terminated, an error), "running" (it yielded, still at work), or None
+    when the text has no head."""
+    m = SCRIPT_HEAD.match(text or "")
+    if not m:
+        return text or "", None
+    how = m.group(1)
+    return text[m.end():], "completed" if how == "completed" else "running" if how == "running" else "failed"
+
+
+def opened_script(call_id: str, script: str, result: Optional[Tuple[str, bool]] = None) -> List[tuple]:
+    """A code-mode call as the calls its script makes, each a call of its own: [(id, name, input, result)]
+    -- one call keeps the script's id, several are each `<id>#<n>`; none found: []. `result`, the script's
+    (text, failed), gives each its own: to a lone call whose output is all the script printed, that
+    output; to any other, "" -- what it showed of files then not known; failed when the script failed."""
+    calls = script_calls(script)
+    if not calls:
+        return []
+    text, how = script_output(result[0]) if result else ("", None)
+    failed = bool(result and (result[1] or how == "failed"))
+    whole = len(calls) == 1 and how == "completed" and script_prints_result(script)
+    return [(call_id if len(calls) == 1 else f"{call_id}#{n}", name, arg,
+             None if result is None else (text if whole else "", failed))
+            for n, (name, arg) in enumerate(calls, 1)]

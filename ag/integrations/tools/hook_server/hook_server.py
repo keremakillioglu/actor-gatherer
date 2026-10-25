@@ -23,8 +23,10 @@ only, so a harness that tries WebSockets first falls back to HTTP.
 `--hook` names the hook: an async callable taking a `Request` and returning a
 new JSON body or None, or a class, built with the `--option`s, whose
 instances are that. A hook with a `close()` has it called when the server
-stops. A URL's `/h/<label>/` may be followed by `/l/<n>/`: the hook's
-`request.limit` is then `n` (the prefix is stripped before forwarding), the
+stops. A URL's `/h/<label>/` may be followed by `/r/<run>/`: the hook's `request.run` is then
+`run` -- the one run of the harness (its process) the call came from, as its launcher named it,
+whichever thread or session the call is in -- and then by `/l/<n>/`: the hook's
+`request.limit` is then `n` (the prefixes are stripped before forwarding), the
 harness's own limit for its calls. A hook with a `measured(request, tokens)` has it called (awaited) when
 a POST's answer has come back whole, before the harness sees its end: `tokens`
 is the call's input tokens as the answer reports them, cached ones included
@@ -79,6 +81,7 @@ from .trace import ModelTrace, response_of
 
 HOP = {"host", "content-length", "transfer-encoding", "connection", "content-encoding", "accept-encoding"}
 LABEL_PREFIX = re.compile(r"^/h/([A-Za-z0-9._-]+)(?=/|$)")
+RUN_PREFIX = re.compile(r"^/r/([A-Za-z0-9._-]+)(?=/|$)")
 LIMIT_PREFIX = re.compile(r"^/l/([0-9]+)(?=/|$)")
 
 
@@ -91,6 +94,8 @@ class Request:
     headers: dict = field(default_factory=dict)
     body: Any = None                            # the JSON body, or None if it is not JSON
     limit: Optional[int] = None                 # the <n> of /l/<n>/..., if the URL had one
+    run: Optional[str] = None                   # the <run> of /r/<run>/..., if the URL had one: the harness's
+                                                # run (its process) the call came from, as its launcher named it
     upstream: Optional[str] = None              # where the request is forwarded (path_qs after it)
     state: dict = field(default_factory=dict)   # the hook's own, kept until its `measured` for this request
     process: Optional[dict] = None              # who sent it: {"pid", "started"} of the harness's process
@@ -111,6 +116,16 @@ def route_of(path: str):
     `/h/<label>/v1/chat` is label `label` and `/v1/chat`. A label
     is letters, digits, `.`, `_` and `-`."""
     match = LABEL_PREFIX.match(path)
+    if not match:
+        return None, path
+    return match.group(1), path[match.end():] or "/"
+
+
+def run_of(path: str):
+    """(the run the URL names, or None; the path to forward): `/r/<run>/v1/chat`, after any label,
+    is run `run` and `/v1/chat` -- the harness's run (its process) the call came from, as its launcher
+    named it. A run is letters, digits, `.`, `_` and `-`."""
+    match = RUN_PREFIX.match(path)
     if not match:
         return None, path
     return match.group(1), path[match.end():] or "/"
@@ -195,6 +210,7 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
             return web.Response(status=426, text="WebSockets are not relayed: use HTTP")
         n = next(counter)
         label, path_qs = route_of(request.path_qs)
+        run, path_qs = run_of(path_qs)
         limit, path_qs = limit_of(path_qs)
         raw = await request.read()
         headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP}
@@ -203,7 +219,7 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         except ValueError:
             body = None                                    # not JSON (e.g. compressed): as it is
         given = Request(request.method, path_qs.split("?", 1)[0], label, dict(request.headers), body, limit,
-                        upstream=upstream, process=sender(request))
+                        upstream=upstream, process=sender(request), run=run)
         try:
             new = await _call(hook, given)
         except Exception as exc:  # noqa: BLE001 - a failing hook never blocks the call

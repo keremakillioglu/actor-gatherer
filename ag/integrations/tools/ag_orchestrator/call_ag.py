@@ -38,7 +38,7 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
                   adaptor: Adaptor, out: Optional[dict] = None,
                   measured: Optional[dict] = None, limit: Optional[int] = None,
                   preamble: Optional[list] = None, op: str = "rewrite",
-                  process: Optional[dict] = None) -> Tuple[Optional[list], str]:
+                  process: Optional[dict] = None, run: Optional[str] = None) -> Tuple[Optional[list], str]:
     """(the messages the model gets, or None to send the harness's own; a
     note): the adaptor's `to_events`, a `rewrite` to the server, its `to_messages`.
     `out`, when given, gets the read's `read_id` (what the provider's count of
@@ -50,7 +50,8 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     harness's own limit for this call (where it compacts, or its window ends); `preamble`,
     [{"name", "text"}], what the harness sends besides its messages (its system prompt,
     its tool definitions), kept with the read; `process`, {"pid", "started"}, the harness's process
-    that made the call, kept with it too (so a reader can tell whether the session still runs). `op` "context" asks for the context read only
+    that made the call, kept with it too (so a reader can tell whether the session still runs), as is `run`, the
+    harness's run that made it, as its launcher named it (`request.run`). `op` "context" asks for the context read only
     (the server's `context`: the events inserted, nothing else of the gatherer changed, no read)."""
     if cwd:
         properties = {**properties, CWD: cwd}                     # where the agent works
@@ -75,6 +76,8 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
         body["preamble"] = preamble
     if process:
         body["process"] = process
+    if run:
+        body["run"] = run
     answer = await client.request(op, body)
     if not isinstance(answer, dict) or answer.get("error"):
         why = answer.get("error") if isinstance(answer, dict) else repr(answer)
