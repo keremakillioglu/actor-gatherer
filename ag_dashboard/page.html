@@ -420,7 +420,7 @@ button:disabled { opacity: .5; cursor: default; }
 .views button { border: 0; border-radius: 6px; background: none; padding: 3px 10px; color: var(--ink-2); }
 .views button[aria-pressed="true"] { background: var(--selected); color: var(--ink); font-weight: 600; }
 /* a choice that just became there to make: a few pulses of the accent */
-.views button.flash { animation: views-flash .65s ease-in-out 4; }
+.views button.flash, .hist .h-group.flash { animation: views-flash .65s ease-in-out 4; }
 @keyframes views-flash { 50% { background: color-mix(in srgb, var(--s1) 45%, transparent); color: var(--ink); } }
 @media (prefers-reduced-motion: reduce) { .views button.flash { animation: none; outline: 2px solid var(--s1); } }
 .composer { display: grid; gap: 6px; margin-top: 12px; }
@@ -568,7 +568,7 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fv-block .diff .ctx { color: var(--muted); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } }
-/* the History view: the history to pick from at the left, at the grain picked; what the Gatherer made of it at the right */
+/* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
 .hist .h-grid:has(> .h-side.open) { grid-template-columns: minmax(0, 1fr) min(400px, 42%); }   /* the panel: only while open */
@@ -582,6 +582,13 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-search:focus-within { border-color: var(--axis); }
 .hist .h-search svg { flex: none; color: var(--muted); }
 .hist .h-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 13px; padding: 5px 0; }
+.hist .h-group { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--ring); border-radius: 6px;
+  font-size: 12px; color: var(--ink); cursor: pointer; white-space: nowrap; user-select: none; }
+.hist .h-group:hover { background: var(--wash); }
+.hist .h-group.off { color: var(--muted); cursor: default; } .hist .h-group.off:hover { background: none; }
+.hist .h-group input { margin: 0; accent-color: var(--s1); }
+.hist .h-group .spin { display: inline-block; width: 1.2em; text-align: center; }
+.hist .h-group .spin::before { content: "✻"; color: var(--term-accent); animation: term-spin 1.2s steps(1) infinite; }
 .hist .h-types { position: relative; flex: none; }
 .hist .h-types > summary { list-style: none; margin: 0; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ring); border-radius: 6px;
   padding: 4px 10px; font-size: 12px; color: var(--ink); cursor: pointer; white-space: nowrap; }
@@ -599,7 +606,7 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-build { white-space: nowrap; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hist .h-build.bad { color: var(--warning); }
 .hist .h-build .spin::before { content: "✻"; color: var(--term-accent); animation: term-spin 1.2s steps(1) infinite; }
-/* the list: no rules between rows; a timeline down the left, a dot for each row of the grain (green: the running
+/* the list: no rules between rows; a timeline down the left, a dot for each task (green: the running
    task); what a row holds nested along a guide, smaller and quieter; when and how big, on hover */
 .hist .h-list { flex: 1; min-height: 0; overflow: auto; padding: 8px 0 28px; }
 .hist .h-row { --row-bg: var(--surface); position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 8px; align-items: start;
@@ -630,7 +637,6 @@ button:disabled { opacity: .5; cursor: default; }
 .hist .h-row.open .h-label { -webkit-line-clamp: 6; }
 .hist .h-label.dim { color: var(--muted); font-style: italic; }
 .hist .h-kind { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--good); margin-right: 6px; }
-.hist .h-kind.plain { color: var(--muted); }
 .hist .h-main.keyed { border-left: 3px solid var(--key); padding-left: 9px; }   /* a message's type, as the Messages view keys it */
 .hist .h-badge { display: inline-block; font-size: 10px; font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-right: 6px; line-height: 15px; }
 .hist .h-sub { font-size: 12.5px; line-height: 1.45; color: var(--ink-2); margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -2608,7 +2614,7 @@ const CHAT_VIEW_KEY = "ag-dashboard-chat-view";
 let chatViewId = (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "transcript"; } catch (e) { return "transcript"; } })();
 const chatView = () => CHAT_VIEWS.get(chatViewId) || CHAT_VIEWS.get("transcript");
 async function setChatView(id) {
-  if (id === "history" && chatViewId !== "history") hist.askedFor = hist.grain = hist.stay = null;   // opened again: built again
+  if (id === "history" && chatViewId !== "history") hist.askedFor = hist.group = hist.stay = null;   // opened again: built again
                                                      // if due, and at its tasks if it has them
   chatViewId = id;
   try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
@@ -3141,21 +3147,18 @@ addChatView({
 });
 
 // ------------------------------------------------------------------ the History view
-// The history to look through and pick from, at the grain the reader chooses -- the actors, the tasks ag
-// segmented each one's history into, the turns (a user message and all that answered it), the messages --
-// of the selected actor or of its whole gatherer, searched (history.py). What is picked is exported, or
+// The selected actor's history to look through and pick from -- its turns (a user message and all that answered it),
+// grouped by the tasks ag split it into when the reader asks, each opening to its messages -- searched (history.py). What is picked is exported, or
 // given to the Gatherer's model to summarize, or to make a memory or a skill of, with what the reader asks
 // of it; what the model made is listed at the right, kept by the server (<home>/dashboard/extracts/).
-// What is picked is the gatherer's: it stays picked across its actors, and across the grains.
-const HIST_GRAINS = [["tasks", "Tasks"], ["turns", "Turns"]];         // a turn opens to its messages
 const HIST_KINDS = { summary: ["Summarize", "Summary", "summary.md"], memory: ["Generate memory", "Memory", "memory.md"],
   agents: ["Generate AGENTS.md", "AGENTS.md", "AGENTS.md"], skill: ["Generate skill", "Skill", "SKILL.md"] };
 HIST_KINDS.claude = ["", "CLAUDE.md", "CLAUDE.md"];      // one made before AGENTS.md: shown, not offered
 const HIST_PAGES = 10;                              // the pages of history.py's OUTLINE_ITEMS loaded at once
 const HIST_SHOWN = 2000;                            // the rows drawn before "show more"
-// `grain`: the reader's pick of Tasks or Turns for the actor shown, null until they pick: an actor opens at its tasks
-// when it has them, else at its turns.
-const hist = { grain: null,
+// `group`: whether the turns are grouped by tasks, as the reader checked it for the actor shown; null until they do:
+// an actor opens grouped when it has tasks.
+const hist = { group: null,
   q: "", hits: null, hitsMore: false, open: new Set(), shut: new Set(), sel: new Map(), selFor: null, last: null,
   ask: "", err: "", busy: false, full: new Map(), recs: { gatherer: null, list: [], at: 0 }, recOpen: null, limit: HIST_SHOWN,
   byId: new Map(), flat: [], tops: [], version: 0 };
@@ -3174,7 +3177,7 @@ async function loadOutlineNow() {
   if (!state.hist || state.hist.key !== k) {
     state.hist = { key: k, gatherer: g, channel: c, events: [], tasks: [], builds: {}, last: 0, more: false,
       error: "", version: 0 };
-    hist.grain = hist.stay = null;                   // another actor: at its tasks if it has them
+    hist.group = hist.stay = null;                   // another actor: grouped by its tasks if it has them
   }
   const h = state.hist;
   for (let page = 0; page < HIST_PAGES; page++) {
@@ -3271,7 +3274,7 @@ function histTree(h) {
     let a = actors.get(e.channel);
     if (!a) {
       a = node("actor", `a:${e.channel}`, { channel: e.channel, tasks: tasksBy.get(e.channel) || [], ti: -2, turnN: 0, task: null, turn: null, ask: "" });
-      if (!a.tasks.length) {                         // not split into tasks: its turns under one task of their own
+      if (!a.tasks.length) {                         // not split into tasks: its turns under one task of their own, never shown
         a.task = node("task", `k:${e.channel}:all`, { channel: e.channel, task: null, whole: true });
         a.children.push(a.task); byId.set(a.task.id, a.task);
       }
@@ -3310,12 +3313,12 @@ function histTree(h) {
 // view's too) and, searching, one that matches.
 const histShown = (r) => { const m = hist.byId.get(`m:${r}`); return !m || shownTypes.has(itemType({ name: m.event.type, group: "Recent history" })[0]); };
 const histHas = (n) => n.rows.some((r) => histShown(r) && (!hist.hits || hist.hits.has(r)));
-// The rows the list shows, in order: [node, depth, open-by-default]. One tree in both grains -- its tasks at the
-// left, their turns under them, a turn's messages under it -- so a switch between them only opens or folds the
-// tasks: Tasks lists them folded, each opened where the reader opened it (`open`); Turns, opened, each folded
-// where the reader folded it (`shut`). A search keeps the rows with a match.
-function histVisible(tree, grain) {
-  const out = [], tops = [], turns = grain === "turns";
+// The rows the list shows, in order: [node, depth, header]. Turns, always one step in from the left, each opened to
+// its messages where the reader opened it; grouped by tasks, each task's row at the left with its turns under it
+// once opened -- so grouping only adds the tasks between the turns, nothing else moves. A search keeps the rows
+// with a match.
+function histVisible(tree, grouped) {
+  const out = [], tops = [];
   const walk = (n, depth) => {
     if (!histHas(n)) return;
     out.push([n, depth, false]);
@@ -3323,9 +3326,8 @@ function histVisible(tree, grain) {
   };
   for (const a of tree) for (const t of a.children) {
     if (!histHas(t)) continue;
-    out.push([t, 0, turns]);
-    tops.push(...(turns ? t.children.filter(histHas) : [t]));
-    if (turns ? !hist.shut.has(t.id) : hist.open.has(t.id)) for (const c of t.children) walk(c, 1);
+    if (grouped) { out.push([t, 0, false]); tops.push(t); }
+    if (!grouped || hist.open.has(t.id)) for (const c of t.children) { if (histHas(c)) { if (!grouped) tops.push(c); walk(c, 1); } }
   }
   hist.tops = tops;
   return out;
@@ -3488,7 +3490,7 @@ async function runHistSearch() {
   hist.version++;
   histRedraw();
 }
-function setHistGrain(grain) { hist.grain = grain; hist.stay = null; hist.limit = HIST_SHOWN; hist.version++; histRedraw(); }
+function setHistGroup(on) { hist.group = on; hist.stay = null; hist.limit = HIST_SHOWN; hist.version++; histRedraw(); }
 // `text` with each match of `q` marked.
 function histMark(text, q, cls = "h-hit") {
   const out = el("div", { class: cls });
@@ -3513,8 +3515,6 @@ function histLabel(n, hits) {
     if (t && n.current)                              // the build's last task, still open, and all since: as it is
       return [el("div", { class: "h-label" }, kind("Running task")),
         el("div", { class: "h-sub dim", text: "Still going on: not summarized" }), hit];
-    if (n.whole) return [el("div", { class: "h-label" }, el("span", { class: "h-kind plain", text: "All turns" })),
-      el("div", { class: "h-sub dim", text: "ag has not split this history into tasks yet" }), hit];
     return [el("div", { class: "h-label" + (t ? "" : " dim") }, t ? t.name : "Before ag's first task"),
       t && t.description ? el("div", { class: "h-sub", text: t.description }) : null, hit];
   }
@@ -3568,7 +3568,8 @@ function histBuildNote(h) {
   if (!b) return null;
   const since = `${plural(b.since, "user message")} since`;
   const asked = hist.built && hist.built.for === key(h.gatherer, c) ? hist.built : null;
-  const [cls, text, title] = b.status === "running" ? ["run", "Building tasks…", "ag is splitting this actor's history into tasks; they show here when it is done"]
+  if (b.status === "running" && !h.tasks.length) return null;      // the checkbox says so
+  const [cls, text, title] = b.status === "running" ? ["run", "Updating tasks…", "ag is splitting this actor's history into tasks again"]
     : asked && asked.failed ? ["bad", "Build not started", asked.failed]
     : b.status === "failed" ? ["bad", `Last build failed · ${since}`, b.error || ""]
     : !b.build_id ? ["", `No tasks yet · ${plural(b.since, "user message")}`, `ag builds tasks once an actor has ${HIST_BUILD_MESSAGES} user messages`]
@@ -3594,7 +3595,18 @@ document.addEventListener("click", (ev) => {                 // the types' menu 
   const menu = document.getElementById("hist-types");
   if (menu && menu.open && !menu.contains(ev.target)) menu.open = false;
 });
-function histBar(h, grains, grain) {
+// Group by tasks: a checkbox, on when the actor has tasks; while ag builds them, saying so; pulsing when they come in.
+function groupBox(h, grouped, hasTasks) {
+  const building = ((h.builds || {})[h.channel] || {}).status === "running";
+  const flash = hist.flash && hist.flash.key === h.key && Date.now() < hist.flash.until;
+  const box = el("input", { type: "checkbox", ...(grouped ? { checked: "" } : {}), ...(hasTasks ? {} : { disabled: "" }) });
+  box.addEventListener("change", () => setHistGroup(box.checked));
+  return el("label", { class: "h-group" + (hasTasks ? "" : " off") + (flash ? " flash" : ""),
+    title: hasTasks ? "Show the turns under the tasks ag split this history into"
+      : building ? "ag is splitting this actor's history into tasks" : `ag splits an actor's history into tasks once it has ${HIST_BUILD_MESSAGES} user messages` },
+    box, ...(building && !hasTasks ? [el("span", { class: "spin", "aria-hidden": "true" }), "Building tasks…"] : ["Group by tasks"]));
+}
+function histBar(h, grouped, hasTasks) {
   const box = el("input", { type: "search", placeholder: "Search this actor's history",
     "aria-label": "Search the history", spellcheck: "false", value: hist.q });
   box.addEventListener("input", () => histSearch(box.value));
@@ -3605,9 +3617,7 @@ function histBar(h, grains, grain) {
   return el("div", { class: "h-bar", "data-morph": "" },
     el("div", { class: "h-controls", "data-morph": "" },
       el("label", { class: "h-search", "data-sig": `search:${h.key}` }, searchIcon(), box),
-      histSwitch("Grain", grains.map(([g, name, ok]) => [g, name, ok, "ag has not segmented this history into tasks yet",
-        g === "tasks" && hist.flash && hist.flash.key === h.key && Date.now() < hist.flash.until ? "flash" : ""]),
-        grain, setHistGrain),
+      groupBox(h, grouped, hasTasks),
       typesMenu(),
       el("div", { class: "h-status" },
         q ? el("span", { class: "h-found", text: !hist.hits ? "Searching…"
@@ -3815,20 +3825,18 @@ function histRender() {
   const tree = histTree(h);
   const hasTasks = h.tasks.length > 0;
   if (hist.hadTasks && hist.hadTasks.key === h.key && !hist.hadTasks.had && hasTasks) {
-    // tasks come in while the reader looks: the list stays as it is, and the Tasks button pulses a few times
+    // tasks come in while the reader looks: the list stays as it is, and Group by tasks pulses a few times
     hist.flash = { key: h.key, until: Date.now() + 2600 };
-    if (!hist.grain) hist.stay = { key: h.key, grain: "turns" };
+    if (hist.group === null) hist.stay = { key: h.key };
     setTimeout(() => { hist.version++; histRedraw(); }, 2700);
   }
   hist.hadTasks = { key: h.key, had: hasTasks };
-  const grains = HIST_GRAINS.map(([g, name]) => [g, name, g === "tasks" ? hasTasks : true]);
-  let grain = hist.grain || (hist.stay && hist.stay.key === h.key ? hist.stay.grain : hasTasks ? "tasks" : "turns");
-  if (!grains.find((x) => x[0] === grain)[2]) grain = "turns";
-  const vis = h.error ? [] : histVisible(tree, grain);
+  const grouped = hasTasks && (hist.group ?? !(hist.stay && hist.stay.key === h.key));
+  const vis = h.error ? [] : histVisible(tree, grouped);
   hist.flat = vis.map(([n, , head]) => n.id + (head ? "/h" : ""));
   histRows.begin(signature([h.key, [...shownTypes]]));
   const shown = vis.slice(0, hist.limit);
-  const list = el("div", { class: "h-list", "data-keep": `hist-list:${h.key}:${grain}`, "data-morph": "" });
+  const list = el("div", { class: "h-list", "data-keep": `hist-list:${h.key}`, "data-morph": "" });
   const q = hist.q.trim();
   list.kids = h.error ? [el("div", { class: "h-note", text: h.error })]
     : !h.events.length ? [el("div", { class: "h-note", text: "No history yet." })]
@@ -3837,7 +3845,7 @@ function histRender() {
       vis.length > shown.length ? el("button", { type: "button", class: "h-more", onclick: () => { hist.limit += HIST_SHOWN; hist.version++; histRedraw(); } },
         `Show ${full(Math.min(HIST_SHOWN, vis.length - shown.length))} more of ${full(vis.length - shown.length)}`) : null,
       h.more ? el("button", { type: "button", class: "h-more", onclick: async () => { await loadOutline(); histRedraw(); } }, "Load more of the history") : null].filter(Boolean);
-  const left = el("div", { class: "h-left", "data-morph": "" }, histBar(h, grains, grain), list);
+  const left = el("div", { class: "h-left", "data-morph": "" }, histBar(h, grouped, hasTasks), list);
   return el("div", { class: "h-grid", "data-morph": "" }, left, histSide(h));
 }
 if (!SNAPSHOT) addChatView({
