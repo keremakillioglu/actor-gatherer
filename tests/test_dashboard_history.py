@@ -82,7 +82,8 @@ class HistoryTest(HistoryBase):
         conn = sqlite3.connect(os.path.join(self.tmp.name, "gatherers", "g", "context.db"))
         conn.executescript("""CREATE TABLE _builds (build_id INTEGER PRIMARY KEY, channel_key TEXT, status TEXT, started_at REAL,
             finished_at REAL, through_row INTEGER, open_from_row INTEGER, ranking_json TEXT, parallel_mark INTEGER, error TEXT, reason TEXT);
-            INSERT INTO _builds VALUES (1, 'c1', 'ready', 1, 2, 5, 2, '[]', 0, NULL, 'asked');""")
+            INSERT INTO _builds VALUES (1, 'c1', 'ready', 1, 2, 5, 2, '[]', 0, NULL, 'asked');
+            INSERT INTO _builds VALUES (2, 'c1', 'ready', 3, 4, 8, 8, '[]', 0, NULL, 'join');""")   # a join: not counted
         conn.commit()
         conn.close()
         got = history.outline("g", "c1")["builds"]["c1"]

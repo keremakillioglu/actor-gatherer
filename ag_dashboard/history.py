@@ -166,11 +166,14 @@ BUILD_MESSAGES = 10
 
 
 def _builds(conn, channel: Optional[str]) -> Dict[str, dict]:
-    """Each channel's latest build -- {build_id, status, reason, started, finished, error} -- and how many
-    user messages it has after the last row its builds went through (`since`)."""
+    """Each channel's latest build of its own history -- {build_id, status, reason, started, finished, error}
+    -- and how many user messages it has after the last row those went through (`since`). A join is not one:
+    it ranks the other channels' tasks, and splits nothing of the channel's own."""
     tables = data._tables(conn)
     where, args = (f"WHERE e.{CHANNEL} = ?", (channel,)) if channel is not None else (f"WHERE e.{CHANNEL} IS NOT NULL", ())
-    through = dict(conn.execute("SELECT channel_key, max(through_row) FROM _builds GROUP BY channel_key")) \
+    cols = data._columns(conn, "_builds") if "_builds" in tables else set()
+    own = "WHERE coalesce(reason, '') != 'join'" if "reason" in cols else ""
+    through = dict(conn.execute(f"SELECT channel_key, max(through_row) FROM _builds {own} GROUP BY channel_key")) \
         if "_builds" in tables else {}
     out: Dict[str, dict] = {}
     for ch, row_id in conn.execute(
@@ -179,10 +182,9 @@ def _builds(conn, channel: Optional[str]) -> Dict[str, dict]:
         o = out.setdefault(ch, {"since": 0})
         o["since"] += row_id > (through.get(ch) or 0)
     if "_builds" in tables:
-        cols = data._columns(conn, "_builds")
         for r in conn.execute(f"SELECT channel_key, build_id, status, started_at, finished_at, error"
                               f"{', reason' if 'reason' in cols else ''} FROM _builds WHERE build_id IN "
-                              "(SELECT max(build_id) FROM _builds GROUP BY channel_key)"):
+                              f"(SELECT max(build_id) FROM _builds {own} GROUP BY channel_key)"):
             if r["channel_key"] in out:
                 out[r["channel_key"]].update(build_id=r["build_id"], status=r["status"], started=data._seconds(r["started_at"]),
                                              finished=data._seconds(r["finished_at"]), error=r["error"],

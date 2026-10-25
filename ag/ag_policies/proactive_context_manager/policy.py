@@ -852,7 +852,7 @@ class ProactiveContextManager(Policy):
         """A build a reader asked for from outside any call (the dashboard's History view): an ordinary
         build (reason `asked`), started in the background and not waited for -- once the channel has at
         least `min_messages` user messages since the last its builds went through (since its start,
-        before any). Adopted as any build is: at the channel's next user message. What came of it:
+        before any) -- a join aside: it splits nothing of the channel's own history. Adopted as any build is: at the channel's next user message. What came of it:
         {"started": build_id, "messages": n}; {"running": build_id}, one already is; {"few": n}, only n
         such messages since; {"failed": why}; {} with no background work."""
         cfg, ch = self.config, channel_of(read)
@@ -862,8 +862,8 @@ class ProactiveContextManager(Policy):
         if latest and latest["status"] == "running" and time.time() - latest["started_at"] < cfg.build_timeout:
             return {"running": latest["build_id"]}
         types = TypeIds.load(conn)
-        since = conn.execute("SELECT max(through_row) FROM _builds WHERE channel_key = ?",
-                             (tables.key(ch),)).fetchone()[0] or 0
+        since = conn.execute("SELECT max(through_row) FROM _builds WHERE channel_key = ? AND coalesce(reason, '') != ?",
+                             (tables.key(ch), tables.JOIN)).fetchone()[0] or 0
         n = sum(1 for r in history.rows(conn, types, self.groups, ch)
                 if r.row_id > since and history.opens_turn(r, types, self.groups))
         if n < min_messages:

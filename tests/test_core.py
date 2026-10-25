@@ -1039,6 +1039,12 @@ class RequestedTest(Base):
         self.read()
         self.assertEqual(store.last_read(self.m._conn("s"), ch("c1"))["basis"], str(build_id))
 
+    def test_a_join_splits_nothing_so_its_messages_still_count(self):
+        self.put(PREAMBLE + conversation(12))
+        conn = self.m._conn("s")
+        tables.settle(conn, tables.claim_build(conn, "c1", 60, tables.JOIN), "ready", through_row=store.high_water(conn))
+        self.assertEqual(self.ask()["messages"], 12)
+
     def test_nothing_without_background_work(self):
         self.policy.jobs = None
         self.put(PREAMBLE + conversation(6))
