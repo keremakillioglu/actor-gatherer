@@ -97,6 +97,21 @@ class EventsTest(unittest.TestCase):
         pasted = {"role": "user", "content": [{"type": "text", "text": "[Image #1] why is this button grey?"}]}
         self.assertEqual(claude.classify(pasted), USER_MESSAGE)                       # the user's own words
 
+    def test_claude_code_s_note_that_a_tool_is_loaded_is_not_the_user_speaking(self):
+        # as Claude Code sends a tool search's result (seen in a live gatherer): its note after the results
+        found = {"type": "tool_result", "tool_use_id": "toolu_7", "content": [{"type": "tool_reference", "tool_name": "TaskStop"}]}
+        listed = {"type": "tool_result", "tool_use_id": "toolu_8", "content": "a.txt"}
+        sent = [{"role": "user", "content": "stop the test"},
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "toolu_7", "name": "ToolSearch", "input": {"query": "select:TaskStop"}},
+                    {"type": "tool_use", "id": "toolu_8", "name": "Bash", "input": {"command": "ls"}}]},
+                {"role": "user", "content": [found, listed, {"type": "text", "text": "Tool loaded."}]}]
+        events = claude.to_events(sent)
+        self.assertEqual([e["type"] for e in events], [USER_MESSAGE, TOOL_CALL, TOOL_CALL, TOOL_OUTPUT, TOOL_OUTPUT, CONTEXT])
+        self.assertEqual(back.to_messages(events, sent)[-1]["content"], sent[-1]["content"])   # in its place
+        said = {"role": "user", "content": [{"type": "text", "text": "Tool loaded. Now use it"}]}
+        self.assertEqual(claude.classify(said), USER_MESSAGE)                         # the user's own words
+
     def test_ids_do_not_move_with_cache_control(self):
         a = claude.to_events(first_turn(cache=True))
         b = claude.to_events(first_turn(cache=False))
