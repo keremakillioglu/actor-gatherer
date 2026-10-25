@@ -109,6 +109,13 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 "while you were away" summary), kept with when it
                                                 was made (`_recaps`): never an event, never in a
                                                 context; for a reader of the gatherer
+    {"op": "touches", "gatherer", "session", "touches": [...]} -> {"kept"}
+                                                what the session's tool calls did to files, as
+                                                the harness side found them on disk once each
+                                                call's result was in (ag/integrations/tools/
+                                                file_touches/): each {"call_id", "path"?, "how"?,
+                                                "checked"?, "named"?, "detail"?}, kept (`_touches`)
+                                                for a reader of the gatherer; never history
     {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?, "process"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens", "basis"}
     {"op": "claim", "gatherer", "session", "process", "by"?} -> {"claimed": true, "took_over"?} or {"claimed": false, "holder"}
                                                 `process` ({"pid", "started"}) opens the session
@@ -483,6 +490,13 @@ class Server:
             recap_id = self.manager(gatherer).record_recap(gatherer, session, text.strip())
             self.log(gatherer, f"[{session}] recap kept")
             return {"recap_id": recap_id}
+        if op == "touches":
+            session, touches = request.get("session"), request.get("touches")
+            if not isinstance(session, str) or not session or not isinstance(touches, list):
+                return {"error": "no session and touches"}
+            kept = self.manager(gatherer).record_touches(gatherer, session, [t for t in touches if isinstance(t, dict)])
+            self.log(gatherer, f"[{session}] {kept} file touches kept")
+            return {"kept": kept}
         if op == "read":
             if not isinstance(request.get("row"), int):
                 return {"error": "no row"}

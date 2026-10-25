@@ -22,9 +22,11 @@ One SQLite file per gatherer (paths.py):
                          call stores its events (internal)
     _recaps              the harness's recaps of a session (Claude Code's "while you were
                          away" summary), each with when it was made: never history (internal)
+    _touches             what each tool call did to files, as the hook server found them on
+                         disk once its result was in: never history (internal)
 
 A leading underscore marks a table internal to the manager (`_made_items`,
-`_reads`, `_read_items`, `_polls`, `_pending`, `_recaps`), which the agent has no reason to know about; the
+`_reads`, `_read_items`, `_polls`, `_pending`, `_recaps`, `_touches`), which the agent has no reason to know about; the
 others (`event_types`, `events`) it may be pointed at. Operations on these
 tables are in operations.py.
 
@@ -183,6 +185,25 @@ CREATE TABLE IF NOT EXISTS _recaps (
     text        TEXT    NOT NULL    -- the recap, as the model wrote it
 );
 CREATE INDEX IF NOT EXISTS _recaps_session ON _recaps (session, recap_id);
+
+-- What each tool call of a session did to files, as the hook server found them on disk right after the
+-- call ran (ag/integrations/tools/ag_orchestrator/file_touches/): a row per call, file and how; a row with no path says
+-- the call was checked and touched no file. Not history: never read back as events, never in a context;
+-- kept for a reader of the gatherer (the dashboard's Files view). The first row for a call, file and how
+-- is the one kept: the same results sent again (a retried call) are not checked again.
+CREATE TABLE IF NOT EXISTS _touches (
+    touch_id    INTEGER PRIMARY KEY,
+    session     TEXT    NOT NULL,   -- the session: its calls' `channel`
+    call_id     TEXT    NOT NULL,   -- the tool call, by the harness's id for it
+    at          TEXT    NOT NULL,   -- when it was checked (UTC, ISO)
+    path        TEXT,               -- the file, absolute; NULL: the call touched none
+    how         TEXT,               -- read, hit, created, modified, deleted
+    checked     INTEGER,            -- 1: what the call showed of the file is on disk; 0: it is not; NULL:
+                                    -- nothing to match (a change; a read whose lines can't be told apart)
+    named       INTEGER,            -- 1: the call names the file; 0: the file changed while the call ran
+    detail_json TEXT                -- at which lines, and what (file_touches/check.py); NULL: none
+);
+CREATE UNIQUE INDEX IF NOT EXISTS _touches_one ON _touches (session, call_id, ifnull(path, ''), ifnull(how, ''));
 
 -- Which process has each session open: one per session, so two processes (a terminal, the
 -- dashboard's chat) never run it at once. Claimed by ag's launcher as it starts the harness on a

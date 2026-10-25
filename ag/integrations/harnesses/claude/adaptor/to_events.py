@@ -71,6 +71,9 @@ HARNESS_MARKERS = ("<system-reminder>", "<local-command-caveat>", "<local-comman
                    "[Image not shown, read it from ", "[Document removed:", "[Request interrupted by user",
                    "<bash-stdout>", "<bash-stderr>",
                    "This session is being continued from a previous conversation that ran out of context")
+# Claude Code's own text that is a whole block, word for word: its note after a tool search's result,
+# in the message of the results, that the tools found are loaded ("Tool loaded.").
+HARNESS_TEXTS = ("Tool loaded.",)
 
 BLOCK_TYPES = {"text": None, "image": USER_MESSAGE, "document": USER_MESSAGE, "tool_result": TOOL_OUTPUT,
                "tool_use": TOOL_CALL, "server_tool_use": TOOL_CALL, "thinking": AGENT_REASONING,
@@ -115,7 +118,8 @@ def pieces(messages: list) -> List[dict]:
 
 
 def is_harness_text(text: str) -> bool:
-    return not text.strip() or text.lstrip().startswith(HARNESS_MARKERS)
+    text = text.strip()
+    return not text or text.startswith(HARNESS_MARKERS) or text in HARNESS_TEXTS
 
 
 def classify(item) -> str:

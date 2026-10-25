@@ -8,6 +8,7 @@
     polls       polled_at, mark_polled
     pending     record_pending, pending, clear_pending
     recaps      record_recap, recaps
+    touches     record_touches
 
 What a property means is not known here: an event carries the values its
 type declares, each in its column, NULL when unset. Two filters read them
@@ -634,6 +635,33 @@ def recaps(conn: sqlite3.Connection, session: Optional[str] = None) -> List[dict
         rows = conn.execute("SELECT recap_id, session, made_at, text FROM _recaps WHERE recap_id IN "
                             "(SELECT max(recap_id) FROM _recaps GROUP BY session) ORDER BY recap_id")
     return [{"recap_id": r[0], "session": r[1], "made_at": r[2], "text": r[3]} for r in rows]
+
+
+# ---------------------------------------------------------------- touches
+
+TOUCH_HOWS = ("read", "hit", "created", "modified", "deleted")
+
+
+def record_touches(conn: sqlite3.Connection, session: str, touches: List[dict]) -> int:
+    """Keep what tool calls of `session` did to files (`_touches`), checked now: each {"call_id",
+    "path"?, "how"?, "checked"?, "named"?, "detail"?} -- no path: the call touched none. One already
+    kept for its call, file and how is not kept again; one with no call id, or a `how` not one of
+    TOUCH_HOWS, is not kept. How many were kept."""
+    at, kept = _now(), 0
+    with conn:
+        for t in touches:
+            path, how = t.get("path"), t.get("how")
+            if not isinstance(t.get("call_id"), str) or not t["call_id"] or (path is None) != (how is None) \
+                    or (path is not None and (not isinstance(path, str) or how not in TOUCH_HOWS)):
+                continue
+            flag = lambda v: None if v is None else int(bool(v))          # noqa: E731
+            detail = t.get("detail")
+            cur = conn.execute("INSERT OR IGNORE INTO _touches (session, call_id, at, path, how, checked, named, "
+                               "detail_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                               (session, t["call_id"], at, path, how, flag(t.get("checked")), flag(t.get("named")),
+                                None if detail is None else json.dumps(detail, ensure_ascii=False)))
+            kept += cur.rowcount
+    return kept
 
 
 # ---------------------------------------------------------------- which process has a session open

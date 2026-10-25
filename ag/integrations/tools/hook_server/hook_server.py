@@ -30,7 +30,10 @@ a POST's answer has come back whole, before the harness sees its end: `tokens`
 is the call's input tokens as the answer reports them, cached ones included
 (trace.py's reading of a Responses or Anthropic Messages answer), or None; the
 `request` is the one it was given, with whatever it kept in `request.state`
-(only a request it kept something on is measured). A hook with an `answered(request, status, answer)`
+(only a request it kept something on is measured). A hook with a `before_end(request, status, answer)`
+has it called (awaited) then too, for the same requests, after `measured`: the answer as trace.py
+reads it -- for a hook that acts before the harness acts on the answer (runs the tools it calls).
+A hook with an `answered(request, status, answer)`
 has it called (awaited) once a POST's answer has come back whole and the harness has seen its end,
 for the same requests as `measured`: the HTTP status, and the answer as trace.py reads it
 (`response_of`: {response_id, status, token_usage, output_items, error}). A URL starting
@@ -84,6 +87,8 @@ class Request:
     state: dict = field(default_factory=dict)   # the hook's own, kept until its `measured` for this request
     process: Optional[dict] = None              # who sent it: {"pid", "started"} of the harness's process
                                                 # (peer.py); None: not told (not Linux, not this machine)
+    answer_started: Optional[float] = None      # when the answer's first bytes came back (time.time()):
+                                                # nothing it asks for can have run before
 
 
 @dataclass
@@ -189,7 +194,8 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
 
         measured = getattr(hook, "measured", None) if request.method == "POST" and given.state else None
         answered = getattr(hook, "answered", None) if request.method == "POST" and given.state else None
-        answer = [] if call or measured or answered else None
+        before_end = getattr(hook, "before_end", None) if request.method == "POST" and given.state else None
+        answer = [] if call or measured or answered or before_end else None
         timeout = ClientTimeout(total=None, sock_read=1800)
         status, error = None, None
         try:
@@ -200,6 +206,8 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                         k: v for k, v in up.headers.items() if k.lower() not in HOP})
                     await resp.prepare(request)
                     async for chunk in up.content.iter_any():
+                        if given.answer_started is None:
+                            given.answer_started = time.time()
                         if answer is not None:
                             answer.append(chunk)
                         await resp.write(chunk)
@@ -214,11 +222,19 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                                 await result
                         except Exception as exc:  # noqa: BLE001 - a lost count never breaks the answer
                             print(f"#{n:04d} measured failed: {exc!r}", file=sys.stderr, flush=True)
+                    read = response_of(whole) if before_end or answered else None
+                    if before_end:                            # before the harness sees the end
+                        try:
+                            result = before_end(given, status, read)
+                            if inspect.isawaitable(result):
+                                await result
+                        except Exception as exc:  # noqa: BLE001 - never breaks the answer
+                            print(f"#{n:04d} before_end failed: {exc!r}", file=sys.stderr, flush=True)
                     await resp.write_eof()
                     record["status"] = up.status
                     if answered:                              # after the harness has the answer: it waits on nothing
                         try:
-                            result = answered(given, status, response_of(whole))
+                            result = answered(given, status, read)
                             if inspect.isawaitable(result):
                                 await result
                         except Exception as exc:  # noqa: BLE001 - the answer is already the harness's

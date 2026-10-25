@@ -16,6 +16,8 @@
   --term-bg: var(--surface); --term-ink: #2b2a27; --term-dim: #6f6c65; --term-faint: #a09d95; --term-user: #efeee9; --term-ok: #2f9a4c;
   --term-err: #cf3a50; --term-run: #c08a00; --term-accent: #c4643f; --term-code: #f2f1ed; --term-rule: #e2e0d9; --term-box: #d6d4cc;
   --term-add: rgba(47,154,76,.12); --term-del: rgba(207,58,80,.10); --term-add-ink: #1b6b34; --term-del-ink: #a5293d; --term-link: #2468c8;
+  /* the Files view's markdown, coloured as the NumPy docs (the PyData theme) colour it: links, inline code */
+  --md-link: #0a7d91; --md-code: #912583;
   --scroll: rgba(0,0,0,.16);
 }
 @media (prefers-color-scheme: dark) {
@@ -28,6 +30,7 @@
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-box: #3a3935;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
+  --md-link: #3fb1c5; --md-code: #f3c7ee;
   --scroll: rgba(255,255,255,.16);
   }
 }
@@ -40,16 +43,18 @@
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-box: #3a3935;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
+  --md-link: #3fb1c5; --md-code: #f3c7ee;
   --scroll: rgba(255,255,255,.16);
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   height: 100vh; display: flex; flex-direction: column; }
-header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--ring); background: var(--surface); flex: none;
+/* the page's name, at the top of the left column, as tall as the panes' heads beside it (--top-h: the top row) */
+header { display: flex; flex-direction: column; justify-content: center; min-height: var(--top-h, 0px); border-bottom: 1px solid var(--ring); flex: none;
   position: relative; z-index: 30; }   /* above the page (the terminal's own layers reach 11), so its Settings panel is too */
 header h1 { font-size: 16px; margin: 0; font-weight: 600; white-space: nowrap; }
 /* the page's name and home, and under them, small, whether it is live (and its pause) */
-header .brand { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 12px; row-gap: 1px; flex: 0 1 auto; min-width: 0; }
+header .brand { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 12px; row-gap: 1px; min-width: 0; padding: 12px 16px 12px 20px; }
 header .home { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 /* a small button under the name: the page's state at a glance (its dot), and a panel with the dashboard's own details */
 header .about-wrap { grid-column: 1 / -1; position: relative; justify-self: start; }
@@ -92,33 +97,40 @@ header .about-btn:hover, header .about-btn[aria-expanded="true"] { color: var(--
 .cfg-file .err { color: var(--critical); font-size: 12px; }
 .about .servers { padding: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 /* the selected actor's controls: how its history is shown, and its details */
-/* they take the room right of the page's name, wrapping there when they need more */
-header .controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 0; min-width: 0; }
-header .controls:empty { visibility: hidden; }
-header .details-btn { display: inline-flex; align-items: center; gap: 6px; }
-header .details-btn[aria-expanded="true"] { background: var(--selected); border-color: transparent; }
+/* they take the top row right of the left column (or, split in panes, of the pane's actor), wrapping there when they need more */
+.controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 0; min-width: 0; }
+.controls:empty { visibility: hidden; }
+.controls .details-btn { display: inline-flex; align-items: center; gap: 6px; }
+.controls .details-btn[aria-expanded="true"] { background: var(--selected); border-color: transparent; }
 button { font: inherit; font-size: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 button:hover { background: var(--wash); }
 /* the page is the screen's height: the agent list and the chat each scroll in their own place */
 .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); flex: 1; min-height: 0; }
+/* the left column: the page's name over the list, one rule down its side from the top of the page to the bottom */
+.side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--side-rule); background: var(--side); }
 aside { border-right: 1px solid var(--side-rule); background: var(--side); padding: 12px 0; overflow-y: auto; }
+#agents { flex: 1; min-height: 0; border-right: 0; }
 aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
 .gatherer { padding: 6px 0 8px; border-top: 1px solid var(--grid); }
+/* its name, the hide button beside it (on hover), and at the right how many run and the start buttons; a
+   click on the row, but on its buttons, opens or closes it */
 .gatherer-row { display: flex; align-items: stretch; }
-.gatherer-row .name { flex: 1; min-width: 0; padding: 6px 4px 6px 12px; display: flex; align-items: center; gap: 8px;
+.gatherer-row:hover { background: var(--wash); }
+.gatherer-row .name { flex: 0 1 auto; min-width: 0; padding: 6px 4px 6px 12px; display: flex; align-items: center; gap: 8px;
   border: 0; border-radius: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
-.gatherer-row .name:hover { background: var(--wash); }
+.gatherer-row .fill { flex: 1 0 auto; display: flex; align-items: center; justify-content: flex-end; padding: 0 4px 0 8px; cursor: pointer; }
+.gatherer-row .fill:last-child { padding-right: 16px; }
 .gatherer-row .name:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
 .gatherer-row .caret { display: inline-block; width: 10px; color: var(--muted); font-size: 10px; transition: transform .15s; }
 .gatherer-row .name[aria-expanded="true"] .caret { transform: rotate(90deg); }
 .gatherer-row .gname { font-size: 14px; font-weight: 600; letter-spacing: -.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.gatherer-row .count { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2);
+.gatherer-row .count { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2);
   background: var(--wash); border-radius: 999px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .gatherer-row .count i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); display: inline-block; }
 .gatherer-row .act { border: 0; border-radius: 6px; background: none; color: var(--muted); padding: 0 8px; margin: 2px 0; line-height: 1;
   display: inline-flex; align-items: center; }
 .gatherer-row .act:last-child { margin-right: 8px; }
-.gatherer-row .act:hover { color: var(--ink); background: var(--wash); }
+.gatherer-row .act:hover { color: var(--ink); }
 .gatherer-row .act.hide { opacity: 0; }
 .gatherer-row:hover .act.hide, .gatherer-row .act.hide:focus-visible { opacity: 1; }
 @media (hover: none) { .gatherer-row .act.hide { opacity: 1; } }
@@ -129,6 +141,9 @@ button.agent-group:hover { color: var(--ink-2); }
   background: none; padding: 8px 10px; margin: 2px 8px; width: calc(100% - 16px); cursor: pointer; color: var(--ink); }
 .agent:hover { background: var(--wash); }
 .agent[aria-current="true"] { background: var(--selected); }
+/* open in a pane other than the one in focus: the same, fainter */
+.agent[data-open="true"] { background: color-mix(in srgb, var(--selected) 45%, transparent); }
+.agent[data-open="true"]:hover { background: var(--selected); }
 .agent .logo { width: 28px; height: 28px; margin-top: 1px; display: block; }
 /* an actor's avatar, its harness's badge small at the corner: the avatar cut away around the badge, so
    whatever is behind the row (hovered, selected) shows between them */
@@ -146,13 +161,15 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .asked.none { color: var(--muted); font-weight: 400; font-style: italic; }
 .agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
-.agent .meta .dot.running { background: var(--good); } .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
+.agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
 .agent .meta .dot.finished { background: var(--s1); }
-/* its turn over, but something it started still runs: a ring of Running's colour round a paler middle */
-.agent .meta .dot.background, .status.background i { background: color-mix(in srgb, var(--good) 30%, transparent); box-shadow: inset 0 0 0 1.5px var(--good); }
+/* its turn under way: the glyph turns, as Claude Code's does while it works */
+.agent .meta .dot.running { width: 9px; height: auto; border-radius: 0; background: none; color: var(--good); font-size: 12px; line-height: 1; text-align: center; }
+.agent .meta .dot.running::before { content: "✻"; animation: term-spin 1.2s steps(1) infinite; animation-delay: var(--spin-at, 0s); }
+/* its turn over, but something it started still runs: Running's colour, holding still */
+.agent .meta .dot.background, .status.background i { background: var(--good); }
 /* what it runs in the background, under its facts: how many, and what they are for */
 .agent .bgline { font-size: 12px; color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agent .bgline .spin::before { content: "✻"; display: inline-block; width: 1.2em; color: var(--good); animation: term-spin 1.2s steps(1) infinite; }
 .agent .meta .dot.closed { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
 .hidden-list { border-top: 1px solid var(--grid); padding: 8px 0 4px; }
 .hidden-list > summary { margin: 0; padding: 4px 16px; font-size: 12px; color: var(--muted); list-style: none; }
@@ -171,6 +188,62 @@ button.agent-group:hover { color: var(--ink-2); }
 .status.closed i { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
 .servers { color: var(--ink-2); font-size: 12px; }
 main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relative; overflow: hidden; }
+/* Panes: the actors open side by side (Ctrl/Cmd+click in the list), each with its head -- the actor, its
+   controls, a close -- the one in focus a shade darker; dividers between them to drag. The first is this
+   page's own view; the others are the page again in a frame, each its own actor's (PANE) */
+.panes { display: flex; min-width: 0; min-height: 0; position: relative; }
+.pane-note { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 10; max-width: calc(100% - 32px);
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 6px 12px; font-size: 12px; color: var(--ink-2);
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+.panes.resizing { cursor: col-resize; user-select: none; }
+.panes.resizing iframe { pointer-events: none; }
+.pane { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; container: pane / inline-size; }
+.pane > main { flex: 1 1 auto; }
+.pane > iframe { flex: 1 1 auto; display: block; width: 100%; min-height: 0; border: 0; background: var(--surface); }
+.pane-gutter { flex: none; width: 5px; margin: 0 -2px; position: relative; z-index: 4; cursor: col-resize; touch-action: none; }
+.pane-gutter::after { content: ""; position: absolute; inset: 0 2px; background: var(--ring); }
+.pane-gutter:hover::after, .panes.resizing .pane-gutter::after { inset: 0 1px; background: var(--axis); }
+/* A pane's top: its head, in the page's top row, as tall as the row (--top-h: the tallest of the page's name and
+   the heads), so the rule under the row runs straight across. Alone, the head is the actor's controls, at the
+   right, as a header's; split, each pane's says whose it is and has its ×: who, the view's switch and Details,
+   the ×, and the view's own tools (filters, switches) on a line under them -- a narrow pane's, who and the × on
+   a line, the switch and Details under them, then the tools */
+.pane-top { flex: none; display: flex; flex-direction: column; justify-content: center; min-height: var(--top-h, 0px); background: var(--surface);
+  border-bottom: 1px solid var(--ring); }
+.pane-head { display: flex; align-items: center; justify-content: flex-end; padding: 12px 20px; }
+.pane-who, .pane-close { display: none; }
+:is(.panes.split, :root.pane-mode .panes) .pane-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-areas: "who views details close" "tools tools tools tools"; column-gap: 8px; padding: 6px 6px 6px 12px; }
+:is(.panes.split, :root.pane-mode .panes) :is(.pane-who, .pane-close) { display: flex; }
+:is(.panes.split, :root.pane-mode .panes) .controls { display: contents; }
+.pane-who { grid-area: who; } .pane-close { grid-area: close; }
+.pane-head .views { grid-area: views; flex-wrap: wrap; } .pane-head .details-btn { grid-area: details; }
+:is(.panes.split, :root.pane-mode .panes) .chat-tools { grid-area: tools; justify-content: flex-end; margin-top: 6px; }
+@container pane (max-width: 640px) {
+  :is(.panes.split, :root.pane-mode .panes) .pane-head { grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "who who who close" "views details . ." "tools tools tools tools"; }
+  :is(.panes.split, :root.pane-mode .panes) :is(.views, .details-btn) { margin-top: 6px; }
+  :is(.panes.split, :root.pane-mode .panes) .chat-tools { justify-content: flex-start; } }
+.pane.focused > .pane-top, :root.pane-focused .pane-top { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
+.pane-who { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 28px; align-self: stretch; font-size: 12.5px;
+  line-height: 1.35; color: var(--ink-2); }
+.pane.focused .pane-who, :root.pane-focused .pane-who { color: var(--ink); font-weight: 500; }
+.pane-who .logo, .pane-who .avatar img { width: 20px; height: 20px; display: block; flex: none; }
+.pane-who .badge { display: none; }
+.pane-who .tx { min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+:is(.panes.split, :root.pane-mode .panes) .views button { padding: 3px 8px; }
+:is(.panes.split, :root.pane-mode .panes) .details-btn { padding: 4px 7px; }
+:is(.panes.split, :root.pane-mode .panes) .details-btn .lbl { display: none; }
+.pane-close { flex: none; border: 0; background: none; font-size: 18px; line-height: 1; padding: 5px 7px; color: var(--muted); }
+.pane-close:hover { color: var(--ink); background: var(--wash); }
+/* in a frame, the page is one pane: no header or list of its own, and never the phone's page-long layout, however narrow */
+:root.pane-mode .side { display: none; }
+:root.pane-mode body { height: 100vh; display: flex; }
+:root.pane-mode .layout { display: grid; grid-template-columns: minmax(0, 1fr); }
+:root.pane-mode .panes { display: flex; }
+:root.pane-mode main { overflow: hidden; }
+:root.pane-mode .chat .chat-frame { flex: 1; height: auto; }
+:root.pane-mode .drawer { position: absolute; inset: 0 0 0 auto; width: min(100%, 600px); box-shadow: -8px 0 24px rgba(0,0,0,.10); z-index: 3; }
 .empty { color: var(--muted); padding: 40px; text-align: center; }
 .title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .title h2 { margin: 0; font-size: 18px; font-weight: 600; }
@@ -198,8 +271,10 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 .tooltip .row span { color: var(--ink-2); }
 .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 1100px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 760px) { body { height: auto; display: block; } .layout { display: block; } aside { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--ring); }
-  main { overflow: visible; } }
+@media (max-width: 760px) { body { height: auto; display: block; } .layout { display: block; } .side { border-right: 0; }
+  #agents { max-height: 40vh; border-bottom: 1px solid var(--ring); }
+  main { overflow: visible; }
+  .panes { display: block; } .panes.split .pane:not(.focused), .pane-gutter { display: none; } .pane > iframe { height: 85vh; } }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 td { padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
@@ -339,15 +414,22 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .aside-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 16px 6px; }
 .aside-head h2 { margin: 0; }
 .gatherer-row .act.add { font-size: 16px; }
+.gatherer-row .act:disabled { cursor: default; opacity: .45; }
+.gatherer-row .act:disabled:hover { background: none; color: var(--muted); }
+/* a start button: "+" and its harness's mark, the tooltip the button's (not the mark's own) */
+.gatherer-row .act.start { gap: 1px; padding: 0 4px; font-size: 14px; }
+.gatherer-row .act.start + .act.start { margin-left: 2px; }
+.gatherer-row .act.start .badge { width: 16px; height: 16px; display: block; pointer-events: none; }
+.gatherer-row .act.start.busy { opacity: 1; }
+.gatherer-row .act.start.busy .badge { animation: term-blink 1s ease-in-out infinite; }
 .newform { margin: 4px 16px 12px; padding: 10px 12px; border: 1px solid var(--ring); border-radius: 8px; background: var(--page); display: grid; gap: 8px; }
 .newform label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); }
 .newform input, .newform select, .composer textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
   border: 1px solid var(--ring); border-radius: 6px; padding: 5px 8px; min-width: 0; }
 .newform .row { display: flex; gap: 8px; justify-content: flex-end; }
-.newform .seg { display: flex; gap: 6px; }
-.newform .seg button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; }
-.newform .seg button[aria-pressed="true"] { border-color: var(--s1); color: var(--ink); box-shadow: inset 0 0 0 1px var(--s1); }
-.newform .seg .logo { width: 14px; height: 14px; }
+.newform .row:has(button[value]) { gap: 6px; flex-wrap: wrap; }
+.newform .row button[value] { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 4px 8px; }
+.newform .row .badge { width: 14px; height: 14px; display: block; }
 .newform .err, .composer .err { color: var(--critical); font-size: 12px; }
 button.primary { background: var(--s1); border-color: var(--s1); color: #fff; }
 button.primary:hover { filter: brightness(1.06); background: var(--s1); }
@@ -391,18 +473,19 @@ button:disabled { opacity: .5; cursor: default; }
 .bg-tasks .kind { color: var(--muted); flex: none; width: 5.6em; }
 .bg-tasks .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bg-tasks .when { color: var(--muted); flex: none; margin-left: auto; font-variant-numeric: tabular-nums; }
-.bg-tasks .spin::before { content: "✻"; display: inline-block; width: 1.2em; color: var(--good); animation: term-spin 1.2s steps(1) infinite; }
+.bg-tasks .mark { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin: 0 calc(1.2em - 7px) 1px 0; vertical-align: middle; }
 .term .bg-tasks { border: 0; background: none; padding: 0; margin-top: 6px; font-size: inherit; }
 .term .bg-tasks .head { color: var(--term-accent); font-weight: 400; }
-.term .bg-tasks .spin::before { color: inherit; }
+.term .bg-tasks .mark { background: currentColor; }
 .term .bg-tasks .task, .term .bg-tasks .kind, .term .bg-tasks .when { color: var(--term-dim); }
 .term .bg-tasks .label { color: var(--term-ink); }
 @media (max-width: 760px) { .bg-tasks .when { display: none; } }
-@media (max-width: 760px) { .chat .chat-frame { flex: none; height: 70vh; } header { flex-wrap: wrap; } header .controls { order: 5; } }
+@media (max-width: 760px) { .chat .chat-frame { flex: none; height: 70vh; } }
 /* Actor and Gatherer: a panel at the chat's right, the chat still live beside it; over it where the window is narrow */
 .drawer { flex: 0 0 min(55%, 760px); min-width: 0; background: var(--page);
   border-left: 1px solid var(--ring); display: flex; flex-direction: column; }
-@media (max-width: 1250px) { .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(100%, 600px); box-shadow: -8px 0 24px rgba(0,0,0,.10); z-index: 3; } }
+/* by its pane's width: alone, the window's less the list's -- over the chat where the window is narrower than 1250px */
+@container pane (max-width: 930px) { .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(100%, 600px); box-shadow: -8px 0 24px rgba(0,0,0,.10); z-index: 3; } }
 .drawer-head { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--ring); background: var(--surface); flex: none; }
 .drawer-head .grow { flex: 1; }
 .drawer-head .close { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 8px; color: var(--muted); }
@@ -458,39 +541,84 @@ button:disabled { opacity: .5; cursor: default; }
 .chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .files .fl-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }
 .files .fl-grid.open { grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
-.files .fl-grid:not(.open) .fl-talk { font-size: 13px; border-left: 0; }
-.files .fl-talk { position: relative; overflow: auto; border-left: 1px solid var(--ring); padding: 6px 0 24px; font-size: 12.5px; }
-.files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px; border-radius: 0 6px 6px 0; }
-.files .fl-turn.on { background: color-mix(in srgb, var(--ink) 4%, transparent); box-shadow: inset 2px 0 0 var(--muted); }   /* the turn picked: a shade and a grey bar, no colour */
-.files .fl-user { display: flex; gap: 8px; width: 100%; text-align: left; background: var(--wash); border: 1px solid var(--ring);
-  border-radius: 6px; padding: 6px 8px; margin: 0; font: inherit; font-size: 12.5px; line-height: 1.45; color: var(--ink); cursor: pointer; }
-.files .fl-user:hover { border-color: var(--axis); }
-.files .fl-user .n { flex: none; color: var(--muted); font: 11px/1.7 var(--mono); }
+/* --lh: a line of the conversation, which a reply's dot and its first line share */
+.files .fl-talk { position: relative; overflow: auto; border-left: 1px solid var(--ring); padding: 6px 0 24px; font-size: 13.5px; --lh: 20px; line-height: var(--lh); }
+.files .fl-grid:not(.open) .fl-talk { font-size: 14px; --lh: 21px; border-left: 0; }
+.files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px 10px; }
+.files .fl-turn.on { box-shadow: inset 2px 0 0 var(--muted); }   /* the turn picked: a grey bar at its left, no colour */
+/* the user's message: at the right, in the colour the page gives the user (--s7), as a chat shows it */
+.files .fl-user { display: flex; gap: 8px; width: fit-content; max-width: min(86%, 680px); margin: 0 0 0 auto; text-align: left;
+  background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--s7) 28%, transparent);
+  border-radius: 12px 12px 4px 12px; padding: 6px 12px; font: inherit; line-height: var(--lh); color: var(--ink); cursor: pointer; }
+.files .fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
 .files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .files .fl-turn.on .fl-user .tx { -webkit-line-clamp: unset; }
 .files .fl-reply { margin: 4px 0 0 2px; color: var(--ink-2); overflow-wrap: anywhere; }
-.files .fl-reply > summary { display: flex; gap: 6px; margin: 0; font-size: 12.5px; cursor: pointer; list-style: none; }
+.files .fl-reply > summary { display: flex; gap: 6px; margin: 0; font-size: inherit; cursor: pointer; list-style: none; }
 .files .fl-reply > summary::-webkit-details-marker { display: none; }
-.files .fl-reply > summary .dot { flex: none; color: var(--muted); font-size: 9px; line-height: 18px; }
+.files .fl-reply > summary .dot { flex: none; color: var(--muted); font-size: 9px; line-height: var(--lh); }
 .files .fl-reply > summary .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-reply > summary:hover .first { color: var(--ink); }
 .files .fl-reply[open] > summary .dot { color: var(--ink-2); } .files .fl-reply > summary:hover .dot { color: var(--s1); }
 .files .fl-reply[open] > summary .first { display: none; }
-.files .fl-reply > .md { margin: -18px 0 4px 15px; }
-.files .fl-reply .md > :first-child { margin-top: 0; } .files .fl-reply .md > :last-child { margin-bottom: 0; }
-.files .fl-reply .md pre { overflow: auto; max-width: 100%; }
+.files .fl-reply > .md { margin: calc(-1 * var(--lh)) 0 6px 15px; }
+/* a turn's last message, whole, in the page's ink; the ones before it smaller and quieter, each folded to a line,
+   the latest few shown and the earlier behind "+N earlier messages" */
+.files .fl-reply.main { margin-top: 6px; color: var(--ink); }
+.files .fl-reply.main > summary .dot, .files .fl-reply.main[open] > summary .dot { color: var(--ink); }
+.files .fl-minor { font-size: .9em; --lh: 18px; color: var(--muted); }
+.files .fl-minor .fl-reply { color: var(--ink-2); }
+.files .fl-minor .fl-reply:not([open]) > summary .first { color: var(--muted); }
+.files .fl-minor .fl-reply > summary:hover .first { color: var(--ink-2); }
+.files .fl-more, .files .fl-earlier { background: none; border: 0; border-radius: 4px; margin: 4px 0 0 2px; padding: 0 4px 0 15px;
+  font-size: .95em; color: var(--muted); cursor: pointer; }
+.files .fl-more:hover, .files .fl-earlier:hover { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.files .fl-earlier { display: block; margin: 4px 6px 6px; padding: 4px 10px; font-size: 12px; }
+/* a reply's markdown, coloured as the NumPy docs (the PyData theme) colour it, and no more: links teal, inline
+   code magenta on grey, a table's header ruled in teal; headings, code and quotes in the text's own colours */
+.files .md { min-width: 0; }
+.files .md > :first-child { margin-top: 0; } .files .md > :last-child { margin-bottom: 0; }
+.files .md p, .files .md ul, .files .md ol, .files .md pre, .files .md table, .files .md blockquote { margin: 0 0 10px; }
+.files .md h1, .files .md h2, .files .md h3, .files .md h4, .files .md h5, .files .md h6 { color: var(--ink); font-weight: 650; line-height: 1.35; margin: 18px 0 6px; }
+.files .md h1 { font-size: 1.35em; } .files .md h2 { font-size: 1.2em; } .files .md h3 { font-size: 1.07em; } .files .md h4, .files .md h5, .files .md h6 { font-size: 1em; }
+.files .md > h1:first-child, .files .md > h2:first-child, .files .md > h3:first-child { line-height: var(--lh); }   /* beside the reply's dot */
+.files .md strong { color: var(--ink); font-weight: 650; }
+.files .md a { color: var(--md-link); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--md-link) 40%, transparent); text-underline-offset: 2px; }
+.files .md a:hover { text-decoration-color: currentColor; }
+.files .md ul, .files .md ol { padding-left: 22px; }
+.files .md li { margin: 3px 0; } .files .md li > ul, .files .md li > ol { margin: 3px 0 0; }
+.files .md li::marker { color: var(--muted); }
+.files .md li:has(> input[type="checkbox"]) { list-style: none; margin-left: -20px; }
+.files .md li > input[type="checkbox"] { margin: 0 6px 0 0; vertical-align: -2px; accent-color: var(--md-link); }
+.files .md code { font: .88em var(--mono); color: var(--md-code); background: color-mix(in srgb, var(--ink) 6%, transparent);
+  border: 1px solid var(--ring); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+.files .md pre { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); border: 1px solid var(--ring);
+  border-radius: 4px; padding: 9px 12px; overflow-x: auto; max-width: 100%; white-space: pre; }
+.files .md pre code { font: 12.5px/1.55 var(--mono); color: var(--ink); background: none; border: 0; padding: 0; border-radius: 0; overflow-wrap: normal; }
+.files .md blockquote { padding: 7px 12px; border-left: 4px solid var(--muted); border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 5%, var(--surface)); color: var(--ink-2); }
+.files .md hr { border: 0; border-top: 1px solid var(--axis); margin: 16px 0; }
+.files .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: .93em; line-height: 1.45; }
+.files .md th, .files .md td { border: 0; border-bottom: 1px solid var(--ring); padding: 5px 12px; text-align: left; vertical-align: top; white-space: normal; }
+.files .md th + th, .files .md td + td { border-left: 1px solid var(--ring); }
+.files .md thead tr { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); }
+.files .md th { color: var(--ink); font-weight: 650; border-bottom: 2px solid var(--md-link); }
+.files .md tbody tr:nth-child(even) { background: var(--wash); }
+.files .md th[align="right"], .files .md td[align="right"] { text-align: right; font-variant-numeric: tabular-nums; }
+.files .md th[align="center"], .files .md td[align="center"] { text-align: center; }
+.files .md img { max-width: 100%; }
 .files .fl-none { margin: 4px 0 0 2px; color: var(--muted); font-style: italic; }
-.files .fl-think { margin: 4px 0 0 2px; color: var(--muted); font-size: 12px; }
-.files .fl-think > summary { display: flex; gap: 6px; margin: 0; list-style: none; cursor: pointer; }
+.files .fl-think { margin: 4px 0 0 2px; color: var(--muted); }
+.files .fl-think > summary { display: flex; gap: 6px; margin: 0; font-size: inherit; list-style: none; cursor: pointer; }
 .files .fl-think > summary::-webkit-details-marker { display: none; }
-.files .fl-think .g { flex: none; color: var(--term-accent); font-size: 11px; line-height: 18px; }
+.files .fl-think .g { flex: none; color: var(--term-accent); font-size: 11px; line-height: var(--lh); }
 .files .fl-think .lbl { flex: none; font-style: italic; }
 .files .fl-think .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-think > summary:hover .lbl, .files .fl-think > summary:hover .first { color: var(--ink-2); }
 .files .fl-think[open] > summary .first { display: none; }
 .files .fl-think .body { margin: 2px 0 4px 15px; padding-left: 8px; border-left: 2px solid var(--ring); white-space: pre-wrap; overflow-wrap: anywhere; font-style: italic; }
 .files .fl-think .body + .body { margin-top: 6px; }
-.files .fl-status { display: flex; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: 12px; }
+.files .fl-status { display: flex; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: .93em; }
 .files .fl-status .spin { flex: none; }
 .files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .fl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ring); }
@@ -499,7 +627,20 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-sec > .fl-h { flex: none; }
 .files .fl-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
 .files .fl-sec > .fl-legend { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--ring); }
-.files .fl-h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 10px 12px 4px; }
+/* under the commands, what runs in the background: a line, its tasks over the column while it is hovered */
+.files .fl-bg { flex: none; position: relative; display: flex; align-items: center; padding: 5px 12px; border-top: 1px solid var(--ring);
+  font-size: 11.5px; color: var(--ink-2); cursor: default; outline: 0; }
+.files .fl-bg:hover, .files .fl-bg:focus-visible { background: var(--wash); color: var(--ink); }
+.files .fl-bg > .mark { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin-right: 8px; }   /* the Background dot */
+.files .fl-bg > .bg-tasks { display: none; position: absolute; left: 6px; bottom: calc(100% + 4px); z-index: 5;
+  width: max-content; max-width: min(560px, calc(100vw - 48px)); padding: 8px 12px; border: 1px solid var(--ring); border-radius: 8px;
+  background: var(--surface); box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+.files .fl-bg:hover > .bg-tasks, .files .fl-bg:focus-within > .bg-tasks { display: block; }
+.files .fl-h { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); padding: 10px 12px 4px; }
+.files .fl-h .tmp { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0;
+  font-size: 11.5px; cursor: pointer; }
+.files .fl-h .tmp:hover { color: var(--ink-2); } .files .fl-h .tmp input { margin: 0; }
 .files .fl-dir { display: flex; align-items: center; gap: 4px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
   padding: 3px 12px; font: 11.5px var(--mono); color: var(--ink-2); text-align: left; cursor: pointer; }
 .files .fl-dir:hover { background: var(--wash); }
@@ -543,6 +684,7 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fv-call .kinds { flex: none; display: flex; gap: 3px; align-self: center; }
 .files .fv-call .via { flex: 1; min-width: 0; color: var(--ink-2); font-weight: 500; overflow-wrap: anywhere; }
 .files .fv-call .what { flex: none; color: var(--muted); font-size: 11.5px; }
+.files .fv-call .what .chk { color: var(--good); } .files .fv-call .what .chk.off { color: var(--critical); }
 .files .fv-call.err .what { color: var(--critical); }
 .files .fv-cmd { margin: 0 16px 2px 58px; } .files .fv-cmd > summary { margin: 0; font-size: 11.5px; color: var(--muted); cursor: pointer; }
 .files .fv-cmd pre.call { margin: 4px 0; }
@@ -567,7 +709,10 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fv-block .diff .del { background: color-mix(in srgb, var(--critical) 15%, transparent); }
 .files .fv-block .diff .ctx { color: var(--muted); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
-@media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } }
+@media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } }
+/* the same by the pane's width: one of several side by side is narrower than the window */
+@container pane (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
+@container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } }
 /* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
@@ -728,53 +873,64 @@ button:disabled { opacity: .5; cursor: default; }
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">
-    <h1>ag agent manager</h1>
-    <div class="home" id="home"></div>
-    <div class="about-wrap">
-      <button class="about-btn" id="about-btn" type="button" aria-expanded="false" aria-controls="about" title="Settings: ag's, and this page's">
-        <span class="state-dot" id="state-dot"></span>Settings<span class="cfg-flag" id="cfg-flag" hidden>· no model set</span> ▾</button>
-      <div class="about" id="about" hidden>
-        <section class="cfg" id="cfg" hidden>
-          <h3>ag</h3>
-          <form id="cfg-model"><h4>Gatherer model</h4>
-            <div class="row"><input id="cfg-model-name" list="cfg-models" placeholder="claude-code/sonnet" spellcheck="false" autocomplete="off" aria-label="Gatherer model">
-              <button class="primary" type="submit">Set</button></div>
-            <datalist id="cfg-models"><option value="claude-code/sonnet"><option value="claude-code/haiku"><option value="claude-code/opus">
-              <option value="codex/gpt-5-mini"><option value="gemini/gemini-3.8-flash"></datalist>
-            <details class="cfg-more"><summary>API base and key (LiteLLM models only)</summary>
-              <label>API base<input id="cfg-api-base" placeholder="the provider's own API" spellcheck="false"></label>
-              <label>Key variable<input id="cfg-key-env" placeholder="the provider's own, e.g. GEMINI_API_KEY" spellcheck="false"></label></details>
-            <div class="cfg-note" id="cfg-model-note"></div></form>
-          <form id="cfg-defaults"><h4>Gatherer defaults</h4>
-            <label>Policy<select id="cfg-policy"></select></label>
-            <div class="cfg-label">Pollers<span class="cfg-checks" id="cfg-pollers"></span></div>
-            <label title="[cli] gatherer: where `ag claude` files a run that names no --gatherer (&quot;.&quot;: one per session)"><span>Gatherer for <code>ag &lt;harness&gt;</code> runs</span><input id="cfg-gatherer" spellcheck="false" placeholder="default"></label>
-            <div class="row"><span class="cfg-note" id="cfg-defaults-note"></span><button type="submit">Save</button></div></form>
-          <div><h4>Harnesses</h4><div class="cfg-harnesses" id="cfg-harnesses"></div></div>
-          <div class="row"><span class="cfg-path" id="cfg-path"></span><button type="button" id="cfg-edit">Edit config.toml…</button></div>
-          <h3>This page</h3>
-        </section>
-        <div><h4>Updates</h4>
-          <div class="row"><span class="live"><span class="state-dot" id="state-dot-2"></span><span id="live" role="status"></span></span>
-            <button id="pause" type="button" title="Stop updating this page; the agents and the server go on">Pause</button></div></div>
-        <div><h4>Theme</h4>
-          <div class="views" id="theme" role="group" aria-label="Theme">
-            <button type="button" data-theme-pick="system">System</button><button type="button" data-theme-pick="light">Light</button><button type="button" data-theme-pick="dark">Dark</button></div></div>
-        <div id="screen-pick" hidden><h4>Terminal</h4>
-          <div class="views" id="screen" role="group" aria-label="Terminal screen"
-               title="Claude Code's classic screen or its full screen, in the Terminal view. An open terminal is reopened in it, the session resumed, once you confirm.">
-            <button type="button" data-screen-pick="classic">Classic</button><button type="button" data-screen-pick="full">Full screen</button></div></div>
-        <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
-      </div>
-    </div>
-  </div>
-  <div class="controls" id="controls"></div>
-</header>
 <div class="layout">
-  <aside id="agents"></aside>
-  <main id="main"><div class="empty">Loading…</div></main>
+  <!-- the left column: the page's name over the list of actors; the top row, its name and each pane's head -->
+  <div class="side">
+    <header>
+      <div class="brand">
+        <h1>ag agent manager</h1>
+        <div class="home" id="home"></div>
+        <div class="about-wrap">
+          <button class="about-btn" id="about-btn" type="button" aria-expanded="false" aria-controls="about" title="Settings: ag's, and this page's">
+            <span class="state-dot" id="state-dot"></span>Settings<span class="cfg-flag" id="cfg-flag" hidden>· no model set</span> ▾</button>
+          <div class="about" id="about" hidden>
+            <section class="cfg" id="cfg" hidden>
+              <h3>ag</h3>
+              <form id="cfg-model"><h4>Gatherer model</h4>
+                <div class="row"><input id="cfg-model-name" list="cfg-models" placeholder="claude-code/sonnet" spellcheck="false" autocomplete="off" aria-label="Gatherer model">
+                  <button class="primary" type="submit">Set</button></div>
+                <datalist id="cfg-models"><option value="claude-code/sonnet"><option value="claude-code/haiku"><option value="claude-code/opus">
+                  <option value="codex/gpt-5-mini"><option value="gemini/gemini-3.8-flash"></datalist>
+                <details class="cfg-more"><summary>API base and key (LiteLLM models only)</summary>
+                  <label>API base<input id="cfg-api-base" placeholder="the provider's own API" spellcheck="false"></label>
+                  <label>Key variable<input id="cfg-key-env" placeholder="the provider's own, e.g. GEMINI_API_KEY" spellcheck="false"></label></details>
+                <div class="cfg-note" id="cfg-model-note"></div></form>
+              <form id="cfg-defaults"><h4>Gatherer defaults</h4>
+                <label>Policy<select id="cfg-policy"></select></label>
+                <div class="cfg-label">Pollers<span class="cfg-checks" id="cfg-pollers"></span></div>
+                <label title="[cli] gatherer: where `ag claude` files a run that names no --gatherer (&quot;.&quot;: one per session)"><span>Gatherer for <code>ag &lt;harness&gt;</code> runs</span><input id="cfg-gatherer" spellcheck="false" placeholder="default"></label>
+                <div class="row"><span class="cfg-note" id="cfg-defaults-note"></span><button type="submit">Save</button></div></form>
+              <div><h4>Harnesses</h4><div class="cfg-harnesses" id="cfg-harnesses"></div></div>
+              <div class="row"><span class="cfg-path" id="cfg-path"></span><button type="button" id="cfg-edit">Edit config.toml…</button></div>
+              <h3>This page</h3>
+            </section>
+            <div><h4>Updates</h4>
+              <div class="row"><span class="live"><span class="state-dot" id="state-dot-2"></span><span id="live" role="status"></span></span>
+                <button id="pause" type="button" title="Stop updating this page; the agents and the server go on">Pause</button></div></div>
+            <div><h4>Theme</h4>
+              <div class="views" id="theme" role="group" aria-label="Theme">
+                <button type="button" data-theme-pick="system">System</button><button type="button" data-theme-pick="light">Light</button><button type="button" data-theme-pick="dark">Dark</button></div></div>
+            <div id="screen-pick" hidden><h4>Terminal</h4>
+              <div class="views" id="screen" role="group" aria-label="Terminal screen"
+                   title="Claude Code's classic screen or its full screen, in the Terminal view. An open terminal is reopened in it, the session resumed, once you confirm.">
+                <button type="button" data-screen-pick="classic">Classic</button><button type="button" data-screen-pick="full">Full screen</button></div></div>
+            <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
+          </div>
+        </div>
+      </div>
+    </header>
+    <aside id="agents"></aside>
+  </div>
+  <div class="panes" id="panes">
+    <section class="pane" id="pane-here">
+      <div class="pane-top"><div class="pane-head" id="pane-head">
+        <span class="pane-who" id="pane-who"></span>
+        <div class="controls" id="controls"></div>
+        <button class="pane-close" id="pane-close" type="button" title="Close this pane" aria-label="Close this pane">×</button>
+      </div></div>
+      <main id="main"><div class="empty">Loading…</div></main>
+    </section>
+  </div>
 </div>
 <!-- config.toml, edited over the whole page: outside the header, whose layer would keep it under the page -->
 <div class="cfg-file" id="cfg-file" hidden role="dialog" aria-modal="true" aria-labelledby="cfg-file-title">
@@ -789,6 +945,15 @@ button:disabled { opacity: .5; cursor: default; }
 <script>
 "use strict";
 const SNAPSHOT = /*SNAPSHOT*/null;
+// In a pane: the page again, in a frame of the page around it (panes, below), showing one actor -- the URL's
+// (?pane=1&gatherer=G&channel=C&view=V) -- with no list or header of its own. PANE is the page around it:
+// it streams for the frame, and keeps which actor and view it shows.
+const PANE_URL = new URLSearchParams(location.search);
+const PANE = (() => {
+  if (SNAPSHOT || !PANE_URL.has("pane") || window.parent === window) return null;
+  try { return window.parent.agPanes || null; } catch (e) { return null; }
+})();
+if (PANE) document.documentElement.classList.add("pane-mode");
 // The server pushes each change (/api/stream); this is only how often the "ago" texts are redrawn.
 const AGO_MS = 30000;
 // What the page calls each kind the data names (data.py's group names stay as they are).
@@ -806,6 +971,13 @@ let state = { home: null, selected: null, agent: null, readId: null, context: nu
   detailsTab: (() => { try { return localStorage.getItem(DETAILS_KEY) === "gatherer" ? "gatherer" : "actor"; } catch (e) { return "actor"; } })(),
   chat: null,           // the history feed's messages: {key, items (stored, append-only), pending, last_row}
   adding: null };       // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
+if (PANE) state.selected = [PANE_URL.get("gatherer") || "", PANE_URL.get("channel") || ""];
+// The actors open side by side (panes, below): this page's own view (`here`, its actor state.selected), the
+// first, and the others (`others`), each the page in a frame; `focus` the one a click in the list shows its
+// actor in. `home` and `actors`: the stream's last home and each other pane's last agent, as sent (JSON), for
+// a frame that is not ready when they come. `checked`: the panes kept in this browser opened again.
+const PANES_KEY = "ag-dashboard-panes", MAX_PANES = 4, MIN_PANE = 260;
+const panes = { here: null, others: [], focus: null, home: null, actors: new Map(), checked: false, top: null };
 
 // ------------------------------------------------------------------ helpers
 const el = (tag, attrs = {}, ...kids) => {
@@ -999,7 +1171,7 @@ const key = (g, c) => g + "\u0000" + c;
 let hidingMoved = false;
 async function loadHome() {
   takeHome(SNAPSHOT ? SNAPSHOT.home : await get("/api/home"));
-  if (!hidingMoved) { hidingMoved = true; await moveHidingToServer(); }
+  if (!hidingMoved && !PANE) { hidingMoved = true; await moveHidingToServer(); }
 }
 async function loadAgent() {
   if (!state.selected) return;
@@ -1099,13 +1271,14 @@ async function loadContext(readId) {
 }
 // What was last drawn, so an update that brings nothing new draws nothing: no flash, and an open
 // table, a scrolled list or a tooltip stays as it is.
-const drawn = { agents: null, main: null };
+const drawn = { agents: null, main: null, who: null };
 const signature = (value) => JSON.stringify(value);
 async function refresh(userAction = false) {
   const main = document.getElementById("main");
   if (userAction) main.classList.add("stale");     // dimmed only while what the reader asked for loads
   try {
     await loadHome();
+    if (!panes.checked) restorePanes();
     if (!state.selected) {
       const first = state.home.gatherers.find((g) => g.agents.length && !isHidden(g)) || state.home.gatherers.find((g) => g.agents.length);
       if (first) state.selected = [first.name, firstAgent(first).channel];
@@ -1130,11 +1303,13 @@ function render(userAction = false) {
     if (!heldDraw) heldDraw = setTimeout(() => { heldDraw = null; render(); }, TYPING_MS - since + 10);
     return;
   }
-  const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.selected, Math.floor(Date.now() / AGO_MS)]);
+  const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.harnesses, paneSig(),
+    Math.floor(Date.now() / AGO_MS)]);
   // "ago" texts: every 30 s; not while a form in the list is open, which a redraw would empty
   if ((userAction || agents !== drawn.agents) && !(state.adding && !userAction)) { renderAgents(); drawn.agents = agents; }
   const view = mainSignature();
   if (userAction || view !== drawn.main) { const end = chatAtEnd(); keepingPlace(renderMain); drawn.main = view; if (end) chatToEnd(); }
+  drawWho();
   setLive(SNAPSHOT ? `Snapshot · ${clock(state.home.now, true)}` : state.paused ? "Paused"
     : !state.stream ? "Connecting…" : state.stream.readyState === EventSource.OPEN ? `Live · updated ${clock(Date.now() / 1000)}` : "Reconnecting…");
 }
@@ -1165,6 +1340,7 @@ function setTheme(pick, keep) {
   if (pick === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = pick;
   for (const b of document.querySelectorAll("[data-theme-pick]")) b.setAttribute("aria-pressed", b.dataset.themePick === pick ? "true" : "false");
   if (keep) { try { localStorage.setItem(THEME_KEY, pick); } catch (e) { /* this page only */ } }
+  for (const p of panes.others) p.call("theme", pick);
   window.dispatchEvent(new Event("ag-theme"));
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => window.dispatchEvent(new Event("ag-theme")));
@@ -1257,7 +1433,7 @@ $("cfg-file-form").addEventListener("submit", async (ev) => {
     $("cfg-file").hidden = true;
   } catch (e) { $("cfg-file-err").textContent = e.message; }
 });
-if (!SNAPSHOT) {
+if (!SNAPSHOT && !PANE) {
   $("cfg").hidden = false;
   loadSettings().then(() => {
     if (cfg && !cfg.llm.model && !(cfg.env || {}).AG_LLM_MODEL) { setAbout(true); $("cfg-model-name").focus(); }
@@ -1292,42 +1468,56 @@ function keepingPlace(draw) {
 // (the server is woken by ag's notifications). EventSource reconnects by itself, and a new stream
 // starts with both again, so nothing is missed while it was down. Reopened when the selection
 // changes; closed while paused. A message for an agent no longer selected is dropped.
+// The other panes' actors come on it too (`also`, each an `actor`), handed to their frames: a browser keeps
+// only six connections to a server open, and a stream holds one for as long as it is open. A frame has no
+// stream of its own: the page around it streams for it.
 function connect() {
+  if (PANE) { state.stream = PANE.stream; paneUrl(); PANE.shows(window, state.selected); return; }
   if (state.stream) { state.stream.close(); state.stream = null; }
   if (SNAPSHOT || state.paused) return;
   const sel = state.selected;
-  const es = new EventSource("/api/stream" + (sel ? `?gatherer=${encodeURIComponent(sel[0])}&channel=${encodeURIComponent(sel[1])}` : ""));
+  const q = [...(sel ? [`gatherer=${encodeURIComponent(sel[0])}`, `channel=${encodeURIComponent(sel[1])}`] : []),
+    ...(panes.others.length ? [`also=${encodeURIComponent(JSON.stringify(panes.others.map((p) => [p.g, p.c])))}`] : [])];
+  const es = new EventSource("/api/stream" + (q.length ? "?" + q.join("&") : ""));
   state.stream = es;
+  panes.actors.clear();
   const mine = () => state.stream === es;
-  let queue = Promise.resolve();                     // one message at a time, in order
-  const on = (name, take) => es.addEventListener(name, (ev) => {
-    queue = queue.then(async () => {
-      if (!mine() || state.paused) return;
-      try {
-        await take(JSON.parse(ev.data));
-        render();
-      } catch (err) { setLive(`Not updated: ${err.message}`); }
-    });
-  });
-  on("home", async (home) => {
-    takeHome(home);
-    await loadChat();                                // a session's state: its messages may have moved on too
-    if (!state.selected) {                           // the first agent to appear: shown, and watched
-      const first = home.gatherers.find((g) => g.agents.length);
-      if (first) { state.selected = [first.name, firstAgent(first).channel]; await loadAgent(); render(true); connect(); }
-    }
-  });
-  on("agent", async (agent) => {
-    if (sel && state.selected && sel[0] === state.selected[0] && sel[1] === state.selected[1]) { await takeAgent(agent); await loadChat(); }
-  });
+  es.addEventListener("home", (ev) => { if (mine()) { panesTake("home", ev.data); streamTake("home", ev.data, mine); } });
+  es.addEventListener("agent", (ev) => { if (mine()) streamTake("agent", ev.data, mine, sel); });
+  es.addEventListener("actor", (ev) => { if (mine()) panesTake("actor", ev.data); });
   es.addEventListener("open", () => { if (mine()) render(); });
   es.addEventListener("error", () => { if (mine() && !state.paused) setLive("Reconnecting…"); });
+}
+
+// What the stream says, one message at a time, in order: the home, and the agent of `sel` -- or, in a frame,
+// the `actor` its page around it hands it (the stream's, for this pane's actor). In a frame, after its first load.
+let streamQueue = Promise.resolve();
+function streamTake(name, data, mine = () => true, sel = null) {
+  streamQueue = streamQueue.then(async () => {
+    if (!mine() || state.paused) return;
+    try {
+      const got = JSON.parse(data);
+      if (name === "home") {
+        takeHome(got);
+        await loadChat();                            // a session's state: its messages may have moved on too
+        if (!state.selected && !PANE) {              // the first agent to appear: shown, and watched
+          const first = got.gatherers.find((g) => g.agents.length);
+          if (first) { state.selected = [first.name, firstAgent(first).channel]; await loadAgent(); render(true); connect(); }
+        }
+      } else {
+        const [g, c, agent] = name === "actor" ? [got.gatherer, got.channel, got.agent] : [...(sel || []), got];
+        if (!isAt(state.selected, g, c)) return;     // for an actor no longer shown
+        await takeAgent(agent); await loadChat();
+      }
+      render();
+    } catch (err) { setLive(`Not updated: ${err.message}`); }
+  });
 }
 
 // ------------------------------------------------------------------ finished, not yet looked at
 // When the reader last looked at each actor, kept in this browser: its `last` (data.py: its latest
 // activity, in the server's clock) at that moment. An actor that has stopped with activity after
-// that is FINISHED: done, and not yet seen. Looking means having it selected while the page is
+// that is FINISHED: done, and not yet seen. Looking means having it open in a pane while the page is
 // visible. The first time this browser opens the dashboard, every actor there is taken as seen.
 const SEEN_KEY = "ag-dashboard-seen";
 const seen = (() => {
@@ -1359,12 +1549,15 @@ function takeHome(home) {
   markSeen();
 }
 function markSeen() {
-  if (SNAPSHOT || !state.home || !state.selected || document.visibilityState !== "visible") return;
-  const g = state.home.gatherers.find((x) => x.name === state.selected[0]);
-  const a = g && g.agents.find((x) => x.channel === state.selected[1]);
-  if (!a || !a.last || (seen.at[a.key] || 0) >= a.last) return;
-  seen.at[a.key] = a.last;
-  keepSeen();
+  if (SNAPSHOT || PANE || !state.home || document.visibilityState !== "visible") return;
+  let changed = false;
+  for (const [gname, c] of openActors()) {
+    const g = state.home.gatherers.find((x) => x.name === gname);
+    const a = g && g.agents.find((x) => x.channel === c);
+    if (!a || !a.last || (seen.at[a.key] || 0) >= a.last) continue;
+    seen.at[a.key] = a.last; changed = true;
+  }
+  if (changed) keepSeen();
 }
 document.addEventListener("visibilitychange", () => { if (state.home && document.visibilityState === "visible") { markSeen(); renderAgents(); } });
 
@@ -1426,51 +1619,54 @@ async function moveHidingToServer() {
   renderAgents();
 }
 function renderAgents() {
+  if (PANE) return;                                  // a frame has no list: the page around it has
   const aside = document.getElementById("agents");
-  document.getElementById("home").textContent = state.home.home;
+  const was = listPlaces(aside);
+  document.getElementById("home").textContent = document.getElementById("home").title = state.home.home;
   const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
-  const running = shown.reduce((n, g) => n + g.agents.filter((a) => a.running).length, 0);
-  const total = shown.reduce((n, g) => n + g.agents.length, 0);
-  const finished = shown.reduce((n, g) => n + g.agents.filter((a) => statusOf(a)[1] === "Finished").length, 0);
-  aside.replaceChildren(el("div", { class: "aside-head" }, el("h2", { text: `Actors · ${running} running${finished ? `, ${finished} finished` : ""} of ${total}` }),
+  aside.replaceChildren(el("div", { class: "aside-head" }, el("h2", { text: "Actors" }),
     SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new gatherer" }, "+ New gatherer")));
   if (state.adding && state.adding.gatherer === "") aside.append(gathererForm());
   if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No gatherers in this home yet." }));
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every gatherer is hidden." }));
   for (const g of shown) {
     const open = !collapsed.has(g.name);
-    const live = g.agents.filter((a) => a.running).length;
+    // running first, then those whose turn is over but something they started still runs, then finished
+    // (not yet looked at), then idle, then closed; each in the order the data has them, newest created
+    // first, so an actor stays in its place, and moves only between them -- but closed, the latest active
+    // first: nothing moves there once closed
+    const groupOf = (a) => ({ Building: "Running", Running: "Running", Starting: "Running", Background: "Background",
+      Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
+    const groups = ["Running", "Background", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
+      .filter(([, list]) => list.length);
+    const live = g.agents.filter((a) => groupOf(a) === "Running").length;
     const box = el("div", { class: "gatherer" },
-      el("div", { class: "gatherer-row" },
+      el("div", { class: "gatherer-row", "data-key": g.name },
         el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name),
           title: g.policy ? `${g.name} · policy ${g.policy}` : g.name },
-          el("span", { class: "caret", text: "▶" }), el("span", { class: "gname", text: g.name }),
-          el("span", { class: "count", title: `${g.agents.length} actor${g.agents.length === 1 ? "" : "s"}${live ? `, ${live} running` : ""}` },
-            live ? el("i", { "aria-hidden": "true" }) : null, live ? `${live} / ${g.agents.length}` : String(g.agents.length))),
+          el("span", { class: "caret", text: "▶" }), el("span", { class: "gname", text: g.name })),
         el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
           hideIcon()),
-        SNAPSHOT ? null : el("button", { class: "act add", type: "button", title: `New session in ${g.name}`, "aria-label": `New session in ${g.name}`,
-          onclick: () => addSession(g) }, "+")));
+        // how many of its actors run now; nothing while none does
+        el("span", { class: "fill", onclick: () => toggleGatherer(g.name) },
+          live ? el("span", { class: "count", title: `${live} of ${plural(g.agents.length, "actor")} running` },
+            el("i", { "aria-hidden": "true" }), String(live)) : null),
+        ...(SNAPSHOT ? [] : startButtons(g))));
     if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
-    // running first, then finished (not yet looked at), then idle, then closed; each in the order the
-    // data has them, newest created first, so an actor stays in its place, and moves only between them --
-    // but closed, the latest active first: nothing moves there once closed
-    const groupOf = (a) => ({ Building: "Running", Running: "Running", Background: "Running", Finished: "Finished", Closed: "Closed" })[statusOf(a)[1]] || "Idle";
-    const groups = ["Running", "Finished", "Idle", "Closed"].map((name) => [name, g.agents.filter((a) => groupOf(a) === name)])
-      .filter(([, list]) => list.length);
     for (const [name, list] of groups) if (name === "Closed") list.sort((x, y) => (y.last || 0) - (x.last || 0));
+    keepOrder(g.name, groups);   // so drawn first; from then on, each group in the order its actors were last in
     for (const [name, list] of open ? groups : []) {
       if (name === "Closed") {
         const shownClosed = closedOpen.has(g.name);
-        const selected = list.filter((a) => state.selected && state.selected[0] === g.name && state.selected[1] === a.channel);
-        box.append(el("button", { class: "agent-group", type: "button", "aria-expanded": shownClosed ? "true" : "false",
+        const selected = list.filter((a) => openActors().some((sel) => isAt(sel, g.name, a.channel)));
+        box.append(el("button", { class: "agent-group", type: "button", "aria-expanded": shownClosed ? "true" : "false", "data-key": `${g.name}/Closed`,
           title: shownClosed ? "Hide closed actors" : "Show closed actors", onclick: () => toggleClosed(g.name) },
           `${shownClosed ? "▾" : "▸"} ${list.length} closed`));
         for (const a of shownClosed ? list : selected) box.append(agentRow(g, a));
         continue;
       }
-      if (groups.length > 1) box.append(el("div", { class: "agent-group", text: name }));
+      if (groups.length > 1) box.append(el("div", { class: "agent-group", "data-key": `${g.name}/${name}`, text: name }));
       for (const a of list) box.append(agentRow(g, a));
     }
     aside.append(box);
@@ -1485,6 +1681,7 @@ function renderAgents() {
     if (wasOpen && wasOpen.open) list.open = true;
     aside.append(list);
   }
+  slideList(aside, was);
   const servers = state.home.hook_servers || [];     // in the dashboard's panel (the header's button)
   document.getElementById("servers").textContent = servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";
@@ -1496,16 +1693,20 @@ const MID_TURN = /^\s*The user sent a new message while you were working:\s*([\s
 const asked = (text) => { const m = text && MID_TURN.exec(text); return m && m[1] ? m[1] : text; };
 function agentRow(g, a) {
   const [cls, label] = statusOf(a);
-  const current = state.selected && state.selected[0] === g.name && state.selected[1] === a.channel;
+  const current = isAt(focusedActor(), g.name, a.channel);
+  const open = !current && openActors().some((sel) => isAt(sel, g.name, a.channel));
   const size = a.real_tokens ?? a.sent_tokens;
-  return el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false",
-    title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}`, onclick: () => select(g.name, a.channel) },
+  return el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false", "data-key": `${g.name}/${a.channel}`,
+    ...(open ? { "data-open": "true" } : {}),
+    title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: open beside the one shown`}`,
+    onclick: (ev) => pick(g.name, a.channel, ev), oncontextmenu: (ev) => pickBeside(g.name, a.channel, ev) },
     actorLogo(a),
     el("div", {},
       el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: asked(a.last_user_message) || "No message yet" }),
       a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
         el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
-      el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label }),
+      // the list is drawn again on every change: the glyph's turn set by the clock, not restarted each time
+      el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label, style: `--spin-at: -${Date.now() % 1200}ms` }),
         el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
         closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",
           "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); closeSession(a); },
@@ -1515,8 +1716,54 @@ function agentRow(g, a) {
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
           : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false))),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
-        el("span", { class: "spin", "aria-hidden": "true" }),
         `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null));
+}
+// Where each gatherer's actors were put when the list was last drawn: channel -> place, top first.
+const listOrder = new Map();
+// Each group's actors in the order they were last in, so an actor moves no further than it must: one that
+// stays in its group keeps its place, and one that comes to it from another lands at the end nearest where it
+// was -- the bottom of a group above it, the top of one below. One not seen before goes first, as the data has it.
+function keepOrder(gatherer, groups) {
+  const before = listOrder.get(gatherer) || new Map(), now = new Map();
+  for (const [, list] of groups) {
+    list.sort((x, y) => (before.get(x.channel) ?? -1) - (before.get(y.channel) ?? -1));
+    for (const a of list) now.set(a.channel, now.size);
+  }
+  listOrder.set(gatherer, now);
+}
+// The list is drawn whole each time; so that an actor changing status does not jump to its new place, each
+// row, group heading and gatherer is keyed (data-key), its place and status taken before the list is drawn
+// again (listPlaces), and after it (slideList) set back where it was and moved to where it is now. An actor
+// whose status changed, and so its group, slides over the others; one new to the list fades in; its status dot
+// grows into its new state. None of it for a reader who asks for less motion.
+function listPlaces(root) {
+  const places = new Map();
+  for (const n of root.querySelectorAll("[data-key]")) {
+    const dot = n.querySelector(".meta .dot");
+    places.set(n.dataset.key, { top: n.getBoundingClientRect().top, status: dot && dot.getAttribute("aria-label") });
+  }
+  return places;
+}
+function slideList(root, was) {
+  if (!was.size || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const side = getComputedStyle(root).backgroundColor;
+  for (const n of root.querySelectorAll("[data-key]")) {
+    const before = was.get(n.dataset.key);
+    if (!before) { n.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, easing: "ease-out" }); continue; }
+    const dot = n.querySelector(".meta .dot"), changed = dot && before.status && dot.getAttribute("aria-label") !== before.status;
+    const dy = before.top - n.getBoundingClientRect().top;
+    if (Math.abs(dy) >= 1) {
+      const frames = [{ transform: `translateY(${dy}px)` }, { transform: "none" }];
+      if (changed) {     // past the rows between: over them, on the list's own background if it has none
+        n.style.position = "relative"; n.style.zIndex = "1";
+        const bg = getComputedStyle(n).backgroundColor;
+        if (bg === "rgba(0, 0, 0, 0)" || bg === "transparent") { frames[0].backgroundColor = side; frames[1].backgroundColor = side; }
+      }
+      n.animate(frames, { duration: 380, easing: "cubic-bezier(.2, .8, .2, 1)" }).onfinish = () => { n.style.position = n.style.zIndex = ""; };
+    }
+    if (changed)
+      dot.animate([{ transform: "scale(.2)", opacity: 0 }, { transform: "scale(1)", opacity: 1 }], { duration: 320, delay: 120, easing: "ease-out", fill: "backwards" });
+  }
 }
 // Selecting an actor draws its chat as soon as it is loaded; its calls and context (the details) follow
 // on the stream, which starts with them. The actor list is the stream's already.
@@ -1524,12 +1771,264 @@ async function select(g, c) {
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null; state.agent = null;
   state.agentVersion = (state.agentVersion || 0) + 1;
   markSeen();
+  savePanes();
   if (SNAPSHOT || state.paused) { await refresh(true); chatToEnd(); return; }
   connect();
   const main = document.getElementById("main");
   main.classList.add("stale");
   try { await loadChat(); } finally { main.classList.remove("stale"); }
   if (state.selected[0] === g && state.selected[1] === c) { render(true); chatToEnd(); }
+}
+// ------------------------------------------------------------------ panes
+// Actors side by side. A click in the list shows its actor in the pane in focus; Ctrl+click (⌘+click on a
+// Mac, where Ctrl+click is a right click) opens it in a new pane at that one's right, up to MAX_PANES. An actor
+// open in a pane already is not opened twice: its pane is focused. A click in a pane focuses it; its × closes
+// it; the bar between two resizes them (a double click: all even). The first pane is this page's own view
+// (state.selected, panes.here); each other is this page again in a frame (PANE), showing one actor in its own
+// view, its controls in its pane's head, its updates handed to it from this page's one stream (connect). Kept
+// in this browser while there is more than one; with one, the page is as it always was.
+const MAC = /mac|iphone|ipad/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
+const BESIDE_KEY = MAC ? "⌘" : "Ctrl";
+panes.here = { node: document.getElementById("pane-here"), size: 1 };
+panes.focus = panes.here;
+function isAt(sel, g, c) { return !!sel && sel[0] === g && sel[1] === c; }
+function allPanes() { return [panes.here, ...panes.others]; }
+// The actors open in this page's panes, this page's own first; the one in focus.
+function openActors() { return PANE ? [] : [...(state.selected ? [state.selected] : []), ...panes.others.map((p) => [p.g, p.c])]; }
+function focusedActor() { return panes.focus === panes.here ? state.selected : [panes.focus.g, panes.focus.c]; }
+function paneSig() { return [state.selected, panes.others.map((p) => [p.g, p.c]), allPanes().indexOf(panes.focus)]; }
+function paneOf(win) { return panes.others.find((p) => p.frame.contentWindow === win) || null; }
+// A row of the list clicked: shown in the pane in focus, or (Ctrl/⌘) beside it.
+function pick(g, c, ev) { return ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT ? openBeside(g, c) : show(g, c); }
+function pickBeside(g, c, ev) {
+  if (!MAC || !ev.ctrlKey || SNAPSHOT || ev.target.closest(".close-btn")) return;   // a Mac's Ctrl+click: a right click, no click after it
+  ev.preventDefault();
+  openBeside(g, c);
+}
+// The actor in the pane in focus -- in `view`, if given; one open already, its pane focused instead.
+async function show(g, c, view = null) {
+  const there = panes.others.find((p) => isAt([p.g, p.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null);
+  const p = there || panes.focus;
+  if (p !== panes.here) {
+    focusPane(p);
+    if (!there) { Object.assign(p, { g, c, view: view || p.view }); savePanes(); connect(); renderAgents(); p.call("select", g, c, view); }
+    else if (view) p.call("view", view);
+    return;
+  }
+  focusPane(panes.here);
+  if (there) { if (view) await setChatView(view); return; }
+  if (view) setViewHere(view);
+  await select(g, c);
+}
+function setViewHere(id) {
+  chatViewId = id;
+  try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
+}
+function openBeside(g, c) {
+  if (PANE || SNAPSHOT || !state.selected) return show(g, c);
+  const there = panes.others.find((p) => isAt([p.g, p.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null);
+  if (there) return focusPane(there);
+  if (allPanes().length >= MAX_PANES) return paneNote(`At most ${MAX_PANES} actors side by side: close one (its ×) to open another.`);
+  const from = panes.focus, at = from === panes.here ? 0 : panes.others.indexOf(from) + 1;
+  const p = addPane(g, c, from === panes.here ? chatView().id : from.view, at);
+  focusPane(p);
+  layout(); savePanes(); connect();
+}
+// A pane of its own for an actor, its frame put at `at` among the others. Nothing else on the page is moved:
+// a frame moved is a frame loaded again.
+function addPane(g, c, view, at, size = 1) {
+  const p = { g, c, view: view || null, size, ready: false };
+  const q = new URLSearchParams({ pane: "1", gatherer: g, channel: c, ...(view ? { view } : {}) });
+  p.frame = el("iframe", { src: `/?${q}`, title: `Actor ${c} of ${g}` });
+  p.node = el("section", { class: "pane" }, p.frame);
+  p.gutter = gutterFor(p);
+  p.call = (what, ...args) => {                      // what the frame's page does when asked (agPane, its paneReady)
+    let api = null;
+    try { api = p.ready && p.frame.contentWindow && p.frame.contentWindow.agPane; } catch (e) { /* gone */ }
+    if (api && api[what]) api[what](...args);
+  };
+  const before = panes.others[at] ? panes.others[at].gutter : null;
+  document.getElementById("panes").insertBefore(p.gutter, before);
+  document.getElementById("panes").insertBefore(p.node, before);
+  panes.others.splice(at, 0, p);
+  return p;
+}
+function closePane(p) {
+  const i = panes.others.indexOf(p);
+  if (i < 0) return;
+  panes.others.splice(i, 1);
+  p.gutter.remove(); p.node.remove();                // its page goes, and its terminal's stream; the session stays
+  topRow(p, null);
+  if (panes.focus === p) focusPane(panes.others[i - 1] || panes.here);
+  layout(); savePanes(); connect(); renderAgents();
+}
+// This page's own pane closed: the next pane's actor (and view) moves into it, its frame gone.
+async function closeHere() {
+  const next = panes.others[0];
+  if (!next) return;
+  panes.others.shift();
+  next.gutter.remove(); next.node.remove();
+  topRow(next, null);
+  panes.here.size = next.size;
+  if (next.view) setViewHere(next.view);
+  focusPane(panes.here);
+  layout();
+  await select(next.g, next.c);
+}
+function focusPane(p) {
+  if (!p || panes.focus === p) return;
+  panes.focus = p;
+  for (const q of allPanes()) q.node.classList.toggle("focused", q === p);
+  for (const q of panes.others) q.call("focused", q === p);
+  savePanes();
+  if (state.home) renderAgents();
+}
+// The panes' widths (each its share, `size`), which is in focus, and whether the page is split at all: split,
+// each pane's head says whose it is, and has its ×.
+function layout() {
+  const split = panes.others.length > 0;
+  document.getElementById("panes").classList.toggle("split", split);
+  for (const p of allPanes()) { p.node.style.flexGrow = split ? String(p.size) : ""; p.node.classList.toggle("focused", p === panes.focus); }
+  drawn.who = null; drawWho();
+}
+// The page's top row -- the page's name at the left, each pane's head -- as tall as the tallest of them, so the
+// rule under it runs straight across the page: each says how tall it is by itself (`tops`: the name's, this
+// page's head's, each frame's), and all are given the tallest (--top-h). Not where the page is a phone's, its
+// panes one under the other. A frame tells the page around it, and is told.
+const tops = new Map(), NARROW = matchMedia("(max-width: 760px)");
+function topRow(who, height) {
+  if (height === null) tops.delete(who); else tops.set(who, height);
+  if (PANE) return PANE.top(window, height);
+  const tallest = NARROW.matches ? 0 : Math.ceil(Math.max(0, ...tops.values())) + 1;   // and the rule under it
+  if (tallest === panes.top) return;
+  panes.top = tallest;
+  setTopRow(tallest);
+  for (const p of panes.others) p.call("top", tallest);
+}
+const setTopRow = (h) => document.documentElement.style.setProperty("--top-h", `${h}px`);
+function watchTop(node, who) {
+  new ResizeObserver(() => topRow(who, node.getBoundingClientRect().height)).observe(node);
+}
+if (!PANE) NARROW.addEventListener("change", () => { panes.top = null; topRow("brand", tops.get("brand") || 0); });
+// The pane's head: whose it is, as the list has the actor -- its avatar, what it was last asked.
+function drawWho() {
+  if (!PANE && !panes.others.length) return;
+  const info = selectedInfo();
+  const sig = signature([state.selected, info && [info.avatar, info.harness, info.last_user_message]]);
+  if (sig === drawn.who) return;
+  drawn.who = sig;
+  const who = document.getElementById("pane-who");
+  who.replaceChildren(...(info ? [actorLogo(info), el("span", { class: "tx", text: asked(info.last_user_message) || info.channel })] : []));
+  who.title = info ? `${harnessName(info.harness)} · ${state.selected[0]} · ${info.channel}` : "";
+}
+// The bar at a pane's left: dragged, it gives the two panes beside it their widths, each at least MIN_PANE.
+function gutterFor(p) {
+  const bar = el("div", { class: "pane-gutter", role: "separator", "aria-orientation": "vertical", title: "Drag to resize · double-click: all the same width" });
+  bar.addEventListener("pointerdown", (ev) => {
+    const all = allPanes(), left = all[all.indexOf(p) - 1];
+    if (!left || ev.button !== 0) return;
+    ev.preventDefault();
+    bar.setPointerCapture(ev.pointerId);
+    const wl = left.node.getBoundingClientRect().width, wr = p.node.getBoundingClientRect().width, share = left.size + p.size, x0 = ev.clientX;
+    const box = document.getElementById("panes");
+    box.classList.add("resizing");                   // the frames let the pointer by while it drags
+    const move = (e) => {
+      const w = Math.min(Math.max(wl + e.clientX - x0, Math.min(MIN_PANE, wl)), wl + wr - Math.min(MIN_PANE, wr));
+      left.size = share * w / (wl + wr); p.size = share - left.size;
+      left.node.style.flexGrow = String(left.size); p.node.style.flexGrow = String(p.size);
+    };
+    const up = () => { bar.removeEventListener("pointermove", move); box.classList.remove("resizing"); savePanes(); };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", up, { once: true });
+    bar.addEventListener("pointercancel", up, { once: true });
+  });
+  bar.addEventListener("dblclick", () => { for (const q of allPanes()) q.size = 1; layout(); savePanes(); });
+  return bar;
+}
+// A line over the panes for a moment: why nothing opened.
+function paneNote(text) {
+  const n = el("div", { class: "pane-note", role: "status", text });
+  document.getElementById("panes").append(n);
+  setTimeout(() => n.remove(), 3500);
+}
+function savePanes() {
+  if (PANE || SNAPSHOT) return;
+  try {
+    if (!panes.others.length) localStorage.removeItem(PANES_KEY);
+    else localStorage.setItem(PANES_KEY, JSON.stringify({ here: state.selected, size: panes.here.size, focus: panes.others.indexOf(panes.focus),
+      others: panes.others.map((p) => ({ g: p.g, c: p.c, view: p.view, size: p.size })) }));
+  } catch (e) { /* this page only */ }
+}
+// The panes kept, opened again once the home is known: those whose actors are still in it.
+function restorePanes() {
+  panes.checked = true;
+  if (PANE || SNAPSHOT) return;
+  let kept = null;
+  try { kept = JSON.parse(localStorage.getItem(PANES_KEY)); } catch (e) { /* none kept */ }
+  if (!kept || !Array.isArray(kept.others)) return;
+  const exists = (g, c) => state.home.gatherers.some((x) => x.name === g && x.agents.some((a) => a.channel === c));
+  if (!state.selected && Array.isArray(kept.here) && exists(...kept.here)) state.selected = kept.here;
+  if (!state.selected) return;
+  panes.here.size = +kept.size || 1;
+  for (const o of kept.others) {
+    if (!o || allPanes().length >= MAX_PANES || !exists(o.g, o.c) || openActors().some((sel) => isAt(sel, o.g, o.c))) continue;
+    addPane(o.g, o.c, o.view, panes.others.length, +o.size || 1);
+  }
+  focusPane(panes.others[kept.focus] || panes.here);
+  layout();
+}
+// What this page's stream says for the frames: the home for each, an actor for its pane's; kept, for a frame not
+// ready yet (or one shown a new actor).
+function panesTake(name, data) {
+  let to = null;
+  if (name === "home") panes.home = data;
+  else { const got = JSON.parse(data); to = [got.gatherer, got.channel]; panes.actors.set(key(...to), data); }
+  for (const p of panes.others) if (!to || isAt(to, p.g, p.c)) p.call("take", name, data);
+}
+// What a frame's page asks of this one (its PANE).
+if (!PANE && !SNAPSHOT) window.agPanes = Object.freeze({
+  get stream() { return state.stream; },
+  ready(win, sel) {                                  // its page is up: given what the stream has said so far
+    const p = paneOf(win);
+    if (!p) return;
+    p.ready = true;
+    p.call("focused", panes.focus === p);
+    if (panes.top) p.call("top", panes.top);
+    if (!isAt(sel, p.g, p.c)) return p.call("select", p.g, p.c, p.view);   // shown another actor while it loaded
+    if (panes.home) p.call("take", "home", panes.home);
+    const a = panes.actors.get(key(p.g, p.c));
+    if (a) p.call("take", "actor", a);
+  },
+  shows(win, sel) {                                  // its actor, chosen or renamed (a codex thread)
+    const p = paneOf(win);
+    if (!p || !p.ready || !sel) return;              // not up yet: its pane's actor is the one it is given (ready)
+    if (!isAt(sel, p.g, p.c)) { [p.g, p.c] = sel; savePanes(); connect(); renderAgents(); return; }
+    const a = panes.actors.get(key(p.g, p.c));
+    if (a) p.call("take", "actor", a);
+  },
+  viewed(win, id) { const p = paneOf(win); if (p) { p.view = id; savePanes(); } },
+  top(win, height) { const p = paneOf(win); if (p) topRow(p, height); },
+  focus(win) { const p = paneOf(win); if (p) focusPane(p); },
+  close(win) { const p = paneOf(win); if (p) closePane(p); },
+});
+// In a frame: its URL says what it shows -- its actor and view -- so that loaded again it shows them still.
+function paneUrl() {
+  const [g, c] = state.selected || [];
+  try { history.replaceState(null, "", "/?" + new URLSearchParams({ pane: "1", gatherer: g || "", channel: c || "", view: chatViewId })); }
+  catch (e) { /* stays as it was */ }
+}
+// In a frame: what the page around it can ask of it, and its word that it is up.
+function paneReady() {
+  window.agPane = Object.freeze({
+    take: (name, data) => streamTake(name, data),
+    select: (g, c, view) => { if (view) chatViewId = view; select(g, c); },
+    view: (id) => setChatView(id),
+    theme: (pick) => setTheme(pick, false),
+    focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
+    top: (h) => setTopRow(h),
+  });
+  PANE.ready(window, state.selected);
+  watchTop(document.getElementById("pane-head"), "here");
 }
 // The forms in the agent list: a new gatherer's ("+ New gatherer", gatherer ""), a new session's in a gatherer (its "+").
 function openForm(gatherer) {
@@ -1561,66 +2060,66 @@ function gathererForm() {
   });
   return form;
 }
-// A gatherer's "+": the form, to choose the harness (and codex's model); the session runs in the directory of
-// the gatherer's most recently active actor -- asked for only when no actor has one (or starting there failed).
-// The harness and model last chosen are chosen again.
-const PICK_KEY = "ag-dashboard-new-session";
-const lastPick = () => { try { return JSON.parse(localStorage.getItem(PICK_KEY)) || {}; } catch (e) { return {}; } };
-const models = {};                                   // harness -> its models (/api/models), asked once
-async function modelsOf(harness) {
-  if (!(harness in models)) { try { models[harness] = await get(`/api/models?harness=${harness}`); } catch (e) { models[harness] = { models: [] }; } }
-  return models[harness];
+// A gatherer's start buttons, one for each harness a new session can run on here (the server's `harnesses`:
+// in ag's config.toml, and installed): a click starts one, on the harness's default model, in the directory of
+// the gatherer's most recently active actor -- or, when no actor has one (or starting there failed), the form
+// asks for the directory first, its buttons the same.
+const startable = () => (state.home.harnesses || []).filter((h) => CHAT_HARNESSES.includes(h));
+const NO_HARNESS = "Neither Claude Code nor Codex is set up here: install one, or set its command in config.toml ([cli.harnesses])";
+function startButtons(g) {
+  const hs = startable();
+  if (!hs.length) return [el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+")];
+  return hs.map((h) => el("button", { class: "act start" + (state.starting && state.starting.gatherer === g.name && state.starting.harness === h ? " busy" : ""),
+    type: "button", ...(state.starting ? { disabled: "" } : {}), title: `New ${harnessName(h)} session in ${g.name}`,
+    "aria-label": `New ${harnessName(h)} session in ${g.name}`, onclick: () => addSession(g, h) },
+    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), harnessBadge(h)));
 }
-function addSession(g) {
-  if (state.adding && state.adding.gatherer === g.name) { state.adding = null; return renderAgents(); }
+async function addSession(g, harness) {
   const last = g.agents.filter((a) => a.cwd).sort((x, y) => (y.last || 0) - (x.last || 0))[0];
-  const pick = lastPick();
-  state.adding = { gatherer: g.name, cwd: last ? last.cwd : "", askCwd: !last, harness: pick.harness || "claude", model: pick.model || "" };
+  if (harness && last) {
+    try { return await startSession(g.name, last.cwd, harness); }
+    catch (e) { state.adding = { gatherer: g.name, cwd: last.cwd, harness, error: e.message }; }
+  } else state.adding = { gatherer: g.name, cwd: last ? last.cwd : "", harness };
   renderAgents();
-  const first = document.querySelector(".newform [aria-pressed=true], .newform input");
+  const first = document.querySelector(".newform input");
   if (first) first.focus();
 }
 // The new session shown in a terminal, opened there (the Terminal view opens it), where the terminal can be.
-async function startSession(gatherer, cwd, harness = "claude", model = "") {
-  const s = await post("/api/sessions", { gatherer, cwd, harness, model });
-  try { localStorage.setItem(PICK_KEY, JSON.stringify({ harness, model: harness === "codex" ? model : (lastPick().model || "") })); } catch (e) { /* this page only */ }
-  state.adding = null;
-  collapsed.delete(s.gatherer);
-  if (CHAT_VIEWS.has("terminal") && state.home.terminals !== false) { chatViewId = "terminal"; try { localStorage.setItem(CHAT_VIEW_KEY, "terminal"); } catch (e) { /* this page only */ } }
-  await select(s.gatherer, s.session_id);
-  const box = chatViewId === "terminal" ? null : document.getElementById("composer-text");
+async function startSession(gatherer, cwd, harness) {
+  state.starting = { gatherer, harness };
+  renderAgents();
+  try {
+    const s = await post("/api/sessions", { gatherer, cwd, harness });
+    state.adding = null;
+    collapsed.delete(s.gatherer);
+    await show(s.gatherer, s.session_id, CHAT_VIEWS.has("terminal") && state.home.terminals !== false ? "terminal" : null);
+  } finally { state.starting = null; renderAgents(); }
+  const box = panes.focus !== panes.here || chatViewId === "terminal" ? null : document.getElementById("composer-text");
   if (box) box.focus();
 }
 function newForm() {
-  const adding = state.adding, fixed = adding.gatherer;
+  const adding = state.adding, fixed = adding.gatherer, hs = startable();
   const cwd = el("input", { name: "cwd", value: adding.cwd || state.home.cwd || "", spellcheck: "false" });
-  const err = el("div", { class: "err", role: "alert", text: adding.error || "" });
-  const start = el("button", { type: "submit", class: "primary" }, "Start");
-  const harnessPick = el("div", { class: "seg", role: "group", "aria-label": "Harness" },
-    ...["claude", "codex"].map((h) => el("button", { type: "button", "aria-pressed": adding.harness === h ? "true" : "false",
-      onclick: () => { adding.harness = h; adding.cwd = cwd.value; renderAgents(); } }, harnessLogo(h), harnessName(h))));
-  const model = el("select", { name: "model", disabled: "" }, el("option", { value: adding.model, text: adding.model || "Loading…" }));
-  model.addEventListener("change", () => { adding.model = model.value; });
-  if (adding.harness === "codex") modelsOf("codex").then(({ models: list, default: dflt }) => {
-    if (!model.isConnected) return;
-    const slugs = list.map((m) => m.slug);
-    if (!slugs.includes(adding.model)) adding.model = slugs.includes(dflt) ? dflt : (slugs[0] || "");
-    model.replaceChildren(...(list.length ? list : [{ slug: "", name: "Codex's default", description: "" }])
-      .map((m) => el("option", { value: m.slug, text: m.name, title: m.description, ...(m.slug === adding.model ? { selected: "" } : {}) })));
-    model.disabled = false;
-  });
+  const err = el("div", { class: "err", role: "alert", text: adding.error || (hs.length ? "" : NO_HARNESS) });
+  const starts = hs.map((h) => el("button", { type: "submit", value: h, class: h === (adding.harness || hs[0]) ? "primary" : "",
+    ...(state.starting ? { disabled: "" } : {}) }, harnessBadge(h), harnessName(h)));
   const form = el("form", { class: "newform", "aria-label": "New session" },
-    el("div", { class: "desc", text: `A new session in ${fixed}${adding.askCwd ? "" : `, in ${adding.cwd}`}` }),
-    harnessPick,
-    adding.harness === "codex" ? el("label", {}, "Model", model) : null,
-    adding.askCwd ? el("label", {}, "Working directory", cwd) : null,
+    el("div", { class: "desc", text: `A new session in ${fixed}` }),
+    el("label", {}, "Working directory", cwd),
     err,
-    el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), start));
+    el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), ...starts));
+  // Enter starts the harness last chosen (the primary), not the first of the buttons
+  cwd.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    if (starts.length) form.requestSubmit(starts.find((b) => b.classList.contains("primary")));
+  });
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    start.disabled = true; err.textContent = "";
-    try { await startSession(fixed, cwd.value.trim(), adding.harness, adding.harness === "codex" ? adding.model : ""); }
-    catch (e) { err.textContent = e.message; start.disabled = false; adding.askCwd = true; }
+    const harness = ev.submitter ? ev.submitter.value : adding.harness;
+    Object.assign(adding, { cwd: cwd.value.trim(), harness, error: "" });
+    try { await startSession(fixed, adding.cwd, harness); }
+    catch (e) { adding.error = e.message; renderAgents(); }
   });
   return form;
 }
@@ -1866,7 +2365,7 @@ function chatCard(info) {
     ...[viewSwitcher(view)].filter(Boolean),
     el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false",
       title: "What ag saw and did for this actor: its context, calls, history and builds", onclick: () => setDetails(!state.details) },
-      infoIcon(), "Details")];
+      infoIcon(), el("span", { class: "lbl", text: "Details" }))];
   // the page's own buttons, unchanged, kept as they are: a view that redraws every few seconds (History, while
   // the Gatherer works) does not make them flash under the pointer. A view's own tools are made again each
   // draw: what they do may be the draw's.
@@ -1887,7 +2386,7 @@ function chatCard(info) {
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
   }
-  if (view.feed !== "none" && view.frame !== "term") { const note = backgroundNote(info); if (note) card.append(note); }
+  if (view.background) { const note = backgroundNote(info); if (note) card.append(note); }
   if (!writable) {
     if (!SNAPSHOT) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code and codex sessions with a known directory." }));
     card.append(...safely(() => view.footer && view.footer(ctx)));
@@ -1936,7 +2435,7 @@ function backgroundNote(info, term = false) {
   const tasks = (info && info.background) || [];
   if (!tasks.length) return null;
   return el("div", { class: term ? "status-line bg-tasks" : "bg-tasks", role: "status" },
-    el("div", { class: "head" }, el("span", { class: "spin", "aria-hidden": "true" }),
+    el("div", { class: "head" }, el("span", { class: "mark", "aria-hidden": "true" }),
       `${plural(tasks.length, "background task")} running${info.status === "background" ? ": the turn is over, the work is not" : ""}`),
     ...tasks.map((t) => el("div", { class: "task", title: [t.label, t.output].filter(Boolean).join("\n") },
       el("span", { class: "kind", text: TASK_KINDS[t.kind] || t.kind }),
@@ -2588,9 +3087,11 @@ function notesSwitch() {
 //                                       // them -- {row_id, type, at, parts: [{kind, role, text, ...}]};
 //                                       // "files", the turns and the picked turn's files (files.py);
 //                                       // or "none", for a view that is not the history (the Terminal)
-//     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own;
-//                                       // under any but "term", what runs in the background (backgroundNote) --
-//                                       // a "term" view draws it itself, with api.backgroundNote(ctx.info, true)
+//     frame: "ctx",                     // the frame's class: "ctx" (the list's), "term" (the terminal's), or your own
+//     background: true,                 // optional: what runs in the background (backgroundNote) under the frame;
+//                                       // false to draw it itself (api.backgroundNote(ctx.info), or (.., true) as a
+//                                       // terminal's status line) or not at all. By default, under any view of the
+//                                       // history but a "term" one
 //     tools(ctx) { return [nodes] },    // optional: controls in the page's header (filters, switches)
 //     render(ctx) { return node or [nodes] },
 //     composer(ctx) { return node },    // optional: the box to write the next message, under the frame;
@@ -2611,13 +3112,14 @@ function notesSwitch() {
 // still work.
 const CHAT_VIEWS = new Map();
 const CHAT_VIEW_KEY = "ag-dashboard-chat-view";
-let chatViewId = (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "transcript"; } catch (e) { return "transcript"; } })();
+let chatViewId = (PANE && PANE_URL.get("view")) || (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "transcript"; } catch (e) { return "transcript"; } })();
 const chatView = () => CHAT_VIEWS.get(chatViewId) || CHAT_VIEWS.get("transcript");
 async function setChatView(id) {
   if (id === "history" && chatViewId !== "history") hist.askedFor = hist.group = hist.stay = null;   // opened again: built again
                                                      // if due, and at its tasks if it has them
   chatViewId = id;
-  try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
+  if (PANE) { paneUrl(); PANE.viewed(window, id); }  // a frame's: kept with its pane, not as every page's
+  else try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
   await loadChat();
   keepingPlace(renderMain);
   chatToEnd();
@@ -2626,7 +3128,7 @@ function addChatView(view) {
   if (!view || typeof view.id !== "string" || typeof view.render !== "function")
     throw new Error("a chat view needs an id and a render(ctx)");
   if (!CHAT_FEEDS[view.feed || "history"]) throw new Error(`no feed ${view.feed}: one of ${Object.keys(CHAT_FEEDS).join(", ")}`);
-  CHAT_VIEWS.set(view.id, { name: view.id, feed: "history", ...view });
+  CHAT_VIEWS.set(view.id, { name: view.id, feed: "history", background: view.feed !== "none" && view.frame !== "term", ...view });
   if (state.home) { drawn.main = null; loadChat().then(() => render()); }
 }
 // What a view can draw from: each loads its data for the selected session, and says what it has.
@@ -2694,7 +3196,7 @@ addChatView({
   },
 });
 addChatView({
-  id: "context", name: "Context", feed: "agent", frame: "ctx",
+  id: "context", name: "Context", feed: "agent", frame: "ctx", background: false,   // the model's context, not what runs
   description: "What the model was sent: the picked call's context, item by item; its size over time and how it divides, under the message box.",
   tools: () => {
     const ctx = state.agent && state.agent.reads ? pickedContext() : null;
@@ -2909,7 +3411,10 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
 // lines it saw at their numbers and its changes in place among them (files.py); the commands that were
 // not just reading a file listed under them. One turn at a time: the latest, followed, unless one is picked.
 const FILE_KINDS = { read: ["read", "var(--s1)"], hit: ["search hit", "var(--s4)"], edit: ["edited", "var(--s2)"],
-  write: ["written", "var(--s3)"] };
+  write: ["written", "var(--s3)"], delete: ["deleted", "var(--critical)"] };
+// What the disk said of a call, where ag's hook server checked it as it ran (files.py's `checked`)
+const CHECKED = { true: ["checked", "What the call showed of this file matched the file on disk right after it ran"],
+  false: ["not as on disk", "What the call showed of this file did not match the file on disk right after it ran"] };
 let filesLoading = Promise.resolve();
 function loadFiles() {
   filesLoading = filesLoading.then(loadFilesNow, loadFilesNow);
@@ -2940,6 +3445,21 @@ async function setFilesTurn(n) {
   await loadFiles();
   keepingPlace(renderMain);
 }
+// The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched
+// only them: hidden until asked for, the choice kept in this browser.
+const TMP_KEY = "ag-dashboard-files-tmp";
+let showTmp = (() => { try { return localStorage.getItem(TMP_KEY) === "1"; } catch (e) { return false; } })();
+function tmpSwitch(n) {
+  const box = el("input", { type: "checkbox" });
+  box.checked = showTmp;
+  box.addEventListener("change", () => {
+    showTmp = box.checked;
+    try { localStorage.setItem(TMP_KEY, showTmp ? "1" : "0"); } catch (e) { /* this page only */ }
+    keepingPlace(renderMain);
+  });
+  return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched only them" },
+    box, `tmp (${n})`);
+}
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
   const d = state.files && state.files.data;
@@ -2965,7 +3485,9 @@ function fileView(f, rel, id) {
       el("summary", {}, el("span", { class: "tw", text: "▸" }), el("span", { class: "k", text: `${i + 1}` }),
         el("span", { class: "kinds" }, ...s.kinds.map((k) => el("i", { class: "fb", style: `background: ${(FILE_KINDS[k] || [k, "var(--muted)"])[1]}` }))),
         el("span", { class: "via", text: firstLine(s.via, 160) }),
-        el("span", { class: "what", text: kinds.join(", ") + (s.error ? " · failed" : "") })),
+        el("span", { class: "what", text: kinds.join(", ") + (s.error ? " · failed" : "") },
+          CHECKED[s.checked] ? el("span", { class: "chk" + (s.checked ? "" : " off"), title: CHECKED[s.checked][1],
+            text: " · " + CHECKED[s.checked][0] }) : null)),
       el("details", { class: "fv-cmd", id: `${id}-s${i}-c` }, el("summary", { text: "command" }), el("pre", { class: "call", text: callText(s.call) })),
       code));
   });
@@ -3019,6 +3541,9 @@ function filesRender({ info, running }) {
   const d = state.files && state.files.data;
   if (!d) return el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" });
   if (!d.turns.length) return [];
+  // the view opened afresh (from another view, or the page's first draw): the conversation and the
+  // commands start where they would for a new turn -- at their end, or at the turn picked
+  if (!document.querySelector("#main .files .fl-grid")) cmdsShown = talkShown = null;
   const t = d.turns[d.turn];
   const cwd = (info.cwd || "").replace(/\/$/, "");
   const rel = (p) => cwd && p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : p.replace(/^\/home\/[^/]+\//, "~/");
@@ -3026,8 +3551,11 @@ function filesRender({ info, running }) {
   const list = el("div", { class: "fl-scroll", "data-keep": "files-list" });
   // the files as a tree of their folders: a folder with one child folder and no files shown as one
   // ("ag_dashboard/vendor/"), each folder folded or opened (opened unless folded by a click)
+  const files = d.files.filter((f) => showTmp || !f.temporary);
+  const tmpFiles = d.files.filter((f) => f.temporary).length;
+  const commands = d.commands.map((c, i) => [c, i]).filter(([c]) => showTmp || !c.temporary);   // each with its index: its id
   const root = { dirs: new Map(), files: [] };
-  for (const f of d.files) {
+  for (const f of files) {
     const parts = rel(f.path).split("/"), name = parts.pop();
     let node = root;
     parts.forEach((p, i) => {
@@ -3062,17 +3590,18 @@ function filesRender({ info, running }) {
     for (const [f, name] of node.files.sort((x, y) => x[1].localeCompare(y[1]))) into.append(fileRow(f, name, depth));
   };
   grow(root, list, 0);
-  if (!d.files.length) list.append(el("div", { class: "fv-note", text: running && d.turn === d.turns.length - 1
-    ? "No files yet in this turn." : "The agent touched no files in this turn." }));
+  if (!files.length) list.append(el("div", { class: "fv-note", text: tmpFiles ? `Only ${plural(tmpFiles, "file")} in temporary folders.`
+    : running && d.turn === d.turns.length - 1 ? "No files yet in this turn." : "The agent touched no files in this turn." }));
   // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one)
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
-  d.commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
+  commands.forEach(([c, i]) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
     el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), firstLine(c.text, 140)),
       (c.files || []).length ? el("div", { class: "fl-cmd-files" }, ...c.files.map((p) => el("button", { type: "button", title: p,
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, rel(p).split("/").pop()))) : null,
       el("pre", { class: "call", text: callText(c.call) }), c.output ? el("pre", { class: "out", text: c.output }) : null))));
-  if (!d.commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
+  if (!commands.length) cmds.append(el("div", { class: "fv-note", text: d.commands.length ? "Only commands in temporary folders."
+    : "No commands in this turn." }));
   const shown = `${state.files.key}:${d.turn}`;
   if (cmdsShown !== shown && state.files.turn === null) requestAnimationFrame(() => {   // once per turn: at its end
     const n = document.querySelector(`[data-keep="files-cmds-${d.turn}"]`);
@@ -3083,39 +3612,69 @@ function filesRender({ info, running }) {
   // two sections, each its own size and scrolling, each with the legend of its colours
   const legend = (pairs) => el("div", { class: "fl-legend" }, ...pairs.map(([name, color]) =>
     el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
-  const failed = d.commands.filter((c) => c.error).length;
+  const failed = commands.filter(([c]) => c.error).length;
   const side = el("div", { class: "fl-side" },
     el("section", { class: "fl-sec files-sec" },
-      el("div", { class: "fl-h", text: d.files.length ? plural(d.files.length, "file") : "No files" }), list,
+      el("div", { class: "fl-h" }, el("span", { text: files.length ? plural(files.length, "file") : "No files" }),
+        tmpFiles || d.commands.some((c) => c.temporary) ? tmpSwitch(tmpFiles) : null), list,
       legend(Object.values(FILE_KINDS))),
     el("section", { class: "fl-sec cmds-sec" },
-      el("div", { class: "fl-h", text: plural(d.commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
-      legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])));
+      el("div", { class: "fl-h", text: plural(commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
+      legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])),
+    filesBackground(info));
   // the file view only while a file is picked: the files and the conversation have the page until then
   const pane = sel ? el("div", { class: "fl-pane", "data-keep": "files-pane" }, fileView(sel, rel, `fl-${d.turn}-${d.files.indexOf(sel)}`)) : null;
   return el("div", { class: "fl-grid" + (sel ? " open" : "") }, side, pane, filesTalk(d, info, running));
 }
 let cmdsShown = null;
-// The conversation, at the right: each of the user's messages a turn, the agent's replies under it, open
-// (a click folds one to its first line), and its thinking between them, folded to a line; while the turn
-// runs, what the agent is doing at its end, as the Transcript's status line. Clicking a message shows its
-// turn's files.
+// What runs in the background, under the commands: one line, the tasks themselves (backgroundNote) over
+// it while it is hovered or focused. Null when none runs.
+function filesBackground(info) {
+  const note = backgroundNote(info);
+  if (!note) return null;
+  return el("div", { class: "fl-bg", tabindex: "0" },
+    el("span", { class: "mark", "aria-hidden": "true" }), plural(info.background.length, "background task"), note);
+}
+// The conversation, at the right: each of the user's messages a turn, at the right, and under it the agent's:
+// its last message whole (a click folds it to its first line), the ones before it -- what it said on the way,
+// its thinking -- each folded to a line, the latest few shown and the earlier behind a click. The latest turns
+// shown, the earlier behind a click too. While the turn runs, what the agent is doing at its end, as the
+// Transcript's status line. Clicking a message shows its turn's files.
+const MINOR_SHOWN = 2, TURNS_SHOWN = 3;
 let talkShown = null;
+// Show more of the conversation above where the reader is, keeping what they look at in place.
+function showMore(change) {
+  const n = document.querySelector(".fl-talk"), below = n ? n.scrollHeight - n.scrollTop : 0;
+  change();
+  keepingPlace(renderMain);
+  const again = document.querySelector(".fl-talk");
+  if (n && again) again.scrollTop = again.scrollHeight - below;
+}
 function filesTalk(d, info, running) {
   const box = el("div", { class: "fl-talk", "data-keep": "files-talk", "data-follow": "1" });
-  const closed = state.files.closed || (state.files.closed = new Set());   // the replies folded by a click
+  const closed = state.files.closed || (state.files.closed = new Set());   // the last messages folded by a click
+  const opened = state.files.opened || (state.files.opened = new Set());   // the turns whose earlier messages are all shown
   const fold = (ev) => { const n = ev.currentTarget; if (n.open) closed.delete(n.id); else closed.add(n.id); };
-  for (const t of d.turns) {
+  const first = state.files.allTurns ? 0 : Math.max(0, Math.min(d.turn, d.turns.length - TURNS_SHOWN));
+  if (first) box.append(el("button", { type: "button", class: "fl-earlier", title: "Show the conversation's earlier turns",
+    onclick: () => showMore(() => { state.files.allTurns = true; }) }, `Show ${plural(first, "earlier turn")}`));
+  for (const t of d.turns.slice(first)) {
     const on = t.n === d.turn;
     const live = running && t.n === d.turns.length - 1;
-    const said = t.replies || [];
-    const reply = (r, i) => {
-      const id = `fl-r-${t.n}-${i}`;
-      if (r.kind === "text") return el("details", { class: "fl-reply", id, open: closed.has(id) ? null : "", ontoggle: fold },
-        el("summary", { title: "Fold or show the whole message" }, el("span", { class: "dot", text: "●" }), el("span", { class: "first", text: firstLine(r.text, 200) })),
-        markdown(r.text));
-      if (!r.texts.length) return null;              // encrypted: nothing to read (the status line says it thinks)
-      return el("details", { class: "fl-think", id },
+    // its messages, by their place in the turn (their ids keep it); thinking that is encrypted has nothing to read
+    const said = (t.replies || []).map((r, i) => [r, i]).filter(([r]) => r.kind === "text" || r.texts.length);
+    const last = said.map(([r]) => r.kind).lastIndexOf("text");
+    const before = last < 0 ? said : said.slice(0, last), after = last < 0 ? [] : said.slice(last + 1);
+    const hidden = opened.has(t.n) || before.length <= MINOR_SHOWN + 1 ? 0 : before.length - MINOR_SHOWN;
+    const reply = ([r, i], main) => {
+      if (r.kind === "text") {
+        const id = `fl-${main ? "m" : "r"}-${t.n}-${i}`;   // apart: the last, once a message follows it, starts folded
+        return el("details", { class: "fl-reply" + (main ? " main" : ""), id, open: main && !closed.has(id) ? "" : null, ontoggle: main ? fold : null },
+          el("summary", { title: "Fold or show the whole message" }, el("span", { class: "dot", text: "●" }),
+            el("span", { class: "first", text: firstLine(r.text.replace(/`|\*\*|^#{1,6}\s+/gm, ""), 200) })),   // its first line, less the markdown's marks
+          markdown(r.text));
+      }
+      return el("details", { class: "fl-think", id: `fl-r-${t.n}-${i}` },
         el("summary", { title: "Show what it thought" }, el("span", { class: "g", "aria-hidden": "true", text: "✻" }),
           el("span", { class: "lbl", text: "Thought" }), el("span", { class: "first", text: firstLine(r.texts[r.texts.length - 1], 200) })),
         ...r.texts.map((x) => el("div", { class: "body", text: x })));
@@ -3124,11 +3683,16 @@ function filesTalk(d, info, running) {
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
       el("button", { type: "button", class: "fl-user", "aria-pressed": on ? "true" : "false",
         title: on ? "The turn shown" : "Show this turn's files", onclick: () => setFilesTurn(t.n) },
-        el("span", { class: "n", text: `${t.n + 1}` }), el("span", { class: "tx", text: t.text })),
-      ...said.map(reply),
+        el("span", { class: "tx", text: t.text })),
+      before.length ? el("div", { class: "fl-minor" },
+        hidden ? el("button", { type: "button", class: "fl-more", title: "Show everything the agent said and thought in this turn",
+          onclick: () => { opened.add(t.n); keepingPlace(renderMain); } }, `+${plural(hidden, "earlier message")}`) : null,
+        ...before.slice(hidden).map((x) => reply(x, false))) : null,
+      last < 0 ? null : reply(said[last], true),
+      after.length ? el("div", { class: "fl-minor" }, ...after.map((x) => reply(x, false))) : null,
       live ? el("div", { class: "fl-status", role: "status" }, el("span", { class: "spin", "aria-hidden": "true" }),
         el("span", { class: "tx", title: now, text: `${now} (last activity ${ago(info.last)})` }))
-        : !said.some((r) => r.kind === "text") ? el("div", { class: "fl-none", text: "No reply in words." }) : null));
+        : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null));
   }
   const at = `${state.files && state.files.key}:${d.turn}`;
   if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick: the latest at its end
@@ -3140,7 +3704,7 @@ function filesTalk(d, info, running) {
   return box;
 }
 addChatView({
-  id: "files", name: "Files", feed: "files", frame: "files",
+  id: "files", name: "Files", feed: "files", frame: "files", background: false,   // drawn under its commands
   description: "One turn at a time: the files the agent read, searched and changed, each with the lines it saw and its changes in place.",
   tools: filesTools,
   render: filesRender,
@@ -3902,7 +4466,14 @@ document.getElementById("pause").addEventListener("click", async (ev) => {
 if (SNAPSHOT) document.getElementById("pause").style.display = "none";
 let resizeTimer = null;
 window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => document.getElementById("size-chart") && state.agent && state.agent.reads && drawCharts(), 150); });
-refresh(true).then(connect).then(loadOwnViews);
+$("pane-close").addEventListener("click", () => PANE ? PANE.close(window) : closeHere());
+if (PANE) document.addEventListener("pointerdown", () => PANE.focus(window), true);
+else {
+  $("pane-here").addEventListener("pointerdown", () => focusPane(panes.here), true);
+  watchTop(document.querySelector("header .brand"), "brand");
+  watchTop(document.getElementById("pane-head"), "here");
+}
+refresh(true).then(connect).then(() => { if (PANE) paneReady(); }).then(loadOwnViews);
 if (!SNAPSHOT) setInterval(() => { if (!state.paused) render(); }, AGO_MS);
 </script>
 </body>
