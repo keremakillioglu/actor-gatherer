@@ -10,7 +10,9 @@ What it decides, Claude Code's own:
 
     a model call   a POST to .../messages (the Anthropic Messages API) whose `messages` hold a user
                    message and that offers tools -- the agent's own turn. Claude Code's side calls
-                   (a title, a summary for its status line) offer none and go through as they are;
+                   (a title, a summary for its status line) offer none and go through as they are,
+                   and so does its WebSearch tool's own call, which offers the web search server tool
+                   alone (`Perform a web search for the query: ...`, the search's summary its result);
                    so do a subagent's (its `Agent` tool), which carry `X-Claude-Code-Agent-Id` and
                    the session's id: a conversation of their own, whose result reaches the session
                    as the Agent call's tool_result. Claude Code's other side calls that do offer
@@ -103,6 +105,7 @@ SIDE_CLASSES = ("auxiliary", "side_reply")       # Claude Code's side calls, not
 SUGGESTION = "[SUGGESTION MODE:"                 # how Claude Code's prompt suggestion asks
 RECAP = "The user stepped away and is coming back."   # how Claude Code's away recap asks
 COMPACTION = "CRITICAL: Respond with TEXT ONLY"  # how Claude Code's compaction call asks for its summary
+WEB_SEARCH = "web_search_"                       # the web search server tool's type, before its version
 ANSWERED = "claude_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
 RECAPPED = "claude_recap"      # the same, for a recap: (gatherer, session), its answer kept as the session's recap
 FILES = "claude_files"         # the same, for what the answer's calls do to files: (gatherer, session, cwd, since)
@@ -111,12 +114,20 @@ COUNT_FROM = 0.5            # of the budget, by the policy's count: from there a
 
 def is_model_call(method: str, path: str, body) -> bool:
     """Whether the request is the agent's own model call: a POST to .../messages with a messages
-    list holding a user message, offering tools."""
+    list holding a user message, offering tools -- not the web search server tool alone, which is
+    Claude Code's WebSearch tool searching."""
     if method != "POST" or not path.split("?", 1)[0].rstrip("/").endswith("/messages"):
         return False
     if not isinstance(body, dict) or not isinstance(body.get("messages"), list) or not body.get("tools"):
         return False
+    if all(is_web_search(t) for t in body["tools"]):
+        return False
     return any(isinstance(m, dict) and m.get("role") == "user" for m in body["messages"])
+
+
+def is_web_search(tool) -> bool:
+    """Whether a tool offered is the API's web search server tool (`web_search_20250305`, ...)."""
+    return isinstance(tool, dict) and str(tool.get("type") or "").startswith(WEB_SEARCH)
 
 
 def session_of(headers, body: dict) -> Optional[str]:
