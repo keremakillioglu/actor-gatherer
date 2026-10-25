@@ -1,7 +1,8 @@
 """Each actor's avatar: a small picture of its own beside it in the page's list, so color alone tells
 the actors apart. The pictures are the SVGs in ag_dashboard/avatars/<kind>/<name>.svg (drawn by
 assets/src/avatars/draw.py, or put there by hand: the README there), each in one hue, which its root
-names (`data-hue`). Which actor has which is kept in the dashboard's own database (<home>/dashboard.db,
+names (`data-hue`), as it does how the character moves while its actor works (`data-motion`: the
+Chat view's, page.html's `.buddy`). Which actor has which is kept in the dashboard's own database (<home>/dashboard.db,
 next to sessions.py's and hiding.py's tables), so every dashboard on this home shows the same. Table
 `avatars`, one row per actor given one:
 
@@ -13,7 +14,8 @@ An actor is given one the first time the home is read with it (`assign`), the ne
 ones in view): one in a hue no other open actor of its gatherer has, then one no actor in the home has,
 then the least recently given -- never given first, in a fixed shuffled order (`order`), so kinds and
 hues mix. An actor whose picture is no longer in the folder is given another in the same way; with no
-pictures at all, none is given, and the page draws the actor's harness's mark."""
+pictures at all, none is given, and the page draws the actor's harness's mark. Each actor carries its
+picture's hue and motion too (`avatar_hue`, `avatar_motion`), for the page to draw it at work."""
 
 import hashlib
 import os
@@ -29,6 +31,8 @@ DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "avatars")
 CLOSED = "closed"                        # data.CLOSED: an actor whose hue another may take
 NAME = re.compile(r"^[a-z0-9_-]+/[a-z0-9_-]+$")
 HUE = re.compile(rb'data-hue="([^"]+)"')
+MOTION = re.compile(rb'data-motion="([^"]*)"')
+CIRCLE = re.compile(rb'<circle cx="32" cy="32" r="32"[^>]*/>')   # the circle of its hue a picture is drawn on (the README)
 SCHEMA = """CREATE TABLE IF NOT EXISTS avatars (
     gatherer TEXT NOT NULL,
     channel  TEXT NOT NULL,
@@ -38,7 +42,7 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS avatars (
 )"""
 
 _lock = threading.Lock()
-_hues: Dict[str, Tuple[float, str]] = {}     # path -> (its mtime, its hue): a picture is read once
+_read: Dict[str, Tuple[float, str, str]] = {}     # path -> (its mtime, its hue, its motion): a picture is read once
 
 
 def pictures() -> Dict[str, str]:
@@ -53,12 +57,24 @@ def pictures() -> Dict[str, str]:
             if not entry.name.endswith(".svg") or not NAME.match(name):
                 continue
             mtime = entry.stat().st_mtime
-            if _hues.get(entry.path, (None,))[0] != mtime:
+            if _read.get(entry.path, (None,))[0] != mtime:
                 with open(entry.path, "rb") as fh:
-                    m = HUE.search(fh.read(4096))
-                _hues[entry.path] = (mtime, m.group(1).decode() if m else name)
-            found[name] = _hues[entry.path][1]
+                    head = fh.read(4096)
+                hue, motion = HUE.search(head), MOTION.search(head)
+                _read[entry.path] = (mtime, hue.group(1).decode() if hue else name, motion.group(1).decode() if motion else "")
+            found[name] = _read[entry.path][1]
     return found
+
+
+def motion(name: str) -> str:
+    """How the picture `name` moves while its actor works, as its root names it ("swim bubbles"): "" for
+    none, or a picture pictures() has not read."""
+    return _read.get(os.path.join(DIR, name + ".svg"), (None, "", ""))[2]
+
+
+def bare(svg: bytes) -> bytes:
+    """The picture `svg` without the circle it is drawn on: its character alone, to move on the page."""
+    return CIRCLE.sub(b"", svg, count=1)
 
 
 def path(name: str) -> Optional[str]:
@@ -88,11 +104,14 @@ def stored() -> Dict[Tuple[str, str], str]:
 
 
 def attach(home: dict, kept: Dict[Tuple[str, str], str], pool: Dict[str, str]) -> dict:
-    """Set each actor's `avatar` in `home` (data.home()) from `kept`: None where it has none in `pool`."""
+    """Set each actor's `avatar` in `home` (data.home()) from `kept`, and its hue and motion: None where it
+    has none in `pool` (pictures())."""
     for g in home["gatherers"]:
         for a in g["agents"]:
             got = kept.get((g["name"], a["channel"]))
             a["avatar"] = got if got in pool else None
+            a["avatar_hue"] = pool[got] if a["avatar"] else None
+            a["avatar_motion"] = motion(got) if a["avatar"] else None
     return home
 
 

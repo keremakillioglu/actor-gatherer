@@ -73,6 +73,9 @@ class CodexBase(unittest.TestCase):
         self.env = unittest.mock.patch.dict(os.environ, {"AG_COMMAND": f"{sys.executable} {fake}", "FAKE_AG_LOG": self.log,
                                                          "FAKE_AG_DELAY": "0"})
         self.env.start()
+        os.makedirs(dashboard_home.HOME)                  # a message to codex exec; ChatTerminalTest: the default
+        with open(os.path.join(dashboard_home.HOME, "config.toml"), "w") as fh:
+            fh.write('[dashboard]\nchat = "headless"\n')
         self.s = sessions.Sessions()
 
     def tearDown(self):

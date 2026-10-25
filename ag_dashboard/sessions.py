@@ -51,6 +51,12 @@ the window's size (`resize`). Opening it ends the session's idle `-p` agent firs
 terminal has the session, and a message sent from any view is typed into it -- pasted, then Enter --
 until it is closed (`stop`) or exits. Unix only: it needs `pty` (TERMINALS).
 
+Which a message OPENS, when the session has no terminal open, is the home's config.toml's to say
+(`chat_mode`): `[dashboard] chat = "terminal"`, the default, opens its terminal, the message given as its
+first prompt (after `--`, so it is never read as an option), so the session is always seen in its own UI;
+`chat = "headless"` sends it to the `-p` agent above. Either way, a turn the agent is running takes
+the message after it, in the agent.
+
 A session whose process the dashboard's own end took (`close`, or a dashboard gone without one: what
 it last recorded running) is KEPT: not closed by anyone, so shown Idle with no process, to be picked
 up by its next message or terminal. So is one whose process the dashboard PUT AWAY (`put_away`): an
@@ -58,7 +64,7 @@ actor saved for later, left unused (saved.py's `Rest`). Closing it (`stop`), or 
 other way, clears it.
 
 CODEX runs the same ways, through `ag ... codex`: in a terminal, its own interactive UI (`codex
-[resume <id>]`); from a message box with no terminal open, a process per turn, `codex exec --json
+[resume <id>]`); headless, a process per turn, `codex exec --json
 [resume <id>] -` with the message on its stdin, ending with the turn. Codex chooses its thread's id,
 so a codex session starts under an id of the dashboard's and is renamed to its thread's once known:
 from `codex exec`'s `thread.started`, or, in a terminal, the gatherer's first call from the terminal's
@@ -98,6 +104,7 @@ HARNESSES = ("claude", "codex")
 # codex's flags for each permission mode: what it has (else none: codex asks, in a terminal)
 CODEX_PERMISSIONS = {"auto": ["--approve-for-me"], "bypassPermissions": ["--dangerously-bypass-approvals-and-sandbox"]}
 PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "manual")
+CHAT_MODES = ("terminal", "headless")          # what a message opens for a session with no terminal (`chat_mode`)
 GATHERER = re.compile(r"[A-Za-z0-9._-]+")      # the names ag takes
 # What says the dashboard itself runs inside a Claude Code session; its agents are sessions of their own.
 PARENT_SESSION = ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID",
@@ -358,6 +365,22 @@ def available(environ: Optional[Dict[str, str]] = None) -> List[str]:
     return found
 
 
+def chat_mode() -> str:
+    """What a message opens for a session with no terminal open, of CHAT_MODES: the home's config.toml's
+    `[dashboard] chat`; "terminal" when it says none (or none of them), or cannot be read -- and always
+    "headless" where there are no terminals (TERMINALS)."""
+    if not TERMINALS:
+        return "headless"
+    try:
+        import tomllib
+        with open(os.path.join(home.HOME, "config.toml"), "rb") as fh:
+            dashboard = tomllib.load(fh).get("dashboard")
+    except (OSError, ValueError):
+        return "terminal"
+    mode = dashboard.get("chat") if isinstance(dashboard, dict) else None
+    return mode if mode in CHAT_MODES else "terminal"
+
+
 _models: Dict[str, dict] = {}           # harness -> {"at": when asked, "models": [...]}
 MODELS_KEEP = 600                       # how long a harness's list of models is kept before it is asked again
 
@@ -556,15 +579,23 @@ class Sessions:
             self._changed(gatherer, session_id)
             return self._row(session_id)
 
-    def send(self, session_id: str, text: str) -> dict:
-        """The message to the session's agent: a turn now, or, while one runs, after it. Starts the
-        agent if it is not running. The session as `list` has it."""
+    def send(self, session_id: str, text: str, cols: int = 120, rows: int = 32, fullscreen: bool = False) -> dict:
+        """The message to the session: typed into its terminal, if one is open; else, as `chat_mode` says, its
+        terminal opened (`cols` x `rows`, `fullscreen` as `terminal` takes it) with the message its first
+        prompt, or a turn of its agent -- now, or, while one runs, after it -- the agent started if it is not
+        running. A turn of the agent's running or waiting takes it in either mode. The session as `list` has it."""
         text = (text or "").strip()
         if not text:
             raise SessionError("an empty message")
         t = self.terms.get(session_id)
         if t is not None and t.kept:                 # its terminal being put away: once it has ended, a process of its own
             self._gone(t)
+        with self.lock:
+            a = self.agents.get(session_id)
+            opens = session_id not in self.terms and self._row(session_id) is not None and chat_mode() == "terminal" \
+                and not (a is not None and a.proc.poll() is None and (a.busy or a.queue))
+        if opens:                                    # outside the lock: an idle agent's end is recorded by its reader
+            return self.terminal(session_id, cols, rows, fullscreen, prompt=text)
         with self.lock:
             s = self._row(session_id)
             if s is None:
@@ -877,11 +908,13 @@ class Sessions:
                     except SessionError:
                         pass
 
-    def terminal(self, session_id: str, cols: int = 120, rows: int = 32, fullscreen: bool = False) -> dict:
+    def terminal(self, session_id: str, cols: int = 120, rows: int = 32, fullscreen: bool = False,
+                 prompt: Optional[str] = None) -> dict:
         """The session opened in a terminal, `cols` x `rows`: its interactive Claude Code, started unless
-        it runs already -- in its classic screen, or with `fullscreen` the screen its settings choose. Its
-        idle `-p` agent is ended first; refused while that one's turn runs, or while another process has
-        the session open. The session as `list` has it."""
+        it runs already -- in its classic screen, or with `fullscreen` the screen its settings choose --
+        with `prompt` its first message (typed into it, if it runs already). Its idle `-p` agent is ended
+        first; refused while that one's turn runs, or while another process has the session open. The
+        session as `list` has it."""
         if not TERMINALS:
             raise SessionError("a terminal needs a Unix pseudo-terminal, which this system does not have")
         with self.lock:
@@ -912,27 +945,34 @@ class Sessions:
                 held = holder(s["gatherer"], session_id)
                 if held is not None:
                     raise SessionError(f"the session is open in another process ({held['pid']}): close it there first")
-                self._start_terminal(self._row(session_id), cols, rows, fullscreen)
-            else:
+                t = self._start_terminal(self._row(session_id), cols, rows, fullscreen, prompt)
+                if prompt:
+                    t.typed = time.time()
+            else:                                    # open already (opened meanwhile): the prompt typed into it
                 self.resize(session_id, cols, rows)
+                if prompt:
+                    self._paste(self.terms[session_id], prompt)
             return next(x for x in self.list() if x["session_id"] == session_id)
 
-    def _start_terminal(self, s: dict, cols: int, rows: int, fullscreen: bool = False) -> _Term:
+    def _start_terminal(self, s: dict, cols: int, rows: int, fullscreen: bool = False,
+                        prompt: Optional[str] = None) -> _Term:
         sid = s["session_id"]
         resume = bool(s["turns"]) or _has_calls(s["gatherer"], sid)
+        first = ["--", prompt] if prompt else []     # its first message: after `--`, never read as an option
         if s["harness"] == "codex":                  # codex's own UI; its classic screen is inline, not alternate
             argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], "codex",       # quiet: ag's notes not on its screen
                     *(["-m", s["model"]] if s.get("model") else []), *CODEX_PERMISSIONS.get(s["permission_mode"], []),
-                    *([] if fullscreen else ["--no-alt-screen"]), *(["resume", sid] if resume else [])]
+                    *([] if fullscreen else ["--no-alt-screen"]), *(["resume", sid] if resume else []), *first]
         else:
             argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"], "--permission-mode",
                     s["permission_mode"], *(["--model", s["model"]] if s.get("model") else []),
-                    *(["--resume", sid] if resume else ["--session-id", sid])]
+                    *(["--resume", sid] if resume else ["--session-id", sid]), *first]
         env = {**{k: v for k, v in agent_env().items() if k not in OUTER_TERMINAL and not (fullscreen and k in CLASSIC)},
                "TERM": "xterm-256color", "COLORTERM": "truecolor", **({} if fullscreen else CLASSIC)}   # full screen even if the dashboard's own is classic
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
         log = open(log_path(sid), "a", encoding="utf-8", buffering=1)
-        log.write(f"--- {_now()} terminal{' (full screen)' if fullscreen else ''} {shlex.join(argv)}\n")
+        log.write(f"--- {_now()} terminal{' (full screen)' if fullscreen else ''} {shlex.join(argv[:len(argv) - len(first)])}"
+                  f"{' -- <the message sent>' if first else ''}\n")       # the message not logged: a line of it is no line of ag's
         try:
             pid, fd = pty.fork()
         except OSError as exc:

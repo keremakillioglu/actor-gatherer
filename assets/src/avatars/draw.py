@@ -5,7 +5,8 @@ hue) -- and, with --preview, a page showing them all.
     python3 assets/src/avatars/draw.py [--preview PATH]
 
 It writes only its own files: an SVG put in ag_dashboard/avatars by hand is left as it is (see the
-README there). To add a character, write a function in the kind's module and list it in its ICONS."""
+README there). To add a character, write a function in the kind's module, list it in its ICONS and say
+how it moves while its actor works in its MOTIONS."""
 
 import argparse
 import os
