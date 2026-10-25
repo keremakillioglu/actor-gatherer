@@ -166,6 +166,21 @@ class FilesTest(unittest.TestCase):
         self.add(result("b9", "ok"))
         self.assertIsNone(files.files("g", "c1")["turns"][-1]["now"])        # its result in: the model's turn again
 
+    def test_the_latest_call_is_kept_while_nothing_readable_follows_it(self):
+        got = files.files("g", "c1", cwd="/w")["turns"]
+        self.assertIsNone(got[0]["last"])                                   # a reply after its call
+        self.assertEqual({k: got[1]["last"][k] for k in ("id", "running", "error")}, {"id": "i1", "running": False, "error": False})
+        self.add(asked("and now?"), thought(""), call("b9", "Bash", {"command": "make", "description": "Build it"}))
+        last = files.files("g", "c1")["turns"][-1]["last"]
+        self.assertEqual((last["text"], last["running"], last["call"]["input"]["command"]), ("Build it", True, "make"))
+        self.add(result("b9", "make: *** failed", True), thought(""))        # encrypted thinking: nothing to show after it
+        last = files.files("g", "c1")["turns"][-1]["last"]
+        self.assertEqual((last["running"], last["error"], last["output"]), (False, True, "make: *** failed"))
+        self.add(thought("Try again."))                                     # thinking shown after it: no longer the last
+        self.assertIsNone(files.files("g", "c1")["turns"][-1]["last"])
+        self.add(call("b10", "Bash", {"command": "make"}), result("b10", "ok"), said("Built."))
+        self.assertIsNone(files.files("g", "c1")["turns"][-1]["last"])     # a reply after it
+
     def test_a_read_shows_its_lines_at_their_numbers(self):
         a = files.files("g", "c1", 0)["files"][0]
         self.assertEqual(a["kinds"], ["read"])

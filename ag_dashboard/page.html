@@ -717,6 +717,14 @@ button:disabled { opacity: .5; cursor: default; }
 /* a run of thinking: a message as the others are, "Thought:" before it, dim and in italics; opened, its words under the word */
 .files .fl-reply.thought > summary .lbl { flex: none; color: var(--muted); font-style: italic; }
 .files .fl-reply.thought > .md { margin-top: 0; }
+/* the turn's latest call, while nothing was said or thought after it: a message as the others, its dot how it went; opened, its call and output */
+.files .fl-reply.call > summary .dot.ok { color: var(--good); } .files .fl-reply.call > summary .dot.err { color: var(--critical); }
+.files .fl-reply.call > summary .dot.run { color: var(--warning); animation: term-blink 1s steps(2) infinite; }
+.files .fl-reply.call > summary .dot.wait { color: var(--warning); } .files .fl-reply.call > summary .dot.stop { color: var(--muted); }
+.files .fl-reply.call > summary .lbl { flex: none; color: var(--muted); }
+.files .fl-reply.call > summary .lbl.err { color: var(--critical); }
+.files .fl-reply.call[open] > summary .first { display: block; }
+.files .fl-reply.call > pre { margin: 4px 0 6px 15px; max-height: 280px; overflow: auto; }
 .files .fl-status { display: flex; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: .93em; }
 .files .fl-status .spin { flex: none; }
 .files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4158,7 +4166,8 @@ function filesTalk(d, info, running) {
         markdown(text));
     };
     const toggle = () => { opened.has(t.n) ? opened.delete(t.n) : opened.add(t.n); keepingPlace(renderMain); };
-    const now = !live ? "" : info && info.failing ? "Retrying…" : !t.now ? "Working…" : t.now.kind === "thinking" ? "Thinking…" : `Running: ${t.now.text}`;
+    // a call under way is drawn above, as the turn's latest call: the line under it only says the agent works
+    const now = !live ? "" : info && info.failing ? "Retrying…" : t.now && t.now.kind === "thinking" ? "Thinking…" : "Working…";
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
       // a click: this turn's files and commands shown at the left, or folded away when they already are
       el("button", { type: "button", class: "fl-user", "aria-pressed": on ? "true" : "false",
@@ -4180,6 +4189,7 @@ function filesTalk(d, info, running) {
         ...before.slice(hidden).map((x) => reply(x, false))) : null,
       last < 0 ? null : reply(said[last], true),
       after.length ? el("div", { class: "fl-minor" }, ...after.map((x) => reply(x, false))) : null,
+      t.last ? el("div", { class: "fl-minor" }, lastCall(t, live, info ? statusOf(info)[0] : "")) : null,
       live ? el("div", { class: "fl-status", role: "status" }, el("span", { class: "spin", "aria-hidden": "true" }),
         el("span", { class: "tx", title: now, text: `${now} (last activity ${ago(info.last)})` }))
         : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null,
@@ -4193,6 +4203,20 @@ function filesTalk(d, info, running) {
     cur.parentElement.scrollTop = state.files.turn === null ? cur.parentElement.scrollHeight : cur.offsetTop;   // .fl-talk is its offset parent
   });
   return box;
+}
+// The turn's latest call, while the agent has said and thought nothing readable since: under its messages,
+// above the line saying it works -- running, or how it went, and what it was; opened, its call and its output.
+// A call with no result once the actor no longer runs: waiting on the user (a question, a plan), or stopped --
+// interrupted, its process gone -- not run.
+function lastCall(t, live, status) {
+  const c = t.last;
+  const [cls, word] = c.error ? ["err", "Failed:"] : !c.running ? ["ok", "Ran:"] : live ? ["run", "Running:"]
+    : status === "asking" ? ["wait", "Waiting for you:"] : ["stop", "Stopped:"];
+  return el("details", { class: "fl-reply call", id: `fl-c-${t.n}-${c.id || ""}` },
+    el("summary", { title: "Show or fold the call and its output" },
+      el("span", { class: "dot " + cls, text: "●" }), el("span", { class: "lbl " + cls, text: word }),
+      el("span", { class: "first", text: firstLine(c.text, 200) })),
+    el("pre", { class: "call", text: callText(c.call) }), c.output ? el("pre", { class: "out", text: c.output }) : null);
 }
 addChatView({
   // "files": named so once, and kept as its id, with the readers' choices of it
