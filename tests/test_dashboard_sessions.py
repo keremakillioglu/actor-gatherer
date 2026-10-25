@@ -405,6 +405,128 @@ class KeptTest(SessionsBase):
         self.assertEqual(shown(100.0, 0), data.CLOSED)
 
 
+class RestTest(SessionsBase):
+    """An actor saved for later whose process is left unused is put away (saved.py's `Rest`): its process
+    ended as the dashboard's own end ends it -- kept, shown Idle -- and resumed by its next message."""
+
+    def idle_agent(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.send(sid, "hi")
+        self.until(lambda: self.session(sid)["status"] == "idle")
+        return sid
+
+    def open_terminal(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.terminal(sid)
+        self.until(lambda: self.s.output(sid, -1) and b"fake terminal" in self.s.output(sid, -1)[0])
+        return sid
+
+    def starts(self):
+        return [x["argv"] for x in self.logged() if "argv" in x]
+
+    def test_an_idle_agent_or_terminal_put_away_is_kept_and_resumed_by_its_next_message(self):
+        chat = self.idle_agent()
+        self.assertTrue(self.s.put_away(chat, time.time() + 1))
+        self.until(lambda: self.session(chat)["status"] == "stopped")
+        row = self.session(chat)
+        self.assertGreater(row["kept"], 0)
+        self.assertIsNone(row["pid"])
+        self.s.send(chat, "again")
+        self.until(lambda: self.session(chat)["status"] == "idle" and self.session(chat)["turns"] == 2)
+        self.assertEqual(len(self.starts()), 2)
+        self.assertIn("--resume", self.starts()[-1])
+        self.assertEqual(self.session(chat)["kept"], 0)          # opened again: no longer kept
+        term = self.open_terminal()
+        self.assertTrue(self.s.put_away(term, time.time() + 1))
+        row = self.session(term)                                 # its end recorded before it returns
+        self.assertEqual((row["status"], row["terminal"], row["pid"]), ("stopped", False, None))
+        self.assertGreater(row["kept"], 0)
+        with open(sessions.log_path(term)) as fh:
+            self.assertIn("put away", fh.read())
+
+    def test_what_was_used_since_or_is_working_is_not_put_away(self):
+        chat = self.idle_agent()
+        self.assertFalse(self.s.put_away(chat, time.time() - 60))   # started since
+        term = self.open_terminal()
+        before = time.time()
+        self.s.type(term, "x")
+        self.assertFalse(self.s.put_away(term, before))              # typed into since
+        self.assertTrue(self.session(term)["terminal"])
+        self.assertFalse(self.s.put_away("nothing-here", time.time()))
+        os.environ["FAKE_AG_DELAY"] = "5"
+        busy = self.s.create("g", self.work)["session_id"]
+        self.s.send(busy, "hi")
+        self.until(lambda: self.session(busy)["status"] == "running")
+        self.assertFalse(self.s.put_away(busy, time.time() + 1))     # mid-turn
+        self.s.stop(busy)
+
+    def test_a_message_sent_as_it_is_put_away_goes_to_the_next_process(self):
+        chat = self.idle_agent()
+        self.assertTrue(self.s.put_away(chat, time.time() + 1))
+        self.s.send(chat, "again")
+        self.until(lambda: self.session(chat)["turns"] == 2 and self.session(chat)["status"] == "idle")
+        self.assertIn({"message": "again"}, self.logged())
+        self.assertEqual(self.session(chat)["kept"], 0)
+        term = self.open_terminal()
+        t = self.s.terms[term]
+        with self.s.lock:                                    # put away, its end not yet recorded
+            t.kept = True
+            self.s._hang_up(t)
+        self.s.send(term, "after")
+        self.until(lambda: {"message": "after"} in self.logged())   # not pasted into the terminal going away
+
+    def test_which_saved_actors_are_due(self):
+        now = 100.0 + saved.REST_SECONDS
+
+        def due(saved_as=("g", "c"), shown=(), at=now, **change):
+            agent = {"channel": "c", "status": data.IDLE, "last": 100.0}
+            s = {"session_id": "c", "pid": 42, "status": "terminal", "queued": [], "typed": None, "since": 50.0}
+            for k, v in change.items():
+                (agent if k in agent else s)[k] = v
+            agent["session"] = s
+            home = {"saved": {saved_as[0]: {saved_as[1]: "2026-10-25T00:00:00+00:00"}} if saved_as else {},
+                    "gatherers": [{"name": "g", "agents": [agent]}]}
+            return saved.resting(home, set(shown), at)
+
+        self.assertEqual(due(), ["c"])
+        self.assertEqual(due(at=now - 1), [])                          # used under REST_SECONDS ago
+        self.assertEqual(due(saved_as=None), [])
+        self.assertEqual(due(saved_as=("other", "c")), [])
+        for status in (data.RUNNING, data.BACKGROUND, data.ASKING, data.ERROR, data.CLOSED):
+            self.assertEqual(due(status=status), [], status)
+        self.assertEqual(due(**{"status": data.IDLE}), ["c"])
+        self.assertEqual(due(pid=None), [])                            # no process of the dashboard's
+        self.assertEqual(due(queued=["hi"]), [])
+        self.assertEqual(due(shown={"c"}), [])                         # open in a page
+        self.assertEqual(due(typed=now - 10), [])
+        self.assertEqual(due(since=now - 10), [])
+        self.assertEqual(due(last=now - 10), [])
+        renamed = {"saved": {"g": {"first": "x"}}, "gatherers": [{"name": "g", "agents": [
+            {"channel": "thread", "status": data.IDLE, "last": 100.0,
+             "session": {"session_id": "thread", "started_as": "first", "pid": 42, "status": "terminal", "since": 50.0}}]}]}
+        self.assertEqual(saved.resting(renamed, set(), now), ["thread"])  # a codex session saved as it started
+
+    def test_the_check_puts_away_saved_actors_left_unused(self):
+        kept, other = self.idle_agent(), self.idle_agent()
+        saved.choose("g", kept, True)
+        shown = set()
+        rest = saved.Rest(self.s, lambda: shown)
+        try:
+            self.assertEqual(rest.check(), [])                       # just used
+            later = time.time() + saved.REST_SECONDS + 1
+            shown.add(("g", kept))
+            self.assertEqual(rest.check(later), [])                  # open in a page
+            shown.clear()
+            self.assertEqual(rest.check(later), [kept])
+            self.until(lambda: self.session(kept)["status"] == "stopped")
+            self.assertIsNotNone(self.session(other)["pid"])         # not saved: left alone
+            a = next(x for g in data.home(self.s.list())["gatherers"] for x in g["agents"] if x["channel"] == kept)
+            self.assertEqual(a["status"], data.IDLE)
+            self.assertEqual(rest.check(later), [])                  # no process left to put away
+        finally:
+            rest.close()
+
+
 class EndedTest(SessionsBase):
     """Where ag cannot tell whether a process runs (no /proc: macOS), what the dashboard saw end shows Closed."""
 

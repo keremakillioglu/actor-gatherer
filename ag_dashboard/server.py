@@ -452,7 +452,8 @@ def _pairs(raw: Optional[str]) -> list:
 
 class Server(ThreadingHTTPServer):
     """The HTTP server, with what wakes its streams (live.py) and the sessions started from the page
-    (sessions.py), whose agents it runs: stopped with it."""
+    (sessions.py), whose agents it runs -- those of actors saved for later put away once left unused
+    (saved.py's `Rest`): stopped with it."""
 
     daemon_threads = True               # an open stream never holds up the exit
 
@@ -464,9 +465,10 @@ class Server(ThreadingHTTPServer):
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
         self.queued = queued.Watcher(self.hub) if live_updates else None   # what is written to a session as it works
+        self.rest = saved.Rest(self.sessions, self.hub.shown)
 
     def server_close(self) -> None:
-        for part in (self.listener, self.fallback, self.queued):
+        for part in (self.listener, self.fallback, self.queued, self.rest):
             if part is not None:
                 part.close()
         super().server_close()
