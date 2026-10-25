@@ -1,7 +1,8 @@
 """The History view's data (page.html: the History view): a gatherer's history laid out to be looked
 through and picked from -- each event, light, and the tasks ag has segmented it into -- searched; and
 what the reader picks, rendered as one transcript, to export, or to give the Gatherer's model to
-summarize, or to write a memory or a skill from:
+summarize, or to write memories, a CLAUDE.md or a skill from -- and those saved where Claude Code reads
+them:
 
     outline(gatherer, channel, after)    the events after row `after` (every channel's, or one's): each
                                          one's row, channel, type, size, time and first PREVIEW
@@ -13,12 +14,24 @@ summarize, or to write a memory or a skill from:
                                          made from them -- and what the reader asked of it: its record,
                                          `running` until the model's answer is in it
     extracts(gatherer), delete(id)       the records, newest first; one removed (stopped, if it runs)
+    save(id, target, dir, version)       a record's files written where Claude Code reads them (TARGETS):
+                                         without `version`, only the plan -- each file, what it gets --
+                                         and its version, which writing it then must match
 
 The model is ag's own ([policies.llm]), asked through ag's command (`ag home complete`) as the
 dashboard runs ag for everything else, never imported: the call is logged with the Gatherer's
 others, and put to the gatherer -- and to the actor, when every row picked is one actor's. A record
-is a file in <home>/dashboard/extracts/; nothing here writes to a gatherer's database."""
+is a file in <home>/dashboard/extracts/; nothing here writes to a gatherer's database.
 
+Where Claude Code reads each kind (its config folder: CLAUDE_CONFIG_DIR, else ~/.claude):
+
+    claude   <dir>/CLAUDE.md, every session there; <config>/CLAUDE.md, every session anywhere -- added
+             to the end of the file there is
+    skill    <dir>/.claude/skills/<name>/SKILL.md; <config>/skills/<name>/SKILL.md
+    memory   <config>/projects/<dir, each character not a letter or digit a "-">/memory/: a file for each
+             memory, and its line in that folder's MEMORY.md -- the index every session there starts with"""
+
+import hashlib
 import json
 import os
 import re
@@ -64,19 +77,44 @@ open questions. Be specific -- names, numbers, paths -- and brief. Say only what
 never invent."""),
     "memory": ("Memory", HISTORY + """
 
-From it, write MEMORY for future agent sessions: the durable facts a new agent needs to work the way \
+From it, write MEMORIES for future agent sessions -- each one fact a new agent needs to work the way \
 this user wants, without this history. Keep only what outlives the work shown:
-- the user's preferences and standing instructions: how they want things done, what to avoid;
-- facts about the project and its environment: conventions, layout, commands, tools, where things are;
-- decisions made, and the reasons for them;
-- pitfalls met, and what fixed them.
-Leave out what was done once and is finished, what the code or its history already records, and what \
-only this work needed.
+- `user`: who the user is -- their role, what they know, how they like to work;
+- `feedback`: how the user wants things done or not done -- corrections, and approaches they confirmed;
+- `project`: facts about the project and its environment that the code does not show -- goals, \
+constraints, decisions and why, where things are, which commands and tools work;
+- `reference`: pointers to outside resources -- a URL, a dashboard, a ticket, a document.
+Leave out what was done once and is finished, what the code or its git history already records, and \
+what only this work needed. One fact per memory; several facts, several memories. Fewer, sharper \
+memories beat many: none at all when the history establishes nothing worth remembering.
 
-Write it as Markdown that can go straight into an agent's memory file (CLAUDE.md, AGENTS.md): short \
-sections by topic, each memory one bullet -- one fact, stated plainly, with its reason where the \
-history gives one. No preamble, no closing remarks. Say only what the history supports; when it \
-establishes nothing worth remembering, say so in one line."""),
+Return ONLY a JSON array, no prose and no code fence -- [] when there is nothing:
+
+[{"name": "<a short slug: lowercase words joined by hyphens>",
+  "title": "<a few words naming it>",
+  "description": "<one line: what it is and when it matters -- what decides whether a future agent reads it>",
+  "type": "user" | "feedback" | "project" | "reference",
+  "body": "<the fact, in Markdown, stated plainly; for feedback and project, followed by a **Why:** line \
+(the reason the history gives) and a **How to apply:** line>"}]
+
+Say only what the history supports; never invent."""),
+    "claude": ("CLAUDE.md", HISTORY + """
+
+From it, write a CLAUDE.md: the standing instructions an agent reads at the start of EVERY session \
+in this project -- so every line costs every session, and must earn its place. Keep only what outlives \
+the work shown and applies again and again:
+- how to build, run and test, with the exact commands that worked;
+- the project's conventions: layout, naming, style, the tools and libraries to use;
+- rules the user set: what to always do, what never to do, and how they want to work;
+- pitfalls to avoid, each with what to do instead.
+Leave out what was done once and is finished, what only this work needed, and anything an agent can \
+see at a glance from the code.
+
+Return ONLY the file's Markdown: short sections by topic (`## Commands`, `## Conventions`, ...), each \
+instruction one bullet, written as an instruction ("Run tests with `make test`", "Never edit \
+generated files in `dist/`"), with its reason where the history gives one. No title, no preamble, no \
+closing remarks. Say only what the history supports; when it establishes nothing worth keeping, say so \
+in one line."""),
     "skill": ("Skill", HISTORY + """
 
 From it, write an Agent Skill: the reusable procedure the history shows -- how the work was done, made \
@@ -259,7 +297,8 @@ def render(gatherer: str, rows, clip: Optional[dict] = CLIP) -> Tuple[str, dict]
     """The events `rows` of the gatherer as one Markdown transcript, oldest first: each actor's under
     its heading, and in it, each task's (as ag has segmented the history, where it has) and each turn's
     -- a user message and all that answered it, numbered as in the whole history -- each event's parts
-    clipped as `clip` says (CLIP; None: whole). With what it holds: {messages, turns, channels, tokens}."""
+    clipped as `clip` says (CLIP; None: whole). With what it holds: {messages, turns, channels, dirs (the
+    actors' working directories), tokens}."""
     rows = _rows(rows)
     conn = data._connect(gatherer)
     if conn is None:
@@ -308,6 +347,7 @@ def render(gatherer: str, rows, clip: Optional[dict] = CLIP) -> Tuple[str, dict]
         words = [w for w in (_part(p, clip) for p in data.parts(r["type"] or "?", r["payload_json"], r["text"], chars=None)) if w]
         out += words
     about = {"messages": len(picked), "turns": len(turns), "channels": list(order),
+             "dirs": list(dict.fromkeys(cwd[ch] for ch in order if cwd.get(ch))),
              "tokens": sum(r["tokens"] or 0 for r in picked)}
     return "\n\n".join(out) + "\n", about
 
@@ -394,7 +434,7 @@ def start(gatherer: str, kind: str, rows, ask: str = "") -> dict:
         raise HistoryError(f"too much for one call: {len(text) // 4:,} tokens or so, even with tool output cut short "
                            f"(at most {PROMPT_CHARS // 4:,}); pick less")
     name, system = KINDS[kind]
-    prompt = (f"Make the {name.lower()} the system message asks for, from the history below."
+    prompt = (f"Make the {name if kind == 'claude' else name.lower()} the system message asks for, from the history below."
               + (f"\n\nWhat the user asks of it -- follow it where it differs from the system message:\n\n{ask}" if ask else "")
               + f"\n\n# The history\n\n{text}")
     rec = {"id": uuid.uuid4().hex[:12], "gatherer": gatherer, "kind": kind, "ask": ask, "status": "running",
@@ -439,6 +479,11 @@ def _run(rec: dict, system: str, prompt: str) -> None:
     finally:
         with _lock:
             _procs.pop(rec["id"], None)
+    if rec["kind"] == "memory" and not rec["error"]:
+        try:
+            rec["memories"] = memories(rec["output"])
+        except HistoryError as exc:
+            rec["error"] = str(exc)
     rec["status"] = "failed" if rec["error"] else "done"
     rec["finished"] = time.time()
     with _lock:
@@ -490,3 +535,176 @@ def delete(rid: str) -> dict:
     if proc is not None:
         _kill(proc)
     return {"id": rid}
+
+
+# ---------------------------------------------------------------- saved where Claude Code reads it
+
+#: Where a record can be saved: one directory's sessions, or every session of this user.
+TARGETS = ("dir", "user")
+MEMORY_TYPES = ("user", "feedback", "project", "reference")
+_SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def _slug(text: str, most: int = 64) -> str:
+    return "-".join(re.findall(r"[a-z0-9]+", (text or "").lower()))[:most].strip("-")
+
+
+def memories(output: str) -> List[dict]:
+    """The model's memories (KINDS["memory"]), checked: [{name, title, description, type, body}], each
+    name a slug, unique. Raises HistoryError when the answer is not that list."""
+    text = (output or "").strip()
+    fenced = re.fullmatch(r"```[a-z]*\n(.*)\n```", text, re.S)
+    try:
+        got = json.loads(fenced.group(1) if fenced else text)
+    except ValueError:
+        raise HistoryError("the model's answer was not the list of memories asked for: try again") from None
+    if not isinstance(got, list):
+        raise HistoryError("the model's answer was not the list of memories asked for: try again")
+    out, names = [], set()
+    for m in got:
+        if not isinstance(m, dict) or not str(m.get("body") or "").strip():
+            continue
+        title = " ".join(str(m.get("title") or m.get("name") or "memory").split())[:80]
+        name = _slug(str(m.get("name") or "")) or _slug(title) or "memory"
+        base, n = name, 2
+        while name in names:
+            name, n = f"{base}-{n}", n + 1
+        names.add(name)
+        kind = str(m.get("type") or "").strip().lower()
+        out.append({"name": name, "title": title, "description": " ".join(str(m.get("description") or title).split()),
+                    "type": kind if kind in MEMORY_TYPES else "project", "body": str(m["body"]).strip()})
+    return out
+
+
+def memory_file(m: dict) -> str:
+    """A memory as Claude Code keeps one: its front matter (strings JSON-quoted: YAML reads them), its body."""
+    return (f"---\nname: {json.dumps(m['name'])}\ndescription: {json.dumps(m['description'], ensure_ascii=False)}\n"
+            f"metadata:\n  type: {m['type']}\n---\n\n{m['body']}\n")
+
+
+def memory_line(m: dict, file: str) -> str:
+    """A memory's line in MEMORY.md: its title, its file, what it is."""
+    return f"- [{m['title']}]({file}) — {m['description']}"
+
+
+def claude_dir() -> str:
+    """Claude Code's own folder: CLAUDE_CONFIG_DIR, else ~/.claude."""
+    return os.path.abspath(os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude"))
+
+
+def project_key(directory: str) -> str:
+    """The name Claude Code gives a directory's folder under <config>/projects/: its path, resolved,
+    every character that is not a letter or digit a "-"."""
+    return re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(directory))
+
+
+def _record(rid: str) -> dict:
+    try:
+        with open(_path(rid), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        raise HistoryError("no such extract") from None
+
+
+def _read(path: str) -> Optional[str]:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError) as exc:
+        raise HistoryError(f"cannot read {path}: {exc}") from None
+
+
+def _skill_name(output: str) -> str:
+    m = re.match(r"\s*---\n(.*?)\n---", output or "", re.S)
+    found = re.search(r"^name:\s*[\"']?([^\"'\n]+?)[\"']?\s*$", m.group(1), re.M) if m else None
+    name = _slug(found.group(1)) if found else ""
+    if not name:
+        raise HistoryError("the skill has no name in its front matter: try again")
+    return name
+
+
+def plan(rid: str, target: str, directory: str = "") -> dict:
+    """What saving record `rid` at `target` (TARGETS) writes, as it would be written now: {files: [{path,
+    action (create / append / replace), text (what the file gets: all of it, or what is added at its end)}],
+    where, version}. `directory` is the directory a "dir" target is; it must exist."""
+    rec = _record(rid)
+    if rec.get("status") != "done":
+        raise HistoryError("only a finished extract can be saved")
+    kind = rec.get("kind")
+    if kind not in ("claude", "skill", "memory"):
+        raise HistoryError("a summary is not saved where Claude Code reads it: download it instead")
+    if target not in TARGETS:
+        raise HistoryError(f"a target of {' or '.join(TARGETS)}")
+    if target == "user" and kind == "memory":
+        raise HistoryError("Claude Code keeps memories per directory: save them to a directory, or make a CLAUDE.md "
+                           "for every session")
+    if target == "dir":
+        directory = os.path.expanduser((directory or "").strip())
+        if not os.path.isabs(directory):
+            raise HistoryError("a directory's full path, please")
+        if not os.path.isdir(directory):
+            raise HistoryError(f"no directory {directory}")
+        directory = os.path.realpath(directory)
+    base = claude_dir()
+    files = []
+    if kind == "claude":
+        path = os.path.join(directory if target == "dir" else base, "CLAUDE.md")
+        had, text = _read(path), rec["output"].strip() + "\n"
+        gap = "" if not had or had.endswith("\n\n") else "\n" if had.endswith("\n") else "\n\n"   # a blank line before it
+        files.append({"path": path, "action": "append" if had else "create", "text": gap + text})
+        where = "every Claude Code session in " + (directory if target == "dir" else "any directory")
+    elif kind == "skill":
+        name = _skill_name(rec["output"])
+        path = os.path.join(directory, ".claude", "skills", name, "SKILL.md") if target == "dir" \
+            else os.path.join(base, "skills", name, "SKILL.md")
+        files.append({"path": path, "action": "replace" if os.path.exists(path) else "create",
+                      "text": rec["output"].strip() + "\n"})
+        where = f"/{name} in Claude Code sessions in " + (directory if target == "dir" else "any directory")
+    else:
+        folder = os.path.join(base, "projects", project_key(directory), "memory")
+        index = os.path.join(folder, "MEMORY.md")
+        lines = []
+        for m in rec.get("memories") or []:
+            name, n = m["name"], 2
+            while os.path.exists(os.path.join(folder, name + ".md")):      # never one already there
+                name, n = f"{m['name']}-{n}", n + 1
+            files.append({"path": os.path.join(folder, name + ".md"), "action": "create", "text": memory_file({**m, "name": name})})
+            lines.append(memory_line(m, name + ".md"))
+        if not lines:
+            raise HistoryError("the model found nothing worth remembering: there is nothing to save")
+        had = _read(index)
+        files.append({"path": index, "action": "append" if had else "create",
+                      "text": ("\n" if had and not had.endswith("\n") else "") + "\n".join(lines) + "\n"})
+        where = f"your Claude Code sessions in {directory} (memory folder {folder})"
+    version = _hash(json.dumps([files, [_read(f["path"]) for f in files]]))
+    return {"files": files, "where": where, "version": version}
+
+
+def _hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def save(rid: str, target: str, directory: str = "", version: str = "") -> dict:
+    """Record `rid` saved at `target` -- what `plan` says, when it still says what the reader saw
+    (`version`): {saved: [paths], where}. Without `version`, the plan alone. Each file is written whole
+    to a file beside it, then put in place; the record keeps where it was saved."""
+    got = plan(rid, target, directory)
+    if not version:
+        return got
+    if version != got["version"]:
+        raise HistoryError("what would be written changed since the preview (a file changed): preview it again")
+    for f in got["files"]:
+        os.makedirs(os.path.dirname(f["path"]), exist_ok=True)
+        whole = ((_read(f["path"]) or "") + f["text"]) if f["action"] == "append" else f["text"]
+        tmp = f["path"] + ".ag-dashboard"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(whole)
+        os.replace(tmp, f["path"])
+    saved = [f["path"] for f in got["files"]]
+    with _lock:
+        rec = _record(rid)
+        rec["saved"] = rec.get("saved", []) + [{"at": time.time(), "where": got["where"], "paths": saved}]
+        _save(rec)
+    return {"saved": saved, "where": got["where"]}

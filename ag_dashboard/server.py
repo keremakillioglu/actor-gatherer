@@ -42,13 +42,16 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/history/extract {gatherer, rows, kind, ask?}  the Gatherer's model asked for a summary, memory
                                           or skill of them, in the background -> its record
     POST /api/history/delete {id}         a record removed, its job stopped -> {id}
+    POST /api/history/save {id, target, dir?, version?}  where Claude Code reads it: the plan, without
+                                          `version`; with the plan's, the files written -> {saved, where}
     GET /api/settings                     ag's settings, its config.toml (settings.py)
     POST /api/settings/model {model, api_base?, key_env?}   the Gatherer's model, by `ag model` -> the settings
     POST /api/settings/defaults {version, policy?, pollers?, gatherer?}   a new gatherer's defaults -> the settings
     POST /api/settings/file {version, text}   config.toml as the reader edited it -> the settings
 
 The POSTs are the only writes, and only to the dashboard's own tables and records, the agents it
-runs, the gatherers `ag new` makes, the model calls `ag home complete` makes, and ag's config.toml --
+runs, the gatherers `ag new` makes, the model calls `ag home complete` makes, the files a History
+extract is saved as (where Claude Code reads them, once the reader has seen them), and ag's config.toml --
 besides the avatar the home gives an actor it has not seen before (avatars.py), kept in the dashboard's
 own table:
 the gatherers' databases are only read. They are taken from the dashboard's own page only
@@ -371,6 +374,9 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                                                      body.get("rows"), str(body.get("ask") or "")))
                 if url.path == "/api/history/delete":
                     return self.answer(history.delete(str(body.get("id") or "")))
+                if url.path == "/api/history/save":
+                    return self.answer(history.save(str(body.get("id") or ""), str(body.get("target") or ""),
+                                                    str(body.get("dir") or ""), str(body.get("version") or "")))
                 if url.path == "/api/settings/model":
                     opt = lambda k: None if body.get(k) is None else str(body[k])    # noqa: E731
                     return self.answer(settings.set_model(str(body.get("model") or ""), opt("api_base"), opt("key_env")))

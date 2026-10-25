@@ -86,7 +86,7 @@ class HistoryTest(HistoryBase):
 
     def test_the_picked_events_as_one_transcript(self):
         text, about = history.render("g", [[2, 5], 6, 8])
-        self.assertEqual(about, {"messages": 6, "turns": 3, "channels": ["c1", "c2"], "tokens": 30})
+        self.assertEqual(about, {"messages": 6, "turns": 3, "channels": ["c1", "c2"], "dirs": [], "tokens": 30})
         self.assertLess(text.index("# Session c1"), text.index("## Task 1: Deploy"))
         self.assertLess(text.index("### Turn 1"), text.index("**User:**\n\ndeploy the site"))
         self.assertIn("**Tool call** `Bash`:\n\n```\nmake deploy\n```", text)
@@ -123,7 +123,8 @@ class HistoryTest(HistoryBase):
 
             def communicate(self, prompt, timeout=None):
                 seen["prompt"] = prompt
-                return json.dumps({"text": "# Memory\n- deploy with make deploy", "model": "m/x", "error": ""}), ""
+                mems = [{"name": "deploy", "title": "Deploy", "description": "how", "type": "project", "body": "make deploy"}]
+                return json.dumps({"text": json.dumps(mems), "model": "m/x", "error": ""}), ""
 
         with unittest.mock.patch.object(history.subprocess, "Popen", Done), \
                 unittest.mock.patch.object(history.sessions, "ag_command", return_value=["ag"]):
@@ -134,10 +135,10 @@ class HistoryTest(HistoryBase):
                 if done["status"] != "running":
                     break
                 time.sleep(0.02)
-        self.assertEqual((done["status"], done["output"], done["model"]), ("done", "# Memory\n- deploy with make deploy", "m/x"))
+        self.assertEqual((done["status"], done["model"], [m["name"] for m in done["memories"]]), ("done", "m/x", ["deploy"]))
         self.assertEqual(done["rows"], [[1, 5]])
         self.assertEqual(seen["argv"][:3], ["ag", "home", "complete"])
-        self.assertIn("MEMORY", seen["argv"][seen["argv"].index("--system") + 1])
+        self.assertIn("MEMORIES", seen["argv"][seen["argv"].index("--system") + 1])
         self.assertIn("only the commands", seen["prompt"])
         self.assertIn("make deploy", seen["prompt"])
         self.assertEqual(json.loads(seen["env"]["AG_JOB"])["properties"], {"channel": "c1"})   # one actor's: put to it
@@ -170,6 +171,97 @@ class HistoryTest(HistoryBase):
         history._save({**rec, "id": "0123456789ab", "server": 2 ** 22 + 12345})       # a dashboard long gone
         orphan = next(r for r in history.extracts("g") if r["id"] == "0123456789ab")
         self.assertEqual(orphan["status"], "failed")
+
+
+class SaveTest(HistoryBase):
+    """A finished record saved where Claude Code reads it, in a Claude Code folder of the test's own."""
+
+    def setUp(self):
+        super().setUp()
+        self.claude = os.path.join(self.tmp.name, "claude-config")
+        self.work = os.path.join(self.tmp.name, "work")
+        os.makedirs(self.work)
+        env = unittest.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": self.claude})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def record(self, kind, output, **more):
+        rec = {"id": f"{len(os.listdir(history.extracts_dir())) if os.path.isdir(history.extracts_dir()) else 0:012x}",
+               "gatherer": "g", "kind": kind, "status": "done", "output": output, "created": time.time(), **more}
+        history._save(rec)
+        return rec["id"]
+
+    def read(self, path):
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_memories_are_checked_and_named_once_each(self):
+        got = history.memories('```json\n[{"name": "Use Make!", "title": "Deploy", "description": "how to deploy", '
+                               '"type": "feedback", "body": "make deploy"}, {"name": "use-make", "body": "again", "type": "x"}, '
+                               '{"name": "empty", "body": " "}]\n```')
+        self.assertEqual([(m["name"], m["type"]) for m in got], [("use-make", "feedback"), ("use-make-2", "project")])
+        self.assertEqual(history.memories("[]"), [])
+        with self.assertRaises(history.HistoryError):
+            history.memories("Here are your memories: ...")
+
+    def test_a_claude_md_is_added_to_the_end_of_the_one_there(self):
+        rid = self.record("claude", "## Commands\n- Run `make test`.")
+        with open(os.path.join(self.work, "CLAUDE.md"), "w") as fh:
+            fh.write("# Mine\nkeep this\n")
+        p = history.save(rid, "dir", self.work)                     # no version: the plan, nothing written
+        self.assertEqual([(f["path"], f["action"]) for f in p["files"]], [(os.path.join(os.path.realpath(self.work), "CLAUDE.md"), "append")])
+        self.assertEqual(self.read(os.path.join(self.work, "CLAUDE.md")), "# Mine\nkeep this\n")
+        history.save(rid, "dir", self.work, p["version"])
+        self.assertEqual(self.read(os.path.join(self.work, "CLAUDE.md")), "# Mine\nkeep this\n\n## Commands\n- Run `make test`.\n")
+        self.assertEqual(len(history._record(rid)["saved"]), 1)
+        user = history.save(rid, "user")
+        self.assertEqual(user["files"][0]["path"], os.path.join(self.claude, "CLAUDE.md"))
+
+    def test_a_skill_goes_in_its_own_folder_and_a_change_since_the_preview_is_refused(self):
+        rid = self.record("skill", "---\nname: Deploy Site\ndescription: deploy it\n---\n\n# Deploy\n1. make deploy")
+        p = history.save(rid, "user")
+        path = os.path.join(self.claude, "skills", "deploy-site", "SKILL.md")
+        self.assertEqual((p["files"][0]["path"], p["files"][0]["action"]), (path, "create"))
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w") as fh:
+            fh.write("someone else's")
+        with self.assertRaises(history.HistoryError):
+            history.save(rid, "user", "", p["version"])              # the file appeared since the preview
+        again = history.save(rid, "user")
+        self.assertEqual(again["files"][0]["action"], "replace")
+        history.save(rid, "user", "", again["version"])
+        self.assertTrue(self.read(path).startswith("---\nname: Deploy Site"))
+        self.assertEqual(history.save(rid, "dir", self.work)["files"][0]["path"],
+                         os.path.join(os.path.realpath(self.work), ".claude", "skills", "deploy-site", "SKILL.md"))
+
+    def test_memories_go_to_the_directory_s_memory_folder_and_its_index(self):
+        mems = [{"name": "deploy", "title": "Deploy", "description": "how to deploy", "type": "project", "body": "make deploy"}]
+        rid = self.record("memory", json.dumps(mems), memories=mems)
+        folder = os.path.join(self.claude, "projects", history.project_key(self.work), "memory")
+        self.assertTrue(history.project_key(self.work).startswith("-"))
+        self.assertNotIn("/", history.project_key(self.work))
+        os.makedirs(folder)
+        with open(os.path.join(folder, "deploy.md"), "w") as fh:
+            fh.write("an older memory")
+        with open(os.path.join(folder, "MEMORY.md"), "w") as fh:
+            fh.write("- [Older](deploy.md) — an older memory")
+        p = history.save(rid, "dir", self.work)
+        self.assertEqual([(os.path.basename(f["path"]), f["action"]) for f in p["files"]], [("deploy-2.md", "create"), ("MEMORY.md", "append")])
+        history.save(rid, "dir", self.work, p["version"])
+        self.assertEqual(self.read(os.path.join(folder, "deploy.md")), "an older memory")           # never overwritten
+        self.assertIn('name: "deploy-2"\ndescription: "how to deploy"\nmetadata:\n  type: project\n---\n\nmake deploy', self.read(os.path.join(folder, "deploy-2.md")))
+        self.assertEqual(self.read(os.path.join(folder, "MEMORY.md")),
+                         "- [Older](deploy.md) — an older memory\n- [Deploy](deploy-2.md) — how to deploy\n")
+
+    def test_what_cannot_be_saved(self):
+        for kind, target, where in (("summary", "dir", self.work), ("memory", "user", ""), ("claude", "dir", "relative/dir"),
+                                    ("claude", "dir", os.path.join(self.work, "nope")), ("claude", "elsewhere", self.work)):
+            with self.subTest(kind=kind, target=target, where=where), self.assertRaises(history.HistoryError):
+                history.save(self.record(kind, "[]" if kind == "memory" else "x", memories=[{"name": "a"}]), target, where)
+        with self.assertRaises(history.HistoryError):
+            history.save(self.record("claude", "x", status="running"), "dir", self.work)
+        with self.assertRaises(history.HistoryError):
+            history.save(self.record("skill", "no front matter"), "dir", self.work)
 
 
 class ServerTest(HistoryBase):
