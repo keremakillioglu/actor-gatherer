@@ -17,7 +17,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import data, hiding, saved, server, sessions  # noqa: E402
+from ag_dashboard import data, hiding, saved, seen, server, sessions  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 # A fake `ag`: writes its arguments, then each message it is sent, to $FAKE_AG_LOG; answers each
@@ -648,6 +648,26 @@ class EndpointTest(SessionsBase):
         self.assertEqual(self.post("/api/saved", {"gatherer": "", "channel": "c", "saved": True})[0], 400)
         self.assertEqual(self.post("/api/saved", {"gatherer": "g", "channel": "c3", "saved": True}, {"Origin": "https://evil.example"})[0], 403)
         self.post("/api/saved", {"gatherer": "g", "channel": "c2", "saved": False})
+
+    def test_when_the_reader_last_looked_at_each_actor_is_the_same_for_every_dashboard_on_the_home(self):
+        self.assertIsNone(json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))["seen"])   # none kept yet
+        code, kept = self.post("/api/seen", {"seen": [["g", "c1", 100.5], ["g", "c2", 200]]})
+        self.assertEqual((code, kept), (200, {"g": {"c1": 100.5, "c2": 200.0}}))
+        code, kept = self.post("/api/seen", {"seen": [["g", "c1", 50], ["g", "c2", 250], ["h", "c1", 10]]})
+        self.assertEqual(kept, {"g": {"c1": 100.5, "c2": 250.0}, "h": {"c1": 10.0}})   # a look only moves forward
+        other = server.serve("127.0.0.1", 0)         # another dashboard: a new port, its own page origin
+        threading.Thread(target=other.serve_forever, daemon=True).start()
+        try:
+            home = json.load(urllib.request.urlopen(f"http://127.0.0.1:{other.server_port}/api/home", timeout=10))
+            self.assertEqual(home["seen"], {"g": {"c1": 100.5, "c2": 250.0}, "h": {"c1": 10.0}})
+        finally:
+            other.shutdown()
+            other.server_close()
+        self.assertEqual(data.home([])["seen"]["g"]["c2"], 250.0)          # snapshots carry it too
+        for bad in ([], [["g", "c1"]], [["g", "", 1]], [["", "c", 1]], [["g", "c", "1"]], [["g", "c", True]], "g"):
+            self.assertEqual(self.post("/api/seen", {"seen": bad})[0], 400, bad)
+        self.assertEqual(self.post("/api/seen", {"seen": [["g", "c3", 1]]}, {"Origin": "https://evil.example"})[0], 403)
+        self.assertEqual(seen.stored(), {"g": {"c1": 100.5, "c2": 250.0}, "h": {"c1": 10.0}})
         self.assertEqual(saved.stored(), {})
 
     def test_what_it_refuses(self):
