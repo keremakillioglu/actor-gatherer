@@ -14,7 +14,7 @@
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --selected: rgba(42,120,214,0.10);
   /* the Transcript view's terminal: the page's own surface, so the history is part of the page in either theme */
   --term-bg: var(--surface); --term-ink: #2b2a27; --term-dim: #6f6c65; --term-faint: #a09d95; --term-user: #efeee9; --term-ok: #2f9a4c;
-  --term-err: #cf3a50; --term-run: #c08a00; --term-accent: #c4643f; --term-code: #f2f1ed; --term-rule: #e2e0d9; --term-box: #d6d4cc;
+  --term-err: #cf3a50; --term-run: #c08a00; --term-accent: #c4643f; --term-code: #f2f1ed; --term-rule: #e2e0d9;
   --term-add: rgba(47,154,76,.12); --term-del: rgba(207,58,80,.10); --term-add-ink: #1b6b34; --term-del-ink: #a5293d; --term-link: #2468c8;
   /* the Files view's markdown, coloured as the NumPy docs (the PyData theme) colour it: links, inline code */
   --md-link: #0a7d91; --md-code: #912583;
@@ -28,7 +28,7 @@
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
-  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-box: #3a3935;
+  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
   --md-link: #3fb1c5; --md-code: #f3c7ee;
   --scroll: rgba(255,255,255,.16);
@@ -41,7 +41,7 @@
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16);
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
-  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-box: #3a3935;
+  --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
   --md-link: #3fb1c5; --md-code: #f3c7ee;
   --scroll: rgba(255,255,255,.16);
@@ -466,7 +466,7 @@ button:disabled { opacity: .5; cursor: default; }
 .ctx-panel .dlabel { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .ctx-panel-head .sub { color: var(--muted); }
 .ctx-panel .dbar { height: 18px; }
-.chat .composer, .chat .term-prompt, .chat .readonly, .chat .err { flex: none; }
+.chat .composer, .chat .readonly, .chat .err { flex: none; }
 .chat .composer { margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--ring); }
 .chat .readonly { color: var(--muted); font-size: 12px; padding: 8px 16px; border-top: 1px solid var(--ring); }
 .chat > .err { color: var(--critical); font-size: 12px; padding: 6px 16px; }
@@ -610,20 +610,6 @@ button:disabled { opacity: .5; cursor: default; }
 .composer .hint { color: var(--muted); font-size: 12px; }
 .queued { color: var(--muted); font-size: 12px; padding: 6px 4px 6px 17px; border-bottom: 1px solid var(--grid); }
 .chat .err:empty { display: none; }
-/* The Transcript view's prompt: a terminal's input box under the terminal */
-.term-prompt {
-  background: var(--term-bg); color: var(--term-ink); border-radius: 10px; margin-top: 8px; padding: 8px 12px 6px;
-  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.term-prompt .box { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 4px; align-items: start;
-  border: 1px solid var(--term-box); border-radius: 8px; padding: 6px 10px; }
-.term-prompt .box:focus-within { border-color: var(--term-dim); }
-.term-prompt .g { color: var(--term-dim); user-select: none; }
-.term-prompt textarea { background: none; border: 0; outline: 0; color: var(--term-ink); font: inherit; resize: none;
-  width: 100%; min-height: 1.55em; max-height: 40vh; padding: 0; field-sizing: content; }
-.term-prompt textarea::placeholder { color: var(--term-dim); }
-.term-prompt textarea:disabled { opacity: .5; }
-.term-prompt .foot { display: flex; justify-content: space-between; gap: 10px; color: var(--term-dim); font-size: 11px; padding: 4px 2px 0; }
-.term-prompt .foot .mode { color: var(--term-accent); }
 /* The Terminal view: Claude Code's own UI, drawn by xterm.js on the page's terminal colors, so it follows
    the theme (Claude Code's own colors follow its /theme) */
 .chat .chat-frame.xterm-frame { position: relative; overflow: hidden; background: var(--term-bg); padding: 8px 4px 8px 10px; }
@@ -632,9 +618,6 @@ button:disabled { opacity: .5; cursor: default; }
 .xterm-cover { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center;
   background: color-mix(in srgb, var(--term-bg) 82%, transparent); color: var(--term-ink); font-size: 13px; padding: 20px; }
 .xterm-cover .desc { color: var(--term-dim); max-width: 46ch; }
-/* under the Transcript view's history: one terminal, the prompt its last lines */
-.chat .chat-frame.term:has(+ .term-prompt) { padding-bottom: 8px; }
-.chat .chat-frame.term + .term-prompt { margin-top: 0; border: 0; border-radius: 0; padding: 4px 18px 10px; }
 /* the Files view: a turn's files, each as the agent saw it (files.py) */
 .chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .files .fl-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }
@@ -2461,11 +2444,11 @@ function gathererDetails(a) {                        // what ag did for the agen
 // the box to write the next. A session not started here is resumed by the dashboard on its first message
 // (in the directory its calls named); while another process has it open -- a terminal -- the box is off
 // (`ctx.held`). An actor that cannot be messaged from here at all (not Claude Code, or no directory; or
-// a snapshot) has its history and no box.
+// a snapshot) has its history and no box; so has every actor in a view to read it by (`readOnly`: the ones in Details).
 function chatCard(info) {
   const s = info.session || { cwd: info.cwd, permission_mode: "auto", queued: [], status: "stopped" };
   const view = chatView(), feed = chatFeed(view);
-  const writable = hasChat(info) && !SNAPSHOT;
+  const writable = hasChat(info) && !SNAPSHOT && !view.readOnly;
   const held = info.chattable === false
     ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}: `
       + "close it there to message it here." : "";
@@ -2512,10 +2495,10 @@ function chatCard(info) {
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
   }
-  if (view.feed !== "none" && view.asking !== false) { const note = askingNote(info) || answeredNote(info); if (note) card.append(note); }   // the terminal shows it itself
+  if (view.feed !== "none" && view.asking !== false) { const note = askingNote(info, !view.readOnly) || answeredNote(info); if (note) card.append(note); }   // the terminal shows it itself
   if (view.background) { const note = backgroundNote(info); if (note) card.append(note); }
   if (!writable) {
-    if (!SNAPSHOT) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code and codex sessions with a known directory." }));
+    if (!SNAPSHOT && !view.readOnly) card.append(el("div", { class: "readonly", text: "Read only: the dashboard can message only Claude Code and codex sessions with a known directory." }));
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
   }
@@ -2575,15 +2558,15 @@ function backgroundNote(info, term = false) {
 // or the plan it asks them to approve. Where the dashboard runs the session's terminal, answered here: what is
 // picked is typed into the terminal's dialog (POST /api/answer, sessions.py's `answer`), and the terminal shows
 // it answered as if it had been picked there; elsewhere it is answered in the terminal that runs the session.
-// Null while it waits on nothing.
-function askingNote(info) {
+// `answerable` false (a view to read by): shown, and answered in Chat or the terminal. Null while it waits on nothing.
+function askingNote(info, answerable = true) {
   const ask = info && info.status === "asking" ? info.asking : null;
   if (!ask) return null;
   const qs = ask.questions || [];
   const s = info.session || {};
   // the dashboard's terminal, and nothing typed into it since it asked: answered from here
   const touched = !!(s.terminal && s.typed && s.typed >= ask.at);
-  const here = !SNAPSHOT && !!s.terminal && !touched;
+  const here = answerable && !SNAPSHOT && !!s.terminal && !touched;
   const sent = info.answer && info.answer.call === ask.call ? info.answer : null;
   const who = info.harness ? harnessName(info.harness) : "The agent";
   const what = ask.kind === "plan" ? `${who} has a plan for you to approve`
@@ -2649,7 +2632,8 @@ function askingNote(info) {
         : `Typing your answer into the terminal: ${sent.summary}`]
       : d.error ? ["err", d.error]
       : !here ? ["", touched ? "Something was typed into its terminal since it asked: finish answering there."
-        : SNAPSHOT ? "Answered in the terminal that runs the session." : "Answer it in the terminal that runs the session."]
+        : SNAPSHOT ? "Answered in the terminal that runs the session."
+        : !answerable && s.terminal ? "Answer it in Chat, or in the terminal." : "Answer it in the terminal that runs the session."]
       : [null, null];
     return text ? el("span", { class: ["say", cls, full ? "full" : ""].filter(Boolean).join(" "), role: cls === "err" ? "alert" : "status", text }) : null;
   };
@@ -3358,6 +3342,8 @@ function notesSwitch() {
 //     name: "Bubbles",                  // on the switch
 //     icon: "M2 4h12M2 8h12M2 12h8",    // optional: its icon beside its name, an SVG path in a 16x16 box, stroked
 //     more: true,                       // optional: not on the bar but with the history's other views, in Details
+//     readOnly: true,                   // optional: a view to read the history by -- no message box under it, and
+//                                       // what the agent waits on the user for shown, not answered there
 //     description: "User and assistant messages only.",
 //     feed: "history",                  // what it draws (CHAT_FEEDS): "history", the gatherer's events --
 //                                       // {row_id, name (its type), text, tokens, at, clipped};
@@ -3436,7 +3422,7 @@ const chatFeed = (view = chatView()) => CHAT_FEEDS[view.feed] || CHAT_FEEDS.hist
 
 // The views that come with the page.
 addChatView({
-  id: "messages", name: "Messages", feed: "history", frame: "ctx", icon: ICONS.list, more: true,
+  id: "messages", name: "Messages", feed: "history", frame: "ctx", icon: ICONS.list, more: true, readOnly: true,
   description: "The session's events as the gatherer has them, one row each, filtered by type.",
   tools: () => typeChips(null),
   render: ({ data }) => {
@@ -3450,7 +3436,7 @@ addChatView({
 });
 const txBlocks = blockCache(), msgRows = blockCache();
 addChatView({
-  id: "transcript", name: "Transcript", feed: "transcript", frame: "term", icon: ICONS.page, more: true,
+  id: "transcript", name: "Transcript", feed: "transcript", frame: "term", icon: ICONS.page, more: true, readOnly: true,
   description: "The conversation as Claude Code's terminal shows it.",
   tools: () => notesSwitch(),
   render: ({ info, data, running, loadEarlier }) => {
@@ -3463,22 +3449,11 @@ addChatView({
       backgroundNote(info, true),
     ].filter(Boolean);
   },
-  composer: (ctx) => {
-    const box = ctx.input({ rows: "1", placeholder: ctx.running ? "Write the next message: it waits for the turn to end" : "Message the agent",
-      "data-send": "1", spellcheck: "false" });
-    const grow = () => { box.style.height = "auto"; box.style.height = `${box.scrollHeight}px`; };   // where field-sizing is not known
-    box.addEventListener("input", grow);
-    return el("div", { class: "term-prompt" },
-      el("label", { class: "box" }, el("span", { class: "g", text: "❯" }), box),
-      el("div", { class: "foot" },
-        el("span", {}, el("span", { class: "mode", text: `» ${ctx.session.permission_mode}` }), ` · ${ctx.session.cwd}`),
-        el("span", { text: "enter to send · shift+enter for a new line" })));
-  },
 });
 addChatView({
-  id: "context", name: "Context", feed: "agent", frame: "ctx", icon: ICONS.layers, more: true,
+  id: "context", name: "Context", feed: "agent", frame: "ctx", icon: ICONS.layers, more: true, readOnly: true,
   background: false,                                 // the model's context, not what runs
-  description: "What the model was sent: the picked call's context, item by item; its size over time and how it divides, under the message box.",
+  description: "What the model was sent: the picked call's context, item by item; its size over time and how it divides, under it.",
   tools: () => {
     const ctx = state.agent && state.agent.reads ? pickedContext() : null;
     return [ctx && ctx.items ? contextChips(ctx) : null,
@@ -3510,8 +3485,8 @@ addChatView({
 // pseudo-terminal (sessions.py's `terminal`), drawn by xterm.js. The terminal keeps one node across
 // the tab's draws (moved, never made again), so what it shows, its scroll and its focus stay. Showing a
 // session in the view opens its terminal, once each time the session is chosen: one that exits or fails
-// to open is not opened again until asked (a button). Once open it has the session -- the other views'
-// message boxes type into it -- until it is closed (the list's close button) or exits.
+// to open is not opened again until asked (a button). Once open it has the session -- the Chat view's
+// message box types into it -- until it is closed (the list's close button) or exits.
 // The terminal's colors: the page's terminal colors, and a 16-color palette for each theme made from them.
 const XTERM_ANSI = {
   dark: { black: "#3a3935", red: "#ff6b80", green: "#4eba65", yellow: "#e8b600", blue: "#7cb7ff", magenta: "#e58fb6", cyan: "#4fc1c9", white: "#c3c2b7",
