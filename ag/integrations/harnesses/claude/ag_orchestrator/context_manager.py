@@ -87,7 +87,8 @@ from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.hook_server.hook_server import Answer
-from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, pending_ag, preamble_of, report_measured
+from ag.integrations.tools.ag_orchestrator.call_ag import (call_ag, keep_read, pending_ag, preamble_of, report_failed,
+                                                    report_measured)
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
@@ -354,6 +355,12 @@ class ClaudeContextManager:
     async def measured(self, request, tokens: Optional[int]) -> None:
         """The hook server's report, once the answer is back: the call's input tokens, to the read."""
         await report_measured(self.ag_clients, request, tokens)
+
+    async def failed(self, request, status: Optional[int], error: str) -> None:
+        """The hook server's report that one of the session's own calls failed -- its endpoint answered an
+        error, or could not be reached -- to the read it came from: what tells a turn that stopped on an
+        error from one under way."""
+        await report_failed(self.ag_clients, request, status, error)
 
     async def before_end(self, request, status: int, answer: dict) -> None:
         """The hook server's report, once the answer to one of the session's own calls is back whole and

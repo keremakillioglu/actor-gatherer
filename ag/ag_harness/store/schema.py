@@ -127,7 +127,11 @@ CREATE TABLE IF NOT EXISTS _reads (
                                     -- manager counted it at the read (less what the harness then
                                     -- left out, as it reports); NULL = not known
     pid         INTEGER,            -- the harness's process that made the call, and when it started
-    pid_started TEXT                -- ("<boot id>:<start ticks>", so a reused pid is not it); NULL = not known
+    pid_started TEXT,               -- ("<boot id>:<start ticks>", so a reused pid is not it); NULL = not known
+    error_status INTEGER,           -- the call failed: the HTTP status its endpoint answered; NULL = it did not
+                                    -- fail, or no answer came at all (`error` says why)
+    error       TEXT                -- why the call failed, as the hook server saw it: the endpoint's message, or
+                                    -- why it could not be reached; NULL = it did not fail, or not known
 );
 
 -- What a harness sends besides its messages -- its system prompt, its tool definitions --
@@ -253,7 +257,8 @@ def create(conn: sqlite3.Connection) -> None:
     read_columns = {c[1] for c in conn.execute("PRAGMA table_info(_reads)")}
     for column, kind in (("est_tokens", "INTEGER"), ("real_tokens", "INTEGER"), ("limit_tokens", "INTEGER"),
                          ("preamble_json", "TEXT"), ("sent_tokens", "INTEGER"), ("pid", "INTEGER"),
-                         ("pid_started", "TEXT")):                     # a file from before reads had them
+                         ("pid_started", "TEXT"), ("error_status", "INTEGER"),
+                         ("error", "TEXT")):                           # a file from before reads had them
         if column not in read_columns:
             conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} {kind}")
     if "yields" not in {c[1] for c in conn.execute("PRAGMA table_info(_open)")}:     # a file from before holders yielded
