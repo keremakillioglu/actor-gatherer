@@ -3309,9 +3309,20 @@ function histTree(h) {
   hist.byId = byId;
   return histTreeOf.tree;
 }
-// A node is listed when it holds a message of a type the reader shows (the chips: `shownTypes`, the Messages
-// view's too) and, searching, one that matches.
-const histShown = (r) => { const m = hist.byId.get(`m:${r}`); return !m || shownTypes.has(itemType({ name: m.event.type, group: "Recent history" })[0]); };
+// Which message types the History view lists -- its own choice, kept in this browser: by default the user's and
+// the assistant's messages (not the Gatherer's, nor tools'). A node is listed when it holds a message of a type
+// shown and, searching, one that matches.
+const HIST_TYPES_KEY = "ag-dashboard-history-types";
+const histTypes = (() => {
+  try { const v = JSON.parse(localStorage.getItem(HIST_TYPES_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  return new Set(["user_message", "agent_message"]);
+})();
+function toggleHistType(type) {
+  if (histTypes.has(type)) histTypes.delete(type); else histTypes.add(type);
+  try { localStorage.setItem(HIST_TYPES_KEY, JSON.stringify([...histTypes])); } catch (e) { /* this page only */ }
+  hist.version++; histRedraw();
+}
+const histShown = (r) => { const m = hist.byId.get(`m:${r}`); return !m || histTypes.has(itemType({ name: m.event.type, group: "Recent history" })[0]); };
 const histHas = (n) => n.rows.some((r) => histShown(r) && (!hist.hits || hist.hits.has(r)));
 // The rows the list shows, in order: [node, depth, header]. Turns, always one step in from the left, each opened to
 // its messages where the reader opened it; grouped by tasks, each task's row at the left with its turns under it
@@ -3577,17 +3588,17 @@ function histBuildNote(h) {
       b.since < HIST_BUILD_MESSAGES ? `Built again once ${HIST_BUILD_MESSAGES} have come in; until then they are the running task` : ""];
   return el("span", { class: "h-build " + cls, title }, cls === "run" ? el("span", { class: "spin", "aria-hidden": "true" }) : null, text);
 }
-// Which message types the list shows (the Messages view's choice too): one button, its menu of the types.
+// Which message types the list shows (`histTypes`): one button, its menu of the types.
 const TYPE_SHORT = { gatherer: "Gatherer", system: "System" };
 function typesMenu() {
   const all = [TYPES[6], ...TYPES.slice(0, 6)];
-  const on = all.filter(([t]) => shownTypes.has(t)).map(([t, name]) => TYPE_SHORT[t] || name);
+  const on = all.filter(([t]) => histTypes.has(t)).map(([t, name]) => TYPE_SHORT[t] || name);
   const said = on.length === all.length ? "All" : on.length > 3 ? `${on.length} types` : on.join(", ") || "Nothing";
   return el("details", { class: "h-types", id: "hist-types" },
     el("summary", { title: "Which message types are listed" }, el("span", { class: "lbl", text: "Show" }), said, el("span", { class: "lbl", text: "▾" })),
     el("div", { class: "menu", role: "group", "aria-label": "Message types shown" }, ...all.map(([type, name, swatch]) => {
-      const box = el("input", { type: "checkbox", ...(shownTypes.has(type) ? { checked: "" } : {}) });
-      box.addEventListener("change", () => toggleType(type));
+      const box = el("input", { type: "checkbox", ...(histTypes.has(type) ? { checked: "" } : {}) });
+      box.addEventListener("change", () => toggleHistType(type));
       return el("label", {}, box, el("i", { style: `background:${swatch}` }), name);
     })));
 }
@@ -3834,7 +3845,7 @@ function histRender() {
   const grouped = hasTasks && (hist.group ?? !(hist.stay && hist.stay.key === h.key));
   const vis = h.error ? [] : histVisible(tree, grouped);
   hist.flat = vis.map(([n, , head]) => n.id + (head ? "/h" : ""));
-  histRows.begin(signature([h.key, [...shownTypes]]));
+  histRows.begin(signature([h.key, [...histTypes]]));
   const shown = vis.slice(0, hist.limit);
   const list = el("div", { class: "h-list", "data-keep": `hist-list:${h.key}`, "data-morph": "" });
   const q = hist.q.trim();
