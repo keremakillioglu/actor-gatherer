@@ -568,17 +568,19 @@ button:disabled { opacity: .5; cursor: default; }
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 420px); }
 .hist .h-left { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.hist .h-bar { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 8px 16px; border-bottom: 1px solid var(--ring); font-size: 12px; color: var(--ink-2); }
+.hist .h-bar { flex: none; padding: 8px 16px 4px; border-bottom: 1px solid var(--ring); font-size: 12px; color: var(--ink-2); }
+.hist .h-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.hist .h-status { display: flex; align-items: center; gap: 14px; height: 20px; margin-top: 4px; font-size: 11.5px; overflow: hidden; white-space: nowrap; }
 .hist .h-search { flex: 1 1 260px; display: flex; align-items: center; gap: 6px; min-width: 0; border: 1px solid var(--ring); border-radius: 6px;
   background: var(--page); padding: 0 8px; }
 .hist .h-search:focus-within { border-color: var(--axis); }
 .hist .h-search svg { flex: none; color: var(--muted); }
 .hist .h-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 13px; padding: 5px 0; }
-.hist .h-found { white-space: nowrap; }
-.hist .h-found:empty { display: none; }
-.hist .h-build { white-space: nowrap; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.hist .h-found { white-space: nowrap; color: var(--ink-2); }
+.hist .h-build { white-space: nowrap; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hist .h-build.bad { color: var(--warning); }
-.hist .h-build .spin::before { content: "✻"; display: inline-block; color: var(--term-accent); animation: term-spin 1.2s steps(1) infinite; }
+.hist .h-build .spin { flex: none; display: inline-block; width: 1.2em; text-align: center; }   /* the glyphs differ in width: the box does not */
+.hist .h-build .spin::before { content: "✻"; color: var(--term-accent); animation: term-spin 1.2s steps(1) infinite; }
 .hist .h-list { flex: 1; min-height: 0; overflow: auto; padding-bottom: 16px; }
 .hist .h-row { display: grid; grid-template-columns: 18px 14px minmax(0, 1fr) auto; column-gap: 6px; align-items: start;
   padding: 6px 16px 6px calc(16px + var(--depth, 0) * 20px); border-bottom: 1px solid var(--grid); content-visibility: auto; contain-intrinsic-size: auto 46px; }
@@ -1804,12 +1806,17 @@ function chatCard(info) {
   };
   // its controls go in the page's header: the view's own (tools), which view, and the details panel
   const tools = safely(() => view.tools && view.tools(ctx));
-  document.getElementById("controls").replaceChildren(
-    ...(tools.length ? [el("div", { class: "chat-tools" }, ...tools)] : []),
+  const controls = document.getElementById("controls");
+  const heading = [...(tools.length ? [el("div", { class: "chat-tools" }, ...tools)] : []),
     ...[viewSwitcher(view)].filter(Boolean),
     el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false",
       title: "What ag saw and did for this actor: its context, calls, history and builds", onclick: () => setDetails(!state.details) },
-      infoIcon(), "Details"));
+      infoIcon(), "Details")];
+  // the page's own buttons, unchanged, kept as they are: a view that redraws every few seconds (History, while
+  // the Gatherer works) does not make them flash under the pointer. A view's own tools are made again each
+  // draw: what they do may be the draw's.
+  const same = !tools.length && heading.length === controls.children.length && heading.every((n, i) => n.isEqualNode(controls.children[i]));
+  if (!same) controls.replaceChildren(...heading);
   const frame = el("div", { class: `chat-frame ${view.frame ?? "ctx"}`, id: "chat-list", "data-keep": "chat-list", "data-follow": "1", "data-morph": "",
     role: "log", "aria-label": `Chat history, ${view.name}` });
   // its blocks, put in by patch(): a block kept from the last draw is still on the page, and is left there
@@ -3372,8 +3379,8 @@ function histLabel(n, hits) {
   if (n.kind === "task") {
     const t = n.task;
     if (t && n.current)                              // the build's last task, still open, and all since: as it is
-      return [el("div", { class: "h-label" }, kind("Running task"), n.ask || t.name),
-        el("div", { class: "h-sub dim", text: "Not summarized: it is still going on" }), hit];
+      return [el("div", { class: "h-label" }, kind("Running task")),
+        el("div", { class: "h-sub dim", text: `${plural(n.children.length, "turn")} so far · still going on, not summarized` }), hit];
     return [el("div", { class: "h-label" }, kind(t ? `Task ${t.index + 1}` : "Before the first task"), t ? t.name : "What came before ag's first task"),
       t && t.description ? el("div", { class: "h-sub", text: t.description }) : null, hit];
   }
@@ -3445,14 +3452,18 @@ function histBar(h, grains, grain) {
   box.addEventListener("input", () => histSearch(box.value));
   box.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && box.value) { ev.stopPropagation(); box.value = ""; histSearch(""); } });
   const q = hist.q.trim();
+  // the controls on a line of their own, which nothing else on the bar changes the width of; what a search
+  // found and how the actor's build stands under them, on a line that is always there
   return el("div", { class: "h-bar", "data-morph": "" },
-    el("label", { class: "h-search", "data-sig": `search:${h.key}` }, searchIcon(), box),
-    el("span", { class: "h-found", text: hist.hits ? `${full(hist.hits.size)}${hist.hitsMore ? "+" : ""} matching message${hist.hits.size === 1 ? "" : "s"}` : "" }),
-    histSwitch("Whose history", [["actor", "This actor"], ["all", "Whole gatherer"]], hist.scope, setHistScope),
-    histSwitch("Grain", grains.map(([g, name, ok]) => [g, name, ok, g === "actors" ? "Across the whole gatherer only" : "ag has not segmented this history into tasks yet"]),
-      grain, setHistGrain),
-    q && !hist.hits ? el("span", { class: "h-found", text: "Searching…" }) : null,
-    histBuildNote(h));
+    el("div", { class: "h-controls", "data-morph": "" },
+      el("label", { class: "h-search", "data-sig": `search:${h.key}` }, searchIcon(), box),
+      histSwitch("Whose history", [["actor", "This actor"], ["all", "Whole gatherer"]], hist.scope, setHistScope),
+      histSwitch("Grain", grains.map(([g, name, ok]) => [g, name, ok, g === "actors" ? "Across the whole gatherer only" : "ag has not segmented this history into tasks yet"]),
+        grain, setHistGrain)),
+    el("div", { class: "h-status" },
+      q ? el("span", { class: "h-found", text: !hist.hits ? "Searching…"
+        : `${full(hist.hits.size)}${hist.hitsMore ? "+" : ""} matching message${hist.hits.size === 1 ? "" : "s"}` }) : null,
+      histBuildNote(h)));
 }
 function histPickBar(h) {
   const rows = [...hist.sel.values()], n = rows.length;
