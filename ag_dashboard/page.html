@@ -3858,11 +3858,11 @@ function tmpSwitch(n) {
   return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched only them" },
     box, `tmp (${n})`);
 }
-// The files and commands at the left, folded to a thin bar of what they hold by the button in their heading
-// or a click on the message of the turn they show, and opened again by a click on the bar or on a message:
-// the choice kept in this browser.
-const SIDE_KEY = "ag-dashboard-files-side-folded";
-let sideFolded = (() => { try { return localStorage.getItem(SIDE_KEY) === "1"; } catch (e) { return false; } })();
+// The files and commands at the left, folded to a thin bar of what they hold until opened: by a click on the
+// bar or on a message, and folded again by the button in their heading or a click on the message of the turn
+// they show. The choice kept in this browser.
+const SIDE_KEY = "ag-dashboard-files-side-folded-2";   // -2: folded by default
+let sideFolded = (() => { try { return localStorage.getItem(SIDE_KEY) !== "0"; } catch (e) { return true; } })();
 function foldSide(fold, draw = true) {
   sideFolded = fold;
   try { localStorage.setItem(SIDE_KEY, fold ? "1" : "0"); } catch (e) { /* this page only */ }
