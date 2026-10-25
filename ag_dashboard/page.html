@@ -3487,7 +3487,7 @@ function histPickBar(h) {
       el("button", { type: "button", onclick: () => histPickAll(false), ...(n ? {} : { disabled: "" }) }, "Clear")),
     ask,
     el("div", { class: "row" },
-      ...Object.entries(HIST_KINDS).map(([k, [label]], i) => el("button", { type: "button", class: i === 0 ? "primary" : "", ...off,
+      ...Object.entries(HIST_KINDS).map(([k, [label]]) => el("button", { type: "button", ...off,
         title: `Give the picked history to the Gatherer's model: ${label.toLowerCase()}`, onclick: () => histMake(k) }, label)),
       el("span", { class: "grow" }),
       el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the picked history as a Markdown transcript", onclick: () => histExport("md") }, "Export .md"),
