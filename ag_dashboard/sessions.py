@@ -323,6 +323,35 @@ def new_gatherer(name: str) -> dict:
     return {"name": name}
 
 
+def available(environ: Optional[Dict[str, str]] = None) -> List[str]:
+    """The harnesses a new session can run on here, of HARNESSES: those ag's config.toml has an entry for
+    ([cli.harnesses.<name>]; every one, before ag first wrote its [cli]) whose command is on the PATH --
+    the agent's, or the one the entry's own env sets."""
+    try:
+        import tomllib
+        with open(os.path.join(home.HOME, "config.toml"), "rb") as fh:
+            cli = tomllib.load(fh).get("cli")
+    except FileNotFoundError:
+        cli = None
+    except (OSError, ValueError):                 # unreadable, or not TOML: ag runs none
+        return []
+    entries = {name: {} for name in HARNESSES} if not isinstance(cli, dict) else cli.get("harnesses")
+    path = agent_env(environ).get("PATH")
+    found = []
+    for name in HARNESSES:
+        entry = entries.get(name) if isinstance(entries, dict) else None
+        if not isinstance(entry, dict):
+            continue
+        command = entry.get("command") or [name]
+        command = [command] if isinstance(command, str) else command
+        env = entry.get("env") if isinstance(entry.get("env"), dict) else {}
+        where = env.get("PATH") or path
+        if isinstance(command, list) and command and shutil.which(os.path.expanduser(str(command[0])),
+                                                                   path=os.path.expanduser(str(where)) if where else None):
+            found.append(name)
+    return found
+
+
 _models: Dict[str, dict] = {}           # harness -> {"at": when asked, "models": [...]}
 MODELS_KEEP = 600                       # how long a harness's list of models is kept before it is asked again
 

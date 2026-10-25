@@ -339,15 +339,22 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .aside-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 16px 6px; }
 .aside-head h2 { margin: 0; }
 .gatherer-row .act.add { font-size: 16px; }
+.gatherer-row .act:disabled { cursor: default; opacity: .45; }
+.gatherer-row .act:disabled:hover { background: none; color: var(--muted); }
+/* a start button: "+" and its harness's mark, the tooltip the button's (not the mark's own) */
+.gatherer-row .act.start { gap: 1px; padding: 0 4px; font-size: 14px; }
+.gatherer-row .act.start + .act.start { margin-left: 2px; }
+.gatherer-row .act.start .badge { width: 16px; height: 16px; display: block; pointer-events: none; }
+.gatherer-row .act.start.busy { opacity: 1; }
+.gatherer-row .act.start.busy .badge { animation: term-blink 1s ease-in-out infinite; }
 .newform { margin: 4px 16px 12px; padding: 10px 12px; border: 1px solid var(--ring); border-radius: 8px; background: var(--page); display: grid; gap: 8px; }
 .newform label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); }
 .newform input, .newform select, .composer textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
   border: 1px solid var(--ring); border-radius: 6px; padding: 5px 8px; min-width: 0; }
 .newform .row { display: flex; gap: 8px; justify-content: flex-end; }
-.newform .seg { display: flex; gap: 6px; }
-.newform .seg button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; }
-.newform .seg button[aria-pressed="true"] { border-color: var(--s1); color: var(--ink); box-shadow: inset 0 0 0 1px var(--s1); }
-.newform .seg .logo { width: 14px; height: 14px; }
+.newform .row:has(button[value]) { gap: 6px; flex-wrap: wrap; }
+.newform .row button[value] { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 4px 8px; }
+.newform .row .badge { width: 14px; height: 14px; display: block; }
 .newform .err, .composer .err { color: var(--critical); font-size: 12px; }
 button.primary { background: var(--s1); border-color: var(--s1); color: #fff; }
 button.primary:hover { filter: brightness(1.06); background: var(--s1); }
@@ -969,7 +976,8 @@ function render(userAction = false) {
     if (!heldDraw) heldDraw = setTimeout(() => { heldDraw = null; render(); }, TYPING_MS - since + 10);
     return;
   }
-  const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.selected, Math.floor(Date.now() / AGO_MS)]);
+  const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.harnesses, state.selected,
+    Math.floor(Date.now() / AGO_MS)]);
   // "ago" texts: every 30 s; not while a form in the list is open, which a redraw would empty
   if ((userAction || agents !== drawn.agents) && !(state.adding && !userAction)) { renderAgents(); drawn.agents = agents; }
   const view = mainSignature();
@@ -1288,8 +1296,7 @@ function renderAgents() {
             live ? el("i", { "aria-hidden": "true" }) : null, live ? `${live} / ${g.agents.length}` : String(g.agents.length))),
         el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
           hideIcon()),
-        SNAPSHOT ? null : el("button", { class: "act add", type: "button", title: `New session in ${g.name}`, "aria-label": `New session in ${g.name}`,
-          onclick: () => addSession(g) }, "+")));
+        ...(SNAPSHOT ? [] : startButtons(g))));
     if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
     // running first, then finished (not yet looked at), then idle, then closed; each in the order the
@@ -1400,66 +1407,67 @@ function gathererForm() {
   });
   return form;
 }
-// A gatherer's "+": the form, to choose the harness (and codex's model); the session runs in the directory of
-// the gatherer's most recently active actor -- asked for only when no actor has one (or starting there failed).
-// The harness and model last chosen are chosen again.
-const PICK_KEY = "ag-dashboard-new-session";
-const lastPick = () => { try { return JSON.parse(localStorage.getItem(PICK_KEY)) || {}; } catch (e) { return {}; } };
-const models = {};                                   // harness -> its models (/api/models), asked once
-async function modelsOf(harness) {
-  if (!(harness in models)) { try { models[harness] = await get(`/api/models?harness=${harness}`); } catch (e) { models[harness] = { models: [] }; } }
-  return models[harness];
+// A gatherer's start buttons, one for each harness a new session can run on here (the server's `harnesses`:
+// in ag's config.toml, and installed): a click starts one, on the harness's default model, in the directory of
+// the gatherer's most recently active actor -- or, when no actor has one (or starting there failed), the form
+// asks for the directory first, its buttons the same.
+const startable = () => (state.home.harnesses || []).filter((h) => CHAT_HARNESSES.includes(h));
+const NO_HARNESS = "Neither Claude Code nor Codex is set up here: install one, or set its command in config.toml ([cli.harnesses])";
+function startButtons(g) {
+  const hs = startable();
+  if (!hs.length) return [el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+")];
+  return hs.map((h) => el("button", { class: "act start" + (state.starting && state.starting.gatherer === g.name && state.starting.harness === h ? " busy" : ""),
+    type: "button", ...(state.starting ? { disabled: "" } : {}), title: `New ${harnessName(h)} session in ${g.name}`,
+    "aria-label": `New ${harnessName(h)} session in ${g.name}`, onclick: () => addSession(g, h) },
+    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), harnessBadge(h)));
 }
-function addSession(g) {
-  if (state.adding && state.adding.gatherer === g.name) { state.adding = null; return renderAgents(); }
+async function addSession(g, harness) {
   const last = g.agents.filter((a) => a.cwd).sort((x, y) => (y.last || 0) - (x.last || 0))[0];
-  const pick = lastPick();
-  state.adding = { gatherer: g.name, cwd: last ? last.cwd : "", askCwd: !last, harness: pick.harness || "claude", model: pick.model || "" };
+  if (harness && last) {
+    try { return await startSession(g.name, last.cwd, harness); }
+    catch (e) { state.adding = { gatherer: g.name, cwd: last.cwd, harness, error: e.message }; }
+  } else state.adding = { gatherer: g.name, cwd: last ? last.cwd : "", harness };
   renderAgents();
-  const first = document.querySelector(".newform [aria-pressed=true], .newform input");
+  const first = document.querySelector(".newform input");
   if (first) first.focus();
 }
 // The new session shown in a terminal, opened there (the Terminal view opens it), where the terminal can be.
-async function startSession(gatherer, cwd, harness = "claude", model = "") {
-  const s = await post("/api/sessions", { gatherer, cwd, harness, model });
-  try { localStorage.setItem(PICK_KEY, JSON.stringify({ harness, model: harness === "codex" ? model : (lastPick().model || "") })); } catch (e) { /* this page only */ }
-  state.adding = null;
-  collapsed.delete(s.gatherer);
-  if (CHAT_VIEWS.has("terminal") && state.home.terminals !== false) { chatViewId = "terminal"; try { localStorage.setItem(CHAT_VIEW_KEY, "terminal"); } catch (e) { /* this page only */ } }
-  await select(s.gatherer, s.session_id);
+async function startSession(gatherer, cwd, harness) {
+  state.starting = { gatherer, harness };
+  renderAgents();
+  try {
+    const s = await post("/api/sessions", { gatherer, cwd, harness });
+    state.adding = null;
+    collapsed.delete(s.gatherer);
+    if (CHAT_VIEWS.has("terminal") && state.home.terminals !== false) { chatViewId = "terminal"; try { localStorage.setItem(CHAT_VIEW_KEY, "terminal"); } catch (e) { /* this page only */ } }
+    await select(s.gatherer, s.session_id);
+  } finally { state.starting = null; renderAgents(); }
   const box = chatViewId === "terminal" ? null : document.getElementById("composer-text");
   if (box) box.focus();
 }
 function newForm() {
-  const adding = state.adding, fixed = adding.gatherer;
+  const adding = state.adding, fixed = adding.gatherer, hs = startable();
   const cwd = el("input", { name: "cwd", value: adding.cwd || state.home.cwd || "", spellcheck: "false" });
-  const err = el("div", { class: "err", role: "alert", text: adding.error || "" });
-  const start = el("button", { type: "submit", class: "primary" }, "Start");
-  const harnessPick = el("div", { class: "seg", role: "group", "aria-label": "Harness" },
-    ...["claude", "codex"].map((h) => el("button", { type: "button", "aria-pressed": adding.harness === h ? "true" : "false",
-      onclick: () => { adding.harness = h; adding.cwd = cwd.value; renderAgents(); } }, harnessLogo(h), harnessName(h))));
-  const model = el("select", { name: "model", disabled: "" }, el("option", { value: adding.model, text: adding.model || "Loading…" }));
-  model.addEventListener("change", () => { adding.model = model.value; });
-  if (adding.harness === "codex") modelsOf("codex").then(({ models: list, default: dflt }) => {
-    if (!model.isConnected) return;
-    const slugs = list.map((m) => m.slug);
-    if (!slugs.includes(adding.model)) adding.model = slugs.includes(dflt) ? dflt : (slugs[0] || "");
-    model.replaceChildren(...(list.length ? list : [{ slug: "", name: "Codex's default", description: "" }])
-      .map((m) => el("option", { value: m.slug, text: m.name, title: m.description, ...(m.slug === adding.model ? { selected: "" } : {}) })));
-    model.disabled = false;
-  });
+  const err = el("div", { class: "err", role: "alert", text: adding.error || (hs.length ? "" : NO_HARNESS) });
+  const starts = hs.map((h) => el("button", { type: "submit", value: h, class: h === (adding.harness || hs[0]) ? "primary" : "",
+    ...(state.starting ? { disabled: "" } : {}) }, harnessBadge(h), harnessName(h)));
   const form = el("form", { class: "newform", "aria-label": "New session" },
-    el("div", { class: "desc", text: `A new session in ${fixed}${adding.askCwd ? "" : `, in ${adding.cwd}`}` }),
-    harnessPick,
-    adding.harness === "codex" ? el("label", {}, "Model", model) : null,
-    adding.askCwd ? el("label", {}, "Working directory", cwd) : null,
+    el("div", { class: "desc", text: `A new session in ${fixed}` }),
+    el("label", {}, "Working directory", cwd),
     err,
-    el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), start));
+    el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), ...starts));
+  // Enter starts the harness last chosen (the primary), not the first of the buttons
+  cwd.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    if (starts.length) form.requestSubmit(starts.find((b) => b.classList.contains("primary")));
+  });
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    start.disabled = true; err.textContent = "";
-    try { await startSession(fixed, cwd.value.trim(), adding.harness, adding.harness === "codex" ? adding.model : ""); }
-    catch (e) { err.textContent = e.message; start.disabled = false; adding.askCwd = true; }
+    const harness = ev.submitter ? ev.submitter.value : adding.harness;
+    Object.assign(adding, { cwd: cwd.value.trim(), harness, error: "" });
+    try { await startSession(fixed, adding.cwd, harness); }
+    catch (e) { adding.error = e.message; renderAgents(); }
   });
   return form;
 }
