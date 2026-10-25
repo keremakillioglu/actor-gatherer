@@ -1054,10 +1054,6 @@ button:disabled { opacity: .5; cursor: default; }
             <div><h4>Theme</h4>
               <div class="views" id="theme" role="group" aria-label="Theme">
                 <button type="button" data-theme-pick="system">System</button><button type="button" data-theme-pick="light">Light</button><button type="button" data-theme-pick="dark">Dark</button></div></div>
-            <div id="screen-pick" hidden><h4>Terminal</h4>
-              <div class="views" id="screen" role="group" aria-label="Terminal screen"
-                   title="Claude Code's classic screen or its full screen, in the Terminal view. An open terminal is reopened in it, the session resumed, once you confirm.">
-                <button type="button" data-screen-pick="classic">Classic</button><button type="button" data-screen-pick="full">Full screen</button></div></div>
             <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
           </div>
         </div>
@@ -1486,7 +1482,8 @@ const setLive = (text) => {
   for (const id of ["state-dot", "state-dot-2"]) document.getElementById(id).dataset.state = st;
   document.getElementById("about-btn").title = `${text}. Settings: ag's, and this page's`;
 };
-// The dashboard's panel: opened by its button, closed by it again, by a click elsewhere, or by Esc.
+// The dashboard's panel: opened by its button, closed by it again, by a click elsewhere, by Esc, or once a
+// theme is picked or the Gatherer's model set.
 function setAbout(open) {
   document.getElementById("about").hidden = !open;
   document.getElementById("about-btn").setAttribute("aria-expanded", open ? "true" : "false");
@@ -1505,7 +1502,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => wind
 setTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })() || "dark", false);
 document.getElementById("theme").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-theme-pick]");
-  if (b) setTheme(b.dataset.themePick, true);
+  if (b) { setTheme(b.dataset.themePick, true); setAbout(false); }
 });
 document.getElementById("about-btn").addEventListener("click", () => {
   const open = document.getElementById("about").hidden;
@@ -1569,6 +1566,7 @@ $("cfg-model").addEventListener("submit", (ev) => cfgSubmit(ev, "cfg-model-note"
   const got = await post("/api/settings/model", { model: $("cfg-model-name").value,
     api_base: $("cfg-api-base").value, key_env: $("cfg-key-env").value });
   showSettings(got, got.said);
+  setAbout(false);
 }));
 $("cfg-defaults").addEventListener("submit", (ev) => cfgSubmit(ev, "cfg-defaults-note", async () => {
   showSettings(await post("/api/settings/defaults", { version: cfg.version, policy: $("cfg-policy").value || null,
@@ -3619,38 +3617,9 @@ function xtermTheme() {
   return { ...XTERM_ANSI[css.colorScheme === "dark" ? "dark" : "light"], background: v("--term-bg"), foreground: ink, cursor: ink, cursorAccent: v("--term-bg") };
 }
 window.addEventListener("ag-theme", () => { if (term.xterm) term.xterm.options.theme = xtermTheme(); });
-// Claude Code's full screen, or its classic one (the default): kept in the browser, for the next terminal
-// opened -- or, changed while one is open, that one reopened in it (the session resumed, its history kept).
-// Full screen scrolls by sending each wheel tick to Claude Code, which redraws; classic prints
-// into xterm's own scrollback, scrolled here.
-const FULLSCREEN_KEY = "ag-dashboard-term-fullscreen";
-let termFullscreen = (() => { try { return localStorage.getItem(FULLSCREEN_KEY) === "1"; } catch (e) { return false; } })();
-// The choice is in the dashboard's panel (Terminal: Classic | Full screen).
-function showScreenPick() {
-  for (const b of document.querySelectorAll("[data-screen-pick]"))
-    b.setAttribute("aria-pressed", (b.dataset.screenPick === "full") === termFullscreen ? "true" : "false");
-}
-// The terminal shown, open in the other screen, is reopened in this one -- once the reader agrees: reopening
-// hangs up Claude Code, whatever it is doing (a turn, its background tasks). Whether it is open is asked of
-// the server at that moment, not taken from the page's last copy.
-async function setScreen(full) {
-  const info = selectedInfo();
-  let open = null;
-  if (info && info.session && term.sid === info.channel) {
-    try {
-      const now = (await (await fetch("/api/sessions")).json()).find((x) => x.session_id === info.session.session_id);
-      if (now && now.terminal && !!now.fullscreen !== full) open = now;
-    } catch (e) { /* not known: nothing reopened */ }
-  }
-  if (open && !confirm(`This terminal is open. Switching to ${full ? "full screen" : "the classic screen"} closes it and resumes the session `
-      + "in the new screen: anything Claude Code is doing now -- a reply, a running command, its background tasks -- is stopped. Switch anyway?")) return;
-  termFullscreen = full;
-  try { localStorage.setItem(FULLSCREEN_KEY, full ? "1" : "0"); } catch (e) { /* this page only */ }
-  showScreenPick();
-  if (!open) return;
-  try { await post("/api/stop", { session_id: open.session_id }); } catch (err) { term.error = err.message; await refresh(); return; }
-  await termOpen(info);
-}
+// Claude Code's terminal runs in its full screen, which scrolls by sending each wheel tick to Claude Code, which
+// redraws; codex's in its classic one, inline, printed into xterm's own scrollback and scrolled here.
+const fullscreenFor = (info) => (info.harness || (info.session && info.session.harness)) !== "codex";
 // A mouse report for the pointer moving with no button held (SGR: ESC [ < b;x;y M, motion bit 32, button 3):
 // with any-motion tracking on, every move over the terminal is one, and each would share the one-at-a-time
 // input with the wheel. Claude Code is given clicks, drags and the wheel, not the bare moves.
@@ -3735,21 +3704,13 @@ async function termOpen(info) {
   t.error = ""; t.exited = null;
   try {
     await post("/api/terminal", { ...(info.session ? { session_id: info.session.session_id } : { gatherer: state.selected[0], channel: info.channel }),
-      cols: dims.cols, rows: dims.rows, fullscreen: termFullscreen });
+      cols: dims.cols, rows: dims.rows, fullscreen: fullscreenFor(info) });
     t.xterm.reset();
   } catch (err) { t.error = err.message; }
   await refresh();
   if (termRunning(info.channel) && (t.xterm.cols !== dims.cols || t.xterm.rows !== dims.rows))   // fitted again meanwhile
     post("/api/terminal/resize", { session_id: info.channel, cols: t.xterm.cols, rows: t.xterm.rows }).catch(() => {});
   t.xterm.focus();
-}
-if (!SNAPSHOT && window.Terminal && window.FitAddon) {
-  document.getElementById("screen-pick").hidden = false;
-  showScreenPick();
-  document.getElementById("screen").addEventListener("click", (ev) => {
-    const b = ev.target.closest("[data-screen-pick]");
-    if (b) setScreen(b.dataset.screenPick === "full");
-  });
 }
 if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
   id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame", icon: ICONS.terminal,
