@@ -82,7 +82,7 @@ from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
 from urllib.parse import urlsplit
 
-from . import home
+from . import answers, home
 
 try:                                    # a terminal needs a pseudo-terminal: Unix only
     import fcntl
@@ -158,6 +158,10 @@ CLASSIC = {"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"}
 TERM_KEEP = 512 * 1024             # how much of a terminal's output is kept, for a page that comes back
 THREAD_POLL = 1.0                  # how often a new codex terminal's thread is looked for in the gatherer
 PASTE_ENTER = 0.15                 # after a message is pasted into a terminal, how long before its Enter
+ANSWER_GAP = 0.3                   # between the keys of an answer typed into a dialog: several at once are one input to it
+#: What a page's terminal sends that no one typed: focus in and out, the terminal's answers to the program's
+#: questions (device attributes, cursor position, OSC replies), mouse reports. Not typing: a dialog is as it was.
+REPORTS = re.compile(r"\x1b\[[IO]|\x1b\[[?>]?[\d;]*[cRn]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b\[<[\d;]*[Mm]")
 
 
 def _has_calls(gatherer: str, session_id: str) -> bool:
@@ -417,6 +421,8 @@ class _Term:
         self.exited: Optional[int] = None
         self.changed = threading.Condition()
         self.reader: Optional[threading.Thread] = None
+        self.typed = 0.0                # when anything was last typed into it (epoch seconds): keys, a message
+        self.answering = False          # an answer's keys being typed into it (`answer`)
 
 
 class Sessions:
@@ -429,6 +435,7 @@ class Sessions:
         self.lock = threading.RLock()
         self.agents: Dict[str, _Agent] = {}
         self.terms: Dict[str, _Term] = {}
+        self.answered: Dict[str, dict] = {}      # each session's last answer typed from the page (`answer`)
         self.closing = False            # the dashboard stopping: what ends now is kept
         conn = self._db()               # a process from before is gone: what it was running stopped, and kept
         try:
@@ -483,12 +490,14 @@ class Sessions:
     def list(self) -> List[dict]:
         """Every session the table has, newest first, each with `queued` (its messages waiting), `pid` (the
         dashboard's process for it), `since` (when that started), `terminal` (whether that is a terminal) and
-        `fullscreen` (whether it runs Claude Code's full screen)."""
+        `fullscreen` (whether it runs Claude Code's full screen), `answer` (the last answer typed from the page,
+        `answer`) and `typed` (when anything was last typed into its terminal)."""
         with self.lock:
             out = []
             for s in stored():
                 a, t = self.agents.get(s["session_id"]), self.terms.get(s["session_id"])
                 out.append({**s, "queued": list(a.queue) if a else [], "terminal": t is not None,
+                            "answer": self.answered.get(s["session_id"]), "typed": t.typed if t else None,
                             "fullscreen": bool(t and t.fullscreen), "pid": t.pid if t else a.proc.pid if a else None,
                             "since": t.since if t else a.since if a else None})
             return out
@@ -983,7 +992,43 @@ class Sessions:
         t = self.terms.get(session_id)
         if t is None:
             raise SessionError("the session has no terminal open")
+        if REPORTS.sub("", data):
+            t.typed = time.time()
         self._write(t, data.encode("utf-8"))
+
+    def answer(self, session_id: str, ask: dict, choice: dict) -> dict:
+        """What the session's terminal asks (data.py's `asking`: a question, a plan to approve) answered with
+        `choice` (answers.py): its keys typed into the terminal one at a time, ANSWER_GAP apart, as if picked
+        there. Refused where the dashboard has no terminal for the session, or where something was typed into
+        it since it asked -- its dialog may no longer be as it first showed. -> the answer, as `list` then has
+        it: {call, summary, expect (what Claude Code's result for the call will hold), at}."""
+        with self.lock:
+            t = self.terms.get(session_id)
+            if t is None:
+                raise SessionError("the dashboard does not run this session's terminal: answer it in the one that does")
+            if t.answering:
+                raise SessionError("an answer is being typed into it already")
+            if t.typed and ask.get("at") and t.typed >= ask["at"]:
+                raise SessionError("something was typed into its terminal since it asked: finish answering there")
+            keys = answers.keys(ask, choice)             # AnswerError, a ValueError: a choice that does not fit
+            sent = {"call": ask.get("call"), "summary": answers.summary(ask, choice),
+                    "expect": answers.expected(ask, choice), "at": time.time()}
+            self.answered[session_id] = sent
+            t.answering = True
+            gatherer = (self._row(session_id) or {}).get("gatherer")
+        threading.Thread(target=self._keys, args=(t, keys), daemon=True).start()
+        self._changed(gatherer, session_id)
+        return sent
+
+    def _keys(self, t: _Term, keys: List[str]) -> None:
+        try:
+            for k in keys:
+                self._write(t, k.encode("utf-8"))
+                time.sleep(ANSWER_GAP)
+        except SessionError:
+            pass
+        finally:
+            t.answering = False
 
     def resize(self, session_id: str, cols: int, rows: int) -> None:
         """The terminal is `cols` x `rows` now: its process is told (SIGWINCH)."""
@@ -1006,6 +1051,7 @@ class Sessions:
     def _paste(self, t: _Term, text: str) -> None:
         """A message from a view's message box, typed into the terminal: pasted as one block (so its
         new lines stay in it), then Enter once the paste has landed."""
+        t.typed = time.time()
         self._write(t, b"\x1b[200~" + text.replace("\x1b", "").encode("utf-8") + b"\x1b[201~")
         threading.Timer(PASTE_ENTER, lambda: self._write_quietly(t, b"\r")).start()
 

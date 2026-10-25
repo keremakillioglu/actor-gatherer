@@ -38,6 +38,8 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/terminal {session_id | gatherer, channel, cols, rows, fullscreen?}  the session opened in a
                                           terminal, Claude Code's own UI (sessions.py's `terminal`), in its
                                           classic screen unless `fullscreen` -> the session
+    POST /api/answer {session_id, call, choice}  what its terminal asks (data.py's `asking`, the call `call`),
+                                          answered with `choice` (answers.py): its keys typed there -> the answer
     POST /api/terminal/input {session_id, data}       what was typed in it
     POST /api/terminal/resize {session_id, cols, rows}  its new size
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
@@ -369,6 +371,16 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                         sid = started.adopt(str(body["gatherer"]), str(body["channel"]))["session_id"]
                     return self.answer(started.terminal(sid, int(body.get("cols") or 120), int(body.get("rows") or 32),
                                                          bool(body.get("fullscreen"))))
+                if url.path == "/api/answer":
+                    sid = str(body.get("session_id") or "")
+                    row = next((x for x in started.list() if x["session_id"] == sid), None)
+                    if row is None:
+                        raise sessions.SessionError(f"no session {sid} started from the dashboard")
+                    ask = data.asking_of(row["gatherer"], sid, row.get("cwd"))
+                    if not ask or ask.get("call") != body.get("call"):
+                        raise sessions.SessionError("it no longer asks that")
+                    choice = body.get("choice")
+                    return self.answer(started.answer(sid, ask, choice if isinstance(choice, dict) else {}))
                 if url.path == "/api/terminal/input":
                     started.type(str(body.get("session_id") or ""), str(body.get("data") or ""))
                     return self.answer({})
