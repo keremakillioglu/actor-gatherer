@@ -1,0 +1,419 @@
+"""What a session's tool calls did to files, found on disk as they run (ag/integrations/tools/
+file_touches/): the command parser's reading of a call, the checks against the disk, the watcher
+(on the system the tests run on: FSEvents on macOS, inotify on Linux), the store, and the whole of
+it through the Claude Code and codex hooks, on real files in a folder of the test's own."""
+import asyncio
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from types import SimpleNamespace
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from ag.integrations.tools.ag_orchestrator.file_touches import Files, check as ck, watch  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.file_touches.calls import calls_in, last_results, results_in  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.file_touches.commands import shell_changes, shell_reads  # noqa: E402
+
+
+class CommandsTest(unittest.TestCase):
+    """A call read from its words and output alone: what was found wrong in real sessions."""
+
+    def test_the_dashboard_s_copy_is_the_same_but_for_its_docstring(self):
+        import ast
+        import ag_dashboard.commands
+        from ag.integrations.tools.ag_orchestrator.file_touches import commands
+
+        def body(module):
+            with open(module.__file__, encoding="utf-8") as fh:
+                tree = ast.parse(fh.read())
+            return ast.dump(ast.Module(body=tree.body[1:], type_ignores=[]))      # all but the docstring
+        self.assertEqual(body(ag_dashboard.commands), body(commands))
+
+    def test_a_line_of_another_command_s_output_is_not_a_search_match(self):
+        found, _ = shell_reads("grep -n foo a.py; date", "3:foo\nSat Oct 24 18:12:34 2026", "/r")
+        self.assertEqual(found, [("/r/a.py", "hit", 3, "foo")])
+        found, _ = shell_reads("grep -n x src/*.py | head -5; ps -o lstart", "src/a.py:3:x\n78938 Sat Oct 24 18:12:34", "/r")
+        self.assertEqual(found, [("/r/src/a.py", "hit", 3, "x")])       # a path the pattern matches, only
+        self.assertEqual(shell_reads("grep -rn x src --include=*.py", "(eval):1: no matches found", "/r")[0], [])
+        self.assertEqual(shell_reads("grep -n x a.py; sqlite3 db 'select 1'", "1|user_message|2026-10-24T21:43:20", "/r")[0], [])
+
+    def test_searches_of_one_file_each_cannot_be_told_apart(self):
+        found, _ = shell_reads("grep -n foo a.py; grep -n bar b.py", "3:foo\n12:bar", "/r")
+        self.assertEqual(found, [("/r/a.py", "maybe", 3, "foo"), ("/r/b.py", "maybe", 3, "foo"),
+                                 ("/r/a.py", "maybe", 12, "bar"), ("/r/b.py", "maybe", 12, "bar")])
+
+    def test_a_search_s_paths_are_from_where_it_ran(self):
+        found, _ = shell_reads("cd sub && grep -n foo a.py b.py", "a.py:3:foo\nb.py:9:foo", "/r")
+        self.assertEqual(found, [("/r/sub/a.py", "hit", 3, "foo"), ("/r/sub/b.py", "hit", 9, "foo")])
+
+    def test_a_path_with_a_variable_the_command_does_not_set_is_not_known(self):
+        self.assertEqual(shell_reads("cat $T/../log.txt", "hello", "/r")[0], [])          # not /r/log.txt
+        self.assertEqual(shell_reads("S=/tmp/x; cat $S/../log.txt", "hello", "/r")[0], [("/tmp/log.txt", "lines", 1, ["hello"])])
+        self.assertEqual(shell_changes("echo 1 > $Q/../x; S=/s; echo 2 > $S/y", "/r")[0], [("/s/y", "write", "2")])
+        self.assertEqual(shell_changes("cd $D && echo 1 > x", "/r")[0], [])               # in a directory not known
+
+    def test_bsd_sed_s_empty_backup_suffix_is_not_its_script(self):
+        self.assertEqual(shell_changes("sed -i '' 's/a/b/' conf.toml", "/r")[0], [("/r/conf.toml", "changed", "sed -i s/a/b/")])
+
+
+def write(path, text):
+    with open(path, "w") as fh:
+        fh.write(text)
+
+
+def sh(command, cwd):
+    return subprocess.run(["/bin/sh", "-c", command], cwd=cwd, capture_output=True, text=True).stdout
+
+
+class CheckTest(unittest.TestCase):
+    """An answer's calls checked against real files."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.d = os.path.realpath(self.tmp.name)
+        write(self.p("a.py"), "x = 1\nfoo()\ny = 2\n")
+        write(self.p("b.py"), "bar()\nz = 3\n")
+
+    def p(self, name):
+        return os.path.join(self.d, name)
+
+    def run_calls(self, *calls, change=None, watched=None):
+        """The calls' named files looked at, `change` run (what the calls do), the calls' commands run for
+        their output, then checked: {(call id, file name, how): touch}."""
+        was = ck.before({cid: (name, inp) for cid, name, inp in calls}, self.d)
+        if change:
+            change()
+        entries = [(cid, name, inp, sh(inp["command"], self.d) if name == "Bash" else inp.get("_out", ""), False)
+                   for cid, name, inp in calls]
+        got = ck.check(entries, self.d, was, watched or {})
+        return {(t["call_id"], os.path.basename(t["path"]) if t.get("path") else None, t.get("how")): t for t in got}
+
+    def test_each_match_is_kept_for_the_file_whose_line_it_is(self):
+        got = self.run_calls(("c", "Bash", {"command": "grep -n foo a.py; grep -n bar b.py; date"}))
+        self.assertEqual(set(got), {("c", "a.py", "hit"), ("c", "b.py", "hit")})
+        self.assertEqual((got["c", "a.py", "hit"]["detail"], got["c", "a.py", "hit"]["checked"]), ({"hits": [[2, "foo()"]]}, True))
+        self.assertEqual(got["c", "b.py", "hit"]["detail"], {"hits": [[1, "bar()"]]})
+
+    def test_a_read_is_checked_and_a_tail_found_where_it_is(self):
+        got = self.run_calls(("r", "Bash", {"command": "sed -n 1,2p a.py"}), ("t", "Bash", {"command": "tail -n 1 a.py"}),
+                             ("n", "Read", {"file_path": self.p("b.py"), "_out": "1\tbar()\n2\tz = 9"}))
+        self.assertEqual((got["r", "a.py", "read"]["detail"], got["r", "a.py", "read"]["checked"]),
+                         ({"lines": [[1, ["x = 1", "foo()"]]]}, True))
+        self.assertEqual(got["t", "a.py", "read"]["detail"], {"lines": [[3, ["y = 2"]]]})   # not "where unknown"
+        self.assertIs(got["n", "b.py", "read"]["checked"], False)              # its line 2 is not on disk
+
+    def test_a_path_that_is_no_file_is_left_out(self):
+        got = self.run_calls(("c", "Read", {"file_path": self.p("gone.py"), "_out": "1\tx"}))
+        self.assertEqual(list(got), [("c", None, None)])                       # checked, and it touched none
+
+    def test_a_change_goes_to_the_call_that_says_it_makes_it_at_its_lines(self):
+        def change():
+            write(self.p("b.py"), "bar()\nz = 4\n")
+            write(self.p("new.txt"), "hi\n")
+            os.remove(self.p("a.py"))
+        got = self.run_calls(("r", "Bash", {"command": "cat b.py"}),
+                             ("w", "Bash", {"command": "sed -i.bak 's/3/4/' b.py && echo hi > new.txt && rm a.py"}),
+                             change=change)
+        hunk, = got["w", "b.py", "modified"]["detail"]["hunks"]
+        self.assertEqual((hunk["at"], hunk["old"], hunk["new"], hunk["above"]), (2, ["z = 3"], ["z = 4"], [[1, "bar()"]]))
+        self.assertEqual(got["w", "new.txt", "created"]["detail"], {"lines": ["hi"]})
+        self.assertIn(("w", "a.py", "deleted"), got)
+        self.assertNotIn(("r", "b.py", "modified"), got)                     # it only names it
+        self.assertIs(got["r", "b.py", "read"]["checked"], True)              # as it was before the change
+
+    def test_a_file_no_call_names_changed_while_they_ran_is_a_command_s_unnamed(self):
+        write(self.p("out.txt"), "made\n")
+        got = self.run_calls(("s", "Bash", {"command": "make"}), ("e", "Edit", {"file_path": self.p("a.py")}),
+                             watched={self.p("out.txt"): "created"})
+        self.assertEqual((got["s", "out.txt", "created"]["named"], got["s", "out.txt", "created"]["detail"]),
+                         (False, {"lines": ["made"]}))
+        self.assertNotIn(("e", "out.txt", "created"), got)                     # an edit changes its own file only
+
+    def test_the_messages_calls_and_results_whichever_harness(self):
+        claude = [{"role": "user", "content": "go"},
+                  {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}}]},
+                  {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": [{"type": "text", "text": "a"}]}]}]
+        self.assertEqual((calls_in(claude), results_in(claude), last_results(claude)),
+                         ({"t1": ("Bash", {"command": "ls"})}, {"t1": ("a", False)}, ["t1"]))
+        codex = [{"type": "function_call", "call_id": "c1", "name": "exec_command", "arguments": '{"cmd": "ls"}'},
+                 {"type": "function_call_output", "call_id": "c1", "output": "a"}]
+        self.assertEqual((calls_in(codex), results_in(codex), last_results(codex)),
+                         ({"c1": ("exec_command", {"cmd": "ls"})}, {"c1": ("a", False)}, ["c1"]))
+        self.assertEqual(ck.shell_output("Chunk ID: 1\nWall time: 0.1 seconds\nProcess exited with code 0\nOutput:\nx\n"), "x\n")
+        self.assertEqual(ck.shell_output("x\nShell cwd was reset to /r"), "x")
+
+
+def until(test, timeout=5.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        got = test()
+        if got:
+            return got
+        time.sleep(0.02)
+    return test()
+
+
+class WatchTest(unittest.TestCase):
+    """The watcher on the system the tests run on."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.d = os.path.realpath(self.tmp.name)
+        os.makedirs(os.path.join(self.d, ".git"))
+        os.makedirs(os.path.join(self.d, "src"))
+        self.w = watch.Watcher()
+        self.addCleanup(self.w.close)
+        self.w.watch(self.d)
+        if self.w._backend() is None:
+            self.skipTest("no watcher on this system")
+        self.assertEqual(until(lambda: self.w.status.get(self.d) == "watched" and self.w.status[self.d]), "watched")
+        time.sleep(0.2)
+
+    def test_what_changed_and_how_it_came_out(self):
+        t0 = time.time()
+        write(os.path.join(self.d, "src", "new.py"), "x\n")
+        write(os.path.join(self.d, ".git", "index"), "x")                       # under a hidden directory: left out
+        write(os.path.join(self.d, "tmp.txt"), "x")
+        os.remove(os.path.join(self.d, "tmp.txt"))                                # made and gone: left out
+        os.makedirs(os.path.join(self.d, "made", "deep"))                        # a directory made while watched
+        write(os.path.join(self.d, "made", "deep", "f.txt"), "x")
+        new, deep = os.path.join(self.d, "src", "new.py"), os.path.join(self.d, "made", "deep", "f.txt")
+        got = until(lambda: (lambda b: b if new in b and deep in b else None)(self.w.between(t0, time.time())))
+        self.assertEqual(got, {new: "created", deep: "created"})
+        time.sleep(0.1)
+        t1 = time.time()
+        with open(new, "a") as fh:
+            fh.write("y\n")
+        os.rename(os.path.join(self.d, "made", "deep", "f.txt"), os.path.join(self.d, "src", "g.txt"))
+        g = os.path.join(self.d, "src", "g.txt")
+        got = until(lambda: (lambda b: b if len(b) == 2 else None)(self.w.between(t1, time.time())))
+        self.assertEqual(got.get(new), "modified")                  # though FSEvents may say created
+        self.assertIn(got.get(g), ("created", "modified"))          # moved in: by inotify created; by its birth not
+        self.assertNotIn(deep, got)                                 # gone: not reported (see `between`)
+
+    def test_a_change_reported_late_from_before_the_window_is_not_in_it(self):
+        old = os.path.join(self.d, "old.txt")
+        write(old, "x")
+        time.sleep(0.2)
+        t0 = time.time()
+        self.w.report(old, "created")                               # as FSEvents may: late
+        self.assertEqual(self.w.between(t0, time.time()), {})
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "inotify's walk: Linux")
+    def test_a_tree_too_big_is_not_watched(self):
+        saved, watch.MAX_DIRS = watch.MAX_DIRS, 3
+        self.addCleanup(setattr, watch, "MAX_DIRS", saved)
+        big = os.path.join(self.d, "src")
+        for i in range(5):
+            os.makedirs(os.path.join(big, f"d{i}"))
+        w = watch.Watcher()
+        self.addCleanup(w.close)
+        w.watch(big)
+        self.assertTrue(until(lambda: w.status[os.path.realpath(big)].startswith("too big")))
+
+
+class StoreTest(unittest.TestCase):
+    """`_touches`, through the server's `touches`."""
+
+    def test_kept_once_for_each_call_file_and_how(self):
+        from ag.ag_harness import home as ag_home
+        from ag.ag_harness.server.__main__ import server_for
+        from ag.ag_harness.store import paths
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        saved = paths.TRACE_DIR, paths.AG_HOME
+        paths.AG_HOME = os.path.join(tmp.name, "ag")
+        paths.TRACE_DIR = os.path.join(paths.AG_HOME, "gatherers")
+        ag_home._HOMES.clear()
+
+        def restore():
+            paths.TRACE_DIR, paths.AG_HOME = saved
+            ag_home._HOMES.clear()
+        self.addCleanup(restore)
+        server = server_for()
+        server.log = lambda gatherer, line: None
+        touches = [{"call_id": "c1", "path": "/r/a.py", "how": "read", "checked": True, "named": True,
+                    "detail": {"lines": [[1, ["x"]]]}},
+                   {"call_id": "c2"},                                           # checked: touched none
+                   {"call_id": "c3", "path": "/r/a.py", "how": "renamed"},      # not a way to touch a file
+                   {"path": "/r/b.py", "how": "read"}]                          # no call
+        self.assertEqual(server.handle({"op": "touches", "gatherer": "g", "session": "s", "touches": touches}), {"kept": 2})
+        self.assertEqual(server.handle({"op": "touches", "gatherer": "g", "session": "s", "touches": touches[:1]}), {"kept": 0})
+        conn = sqlite3.connect(paths.db_path("g"))
+        rows = conn.execute("SELECT session, call_id, path, how, checked, named, detail_json FROM _touches ORDER BY touch_id").fetchall()
+        conn.close()
+        self.assertEqual(rows, [("s", "c1", "/r/a.py", "read", 1, 1, json.dumps({"lines": [[1, ["x"]]]})),
+                                ("s", "c2", None, None, None, None, None)])
+        self.assertIn("error", server.handle({"op": "touches", "gatherer": "g", "touches": []}))
+
+
+class Server:
+    """The context manager's server, as the hooks see it: answers what it is asked, recording it."""
+
+    def __init__(self):
+        self.asked = []
+
+    async def request(self, op, body=None, timeout=None):
+        self.asked.append((op, body))
+        if op == "rewrite":
+            return {"context": body["events"], "note": "ok", "read_id": len(self.asked), "basis": None}
+        return {"kept": len(body.get("touches") or [])} if op == "touches" else {}
+
+    async def stop(self):
+        pass
+
+
+class HookTest(unittest.TestCase):
+    """Two calls of a session through each hook: the answer's calls run between them, on real files."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.d = os.path.realpath(self.tmp.name)
+        write(os.path.join(self.d, "a.py"), "x = 1\nfoo()\n")
+        write(os.path.join(self.d, "b.py"), "z = 3\n")
+        script = "p = 'b.py'; s = open(p).read(); open(p, 'w').write(s.replace('z = 3', 'z = 4'))"
+        self.commands = ["grep -n foo a.py; date", f"{sys.executable} -c \"{script}\""]
+
+    def session(self, hook, first, answer, second):
+        """`first` through the hook, `answer` back, its commands run, then `second` (with their results)."""
+        from ag.integrations.tools.ag_connection.ag_client import AgClient  # noqa: F401 - the hooks' own import
+        from ag.integrations.tools.hook_server.trace import response_of
+
+        def req(body, headers):
+            return SimpleNamespace(method="POST", path=body.pop("_path"), label="g", limit=None, state={}, upstream=None,
+                                   headers=headers, body=body)
+
+        async def go():
+            r1 = req(first, self.headers)
+            await hook(r1)
+            await asyncio.sleep(0.1)                     # the model, before its answer begins to come back
+            r1.answer_started = time.time()
+            got = response_of(answer)
+            await hook.before_end(r1, 200, got)
+            await hook.answered(r1, 200, got)
+            outputs = [sh(c, self.d) for c in self.commands]
+            await hook(req(second(outputs), self.headers))
+            await hook.close()
+        asyncio.run(go())
+
+    def touches(self, server):
+        sent = [b for op, b in server.asked if op == "touches"]
+        self.assertEqual(len(sent), 1)
+        return {(t["call_id"], os.path.basename(t["path"]), t["how"]): t for t in sent[0]["touches"]}
+
+    def test_claude_code(self):
+        from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag
+        from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
+        server = Server()
+        hook = claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda g: server), log=lambda g, l: None, count="off")
+        self.headers = {"X-Claude-Code-Session-Id": "s"}
+        ask = {"role": "user", "content": [{"type": "text", "text": f"Primary working directory: {self.d}"},
+                                           {"type": "text", "text": "fix it"}]}
+        uses = [{"type": "tool_use", "id": f"t{i}", "name": "Bash", "input": {"command": c}} for i, c in enumerate(self.commands)]
+        events = [{"type": "message_start", "message": {"id": "m1", "role": "assistant", "content": [], "usage": {}}}]
+        for i, u in enumerate(uses):
+            events += [{"type": "content_block_start", "index": i, "content_block": dict(u, input={})},
+                       {"type": "content_block_delta", "index": i, "delta": {"type": "input_json_delta",
+                                                                              "partial_json": json.dumps(u["input"])}},
+                       {"type": "content_block_stop", "index": i}]
+        events += [{"type": "message_delta", "delta": {"stop_reason": "tool_use"}}, {"type": "message_stop"}]
+        answer = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events).encode()
+        body = lambda messages: {"_path": "/v1/messages", "model": "m", "tools": [{"name": "Bash"}], "messages": messages}  # noqa: E731
+        self.session(hook, body([ask]), answer, lambda outs: body([ask, {"role": "assistant", "content": uses}, {
+            "role": "user", "content": [{"type": "tool_result", "tool_use_id": u["id"], "content": o}
+                                        for u, o in zip(uses, outs)]}]))
+        got = self.touches(server)
+        self.assertEqual(set(got), {("t0", "a.py", "hit"), ("t1", "b.py", "modified")})
+        self.assertEqual(got["t0", "a.py", "hit"]["detail"], {"hits": [[2, "foo()"]]})
+        self.assertEqual(got["t1", "b.py", "modified"]["detail"]["hunks"][0]["new"], ["z = 4"])
+
+    def test_codex(self):
+        from ag.integrations.harnesses.codex.ag_orchestrator import context_manager as codex_ag
+        from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
+        server = Server()
+        hook = codex_ag.CodexContextManager(ag_clients=AgClients(lambda g: server), log=lambda g, l: None)
+        self.headers = {"session-id": "th"}
+        ask = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": f"<environment_context><cwd>{self.d}</cwd></environment_context>"}]}
+        fcs = [{"type": "function_call", "call_id": f"c{i}", "name": "exec_command", "arguments": json.dumps({"cmd": c})}
+               for i, c in enumerate(self.commands)]
+        events = [{"type": "response.output_item.done", "item": f} for f in fcs] + \
+                 [{"type": "response.completed", "response": {"id": "r1", "status": "completed", "output": fcs}}]
+        answer = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events).encode()
+        body = lambda items: {"_path": "/v1/responses", "model": "m", "input": items}  # noqa: E731
+        self.session(hook, body([ask]), answer, lambda outs: body([ask] + fcs + [
+            {"type": "function_call_output", "call_id": f["call_id"], "output": f"Wall time: 0.1 seconds\nOutput:\n{o}"}
+            for f, o in zip(fcs, outs)]))
+        got = self.touches(server)
+        self.assertEqual(set(got), {("c0", "a.py", "hit"), ("c1", "b.py", "modified")})
+
+    def test_off(self):
+        from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag
+        from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
+        hook = claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda g: Server()), log=lambda g, l: None, files="off")
+        self.assertIsNone(hook.files)
+        with self.assertRaises(ValueError):
+            claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda g: Server()), files="maybe")
+
+
+class FilesTrackerTest(unittest.TestCase):
+    def test_a_call_run_as_the_answer_streamed_in_and_another_in_the_same_file(self):
+        """As Claude Code did live: its Edit ran before the answer ended (before the look at its file),
+        then a sed in the same answer changed another line of the file."""
+        server = Server()
+        files = Files(SimpleNamespace(client=lambda g: server), log=lambda g, l: None, watcher=None)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        d = os.path.realpath(tmp.name)
+        f = os.path.join(d, "shapes.py")
+        write(f, "def area(w, h):\n    return w * h\n\n\ndef perimeter(w, h):\n    return 2 * (w + h)\n")
+        files.seen[f] = ["def area(w, h):", "    return w * h", "", "", "def perimeter(w, h):", "    return 2 * (w + h)"]
+        edit = {"type": "tool_use", "id": "e", "name": "Edit", "input": {"file_path": f, "old_string": "return w * h",
+                                                                           "new_string": "return h * w"}}
+        sed = {"type": "tool_use", "id": "s", "name": "Bash", "input": {"command": "sed -i.bak 's/2 \\* (w + h)/(w + h) * 2/' shapes.py"}}
+
+        async def go():
+            began = time.time() - 0.5
+            time.sleep(0.05)
+            with open(f) as fh:
+                text = fh.read()
+            write(f, text.replace("return w * h", "return h * w"))                 # the Edit, as the answer streams in
+            files.started("g", "c", d, [edit, sed], since=began)                   # the answer's end: looked at
+            sh("sed -i.bak 's/2 \\* (w + h)/(w + h) * 2/' shapes.py", d)          # Claude Code runs the sed
+            files.arrived("g", "c", d, [{"role": "assistant", "content": [edit, sed]}, {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "e", "content": "ok"}, {"type": "tool_result", "tool_use_id": "s", "content": ""}]}])
+            await files.close()
+        asyncio.run(go())
+        (op, body), = server.asked
+        got = {(t["call_id"], os.path.basename(t["path"])): t["detail"] for t in body["touches"] if t.get("path")}
+        self.assertEqual([(h["at"], h["new"]) for h in got["e", "shapes.py"]["hunks"]], [(2, ["    return h * w"])])
+        self.assertEqual([(h["at"], h["new"]) for h in got["s", "shapes.py"]["hunks"]], [(6, ["    return (w + h) * 2"])])
+
+    def test_a_call_whose_answer_was_not_seen_end_is_checked_for_what_it_read(self):
+        server = Server()
+        files = Files(SimpleNamespace(client=lambda g: server), log=lambda g, l: None, watcher=None)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        d = os.path.realpath(tmp.name)
+        write(os.path.join(d, "a.py"), "x\n")
+        messages = [{"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "Read",
+                                                       "input": {"file_path": os.path.join(d, "a.py")}}]},
+                    {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "1\tx"}]}]
+
+        async def go():
+            files.arrived("g", "s", d, messages)
+            await files.close()
+        asyncio.run(go())
+        (op, body), = server.asked
+        self.assertEqual([(t["how"], t["checked"]) for t in body["touches"]], [("read", True)])
+
+
+if __name__ == "__main__":
+    unittest.main()

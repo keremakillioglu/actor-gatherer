@@ -418,6 +418,15 @@ class Manager(ContextManager):
         notify(gatherer_id, "recap", None, recap_id)   # no property named: every stream of the gatherer looks
         return recap_id
 
+    def record_touches(self, gatherer_id: str, session: str, touches: List[dict]) -> int:
+        """Not part of the interface: keep what tool calls of `session` did to files, as the hook server
+        found them on disk (`store.record_touches`), for a reader of the gatherer; never history. How
+        many were kept."""
+        kept = store.record_touches(self._conn(gatherer_id), session, touches)
+        if kept:
+            notify(gatherer_id, "touches")       # no property named: every stream of the gatherer looks
+        return kept
+
     def recaps(self, gatherer_id: str, session: Optional[str] = None) -> List[dict]:
         """Not part of the interface: each session's newest recap, or one session's every recap
         (`store.recaps`)."""

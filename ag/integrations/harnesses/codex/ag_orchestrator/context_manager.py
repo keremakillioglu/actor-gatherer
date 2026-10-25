@@ -45,7 +45,9 @@ the context manager could not answer, or its context is codex's input as it
 was. Options (given by the hook server's --option): `adaptor`, the adaptor
 class as `module:Class`; `cwd`, the working directory when a request states
 none; `factory` and `path` (paths joined by the OS's path separator), handed
-to each gatherer's server.
+to each gatherer's server; `files`, "on" (the default) or "off": what each of the
+thread's tool calls did to files, found on disk as they run and kept in the gatherer
+for the dashboard's Files view -- as the Claude Code hook does (its Files).
 """
 
 import importlib
@@ -53,17 +55,20 @@ import json
 import os
 import re
 import sys
+import time
 from typing import Callable, Optional, Tuple, Union
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, pending_ag, preamble_of, report_measured
+from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from .ag_clients import AgClients
 from ..adaptor.adaptor import CodexAdaptor
 
 CWD = re.compile(r"<cwd>\s*(.*?)\s*</cwd>", re.S)
 ROOT = re.compile(r"<workspace_roots>\s*<root>\s*(.*?)\s*</root>", re.S)
 ANSWERED = "codex_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
+FILES = "codex_files"         # the same, for what the answer's calls do to files: (gatherer, thread, cwd, since)
 METADATA = "x-codex-turn-metadata"   # codex's header (and client_metadata key) saying what a call is for
 TURN = "user"                         # the thread_source of a thread's own turn; any other is a side call
 TRIGGER = "compaction_trigger"        # a compaction call's last item, which codex requires last
@@ -164,20 +169,24 @@ class CodexContextManager:
         ag_clients: the server client per gatherer (`AgClients` of `ag_client.AgClient`
             by default).
         adaptor: the adaptor, or its class as "module:Class"; codex's own by default.
+        files: "on" (what each tool call did to files, found on disk) or "off".
         log: (gatherer, line) -> None, for what each model call came to.
     """
 
     def __init__(self, cwd: Optional[str] = None, factory: Optional[str] = None, path: Optional[str] = None,
                  ag_clients: Optional[AgClients] = None, log: Callable[[str, str], None] = _print,
-                 adaptor: Union[Adaptor, str, None] = None):
+                 adaptor: Union[Adaptor, str, None] = None, files: str = "on"):
         args = (["--factory", factory] if factory else []) + \
             [x for p in (path.split(os.pathsep) if path else []) for x in ("--path", p)]
         self.ag_clients = ag_clients or AgClients(lambda gatherer: AgClient("codex", args=args))
         self.cwd, self.log = cwd, log
         self.adaptor = load_adaptor(adaptor) if isinstance(adaptor, str) else (adaptor or CodexAdaptor())
+        if files not in ("on", "off"):
+            raise ValueError(f"files: {files!r}, not on or off")
+        self.files = Files(self.ag_clients, log) if files == "on" else None
 
     async def __call__(self, request) -> Optional[dict]:
-        body = request.body
+        body, since = request.body, time.time()
         if not is_model_call(request.method, request.path, body):
             return None
         thread = thread_of(request.headers, body)
@@ -197,6 +206,10 @@ class CodexContextManager:
             return await self.compaction(request, gatherer, channel, body, cwd, *compaction)
         if isinstance(getattr(request, "state", None), dict):
             request.state[ANSWERED] = (gatherer, channel, cwd)
+            if self.files is not None:
+                request.state[FILES] = (gatherer, channel, cwd, since)
+        if self.files is not None:                         # the results of the last answer's calls: checked
+            self.files.arrived(gatherer, channel, cwd, items)
         messages, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
                                        cwd, items, self.adaptor, out=out,
                                        limit=getattr(request, "limit", None),
@@ -225,6 +238,17 @@ class CodexContextManager:
         """The hook server's report, once the answer is back: the call's input tokens, to the read."""
         await report_measured(self.ag_clients, request, tokens)
 
+    async def before_end(self, request, status: int, answer: dict) -> None:
+        """The hook server's report, once the answer to one of the thread's own calls is back whole and
+        before codex has its end -- before it runs the tools the answer calls: the files they name,
+        looked at as they are (file_touches)."""
+        kept = (getattr(request, "state", None) or {}).get(FILES)
+        if kept is None or self.files is None or status != 200 or not isinstance(answer, dict) or answer.get("error"):
+            return
+        gatherer, channel, cwd, since = kept              # the answer's calls can't have run before it began
+        self.files.started(gatherer, channel, cwd, answer.get("output_items") or [],
+                           getattr(request, "answer_started", None) or since)
+
     async def answered(self, request, status: int, answer: dict) -> None:
         """The hook server's report, once codex has the whole answer to a model call: its output items,
         as events, kept as pending (the server's `pending`) until the thread's next call stores them
@@ -243,5 +267,7 @@ class CodexContextManager:
         self.log(gatherer, f"[{channel}] answered ({answer.get('status')}): {note}")
 
     async def close(self) -> None:
-        """Stop every gatherer's server."""
+        """Let file checks under way finish, then stop every gatherer's server."""
+        if self.files is not None:
+            await self.files.close()
         await self.ag_clients.close()
