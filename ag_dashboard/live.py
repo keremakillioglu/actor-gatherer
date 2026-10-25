@@ -8,9 +8,10 @@
     Fallback   every FALLBACK_SECONDS, the size and time of each gatherer's context.db and
                its -wal, and of the call log: rung on a change. It covers a writer that sends
                nothing (an older ag; Windows, which has no Unix datagram sockets) and a lost message;
-               and every RECORD_SECONDS, Claude Code's own record of each session waiting on the user
-               (`watch_records`, data.py's): a question answered or dismissed in its terminal is written
-               there and nowhere ag sees -- a dismissal makes no call -- rung on a change
+               and every RECORD_SECONDS, Claude Code's own record of each session waiting on the user or
+               on background work (`watch_records`, data.py's): a question answered or dismissed in its
+               terminal, a background task stopped from its list, is written there and nowhere ag sees --
+               neither makes a call -- rung on a change
 
 A message only says that something changed; the stream reads what from the database. So a
 lost message delays an update and never makes one wrong. Standard library only; nothing of
@@ -152,9 +153,9 @@ def _stat(path: str):
 
 
 def watch_records(found: Dict[str, Tuple[str, object]]) -> None:
-    """Claude Code's records of the sessions waiting on the user, to watch from now on in place of those before:
-    {path: (gatherer, its `_stat` when it was read)} -- a change since rings the gatherer. One watched already keeps
-    what it was last seen as."""
+    """Claude Code's records of the sessions waiting on the user or on background work, to watch from now on in
+    place of those before: {path: (gatherer, its `_stat` when it was read)} -- a change since rings the gatherer.
+    One watched already keeps what it was last seen as."""
     with _RECORDS_LOCK:
         kept = {p: _RECORDS[p] for p in found if p in _RECORDS}
         _RECORDS.clear()
