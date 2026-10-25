@@ -118,9 +118,10 @@ def _signature(value) -> str:
 
 def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
     def home_view() -> dict:
-        """The home as the page gets it: with the sessions' state, and what the new-session form starts from."""
+        """The home as the page gets it: with the sessions' state, and what a new session starts from -- the
+        harnesses it can run on here (sessions.py's `available`)."""
         return {**avatars.assign(data.home(started.list())), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
-                "terminals": sessions.TERMINALS}
+                "terminals": sessions.TERMINALS, "harnesses": sessions.available()}
 
     class Handler(BaseHTTPRequestHandler):
         # One connection kept for many requests (HTTP/1.1): each key typed in a terminal is a request, and a

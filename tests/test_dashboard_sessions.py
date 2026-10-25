@@ -488,6 +488,37 @@ class GathererTest(SessionsBase):
                 sessions.new_gatherer(name)
 
 
+class AvailableTest(SessionsBase):
+    """The harnesses a gatherer's start buttons offer: those config.toml has, whose command is installed."""
+
+    def config(self, text):
+        os.makedirs(dashboard_home.HOME, exist_ok=True)
+        with open(os.path.join(dashboard_home.HOME, "config.toml"), "w") as fh:
+            fh.write(text)
+
+    def test_those_configured_whose_command_is_on_the_path(self):
+        bin_dir = os.path.join(self.tmp.name, "bin")
+        os.makedirs(bin_dir)
+        for name in ("claude", "my-codex"):
+            with open(os.path.join(bin_dir, name), "w") as fh:
+                fh.write("#!/bin/sh\n")
+            os.chmod(os.path.join(bin_dir, name), 0o755)
+        env = {"PATH": bin_dir}
+        self.assertEqual(sessions.available(env), ["claude"])          # no config.toml: the shipped commands
+        self.config('[cli.harnesses.claude]\ncommand = ["claude"]\n[cli.harnesses.codex]\ncommand = ["my-codex"]\n')
+        self.assertEqual(sessions.available(env), ["claude", "codex"])
+        self.config('[cli.harnesses.codex]\ncommand = "my-codex"\n')      # claude has no entry: ag cannot run it
+        self.assertEqual(sessions.available(env), ["codex"])
+        self.config('[cli.harnesses.codex]\ncommand = ["my-codex"]\nenv = { PATH = "/nowhere" }\n')
+        self.assertEqual(sessions.available(env), [])                   # its own PATH has none
+        self.config('[policies]\ndefault = "p"\n')                      # no [cli] yet: ag writes the shipped ones
+        self.assertEqual(sessions.available(env), ["claude"])
+        self.config('[cli]\ngatherer = "default"\n')                    # a [cli] with none
+        self.assertEqual(sessions.available(env), [])
+        self.config("[cli\n")
+        self.assertEqual(sessions.available(env), [])
+
+
 class EndpointTest(SessionsBase):
     def setUp(self):
         super().setUp()
