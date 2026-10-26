@@ -248,7 +248,7 @@ def _session_harness(gatherer: str, session_id: str) -> str:
     if conn is None:
         return "claude"
     try:
-        rows = conn.execute("SELECT payload_json FROM events WHERE p_channel = ? ORDER BY row_id LIMIT 60", (session_id,))
+        rows = conn.execute("SELECT payload_json FROM events WHERE ifnull(p_channel, '') = ? ORDER BY row_id LIMIT 60", (session_id,))
         payloads = []
         for (raw,) in rows:
             try:

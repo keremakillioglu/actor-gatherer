@@ -181,7 +181,7 @@ def _builds(conn, channel: Optional[str]) -> Dict[str, dict]:
     -- and how many user messages it has after the last row those went through (`since`). A join is not one:
     it ranks the other channels' tasks, and splits nothing of the channel's own."""
     tables = data._tables(conn)
-    where, args = (f"WHERE e.{CHANNEL} = ?", (channel,)) if channel is not None else (f"WHERE e.{CHANNEL} IS NOT NULL", ())
+    where, args = (f"WHERE ifnull(e.{CHANNEL}, '') = ?", (channel,)) if channel is not None else (f"WHERE e.{CHANNEL} IS NOT NULL", ())
     cols = data._columns(conn, "_builds") if "_builds" in tables else set()
     own = "WHERE coalesce(reason, '') != 'join'" if "reason" in cols else ""
     through = dict(conn.execute(f"SELECT channel_key, max(through_row) FROM _builds {own} GROUP BY channel_key")) \
@@ -218,7 +218,7 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
             return dict(data.NOTHING_YET)
         where, args = f"e.row_id > ? AND e.{CHANNEL} IS NOT NULL", [after]
         if channel is not None:
-            where, args = where + f" AND e.{CHANNEL} = ?", args + [channel]
+            where, args = where + f" AND ifnull(e.{CHANNEL}, '') = ?", args + [channel]
         # a user message as ag stored it cleaned -- the harness's wrapper around it taken off -- where it has
         cleaned = "cleaned_messages" in data._tables(conn)
         words = "coalesce(c.text, e.text)" if cleaned else "e.text"
@@ -276,7 +276,7 @@ def search(gatherer: str, channel: Optional[str], q: str) -> dict:
         words = "CASE WHEN e.text IS NULL OR e.text = '' THEN e.payload_json ELSE e.text END"
         where, args = f"e.{CHANNEL} IS NOT NULL AND {words} LIKE ? ESCAPE '\\'", [like]
         if channel is not None:
-            where, args = where + f" AND e.{CHANNEL} = ?", args + [channel]
+            where, args = where + f" AND ifnull(e.{CHANNEL}, '') = ?", args + [channel]
         rows = conn.execute(f"SELECT e.row_id, e.text, e.payload_json FROM events e WHERE {where} ORDER BY e.row_id LIMIT ?",
                             (*args, SEARCH_HITS + 1)).fetchall()
         hits = []
@@ -391,12 +391,12 @@ def render(gatherer: str, rows, clip: Optional[dict] = CLIP) -> Tuple[str, dict]
         picked.sort(key=lambda r: (order[r["ch"]], r["row_id"]))
         user_rows = {ch: [x[0] for x in conn.execute(
             f"SELECT e.row_id FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
-            f"WHERE e.{CHANNEL} = ? AND t.name = 'user_message' ORDER BY e.row_id", (ch,))] for ch in order}
+            f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'user_message' ORDER BY e.row_id", (ch,))] for ch in order}
         tasks = {ch: _tasks(conn, ch) for ch in order}
         cwd = {}
         if CHANNEL in data._columns(conn, "_reads") and "p_cwd" in data._columns(conn, "_reads"):
             for ch in order:
-                got = conn.execute(f"SELECT p_cwd FROM _reads WHERE {CHANNEL} = ? AND p_cwd IS NOT NULL "
+                got = conn.execute(f"SELECT p_cwd FROM _reads WHERE ifnull({CHANNEL}, '') = ? AND p_cwd IS NOT NULL "
                                    "ORDER BY read_id DESC LIMIT 1", (ch,)).fetchone()
                 cwd[ch] = got[0] if got else None
     finally:

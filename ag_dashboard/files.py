@@ -151,7 +151,7 @@ def _events(conn, channel: str):
     parts unclipped, the lines of a long read all there."""
     rows = conn.execute(
         "SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at FROM events e "
-        f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.{data.CHANNEL} = ? ORDER BY e.row_id",
+        f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{data.CHANNEL}, '') = ? ORDER BY e.row_id",
         (channel,)).fetchall()
     for r in rows:
         yield r["row_id"], r["type"] or "?", data._seconds(r["inserted_at"]), data.parts(r["type"] or "?", r["payload_json"], r["text"], None)
