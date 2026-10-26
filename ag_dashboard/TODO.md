@@ -85,14 +85,83 @@ interrupted (Esc) as Idle, where ag's record would go on running.
 
 Not covered yet:
 
-- [ ] **An answer that breaks off once it has begun** is not kept as a failure: the hook server can't tell the
-  endpoint breaking it from the harness closing it (an interrupted turn). Claude Code's record still shows the
-  give-up; for codex it shows as Running until its next call.
+- [ ] **An answer the endpoint breaks off once it has begun** is not kept as a failure. The harness hanging up is
+  now told apart (see "Stopped before the answer"); the endpoint breaking off is not. Claude Code's record still
+  shows the give-up; for codex it shows as Running until its next call.
 - [x] **Codex's own record** (its rollout file, rollout.py) is read: a turn that gave up (`task_complete` with an
   `error`) is Error at once, one interrupted (`turn_aborted`) or completed with no call ag saw is Idle.
 - [ ] **Calls with no read** (Claude Code's compaction, recaps) are not kept when they fail.
 - [ ] **A session whose record is elsewhere** (another `CLAUDE_CONFIG_DIR`, another machine) waits GIVE_UP_SECONDS
   for Error, and an interruption there is not seen.
+
+## Stopped before the answer (Esc)
+
+Esc before any of the answer's text has come: Claude Code puts the user's message back in its input box, writes
+nothing to its record, and drops the call. ag's hook server sees the harness hang up (`hung_up`, looked at every
+0.25 s while the model is quiet): the call is not sent on, or is broken off, and is kept on its read as 499. The
+actor shows Idle (data.py's `hung_up`). The events the call stored are withdrawn (`_withdrawn`, the server's
+`withdraw`): in no read, not in `latest`, and not in Chat, until the harness sends one again -- as Claude Code does
+when it kept the message (Esc once some text had come). A message sent from the Chat right after such an Esc first
+empties Claude Code's input box with Ctrl+C (sessions.py's `took_back`), so it does not go out joined to the one
+put back.
+
+Not covered yet:
+
+- [ ] **Idle only once ag's read for the call ends.** The hook reports the hang-up with the read's id, so a call
+  stopped while ag still reads waits for that read: seconds on a busy gatherer. The hang-up could be kept at once
+  and tied to its read after.
+- [ ] **Claude Code's rewind** (Esc Esc, /rewind): the conversation goes back to an earlier message and on from
+  there. ag keeps the branch left behind in every later context. Where Claude Code's notes follow the new message
+  (a session's first turn), the Claude adaptor's Continuity can even take the new message for one stored and not
+  send it -- the shape the withdrawn calls had. It needs the fork found in the request: the stored chain's piece
+  after the last common one differs from the request's, and is a user message (Claude Code rewriting its own notes
+  on resume looks alike, but the notes are not the user's). The stored branch after the fork would then be withdrawn.
+- [ ] **Codex, stopped before the answer:** the call is kept as 499 and shows Idle, but nothing is withdrawn: what
+  codex does with the message (keeps it, or takes it back) is not checked.
+- [ ] **A message taken back is not shown in Chat at all.** It is in Claude Code's input box; Chat could show it
+  there, as "Taken back".
+- [ ] **`took_back` knows only keys typed through the dashboard's terminal**, and relies on Claude Code 2.1.310
+  emptying a non-empty input box on Ctrl+C (on an empty one it only says "press again to exit": never send two).
+
+## Sent at once, in Chat
+
+A message shows as sent the moment Claude Code sends it: queued.py reads the line Claude Code writes to its record
+as it does (`{"type": "user", "origin": {"kind": "human"}}`), every 0.25 s for each actor a page shows, and the Chat
+view draws it as its turn's first, with the actor at work, until ag stores the turn (data.py's `_unstored`).
+
+Not covered yet:
+
+- [ ] **Codex:** a message stays "Pending" until ag stores it. Codex's rollout file has the user's message as codex
+  sends it, and could give the same.
+- [ ] **The actor list's other actors** turn Running only when ag stores their message: Claude Code's record is read
+  only for the actors a page shows.
+- [ ] **In the event-based design**, "sent" would be an event the harness's adaptor writes. It must not wait in the
+  gatherer server's lane behind the session's read, or the lag comes back.
+
+## ag's server: what a model call waits for
+
+Each session's requests run in a lane of their own (server's `serve`): one session's in order, sessions side by
+side, so a read that waits for a check or a build holds only its own session. The file poller's watch leaves out
+events with no text and searches each text once (file_changes.py's `names_in`): a read in making_ag went from 6.1 s
+to 0.36 s.
+
+Not covered yet:
+
+- [ ] **A side call's context is read from a whole copy of the database** in memory (manager.py's `context_only`): in
+  making_ag about 470 MB, and seconds, for every prompt suggestion and recap -- one at a time in the process. It could
+  be read in the database itself and the policy's writes undone (a savepoint, rolled back).
+- [ ] **Each request sets the manager up again:** `Manager.init` opens a connection and runs the schema's setup, and a
+  new manager runs it again on its first use (`_conn`): about 60 ms an op, 5-6 ops a model call (measured before the
+  lanes).
+- [ ] **`history.rows` reads the whole events table**: its `(p_channel = ? OR p_channel IS NULL)` can't use the index
+  (0.07-0.5 s a read in making_ag).
+- [ ] **The watch's raw part reaches back to the oldest of every channel's latest reads** (row 374 of 24.7k in
+  making_ag): one idle channel keeps nearly the whole history in it. Only channels read lately would cut the first
+  watch from 1.4 s to 0.12 s, but a change to a file named only by an idle channel would go unreported.
+- [ ] **A user message's read still waits for its task-boundary check** (sync_seconds), by choice: 3.2 s on average
+  in making_ag, and 2 of 102 checks found a new task. Lanes keep it to the session.
+- [ ] **A plugin poller holding something tied to the thread that made it** (a sqlite connection opened in its
+  `__init__`) fails when another lane asks it.
 
 ## One process per session, on macOS
 
@@ -181,5 +250,5 @@ Not covered yet:
   websocket: HTTP error: 426 Upgrade Required" on every run before falling back to HTTP. Harmless, but noise in
   `codex exec`'s output; codex could be told not to try.
 - [ ] **A codex patch's command** reads "apply_patch" in the Files view's commands, not the file it changes.
-- [ ] **Tests that fail on macOS by path alone:** test_dashboard_codex's ExecTest (its work folder under /var, which
-  macOS resolves to /private/var: the test should take its realpath), test_join's guide test and test_pi_launch.
+- [x] **Tests that fail on macOS by path alone:** test_dashboard_codex's ExecTest, test_join's guide test and
+  test_pi_launch compare paths as written, not through the /var symlink (#128).
