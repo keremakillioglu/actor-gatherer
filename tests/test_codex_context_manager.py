@@ -442,6 +442,11 @@ class RealServerTest(ProxyBase):
     def database(self, gatherer):
         return os.path.join(self.home, "gatherers", gatherer, "context.db")
 
+    def sent(self):
+        """The input of the last model call upstream got -- not a count of one (`/responses/input_tokens`), which the
+        hook sends after the call and may reach upstream first or after."""
+        return next(body for method, path, body in reversed(self.received) if path.endswith("/responses"))["input"]
+
     def channels(self, gatherer):
         conn = sqlite3.connect(self.database(gatherer))
         try:
@@ -453,7 +458,7 @@ class RealServerTest(ProxyBase):
         resp = await self.client.post(f"/h/{gatherer}/v1/responses", json={"model": "m", "input": items},
                                       headers={"thread-id": thread})
         await resp.read()
-        return self.received[-1][2]["input"]
+        return self.sent()
 
     async def test_threads_of_a_named_gatherer_are_channels_and_both_hear_of_a_change(self):
         work = os.path.join(self.tmp.name, "work")
@@ -508,7 +513,7 @@ class RealServerTest(ProxyBase):
             fh.write("x = 1\n")
         first = [DEV, env(work), user("please read a.py", 1), *cat("a.py", 1)]
         await self.call(first, thread="real")
-        sent = self.received[-1][2]["input"]
+        sent = self.sent()
         guide = [i for i in sent if json.dumps(i).find("About this context, from the gatherer.") >= 0]
         self.assertEqual(len(guide), 1)                                      # the gatherer guide, after the set-up
         self.assertEqual(sent.index(guide[0]), 2)
@@ -517,7 +522,7 @@ class RealServerTest(ProxyBase):
             fh.write("y = 2\n")
         second = first + [agent("ok", 1), user("and now?", 2)]
         await self.call(second, thread="real")
-        sent = [i for i in self.received[-1][2]["input"] if i not in guide]
+        sent = [i for i in self.sent() if i not in guide]
         self.assertEqual(sent[:len(second)], second)
         self.assertEqual(sent[-1]["role"], "developer")
         self.assertTrue(sent[-1]["content"][0]["text"].startswith("File a.py was changed on disk"))

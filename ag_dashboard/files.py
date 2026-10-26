@@ -152,12 +152,13 @@ def place(known: Sheet, old: str, new: str):
 def _events(conn, channel: str):
     """The channel's events, oldest first, then what it has pending: (row_id, type, at, parts, said) -- parts unclipped,
     the lines of a long read all there; `said`, a user message's (kind, words) as its harness's rules read them when
-    it was stored (its `kind` and `words` properties), else None: read here, from its parts."""
+    it was stored (its `kind` and `words` properties), else None: read here, from its parts. Not those the harness
+    took back (data.kept)."""
     said = "e.p_kind, e.p_words" if {"p_kind", "p_words"} <= data._columns(conn, "events") else "NULL AS p_kind, NULL AS p_words"
     rows = conn.execute(
         f"SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at, {said} FROM events e "
         f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{data.CHANNEL}, '') = ? "
-        f"AND {data.NOT_RECORD} ORDER BY e.row_id", (channel,)).fetchall()
+        f"AND {data.NOT_RECORD}{data.kept(data._tables(conn))} ORDER BY e.row_id", (channel,)).fetchall()
     for r in rows:
         yield (r["row_id"], r["type"] or "?", data._seconds(r["inserted_at"]),
                data.parts(r["type"] or "?", r["payload_json"], r["text"], None),

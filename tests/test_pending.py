@@ -50,7 +50,8 @@ class ServerTest(unittest.TestCase):
     def ask(self, *requests):
         out = io.StringIO()
         serve(server_for(), [json.dumps(dict(r, id=i)) for i, r in enumerate(requests, 1)], out)
-        return [json.loads(line) for line in out.getvalue().splitlines()]
+        answers = [json.loads(line) for line in out.getvalue().splitlines()]
+        return sorted(answers, key=lambda a: a["id"])        # as asked: each comes out as it is ready
 
     def rows(self, sql):
         conn = sqlite3.connect(paths.db_path("g"))

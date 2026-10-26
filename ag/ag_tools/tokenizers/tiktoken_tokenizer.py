@@ -14,13 +14,13 @@ class Tiktoken(Tokenizer):
         self._tried = False
 
     def _load(self):
-        if not self._tried:
-            self._tried = True
+        if not self._tried:                 # set after it, so a thread never counts with one not loaded yet
             try:
                 import tiktoken
                 self._encoder = tiktoken.get_encoding(self.encoding)
             except Exception:  # noqa: BLE001 - no tiktoken, or no encoding file
                 self._encoder = None
+            self._tried = True
         return self._encoder
 
     def count(self, text: str) -> int:

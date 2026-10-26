@@ -248,20 +248,48 @@ def stored(conn: sqlite3.Connection, sp: Spec, values: tuple, event_id: str) -> 
                         (*_unset_is_empty(keyed), event_id)).fetchone() is not None
 
 
+#: Leaves out the events the harness took back (`withdraw`): a condition on `e`, an events row.
+KEPT = " AND NOT EXISTS (SELECT 1 FROM _withdrawn w WHERE w.row_id = e.row_id)"
+
+
+def withdraw(conn: sqlite3.Connection, row_ids: Iterable[int], read_id: Optional[int] = None) -> int:
+    """Withdraw these events (the `_withdrawn` table): the harness took them back. How many were not already."""
+    ids = sorted({r for r in row_ids if isinstance(r, int) and not isinstance(r, bool)})
+    with conn:
+        before = conn.total_changes
+        conn.executemany("INSERT INTO _withdrawn (row_id, withdrawn_at, read_id) SELECT ?, ?, ? "
+                         "WHERE EXISTS (SELECT 1 FROM events WHERE row_id = ?) ON CONFLICT DO NOTHING",
+                         [(r, _now(), read_id, r) for r in ids])
+        return conn.total_changes - before
+
+
+def sent_again(conn: sqlite3.Connection, sp: Spec, values: tuple, event_id: str) -> List[int]:
+    """An event the harness sends again, already stored: its rows no longer withdrawn, if they were. Those rows."""
+    keyed = [v for n, v in zip(sp.names, values) if n in sp.identifying]
+    back = [r for (r,) in conn.execute(
+        f"SELECT w.row_id FROM _withdrawn w JOIN events e ON e.row_id = w.row_id WHERE {_same(sp.identifying, 'e.')}"
+        "e.event_id = ?", (*_unset_is_empty(keyed), event_id))]
+    if back:
+        with conn:
+            conn.executemany("DELETE FROM _withdrawn WHERE row_id = ?", [(r,) for r in back])
+    return back
+
+
 def latest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: int,
            types: Optional[List[str]] = None) -> List[Tuple[str, Any]]:
     """(event id, payload) of the `n` events last stored with exactly these identifying properties (one
     not given: unset) and an id -- of these `types` alone, when given (a harness's conversation, not what it
-    records besides) -- oldest first: where a harness that re-sends its history picks it up."""
+    records besides) -- oldest first: where a harness that re-sends its history picks it up -- not one it took
+    back (`withdraw`)."""
     names = identifying_names(conn)
     given = properties or {}
     typed, named = "", []
     if types is not None:
         named = [t for t in types if isinstance(t, str)]
-        typed = (f"event_type_id IN (SELECT event_type_id FROM event_types WHERE name IN "
+        typed = (f"e.event_type_id IN (SELECT event_type_id FROM event_types WHERE name IN "
                  f"({', '.join('?' * len(named))})) AND " if named else "0 AND ")
-    found = conn.execute(f"SELECT event_id, payload_json FROM events WHERE {_same(names)}{typed}event_id IS NOT NULL "
-                         "ORDER BY row_id DESC LIMIT ?",
+    found = conn.execute(f"SELECT event_id, payload_json FROM events e WHERE {_same(names, 'e.')}{typed}event_id IS NOT NULL"
+                         f"{KEPT} ORDER BY row_id DESC LIMIT ?",
                          (*_unset_is_empty([given.get(name) for name in names]), *named, max(0, n))).fetchall()
     return [(event_id, json.loads(payload)) for event_id, payload in reversed(found)]
 
@@ -302,6 +330,7 @@ def insert(conn: sqlite3.Connection, event: Event, tokenizer: Tokenizer, spec_: 
     sp = spec_ or spec(conn)
     values = property_values(event, sp)
     if event.id and stored(conn, sp, values, event.id):
+        sent_again(conn, sp, values, event.id)          # one the harness took back, sent again: kept again
         return None
     row_values = row_of(event, values, tokenizer)
     try:
@@ -376,7 +405,8 @@ def rows(conn: sqlite3.Connection, after_row: int = 0, type_ids: Optional[Iterab
     first stored among the events that pass: the same event can have a row
     with a property unset and one with it set (bulk-loaded without it, then
     re-sent with it). With `after_row`, an id first stored at or before it is
-    not repeated: it is a re-send of something already seen.
+    not repeated: it is a re-send of something already seen. An event the
+    harness took back (`withdraw`) is not one.
     """
     names = property_names(conn)
     clause, params = _types_clause(type_ids)
@@ -386,7 +416,7 @@ def rows(conn: sqlite3.Connection, after_row: int = 0, type_ids: Optional[Iterab
         inner, once_params = _filter(names, "x.", match, None, unset_matches)
         once = (f" AND (e.event_id IS NULL OR e.row_id IN (SELECT min(x.row_id) FROM events x "
                 f"WHERE {inner}x.event_id IS NOT NULL GROUP BY x.event_id))")
-    sql = f"SELECT {_select(names)} FROM {_FROM} WHERE {where}e.row_id > ?{clause}{once} ORDER BY e.row_id"
+    sql = f"SELECT {_select(names)} FROM {_FROM} WHERE {where}e.row_id > ?{clause}{once}{KEPT} ORDER BY e.row_id"
     return [_row(r, names) for r in conn.execute(sql, (*where_params, after_row, *params, *once_params))]
 
 
@@ -571,8 +601,8 @@ def preamble_tokens(conn: sqlite3.Connection, parts) -> int:
 def raw_texts(conn: sqlite3.Connection, skip_types: Iterable[str] = ("environment_update", "context_stream")) -> List[str]:
     """The texts of the conversation's raw part: the events each set of properties' latest read sent
     verbatim (its stored rows), and every event since the earliest of those reads -- all of them,
-    before any read -- the events of `skip_types` (the pollers') left out. An event with no text
-    stands in by its payload."""
+    before any read -- the events of `skip_types` (the pollers') left out, and those with no text:
+    an opaque blob (a model's encrypted reasoning), whose payload names nothing a reader could."""
     names = property_names(conn)
     group = f" GROUP BY {', '.join(property_column(n) for n in names)}" if names else ""
     latest = conn.execute(f"SELECT read_id, row_id FROM _reads WHERE read_id IN "
@@ -582,11 +612,11 @@ def raw_texts(conn: sqlite3.Connection, skip_types: Iterable[str] = ("environmen
     skip = list(skip_types)
     marks, skipped = ",".join("?" * len(reads)) or "NULL", ",".join("?" * len(skip)) or "NULL"
     rows = conn.execute(
-        f"SELECT e.text, e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
-        f"WHERE t.name NOT IN ({skipped}) AND (e.row_id > ? OR e.row_id IN "
+        f"SELECT e.text FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+        f"WHERE t.name NOT IN ({skipped}) AND e.text IS NOT NULL AND (e.row_id > ? OR e.row_id IN "
         f"(SELECT row_id FROM _read_items WHERE read_id IN ({marks}) AND row_id IS NOT NULL)) ORDER BY e.row_id",
         (*skip, since, *reads)).fetchall()
-    return [text if text is not None else payload for text, payload in rows]
+    return [text for (text,) in rows]
 
 
 def record_real_tokens(conn: sqlite3.Connection, read_id: int, tokens: int) -> bool:

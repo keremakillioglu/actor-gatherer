@@ -34,6 +34,9 @@ class Poller(ABC):
       property not in `properties`, is dropped. A poller that raises is skipped, and never fails
       a model call.
     - A poller's events belong to no channel: every session in the gatherer sees them.
+    - It may be asked from more than one thread -- the server answers each session on its own --
+      but never by two at once (`watch` and `poll` together): hold nothing that only the thread
+      that built it may use (a sqlite3 connection opened in `__init__`).
 
     **A sketch.** A poller that turns messages appended to a JSON-lines file (say, exported from
     a team chat) into `context_stream` events, which `proactive_context_manager` shows to the

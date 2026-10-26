@@ -95,6 +95,13 @@ class RecordsTest(unittest.TestCase):
         self.record(records.model_call("turn", "claude", None, read))        # Claude Code tries again
         self.assertEqual(data.replies(data._connect("g"), "s"), [])
 
+    def test_a_call_the_user_stopped_ends_the_turn_and_is_no_failure(self):
+        read = self.turn([user("count the rows")])
+        self.assertEqual(self.agent()["status"], data.RUNNING)
+        self.record(records.call_failed(read, data.HUNG_UP, "the harness hung up before the answer was through"))
+        a = self.agent()                                                     # Esc: as the hook server reports it
+        self.assertEqual((a["status"], a["stopped"]["kind"], a["failing"]), (data.IDLE, "interrupted", None))
+
     def test_a_failed_call_a_recap_and_a_name(self):
         read = self.turn([user("count the rows")])
         self.record(records.call_failed(read, 529, "overloaded_error: Overloaded"))

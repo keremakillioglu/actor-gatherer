@@ -30,7 +30,7 @@ hooks use as the gatherer.
 """
 
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .adaptor import CWD, Adaptor
 
@@ -104,6 +104,7 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     if out is not None:                                   # a read-only context's too, but its read_id
         out["basis"], out["context"] = answer.get("basis"), context
         out["uncounted"] = answer.get("uncounted") if isinstance(answer.get("uncounted"), list) else None
+        out["inserted"] = [r for r in answer.get("inserted") or [] if isinstance(r, int)]     # the rows it stored
         out.update({k: answer[k] for k in ("tokens", "budget", "sent_tokens") if isinstance(answer.get(k), int)})
     if out is not None and isinstance(answer.get("read_id"), int):
         out["read_id"] = answer["read_id"]                # the read's context is what is sent
@@ -149,6 +150,9 @@ async def pending_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Opt
 
 
 READ = "ag_read"      # a proxy hook's key in the hook server's `request.state`: (gatherer, read_id)
+STORED = "ag_stored"  # and (gatherer, properties, the rows the call stored), for `report_withdrawn`
+#: The hook server's status for a call the harness hung up on before its answer was through (hook_server.HUNG_UP).
+HUNG_UP = 499
 
 
 def preamble_of(parts) -> list:
@@ -193,6 +197,29 @@ async def report_measured(ag_clients, request, tokens: Optional[int]) -> None:
     gatherer, read_id = kept
     await ag_clients.client(gatherer).request("measured", {"gatherer": gatherer, "read_id": read_id,
                                                            "tokens": tokens})
+
+
+def keep_stored(request, gatherer: str, properties: Dict[str, Any], rows: List[int]) -> None:
+    """For a proxy hook: keep the rows of the events this request's call stored (`call_ag`'s `inserted`, of each
+    read it made), for `report_withdrawn` should the harness hang up on it."""
+    state = getattr(request, "state", None)
+    if isinstance(state, dict) and rows:
+        state[STORED] = (gatherer, dict(properties), list(rows))
+
+
+async def report_withdrawn(ag_clients, request) -> None:
+    """For a proxy hook whose harness took back what it sent when it hung up on the call (`failed` with HUNG_UP):
+    the events the call stored (`keep_stored`) withdrawn -- in no read until the harness sends one again. With the
+    call's properties, so the server takes it in the channel's order. Nothing when none were stored."""
+    state = getattr(request, "state", None) or {}
+    kept = state.get(STORED)
+    if kept is None:
+        return
+    gatherer, properties, rows = kept
+    body = {"gatherer": gatherer, "properties": properties, "rows": rows}
+    if state.get(READ):
+        body["read_id"] = state[READ][1]
+    await ag_clients.client(gatherer).request("withdraw", body)
 
 
 async def report_failed(ag_clients, request, status: Optional[int], error: str) -> None:

@@ -169,6 +169,8 @@ CLASSIC = {"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": "1"}
 TERM_KEEP = 512 * 1024             # how much of a terminal's output is kept, for a page that comes back
 THREAD_POLL = 1.0                  # how often a new codex terminal's thread is looked for in the gatherer
 PASTE_ENTER = 0.15                 # after a message is pasted into a terminal, how long before its Enter
+CLEAR_GAP = 0.2                    # after Claude Code's input box is emptied (Ctrl+C), how long before a message is pasted
+STOP_KEYS = ("\x1b", "\x03")       # keys that stop a turn: Esc, Ctrl+C
 ANSWER_GAP = 0.3                   # between the keys of an answer typed into a dialog: several at once are one input to it
 CLEARED = b"\x1b[2J"               # a full screen clearing it, to draw it all again (Claude Code's, at its start and each resize)
 REDRAW_WAIT = 1.0                  # a full screen made a row shorter (`redraw`): how long it is given to draw, before it is put back
@@ -447,6 +449,29 @@ class _Agent:
         self.reader: Optional[threading.Thread] = None
 
 
+def took_back(gatherer: str, channel: str, stopped: float) -> bool:
+    """Whether Claude Code has put the message it was stopped on back in its input box, untouched: its newest call
+    was hung up on before the answer came (the hook server's HUNG_UP), and the last thing typed into its terminal was
+    the key that stopped it (`stopped`, its time; 0: something else was), after the call before that one -- in this
+    turn. (Not after the stopped call's own read: ag may still have been reading for it.)"""
+    if not stopped:
+        return False
+    from . import data                                 # data imports this module
+    conn = data._connect(gatherer)
+    if conn is None:
+        return False
+    try:
+        last = conn.execute(f"SELECT read_at, error_status FROM _reads WHERE ifnull({data.CHANNEL}, '') = ? "
+                            "ORDER BY read_id DESC LIMIT 2", (channel,)).fetchall()
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+    if not last or last[0]["error_status"] != data.HUNG_UP:
+        return False
+    return len(last) < 2 or (data._seconds(last[1]["read_at"]) or 0) < stopped
+
+
 class _Term:
     """One session's terminal: the process in its pseudo-terminal, and what it printed."""
 
@@ -459,6 +484,7 @@ class _Term:
         self.changed = threading.Condition()
         self.reader: Optional[threading.Thread] = None
         self.typed = 0.0                # when anything was last typed into it (epoch seconds): keys, a message
+        self.stopped = 0.0              # when the last thing typed was a key that stops a turn alone (STOP_KEYS); 0: it was not
         self.answering = False          # an answer's keys being typed into it (`answer`)
         self.kept = False               # put away (`put_away`): its end is kept
         self.drawn = -1                 # where in what it printed it last cleared its screen (CLEARED), to draw it all
@@ -615,7 +641,8 @@ class Sessions:
             if s is None:
                 raise SessionError(f"no session {session_id} started from the dashboard")
             if session_id in self.terms:             # its terminal has it: typed there
-                self._paste(self.terms[session_id], text)
+                t = self.terms[session_id]
+                self._paste(t, text, clear=s["harness"] == "claude" and took_back(s["gatherer"], session_id, t.stopped))
                 return next(x for x in self.list() if x["session_id"] == session_id)
             a = self.agents.get(session_id)
             if s["harness"] == "codex":                  # a process per turn: this one now, or after the one running
@@ -1126,6 +1153,7 @@ class Sessions:
             raise SessionError("the session has no terminal open")
         if REPORTS.sub("", data):
             t.typed = time.time()
+            t.stopped = t.typed if data in STOP_KEYS else 0.0
         self._write(t, data.encode("utf-8"))
 
     def answer(self, session_id: str, ask: dict, choice: dict) -> dict:
@@ -1184,12 +1212,24 @@ class Sessions:
         except OSError as exc:
             raise SessionError(f"the terminal is gone: {exc}") from exc
 
-    def _paste(self, t: _Term, text: str) -> None:
+    def _paste(self, t: _Term, text: str, clear: bool = False) -> None:
         """A message from a view's message box, typed into the terminal: pasted as one block (so its
-        new lines stay in it), then Enter once the paste has landed."""
-        t.typed = time.time()
-        self._write(t, b"\x1b[200~" + text.replace("\x1b", "").encode("utf-8") + b"\x1b[201~")
-        threading.Timer(PASTE_ENTER, lambda: self._write_quietly(t, b"\r")).start()
+        new lines stay in it), then Enter once the paste has landed. With `clear`, Claude Code's input box
+        emptied first (Ctrl+C), of the message it put back there (`took_back`), so the two do not go as one."""
+        t.typed, t.stopped = time.time(), 0.0
+        paste = b"\x1b[200~" + text.replace("\x1b", "").encode("utf-8") + b"\x1b[201~"
+        if not clear:
+            self._write(t, paste)
+            threading.Timer(PASTE_ENTER, lambda: self._write_quietly(t, b"\r")).start()
+            return
+        self._write(t, b"\x03")
+
+        def then() -> None:
+            time.sleep(CLEAR_GAP)
+            self._write_quietly(t, paste)
+            time.sleep(PASTE_ENTER)
+            self._write_quietly(t, b"\r")
+        threading.Thread(target=then, name="ag-paste", daemon=True).start()
 
     def _write_quietly(self, t: _Term, data: bytes) -> None:
         try:
@@ -1251,3 +1291,4 @@ class Sessions:
                     except OSError:
                         pass
                     t.reader.join(timeout=2)
+

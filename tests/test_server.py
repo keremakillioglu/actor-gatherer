@@ -64,7 +64,8 @@ class HomeBase(unittest.TestCase):
     def ask(self, *requests):
         out = io.StringIO()
         serve(server_for(), [json.dumps(dict(r, id=i)) for i, r in enumerate(requests, 1)], out)
-        return [json.loads(line) for line in out.getvalue().splitlines()]
+        answers = [json.loads(line) for line in out.getvalue().splitlines()]
+        return sorted(answers, key=lambda a: a["id"])        # as asked: each comes out as it is ready
 
 
 class EventPropertiesTest(HomeBase):
@@ -249,7 +250,7 @@ class ProcessTest(unittest.TestCase):
             done = self.run_server(tmp, [{"id": 1, "op": "rewrite", "gatherer": "s", "properties": {"channel": "s"}, "events": sent},
                                          {"id": 2, "op": "ping"}])
             self.assertEqual(done.returncode, 0, done.stderr)
-            answers = [json.loads(line) for line in done.stdout.decode().splitlines()]
+            answers = sorted((json.loads(line) for line in done.stdout.decode().splitlines()), key=lambda a: a["id"])
             self.assertEqual([e["payload"] for e in without_guide(answers[0]["context"])], [DEV, user("q", 1)], done.stderr)
             self.assertEqual(answers[1], {"pong": True, "id": 2})
             self.assertTrue(os.path.exists(os.path.join(tmp, "ag", "logs", "gatherers", "s", "server.log")))
