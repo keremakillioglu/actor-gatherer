@@ -122,6 +122,19 @@ class DataTest(HomeBase):
         groups = {e["group"] for e in u["entries"]}
         self.assertTrue({"Recent history", "Kept from before the cut", "ag's sections"} <= groups)
 
+    def test_a_call_s_count_is_as_ag_kept_it_then(self):
+        before = data.agent("g", "c1", [])["reads"]
+        conn = sqlite3.connect(paths.db_path("g"))
+        kept = dict(conn.execute("SELECT read_id, sent_tokens FROM _reads WHERE p_channel = 'c1'"))
+        conn.execute("UPDATE events SET tokens = 0, counted = 1 WHERE p_channel = 'c1'")   # sizes set since
+        conn.commit()
+        conn.close()
+        after = data.agent("g", "c1", [])["reads"]
+        self.assertEqual([r["recorded_tokens"] for r in after], [kept[r["read_id"]] for r in after])
+        self.assertEqual([r["recorded_tokens"] for r in after], [r["recorded_tokens"] for r in before])
+        self.assertTrue(all(r["recorded_tokens"] for r in after))
+        self.assertLess(after[-1]["sent_tokens"], before[-1]["sent_tokens"])               # the breakdown, as now
+
     def test_a_file_from_before_reads_had_sizes_still_has_ag_s_count(self):
         conn = sqlite3.connect(paths.db_path("g"))
         conn.executescript("ALTER TABLE _reads DROP COLUMN est_tokens; ALTER TABLE _reads DROP COLUMN real_tokens; "
@@ -129,6 +142,11 @@ class DataTest(HomeBase):
         conn.close()
         reads = data.agent("g", "c1", [])["reads"]
         self.assertTrue(all(r["sent_tokens"] > 0 and r["est_tokens"] is None and r["real_tokens"] is None for r in reads))
+        conn = sqlite3.connect(paths.db_path("g"))
+        conn.executescript("ALTER TABLE _reads DROP COLUMN sent_tokens;")
+        conn.close()
+        reads = data.agent("g", "c1", [])["reads"]
+        self.assertTrue(all(r["recorded_tokens"] is None and r["sent_tokens"] > 0 for r in reads))   # not kept: now's
         c1 = next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")
         self.assertEqual((c1["reads"], c1["real_tokens"]), (3, None))
         self.assertGreater(c1["sent_tokens"], 0)
