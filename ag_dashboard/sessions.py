@@ -179,7 +179,7 @@ def _has_calls(gatherer: str, session_id: str) -> bool:
     if conn is None:
         return False
     try:
-        return conn.execute("SELECT 1 FROM _reads WHERE p_channel = ? LIMIT 1", (session_id,)).fetchone() is not None
+        return conn.execute("SELECT 1 FROM _reads WHERE ifnull(p_channel, '') = ? LIMIT 1", (session_id,)).fetchone() is not None
     except sqlite3.Error:
         return False
     finally:
@@ -214,7 +214,7 @@ def holder(gatherer: str, session_id: str) -> Optional[dict]:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(_reads)")} if "_reads" in tables else set()
         if {"pid", "pid_started", "p_channel"} <= cols:
             rows += [(r["pid"], r["pid_started"], "call") for r in conn.execute(
-                "SELECT pid, pid_started FROM _reads WHERE p_channel = ? AND pid IS NOT NULL ORDER BY read_id DESC LIMIT 1",
+                "SELECT pid, pid_started FROM _reads WHERE ifnull(p_channel, '') = ? AND pid IS NOT NULL ORDER BY read_id DESC LIMIT 1",
                 (session_id,))]
     except sqlite3.Error:
         return None
@@ -232,7 +232,7 @@ def _session_cwd(gatherer: str, session_id: str) -> Optional[str]:
     if conn is None:
         return None
     try:
-        r = conn.execute("SELECT p_cwd FROM _reads WHERE p_channel = ? AND p_cwd IS NOT NULL ORDER BY read_id DESC LIMIT 1",
+        r = conn.execute("SELECT p_cwd FROM _reads WHERE ifnull(p_channel, '') = ? AND p_cwd IS NOT NULL ORDER BY read_id DESC LIMIT 1",
                          (session_id,)).fetchone()
     except sqlite3.Error:
         return None
