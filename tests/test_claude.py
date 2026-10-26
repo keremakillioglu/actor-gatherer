@@ -112,6 +112,28 @@ class EventsTest(unittest.TestCase):
         said = {"role": "user", "content": [{"type": "text", "text": "Tool loaded. Now use it"}]}
         self.assertEqual(claude.classify(said), USER_MESSAGE)                         # the user's own words
 
+    def test_claude_code_s_note_after_a_response_that_went_wrong_is_not_the_user_speaking(self):
+        # as Claude Code 2.1.310 sent it after a response a safety classifier stopped (stored in a live gatherer)
+        stopped = ("Your response above was stopped by a safety classifier — this is not a tool or API error. The rest of "
+                   "it was withheld, and tool calls in it that had not finished did not run. Do not produce that content "
+                   "again, even reworded.")
+        sent = [{"role": "user", "content": "check the log"},
+                {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_5", "name": "Bash",
+                                                   "input": {"command": "tail log"}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_5", "content": "ok"},
+                                             {"type": "text", "text": stopped}]}]
+        events = claude.to_events(sent)
+        self.assertEqual([e["type"] for e in events], [USER_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT])
+        self.assertEqual(back.to_messages(events, sent)[-1]["content"], sent[-1]["content"])   # in its place
+        for text in ("Your response above was cut off mid-stream. Resume directly from where it stops — no apology, no "
+                     "recap. If none of it survived, answer the request from the start.",
+                     "Goal check-in: «ship the fix» — keep going.", "Stop hook feedback:\nthe tests still fail",
+                     "[Image: source: /Users/sep/Desktop/Screenshot.png]"):
+            self.assertEqual(claude.classify({"role": "user", "content": [{"type": "text", "text": text}]}), CONTEXT)
+        for text in ("Your response above was stopped by a safety classifier, why?", "Output token limit hit again?"):
+            said = {"role": "user", "content": [{"type": "text", "text": text}]}
+            self.assertEqual(claude.classify(said), USER_MESSAGE)                     # the user's own words
+
     # as Claude Code 2.1.310 sends them (saved from a live session)
     SKILL_TEXT = ("Base directory for this skill: /w/.claude/skills/greet\n\n# Greeting in the house style\n\n"
                   'Reply with exactly: "Ahoy, <name>! Welcome aboard." and nothing else.\n\n\nARGUMENTS: {}')
@@ -276,6 +298,26 @@ class MessagesTest(unittest.TestCase):
         at = next(i for i, m in enumerate(out) if m["role"] == "assistant")
         self.assertEqual(out[at - 1], {"role": "system", "content": [ADD]})
         self.assertEqual(out[at]["content"][0]["id"], "toolu_2")
+
+    def test_a_moved_tool_notice_stays_before_a_later_one_for_the_same_tool(self):
+        # the tool was added in a turn the build summarized, then removed in the new task: its addition,
+        # moved on, still comes before its removal (after it, the removal names a tool not yet added)
+        reply = {"role": "assistant", "content": [{"type": "text", "text": "The readme has 3 sections."}]}
+        call = {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_2", "name": "Bash",
+                                                   "input": {"command": "wc -l t.csv"}}]}
+        sent = first_turn() + tool_turn() + [NOTE("Tools just became available: mcp__demo__search", ADD), reply,
+                                             txt("user", "New task: count the rows"),
+                                             NOTE("Tools are no longer available: mcp__demo__search", REMOVE), call]
+        events = claude.to_events(sent)
+        notes = [e for e in events if e["type"] == CONTEXT]          # reminder, environment, notice, ADD, ...
+        request = [e for e in events if e["type"] == USER_MESSAGE][-1]
+        after = events[events.index(request) + 1:]
+        ctx = notes[:2] + [{"type": "ag", "name": "earlier", "text": "SUMMARY"}] + notes[2:4] + [request] + after
+        out = back.to_messages(ctx, sent)
+        self.assert_takes(out)
+        inline = [b["type"] for m in out for b in (m["content"] if isinstance(m["content"], list) else [])
+                  if b.get("type") in ("tool_addition", "tool_removal")]
+        self.assertEqual(inline, ["tool_addition", "tool_removal"])
 
     def test_a_tool_notice_moves_the_same_way_as_user_reminders(self):
         reply = {"role": "assistant", "content": [{"type": "text", "text": "ok"}]}

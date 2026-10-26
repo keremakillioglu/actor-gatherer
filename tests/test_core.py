@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ag.ag_harness  # noqa: E402
@@ -769,6 +770,27 @@ class SwitchTest(Base):
         after = self.read()
         self.assertTrue(any(codex.text(i).startswith("# Previous task") for i in after))
 
+    def test_a_new_task_build_too_slow_for_its_message_is_taken_up_at_the_next_call(self):
+        self.put(PREAMBLE + conversation(8) + [user("fresh start", 50)])
+        self.assertFalse(any(t.startswith("# ") for t in self.texts(self.read())))   # went on without it
+        conn = self.m._conn("s")
+        self.policy.build("s", ch("c1"), tables.new_build(conn, "c1", tables.BOUNDARY))
+        self.put([call(50), output(50)])
+        texts = self.texts(self.read())                   # mid-turn, its own turn: taken up now
+        self.assertTrue(any(t.startswith("# Previous task") for t in texts))
+        self.assertIn("fresh start", texts)               # the turn itself stays verbatim
+        self.assertIn("out 50", texts)
+        build_id = tables.latest_build(conn, "c1")["build_id"]
+        self.assertEqual(int(store.last_read(conn, ch("c1"))["basis"]), build_id)
+
+    def test_a_new_task_build_for_an_earlier_turn_waits_for_a_user_message(self):
+        self.put(PREAMBLE + conversation(8) + [user("question 9", 9)])
+        self.policy.build("s", ch("c1"), tables.new_build(self.m._conn("s"), "c1", tables.BOUNDARY))
+        self.put([output(9), agent("answer 9", 9), user("question 10", 10), call(10)])
+        self.assertFalse(any(t.startswith("# ") for t in self.texts(self.read())))
+        self.put([output(10), agent("answer 10", 10), user("question 11", 11)])
+        self.assertTrue(any(t.startswith("# Previous task") for t in self.texts(self.read())))
+
     def test_the_build_in_use_holds_mid_turn(self):
         self.put(PREAMBLE + conversation(8) + [user("q", 50)])
         self.run_build("s", channel_id="c1")
@@ -1254,6 +1276,25 @@ def make():
         self.assertFalse(any(t.startswith("# ") for t in texts))
         self.assertEqual(self.verdict(self.last_row()), (False, "scripted"))
         self.assertIsNone(tables.latest_build(self.m._conn("s"), "c1"))
+
+    def test_a_new_task_s_build_is_waited_for_longer_than_its_check(self):
+        # the check answers at once; the build is ready 0.4 s later, past sync_seconds
+        self.cfg.sync_seconds, self.cfg.build_wait_seconds = 0.1, 2.0
+        t0 = time.monotonic()
+        ready = lambda conn, ch: {"status": "ready" if time.monotonic() - t0 > 0.4 else "running"}
+        with mock.patch.object(tables, "boundary_verdict", lambda conn, row: {"new_task": True}), \
+                mock.patch.object(tables, "latest_build", ready):
+            self.assertTrue(self.policy.wait(None, "c1", 1, "check", self.cfg.sync_seconds))
+            self.assertGreater(time.monotonic() - t0, 0.4)
+            self.cfg.build_wait_seconds = 0.2                       # one slower than that is not waited for
+            t0 = time.monotonic()
+            self.assertFalse(self.policy.wait(None, "c1", 1, "check", self.cfg.sync_seconds))
+            self.assertLess(time.monotonic() - t0, 0.4)
+        no = lambda conn, row: {"new_task": False}
+        with mock.patch.object(tables, "boundary_verdict", no):    # a continuation: no longer wait
+            t0 = time.monotonic()
+            self.assertFalse(self.policy.wait(None, "c1", 1, "check", 5))
+            self.assertLess(time.monotonic() - t0, 0.2)
 
     def test_past_the_deadline_the_worker_finishes_in_the_background(self):
         self.factory(new_task=True)
