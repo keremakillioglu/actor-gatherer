@@ -68,8 +68,8 @@ from typing import Callable, Optional, Tuple, Union
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import (call_ag, keep_read, pending_ag, preamble_of, read_of,
-                                                    report_failed, report_measured)
+from ag.integrations.tools.ag_orchestrator.call_ag import (STREAMING, call_ag, keep_read, pending_ag, preamble_of,
+                                                    read_of, report_failed, report_measured)
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from .ag_clients import AgClients
 from ..adaptor.adaptor import CodexAdaptor
@@ -287,12 +287,25 @@ class CodexContextManager:
         self.files.started(gatherer, channel, cwd, answer.get("output_items") or [],
                            getattr(request, "answer_started", None) or since)
 
+    async def streamed(self, request, answer: dict) -> None:
+        """The hook server's report, while the answer to a model call streams, that an output item is
+        done: the items done so far kept as pending, stopped STREAMING, in place of those kept before --
+        what codex wrote before a tool call seen as codex shows it. `answered` replaces them."""
+        kept = (getattr(request, "state", None) or {}).get(ANSWERED)
+        if kept is None or not isinstance(answer, dict) or not answer.get("output_items") or not answer.get("response_id"):
+            return
+        gatherer, channel, cwd = kept
+        note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
+                                answer["output_items"], self.adaptor, answer["response_id"], STREAMING)
+        self.log(gatherer, f"[{channel}] streaming: {note}")
+
     async def answered(self, request, status: int, answer: dict) -> None:
         """The hook server's report, once codex has the whole answer to a model call: its output items,
         as events, kept as pending (the server's `pending`) until the thread's next call stores them
         -- so a reader of the gatherer sees the turn's last reply, which no call carries until the
-        user writes again, and a tool call while it runs. A failed answer, or one with no output, is
-        not kept."""
+        user writes again, and a tool call while it runs; in place of the items kept while it streamed
+        (`streamed`). A failed answer, or one with no output, is not kept. A side call's answer kept
+        for its thread (`side_answered`): a title, a recap."""
         side = (getattr(request, "state", None) or {}).get(SIDE)
         if side is not None:
             return await self.side_answered(side, status, answer)

@@ -23,7 +23,7 @@ from ag.ag_harness.store import schema  # noqa: E402
 from ag.integrations.harnesses.claude.adaptor import to_events as claude  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
 from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
-from ag.integrations.tools.hook_server.trace import response_of  # noqa: E402
+from ag.integrations.tools.hook_server.trace import response_of, streamed_of  # noqa: E402
 
 C1 = {"channel": "c1", "cwd": "/w"}
 C2 = {"channel": "c2", "cwd": "/w"}
@@ -120,6 +120,36 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.rows("SELECT count(*) FROM _reads"), [(1,)])               # which logs no read
         self.ask(dict(self.pend(C2), read_id=True), dict(self.pend(C2), read_id="1"), self.pend(C2))
         self.assertEqual(self.rows(answered), [(received,)])                             # no read named: none set
+
+    def test_the_parts_of_an_answer_replace_each_other_and_keep_when_they_came(self):
+        """While an answer streams, the parts of it complete so far are kept, stopped "streaming", each
+        time in place of those kept before; then the whole answer in their place. A part keeps the time
+        it first came: what the agent wrote before a tool call came before the call."""
+        said = {"role": "assistant", "content": [TEXT]}
+        whole = {"role": "assistant", "content": [TEXT, CALL]}
+        streaming = lambda answer: dict(self.pend(C1, answer), stop="streaming")    # noqa: E731
+        self.ask(self.call(C1, [ask("count the rows")]), streaming(said))
+        (first,), = self.rows("SELECT received_at FROM _pending")
+        self.ask(streaming(said), self.pend(C1, whole))
+        self.assertEqual(self.rows("SELECT type, stop FROM _pending ORDER BY pending_id"),
+                         [("agent_message", "end_turn"), ("tool_call", "end_turn")])
+        (text_at,), (call_at,) = self.rows("SELECT received_at FROM _pending ORDER BY pending_id")
+        self.assertEqual(text_at, first)                                           # when it came, kept
+        self.assertGreater(call_at, first)
+        self.ask(dict(self.pend(C1, whole), answer="msg_2"))                       # another answer: added
+        self.assertEqual(self.rows("SELECT count(*) FROM _pending"), [(4,)])
+        self.ask(dict(self.pend(C2, said), stop="streaming"))                      # another channel's: its own
+        self.assertEqual(self.rows("SELECT count(*) FROM _pending WHERE p_channel = 'c1'"), [(4,)])
+
+    def test_a_turn_that_stores_nothing_drops_an_answer_that_broke_off(self):
+        """An answer that broke off while it streamed (an overloaded API, which Claude Code retries)
+        leaves its parts pending: the retry, which carries nothing new, drops them -- and only them."""
+        self.ask(self.call(C1, [ask("count the rows")]), self.pend(C1),
+                 dict(self.pend(C1, {"role": "assistant", "content": [TEXT]}), answer="msg_2", stop="streaming"))
+        self.ask(dict(self.call(C1, [ask("count the rows")]), op="context"))          # read only: kept
+        self.assertEqual(self.rows("SELECT count(*) FROM _pending"), [(2,)])
+        self.ask(self.call(C1, [ask("count the rows")]))                              # the retry
+        self.assertEqual(self.rows("SELECT answer, stop FROM _pending"), [("msg_1", "end_turn")])
 
     def test_a_pending_event_must_be_one(self):
         answer, = self.ask({"op": "pending", "gatherer": "g", "properties": C1, "events": [{"text": "x"}]})
@@ -222,6 +252,27 @@ class HookTest(unittest.TestCase):
         reads = [i for i, (op, _) in enumerate(self.server.asked, 1) if op == "rewrite"]   # the read_id each was given
         self.assertEqual([b["read_id"] for b in self.kept()], reads)
 
+    def stream(self, messages, *parts):
+        """A call whose answer streams: the hook's `streamed` for each of `parts` (the bytes so far)."""
+        req = SimpleNamespace(method="POST", path="/v1/messages", label="g", limit=None, state={}, upstream=None,
+                              headers={"X-Claude-Code-Session-Id": "s"},
+                              body={"model": "m", "tools": [{"name": "Bash"}], "messages": messages})
+
+        async def go():
+            await self.hook(req)
+            for raw in parts:
+                await self.hook.streamed(req, streamed_of(raw))
+        asyncio.run(go())
+
+    def test_the_parts_of_an_answer_are_kept_while_it_streams(self):
+        whole = sse([TEXT, CALL], "tool_use")
+        cut = whole[:whole.index(b'"content_block_stop", "index": 1')]                # the call still streaming
+        self.stream([ask("count the rows")], cut, sse([], "tool_use"))
+        kept, = self.kept()                                                          # no part complete: none kept
+        self.assertEqual((kept["answer"], kept["stop"], kept["properties"]), ("msg_1", "streaming", {"channel": "s"}))
+        self.assertEqual([(e["type"], e["text"]) for e in kept["events"]], [("agent_message", "There are 42 rows.")])
+        self.assertNotIn("read_id", kept)                                            # when it came: the whole answer's
+
     def test_a_failed_answer_is_not_kept(self):
         self.call([ask("count the rows")], sse([TEXT], "end_turn"), status=529)
         self.call([ask("count the rows")], sse([TEXT], "end_turn", error={"type": "overloaded_error"}))
@@ -259,6 +310,27 @@ class CodexHookTest(unittest.TestCase):
         self.assertEqual((kept[0]["properties"], kept[0]["answer"], kept[0]["stop"]), ({"channel": "t1"}, "resp_1", "completed"))
         self.assertEqual(kept[0]["read_id"], [i for i, (op, _) in enumerate(server.asked, 1) if op == "rewrite"][0])
         self.assertEqual([(e["type"], e["text"]) for e in kept[0]["events"]], [("agent_message", "There are 42 rows.")])
+
+    def test_codex_s_output_items_are_kept_as_each_is_done(self):
+        from ag.integrations.harnesses.codex.ag_orchestrator import context_manager as codex_ag
+        server = Server()
+        hook = codex_ag.CodexContextManager(ag_clients=AgClients(lambda g: server), log=lambda g, l: None)
+        user = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "count the rows"}]}
+        req = SimpleNamespace(method="POST", path="/v1/responses", label="g", limit=None, state={}, upstream=None,
+                              headers={"thread-id": "t1"}, body={"model": "m", "input": [user]})
+        said = {"type": "message", "role": "assistant", "id": "msg_9", "content": [{"type": "output_text", "text": "Counting."}]}
+        so_far = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in [
+            {"type": "response.created", "response": {"id": "resp_1", "status": "in_progress"}},
+            {"type": "response.output_item.done", "output_index": 0, "item": said},
+            {"type": "response.output_item.added", "output_index": 1, "item": {"type": "function_call", "name": "shell"}}])
+
+        async def go():
+            await hook(req)
+            await hook.streamed(req, streamed_of(so_far.encode()))
+        asyncio.run(go())
+        kept, = [b for op, b in server.asked if op == "pending"]
+        self.assertEqual((kept["answer"], kept["stop"]), ("resp_1", "streaming"))
+        self.assertEqual([(e["type"], e["text"]) for e in kept["events"]], [("agent_message", "Counting.")])
 
 
 if __name__ == "__main__":

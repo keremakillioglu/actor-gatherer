@@ -581,19 +581,29 @@ def last_inserted_at(conn: sqlite3.Connection) -> Optional[str]:
 
 # ---------------------------------------------------------------- pending
 
+STREAMING = "streaming"    # a pending answer's stop while it still streams: the parts of it complete so far
+
 def record_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], events: List[dict],
                    answer: Optional[str] = None, stop: Optional[str] = None, read_id: Optional[int] = None) -> int:
     """Keep an answer's events -- {"type", "payload", "text"?} -- in `_pending` with the
     properties of the call it answered, until that channel's next call (`clear_pending`); `stop`
-    is why the answer stopped, as the provider says it (end_turn, tool_use, ...), on each. With
-    `read_id`, the read that call's context came from: its `answered_at` set to when they were kept,
-    which stays once they are cleared -- when the answer came, whatever call stores it later.
-    Returns how many were kept."""
+    is why the answer stopped, as the provider says it (end_turn, tool_use, ...), on each. A named
+    `answer`'s events replace those kept for it before (the parts of it complete while it streamed,
+    then all of it), each one there before keeping when it came. With `read_id`, the read that
+    call's context came from: its `answered_at` set to when they were kept, which stays once they
+    are cleared -- when the answer came, whatever call stores it later. Returns how many were kept."""
     names, values = _given(conn, properties, "a pending event")
     now = _now()
-    rows = [(now, answer, stop, e["type"], json.dumps(e["payload"], ensure_ascii=False),
-             e.get("text") if isinstance(e.get("text"), str) else None, *values) for e in events]
     with conn:
+        came = []
+        if answer is not None:                     # the channel's: its identifying properties, as clear_pending
+            ids = identifying_names(conn)
+            same = (f"{_same(ids)}answer = ?", (*_unset_is_empty((properties or {}).get(n) for n in ids), answer))
+            came = [t for (t,) in conn.execute(f"SELECT received_at FROM _pending WHERE {same[0]} "
+                                               "ORDER BY pending_id", same[1])]
+            conn.execute(f"DELETE FROM _pending WHERE {same[0]}", same[1])
+        rows = [(came[i] if i < len(came) else now, answer, stop, e["type"], json.dumps(e["payload"], ensure_ascii=False),
+                 e.get("text") if isinstance(e.get("text"), str) else None, *values) for i, e in enumerate(events)]
         conn.executemany(f"INSERT INTO _pending (received_at, answer, stop, type, payload_json, text{_columns(names)}) "
                          f"VALUES (?, ?, ?, ?, ?, ?{', ?' * len(names)})", rows)
         if read_id is not None:
@@ -619,16 +629,20 @@ def pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = Non
     return out
 
 
-def clear_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]]) -> int:
+def clear_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], stop: Optional[str] = None) -> int:
     """Delete the pending events with these identifying properties (`identifying_names`: the
     channel's, whatever directory the call came from): a call with them has stored its events,
-    the answers they were kept for among them. How many."""
+    the answers they were kept for among them. With `stop`, only those that stopped so (STREAMING:
+    the parts of an answer that broke off, which no call will carry back). How many."""
     if any(v is not None for n, v in (properties or {}).items() if n not in property_names(conn)):
         return 0
     names = identifying_names(conn)
-    values = tuple((properties or {}).get(n) for n in names)
+    values = _unset_is_empty((properties or {}).get(n) for n in names)
     with conn:
-        cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}1", _unset_is_empty(values))
+        if stop is None:
+            cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}1", values)
+        else:
+            cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}stop = ?", (*values, stop))
     return cur.rowcount
 
 

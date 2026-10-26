@@ -302,22 +302,6 @@ tr.total td { font-weight: 600; border-bottom: 0; }
 .stack div:first-child { border-radius: 4px 0 0 4px; } .stack div:last-child { border-radius: 0 4px 4px 0; }
 .stack div:only-child { border-radius: 4px; }
 details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-top: 8px; }
-.tasks { border-top: 1px solid var(--grid); }
-.tasks .thead, .task > summary { display: grid; grid-template-columns: 32px minmax(140px, 220px) minmax(0, 1fr) 150px 60px 96px; gap: 12px;
-  padding: 7px 8px; font-size: 12px; align-items: start; }
-.tasks .thead { color: var(--muted); border-bottom: 1px solid var(--grid); }
-.task > summary { margin: 0; color: var(--ink); cursor: pointer; border-bottom: 1px solid var(--grid); list-style: none; }
-.task > summary::-webkit-details-marker { display: none; }
-.task > summary:hover { background: var(--wash); }
-.task[open] > summary { background: var(--selected); }
-.task .tname { font-weight: 500; }
-.task .badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px;
-  padding: 0 7px; margin-right: 6px; line-height: 16px; vertical-align: 1px; }
-.task .tnote { display: block; color: var(--muted); margin-top: 2px; }
-.task .n, .tasks .thead .n { text-align: right; font-variant-numeric: tabular-nums; }
-.task .messages { padding: 4px 0 10px 44px; }
-@media (max-width: 760px) { .tasks .thead { display: none; } .task > summary { grid-template-columns: 24px minmax(0, 1fr); }
-  .task > summary > span:nth-child(n+3) { grid-column: 2; } .task .messages { padding-left: 0; } }
 .card-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .decomp { position: relative; margin: 6px 0 14px; display: grid; gap: 8px; }
 .drow { display: grid; grid-template-columns: 210px minmax(0, 1fr); align-items: center; gap: 12px; }
@@ -473,17 +457,6 @@ button:disabled { opacity: .5; cursor: default; }
    laid out, so the end the chat opens at does not move as they are. */
 .chat .chat-frame > * { content-visibility: auto; contain-intrinsic-size: auto 48px; }
 .chat .chat-frame > :nth-last-child(-n+30) { content-visibility: visible; }
-/* the Context view's panel, under the message box: the size chart, and how the picked context divides */
-.ctx-panel { flex: none; border-top: 1px solid var(--ring); padding: 8px 16px 10px; }
-.ctx-panel-head { display: flex; align-items: center; gap: 16px; font-size: 12px; }
-.ctx-panel-head .legend { margin: 0; }
-.ctx-panel .decomp { margin: 6px 0 0; gap: 6px; }
-/* the bars under the chart's plot: label column and gap as wide as its axis (lineChart's m.l, 48), as far from the right (m.r) */
-.ctx-panel .decomp { padding-right: 12px; }
-.ctx-panel .drow { grid-template-columns: 40px minmax(0, 1fr); gap: 8px; }
-.ctx-panel .dlabel { font-size: 11px; color: var(--muted); white-space: nowrap; }
-.ctx-panel-head .sub { color: var(--muted); }
-.ctx-panel .dbar { height: 18px; }
 .chat .composer, .chat .readonly, .chat .err { flex: none; }
 .chat .composer { margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--ring); }
 .chat .readonly { color: var(--muted); font-size: 12px; padding: 8px 16px; border-top: 1px solid var(--ring); }
@@ -2705,11 +2678,11 @@ function dashboardCommand(text) {
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")) setDetails(false);
 });
-// Its Context side is the Context view's, beside the chat: what `/context` in the message box opens (dashboardCommand).
+// Its Context side, what the model was sent, beside the chat: what `/context` in the message box opens (dashboardCommand).
 function detailsPanel(info) {
   const a = state.agent;
   const switcher = el("div", { class: "views", role: "group", "aria-label": "Details shown" },
-    ...[["actor", "Actor", "What the agent saw and did: its context, its calls, its history"],
+    ...[["actor", "Actor", "The agent's calls: its context's size now, and the tokens its calls sent"],
       ["context", "Context", "What the model was sent at the latest call, item by item, and its size over the session"],
       ["gatherer", "Gatherer", "What ag did for the agent: its builds and its own model calls"]].map(([id, name, title]) =>
       el("button", { type: "button", title, "aria-pressed": state.detailsTab === id ? "true" : "false", onclick: () => setDetails(true, id) }, name)));
@@ -2739,7 +2712,6 @@ function facts(info) {
 }
 function actorDetails(a) {                           // what the agent saw and did
   const reads = a.reads, last = reads[reads.length - 1] || {};
-  const hasReal = reads.some((r) => typeof r.real_tokens === "number");
   return [
     el("div", { class: "tiles" },
       tile("Context now", compact(last.real_tokens ?? last.counted_tokens),
@@ -2747,13 +2719,10 @@ function actorDetails(a) {                           // what the agent saw and d
       tile("Harness limit", compact(last.limit_tokens), last.limit_tokens ? "where the harness compacts" : "none stated"),
       tile("Tasks", full(a.tasks.length), "as ag has segmented the history"),
       tile("Reads", full(reads.length), last.at ? `last ${ago(last.at)}` : "")),
-    ...(chatView().id === "context" ? [] : [sizeCard(reads, hasReal), contextCard()]),   // shown in the chat already
     usageCard(),
-    historyCard(a.tasks),
   ];
 }
-function contextDetails(a) {                         // the Context view, beside the chat
-  if (chatView().id === "context") return [el("div", { class: "desc", text: "The Context view, at the left, shows it." })];
+function contextDetails(a) {                         // what the model was sent, beside the chat
   return [contextCard(), sizeCard(a.reads, a.reads.some((r) => typeof r.real_tokens === "number"))];
 }
 function gathererDetails(a) {                        // what ag did for the agent
@@ -3376,78 +3345,6 @@ function contextItem(it) {
   });
   return row;
 }
-const historyCache = new Map();                    // a task's messages, once loaded: closed stretches never change
-// What each open task last showed, and how far its list was scrolled: a redraw reopens the task and
-// shows these at once, while the current task's newest messages load -- no "Loading…", no jump.
-const shown = new Map(), scrolledTo = new Map();
-async function loadHistory(first, last) {
-  const [g, c] = state.selected;
-  const k = [g, c, first, last].join("\u0000");
-  if (last !== null && historyCache.has(k)) return historyCache.get(k);
-  const got = await get(`/api/history?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}&from=${first}`
-    + (last !== null ? `&to=${last}` : ""));
-  if (last !== null) historyCache.set(k, got);
-  return got;
-}
-function historyCard(tasks) {
-  const card = el("section", { class: "card" }, el("h3", { text: "Complete history" }),
-    el("div", { class: "desc", text: "The actor's whole history as ag has segmented it into tasks, oldest first; the last is the current task, "
-      + "from its first message to now. Click one to see its messages." }));
-  card.append(typeChips(null));
-  // ag's last task is the one running when it last segmented the history -- where its cut falls, not a
-  // finished task: shown as the current task, from its first message to now
-  const last = tasks.length ? tasks[tasks.length - 1] : null;
-  const entries = [...tasks.slice(0, -1).map((t) => ({ ...t, key: `task-${t.index}` })),
-    last ? { ...last, key: "task-current", current: true, last_row: null,
-      note: "Still running when ag last segmented the history: its messages from then to now." }
-      : { key: "task-current", index: "", name: "The whole history", current: true, first_row: 1, last_row: null,
-        note: "No task yet: ag has not segmented the history.", description: "" }];
-  const list = el("div", { class: "tasks" }, el("div", { class: "thead" },
-    ...["#", "Task", "What it was", "Started", "Took", "Message tokens"].map((h, i) => el("span", { class: i === 0 || i === 5 ? "n" : "", text: h,
-      title: i === 5 ? "ag's count of the task's user and assistant messages: its tool calls and outputs are not in it" : null }))));
-  for (const t of entries) {
-    const body = el("div", { class: "messages" });
-    const row = el("details", { class: "task", id: t.key },
-      el("summary", {}, el("span", { class: "n", text: t.index }),
-        el("span", { class: "tname" }, ...(t.current ? [el("span", { class: "badge", text: "Current" })] : []), t.name || "–"),
-        el("span", { class: "desc-cell" }, t.description || "", ...(t.note ? [el("span", { class: "tnote", text: t.note })] : [])),
-        el("span", { text: t.started ? clock(t.started, true) : "" }),
-        el("span", { text: t.current ? (t.started ? "running" : "") : span(t.started, t.ended) }),
-        el("span", { class: "n", text: t.current ? "" : full(t.tokens) })),
-      body);
-    row.addEventListener("toggle", async () => {
-      if (!row.open) return;
-      if (SNAPSHOT) { body.replaceChildren(el("div", { class: "warn", text: "A snapshot has no messages: run `ag dashboard` live to open a task." })); return; }
-      const k = [...state.selected, t.key].join("\u0000");
-      if (shown.has(k)) showMessages(body, shown.get(k), k);
-      else body.replaceChildren(el("div", { class: "desc", text: "Loading…" }));
-      try {
-        const got = await loadHistory(t.first_row, t.last_row);
-        if (!row.isConnected) return;                // redrawn meanwhile: the new row loads its own
-        shown.set(k, got);
-        showMessages(body, got, k);
-      } catch (err) { if (!shown.has(k)) body.replaceChildren(el("div", { class: "warn", text: `Not loaded: ${err.message}` })); }
-    });
-    list.append(row);
-  }
-  card.append(list);
-  return card;
-}
-function showMessages(body, h, k) {
-  const items = h.items.map((i) => ({ ...i, group: "Recent history" }));
-  const listed = items.filter((it) => shownTypes.has(itemType(it)[0]));
-  const tokens = items.reduce((n, i) => n + i.tokens, 0);
-  const box = el("div", { class: "ctx tall" }, columns(), el("div", { class: "run" }, el("strong", { text: "Messages" }),
-    el("span", { text: tally(items.length, listed.length, tokens, listed.reduce((n, i) => n + i.tokens, 0), "message")
-      + (h.more ? ` · ${full(h.more)} more not loaded` : "") })));
-  for (const it of listed) box.append(contextItem(it));
-  if (!items.length) box.append(el("div", { class: "desc", text: "No messages yet." }));
-  const old = body.querySelector(".ctx");
-  const top = old ? old.scrollTop : scrolledTo.get(k) || 0;
-  body.replaceChildren(box);
-  box.scrollTop = top;
-  box.addEventListener("scroll", () => scrolledTo.set(k, box.scrollTop));
-}
 function buildsCard(builds) {
   const card = el("section", { class: "card" }, el("h3", { text: `Builds · ${builds.length}` }),
     el("div", { class: "desc", text: "Each analysis of the history: why it started, how long it took, how it ended." }));
@@ -3849,35 +3746,6 @@ addChatView({
         info.failing ? `Retrying… (last try ${ago(info.failing.at)})` : `Working… (last activity ${ago(info.last)})`) : null,
       backgroundNote(info, true),
     ].filter(Boolean);
-  },
-});
-addChatView({
-  id: "context", name: "Context", feed: "agent", frame: "ctx", icon: ICONS.layers, more: true, readOnly: true,
-  background: false,                                 // the model's context, not what runs
-  description: "What the model was sent: the picked call's context, item by item; its size over time and how it divides, under it.",
-  tools: () => {
-    const ctx = state.agent && state.agent.reads ? pickedContext() : null;
-    return [ctx && ctx.items ? contextChips(ctx) : null,
-      state.followLatest ? null : el("button", { type: "button", title: `Read ${state.readId} is shown`, onclick: backToLatest }, "Back to the latest")];
-  },
-  render: ({ data }) => {
-    const ctx = data.items.length ? pickedContext() : null;
-    if (!ctx || !ctx.items) return el("div", { class: "desc", text: (state.agent && state.agent.error) || "No context sent yet." });
-    return [columns(), ...contextRuns(ctx)];
-  },
-  footer: ({ data }) => {
-    const reads = data.items;
-    if (!reads.length) return null;
-    const hasReal = reads.some((r) => typeof r.real_tokens === "number");
-    const ctx = pickedContext();
-    return el("div", { class: "ctx-panel" },
-      el("div", { class: "ctx-panel-head" },
-        el("strong", { text: state.followLatest ? "Context size" : `Context size · read ${state.readId}` }),
-        ctx && ctx.items ? el("span", { class: "sub", text: `${compact(ctx.real_tokens ?? ctx.tokens)} tokens ${state.followLatest ? "now" : "at that call"}` }) : null,
-        legend([hasReal ? { label: "Provider's count", color: "var(--s1)" } : { label: "ag's own count", color: "var(--s2)" },
-          { label: "Rebuild", kind: "rule" }])),
-      el("div", { id: "size-chart", "data-height": "120", ...(hasReal ? { "data-provider-only": "" } : {}), title: "Click a call to see its context" }),
-      ctx && ctx.items ? contextSplit(ctx, true) : null);
   },
 });
 

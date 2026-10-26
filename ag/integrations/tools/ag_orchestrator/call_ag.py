@@ -104,14 +104,18 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     return routed, note
 
 
+STREAMING = "streaming"    # `pending_ag`'s stop for the parts of an answer complete while it still streams
+
+
 async def pending_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], answer: list,
                      adaptor: Adaptor, answer_id: Optional[str] = None, stop: Optional[str] = None,
                      read_id: Optional[int] = None) -> str:
     """What the model answered -- `answer`, the harness's messages it makes -- through the adaptor's
     `to_events`, kept by the server as pending (its `pending`): seen by a reader of the gatherer
     until the next call with these properties stores its events, with why it stopped (`stop`: the
-    provider's end_turn, tool_use, ...), and on `read_id`, the read the call's context came from
-    (`keep_read`), when it came. The properties are a call's (CWD
+    provider's end_turn, tool_use, ...; STREAMING: the parts of it complete so far, which the next
+    keeping of the same `answer_id` replaces), and on `read_id`, the read the call's context came
+    from (`keep_read`), when it came. The properties are a call's (CWD
     from `cwd`, as `call_ag` sets it), so that call's are what clears them. A note; never raises."""
     if cwd:
         properties = {**properties, CWD: cwd}
