@@ -363,6 +363,18 @@ class FilesTest(unittest.TestCase):
     # Claude Code's own notes, as Claude Code 2.1.310 sends them (saved from a live session) and ag stores them
     SKILL = "Base directory for this skill: /w/.claude/skills/greet\n\n# Greeting\n\nReply with exactly: \"Ahoy, <name>!\"\n\n\nARGUMENTS: {}"
 
+    def test_a_message_s_words_as_kept_when_it_was_stored(self):
+        conn = sqlite3.connect(self.db)                  # a gatherer whose events carry what the rules read of them
+        conn.executescript("ALTER TABLE events ADD COLUMN p_kind; ALTER TABLE events ADD COLUMN p_words;")
+        conn.close()
+        self.add(asked("<command-message>deploy</command-message>\n<command-name>/deploy</command-name>"))
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE events SET p_kind = 'user_command', p_words = '/deploy now' WHERE row_id = (SELECT max(row_id) FROM events)")
+        conn.commit()
+        conn.close()
+        last = files.files("g", "c1", cwd="/w")["turns"][-1]
+        self.assertEqual((last["text"], last["kind"]), ("/deploy now", "user_command"))     # as kept, not read again
+
     def test_claude_code_s_notes_show_among_the_messages(self):
         handback = ('Another Claude session sent a message:\n<agent-message from="ab81">\n[Subagent hand-back] The text below is the '
                     "final report of a subagent ... The report follows:\n  Ran ls.\n  \n  - a.py\n</agent-message>\n\nThat \"other Claude session\" ...")

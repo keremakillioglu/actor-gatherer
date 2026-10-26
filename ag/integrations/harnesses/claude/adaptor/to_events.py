@@ -53,6 +53,7 @@ import json
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from harness_kit import Kind, claude as rules
+from ag.integrations.tools.ag_orchestrator.adaptor import part_properties
 from harness_kit.claude import (COMPACTED, HARNESS_MARKERS, HARNESS_TEXTS, RETRY_NOTES,  # noqa: F401 - the rules, as
                                 RETRY_OPENINGS, SKILL, TYPED_COMMAND, blocks_of, is_compacted_summary,  # this module
                                 is_harness_text, pieces, text_of, typed_command, without_cache_control)  # had them
@@ -151,15 +152,19 @@ class Continuity:
         return run
 
 
-def event(item, item_id: str, kind: Optional[str] = None) -> dict:
-    """The piece as an event of type `kind` (None: as `classify` has it). A command the user typed reads
-    as they typed it ("/greet Bob"), not as Claude Code's tags around it."""
+def event(item, item_id: str, kind: Optional[str] = None, part=None) -> dict:
+    """The piece as an event of type `kind` (None: as `classify` has it). A command the user typed reads as they typed it
+    ("/greet Bob"), not as Claude Code's tags around it. With its `part` (the rules' reading of it), it carries what
+    they read as its properties (`part_properties`)."""
     out = {"type": kind or classify(item), "id": item_id, "payload": item}
     text = (typed_command(item) if out["type"] == USER_MESSAGE else None) or text_of(item)
     if text is not None:
         out["text"] = text
     if out["type"] == AGENT_REASONING:
         out["tokens"] = 0
+    found = part_properties(part) if part is not None else {}
+    if found:
+        out["properties"] = found
     return out
 
 
@@ -212,5 +217,5 @@ def to_events(messages: list, continuity: Optional[Continuity] = None,
     parts = HARNESS.read(items)
     types = [event_types.get(p.kind, CONTEXT) for p in parts]
     dropped = {i for i, p in enumerate(parts) if p.kind == Kind.COMPACTION_REPEAT or p.detail.get("opens")}
-    return request_last([event(items[k], ids[k], types[k]) for k in range(start, len(items)) if k not in dropped],
+    return request_last([event(items[k], ids[k], types[k], parts[k]) for k in range(start, len(items)) if k not in dropped],
                         frozenset(ids[k] for k, p in enumerate(parts) if p.detail.get("expands")))

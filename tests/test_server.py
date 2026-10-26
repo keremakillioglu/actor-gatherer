@@ -67,6 +67,36 @@ class HomeBase(unittest.TestCase):
         return [json.loads(line) for line in out.getvalue().splitlines()]
 
 
+class EventPropertiesTest(HomeBase):
+    """What a harness's rules read of each event (its kind, the user's words, a call's action and id) is kept with it,
+    declared on its type the first time it is seen: no policy declares them."""
+
+    def test_an_event_s_own_properties_are_kept_and_declared_on_its_type(self):
+        sent = events(DEV, user("q", 1), *cat("a.py", 2))
+        self.assertEqual([e.get("properties") for e in sent],
+                         [{"kind": "environment"}, {"kind": "user", "words": "q"},
+                          {"kind": "tool_call", "action": "shell", "call_id": "c2"}, {"kind": "tool_result", "call_id": "c2"}])
+        inserted, read = self.ask({"op": "insert", "gatherer": "s", "properties": {"channel": "c"}, "events": sent},
+                                  {"op": "read", "gatherer": "s", "properties": {"channel": "c"}, "row": 4})
+        self.assertEqual(inserted["rows"], [1, 2, 3, 4])
+        self.assertEqual(len(without_guide(read["context"])), 4)            # a read naming none of them sees them all
+        conn = sqlite3.connect(paths.db_path("s"))
+        rows = conn.execute("SELECT p_channel, p_kind, p_words, p_action, p_call_id FROM events ORDER BY row_id").fetchall()
+        declared = {r[0] for r in conn.execute("SELECT p.name FROM event_type_properties p JOIN event_types t "
+                                                "USING (event_type_id) WHERE t.name = 'tool_call'")}
+        conn.close()
+        self.assertEqual(rows, [("c", "environment", None, None, None), ("c", "user", "q", None, None),
+                                ("c", "tool_call", None, "shell", "c2"), ("c", "tool_result", None, None, "c2")])
+        self.assertLessEqual({"kind", "action", "call_id"}, declared)
+
+    def test_the_request_s_properties_win(self):
+        sent = [{"type": "context", "id": "x", "payload": {}, "properties": {"channel": "other", "kind": "note"}}]
+        self.ask({"op": "insert", "gatherer": "s", "properties": {"channel": "c"}, "events": sent})
+        conn = sqlite3.connect(paths.db_path("s"))
+        self.assertEqual(conn.execute("SELECT p_channel, p_kind FROM events").fetchall(), [("c", "note")])
+        conn.close()
+
+
 class ManagerFunctionsTest(HomeBase):
     def test_insert_then_read(self):
         sent = events(DEV, user("q", 1))

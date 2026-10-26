@@ -17,8 +17,9 @@ send(messages if messages is not None else harness_messages)   # None: the Gathe
 `call_ag` runs `to_events`, sends the events to the Gatherer, and runs `to_messages` on the
 context it returns. In TypeScript, `call_ag(server, {gatherer, properties, cwd}, messages,
 adaptor)` does the same. It holds the adaptor to what it declares: an event of a type not in
-its `outputs`, or a property not in its `properties`, sends nothing (None), and a context
-entry not in its `accepts` is noted. The working directory, when given, goes on the events
+its `outputs`, a property of the request not in its `properties`, or one an event carries of its
+own not in its `event_properties`, sends nothing (None), and a context entry not in its
+`accepts` is noted. The working directory, when given, goes on the events
 and the read as the property CWD too. An adaptor that fails, a server that errors or does
 not answer, or a context that is not a list each give None and a note.
 
@@ -69,6 +70,11 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     if undeclared:
         return None, (f"adaptor {adaptor.name} made events of types it does not declare "
                       f"({', '.join(undeclared)}); request unchanged")
+    own = sorted({k for e in events if isinstance(e, dict) and isinstance(e.get("properties"), dict)
+                  for k in e["properties"]} - set(getattr(adaptor, "event_properties", ())))
+    if own:
+        return None, (f"adaptor {adaptor.name} set properties on its events it does not declare "
+                      f"({', '.join(own)}); request unchanged")
     body = {"gatherer": gatherer, "properties": properties, "cwd": cwd, "events": events}
     if measured is not None:
         body["measured"] = measured

@@ -36,6 +36,12 @@ CHANNEL = "channel"
 #: The property call_ag sets from the request's working directory: where the
 #: agent works, which the file poller's events are matched against.
 CWD = "cwd"
+#: The properties an adaptor built on a harness module sets on each event of its own (`event_properties`), from what
+#: the harness's rules read of it: its Kind; the user's words, as they typed them; what a tool call does; the tool
+#: call it is or answers. Optional, and no part of an event's identity: the server declares them on the event's
+#: type the first time it sees them, so a policy need not -- it may read them, or not.
+KIND, WORDS, ACTION, CALL_ID = "kind", "words", "action", "call_id"
+EVENT_PROPERTIES = (KIND, WORDS, ACTION, CALL_ID)
 
 
 class Adaptor(ABC):
@@ -91,6 +97,7 @@ class Adaptor(ABC):
     outputs: ClassVar[Tuple[str, ...]] = ()
     accepts: ClassVar[Tuple[str, ...]] = ()
     properties: ClassVar[Tuple[str, ...]] = ()
+    event_properties: ClassVar[Tuple[str, ...]] = ()     # what an event of its own may carry besides (KIND, ...)
 
     @abstractmethod
     def to_events(self, messages: list) -> List[dict]:
@@ -114,7 +121,17 @@ class HarnessAdaptor(Adaptor):
     harness: ClassVar[Harness]
     event_types: ClassVar[Dict[str, str]] = {}
     other: ClassVar[str] = ""
+    event_properties = EVENT_PROPERTIES
 
     def type_of(self, part: Part) -> str:
         """The event type a piece read becomes."""
         return self.event_types.get(part.kind, self.other)
+
+
+def part_properties(part: Part) -> Dict[str, str]:
+    """What an event carries of what its harness's rules read (EVENT_PROPERTIES): its Kind, the user's words, a tool
+    call's Action, the call's id (a result's: the call it answers) -- each that is set."""
+    call = part.tool.id if part.tool is not None else part.result.call_id if part.result is not None else None
+    found = {KIND: part.kind, WORDS: part.words, ACTION: part.tool.action if part.tool is not None else None,
+             CALL_ID: call}
+    return {k: v for k, v in found.items() if isinstance(v, str) and v}

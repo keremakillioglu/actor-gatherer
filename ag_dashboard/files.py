@@ -149,19 +149,23 @@ def place(known: Sheet, old: str, new: str):
 # ------------------------------------------------------------------ the session, turn by turn
 
 def _events(conn, channel: str):
-    """The channel's events, oldest first, then what it has pending: (row_id, type, at, parts) --
-    parts unclipped, the lines of a long read all there."""
+    """The channel's events, oldest first, then what it has pending: (row_id, type, at, parts, said) -- parts unclipped,
+    the lines of a long read all there; `said`, a user message's (kind, words) as its harness's rules read them when
+    it was stored (its `kind` and `words` properties), else None: read here, from its parts."""
+    said = "e.p_kind, e.p_words" if {"p_kind", "p_words"} <= data._columns(conn, "events") else "NULL AS p_kind, NULL AS p_words"
     rows = conn.execute(
-        "SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at FROM events e "
+        f"SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at, {said} FROM events e "
         f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{data.CHANNEL}, '') = ? ORDER BY e.row_id",
         (channel,)).fetchall()
     for r in rows:
-        yield r["row_id"], r["type"] or "?", data._seconds(r["inserted_at"]), data.parts(r["type"] or "?", r["payload_json"], r["text"], None)
+        yield (r["row_id"], r["type"] or "?", data._seconds(r["inserted_at"]),
+               data.parts(r["type"] or "?", r["payload_json"], r["text"], None),
+               (r["p_kind"], r["p_words"]) if r["p_kind"] and r["p_words"] is not None else None)
     tables = data._tables(conn)
     if "_pending" in tables and data.CHANNEL in data._columns(conn, "_pending"):
         for r in conn.execute(f"SELECT received_at, type, payload_json, text FROM _pending WHERE {data.CHANNEL} = ? "
                               "ORDER BY pending_id", (channel,)):
-            yield None, r["type"], data._seconds(r["received_at"]), data.parts(r["type"], r["payload_json"], r["text"], None)
+            yield None, r["type"], data._seconds(r["received_at"]), data.parts(r["type"], r["payload_json"], r["text"], None), None
 
 
 def _touches(conn, channel: str) -> Dict[str, List[dict]]:
@@ -656,10 +660,10 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     # as it worked (rollout.py's `replies`), which it sends as the user's while the turn runs
     held = queued.meanwhile(channel, cwd)
     starts, more = [], {}                            # more: what was written while a turn ran, by the turn it is part of
-    for i, (row_id, typ, at, parts) in enumerate(evs):
+    for i, (row_id, typ, at, parts, stored) in enumerate(evs):
         said = [p["text"] for p in parts if p["kind"] == "text" and p.get("role") == "user"]
         if said and typ == "user_message":
-            kind, text = harness_kit.words(said[0])          # the user's words, its harness's wrapper off
+            kind, text = stored or harness_kit.words(said[0])   # the user's words, its harness's wrapper off
             meanwhile = kind in (Kind.MID_TURN, Kind.ASK_REPLY)
             if not meanwhile and at is not None:
                 q = next((q for q in held if q["text"].strip() == said[0].strip() and abs(at - q["sent"]) <= HELD_SECONDS), None)
@@ -693,7 +697,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     results: Dict[str, dict] = {}
     agents: Dict[str, str] = {}                      # a subagent's id: what it was started for (its call's description)
     spawned: Dict[str, dict] = {}                    # a codex subagent's path: the turn that started it, its report there
-    for i, (row_id, typ, at, parts) in enumerate(evs):
+    for i, (row_id, typ, at, parts, _said) in enumerate(evs):
         cur = begins.get(i, cur)
         head = cur.head if cur is not None else {"replies": [], "now": None, "last": None}   # before the first message: kept nowhere
         acts = cur.acts if cur is not None else {}

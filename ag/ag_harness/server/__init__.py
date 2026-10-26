@@ -10,7 +10,7 @@ policy.
 An event, as the harness side sends it:
 
     {"type": <type name>, "id": <stable id, or null>, "payload": <any JSON>, "tokens": <int, optional>,
-     "text": <string, optional>}
+     "text": <string, optional>, "properties": <{name: value}, optional>}
 
 `type` names one of the gatherer's event types -- those its policy declares
 (e.g. `user_message`, `tool_call`) -- or any other, added the first time it is
@@ -20,7 +20,10 @@ exactly as given. `text` is its readable text -- a message's words, a tool
 call's name and arguments, a tool's output, without the harness's ids and
 metadata: what the policies show and count of it (its payload as JSON when
 there is none). `tokens` is its cost, if the sender knows better than
-counting its text (e.g. 0 for an opaque blob).
+counting its text (e.g. 0 for an opaque blob). `properties` are its own,
+beside the request's (which win): what the harness's rules read of it (its
+kind, the user's words, a tool call's action and id), each declared on its
+type, as optional, the first time it is seen -- no policy needs to.
 
 The context, as it comes back -- what the model should see, in order:
 
@@ -350,19 +353,29 @@ class Server:
 
     @staticmethod
     def events_of(manager, gatherer: str, events: list, properties: Dict[str, Any]) -> List[Event]:
-        """The Events `events` are, their types named, each with
-        `properties`: a name the gatherer does not have is added, declaring each of `properties` as optional."""
-        ids: Dict[str, int] = {t.name: t.id for t in manager.event_types(gatherer)}
+        """The Events `events` are, their types named, each with `properties` -- and with the properties it carries of
+        its own (its `properties`; the request's win): a name the gatherer does not have is added, declaring each of
+        `properties` as optional; a property an event carries that its type does not declare is declared on it, as
+        optional (what a harness's rules read of each event: its kind, the user's words, ...)."""
+        types: Dict[str, EventType] = {t.name: t for t in manager.event_types(gatherer)}
         out = []
         for e in events:
             if not isinstance(e, dict) or not isinstance(e.get("type"), str) or not e["type"] or "payload" not in e:
                 raise BadEvent(f"not an event: {str(e)[:120]}")
             name = e["type"]
-            if name not in ids:
-                ids[name] = manager.add_event_type(gatherer, EventType(name, tuple(Property(p) for p in properties)))
+            own = e.get("properties") if isinstance(e.get("properties"), dict) else {}
+            own = {k: v for k, v in own.items() if isinstance(k, str) and k not in properties and v is not None}
+            if name not in types:
+                types[name] = EventType(name, tuple(Property(p) for p in (*properties, *own)))
+                types[name] = EventType(name, types[name].properties, id=manager.add_event_type(gatherer, types[name]))
+            missing = [k for k in own if k not in {p.name for p in types[name].properties}]
+            if missing:
+                more = EventType(name, types[name].properties + tuple(Property(k) for k in missing))
+                manager.add_event_type(gatherer, more)
+                types[name] = EventType(name, more.properties, id=types[name].id)
             tokens, text = e.get("tokens"), e.get("text")
-            out.append(Event(ids[name], e["payload"], id=e.get("id") or None,
-                             tokens=tokens if isinstance(tokens, int) else None, properties=dict(properties),
+            out.append(Event(types[name].id, e["payload"], id=e.get("id") or None,
+                             tokens=tokens if isinstance(tokens, int) else None, properties={**own, **properties},
                              text=text if isinstance(text, str) else None))
         return out
 

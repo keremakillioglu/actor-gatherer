@@ -27,6 +27,7 @@ import json
 from typing import Dict, List
 
 from harness_kit import Kind, codex as rules
+from ag.integrations.tools.ag_orchestrator.adaptor import part_properties
 from harness_kit.codex import (COMPACTED, PREAMBLE_MARKERS, TRIGGER, is_harness_context,  # noqa: F401 - the rules, as
                                text_of)                                                    # this module had them
 
@@ -72,16 +73,20 @@ def item_id(item) -> str:
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def event(item, kind: str = None) -> dict:
-    """The event a codex item is (of type `kind`; None: `classify`'s), with its text when it has one (`text_of`). A
-    reasoning item costs 0 tokens: its `encrypted_content` is an opaque blob of roughly constant size whatever the
-    reasoning was, which says nothing of what it costs."""
+def event(item, kind: str = None, part=None) -> dict:
+    """The event a codex item is (of type `kind`; None: `classify`'s), with its text when it has one (`text_of`); with
+    its `part` (the rules' reading of it), what they read as its properties (`part_properties`). A reasoning item costs
+    0 tokens: its `encrypted_content` is an opaque blob of roughly constant size whatever the reasoning was, which says
+    nothing of what it costs."""
     out = {"type": kind or classify(item), "id": item_id(item), "payload": item}
     text = text_of(item)
     if text is not None:
         out["text"] = text
     if isinstance(item, dict) and item.get("type") == "reasoning":
         out["tokens"] = 0
+    found = part_properties(part) if part is not None else {}
+    if found:
+        out["properties"] = found
     return out
 
 
@@ -98,4 +103,4 @@ def to_events(items: list, event_types: Dict[str, str] = EVENT_TYPES) -> List[di
     items = HARNESS.items(items)
     parts = HARNESS.read(items)
     keep = rules.after_compaction(items)[1]
-    return [event(items[i], event_types.get(parts[i].kind, CONTEXT)) for i in keep]
+    return [event(items[i], event_types.get(parts[i].kind, CONTEXT), parts[i]) for i in keep]

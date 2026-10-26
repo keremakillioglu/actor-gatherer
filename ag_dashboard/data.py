@@ -387,12 +387,13 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
     building = _running_builds(conn)
     background = _background(conn)
     last_user = {}                                   # each agent's newest user message: what it was last asked --
-    for ch, text, payload in conn.execute(           # not a background agent's report, which comes as one (HANDBACK)
-            f"SELECT e.{CHANNEL}, e.text, e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+    words = "e.p_words" if "p_words" in _columns(conn, "events") else "NULL"   # as the user typed it, where it was kept
+    for ch, text, payload, said in conn.execute(     # not a background agent's report, which comes as one (HANDBACK)
+            f"SELECT e.{CHANNEL}, e.text, e.payload_json, {words} FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
             f"WHERE t.name = 'user_message' AND e.row_id IN (SELECT max(e2.row_id) FROM events e2 "
             f"JOIN event_types t2 ON t2.event_type_id = e2.event_type_id WHERE t2.name = 'user_message' "
             f"AND ifnull(e2.text, '') NOT LIKE '%[Subagent hand-back]%' GROUP BY e2.{CHANNEL})"):
-        last_user[ch] = (text if text else readable(payload)) or ""
+        last_user[ch] = (said, None) if said is not None else (None, (text if text else readable(payload)) or "")
     tables = _tables(conn)
     recaps = {}                                      # each agent's newest recap (Claude Code's, while the user was away)
     if "_recaps" in tables:
@@ -405,7 +406,8 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
             names[ch] = {"text": " ".join((text or "").split())[:120], "by": by}
     for ch, a in out.items():
         a["harness"] = _harness(conn, ch)
-        said = harness_kit.words(last_user.get(ch, ""), a["harness"])[1]          # as the user typed it
+        kept, text = last_user.get(ch, (None, ""))
+        said = kept if kept is not None else harness_kit.words(text, a["harness"])[1]   # as the user typed it
         a["last_user_message"] = " ".join(said.split())[:600] or None
         a["recap"] = recaps.get(ch)
         a["name"] = names.get(ch)
