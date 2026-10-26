@@ -299,6 +299,26 @@ class MessagesTest(unittest.TestCase):
         self.assertEqual(out[at - 1], {"role": "system", "content": [ADD]})
         self.assertEqual(out[at]["content"][0]["id"], "toolu_2")
 
+    def test_a_moved_tool_notice_stays_before_a_later_one_for_the_same_tool(self):
+        # the tool was added in a turn the build summarized, then removed in the new task: its addition,
+        # moved on, still comes before its removal (after it, the removal names a tool not yet added)
+        reply = {"role": "assistant", "content": [{"type": "text", "text": "The readme has 3 sections."}]}
+        call = {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_2", "name": "Bash",
+                                                   "input": {"command": "wc -l t.csv"}}]}
+        sent = first_turn() + tool_turn() + [NOTE("Tools just became available: mcp__demo__search", ADD), reply,
+                                             txt("user", "New task: count the rows"),
+                                             NOTE("Tools are no longer available: mcp__demo__search", REMOVE), call]
+        events = claude.to_events(sent)
+        notes = [e for e in events if e["type"] == CONTEXT]          # reminder, environment, notice, ADD, ...
+        request = [e for e in events if e["type"] == USER_MESSAGE][-1]
+        after = events[events.index(request) + 1:]
+        ctx = notes[:2] + [{"type": "ag", "name": "earlier", "text": "SUMMARY"}] + notes[2:4] + [request] + after
+        out = back.to_messages(ctx, sent)
+        self.assert_takes(out)
+        inline = [b["type"] for m in out for b in (m["content"] if isinstance(m["content"], list) else [])
+                  if b.get("type") in ("tool_addition", "tool_removal")]
+        self.assertEqual(inline, ["tool_addition", "tool_removal"])
+
     def test_a_tool_notice_moves_the_same_way_as_user_reminders(self):
         reply = {"role": "assistant", "content": [{"type": "text", "text": "ok"}]}
         sent = first_turn() + [NOTE("Tools just became available: mcp__demo__search", ADD), reply, txt("user", "next")]

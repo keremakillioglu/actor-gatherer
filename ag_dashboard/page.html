@@ -628,7 +628,7 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-talk { flex: 1; min-height: 0; position: relative; overflow: auto; padding: 6px 0 24px; font-size: 13.5px; --lh: 20px; line-height: var(--lh); }
 .files .fl-grid:not(.open) .fl-talk { font-size: 14px; --lh: 21px; }
 .files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px 10px; }
-.files .fl-turn.on { box-shadow: inset 2px 0 0 var(--muted); }   /* the turn picked: a grey bar at its left, no colour */
+.files .fl-grid:not(.folded) .fl-turn.on { box-shadow: inset 2px 0 0 var(--muted); }   /* the turn whose files and commands show: a grey bar */
 /* the user's message: at the right, in the colour the page gives the user (--s7), as a chat shows it */
 .files .fl-user { display: flex; gap: 8px; width: fit-content; max-width: min(86%, 680px); margin: 0 0 0 auto; text-align: left;
   background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--s7) 28%, transparent);
@@ -733,11 +733,10 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-status { display: flex; align-items: center; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: .93em; }
 .files .fl-status .spin { flex: none; }
 .files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.files .fl-status .buddy { margin: 2px 2px 0 0; }
-/* the actor at work, in the Chat view (buddy()): its avatar's character out of its circle, moving as it would -- its
-   data-motion, a move and an effect (avatars/README.md) -- small and slow. Every animation runs on the page's clock
-   (--t), so a redraw does not restart it. */
-.buddy { position: relative; display: inline-block; width: 24px; height: 24px; flex: none; isolation: isolate; --t: 0s; }
+/* the actor at work, "Simple" (buddy()): its avatar's character out of its circle, small, moving as it would -- its
+   data-motion, a move and an effect (avatars/README.md); and on the stage, while it thinks, the same effect laid over the
+   character (.stage-box). Every animation runs on the page's clock (--t), so a redraw does not restart it. */
+.buddy { position: relative; display: inline-block; width: 24px; height: 24px; flex: none; isolation: isolate; pointer-events: none; --t: 0s; }
 /* a soft edge round it, so a white character stands out on a light page (--buddy-edge: the theme's) */
 .buddy img { width: 100%; height: 100%; display: block; transform-origin: var(--o, 50% 50%);
   filter: drop-shadow(0 0 .7px var(--buddy-edge, rgba(0, 0, 0, .45))) drop-shadow(0 1px 1px var(--buddy-edge2, rgba(0, 0, 0, .12)));
@@ -751,63 +750,64 @@ button:disabled { opacity: .5; cursor: default; }
 .buddy.still { opacity: .55; filter: grayscale(.6); }
 @media (prefers-reduced-motion: reduce) { .buddy img, .buddy i, .buddy::before { animation: none !important; } }
 
-/* moves: the whole avatar, about its middle, its foot (50% 100%) or the string it hangs from (50% 0) */
-.buddy.m-bob { --m: b-bob; --d: 2.4s; }
+/* moves: the character (small, .buddy; or on its stage as it thinks, .me), about its middle, its foot (50% 100%) or the string it
+   hangs from (50% 0) */
+.m-bob { --m: b-bob; --d: 2.4s; }
 @keyframes b-bob { 50% { transform: translateY(-2px); } }
-.buddy.m-float { --m: b-float; --d: 3.6s; }
+.m-float { --m: b-float; --d: 3.6s; }
 @keyframes b-float { 25% { transform: translateY(-1.5px) rotate(-3deg); } 75% { transform: translateY(.5px) rotate(3deg); } }
-.buddy.m-hop { --m: b-hop; --d: 2.2s; --e: ease-out; --o: 50% 100%; }
+.m-hop { --m: b-hop; --d: 2.2s; --e: ease-out; --o: 50% 100%; }
 @keyframes b-hop { 0%, 55%, 100% { transform: none; } 8% { transform: scale(1.08, .9); } 24% { transform: translateY(-5px) scale(.96, 1.05); }
   42% { transform: translateY(0) scale(1.07, .93); } }
-.buddy.m-swim { --m: b-swim; --d: 3s; }
+.m-swim { --m: b-swim; --d: 3s; }
 @keyframes b-swim { 0%, 100% { transform: translateX(-1.5px) rotate(4deg); } 50% { transform: translate(1.5px, -.5px) rotate(-4deg); } }
-.buddy.m-glide { --m: b-glide; --d: 5s; }
+.m-glide { --m: b-glide; --d: 5s; }
 @keyframes b-glide { 0%, 100% { transform: translateX(-2.5px) rotate(1deg); } 50% { transform: translateX(2.5px) rotate(-1deg); } }
-.buddy.m-pulse { --m: b-pulse; --d: 2.6s; --o: 50% 100%; }
+.m-pulse { --m: b-pulse; --d: 2.6s; --o: 50% 100%; }
 @keyframes b-pulse { 0%, 100% { transform: none; } 25% { transform: scale(1.08, .88); } 50% { transform: translateY(-3px) scale(.95, 1.06); }
   75% { transform: translateY(-1px); } }
-.buddy.m-puff { --m: b-puff; --d: 3.2s; }
+.m-puff { --m: b-puff; --d: 3.2s; }
 @keyframes b-puff { 0%, 30%, 100% { transform: none; } 45% { transform: scale(1.15); } 70% { transform: scale(1.13); } 85% { transform: scale(.98); } }
-.buddy.m-waddle { --m: b-waddle; --d: 1.3s; --e: linear; --o: 50% 100%; }
+.m-waddle { --m: b-waddle; --d: 1.3s; --e: linear; --o: 50% 100%; }
 @keyframes b-waddle { 0%, 100% { transform: rotate(-6deg); } 25% { transform: translateY(-1px); } 50% { transform: rotate(6deg); } 75% { transform: translateY(-1px); } }
-.buddy.m-wobble { --m: b-wobble; --d: 3s; --o: 50% 100%; }
+.m-wobble { --m: b-wobble; --d: 3s; --o: 50% 100%; }
 @keyframes b-wobble { 0%, 70%, 100% { transform: none; } 10% { transform: rotate(-11deg); } 25% { transform: rotate(8deg); } 40% { transform: rotate(-5deg); }
   55% { transform: rotate(2deg); } }
-.buddy.m-swing { --m: b-swing; --d: 3s; --o: 50% 0; }
+.m-swing { --m: b-swing; --d: 3s; --o: 50% 0; }
 @keyframes b-swing { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
-.buddy.m-sway { --m: b-sway; --d: 4s; --o: 50% 100%; }
+.m-sway { --m: b-sway; --d: 4s; --o: 50% 100%; }
 @keyframes b-sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
-.buddy.m-nod { --m: b-nod; --d: 2.8s; --o: 50% 100%; }
+.m-nod { --m: b-nod; --d: 2.8s; --o: 50% 100%; }
 @keyframes b-nod { 0%, 60%, 100% { transform: none; } 70% { transform: translateY(1px) rotate(7deg); } 80% { transform: none; } 88% { transform: translateY(.5px) rotate(5deg); } }
-.buddy.m-peck { --m: b-peck; --d: 2.2s; --o: 50% 100%; }
+.m-peck { --m: b-peck; --d: 2.2s; --o: 50% 100%; }
 @keyframes b-peck { 0%, 50%, 100% { transform: none; } 10%, 30% { transform: rotate(-13deg); } 20%, 40% { transform: none; } }
-.buddy.m-roll { --m: b-roll; --d: 3.6s; }
+.m-roll { --m: b-roll; --d: 3.6s; }
 @keyframes b-roll { 0%, 100% { transform: translateX(-3px) rotate(-17deg); } 50% { transform: translateX(3px) rotate(17deg); } }
-.buddy.m-fan { --m: b-fan; --d: 1.2s; --o: 50% 90%; }
+.m-fan { --m: b-fan; --d: 1.2s; --o: 50% 90%; }
 @keyframes b-fan { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(10deg); } }
-.buddy.m-beckon { --m: b-beckon; --d: 2.6s; --o: 50% 100%; }
+.m-beckon { --m: b-beckon; --d: 2.6s; --o: 50% 100%; }
 @keyframes b-beckon { 0%, 45%, 100% { transform: none; } 10%, 30% { transform: translateY(-1px) rotate(-7deg); } 20% { transform: none; } }
-.buddy.m-squish { --m: b-squish; --d: 2.4s; --o: 50% 100%; }
+.m-squish { --m: b-squish; --d: 2.4s; --o: 50% 100%; }
 @keyframes b-squish { 0%, 100% { transform: none; } 30% { transform: scale(1.09, .91); } 60% { transform: scale(.96, 1.05); } 80% { transform: scale(1.02, .98); } }
-.buddy.m-crawl { --m: b-crawl; --d: 6s; }
+.m-crawl { --m: b-crawl; --d: 6s; }
 @keyframes b-crawl { 0%, 100% { transform: translateX(-2.5px); } 25%, 75% { transform: translateY(-.5px); } 50% { transform: translateX(2.5px); } }
-.buddy.m-wag { --m: b-wag; --d: 2s; }
+.m-wag { --m: b-wag; --d: 2s; }
 @keyframes b-wag { 0%, 50%, 100% { transform: none; } 10%, 30% { transform: rotate(6deg); } 20% { transform: rotate(-6deg); } 40% { transform: rotate(-3deg); } }
-.buddy.m-patter { --m: b-patter; --d: 1.8s; --o: 50% 100%; }
+.m-patter { --m: b-patter; --d: 1.8s; --o: 50% 100%; }
 @keyframes b-patter { 0%, 45%, 100% { transform: none; } 8%, 24% { transform: translateY(-1.5px) scale(1.02, .98); } 16%, 32% { transform: none; } }
-.buddy.m-flutter { --m: b-flutter; --d: 2.6s; }
+.m-flutter { --m: b-flutter; --d: 2.6s; }
 @keyframes b-flutter { 0%, 100% { transform: none; } 6% { transform: translateY(-2px); } 12% { transform: translateY(-1px); } 18% { transform: translateY(-3px); }
   24% { transform: translateY(-2px); } 30% { transform: translateY(-3.5px); } 55% { transform: translateY(-2.5px) rotate(-3deg); } 80% { transform: none; } }
-.buddy.m-lookabout { --m: b-lookabout; --d: 4.4s; --o: 50% 100%; }
+.m-lookabout { --m: b-lookabout; --d: 4.4s; --o: 50% 100%; }
 @keyframes b-lookabout { 0%, 100% { transform: none; } 15%, 75% { transform: translateY(-1.5px); } 30% { transform: translateY(-1.5px) rotate(-8deg); }
   55% { transform: translateY(-1.5px) rotate(8deg); } 90% { transform: none; } }
-.buddy.m-flip { --m: b-flip; --d: 4s; }
+.m-flip { --m: b-flip; --d: 4s; }
 @keyframes b-flip { 0%, 72% { transform: none; } 84% { transform: translateY(-4px) rotateY(180deg); } 96%, 100% { transform: rotateY(360deg); } }
-.buddy.m-whisk { --m: b-whisk; --d: 2s; --e: linear; }
+.m-whisk { --m: b-whisk; --d: 2s; --e: linear; }
 @keyframes b-whisk { 0%, 50%, 100% { transform: none; } 6%, 18%, 30%, 42% { transform: translateX(-1px); } 12%, 24%, 36% { transform: translateX(1px); } }
-.buddy.m-wiggle { --m: b-wiggle; --d: 1.6s; }
+.m-wiggle { --m: b-wiggle; --d: 1.6s; }
 @keyframes b-wiggle { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
-.buddy.m-spin { --m: b-spin; --d: 10s; --e: linear; }
+.m-spin { --m: b-spin; --d: 10s; --e: linear; }
 @keyframes b-spin { 100% { transform: rotate(360deg); } }
 
 /* effects: three of each, a third of the way apart (or, a spout, together), around the avatar */
@@ -849,6 +849,193 @@ button:disabled { opacity: .5; cursor: default; }
 .buddy.f-glow::before { content: ""; position: absolute; inset: -5px; z-index: -1; border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 166, 64, .6), transparent 68%); animation: b-glow 2.8s ease-in-out infinite var(--t); }
 @keyframes b-glow { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.08); } }
+
+/* The actor at work in the Chat view (atWork): its avatar's character out of its circle, acting out what its turn is doing
+   (s-<kind>, work.py's) with the same tool whatever the character, so a tool always means the same thing; reacting to how a
+   call ended, once (r-*); between calls, thinking, moving as its character does (its avatar_motion's move: .me.m-<move>).
+   Its loops run on the page's clock (--t; its action's, --a, slowing to a stop as a call ends), a reaction from when it
+   began (--r), so a redraw restarts neither. */
+/* what it is doing in words, at the end of the latest turn; the actor at work under it, in line with its words */
+.files .fl-working { margin: 6px 0 0 2px; font-size: .93em; min-width: 0; }
+.files .fl-working > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.files .fl-working .now { color: var(--term-accent); }
+/* when it last did something, and how long the turn has run: counting, dim, above the words */
+.files .fl-working .fl-times { color: var(--muted); font-size: .86em; opacity: .8; font-variant-numeric: tabular-nums; }
+.files .fl-talk > .fl-status { margin: 4px 6px 0 8px; }
+.files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
+.files .fl-status .spin { font-size: 1.4em; }
+.files .fl-status > .buddy { margin: 2px 0 0 4px; }
+/* the turn over: the actor small, done -- a check at its corner, still; grown in if the page saw it end (--r) */
+.files .fl-done { display: flex; align-items: center; margin: 6px 6px 0 17px; }
+.files .fl-done .done { position: relative; display: inline-flex; flex: none; transform-origin: 30% 90%;
+  animation: w-arrive .5s cubic-bezier(.3, 1.3, .5, 1) var(--r, -60s) 1 both; }
+.files .fl-done .done img { width: 24px; height: 24px; display: block; filter: drop-shadow(0 0 .6px var(--buddy-edge, rgba(0, 0, 0, .45))); }
+.files .fl-done .done .ok { position: absolute; right: -4px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: #22a55a;
+  box-shadow: 0 0 0 1.5px var(--surface); display: grid; place-items: center; }
+.files .fl-done .done .ok svg { width: 8px; height: 8px; }
+svg.stage { height: 32px; width: auto; flex: none; overflow: visible; --t: 0s; --a: 0s; --r: -60s; --x: -60s; --y: -60s; --z: -60s; --p: -60s;
+  --b: -60s; --dot: #f97316; --metal: light-dark(#94a3b8, #8a94a3); }
+.stage .me, .stage .prop, .stage .tb, .stage .bd, .stage .cf, .stage .o-bang, .stage .mag, .stage .gear, .stage .parcel, .stage .flip,
+.stage .hg, .stage .st, .stage .sb, .stage .mini { transform-box: fill-box; }
+/* a soft edge round it, so a white character stands out on a light page (--buddy-edge: the theme's) */
+.stage image { filter: drop-shadow(0 0 .7px var(--buddy-edge, rgba(0, 0, 0, .45))) drop-shadow(0 1px 1px var(--buddy-edge2, rgba(0, 0, 0, .12))); }
+.stage .ov { display: none; }
+.stage .me { transform-origin: 50% 100%; }
+/* from one action to the next (--x: since the change): the old tool fades out as the new one grows in; a new turn's actor
+   grows in (--z) */
+.stage .enter, .stage .leave { transform-box: fill-box; transform-origin: 50% 80%; }
+.stage .enter { animation: w-in .5s ease-out var(--x) 1 both; }
+.stage .leave { animation: w-out .4s ease-in var(--x) 1 both; }
+@keyframes w-in { from { opacity: 0; transform: scale(.88); } to { opacity: 1; transform: none; } }
+@keyframes w-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.92); } }
+svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-bezier(.3, 1.3, .5, 1) var(--z) 1 both; }
+@keyframes w-arrive { from { opacity: 0; transform: translateY(4px) scale(.6); } to { opacity: 1; transform: none; } }
+/* thinking (no call running): moving as its character does, slower; a thought by its head -- two puffs, then a cloud, grown in
+   from --b, its dots hopping in the avatar's colour (--dot); popped away (--y) as a call begins */
+.stage.s-think .me { transform-origin: var(--o, 50% 50%); animation: var(--m, b-bob) calc(var(--d, 2.4s) * 1.4) var(--e, ease-in-out) var(--t) infinite; }
+.stage .o-think { display: none; }
+.stage.musing .o-think, .stage.popping .o-think { display: inline; }
+.stage.r-fail .o-think, .stage.r-pass .o-think, .stage.r-tfail .o-think, .stage.r-ship .o-think, .stage.streak .o-think, .stage.retry .o-think { display: none; }
+.stage .tb { transform-origin: 50% 50%; animation: w-bub .4s cubic-bezier(.3, 1.6, .5, 1) var(--b) 1 both; }
+.stage .tb2 { animation-delay: calc(var(--b) + .12s); }
+.stage .tb3 { transform-origin: 15% 85%; animation-delay: calc(var(--b) + .24s); }
+@keyframes w-bub { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: none; } }
+.stage .te { fill: light-dark(#ddd7cf, #7a746c); stroke: light-dark(#ddd7cf, #7a746c); stroke-width: 1.8; }
+.stage .tf, .stage .tb1, .stage .tb2 { fill: light-dark(#fff, #fbf8f3); }
+.stage .tb1, .stage .tb2 { stroke: light-dark(#ddd7cf, #7a746c); stroke-width: .9; }
+.stage .td circle { fill: var(--dot); transform-box: fill-box; animation: w-dothop 1.2s ease-in-out var(--t) infinite; }
+.stage .td circle:nth-child(2) { animation-delay: calc(var(--t) + .16s); }
+.stage .td circle:nth-child(3) { animation-delay: calc(var(--t) + .32s); }
+@keyframes w-dothop { 0%, 55%, 100% { transform: none; } 25% { transform: translateY(-1.7px); } }
+.stage.popping .o-think { transform-box: fill-box; transform-origin: 0% 100%; animation: w-unbub .3s ease-in var(--y) 1 both; }
+@keyframes w-unbub { to { opacity: 0; transform: scale(.3); } }
+/* a call over: what it did slows to a stop, then it puts its tool away (.putting, from --p), each its own way -- the book
+   shut, the gears faded, the rest set aside or lowered */
+.stage.putting .prop { transform-origin: 50% 100%; animation: w-away .55s ease-in var(--p) 1 both; }
+@keyframes w-away { to { opacity: 0; transform: translateY(5px) scale(.85); } }
+.stage.putting.s-read .prop { transform-origin: 50% 50%; animation-name: w-shut; }
+@keyframes w-shut { 45% { opacity: 1; transform: scaleX(.14); } 100% { opacity: 0; transform: translateY(7px) scaleX(.14); } }
+.stage.putting.s-edit .prop, .stage.putting.s-test .prop, .stage.putting.s-ship .prop, .stage.putting.s-wait .prop,
+.stage.putting.s-team .prop { animation-name: w-aside; }
+@keyframes w-aside { to { opacity: 0; transform: translateX(10px) scale(.9); } }
+.stage.putting.s-run .prop { transform-origin: 50% 50%; animation-name: w-fadeback; }
+@keyframes w-fadeback { to { opacity: 0; transform: scale(.8); } }
+/* read: a book, a page turning; it sways a little over it */
+.stage.s-read .me { animation: w-read 3.2s ease-in-out var(--a) infinite; }
+@keyframes w-read { 50% { transform: translateY(.6px) rotate(1.5deg); } }
+.stage .flip { transform-origin: 0% 50%; animation: w-flip 5s var(--a) infinite; }
+@keyframes w-flip { 0%, 70% { transform: none; opacity: 0; } 71% { opacity: 1; } 82% { transform: scaleX(0); } 92% { transform: scaleX(-1); opacity: 1; }
+  95%, 100% { transform: scaleX(-1); opacity: 0; } }
+/* search: a magnifying glass sweeping, glinting as it looks */
+.stage.s-search .me { animation: w-search 2.4s ease-in-out var(--a) infinite; }
+@keyframes w-search { 0%, 100% { transform: rotate(-3deg); } 50% { transform: translateX(1.2px) rotate(3deg); } }
+.stage .mag { transform-origin: 50% 50%; animation: w-sweep 2.4s ease-in-out var(--a) infinite; }
+@keyframes w-sweep { 0%, 100% { transform: translate(-7px, 2px) rotate(-14deg); } 50% { transform: translate(3px, -3px) rotate(10deg); } }
+.stage .glint { animation: w-glint 2.4s ease-in-out var(--a) infinite; }
+@keyframes w-glint { 0%, 35%, 65%, 100% { opacity: .35; } 50% { opacity: 1; } }
+/* edit: a pencil writing lines on a sheet */
+.stage.s-edit .me { animation: w-edit 1.2s ease-in-out var(--a) infinite; }
+@keyframes w-edit { 50% { transform: rotate(2.5deg) translateY(.4px); } }
+.stage .paper { fill: #fff; stroke: #d6d3d1; stroke-width: .8; }
+.stage .ln { stroke: #57534e; stroke-width: 1.3; stroke-linecap: round; fill: none; stroke-dasharray: 17; stroke-dashoffset: 17; }
+.stage .l1 { animation: w-l1 3.6s linear var(--a) infinite; } .stage .l2 { animation: w-l2 3.6s linear var(--a) infinite; }
+.stage .l3 { animation: w-l3 3.6s linear var(--a) infinite; }
+@keyframes w-l1 { 0% { stroke-dashoffset: 17; } 28%, 96% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 17; } }
+@keyframes w-l2 { 0%, 31% { stroke-dashoffset: 17; } 61%, 96% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 17; } }
+@keyframes w-l3 { 0%, 64% { stroke-dashoffset: 17; } 88%, 96% { stroke-dashoffset: 6; } 100% { stroke-dashoffset: 17; } }
+.stage .pen { animation: w-pen 3.6s linear var(--a) infinite; }
+@keyframes w-pen { 0% { transform: none; } 7%, 21% { transform: translate(5px, .2px); } 14% { transform: translate(8px, 1.2px); } 28% { transform: translate(16px, 1.4px); }
+  31% { transform: translate(-.4px, 4.5px); } 46% { transform: translate(8px, 5.6px); } 61% { transform: translate(15.6px, 5.9px); } 64% { transform: translate(-.8px, 9px); }
+  88%, 96% { transform: translate(10.2px, 9.9px); } 100% { transform: none; } }
+/* test: a checklist on a clipboard, ticked off line by line */
+.stage.s-test .me { animation: w-test 3s ease-in-out var(--a) infinite; }
+@keyframes w-test { 0%, 100% { transform: rotate(1deg); } 50% { transform: translateY(-.8px) rotate(3deg); } }
+.stage .tk { fill: none; stroke: #475569; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 7; stroke-dashoffset: 7; }
+.stage .tk0 { animation: w-tk0 3s linear var(--a) infinite; } .stage .tk1 { animation: w-tk1 3s linear var(--a) infinite; }
+.stage .tk2 { animation: w-tk2 3s linear var(--a) infinite; }
+@keyframes w-tk0 { 0%, 8% { stroke-dashoffset: 7; } 20%, 92% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 7; } }
+@keyframes w-tk1 { 0%, 32% { stroke-dashoffset: 7; } 44%, 92% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 7; } }
+@keyframes w-tk2 { 0%, 56% { stroke-dashoffset: 7; } 68%, 92% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 7; } }
+.stage .tx { display: none; }
+/* run: gears turning; it bobs along with them */
+.stage.s-run .me { animation: w-run .5s ease-in-out var(--a) infinite; }
+@keyframes w-run { 50% { transform: translateY(-1.6px) scale(1.02, .98); } }
+.stage .gear { transform-origin: 50% 50%; fill: none; stroke: var(--metal); }
+.stage .g1 { animation: w-gear 2.6s linear var(--a) infinite; } .stage .g2 { animation: w-gear 1.8s linear var(--a) infinite reverse; }
+@keyframes w-gear { to { transform: rotate(360deg); } }
+/* ship: a parcel sent off, an arrow up */
+.stage.s-ship .me { animation: w-ship 2.6s var(--a) infinite; }
+@keyframes w-ship { 0%, 40%, 62%, 100% { transform: none; } 46% { transform: scale(1.05, .94); } 54% { transform: translateY(-3px) rotate(4deg); } }
+.stage .parcel { transform-origin: 50% 100%; animation: w-parcel 2.6s ease-in-out var(--a) infinite; }
+@keyframes w-parcel { 0% { opacity: 0; transform: scale(.5); } 10%, 40% { opacity: 1; transform: none; } 46% { transform: scale(1.08, .9); }
+  54% { transform: translateY(-3px); } 62% { opacity: 1; transform: none; } 82%, 100% { opacity: 0; transform: translate(14px, -16px) rotate(18deg) scale(.8); } }
+.stage .arrow { animation: w-arrow 2.6s ease-in-out var(--a) infinite; }
+@keyframes w-arrow { 0%, 52% { opacity: 0; transform: none; } 64% { opacity: 1; } 84% { opacity: 1; transform: translateY(-4px); } 100% { opacity: 0; transform: translateY(-6px); } }
+/* wait: an hourglass running and turning; a foot tapping */
+.stage.s-wait .me { animation: w-wait 2.4s ease-in-out var(--a) infinite; }
+@keyframes w-wait { 0%, 45%, 100% { transform: none; } 10%, 30% { transform: rotate(2.5deg); } 20% { transform: none; } }
+.stage .wood { fill: #a0683a; } .stage .glass { fill: rgba(186, 230, 253, .3); stroke: var(--metal); stroke-width: .8; }
+.stage .sand { fill: #fbbf24; } .stage .stream { stroke: #fbbf24; stroke-width: .7; animation: w-stream 5s var(--a) infinite; }
+.stage .hg { transform-origin: 50% 50%; animation: w-hg 5s ease-in-out var(--a) infinite; }
+@keyframes w-hg { 0%, 82% { transform: none; } 96%, 100% { transform: rotate(180deg); } }
+.stage .st { transform-origin: 50% 100%; animation: w-st 5s linear var(--a) infinite; }
+@keyframes w-st { 0% { transform: none; } 80%, 100% { transform: scaleY(0); } }
+.stage .sb { transform-origin: 50% 100%; animation: w-sb 5s linear var(--a) infinite; }
+@keyframes w-sb { 0% { transform: scaleY(0); } 80%, 100% { transform: none; } }
+@keyframes w-stream { 0%, 79% { opacity: 1; } 80%, 100% { opacity: 0; } }
+/* team: little copies of it, scurrying, one for each subagent running (up to three) */
+.stage.s-team .me { animation: w-team 3.2s ease-in-out var(--a) infinite; }
+@keyframes w-team { 0%, 100% { transform: rotate(3deg); } 50% { transform: rotate(5deg) translateY(-.6px); } }
+.stage .mini { animation: w-scurry 1.6s ease-in-out var(--a) infinite; }
+.stage .mini.m1 { animation-delay: calc(var(--a) - .55s); } .stage .mini.m2 { animation-delay: calc(var(--a) - 1.1s); }
+@keyframes w-scurry { 0%, 100% { transform: translate(-2.5px, 0); } 25% { transform: translate(0, -1.6px); } 50% { transform: translate(2.5px, 0); }
+  75% { transform: translate(0, -1.6px); } }
+/* a call failed: startled, a red ! */
+.stage.r-fail .me { animation: w-startle .7s ease-out var(--r) 1 both; }
+@keyframes w-startle { 0% { transform: none; } 25% { transform: translateY(-4px) scale(.97, 1.04); } 50% { transform: none; } 62% { transform: translateX(-.8px); }
+  74% { transform: translateX(.8px); } 86%, 100% { transform: none; } }
+.stage.r-fail .o-bang { display: inline; transform-origin: 50% 100%; animation: w-pop 2.6s ease-out var(--r) 1 both; }
+@keyframes w-pop { 0% { transform: scale(0); opacity: 0; } 10% { transform: scale(1.35); opacity: 1; } 18% { transform: scale(1); } 75% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1); } }
+/* failing again and again: a storm cloud */
+.stage.streak .o-cloud { display: inline; animation: w-jitter 2.4s ease-in-out var(--t) infinite; }
+@keyframes w-jitter { 0%, 100% { transform: none; } 50% { transform: translateX(1px); } }
+/* tests passed, or a commit landed: a hop for joy, confetti and a check -- the list all ticked, the parcel off */
+.stage.r-pass .me, .stage.r-ship .me { animation: w-cheer .9s ease-out var(--r) 2 both; }
+@keyframes w-cheer { 0% { transform: none; } 15% { transform: scale(1.06, .92); } 45% { transform: translateY(-7px) scale(.96, 1.05); } 75% { transform: none; }
+  85% { transform: scale(1.04, .96); } 100% { transform: none; } }
+.stage.r-pass .o-confetti, .stage.r-ship .o-confetti, .stage.r-pass .o-check, .stage.r-ship .o-check, .stage.r-tfail .o-cross { display: inline; }
+.stage .cf { transform-origin: 50% 50%; animation: w-confetti 1.6s ease-out var(--r) 1 both; }
+@keyframes w-confetti { 0% { opacity: 0; transform: none; } 10% { opacity: 1; } 60% { transform: translate(var(--dx), var(--dy)) rotate(200deg); }
+  100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 8px)) rotate(360deg); } }
+.stage .bd { transform-origin: 50% 50%; animation: w-pop 3s ease-out var(--r) 1 both; }
+.stage.r-pass .tk, .stage.r-tfail .tk { animation: none; stroke-dashoffset: 0; stroke: #16a34a; }
+.stage.r-ship .parcel { animation: w-parcel-off .9s ease-in var(--r) 1 both; } .stage.r-ship .arrow { animation: none; opacity: 1; }
+@keyframes w-parcel-off { to { opacity: 0; transform: translate(16px, -20px) rotate(20deg) scale(.8); } }
+/* tests failed: a tumble, dizzy stars and a cross -- a line of the list crossed out */
+.stage.r-tfail .me { transform-origin: 50% 55%; animation: w-tumble 1s cubic-bezier(.3, .7, .4, 1) var(--r) 1 both; }
+@keyframes w-tumble { 0% { transform: none; } 20% { transform: translate(5px, -6px) rotate(80deg); } 55% { transform: translate(-3px, -2px) rotate(300deg); }
+  75% { transform: rotate(360deg); } 86% { transform: translateY(1px) rotate(354deg); } 100% { transform: rotate(360deg); } }
+.stage.r-tfail .tk1 { display: none; } .stage.r-tfail .tx { display: inline; }
+.stage.r-tfail .o-stars { display: inline; }
+.stage .star { fill: #fbbf24; animation: w-orbit 1.4s linear var(--r) infinite; }
+.stage .star.s2 { animation-delay: calc(var(--r) - .467s); } .stage .star.s3 { animation-delay: calc(var(--r) - .933s); }
+@keyframes w-orbit { 0%, 100% { transform: translate(11px, 0); } 12.5% { transform: translate(7.8px, 2.1px); } 25% { transform: translate(0, 3px); }
+  37.5% { transform: translate(-7.8px, 2.1px); } 50% { transform: translate(-11px, 0); } 62.5% { transform: translate(-7.8px, -2.1px); }
+  75% { transform: translate(0, -3px); } 87.5% { transform: translate(7.8px, -2.1px); } }
+/* its model calls failing (Retrying…): still and gray, a ? */
+.stage.retry, .stage.retry * { animation: none !important; }
+.stage.retry .me, .stage.retry .prop { filter: grayscale(.9); opacity: .55; }
+.stage.retry .o-q { display: inline; }
+.stage .qb { fill: var(--surface); stroke: var(--muted); stroke-width: .8; } .stage .qt { fill: var(--muted); font: 800 9px system-ui, sans-serif; }
+@media (prefers-reduced-motion: reduce) { svg.stage, svg.stage *, .files .fl-done .done { animation: none !important; }
+  svg.stage .leave, svg.stage .o-confetti { display: none !important; } }
+/* the stage and, while it thinks, its character's effect round it (.buddy) laid over the character */
+.stage-box { position: relative; display: inline-flex; flex: none; isolation: isolate; }
+.stage-box > .buddy { display: none; position: absolute; left: calc(8 / 102 * 100%); top: calc(14 / 82 * 100%); width: calc(64 / 102 * 100%);
+  height: calc(64 / 82 * 100%); }
+.stage-box > svg.s-think:not(.retry) + .buddy { display: block; }
+.stage-box > .buddy.f-glow { z-index: -1; }
 .files .fl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ring); }
 /* the files and commands folded: a thin bar of their numbers, opened again by a click */
 .files .fl-grid.folded { grid-template-columns: 30px minmax(0, 1fr); }
@@ -859,6 +1046,7 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-bar:hover, .files .fl-bar:focus-visible { background: var(--wash); color: var(--ink-2); }
 .files .fl-bar > svg { flex: none; color: var(--ink-2); }
 .files .fl-bar .it { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.files .fl-bar .stats { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: auto; }   /* the latest turn's, at the foot */
 .files .fl-bar .sub { display: inline-flex; align-items: center; gap: 2px; }
 .files .fl-bar .g { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
 .files .fl-bar .g.ok { background: var(--good); } .files .fl-bar .sub.ok { color: var(--ink-2); }
@@ -971,11 +1159,11 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fv-block .diff .ctx { color: var(--muted); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
-  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .it.bg { width: auto; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid var(--ring); } }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } .files .fl-bar .it.bg { width: auto; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid var(--ring); } }
 /* the same by the pane's width: one of several side by side is narrower than the window */
 @container pane (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
-  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .it.bg { width: auto; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid var(--ring); } }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } .files .fl-bar .it.bg { width: auto; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid var(--ring); } }
 /* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
@@ -1175,6 +1363,9 @@ button:disabled { opacity: .5; cursor: default; }
             <div><h4>Theme</h4>
               <div class="views" id="theme" role="group" aria-label="Theme">
                 <button type="button" data-theme-pick="system">System</button><button type="button" data-theme-pick="light">Light</button><button type="button" data-theme-pick="dark">Dark</button></div></div>
+            <div><h4>Avatar at work</h4>
+              <div class="views" id="avatar-mode" role="group" aria-label="Avatar at work">
+                <button type="button" data-avatar-pick="acting" title="Acting out what it does: a book, a magnifying glass, gears…">Acting</button><button type="button" data-avatar-pick="simple" title="Small, moving as its character does">Simple</button></div></div>
             <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
           </div>
         </div>
@@ -1268,6 +1459,14 @@ const ago = (t) => {
   const s = Math.max(0, Date.now() / 1000 - t);
   return s < 60 ? `${Math.round(s)}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
 };
+// " (… <what> Ns ago)", counting: the time `t` (the server's seconds) set every second (the ticker by `data-since`);
+// hidden from screen readers, so a status line holding it is not read out again each second.
+// How long since the time `t` (the server's seconds), as a clock counting up: "45s", "2m 05s", "1h 12m".
+const lasting = (t) => {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - t)), pad = (n) => String(n).padStart(2, "0");
+  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${pad(s % 60)}s` : `${Math.floor(s / 3600)}h ${pad(Math.floor(s / 60) % 60)}m`;
+};
+const agoEl = (what, t) => el("span", { "aria-hidden": "true" }, ` (${what} `, el("span", { "data-ago": t || "", text: ago(t) }), ")");
 const span = (a, b) => {
   if (!a || !b) return "–";
   const s = Math.max(0, b - a);
@@ -1360,19 +1559,201 @@ const HUE_INK = { red: ["#b91c1c", "#f57474"], orange: ["#c2410c", "#fb9645"], y
   blue: ["#1e40af", "#7095f9"], purple: ["#5b21b6", "#a788f9"], pink: ["#be185d", "#f7a0cf"], brown: ["#6b4226", "#c1966c"],
   gray: ["#334155", "#aab4c2"] };
 const hueInk = (a) => { const ink = a && HUE_INK[a.avatar_hue]; return ink ? `color: light-dark(${ink[0]}, ${ink[1]})` : null; };
-// The actor at work, in the Chat view: its avatar's character out of its circle, moving as it does (its
-// avatar_motion: a move, then an effect round it, if any -- the .buddy CSS), on the page's clock so a redraw does
-// not start it over; `still`, its calls failing: not moving. An actor with no avatar has the turning glyph.
-function buddy(a, still) {
+// The actor's avatar without its circle, its character alone: where to get it (null: none to show).
+function bareAvatar(a) {
   const svg = SNAPSHOT && a && a.avatar && (SNAPSHOT.avatars || {})[a.avatar];
-  const src = !a || !a.avatar ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg.replace(/<circle cx="32" cy="32" r="32"[^>]*\/>/, ""))
+  return !a || !a.avatar ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg.replace(/<circle cx="32" cy="32" r="32"[^>]*\/>/, ""))
     : `/avatars/${a.avatar}.svg?bare=1`;
+}
+// The actor done, at its turn's end in the Chat view: its avatar small, still, a check at its corner -- grown in, if the
+// page saw the turn end.
+function atRest(a, turn) {
+  const src = bareAvatar(a);
+  if (a) stage.rest(a.channel);
+  const gone = a ? reaction(`${a.channel} done`, turn, a.last) : null;
+  const ok = svgEl("svg", { viewBox: "0 0 10 10", "aria-hidden": "true" });
+  ok.append(svgEl("path", { d: "M2.2 5.2L4.2 7.1L7.9 3.1", fill: "none", stroke: "#fff", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+  return el("span", { class: "done", style: `--r: -${Math.round(gone === null ? 60000 : gone)}ms` },
+    src ? el("img", { src, alt: "", draggable: "false" }) : null, el("span", { class: "ok" }, ok));
+}
+// The actor at work in the Chat view: its avatar acting out its turn -- `t`, the turn, its `work` (work.py's summary) --
+// on the stage; or, the setting "Simple" (avatarMode), buddy()'s one motion. An actor with no avatar has the turning glyph.
+function atWork(a, t) {
+  const src = bareAvatar(a);
   if (!src) return el("span", { class: "spin", "aria-hidden": "true" });
+  return avatarMode === "simple" ? buddy(a, !!a.failing) : stage(a, (t && t.work) || {}, src);
+}
+// The actor at work, small: its avatar's character out of its circle, moving as it does (its avatar_motion: a move, then an
+// effect round it, if any -- the .buddy CSS), on the page's clock so a redraw does not start it over; `still`, its calls
+// failing: not moving.
+function buddy(a, still) {
   const [move, fx] = (a.avatar_motion || "").split(/\s+/).map((w) => /^[a-z0-9-]+$/.test(w) ? w : "");
   return el("span", { class: ["buddy", move && `m-${move}`, fx && `f-${fx}`, still && "still"].filter(Boolean).join(" "),
     style: `--t: -${Math.round(performance.now())}ms`, "aria-hidden": "true" },
-    el("img", { src, alt: "", draggable: "false" }), ...(fx ? [el("i"), el("i"), el("i")] : []));
+    el("img", { src: bareAvatar(a), alt: "", draggable: "false" }), ...(fx ? [el("i"), el("i"), el("i")] : []));
 }
+// What an actor's stage reacts to, once: a call that ended, its turn over (`id`: which; null, none). Started when the
+// page sees it change -- or, seen on first drawing the actor, from when it happened, if that was lately; null once over.
+const REACT_MS = 3200, REACT_LATE = 6;
+const reacted = new Map();                          // "<channel> <what>" -> {id, start (performance.now())}
+function reaction(k, id, at) {
+  id = id === undefined ? null : id;
+  let r = reacted.get(k);
+  if (!r || r.id !== id) {
+    const late = Math.max(0, Date.now() / 1000 - (at || 0));
+    r = { id, start: r ? performance.now() : late < REACT_LATE ? performance.now() - late * 1000 : -Infinity };
+    reacted.set(k, r);
+  }
+  const gone = performance.now() - r.start;
+  return id !== null && gone < REACT_MS ? gone : null;
+}
+// The main shade of each avatar hue (assets/src/avatars/kit.py's), for its thought's dots.
+const HUE_MAIN = { red: "#ef4444", orange: "#f97316", yellow: "#fbbf24", lime: "#84cc16", green: "#22a55a", teal: "#14b8a6", sky: "#38bdf8",
+  blue: "#3b6cf6", purple: "#8b5cf6", pink: "#f472b6", brown: "#a0683a", gray: "#64748b" };
+// The stage: any avatar's character (its picture, 64 units square at 0, 0) acting out what its turn does with the same tool
+// whatever the character, so a tool always means one thing -- a book (read), a magnifying glass (search), a pencil and
+// sheet (edit), a checklist (test), gears (run), a parcel sent off (ship), an hourglass (wait), little copies of it (team);
+// as a call ends, slowing to a stop and putting the tool away to think (a thought by its head, its dots in the avatar's
+// hue, the character moving as it does: its avatar_motion's move, and its effect round it), until the next; and
+// reacting to how a call ended, what shows on its head and at the stage's corner.
+const stage = (() => {
+  const star = (k) => `<path class="star s${k}" d="M0 -2.6L.7 -.7L2.6 0L.7 .7L0 2.6L-.7 .7L-2.6 0L-.7 -.7Z"/>`;
+  const CONFETTI = [[-24, -14, "#22c55e"], [-16, -24, "#fbbf24"], [-6, -28, "#f472b6"], [6, -27, "#38bdf8"], [16, -24, "#a78bfa"], [24, -15, "#f97316"],
+    [-28, -4, "#38bdf8"], [28, -5, "#22c55e"]];
+  const CLOUD = [[61, -1.8, 4], [66.2, -5, 5], [71.4, -1.8, 4], [66.2, -.6, 4.6]];
+  const OVER = `
+    <g class="ov o-think"><circle class="tb tb1" cx="50.5" cy="9.6" r="1.5"/><circle class="tb tb2" cx="55" cy="4.6" r="2.3"/>
+      <g class="tb tb3">${CLOUD.map(([x, y, r]) => `<circle class="te" cx="${x}" cy="${y}" r="${r}"/>`).join("")}
+        ${CLOUD.map(([x, y, r]) => `<circle class="tf" cx="${x}" cy="${y}" r="${r}"/>`).join("")}
+        <g class="td"><circle cx="62.6" cy="-2.6" r="1.3"/><circle cx="66.2" cy="-2.6" r="1.3"/><circle cx="69.8" cy="-2.6" r="1.3"/></g></g></g>
+    <g class="ov o-bang"><text x="54" y="6" font-size="15" font-weight="800" fill="#ef4444" font-family="system-ui, sans-serif">!</text></g>
+    <g class="ov o-cloud"><g transform="translate(0 -9)"><path d="M22 6C22 2.5 25.5 1 28 2.8C29.5 -.6 35.5 -.6 37 2.8C39.5 1 43 2.6 42.5 6C45 6.6 45 10.6 42 10.6H22.5C19.5 10.6 19 6.8 22 6Z" fill="#78716c"/>
+      <path d="M29 8.6l2.4 -3l1.4 1.8l2.4 -3" stroke="#fde68a" stroke-width="1.1" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+    <g class="ov o-stars"><g transform="translate(32 2)">${star(1)}${star(2)}${star(3)}</g></g>
+    <g class="ov o-confetti"><g transform="translate(32 16)">${CONFETTI.map(([dx, dy, c], i) => `<rect class="cf" x="-1" y="-1.6" width="2" height="3.2" rx=".5" `
+      + `fill="${c}" style="--dx:${dx}px;--dy:${dy}px;animation-delay:calc(var(--r) - ${i * 40}ms)"/>`).join("")}</g></g>
+    <g class="ov o-q"><g transform="translate(57 1)"><circle class="qb" r="6.5"/><text class="qt" x="-2.6" y="3.2">?</text></g></g>
+    <g class="ov o-check" transform="translate(86 2)"><g class="bd"><circle r="7" fill="#22a55a"/><path d="M-3.3 .2L-1 2.6L3.4 -2.2" stroke="#fff" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+    <g class="ov o-cross" transform="translate(86 2)"><g class="bd"><circle r="7" fill="#ef4444"/><path d="M-2.6 -2.6L2.6 2.6M2.6 -2.6L-2.6 2.6" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/></g></g>`;
+  const ROWS = [10, 16.5, 23];                       // the checklist's lines
+  const gear = (cls, x, y, r) => `<g transform="translate(${x} ${y})"><g class="gear ${cls}">
+    <circle r="${r}" stroke-width="${r * .55}" stroke-dasharray="${(r * .5).toFixed(2)} ${(r * .42).toFixed(2)}"/>
+    <circle r="${r * .72}" style="fill: var(--metal)"/><circle r="${r * .28}" style="fill: var(--surface)"/></g></g>`;
+  // each of work.py's kinds, and thinking alone: its tool, behind and before the character
+  const PROPS = {
+    think: () => ({}),
+    read: () => ({ front: `<g class="prop">
+      <path d="M17 46.5Q24.5 44.5 32 47Q39.5 44.5 47 46.5V58.8Q39.5 56.8 32 59.3Q24.5 56.8 17 58.8Z" fill="#3b6cf6"/>
+      <path d="M18.5 46Q25 44.2 32 46.4V57.6Q25 55.4 18.5 57.2Z" fill="#fff"/><path d="M45.5 46Q39 44.2 32 46.4V57.6Q39 55.4 45.5 57.2Z" fill="#fff"/>
+      <path d="M21 49.2h7.5M21 51.7h7.5M21 54.2h5.5M35.5 49.2h7.5M35.5 51.7h7.5M35.5 54.2h5.5" stroke="#b9ad9f" stroke-width=".9" stroke-linecap="round"/>
+      <path class="flip" d="M45.5 46Q39 44.2 32 46.4V57.6Q39 55.4 45.5 57.2Z" fill="#efeae1"/></g>` }),
+    search: () => ({ front: `<g class="prop"><g transform="translate(66 38)"><g class="mag">
+      <path d="M5.8 5.8L12.6 12.6" stroke="#8b5a2b" stroke-width="3.6" stroke-linecap="round"/>
+      <circle r="8.2" fill="rgba(186, 230, 253, .45)" stroke="#64748b" stroke-width="2.4"/>
+      <path class="glint" d="M-4.8 -2.2A5.2 5.2 0 0 1 -1.8 -5.3" stroke="#fff" stroke-width="1.7" fill="none" stroke-linecap="round"/></g></g></g>` }),
+    edit: () => ({
+      back: `<g class="prop"><g transform="rotate(5 63 49)"><rect class="paper" x="51" y="38" width="24" height="22" rx="1.6"/>
+        <path class="ln l1" d="M55 43.5h16"/><path class="ln l2" d="M55 48h16"/><path class="ln l3" d="M55 52.5h11"/></g></g>`,
+      front: `<g class="prop"><g transform="translate(55.5 42.8)"><g class="pen"><g transform="rotate(250)">
+        <path d="M0 0L5 -2V2Z" fill="#f1d3a6"/><path d="M0 0L1.9 -.76V.76Z" fill="#3a2a2a"/>
+        <rect x="5" y="-2" width="10" height="4" fill="#fbbf24"/><path d="M5 0H15" stroke="#f59e0b" stroke-width=".8"/>
+        <rect x="15" y="-2" width="1.6" height="4" fill="#a8a29e"/><rect x="16.6" y="-2" width="2.8" height="4" rx="1" fill="#f9a8d4"/></g></g></g></g>` }),
+    test: () => ({ front: `<g class="prop"><g transform="translate(60 21)">
+      <rect x="0" y="2" width="24" height="30" rx="2.5" fill="#b9824f"/><rect x="2.5" y="5" width="19" height="25" rx="1" fill="#fff"/>
+      <rect x="7" y="0" width="10" height="5" rx="1.5" fill="#94a3b8"/>
+      ${ROWS.map((y, i) => `<rect x="5" y="${y - 2.2}" width="4.4" height="4.4" rx=".8" fill="none" stroke="#94a3b8" stroke-width=".9"/>
+        <path d="M11.5 ${y}h7.5" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round"/><path class="tk tk${i}" d="M5.7 ${y}l1.4 1.4l2.5 -2.8"/>`).join("")}
+      <path class="tx" d="M5.6 ${ROWS[1] - 1.6}l3.2 3.2M8.8 ${ROWS[1] - 1.6}l-3.2 3.2" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/></g></g>` }),
+    run: () => ({ back: `<g class="prop">${gear("g1", 69, 31, 8)}${gear("g2", 81.5, 43, 5.4)}</g>` }),
+    ship: () => ({ front: `<g class="prop"><g transform="translate(62 43)"><g class="parcel">
+      <rect width="18" height="14" rx="1.5" fill="#d6a86c"/><path d="M0 4.5H18" stroke="#b07d3e" stroke-width="1"/><rect x="7.5" width="3" height="14" fill="#f3e1c4"/></g>
+      <path class="arrow" d="M9 -4v-8M5.5 -8.5L9 -12L12.5 -8.5" stroke="#22a55a" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g></g>` }),
+    wait: () => ({ front: `<g class="prop"><g transform="translate(74 45)"><g class="hg">
+      <rect class="wood" x="-6.5" y="-13" width="13" height="2.4" rx="1.2"/><rect class="wood" x="-6.5" y="10.6" width="13" height="2.4" rx="1.2"/>
+      <path class="glass" d="M-4.6 -10.6H4.6C4.6 -4.5 1.1 -2.2 1.1 0C1.1 2.2 4.6 4.5 4.6 10.6H-4.6C-4.6 4.5 -1.1 2.2 -1.1 0C-1.1 -2.2 -4.6 -4.5 -4.6 -10.6Z"/>
+      <path class="sand st" d="M-3.6 -9.2H3.6C3.6 -5 .8 -2.6 0 -.6C-.8 -2.6 -3.6 -5 -3.6 -9.2Z"/><path class="stream" d="M0 -.6V9"/>
+      <path class="sand sb" d="M-3.9 10.4Q0 3.2 3.9 10.4Z"/></g></g></g>` }),
+    team: (src, n) => ({ front: `<g class="prop">${[[65, 50], [78, 53], [91, 50]].slice(0, n).map(([x, y], k) =>
+      `<g transform="translate(${x} ${y})"><g class="mini m${k}"><image href="${src}" x="-10" y="-10" width="20" height="20"/></g></g>`).join("")}</g>` }),
+  };
+  const props = (look, src) => look.startsWith("team") ? PROPS.team(src, +look.slice(4) || 1) : (PROPS[look] || PROPS.think)();
+  // what came of a call: on its own tool (a test's checklist, a commit's parcel) or on whatever it does now
+  const ENDS = { pass: "test", tfail: "test", ship: "ship" };
+  const MOVE_MS = 600, WIND_MS = 1400;
+  const PUT_AFTER = 900, PUT_MS = 650;              // a call over: its tool put away this long after, taking this long
+  // where the action's animations are, by the page's clock, `e` ms after a call ended: slowing evenly to a stop over WIND_MS
+  const wound = (since, now) => { const e = Math.min(WIND_MS, Math.max(0, now - since)); return since + e - e * e / (2 * WIND_MS); };
+  const WINDS = new Set(["w-read", "w-flip", "w-search", "w-sweep", "w-glint", "w-edit", "w-l1", "w-l2", "w-l3", "w-pen", "w-test", "w-tk0",
+    "w-tk1", "w-tk2", "w-run", "w-gear", "w-ship", "w-parcel", "w-arrow", "w-wait", "w-stream", "w-hg", "w-st", "w-sb", "w-team", "w-scurry"]);
+  // the action's animations held where `wound` says, frame by frame until stopped: drawn already where it starts them (--a)
+  const windDown = (svg, since, from) => {
+    const anims = svg.getAnimations({ subtree: true }).filter((x) => WINDS.has(x.animationName));
+    for (const x of anims) x.pause();
+    const step = () => {
+      if (!svg.isConnected) return;
+      const now = performance.now();
+      for (const x of anims) x.currentTime = wound(since, now) - from;
+      if (now - since < WIND_MS) requestAnimationFrame(step);
+    };
+    step();
+  };
+  // what each actor's stage last showed: {look, at (when it changed), was (the look before), musing, musedAt (when that changed),
+  // putAt (when its tool is put away; null: none to), bubbleAt (when its thought grows in), popBubble, done, arrivedAt}
+  const shown = new Map();
+  const stage = (a, w, src) => {
+    const ch = a.channel;
+    const e = w.ended, gone = reaction(`${ch} call`, e ? e.id : null, e && e.at);
+    const react = gone === null ? null : !e.ok ? (e.kind === "test" ? "tfail" : "fail")
+      : e.kind === "test" ? "pass" : e.kind === "ship" ? "ship" : null;
+    const musing = !w.doing, t0 = performance.now();
+    let sh = shown.get(ch);
+    if (!sh || sh.done) {                            // first seen (no change to show), or a new turn after its last: it arrives
+      sh = { look: null, at: -Infinity, was: null, musing, musedAt: -Infinity, putAt: null, bubbleAt: -Infinity, popBubble: false,
+        done: false, arrivedAt: sh ? t0 : -Infinity };
+      shown.set(ch, sh);
+    }
+    const wasPut = sh.putAt !== null && t0 >= sh.putAt;   // what it showed is being put away, or is
+    if (sh.musing !== musing) {                      // a call over (the model at work), or one begun
+      const acting = sh.look !== null && sh.look !== "think";
+      const putAt = musing && acting ? t0 + (react ? REACT_MS - 300 : PUT_AFTER) : null;
+      Object.assign(sh, { musing, musedAt: t0, putAt, popBubble: !musing && sh.bubbleAt <= t0,
+        bubbleAt: !musing ? sh.bubbleAt : putAt === null ? t0 : putAt + 350 });
+    }
+    // a call running; else, the call it made last, until it is put away (and while nothing readable was said since); else thinking
+    const putting = musing && sh.putAt !== null && t0 < sh.putAt + PUT_MS;
+    const doing = (react && ENDS[react]) || w.doing || (putting && w.last) || "think";
+    const look = doing === "team" ? `team${Math.min(3, Math.max(1, w.helpers || 0))}` : doing;
+    if (sh.look === null) sh.look = look;            // first seen: as it is
+    else if (sh.look !== look)                       // what it showed, put away already, has nothing left to take off
+      Object.assign(sh, { was: wasPut && sh.look !== "think" ? null : sh.look, look, at: t0 });
+    const moving = sh.was !== null && t0 - sh.at < MOVE_MS;
+    const href = escapeHtml(src), p = props(look, href), q = moving ? props(sh.was, href) : null;
+    const since = Math.max(sh.musedAt, t0 - 60000);
+    const [move, fx] = (a.avatar_motion || "").split(/\s+/).map((x) => /^[a-z0-9-]+$/.test(x) ? x : "");
+    const cls = ["stage", `s-${doing}`, musing && "musing", putting && "putting", !musing && sh.popBubble && t0 - sh.musedAt < 400 && "popping",
+      t0 - sh.arrivedAt < MOVE_MS && "arriving", react && `r-${react}`, (!react || react === "fail") && w.failed >= 3 && "streak",
+      a.failing && "retry"].filter(Boolean).join(" ");
+    const box = el("span", { class: "stage-box" });
+    box.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="${cls}" viewBox="-8 -14 102 82" aria-hidden="true" style="`
+      + `--t: -${Math.round(t0)}ms; --r: -${Math.round(gone || 0)}ms; --dot: ${HUE_MAIN[a.avatar_hue] || "var(--muted)"}; `
+      + `--x: -${Math.round(Math.min(60000, t0 - sh.at))}ms; --y: -${Math.round(Math.min(60000, t0 - sh.musedAt))}ms; `
+      + `--z: -${Math.round(Math.min(60000, t0 - sh.arrivedAt))}ms; --a: -${Math.round(musing ? wound(since, t0) : t0)}ms; `
+      + `--p: ${Math.round(Math.max(-60000, (sh.putAt ?? t0 - 60000) - t0))}ms; --b: ${Math.round(Math.max(-60000, sh.bubbleAt - t0))}ms">`
+      + `${q && q.back ? `<g class="leave">${q.back}</g>` : ""}${p.back ? `<g class="enter">${p.back}</g>` : ""}`
+      + `<g class="me${move ? ` m-${move}` : ""}"><image href="${href}" x="0" y="0" width="64" height="64"/></g>`
+      + `${q && q.front ? `<g class="leave">${q.front}</g>` : ""}${p.front ? `<g class="enter">${p.front}</g>` : ""}${OVER}</svg>`;
+    if (fx) box.append(el("span", { class: `buddy f-${fx}`, style: `--t: -${Math.round(t0)}ms` }, el("i"), el("i"), el("i")));
+    const svg = box.firstElementChild;
+    if (musing) requestAnimationFrame(() => windDown(svg, since, wound(since, t0)));   // once drawn: its animations exist
+    const left = Math.max(gone === null ? 0 : REACT_MS - gone, moving ? MOVE_MS - (t0 - sh.at) : 0,
+      putting ? sh.putAt + PUT_MS - t0 : 0);         // put away: drawn thinking
+    if (left) setTimeout(() => { if (box.isConnected) box.replaceWith(stage(a, w, src)); }, left + 30);   // over: drawn as it is now
+    return box;
+  };
+  // its turn over (atRest): the next turn's actor arrives
+  stage.rest = (ch) => { const sh = shown.get(ch); if (sh) sh.done = true; else shown.set(ch, { done: true }); };
+  return stage;
+})();
 // An eye with a stroke through it: hide.
 function hideIcon() {
   const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 14, height: 14, "aria-hidden": "true", fill: "none", stroke: "currentColor",
@@ -1647,6 +2028,22 @@ function setTheme(pick, keep) {
   window.dispatchEvent(new Event("ag-theme"));
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => window.dispatchEvent(new Event("ag-theme")));
+// The actor at work in the Chat view: acting out what it does (the stage), or small with its one motion ("simple"); kept in
+// this browser, acting until one is picked.
+const AVATAR_KEY = "ag-dashboard-avatar";
+let avatarMode = "acting";
+function setAvatarMode(pick, keep, draw = true) {
+  avatarMode = pick === "simple" ? "simple" : "acting";
+  for (const b of document.querySelectorAll("[data-avatar-pick]")) b.setAttribute("aria-pressed", b.dataset.avatarPick === avatarMode ? "true" : "false");
+  if (keep) { try { localStorage.setItem(AVATAR_KEY, avatarMode); } catch (e) { /* this page only */ } }
+  for (const p of panes.others) p.call("avatar", avatarMode);
+  if (draw && chatView().id === "files") keepingPlace(renderMain);
+}
+setAvatarMode((() => { try { return localStorage.getItem(AVATAR_KEY); } catch (e) { return null; } })(), false, false);
+document.getElementById("avatar-mode").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-avatar-pick]");
+  if (b) setAvatarMode(b.dataset.avatarPick, true);
+});
 setTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })() || "dark", false);
 document.getElementById("theme").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-theme-pick]");
@@ -2425,6 +2822,7 @@ function paneReady() {
     select: (g, c, view) => { if (view) chatViewId = view; select(g, c); },
     view: (id) => setChatView(id),
     theme: (pick) => setTheme(pick, false),
+    avatar: (pick) => setAvatarMode(pick, false),
     focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
     top: (h) => setTopRow(h),
   });
@@ -3749,7 +4147,7 @@ addChatView({
       data.earlier ? el("button", { type: "button", class: "earlier", onclick: loadEarlier }, "Load earlier messages") : null,
       ...transcriptBlocks([...data.items, ...data.pending], running, txBlocks),
       running ? el("div", { class: "status-line" }, el("span", { class: "spin", "aria-hidden": "true" }),
-        info.failing ? `Retrying… (last try ${ago(info.failing.at)})` : `Working… (last activity ${ago(info.last)})`) : null,
+        ...(info.failing ? ["Retrying…", agoEl("last try", info.failing.at)] : ["Working…", agoEl("last activity", info.last)])) : null,
       backgroundNote(info, true),
     ].filter(Boolean);
   },
@@ -3985,6 +4383,7 @@ let sideFolded = (() => { try { return localStorage.getItem(SIDE_KEY) !== "0"; }
 function foldSide(fold, draw = true) {
   sideFolded = fold;
   try { localStorage.setItem(SIDE_KEY, fold ? "1" : "0"); } catch (e) { /* this page only */ }
+  if (fold && state.files && state.files.turn !== null) return setFilesTurn(null);   // folded: the latest turn, which its bar counts
   if (draw) keepingPlace(renderMain);
 }
 // The bar: the number of files; of commands, by how they went, in the colours of the commands' dots; of tasks
@@ -3998,10 +4397,11 @@ function sideBar(files, cmds, info) {
   return el("button", { type: "button", class: "fl-bar", title: `${said}. Show the files and commands`,
     "aria-label": `Show the files and commands: ${said}`, onclick: () => foldSide(false) },
     strokeIcon(ICONS.sidebar, 15),
-    el("span", { class: "it" }, strokeIcon(ICONS.page, 13), el("span", { text: full(files) })),
-    el("span", { class: "it" }, strokeIcon(ICONS.terminal, 13),
-      ...(how.length ? how.map(([k, cls]) => el("span", { class: "sub " + cls }, dot(cls), full(k))) : [el("span", { text: "0" })])),
-    bg ? el("span", { class: "it bg" }, dot("bg"), el("span", { text: full(bg) })) : null);
+    el("span", { class: "stats" },
+      el("span", { class: "it" }, strokeIcon(ICONS.page, 13), el("span", { text: full(files) })),
+      el("span", { class: "it" }, strokeIcon(ICONS.terminal, 13),
+        ...(how.length ? how.map(([k, cls]) => el("span", { class: "sub " + cls }, dot(cls), full(k))) : [el("span", { text: "0" })])),
+      bg ? el("span", { class: "it bg" }, dot("bg"), el("span", { text: full(bg) })) : null));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
@@ -4315,7 +4715,8 @@ function filesTalk(d, info, running) {
         userWords(t.text))),
       ...[...(t.more || []), ...(t.n === d.turns.length - 1 ? joined : [])].map((m) =>
         el("button", { type: "button", class: "fl-user joined" + bubbleClass(m.text), "aria-pressed": on ? "true" : "false",
-          title: "Written while it worked, and given to the agent in this turn", onclick: () => setFilesTurn(t.n) },
+          title: "Written while it worked, and given to the agent in this turn",
+          onclick: () => { if (sideFolded) foldSide(false, false); setFilesTurn(t.n); } },
           userWords(m.text))),
       before.length ? el("div", { class: "fl-minor" },
         extra ? el("button", { type: "button", class: "fl-more", "aria-expanded": hidden ? "false" : "true", onclick: toggle,
@@ -4325,10 +4726,17 @@ function filesTalk(d, info, running) {
       last < 0 ? null : reply(said[last], true),
       after.length ? el("div", { class: "fl-minor" }, ...after.map((x) => reply(x, false))) : null,
       t.last ? el("div", { class: "fl-minor" }, lastCall(t, live, info ? statusOf(info)[0] : "")) : null,
-      live ? el("div", { class: "fl-status", role: "status", style: hueInk(info) }, buddy(info, !!(info && info.failing)),
-        el("span", { class: "tx", title: now, text: `${now} (last activity ${ago(info.last)})` }))
+      live ? el("div", { class: "fl-working" },
+        el("div", { class: "fl-times", "aria-hidden": "true" }, info.failing ? "last try " : "last activity ",
+          el("span", { "data-ago": (info.failing ? info.failing.at : info.last) || "", text: ago(info.failing ? info.failing.at : info.last) }),
+          t.at ? " · " : null, t.at ? el("span", { "data-lasting": t.at, text: lasting(t.at) }) : null, t.at ? " so far" : null),
+        el("div", { class: "now", role: "status", style: hueInk(info) }, now))
         : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null,
       t.n === d.turns.length - 1 ? pendingTalk(info, h) : null));
+    // under the latest turn's box: the actor at work; or, its turn over, the actor done
+    if (live) box.append(el("div", { class: "fl-status", "aria-hidden": "true" }, atWork(info, t)));
+    else if (t.n === d.turns.length - 1 && info && ["idle", "finished", "closed"].includes(statusOf(info)[0]))
+      box.append(el("div", { class: "fl-done", title: `Done · ${ago(info.last)}` }, atRest(info, t.row_id)));
   }
   const at = `${state.files && state.files.key}:${d.turn}`;
   if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick: the latest at its end
@@ -4472,8 +4880,14 @@ CHAT_FEEDS.outline = {
 // What the Gatherer's model made of the gatherer's history, newest first; looked at again every
 // 2 s while one is being made.
 let extractsTimer = null;
-// Each time that counts up (`data-since`, in the server's seconds) set where it is, every second: nothing redrawn.
-setInterval(() => { for (const n of document.querySelectorAll("[data-since]")) n.textContent = span(+n.dataset.since, Date.now() / 1000); }, 1000);
+// Each time that counts up (`data-since`, in the server's seconds; `data-ago`, how long ago, as ago() says it) set where
+// it is, every second: nothing redrawn.
+setInterval(() => {
+  const now = Date.now() / 1000;
+  for (const n of document.querySelectorAll("[data-since]")) n.textContent = span(+n.dataset.since, now);
+  for (const n of document.querySelectorAll("[data-ago]")) n.textContent = ago(+n.dataset.ago);
+  for (const n of document.querySelectorAll("[data-lasting]")) n.textContent = lasting(+n.dataset.lasting);
+}, 1000);
 async function loadExtracts(g) {
   try {
     const list = await get(`/api/extracts?gatherer=${enc(g)}`);
