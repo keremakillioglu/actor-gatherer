@@ -1052,8 +1052,8 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-bar .g.ok { background: var(--good); } .files .fl-bar .sub.ok { color: var(--ink-2); }
 .files .fl-bar .g.err { background: var(--critical); } .files .fl-bar .sub.err { color: var(--critical); }
 .files .fl-bar .g.run { background: var(--warning); animation: term-blink 1s steps(2) infinite; } .files .fl-bar .sub.run { color: var(--warning); }
-.files .fl-bar .it.bg { padding-top: 12px; border-top: 1px solid var(--ring); width: 18px; }   /* the background apart from the commands */
-.files .fl-bar .g.bg { width: 7px; height: 7px; background: var(--good); }   /* the Background dot */
+.files .fl-bar .sub.kd { color: var(--ink-2); }   /* the files of a kind, by its colour in the tree */
+.files .fl-bar .g.bg { background: var(--good); } .files .fl-bar .sub.bg { color: var(--ink-2); }   /* the Background dot */
 .files .fl-h .fold { flex: none; display: inline-flex; margin: -3px -4px -3px auto; padding: 3px; background: none; border: 0; border-radius: 4px;
   color: var(--muted); cursor: pointer; }
 .files .fl-h .tmp + .fold { margin-left: 0; }
@@ -1063,15 +1063,20 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-sec > .fl-h { flex: none; }
 .files .fl-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
 .files .fl-sec > .fl-legend { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--ring); }
-/* under the commands, what runs in the background: a line, its tasks over the column while it is hovered */
-.files .fl-bg { flex: none; position: relative; display: flex; align-items: center; padding: 5px 12px; border-top: 1px solid var(--ring);
-  font-size: 11.5px; color: var(--ink-2); cursor: default; outline: 0; }
-.files .fl-bg:hover, .files .fl-bg:focus-visible { background: var(--wash); color: var(--ink); }
-.files .fl-bg > .mark { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin-right: 8px; }   /* the Background dot */
-.files .fl-bg > .bg-tasks { display: none; position: absolute; left: 6px; bottom: calc(100% + 4px); z-index: 5;
-  width: max-content; max-width: min(560px, calc(100vw - 48px)); padding: 8px 12px; border: 1px solid var(--ring); border-radius: 8px;
-  background: var(--surface); box-shadow: 0 4px 16px rgba(0,0,0,.12); }
-.files .fl-bg:hover > .bg-tasks, .files .fl-bg:focus-within > .bg-tasks { display: block; }
+/* under the commands, what runs in the background: a section folded to its heading, opened by a click to its tasks,
+   listed as the commands are */
+.files .fl-sec.bg-sec { flex: none; max-height: 40%; border-top: 1px solid var(--ring); }
+.files .fl-sec.bg-sec.open { flex: 0 1 auto; }
+.files .fl-sec.bg-sec > .fl-h { width: 100%; margin: 0; padding: 8px 12px; background: none; border: 0; border-radius: 0; cursor: pointer;
+  font-family: inherit; text-align: left; }
+.files .fl-sec.bg-sec.open > .fl-h { padding-bottom: 4px; }
+.files .fl-sec.bg-sec > .fl-h:hover, .files .fl-sec.bg-sec > .fl-h:focus-visible { background: var(--wash); color: var(--ink-2); }
+.files .fl-sec.bg-sec > .fl-h .tw { flex: none; width: 10px; text-align: center; font-size: 8px; color: var(--ink-2); }   /* as its rows' */
+.files .fl-sec.bg-sec > .fl-h .mark { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--good); }   /* the Background dot */
+.files .fl-cmd .g.bg { color: var(--good); }
+.files .fl-cmd summary .kind { color: var(--muted); font: 10.5px var(--mono); margin-right: 6px; }
+.files .fl-bg-meta { font-size: 11.5px; color: var(--ink-2); margin: 2px 0 6px; }
+.files .fl-bg-meta .p { font: 11px var(--mono); overflow-wrap: anywhere; }
 .files .fl-h { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
   color: var(--muted); padding: 10px 12px 4px; }
 .files .fl-h .tmp { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0;
@@ -1159,11 +1164,11 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fv-block .diff .ctx { color: var(--muted); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
-  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } .files .fl-bar .it.bg { width: auto; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid var(--ring); } }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } }
 /* the same by the pane's width: one of several side by side is narrower than the window */
 @container pane (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
-  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } .files .fl-bar .it.bg { width: auto; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid var(--ring); } }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } }
 /* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
@@ -1779,6 +1784,7 @@ const ICONS = {
   layers: "M8 2.25l6 3-6 3-6-3zM2 8l6 3 6-3M2 10.75l6 3 6-3",
   panel: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM9.75 2.75v10.5",
   sidebar: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM6.25 2.75v10.5",
+  pulse: "M1.5 8.5h2.75l1.75-4.25 2.5 7.5 2-5.5 1.25 2.25h2.75",   // what runs in the background: alive
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -4387,22 +4393,38 @@ function foldSide(fold, draw = true) {
   if (fold && state.files && state.files.turn !== null) return setFilesTurn(null);   // folded: the latest turn, which its bar counts
   if (draw) keepingPlace(renderMain);
 }
-// The bar: the number of files; of commands, by how they went, in the colours of the commands' dots; of tasks
-// in the background, apart under a line.
+// The background's section under the commands: folded to its heading until opened, the choice kept in this browser.
+const BG_KEY = "ag-dashboard-files-bg-open";
+let bgOpen = (() => { try { return localStorage.getItem(BG_KEY) === "1"; } catch (e) { return false; } })();
+function openBackground(open, draw = true) {
+  bgOpen = open;
+  try { localStorage.setItem(BG_KEY, open ? "1" : "0"); } catch (e) { /* this page only */ }
+  if (draw) keepingPlace(renderMain);
+}
+// The bar: the files, by kind, in the colours of the tree's (a file of two kinds counted in both; the kinds switched
+// off left out); the commands, by how they went, in the colours of the commands' dots; the tasks in the background.
+// A click on the background's opens their section too.
 function sideBar(files, cmds, info) {
   const bg = (info.background || []).length, n = cmds.ok + cmds.err + cmds.run;
+  const kinds = Object.entries(FILE_KINDS).filter(([k]) => !hiddenKinds.has(k))
+    .map(([k, [name, color]]) => [files.filter((f) => f.kinds.includes(k)).length, color, name]).filter(([c]) => c);
   const how = [[cmds.ok, "ok", "passed"], [cmds.err, "err", "failed"], [cmds.run, "run", "running"]].filter(([k]) => k);
-  const said = [plural(files, "file"), plural(n, "command") + (how.length ? ": " + how.map(([k, , w]) => `${full(k)} ${w}`).join(", ") : ""),
+  const said = [plural(files.length, "file") + (kinds.length ? ": " + kinds.map(([c, , w]) => `${full(c)} ${w}`).join(", ") : ""),
+    plural(n, "command") + (how.length ? ": " + how.map(([k, , w]) => `${full(k)} ${w}`).join(", ") : ""),
     bg ? plural(bg, "background task") : null].filter(Boolean).join(" · ");
-  const dot = (cls) => el("i", { class: "g " + cls, "aria-hidden": "true" });
+  const dot = (cls, color) => el("i", { class: "g " + cls, "aria-hidden": "true", style: color ? `background: ${color}` : null });
   return el("button", { type: "button", class: "fl-bar", title: `${said}. Show the files and commands`,
-    "aria-label": `Show the files and commands: ${said}`, onclick: () => foldSide(false) },
+    "aria-label": `Show the files and commands: ${said}`,
+    onclick: (ev) => { if (ev.target.closest(".it.bg")) openBackground(true, false); foldSide(false); } },
     strokeIcon(ICONS.sidebar, 15),
     el("span", { class: "stats" },
-      el("span", { class: "it" }, strokeIcon(ICONS.page, 13), el("span", { text: full(files) })),
+      el("span", { class: "it" }, strokeIcon(ICONS.page, 13),
+        ...(kinds.length ? kinds.map(([c, color]) => el("span", { class: "sub kd" }, dot("", color), full(c)))
+          : [el("span", { text: full(files.length) })])),
       el("span", { class: "it" }, strokeIcon(ICONS.terminal, 13),
         ...(how.length ? how.map(([k, cls]) => el("span", { class: "sub " + cls }, dot(cls), full(k))) : [el("span", { text: "0" })])),
-      bg ? el("span", { class: "it bg" }, dot("bg"), el("span", { text: full(bg) })) : null));
+      bg ? el("span", { class: "it bg", title: `${plural(bg, "background task")}: show them` }, strokeIcon(ICONS.pulse, 13),
+        el("span", { class: "sub bg" }, dot("bg"), full(bg))) : null));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
@@ -4583,7 +4605,7 @@ function filesRender({ info, running }) {
     el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
   const failed = commands.filter((c) => c.error).length;
   const busy = commands.filter((c) => !c.error && c.running && running).length;
-  const side = sideFolded ? sideBar(files.length, { ok: commands.length - failed - busy, err: failed, run: busy }, info)
+  const side = sideFolded ? sideBar(files, { ok: commands.length - failed - busy, err: failed, run: busy }, info)
     : el("div", { class: "fl-side" },
     el("section", { class: "fl-sec files-sec" },
       el("div", { class: "fl-h" }, el("span", { text: files.length ? plural(files.length, "file") : "No files" }),
@@ -4604,13 +4626,28 @@ function filesRender({ info, running }) {
     el("div", { class: "fl-right", "data-morph": "" }, filesTalk(d, info, running), asking));
 }
 let cmdsShown = null;
-// What runs in the background, under the commands: one line, the tasks themselves (backgroundNote) over
-// it while it is hovered or focused. Null when none runs.
+// What runs in the background, under the commands: a section folded to its heading (openBackground), opened to
+// its tasks, each a row as a command is -- its dot, what kind it is and what it is for, opened to when it started,
+// its last sign of life and the file it writes to. Null when none runs.
 function filesBackground(info) {
-  const note = backgroundNote(info);
-  if (!note) return null;
-  return el("div", { class: "fl-bg", tabindex: "0" },
-    el("span", { class: "mark", "aria-hidden": "true" }), plural(info.background.length, "background task"), note);
+  const tasks = info.background || [];
+  if (!tasks.length) return null;
+  const head = el("button", { type: "button", class: "fl-h", "aria-expanded": bgOpen ? "true" : "false",
+    title: bgOpen ? "Fold the background tasks" : "Show the background tasks", onclick: () => openBackground(!bgOpen) },
+    el("span", { class: "tw", "aria-hidden": "true", text: bgOpen ? "▼" : "▶" }), el("span", { class: "mark", "aria-hidden": "true" }),
+    el("span", { text: `${plural(tasks.length, "background task")} running` }));
+  if (!bgOpen) return el("section", { class: "fl-sec bg-sec" }, head);
+  const meta = (k, v, cls) => v ? el("div", { class: "fl-bg-meta" }, `${k} `, el("span", { class: cls || "", text: v })) : null;
+  return el("section", { class: "fl-sec bg-sec open" }, head,
+    el("div", { class: "fl-scroll", "data-keep": "files-bg" }, ...tasks.map((t) => el("div", { class: "fl-cmd" },
+      el("span", { class: "g bg", text: "●" }),
+      el("details", { id: `fl-bg-${t.id}` },
+        el("summary", {}, el("span", { class: "kind", text: TASK_KINDS[t.kind] || t.kind }), firstLine(t.label || t.id, 140)),
+        el("div", { class: "fl-bg-meta" }, "started ", el("span", { "data-ago": t.started || "", text: ago(t.started) }),
+          t.active && t.active - t.started > 2 && !t.event ? el("span", {}, " · active ", el("span", { "data-ago": t.active, text: ago(t.active) })) : null),
+        t.event ? el("div", { class: "fl-bg-meta" }, "last event ", el("span", { "data-ago": t.event_at || "", text: ago(t.event_at) }),
+          ": ", el("span", { text: t.event })) : null,
+        meta("writes to", t.output, "p"))))));
 }
 // The conversation, at the right: each of the user's messages a turn, at the right, and under it the agent's:
 // its last message whole (a click folds it to its first line), the ones before it -- what it said on the way,
