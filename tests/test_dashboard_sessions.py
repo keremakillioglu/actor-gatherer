@@ -5,6 +5,7 @@ import base64
 import json
 import os
 import sqlite3
+import struct
 import sys
 import tempfile
 import textwrap
@@ -22,7 +23,8 @@ from ag_dashboard import home as dashboard_home  # noqa: E402
 
 # A fake `ag`: writes its arguments, then each message it is sent, to $FAKE_AG_LOG; answers each
 # after $FAKE_AG_DELAY seconds with a result line; exits when its stdin closes. `new G` makes G's
-# config in $AG_HOME, as ag's does.
+# config in $AG_HOME, as ag's does. In a terminal, resized, it clears its screen and says its size, as a
+# full screen draws all of it again.
 FAKE_AG = textwrap.dedent("""
     import json, os, sys, time
     if sys.argv[1:2] == ["home"]:                       # `ag home hold ...`: it has the session
@@ -40,7 +42,7 @@ FAKE_AG = textwrap.dedent("""
         import signal, tty
         tty.setraw(0)
         size = lambda: "%dx%d" % tuple(os.get_terminal_size(0))
-        signal.signal(signal.SIGWINCH, lambda *_: os.write(1, ("[resized %s]\\r\\n" % size()).encode()))
+        signal.signal(signal.SIGWINCH, lambda *_: os.write(1, ("\\x1b[2J[resized %s]\\r\\n" % size()).encode()))
         os.write(1, ("fake terminal %s tty=%s term=%s alt=%s\\r\\n" % (size(), os.isatty(0), os.environ.get("TERM"),
                                                                      os.environ.get("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"))).encode())
         while True:
@@ -296,6 +298,52 @@ class TerminalTest(SessionsBase):
         self.s.resize(sid, 90, 20)
         self.until(lambda: "[resized 90x20]" in self.screen(sid))
         self.assertTrue(self.s.output(sid, end + 10_000)[2])      # past its end: all of it again
+
+    def size(self, sid):
+        rows, cols = struct.unpack("HHHH", sessions.fcntl.ioctl(self.s.terms[sid].fd, sessions.termios.TIOCGWINSZ, b"\0" * 8))[:2]
+        return cols, rows
+
+    def test_a_full_screen_whose_last_whole_drawing_is_no_longer_kept_is_drawn_again(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.terminal(sid, 100, 30, fullscreen=True)
+        self.until(lambda: "fake terminal" in self.screen(sid))
+        self.s.redraw(sid)                                        # all it printed is kept: nothing to draw again
+        time.sleep(0.3)
+        self.assertNotIn("[resized", self.screen(sid))
+        with unittest.mock.patch.object(sessions, "TERM_KEEP", 200):
+            self.s.type(sid, "x" * 300)                           # echoed: its start no longer kept
+            self.until(lambda: self.s.output(sid, -1)[1] > 300)
+            self.s.redraw(sid)
+            self.until(lambda: "[resized 100x30]" in self.screen(sid))
+        out = self.screen(sid)
+        self.assertLess(out.index("[resized 100x29]"), out.index("[resized 100x30]"))   # a row less, then put back
+        self.assertEqual(self.size(sid), (100, 30))
+        _, at, _, _ = self.s.output(sid, -1)
+        self.s.redraw(sid)                                        # its clearing kept now: not again
+        time.sleep(0.3)
+        self.assertEqual(self.s.output(sid, -1)[1], at)
+
+    def test_the_page_s_own_size_given_while_it_is_drawn_again_stays(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.terminal(sid, 100, 30, fullscreen=True)
+        self.until(lambda: "fake terminal" in self.screen(sid))
+        with unittest.mock.patch.object(sessions, "TERM_KEEP", 100):
+            self.s.type(sid, "x" * 200)
+            self.until(lambda: self.s.output(sid, -1)[1] > 200)
+            self.s.redraw(sid)
+            self.s.resize(sid, 90, 20)
+            self.until(lambda: not self.s.terms[sid].redrawing)
+        self.assertEqual(self.size(sid), (90, 20))
+
+    def test_the_classic_screen_is_not_drawn_again(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid, 100, 30)
+        with unittest.mock.patch.object(sessions, "TERM_KEEP", 100):
+            self.s.type(sid, "x" * 200)
+            self.until(lambda: self.s.output(sid, -1)[1] > 200)
+            self.s.redraw(sid)
+        time.sleep(0.3)
+        self.assertNotIn("[resized", self.screen(sid))
 
     def test_a_message_from_another_view_is_pasted_into_it_then_entered(self):
         sid = self.s.create("g", self.work)["session_id"]
