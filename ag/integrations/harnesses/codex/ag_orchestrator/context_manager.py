@@ -209,6 +209,7 @@ class CodexContextManager:
             raise ValueError(f"files: {files!r}, not on or off")
         self.files = Files(self.ag_clients, log) if files == "on" else None
         self.runs = {}                    # (label, run) -> (gatherer, thread): the thread whose own turn it sent last
+        self.latest = {}                  # (gatherer, thread) -> the read its newest call's context came from
 
     async def __call__(self, request) -> Optional[dict]:
         body, since = request.body, time.time()
@@ -249,6 +250,8 @@ class CodexContextManager:
                                        process=getattr(request, "process", None), run=run)
         self.log(gatherer, f"[{channel}] {note}")
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
+        if isinstance(out.get("read_id"), int):
+            self.latest[(gatherer, channel)] = max(out["read_id"], self.latest.get((gatherer, channel), 0))
         if messages is None or messages == items:
             return None                                   # nothing to change: codex's own bytes go through
         return dict(body, input=messages)
@@ -295,6 +298,8 @@ class CodexContextManager:
         if kept is None or not isinstance(answer, dict) or not answer.get("output_items") or not answer.get("response_id"):
             return
         gatherer, channel, cwd = kept
+        if self.overtaken(request, gatherer, channel):
+            return
         note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
                                 answer["output_items"], self.adaptor, answer["response_id"], STREAMING)
         self.log(gatherer, f"[{channel}] streaming: {note}")
@@ -304,8 +309,9 @@ class CodexContextManager:
         as events, kept as pending (the server's `pending`) until the thread's next call stores them
         -- so a reader of the gatherer sees the turn's last reply, which no call carries until the
         user writes again, and a tool call while it runs; in place of the items kept while it streamed
-        (`streamed`). A failed answer, or one with no output, is not kept. A side call's answer kept
-        for its thread (`side_answered`): a title, a recap."""
+        (`streamed`). A failed answer, or one with no output, is not kept; nor one a later call of the
+        thread has carried back already (`overtaken`). A side call's answer is kept for its thread
+        (`side_answered`): a title, a recap."""
         side = (getattr(request, "state", None) or {}).get(SIDE)
         if side is not None:
             return await self.side_answered(side, status, answer)
@@ -315,10 +321,20 @@ class CodexContextManager:
         if not isinstance(answer, dict) or answer.get("error") or not answer.get("output_items"):
             return
         gatherer, channel, cwd = kept
+        if self.overtaken(request, gatherer, channel):
+            return
         note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
                                 answer["output_items"], self.adaptor, answer.get("response_id"),
                                 answer.get("status"), read_of(request))
         self.log(gatherer, f"[{channel}] answered ({answer.get('status')}): {note}")
+
+    def overtaken(self, request, gatherer: str, channel: str) -> bool:
+        """Whether a later call of the thread has been read since this one: codex sends its next call
+        once it has the whole answer -- before the end of its stream is written, before the hook server
+        is done with it -- and that call carries this answer back, stored. Kept as pending now, it would
+        show twice until the thread's next call."""
+        read_id = read_of(request)
+        return isinstance(read_id, int) and read_id < self.latest.get((gatherer, channel), 0)
 
     async def side_answered(self, side: Tuple[str, str, str], status: int, answer: dict) -> None:
         """A side call's answer, kept for the thread it was for: a title as its name (by "codex"); a recap

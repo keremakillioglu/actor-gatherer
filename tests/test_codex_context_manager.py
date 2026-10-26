@@ -225,6 +225,25 @@ class SideCallTest(HookTest):
                                 ("recap", {"gatherer": "demo", "session": "t1", "text": "2 + 3 is 5.\n\nNext: Multiply it."})])
         self.assertNotIn("pending", [op for op, _ in client.requests])     # never the thread's own answer
 
+    def test_an_answer_a_later_call_has_carried_back_is_not_kept_as_pending(self):
+        """Codex sends its next call once it has the whole answer, before the hook server is done with
+        it: that call stores the answer, so keeping it as pending then would show it twice."""
+        import asyncio
+        hook = self.hook()
+        reads = iter(range(1, 10))
+        hook.ag_clients.client("t1").answer = lambda body: {"context": body["events"], "note": "ok", "read_id": next(reads)}
+        first, second = (self.request({"input": [DEV, user("q", 1)]}, headers=meta(thread_source="user")) for _ in range(2))
+        for r in (first, second):
+            r.state = {}
+            self.call(hook, r)                              # reads 1 and 2
+        said = {"output_items": [{"type": "message", "role": "assistant", "id": "m1",
+                                  "content": [{"type": "output_text", "text": "done"}]}], "response_id": "resp_1"}
+        asyncio.run(hook.streamed(first, said))
+        asyncio.run(hook.answered(first, 200, said))       # read 2 is under way: read 1's answer is in it
+        asyncio.run(hook.answered(second, 200, dict(said, response_id="resp_2")))
+        kept = [b["answer"] for op, b in hook.ag_clients.client("t1").requests if op == "pending"]
+        self.assertEqual(kept, ["resp_2"])
+
     def test_a_turn_s_run_is_sent_with_it(self):
         hook = self.hook()
         for run in ("4242", None):
