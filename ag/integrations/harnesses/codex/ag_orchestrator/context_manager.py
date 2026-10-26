@@ -68,10 +68,11 @@ from typing import Callable, Optional, Tuple, Union
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import (STREAMING, call_ag, keep_read, pending_ag, preamble_of,
+from ag.integrations.tools.ag_orchestrator.call_ag import (READ, STREAMING, call_ag, keep_read, pending_ag, preamble_of,
                                                     read_of, report_failed, report_measured)
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from .ag_clients import AgClients
+from .counting import Counter
 from ..adaptor.adaptor import CodexAdaptor
 
 CWD = re.compile(r"<cwd>\s*(.*?)\s*</cwd>", re.S)
@@ -84,6 +85,7 @@ TRIGGER = "compaction_trigger"        # a compaction call's last item, which cod
 SIDE = "codex_side"                   # the same, for a side call whose answer is kept: (kind, gatherer, thread)
 KEPT = ("thread_title", "system")     # the side calls whose answers are kept: a title, a recap
 NAME_CHARS = 120                      # the longest name kept (codex asks for 36 characters at most)
+COUNT_FROM = 0.5      # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
 def load_adaptor(spec: str) -> Adaptor:
@@ -199,12 +201,16 @@ class CodexContextManager:
 
     def __init__(self, cwd: Optional[str] = None, factory: Optional[str] = None, path: Optional[str] = None,
                  ag_clients: Optional[AgClients] = None, log: Callable[[str, str], None] = _print,
-                 adaptor: Union[Adaptor, str, None] = None, files: str = "on"):
+                 adaptor: Union[Adaptor, str, None] = None, count: str = "on", files: str = "on"):
         args = (["--factory", factory] if factory else []) + \
             [x for p in (path.split(os.pathsep) if path else []) for x in ("--path", p)]
         self.ag_clients = ag_clients or AgClients(lambda gatherer: AgClient("codex", args=args))
         self.cwd, self.log = cwd, log
         self.adaptor = load_adaptor(adaptor) if isinstance(adaptor, str) else (adaptor or CodexAdaptor())
+        if count not in ("on", "check", "off"):
+            raise ValueError(f"count: {count!r}, not on, check or off")
+        self.counter = Counter(self.adaptor, enabled=count != "off", log=log)
+        self.count_events = count == "on"
         if files not in ("on", "off"):
             raise ValueError(f"files: {files!r}, not on or off")
         self.files = Files(self.ag_clients, log) if files == "on" else None
@@ -243,15 +249,36 @@ class CodexContextManager:
                 request.state[FILES] = (gatherer, channel, cwd, since)
         if self.files is not None:                         # the results of the last answer's calls: checked
             self.files.arrived(gatherer, channel, cwd, items)
-        messages, note = await call_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel},
-                                       cwd, items, self.adaptor, out=out,
-                                       limit=getattr(request, "limit", None),
-                                       preamble=preamble_of({"instructions": body.get("instructions"), "tools": body.get("tools")}),
-                                       process=getattr(request, "process", None), run=run)
-        self.log(gatherer, f"[{channel}] {note}")
+        client = self.ag_clients.client(gatherer)
+        preamble = preamble_of({"instructions": body.get("instructions"), "tools": body.get("tools")})
+
+        async def read():
+            out = {}
+            new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd, items, self.adaptor, out=out,
+                                      limit=getattr(request, "limit", None), preamble=preamble,
+                                      process=getattr(request, "process", None), run=run)
+            self.log(gatherer, f"[{channel}] {note}")
+            return new, out
+
+        messages, out = await read()
+        size, budget = out.get("sent_tokens"), out.get("budget")      # all of it, as the provider counts
+        if "read_id" in out and budget and size is not None and size >= COUNT_FROM * budget:
+            counted = await self.counter.exact(gatherer, channel, request,
+                                               dict(body, input=items if messages is None else messages))
+            if counted is not None and counted > budget:
+                self.log(gatherer, f"[{channel}] counted {counted} tokens before sending (ag's count {size}), "
+                                   f"over the budget {budget}: read again")
+                await client.request("measured", {"gatherer": gatherer, "read_id": out["read_id"], "tokens": counted})
+                again, out_again = await read()
+                if "read_id" in out_again:
+                    messages, out = again, out_again
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
         if isinstance(out.get("read_id"), int):
             self.latest[(gatherer, channel)] = max(out["read_id"], self.latest.get((gatherer, channel), 0))
+        sent = items if messages is None else messages
+        if self.count_events and "read_id" in out:
+            self.counter.sent(gatherer, channel, out, sent, preamble)
+            self.counter.start(request, client, gatherer, {CHANNEL: channel}, body, items, sent, out)
         if messages is None or messages == items:
             return None                                   # nothing to change: codex's own bytes go through
         return dict(body, input=messages)
@@ -270,8 +297,15 @@ class CodexContextManager:
         return dict(body, input=new + [dict(t) for t in trigger])
 
     async def measured(self, request, tokens: Optional[int]) -> None:
-        """The hook server's report, once the answer is back: the call's input tokens, to the read."""
+        """The hook server's report, once the answer is back: the call's input tokens, to the read -- and
+        to the counter, which counts by them what the count endpoint cannot (`Counter.reported`)."""
         await report_measured(self.ag_clients, request, tokens)
+        state = getattr(request, "state", None) or {}
+        read, answered = state.get(READ), state.get(ANSWERED)
+        if self.count_events and read and answered and isinstance(tokens, int):
+            gatherer, read_id = read
+            self.counter.reported(request, self.ag_clients.client(gatherer), gatherer, answered[1], read_id, tokens,
+                                  request.body if isinstance(request.body, dict) else {})
 
     async def failed(self, request, status: Optional[int], error: str) -> None:
         """The hook server's report that one of the session's own calls failed -- its endpoint answered an
@@ -360,7 +394,8 @@ class CodexContextManager:
                                                    else f"not kept: {kept}"))
 
     async def close(self) -> None:
-        """Let file checks under way finish, then stop every gatherer's server."""
+        """Let counts and file checks under way finish, then stop every gatherer's server."""
+        await self.counter.close()
         if self.files is not None:
             await self.files.close()
         await self.ag_clients.close()

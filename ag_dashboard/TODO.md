@@ -119,5 +119,31 @@ Not covered yet:
 - [ ] **Codex's automatic recap** (its `auto_recap` setting) should be kept the same way as `/recap`: not seen live.
 - [x] **Codex's warning** "Running without the shared background server", shown when that server runs: ag's `-c`
   overrides need codex embedded, so ag now runs it with `--no-daemon` (where its version has it), which says so.
+- [x] **Codex's counts are the provider's** (codex/ag_orchestrator/counting.py), as Claude Code's are: each call's
+  new steps counted by OpenAI's /v1/responses/input_tokens after it is sent, its reasoning by what the call's own
+  count is over that, and the call counted before it is sent near the budget. Without the endpoint, by differencing
+  the calls' own counts.
+- [ ] **Remind the user to set an OpenAI API key.** Under a ChatGPT login, codex's own endpoint (the ChatGPT backend)
+  has no count; the hook counts with OPENAI_API_KEY, if the hook server has it. Without it, counts come from
+  differencing the calls' own counts: each call's total is exact, but a reasoning item's cost is carried by the items
+  beside it, and there is no exact count before a call is sent. The dashboard or `ag codex` should say so, and how
+  to set one.
 - [ ] **`memory_consolidation`** side calls are passed through on the strength of the codex binary's strings
   alone: not seen live.
+- [ ] **Reasoning across turns, by OpenAI's count.** Live (gpt-6-luna at high effort, three turns), the first
+  reasoning item came to 75 tokens against the 73 its answer reported, but the second to 13 against 84. Check
+  whether OpenAI counts an earlier turn's reasoning in full when it is sent back, or one answer's reasoning is
+  more than the items ag sees.
+- [ ] **A build under codex, live.** Not yet watched: with a low `max_context_tokens` on a test gatherer, check that
+  builds start before codex's own compaction point (its stated limit, 90% of the window) and codex never compacts
+  by itself.
+- [ ] **Codex's subagents** (`subagent` side calls, the agents it spawns, /review's reviewer) are passed through, not
+  shown as background work the way Claude Code's background agents are.
+- [ ] **The approval reviewer** (`guardian_review`, for `--approve-for-me`, which the dashboard always uses) is passed
+  through; its verdict could say why codex did not run something.
+- [ ] **Codex tries a WebSocket first.** The hook server answers 426, and codex logs "failed to connect to
+  websocket: HTTP error: 426 Upgrade Required" on every run before falling back to HTTP. Harmless, but noise in
+  `codex exec`'s output; codex could be told not to try.
+- [ ] **A codex patch's command** reads "apply_patch" in the Files view's commands, not the file it changes.
+- [ ] **Tests that fail on macOS by path alone:** test_dashboard_codex's ExecTest (its work folder under /var, which
+  macOS resolves to /private/var: the test should take its realpath), test_join's guide test and test_pi_launch.
