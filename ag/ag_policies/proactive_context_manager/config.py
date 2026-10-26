@@ -57,6 +57,10 @@ class ProactiveContextManagerConfig:
     build_every_request: bool = False     # build at every user message (tests, experiments)
     sync_seconds: float = 15.0            # how long a read waits for the worker it started
                                           # (over the limit: up to build_timeout)
+    build_wait_seconds: float = 45.0      # once the check finds a new task, how long the read waits for
+                                          # that build, from when it began waiting (such builds took
+                                          # 15-28 s); one still running is taken up at a later call
+                                          # of the same turn
     check_boundaries: bool = True         # at or over min_context_tokens, ask; False = no build there
     boundary_cooldown: int = 2            # user messages into the open task before asking
     boundary_tasks_shown: int = 2         # finished tasks shown to the check, for contrast

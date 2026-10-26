@@ -180,16 +180,18 @@ def tools_placed(out: List[dict]) -> List[dict]:
     at the end. Only a system message may hold them, so they cannot go into the user turn as its text
     does (`placed`). In Claude Code's own history they always sit right before an assistant reply; a
     context that leaves that reply out (a build's summary in its place) leaves them before a user
-    turn. Moved on, the tools are still offered before the model next answers."""
+    turn. Moved on, the tools are still offered before the model next answers. They go out ahead of
+    a system message that keeps its place, so the blocks stay in order: a tool added, then removed,
+    is still added before it is removed (the API refuses a removal of a tool not yet added)."""
     fixed, moving = [], []
     for i, m in enumerate(out):
         nxt = out[i + 1] if i + 1 < len(out) else None
-        if moving and m.get("role") == "assistant":
+        stays = m.get("role") == "system" and (nxt is None or nxt.get("role") == "assistant")
+        if moving and (m.get("role") == "assistant" or stays):
             fixed.append({"role": "system", "content": moving})
             moving = []
         blocks = m.get("content")
-        if m.get("role") == "system" and nxt is not None and nxt.get("role") != "assistant" \
-                and isinstance(blocks, list):
+        if m.get("role") == "system" and not stays and isinstance(blocks, list):
             tools = [b for b in blocks if isinstance(b, dict) and b.get("type") in INLINE_TOOLS]
             if tools:
                 moving += tools
