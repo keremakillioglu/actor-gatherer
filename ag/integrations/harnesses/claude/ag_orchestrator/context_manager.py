@@ -89,8 +89,8 @@ from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.hook_server.hook_server import Answer
-from ag.integrations.tools.ag_orchestrator.call_ag import (call_ag, keep_read, pending_ag, preamble_of, read_of,
-                                                    report_failed, report_measured)
+from ag.integrations.tools.ag_orchestrator.call_ag import (STREAMING, call_ag, keep_read, pending_ag, preamble_of,
+                                                    read_of, report_failed, report_measured)
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
@@ -384,13 +384,29 @@ class ClaudeContextManager:
         self.files.started(gatherer, channel, cwd, answer.get("output_items") or [],
                            getattr(request, "answer_started", None) or since)
 
+    async def streamed(self, request, answer: dict) -> None:
+        """The hook server's report, while the answer to one of the session's own calls streams, that
+        a part of it is complete (a content block has ended): the parts complete so far kept as pending,
+        stopped STREAMING, in place of those kept before -- so a reader of the gatherer sees what the
+        agent wrote before a tool call as Claude Code shows it, not once the call's input (a whole
+        file, say) has streamed too. `answered` replaces them with the whole answer."""
+        kept = (getattr(request, "state", None) or {}).get(ANSWERED)
+        if kept is None or not isinstance(answer, dict) or not answer.get("output_items") or not answer.get("response_id"):
+            return
+        gatherer, channel, cwd = kept
+        note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
+                                [{"role": "assistant", "content": answer["output_items"]}], self.adaptor,
+                                answer["response_id"], STREAMING)
+        self.log(gatherer, f"[{channel}] streaming: {note}")
+
     async def answered(self, request, status: int, answer: dict) -> None:
         """The hook server's report, once Claude Code has the whole answer to one of the session's
         own calls: the answer's events kept as pending (the server's `pending`) until the channel's
         next call stores them as events -- so a reader of the gatherer sees the reply that ends a
-        turn, which no call carries until the user writes again, and a tool call while it runs. A
-        failed answer, or one with no content, is not kept. A recap's answer is kept as the
-        session's recap instead (the server's `recap`), never as events."""
+        turn, which no call carries until the user writes again, and a tool call while it runs; in
+        place of the parts of it kept while it streamed (`streamed`). A failed answer, or one with
+        no content, is not kept. A recap's answer is kept as the session's recap instead (the
+        server's `recap`), never as events."""
         recapped = (getattr(request, "state", None) or {}).get(RECAPPED)
         if recapped is not None:
             await self.recapped(recapped, status, answer)

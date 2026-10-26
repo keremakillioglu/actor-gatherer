@@ -94,6 +94,9 @@ class AgentsTest(HomeBase):
         self.pend([{"type": "agent_message", "payload": {}, "text": "Done."}], "end_turn")
         self.assertEqual(self.status()[:2], (data.IDLE, True))
         self.m.clear_pending("g", ch("c1"))
+        self.pend([{"type": "agent_message", "payload": {}, "text": "Writing the file."}], "streaming")
+        self.assertEqual(self.status()[:2], (data.RUNNING, False))      # what it wrote, the rest still streaming
+        self.m.clear_pending("g", ch("c1"))
         self.pend([{"type": "agent_message", "payload": {}, "text": "Running the tests."},
                    {"type": "tool_call", "payload": {}, "text": "pytest"}], "tool_use")
         self.assertEqual(self.status()[1], False)
@@ -179,6 +182,20 @@ class ServerTest(HomeBase):
             row = self.m._conn("g").execute("SELECT pid, pid_started FROM _reads WHERE read_id = ?",
                                             (answer["read_id"],)).fetchone()
             self.assertEqual(tuple(row), kept, given)
+
+
+    def test_the_server_keeps_a_rewrite_s_run_and_refuses_a_bad_one(self):
+        from ag.ag_harness.server import Server
+        srv = Server(lambda gatherer: self.m)
+        for given, kept in (("4242", "4242"), ("bad run", None), (17, None), (None, None)):
+            body = {"op": "rewrite", "gatherer": "g", "properties": ch("c1"), "cwd": None,
+                    "events": [{"type": "user_message", "id": f"u-{time.time_ns()}", "payload": {"role": "user", "content": "hi"},
+                                "text": "hi"}]}
+            if given is not None:
+                body["run"] = given
+            answer = srv.handle(body)
+            row = self.m._conn("g").execute("SELECT run FROM _reads WHERE read_id = ?", (answer["read_id"],)).fetchone()
+            self.assertEqual(row[0], kept, given)
 
 
 if __name__ == "__main__":

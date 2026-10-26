@@ -38,7 +38,7 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
                   adaptor: Adaptor, out: Optional[dict] = None,
                   measured: Optional[dict] = None, limit: Optional[int] = None,
                   preamble: Optional[list] = None, op: str = "rewrite",
-                  process: Optional[dict] = None) -> Tuple[Optional[list], str]:
+                  process: Optional[dict] = None, run: Optional[str] = None) -> Tuple[Optional[list], str]:
     """(the messages the model gets, or None to send the harness's own; a
     note): the adaptor's `to_events`, a `rewrite` to the server, its `to_messages`.
     `out`, when given, gets the read's `read_id` (what the provider's count of
@@ -50,7 +50,8 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     harness's own limit for this call (where it compacts, or its window ends); `preamble`,
     [{"name", "text"}], what the harness sends besides its messages (its system prompt,
     its tool definitions), kept with the read; `process`, {"pid", "started"}, the harness's process
-    that made the call, kept with it too (so a reader can tell whether the session still runs). `op` "context" asks for the context read only
+    that made the call, kept with it too (so a reader can tell whether the session still runs), as is `run`, the
+    harness's run that made it, as its launcher named it (`request.run`). `op` "context" asks for the context read only
     (the server's `context`: the events inserted, nothing else of the gatherer changed, no read)."""
     if cwd:
         properties = {**properties, CWD: cwd}                     # where the agent works
@@ -75,6 +76,8 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
         body["preamble"] = preamble
     if process:
         body["process"] = process
+    if run:
+        body["run"] = run
     answer = await client.request(op, body)
     if not isinstance(answer, dict) or answer.get("error"):
         why = answer.get("error") if isinstance(answer, dict) else repr(answer)
@@ -101,14 +104,18 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     return routed, note
 
 
+STREAMING = "streaming"    # `pending_ag`'s stop for the parts of an answer complete while it still streams
+
+
 async def pending_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], answer: list,
                      adaptor: Adaptor, answer_id: Optional[str] = None, stop: Optional[str] = None,
                      read_id: Optional[int] = None) -> str:
     """What the model answered -- `answer`, the harness's messages it makes -- through the adaptor's
     `to_events`, kept by the server as pending (its `pending`): seen by a reader of the gatherer
     until the next call with these properties stores its events, with why it stopped (`stop`: the
-    provider's end_turn, tool_use, ...), and on `read_id`, the read the call's context came from
-    (`keep_read`), when it came. The properties are a call's (CWD
+    provider's end_turn, tool_use, ...; STREAMING: the parts of it complete so far, which the next
+    keeping of the same `answer_id` replaces), and on `read_id`, the read the call's context came
+    from (`keep_read`), when it came. The properties are a call's (CWD
     from `cwd`, as `call_ag` sets it), so that call's are what clears them. A note; never raises."""
     if cwd:
         properties = {**properties, CWD: cwd}

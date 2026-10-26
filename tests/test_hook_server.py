@@ -4,6 +4,7 @@ harness, so it is checked here with a hook for a made-up API whose body is
 `{"messages": [...]}`: what reaches the upstream, what comes back, and that a
 hook that passes, changes or fails is relayed as it should be."""
 
+import asyncio
 import json
 import os
 import sys
@@ -22,6 +23,24 @@ if web is not None:
     from ag.integrations.tools.hook_server import hook_server  # noqa: E402
 
 STREAM = b"data: one\n\ndata: two\n\n"
+
+
+def _anthropic():
+    events = [{"type": "message_start", "message": {"id": "msg_1", "role": "assistant", "content": [], "usage": {}}},
+              {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+              {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Writing it."}},
+              {"type": "content_block_stop", "index": 0},
+              {"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "t1",
+                                                                           "name": "Write", "input": {}}},
+              {"type": "content_block_delta", "index": 1, "delta": {"type": "input_json_delta",
+                                                                    "partial_json": '{"file_path": "/a"}'}},
+              {"type": "content_block_stop", "index": 1},
+              {"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 5}},
+              {"type": "message_stop"}]
+    return "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events).encode()
+
+
+ANTHROPIC = _anthropic()     # an Anthropic Messages stream: a text, then a tool call
 
 
 class ToyHook:
@@ -53,6 +72,14 @@ class RouteOfTest(unittest.TestCase):
         self.assertEqual(route_of("/v1/x"), (None, "/v1/x"))
         self.assertEqual(route_of("/h/bad name/v1"), (None, "/h/bad name/v1"))    # not a label: as it is
         self.assertEqual(route_of("/sx/demo/v1"), (None, "/sx/demo/v1"))
+
+    def test_the_url_s_run(self):
+        run_of = __import__("ag.integrations.tools.hook_server.hook_server", fromlist=["run_of"]).run_of if web else None
+        if run_of is None:
+            self.skipTest("the hook server needs aiohttp")
+        self.assertEqual(run_of("/r/4242/l/100/v1/responses"), ("4242", "/l/100/v1/responses"))
+        self.assertEqual(run_of("/v1/x"), (None, "/v1/x"))
+        self.assertEqual(run_of("/r/bad run/v1"), (None, "/r/bad run/v1"))
 
 
 @unittest.skipIf(web is None, "the hook server needs aiohttp")
@@ -147,6 +174,13 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         await self.client.post("/h/demo/v1/chat", json={"messages": ["x"]})
         self.assertEqual((self.hook.seen[-1].label, self.hook.seen[-1].path), ("demo", "/v1/chat"))
         self.assertEqual(self.received[-1][1], "/v1/chat")
+        self.assertIsNone(self.hook.seen[-1].run)
+
+    async def test_the_run_is_given_to_the_hook_and_stripped_with_the_label_and_limit(self):
+        await self.client.post("/h/demo/r/4242/l/1000/v1/chat", json={"messages": ["x"]})
+        seen = self.hook.seen[-1]
+        self.assertEqual((seen.label, seen.run, seen.limit, seen.path), ("demo", "4242", 1000, "/v1/chat"))
+        self.assertEqual(self.received[-1][1], "/v1/chat")
 
     async def test_answered_gets_the_whole_answer_after_the_harness_has_it(self):
         class Answered(ToyHook):
@@ -193,6 +227,88 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         finally:
             await client.close()
         self.assertEqual(hook.order, [("before_end", 200, True), ("answered", 200)])   # when the answer began: known
+
+    async def test_answered_even_when_the_harness_hangs_up_before_the_stream_s_end(self):
+        class HangUp(ToyHook):                               # codex closes once it has the whole answer
+            async def __call__(self, request):
+                request.state["kept"] = True
+                return await super().__call__(request)
+
+            async def before_end(self, request, status, answer):
+                await asyncio.sleep(0.3)                     # the harness hangs up meanwhile
+
+            async def answered(self, request, status, answer):
+                self.answers.append(status)
+
+        hook = HangUp()
+        hook.answers = []
+        runner = web.AppRunner(hook_server.make_app(str(self.upstream.make_url("")).rstrip("/"), hook))
+        await runner.setup()                                 # as run_app serves it: a hang-up cancels no handler
+        site = web.TCPSite(runner, "127.0.0.1", 0)           # (TestServer's would)
+        await site.start()
+        try:
+            reader, writer = await asyncio.open_connection(*runner.addresses[0][:2])
+            body = json.dumps({"messages": ["hi"]}).encode()
+            writer.write(b"POST /v1/chat HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                         + f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+            got = b""
+            while b"data: two" not in got:                   # the whole answer, not yet its end
+                got += await asyncio.wait_for(reader.read(4096), 5)
+            writer.close()
+            for _ in range(50):
+                if hook.answers:
+                    break
+                await asyncio.sleep(0.05)
+        finally:
+            await runner.cleanup()
+        self.assertEqual(hook.answers, [200])
+
+    async def test_streamed_gets_each_part_as_it_ends_while_the_answer_streams(self):
+        """The upstream holds the rest of its answer until the hook has been given the text that came
+        first: had the hook to wait for the end, the answer would never end."""
+        given = asyncio.Event()
+
+        async def upstream(request):
+            await request.read()
+            resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            await resp.prepare(request)
+            await resp.write(ANTHROPIC[:ANTHROPIC.index(b"event: content_block_start\ndata: {\"type\": "
+                                                        b"\"content_block_start\", \"index\": 1")])
+            await asyncio.wait_for(given.wait(), 5)
+            await resp.write(ANTHROPIC[ANTHROPIC.index(b"event: content_block_start\ndata: {\"type\": "
+                                                       b"\"content_block_start\", \"index\": 1"):])
+            await resp.write_eof()
+            return resp
+
+        class Streamed(ToyHook):
+            async def __call__(self, request):
+                request.state["kept"] = True
+                return await super().__call__(request)
+
+            async def streamed(self, request, answer):
+                self.order.append(("streamed", [b.get("type") for b in answer["output_items"]], answer["response_id"]))
+                given.set()
+
+            async def answered(self, request, status, answer):
+                self.order.append(("answered", [b.get("type") for b in answer["output_items"]]))
+
+        app = web.Application()
+        app.router.add_route("*", "/{tail:.*}", upstream)
+        up = TestServer(app)
+        await up.start_server()
+        hook = Streamed()
+        hook.order = []
+        client = TestClient(TestServer(hook_server.make_app(str(up.make_url("")).rstrip("/"), hook)))
+        await client.start_server()
+        try:
+            resp = await client.post("/v1/messages", json={"messages": ["hi"]})
+            self.assertEqual(await resp.read(), ANTHROPIC)                          # relayed as it came
+        finally:
+            await client.close()
+            await up.close()
+        self.assertEqual(hook.order[0], ("streamed", ["text"], "msg_1"))           # before the rest was sent
+        self.assertEqual(hook.order[-1], ("answered", ["text", "tool_use"]))      # after every part
+        self.assertTrue(all(o == ("streamed", ["text", "tool_use"], "msg_1") for o in hook.order[1:-1]))
 
     async def test_the_hook_is_closed_with_the_server(self):
         await self.client.close()
@@ -371,6 +487,17 @@ class ModelTraceTest(unittest.IsolatedAsyncioTestCase):
                          ["rollout_started", "inference_started", "inference_completed", "rollout_ended"])
         self.assertFalse(events[1]["payload"]["hooked"])
         self.assertEqual(load(events[1]["payload"]["request_payload"]), {"model": "m", "input": []})
+
+
+class StreamedOfTest(unittest.TestCase):
+    def test_the_parts_complete_so_far(self):
+        from ag.integrations.tools.hook_server.trace import streamed_of
+        cut = ANTHROPIC[:ANTHROPIC.index(b'"content_block_stop", "index": 1')]
+        self.assertEqual(streamed_of(cut), {"response_id": "msg_1",
+                                            "output_items": [{"type": "text", "text": "Writing it."}]})
+        self.assertEqual(len(streamed_of(ANTHROPIC)["output_items"]), 2)
+        self.assertEqual(streamed_of(ANTHROPIC[:ANTHROPIC.index(b'"content_block_stop", "index": 0')])["output_items"], [])
+        self.assertEqual(streamed_of(b"data: one\n\n"), {"response_id": None, "output_items": []})   # no stream of either
 
 
 class LoadHookTest(unittest.TestCase):

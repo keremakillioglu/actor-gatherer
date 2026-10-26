@@ -1,9 +1,13 @@
 """The tool calls and results in a harness's messages, whichever harness: Claude Code's (Anthropic
 Messages: `tool_use` and `tool_result` blocks) or codex's (Responses items: `function_call`,
 `custom_tool_call`, `local_shell_call` and their outputs) -- as the dashboard reads them from the
-stored events (ag_dashboard/data.py's `parts`), here from the messages themselves."""
+stored events (ag_dashboard/data.py's `parts`), here from the messages themselves. A codex
+code-mode call (`exec`) is one call to its harness, but its script makes others: `opened` reads them
+out of it (commands.opened_script), for what they do to files."""
 import json
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+from .commands import CODE_MODE, opened_script
 
 CALLS = ("function_call", "custom_tool_call")
 OUTPUTS = ("function_call_output", "custom_tool_call_output")
@@ -79,6 +83,24 @@ def results_in(items) -> Dict[str, Tuple[str, bool]]:
         elif t in OUTPUTS and b.get("call_id"):
             out[b["call_id"]] = (_output(b.get("output")), False)
     return out
+
+
+def opened(calls: Dict[str, Tuple[str, Any]], results: Optional[Dict[str, Tuple[str, bool]]] = None):
+    """(calls, results): those given, each codex code-mode script among the calls in place of the calls it
+    makes (commands.opened_script: by the script's id, or `<id>#<n>` for several), and each of those with
+    its own result, where the script's came in. A script whose calls can't be found stays as it is."""
+    out_calls, out_results = {}, dict(results or {})
+    for cid, (name, inp) in calls.items():
+        inner = opened_script(cid, inp, out_results.get(cid)) if name == CODE_MODE and isinstance(inp, str) else []
+        if not inner:
+            out_calls[cid] = (name, inp)
+            continue
+        out_results.pop(cid, None)
+        for iid, iname, iinp, result in inner:
+            out_calls[iid] = (iname, iinp)
+            if result is not None:
+                out_results[iid] = result
+    return out_calls, out_results
 
 
 def last_results(items) -> List[str]:

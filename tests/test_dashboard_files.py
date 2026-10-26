@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import files  # noqa: E402
+from ag_dashboard import data, files  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 
@@ -106,6 +106,12 @@ def note(text, role="user"):
     return ("context", {"role": role, "content": [{"type": "text", "text": text}]})
 
 
+# As codex 0.164 wrote it live: its code-mode script (`exec`), and what the call gave back
+SCRIPT = ("const r = await tools.exec_command({cmd:\"printf 'one\\\\n' > notes.txt && printf 'two\\\\n' > notes.txt "
+          "&& cat notes.txt\",max_output_tokens:1000});\ntext(r.output);\n")
+SCRIPT_OUT = [{"type": "input_text", "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"}, {"type": "input_text", "text": "two\n"}]
+
+
 class FilesTest(unittest.TestCase):
     """A session of two turns, in a gatherer database of the test's own."""
 
@@ -151,6 +157,26 @@ class FilesTest(unittest.TestCase):
                          "('2026-10-24 08:00:00', ?, ?, 1, 'c1')", (tid, json.dumps(payload)))
         conn.commit()
         conn.close()
+
+    def test_a_codex_script_is_the_calls_it_makes(self):
+        self.add(asked("make notes"),
+                 ("tool_call", {"type": "custom_tool_call", "call_id": "x1", "name": "exec", "input": SCRIPT}),
+                 ("tool_output", {"type": "custom_tool_call_output", "call_id": "x1", "output": SCRIPT_OUT}))
+        got = files.files("g", "c1", cwd="/w")
+        self.add(asked("the same, run directly"),
+                 ("tool_call", {"type": "function_call", "call_id": "f1", "name": "exec_command", "arguments": json.dumps(
+                     {"cmd": "printf 'one\\n' > notes.txt && printf 'two\\n' > notes.txt && cat notes.txt"})}),
+                 ("tool_output", {"type": "function_call_output", "call_id": "f1", "output": "two\n"}))
+        direct = files.files("g", "c1", cwd="/w")
+        self.assertEqual([f["path"] for f in got["files"]], ["/w/notes.txt"])
+        blocks = lambda g: [b for f in g["files"] for s in f["sources"] for b in s["blocks"]]
+        self.assertEqual(blocks(got), blocks(direct))                      # read as its call would be on its own
+        (one,), (other,) = got["commands"], direct["commands"]
+        self.assertEqual({k: one[k] for k in ("text", "output", "files")}, {k: other[k] for k in ("text", "output", "files")})
+        self.assertEqual(one["output"], "two\n")                          # what it printed, without codex's head
+        part, = [p for p in data.parts("tool_call", json.dumps({"type": "custom_tool_call", "call_id": "x1", "name": "exec",
+                                                                "input": SCRIPT}), None) if p["kind"] == "call"]
+        self.assertEqual([c["name"] for c in part["calls"]], ["exec_command"])  # the Chat view titles it by its call
 
     def test_the_turns_and_the_latest_by_default(self):
         got = files.files("g", "c1", cwd="/w")
@@ -369,6 +395,16 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(count[1], {"kind": "report", "name": "List files", "text": "Ran ls.\n\n- a.py"})
         self.assertEqual(len(count), 3)                                     # /context and /login run: not shown
         self.assertEqual(turns[3]["ran"], ["/context"])                     # only matched with what the page sent
+
+    def test_another_session_s_message_shows_among_the_messages_by_its_sender(self):
+        peer = ('Another Claude session sent a message:\n<cross-session-message from="uds:/tmp/cc-socks/81007.sock" '
+                'from-name="ucbepic-actor-gatherer-6c" from-mode="prompting">\nYour branch predates #108.\n\nMerge main.\n'
+                "</cross-session-message>\n\nThis came from another Claude session \u2014 not typed by your user ...")
+        self.add(asked("Build the hamster."), said("Building it."), note(peer), said("The other session is right."))
+        replies = files.files("g", "c1", cwd="/w")["turns"][-1]["replies"]
+        self.assertEqual(replies, [{"kind": "text", "text": "Building it."},
+                                   {"kind": "peer", "name": "ucbepic-actor-gatherer-6c", "text": "Your branch predates #108.\n\nMerge main."},
+                                   {"kind": "text", "text": "The other session is right."}])
 
     def test_files_claude_code_gives_the_agent_are_read_in_the_turn(self):
         start = ("<system-reminder>\nCodebase and user instructions are shown below.\n\nContents of /w/CLAUDE.md (project instructions, "

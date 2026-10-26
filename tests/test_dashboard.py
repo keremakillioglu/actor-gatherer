@@ -85,6 +85,15 @@ class DataTest(HomeBase):
         self.assertEqual(c1["recap"]["text"], "Counting rows; next, the columns.")   # its newest recap
         self.assertTrue(c1["recap"]["at"])
         self.assertEqual(c1["last_user_message"], "the next request")        # a recap is not a message
+        self.assertIsNone(c1["name"])
+        self.m.record_name("g", "c1", "Count rows", "codex")
+        self.m.record_name("g", "c1", "Count the rows", "codex")
+        c1 = next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")
+        self.assertEqual(c1["name"], {"text": "Count the rows", "by": "codex"})   # the newest it was given
+        self.m.record_name("g", "c1", "Rows", "user")
+        self.m.record_name("g", "c1", "Count rows again", "codex")
+        c1 = next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")
+        self.assertEqual(c1["name"], {"text": "Rows", "by": "user"})              # the user's, over a newer one
         self.assertTrue(c1["running"])                      # read just now
         self.assertFalse(agents["c2"]["running"] and agents["c2"]["reads"])
         created = [a["created"] for a in g["agents"]]                      # in place: newest created first,

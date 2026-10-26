@@ -2,7 +2,12 @@
 calls the context manager (its setup, setup.py), for this run only. ag finds the provider codex would use
 and where it points, and overrides the one setting codex takes that provider's base_url from:
 
-    "http://127.0.0.1:<port>[/h/<gatherer>][/l/<limit>]<path>"
+    "http://127.0.0.1:<port>[/h/<gatherer>][/r/<run>][/l/<limit>]<path>"
+
+<run> is the run's process id: ag runs codex in its own process (exec), so every call this codex
+makes -- its thread's turns and its own side calls, a title for the thread or a recap, each in a
+thread of its own that names no other -- says which run it came from (the hook's `request.run`). Not in
+a dry run, whose process codex is not.
 
 The hook server relays to the provider's own origin, so <path> -- and everything else about the
 provider (its key, headers, wire API), the model, the codex home, its hooks and auth -- stays as it
@@ -39,11 +44,22 @@ the profile's, config.toml's), else of the model's in codex's catalog (`codex de
 models`), else of the window codex gives a model it does not know (FALLBACK_WINDOW); a
 limit set in the arguments, the profile or config.toml, when lower. The model is `-m`/`--model`,
 else `-c model=`, the profile's, config.toml's.
+
+Codex is run without its shared background server (`--no-daemon`, where its version has it): ag's
+`-c` overrides need it to run embedded anyway, and with the server running, codex otherwise starts
+every session with a warning that it does not use it. Not added when the arguments have it.
+
+A run that resumes a thread by its id -- `resume <id>`, interactive or `exec ... resume <id>` -- has it
+known to ag (`Launch.session`), which claims it, so no other process -- a terminal, the dashboard's
+chat -- runs it at once. A new thread's id is codex's to choose, and is not known until its first call;
+`resume --last` and the picker do not say which thread they open: neither is claimed.
 """
 
 import json
 import os
+import re
 import subprocess
+import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -57,6 +73,7 @@ OSS_URL = "CODEX_OSS_BASE_URL"
 COMPACT_LIMIT = "model_auto_compact_token_limit"        # the context size at which codex compacts by itself
 NO_COMPACTION = 10 ** 15                                # a limit no context reaches: codex never compacts by itself
 FALLBACK_WINDOW = 272_000                               # the window codex gives a model it does not know
+NO_DAEMON = "--no-daemon"                               # codex without its shared background server
 WINDOW_SHARE = 0.9                                      # codex compacts past this share of the window, whatever the limit
 
 
@@ -113,6 +130,9 @@ class Plan:
     window: Optional[int] = None    # model_context_window, when set
     own_limit: Optional[int] = None  # model_auto_compact_token_limit, when set
     limit: Optional[int] = None     # where codex compacts by itself (`harness_limit`), stated in the base URL
+    session: Optional[str] = None   # the thread the run resumes (`resume <id>`), claimed by ag; None: a new one
+    run: Optional[str] = None       # the run's id (its process's), stated in the base URL; None: not stated
+    daemonless: bool = False        # run without codex's shared background server (`--no-daemon`)
 
     @property
     def setting(self) -> str:
@@ -121,11 +141,12 @@ class Plan:
         return builtin.setting if builtin else f"model_providers.{self.provider}.base_url"
 
     def base_url(self, server_url: str, gatherer: Optional[str]) -> str:
-        return (server_url + (f"/h/{gatherer}" if gatherer else "") + (f"/l/{self.limit}" if self.limit else "")
-                + self.path)
+        return (server_url + (f"/h/{gatherer}" if gatherer else "") + (f"/r/{self.run}" if self.run else "")
+                + (f"/l/{self.limit}" if self.limit else "") + self.path)
 
     def argv(self, command: List[str], server_url: str, gatherer: Optional[str]) -> List[str]:
-        added = ["-c", f"{COMPACT_LIMIT}={NO_COMPACTION}"] if self.compaction_off else []
+        added = [NO_DAEMON] if self.daemonless and NO_DAEMON not in self.args else []   # before any subcommand
+        added += ["-c", f"{COMPACT_LIMIT}={NO_COMPACTION}"] if self.compaction_off else []
         if not self.setting.startswith("$"):
             added += ["-c", f'{self.setting}="{self.base_url(server_url, gatherer)}"']
         return [*command, *added, *self.args]
@@ -144,6 +165,9 @@ def _value(raw: str) -> Any:
         return raw
 
 
+THREAD_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
 @dataclass
 class Scan:
     overrides: Dict[str, Tuple[int, Any]]   # each `-c` key -> (index of its value, value)
@@ -151,11 +175,12 @@ class Scan:
     oss: bool = False
     local_provider: Optional[str] = None
     model: Optional[str] = None
+    session: Optional[str] = None           # the thread `resume <id>` opens (interactive or exec's)
 
 
 def scan(args: List[str]) -> Scan:
     """The `-c` overrides in codex's arguments, the profile, whether --oss is
-    given and the --local-provider."""
+    given, the --local-provider and the thread a `resume <id>` opens."""
     found = Scan({})
     i = 0
     while i < len(args):
@@ -185,6 +210,9 @@ def scan(args: List[str]) -> Scan:
             found.model = a[len("--model="):]
         elif a == "--oss":
             found.oss = True
+        elif a == "resume" and i + 1 < len(args) and THREAD_ID.fullmatch(args[i + 1]):
+            found.session = args[i + 1]
+            i += 1
         if raw is not None and "=" in raw:
             key, _, value = raw.partition("=")
             found.overrides[key.strip()] = (at, _value(value.strip()))
@@ -277,7 +305,19 @@ def plan(args: List[str], settings: Dict[str, Any], env: Dict[str, str]) -> Plan
     return Plan(provider, f"{parts.scheme}://{parts.netloc}", parts.path.rstrip("/"), args, codex_home, notes,
                 compaction_off=not limit, model=str(model) if model else None,
                 window=window if isinstance(window, int) and window > 0 else None,
-                own_limit=limit if isinstance(limit, int) and limit > 0 else None)
+                own_limit=limit if isinstance(limit, int) and limit > 0 else None, session=found.session)
+
+
+def takes(command: List[str], env: Dict[str, str], option: str) -> bool:
+    """Whether codex has `option` (its `--help` names it): False when it can't be asked. Asked with a codex
+    home of its own, thrown away after: codex writes to its home even for `--help`."""
+    try:
+        with tempfile.TemporaryDirectory() as home:
+            done = subprocess.run([*command, "--help"], env={**env, "CODEX_HOME": home}, capture_output=True, text=True,
+                                  timeout=10, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0 and re.search(rf"(?<![\w-]){re.escape(option)}(?![\w-])", done.stdout) is not None
 
 
 def catalog(command: List[str], env: Dict[str, str]) -> Dict[str, dict]:
@@ -335,6 +375,8 @@ class CodexLauncher(Launcher):
         port = int(self.settings["port"])
         options = {"adaptor": run.adaptor} if run.adaptor else {}                  # the hook builds it
         notes = list(p.notes)
+        p.run = None if run.dry_run else str(os.getpid())                          # codex's, once exec'd
+        p.daemonless = takes(list(run.command), {**os.environ, **run.env}, NO_DAEMON)
         if run.dry_run:
             found = self.servers.find(SETUP, p.upstream, log_dir, options)
             server_url = found.url if found else f"http://127.0.0.1:{port}"
@@ -351,7 +393,8 @@ class CodexLauncher(Launcher):
         if p.compaction_off:
             notes.append(f"codex's own automatic compaction: off for the run ({COMPACT_LIMIT}={NO_COMPACTION})")
         notes.append(f"codex's own limit: {p.limit} tokens, {how}; the context manager keeps under it")
-        return Launch(p.argv(run.command, server_url, run.gatherer), p.env(run.env, server_url, run.gatherer), notes)
+        return Launch(p.argv(run.command, server_url, run.gatherer), p.env(run.env, server_url, run.gatherer), notes,
+                      p.session)
 
     def describe(self, env: Dict[str, str]) -> List[str]:
         try:

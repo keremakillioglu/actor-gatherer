@@ -412,22 +412,23 @@ def record_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], 
                 manager: str, basis: Optional[str] = None, row_id: Optional[int] = None,
                 est_tokens: Optional[int] = None, limit_tokens: Optional[int] = None,
                 preamble_ids: Optional[List[int]] = None, sent_tokens: Optional[int] = None,
-                process: Optional[Dict[str, Any]] = None) -> int:
+                process: Optional[Dict[str, Any]] = None, run: Optional[str] = None) -> int:
     """Log one read: a `_reads` row (with its properties, `row_id`, the
     event it responded to, `est_tokens`, the context's size by the
     manager's count, `limit_tokens`, the harness's own limit the call
     stated, `preamble_ids`, the _preambles it sent besides its messages, and
-    `sent_tokens`, all of it as counted now, and `process`, {"pid", "started"}, the harness's process
-    that made the call), and a `_read_items` row per item it returned, in order. Returns the read_id."""
+    `sent_tokens`, all of it as counted now, `process`, {"pid", "started"}, the harness's process
+    that made the call, and `run`, the harness's run that made it, as its launcher named it), and a
+    `_read_items` row per item it returned, in order. Returns the read_id."""
     names, values = _given(conn, properties, "a read")
     preamble = json.dumps(list(preamble_ids)) if preamble_ids else None
     pid, started = (process.get("pid"), process.get("started")) if isinstance(process, dict) else (None, None)
     with conn:
         cur = conn.execute(f"INSERT INTO _reads (read_at, row_id, manager, basis, est_tokens, limit_tokens, preamble_json, "
-                           f"sent_tokens, pid, pid_started{_columns(names)}) "
-                           f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?{', ?' * len(names)})",
+                           f"sent_tokens, pid, pid_started, run{_columns(names)}) "
+                           f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?{', ?' * len(names)})",
                            (_now(), row_id, manager, basis, est_tokens, limit_tokens, preamble, sent_tokens,
-                            pid, started, *values))
+                            pid, started, run, *values))
         read_id = cur.lastrowid
         conn.executemany("INSERT INTO _read_items (read_id, position, row_id, made_id) VALUES (?, ?, ?, ?)",
                          [(read_id, i, r.row_id, r.made_id) for i, r in enumerate(refs)])
@@ -580,19 +581,29 @@ def last_inserted_at(conn: sqlite3.Connection) -> Optional[str]:
 
 # ---------------------------------------------------------------- pending
 
+STREAMING = "streaming"    # a pending answer's stop while it still streams: the parts of it complete so far
+
 def record_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], events: List[dict],
                    answer: Optional[str] = None, stop: Optional[str] = None, read_id: Optional[int] = None) -> int:
     """Keep an answer's events -- {"type", "payload", "text"?} -- in `_pending` with the
     properties of the call it answered, until that channel's next call (`clear_pending`); `stop`
-    is why the answer stopped, as the provider says it (end_turn, tool_use, ...), on each. With
-    `read_id`, the read that call's context came from: its `answered_at` set to when they were kept,
-    which stays once they are cleared -- when the answer came, whatever call stores it later.
-    Returns how many were kept."""
+    is why the answer stopped, as the provider says it (end_turn, tool_use, ...), on each. A named
+    `answer`'s events replace those kept for it before (the parts of it complete while it streamed,
+    then all of it), each one there before keeping when it came. With `read_id`, the read that
+    call's context came from: its `answered_at` set to when they were kept, which stays once they
+    are cleared -- when the answer came, whatever call stores it later. Returns how many were kept."""
     names, values = _given(conn, properties, "a pending event")
     now = _now()
-    rows = [(now, answer, stop, e["type"], json.dumps(e["payload"], ensure_ascii=False),
-             e.get("text") if isinstance(e.get("text"), str) else None, *values) for e in events]
     with conn:
+        came = []
+        if answer is not None:                     # the channel's: its identifying properties, as clear_pending
+            ids = identifying_names(conn)
+            same = (f"{_same(ids)}answer = ?", (*_unset_is_empty((properties or {}).get(n) for n in ids), answer))
+            came = [t for (t,) in conn.execute(f"SELECT received_at FROM _pending WHERE {same[0]} "
+                                               "ORDER BY pending_id", same[1])]
+            conn.execute(f"DELETE FROM _pending WHERE {same[0]}", same[1])
+        rows = [(came[i] if i < len(came) else now, answer, stop, e["type"], json.dumps(e["payload"], ensure_ascii=False),
+                 e.get("text") if isinstance(e.get("text"), str) else None, *values) for i, e in enumerate(events)]
         conn.executemany(f"INSERT INTO _pending (received_at, answer, stop, type, payload_json, text{_columns(names)}) "
                          f"VALUES (?, ?, ?, ?, ?, ?{', ?' * len(names)})", rows)
         if read_id is not None:
@@ -618,16 +629,20 @@ def pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = Non
     return out
 
 
-def clear_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]]) -> int:
+def clear_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], stop: Optional[str] = None) -> int:
     """Delete the pending events with these identifying properties (`identifying_names`: the
     channel's, whatever directory the call came from): a call with them has stored its events,
-    the answers they were kept for among them. How many."""
+    the answers they were kept for among them. With `stop`, only those that stopped so (STREAMING:
+    the parts of an answer that broke off, which no call will carry back). How many."""
     if any(v is not None for n, v in (properties or {}).items() if n not in property_names(conn)):
         return 0
     names = identifying_names(conn)
-    values = tuple((properties or {}).get(n) for n in names)
+    values = _unset_is_empty((properties or {}).get(n) for n in names)
     with conn:
-        cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}1", _unset_is_empty(values))
+        if stop is None:
+            cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}1", values)
+        else:
+            cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}stop = ?", (*values, stop))
     return cur.rowcount
 
 
@@ -650,6 +665,22 @@ def recaps(conn: sqlite3.Connection, session: Optional[str] = None) -> List[dict
         rows = conn.execute("SELECT recap_id, session, made_at, text FROM _recaps WHERE recap_id IN "
                             "(SELECT max(recap_id) FROM _recaps GROUP BY session) ORDER BY recap_id")
     return [{"recap_id": r[0], "session": r[1], "made_at": r[2], "text": r[3]} for r in rows]
+
+
+# ---------------------------------------------------------------- names
+
+def record_name(conn: sqlite3.Connection, session: str, text: str, by: str) -> None:
+    """Keep `by`'s name for `session` (`_names`), named now, in place of the one `by` gave before."""
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO _names (session, by, named_at, text) VALUES (?, ?, ?, ?)",
+                     (session, by, _now(), text))
+
+
+def names(conn: sqlite3.Connection, session: Optional[str] = None) -> List[dict]:
+    """Every session's names -- or one session's -- newest last: {session, by, named_at, text}."""
+    rows = conn.execute("SELECT session, by, named_at, text FROM _names" + (" WHERE session = ?" if session else "")
+                        + " ORDER BY named_at", (session,) if session else ())
+    return [{"session": r[0], "by": r[1], "named_at": r[2], "text": r[3]} for r in rows]
 
 
 # ---------------------------------------------------------------- touches
