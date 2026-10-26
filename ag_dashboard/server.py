@@ -10,6 +10,7 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/history?gatherer=G&channel=C&from=A[&to=B]   data.history(G, C, A, B)
     GET /api/transcript?gatherer=G&channel=C[&after=A|&before=B]   data.transcript(G, C, A, B)
     GET /api/files?gatherer=G&channel=C[&turn=N][&cwd=D]   files.files(G, C, N, D): a turn's files
+    GET /api/monitor?actors=[[G, C, D], ...]               monitor.actors: what each is doing, its latest turn
     GET /api/image?gatherer=G&row_id=R&id=I                files.image(G, R, I): the image call I's result holds
     GET /api/outline?gatherer=G[&channel=C][&after=A]      history.outline(G, C, A): the events, light, and the tasks
     GET /api/event?gatherer=G&row_id=R                     history.event(G, R): one event, as the transcript shows it
@@ -89,7 +90,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import avatars, data, files, hiding, history, home, live, queued, saved, seen, sessions, settings
+from . import avatars, data, files, hiding, history, home, live, monitor, queued, saved, seen, sessions, settings
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -231,6 +232,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                 if url.path == "/api/files" and q.get("gatherer") and "channel" in q and q.get("turn", "0").isdigit():
                     return self.answer(files.files(q["gatherer"], q["channel"],
                                                    int(q["turn"]) if "turn" in q else None, q.get("cwd", "")))
+                if url.path == "/api/monitor":
+                    return self.answer({"actors": monitor.actors(_actors(q.get("actors")))})
                 if url.path == "/api/image" and q.get("gatherer") and q.get("row_id", "").isdigit() and q.get("id"):
                     got = files.image(q["gatherer"], int(q["row_id"]), q["id"])
                     return self.send(200, got[1], got[0]) if got else self.send(404, b"no image", "text/plain")
@@ -481,6 +484,21 @@ def _pairs(raw: Optional[str]) -> list:
     if not isinstance(got, list):
         return []
     return [tuple(p) for p in got if isinstance(p, list) and len(p) == 2 and all(isinstance(x, str) for x in p) and p[0]][:MAX_ALSO]
+
+
+def _actors(raw: Optional[str]) -> list:
+    """The monitor's `actors`: [[gatherer, channel, cwd], ...] as JSON (cwd may be left out, or null); what is not
+    one is left out."""
+    try:
+        got = json.loads(raw) if raw else []
+    except ValueError:
+        return []
+    out = []
+    for p in got if isinstance(got, list) else []:
+        if isinstance(p, list) and len(p) in (2, 3) and all(isinstance(x, str) for x in p[:2]) and p[0] \
+                and (len(p) == 2 or p[2] is None or isinstance(p[2], str)):
+            out.append((p[0], p[1], (p[2] if len(p) == 3 else None) or ""))
+    return out
 
 
 class Server(ThreadingHTTPServer):
