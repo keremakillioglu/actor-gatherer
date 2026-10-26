@@ -16,6 +16,7 @@ its URL label, whether the hook changed it, and the thread its thread header nam
 relayed bytes: a Responses API stream's `response.completed` (or failed / incomplete) event, an
 Anthropic Messages API stream (its content blocks put together from their deltas, its usage from
 `message_start` and `message_delta`), or either API's JSON body; anything else is kept as text.
+While an answer still streams, `streamed_of` reads the parts of it that are complete.
 """
 
 import itertools
@@ -57,19 +58,22 @@ def anthropic_usage(usage: Optional[dict]) -> Optional[dict]:
             "output_tokens": out, "reasoning_output_tokens": 0, "total_tokens": inp + out}
 
 
-def anthropic_response(events: list) -> Optional[dict]:
+def anthropic_response(events: list, ended: bool = False) -> Optional[dict]:
     """The answer an Anthropic Messages API stream's events make, or None if they are not one:
-    {response_id, status (the stop reason), token_usage, output_items (the content blocks)}."""
+    {response_id, status (the stop reason), token_usage, output_items (the content blocks)} --
+    with `ended`, only the blocks that have ended (`content_block_stop`), of a stream still going."""
     start = next((e for e in events if e.get("type") == "message_start"), None)
     if start is None:
         return None
     message = start.get("message") or {}
     usage = dict(message.get("usage") or {})
-    blocks, partial, stop, error = {}, {}, None, None
+    blocks, partial, stop, error, stopped = {}, {}, None, None, set()
     for e in events:
         kind = e.get("type")
         if kind == "content_block_start":
             blocks[e.get("index")] = dict(e.get("content_block") or {})
+        elif kind == "content_block_stop":
+            stopped.add(e.get("index"))
         elif kind == "content_block_delta":
             b, d = blocks.setdefault(e.get("index"), {}), e.get("delta") or {}
             if d.get("type") == "text_delta":
@@ -91,16 +95,13 @@ def anthropic_response(events: list) -> Optional[dict]:
         except ValueError:
             blocks[i]["input"] = raw
     return {"response_id": message.get("id"), "status": stop or message.get("stop_reason"),
-            "token_usage": anthropic_usage(usage), "output_items": [blocks[i] for i in sorted(blocks)],
-            "error": error}
+            "token_usage": anthropic_usage(usage), "error": error,
+            "output_items": [blocks[i] for i in sorted(blocks) if not ended or i in stopped]}
 
 
-def response_of(raw: bytes) -> dict:
-    """The model's answer from the bytes relayed back: {response_id, status, token_usage,
-    output_items, error} from a Responses or Anthropic Messages stream or JSON body; {text}
-    when it is none of these."""
-    text = raw.decode("utf-8", errors="replace")
-    final, items, events = None, [], []
+def _events(text: str) -> list:
+    """A stream's events: each `data:` line that is a JSON object."""
+    events = []
     for line in text.splitlines():
         if not line.startswith("data:"):
             continue
@@ -108,9 +109,33 @@ def response_of(raw: bytes) -> dict:
             event = json.loads(line[5:].strip())
         except ValueError:
             continue
-        if not isinstance(event, dict):
-            continue
-        events.append(event)
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
+def streamed_of(raw: bytes) -> dict:
+    """The parts of an answer still streaming that are complete, from the bytes relayed so far:
+    {response_id, output_items} -- an Anthropic Messages stream's content blocks that have ended, a
+    Responses stream's output items that are done (`response.output_item.done`), its id from
+    `response.created`. No items: none is complete yet, or the bytes are no stream of either."""
+    events = _events(raw.decode("utf-8", errors="replace"))
+    anthropic = anthropic_response(events, ended=True)
+    if anthropic is not None:
+        return {"response_id": anthropic["response_id"], "output_items": anthropic["output_items"]}
+    made = next((e["response"] for e in events if e.get("type") == "response.created"
+                 and isinstance(e.get("response"), dict)), {})
+    return {"response_id": made.get("id"), "output_items": [
+        e["item"] for e in events if e.get("type") == "response.output_item.done" and isinstance(e.get("item"), dict)]}
+
+
+def response_of(raw: bytes) -> dict:
+    """The model's answer from the bytes relayed back: {response_id, status, token_usage,
+    output_items, error} from a Responses or Anthropic Messages stream or JSON body; {text}
+    when it is none of these."""
+    text = raw.decode("utf-8", errors="replace")
+    final, items, events = None, [], _events(text)
+    for event in events:
         if event.get("type") in FINAL_EVENTS and isinstance(event.get("response"), dict):
             final = event["response"]
         elif event.get("type") == "response.output_item.done" and isinstance(event.get("item"), dict):

@@ -129,9 +129,9 @@ MONITOR_END = re.compile(r"^\s*\[Monitor (?:expired|stopped)\b")
 STOPPED = re.compile(r'^(?:\{"message":\s*")?Successfully stopped task: ([\w-]+)')
 OUTPUT_FILE = re.compile(r"(?:Output is being written to: |output_file: )(\S+?\.output)\b|^Transcript dir: (\S+)$", re.M)
 #: An answer's stop reason, as the provider gives it: the turn goes on (a tool to run, a paused
-#: turn), or is over. Any other (Codex's `completed` on every answer, none) tells nothing: its
-#: last event does.
-GOES_ON = {"tool_use", "pause_turn"}
+#: turn, or ag's "streaming": the parts of an answer complete while the rest still streams), or is
+#: over. Any other (Codex's `completed` on every answer, none) tells nothing: its last event does.
+GOES_ON = {"tool_use", "pause_turn", "streaming"}
 OVER = {"end_turn", "stop_sequence", "max_tokens", "refusal"}
 CHANNEL = "p_channel"          # the channel property's column (ag.ag_policies.tools.channel)
 
