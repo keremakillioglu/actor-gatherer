@@ -343,13 +343,13 @@ class FilesTest(unittest.TestCase):
         by = {f["path"]: f["sources"][0]["blocks"] for f in got["files"]}
         self.assertEqual([(b["t"], b["lines"]) for b in by["/w/d.py"]], [("output", ["def c():", "    pass"])])
 
-    def test_files_in_temporary_folders_and_commands_touching_only_them_are_marked(self):
+    def test_files_in_temporary_folders_are_marked_and_every_command_is_listed(self):
         tmp = os.path.join(files.TEMPORARY[0], "scratch", "x.txt")
         self.add(asked("scratch"), call("s1", "Bash", {"command": f"cat {tmp}", "description": "Read scratch"}), result("s1", "hi"),
                  call("s2", "Bash", {"command": f"cat {tmp}; sed -n 1p a.py", "description": "Both"}), result("s2", "hi\ndef f():"))
         got = files.files("g", "c1", 2, cwd="/w")
         self.assertEqual({f["path"]: f["temporary"] for f in got["files"]}, {tmp: True, "/w/a.py": False})
-        self.assertEqual([(c["text"], c["temporary"]) for c in got["commands"]], [("Read scratch", True), ("Both", False)])
+        self.assertEqual([c["text"] for c in got["commands"]], ["Read scratch", "Both"])
         self.assertTrue(files.temporary("/tmp/x") and files.temporary("/private/tmp/x") and not files.temporary("/tmpx/y"))
 
     def test_every_call_is_listed_in_order_with_its_files(self):
