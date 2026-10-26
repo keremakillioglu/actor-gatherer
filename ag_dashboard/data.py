@@ -115,6 +115,9 @@ GIVE_UP_SECONDS = 90           # a failed call with no try since: given up (Clau
                                # between its tries)
 GIVE_UP_LONG = 600             # the same for an error answered, where the record could still say (Retry-After)
 FAILED_READS = 50              # how many of its newest reads `failing` looks at
+#: A call the harness hung up on before its answer was through, as ag's hook server reports it (its HUNG_UP: nginx's
+#: "client closed request"): the user stopped it (Esc) -- not a failure.
+HUNG_UP = 499
 ERROR_CHARS = 2000             # the most of an error's words it returns
 #: Where Claude Code writes the plan it asks to have approved (ExitPlanMode's call carries none): the file
 #: of its plans its latest write to one names.
@@ -447,6 +450,9 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
             a["status"], a["turn_over"] = IDLE, True
     if a["asking"]:
         a["status"] = ASKING
+    cut = hung_up(conn, ch) if a["status"] == RUNNING else None
+    if cut is not None:                              # stopped before its answer came: Claude Code records nothing of it
+        a["status"], a["turn_over"] = IDLE, True
     a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
     claude = a["harness"] in ("claude", None)
     record = (record or queued.record(ch, a.get("cwd"))) if a["status"] == RUNNING and claude else None
@@ -460,6 +466,8 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
         a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], bool(record)) + 1   # when it would be given up
     if a["status"] == RUNNING and record and not a.get("record"):
         a["record"] = (record, seen)                 # watched (live.py) while it runs: it may stop unseen
+    if cut is not None:
+        a["stopped"] = {"kind": "interrupted", "at": cut}
 
 
 def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
@@ -471,6 +479,9 @@ def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
     seen = live._stat(path) if path else None       # before it is read: a change after it is noticed
     rec = rollout.read(path)
     a["stopped"] = None
+    cut = hung_up(conn, ch) if a["status"] == RUNNING else None
+    if cut is not None:                              # stopped before its answer came (Esc), as ag's hook server saw
+        a["stopped"], a["status"], a["turn_over"] = {"kind": "interrupted", "at": cut}, IDLE, True
     a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
     got = rollout.stopped(rec, a["last"]) if a["status"] == RUNNING else None
     if got and got["kind"] == "error":
@@ -624,18 +635,30 @@ def failing(conn, channel: str) -> Optional[dict]:
     retrying = bool(rows) and rows[0]["error"] is None
     if retrying:                                      # a try under way, after a failure at the same event
         if rows[0]["real_tokens"] is not None or len(rows) < 2 or rows[1]["error"] is None \
-                or rows[1]["row_id"] != rows[0]["row_id"]:
+                or rows[1]["row_id"] != rows[0]["row_id"] or rows[1]["error_status"] == HUNG_UP:
             return None
         rows = rows[1:]
     run = []
-    for r in rows:
-        if r["error"] is None or r["row_id"] != rows[0]["row_id"]:
+    for r in rows:                                    # a call the user stopped (HUNG_UP) is not one that failed
+        if r["error"] is None or r["error_status"] == HUNG_UP or r["row_id"] != rows[0]["row_id"]:
             break
         run.append(r)
     if not run:
         return None
     return {"at": _seconds(run[0]["read_at"]), "first": _seconds(run[-1]["read_at"]), "attempts": len(run),
             "status": run[0]["error_status"], "error": _clip(run[0]["error"], ERROR_CHARS), "retrying": retrying}
+
+
+def hung_up(conn, channel: str) -> Optional[float]:
+    """When the agent's newest call was stopped by the user before its answer was through (HUNG_UP, as ag's hook server
+    reports it), None if it was not. Before any of the answer came, Claude Code takes the message back into its prompt
+    and records nothing of it, so that is all that tells the turn is over."""
+    cols = _columns(conn, "_reads")
+    if "error_status" not in cols or CHANNEL not in cols:
+        return None
+    r = conn.execute(f"SELECT read_at, error_status FROM _reads WHERE ifnull({CHANNEL}, '') = ? ORDER BY read_id DESC LIMIT 1",
+                     (channel,)).fetchone()
+    return _seconds(r["read_at"]) if r is not None and r["error_status"] == HUNG_UP else None
 
 
 def give_up_after(failure: dict, record: bool) -> float:

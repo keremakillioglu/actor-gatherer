@@ -122,6 +122,28 @@ class FailingTest(ErrorsBase):
         self.assertIsNone(self.failing())
 
 
+class HungUpTest(ErrorsBase):
+    """A call the user stopped (Esc) before any of its answer came: Claude Code takes the message back and records nothing
+    of it; ag's hook server reports it as hung up (HUNG_UP) -- the turn over, not a failure."""
+
+    def test_the_turn_is_over_and_nothing_failed(self):
+        now = time.time()
+        self.read(now - 3)                                                    # the call, as ag read for it
+        self.assertEqual(self.actor()["status"], data.RUNNING)               # the model answering, as far as ag knows
+        self.read(now - 2, row=2, status=data.HUNG_UP, error="the harness hung up before the answer was through")
+        a = self.actor()
+        self.assertEqual((a["status"], a["turn_over"], a["failing"]), (data.IDLE, True, None))
+        self.assertEqual(a["stopped"]["kind"], "interrupted")
+        self.assertIsNone(self.failing())
+
+    def test_a_try_after_it_is_not_a_retry_of_a_failure(self):
+        now = time.time()
+        self.read(now - 20, status=data.HUNG_UP, error="hung up")
+        self.read(now - 1)                                                    # the same event, sent again
+        self.assertIsNone(self.failing())
+        self.assertEqual(self.actor()["status"], data.RUNNING)
+
+
 class GivenUpTest(ErrorsBase):
     """No record of Claude Code's to say (here: none written): time does."""
 

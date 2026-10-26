@@ -119,6 +119,18 @@ class Answer:
     body: Any
 
 
+#: What a call is reported as (`failed`) when the harness hung up before its answer was through -- the user stopped
+#: it (Esc) -- not an error of its endpoint's: the status for it that nginx has, "client closed request".
+HUNG_UP = 499
+HUNG_UP_WHY = "the harness hung up before the answer was through: stopped by the user"
+
+
+def hung_up(request) -> bool:
+    """Whether the harness has hung up on `request`: its connection closing, or gone."""
+    transport = request.transport
+    return transport is None or transport.is_closing()
+
+
 def route_of(path: str):
     """(the label the URL names, or None; the path to forward):
     `/h/<label>/v1/chat` is label `label` and `/v1/chat`. A label
@@ -288,6 +300,13 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         streamed = getattr(hook, "streamed", None) if request.method == "POST" and given.state else None
         parts = Parts(n, streamed, given) if streamed else None
         answer = [] if call or measured or answered or before_end or failed or streamed else None
+        if hung_up(request):                              # stopped while the hook ran (Esc, as ag read): no model call
+            print(f"#{n:04d} the harness hung up before the call went on: not sent", flush=True)
+            if call:
+                trace.completed(call[0], call[1], None, b"", time.time() - record["t_start"], HUNG_UP_WHY)
+            if failed:
+                await _report(n, "failed", failed, given, HUNG_UP, HUNG_UP_WHY)
+            return web.Response(status=HUNG_UP)           # to no one: the server drops it
         timeout = ClientTimeout(total=None, sock_read=1800)
         status, error, resp = None, None, None
         try:
@@ -342,6 +361,13 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                             print(f"#{n:04d} answered failed: {exc!r}", file=sys.stderr, flush=True)
         except Exception as exc:
             error = repr(exc)
+            if hung_up(request):                              # stopped as the answer came (Esc): the model's call
+                print(f"#{n:04d} the harness hung up as the answer came: broken off", flush=True)   # given up with it
+                if failed:
+                    await _report(n, "failed", failed, given, HUNG_UP, HUNG_UP_WHY)
+                if parts is not None:
+                    await parts.done()
+                return resp if resp is not None else web.Response(status=HUNG_UP)
             if resp is not None:                              # the answer had begun: it breaks off
                 raise
             why = str(exc) or type(exc).__name__
