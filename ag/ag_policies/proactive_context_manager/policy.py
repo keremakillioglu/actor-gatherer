@@ -58,6 +58,11 @@ to keep_pinned_tokens, the newest kept. What still does not fit -- a step
 larger than the room the build leaves -- is left out with a note naming its
 rows (`stubbed`).
 
+A user message the boundary check finds starts a new task gets its build: the read waits
+for it up to build_wait_seconds. One that takes longer is taken up at the turn's next call
+(`for_this_turn`), not left for the next user message: the turn itself stays verbatim, so
+the switch replaces only the history before it.
+
 Everything below `assemble` is the sections' logic: segmentation, ranking,
 builds and their adoption.
 """
@@ -278,7 +283,7 @@ class ProactiveContextManager(Policy):
         at_user = history.opens_turn(rows[-1], types, self.groups)
         latest = tables.build_for(conn, ch)
         last = conn.last_read(channel.of(ch))
-        build, made = self.choose(conn, types, rows, latest, last, at_user, read)
+        build, made = self.choose(conn, types, rows, latest, last, at_user or self.for_this_turn(latest, rows, types), read)
         items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
         over = size > cfg.max_context_tokens or self.measured_over(last, build, ch)
         if over and not at_user and tables.waiting(latest, last):        # a ready build: taken now, not at the user
@@ -301,6 +306,16 @@ class ProactiveContextManager(Policy):
         self.last_tokens = own                      # the part of it the policy arranges
         return Context(items, refs, str(build["build_id"]) if build else None, tokens=own,
                        budget=cfg.max_context_tokens)
+
+    def for_this_turn(self, build: Optional[dict], rows, types: TypeIds) -> bool:
+        """Whether `build` is a new task's build made at this turn's own user message: its check found
+        the new task there, and the read at it went on without it (the build took longer than the read
+        waited). It is taken up at the turn's next call, not at the next user message: the sections
+        replace only what came before the turn, and the turn itself stays verbatim, as it was."""
+        if not build or build.get("reason") != tables.BOUNDARY or build["status"] != "ready":
+            return False
+        opening = next((r.row_id for r in reversed(rows) if history.opens_turn(r, types, self.groups)), None)
+        return opening is not None and build["through_row"] == opening
 
     def measured_over(self, last: Optional[dict], build: Optional[dict], ch) -> bool:
         """Whether the provider's count of the last call's context (`real_tokens`, reported
@@ -666,8 +681,9 @@ class ProactiveContextManager(Policy):
                read: Read) -> Tuple[Optional[dict], List[int]]:
         """(the build in use, its section items' made_ids in order), or
         (None, []). A ready build newer than the last read's is switched to
-        when `at_user` -- at a user message, or when the context is over
-        max_context_tokens -- and laid out then (`adopt`)."""
+        when `at_user` -- at a user message, when the context is over
+        max_context_tokens, or at a later call of the turn a new task's build was
+        made for (`for_this_turn`) -- and laid out then (`adopt`)."""
         if at_user and tables.waiting(latest, last_read):
             made = self.adopt(conn, types, rows, latest, read)
             if made is not None:
@@ -880,7 +896,11 @@ class ProactiveContextManager(Policy):
         return {"started": build_id, "messages": n}
 
     def wait(self, conn, channel_id, row_id: int, started: str, seconds: float) -> bool:
-        deadline = time.monotonic() + seconds
+        """Whether the build the read started (or the one its check found a new task for) is ready
+        within `seconds` -- for a check that finds a new task, within build_wait_seconds, if longer:
+        the check answers in seconds, the build it starts takes tens of them."""
+        begun = time.monotonic()
+        deadline = begun + seconds
         started = "build" if started == "join" else started
         while True:
             if started == "check":
@@ -889,6 +909,7 @@ class ProactiveContextManager(Policy):
                     return False
                 if verdict and verdict["new_task"] is True:
                     started = "build"
+                    deadline = max(deadline, begun + self.config.build_wait_seconds)
             if started == "build":
                 build = tables.latest_build(conn, channel_id)
                 if build and build["status"] == "ready":
