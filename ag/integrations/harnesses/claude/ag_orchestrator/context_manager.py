@@ -173,7 +173,9 @@ def recap_at(messages: list) -> Optional[int]:
 def compaction_split(messages: list) -> Optional[Tuple[list, list]]:
     """(the conversation, the instruction's blocks) of a compaction call -- the last user message's
     text blocks from the one opening with `CRITICAL: Respond with TEXT ONLY` on are the instruction,
-    the rest the conversation -- or None: not a compaction."""
+    the rest the conversation -- or None: not a compaction. Claude Code joins the instruction to the
+    last message it summarizes, adding a newline to that one's text: the adaptor's Continuity finds
+    the message, if stored, in that form (to_events.merged_key)."""
     at = next((i for i in range(len(messages) - 1, -1, -1)
                if isinstance(messages[i], dict) and messages[i].get("role") == "user"), None)
     if at is None or at < len(messages) - 2:          # the last user message, or just before a system note
