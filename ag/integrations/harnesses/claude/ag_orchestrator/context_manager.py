@@ -82,6 +82,8 @@ import sys
 import time
 from typing import Callable, Optional, Tuple, Union
 
+from harness_kit import CallKind, ClaudeCode
+
 from harness_kit.claude import (AGENT_HEADER, COMPACTION, RECAP, REQUEST_CLASS_HEADER,  # noqa: F401 - Claude Code's
                                 SESSION_HEADER, SIDE_CLASSES, SUGGESTION, WEB_SEARCH, compaction_split,  # rules for its
                                 cwd_of, is_model_call, is_subagent, is_web_search, recap_at,  # calls, as this module
@@ -92,8 +94,8 @@ from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.hook_server.hook_server import Answer
-from ag.integrations.tools.ag_orchestrator.call_ag import (STREAMING, call_ag, keep_read, pending_ag, preamble_of,
-                                                    read_of, report_failed, report_measured)
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, preamble_of
+from ag.integrations.tools.ag_orchestrator.proxy_hook import ProxyHook
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
@@ -115,7 +117,7 @@ def _print(gatherer: str, line: str) -> None:
     print(f"[{gatherer}] {line}", flush=True)
 
 
-class ClaudeContextManager:
+class ClaudeContextManager(ProxyHook):
     """The hook: `await hook(request)` -> Claude Code's body with new `messages`, or None.
 
     Args:
@@ -130,6 +132,8 @@ class ClaudeContextManager:
         files: "on" (what each tool call did to files, found on disk -- see Files) or "off".
         log: (gatherer, line) -> None, for what each model call came to.
     """
+    harness = ClaudeCode()
+    ANSWERED, FILES = ANSWERED, FILES
 
     def __init__(self, cwd: Optional[str] = None, factory: Optional[str] = None, path: Optional[str] = None,
                  ag_clients: Optional[AgClients] = None, log: Callable[[str, str], None] = _print,
@@ -137,8 +141,11 @@ class ClaudeContextManager:
                  files: str = "on"):
         args = (["--factory", factory] if factory else []) + \
             [x for p in (path.split(os.pathsep) if path else []) for x in ("--path", p)]
-        self.ag_clients = ag_clients or AgClients(lambda gatherer: AgClient("claude", args=args))
-        self.cwd, self.log = cwd, log
+        ag_clients = ag_clients or AgClients(lambda gatherer: AgClient("claude", args=args))
+        if files not in ("on", "off"):
+            raise ValueError(f"files: {files!r}, not on or off")
+        super().__init__(ag_clients, log, Files(ag_clients, log) if files == "on" else None)
+        self.cwd = cwd
         self.adaptor = load_adaptor(adaptor) if isinstance(adaptor, str) else (adaptor or ClaudeAdaptor())
         if system_messages not in ("auto", "keep", "user"):
             raise ValueError(f"system_messages: {system_messages!r}, not auto, keep or user")
@@ -147,9 +154,6 @@ class ClaudeContextManager:
             raise ValueError(f"count: {count!r}, not on, check or off")
         self.counter = Counter(enabled=count != "off", log=log)
         self.count_events = count == "on"
-        if files not in ("on", "off"):
-            raise ValueError(f"files: {files!r}, not on or off")
-        self.files = Files(self.ag_clients, log) if files == "on" else None
         self.adaptors = {}                                  # one per mode: requests run concurrently
         for mode in ("keep", "user"):
             a = copy.copy(self.adaptor)
@@ -158,38 +162,36 @@ class ClaudeContextManager:
 
     async def __call__(self, request) -> Optional[dict]:
         body, since = request.body, time.time()
-        if not is_model_call(request.method, request.path, body) or is_subagent(request.headers):
+        call = self.harness.call(request.method, request.path, request.headers, body)
+        if call is None or not call.detail.get("model") or call.kind == CallKind.SUBAGENT:
+            if call is not None and call.session:         # a call of its own ag takes no part in: recorded, as it is
+                self.called(*self.where(request, call.session), call)
             return None
-        session = session_of(request.headers, body)
+        session = call.session
         if not session:
             print("a model call with no session id; request unchanged", file=sys.stderr, flush=True)
             return None
-        gatherer, channel = (request.label, session) if request.label else (session, session)
+        gatherer, channel = self.where(request, session)
         client = self.ag_clients.client(gatherer)
         refused = await self.refused(client, gatherer, channel, getattr(request, "process", None))
         if refused is not None:
             return refused
-        messages = body["messages"]
-        recap = recap_at(messages)
-        at = suggestion_at(messages) if recap is None else recap
-        if at is None and request_class(request.headers) in SIDE_CLASSES:
+        if call.kind == CallKind.OTHER:
+            self.called(gatherer, channel, call)
             return None                                   # a side call of Claude Code's own: as it is
+        messages = body["messages"]
         mode = self.system_messages if self.system_messages != "auto" else \
             ("user" if is_gemini(body.get("model")) else "keep")
         adaptor = self.adaptors[mode]
         if isinstance(adaptor, ClaudeAdaptor):                    # its ids carry on from the channel's stored history
             adaptor = adaptor.for_channel(await self.continuity(client, gatherer, channel))
-        if recap is not None and isinstance(getattr(request, "state", None), dict):
+        if call.kind == CallKind.RECAP and isinstance(getattr(request, "state", None), dict):
             request.state[RECAPPED] = (gatherer, channel)
-        if at is not None:
-            return await self.side_call(request, client, gatherer, channel, body, messages[:at], messages[at:],
-                                        adaptor, mode, "context", "recap" if recap is not None else "suggestion")
-        compaction = compaction_split(messages)
-        if compaction is not None:
-            history, instruction = compaction
-            return await self.side_call(request, client, gatherer, channel, body, history,
-                                        [{"role": "user", "content": instruction}], adaptor, mode, "compaction",
-                                        "compaction")
+        if call.kind in (CallKind.RECAP, CallKind.SUGGESTION, CallKind.COMPACTION):
+            self.called(gatherer, channel, call)
+            op = "compaction" if call.kind == CallKind.COMPACTION else "context"
+            return await self.side_call(request, client, gatherer, channel, body, call.history, call.own,
+                                        adaptor, mode, op, call.kind)
 
         cwd = cwd_of(messages) or self.cwd
         if isinstance(getattr(request, "state", None), dict):
@@ -220,6 +222,7 @@ class ClaudeContextManager:
                 if "read_id" in out_again:
                     new, out = again, out_again
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
+        self.called(gatherer, channel, call, out.get("read_id"))
         if new is not None and "read_id" in out:
             new, out["left_out_events"] = fresh_thinking(out.get("context"), new)
             out["left_out"] = sum(out["left_out_events"].values())          # off the read's sent_tokens
@@ -230,12 +233,18 @@ class ClaudeContextManager:
             return None                                   # nothing to change: Claude Code's own bytes go through
         return dict(body, messages=new)
 
+    @staticmethod
+    def where(request, session: str) -> Tuple[str, str]:
+        """(gatherer, channel) of a call of `session`: the request's label and the session, else the session for both."""
+        return (request.label, session) if request.label else (session, session)
+
     async def continuity(self, client, gatherer: str, channel: str) -> Continuity:
         """Where the channel's next request carries on (to_events.py): its last stored events, read from the
         gatherer on every call -- nothing of it is kept here, so a hook server started again carries on as
         this one would. The gatherer not answering: none, and the ids are chained from the request's start."""
         try:
-            answer = await client.request("latest", {"gatherer": gatherer, "properties": {CHANNEL: channel}, "n": TAIL})
+            answer = await client.request("latest", {"gatherer": gatherer, "properties": {CHANNEL: channel}, "n": TAIL,
+                                                     "types": list(self.adaptor.outputs)})
         except Exception as exc:  # noqa: BLE001 - never block the model call
             answer = {"error": repr(exc)}
         events = answer.get("events") if isinstance(answer, dict) else None
@@ -281,85 +290,15 @@ class ClaudeContextManager:
         joined = back.as_user(back.tools_placed(joined)) if mode == "user" else back.placed(back.tools_placed(joined))
         return dict(body, messages=joined)
 
-    async def measured(self, request, tokens: Optional[int]) -> None:
-        """The hook server's report, once the answer is back: the call's input tokens, to the read."""
-        await report_measured(self.ag_clients, request, tokens)
+    def answer_items(self, output_items: list) -> list:
+        return [{"role": "assistant", "content": output_items}]
 
-    async def failed(self, request, status: Optional[int], error: str) -> None:
-        """The hook server's report that one of the session's own calls failed -- its endpoint answered an
-        error, or could not be reached -- to the read it came from: what tells a turn that stopped on an
-        error from one under way."""
-        await report_failed(self.ag_clients, request, status, error)
-
-    async def before_end(self, request, status: int, answer: dict) -> None:
-        """The hook server's report, once the answer to one of the session's own calls is back whole and
-        before Claude Code has its end -- before it runs the tools the answer calls: the files they
-        name, looked at as they are (Files)."""
-        kept = (getattr(request, "state", None) or {}).get(FILES)
-        if kept is None or self.files is None or status != 200 or not isinstance(answer, dict) or answer.get("error"):
-            return
-        gatherer, channel, cwd, since = kept              # the answer's calls can't have run before it began
-        self.files.started(gatherer, channel, cwd, answer.get("output_items") or [],
-                           getattr(request, "answer_started", None) or since)
-
-    async def streamed(self, request, answer: dict) -> None:
-        """The hook server's report, while the answer to one of the session's own calls streams, that
-        a part of it is complete (a content block has ended): the parts complete so far kept as pending,
-        stopped STREAMING, in place of those kept before -- so a reader of the gatherer sees what the
-        agent wrote before a tool call as Claude Code shows it, not once the call's input (a whole
-        file, say) has streamed too. `answered` replaces them with the whole answer."""
-        kept = (getattr(request, "state", None) or {}).get(ANSWERED)
-        if kept is None or not isinstance(answer, dict) or not answer.get("output_items") or not answer.get("response_id"):
-            return
-        gatherer, channel, cwd = kept
-        note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
-                                [{"role": "assistant", "content": answer["output_items"]}], self.adaptor,
-                                answer["response_id"], STREAMING)
-        self.log(gatherer, f"[{channel}] streaming: {note}")
-
-    async def answered(self, request, status: int, answer: dict) -> None:
-        """The hook server's report, once Claude Code has the whole answer to one of the session's
-        own calls: the answer's events kept as pending (the server's `pending`) until the channel's
-        next call stores them as events -- so a reader of the gatherer sees the reply that ends a
-        turn, which no call carries until the user writes again, and a tool call while it runs; in
-        place of the parts of it kept while it streamed (`streamed`). A failed answer, or one with
-        no content, is not kept. A recap's answer is kept as the session's recap instead (the
-        server's `recap`), never as events."""
+    async def side_answered(self, request, status: int, answer) -> bool:
+        """A recap's answer, kept as its session's recap (`recap`): the text of its answer, if any."""
         recapped = (getattr(request, "state", None) or {}).get(RECAPPED)
-        if recapped is not None:
-            await self.recapped(recapped, status, answer)
-            return
-        kept = (getattr(request, "state", None) or {}).get(ANSWERED)
-        if kept is None or status != 200:
-            return
-        if not isinstance(answer, dict) or answer.get("error") or not answer.get("output_items"):
-            return
-        gatherer, channel, cwd = kept
-        note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
-                                [{"role": "assistant", "content": answer["output_items"]}], self.adaptor,
-                                answer.get("response_id"), answer.get("status"), read_of(request))
-        self.log(gatherer, f"[{channel}] answered ({answer.get('status')}): {note}")
-
-    async def recapped(self, recapped: Tuple[str, str], status: int, answer: dict) -> None:
-        """A recap's answer, kept as its session's recap: the text of its answer, if any."""
-        if status != 200 or not isinstance(answer, dict) or answer.get("error"):
-            return
-        text = "\n".join(str(b.get("text") or "") for b in answer.get("output_items") or []
-                         if isinstance(b, dict) and b.get("type") == "text").strip()
-        if not text:
-            return
-        gatherer, session = recapped
-        try:
-            got = await self.ag_clients.client(gatherer).request("recap", {"gatherer": gatherer, "session": session,
-                                                                           "text": text})
-        except Exception as exc:  # noqa: BLE001 - a lost recap never breaks the call
-            got = {"error": repr(exc)}
-        self.log(gatherer, f"[{session}] recap: " + (f"kept ({got.get('recap_id')})" if isinstance(got, dict)
-                                                     and not got.get("error") else f"not kept: {got}"))
-
-    async def close(self) -> None:
-        """Let counts and file checks still under way finish, then stop every gatherer's server."""
-        await self.counter.close()
-        if self.files is not None:
-            await self.files.close()
-        await self.ag_clients.close()
+        if recapped is None:
+            return False
+        if status == 200 and isinstance(answer, dict) and not answer.get("error"):
+            reply = self.harness.read(self.harness.items(self.answer_items(answer.get("output_items") or [])))
+            await self.recapped(*recapped, self.harness.recap(reply))
+        return True

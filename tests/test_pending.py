@@ -185,9 +185,25 @@ class Server:
         self.asked.append((op, body))
         if op == "rewrite":
             return {"context": body["events"], "note": "ok", "read_id": len(self.asked), "basis": None}
-        if op == "pending":
-            return {"kept": len(body["events"])}
+        if op == "insert":
+            return {"rows": [None] * len(body["events"])}
         return {}
+
+    def answers(self):
+        """What the hook recorded of each answer, by its id, in the order recorded: {parts: the conversation events
+        recorded of it, each once; end: its reply_end's payload and properties, None while none; channel}."""
+        out = {}
+        for op, body in self.asked:
+            for e in body["events"] if op == "insert" else []:
+                if e["type"] not in ("reply_part", "reply_end"):
+                    continue
+                a = out.setdefault(e["properties"]["answer_id"], {"parts": {}, "end": None,
+                                                                  "channel": body["properties"]["channel"]})
+                if e["type"] == "reply_part":
+                    a["parts"].setdefault(e["id"], e["payload"])
+                else:
+                    a["end"] = {**e["payload"], **e["properties"]}
+        return [dict(a, parts=list(a["parts"].values())) for a in out.values()]
 
     async def stop(self):
         pass
@@ -223,34 +239,31 @@ class HookTest(unittest.TestCase):
         self.hook = claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda g: self.server), log=lambda g, l: None,
                                                    count="off")
 
-    def call(self, messages, answer, status=200, headers=None):
+    def call(self, messages, answer, status=200, headers=None, answer_id="msg_1"):
         req = SimpleNamespace(method="POST", path="/v1/messages", label="g", limit=None, state={}, upstream=None,
                               headers=dict({"X-Claude-Code-Session-Id": "s"}, **(headers or {})),
                               body={"model": "m", "tools": [{"name": "Bash"}], "messages": messages})
 
         async def go():
             await self.hook(req)
-            await self.hook.answered(req, status, response_of(answer))
+            await self.hook.answered(req, status, response_of(answer.replace(b'"msg_1"', f'"{answer_id}"'.encode())))
         asyncio.run(go())
 
-    def kept(self):
-        return [b for op, b in self.server.asked if op == "pending"]
-
-    def test_every_answer_of_the_session_s_own_calls_is_kept(self):
+    def test_every_answer_of_the_session_s_own_calls_is_recorded(self):
         self.call([ask("count the rows")], sse([CALL], "tool_use"))
-        self.call([ask("count the rows")], sse([TEXT], "end_turn"))
-        first, second = self.kept()
-        self.assertEqual([e["type"] for e in first["events"]], ["tool_call"])
-        self.assertEqual([(e["type"], e["text"]) for e in second["events"]], [("agent_message", "There are 42 rows.")])
-        self.assertEqual((second["properties"], second["answer"]), ({"channel": "s"}, "msg_1"))
-        self.assertEqual((first["stop"], second["stop"]), ("tool_use", "end_turn"))   # why each answer stopped
-        self.assertNotIn("id", second["events"][0])                                # not history: no id
+        self.call([ask("count the rows")], sse([TEXT], "end_turn"), answer_id="msg_2")
+        first, second = self.server.answers()
+        self.assertEqual([e["type"] for e in first["parts"]], ["tool_call"])
+        self.assertEqual([(e["type"], e["text"]) for e in second["parts"]], [("agent_message", "There are 42 rows.")])
+        self.assertEqual((first["end"]["stop"], second["end"]["stop"]), ("tool_use", "end_turn"))   # why each stopped
+        self.assertEqual((second["channel"], second["end"]["answer_id"]), ("s", "msg_2"))
+        self.assertNotIn("id", second["parts"][0])                                  # not history: no id of its own
 
     def test_each_answer_names_the_read_its_call_s_context_came_from(self):
         self.call([ask("count the rows")], sse([CALL], "tool_use"))
-        self.call([ask("count the rows")], sse([TEXT], "end_turn"))
+        self.call([ask("count the rows")], sse([TEXT], "end_turn"), answer_id="msg_2")
         reads = [i for i, (op, _) in enumerate(self.server.asked, 1) if op == "rewrite"]   # the read_id each was given
-        self.assertEqual([b["read_id"] for b in self.kept()], reads)
+        self.assertEqual([a["end"]["read_id"] for a in self.server.answers()], reads)
 
     def stream(self, messages, *parts):
         """A call whose answer streams: the hook's `streamed` for each of `parts` (the bytes so far)."""
@@ -264,25 +277,24 @@ class HookTest(unittest.TestCase):
                 await self.hook.streamed(req, streamed_of(raw))
         asyncio.run(go())
 
-    def test_the_parts_of_an_answer_are_kept_while_it_streams(self):
+    def test_the_parts_of_an_answer_are_recorded_while_it_streams(self):
         whole = sse([TEXT, CALL], "tool_use")
         cut = whole[:whole.index(b'"content_block_stop", "index": 1')]                # the call still streaming
         self.stream([ask("count the rows")], cut, sse([], "tool_use"))
-        kept, = self.kept()                                                          # no part complete: none kept
-        self.assertEqual((kept["answer"], kept["stop"], kept["properties"]), ("msg_1", "streaming", {"channel": "s"}))
-        self.assertEqual([(e["type"], e["text"]) for e in kept["events"]], [("agent_message", "There are 42 rows.")])
-        self.assertNotIn("read_id", kept)                                            # when it came: the whole answer's
+        kept, = self.server.answers()                                                # no part complete: none kept
+        self.assertEqual((kept["channel"], kept["end"]), ("s", None))                 # it streams: no end yet
+        self.assertEqual([(e["type"], e["text"]) for e in kept["parts"]], [("agent_message", "There are 42 rows.")])
 
-    def test_a_failed_answer_is_not_kept(self):
+    def test_a_failed_answer_is_not_recorded(self):
         self.call([ask("count the rows")], sse([TEXT], "end_turn"), status=529)
         self.call([ask("count the rows")], sse([TEXT], "end_turn", error={"type": "overloaded_error"}))
-        self.assertEqual(self.kept(), [])
+        self.assertEqual(self.server.answers(), [])
 
-    def test_a_call_the_hook_does_not_answer_for_is_not_kept(self):
+    def test_a_call_the_hook_does_not_answer_for_is_not_recorded(self):
         self.call([ask("count the rows")], sse([TEXT], "end_turn"), headers={"X-Claude-Code-Agent-Id": "a1"})
         self.call([ask("count the rows"), ask("[SUGGESTION MODE: next?]")], sse([TEXT], "end_turn"),
                   headers={"X-Claude-Code-Request-Class": "auxiliary"})
-        self.assertEqual(self.kept(), [])
+        self.assertEqual(self.server.answers(), [])
 
 
 RESPONSES = (
@@ -305,11 +317,10 @@ class CodexHookTest(unittest.TestCase):
             await hook.answered(req, status, response_of(RESPONSES))
         asyncio.run(go(200))
         asyncio.run(go(500))                                                          # failed: not kept
-        kept = [b for op, b in server.asked if op == "pending"]
-        self.assertEqual(len(kept), 1)
-        self.assertEqual((kept[0]["properties"], kept[0]["answer"], kept[0]["stop"]), ({"channel": "t1"}, "resp_1", "completed"))
-        self.assertEqual(kept[0]["read_id"], [i for i, (op, _) in enumerate(server.asked, 1) if op == "rewrite"][0])
-        self.assertEqual([(e["type"], e["text"]) for e in kept[0]["events"]], [("agent_message", "There are 42 rows.")])
+        kept, = server.answers()
+        self.assertEqual((kept["channel"], kept["end"]["answer_id"], kept["end"]["stop"]), ("t1", "resp_1", "completed"))
+        self.assertEqual(kept["end"]["read_id"], [i for i, (op, _) in enumerate(server.asked, 1) if op == "rewrite"][0])
+        self.assertEqual([(e["type"], e["text"]) for e in kept["parts"]], [("agent_message", "There are 42 rows.")])
 
     def test_codex_s_output_items_are_kept_as_each_is_done(self):
         from ag.integrations.harnesses.codex.ag_orchestrator import context_manager as codex_ag
@@ -328,9 +339,9 @@ class CodexHookTest(unittest.TestCase):
             await hook(req)
             await hook.streamed(req, streamed_of(so_far.encode()))
         asyncio.run(go())
-        kept, = [b for op, b in server.asked if op == "pending"]
-        self.assertEqual((kept["answer"], kept["stop"]), ("resp_1", "streaming"))
-        self.assertEqual([(e["type"], e["text"]) for e in kept["events"]], [("agent_message", "Counting.")])
+        kept, = server.answers()
+        self.assertEqual(kept["end"], None)                                           # it streams
+        self.assertEqual([(e["type"], e["text"]) for e in kept["parts"]], [("agent_message", "Counting.")])
 
 
 if __name__ == "__main__":

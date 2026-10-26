@@ -140,12 +140,13 @@ class Manager(ContextManager):
             return None
         return store.locate(self._conn(gatherer_id), properties, event_id)
 
-    def latest(self, gatherer_id: str, properties: Optional[dict], n: int) -> List[tuple]:
+    def latest(self, gatherer_id: str, properties: Optional[dict], n: int, types: Optional[list] = None) -> List[tuple]:
         """Not part of the interface: (event id, payload) of the `n` events last stored with these
-        properties, oldest first (`store.latest`): where a harness that re-sends its history picks it up."""
+        properties -- of these `types` alone, when given -- oldest first (`store.latest`): where a harness that
+        re-sends its history picks it up."""
         if not os.path.exists(db_path(gatherer_id)):
             return []
-        return store.latest(schema.connection(gatherer_id), properties, n)     # a read: no tables to set up
+        return store.latest(schema.connection(gatherer_id), properties, n, types)     # a read: no tables to set up
 
     def event_types(self, gatherer_id: str) -> List[EventType]:
         """The gatherer's types, in the order defined, with their ids."""

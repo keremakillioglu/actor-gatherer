@@ -160,9 +160,11 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 named `took_over`. A harness's call is refused when
                                                 it is not claimed
     {"op": "locate", "gatherer", "properties", "event_id"} -> {"row"}      (`id` is the request's own)
-    {"op": "latest", "gatherer", "properties", "n"} -> {"events": [{"id", "payload"}, ...]}
+    {"op": "latest", "gatherer", "properties", "n", "types"?} -> {"events": [{"id", "payload"}, ...]}
                                                 the `n` events last stored with exactly these
-                                                identifying properties, oldest first: where a
+                                                identifying properties (of `types` alone, when
+                                                given: the harness's conversation, not what its
+                                                hook records besides), oldest first: where a
                                                 harness that re-sends its whole history, and
                                                 gives its events ids of its own making, picks
                                                 it up (the claude adaptor's Continuity)
@@ -603,8 +605,10 @@ class Server:
             n = request.get("n")
             if not isinstance(n, int) or isinstance(n, bool) or n < 0:
                 return {"error": "no n"}
+            types = request.get("types")
+            types = [t for t in types if isinstance(t, str)] if isinstance(types, list) else None
             manager = self.factory(gatherer)        # read only, and on every model call: no `init`
-            return {"events": [{"id": i, "payload": p} for i, p in manager.latest(gatherer, properties, n)]}
+            return {"events": [{"id": i, "payload": p} for i, p in manager.latest(gatherer, properties, n, types)]}
         if op == "init":
             return self.init(gatherer, request.get("event_types"))
         if op == "event_types":

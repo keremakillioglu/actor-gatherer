@@ -312,6 +312,8 @@ def kind_of(item) -> str:
     role = item.get("role")
     blocks = blocks_of(item)
     if role == "system":
+        if blocks and blocks[0].get("type") in ("tool_addition", "tool_removal"):
+            return Kind.TOOL_NOTICE
         text = " ".join(str(b.get("text") or "") for b in blocks)
         return Kind.TASK_NOTICE if "<task-notification>" in text else Kind.ENVIRONMENT
     if not blocks:

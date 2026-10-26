@@ -46,6 +46,10 @@ class Server:
     async def request(self, op, body=None, timeout=None):
         if op == "latest":                   # a gatherer with nothing stored yet
             return {"events": []}
+        if op == "insert":                   # what the hook records besides the conversation: kept apart
+            self.records = getattr(self, "records", []) + [dict(e, channel=body["properties"]["channel"])
+                                                           for e in body["events"]]
+            return {"rows": []}
         self.asked.append((op, body))
         if op in ("rewrite", "context"):
             return {"context": [{"type": "ag", "name": "earlier", "text": "SUMMARY"}] + body["events"], "note": "ok",
@@ -91,21 +95,25 @@ class HookTest(unittest.TestCase):
             self.assertEqual(out["messages"][-1], RECAP)
             self.assertEqual(out["messages"][0]["content"][0]["text"], "SUMMARY")    # the context, before it
 
-    def test_its_answer_is_kept_as_the_session_s_recap_not_pending(self):
+    def recorded(self, *types):
+        return [(e["type"], e["channel"], e["payload"]) for e in getattr(self.server, "records", []) if e["type"] in types]
+
+    def test_its_answer_is_kept_as_the_session_s_recap_not_as_its_reply(self):
         self.call(conversation_so_far() + [RECAP], sse([{"type": "text", "text": SUMMARY}], "end_turn"))
-        ops = [op for op, _ in self.server.asked]
-        self.assertEqual(ops, ["context", "recap"])                                 # nothing pending
-        self.assertEqual(self.server.asked[1][1], {"gatherer": "g", "session": "s", "text": SUMMARY})
+        self.assertEqual([op for op, _ in self.server.asked], ["context"])
+        self.assertEqual(self.recorded("recap", "reply_part", "reply_end"), [("recap", "s", {"text": SUMMARY})])
+        self.assertEqual([p["kind"] for _, _, p in self.recorded("model_call")], ["recap"])
 
     def test_a_failed_or_empty_recap_is_not_kept(self):
         self.call(conversation_so_far() + [RECAP], sse([{"type": "text", "text": SUMMARY}], "end_turn"), status=529)
         self.call(conversation_so_far() + [RECAP], sse([{"type": "text", "text": "  "}], "end_turn"))
-        self.assertNotIn("recap", [op for op, _ in self.server.asked])
+        self.assertEqual(self.recorded("recap"), [])
 
-    def test_the_session_s_own_turn_is_still_kept_as_pending(self):
+    def test_the_session_s_own_turn_is_still_recorded_as_its_reply(self):
         self.call(conversation_so_far() + [{"role": "user", "content": "and the columns?"}],
                   sse([{"type": "text", "text": "3 columns."}], "end_turn"))
-        self.assertEqual([op for op, _ in self.server.asked], ["rewrite", "pending"])
+        self.assertEqual([op for op, _ in self.server.asked], ["rewrite"])
+        self.assertEqual([t for t, _, _ in self.recorded("reply_part", "reply_end", "recap")], ["reply_part", "reply_end"])
 
 
 class ServerTest(unittest.TestCase):

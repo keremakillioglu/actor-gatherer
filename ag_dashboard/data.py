@@ -129,11 +129,23 @@ OUTPUT_FILE = claude_rules.OUTPUT_FILE
 #: An answer's stop reason, as the provider gives it: the turn goes on (a tool to run, a paused
 #: turn, or ag's "streaming": the parts of an answer complete while the rest still streams), or is
 #: over. Any other (Codex's `completed` on every answer, none) tells nothing: its last event does.
-GOES_ON = {"tool_use", "pause_turn", "streaming"}
+STREAMING = "streaming"
+GOES_ON = {"tool_use", "pause_turn", STREAMING}
 OVER = {"end_turn", "stop_sequence", "max_tokens", "refusal"}
 CHANNEL = "p_channel"          # the channel property's column (ag.ag_policies.tools.channel)
 # A channel's events and reads are found by ifnull(CHANNEL, '') = ?, as ag's indexes on them have it (schema.index):
 # by the bare column, SQLite cannot use them and reads every event of the gatherer.
+
+
+#: The events a harness's hook records of a session besides its conversation (ag's
+#: integrations/tools/ag_orchestrator/records.py) and the dashboard of what it did: read for what they say, never shown
+#: as the conversation.
+RECORDS = ("model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "asked", "ask_settled",
+           "turn_stopped", "task_started", "task_ended", "task_activity", "message_queued", "message_sent",
+           "message_withdrawn", "file_touched", "chat_sent", "answer_given", "terminal_input")
+#: SQL: an event (`e`) that is the conversation, not a record.
+NOT_RECORD = ("e.event_type_id NOT IN (SELECT event_type_id FROM event_types WHERE name IN ("
+              + ", ".join(f"'{t}'" for t in RECORDS) + "))")
 
 
 def _connect(gatherer: str) -> Optional[sqlite3.Connection]:
@@ -344,8 +356,8 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
     sizes = [c for c in ("est_tokens", "real_tokens", "limit_tokens") if c in _columns(conn, "_reads")]
     out: Dict[str, dict] = {}
     which = "" if only is None else f" AND {CHANNEL} IN ({', '.join('?' * len(only))})"
-    for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, min(inserted_at) AS first, max(inserted_at) AS last FROM events "
-                          f"WHERE {CHANNEL} IS NOT NULL{which} GROUP BY {CHANNEL}", tuple(only or ())):
+    for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, min(inserted_at) AS first, max(inserted_at) AS last FROM events e "
+                          f"WHERE {CHANNEL} IS NOT NULL AND {NOT_RECORD}{which} GROUP BY {CHANNEL}", tuple(only or ())):
         out[r["ch"]] = {"channel": r["ch"], "events": r["n"], "created": _seconds(r["first"]), "last_event": _seconds(r["last"]), "reads": 0,
                         "last_read": None, "cwd": None, "tasks": 0, "est_tokens": None, "real_tokens": None,
                         "limit_tokens": None, "sent_tokens": None, "pid": None, "alive": None}
@@ -380,10 +392,14 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         for r in conn.execute("SELECT channel_key AS ch, count(*) AS n FROM tasks GROUP BY channel_key"):
             if r["ch"] in out:
                 out[r["ch"]]["tasks"] = r["n"]
-    answered = {}                                    # each agent's newest pending answer: one no call has carried yet
-    if "_pending" in _tables(conn) and CHANNEL in _columns(conn, "_pending"):
+    answered = {}                                    # each agent's newest answer: pending (one no call has carried yet),
+    if "_pending" in _tables(conn) and CHANNEL in _columns(conn, "_pending"):     # or recorded as it came (`reply_*`)
         answered = {ch: _seconds(t) for ch, t in conn.execute(
             f"SELECT {CHANNEL}, max(received_at) FROM _pending WHERE {CHANNEL} IS NOT NULL GROUP BY {CHANNEL}")}
+    for ch, t in conn.execute(f"SELECT e.{CHANNEL}, max(e.inserted_at) FROM events e JOIN event_types t ON "
+                              f"t.event_type_id = e.event_type_id WHERE t.name IN ('reply_part', 'reply_end') "
+                              f"AND e.{CHANNEL} IS NOT NULL GROUP BY e.{CHANNEL}"):
+        answered[ch] = max(answered.get(ch) or 0, _seconds(t) or 0) or None
     building = _running_builds(conn)
     background = _background(conn)
     last_user = {}                                   # each agent's newest user message: what it was last asked --
@@ -395,14 +411,27 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
             f"AND ifnull(e2.text, '') NOT LIKE '%[Subagent hand-back]%' GROUP BY e2.{CHANNEL})"):
         last_user[ch] = (said, None) if said is not None else (None, (text if text else readable(payload)) or "")
     tables = _tables(conn)
-    recaps = {}                                      # each agent's newest recap (Claude Code's, while the user was away)
+    recaps = {}                                      # each agent's newest recap (Claude Code's, while the user was away):
+    found = []                                       # kept in `_recaps` before, recorded as an event now
     if "_recaps" in tables:
-        for ch, made, text in conn.execute("SELECT session, made_at, text FROM _recaps WHERE recap_id IN "
-                                           "(SELECT max(recap_id) FROM _recaps GROUP BY session)"):
+        found += conn.execute("SELECT session, made_at, text FROM _recaps WHERE recap_id IN "
+                              "(SELECT max(recap_id) FROM _recaps GROUP BY session)").fetchall()
+    found += [(ch, at, (_json(raw) or {}).get("text")) for ch, at, raw in conn.execute(
+        f"SELECT e.{CHANNEL}, e.inserted_at, e.payload_json FROM events e WHERE e.row_id IN (SELECT max(x.row_id) FROM "
+        f"events x JOIN event_types t ON t.event_type_id = x.event_type_id WHERE t.name = 'recap' GROUP BY x.{CHANNEL})")]
+    for ch, made, text in found:
+        if ch and (ch not in recaps or (_seconds(made) or 0) >= (recaps[ch]["at"] or 0)):
             recaps[ch] = {"text": " ".join((text or "").split())[:600], "at": _seconds(made)}
     names = {}                                       # each agent's name: the user's, else the newest another gave
-    if "_names" in tables:                           # (codex's title for its thread)
-        for ch, by, text in conn.execute("SELECT session, by, text FROM _names ORDER BY by = 'user', named_at"):
+    given = []                                       # (codex's title for its thread): `_names`, then the records
+    if "_names" in tables:
+        given += [(ch, by, text, named) for ch, by, text, named in conn.execute("SELECT session, by, text, named_at FROM _names")]
+    for ch, at, raw in conn.execute(f"SELECT e.{CHANNEL}, e.inserted_at, e.payload_json FROM events e JOIN event_types t "
+                                    f"ON t.event_type_id = e.event_type_id WHERE t.name = 'name' ORDER BY e.row_id"):
+        got = _json(raw) or {}
+        given.append((ch, got.get("by"), got.get("text"), at))
+    for ch, by, text, _named in sorted(given, key=lambda g: (g[1] == "user", _seconds(g[3]) or 0)):
+        if ch:
             names[ch] = {"text": " ".join((text or "").split())[:120], "by": by}
     for ch, a in out.items():
         a["harness"] = _harness(conn, ch)
@@ -491,34 +520,74 @@ def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
 
 
 def turn_over(conn, channel: str, tables: set):
-    """(whether the channel's turn is over, the time of what says so): from its pending answer --
+    """(whether the channel's turn is over, the time of what says so): from its pending answer (`replies`) --
     its stop reason (GOES_ON / OVER), else its last event: an assistant message ends a turn, a tool
-    call does not -- else, with none pending, from its newest stored event: an assistant message
+    call does not -- else, with none pending, from its newest stored event of the conversation: an assistant message
     (a turn stored whole), or else not (a user message or a tool's output: the model is answering)."""
-    if "_pending" in tables and CHANNEL in _columns(conn, "_pending"):
-        stop = "stop" in _columns(conn, "_pending")
-        last = conn.execute(f"SELECT type, received_at{', stop' if stop else ''} FROM _pending WHERE {CHANNEL} = ? "
-                            "ORDER BY pending_id DESC LIMIT 1", (channel,)).fetchone()
-        if last is not None:
-            why = last["stop"] if stop else None
-            over = False if why in GOES_ON else True if why in OVER else last["type"] == "agent_message"
-            return over, _seconds(last["received_at"])
+    pending = replies(conn, channel, tables)
+    if pending:
+        last = pending[-1]
+        why = last["stop"]
+        over = False if why in GOES_ON else True if why in OVER else last["type"] == "agent_message"
+        return over, _seconds(last["received_at"])
     last = conn.execute(f"SELECT t.name, e.inserted_at FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
                         f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name NOT IN ('environment_update', 'context_stream') "
-                        "ORDER BY e.row_id DESC LIMIT 1", (channel,)).fetchone()
+                        f"AND {NOT_RECORD} ORDER BY e.row_id DESC LIMIT 1", (channel,)).fetchone()
     if last is None:
         return True, None
     return last[0] == "agent_message", _seconds(last[1])
+
+
+def _json(raw):
+    try:
+        got = json.loads(raw) if raw else None
+    except ValueError:
+        return None
+    return got if isinstance(got, dict) else None
+
+
+def replies(conn, channel: str, tables: Optional[set] = None) -> List[dict]:
+    """What the model answered that no call of the channel has carried back yet, oldest first, each {answer,
+    received_at, type, payload_json, text, stop}: from ag's `_pending` (as kept before its hooks recorded answers as
+    events), and the answers recorded as they came (`reply_part`, `reply_end`) after the channel's newest event of the
+    conversation -- the call that carries an answer back stores it as conversation, after it. `stop`: why its answer
+    stopped (its `reply_end`'s), "streaming" while it has none; an answer that broke off as it streamed -- no end, and a
+    turn's call since -- is left out, as ag dropped it from `_pending`."""
+    tables = _tables(conn) if tables is None else tables
+    out = []
+    if "_pending" in tables and CHANNEL in _columns(conn, "_pending"):
+        stop = "stop" in _columns(conn, "_pending")
+        for r in conn.execute(f"SELECT answer, received_at, type, payload_json, text{', stop' if stop else ', NULL AS stop'} "
+                              f"FROM _pending WHERE ifnull({CHANNEL}, '') = ? ORDER BY pending_id", (channel,)):
+            out.append({k: r[k] for k in ("answer", "received_at", "type", "payload_json", "text", "stop")})
+    if "p_answer_id" not in _columns(conn, "events"):
+        return out
+    since = conn.execute(f"SELECT max(e.row_id) FROM events e WHERE ifnull(e.{CHANNEL}, '') = ? AND {NOT_RECORD}",
+                         (channel,)).fetchone()[0] or 0
+    rows = conn.execute(f"SELECT e.row_id, t.name, e.inserted_at, e.payload_json, e.p_answer_id FROM events e JOIN event_types t "
+                        f"ON t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? AND e.row_id > ? AND "
+                        f"t.name IN ('reply_part', 'reply_end', 'model_call') ORDER BY e.row_id", (channel, since)).fetchall()
+    ends = {r[4]: (_json(r[3]) or {}).get("stop") for r in rows if r[1] == "reply_end"}
+    turned = max((r[0] for r in rows if r[1] == "model_call" and (_json(r[3]) or {}).get("kind") == "turn"), default=0)
+    last_part = {}
+    for r in rows:
+        if r[1] == "reply_part":
+            last_part[r[4]] = r[0]
+    for r in rows:
+        if r[1] != "reply_part" or (r[4] not in ends and turned > last_part[r[4]]):
+            continue                                 # a part of an answer that broke off: a turn's call came since
+        part = _json(r[3]) or {}
+        out.append({"answer": r[4], "received_at": r[2], "type": part.get("type"),
+                    "payload_json": json.dumps(part.get("payload")), "text": part.get("text"),
+                    "stop": ends[r[4]] if r[4] in ends else STREAMING})
+    return out
 
 
 def asking(conn, channel: str, tables: set) -> Optional[dict]:
     """What the agent waits on the user for (module doc), None if nothing: from its newest pending answer,
     its calls to a tool of ASKS -- {kind: "question" or "plan", at: when it was answered, call: the call's
     id, questions: [{header, question, multiSelect, options: [{label, description}]}] or plan: its text}."""
-    if "_pending" not in tables or CHANNEL not in _columns(conn, "_pending"):
-        return None
-    rows = conn.execute(f"SELECT answer, received_at, type, payload_json FROM _pending WHERE {CHANNEL} = ? "
-                        "ORDER BY pending_id DESC", (channel,)).fetchall()
+    rows = replies(conn, channel, tables)[::-1]
     for r in rows:
         if r["answer"] != rows[0]["answer"]:
             break                                    # an earlier answer's
@@ -609,11 +678,20 @@ def failing(conn, channel: str) -> Optional[dict]:
     -- that answered the same event. {at: when the newest began, first: the run's first, attempts: how many
     failed, status: the newest's HTTP status (None: no answer came), error: why, retrying: a try under way}."""
     cols = _columns(conn, "_reads")
-    if "error" not in cols or CHANNEL not in cols:
-        return None                                   # a file from before ag kept failures
+    if CHANNEL not in cols:
+        return None
     counted = "real_tokens" if "real_tokens" in cols else "NULL AS real_tokens"
-    rows = conn.execute(f"SELECT read_at, row_id, {counted}, error_status, error FROM _reads WHERE ifnull({CHANNEL}, '') = ? "
-                        "ORDER BY read_id DESC LIMIT ?", (channel, FAILED_READS)).fetchall()
+    kept = "error_status, error" if "error" in cols else "NULL AS error_status, NULL AS error"   # ag's, kept on the read
+    rows = [dict(r) for r in conn.execute(f"SELECT read_id, read_at, row_id, {counted}, {kept} FROM _reads WHERE "
+                                          f"ifnull({CHANNEL}, '') = ? ORDER BY read_id DESC LIMIT ?", (channel, FAILED_READS))]
+    if rows and "p_read_id" in _columns(conn, "events"):         # recorded as an event now (`call_failed`)
+        for read, raw in conn.execute(f"SELECT e.p_read_id, e.payload_json FROM events e JOIN event_types t ON "
+                                      f"t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? AND "
+                                      f"t.name = 'call_failed' AND e.p_read_id >= ?", (channel, rows[-1]["read_id"])):
+            got = _json(raw) or {}
+            for r in rows:
+                if r["read_id"] == read and r["error"] is None:
+                    r["error_status"], r["error"] = got.get("status"), got.get("error") or "failed"
     retrying = bool(rows) and rows[0]["error"] is None
     if retrying:                                      # a try under way, after a failure at the same event
         if rows[0]["real_tokens"] is not None or len(rows) < 2 or rows[1]["error"] is None \
@@ -988,7 +1066,14 @@ harness_of = harness_kit.harness_of
 
 
 def _harness(conn, channel: str) -> Optional[str]:
-    rows = conn.execute(f"SELECT payload_json FROM events WHERE ifnull({CHANNEL}, '') = ? ORDER BY row_id LIMIT 60", (channel,))
+    """The harness the channel runs on: as its hook recorded it with each model call, else as its events' shape tells."""
+    said = conn.execute(f"SELECT e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+                        f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'model_call' ORDER BY e.row_id DESC LIMIT 1",
+                        (channel,)).fetchone()
+    if said and (_json(said[0]) or {}).get("harness"):
+        return _json(said[0])["harness"]
+    rows = conn.execute(f"SELECT payload_json FROM events e WHERE ifnull({CHANNEL}, '') = ? AND {NOT_RECORD} "
+                        "ORDER BY row_id LIMIT 60", (channel,))
     payloads = []
     for (raw,) in rows:
         try:
@@ -1166,12 +1251,9 @@ def _count(text: str) -> int:
 def _pending(conn, channel: str, tables: set) -> List[dict]:
     """The channel's pending events, oldest first, as `context` lists items (group PENDING): each one's
     type, size by ag's own count, time and text (at most TEXT_CHARS; `clipped` says how much more).
-    [] in a file from before `_pending`, or when the channel has none: its last call carried them all."""
-    if "_pending" not in tables or CHANNEL not in _columns(conn, "_pending"):
-        return []
+    [] when the channel has none: its last call carried them all (`replies`)."""
     items = []
-    for r in conn.execute(f"SELECT pending_id, received_at, type, payload_json, text FROM _pending "
-                          f"WHERE ifnull({CHANNEL}, '') = ? ORDER BY pending_id", (channel,)):
+    for r in replies(conn, channel, tables):
         text = r["text"] if r["text"] else readable(r["payload_json"])
         items.append({"position": None, "group": PENDING, "name": r["type"], "tokens": _count(r["text"] or ""),
                       "row_id": None, "made_id": None, "at": _seconds(r["received_at"]),
@@ -1190,7 +1272,7 @@ def _after_read(conn, channel: str, tables: set, row_id: Optional[int]) -> List[
         for r in conn.execute(
                 "SELECT e.row_id, t.name AS type, e.tokens, e.text, e.payload_json, e.inserted_at FROM events e "
                 f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? AND e.row_id > ? "
-                "ORDER BY e.row_id LIMIT ?", (channel, row_id, HISTORY_ITEMS)):
+                f"AND {NOT_RECORD} ORDER BY e.row_id LIMIT ?", (channel, row_id, HISTORY_ITEMS)):
             text = r["text"] if r["text"] else readable(r["payload_json"])
             items.append({"position": None, "group": AFTER_READ, "name": r["type"] or "?", "tokens": r["tokens"] or 0,
                           "row_id": r["row_id"], "made_id": None, "at": _seconds(r["inserted_at"]),
@@ -1332,7 +1414,7 @@ def history(gatherer: str, channel: str, first_row: int, last_row: Optional[int]
         if not _channels_kept(conn):
             return dict(NOTHING_YET)
         top = last_row if last_row is not None else 2 ** 62
-        where = f"ifnull(e.{CHANNEL}, '') = ? AND e.row_id >= ? AND e.row_id <= ?"
+        where = f"ifnull(e.{CHANNEL}, '') = ? AND e.row_id >= ? AND e.row_id <= ? AND {NOT_RECORD}"
         n = conn.execute(f"SELECT count(*) FROM events e WHERE {where}", (channel, first_row, top)).fetchone()[0]
         items = []
         for r in conn.execute(
@@ -1488,7 +1570,7 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
         if not _channels_kept(conn):
             return dict(NOTHING_YET)
         cols = ("SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at FROM events e "
-                f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? ")
+                f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? AND {NOT_RECORD} ")
         if after is not None:
             rows = conn.execute(cols + "AND e.row_id > ? ORDER BY e.row_id LIMIT ?",
                                 (channel, after, TRANSCRIPT_ITEMS + 1)).fetchall()
@@ -1502,14 +1584,12 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
                   "parts": parts(r["type"] or "?", r["payload_json"], r["text"])} for r in rows]
         earlier = False
         if items:
-            earlier = conn.execute(f"SELECT 1 FROM events WHERE ifnull({CHANNEL}, '') = ? AND row_id < ? LIMIT 1",
+            earlier = conn.execute(f"SELECT 1 FROM events e WHERE ifnull(e.{CHANNEL}, '') = ? AND e.row_id < ? AND {NOT_RECORD} LIMIT 1",
                                    (channel, items[0]["row_id"])).fetchone() is not None
         elif after is not None:
             earlier = True
-        tables = _tables(conn)
-        if newest and "_pending" in tables and CHANNEL in _columns(conn, "_pending"):
-            for r in conn.execute(f"SELECT received_at, type, payload_json, text FROM _pending WHERE {CHANNEL} = ? "
-                                  "ORDER BY pending_id", (channel,)):
+        if newest:
+            for r in replies(conn, channel):
                 items.append({"row_id": None, "type": r["type"], "at": _seconds(r["received_at"]),
                               "parts": parts(r["type"], r["payload_json"], r["text"])})
         return {"items": items, "earlier": earlier, "newest": newest}

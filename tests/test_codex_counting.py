@@ -91,6 +91,10 @@ class Client:
         self.asked = []
 
     async def request(self, op, body=None, timeout=None):
+        if op == "insert":                   # what the hook records besides the conversation: kept apart
+            self.records = getattr(self, "records", []) + [dict(e, channel=body["properties"]["channel"])
+                                                           for e in body["events"]]
+            return {"rows": []}
         self.asked.append((op, body))
         return {}
 
@@ -362,6 +366,10 @@ class HookTest(Base):
                 self.asked = []
 
             async def request(self, op, body=None, timeout=None):
+                if op == "insert":                   # what the hook records besides the conversation: kept apart
+                    self.records = getattr(self, "records", []) + [dict(e, channel=body["properties"]["channel"])
+                                                                   for e in body["events"]]
+                    return {"rows": []}
                 self.asked.append((op, body))
                 if op != "rewrite":
                     return {}
