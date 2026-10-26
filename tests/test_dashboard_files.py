@@ -212,6 +212,24 @@ class FilesTest(unittest.TestCase):
         self.add(call("b10", "Bash", {"command": "make"}), result("b10", "ok"), said("Built."))
         self.assertIsNone(files.files("g", "c1")["turns"][-1]["last"])     # a reply after it
 
+    def test_what_its_calls_are_doing_and_how_they_ended(self):
+        work = files.files("g", "c1")["turns"][-1]["work"]                  # the edits, the failed tests, then the reads
+        self.assertEqual((work["doing"], work["last"], work["failed"]), (None, "read", 0))
+        self.assertEqual({k: work["ended"][k] for k in ("id", "kind", "ok")}, {"id": "i1", "kind": "read", "ok": True})
+        self.add(asked("again"), call("t2", "Bash", {"command": "cd tests && python -m unittest"}))
+        work = files.files("g", "c1")["turns"][-1]["work"]
+        self.assertEqual((work["doing"], work["last"], work["ended"]), ("test", "test", None))
+        self.add(result("t2", "Ran 3 tests\n\nFAILED (failures=1)"))       # exits 0 through a pipe, all the same failed
+        work = files.files("g", "c1")["turns"][-1]["work"]
+        self.assertEqual((work["doing"], work["last"], work["ended"]["ok"], work["failed"]), (None, "test", False, 1))
+        self.add(call("g1", "Grep", {"pattern": "x"}), result("g1", "nothing", True), call("a1", "Agent", {"prompt": "p"}),
+                 call("a2", "Agent", {"prompt": "q"}))
+        work = files.files("g", "c1")["turns"][-1]["work"]
+        self.assertEqual((work["doing"], work["helpers"], work["failed"]), ("team", 2, 2))
+        self.add(result("a1", "done"), said("Both helpers are working."))
+        work = files.files("g", "c1")["turns"][-1]["work"]
+        self.assertEqual((work["doing"], work["last"], work["failed"]), ("team", None, 0))   # a reply after: no last call
+
     def test_a_read_shows_its_lines_at_their_numbers(self):
         a = files.files("g", "c1", 0)["files"][0]
         self.assertEqual(a["kinds"], ["read"])
