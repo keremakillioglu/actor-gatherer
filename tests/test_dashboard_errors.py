@@ -122,6 +122,23 @@ class FailingTest(ErrorsBase):
         self.assertIsNone(self.failing())
 
 
+class ShrankTest(ErrorsBase):
+    """When an actor's context last shrank to half or less between two calls: its harness compacted it."""
+
+    def test_only_a_drop_to_half_or_less_at_its_newest_call(self):
+        now = time.time()
+        self.assertIsNone(self.actor()["shrank_at"])                         # no call yet
+        self.read(now - 30, tokens=400000)
+        self.read(now - 20, tokens=380000)
+        self.assertIsNone(self.actor()["shrank_at"])                         # smaller, but not by half
+        self.read(now - 10, tokens=150000)
+        self.assertAlmostEqual(self.actor()["shrank_at"], now - 10, delta=1)
+        self.read(now - 5, tokens=160000)
+        self.assertIsNone(self.actor()["shrank_at"])                         # grown again since
+        self.read(now - 2)                                                   # one not counted yet tells nothing
+        self.assertIsNone(self.actor()["shrank_at"])
+
+
 class GivenUpTest(ErrorsBase):
     """No record of Claude Code's to say (here: none written): time does."""
 

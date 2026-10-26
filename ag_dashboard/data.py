@@ -291,7 +291,7 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
         if a is None:
             a = {"channel": s["session_id"], "events": 0, "last_event": None, "reads": 0, "last_read": None,
                  "cwd": s["cwd"], "tasks": 0, "est_tokens": None, "real_tokens": None, "limit_tokens": None,
-                 "sent_tokens": None, "harness": s["harness"], "last_user_message": None, "recap": None,
+                 "sent_tokens": None, "shrank_at": None, "harness": s["harness"], "last_user_message": None, "recap": None,
                  "created": None, "last": _seconds(s["created_at"]), "building": False, "running": False,
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
@@ -342,7 +342,7 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
                           f"WHERE {CHANNEL} IS NOT NULL{which} GROUP BY {CHANNEL}", tuple(only or ())):
         out[r["ch"]] = {"channel": r["ch"], "events": r["n"], "created": _seconds(r["first"]), "last_event": _seconds(r["last"]), "reads": 0,
                         "last_read": None, "cwd": None, "tasks": 0, "est_tokens": None, "real_tokens": None,
-                        "limit_tokens": None, "sent_tokens": None, "pid": None, "alive": None}
+                        "limit_tokens": None, "sent_tokens": None, "shrank_at": None, "pid": None, "alive": None}
     if CHANNEL in _columns(conn, "_reads"):
         cols = _columns(conn, "_reads")
         answer = "max(answered_at)" if "answered_at" in cols else "NULL"
@@ -353,11 +353,11 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         cwd = "p_cwd" in cols
         process = [c for c in ("pid", "pid_started") if c in cols]
         for ch, a in out.items():
-            last = conn.execute(f"SELECT {', '.join(['read_id'] + sizes + (['p_cwd'] if cwd else []))} FROM _reads "
-                                f"WHERE {CHANNEL} = ? ORDER BY read_id DESC LIMIT 1", (ch,)).fetchone()
+            last, *before = conn.execute(f"SELECT {', '.join(['read_id', 'read_at'] + sizes + (['p_cwd'] if cwd else []))} FROM _reads "
+                                         f"WHERE {CHANNEL} = ? ORDER BY read_id DESC LIMIT 2", (ch,)).fetchall() or [None]
             if last is not None:
-                a.update({k: last[k] for k in sizes}, cwd=last["p_cwd"] if cwd else None,
-                         sent_tokens=_sent(conn, last["read_id"]))
+                a.update({k: last[k] for k in sizes}, cwd=last["p_cwd"] if cwd else None, sent_tokens=_sent(conn, last["read_id"]))
+                a["shrank_at"] = _shrank(conn, last, before[0] if before else None, sizes)
             if len(process) == 2:                    # the newest call that named its process
                 p = conn.execute(f"SELECT pid, pid_started FROM _reads WHERE {CHANNEL} = ? AND pid IS NOT NULL "
                                  f"ORDER BY read_id DESC LIMIT 1", (ch,)).fetchone()
@@ -498,6 +498,17 @@ def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optiona
     finally:
         conn.close()
     return None if ask is None or settled(channel, cwd, ask["call"]) else ask
+
+
+def _shrank(conn, last, before, sizes) -> Optional[float]:
+    """When the agent's context last shrank to half or less between two calls (its harness compacted it, or its
+    context manager built it afresh): the newest call's time, if it did; else None. Each call's size is the
+    provider's count, or until it comes (after the model answers) ag's own, as the page shows it."""
+    if before is None:
+        return None
+    size = lambda r: (r["real_tokens"] if "real_tokens" in sizes else None) or _sent(conn, r["read_id"])
+    now, then = size(last), size(before)
+    return _seconds(last["read_at"]) if now and then and now * 2 <= then else None
 
 
 def failing(conn, channel: str) -> Optional[dict]:

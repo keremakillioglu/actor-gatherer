@@ -30,7 +30,7 @@ import tempfile
 import textwrap
 from typing import Dict, List, Optional
 
-from . import data, queued
+from . import data, queued, work
 from . import home as paths
 from .commands import (  # noqa: F401 - python_changes: tested here
     EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, python_changes, shell_changes,
@@ -195,6 +195,7 @@ class _Turn:
     def __init__(self, n, row_id, at, text):
         self.head = {"n": n, "row_id": row_id, "at": at, "text": text[:REPLY_CHARS], "replies": [], "now": None, "more": [],
                      "last": None}
+        self.acts: Dict[str, dict] = {}              # its calls, by id, for what it is doing (work.summary)
         self.files: Dict[str, dict] = {}
         self.commands: List[dict] = []
         self.order: List[str] = []
@@ -358,7 +359,7 @@ def _loaded(text: str) -> List[tuple]:
 
 
 def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = "") -> dict:
-    """The session's turns ({n, row_id, at, text, more, replies, now, last}: what the user asked, and what they wrote while it
+    """The session's turns ({n, row_id, at, text, more, replies, now, last, work}: what the user asked, and what they wrote while it
     ran ({row_id, at, text}: sent mid-turn, or held until it ended; queued.py) -- part of it, not a turn of its own; what the agent
     said back and thought, in order -- each {kind: "text", text} or {kind: "thinking", texts} (a run of
     thinking between two replies, its readable words: none when encrypted), and among them a subagent's report
@@ -367,7 +368,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     ran with ! printed, when it is one; what it was doing
     last -- {kind: "thinking"}, {kind: "call", id, text} (a call with no result yet), or None; and its latest
     call while nothing readable was said or thought after it -- {id, text, call, running, error, output} -- or
-    None), and for turn `turn` (None:
+    None; and what its calls are doing and how they ended, work.summary's), and for turn `turn` (None:
     the latest) the files it worked on, in the order first touched, each
         {path, kinds (read, edit, write, hit), created,
          sources: [{via, kind, kinds, error, call, blocks}]: the calls that touched it, in order, each
@@ -687,6 +688,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     for i, (row_id, typ, at, parts) in enumerate(evs):
         cur = begins.get(i, cur)
         head = cur.head if cur is not None else {"replies": [], "now": None, "last": None}   # before the first message: kept nowhere
+        acts = cur.acts if cur is not None else {}
         for p in parts:
             if p["kind"] == "call":
                 order.append((cur, p))
@@ -696,8 +698,13 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 label = _label(p.get("name") or "", inp, p.get("input"), cwd)
                 head["now"] = {"kind": "call", "id": p.get("id"), "text": label}
                 head["last"] = {"id": p.get("id"), "text": label, "call": _call_view(p), "running": True, "error": False, "output": ""}
+                acts[p.get("id") or f"#{len(acts)}"] = {"id": p.get("id"), "kind": work.doing(p.get("name") or "", p.get("input")),
+                                                         "ended": None, "ok": True}
             elif p["kind"] == "result" and p.get("id"):
                 results[p["id"]] = dict(p, row_id=row_id)      # where it is stored: its image is fetched from there
+                if p["id"] in acts and acts[p["id"]]["ended"] is None:
+                    a = acts[p["id"]]
+                    a.update(ended=at or 0, seq=len(results), ok=work.ok(a["kind"], bool(p.get("error")), p.get("text") or ""))
                 if (head["now"] or {}).get("id") == p["id"]:
                     head["now"] = None
                 if (head["last"] or {}).get("id") == p["id"]:
@@ -741,6 +748,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
             skilled(t, p)
         else:
             apply(t, p, results.get(p.get("id")) if p.get("id") else None)
+    for h in heads:                                  # its newest call, while nothing readable was said or thought after it
+        h.head["work"] = dict(work.summary(list(h.acts.values())), **({} if h.head["last"] else {"last": None}))
     out = {"turns": [h.head for h in heads], "turn": pick if heads else None, "files": [], "commands": [],
            "home": os.path.expanduser("~")}
     if want is None:
