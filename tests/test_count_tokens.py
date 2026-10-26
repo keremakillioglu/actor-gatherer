@@ -39,6 +39,8 @@ class Client:
         self.asked, self.tokens, self.budget = [], tokens, budget
 
     async def request(self, op, body=None, timeout=None):
+        if op == "latest":                   # a gatherer with nothing stored yet
+            return {"events": []}
         self.asked.append((op, body))
         if op == "measured":
             return {"recorded": True}

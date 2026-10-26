@@ -111,6 +111,20 @@ class ManagerFunctionsTest(HomeBase):
         self.assertEqual(added["type_id"], dict((t["name"], t["id"]) for t in types["event_types"])["robot"])
         self.assertEqual(set(types["event_types"][0]), {"id", "name", "properties"})   # no text functions
 
+    def test_latest_is_the_channel_s_last_stored_events(self):
+        sent = events(user("q", 1), user("r", 2), user("s", 3))
+        self.ask({"op": "insert", "gatherer": "s", "properties": {"channel": "c"}, "events": sent},
+                 {"op": "insert", "gatherer": "s", "properties": {"channel": "d"}, "events": events(user("t", 4))})
+        two, every, none, bad = self.ask(
+            {"op": "latest", "gatherer": "s", "properties": {"channel": "c"}, "n": 2},
+            {"op": "latest", "gatherer": "s", "properties": {"channel": "c"}, "n": 10},
+            {"op": "latest", "gatherer": "s", "properties": {"channel": "e"}, "n": 10},
+            {"op": "latest", "gatherer": "s", "properties": {"channel": "c"}})
+        self.assertEqual(two["events"], [{"id": e["id"], "payload": e["payload"]} for e in sent[1:]])   # oldest first
+        self.assertEqual([e["id"] for e in every["events"]], [e["id"] for e in sent])                     # c's alone
+        self.assertEqual(none["events"], [])
+        self.assertIn("error", bad)
+
     def test_every_request_is_stateless(self):
         """No manager outlives a request: two servers on one gatherer agree."""
         self.ask({"op": "insert", "gatherer": "s", "properties": {"channel": "c"}, "events": events(user("q", 1))})

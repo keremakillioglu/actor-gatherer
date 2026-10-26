@@ -248,6 +248,17 @@ def stored(conn: sqlite3.Connection, sp: Spec, values: tuple, event_id: str) -> 
                         (*_unset_is_empty(keyed), event_id)).fetchone() is not None
 
 
+def latest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: int) -> List[Tuple[str, Any]]:
+    """(event id, payload) of the `n` events last stored with exactly these identifying properties (one
+    not given: unset) and an id, oldest first: where a harness that re-sends its history picks it up."""
+    names = identifying_names(conn)
+    given = properties or {}
+    found = conn.execute(f"SELECT event_id, payload_json FROM events WHERE {_same(names)}event_id IS NOT NULL "
+                         "ORDER BY row_id DESC LIMIT ?",
+                         (*_unset_is_empty([given.get(name) for name in names]), max(0, n))).fetchall()
+    return [(event_id, json.loads(payload)) for event_id, payload in reversed(found)]
+
+
 def locate(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], event_id: str) -> Optional[int]:
     """The row id of the event with this id as a read with `properties` sees
     it -- with each identifying property its value or unset (one not given:

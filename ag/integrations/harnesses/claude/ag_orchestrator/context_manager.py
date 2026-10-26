@@ -94,7 +94,7 @@ from ag.integrations.tools.ag_orchestrator.call_ag import (STREAMING, call_ag, k
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
-from ..adaptor.to_events import Continuity, blocks_of
+from ..adaptor.to_events import TAIL, Continuity, blocks_of
 from .counting import Counter, countable, fresh_thinking  # noqa: F401 - countable: this module's before counting.py
 
 CWD = re.compile(r"Primary working directory:\s*(\S+)")
@@ -247,7 +247,6 @@ class ClaudeContextManager:
             raise ValueError(f"files: {files!r}, not on or off")
         self.files = Files(self.ag_clients, log) if files == "on" else None
         self.adaptors = {}                                  # one per mode: requests run concurrently
-        self.continuity = {}                                # (gatherer, channel) -> its Continuity (to_events.py)
         for mode in ("keep", "user"):
             a = copy.copy(self.adaptor)
             a.system_messages = mode                        # the adaptor's own setting (ClaudeAdaptor)
@@ -274,8 +273,8 @@ class ClaudeContextManager:
         mode = self.system_messages if self.system_messages != "auto" else \
             ("user" if is_gemini(body.get("model")) else "keep")
         adaptor = self.adaptors[mode]
-        if isinstance(adaptor, ClaudeAdaptor):                    # its ids carry on from the channel's last call
-            adaptor = adaptor.for_channel(self.continuity.setdefault((gatherer, channel), Continuity()))
+        if isinstance(adaptor, ClaudeAdaptor):                    # its ids carry on from the channel's stored history
+            adaptor = adaptor.for_channel(await self.continuity(client, gatherer, channel))
         if recap is not None and isinstance(getattr(request, "state", None), dict):
             request.state[RECAPPED] = (gatherer, channel)
         if at is not None:
@@ -326,6 +325,21 @@ class ClaudeContextManager:
         if new is None or new == messages:
             return None                                   # nothing to change: Claude Code's own bytes go through
         return dict(body, messages=new)
+
+    async def continuity(self, client, gatherer: str, channel: str) -> Continuity:
+        """Where the channel's next request carries on (to_events.py): its last stored events, read from the
+        gatherer on every call -- nothing of it is kept here, so a hook server started again carries on as
+        this one would. The gatherer not answering: none, and the ids are chained from the request's start."""
+        try:
+            answer = await client.request("latest", {"gatherer": gatherer, "properties": {CHANNEL: channel}, "n": TAIL})
+        except Exception as exc:  # noqa: BLE001 - never block the model call
+            answer = {"error": repr(exc)}
+        events = answer.get("events") if isinstance(answer, dict) else None
+        if not isinstance(events, list):
+            self.log(gatherer, f"[{channel}] the stored history's end not read "
+                               f"({answer.get('error') if isinstance(answer, dict) else answer!r}): ids chained from the start")
+            return Continuity()
+        return Continuity((e["payload"], e["id"]) for e in events if isinstance(e, dict) and isinstance(e.get("id"), str))
 
     async def refused(self, client, gatherer: str, channel: str, process: Optional[dict]):
         """None when the call may go on: its process opens the session (the server's `claim`), or it
