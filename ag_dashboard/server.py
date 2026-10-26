@@ -34,7 +34,10 @@ context manager's home (data.py), read-only. Standard library only.
                                           default, or codex) -> the session
     POST /api/send {session_id, text, cols?, rows?, fullscreen?}  a message to it -> the session: typed into
                                           its terminal, or one opened for it (that size, that screen), or to
-                                          its agent (sessions.py's `send`)
+                                          its agent (sessions.py's `send`); while the codex in the dashboard's
+                                          terminal asks whether to implement its plan, what to change instead
+                                          ("No, stay in Plan mode", then the message); refused while it waits on
+                                          a question there (`codex_dialog`)
     POST /api/send {gatherer, channel, text, ...}  the same to a Claude Code or codex session not started here,
                                           taken into the table first (sessions.py's `adopt`)
     POST /api/stop {session_id}           its agent, idle, ended -- or its terminal closed -> the session
@@ -145,6 +148,19 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
         harnesses it can run on here (sessions.py's `available`)."""
         return {**avatars.assign(data.home(started.list())), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
                 "terminals": sessions.TERMINALS, "harnesses": sessions.available()}
+
+    def codex_dialog(sid: str) -> Optional[dict]:
+        """What a codex session's terminal -- the dashboard's -- shows asking the user now, where a message typed
+        into it would answer the dialog: a question its turn waits on (a message's keys would pick its options),
+        or the plan it asks whether to implement (Enter would implement it). None: nothing, or not codex's."""
+        row = next((x for x in started.list() if x["session_id"] == sid), None)
+        if row is None or row.get("harness") != "codex" or not row.get("terminal"):
+            return None
+        ask = data.asking_of(row["gatherer"], sid, row.get("cwd"))
+        if ask is None or ask.get("async") or (row.get("since") or 0) > (ask.get("at") or 0) \
+                or (row.get("typed") and row["typed"] >= (ask.get("at") or 0)):
+            return None                              # answered as it works; or not shown there, or touched since
+        return ask
 
     class Handler(BaseHTTPRequestHandler):
         # One connection kept for many requests (HTTP/1.1): each key typed in a terminal is a request, and a
@@ -371,7 +387,15 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     sid = str(body.get("session_id") or "")
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
                         sid = started.adopt(str(body["gatherer"]), str(body["channel"]))["session_id"]
-                    return self.answer(started.send(sid, str(body.get("text") or ""), int(body.get("cols") or 120),
+                    text = str(body.get("text") or "")
+                    held = codex_dialog(sid)
+                    if held is not None and held.get("kind") == "plan":     # what to change: "No, stay in Plan mode" first
+                        started.answer(sid, held, {"plan": "change", "text": " ".join(text.split())})
+                        return self.answer(next(x for x in started.list() if x["session_id"] == sid))
+                    if held is not None:
+                        raise sessions.SessionError("Codex waits on its question in the terminal: answer it, "
+                                                    "or press Esc there to stop the turn, first")
+                    return self.answer(started.send(sid, text, int(body.get("cols") or 120),
                                                     int(body.get("rows") or 32), bool(body.get("fullscreen"))))
                 if url.path == "/api/stop":
                     return self.answer(started.stop(str(body.get("session_id") or "")))

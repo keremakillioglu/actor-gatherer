@@ -91,7 +91,7 @@ from typing import Any, Dict, List, Optional
 
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
-from . import answers, avatars, hiding, live, queued, saved, sessions
+from . import answers, avatars, hiding, live, queued, rollout, saved, sessions
 from .commands import CODE_MODE, script_calls
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
@@ -100,6 +100,9 @@ RUNNING, IDLE, CLOSED, BACKGROUND, ASKING, ERROR = "running", "idle", "closed", 
 #: Claude Code's tools that wait for the user in its terminal before the turn goes on: a question, with
 #: options to pick from; a plan, to approve. What each asks, `asking` returns.
 ASKS = {"AskUserQuestion": "question", "ExitPlanMode": "plan"}
+#: Codex's tool that asks the user in its terminal, its turn waiting on the answer (Plan mode's): a question, with
+#: options to pick from -- codex adds "None of the above" to each, with a note in the user's own words.
+CODEX_ASKS = {rollout.ASK: "question"}
 ASK_CHARS = 4000               # the most of a question's words `asking` returns
 PLAN_CHARS = 20000             # the most of a plan it returns
 #: Claude Code's own record of a session, a line per message as it is made: <its config dir>/projects/<the session's
@@ -303,8 +306,13 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
         a["session"] = s
-        if s.get("answer"):                      # the last answer typed from the page: what Claude Code made of it
-            result = _result(s["gatherer"], a["channel"], s["answer"]["call"])
+        offer = a.pop("offer", None)             # a codex plan: asked about where its terminal is the dashboard's, not
+        if offer and s.get("terminal") and a["status"] == IDLE and (s.get("since") or 0) <= offer["at"] \
+                and not (s.get("typed") and s["typed"] >= offer["at"]):     # restarted since, nor anything typed there
+            a["asking"], a["status"] = offer, ASKING
+        if s.get("answer"):                      # the last answer typed from the page: what the harness made of it
+            result = rollout.result(rollout.read(rollout.record(a["channel"])), s["answer"]["call"]) \
+                if a.get("harness") == "codex" else _result(s["gatherer"], a["channel"], s["answer"]["call"])
             a["answer"] = {**s["answer"], "result": _clip(result, ASK_CHARS) if result else None,
                            "recorded": answers.recorded(result, s["answer"]["expect"])}
         if a.get("holder") and paths.runs_under(a["holder"]["pid"], s.get("pid")):
@@ -320,6 +328,7 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
         g["last"] = max(g["last"] or 0, a["last"] or 0) or None
     for g in gatherers:                  # newest created first, as `_agents` has them
         for a in g["agents"]:
+            a.pop("offer", None)
             a["chattable"] = chattable(a)
             _settle_background(a, time.time() if now is None else now)
         g["agents"].sort(key=lambda a: a.get("created") or 0, reverse=True)
@@ -414,34 +423,78 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         a["building"] = ch in building
         a["turn_over"] = turn_over(conn, ch, tables)[0]
         a["status"] = status_of(a.get("alive"), a["turn_over"], a["last"], now)
-        a["asking"] = asking(conn, ch, tables) if a["status"] == RUNNING else None
-        record = queued.record(ch, a.get("cwd")) if a["asking"] and a["harness"] in ("claude", None) else None
-        seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
-        how = settled(ch, a.get("cwd"), a["asking"]["call"], record) if record else None
-        if a["asking"] and not how and record:
-            a["record"] = (record, seen)                 # watched (live.py) while it asks
-        if how:
-            a["asking"] = None
-            if how == "dismissed":
-                a["status"], a["turn_over"] = IDLE, True
-        if a["asking"]:
-            a["status"] = ASKING
-        a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
-        claude = a["harness"] in ("claude", None)
-        record = (record or queued.record(ch, a.get("cwd"))) if a["status"] == RUNNING and claude else None
-        seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
-        a["stopped"] = stopped(record, a["last"]) if record else None
-        if a["stopped"] and a["stopped"]["kind"] == "interrupted":
-            a["status"], a["turn_over"], a["failing"] = IDLE, True, None
-        elif a["stopped"] or (a["failing"] and given_up(a["failing"], bool(record), now)):
-            a["status"], a["turn_over"] = ERROR, True
-        elif a["failing"] and not a["failing"]["retrying"]:
-            a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], bool(record)) + 1   # when it would be given up
-        if a["status"] == RUNNING and record and not a.get("record"):
-            a["record"] = (record, seen)                 # watched (live.py) while it runs: it may stop unseen
+        if a["harness"] == "codex":
+            _codex_status(conn, ch, a, tables, now)
+        else:
+            _claude_status(conn, ch, a, tables, now)
         a["running"] = a["building"] or a["status"] == RUNNING
-        a["background"] = background.get(ch, [])
+        a["background"] = background.get(ch, []) + a.pop("codex_background", [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
+
+
+def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
+    """The agent's status as Claude Code's own record of the session tells it (module doc): what it asks the user,
+    whether it was answered or dismissed there, and whether its turn stopped on an error or was interrupted."""
+    a["asking"] = asking(conn, ch, tables) if a["status"] == RUNNING else None
+    record = queued.record(ch, a.get("cwd")) if a["asking"] and a["harness"] in ("claude", None) else None
+    seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
+    how = settled(ch, a.get("cwd"), a["asking"]["call"], record) if record else None
+    if a["asking"] and not how and record:
+        a["record"] = (record, seen)                 # watched (live.py) while it asks
+    if how:
+        a["asking"] = None
+        if how == "dismissed":
+            a["status"], a["turn_over"] = IDLE, True
+    if a["asking"]:
+        a["status"] = ASKING
+    a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
+    claude = a["harness"] in ("claude", None)
+    record = (record or queued.record(ch, a.get("cwd"))) if a["status"] == RUNNING and claude else None
+    seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
+    a["stopped"] = stopped(record, a["last"]) if record else None
+    if a["stopped"] and a["stopped"]["kind"] == "interrupted":
+        a["status"], a["turn_over"], a["failing"] = IDLE, True, None
+    elif a["stopped"] or (a["failing"] and given_up(a["failing"], bool(record), now)):
+        a["status"], a["turn_over"] = ERROR, True
+    elif a["failing"] and not a["failing"]["retrying"]:
+        a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], bool(record)) + 1   # when it would be given up
+    if a["status"] == RUNNING and record and not a.get("record"):
+        a["record"] = (record, seen)                 # watched (live.py) while it runs: it may stop unseen
+
+
+def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
+    """The agent's status as codex's own record of the thread tells it (rollout.py; module doc): its turn over,
+    interrupted (Esc) or stopped on an error where ag heard nothing of it; what it asks the user (`codex_asking`) --
+    a plan it proposed kept as `offer`, for `_with_started` to show only where the dashboard's terminal shows codex
+    asking whether to implement it; and the subagents and commands it left running, as `codex_background`."""
+    path = rollout.record(ch) if a["status"] in (RUNNING, IDLE) else None
+    seen = live._stat(path) if path else None       # before it is read: a change after it is noticed
+    rec = rollout.read(path)
+    a["stopped"] = None
+    a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
+    got = rollout.stopped(rec, a["last"]) if a["status"] == RUNNING else None
+    if got and got["kind"] == "error":
+        a["stopped"], a["status"], a["turn_over"] = got, ERROR, True
+    elif got:                                        # over, or interrupted: its turn ended with no call ag saw
+        a["stopped"] = got if got["kind"] == "interrupted" else None
+        a["status"], a["turn_over"], a["failing"] = IDLE, True, None
+    elif a["failing"] and given_up(a["failing"], bool(rec), now):
+        a["status"], a["turn_over"] = ERROR, True
+    elif a["failing"] and not a["failing"]["retrying"]:
+        a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], bool(rec)) + 1
+    ask = codex_asking(conn, ch, tables, a["status"], rec) if a["status"] in (RUNNING, IDLE) else None
+    offer = bool(ask) and ask["kind"] == "plan" and ask["call"].startswith("plan:")   # its proposed plan, not a call
+    a["asking"] = None if offer else ask
+    if offer:
+        a["offer"] = ask
+    elif ask and not ask.get("async"):               # its turn waits on the answer; an async one's goes on
+        a["status"] = ASKING
+    a["codex_background"] = [{"id": t["id"], "kind": "agent", "label": t["path"], "started": t["started"], "output": None,
+                              "event": None, "event_at": None} for t in rollout.agents(rec)] + \
+                            [{"id": t["id"], "kind": "command", "label": t["label"], "started": t["started"], "output": None,
+                              "event": None, "event_at": None} for t in rollout.commands(rec)]
+    if path and (a["status"] in (RUNNING, ASKING) or ask or a["codex_background"]):
+        a["record"] = (path, seen)                   # watched (live.py): it may stop, be answered, end, unseen
 
 
 def turn_over(conn, channel: str, tables: set):
@@ -479,9 +532,17 @@ def asking(conn, channel: str, tables: set) -> Optional[dict]:
         if r["type"] != "tool_call":
             continue
         try:
-            content = json.loads(r["payload_json"]).get("content")
+            payload = json.loads(r["payload_json"])
+            content = payload.get("content")
         except (ValueError, AttributeError):
             continue
+        if payload.get("type") == "function_call" and payload.get("name") in CODEX_ASKS:
+            try:                                     # codex's: its arguments a JSON string
+                got = json.loads(payload.get("arguments") or "{}")
+            except ValueError:
+                got = {}
+            return {"kind": CODEX_ASKS[payload["name"]], "harness": "codex", "at": _seconds(r["received_at"]),
+                    "call": payload.get("call_id"), "questions": codex_questions(got.get("questions") if isinstance(got, dict) else None)}
         for b in content if isinstance(content, list) else []:
             if not isinstance(b, dict) or b.get("type") != "tool_use" or b.get("name") not in ASKS:
                 continue
@@ -499,14 +560,51 @@ def asking(conn, channel: str, tables: set) -> Optional[dict]:
     return None
 
 
+def codex_questions(given) -> List[dict]:
+    """Codex's questions (request_user_input's: {id, header, question, options: [{label, description}]}; the
+    async one's: {title, options: [label]}) as `asking` returns them, each with its `id` (None: the async one's)."""
+    out = []
+    for q in given if isinstance(given, list) else []:
+        if not isinstance(q, dict):
+            continue
+        options = [o if isinstance(o, dict) else {"label": str(o)} for o in q.get("options") or [] if isinstance(o, (dict, str))]
+        out.append({"id": q.get("id"), "header": q.get("header"), "question": _clip(q.get("question") or q.get("title"), ASK_CHARS),
+                    "multiSelect": False, "options": [{"label": o.get("label"), "description": _clip(o.get("description"), ASK_CHARS)}
+                                                      for o in options]})
+    return out
+
+
+def codex_asking(conn, channel: str, tables: set, status: str, record) -> Optional[dict]:
+    """What a codex agent waits on the user for (module doc), None if nothing: RUNNING, a question it asked in its
+    terminal (`asking`) while codex's record (`record`, rollout.py's) does not say it was answered or dismissed, else
+    one it asked as its turn goes on (async: True); its turn over (IDLE), the plan it proposed, which its terminal
+    asks whether to implement -- {kind: "plan", call: "plan:<its turn>", at: when the turn ended, plan}."""
+    if status == RUNNING:
+        ask = asking(conn, channel, tables)
+        if ask is not None and not rollout.settled(record, ask["call"]):
+            return ask
+        got = rollout.open_question(record)
+        return {"kind": "question", "harness": "codex", "async": True, "at": got["at"], "call": got["call"],
+                "questions": codex_questions(got["questions"])} if got else None
+    got = rollout.offer(record) if status == IDLE else None
+    return {"kind": "plan", "harness": "codex", "at": got["at"], "call": f"plan:{got['turn']}",
+            "plan": _clip(got["text"], PLAN_CHARS)} if got else None
+
+
 def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optional[dict]:
-    """What the agent waits on the user for now (`asking`, less what Claude Code's record says is `settled`), None if
-    nothing; `cwd`, where the session runs."""
+    """What the agent waits on the user for now (`asking`, less what Claude Code's record says is `settled`; a codex
+    agent's, `codex_asking`), None if nothing; `cwd`, where the session runs."""
     conn = _connect(gatherer)
     if conn is None:
         return None
     try:
-        ask = asking(conn, channel, _tables(conn)) if _channels_kept(conn) else None
+        if not _channels_kept(conn):
+            return None
+        tables = _tables(conn)
+        if _harness(conn, channel) == "codex":
+            over = turn_over(conn, channel, tables)[0]
+            return codex_asking(conn, channel, tables, IDLE if over else RUNNING, rollout.read(rollout.record(channel)))
+        ask = asking(conn, channel, tables)
     finally:
         conn.close()
     return None if ask is None or settled(channel, cwd, ask["call"]) else ask
@@ -1345,7 +1443,8 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
                                                     code-mode script also has `calls`: [{name, input}], the
                                                     calls it makes (input None: not written out)
         {"kind": "result", "id", "error", "text"}   a tool's result, `id` its call's
-        {"kind": "note", "name", "text"}            anything else: the harness's or ag's own messages
+        {"kind": "note", "name", "text"}            anything else: the harness's or ag's own messages (codex's
+                                                    message from another agent, "agent_message", among them)
     The harness's own format is read here (Claude Code's content blocks, codex's Responses items),
     and nowhere else: anything this does not know shows as its readable text. Each text and input is
     clipped at `chars` (None: kept whole)."""
@@ -1357,7 +1456,10 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
     if role is None:                         # not the conversation: a system message, ag's notices
         return [{"kind": "note", "name": event_type, "text": text or readable(payload_json)}]
     out: List[dict] = []
-    if isinstance(p, dict) and p.get("type") in CODEX_TYPES | {"tool_search_call", "tool_search_output"}:
+    if isinstance(p, dict) and p.get("type") == "agent_message" and ("author" in p or "recipient" in p):
+        out.append({"kind": "note", "name": "agent_message",      # codex's: another agent's message to this one
+                    "text": "\n".join(b.get("text") or "" for b in p.get("content") or [] if isinstance(b, dict))})
+    elif isinstance(p, dict) and p.get("type") in CODEX_TYPES | {"tool_search_call", "tool_search_output"}:
         kind = p["type"]
         if kind in ("function_call", "custom_tool_call", "tool_search_call"):
             call = {"kind": "call", "id": p.get("call_id") or p.get("id"), "name": p.get("name") or kind,
