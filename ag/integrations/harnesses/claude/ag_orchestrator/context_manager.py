@@ -89,8 +89,9 @@ from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.hook_server.hook_server import Answer
-from ag.integrations.tools.ag_orchestrator.call_ag import (STREAMING, call_ag, keep_read, pending_ag, preamble_of,
-                                                    read_of, report_failed, report_measured)
+from ag.integrations.tools.ag_orchestrator.call_ag import (HUNG_UP, STREAMING, call_ag, keep_read, keep_stored,
+                                                    pending_ag, preamble_of, read_of, report_failed,
+                                                    report_measured, report_withdrawn)
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
@@ -307,6 +308,7 @@ class ClaudeContextManager:
             return new, out
 
         new, out = await read()
+        stored = list(out.get("inserted") or [])           # what this call stored: withdrawn, should Claude Code take it back
         size, budget = out.get("sent_tokens"), out.get("budget")      # all of it, as the provider counts
         if "read_id" in out and budget and size is not None and size >= COUNT_FROM * budget:
             counted = await self.counter.exact(request, dict(body, messages=messages if new is None else new))
@@ -315,9 +317,11 @@ class ClaudeContextManager:
                                    f"over the budget {budget}: read again")
                 await client.request("measured", {"gatherer": gatherer, "read_id": out["read_id"], "tokens": counted})
                 again, out_again = await read()
+                stored += out_again.get("inserted") or []
                 if "read_id" in out_again:
                     new, out = again, out_again
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
+        keep_stored(request, gatherer, {CHANNEL: channel}, stored)
         if new is not None and "read_id" in out:
             new, out["left_out_events"] = fresh_thinking(out.get("context"), new)
             out["left_out"] = sum(out["left_out_events"].values())          # off the read's sent_tokens
@@ -386,8 +390,13 @@ class ClaudeContextManager:
     async def failed(self, request, status: Optional[int], error: str) -> None:
         """The hook server's report that one of the session's own calls failed -- its endpoint answered an
         error, or could not be reached -- to the read it came from: what tells a turn that stopped on an
-        error from one under way."""
+        error from one under way. One Claude Code hung up on (HUNG_UP: the user pressed Esc) before the answer was
+        through: the events it stored are withdrawn too. Before any of the answer, Claude Code puts the user's message
+        back in its input box and never sends it again; after, it sends it again with its next call, and storing it
+        again keeps it (the server's `withdraw`)."""
         await report_failed(self.ag_clients, request, status, error)
+        if status == HUNG_UP:
+            await report_withdrawn(self.ag_clients, request)
 
     async def before_end(self, request, status: int, answer: dict) -> None:
         """The hook server's report, once the answer to one of the session's own calls is back whole and

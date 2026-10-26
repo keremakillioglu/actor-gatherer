@@ -6,6 +6,7 @@ hook that passes, changes or fails is relayed as it should be."""
 
 import asyncio
 import json
+import time
 import os
 import sys
 import tempfile
@@ -262,6 +263,121 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         finally:
             await runner.cleanup()
         self.assertEqual(hook.answers, [200])
+
+    async def _hang_up(self, hook, upstream, until: bytes) -> None:
+        """A request to a hook server served as run_app serves it (a hang-up cancels no handler) in front of `upstream`
+        (an aiohttp handler), the harness hanging up once it has read `until` (b"": at once): until the hook reported."""
+        app = web.Application()
+        app.router.add_route("*", "/{tail:.*}", upstream)
+        up = TestServer(app)
+        await up.start_server()
+        runner = web.AppRunner(hook_server.make_app(str(up.make_url("")).rstrip("/"), hook))
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        try:
+            reader, writer = await asyncio.open_connection(*runner.addresses[0][:2])
+            body = json.dumps({"messages": ["hi"]}).encode()
+            writer.write(b"POST /v1/chat HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                         + f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+            await writer.drain()
+            got = b""
+            while until and until not in got:
+                got += await asyncio.wait_for(reader.read(4096), 5)
+            writer.close()                                   # Esc: Claude Code drops the call
+            for _ in range(60):
+                if hook.failures:
+                    break
+                await asyncio.sleep(0.05)
+            await asyncio.sleep(0.2)
+        finally:
+            await runner.cleanup()
+            await up.close()
+
+    async def test_a_call_the_harness_hung_up_on_while_the_hook_ran_is_not_sent_and_is_reported_stopped(self):
+        class Slow(ToyHook):                                 # as ag reads, behind other sessions' calls
+            async def __call__(self, request):
+                request.state["kept"] = True
+                await asyncio.sleep(0.4)                     # the harness hangs up meanwhile
+                return await super().__call__(request)
+
+            async def failed(self, request, status, error):
+                self.failures.append((status, error))
+
+            async def answered(self, request, status, answer):
+                self.answers.append(status)
+
+        hook, sent = Slow(), []
+        hook.failures, hook.answers = [], []
+
+        async def upstream(request):
+            sent.append(await request.read())
+            return web.Response(text="{}")
+        await self._hang_up(hook, upstream, b"")
+        self.assertEqual(sent, [])                           # no model call for no one
+        self.assertEqual(hook.failures, [(hook_server.HUNG_UP, hook_server.HUNG_UP_WHY)])
+        self.assertEqual(hook.answers, [])
+
+    async def test_a_call_the_harness_hung_up_on_as_the_answer_came_is_broken_off_and_reported_stopped(self):
+        class Kept(ToyHook):
+            async def __call__(self, request):
+                request.state["kept"] = True
+                return await super().__call__(request)
+
+            async def failed(self, request, status, error):
+                self.failures.append((status, error))
+
+            async def answered(self, request, status, answer):
+                self.answers.append(status)
+
+        hook, frames = Kept(), []
+        hook.failures, hook.answers = [], []
+
+        async def upstream(request):                         # the model, answering slowly
+            await request.read()
+            resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            await resp.prepare(request)
+            try:
+                for i in range(40):
+                    await resp.write(f"data: {i}\n\n".encode())
+                    frames.append(i)
+                    await asyncio.sleep(0.05)
+            except (ConnectionResetError, asyncio.CancelledError):
+                pass
+            return resp
+        await self._hang_up(hook, upstream, b"data: 1\n")
+        self.assertEqual(hook.failures, [(hook_server.HUNG_UP, hook_server.HUNG_UP_WHY)])
+        self.assertEqual(hook.answers, [])
+        self.assertLess(len(frames), 40)                     # the model's call given up with it
+
+    async def test_a_hang_up_while_the_model_is_quiet_is_seen_at_once(self):
+        class Kept(ToyHook):
+            async def __call__(self, request):
+                request.state["kept"] = True
+                return await super().__call__(request)
+
+            async def failed(self, request, status, error):
+                self.failures.append((status, time.monotonic()))
+
+        hook = Kept()
+        hook.failures = []
+
+        async def upstream(request):                         # the model, thinking: nothing for 5 s after its start
+            await request.read()
+            resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            await resp.prepare(request)
+            try:
+                await resp.write(b"data: start\n\n")
+                await asyncio.sleep(5)
+                await resp.write(b"data: late\n\n")
+            except (ConnectionResetError, asyncio.CancelledError):
+                pass
+            return resp
+        began = time.monotonic()
+        await self._hang_up(hook, upstream, b"data: start\n")
+        (status, at), = hook.failures
+        self.assertEqual(status, hook_server.HUNG_UP)
+        self.assertLess(at - began, 2)                       # not at the model's next bytes, 5 s on
 
     async def test_streamed_gets_each_part_as_it_ends_while_the_answer_streams(self):
         """The upstream holds the rest of its answer until the hook has been given the text that came
