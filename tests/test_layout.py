@@ -284,6 +284,7 @@ class RoutingTest(unittest.TestCase):
         relative = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.level]
         self.assertEqual(sorted((n.level, n.module, [a.name for a in n.names]) for n in relative),
                          [(1, "ag_clients", ["AgClients"]),                       # its own orchestrator's
+                          (1, "counting", ["Counter"]),                           # its own orchestrator's
                           (2, "adaptor.adaptor", ["CodexAdaptor"])])
 
     def test_an_adaptor_class_declares_what_it_outputs_and_accepts(self):
