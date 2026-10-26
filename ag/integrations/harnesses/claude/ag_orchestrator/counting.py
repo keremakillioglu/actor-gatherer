@@ -23,13 +23,23 @@ and so does this, after each call is sent (`Counter.start`: in the background, n
 
 The counts go to the server (`counted`), which sets them in place of the tokenizer's.
 
-Thinking under a build (`Counter.fresh_thinking`, before a call is sent): the API counts a thinking
+Thinking under a build (`fresh_thinking`, before a call is sent): the API counts a thinking
 block -- and the model reads it -- only after the exact history it was written in. A build replaces
 that history with its sections, so the thinking from before the switch is dead weight the model no
-longer reads (and, sent, it was seen to keep the model from thinking again). At a switch to a new
-basis, the thinking the context holds is noted, and left out of this call and every later one --
-but a tool loop's: when the call answers tool results, the thinking of the turn that called them
-stays (the API wants it there). Their counts go to 0: they are not sent again.
+longer reads (and, sent, it was seen to keep the model from thinking again). From a switch to a new
+basis on, the thinking from before it is left out of every call -- but a tool loop's: when the
+switch came at tool results, the thinking of the turn that called them stays (the API wants it
+there). Their counts go to 0: they are not sent again.
+
+What is remembered is ag's, not this process's. Where the context switched to its basis is the read
+log's: the server marks each stored event of a context that came before the event its first read
+made from that basis responded to (`before_basis`), and that event (`opens_basis`). Whether an event
+is counted, and what it cost, are the store's: each stored event of a context comes with its size as
+stored and whether that is the provider's count, and the answer names the call's events not counted
+yet (`uncounted`). So a hook server started again, or a second one, leaves out and counts what the
+last one would have. A `Channel` keeps caches only, whose loss costs count_tokens calls, never a
+count: what this process counted (a call read before the last one's counts were stored would count
+them again), what thinking cost, and the costs of ag's texts and of the preamble versions.
 """
 
 import asyncio
@@ -38,9 +48,9 @@ import hashlib
 import json
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
-from ..adaptor.to_events import blocks_of, piece_key, pieces
+from ..adaptor.to_events import blocks_of, piece_key, pieces, without_cache_control
 
 COUNTED = ("model", "messages", "system", "tools", "tool_choice", "thinking")      # what count_tokens takes
 CREDENTIALS = ("authorization", "x-api-key", "anthropic-version", "anthropic-beta")
@@ -107,25 +117,76 @@ def answers_tools(messages: list) -> bool:
         any(b.get("type") == "tool_result" for b in blocks_of(messages[-1]))
 
 
+def stored(context: Optional[list]) -> Dict[str, dict]:
+    """The stored events of a context the server answered, by id."""
+    return {e["id"]: e for e in context or () if isinstance(e, dict) and isinstance(e.get("id"), str)
+            and isinstance(e.get("payload"), dict)}
+
+
+def thinking_of(context: Optional[list]) -> Dict[str, dict]:
+    """The thinking blocks of a context the server answered: each signature, its stored event."""
+    return {signature(b): e for e in stored(context).values() for b in blocks_of(e["payload"])
+            if b.get("type") in THINKING and signature(b)}
+
+
+def opened_at(messages: list, piece: Optional[dict]) -> Optional[int]:
+    """The index of the message of `messages` holding the event `piece` (its payload), the latest such;
+    None if none does."""
+    want = [without_cache_control(b) for b in blocks_of(piece or {})]
+    if not want:
+        return None
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == piece.get("role"):
+            have = [without_cache_control(b) for b in blocks_of(messages[i])]
+            if all(w in have for w in want):
+                return i
+    return None
+
+
+def fresh_thinking(context: Optional[list], messages: list) -> Tuple[list, Dict[str, int]]:
+    """(`messages`, made from the server's `context` to be sent, without the thinking from before its
+    basis -- see the module's doc --, and what that took out: {its event's id: its size as stored}).
+    As they are under the history itself (no event of the context `before_basis`)."""
+    before = {s: e for s, e in thinking_of(context).items() if e.get("before_basis")}
+    if not before:
+        return messages, {}
+    opening = next((e["payload"] for e in stored(context).values() if e.get("opens_basis")), None)
+    at, keep = opened_at(messages, opening), set()
+    if at is not None and answers_tools(messages[:at + 1]):      # the tool loop's own, at the switch
+        last = next((m for m in reversed(messages[:at]) if m.get("role") == "assistant"), None)
+        keep = {signature(b) for b in blocks_of(last or {}) if b.get("type") in THINKING}
+    out, gone = [], {}
+    for m in messages:
+        if m.get("role") == "assistant" and isinstance(m.get("content"), list):
+            kept = []
+            for b in m["content"]:
+                s = signature(b) if b.get("type") in THINKING else None
+                if s in before and s not in keep:
+                    gone[before[s]["id"]] = before[s].get("tokens") or 0
+                else:
+                    kept.append(b)
+            if not kept:
+                continue
+            if len(kept) != len(m["content"]):
+                m = dict(m, content=kept)
+        out.append(m)
+    return out, gone
+
+
 @dataclass
 class Channel:
-    """What one conversation's counting remembers between calls."""
-    counted: Set[str] = field(default_factory=set)            # event ids counted
+    """One conversation's caches (see the module's doc): what is known of them is the store's."""
+    counting: Set[str] = field(default_factory=set)           # event ids this process counted
     thinking: Dict[str, int] = field(default_factory=dict)    # a thinking block's signature: its cost
-    thinking_ids: Dict[str, str] = field(default_factory=dict)  # its signature: its event id
     texts: Dict[str, int] = field(default_factory=dict)       # the sha of an ag item's text: its cost
     made: Set[int] = field(default_factory=set)               # made ids counted
     preambles: Set[str] = field(default_factory=set)          # the system prompt and tools counted
-    basis: Optional[str] = None                               # the build the context last came from
-    stale: Set[str] = field(default_factory=set)              # thinking from before it: not sent
-    zeroed: Set[str] = field(default_factory=set)             # stale thinking whose count went to 0
-    left_out: int = 0                                         # what the last call's rule took out, by its counts
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class Counter:
     """Claude's own counts of Claude Code's calls, for one hook: `exact` before a call is sent (the
-    pre-send check), `fresh_thinking` on its messages, `start` once it is sent."""
+    pre-send check), `start` once it is sent."""
 
     def __init__(self, enabled: bool = True, log=lambda gatherer, line: None):
         self.enabled, self.log = enabled, log
@@ -174,50 +235,14 @@ class Counter:
             n = await self.ask(session, request, body)
         return n if isinstance(n, int) else None
 
-    # ------------------------------------------------------------------ thinking under a build
-
-    def fresh_thinking(self, gatherer: str, channel: str, basis: Optional[str], messages: list) -> list:
-        """`messages`, the context about to be sent, without the thinking from before its build (see the
-        module's doc); as they are when the context is the history itself (no basis)."""
-        ch = self.channel(gatherer, channel)
-        ch.left_out = 0
-        if not basis:
-            ch.basis = None
-            return messages
-        if basis != ch.basis:                       # the switch: what thinking the context holds is old
-            keep = set()
-            if answers_tools(messages):             # but the tool loop's own: the turn that called them
-                last = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
-                keep = {signature(b) for b in blocks_of(last or {}) if b.get("type") in THINKING}
-            ch.basis = basis
-            ch.stale |= {signature(b) for m in messages if m.get("role") == "assistant"
-                         for b in blocks_of(m) if b.get("type") in THINKING} - keep - {None}
-        if not ch.stale:
-            return messages
-        out = []
-        for m in messages:
-            if m.get("role") == "assistant" and isinstance(m.get("content"), list):
-                gone = [signature(b) for b in m["content"] if b.get("type") in THINKING and signature(b) in ch.stale]
-                ch.left_out += sum(0 if s in ch.zeroed else ch.thinking.get(s, 0) for s in gone)   # as ag counted them
-                kept = [b for b in m["content"] if not (b.get("type") in THINKING and signature(b) in ch.stale)]
-                if not kept:
-                    continue
-                if len(kept) != len(m["content"]):
-                    m = dict(m, content=kept)
-            out.append(m)
-        return out
-
     # ------------------------------------------------------------------ after a call is sent
-
-    def left_out(self, gatherer: str, channel: str) -> int:
-        """What `fresh_thinking` took out of the last call's context, by the counts ag sized it with."""
-        return self.channel(gatherer, channel).left_out
 
     def start(self, request, client, gatherer: str, properties: dict, body: dict, messages: list,
               sent: list, out: dict) -> None:
         """Count what the call holds that is not counted yet, in the background: `messages` Claude
-        Code's own, `sent` what the model got, `out` call_ag's (its events, ag's items, its read_id,
-        and `left_out`: what the hook took out of the read's context before sending it)."""
+        Code's own, `sent` what the model got, `out` call_ag's (its events, the context answered, the
+        events not counted yet, ag's items, its read_id, and `left_out`, what the hook took out of the
+        read's context before sending it, and `left_out_events`, by event: `fresh_thinking`'s)."""
         if not self.enabled or not getattr(request, "upstream", None) or request.upstream in self.uncountable:
             return
         task = asyncio.ensure_future(self.count_call(request, client, gatherer, properties, body, messages, sent, out))
@@ -243,14 +268,20 @@ class Counter:
         found = {"counts": {}, "made": {}, "preamble_counts": [], "left_out": {}}
         if out.get("left_out") and isinstance(out.get("read_id"), int):
             found["left_out"][str(out["read_id"])] = out["left_out"]
+        known = stored(out.get("context"))
+        for event in out.get("left_out_events") or ():      # not sent again: 0, unless the store has it so
+            if not (known.get(event, {}).get("counted") and not known[event].get("tokens")):
+                found["counts"][event] = 0
+                ch.counting.add(event)
         base = {k: body[k] for k in COUNTED if k in body and k != "messages"}
         placeholder = await self.ask(session, request, dict(base, messages=PLACEHOLDER))
         if not isinstance(placeholder, int):
             return found
         await self.preamble(session, request, ch, base, placeholder, found)
-        ids = self.event_ids(ch, messages, out.get("events") or [])
-        await self.steps(session, request, ch, base, placeholder, as_blocks(messages), ids, found)
-        await self.thinking(session, request, ch, base, as_blocks(sent), found)
+        ids = self.event_ids(messages, out.get("events") or [])
+        uncounted = set(out["uncounted"]) if isinstance(out.get("uncounted"), list) else None
+        await self.steps(session, request, ch, base, placeholder, as_blocks(messages), ids, uncounted, found)
+        await self.thinking(session, request, ch, base, as_blocks(sent), out.get("context"), out.get("events"), found)
         for made_id, text in out.get("ag_items") or ():
             if made_id in ch.made or not isinstance(text, str):
                 continue
@@ -282,10 +313,9 @@ class Counter:
         ch.preambles.add(sha)
 
     @staticmethod
-    def event_ids(ch: Channel, messages: list, events: list) -> List[List[Optional[str]]]:
+    def event_ids(messages: list, events: list) -> List[List[Optional[str]]]:
         """For each block of each message, the id of the event it is (None: one stored before this
-        call's events start, counted after an earlier call). A thinking block's id is remembered by
-        its signature, for when it is counted."""
+        call's events start, counted after an earlier call)."""
         queue: Dict[str, List[str]] = {}
         for e in events:
             if isinstance(e, dict) and isinstance(e.get("id"), str):
@@ -296,22 +326,23 @@ class Counter:
             for piece in pieces([m]):
                 taken = queue.get(piece_key(piece))
                 ids.append(taken.pop(0) if taken else None)
-            blocks = blocks_of(m)
-            for b, i in zip(blocks, ids):
-                if b.get("type") in THINKING and i and signature(b):
-                    ch.thinking_ids[signature(b)] = i
             out.append(ids)
         return out
 
     async def steps(self, session, request, ch: Channel, base: dict, placeholder: int, messages: list,
-                    ids: List[list], found: dict) -> None:
+                    ids: List[list], uncounted: Optional[Set[str]], found: dict) -> None:
+        """The new steps' counts (the module's doc): of the blocks of this call's events the store has
+        not counted (`uncounted`; None: not known, all of them), but those this process has."""
+        def due(event) -> bool:
+            return bool(event) and event not in ch.counting and (uncounted is None or event in uncounted)
+
         done = 0
         for start, end in steps_of(messages):
             if done >= STEPS_PER_CALL:
                 return
             blocks = [(i, j, b) for i in range(start, end) for j, b in enumerate(blocks_of(messages[i]))]
             todo = [(i, j, b) for i, j, b in blocks if b.get("type") not in THINKING
-                    and j < len(ids[i]) and ids[i][j] and ids[i][j] not in ch.counted]
+                    and j < len(ids[i]) and due(ids[i][j])]
             if not todo:
                 continue
             # thinking is the thinking count's: the step without it, each block keeping its place
@@ -329,9 +360,9 @@ class Counter:
                 continue
             for (i, j), n in costs.items():
                 event = ids[i][j] if j < len(ids[i]) else None
-                if event and event not in ch.counted:
+                if due(event):
                     found["counts"][event] = max(n, 0)
-                    ch.counted.add(event)
+                    ch.counting.add(event)
             done += 1
 
     async def split(self, session, request, base: dict, placeholder: int, step: list, offset: int):
@@ -383,13 +414,14 @@ class Counter:
         total, whole = sum(sizes.values()) or 1, upto - before
         return {at: whole * s // total for at, s in sizes.items()}
 
-    async def thinking(self, session, request, ch: Channel, base: dict, sent: list, found: dict) -> None:
+    async def thinking(self, session, request, ch: Channel, base: dict, sent: list, context: Optional[list],
+                       new_events: Optional[list], found: dict) -> None:
         """The sent thinking's cost, by counting the call with and without it: a new block's is the rise
-        over the blocks already counted. Stale blocks (not sent since their build) go to 0."""
-        for sig in ch.stale - ch.zeroed:
-            if sig in ch.thinking_ids:
-                found["counts"][ch.thinking_ids[sig]] = 0
-                ch.zeroed.add(sig)
+        over the blocks already counted -- by the store (as the context came), or by this process."""
+        events = {**thinking_of(new_events), **thinking_of(context)}
+        for s, e in events.items():
+            if e.get("counted") and s not in ch.thinking:
+                ch.thinking[s] = e.get("tokens") or 0
         sigs = [signature(b) for m in sent if m.get("role") == "assistant"
                 for b in blocks_of(m) if b.get("type") in THINKING and signature(b)]
         new = [s for s in sigs if s not in ch.thinking]
@@ -409,9 +441,9 @@ class Counter:
         rise = full - without - sum(ch.thinking[s] for s in sigs if s in ch.thinking)
         for k, s in enumerate(new):
             ch.thinking[s] = max(rise // len(new) + (1 if k < rise % len(new) else 0), 0)
-            if s in ch.thinking_ids:
-                found["counts"][ch.thinking_ids[s]] = ch.thinking[s]
-                ch.counted.add(ch.thinking_ids[s])
+            if s in events:
+                found["counts"][events[s]["id"]] = ch.thinking[s]
+                ch.counting.add(events[s]["id"])
 
     async def close(self) -> None:
         """Let counts still being taken finish (briefly)."""

@@ -48,6 +48,13 @@ Codex's items are read through the adaptor class the hook is given (its `to_even
 event, its `to_messages` for how the context manager's own items are sent), as the hook reads them.
 
 The counts go to the server (`counted`), which sets them in place of the tokenizer's.
+
+What is known is ag's, not this process's: each stored event of a context comes with its size as
+stored and whether that is the provider's count, and the answer names the call's events not counted
+yet (`uncounted`). So a hook server started again counts what the last one would have, and costs
+reasoning already costed at what it was found to cost (`learn`). A `Channel` keeps caches, and what
+a call needs until its own count is back; differencing, which needs the last call's own count,
+starts again at the next call after one whose events the store has counted.
 """
 
 import asyncio
@@ -158,8 +165,9 @@ class Sent:
 
 @dataclass
 class Channel:
-    """What one conversation's counting remembers between calls."""
-    counted: Set[str] = field(default_factory=set)            # event ids counted
+    """What one conversation's counting remembers between calls: caches (see the module's doc), and
+    what a call needs until its own count is back."""
+    counting: Set[str] = field(default_factory=set)           # event ids this process counted
     reasoning: Dict[str, int] = field(default_factory=dict)   # a reasoning item's id: its cost
     texts: Dict[str, int] = field(default_factory=dict)       # the sha of an ag item's text: its cost
     made: Set[int] = field(default_factory=set)               # made ids counted
@@ -167,6 +175,7 @@ class Channel:
     exact: Dict[int, "asyncio.Future"] = field(default_factory=dict)   # read_id: the request as sent, counted
     sent: Dict[int, Sent] = field(default_factory=dict)       # read_id: its context, kept until its count is back
     last: Optional[tuple] = None                              # (Sent, its own count): the last call counted so
+                                                              # (False: none yet, but the store has counts)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -254,6 +263,15 @@ class Counter:
         known = self.channel(gatherer, channel).reasoning
         return n + sum(known.get(key_of(self.adaptor, i), 0) for i in body.get("input") or () if is_reasoning(i))
 
+    def learn(self, gatherer: str, channel: str, context: Optional[list]) -> None:
+        """What a context the server answered says reasoning costs: each counted reasoning event's size
+        as stored, for one this process has not costed itself (started since, say)."""
+        known = self.channel(gatherer, channel).reasoning
+        for e in context or ():
+            if isinstance(e, dict) and e.get("counted") and isinstance(e.get("id"), str) and e["id"] not in known \
+                    and isinstance(e.get("payload"), dict) and is_reasoning(e["payload"]):
+                known[e["id"]] = e.get("tokens") or 0
+
     # ------------------------------------------------------------------ once it is sent
 
     def sent(self, gatherer: str, channel: str, out: dict, sent: list, preamble: list) -> None:
@@ -281,6 +299,9 @@ class Counter:
                 keys.append(iid)
                 parts.append(("event", iid if iid in ids else None, item))
         ch = self.channel(gatherer, channel)
+        self.learn(gatherer, channel, out.get("context"))
+        if ch.last is None and any(isinstance(e, dict) and e.get("counted") for e in out.get("context") or ()):
+            ch.last = False                      # counted before this process: not differenced from nothing
         ch.sent[read_id] = Sent(out.get("basis"), [(p["name"], p["text"]) for p in preamble or ()], keys, parts)
         while len(ch.sent) > KEPT_SENT:          # a call whose count never came back
             ch.sent.pop(next(iter(ch.sent)))
@@ -331,7 +352,8 @@ class Counter:
             return found
         await self.preamble(session, request, ch, base, placeholder, found)
         ids = self.event_ids(items, out.get("events") or [])
-        await self.steps(session, request, ch, base, placeholder, items, ids, found)
+        uncounted = set(out["uncounted"]) if isinstance(out.get("uncounted"), list) else None
+        await self.steps(session, request, ch, base, placeholder, items, ids, uncounted, found)
         for made_id, text in out.get("ag_items") or ():
             if made_id in ch.made or not isinstance(text, str):
                 continue
@@ -372,12 +394,17 @@ class Counter:
         return [k if k in ids else None for k in (key_of(self.adaptor, i) for i in items)]
 
     async def steps(self, session, request, ch: Channel, base: dict, placeholder: int, items: list,
-                    ids: List[Optional[str]], found: dict) -> None:
+                    ids: List[Optional[str]], uncounted: Optional[Set[str]], found: dict) -> None:
+        """The new steps' counts (the module's doc): of this call's events the store has not counted
+        (`uncounted`; None: not known, all of them), but those this process has."""
+        def due(event) -> bool:
+            return bool(event) and event not in ch.counting and (uncounted is None or event in uncounted)
+
         done, kinds = 0, [kind_of(self.adaptor, i) for i in items]
         for start, end in steps_of(items, kinds):
             if done >= STEPS_PER_CALL:
                 return
-            todo = [i for i in range(start, end) if not is_reasoning(items[i]) and ids[i] and ids[i] not in ch.counted]
+            todo = [i for i in range(start, end) if not is_reasoning(items[i]) and due(ids[i])]
             if not todo:
                 continue
             # reasoning is the reasoning count's: the step without it
@@ -391,9 +418,9 @@ class Counter:
             if costs is None:
                 continue
             for i, n in costs.items():
-                if ids[i] and ids[i] not in ch.counted:
+                if due(ids[i]):
                     found["counts"][ids[i]] = max(n, 0)
-                    ch.counted.add(ids[i])
+                    ch.counting.add(ids[i])
             done += 1
 
     async def split(self, session, request, base: dict, placeholder: int, step: list, kinds: List[str]):
@@ -496,14 +523,14 @@ class Counter:
             ch.reasoning[k] = rise // len(new) + (1 if j < rise % len(new) else 0)
             if at:
                 counts[at] = ch.reasoning[k]
-                ch.counted.add(at)
+                ch.counting.add(at)
         return {"counts": counts}
 
     def differenced(self, ch: Channel, sent: Optional[Sent], tokens: int) -> dict:
         """Every item new in a call since the last one counted so -- the same build and preamble, its
         context that one's with items added -- at what the two calls' own counts differ by, shared by
         ag's counts (`weight_of`). A channel's first is so from nothing: its preamble parts too."""
-        if sent is None:
+        if sent is None or ch.last is False:          # False: counted before this process, from no count of its
             return {}
         first = ch.last is None
         before, base = (Sent(sent.basis, sent.preamble, [], []), 0) if first else ch.last
@@ -527,7 +554,7 @@ class Counter:
             kind, at, item = part
             if kind == "event" and at:
                 counts[at] = share
-                ch.counted.add(at)
+                ch.counting.add(at)
                 if is_reasoning(item):
                     ch.reasoning[key] = share
             elif kind == "made" and isinstance(at, int):

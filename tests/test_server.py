@@ -76,8 +76,10 @@ class ManagerFunctionsTest(HomeBase):
             {"op": "read", "gatherer": "s", "properties": {"channel": "c"}, "row": 2})
         self.assertEqual((inserted["rows"], inserted["last"]), ([1, 2], 2))
         self.assertEqual((again["rows"], again["last"]), ([None, None], 2))    # stored already; the last found
-        self.assertEqual(without_guide(read["context"]), [{"type": e["type"], "id": e["id"], "payload": e["payload"]}
-                                                          for e in sent])     # events come back as they were sent
+        back = without_guide(read["context"])
+        self.assertEqual([{k: e[k] for k in ("type", "id", "payload")} for e in back],
+                         [{"type": e["type"], "id": e["id"], "payload": e["payload"]} for e in sent])   # as they were sent
+        self.assertTrue(all(e["tokens"] > 0 and e["counted"] is False for e in back))      # with their sizes as stored
         guide = read["context"][1]                                             # after the harness's own set-up
         self.assertEqual((guide["type"], guide["name"]), ("ag", "gatherer_guide"))
 
