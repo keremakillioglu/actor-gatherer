@@ -1115,6 +1115,15 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-file .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .badges { display: flex; gap: 3px; flex: none; }
 .files .fb { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+/* a kind's mark (kindMark), and a change's lines added and removed */
+.files .km { flex: none; display: inline-flex; align-items: center; } .files .km svg { display: block; }
+.files .badges .km + .km { margin-left: 1px; }
+.files .chg { flex: none; display: inline-flex; gap: 5px; font: 10.5px/1 var(--mono); white-space: nowrap; }
+.files .chg .a, .files .fl-bar .chg-a { color: var(--term-ok); } .files .chg .r, .files .fl-bar .chg-r { color: var(--term-err); }
+.files .fl-bar .chg-a, .files .fl-bar .chg-r { font: 10.5px var(--mono); }
+.files .fl-cmd-files button { display: inline-flex; align-items: center; gap: 4px; }
+.files .fl-cmd summary .chg { margin-left: 8px; vertical-align: 0; }
+.files .fv-call .chg { align-self: center; }
 .files .fl-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); }
 .files .fl-legend span { display: inline-flex; align-items: center; gap: 4px; }
 /* the files' legend: each kind a switch, the files of the kinds switched off left out of the tree */
@@ -4791,6 +4800,28 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
 // not just reading a file listed under them. One turn at a time: the latest, followed, unless one is picked.
 const FILE_KINDS = { read: ["read", "var(--s1)"], hit: ["search hit", "var(--s4)"], edit: ["edited", "var(--s2)"],
   write: ["written", "var(--s3)"], delete: ["deleted", "var(--critical)"] };
+// Each kind of file by a mark, in its colour, the same wherever a file shows -- in the tree, its legend, the folded bar,
+// a call of the file, a command's files: a book read, a glass searched, a pencil edited, a page with a plus written
+// whole, a bin deleted.
+const MARKS = {
+  read: "M8 4.25C6.6 3.2 4.6 2.9 2 3.1v9.2c2.6-.2 4.6.1 6 1.15 1.4-1.05 3.4-1.35 6-1.15V3.1c-2.6-.2-4.6.1-6 1.15zM8 4.25v9.2",
+  hit: "M6.75 2.5a4.25 4.25 0 1 0 0 8.5 4.25 4.25 0 0 0 0-8.5zM9.9 9.9l3.6 3.6",
+  edit: "M10.6 2.6l2.8 2.8-7.9 7.9-3.4.6.6-3.4zM9.1 4.1l2.8 2.8",
+  write: "M4.25 1.75h5l3 3v9a.5.5 0 0 1-.5.5h-7.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5zM9 1.75v3.25h3.25M8 7.25v4.5M5.75 9.5h4.5",
+  delete: "M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.65 9.1a.75.75 0 0 0 .75.65h4.7a.75.75 0 0 0 .75-.65l.65-9.1M6.75 6.75v4.5M9.25 6.75v4.5",
+};
+// a kind of file's mark, `title` said on hover (its name unless given)
+function kindMark(kind, size = 12, title) {
+  const [name, color] = FILE_KINDS[kind] || [kind, "var(--muted)"];
+  const svg = MARKS[kind] ? strokeIcon(MARKS[kind], size) : el("i", { class: "fb", style: `background: ${color}` });
+  svg.style.color = color;
+  return el("span", { class: "km", title: title === undefined ? name : title }, svg);
+}
+// the lines a change added and removed, as a diff's +N −M (files.py's `changed`); none for none
+const changedCount = (ch) => !ch || !(ch[0] || ch[1]) ? null
+  : el("span", { class: "chg", title: `${plural(ch[0], "line")} added, ${plural(ch[1], "line")} removed` },
+    ch[0] ? el("span", { class: "a", text: `+${full(ch[0])}` }) : null, ch[1] ? el("span", { class: "r", text: `−${full(ch[1])}` }) : null);
+const addChanged = (all) => all.reduce((a, x) => !x ? a : !a ? [...x] : [a[0] + x[0], a[1] + x[1]], null);
 // What the disk said of a call, where ag's hook server checked it as it ran (files.py's `checked`)
 const CHECKED = { true: ["checked", "What the call showed of this file matched the file on disk right after it ran"],
   false: ["not as on disk", "What the call showed of this file did not match the file on disk right after it ran"] };
@@ -4840,7 +4871,7 @@ function kindSwitches() {
         on ? hiddenKinds.add(k) : hiddenKinds.delete(k);
         try { localStorage.setItem(KINDS_KEY, JSON.stringify([...hiddenKinds])); } catch (e) { /* this page only */ }
         keepingPlace(renderMain);
-      } }, el("i", { class: "fb", style: `background: ${color}` }), name);
+      } }, kindMark(k, 12, ""), name);
   }));
 }
 // The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders): hidden until asked for, the choice
@@ -4883,9 +4914,11 @@ function openBackground(open, draw = true) {
 function sideBar(files, cmds, info) {
   const bg = (info.background || []).length, n = cmds.ok + cmds.err + cmds.run;
   const kinds = Object.entries(FILE_KINDS).filter(([k]) => !hiddenKinds.has(k))
-    .map(([k, [name, color]]) => [files.filter((f) => f.kinds.includes(k)).length, color, name]).filter(([c]) => c);
+    .map(([k, [name]]) => [files.filter((f) => f.kinds.includes(k)).length, k, name]).filter(([c]) => c);
+  const changed = addChanged(files.map((f) => f.changed));
   const how = [[cmds.ok, "ok", "passed"], [cmds.err, "err", "failed"], [cmds.run, "run", "running"]].filter(([k]) => k);
-  const said = [plural(files.length, "file") + (kinds.length ? ": " + kinds.map(([c, , w]) => `${full(c)} ${w}`).join(", ") : ""),
+  const said = [plural(files.length, "file") + (kinds.length ? ": " + kinds.map(([c, , w]) => `${full(c)} ${w}`).join(", ") : "")
+    + (changed ? `; ${plural(changed[0], "line")} added, ${full(changed[1])} removed` : ""),
     plural(n, "command") + (how.length ? ": " + how.map(([k, , w]) => `${full(k)} ${w}`).join(", ") : ""),
     bg ? plural(bg, "background task") : null].filter(Boolean).join(" · ");
   const dot = (cls, color) => el("i", { class: "g " + cls, "aria-hidden": "true", style: color ? `background: ${color}` : null });
@@ -4895,8 +4928,10 @@ function sideBar(files, cmds, info) {
     strokeIcon(ICONS.sidebar, 15),
     el("span", { class: "stats" },
       el("span", { class: "it" }, strokeIcon(ICONS.page, 13),
-        ...(kinds.length ? kinds.map(([c, color]) => el("span", { class: "sub kd" }, dot("", color), full(c)))
-          : [el("span", { text: full(files.length) })])),
+        ...(kinds.length ? kinds.map(([c, k]) => el("span", { class: "sub kd" }, kindMark(k, 10, ""), full(c)))
+          : [el("span", { text: full(files.length) })]),
+        changed && changed[0] ? el("span", { class: "sub chg-a", text: `+${full(changed[0])}` }) : null,
+        changed && changed[1] ? el("span", { class: "sub chg-r", text: `−${full(changed[1])}` }) : null),
       el("span", { class: "it" }, strokeIcon(ICONS.terminal, 13),
         ...(how.length ? how.map(([k, cls]) => el("span", { class: "sub " + cls }, dot(cls), full(k))) : [el("span", { text: "0" })])),
       bg ? el("span", { class: "it bg", title: `${plural(bg, "background task")}: show them` }, strokeIcon(ICONS.pulse, 13),
@@ -4993,16 +5028,18 @@ function fileView(f, rel, id) {
   const box = el("div", { class: "fv" }, el("div", { class: "fv-h" }, el("div", { class: "fv-path", text: rel(f.path) }),
     el("button", { type: "button", class: "fv-close", title: "Close the file", "aria-label": "Close the file",
       onclick: () => { state.files.sel = null; keepingPlace(renderMain); } }, "×")));
+  // the last call opened when it first shows -- the file opened, or a call new to it -- and left as the reader leaves it
+  const last = `${id}-s${f.sources.length - 1}`, fresh = !document.getElementById(last);
   f.sources.forEach((s, i) => {
     const kinds = s.kinds.map((k) => k === "write" ? (s.blocks.some((b) => b.created) ? "created" : "written") : (FILE_KINDS[k] || [k])[0]);
     // folded to its header until clicked; opened, what it did to the file, and its exact call behind "command"
     const code = el("div", { class: "code" });
     for (const b of s.blocks) code.append(...fileBlock(b, langOfPath(f.path)));
     if (s.error && !s.blocks.length) code.append(el("div", { class: "fv-note", text: "The call failed." }));
-    box.append(el("details", { class: "fv-call" + (s.error ? " err" : ""), id: `${id}-s${i}` },
+    box.append(el("details", { class: "fv-call" + (s.error ? " err" : ""), id: `${id}-s${i}`, open: fresh && `${id}-s${i}` === last ? "" : null },
       el("summary", {}, el("span", { class: "tw", text: "▸" }), el("span", { class: "k", text: `${i + 1}` }),
-        el("span", { class: "kinds" }, ...s.kinds.map((k) => el("i", { class: "fb", style: `background: ${(FILE_KINDS[k] || [k, "var(--muted)"])[1]}` }))),
-        el("span", { class: "via", text: firstLine(s.via, 160) }),
+        el("span", { class: "kinds" }, ...s.kinds.map((k) => kindMark(k, 12))),
+        el("span", { class: "via", text: firstLine(s.via, 160) }), changedCount(s.changed),
         el("span", { class: "what", text: kinds.join(", ") + (s.error ? " · failed" : "") },
           CHECKED[s.checked] ? el("span", { class: "chk" + (s.checked ? "" : " off"), title: CHECKED[s.checked][1],
             text: " · " + CHECKED[s.checked][0] }) : null)),
@@ -5115,9 +5152,8 @@ function filesRender({ info, running }) {
   const fileRow = (f, name, depth) => el("button", { type: "button", class: "fl-file" + (f === sel ? " on" : ""), title: f.path,
     style: `padding-left: ${12 + depth * 14}px`, "aria-pressed": f === sel ? "true" : "false",
     onclick: () => { state.files.sel = f === sel ? null : f.path; keepingPlace(renderMain); } },   // again: closed
-    el("span", { class: "name", text: name }),
-    el("span", { class: "badges" }, ...f.kinds.map((k) => el("i", { class: "fb", style: `background: ${(FILE_KINDS[k] || [k, "var(--muted)"])[1]}`,
-      title: k === "write" && f.created ? "created" : (FILE_KINDS[k] || [k])[0] }))));
+    el("span", { class: "name", text: name }), changedCount(f.changed),
+    el("span", { class: "badges" }, ...f.kinds.map((k) => kindMark(k, 12, k === "write" && f.created ? "created" : undefined))));
   const folded = state.files.folded || (state.files.folded = new Set());
   // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. Claude
   // Code's memory of a directory (~/.claude/projects/<the directory, as a name>/memory) marked, its long name cut.
@@ -5155,9 +5191,11 @@ function filesRender({ info, running }) {
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
   commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
-    el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), callLabel(c, 140)),
+    el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), callLabel(c, 140),
+      changedCount(c.changed)),
       (c.files || []).length ? el("div", { class: "fl-cmd-files" }, ...c.files.map((p) => el("button", { type: "button", title: p,
-        onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, rel(p).split("/").pop()))) : null,
+        onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, ...((c.did || {})[p] || []).map((k) => kindMark(k, 11)),
+        rel(p).split("/").pop()))) : null,
       callView(c.call, c.output, c.error)))));
   if (!commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
   const shown = `${state.files.key}:${d.turn}`;
