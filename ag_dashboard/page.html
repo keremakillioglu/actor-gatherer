@@ -18,6 +18,9 @@
   --term-add: rgba(47,154,76,.12); --term-del: rgba(207,58,80,.10); --term-add-ink: #1b6b34; --term-del-ink: #a5293d; --term-link: #2468c8;
   /* the Files view's markdown, coloured as the NumPy docs (the PyData theme) colour it: links, inline code */
   --md-link: #0a7d91; --md-code: #912583;
+  /* code, coloured (the highlighter's hl-* classes, a command's output's a-* colours) */
+  --hl-com: #6e6c66; --hl-kw: #7a35b0; --hl-str: #1d7a3a; --hl-num: #a3570a; --hl-fn: #1f5fb4; --hl-prop: #0a7489; --hl-meta: #8a6200;
+  --hl-bg: color-mix(in srgb, var(--ink) 4%, var(--surface));
   --scroll: rgba(0,0,0,.16);
 }
 @media (prefers-color-scheme: dark) {
@@ -31,6 +34,8 @@
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-bash: #fd5db1;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
   --md-link: #3fb1c5; --md-code: #f3c7ee;
+  --hl-com: #9a978f; --hl-kw: #c7a2ff; --hl-str: #8fd19e; --hl-num: #f0a868; --hl-fn: #82b8ff; --hl-prop: #62c6d6; --hl-meta: #e3bd5f;
+  --hl-bg: color-mix(in srgb, var(--ink) 4%, var(--surface));
   --scroll: rgba(255,255,255,.16);
   --buddy-edge: rgba(255,255,255,.28); --buddy-edge2: transparent;
   }
@@ -45,6 +50,8 @@
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-bash: #fd5db1;
   --term-add: rgba(78,186,101,.16); --term-del: rgba(255,107,128,.16); --term-add-ink: #b6e8c0; --term-del-ink: #ffc2cb; --term-link: #7cb7ff;
   --md-link: #3fb1c5; --md-code: #f3c7ee;
+  --hl-com: #9a978f; --hl-kw: #c7a2ff; --hl-str: #8fd19e; --hl-num: #f0a868; --hl-fn: #82b8ff; --hl-prop: #62c6d6; --hl-meta: #e3bd5f;
+  --hl-bg: color-mix(in srgb, var(--ink) 4%, var(--surface));
   --scroll: rgba(255,255,255,.16);
   --buddy-edge: rgba(255,255,255,.28); --buddy-edge2: transparent;
 }
@@ -733,7 +740,6 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-reply.call > summary .lbl { flex: none; color: var(--muted); }
 .files .fl-reply.call > summary .lbl.err { color: var(--critical); }
 .files .fl-reply.call[open] > summary .first { display: block; }
-.files .fl-reply.call > pre { margin: 4px 0 6px 15px; max-height: 280px; overflow: auto; }
 /* Claude Code's notes among the messages (notedReply): a line, what it is in grey; opened, the rest under it */
 .files .fl-reply.noted > summary .lbl { flex: none; color: var(--muted); }
 .files .fl-reply.noted[open] > summary .first { display: block; }
@@ -1110,6 +1116,15 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-file .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .badges { display: flex; gap: 3px; flex: none; }
 .files .fb { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+/* a kind's mark (kindMark), and a change's lines added and removed */
+.files .km { flex: none; display: inline-flex; align-items: center; } .files .km svg { display: block; }
+.files .badges .km + .km { margin-left: 1px; }
+.files .chg { flex: none; display: inline-flex; gap: 5px; font: 10.5px/1 var(--mono); white-space: nowrap; }
+.files .chg .a, .files .fl-bar .chg-a { color: var(--term-ok); } .files .chg .r, .files .fl-bar .chg-r { color: var(--term-err); }
+.files .fl-bar .chg-a, .files .fl-bar .chg-r { font: 10.5px var(--mono); }
+.files .fl-cmd-files button { display: inline-flex; align-items: center; gap: 4px; }
+.files .fl-cmd summary .chg { margin-left: 8px; vertical-align: 0; }
+.files .fv-call .chg { align-self: center; }
 .files .fl-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); }
 .files .fl-legend span { display: inline-flex; align-items: center; gap: 4px; }
 /* the files' legend: each kind a switch, the files of the kinds switched off left out of the tree */
@@ -1149,13 +1164,12 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fv-call .what .chk { color: var(--good); } .files .fv-call .what .chk.off { color: var(--critical); }
 .files .fv-call.err .what { color: var(--critical); }
 .files .fv-cmd { margin: 0 16px 2px 58px; } .files .fv-cmd > summary { margin: 0; font-size: 11.5px; color: var(--muted); cursor: pointer; }
-.files .fv-cmd pre.call { margin: 4px 0; }
 .files .code { font: 12px/1.5 var(--mono); padding: 4px 0 0; }
 .files .code .sep { height: 6px; }
 .files .fv-img { display: block; margin: 4px 16px 0 58px; }
 .files .fv-img img { display: block; max-width: 100%; max-height: 70vh; border: 1px solid var(--ring); border-radius: 4px; background: #fff; }
 .files .code .sep:last-child { display: none; }
-.files .ln.ctx .tx { color: var(--muted); }
+.files .ln.ctx .tx { opacity: .62; }               /* the lines around a change: its colours kept, quieter */
 .files .ln { display: grid; grid-template-columns: 56px 18px minmax(0, 1fr); padding-right: 12px; }
 .files .ln .no { text-align: right; color: var(--muted); padding-right: 10px; user-select: none; }
 .files .ln .mk { color: var(--muted); user-select: none; }
@@ -1170,6 +1184,56 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fv-block .diff .add { background: color-mix(in srgb, var(--good) 15%, transparent); }
 .files .fv-block .diff .del { background: color-mix(in srgb, var(--critical) 15%, transparent); }
 .files .fv-block .diff .ctx { color: var(--muted); }
+/* code, coloured by the page's highlighter (hlTokens, shLex): what a reader scans for, the rest in the text's own ink */
+.hl-com { color: var(--hl-com); font-style: italic; } .hl-kw, .hl-tag { color: var(--hl-kw); } .hl-str { color: var(--hl-str); }
+.hl-num { color: var(--hl-num); } .hl-fn { color: var(--hl-fn); } .hl-prop { color: var(--hl-prop); } .hl-meta { color: var(--hl-meta); }
+.hl-sec { color: var(--hl-kw); font-weight: 650; } .hl-b { font-weight: 650; } .hl-add { color: var(--term-ok); } .hl-del { color: var(--term-err); }
+.hl-sp { color: var(--muted); user-select: none; }
+/* shell: the command run and each step's operators (&&, |, >) stand out, the way a reader finds the steps */
+.hl-cmd { color: var(--hl-fn); font-weight: 600; } .hl-flag { color: var(--hl-prop); } .hl-var { color: var(--hl-num); } .hl-op { color: var(--term-bash); font-weight: 600; }
+/* a command's output, in the colours its terminal showed (ansiHtml) */
+.a-red { color: var(--term-err); } .a-green { color: var(--term-ok); } .a-yellow { color: var(--term-run); } .a-blue { color: var(--hl-fn); }
+.a-magenta { color: var(--hl-kw); } .a-cyan { color: var(--hl-prop); } .a-dim { color: var(--muted); } .a-bold { font-weight: 650; }
+/* a fenced block in a message, and its Copy at the top right, shown on hover */
+.code-box { position: relative; margin: 0 0 10px; }
+.files .md .code-box > pre, .term .md .code-box > pre { margin: 0; }
+.code-copy { position: absolute; top: 5px; right: 5px; margin: 0; padding: 1px 7px; font: 11px system-ui, -apple-system, sans-serif; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 4px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.code-copy:hover { color: var(--ink); border-color: var(--axis); }
+.code-box:hover .code-copy, .cv-in:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
+@media (hover: none) { .code-copy { opacity: 1; } }
+/* a call opened (callView): its command as a terminal shows it -- "$ " in the gutter, each step on a line, the lines
+   continuing one indented, a heredoc's body set apart; a script or a change coloured; other inputs one by one */
+.files .cv { margin: 4px 0 6px; font: 11.5px/1.5 var(--mono); min-width: 0; }
+.files .cv-in { position: relative; background: var(--hl-bg); border: 1px solid var(--ring); border-radius: 6px; max-height: 360px; overflow: auto; }
+.files .cv-in.sh { border-left: 3px solid color-mix(in srgb, var(--term-bash) 50%, transparent); }
+.files .cv-src { padding: 6px 10px; color: var(--ink); }
+.files .cv-in.src .cv-src { white-space: pre-wrap; overflow-wrap: anywhere; }
+.files .cv-in.diff .cv-src { padding: 4px 0; }
+.files .sh-l { white-space: pre-wrap; overflow-wrap: anywhere; padding-left: calc((var(--i) + 2) * 2ch); text-indent: -2ch; }
+.files .sh-l.p { text-indent: -4ch; }
+.files .sh-p { color: var(--muted); user-select: none; }
+.files .sh-here { margin: 2px 0 2px 2ch; padding: 3px 8px; white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid var(--axis);
+  background: color-mix(in srgb, var(--ink) 3%, transparent); border-radius: 0 4px 4px 0; }
+.files .cv .cl { display: grid; grid-template-columns: 16px minmax(0, 1fr); padding: 0 10px 0 4px; }
+.files .cv .cl .mk { color: var(--muted); user-select: none; text-align: center; }
+.files .cv .cl .tx { white-space: pre-wrap; overflow-wrap: anywhere; }
+.files .cv .cl.add { background: color-mix(in srgb, var(--good) 13%, transparent); } .files .cv .cl.add .mk { color: var(--good); }
+.files .cv .cl.del { background: color-mix(in srgb, var(--critical) 13%, transparent); } .files .cv .cl.del .mk { color: var(--critical); }
+.files .cv-sep { height: 1px; background: var(--ring); margin: 4px 0; }
+.files .cv-path { font: 600 11px var(--mono); color: var(--ink-2); margin: 0 0 3px; overflow-wrap: anywhere; }
+.files .cv-args { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 10px; padding: 6px 10px; background: var(--hl-bg);
+  border: 1px solid var(--ring); border-radius: 6px; max-height: 360px; overflow: auto; }
+.files .cv-args .k { color: var(--hl-prop); } .files .cv-args .v { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+.files .cv-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 5px 0 0; font: 10.5px var(--mono); color: var(--muted); }
+.files .cv-tags span { padding: 0 7px; border: 1px solid var(--ring); border-radius: 9px; }
+.files .cv-tags .ok { color: var(--good); } .files .cv-tags .bad { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 40%, transparent); }
+.files .cv pre.out { margin: 4px 0 0; font-size: 11.5px; }
+.files .cv.err pre.out { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--critical) 60%, transparent); }
+.files .fl-reply.call > .cv { margin: 4px 0 6px 15px; }
+.files .fv-cmd .cv { margin: 4px 0; }
+/* a call's line that is a shell command (no description given): in the terminal's type, coloured */
+.files .cmdline { font: .92em var(--mono); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
   .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } }
@@ -2507,7 +2571,7 @@ const isBash = (text) => !!text && (BANG.test(text) || /^\s*!/.test(text));
 const bubbleClass = (text) => isBash(text) ? " bash" : "";
 const userWords = (text) => isBash(text)
   ? el("span", { class: "tx bang" }, el("span", { class: "bash-mark", "aria-hidden": "true", text: "!" }),
-    " " + asked(text).trim().replace(/^!\s*/, ""))
+    " ", shellSpan(asked(text).trim().replace(/^!\s*/, "")))
   : el("span", { class: "tx" + (text && SLASH.test(text) ? " bang" : ""), text: asked(text) });
 function agentRow(g, a, group) {
   const [cls, label] = statusOf(a);
@@ -3826,6 +3890,382 @@ function llmCard(a) {
   return card;
 }
 
+// ------------------------------------------------------------------ code, coloured
+// A small highlighter of the page's own, for code in messages (fenced blocks), in files and in calls. Each language is
+// a list of rules tried in turn at each place in the text -- a sticky regex and the class of what it matches, or a
+// function making the tokens -- and word lists sorting its names. It colours what a reader scans for (comments,
+// strings, numbers, keywords, a name defined or called) and leaves the rest in the text's own ink, as the NumPy docs
+// do. Shell is read apart (shLex), as the shell reads it.
+const words = (s) => new Set(s.split(" "));
+const NUM = /(?:0[xX][\da-fA-F_]+|0[bBoO][0-7_]+|(?:\d[\d_]*(?:\.[\d_]*)?|\.\d[\d_]*)(?:[eE][+-]?\d+)?)[jJlLuUfFnm]*(?![\w$])/y;
+const C_COMMENTS = [[/\/\/.*/y, "com"], [/\/\*[\s\S]*?(?:\*\/|$)/y, "com"]];
+const QUOTED = [[/"(?:[^"\\\n]|\\.)*"?/y, "str"], [/'(?:[^'\\\n]|\\.)*'?/y, "str"]];
+// a tag in HTML or XML: its name, its attributes' names and their quoted values
+function tagTokens(m) {
+  const t = m[0], name = /^<\/?[\w:.-]+/.exec(t)[0], out = [["tag", name]];
+  const re = /("[^"]*"?|'[^']*'?)|([\w:.@-]+)(?=\s*=)|(\/?>$)|([\s\S])/g;
+  re.lastIndex = name.length;
+  for (let x; (x = re.exec(t));) out.push([x[1] ? "str" : x[2] ? "prop" : x[3] ? "tag" : "", x[0]]);
+  return out;
+}
+const HL = {
+  python: { rules: [[/#.*/y, "com"], [/[rRbBuUfF]{0,2}("""|''')[\s\S]*?(?:\1|$)/y, "str"], [/[rRbBuUfF]{0,2}(["'])(?:(?!\1)[^\\\n]|\\.)*\1?/y, "str"],
+    [/@[A-Za-z_][\w.]*/y, "meta"], [NUM, "num"], [/[A-Za-z_]\w*/y, "id"]],
+    kw: words("and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield"),
+    lit: words("True False None"), defs: words("def class") },
+  js: { rules: [...C_COMMENTS, [/`(?:[^`\\]|\\[\s\S])*`?/y, "str"], ...QUOTED, [/@[A-Za-z_][\w.]*/y, "meta"], [NUM, "num"], [/[A-Za-z_$][\w$]*/y, "id"]],
+    kw: words("async await break case catch class const continue debugger default delete do else enum export extends finally for function if implements import in instanceof interface let new private protected public return static super switch throw try typeof var void while with yield"),
+    lit: words("true false null undefined this NaN Infinity"), defs: words("function class interface enum") },
+  json: { rules: [[/"(?:[^"\\\n]|\\.)*"(?=\s*:)/y, "prop"], [/"(?:[^"\\\n]|\\.)*"?/y, "str"], [/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/y, "num"], [/[A-Za-z_]\w*/y, "id"]],
+    lit: words("true false null") },
+  clike: { rules: [...C_COMMENTS, [/(?<=^[ \t]*)#[ \t]*[a-z]+/my, "meta"], [/#!?\[[^\]\n]*\]/y, "meta"], [/@[A-Za-z_]\w*/y, "meta"], [/"(?:[^"\\\n]|\\.)*"?/y, "str"],
+    [/'(?:[^'\\\n]|\\.){1,8}'/y, "str"], [/`[^`]*`?/y, "str"], [NUM, "num"], [/[A-Za-z_]\w*/y, "id"]],
+    kw: words("abstract async auto await break case catch char class const continue default defer do double dyn else enum extends extern final float fn for fun func go goto if impl implements import in inline int interface let long loop match mod move mut namespace new override package private protected pub public ref return short signed sizeof static struct super switch template throw throws trait try type typedef typename union unsafe unsigned use using val var virtual void volatile when where while yield"),
+    lit: words("true false null nil NULL nullptr None Some Ok Err self Self this"), defs: words("fn func fun class struct enum trait impl interface type union") },
+  toml: { rules: [[/#.*/y, "com"], [/(?<=^[ \t]*);.*/my, "com"], [/(?<=^[ \t]*)\[\[?[^\]\n]*\]\]?/my, "sec"], [/(?<=^[ \t]*)[\w.\-"' ]*?[\w"'](?=[ \t]*=)/my, "prop"],
+    [/("""|''')[\s\S]*?(?:\1|$)/y, "str"], ...QUOTED, [/\d{4}-\d\d-\d\d(?:[T ][\d:.]+)?(?:Z|[+-]\d\d:\d\d)?/y, "num"], [/[+-]?(?:\d[\d_]*\.?[\d_]*(?:[eE][+-]?\d+)?|inf|nan)\b/y, "num"],
+    [/[A-Za-z_][\w-]*/y, "id"]],
+    lit: words("true false") },
+  yaml: { rules: [[/(?<=^|[ \t])#.*/my, "com"], [/(?<=^[ \t]*(?:-[ \t]+)*)(?:"[^"\n]*"|'[^'\n]*'|[^\s#'"\-?:,\[\]{}][^\n#]*?)(?=[ \t]*:(?:[ \t]|$))/my, "prop"],
+    [/(?<=(?:^|[:\-,\[{])[ \t]*)(?:"(?:[^"\\\n]|\\.)*"?|'[^'\n]*'?)/my, "str"], [/[&*][\w-]+/y, "meta"], [/(?<=^)(?:---|\.\.\.)$/my, "meta"], [NUM, "num"], [/[A-Za-z_][\w-]*/y, "id"]],
+    lit: words("true false null True False Null") },
+  md: { rules: [[/(?<=^[ \t]{0,3})#{1,6}[ \t].*/my, "sec"], [/(?<=^[ \t]*)(?:```|~~~).*/my, "meta"], [/<!--[\s\S]*?(?:-->|$)/y, "com"], [/(?<=^[ \t]*)>.*/my, "com"],
+    [/(?<=^[ \t]*)(?:[-*+]|\d+[.)])(?=[ \t])/my, "kw"], [/`[^`\n]+`/y, "str"], [/\*\*[^*\n]+\*\*|__[^_\n]+__/y, "b"], [/\[[^\]\n]*\]\([^)\n]*\)/y, "fn"]] },
+  html: { rules: [[/<!--[\s\S]*?(?:-->|$)/y, "com"], [/<![A-Za-z][^>]*>?/y, "meta"], [/<\/?[A-Za-z][\w:.-]*(?:[^>"']|"[^"]*"|'[^']*')*>?/y, tagTokens], [/&#?\w+;/y, "num"]] },
+  css: { rules: [[/\/\*[\s\S]*?(?:\*\/|$)/y, "com"], ...QUOTED, [/@[\w-]+/y, "kw"], [/-{0,2}[A-Za-z_][\w-]*(?=[ \t]*:[^{};\n]*(?:[;}]|$))/my, "prop"], [/--[\w-]+/y, "prop"],
+    [/#[\da-fA-F]{3,8}(?![\w-])/y, "num"], [/-?(?:\d+\.?\d*|\.\d+)(?:%|[a-zA-Z]+)?/y, "num"], [/!important\b/y, "kw"], [/[A-Za-z_-][\w-]*/y, "id"]] },
+  sql: { rules: [[/--.*/y, "com"], [/\/\*[\s\S]*?(?:\*\/|$)/y, "com"], [/'(?:[^']|'')*'?/y, "str"], [NUM, "num"], [/[A-Za-z_]\w*/y, "id"]], ci: true,
+    kw: words("all alter and as asc begin between by case check collate commit create cross default delete desc distinct drop else end exists explain foreign from glob group having if ignore in index inner insert into is join key left like limit not null offset on or order outer pragma primary recursive references replace returning right rollback select set table then transaction trigger union unique update using vacuum values view when where with"),
+    lit: words("true false") },
+  diff: { rules: [[/^(?:\+\+\+|---|\*\*\*|diff |index ).*/my, "meta"], [/^@@.*/my, "fn"], [/^\+.*/my, "add"], [/^-.*/my, "del"], [/.+/y, ""]] },
+  console: { rules: [[/^[$%] .*/my, (m) => [["sp", m[0].slice(0, 2)], ...hlTokens(m[0].slice(2), "shell")]], [/.+/y, ""]] },   // a session: its commands after their prompts
+  shell: {},                                                                                                                   // read by shLex
+};
+const HL_ALIASES = { py: "python", python3: "python", pyi: "python", pyw: "python", javascript: "js", jsx: "js", mjs: "js", cjs: "js", ts: "js", typescript: "js",
+  tsx: "js", mts: "js", cts: "js", node: "js", jsonc: "json", jsonl: "json", json5: "json", ipynb: "json", geojson: "json",
+  sh: "shell", bash: "shell", zsh: "shell", ksh: "shell", shellscript: "shell", "shell-session": "console", shellsession: "console", terminal: "console",
+  ini: "toml", cfg: "toml", conf: "toml", properties: "toml", editorconfig: "toml", yml: "yaml", markdown: "md", mdx: "md",
+  htm: "html", xhtml: "html", xml: "html", svg: "html", vue: "html", plist: "html", scss: "css", less: "css",
+  sqlite: "sql", sqlite3: "sql", psql: "sql", postgres: "sql", postgresql: "sql", mysql: "sql", patch: "diff", udiff: "diff",
+  c: "clike", h: "clike", cc: "clike", cpp: "clike", cxx: "clike", hpp: "clike", hh: "clike", "c++": "clike", java: "clike", go: "clike", golang: "clike",
+  rs: "clike", rust: "clike", swift: "clike", kt: "clike", kts: "clike", kotlin: "clike", cs: "clike", csharp: "clike", scala: "clike", dart: "clike", zig: "clike" };
+// the language a name stands for (a fenced block's, a file's extension); null: none known, shown as written
+const hlLang = (name) => { const n = String(name || "").toLowerCase(); return Object.hasOwn(HL, n) ? n : Object.hasOwn(HL_ALIASES, n) ? HL_ALIASES[n] : null; };
+const SHELL_FILES = words(".bashrc .zshrc .profile .bash_profile .zprofile .zshenv .envrc");
+function langOfPath(p) {
+  const name = String(p || "").replace(/^['"]|['"]$/g, "").split("/").pop(), dot = name.lastIndexOf(".");
+  return SHELL_FILES.has(name) ? "shell" : dot > 0 ? hlLang(name.slice(dot + 1)) : null;
+}
+// A piece of a web page, read by itself (a file's lines, a change): its markup, its style or its script -- the page
+// itself (page.html) is mostly the last two
+function guessWeb(text) {
+  let tag = 0, css = 0, js = 0;
+  for (const l of text.split("\n")) {
+    const s = l.trim();
+    if (!s) continue;
+    if (/^(?:const|let|var|function|return|if|for|while|async|await|class|import|export|else|try|catch|throw|switch|case)\b|=>|^\}|^\/\/|[=(]\s*$/.test(s)) js++;
+    else if (/^<\/?[A-Za-z!]/.test(s)) tag++;
+    else if (/^[.#:\[*>@&\w][^{}=]*\{\s*(?:-{0,2}[\w-]+\s*:|\}?$)|^-{0,2}[\w-]+\s*:\s*[^{}]*;\s*\}?\s*$|^\/\*/.test(s)) css++;
+    else if (/[;{]\s*$/.test(s)) js++;
+  }
+  return tag && tag >= Math.max(css, js) ? "html" : css > js ? "css" : "js";
+}
+const HL_WS = /\s+/y, HL_CALL = /[ \t]*\(/y, HL_PLAIN = /\w+|[^\w\s]/y;
+// `text` as [class, text] tokens in `lang` ("" the class of plain text)
+function hlTokens(text, lang) {
+  if (lang === "shell") return shLex(text).flatMap(([cls, t, , l]) => cls === "here" ? (l ? hlTokens(t, l) : [["", t]]) : [[SH_CLASS[cls] || "", t]]);
+  const L = HL[lang], out = [];
+  const add = (cls, t) => { const p = out[out.length - 1]; if (p && p[0] === cls) p[1] += t; else out.push([cls, t]); };
+  let i = 0, def = false;                            // def: the next name is the one a def, class or function defines
+  scan: while (i < text.length) {
+    HL_WS.lastIndex = i;
+    let m = HL_WS.exec(text);
+    if (m) { add("", m[0]); i += m[0].length; continue; }
+    for (const [re, cls] of L.rules) {
+      re.lastIndex = i;
+      m = re.exec(text);
+      if (!m || !m[0]) continue;
+      const w = m[0];
+      if (typeof cls === "function") for (const t of cls(m)) add(t[0], t[1]);
+      else if (cls !== "id") add(cls, w);
+      else {                                         // a name: a keyword, a literal, one defined or called -- not after a dot, a member
+        const key = L.ci ? w.toLowerCase() : w, member = text[i - 1] === ".";
+        HL_CALL.lastIndex = i + w.length;
+        add(!member && L.kw && L.kw.has(key) ? "kw" : !member && L.lit && L.lit.has(key) ? "num" : def || HL_CALL.test(text) ? "fn" : "", w);
+        i += w.length;
+        def = !member && !!(L.defs && L.defs.has(key));
+        continue scan;
+      }
+      i += w.length; def = false;
+      continue scan;
+    }
+    HL_PLAIN.lastIndex = i; m = HL_PLAIN.exec(text);
+    add("", m[0]); i += m[0].length; def = false;
+  }
+  return out;
+}
+// tokens as lines of HTML, each whole in itself: a token over several lines closed at each line's end
+function tokenLines(toks) {
+  const lines = [""];
+  for (const [cls, t] of toks) t.split("\n").forEach((p, k) => {
+    if (k) lines.push("");
+    if (p) lines[lines.length - 1] += cls ? `<span class="hl-${cls}">${escapeHtml(p)}</span>` : escapeHtml(p);
+  });
+  return lines;
+}
+const hlCache = new Map();
+// `text` as HTML lines, coloured as `lang` (one hlLang gives; none: only escaped). The same text colours the same.
+function hlLines(text, lang) {
+  text = String(text ?? "");
+  if (!lang || !HL[lang] || text.length > 300000) return text.split("\n").map(escapeHtml);
+  const k = lang + "\0" + text;
+  let got = hlCache.get(k);
+  if (!got) {
+    try { got = tokenLines(hlTokens(text, lang)); } catch (e) { got = text.split("\n").map(escapeHtml); }
+    if (hlCache.size > 500) hlCache.clear();
+    hlCache.set(k, got);
+  }
+  return got;
+}
+const shellSpan = (text) => { const s = el("span", { class: "sh-t" }); s.innerHTML = hlLines(text, "shell").join("\n"); return s; };
+
+// Shell, read as the shell reads it: words, quotes, variables, substitutions ($(…), `…`), operators, redirections and
+// heredocs, each body's language guessed from the command it feeds. Each token [class, text, depth, a body's language]:
+// depth, how deep in parentheses and substitutions -- the command's own steps are at 0. A word naming a command is
+// "cmd", one starting with - a "flag", a name before = (an assignment) a "var".
+const SH_KW = words("if then else elif fi for do done while until case esac function select time ! { } [[");
+const SH_NEXT = words("if then else elif do while until ! time {");            // a command's name comes after these
+const SH_WRAP = words("sudo env exec nohup xargs command builtin nice watch");   // ...and after these, past their flags
+const SH_WRAP_ARG = { env: words("-u -C -S"), sudo: words("-u -g -C -h -p -U"), nice: words("-n"), xargs: words("-I -n -P -L -s -d -E -a"), watch: words("-n") };   // flags taking a word
+const SH_CLASS = { cmd: "cmd", kw: "kw", op: "op", str: "str", var: "var", com: "com", flag: "flag" };
+// a heredoc body's language: the interpreter reading it (python - <<EOF), else the file it is written to (cat > x.py <<EOF)
+function hereLang(ws, target) {
+  const name = (ws.find((w) => !/^\w+=/.test(w) && !w.startsWith("-") && !SH_WRAP.has(w.split("/").pop())) || "").split("/").pop();
+  if (/^i?python[\d.]*$/.test(name)) return "python";
+  if (/^(?:node|deno|bun)$/.test(name)) return "js";
+  if (/^(?:sqlite3?|psql|mysql|duckdb)$/.test(name)) return "sql";
+  if (/^(?:ba|z|k|da)?sh$/.test(name)) return "shell";
+  return target ? langOfPath(target) : null;
+}
+function shLex(src) {
+  const out = [], pending = [];                      // pending: the heredocs started on this line, their bodies after it
+  let i = 0, cmd = true, redir = false, wrapped = "", arg = false, at = { words: [], target: null };   // at: the command being read; wrapped: the wrapper before it
+  const push = (cls, text, depth, lang) => { if (text) out.push([cls, text, depth, lang]); };
+  const take = (re) => { re.lastIndex = i; const m = re.exec(src); if (m && m[0]) i += m[0].length; return m && m[0] ? m : null; };
+  const next = () => { cmd = true; redir = arg = false; wrapped = ""; at = { words: [], target: null }; };
+  const bodies = (depth) => {
+    while (pending.length) {
+      const h = pending.shift(), lang = hereLang(h.at.words, h.at.target);
+      let body = "";
+      for (;;) {
+        if (i >= src.length) { push("here", body, depth, lang); return; }   // its end clipped off
+        const j = src.indexOf("\n", i), end = j < 0 ? src.length : j, line = src.slice(i, end);
+        if ((h.strip ? line.replace(/^\t+/, "") : line) === h.delim) {
+          push("here", body, depth, lang); push("op", line, depth);
+          i = pending.length ? Math.min(src.length, end + 1) : end;      // the next body starts on the next line
+          break;
+        }
+        body += line + (j < 0 ? "" : "\n");
+        i = j < 0 ? src.length : j + 1;
+      }
+    }
+  };
+  // inside $( … ), ( … ) or ` … `: commands of their own, up to the close
+  const sub = (depth, close) => {
+    const keep = [at, redir, wrapped];
+    next();
+    lex(depth, close);
+    if (src[i] === close) { push("op", close, depth - 1); i++; }
+    [at, redir, wrapped] = keep;
+    cmd = false;
+  };
+  const dollar = (depth) => {
+    const from = i;
+    if (src.startsWith("$((", i)) { const j = src.indexOf("))", i + 3); i = j < 0 ? src.length : j + 2; push("var", src.slice(from, i), depth); return; }
+    if (src[i + 1] === "(") { i += 2; push("op", "$(", depth); sub(depth + 1, ")"); return; }
+    if (src[i + 1] === "{") { const j = src.indexOf("}", i + 2); i = j < 0 ? src.length : j + 1; push("var", src.slice(from, i), depth); return; }
+    if (take(/\$(?:[A-Za-z_]\w*|[0-9@*#?$!-])/y)) push("var", src.slice(from, i), depth);
+    else { i++; push("w", "$", depth); }
+  };
+  const tick = (depth) => { push("op", "`", depth); i++; sub(depth + 1, "`"); };
+  const dq = (depth) => {                            // "…": its variables and substitutions read inside it
+    let from = i++;
+    while (i < src.length && src[i] !== '"') {
+      if (src[i] === "\\") { i += 2; continue; }
+      if (src[i] === "$" && /[({\w@*#?$!]/.test(src[i + 1] || "")) { push("str", src.slice(from, i), depth); dollar(depth); from = i; continue; }
+      if (src[i] === "`") { push("str", src.slice(from, i), depth); tick(depth); from = i; continue; }
+      i++;
+    }
+    i = Math.min(src.length, i + 1);
+    push("str", src.slice(from, i), depth);
+  };
+  const flag = (k, head, depth) => { const e = head[1].indexOf("="); if (e < 0) head[0] = "flag"; else out.splice(k, 1, ["flag", head[1].slice(0, e), depth], ["w", head[1].slice(e), depth]); };
+  const word = (depth, close) => {
+    const start = out.length, begin = i, wasCmd = cmd, target = redir;
+    cmd = redir = false;
+    while (i < src.length) {
+      const c = src[i], from = i;
+      if (" \t\n|&;()<>".includes(c) || (c === "`" && close === "`")) break;
+      if (c === "'") { const j = src.indexOf("'", i + 1); i = j < 0 ? src.length : j + 1; push("str", src.slice(from, i), depth); }
+      else if (c === "$" && src[i + 1] === "'") { take(/\$'(?:[^'\\]|\\[\s\S])*'?/y); push("str", src.slice(from, i), depth); }
+      else if (c === '"') dq(depth);
+      else if (c === "$") dollar(depth);
+      else if (c === "`") tick(depth);
+      else if (c === "\\") { i = Math.min(src.length, i + 2); push("w", src.slice(from, i), depth); }
+      else { take(/[^ \t\n|&;()<>'"$`\\]+/y); push("w", src.slice(from, i), depth); }
+    }
+    if (i === begin) { i++; push("w", src[begin], depth); }
+    const raw = src.slice(begin, i), head = out[start];
+    if (head && head[0] === "w" && wasCmd) {
+      if (out.length === start + 1 && SH_KW.has(raw)) { head[0] = "kw"; cmd = SH_NEXT.has(raw); return; }
+      const name = /^[A-Za-z_]\w*(?=\+?=)/.exec(head[1]);
+      if (name) { out.splice(start, 1, ...[["var", name[0], depth], ["w", head[1].slice(name[0].length), depth]].filter((t) => t[1])); cmd = true; return; }
+      if (arg) { arg = false; cmd = true; return; }                      // a wrapper's flag's word (env -u NAME)
+      if (wrapped && head[1].startsWith("-")) { flag(start, head, depth); arg = !!(SH_WRAP_ARG[wrapped] && SH_WRAP_ARG[wrapped].has(raw)); cmd = true; return; }
+      head[0] = "cmd";
+      at.words.push(raw);
+      wrapped = SH_WRAP.has(raw.split("/").pop()) ? raw.split("/").pop() : "";
+      cmd = !!wrapped;
+      return;
+    }
+    if (head && head[0] === "w" && head[1].startsWith("-")) flag(start, head, depth);
+    if (target || (at.words[0] && at.words[0].split("/").pop() === "tee" && !raw.startsWith("-"))) at.target = raw;
+    at.words.push(raw);
+  };
+  const lex = (depth, close) => {
+    while (i < src.length) {
+      const c = src[i], from = i;
+      let m;
+      if (close && c === close) return;
+      if (c === "\n") { i++; push("nl", "\n", depth); bodies(depth); next(); continue; }
+      if (c === " " || c === "\t") { take(/[ \t]+/y); push("ws", src.slice(from, i), depth); continue; }
+      if (c === "\\" && src[i + 1] === "\n") { i += 2; push("ws", "\\\n", depth); continue; }
+      if (c === "#") { take(/#[^\n]*/y); push("com", src.slice(from, i), depth); continue; }
+      if ((m = take(/<<(-?)[ \t]*\\?(['"]?)([A-Za-z_][\w.-]*)\2/y))) { push("op", m[0], depth); pending.push({ delim: m[3], strip: !!m[1], at }); continue; }
+      if (take(/\d*(?:<<<|&>>|&>|>>|>&|<&|>\||<>|>|<)(?:&?\d+-?|&-)?/y)) { const r = src.slice(from, i); push("op", r, depth); redir = !/&(?:\d+-?|-)$/.test(r); continue; }
+      if (take(/&&|\|\||;;&?|;&|\|&|[|;&]/y)) { push("op", src.slice(from, i), depth); next(); continue; }
+      if (c === "(") { i++; push("op", "(", depth); sub(depth + 1, ")"); continue; }
+      if (c === ")" || c === "`") { i++; push("op", c, depth); continue; }   // with nothing open
+      word(depth, close);
+    }
+  };
+  lex(0, null);
+  return out;
+}
+// A shell command as HTML, easy to read and still the same command: coloured; a long one-liner broken after its steps
+// (each &&, || and ;, a pipe once its line runs long), the lines continuing a step indented, as are do and then blocks;
+// a heredoc's body set apart, coloured as the language it feeds; a path in the home folder from ~. The agent's own
+// lines are kept as it wrote them.
+const SH_WIDE = 64, SH_PIPE = 72;                    // a first line longer than this is broken; a pipeline, at a pipe
+const shCache = new Map();
+const tildePath = (p, home) => { const h = (home || "").replace(/\/$/, ""); return h && (p === h || p.startsWith(h + "/")) ? "~" + p.slice(h.length) : p; };
+function shellHtml(src, home) {
+  const key = home + "\0" + src;
+  if (shCache.has(key)) return shCache.get(key);
+  let toks;
+  try { toks = shLex(src); } catch (e) { toks = [["w", src, 0]]; }
+  const html = (cls, text, prev) => {
+    if ((cls === "w" || cls === "cmd") && (!prev || ["ws", "op", "nl"].includes(prev[0]))) text = tildePath(text, home);
+    return SH_CLASS[cls] ? `<span class="hl-${SH_CLASS[cls]}">${escapeHtml(text)}</span>` : escapeHtml(text);
+  };
+  const STEP = /^(?:&&|\|\||;|\||\|&|&)$/;
+  const step = (t) => t[2] === 0 && t[0] === "op" && STEP.test(t[1]);
+  let head = toks.findIndex((t) => t[1].includes("\n"));
+  if (head < 0) head = toks.length;
+  const breaking = toks.slice(0, head).reduce((n, t) => n + t[1].length, 0) > SH_WIDE && toks.slice(0, head).some(step);
+  const lines = [];                                  // {ind, html} or {here}
+  let line = "", ind = 0, blk = 0, len = 0, stop = false, from = 0;   // from: the indent the step on this line began at
+  const brk = (next) => { lines.push({ ind, html: line }); line = ""; len = 0; ind = next; };
+  const cut = (next) => { if (line) brk(next); else ind = next; };
+  const put = (t, k) => t[1].split("\n").forEach((part, n) => {
+    if (n) brk(0);
+    if (part) { line += html(t[0], part, n ? null : toks[k - 1]); len += part.length; }
+  });
+  const skipWs = (k) => { while (toks[k + 1] && toks[k + 1][0] === "ws") k++; return k; };
+  const rest = (k) => { let n = 0; for (let j = k + 1; j < head && !step(toks[j]); j++) n += toks[j][1].length; return n; };
+  for (let k = 0; k < toks.length; k++) {
+    const t = toks[k];
+    if (t[0] === "nl") { brk(0); continue; }
+    if (t[0] === "here") { if (line) brk(0); lines.push({ here: hlLines(t[1].replace(/\n$/, ""), t[3]).join("\n") }); continue; }
+    if (k < head && breaking && !stop && step(t)) {
+      const o = t[1];
+      if (o === "&&" || o === "||" || o === "&") { put(t, k); k = skipWs(k); cut(from = o === "&" ? blk : blk + 1); continue; }
+      if (o === ";") {
+        let j = skipWs(k) + 1;
+        const w = toks[j] && toks[j][0] === "kw" ? toks[j][1] : "";
+        if (w === "do" || w === "then") { put(t, k); line += " "; put(toks[j], j); k = skipWs(j); cut(from = ++blk); continue; }
+        if (w === "else") { cut(Math.max(0, blk - 1)); put(toks[j], j); k = skipWs(j); cut(from = blk); continue; }
+        if (["elif", "done", "fi", "esac", "}"].includes(w)) blk = Math.max(0, blk - 1);
+        k = skipWs(k); cut(from = blk); continue;
+      }
+      if (len + rest(k) > SH_PIPE) { put(t, k); k = skipWs(k); cut(from + 1); continue; }   // a pipe, its line long: under its step, a level in
+    }
+    if (t[0] === "op" && /^<<[^<]/.test(t[1])) stop = true;   // its body starts at the line's end: not broken after it
+    put(t, k);
+  }
+  if (line || !lines.length) brk(0);
+  const got = lines.map((l, n) => l.here !== undefined ? `<div class="sh-here">${l.here || "&#8203;"}</div>`
+    : `<div class="sh-l${n ? "" : " p"}" style="--i:${l.ind}">${n ? "" : '<span class="sh-p" aria-hidden="true">$ </span>'}${l.html || "&#8203;"}</div>`).join("");
+  if (shCache.size > 1000) shCache.clear();
+  shCache.set(key, got);
+  return got;
+}
+// What a call printed as HTML, as its terminal showed it: its colours (ANSI codes) kept, other escapes dropped, a line
+// overwritten by its carriage returns (a progress bar) shown as it ended.
+const ANSI_FG = { 30: "dim", 31: "red", 32: "green", 33: "yellow", 34: "blue", 35: "magenta", 36: "cyan", 37: "", 90: "dim", 91: "red", 92: "green",
+  93: "yellow", 94: "blue", 95: "magenta", 96: "cyan", 97: "" };
+function ansiHtml(text) {
+  const t = String(text ?? "").replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[()][A-Za-z0-9]|\x1b[=>78]/g, "").replace(/\r\n/g, "\n")
+    .split("\n").map((l) => l.includes("\r") ? l.split("\r").filter(Boolean).pop() || "" : l).join("\n");
+  if (!t.includes("\x1b")) return escapeHtml(t);
+  let out = "", fg = "", bold = false, faint = false, last = 0;
+  const seg = (s) => {
+    const c = [fg && "a-" + fg, bold && "a-bold", faint && "a-dim"].filter(Boolean).join(" ");
+    if (s) out += c ? `<span class="${c}">${escapeHtml(s)}</span>` : escapeHtml(s);
+  };
+  for (const m of t.matchAll(/\x1b\[([0-9;?]*)([ -\/]*[@-~])/g)) {
+    seg(t.slice(last, m.index));
+    last = m.index + m[0].length;
+    if (m[2] !== "m") continue;
+    const ps = (m[1] || "0").split(";").map(Number);
+    for (let k = 0; k < ps.length; k++) {
+      const p = ps[k];
+      if (p === 0) { fg = ""; bold = faint = false; }
+      else if (p === 1) bold = true; else if (p === 2) faint = true; else if (p === 22) bold = faint = false;
+      else if (p in ANSI_FG) fg = ANSI_FG[p]; else if (p === 39) fg = "";
+      else if (p === 38 || p === 48) k += ps[k + 1] === 5 ? 2 : ps[k + 1] === 2 ? 4 : 0;   // 256 colours or true colour: not kept
+    }
+  }
+  seg(t.slice(last));
+  return out;
+}
+// What a call printed as HTML (ansiHtml); with no colours of its own, coloured as what it plainly is -- a diff (a git
+// diff, show or log -p, a diff -u), JSON -- else as printed. `cmd`: the command that printed it.
+const DIFF_CMD = /\b(?:git\s+(?:-C\s+\S+\s+)?(?:diff|show|log\s[^|;&]*-p|stash\s+show)|diff\s+-\w*u)\b/;
+function outputHtml(text, cmd) {
+  const t = String(text ?? "");
+  if (t.includes("\x1b") || t.length > 200000) return ansiHtml(t);
+  const s = t.trim();
+  if (/^[\[{]/.test(s) && /[\]}]$/.test(s)) { try { JSON.parse(s); return hlLines(t, "json").join("\n"); } catch (e) { /* not JSON */ } }
+  if (cmd && DIFF_CMD.test(cmd)) {
+    const ls = t.split("\n").filter(Boolean);
+    if (ls.filter((l) => /^(?:[-+@ ]|diff |index |commit |Author:|Date:)/.test(l)).length >= ls.length * 0.6) return hlLines(t, "diff").join("\n");
+  }
+  return ansiHtml(t);
+}
+// A fenced block in a message: coloured when it names a language the highlighter knows (```python), as written
+// otherwise -- most unnamed ones are diagrams and output -- with a button copying it
+const codeFence = (text, lang) => `<div class="code-box"><pre><code>${hlLines(text, hlLang(String(lang || "").split(/\s/)[0])).join("\n")}</code></pre>`
+  + `<button type="button" class="code-copy" title="Copy the code">Copy</button></div>\n`;
+// a code block's Copy (codeFence's, callView's): the command as written (data-copy), else the block's own text
+document.addEventListener("click", async (ev) => {
+  const b = ev.target.closest && ev.target.closest(".code-copy");
+  if (!b) return;
+  const code = b.parentElement.querySelector("code");
+  try { await navigator.clipboard.writeText(b.dataset.copy ?? (code ? code.textContent : "")); b.textContent = "Copied"; } catch (e) { b.textContent = "Not copied"; }
+  setTimeout(() => { b.textContent = "Copy"; }, 1500);
+});
+
 // ------------------------------------------------------------------ the Transcript view
 // The conversation as a terminal running the harness shows it: what was asked, what the agent said
 // (markdown), each tool call with its result under it, its thinking folded away. The data has made
@@ -3838,8 +4278,8 @@ const mdCache = new Map();                         // a text's rendered markdown
 const escapeHtml = (t) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const markdownReady = typeof marked !== "undefined" && typeof DOMPurify !== "undefined";
 if (markdownReady) {
-  // raw HTML in a message is shown as the agent wrote it, not rendered; links open apart
-  marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text) } });
+  // raw HTML in a message is shown as the agent wrote it, not rendered; links open apart; code coloured (codeFence)
+  marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text), code: ({ text, lang }) => codeFence(text, lang) } });
   DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } });
 }
 // Codex's plan, as its Plan mode has the model write it: between <proposed_plan> and </proposed_plan> (the closing tag
@@ -4361,6 +4801,28 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
 // not just reading a file listed under them. One turn at a time: the latest, followed, unless one is picked.
 const FILE_KINDS = { read: ["read", "var(--s1)"], hit: ["search hit", "var(--s4)"], edit: ["edited", "var(--s2)"],
   write: ["written", "var(--s3)"], delete: ["deleted", "var(--critical)"] };
+// Each kind of file by a mark, in its colour, the same wherever a file shows -- in the tree, its legend, the folded bar,
+// a call of the file, a command's files: a book read, a glass searched, a pencil edited, a page with a plus written
+// whole, a bin deleted.
+const MARKS = {
+  read: "M8 4.25C6.6 3.2 4.6 2.9 2 3.1v9.2c2.6-.2 4.6.1 6 1.15 1.4-1.05 3.4-1.35 6-1.15V3.1c-2.6-.2-4.6.1-6 1.15zM8 4.25v9.2",
+  hit: "M6.75 2.5a4.25 4.25 0 1 0 0 8.5 4.25 4.25 0 0 0 0-8.5zM9.9 9.9l3.6 3.6",
+  edit: "M10.6 2.6l2.8 2.8-7.9 7.9-3.4.6.6-3.4zM9.1 4.1l2.8 2.8",
+  write: "M4.25 1.75h5l3 3v9a.5.5 0 0 1-.5.5h-7.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5zM9 1.75v3.25h3.25M8 7.25v4.5M5.75 9.5h4.5",
+  delete: "M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.65 9.1a.75.75 0 0 0 .75.65h4.7a.75.75 0 0 0 .75-.65l.65-9.1M6.75 6.75v4.5M9.25 6.75v4.5",
+};
+// a kind of file's mark, `title` said on hover (its name unless given)
+function kindMark(kind, size = 12, title) {
+  const [name, color] = FILE_KINDS[kind] || [kind, "var(--muted)"];
+  const svg = MARKS[kind] ? strokeIcon(MARKS[kind], size) : el("i", { class: "fb", style: `background: ${color}` });
+  svg.style.color = color;
+  return el("span", { class: "km", title: title === undefined ? name : title }, svg);
+}
+// the lines a change added and removed, as a diff's +N −M (files.py's `changed`); none for none
+const changedCount = (ch) => !ch || !(ch[0] || ch[1]) ? null
+  : el("span", { class: "chg", title: `${plural(ch[0], "line")} added, ${plural(ch[1], "line")} removed` },
+    ch[0] ? el("span", { class: "a", text: `+${full(ch[0])}` }) : null, ch[1] ? el("span", { class: "r", text: `−${full(ch[1])}` }) : null);
+const addChanged = (all) => all.reduce((a, x) => !x ? a : !a ? [...x] : [a[0] + x[0], a[1] + x[1]], null);
 // What the disk said of a call, where ag's hook server checked it as it ran (files.py's `checked`)
 const CHECKED = { true: ["checked", "What the call showed of this file matched the file on disk right after it ran"],
   false: ["not as on disk", "What the call showed of this file did not match the file on disk right after it ran"] };
@@ -4410,7 +4872,7 @@ function kindSwitches() {
         on ? hiddenKinds.add(k) : hiddenKinds.delete(k);
         try { localStorage.setItem(KINDS_KEY, JSON.stringify([...hiddenKinds])); } catch (e) { /* this page only */ }
         keepingPlace(renderMain);
-      } }, el("i", { class: "fb", style: `background: ${color}` }), name);
+      } }, kindMark(k, 12, ""), name);
   }));
 }
 // The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders): hidden until asked for, the choice
@@ -4453,9 +4915,11 @@ function openBackground(open, draw = true) {
 function sideBar(files, cmds, info) {
   const bg = (info.background || []).length, n = cmds.ok + cmds.err + cmds.run;
   const kinds = Object.entries(FILE_KINDS).filter(([k]) => !hiddenKinds.has(k))
-    .map(([k, [name, color]]) => [files.filter((f) => f.kinds.includes(k)).length, color, name]).filter(([c]) => c);
+    .map(([k, [name]]) => [files.filter((f) => f.kinds.includes(k)).length, k, name]).filter(([c]) => c);
+  const changed = addChanged(files.map((f) => f.changed));
   const how = [[cmds.ok, "ok", "passed"], [cmds.err, "err", "failed"], [cmds.run, "run", "running"]].filter(([k]) => k);
-  const said = [plural(files.length, "file") + (kinds.length ? ": " + kinds.map(([c, , w]) => `${full(c)} ${w}`).join(", ") : ""),
+  const said = [plural(files.length, "file") + (kinds.length ? ": " + kinds.map(([c, , w]) => `${full(c)} ${w}`).join(", ") : "")
+    + (changed ? `; ${plural(changed[0], "line")} added, ${full(changed[1])} removed` : ""),
     plural(n, "command") + (how.length ? ": " + how.map(([k, , w]) => `${full(k)} ${w}`).join(", ") : ""),
     bg ? plural(bg, "background task") : null].filter(Boolean).join(" · ");
   const dot = (cls, color) => el("i", { class: "g " + cls, "aria-hidden": "true", style: color ? `background: ${color}` : null });
@@ -4465,8 +4929,10 @@ function sideBar(files, cmds, info) {
     strokeIcon(ICONS.sidebar, 15),
     el("span", { class: "stats" },
       el("span", { class: "it" }, strokeIcon(ICONS.page, 13),
-        ...(kinds.length ? kinds.map(([c, color]) => el("span", { class: "sub kd" }, dot("", color), full(c)))
-          : [el("span", { text: full(files.length) })])),
+        ...(kinds.length ? kinds.map(([c, k]) => el("span", { class: "sub kd" }, kindMark(k, 10, ""), full(c)))
+          : [el("span", { text: full(files.length) })]),
+        changed && changed[0] ? el("span", { class: "sub chg-a", text: `+${full(changed[0])}` }) : null,
+        changed && changed[1] ? el("span", { class: "sub chg-r", text: `−${full(changed[1])}` }) : null),
       el("span", { class: "it" }, strokeIcon(ICONS.terminal, 13),
         ...(how.length ? how.map(([k, cls]) => el("span", { class: "sub " + cls }, dot(cls), full(k))) : [el("span", { text: "0" })])),
       bg ? el("span", { class: "it bg", title: `${plural(bg, "background task")}: show them` }, strokeIcon(ICONS.pulse, 13),
@@ -4478,69 +4944,162 @@ function filesTools() {
   if (!d || !d.turns.length || state.files.turn === null) return [];
   return [el("button", { type: "button", title: "Show the latest turn, and follow it", onclick: () => setFilesTurn(null) }, "Latest")];
 }
-// A call as its source shows it: a shell call's command, else its input.
-const callText = (call) => !call ? "" : call.input && typeof call.input === "object"
-  ? (typeof call.input.command === "string" ? call.input.command : JSON.stringify(call.input, null, 1)) : str(call.input);
+// A shell call's command, whichever harness's (codex's an argv: `bash -lc <it>`, its third); null for any other call.
+const SHELL_TOOLS = words("Bash shell exec_command local_shell shell_command");
+function shellCommand(call) {
+  const i = call && call.input;
+  if (!call || !SHELL_TOOLS.has(call.name) || !i || typeof i !== "object") return null;
+  const c = i.command ?? i.cmd;
+  if (Array.isArray(c)) return c.length >= 3 && ["bash", "sh", "zsh"].includes(c[0]) && ["-lc", "-c"].includes(c[1]) ? String(c[2]) : c.join(" ");
+  return typeof c === "string" ? c : null;
+}
+const homeDir = () => (state.files && state.files.data && state.files.data.home) || "";
+// A call's line (files.py's `_label`) as the commands list and the turn's latest call show it: a shell command it
+// is (no description given: codex's) in the terminal's type, coloured
+function callLabel(c, n) {
+  const text = firstLine(c.text, n);
+  return shellCommand(c.call) !== null && !(c.call.input && c.call.input.description) ? el("span", { class: "cmdline" }, shellSpan(text)) : text;
+}
+// What a call printed, less a harness's own lines about the run, given apart: Claude Code's "Exit code N" before a
+// failure's output and its note after a command that the shell's directory was put back; codex's header (its exit
+// code, how long it ran).
+const CC_EXIT = /^(?:Error: )?Exit code (-?\d+)\n?/;
+const CODEX_HEAD = /^(?:Chunk ID: [^\n]*\n)?(?:Wall time: ([^\n]*)\n)?(?:Process exited with code (-?\d+)\n)?(?:Original token count: [^\n]*\n)?Output:\n/;
+const CWD_NOTE = /\n?Shell cwd was reset to [^\n]*\s*$/;
+function outputParts(text) {
+  let t = String(text ?? ""), exit = null, took = null, m;
+  if ((m = CODEX_HEAD.exec(t))) { took = m[1] || null; exit = m[2] ?? null; t = t.slice(m[0].length); }
+  else if ((m = CC_EXIT.exec(t))) { exit = m[1]; t = t.slice(m[0].length); }
+  return { text: t.replace(CWD_NOTE, "").replace(/\n+$/, ""), exit, took };
+}
+// A call opened: its command as a terminal would show it (shellHtml); a script, or a file's new text, coloured in its
+// language; a change as its lines out and in; any other call its inputs one by one, each whole. Under it what it
+// printed (ansiHtml), its exit code and run time beside. Copy takes the call as written.
+function callView(call, output, error) {
+  const box = el("div", { class: "cv" + (error ? " err" : "") });
+  if (!call) return box;
+  const input = call.input && typeof call.input === "object" ? call.input : {};
+  const code = (cls, html, copy) => {
+    const src = el("div", { class: "cv-src" });
+    src.innerHTML = html;
+    return el("div", { class: "cv-in " + cls }, src,
+      copy === undefined ? null : el("button", { type: "button", class: "code-copy", title: "Copy it as written", "data-copy": copy }, "Copy"));
+  };
+  const lined = (t, lang, cls, mark) => hlLines(t, lang === "html" ? guessWeb(t) : lang)
+    .map((h) => `<div class="cl ${cls}"><span class="mk">${mark}</span><span class="tx">${h || "&#8203;"}</span></div>`).join("");
+  const cwd = ((selectedInfo() || {}).cwd || "").replace(/\/$/, "");   // a path from the session's directory, else from ~
+  const path = (p) => el("div", { class: "cv-path", title: str(p), text: cwd && str(p).startsWith(cwd + "/") ? str(p).slice(cwd.length + 1) : tildePath(str(p), homeDir()) });
+  const cmd = shellCommand(call);
+  if (cmd !== null) {
+    box.append(code("sh", shellHtml(cmd, homeDir()), cmd));
+    const dir = input.workdir || input.cwd;
+    const tags = [dir ? `in ${tildePath(str(dir), homeDir())}` : null, input.run_in_background ? "in the background" : null].filter(Boolean);
+    if (tags.length) box.append(el("div", { class: "cv-tags" }, ...tags.map((t) => el("span", { text: t }))));
+  } else if (call.name === "exec" && typeof call.input === "string") {   // codex's code mode: a JavaScript script
+    box.append(code("src", hlLines(call.input, "js").join("\n"), call.input));
+  } else if (call.name === "apply_patch") {
+    const p = str(input.input ?? call.input);
+    box.append(code("src", hlLines(p, "diff").join("\n"), p));
+  } else if (["Edit", "MultiEdit", "Write", "NotebookEdit"].includes(call.name)) {
+    const p = input.file_path || input.notebook_path, lang = call.name === "NotebookEdit" ? "python" : langOfPath(p);
+    const edits = call.name === "MultiEdit" ? input.edits || [] : call.name === "Edit" ? [input] : [];
+    const html = edits.length ? edits.map((e) => lined(str(e.old_string), lang, "del", "−") + lined(str(e.new_string), lang, "add", "+")).join('<div class="cv-sep"></div>')
+      : lined(str(input.content ?? input.new_source), lang, "", "");
+    box.append(path(p), code("diff", html));
+  } else {
+    const args = typeof call.input === "string" || !call.input ? [["", str(call.input)]] : Object.entries(input);
+    box.append(el("div", { class: "cv-args" }, ...args.flatMap(([k, v]) => {
+      const val = el("span", { class: "v" + (typeof v === "string" ? "" : " json") });
+      if (typeof v === "string") val.textContent = v; else val.innerHTML = hlLines(JSON.stringify(v, null, 1), "json").join("\n");
+      return [el("span", { class: "k", text: k }), val];
+    })));
+  }
+  if (output !== undefined && output !== null && output !== "") {
+    const o = outputParts(output), out = el("pre", { class: "out" });
+    out.innerHTML = o.text ? outputHtml(o.text, cmd) : '<span class="a-dim">no output</span>';
+    if (o.exit !== null || o.took) box.append(el("div", { class: "cv-tags" },
+      o.exit !== null ? el("span", { class: o.exit === "0" ? "ok" : "bad", text: `exit ${o.exit}` }) : null, o.took ? el("span", { text: o.took }) : null));
+    box.append(out);
+  }
+  return box;
+}
 // A file, call by call: each call that touched it in the turn, in order, with what it did to the file --
 // the lines it read or found, or its change, at their line numbers.
 function fileView(f, rel, id) {
   const box = el("div", { class: "fv" }, el("div", { class: "fv-h" }, el("div", { class: "fv-path", text: rel(f.path) }),
     el("button", { type: "button", class: "fv-close", title: "Close the file", "aria-label": "Close the file",
       onclick: () => { state.files.sel = null; keepingPlace(renderMain); } }, "×")));
+  // the last call opened when it first shows -- the file opened, or a call new to it -- and left as the reader leaves it
+  const last = `${id}-s${f.sources.length - 1}`, fresh = !document.getElementById(last);
   f.sources.forEach((s, i) => {
     const kinds = s.kinds.map((k) => k === "write" ? (s.blocks.some((b) => b.created) ? "created" : "written") : (FILE_KINDS[k] || [k])[0]);
     // folded to its header until clicked; opened, what it did to the file, and its exact call behind "command"
     const code = el("div", { class: "code" });
-    for (const b of s.blocks) code.append(...fileBlock(b));
+    for (const b of s.blocks) code.append(...fileBlock(b, langOfPath(f.path)));
     if (s.error && !s.blocks.length) code.append(el("div", { class: "fv-note", text: "The call failed." }));
-    box.append(el("details", { class: "fv-call" + (s.error ? " err" : ""), id: `${id}-s${i}` },
+    box.append(el("details", { class: "fv-call" + (s.error ? " err" : ""), id: `${id}-s${i}`, open: fresh && `${id}-s${i}` === last ? "" : null },
       el("summary", {}, el("span", { class: "tw", text: "▸" }), el("span", { class: "k", text: `${i + 1}` }),
-        el("span", { class: "kinds" }, ...s.kinds.map((k) => el("i", { class: "fb", style: `background: ${(FILE_KINDS[k] || [k, "var(--muted)"])[1]}` }))),
-        el("span", { class: "via", text: firstLine(s.via, 160) }),
+        el("span", { class: "kinds" }, ...s.kinds.map((k) => kindMark(k, 12))),
+        el("span", { class: "via", text: firstLine(s.via, 160) }), changedCount(s.changed),
         el("span", { class: "what", text: kinds.join(", ") + (s.error ? " · failed" : "") },
           CHECKED[s.checked] ? el("span", { class: "chk" + (s.checked ? "" : " off"), title: CHECKED[s.checked][1],
             text: " · " + CHECKED[s.checked][0] }) : null)),
-      s.call ? el("details", { class: "fv-cmd", id: `${id}-s${i}-c` }, el("summary", { text: "command" }), el("pre", { class: "call", text: callText(s.call) })) : null,
+      s.call ? el("details", { class: "fv-cmd", id: `${id}-s${i}-c` }, el("summary", { text: "command" }), callView(s.call)) : null,
       code));
   });
   return box;
 }
-// One line of a file as a call saw it: its number (null: not known), a mark (+ − ›), its text.
-const fileLine = (n, cls, mark, text) => el("div", { class: "ln " + cls },
-  el("span", { class: "no", text: n === null || n === undefined ? "" : String(n) }), el("span", { class: "mk", text: mark }), el("span", { class: "tx", text }));
+// One line of a file as a call saw it: its number (null: not known), a mark (+ − ›), its text -- `html`, coloured, if given.
+const fileLine = (n, cls, mark, text, html) => {
+  const tx = el("span", { class: "tx" });
+  if (html === undefined) tx.textContent = text; else tx.innerHTML = html || "&#8203;";
+  return el("div", { class: "ln " + cls }, el("span", { class: "no", text: n === null || n === undefined ? "" : String(n) }), el("span", { class: "mk", text: mark }), tx);
+};
 const fileGap = (text) => el("div", { class: "gap", text });
-function fileBlock(b) {
+// a block of the file's lines (`lang` the file's language, langOfPath), each run of them coloured together; what a
+// command printed (an "output" block) as it printed it
+function fileBlock(b, lang) {
   const out = [];
+  const hl = (ls) => { const t = ls.join("\n"); return lang ? hlLines(t, lang === "html" ? guessWeb(t) : lang) : ls.map(escapeHtml); };
   const cut = () => { if (b.cut) out.push(fileGap(`+${plural(b.cut, "more line")} not shown`)); };
   if (b.t === "lines") {
     if (b.start === null) out.push(fileGap("where in the file is not known"));
-    b.lines.forEach((t, i) => out.push(fileLine(b.start === null ? null : b.start + i, "read", "", t)));
+    const h = hl(b.lines);
+    b.lines.forEach((t, i) => out.push(fileLine(b.start === null ? null : b.start + i, "read", "", t, h[i])));
     cut();
   } else if (b.t === "output") {                 // the file's lines are somewhere in it: which, not known
     out.push(fileGap(b.note));
-    b.lines.forEach((t) => out.push(fileLine(null, "read", "", t)));
+    const h = ansiHtml(b.lines.join("\n")).split("\n");
+    b.lines.forEach((t, i) => out.push(fileLine(null, "read", "", t, h[i] ?? "")));
     cut();
   } else if (b.t === "hits") {
-    let prev = null;
-    for (const [n, t] of b.rows) {
-      if (prev !== null && n > prev + 1) out.push(fileGap("⋯"));
-      out.push(fileLine(n, "hit", "›", t));
-      prev = n;
+    let prev = null, run = [];
+    const flush = () => { const h = hl(run.map((r) => r[1])); run.forEach(([n, t], i) => out.push(fileLine(n, "hit", "›", t, h[i]))); run = []; };
+    for (const r of b.rows) {
+      if (prev !== null && r[0] > prev + 1) { flush(); out.push(fileGap("⋯")); }
+      run.push(r);
+      prev = r[0];
     }
+    flush();
     cut();
   } else if (b.t === "diff") {
     if (b.at === null) out.push(fileGap("where in the file is not known: its lines were not seen"));
-    for (const [n, t] of b.above || []) out.push(fileLine(n, "ctx", "", t));
-    b.old.forEach((t, i) => out.push(fileLine(b.at === null ? null : b.at + i, "del", "−", t)));
-    b.new.forEach((t, i) => out.push(fileLine(b.at === null ? null : b.at + i, "add", "+", t)));
-    for (const [n, t] of b.below || []) out.push(fileLine(n, "ctx", "", t));
+    const above = b.above || [], below = b.below || [], ctx = (rows) => rows.map((r) => r[1]);
+    // the lines before and after, coloured once with the old lines between them and once with the new
+    const was = hl([...ctx(above), ...b.old, ...ctx(below)]), now = hl([...ctx(above), ...b.new, ...ctx(below)]);
+    above.forEach(([n, t], i) => out.push(fileLine(n, "ctx", "", t, was[i])));
+    b.old.forEach((t, i) => out.push(fileLine(b.at === null ? null : b.at + i, "del", "−", t, was[above.length + i])));
+    b.new.forEach((t, i) => out.push(fileLine(b.at === null ? null : b.at + i, "add", "+", t, now[above.length + i])));
+    below.forEach(([n, t], i) => out.push(fileLine(n, "ctx", "", t, now[above.length + b.new.length + i])));
     out.push(el("div", { class: "sep" }));
   } else if (b.t === "write") {
-    b.lines.forEach((t, i) => out.push(fileLine(i + 1, "add", "+", t)));
+    const h = hl(b.lines);
+    b.lines.forEach((t, i) => out.push(fileLine(i + 1, "add", "+", t, h[i])));
     cut();
   } else if (b.t === "append") {
     out.push(fileGap("added at the end of the file"));
-    b.lines.forEach((t) => out.push(fileLine(null, "add", "+", t)));
+    const h = hl(b.lines);
+    b.lines.forEach((t, i) => out.push(fileLine(null, "add", "+", t, h[i])));
     cut();
   } else if (b.t === "image") {
     const [g] = state.selected || [];
@@ -4594,9 +5153,8 @@ function filesRender({ info, running }) {
   const fileRow = (f, name, depth) => el("button", { type: "button", class: "fl-file" + (f === sel ? " on" : ""), title: f.path,
     style: `padding-left: ${12 + depth * 14}px`, "aria-pressed": f === sel ? "true" : "false",
     onclick: () => { state.files.sel = f === sel ? null : f.path; keepingPlace(renderMain); } },   // again: closed
-    el("span", { class: "name", text: name }),
-    el("span", { class: "badges" }, ...f.kinds.map((k) => el("i", { class: "fb", style: `background: ${(FILE_KINDS[k] || [k, "var(--muted)"])[1]}`,
-      title: k === "write" && f.created ? "created" : (FILE_KINDS[k] || [k])[0] }))));
+    el("span", { class: "name", text: name }), changedCount(f.changed),
+    el("span", { class: "badges" }, ...f.kinds.map((k) => kindMark(k, 12, k === "write" && f.created ? "created" : undefined))));
   const folded = state.files.folded || (state.files.folded = new Set());
   // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. Claude
   // Code's memory of a directory (~/.claude/projects/<the directory, as a name>/memory) marked, its long name cut.
@@ -4634,10 +5192,12 @@ function filesRender({ info, running }) {
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
   commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
-    el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), firstLine(c.text, 140)),
+    el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), callLabel(c, 140),
+      changedCount(c.changed)),
       (c.files || []).length ? el("div", { class: "fl-cmd-files" }, ...c.files.map((p) => el("button", { type: "button", title: p,
-        onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, rel(p).split("/").pop()))) : null,
-      el("pre", { class: "call", text: callText(c.call) }), c.output ? el("pre", { class: "out", text: c.output }) : null))));
+        onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, ...((c.did || {})[p] || []).map((k) => kindMark(k, 11)),
+        rel(p).split("/").pop()))) : null,
+      callView(c.call, c.output, c.error)))));
   if (!commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
   const shown = `${state.files.key}:${d.turn}`;
   if (cmdsShown !== shown) requestAnimationFrame(() => {   // once each time a turn is shown, the latest or one picked: at its end
@@ -4847,8 +5407,9 @@ function notedReply(r, id) {
 // what it printed (files.py's `output`: stdout, then stderr) -- "no output" for none.
 function bashBubble(t, bubble) {
   if (!isBash(t.text) || t.output === undefined || t.output === null) return bubble;
-  return el("div", { class: "fl-bash" }, bubble,
-    el("pre", { class: "fl-bash-out" + (t.output ? "" : " none"), title: "What it printed", text: t.output || "no output" }));
+  const out = el("pre", { class: "fl-bash-out" + (t.output ? "" : " none"), title: "What it printed" });
+  out.innerHTML = t.output ? outputHtml(t.output, asked(t.text).replace(/^\s*!\s*/, "")) : "no output";
+  return el("div", { class: "fl-bash" }, bubble, out);
 }
 // The turn's latest call, while the agent has said and thought nothing readable since: under its messages,
 // above the line saying it works -- running, or how it went, and what it was; opened, its call and its output.
@@ -4861,8 +5422,8 @@ function lastCall(t, live, status) {
   return el("details", { class: "fl-reply call", id: `fl-c-${t.n}-${c.id || ""}` },
     el("summary", { title: "Show or fold the call and its output" },
       el("span", { class: "dot " + cls, text: "●" }), el("span", { class: "lbl " + cls, text: word }),
-      el("span", { class: "first", text: firstLine(c.text, 200) })),
-    el("pre", { class: "call", text: callText(c.call) }), c.output ? el("pre", { class: "out", text: c.output }) : null);
+      el("span", { class: "first" }, callLabel(c, 200))),
+    callView(c.call, c.output, c.error));
 }
 addChatView({
   // "files": named so once, and kept as its id, with the readers' choices of it
