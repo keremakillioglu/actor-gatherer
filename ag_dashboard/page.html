@@ -322,7 +322,7 @@ header .brand .list-btns { display: none; margin-left: -6px; }
 .m-card .c-foot .fk i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
 .m-card .c-wait { color: var(--muted); font-size: 12px; }
 /* in a narrow column: the actor at work smaller, and what it does under its label and time, not squeezed beside them */
-@container mcol (max-width: 330px) {
+@container mcol (max-width: 380px) {
   .m-card { padding: 10px 12px; }
   .m-card .c-pic.acting { width: 58px; }
   .m-card .c-pic svg.stage { height: 48px; margin: -4px -6px -2px -8px; }
@@ -2850,18 +2850,18 @@ function railActor(g, a) {
     actorLogo(a), el("i", { class: `rd ${cls}`, "aria-hidden": "true", style: `--spin-at: -${Date.now() % 1200}ms` }));
 }
 // The monitor: every actor of the gatherers not hidden, a column for each group of the list that has any, side by side
-// -- those wanting the reader first, then those at work, then those at rest (MON_ORDER); Saved and Closed folded to a
-// strip until opened, kept in this browser -- and in each, a card for each actor: who it is, its status,
+// -- those wanting the reader first, then those at work, then those at rest (MON_ORDER), Closed last; Saved folded to a
+// strip until opened, each column's fold kept in this browser -- and in each, a card for each actor: who it is, its status,
 // and what it is doing -- what it waits on the reader for, its error, what it runs now and its newest calls, what runs
 // in the background, or once done, what it said last -- with the files its latest turn worked on. What its turn did
 // is read from the server (monitor.py) for the cards in view, again when the actor changes (monSig), at most every
 // MON_GAP ms. A card, a column, and each column's place are only redrawn where they changed, so an actor at work goes
 // on as it was (its stage, its glyphs: on the page's clock).
-const MON_FOLD_KEY = "ag-dashboard-monitor-folded", MON_GAP = 1000, MON_BATCH = 24;
+const MON_FOLD_KEY = "ag-dashboard-monitor-folds", MON_GAP = 1000, MON_BATCH = 24;   // a new key: the old one kept Closed folded
 const MON_ORDER = ["Waiting for you", "Error", "Running", "Background", "Finished", "Idle", "Saved", "Closed"];
 const monFolded = (() => {
   try { const v = JSON.parse(localStorage.getItem(MON_FOLD_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
-  return new Set(["Saved", "Closed"]);
+  return new Set(["Saved"]);
 })();
 const mon = { got: new Map(), cards: new Map(), secs: new Map(), box: null, visible: new Set(), timer: null, busy: false, last: -Infinity, seen: null };
 const monSig = (a) => `${a.last}|${a.events}|${statusOf(a)[0]}`;
