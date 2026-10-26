@@ -25,8 +25,9 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/sessions                     the sessions started from the page (sessions.py)
     GET /api/models?harness=H             the models a new session of H can run on (sessions.py's `models`)
     GET /api/terminal?session_id=S        server-sent events, until the page goes: what the session's
-        terminal prints, `out` {data (base64), at (where it ends), reset (all that is kept: start over)},
-        then `exit` {code} when its process ends; `none` when it has no terminal
+        terminal prints, `out` {data (base64), at (where it ends), reset (all that is kept: start over --
+        a full screen then drawn all again, sessions.py's `redraw`)}, then `exit` {code} when its process
+        ends; `none` when it has no terminal
     GET /api/views                        the reader's own chat views: <home>/dashboard/views/*.js, by name
     GET /views/<name>.js                  one of them, which the page loads (page.html: chat views)
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
@@ -340,6 +341,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     if out or reset:
                         self.event("out", {"data": base64.b64encode(out).decode("ascii"), "at": end, "reset": reset})
                         at = end
+                    if reset:                            # what is kept may not hold all of its full screen
+                        started.redraw(session_id)
                     if code is not None:
                         self.event("exit", {"code": code})
                         return self.wfile.flush()
