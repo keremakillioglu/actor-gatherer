@@ -142,7 +142,8 @@ class ExecTest(CodexBase):
         self.assertEqual(run["argv"][run["argv"].index("-m") + 1], "gpt-5.6-luna")
         self.assertIn("--approve-for-me", run["argv"])
         self.assertNotIn("resume", run["argv"])
-        self.assertEqual((run["argv"][-1], run["stdin"], run["cwd"]), ("-", "Reply with pong", self.work))
+        self.assertEqual((run["argv"][-1], run["stdin"]), ("-", "Reply with pong"))
+        self.assertEqual(os.path.realpath(run["cwd"]), os.path.realpath(self.work))   # macOS: /var is /private/var
         self.assertIsNone(self.session(first))
         self.assertEqual(done["started_as"], first)
         self.assertEqual(self.session(THREAD)["status"], "stopped")

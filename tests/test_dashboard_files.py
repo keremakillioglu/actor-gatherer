@@ -360,6 +360,18 @@ class FilesTest(unittest.TestCase):
             ("Shorten the comment", False, ["/w/a.py"]), ("Write notes", False, ["/w/notes.md"]),
             ("Read shot.png", False, ["/w/shot.png"])])
 
+    def test_each_change_counts_the_lines_it_added_and_removed_and_each_command_says_what_it_did_to_each_file(self):
+        got = files.files("g", "c1", 1, cwd="/w")
+        self.assertEqual([(c["text"], c.get("did"), c.get("changed")) for c in got["commands"]], [
+            ("Show g", {"/w/a.py": ["read"]}, None), ("Edit a.py", {"/w/a.py": ["edit"]}, [2, 1]),
+            ("Edit b.py", {"/w/b.py": ["edit"]}, [1, 1]), ("Write new.py", {"/w/new.py": ["write"]}, [1, 0]),
+            ("Run the tests", None, None), ("Shorten the comment", {"/w/a.py": ["edit"]}, [1, 1]),
+            ("Write notes", {"/w/notes.md": ["write"]}, [1, 0]), ("Read shot.png", {"/w/shot.png": ["read"]}, None)])
+        a = got["files"][0]
+        self.assertEqual([s["changed"] for s in a["sources"]], [None, [2, 1], [1, 1]])   # counted as a diff: "return" changed
+        self.assertEqual(a["changed"], [3, 2])
+        self.assertIsNone(got["files"][4]["changed"])                                    # only read
+
     # Claude Code's own notes, as Claude Code 2.1.310 sends them (saved from a live session) and ag stores them
     SKILL = "Base directory for this skill: /w/.claude/skills/greet\n\n# Greeting\n\nReply with exactly: \"Ahoy, <name>!\"\n\n\nARGUMENTS: {}"
 

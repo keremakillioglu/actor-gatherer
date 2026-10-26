@@ -26,6 +26,7 @@ session (earlier turns too); one that is not found is listed apart. The files th
 read here: they show what the agent saw then, not what is there now."""
 import base64
 import binascii
+import difflib
 import json
 import os
 import re
@@ -410,6 +411,30 @@ def _loaded(text: str) -> List[tuple]:
     return out
 
 
+def _changed(blocks: List[dict]) -> Optional[List[int]]:
+    """The lines a call's changes to a file added and removed, [added, removed], counted as a diff counts them (the
+    lines an edit's old and new text share left out); None when it made no change that can be counted: a read, a
+    search, a file written whole over lines not seen."""
+    added = removed = 0
+    counted = False
+    for b in blocks:
+        if b["t"] == "diff":
+            for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, b["old"], b["new"], autojunk=False).get_opcodes():
+                if op != "equal":
+                    removed, added = removed + i2 - i1, added + j2 - j1
+            counted = True
+        elif b["t"] == "append" or b["t"] == "write" and b.get("created"):
+            ends = not b.get("cut") and b["lines"][-1:] == [""]     # its last newline: the end of a line, not one
+            added += len(b["lines"]) + b.get("cut", 0) - ends
+            counted = True
+    return [added, removed] if counted else None
+
+
+def _plus(a: Optional[List[int]], b: Optional[List[int]]) -> Optional[List[int]]:
+    """Two counts of lines [added, removed] together; None for neither."""
+    return a if b is None else b if a is None else [a[0] + b[0], a[1] + b[1]]
+
+
 def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = "") -> dict:
     """The session's turns ({n, row_id, at, text, more, replies, now, last, work}: what the user asked, and what they wrote while it
     ran ({row_id, at, text}: sent mid-turn, or held until it ended; queued.py) -- part of it, not a turn of its own; what the agent
@@ -422,14 +447,16 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     call while nothing readable was said or thought after it -- {id, text, call, running, error, output} -- or
     None; and what its calls are doing and how they ended, work.summary's), and for turn `turn` (None:
     the latest) the files it worked on, in the order first touched, each
-        {path, kinds (read, edit, write, hit), created,
-         sources: [{via, kind, kinds, error, call, blocks}]: the calls that touched it, in order, each
+        {path, kinds (read, edit, write, hit), created, changed (the lines its changes added and removed, [added,
+         removed]: `_changed`; None for none counted),
+         sources: [{via, kind, kinds, error, call, blocks, changed}]: the calls that touched it, in order, each
          with what it did to it -- blocks of {t: "lines", start (None: not known), lines} (read),
          {t: "hits", rows: [[n, text]]}, {t: "diff", at (None: not found), old, new, above, below
          ([[n, text]]: known lines around it)}, {t: "write", lines, created}, {t: "append", lines},
          {t: "image", row_id, id} (fetched by `image`), {t: "note", text}}; `call` None for a file Claude Code
          gave the agent the lines of itself (`_loaded`: one the user @-mentioned, a CLAUDE.md, its memory)
-    and every call it made, in order: {text, error, running, call, output, files (the paths it touched)} -- a skill
+    and every call it made, in order: {text, error, running, call, output, files (the paths it touched), did (each
+    one's kinds, by path), changed (the lines its changes added and removed, as above)} -- a skill
     loaded with them, as its Skill call, its instructions its output, or as a call of its own when the user typed its /name.
     A source the hook server checked on disk also has `checked` (True: what the call showed of the file
     is on disk; False: it is not; None: nothing to match), and `unnamed` when the file changed while
@@ -828,8 +855,16 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
            "home": os.path.expanduser("~")}
     if want is None:
         return out
+    by_call = {id(c["call"]): c for c in want.commands if c.get("call") is not None}
     for path in want.order:
         f = want.files[path]
+        for src in f["sources"]:                     # the lines each change added and removed: by call, file, command
+            src["changed"] = _changed(src["blocks"])
+            f["changed"] = _plus(f.get("changed"), src["changed"])
+            c = by_call.get(id(src["call"])) if src["call"] is not None else None
+            if c is not None:                        # and what each command did to each of its files
+                c["changed"] = _plus(c.get("changed"), src["changed"])
+                c.setdefault("did", {})[path] = src["kinds"]
         room = MAX_ROWS                              # the most lines one file shows, over all its calls
         for src in f["sources"]:
             for b in src["blocks"]:
@@ -838,7 +873,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     b["cut"] = max(0, len(b[key]) - room)
                     b[key] = [x[:LINE_CHARS] if isinstance(x, str) else x for x in b[key][:room]]
                     room = max(0, room - len(b[key]))
-        out["files"].append({"path": path, "kinds": sorted(f["kinds"]), "created": f["created"],
+        out["files"].append({"path": path, "kinds": sorted(f["kinds"]), "created": f["created"], "changed": f.get("changed"),
                              "temporary": temporary(path), "sources": f["sources"]})
     out["commands"] = want.commands
     return out
