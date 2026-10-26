@@ -26,10 +26,11 @@ alike.
 
 import os
 import sqlite3
+import threading
 import time
 from dataclasses import replace
 from datetime import datetime
-from typing import Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from ag.ag_interface import AG, ContextManager, Event, EventType, Poller, Tokenizer, is_ag
 from ag.ag_interface.policy import Context, Policy, Read
@@ -40,6 +41,21 @@ from .store.gatherer import Store, StoreGatherers
 from .store.notify import notify
 from ag.ag_tools.log import warn
 from ag.ag_tools.tokenizers import Tiktoken
+
+
+# One poll of a source at a time, whichever thread asks: the server's lanes share a gatherer's pollers
+# (the home builds them once per directory), and a poller is told what to watch, then asked.
+_POLLING: Dict[str, threading.Lock] = {}
+_POLLING_LOCK = threading.Lock()
+#: A read-only context (`context_only`) is read from a copy of the whole database, in memory: one at a time in the
+#: process, so the server's lanes (each session's side calls at once) do not hold a copy each.
+_COPYING = threading.Lock()
+
+
+def polling(name: str) -> threading.Lock:
+    """The lock for polls of the poller `name`."""
+    with _POLLING_LOCK:
+        return _POLLING.setdefault(name, threading.Lock())
 
 
 class Manager(ContextManager):
@@ -199,7 +215,8 @@ class Manager(ContextManager):
         is asked for this gatherer: there is no earlier moment, and each
         poller decides what that means (the file poller returns nothing). The mark is taken before the poller
         runs, so nothing that happens while it runs is lost (a duplicate is
-        harmless). A poller that raises, or returns an event of a type it
+        harmless). One poller is asked by one thread at a time, from its mark to the next (`polling`):
+        the server's lanes share it. A poller that raises, or returns an event of a type it
         does not declare (`outputs`), with a property it does not declare
         (`properties`), or one the store refuses, is reported and skipped:
         polling never fails a read.
@@ -213,37 +230,44 @@ class Manager(ContextManager):
         watching = [p for p in self.pollers if getattr(type(p), "watch", Poller.watch) is not Poller.watch]
         texts = store.raw_texts(conn) if watching else []        # what the conversation's raw part says
         for poller in self.pollers:
-            since = store.polled_at(conn, poller.name)
-            now = time.time()
-            try:
-                if poller in watching:
-                    poller.watch(texts)
-                events = list(poller.poll(since, types))
-            except Exception as exc:  # noqa: BLE001 - an outside source must not break a read
-                warn(f"poller {poller.name!r} failed: {exc!r}")
+            with polling(poller.name):
+                stored += self._poll(conn, gatherer_id, poller, types, names, texts if poller in watching else None)
+        return stored
+
+    def _poll(self, conn, gatherer_id: str, poller: Poller, types, names: dict, texts: Optional[list]) -> int:
+        """`poll`, for one poller: told `texts` first, unless None. How many events were newly stored."""
+        stored = 0
+        since = store.polled_at(conn, poller.name)
+        now = time.time()
+        try:
+            if texts is not None:
+                poller.watch(texts)
+            events = list(poller.poll(since, types))
+        except Exception as exc:  # noqa: BLE001 - an outside source must not break a read
+            warn(f"poller {poller.name!r} failed: {exc!r}")
+            return 0
+        store.mark_polled(conn, poller.name, now)
+        last = None
+        for event in events:
+            if names.get(event.type_id) not in poller.outputs:
+                warn(f"poller {poller.name!r}: an event of type {names.get(event.type_id, event.type_id)!r}, "
+                     f"which it does not declare ({', '.join(poller.outputs)}); dropped")
                 continue
-            store.mark_polled(conn, poller.name, now)
-            last = None
-            for event in events:
-                if names.get(event.type_id) not in poller.outputs:
-                    warn(f"poller {poller.name!r}: an event of type {names.get(event.type_id, event.type_id)!r}, "
-                         f"which it does not declare ({', '.join(poller.outputs)}); dropped")
-                    continue
-                undeclared = sorted(k for k, v in (event.properties or {}).items()
-                                    if v is not None and k not in getattr(poller, "properties", ()))
-                if undeclared:
-                    warn(f"poller {poller.name!r}: an event with the properties {', '.join(undeclared)}, "
-                         f"which it does not declare ({', '.join(getattr(poller, 'properties', ())) or 'none'}); "
-                         f"dropped")
-                    continue
-                try:
-                    row_id = store.insert(conn, event, self.tokenizer)
-                    if row_id is not None:
-                        stored, last = stored + 1, row_id
-                except (TypeError, LookupError, ValueError) as exc:
-                    warn(f"poller {poller.name!r}: event refused: {exc}")
-            if last is not None:
-                notify(gatherer_id, "events", None, last)        # no one read's (above): every channel's
+            undeclared = sorted(k for k, v in (event.properties or {}).items()
+                                if v is not None and k not in getattr(poller, "properties", ()))
+            if undeclared:
+                warn(f"poller {poller.name!r}: an event with the properties {', '.join(undeclared)}, "
+                     f"which it does not declare ({', '.join(getattr(poller, 'properties', ())) or 'none'}); "
+                     f"dropped")
+                continue
+            try:
+                row_id = store.insert(conn, event, self.tokenizer)
+                if row_id is not None:
+                    stored, last = stored + 1, row_id
+            except (TypeError, LookupError, ValueError) as exc:
+                warn(f"poller {poller.name!r}: event refused: {exc}")
+        if last is not None:
+            notify(gatherer_id, "events", None, last)        # no one read's (above): every channel's
         return stored
 
     # ------------------------------------------------------------ reads
@@ -323,6 +347,11 @@ class Manager(ContextManager):
         if not os.path.exists(db_path(gatherer_id)):
             return [], {}
         conn = self._conn(gatherer_id)
+        with _COPYING:
+            return self._context_copy(conn, gatherer_id, row_id, properties, limit, preamble)
+
+    def _context_copy(self, conn, gatherer_id: str, row_id: int, properties: Optional[dict], limit: Optional[int],
+                      preamble: Optional[List[dict]]) -> Tuple[List[dict], dict]:
         copy = sqlite3.connect(":memory:", check_same_thread=False)
         try:
             conn.backup(copy)                       # the policy reads, and writes, the copy alone
@@ -416,6 +445,17 @@ class Manager(ContextManager):
         if found:
             notify(gatherer_id, "counts", None, read_id)
         return found
+
+    def withdraw(self, gatherer_id: str, properties: Optional[dict], row_ids, read_id: Optional[int] = None) -> int:
+        """Not part of the interface: withdraw these events (`store.withdraw`) -- the harness took them back: stored
+        for a model call it hung up on, and not in what it sends after. They stay stored but are in no read, until
+        it sends one again. How many were withdrawn."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return 0
+        n = store.withdraw(self._conn(gatherer_id), row_ids, read_id)
+        if n:
+            notify(gatherer_id, "events", properties)
+        return n
 
     def record_failed(self, gatherer_id: str, read_id: int, status: Optional[int], error: str) -> bool:
         """Not part of the interface: record that the model call read `read_id` was for failed --

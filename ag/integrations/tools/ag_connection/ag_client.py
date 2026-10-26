@@ -6,7 +6,8 @@ Python (ag_client.ts is the same for plugins in Node or Bun).
 
 Starts the server on first use, again if it has exited; sends one JSON line
 per request on its stdin and matches each answer line on its stdout to its
-request by id. The protocol is ag/ag_harness/server/__init__.py's; nothing
+request by id, in whatever order they come (the server answers sessions side
+by side). The protocol is ag/ag_harness/server/__init__.py's; nothing
 of the context manager is imported here. `harness` only names the server's log.
 
 A request never raises: it returns the answer, or `{"error"}` when the server

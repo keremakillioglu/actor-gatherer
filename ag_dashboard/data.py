@@ -115,6 +115,9 @@ GIVE_UP_SECONDS = 90           # a failed call with no try since: given up (Clau
                                # between its tries)
 GIVE_UP_LONG = 600             # the same for an error answered, where the record could still say (Retry-After)
 FAILED_READS = 50              # how many of its newest reads `failing` looks at
+#: A call the harness hung up on before its answer was through, as ag's hook server reports it (its HUNG_UP: nginx's
+#: "client closed request"): the user stopped it (Esc) -- not a failure.
+HUNG_UP = 499
 ERROR_CHARS = 2000             # the most of an error's words it returns
 #: Where Claude Code writes the plan it asks to have approved (ExitPlanMode's call carries none): the file
 #: of its plans its latest write to one names.
@@ -401,7 +404,7 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
             f"SELECT e.{CHANNEL}, e.text, e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
             f"WHERE t.name = 'user_message' AND e.row_id IN (SELECT max(e2.row_id) FROM events e2 "
             f"JOIN event_types t2 ON t2.event_type_id = e2.event_type_id WHERE t2.name = 'user_message' "
-            f"AND ifnull(e2.text, '') NOT LIKE '%[Subagent hand-back]%' GROUP BY e2.{CHANNEL})"):
+            f"AND ifnull(e2.text, '') NOT LIKE '%[Subagent hand-back]%'{kept(_tables(conn), 'e2')} GROUP BY e2.{CHANNEL})"):
         last_user[ch] = (text if text else readable(payload)) or ""
     tables = _tables(conn)
     recaps = {}                                      # each agent's newest recap (Claude Code's, while the user was away)
@@ -447,6 +450,9 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
             a["status"], a["turn_over"] = IDLE, True
     if a["asking"]:
         a["status"] = ASKING
+    cut = hung_up(conn, ch) if a["status"] == RUNNING else None
+    if cut is not None:                              # stopped before its answer came: Claude Code records nothing of it
+        a["status"], a["turn_over"] = IDLE, True
     a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
     claude = a["harness"] in ("claude", None)
     record = (record or queued.record(ch, a.get("cwd"))) if a["status"] == RUNNING and claude else None
@@ -460,6 +466,8 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
         a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], bool(record)) + 1   # when it would be given up
     if a["status"] == RUNNING and record and not a.get("record"):
         a["record"] = (record, seen)                 # watched (live.py) while it runs: it may stop unseen
+    if cut is not None:
+        a["stopped"] = {"kind": "interrupted", "at": cut}
 
 
 def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
@@ -471,6 +479,9 @@ def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
     seen = live._stat(path) if path else None       # before it is read: a change after it is noticed
     rec = rollout.read(path)
     a["stopped"] = None
+    cut = hung_up(conn, ch) if a["status"] == RUNNING else None
+    if cut is not None:                              # stopped before its answer came (Esc), as ag's hook server saw
+        a["stopped"], a["status"], a["turn_over"] = {"kind": "interrupted", "at": cut}, IDLE, True
     a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
     got = rollout.stopped(rec, a["last"]) if a["status"] == RUNNING else None
     if got and got["kind"] == "error":
@@ -624,18 +635,37 @@ def failing(conn, channel: str) -> Optional[dict]:
     retrying = bool(rows) and rows[0]["error"] is None
     if retrying:                                      # a try under way, after a failure at the same event
         if rows[0]["real_tokens"] is not None or len(rows) < 2 or rows[1]["error"] is None \
-                or rows[1]["row_id"] != rows[0]["row_id"]:
+                or rows[1]["row_id"] != rows[0]["row_id"] or rows[1]["error_status"] == HUNG_UP:
             return None
         rows = rows[1:]
     run = []
-    for r in rows:
-        if r["error"] is None or r["row_id"] != rows[0]["row_id"]:
+    for r in rows:                                    # a call the user stopped (HUNG_UP) is not one that failed
+        if r["error"] is None or r["error_status"] == HUNG_UP or r["row_id"] != rows[0]["row_id"]:
             break
         run.append(r)
     if not run:
         return None
     return {"at": _seconds(run[0]["read_at"]), "first": _seconds(run[-1]["read_at"]), "attempts": len(run),
             "status": run[0]["error_status"], "error": _clip(run[0]["error"], ERROR_CHARS), "retrying": retrying}
+
+
+def kept(tables: set, alias: str = "e") -> str:
+    """A condition on the events row `alias`: not one the harness took back (ag's `_withdrawn`: stored for a call it
+    hung up on, and not sent again -- Claude Code put the user's message back in its input box). Nothing for a file
+    from before ag kept them."""
+    return f" AND {alias}.row_id NOT IN (SELECT row_id FROM _withdrawn)" if "_withdrawn" in tables else ""
+
+
+def hung_up(conn, channel: str) -> Optional[float]:
+    """When the agent's newest call was stopped by the user before its answer was through (HUNG_UP, as ag's hook server
+    reports it), None if it was not. Before any of the answer came, Claude Code takes the message back into its prompt
+    and records nothing of it, so that is all that tells the turn is over."""
+    cols = _columns(conn, "_reads")
+    if "error_status" not in cols or CHANNEL not in cols:
+        return None
+    r = conn.execute(f"SELECT read_at, error_status FROM _reads WHERE ifnull({CHANNEL}, '') = ? ORDER BY read_id DESC LIMIT 1",
+                     (channel,)).fetchone()
+    return _seconds(r["read_at"]) if r is not None and r["error_status"] == HUNG_UP else None
 
 
 def give_up_after(failure: dict, record: bool) -> float:
@@ -1158,11 +1188,26 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
     harness = _harness(conn, channel)
     return {"gatherer": gatherer, "channel": channel, "harness": harness, "reads": reads,
             "pending": _pending(conn, channel, tables),
-            "typed": queued.typed(channel) if harness in ("claude", None) else [],
+            "typed": _unstored(conn, channel, queued.typed(channel)) if harness in ("claude", None) else [],
             "after_read": _after_read(conn, channel, tables, reads[-1]["row_id"] if reads else None),
             "tasks": tasks, "builds": builds,
             "checks": checks, "rebuilds": sum(1 for r in reads if r["rebuild"]), "llm": _llm_summary(mine), "usage": usage,
             "llm_attributed_by_time": sum(1 for c in mine if not c.get("job"))}
+
+
+def _unstored(conn, channel: str, typed: List[dict]) -> List[dict]:
+    """What the user wrote to Claude Code (queued.typed), less each message that opened a turn ag has stored since. ag
+    stores a call's messages before the call goes on to the model, so every turn that ended before a message was sent
+    was stored before it: a user message stored after it is its own, or a later one's. (Matched by when, not by its
+    words: ag may store them otherwise, an image's say.)"""
+    opening = [q["sent"] for q in typed if q["sent"] is not None and not q["joins"]]
+    if not opening:
+        return typed
+    got = conn.execute(f"SELECT e.inserted_at FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+                       f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'user_message' ORDER BY e.row_id DESC LIMIT 1",
+                       (channel,)).fetchone()
+    stored = _seconds(got[0]) if got else None
+    return [q for q in typed if q["sent"] is None or q["joins"] or stored is None or stored < q["sent"]]
 
 
 #: What the model answered that no call has carried back yet (the store's `_pending`): the latest context's tail.

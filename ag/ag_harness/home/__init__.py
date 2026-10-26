@@ -61,6 +61,7 @@ import json
 import os
 import re
 import sys
+import threading
 import tomllib
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -309,6 +310,15 @@ def set_keys(lines: List[str], table: str, values: Dict[str, Optional[str]]) -> 
     return lines
 
 
+def write_whole(path: str, text: str) -> None:
+    """Write `path` so that a reader finds the old file or the new one, never part of it: another
+    thread (the server's lanes) or process may be reading it as it is made."""
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
 def _headers_after(lines: List[str], start: int):
     return ((i, m.group(1)) for i in range(start + 1, len(lines)) for m in [_HEADER.match(lines[i])] if m)
 
@@ -323,6 +333,7 @@ class Home:
         self._loaded: Tuple[float, dict] = (-1.0, {})
         self._modules: Dict[str, Any] = {}
         self._pollers: Dict[Tuple, List] = {}             # (gatherer, cwd, mtimes) -> the pollers built
+        self._lock = threading.RLock()                    # the server's lanes share the home: its loads, its pollers
 
     # ---- the registry
 
@@ -331,8 +342,7 @@ class Home:
         policy and poller this clone ships, if there is none."""
         os.makedirs(self.plugins, exist_ok=True)
         if not os.path.exists(self.config_path):
-            with open(self.config_path, "w", encoding="utf-8") as fh:
-                fh.write(TEMPLATE)
+            write_whole(self.config_path, TEMPLATE)
 
     def config(self) -> dict:
         """config.toml, parsed; re-read when it changes."""
@@ -424,16 +434,17 @@ class Home:
             if not os.path.exists(path):
                 raise ConfigError(f"{what}: {path} does not exist")
             key = f"ag_plugins.{os.path.splitext(os.path.basename(path))[0]}"
-            mod = self._modules.get(path)
-            if mod is None:
-                spec = importlib.util.spec_from_file_location(key, path)
-                mod = importlib.util.module_from_spec(spec)
-                sys.modules[key] = mod
-                try:
-                    spec.loader.exec_module(mod)
-                except Exception as exc:  # noqa: BLE001
-                    raise ConfigError(f"{what}: {path} failed to load: {exc!r}") from exc
-                self._modules[path] = mod
+            with self._lock:                                 # loaded once, whole, before any lane uses it
+                mod = self._modules.get(path)
+                if mod is None:
+                    spec = importlib.util.spec_from_file_location(key, path)
+                    mod = importlib.util.module_from_spec(spec)
+                    sys.modules[key] = mod
+                    try:
+                        spec.loader.exec_module(mod)
+                    except Exception as exc:  # noqa: BLE001
+                        raise ConfigError(f"{what}: {path} failed to load: {exc!r}") from exc
+                    self._modules[path] = mod
         elif module:
             try:
                 mod = importlib.import_module(module)
@@ -631,8 +642,7 @@ class Home:
 
     def write_gatherer(self, cfg: GathererConfig) -> None:
         os.makedirs(os.path.dirname(cfg.path), exist_ok=True)
-        with open(cfg.path, "w", encoding="utf-8") as fh:
-            fh.write(gatherer_toml(cfg))
+        write_whole(cfg.path, gatherer_toml(cfg))
 
     def locked_policy(self, gatherer: str) -> Optional[str]:
         """The policy the gatherer's reads were made by, if any."""
@@ -671,20 +681,21 @@ class Home:
         a connection is not remade on every call."""
         cfg = self.gatherer(gatherer)
         key = (gatherer, cwd, os.path.getmtime(cfg.path), os.path.getmtime(self.config_path))
-        if key in self._pollers:
-            return self._pollers[key]
-        known = self.pollers()
-        found = []
-        for name in cfg.pollers:
-            spec = known.get(name)
-            if spec is None:
-                raise ConfigError(f"gatherer {gatherer}: poller {name!r} is not known ({cfg.path})")
-            poller = self.build_poller(spec, gatherer, cwd)
-            if poller is not None:
-                found.append(poller)
-        self._pollers = {k: v for k, v in self._pollers.items() if k[:2] != (gatherer, cwd)}
-        self._pollers[key] = found
-        return found
+        with self._lock:                        # built once: lanes in one directory share them (Manager.poll)
+            if key in self._pollers:
+                return self._pollers[key]
+            known = self.pollers()
+            found = []
+            for name in cfg.pollers:
+                spec = known.get(name)
+                if spec is None:
+                    raise ConfigError(f"gatherer {gatherer}: poller {name!r} is not known ({cfg.path})")
+                poller = self.build_poller(spec, gatherer, cwd)
+                if poller is not None:
+                    found.append(poller)
+            self._pollers = {k: v for k, v in self._pollers.items() if k[:2] != (gatherer, cwd)}
+            self._pollers[key] = found
+            return found
 
     def problems(self) -> List[str]:
         """What in the registry cannot be resolved, or does not fit."""
@@ -717,14 +728,16 @@ class Home:
 # ---------------------------------------------------------------- what the server and the worker call
 
 _HOMES: Dict[str, Home] = {}
+_HOMES_LOCK = threading.Lock()
 
 
 def home(root: Optional[str] = None) -> Home:
     """The Home at `root` (default: AG_HOME, or ~/.ag), one per process."""
     root = os.path.abspath(os.path.expanduser(root or paths.AG_HOME))
-    if root not in _HOMES:
-        _HOMES[root] = Home(root)
-    return _HOMES[root]
+    with _HOMES_LOCK:
+        if root not in _HOMES:
+            _HOMES[root] = Home(root)
+        return _HOMES[root]
 
 
 def manager(gatherer: str):

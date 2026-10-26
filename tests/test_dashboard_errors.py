@@ -122,6 +122,39 @@ class FailingTest(ErrorsBase):
         self.assertIsNone(self.failing())
 
 
+class HungUpTest(ErrorsBase):
+    """A call the user stopped (Esc) before any of its answer came: Claude Code takes the message back and records nothing
+    of it; ag's hook server reports it as hung up (HUNG_UP) -- the turn over, not a failure."""
+
+    def test_the_turn_is_over_and_nothing_failed(self):
+        now = time.time()
+        self.read(now - 3)                                                    # the call, as ag read for it
+        self.assertEqual(self.actor()["status"], data.RUNNING)               # the model answering, as far as ag knows
+        self.read(now - 2, row=2, status=data.HUNG_UP, error="the harness hung up before the answer was through")
+        a = self.actor()
+        self.assertEqual((a["status"], a["turn_over"], a["failing"]), (data.IDLE, True, None))
+        self.assertEqual(a["stopped"]["kind"], "interrupted")
+        self.assertIsNone(self.failing())
+
+    def test_claude_code_has_the_message_back_only_after_the_key_that_stopped_it(self):
+        from ag_dashboard import sessions
+        now = time.time()
+        self.read(now - 5)
+        self.assertFalse(sessions.took_back("g", SESSION, now - 2))             # the call not hung up on
+        self.read(now - 1, status=data.HUNG_UP, error="hung up")             # read for after the Esc: ag was reading
+        self.assertTrue(sessions.took_back("g", SESSION, now - 2))              # Esc, in this turn
+        self.assertFalse(sessions.took_back("g", SESSION, 0.0))                 # something typed since
+        self.assertFalse(sessions.took_back("g", SESSION, now - 10))            # a key from an earlier turn
+        self.assertFalse(sessions.took_back("nope", SESSION, now))
+
+    def test_a_try_after_it_is_not_a_retry_of_a_failure(self):
+        now = time.time()
+        self.read(now - 20, status=data.HUNG_UP, error="hung up")
+        self.read(now - 1)                                                    # the same event, sent again
+        self.assertIsNone(self.failing())
+        self.assertEqual(self.actor()["status"], data.RUNNING)
+
+
 class GivenUpTest(ErrorsBase):
     """No record of Claude Code's to say (here: none written): time does."""
 

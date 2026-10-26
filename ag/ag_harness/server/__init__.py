@@ -73,7 +73,9 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 provider has not counted yet (`counted`). A harness
                                                 that counts the context exactly before sending
                                                 it, and finds it over `budget`, reports that
-                                                count (`measured`) and asks again
+                                                count (`measured`) and asks again. `inserted`: the
+                                                rows of the events it stored (not those already
+                                                stored), for a `withdraw`
     {"op": "context", "gatherer", "properties", "cwd", "events", "limit"?, "preamble"?}
         -> {"context": [...] or null, "note", "tokens", "budget", "sent_tokens", "basis"}
                                                 a rewrite's context, read only: the events are
@@ -100,6 +102,12 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 the HTTP status its endpoint answered (none:
                                                 no answer came) and why, kept on the read
                                                 (`_reads`) for a reader of the gatherer
+    {"op": "withdraw", "gatherer", "properties", "rows", "read_id"?} -> {"withdrawn": n}
+                                                the harness took these events back (a call's
+                                                `inserted`): it hung up on the call before the
+                                                answer came, and does not send them again. Kept,
+                                                but in no read and not in `latest`, until the
+                                                harness sends one again (`insert` keeps it)
     {"op": "counted", "gatherer", "properties", "counts"?: {event_id: n}, "made"?: {made_id: n},
      "preamble_counts"?: [{"name", "text", "tokens"}], "left_out"?: {read_id: n}}
         -> {"events", "made", "preamble"}       sizes the model's provider counted after the
@@ -174,26 +182,49 @@ where TYPE is {"name", "properties"?: [{"name", "required"?, "identifies"?}]}.
 A request that fails is answered `{"id", "error"}`; a rewrite that fails is
 answered with a null context, so the harness sends its own messages.
 Nothing but answers is written to stdout: whatever else would go there (a
-print in a policy or a plugin) goes to stderr. Requests are answered one at
-a time, in the order they arrive. What each request came to goes to the
-gatherer's `server.log` (`logs/gatherers/<gatherer>/`).
+print in a policy or a plugin) goes to stderr. What each request came to goes
+to the gatherer's `server.log` (`logs/gatherers/<gatherer>/`).
+
+Requests run in LANES, one per gatherer and values of its identifying
+properties -- those its types declare `identifies`: the harness's session, its
+`channel` -- as the request's `properties` give them. A lane's requests are
+answered one at a time, in the order they arrive; different lanes run side by
+side, so a read that waits for its build holds up only its own session. A
+request that gives none (`measured`, `failed`, `claim`, `recap`, `init`, ...)
+runs in its gatherer's lane for none, in order with the others there but not
+with any session's: no read waits on one of them that its sender has not
+waited for itself (a `measured` is answered before the harness sees the call's
+end, a `claim` before the call is made). A gatherer with no identifying
+property, or none known yet (no database), has one lane. Answers come out as
+they are ready, each one whole line: a client matches them to its requests by id.
 """
 
 import json
 import os
 import re
+import sqlite3
 import sys
+import threading
+import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
+from urllib.request import pathname2url
 
 from ag.ag_interface import Event, EventType, Property
-from ..store import paths
+from ..store import paths, schema
 from ..store.operations import STREAMING
+
+#: How long a lane's thread waits for its next request before it ends (seconds): a
+#: session's next call usually comes within it, and finds the thread's database
+#: connections still open.
+LINGER = 60.0
 
 
 def log_line(gatherer: str, line: str) -> None:
-    """A line on stderr, and in the gatherer's server.log."""
-    print(f"[{gatherer}] {line}", file=sys.stderr, flush=True)
+    """A line on stderr, and in the gatherer's server.log. Each written whole: lanes log at once."""
+    sys.stderr.write(f"[{gatherer}] {line}\n")
+    sys.stderr.flush()
     path = paths.server_log(gatherer)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -338,6 +369,29 @@ class Server:
             self.log(gatherer, f"gatherer {gatherer} created ({manager.name})")
         return manager
 
+    def identifying(self, gatherer: Optional[str]) -> Optional[tuple]:
+        """The names of the gatherer's identifying properties -- those its types declare `identifies`
+        (`schema.identifying_names`): the harness's session -- as its database has them: through this
+        thread's connection to it, if one is open, else a look at the file, read only. None when it
+        has no database yet. A request's lane is its values of them (`serve`).
+
+        Raises:
+            sqlite3.Error: the file cannot be read.
+        """
+        if not gatherer:
+            return None
+        conn = schema.opened(gatherer)
+        if conn is not None:
+            return tuple(schema.identifying_names(conn))
+        path = paths.db_path(gatherer)
+        if not os.path.exists(path):
+            return None
+        conn = sqlite3.connect(f"file:{pathname2url(path)}?mode=ro", uri=True, timeout=8)
+        try:
+            return tuple(schema.identifying_names(conn))
+        finally:
+            conn.close()
+
     def with_pollers(self, manager, gatherer: str, cwd: Optional[str]):
         """The manager, with the gatherer's pollers for `cwd` (none, if they
         cannot be made: a bad poller config must not block the call)."""
@@ -403,6 +457,14 @@ class Server:
     def measured(self, gatherer: str, read_id: int, tokens: int) -> dict:
         """Record the provider's count of the context read `read_id` returned."""
         return {"recorded": self.manager(gatherer).record_real_tokens(gatherer, read_id, tokens)}
+
+    def withdraw(self, gatherer: str, properties: Dict[str, Any], rows: list, read_id: Optional[int] = None) -> dict:
+        """Withdraw the events of `rows`: the harness took them back (`Manager.withdraw`)."""
+        n = self.manager(gatherer).withdraw(gatherer, properties, rows, read_id)
+        if n:
+            self.log(gatherer, tag(properties) + f"{n} events withdrawn: the harness took them back"
+                     + (f" (read {read_id})" if read_id is not None else ""))
+        return {"withdrawn": n}
 
     def failed(self, gatherer: str, read_id: int, status: Optional[int], error: str) -> dict:
         """Record that the model call read `read_id` was for failed: its endpoint's status, and why."""
@@ -498,6 +560,7 @@ class Server:
             self.log(gatherer, prefix + f"could not tell which events are counted: {exc!r}")
             uncounted = None
         return {"context": context, "note": note, "read_id": answer["read_id"], "uncounted": uncounted,
+                "inserted": [r for r in inserted["rows"] if r is not None],
                 **{k: answer.get(k) for k in ("tokens", "budget", "sent_tokens", "basis")}}
 
     def open(self, gatherer: str, properties: Dict[str, Any]) -> dict:
@@ -537,6 +600,12 @@ class Server:
                 return {"error": "no read_id and error"}
             return self.failed(gatherer, read_id, status if isinstance(status, int) and not isinstance(status, bool) else None,
                                error)
+        if op == "withdraw":
+            rows, read_id = request.get("rows"), request.get("read_id")
+            if not isinstance(rows, list) or not all(isinstance(r, int) and not isinstance(r, bool) for r in rows):
+                return {"error": "no rows"}
+            return self.withdraw(gatherer, properties, rows,
+                                 read_id if isinstance(read_id, int) and not isinstance(read_id, bool) else None)
         if op == "counted":
             sizes = counted_of(request)
             if sizes is None:
@@ -613,18 +682,173 @@ class Server:
         return dict(result, id=request.get("id"))
 
 
-def serve(server: Server, lines, out) -> None:
-    """Answer each JSON line of `lines` on `out`, one line per answer, in
-    order, until `lines` ends."""
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+def gatherer_of(request: dict) -> Optional[str]:
+    gatherer = request.get("gatherer")
+    return gatherer if isinstance(gatherer, str) else None
+
+
+def lane_of(request: dict, names: tuple) -> tuple:
+    """The lane `request` runs in when its gatherer's identifying properties are `names`
+    (`Server.identifying`): its gatherer, and its values of them (None: not given)."""
+    props = request.get("properties")
+    props = props if isinstance(props, dict) else {}
+    return gatherer_of(request), tuple((n, _hashable(props.get(n))) for n in names)
+
+
+def _hashable(value):
+    if value is None or isinstance(value, (str, int, float)):
+        return value
+    return json.dumps(value, sort_keys=True, default=str)          # not a property's value: refused in its lane
+
+
+class Lanes:
+    """The requests `serve` has read, each run in its lane (`lane_of`): a thread per lane while it
+    has requests, and `linger` seconds after, answering them one at a time in the order they came;
+    lanes side by side. Each answer is written to `out` whole, as it is ready.
+
+    A request is placed by its gatherer's identifying properties as last found (`Server.identifying`:
+    when the gatherer is first seen, and after each answer). When they change -- a new gatherer's,
+    once its database has its types -- the gatherer's requests after the change are held until those
+    placed before it are answered: a lane by the new ones never runs ahead of one by the old."""
+
+    def __init__(self, server: Server, out, linger: float = LINGER):
+        self.server, self.out, self.linger = server, out, linger
+        self.lock = threading.Condition()
+        self.queues: Dict[tuple, deque] = {}        # lane -> its requests not begun; there while its thread runs
+        self.running = 0                            # lane threads not yet ended
+        self.ended = False                          # no request comes after these
+        self.found: Dict[Any, tuple] = {}           # gatherer -> its identifying properties, as last found
+        self.placed: Dict[Any, tuple] = {}          # gatherer -> those its requests not yet answered were placed by
+        self.busy: Dict[Any, int] = {}              # gatherer -> its requests placed and not yet answered
+        self.held: Dict[Any, deque] = {}            # gatherer -> its requests waiting for those to be answered
+        self.writing = threading.Lock()
+        self.broken: Optional[Exception] = None     # what writing an answer raised: no one reads them
+
+    def write(self, result: dict) -> None:
         try:
-            request = json.loads(line)
-        except ValueError as exc:
-            result = {"id": None, "error": f"not JSON: {exc}"}
-        else:
-            result = server.answer(request) if isinstance(request, dict) else {"id": None, "error": "not an object"}
-        out.write(json.dumps(result, ensure_ascii=False) + "\n")
-        out.flush()
+            line = json.dumps(result, ensure_ascii=False)
+        except (TypeError, ValueError) as exc:
+            line = json.dumps({"id": result.get("id"), "error": f"the answer is not JSON: {exc}"})
+        with self.writing:
+            if self.broken is None:
+                try:
+                    self.out.write(line + "\n")
+                    self.out.flush()
+                except (OSError, ValueError) as exc:     # a closed pipe, or file
+                    self.broken = exc
+
+    def submit(self, request: dict) -> None:
+        gatherer = gatherer_of(request)
+        names = None if gatherer in self.found else self.identifying(gatherer)     # a gatherer not seen yet
+        with self.lock:
+            if names is not None:
+                self.found.setdefault(gatherer, names)
+            if gatherer in self.held:
+                self.held[gatherer].append(request)
+            else:
+                self.place(gatherer, request)
+
+    def place(self, gatherer, request: dict) -> None:
+        """Put `request` in its lane (under the lock) -- or hold it, while requests of its gatherer
+        placed by other identifying properties are not all answered."""
+        names = self.found.get(gatherer, ())
+        if self.busy.get(gatherer) and self.placed[gatherer] != names:
+            self.held.setdefault(gatherer, deque()).append(request)
+            return
+        self.placed[gatherer], self.busy[gatherer] = names, self.busy.get(gatherer, 0) + 1
+        key = lane_of(request, names)
+        queue = self.queues.get(key)
+        if queue is not None:
+            queue.append(request)
+            self.lock.notify_all()
+            return
+        queue = self.queues[key] = deque([request])
+        self.running += 1
+        try:
+            threading.Thread(target=self.run, args=(key, queue), daemon=True,
+                             name=f"ag lane {key[0]} {key[1]}").start()
+        except RuntimeError as exc:                 # no thread to be had
+            del self.queues[key]
+            self.running -= 1
+            self.write({"id": request.get("id"), "error": f"no thread to answer it: {exc}"})
+            self.answered(gatherer, None)
+
+    def answered(self, gatherer, names: Optional[tuple]) -> None:
+        """One of the gatherer's requests is answered (under the lock), and its identifying
+        properties found to be `names` (None: not known); those held, once none placed is left."""
+        if names is not None:
+            self.found[gatherer] = names
+        self.busy[gatherer] -= 1
+        if self.busy[gatherer]:
+            return
+        del self.busy[gatherer], self.placed[gatherer]
+        held = self.held.pop(gatherer, deque())
+        while held and gatherer not in self.held:
+            self.place(gatherer, held.popleft())
+        if held:
+            self.held[gatherer].extend(held)
+
+    def identifying(self, gatherer) -> Optional[tuple]:
+        try:
+            return self.server.identifying(gatherer)
+        except Exception:  # noqa: BLE001 - the lanes stay as they were
+            return None
+
+    def run(self, key: tuple, queue: deque) -> None:
+        gatherer = key[0]
+        try:
+            while True:
+                with self.lock:
+                    deadline = time.monotonic() + self.linger
+                    while not queue and not self.ended and time.monotonic() < deadline:
+                        self.lock.wait(deadline - time.monotonic())
+                    if not queue:                   # gone from the lanes as it ends: a request after starts another
+                        del self.queues[key]
+                        return
+                    request = queue.popleft()
+                self.write(self.server.answer(request))
+                names = self.identifying(gatherer)
+                with self.lock:
+                    self.answered(gatherer, names)
+        finally:
+            try:
+                schema.release()                    # the thread's database connections
+            finally:
+                with self.lock:
+                    self.running -= 1
+                    self.lock.notify_all()
+
+    def close(self) -> None:
+        """Once every request submitted is answered, and every lane's thread has ended."""
+        with self.lock:
+            self.ended = True
+            self.lock.notify_all()
+            while self.running:
+                self.lock.wait()
+
+
+def serve(server: Server, lines, out, linger: float = LINGER) -> None:
+    """Answer each JSON line of `lines` on `out`, one line per answer, until `lines` ends; then
+    return once every request is answered. Each request runs in its lane (`Lanes`): one session's
+    in the order they came, different sessions' side by side, so answers come out as they are ready."""
+    lanes = Lanes(server, out, linger)
+    try:
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                request = json.loads(line)
+            except ValueError as exc:
+                lanes.write({"id": None, "error": f"not JSON: {exc}"})
+            else:
+                if isinstance(request, dict):
+                    lanes.submit(request)
+                else:
+                    lanes.write({"id": None, "error": "not an object"})
+            if lanes.broken is not None:
+                break
+    finally:
+        lanes.close()
+    if lanes.broken is not None:
+        raise lanes.broken
