@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 from contextlib import redirect_stderr
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -177,6 +178,12 @@ class ManagerPollingTest(Base):
         self.assertNotIn("text 1", store.raw_texts(conn, skip_types=()))
         self.assertTrue(read_id)
 
+    def test_an_event_with_no_text_names_nothing(self):
+        conn = self.m._conn("p")
+        self.m.insert("p", on(Event(1, {"thinking": "", "signature": "EqQBCkgIBhABGAIiQE/a/b.py+c/d.md"}, id="r1"), "c"))
+        self.m.insert("p", on(Event(1, {"text": "x"}, id="n1", text="see src/a.py"), "c"))
+        self.assertEqual(store.raw_texts(conn), ["see src/a.py"])         # a model's encrypted reasoning: not read
+
     def test_a_gatherer_without_a_database_is_not_polled(self):
         ticker = Ticker()
         self.m.add_poller(ticker)
@@ -269,6 +276,18 @@ class FileWatchTest(unittest.TestCase):
         self.assertEqual(mentioned_files(os.path.join(root, "nope"), self.said(root)), [])
         os.symlink(os.path.join(root, "old.py"), os.path.join(root, "link.py"))
         self.assertEqual(mentioned_files(root, ["link.py"]), [])
+
+    def test_a_text_s_names_are_found_once_and_the_ones_kept_are_bounded(self):
+        from ag.ag_pollers import file_changes
+        file_changes._FOUND.clear(); file_changes._FOUND_CHARS[0] = 0
+        with unittest.mock.patch.object(file_changes, "PATH", unittest.mock.Mock(wraps=file_changes.PATH)) as path, \
+                unittest.mock.patch.object(file_changes, "KEPT_CHARS", 40):
+            text = "read src/a.py and b.md"                                  # 22 characters
+            self.assertEqual(file_changes.names_in(text), ["src/a.py", "b.md"])
+            self.assertEqual(file_changes.names_in(str(text)), ["src/a.py", "b.md"])   # the same words: not searched again
+            self.assertEqual(path.findall.call_count, 1)
+            file_changes.names_in("and also notes/c.txt")                    # past KEPT_CHARS: the kept ones dropped
+            self.assertEqual(list(file_changes._FOUND), ["and also notes/c.txt"])
 
     def test_changed_files_among_them(self):
         since = time.time() - 1000
