@@ -23,6 +23,7 @@ matches against the conversation; its `what` says what happened in words:
 
 import os
 import re
+import threading
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from ag.ag_interface import Event, EventType, Poller
@@ -65,9 +66,10 @@ WATCHED = 5000
 
 #: The names found in each text lately (names_in), kept by the text: a gatherer's server is asked to watch for every
 #: call, and the texts it is given are mostly the same ones again (stored events never change), so each is searched
-#: once. Dropped whole when it holds more than KEPT_CHARS of them.
+#: once. Dropped whole when it holds more than KEPT_CHARS of them. Shared by the server's threads (_FOUND_LOCK).
 _FOUND: Dict[str, Tuple[str, ...]] = {}
 _FOUND_CHARS = [0]
+_FOUND_LOCK = threading.Lock()
 KEPT_CHARS = 64 << 20
 
 
@@ -77,11 +79,13 @@ def names_in(text: Optional[str]) -> List[str]:
     got = _FOUND.get(text)
     if got is None:
         got = tuple(n for n in (m.rstrip(".") for m in PATH.findall(text)) if n)
-        if _FOUND_CHARS[0] + len(text) > KEPT_CHARS:
-            _FOUND.clear()
-            _FOUND_CHARS[0] = 0
-        _FOUND[text] = got
-        _FOUND_CHARS[0] += len(text)
+        with _FOUND_LOCK:
+            if _FOUND_CHARS[0] + len(text) > KEPT_CHARS:
+                _FOUND.clear()
+                _FOUND_CHARS[0] = 0
+            if text not in _FOUND:
+                _FOUND[text] = got
+                _FOUND_CHARS[0] += len(text)
     return list(got)
 
 
