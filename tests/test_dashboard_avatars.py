@@ -123,7 +123,7 @@ class AvatarsTest(AvatarsBase):
             page = fh.read()
         with open(os.path.join(avatars.DIR, "README.md"), encoding="utf-8") as fh:
             readme = fh.read()
-        moves = set(re.findall(r"\.buddy\.m-([a-z-]+) \{ --m: b-\1;", page))
+        moves = set(re.findall(r"\.me\.m-([a-z-]+) \{ --m: b-\1;", page))
         effects = set(re.findall(r"\.buddy\.f-([a-z-]+)[ :]", page))
         listed = lambda kind: set(re.findall(r"`([a-z]+)`", re.search(rf"^- {kind}: (.*?)(?:^- |\n\n)", readme, re.M | re.S).group(1)))
         self.assertEqual(listed("moves"), moves)
@@ -138,6 +138,8 @@ class AvatarsTest(AvatarsBase):
         self.assertEqual(used, moves | effects)                              # each drawn, each used
         ink = re.search(r"const HUE_INK = \{(.*?)\};", page, re.S).group(1)
         self.assertEqual(set(re.findall(r"(\w+): \[", ink)), set(pool.values()))   # every hue's words in its color
+        main = re.search(r"const HUE_MAIN = \{(.*?)\};", page, re.S).group(1)
+        self.assertEqual(set(re.findall(r"(\w+): \"", main)), set(pool.values()))   # and its thought's dots
 
     def test_the_drawn_avatars_are_in_one_hue_of_the_palette_each(self):
         avatars.DIR = self.saved[1]

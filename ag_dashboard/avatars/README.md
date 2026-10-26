@@ -25,13 +25,15 @@ then an effect round it if any. With none, or a move the page does not know, it 
   `patter`, `flutter`, `lookabout`, `flip`, `whisk`, `wiggle`, `spin`;
 - effects: `steam`, `bubbles`, `spout`, `petals`, `snow`, `sparkle`, `notes`, `breeze`, `ripple`, `glow`.
 
-They are page.html's `.buddy.m-<move>` and `.buddy.f-<effect>`; the drawn ones name theirs in their kind's
+They are page.html's `.me.m-<move>` and `.buddy.f-<effect>`; the drawn ones name theirs in their kind's
 MOTIONS (assets/src/avatars).
 
-An avatar can instead have a stage of its own, page.html's `STAGES["<kind>/<name>"]` (the hamster's, so far):
-the character acting out what its turn does (ag_dashboard/work.py's kinds: read, search, edit, test, run, ship,
-wait, team), winding down and putting it away once the call ends to think (a thought bubble) until the next,
-reacting to how a call ended (a failure, failures in a row, tests passed or failed, a commit), and its context
-filling (its share of the harness's limit) or being compacted. Its turn over, it sits small under it, done.
+It works on a stage (page.html's `stage`), the same for every avatar: for each kind of call its turn makes
+(ag_dashboard/work.py's), the character holds the same tool, so a tool means one thing whatever the character --
+a book (read), a magnifying glass (search), a pencil and sheet (edit), a checklist (test), gears (run), a parcel
+sent off (ship), an hourglass (wait), little copies of itself (team). As a call ends it slows to a stop and puts
+the tool away, then thinks until the next, with a thought bubble whose dots are in its hue; only then does it
+move as its own character, its move and its effect. It reacts the same way to how a call ended: a failure, failures
+in a row, tests passed or failed, a commit. Its turn over, it sits small under it, done.
 
 A dashboard running sees a new one at once. Removing one gives its actors another.
