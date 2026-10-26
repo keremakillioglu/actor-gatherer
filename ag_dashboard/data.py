@@ -1158,11 +1158,26 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
     harness = _harness(conn, channel)
     return {"gatherer": gatherer, "channel": channel, "harness": harness, "reads": reads,
             "pending": _pending(conn, channel, tables),
-            "typed": queued.typed(channel) if harness in ("claude", None) else [],
+            "typed": _unstored(conn, channel, queued.typed(channel)) if harness in ("claude", None) else [],
             "after_read": _after_read(conn, channel, tables, reads[-1]["row_id"] if reads else None),
             "tasks": tasks, "builds": builds,
             "checks": checks, "rebuilds": sum(1 for r in reads if r["rebuild"]), "llm": _llm_summary(mine), "usage": usage,
             "llm_attributed_by_time": sum(1 for c in mine if not c.get("job"))}
+
+
+def _unstored(conn, channel: str, typed: List[dict]) -> List[dict]:
+    """What the user wrote to Claude Code (queued.typed), less each message that opened a turn ag has stored since. ag
+    stores a call's messages before the call goes on to the model, so every turn that ended before a message was sent
+    was stored before it: a user message stored after it is its own, or a later one's. (Matched by when, not by its
+    words: ag may store them otherwise, an image's say.)"""
+    opening = [q["sent"] for q in typed if q["sent"] is not None and not q["joins"]]
+    if not opening:
+        return typed
+    got = conn.execute(f"SELECT e.inserted_at FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+                       f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'user_message' ORDER BY e.row_id DESC LIMIT 1",
+                       (channel,)).fetchone()
+    stored = _seconds(got[0]) if got else None
+    return [q for q in typed if q["sent"] is None or q["joins"] or stored is None or stored < q["sent"]]
 
 
 #: What the model answered that no call has carried back yet (the store's `_pending`): the latest context's tail.

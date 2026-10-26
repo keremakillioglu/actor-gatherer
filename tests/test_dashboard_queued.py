@@ -12,7 +12,7 @@ import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import files, live, queued  # noqa: E402
+from ag_dashboard import data, files, live, queued  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 from test_dashboard_files import asked, call, result, said  # noqa: E402
 
@@ -48,6 +48,14 @@ class RecordBase(unittest.TestCase):
     def write(self, line, end="\n"):
         with open(self.record, "a") as fh:
             fh.write(json.dumps(line) + end)
+
+    def prompt(self, text, ago=0.0, origin="human", **more):
+        """A user line as Claude Code records a message as it sends it (`origin` None: one with none, a "!" command's)."""
+        line = {"type": "user", "message": {"role": "user", "content": text}, "timestamp": stamp(self.now - ago),
+                "sessionId": SESSION, "promptId": "p1"}
+        if origin is not None:
+            line["origin"] = {"kind": origin}
+        self.write({**line, **more})
 
     def op(self, operation, text=None, ago=0.0, **more):
         line = {"type": "queue-operation", "operation": operation, "timestamp": stamp(self.now - ago), "sessionId": SESSION}
@@ -109,6 +117,30 @@ class TypedTest(RecordBase):
         self.assertEqual([(q["text"], q["joins"]) for q in queued.typed(SESSION, now=self.now)],   # part of the turn, or the next's
                          [("and cook's theorem?", True), ("and karp's problems?", True), ("next thing", False)])
 
+    def test_sent_between_turns_opens_the_next(self):
+        self.prompt("look at a.py", ago=3)
+        [q] = queued.typed(SESSION, now=self.now)
+        self.assertEqual((q["text"], q["joins"]), ("look at a.py", False))          # its turn's first
+        self.assertAlmostEqual(q["sent"], self.now - 3, delta=0.002)            # sent as Claude Code recorded it
+
+    def test_only_the_user_s_own_and_each_once(self):
+        self.prompt("<task-notification>\n<task-id>b1</task-id>", ago=9, origin="task-notification")
+        self.prompt("Another Claude session sent a message:\nhi", ago=8, origin="peer")
+        self.prompt("<bash-input>echo hi</bash-input>", ago=7, origin=None)      # a "!" command: no model call
+        self.prompt("Caveat: the messages below", ago=6, isMeta=True)
+        self.prompt("a subagent's task", ago=5, isSidechain=True)
+        self.assertEqual(self.typed(), [])
+        self.op("enqueue", "and then b", ago=4)
+        self.op("dequeue", ago=2)
+        self.prompt("and then b", ago=2)                                    # the dequeued one, recorded as it is sent
+        self.assertEqual(self.typed(), [("and then b", True)])
+
+    def test_sent_between_turns_long_ago_is_forgotten(self):
+        self.prompt("old", ago=queued.PROMPT_SECONDS + 5)
+        self.prompt("an image", ago=1, message={"role": "user", "content": [{"type": "text", "text": "this one"},
+                                                                             {"type": "image", "source": {}}]})
+        self.assertEqual(self.typed(), [("this one", True)])
+
     def test_a_message_sent_mid_turn_unwrapped(self):
         self.assertEqual(queued.mid_turn(wrapped("change g\ntoo")), "change g\ntoo")
         self.assertIsNone(queued.mid_turn("change g"))
@@ -134,6 +166,42 @@ class WatcherTest(RecordBase):
         self.op("remove", "also do b", reason="absorbed_mid_turn")
         watcher.check()
         self.assertTrue(w.take()[1])                                        # sent: the page draws it in full
+        self.prompt("next thing")
+        watcher.check()
+        self.assertTrue(w.take()[1])                                        # sent between turns: its turn begun
+
+
+class UnstoredTest(unittest.TestCase):
+    """The agent's `typed` (data.py's _unstored) leaves out a message that opened a turn once ag has stored a user message
+    after it was sent: ag stores a call's messages before the call goes on, so that one is its own, or a later one's."""
+
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.addCleanup(self.conn.close)
+        self.conn.executescript("""CREATE TABLE event_types (event_type_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+            CREATE TABLE events (row_id INTEGER PRIMARY KEY, inserted_at TEXT NOT NULL, event_type_id INTEGER NOT NULL, p_channel);
+            INSERT INTO event_types (name) VALUES ('user_message'), ('agent_message');""")
+        self.now = time.time()
+
+    def store(self, kind, ago, channel=SESSION):
+        tid = self.conn.execute("SELECT event_type_id FROM event_types WHERE name = ?", (kind,)).fetchone()[0]
+        self.conn.execute("INSERT INTO events (inserted_at, event_type_id, p_channel) VALUES (?, ?, ?)",
+                          (stamp(self.now - ago), tid, channel))
+
+    def left(self, typed):
+        return [q["text"] for q in data._unstored(self.conn, SESSION, typed)]
+
+    def test_left_out_once_its_turn_is_stored(self):
+        typed = [{"text": "waiting", "at": self.now - 9, "sent": None, "joins": False},
+                 {"text": "mid-turn", "at": self.now - 8, "sent": self.now - 7, "joins": True},
+                 {"text": "next turn", "at": self.now - 5, "sent": self.now - 5, "joins": False}]
+        self.assertEqual(self.left(typed), ["waiting", "mid-turn", "next turn"])             # nothing stored
+        self.store("user_message", ago=20)                                                     # the turn before it
+        self.store("agent_message", ago=1)                                                     # not a message of the user's
+        self.store("user_message", ago=1, channel="another")                                   # another session's
+        self.assertEqual(self.left(typed), ["waiting", "mid-turn", "next turn"])
+        self.store("user_message", ago=1)                                                      # its own: stored
+        self.assertEqual(self.left(typed), ["waiting", "mid-turn"])                            # the rest, by their words (page.html)
 
 
 class TurnTest(RecordBase):
