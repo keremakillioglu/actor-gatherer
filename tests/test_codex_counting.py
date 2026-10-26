@@ -249,6 +249,25 @@ class ReasoningTest(Base):
         self.assertEqual(got[-1]["counts"], {"rs_2": REASONING_COST, "rs_3": REASONING_COST})   # 80, shared evenly
         self.assertEqual(counter.channel("g", "c").reasoning["rs_1"], REASONING_COST)
 
+    async def test_started_again_it_takes_the_reasoning_s_cost_from_the_store(self):
+        items = turn()
+        more = items + [{"type": "reasoning", "id": "rs_2", "summary": [], "encrypted_content": "b"},
+                        {"type": "message", "role": "assistant", "id": "msg_2", "content": [{"type": "output_text", "text": "3."}]}]
+        context = [dict(e, tokens=REASONING_COST if e["id"] == "rs_1" else 1, counted=True)
+                   for e in codex.to_events(items)]
+        counter, client = Counter(CodexAdaptor()), Client()          # a new process: rs_1 costed before it
+        out = {"events": codex.to_events(more), "ag_items": [], "read_id": 2, "basis": None, "context": context,
+               "uncounted": ["rs_2", "msg_2"]}
+        counter.sent("g", "c", out, more, [])
+        counter.start(self.request, client, "g", {"channel": "c"}, body_of(more), more, more, out)
+        counter.reported(self.request, client, "g", "c", 2, own_count(body_of(more)), body_of(more))
+        await counter.close()
+        await counter.close()
+        counts = {k: v for op, b in client.asked if op == "counted" for k, v in b["counts"].items()}
+        self.assertEqual(counts["rs_2"], REASONING_COST)              # not rs_1's cost again, shared with it
+        self.assertNotIn("rs_1", counts)
+        self.assertEqual(set(counts), {"rs_2", "msg_2"})
+
     async def test_the_count_before_sending_takes_the_reasoning_at_what_it_costs(self):
         counter, items = Counter(CodexAdaptor()), turn()
         await self.call(counter, items, 1)
@@ -292,6 +311,20 @@ class DifferencedTest(unittest.TestCase):
         self.assertEqual(set(got["counts"]), {codex.item_id(i) for i in items[2:]})
         self.assertEqual(sum(got["counts"].values()), 300)
         self.assertGreater(got["counts"]["u2"], 0)
+
+    def test_started_again_it_does_not_difference_a_counted_history_from_nothing(self):
+        items = turn()
+        context = [dict(e, tokens=10, counted=True) for e in codex.to_events(items[:2])]
+        out = {"events": codex.to_events(items), "ag_items": [], "read_id": 2, "basis": None, "context": context}
+        self.counter.sent("g", "c", out, items, [])
+
+        async def go():
+            self.counter.reported(self.request, self.client, "g", "c", 2, 1300, body_of(items))
+            await self.counter.close()
+        asyncio.run(go())
+        self.assertEqual([b for op, b in self.client.asked if op == "counted"], [])
+        got = self.call(items + [user("more", 3)], 3, 1400)          # from its own first count on
+        self.assertEqual(got["counts"], {"u3": 100})
 
     def test_after_a_build_or_with_something_taken_out_nothing_is_differenced(self):
         items = turn()

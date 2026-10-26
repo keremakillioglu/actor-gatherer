@@ -24,10 +24,14 @@ except ImportError:
 from ag.ag_harness import home as ag_home  # noqa: E402
 from ag.ag_harness.server import serve  # noqa: E402
 from ag.ag_harness.server.__main__ import server_for  # noqa: E402
+from ag.ag_harness.manager import Manager  # noqa: E402
+from ag.ag_harness.store import operations as store_ops  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
+from ag.ag_interface.policy import Context  # noqa: E402
+from ag.ag_interface.store import Ref  # noqa: E402
 from ag.integrations.harnesses.claude.adaptor import to_events as claude  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
-from ag.integrations.harnesses.claude.ag_orchestrator.counting import Counter  # noqa: E402
+from ag.integrations.harnesses.claude.ag_orchestrator.counting import Counter, fresh_thinking  # noqa: E402
 from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
 
@@ -102,12 +106,12 @@ class CounterTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.upstream.close()
 
-    async def run_call(self, counter, messages, sent=None, ag_items=()):
+    async def run_call(self, counter, messages, sent=None, ag_items=(), **out):
         client = Client()
         body = {"model": "m", "system": SYSTEM, "tools": TOOLS, "messages": messages}
         await counter.count_call(self.request, client, "g", {"channel": "c"}, body, messages,
                                  sent if sent is not None else messages,
-                                 {"events": claude.to_events(messages), "ag_items": list(ag_items)})
+                                 dict({"events": claude.to_events(messages), "ag_items": list(ag_items)}, **out))
         return client.asked[0][1] if client.asked else None
 
     async def test_every_event_counted_and_together_the_whole_request(self):
@@ -140,6 +144,28 @@ class CounterTest(unittest.IsolatedAsyncioTestCase):
         new = {e["id"] for e in claude.to_events(more)} - {e["id"] for e in claude.to_events(messages)}
         self.assertEqual(set(sent["counts"]), new)
         self.assertEqual(sent["preamble_counts"], [])                               # once per version
+
+    async def test_started_again_it_counts_only_what_the_store_has_not(self):
+        messages = turn()
+        events = claude.to_events(messages)
+        context = [dict(e, tokens=50 if e["type"] == claude.AGENT_REASONING else 1, counted=True) for e in events]
+        sent = await self.run_call(Counter(), messages, context=context, uncounted=[])   # a new process: all counted
+        self.assertEqual(sent["counts"] if sent else {}, {})
+        last = events[-1]["id"]
+        context[-1] = dict(context[-1], counted=False)
+        sent = await self.run_call(Counter(), messages, context=context, uncounted=[last])
+        self.assertEqual(set(sent["counts"]), {last})
+
+    async def test_started_again_it_takes_the_thinking_s_cost_from_the_store(self):
+        later = turn() + [{"role": "assistant", "content": [{"type": "thinking", "thinking": "", "signature": "sig-9"},
+                                                            {"type": "text", "text": "Five."}]},
+                          {"role": "user", "content": "Thanks."}]
+        events = claude.to_events(later)
+        first, ninth = [e["id"] for e in events if e["type"] == claude.AGENT_REASONING]
+        context = [dict(e, tokens=50, counted=True) if e["id"] == first else dict(e, tokens=1, counted=False)
+                   for e in events]
+        sent = await self.run_call(Counter(), later, context=context, uncounted=[])
+        self.assertEqual(sent["counts"], {ninth: 50})          # the new block alone, at its own cost
 
     async def test_ag_s_own_items_once_per_text(self):
         counter = Counter()
@@ -174,6 +200,9 @@ class CounterTest(unittest.IsolatedAsyncioTestCase):
 
 
 class FreshThinkingTest(unittest.TestCase):
+    """The thinking from before a build is left out, as the server marks the context: nothing is
+    remembered by the hook, so a hook started again leaves out what the last one did."""
+
     def history(self, tool_loop=False):
         out = [{"role": "system", "content": [{"type": "text", "text": "SUMMARY"}]}] + turn()[:4]
         if tool_loop:
@@ -183,45 +212,63 @@ class FreshThinkingTest(unittest.TestCase):
                     {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "ok"}]}]
         return out
 
+    def context(self, messages, opens, tokens=None):
+        """The server's context for `messages`: an ag item for the summary, each piece a stored event with
+        its id, the events before the piece at `opens` (an index into the pieces) marked before the basis
+        and that one as opening it -- None: no basis."""
+        out = []
+        for i, e in enumerate(claude.to_events(messages[1:])):
+            event = dict(e, tokens=(tokens or {}).get(i, 5), counted=True)
+            if opens is not None and i <= opens:
+                event["before_basis" if i < opens else "opens_basis"] = True
+            out.append(event)
+        return [{"type": "ag", "name": "earlier", "text": "SUMMARY", "made_id": 1}] + out
+
+    def piece(self, messages, match):
+        return next(i for i, e in enumerate(claude.to_events(messages[1:])) if match(e["payload"]))
+
     def signatures(self, messages):
         return [b.get("signature") for m in messages for b in (m["content"] if isinstance(m["content"], list) else [])
                 if b.get("type") == "thinking"]
 
     def test_none_under_the_history_itself(self):
-        self.assertEqual(Counter().fresh_thinking("g", "c", None, turn()), turn())
+        messages = self.history()
+        self.assertEqual(fresh_thinking(self.context(messages, None), messages), (messages, {}))
 
-    def test_from_the_switch_the_thinking_before_it_is_left_out(self):
-        counter = Counter()
-        self.assertEqual(self.signatures(counter.fresh_thinking("g", "c", "1", self.history())), [])
+    def test_the_thinking_before_the_switch_is_left_out_and_after_it_kept(self):
         later = self.history() + [{"role": "user", "content": "more"},
                                   {"role": "assistant", "content": [{"type": "thinking", "thinking": "", "signature": "sig-3"},
                                                                     {"type": "text", "text": "ok"}]},
                                   {"role": "user", "content": "and?"}]
-        self.assertEqual(self.signatures(counter.fresh_thinking("g", "c", "1", later)), ["sig-3"])   # made after it
+        opens = self.piece(later, lambda p: p.get("content") == [{"type": "text", "text": "more"}])
+        out, gone = fresh_thinking(self.context(later, opens), later)
+        self.assertEqual(self.signatures(out), ["sig-3"])                              # made after it
 
     def test_a_tool_loop_keeps_its_own_turn_s_thinking(self):
-        out = Counter().fresh_thinking("g", "c", "1", self.history(tool_loop=True))
+        messages = self.history(tool_loop=True)
+        opens = self.piece(messages, lambda p: p["content"][0].get("type") == "tool_result" and
+                           p["content"][0]["tool_use_id"] == "t2")
+        out, _ = fresh_thinking(self.context(messages, opens), messages)
         self.assertEqual(self.signatures(out), ["sig-2"])
 
-    def test_what_it_leaves_out_is_what_ag_counted_it_at(self):
-        counter = Counter()
-        counter.channel("g", "c").thinking["sig-1"] = 120               # counted at 120 before the switch
-        counter.fresh_thinking("g", "c", "1", self.history())
-        self.assertEqual(counter.left_out("g", "c"), 120)
-        counter.channel("g", "c").zeroed.add("sig-1")                    # since set to 0: nothing more off
-        counter.fresh_thinking("g", "c", "1", self.history())
-        self.assertEqual(counter.left_out("g", "c"), 0)
-        counter.fresh_thinking("g", "c", None, turn())
-        self.assertEqual(counter.left_out("g", "c"), 0)
+    def test_the_tool_loop_s_thinking_stays_once_its_turn_is_over(self):
+        messages = self.history(tool_loop=True)
+        opens = self.piece(messages, lambda p: p["content"][0].get("type") == "tool_result" and
+                           p["content"][0]["tool_use_id"] == "t2")
+        later = messages + [{"role": "assistant", "content": [{"type": "text", "text": "Done."}]},
+                            {"role": "user", "content": "next"}]
+        out, _ = fresh_thinking(self.context(later, opens), later)
+        self.assertEqual(self.signatures(out), ["sig-2"])                    # sent from the switch: sent after it
 
-    def test_a_new_build_leaves_out_what_came_before_it(self):
-        counter = Counter()
-        counter.fresh_thinking("g", "c", "1", self.history())
-        later = self.history() + [{"role": "user", "content": "more"},
-                                  {"role": "assistant", "content": [{"type": "thinking", "thinking": "", "signature": "sig-3"},
-                                                                    {"type": "text", "text": "ok"}]},
-                                  {"role": "user", "content": "and?"}]
-        self.assertEqual(self.signatures(counter.fresh_thinking("g", "c", "2", later)), [])
+    def test_what_it_leaves_out_is_what_the_store_has_it_at(self):
+        messages = self.history() + [{"role": "user", "content": "more"}]
+        opens = len(claude.to_events(messages[1:])) - 1
+        thinking = self.piece(messages, lambda p: p["content"][0].get("type") == "thinking")
+        _, gone = fresh_thinking(self.context(messages, opens, {thinking: 120}), messages)
+        event = claude.to_events(messages[1:])[thinking]["id"]
+        self.assertEqual(gone, {event: 120})
+        _, gone = fresh_thinking(self.context(messages, opens, {thinking: 0}), messages)   # since set to 0
+        self.assertEqual(sum(gone.values()), 0)
 
 
 @unittest.skipIf(web is None, "the hook server needs aiohttp")
@@ -248,7 +295,9 @@ class HookTest(unittest.IsolatedAsyncioTestCase):
                 self.asked.append((op, body))
                 if op != "rewrite":
                     return {}
-                ctx = [{"type": "ag", "name": "earlier", "text": "SUMMARY", "made_id": 3}] + body["events"]
+                events = [dict(e, before_basis=True) for e in body["events"][:-1]] + \
+                    [dict(e, opens_basis=True) for e in body["events"][-1:]]      # the first read of build 1
+                ctx = [{"type": "ag", "name": "earlier", "text": "SUMMARY", "made_id": 3}] + events
                 return {"context": ctx, "note": "ok", "read_id": 1, "basis": "1", "tokens": 10, "budget": 100000,
                         "sent_tokens": 10}
 
@@ -270,6 +319,42 @@ class HookTest(unittest.IsolatedAsyncioTestCase):
         counted = server.asked[1][1]
         self.assertEqual(counted["made"], {"3": cost({"type": "text", "text": "SUMMARY"}) + 2})
         self.assertEqual(counted["properties"], {"channel": "s"})
+
+
+    async def test_a_hook_started_again_keeps_the_thinking_from_after_the_switch(self):
+        class Server:
+            def __init__(self):
+                self.asked = []
+
+            async def request(self, op, body=None, timeout=None):
+                self.asked.append((op, body))
+                if op != "rewrite":
+                    return {}
+                events = [dict(e, opens_basis=True) if i == 0 else e for i, e in enumerate(body["events"])]
+                return {"context": events, "note": "ok", "read_id": 9, "basis": "1", "tokens": 10, "budget": 100000,
+                        "sent_tokens": 10, "uncounted": []}      # build 1 since the first message: none before it
+
+            async def stop(self):
+                pass
+
+        later = turn() + [{"role": "assistant", "content": [{"type": "thinking", "thinking": "", "signature": "sig-2"},
+                                                            {"type": "text", "text": "Five."}]},
+                          {"role": "user", "content": "Thanks."}]
+        for _ in range(2):                                     # a hook, then one started again
+            server = Server()
+            hook = claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda g: server), log=lambda g, l: None)
+            req = SimpleNamespace(method="POST", path="/v1/messages", label="g",
+                                  upstream=str(self.upstream.make_url("")).rstrip("/"),
+                                  headers={"X-Claude-Code-Session-Id": "s"}, limit=None, state={},
+                                  body={"model": "m", "system": SYSTEM, "tools": TOOLS, "messages": later})
+            out = await hook(req)
+            await hook.counter.close()
+            sent = out["messages"] if out else later
+            thinking = [b["signature"] for m in sent for b in (m["content"] if isinstance(m["content"], list) else [])
+                        if b.get("type") == "thinking"]
+            self.assertEqual(thinking, ["sig-1", "sig-2"])
+            counted = [b for op, b in server.asked if op == "counted"]
+            self.assertFalse(any(b.get("left_out") for b in counted))
 
 
 class ServerTest(unittest.TestCase):
@@ -310,6 +395,50 @@ class ServerTest(unittest.TestCase):
         other, = self.ask({"op": "counted", "gatherer": "s", "properties": {"channel": "elsewhere"},
                            "counts": {i: 7 for i in stored}})
         self.assertEqual(other["events"], 0)                  # another channel's are not touched
+
+    def test_a_read_answers_each_event_s_size_and_those_the_provider_has_not_counted(self):
+        events = codex.to_events([{"type": "message", "role": "user", "id": "u1",
+                                   "content": [{"type": "input_text", "text": "hi there"}]}])
+        stored = [e["id"] for e in events if e.get("id")]
+        first, = self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "events": events})
+        self.assertEqual(sorted(first["uncounted"]), sorted(stored))
+        mine = [e for e in first["context"] if e.get("id") in stored]
+        self.assertTrue(mine and all(e["counted"] is False and e["tokens"] > 0 for e in mine))
+        self.ask({"op": "counted", "gatherer": "s", "properties": {"channel": "c"}, "counts": {i: 1000 for i in stored}})
+        again, = self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "events": events})
+        self.assertEqual(again["uncounted"], [])
+        self.assertTrue(all(e["counted"] is True and e["tokens"] == 1000 for e in again["context"] if e.get("id") in stored))
+        other, = self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "elsewhere"}, "events": events})
+        self.assertEqual(sorted(other["uncounted"]), sorted(stored))       # another channel's events are its own
+
+    def test_the_switch_to_a_basis_is_the_event_its_first_read_responded_to(self):
+        self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"},
+                  "events": codex.to_events([{"type": "message", "role": "user", "id": "u1",
+                                              "content": [{"type": "input_text", "text": "hi"}]}])})
+        conn = sqlite3.connect(paths.db_path("s"))
+        for row, basis in ((10, None), (20, "5"), (30, "5")):
+            store_ops.record_read(conn, {"channel": "c"}, [], manager="m", basis=basis, row_id=row)
+        store_ops.record_read(conn, {"channel": "d"}, [], manager="m", basis="5", row_id=25)
+        self.assertEqual(store_ops.basis_opened(conn, {"channel": "c"}, "5"), 20)      # not 30, nor d's
+        self.assertIsNone(store_ops.basis_opened(conn, {"channel": "c"}, None))
+        store_ops.record_read(conn, {"channel": "c"}, [], manager="m", basis="6", row_id=40)
+        self.assertEqual(store_ops.basis_opened(conn, {"channel": "c"}, "6"), 40)
+        self.assertIsNone(store_ops.basis_opened(conn, {"channel": "c"}, "5"))         # no longer its basis
+        store_ops.record_read(conn, {"channel": "c"}, [], manager="m", basis="6", row_id=50)
+        self.assertEqual(store_ops.basis_opened(conn, {"channel": "c"}, "6"), 40)      # still: a restart changes nothing
+        conn.close()
+
+    def test_the_context_marks_the_events_before_its_switch(self):
+        events = claude.to_events(turn())
+        self.ask({"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "events": events})
+        conn = sqlite3.connect(paths.db_path("s"))
+        rows = [r for (r,) in conn.execute("SELECT row_id FROM events WHERE p_channel = 'c' ORDER BY row_id")]
+        ctx = Context(items=[{}] * len(rows), refs=[Ref(r) for r in rows], basis="5")
+        out = Manager.as_events(conn, ctx, opened=rows[2])
+        conn.close()
+        self.assertEqual([bool(e.get("before_basis")) for e in out], [True, True] + [False] * (len(rows) - 2))
+        self.assertEqual([bool(e.get("opens_basis")) for e in out], [False, False, True] + [False] * (len(rows) - 3))
+        self.assertEqual([e["id"] for e in out], [e["id"] for e in events])
 
     def test_the_read_log_keeps_what_each_call_sent_as_counted_then(self):
         user = {"type": "message", "role": "user", "id": "u1", "content": [{"type": "input_text", "text": "hi there"}]}

@@ -40,7 +40,7 @@ policy's event types declare (e.g. {"channel": <the harness's thread>});
 none: {}. `cwd` is the working directory the gatherer's pollers look at.
 
     {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?, "preamble"?, "process"?, "run"?}
-        -> {"context": [...] or null, "note", "read_id", "tokens", "budget", "sent_tokens", "basis"}
+        -> {"context": [...] or null, "note", "read_id", "tokens", "budget", "sent_tokens", "basis", "uncounted"}
                                                 one model call: insert, then read
                                                 in response to the last event; null: send
                                                 your own. `read_id` names the read, for
@@ -62,7 +62,15 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 none), `sent_tokens` all the call sends by that
                                                 count (every item, and the preamble), `basis`
                                                 what it was built from (null: the history as it
-                                                is); an `ag` item carries its `made_id`. A harness
+                                                is); an `ag` item carries its `made_id`, a stored
+                                                event its size as stored (`tokens`), whether
+                                                that is the provider's count (`counted`), and,
+                                                under a basis, `before_basis` when it came before
+                                                the event the context switched to that basis at
+                                                (the first read made from it, of the latest in a
+                                                row) or `opens_basis` when it is that event.
+                                                `uncounted`: the ids of the events given that the
+                                                provider has not counted yet (`counted`). A harness
                                                 that counts the context exactly before sending
                                                 it, and finds it over `budget`, reports that
                                                 count (`measured`) and asks again
@@ -478,7 +486,12 @@ class Server:
         note = f"{len(events)} events in (event {last}), {len(context)} out ({ags} ag)" + (" read only" if read_only else "") \
             + (f", compaction build: {built or 'none'}" if compacted else "")
         self.log(gatherer, prefix + note)
-        return {"context": context, "note": note, "read_id": answer["read_id"],
+        try:
+            uncounted = manager.uncounted(gatherer, properties, [e.get("id") for e in events if isinstance(e, dict)])
+        except Exception as exc:  # noqa: BLE001 - a harness that does not know counts them again
+            self.log(gatherer, prefix + f"could not tell which events are counted: {exc!r}")
+            uncounted = None
+        return {"context": context, "note": note, "read_id": answer["read_id"], "uncounted": uncounted,
                 **{k: answer.get(k) for k in ("tokens", "budget", "sent_tokens", "basis")}}
 
     def open(self, gatherer: str, properties: Dict[str, Any]) -> dict:

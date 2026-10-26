@@ -4,7 +4,8 @@
     properties  Spec, spec (what each type declares), property_values
     events      row_of, insert, insert_many, locate; Row, rows, read; high_water
     made items  make_item, made_items
-    read log    Ref, record_read, last_read, record_failed
+    read log    Ref, record_read, last_read, basis_opened, record_failed
+    counts      counted_rows, uncounted, record_counts
     polls       polled_at, mark_polled
     pending     record_pending, pending, clear_pending
     recaps      record_recap, recaps
@@ -458,6 +459,45 @@ def last_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = N
     return {"read_id": row[0], "read_at": row[1], "row_id": row[2], "manager": row[3], "basis": row[4],
             "est_tokens": row[5], "real_tokens": row[6], "limit_tokens": row[7], "fixed_tokens": fixed,
             "sent_tokens": row[9], "refs": refs}
+
+
+def basis_opened(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], basis: Optional[str]) -> Optional[int]:
+    """The row the context of these properties switched to `basis` at: the event the first of their latest
+    reads made from it, in a row, responded to. None for no basis, or when their latest read was made from
+    another (a read made from it now is the switch)."""
+    if basis is None:
+        return None
+    names, _ = _given(conn, properties, "a read")
+    given = {n: v for n, v in (properties or {}).items() if n in names}
+    same, values = _same(list(given)), _unset_is_empty(given.values())
+    before = conn.execute(f"SELECT max(read_id) FROM _reads WHERE {same}basis IS NOT ?", (*values, basis)).fetchone()[0]
+    row = conn.execute(f"SELECT row_id FROM _reads WHERE {same}read_id > ? ORDER BY read_id LIMIT 1",
+                       (*values, before or 0)).fetchone()
+    return row[0] if row else None
+
+
+def counted_rows(conn: sqlite3.Connection, row_ids) -> set:
+    """Those of the rows `row_ids` whose size is the provider's count (`record_counts`)."""
+    ids = sorted(set(row_ids))
+    if not ids:
+        return set()
+    return {r for (r,) in conn.execute(f"SELECT row_id FROM events WHERE counted = 1 AND row_id IN "
+                                       f"({','.join('?' * len(ids))})", ids)}
+
+
+def uncounted(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], event_ids) -> List[str]:
+    """Those of the events with these ids (and `properties`, as `record_counts` finds them) the provider
+    has not counted yet."""
+    ids = sorted({i for i in event_ids if isinstance(i, str)})
+    names = [n for n in identifying_names(conn) if properties and n in properties]
+    where = "".join(f" AND {property_column(n)} = ?" for n in names)
+    out = []
+    for start in range(0, len(ids), 500):                    # within SQLite's limit on parameters
+        chunk = ids[start:start + 500]
+        out += [i for (i,) in conn.execute(f"SELECT event_id FROM events WHERE counted IS NULL AND event_id IN "
+                                           f"({','.join('?' * len(chunk))}){where}",
+                                           (*chunk, *[properties[n] for n in names]))]
+    return out
 
 
 def record_preamble(conn: sqlite3.Connection, name: str, text: str, tokenizer) -> int:
