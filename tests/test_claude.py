@@ -166,6 +166,13 @@ class EventsTest(unittest.TestCase):
                   "</agent-message>\n\nThat \"other Claude session\" is an agent working inside this same session ..."}]}
         self.assertEqual(claude.classify(report), CONTEXT)
 
+    def test_another_sessions_message_is_not_the_user_speaking(self):
+        peer = {"role": "user", "content": [{"type": "text", "text":
+                'Another Claude session sent a message:\n<cross-session-message from="uds:/tmp/cc-socks/81007.sock" '
+                'from-name="ucbepic-actor-gatherer-6c" from-mode="prompting">\nYour test dashboard (:4822) ...\n'
+                "</cross-session-message>\n\nThis came from another Claude session -- not typed by your user ..."}]}
+        self.assertEqual(claude.classify(peer), CONTEXT)
+
     def test_after_a_compaction_the_prompt_of_a_command_typed_stays(self):
         summary = {"type": "text", "text": "This session is being continued from a previous conversation that ran out of context. ..."}
         sent = [{"role": "user", "content": [summary]},
