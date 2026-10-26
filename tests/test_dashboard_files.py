@@ -352,6 +352,16 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(len(count), 3)                                     # /context and /login run: not shown
         self.assertEqual(turns[3]["ran"], ["/context"])                     # only matched with what the page sent
 
+    def test_another_session_s_message_shows_among_the_messages_by_its_sender(self):
+        peer = ('Another Claude session sent a message:\n<cross-session-message from="uds:/tmp/cc-socks/81007.sock" '
+                'from-name="ucbepic-actor-gatherer-6c" from-mode="prompting">\nYour branch predates #108.\n\nMerge main.\n'
+                "</cross-session-message>\n\nThis came from another Claude session \u2014 not typed by your user ...")
+        self.add(asked("Build the hamster."), said("Building it."), note(peer), said("The other session is right."))
+        replies = files.files("g", "c1", cwd="/w")["turns"][-1]["replies"]
+        self.assertEqual(replies, [{"kind": "text", "text": "Building it."},
+                                   {"kind": "peer", "name": "ucbepic-actor-gatherer-6c", "text": "Your branch predates #108.\n\nMerge main."},
+                                   {"kind": "text", "text": "The other session is right."}])
+
     def test_files_claude_code_gives_the_agent_are_read_in_the_turn(self):
         start = ("<system-reminder>\nCodebase and user instructions are shown below.\n\nContents of /w/CLAUDE.md (project instructions, "
                  "checked into the codebase):\n\n# Project\n\nBe brief.\n\nContents of /h/.claude/projects/-w/memory/MEMORY.md (user's "

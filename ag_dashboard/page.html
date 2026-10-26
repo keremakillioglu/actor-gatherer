@@ -2055,7 +2055,13 @@ const BANG = /^\s*<bash-input>([\s\S]*?)(?:<\/bash-input>\s*)?$/;
 // ("<command-message>greet</command-message>\n<command-name>/greet</command-name>\n<command-args>Bob</command-args>"):
 // as the user typed it, "/greet Bob".
 const SLASH = /^\s*<command-message>[^<]*<\/command-message>\s*<command-name>\/?([^<]*)<\/command-name>\s*(?:<command-args>([\s\S]*?)<\/command-args>)?\s*$/;
+// What the user pasted, as Claude Code sends it when it is long -- one pasted in its terminal, or a long message from this
+// page's box, which is pasted there too: between <pasted_content id="55b6"> and </pasted_content id="55b6">. Its words
+// without the tags, a blank line either side of them.
+const PASTED = /\s*<\/?pasted_content\b[^>]*>\s*/g;
+const unpasted = (text) => text && text.includes("pasted_content") ? text.replace(PASTED, "\n\n").trim() : text;
 const asked = (text) => {
+  text = unpasted(text);
   const b = text && BANG.exec(text);
   if (b) return `! ${b[1].trim()}`;
   const c = text && SLASH.exec(text);
@@ -4321,13 +4327,16 @@ function filesTalk(d, info, running) {
   return box;
 }
 // Claude Code's own notes in a turn (files.py's `_note`), each a line among the messages, folded to it: a subagent's
-// report handed back (opened: the report). A skill it loaded is with the turn's commands, not here.
-const NOTED = { report: "Subagent's report:" };
+// report handed back, by its task; another session's message, by its first line, the session named (opened: the
+// whole). A skill it loaded is with the turn's commands, not here.
+const NOTED = { report: "Subagent's report:", peer: "Message from another session:" };
 function notedReply(r, id) {
+  const peer = r.kind === "peer";
   return el("details", { class: `fl-reply noted ${r.kind}`, id },
-    el("summary", { title: "Show or fold the report" },
-      el("span", { class: "dot", text: "●" }), el("span", { class: "lbl", text: NOTED[r.kind] }),
-      el("span", { class: "first", text: firstLine(r.name || r.text, 200) })),
+    el("summary", { title: peer ? "Show or fold the message" : "Show or fold the report" },
+      el("span", { class: "dot", text: "●" }),
+      el("span", { class: "lbl", text: peer && r.name ? `Message from ${r.name}:` : NOTED[r.kind] }),
+      el("span", { class: "first", text: firstLine(peer ? r.text : r.name || r.text, 200) })),
     r.text ? markdown(r.text, true) : el("div", { class: "fl-none", text: "Empty." }));
 }
 // A turn's first bubble; a command the user ran with `!` in a bash bubble: the command at its top, and under a rule

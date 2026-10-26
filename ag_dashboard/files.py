@@ -295,6 +295,9 @@ def _call_view(part: dict) -> dict:
 
 SKILL = re.compile(r"^\s*Base directory for this skill: ([^\n]*)\n+([\s\S]*?)(?:\n+ARGUMENTS: ([\s\S]*?))?\s*$")
 AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]*)"[^>]*>\n?([\s\S]*?)\n?</agent-message>')
+# another session's message, sent to this one (Claude Code's SendMessage across sessions), as it hands it on: the sender's
+# name in `from-name` (its socket in `from`), and after the tag Claude Code's own caution about it
+PEER_MESSAGE = re.compile(r'<cross-session-message\b([^>]*)>\n?([\s\S]*?)\n?</cross-session-message>')
 REPORT_FOLLOWS = "The report follows:\n"
 RAN = re.compile(r"^\s*<command-name>/?([^<]*)</command-name>\s*<command-message>[^<]*</command-message>"
                  r"\s*(?:<command-args>([\s\S]*?)</command-args>)?\s*$")
@@ -308,6 +311,7 @@ def _note(text: str) -> Optional[dict]:
     """What a note of Claude Code's in the conversation is, as the Chat view shows it; None for one it doesn't:
         {kind: "skill", name, args, text}   a skill's instructions, loaded by the Skill tool or the user's /name
         {kind: "report", from, text}        another session's message: a subagent's report as it hands back
+        {kind: "peer", name, text}          another session's message: one another Claude session sent this one
         {kind: "command", name}             a command the user ran that Claude Code runs itself (/context, /mcp): not
                                             shown, only matched with what was sent from the page
         {kind: "printed", text}             what a command the user ran with ! printed"""
@@ -321,6 +325,10 @@ def _note(text: str) -> Optional[dict]:
         if REPORT_FOLLOWS in body:                   # a hand-back: the report, each of its lines indented by Claude Code
             body = textwrap.dedent(body.split(REPORT_FOLLOWS, 1)[1])
         return {"kind": "report", "from": m.group(1), "text": body.strip()[:REPLY_CHARS]}
+    m = PEER_MESSAGE.search(text) if text.lstrip().startswith("Another Claude session sent a message:") else None
+    if m:
+        who = dict(re.findall(r'([\w-]+)="([^"]*)"', m.group(1)))
+        return {"kind": "peer", "name": who.get("from-name") or who.get("from") or "", "text": m.group(2).strip()[:REPLY_CHARS]}
     m = RAN.match(text)
     if m:
         args = (m.group(2) or "").strip()
@@ -717,12 +725,14 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     said[-1]["texts"].append(p["text"][:REPLY_CHARS])
                     head["last"] = None                      # shown after the call: the call is no longer the last
                 head["now"] = {"kind": "thinking"}
-            elif p["kind"] == "note":                        # Claude Code's own: a report, a skill loaded, a ! command's output
+            elif p["kind"] == "note":                        # Claude Code's own: a report, a message, a skill loaded, a ! command's output
                 n = _note(p.get("text") or "")
                 if n is None:
                     pass
                 elif n["kind"] == "report":
                     n["name"] = agents.get(n.pop("from"), "")
+                    head["replies"].append(n)
+                elif n["kind"] == "peer":
                     head["replies"].append(n)
                 elif n["kind"] == "skill":                   # among the calls, not the conversation (skilled)
                     order.append((cur, n))
