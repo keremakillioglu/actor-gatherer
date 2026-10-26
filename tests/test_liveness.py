@@ -94,6 +94,9 @@ class AgentsTest(HomeBase):
         self.pend([{"type": "agent_message", "payload": {}, "text": "Done."}], "end_turn")
         self.assertEqual(self.status()[:2], (data.IDLE, True))
         self.m.clear_pending("g", ch("c1"))
+        self.pend([{"type": "agent_message", "payload": {}, "text": "Writing the file."}], "streaming")
+        self.assertEqual(self.status()[:2], (data.RUNNING, False))      # what it wrote, the rest still streaming
+        self.m.clear_pending("g", ch("c1"))
         self.pend([{"type": "agent_message", "payload": {}, "text": "Running the tests."},
                    {"type": "tool_call", "payload": {}, "text": "pytest"}], "tool_use")
         self.assertEqual(self.status()[1], False)

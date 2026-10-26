@@ -108,7 +108,13 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 stores none (Claude Code's idle compaction, whose
                                                 history ends before the reply) keeps them. `answer`
                                                 names the answer (the provider's id), `stop`
-                                                why it stopped (end_turn, tool_use, ...);
+                                                why it stopped (end_turn, tool_use, ...), or
+                                                "streaming": the parts of an answer complete
+                                                while it streams, each time replacing those kept
+                                                for it before, until all of it does (a named
+                                                answer's events always replace its earlier
+                                                ones; none drops them); a rewrite that stores
+                                                nothing drops those still streaming;
                                                 `read_id`, the read the answered call's
                                                 context came from: when the answer came is
                                                 kept on it (`_reads.answered_at`), for good
@@ -159,6 +165,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from ag.ag_interface import Event, EventType, Property
 from ..store import paths
+from ..store.operations import STREAMING
 
 
 def log_line(gatherer: str, line: str) -> None:
@@ -427,6 +434,8 @@ class Server:
         try:
             if any(r is not None for r in inserted["rows"]):    # it stored something: the answers kept with it
                 manager.clear_pending(gatherer, properties)
+            elif not read_only:                                 # the channel's next turn: an answer still
+                manager.clear_pending(gatherer, properties, STREAMING)   # streaming broke off (a retry's)
         except Exception as exc:  # noqa: BLE001 - stale pending events never block the call
             self.log(gatherer, prefix + f"could not clear the pending events: {exc!r}")
         if last is None:
