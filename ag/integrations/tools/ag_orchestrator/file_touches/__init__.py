@@ -28,7 +28,7 @@ from collections import OrderedDict
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import check
-from .calls import calls_in, last_results, results_in
+from .calls import calls_in, last_results, opened as scripts_opened, results_in
 from .watch import LAG, Watcher
 
 SETTLE = 0.3                # seconds after a call's results arrive before they are checked: the watcher's
@@ -63,7 +63,7 @@ class Files:
                 self.open.pop((gatherer, channel), None)
                 return
             self.open[(gatherer, channel)] = {"at": since or time.time(), "calls": calls, "cwd": cwd,
-                                              "was": check.before(calls, cwd)}
+                                              "was": check.before(scripts_opened(calls)[0], cwd)}
             if self.watcher is not None:
                 self.watcher.watch(cwd)
         except Exception as exc:  # noqa: BLE001 - never in the way of the answer
@@ -83,6 +83,8 @@ class Files:
             else:
                 calls = calls_in(messages)
                 ids = [i for i in last_results(messages) if i in calls]
+            calls, results = scripts_opened({i: calls[i] for i in ids}, results)   # a script: the calls it makes
+            ids = [i for i in calls if i in results]
             if not ids:
                 return
             entries = [(i, calls[i][0], calls[i][1], results[i][0], results[i][1]) for i in ids]

@@ -15,9 +15,17 @@ What it decides, codex's own:
                    `x-codex-turn-metadata` header, else the body's `client_metadata`):
                    `thread_source` user is the thread's own turn; any other is a
                    side call of codex's own, in a thread of its own, and goes through
-                   as it is, nothing of it stored --
-        thread_title     a title for the thread, after its first message
-        system           a "catch-up" recap of the thread, its conversation pasted in
+                   as it is, nothing of it stored, but for two answers --
+        thread_title     a title for the thread, after its first message (codex's interactive
+                         UI only): its answer, {"title"}, kept as the thread's name (the
+                         server's `name`, by "codex": `_names`)
+        system           a "catch-up" recap of the thread (/recap), its conversation pasted
+                         in: its answer, {"summary", "next_action"}, kept as the thread's
+                         recap (the server's `recap`: `_recaps`)
+                         -- neither names the thread it is for, so the run tells: the thread
+                         whose own turn the same run (`request.run`, the /r/<run>/ codex's
+                         launcher puts in its URL) sent last; with no run, or no turn yet,
+                         not kept
         subagent         a subagent's thread (`parent_thread_id`): an agent it spawned,
                          /review's reviewer; what it found reaches the thread as a message
         guardian_review  the reviewer that approves an action for --approve-for-me
@@ -73,6 +81,9 @@ FILES = "codex_files"         # the same, for what the answer's calls do to file
 METADATA = "x-codex-turn-metadata"   # codex's header (and client_metadata key) saying what a call is for
 TURN = "user"                         # the thread_source of a thread's own turn; any other is a side call
 TRIGGER = "compaction_trigger"        # a compaction call's last item, which codex requires last
+SIDE = "codex_side"                   # the same, for a side call whose answer is kept: (kind, gatherer, thread)
+KEPT = ("thread_title", "system")     # the side calls whose answers are kept: a title, a recap
+NAME_CHARS = 120                      # the longest name kept (codex asks for 36 characters at most)
 
 
 def load_adaptor(spec: str) -> Adaptor:
@@ -143,6 +154,18 @@ def texts_of(item) -> list:
     return [p["text"] for p in parts or [] if isinstance(p, dict) and isinstance(p.get("text"), str)]
 
 
+def answer_object(answer: dict) -> dict:
+    """What a side call's answer says, read as the JSON object codex asked for (its output schema): the
+    text of its messages; {} when it is not one."""
+    text = "".join(t for item in answer.get("output_items") or [] if isinstance(item, dict)
+                   and item.get("type") == "message" for t in texts_of(item))
+    try:
+        found = json.loads(text)
+    except ValueError:
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
 def cwd_of(items: list) -> Optional[str]:
     """The agent's working directory, as the last <environment_context> in
     the input states it -- its <cwd>, or, where codex writes none, the first
@@ -185,6 +208,8 @@ class CodexContextManager:
         if files not in ("on", "off"):
             raise ValueError(f"files: {files!r}, not on or off")
         self.files = Files(self.ag_clients, log) if files == "on" else None
+        self.runs = {}                    # (label, run) -> (gatherer, thread): the thread whose own turn it sent last
+        self.latest = {}                  # (gatherer, thread) -> the read its newest call's context came from
 
     async def __call__(self, request) -> Optional[dict]:
         body, since = request.body, time.time()
@@ -196,10 +221,17 @@ class CodexContextManager:
             return None
         gatherer, channel = (request.label, thread) if request.label else (thread, thread)
         metadata = metadata_of(request.headers, body)
-        kind = side_call(metadata)
+        kind, run = side_call(metadata), getattr(request, "run", None)
         if kind is not None:
-            self.log(gatherer, f"[{channel}] codex's own {kind} call: as it is, not stored")
+            of = self.runs.get((request.label, run)) if kind in KEPT and run else None
+            if of is not None and isinstance(getattr(request, "state", None), dict):
+                request.state[SIDE] = (kind, *of)
+                self.log(of[0], f"[{channel}] codex's own {kind} call, for {of[1]}: as it is, its answer kept")
+            else:
+                self.log(gatherer, f"[{channel}] codex's own {kind} call: as it is, not stored")
             return None
+        if run:
+            self.runs[(request.label, run)] = (gatherer, channel)
         items, out = body["input"], {}
         cwd = cwd_of(items) or self.cwd
         compaction = compaction_split(metadata, items)
@@ -215,9 +247,11 @@ class CodexContextManager:
                                        cwd, items, self.adaptor, out=out,
                                        limit=getattr(request, "limit", None),
                                        preamble=preamble_of({"instructions": body.get("instructions"), "tools": body.get("tools")}),
-                                       process=getattr(request, "process", None))
+                                       process=getattr(request, "process", None), run=run)
         self.log(gatherer, f"[{channel}] {note}")
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
+        if isinstance(out.get("read_id"), int):
+            self.latest[(gatherer, channel)] = max(out["read_id"], self.latest.get((gatherer, channel), 0))
         if messages is None or messages == items:
             return None                                   # nothing to change: codex's own bytes go through
         return dict(body, input=messages)
@@ -264,6 +298,8 @@ class CodexContextManager:
         if kept is None or not isinstance(answer, dict) or not answer.get("output_items") or not answer.get("response_id"):
             return
         gatherer, channel, cwd = kept
+        if self.overtaken(request, gatherer, channel):
+            return
         note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
                                 answer["output_items"], self.adaptor, answer["response_id"], STREAMING)
         self.log(gatherer, f"[{channel}] streaming: {note}")
@@ -273,17 +309,55 @@ class CodexContextManager:
         as events, kept as pending (the server's `pending`) until the thread's next call stores them
         -- so a reader of the gatherer sees the turn's last reply, which no call carries until the
         user writes again, and a tool call while it runs; in place of the items kept while it streamed
-        (`streamed`). A failed answer, or one with no output, is not kept."""
+        (`streamed`). A failed answer, or one with no output, is not kept; nor one a later call of the
+        thread has carried back already (`overtaken`). A side call's answer is kept for its thread
+        (`side_answered`): a title, a recap."""
+        side = (getattr(request, "state", None) or {}).get(SIDE)
+        if side is not None:
+            return await self.side_answered(side, status, answer)
         kept = (getattr(request, "state", None) or {}).get(ANSWERED)
         if kept is None or status != 200:
             return
         if not isinstance(answer, dict) or answer.get("error") or not answer.get("output_items"):
             return
         gatherer, channel, cwd = kept
+        if self.overtaken(request, gatherer, channel):
+            return
         note = await pending_ag(self.ag_clients.client(gatherer), gatherer, {CHANNEL: channel}, cwd,
                                 answer["output_items"], self.adaptor, answer.get("response_id"),
                                 answer.get("status"), read_of(request))
         self.log(gatherer, f"[{channel}] answered ({answer.get('status')}): {note}")
+
+    def overtaken(self, request, gatherer: str, channel: str) -> bool:
+        """Whether a later call of the thread has been read since this one: codex sends its next call
+        once it has the whole answer -- before the end of its stream is written, before the hook server
+        is done with it -- and that call carries this answer back, stored. Kept as pending now, it would
+        show twice until the thread's next call."""
+        read_id = read_of(request)
+        return isinstance(read_id, int) and read_id < self.latest.get((gatherer, channel), 0)
+
+    async def side_answered(self, side: Tuple[str, str, str], status: int, answer: dict) -> None:
+        """A side call's answer, kept for the thread it was for: a title as its name (by "codex"); a recap
+        -- its summary, and the next action when it says one -- as its recap. Not kept: a failed answer, or
+        one that is not what codex asked for ({"title"}, {"summary", "next_action"})."""
+        kind, gatherer, thread = side
+        got = answer_object(answer) if status == 200 and isinstance(answer, dict) and not answer.get("error") else {}
+        if kind == "thread_title":
+            text = " ".join(str(got.get("title") or "").split())[:NAME_CHARS]
+            op, body = "name", {"gatherer": gatherer, "session": thread, "text": text, "by": "codex"}
+        else:
+            summary, then = str(got.get("summary") or "").strip(), str(got.get("next_action") or "").strip()
+            text = summary + (f"\n\nNext: {then}" if summary and then else "")
+            op, body = "recap", {"gatherer": gatherer, "session": thread, "text": text}
+        if not text:
+            self.log(gatherer, f"[{thread}] codex's {kind}: nothing to keep ({status})")
+            return
+        try:
+            kept = await self.ag_clients.client(gatherer).request(op, body)
+        except Exception as exc:  # noqa: BLE001 - a lost name or recap never breaks the call
+            kept = {"error": repr(exc)}
+        self.log(gatherer, f"[{thread}] {op}: " + ("kept" if isinstance(kept, dict) and not kept.get("error")
+                                                   else f"not kept: {kept}"))
 
     async def close(self) -> None:
         """Let file checks under way finish, then stop every gatherer's server."""

@@ -412,22 +412,23 @@ def record_read(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], 
                 manager: str, basis: Optional[str] = None, row_id: Optional[int] = None,
                 est_tokens: Optional[int] = None, limit_tokens: Optional[int] = None,
                 preamble_ids: Optional[List[int]] = None, sent_tokens: Optional[int] = None,
-                process: Optional[Dict[str, Any]] = None) -> int:
+                process: Optional[Dict[str, Any]] = None, run: Optional[str] = None) -> int:
     """Log one read: a `_reads` row (with its properties, `row_id`, the
     event it responded to, `est_tokens`, the context's size by the
     manager's count, `limit_tokens`, the harness's own limit the call
     stated, `preamble_ids`, the _preambles it sent besides its messages, and
-    `sent_tokens`, all of it as counted now, and `process`, {"pid", "started"}, the harness's process
-    that made the call), and a `_read_items` row per item it returned, in order. Returns the read_id."""
+    `sent_tokens`, all of it as counted now, `process`, {"pid", "started"}, the harness's process
+    that made the call, and `run`, the harness's run that made it, as its launcher named it), and a
+    `_read_items` row per item it returned, in order. Returns the read_id."""
     names, values = _given(conn, properties, "a read")
     preamble = json.dumps(list(preamble_ids)) if preamble_ids else None
     pid, started = (process.get("pid"), process.get("started")) if isinstance(process, dict) else (None, None)
     with conn:
         cur = conn.execute(f"INSERT INTO _reads (read_at, row_id, manager, basis, est_tokens, limit_tokens, preamble_json, "
-                           f"sent_tokens, pid, pid_started{_columns(names)}) "
-                           f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?{', ?' * len(names)})",
+                           f"sent_tokens, pid, pid_started, run{_columns(names)}) "
+                           f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?{', ?' * len(names)})",
                            (_now(), row_id, manager, basis, est_tokens, limit_tokens, preamble, sent_tokens,
-                            pid, started, *values))
+                            pid, started, run, *values))
         read_id = cur.lastrowid
         conn.executemany("INSERT INTO _read_items (read_id, position, row_id, made_id) VALUES (?, ?, ?, ?)",
                          [(read_id, i, r.row_id, r.made_id) for i, r in enumerate(refs)])
@@ -664,6 +665,22 @@ def recaps(conn: sqlite3.Connection, session: Optional[str] = None) -> List[dict
         rows = conn.execute("SELECT recap_id, session, made_at, text FROM _recaps WHERE recap_id IN "
                             "(SELECT max(recap_id) FROM _recaps GROUP BY session) ORDER BY recap_id")
     return [{"recap_id": r[0], "session": r[1], "made_at": r[2], "text": r[3]} for r in rows]
+
+
+# ---------------------------------------------------------------- names
+
+def record_name(conn: sqlite3.Connection, session: str, text: str, by: str) -> None:
+    """Keep `by`'s name for `session` (`_names`), named now, in place of the one `by` gave before."""
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO _names (session, by, named_at, text) VALUES (?, ?, ?, ?)",
+                     (session, by, _now(), text))
+
+
+def names(conn: sqlite3.Connection, session: Optional[str] = None) -> List[dict]:
+    """Every session's names -- or one session's -- newest last: {session, by, named_at, text}."""
+    rows = conn.execute("SELECT session, by, named_at, text FROM _names" + (" WHERE session = ?" if session else "")
+                        + " ORDER BY named_at", (session,) if session else ())
+    return [{"session": r[0], "by": r[1], "named_at": r[2], "text": r[3]} for r in rows]
 
 
 # ---------------------------------------------------------------- touches

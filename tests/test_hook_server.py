@@ -73,6 +73,14 @@ class RouteOfTest(unittest.TestCase):
         self.assertEqual(route_of("/h/bad name/v1"), (None, "/h/bad name/v1"))    # not a label: as it is
         self.assertEqual(route_of("/sx/demo/v1"), (None, "/sx/demo/v1"))
 
+    def test_the_url_s_run(self):
+        run_of = __import__("ag.integrations.tools.hook_server.hook_server", fromlist=["run_of"]).run_of if web else None
+        if run_of is None:
+            self.skipTest("the hook server needs aiohttp")
+        self.assertEqual(run_of("/r/4242/l/100/v1/responses"), ("4242", "/l/100/v1/responses"))
+        self.assertEqual(run_of("/v1/x"), (None, "/v1/x"))
+        self.assertEqual(run_of("/r/bad run/v1"), (None, "/r/bad run/v1"))
+
 
 @unittest.skipIf(web is None, "the hook server needs aiohttp")
 class HookServerTest(unittest.IsolatedAsyncioTestCase):
@@ -166,6 +174,13 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         await self.client.post("/h/demo/v1/chat", json={"messages": ["x"]})
         self.assertEqual((self.hook.seen[-1].label, self.hook.seen[-1].path), ("demo", "/v1/chat"))
         self.assertEqual(self.received[-1][1], "/v1/chat")
+        self.assertIsNone(self.hook.seen[-1].run)
+
+    async def test_the_run_is_given_to_the_hook_and_stripped_with_the_label_and_limit(self):
+        await self.client.post("/h/demo/r/4242/l/1000/v1/chat", json={"messages": ["x"]})
+        seen = self.hook.seen[-1]
+        self.assertEqual((seen.label, seen.run, seen.limit, seen.path), ("demo", "4242", 1000, "/v1/chat"))
+        self.assertEqual(self.received[-1][1], "/v1/chat")
 
     async def test_answered_gets_the_whole_answer_after_the_harness_has_it(self):
         class Answered(ToyHook):
@@ -212,6 +227,41 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         finally:
             await client.close()
         self.assertEqual(hook.order, [("before_end", 200, True), ("answered", 200)])   # when the answer began: known
+
+    async def test_answered_even_when_the_harness_hangs_up_before_the_stream_s_end(self):
+        class HangUp(ToyHook):                               # codex closes once it has the whole answer
+            async def __call__(self, request):
+                request.state["kept"] = True
+                return await super().__call__(request)
+
+            async def before_end(self, request, status, answer):
+                await asyncio.sleep(0.3)                     # the harness hangs up meanwhile
+
+            async def answered(self, request, status, answer):
+                self.answers.append(status)
+
+        hook = HangUp()
+        hook.answers = []
+        runner = web.AppRunner(hook_server.make_app(str(self.upstream.make_url("")).rstrip("/"), hook))
+        await runner.setup()                                 # as run_app serves it: a hang-up cancels no handler
+        site = web.TCPSite(runner, "127.0.0.1", 0)           # (TestServer's would)
+        await site.start()
+        try:
+            reader, writer = await asyncio.open_connection(*runner.addresses[0][:2])
+            body = json.dumps({"messages": ["hi"]}).encode()
+            writer.write(b"POST /v1/chat HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                         + f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+            got = b""
+            while b"data: two" not in got:                   # the whole answer, not yet its end
+                got += await asyncio.wait_for(reader.read(4096), 5)
+            writer.close()
+            for _ in range(50):
+                if hook.answers:
+                    break
+                await asyncio.sleep(0.05)
+        finally:
+            await runner.cleanup()
+        self.assertEqual(hook.answers, [200])
 
     async def test_streamed_gets_each_part_as_it_ends_while_the_answer_streams(self):
         """The upstream holds the rest of its answer until the hook has been given the text that came

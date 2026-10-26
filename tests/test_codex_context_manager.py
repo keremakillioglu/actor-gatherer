@@ -204,6 +204,83 @@ class SideCallTest(HookTest):
             self.assertEqual(FakeClient.made, [], source)                # no server asked: nothing stored
             self.assertNotIn(codex_ag.ANSWERED, request.state)           # its answer not kept either
 
+    def test_a_title_and_a_recap_are_kept_for_the_thread_their_run_last_turned_in(self):
+        import asyncio
+        hook = self.hook()
+        turn = self.request({"input": [DEV, user("Add 2 and 3", 1)]}, label="demo", headers=meta(thread_source="user"))
+        turn.run, turn.state = "4242", {}
+        self.call(hook, turn)
+        said = lambda text: {"output_items": [{"type": "message", "role": "assistant",
+                                               "content": [{"type": "output_text", "text": text}]}]}
+        for source, text in (("thread_title", '{"title": "Add 2 and 3"}'),
+                             ("system", '{"summary": "2 + 3 is 5.", "next_action": "Multiply it."}')):
+            side = self.request({"input": [DEV, user("...", 1)]}, label="demo", headers={**meta(thread_source=source),
+                                                                                        "thread-id": "side"})
+            side.run, side.state = "4242", {}
+            self.assertIsNone(self.call(hook, side))                      # as it is
+            asyncio.run(hook.answered(side, 200, said(text)))
+        client = hook.ag_clients.client("demo")
+        kept = [(op, body) for op, body in client.requests if op in ("name", "recap")]
+        self.assertEqual(kept, [("name", {"gatherer": "demo", "session": "t1", "text": "Add 2 and 3", "by": "codex"}),
+                                ("recap", {"gatherer": "demo", "session": "t1", "text": "2 + 3 is 5.\n\nNext: Multiply it."})])
+        self.assertNotIn("pending", [op for op, _ in client.requests])     # never the thread's own answer
+
+    def test_an_answer_a_later_call_has_carried_back_is_not_kept_as_pending(self):
+        """Codex sends its next call once it has the whole answer, before the hook server is done with
+        it: that call stores the answer, so keeping it as pending then would show it twice."""
+        import asyncio
+        hook = self.hook()
+        reads = iter(range(1, 10))
+        hook.ag_clients.client("t1").answer = lambda body: {"context": body["events"], "note": "ok", "read_id": next(reads)}
+        first, second = (self.request({"input": [DEV, user("q", 1)]}, headers=meta(thread_source="user")) for _ in range(2))
+        for r in (first, second):
+            r.state = {}
+            self.call(hook, r)                              # reads 1 and 2
+        said = {"output_items": [{"type": "message", "role": "assistant", "id": "m1",
+                                  "content": [{"type": "output_text", "text": "done"}]}], "response_id": "resp_1"}
+        asyncio.run(hook.streamed(first, said))
+        asyncio.run(hook.answered(first, 200, said))       # read 2 is under way: read 1's answer is in it
+        asyncio.run(hook.answered(second, 200, dict(said, response_id="resp_2")))
+        kept = [b["answer"] for op, b in hook.ag_clients.client("t1").requests if op == "pending"]
+        self.assertEqual(kept, ["resp_2"])
+
+    def test_a_turn_s_run_is_sent_with_it(self):
+        hook = self.hook()
+        for run in ("4242", None):
+            turn = self.request({"input": [DEV, user("q", 1)]}, headers=meta(thread_source="user"))
+            turn.run, turn.state = run, {}
+            self.call(hook, turn)
+        (_, first), (_, second) = [r for r in hook.ag_clients.client("t1").requests if r[0] == "rewrite"]
+        self.assertEqual((first.get("run"), "run" in second), ("4242", False))
+
+    def test_a_side_call_from_no_run_another_run_or_before_a_turn_is_not_kept(self):
+        import asyncio
+        title = {"output_items": [{"type": "message", "content": [{"type": "output_text", "text": '{"title": "T"}'}]}]}
+        for runs in ((None, None), ("1", "2"), (None, "1")):        # no run said; another run's turn; no turn yet
+            hook = self.hook()
+            if runs[0] is not None:
+                turn = self.request({"input": [DEV, user("q", 1)]}, headers=meta(thread_source="user"))
+                turn.run, turn.state = runs[0], {}
+                self.call(hook, turn)
+            side = self.request({"input": [DEV, user("q", 1)]}, headers=meta(thread_source="thread_title"))
+            side.run, side.state = runs[1], {}
+            self.call(hook, side)
+            self.assertNotIn(codex_ag.SIDE, side.state, runs)
+            asyncio.run(hook.answered(side, 200, title))
+            self.assertNotIn("name", [op for c in FakeClient.made for op, _ in c.requests], runs)
+
+    def test_a_side_answer_that_is_not_what_codex_asked_for_is_not_kept(self):
+        import asyncio
+        hook = self.hook()
+        said = lambda text: {"output_items": [{"type": "message", "content": [{"type": "output_text", "text": text}]}]}
+        for status, answer in ((200, said("Add 2 and 3")), (200, said('{"title": " "}')), (500, said('{"title": "T"}')),
+                               (200, {"error": "x"}), (200, said('{"summary": ""}'))):
+            asyncio.run(hook.side_answered(("thread_title" if "summary" not in str(answer) else "system", "demo", "t1"),
+                                           status, answer))
+        self.assertEqual([op for c in FakeClient.made for op, _ in c.requests], [])
+        self.assertEqual(codex_ag.answer_object(said('{"title": "T"}')), {"title": "T"})
+        self.assertEqual(codex_ag.answer_object(said("[1]")), {})
+
     def test_a_turn_is_rewritten(self):
         out = self.call(self.hook(), self.request({"input": [DEV, user("q", 1)]}, headers=meta(thread_source="user")))
         self.assertEqual(out["input"], [MANAGED, DEV, user("q", 1)])

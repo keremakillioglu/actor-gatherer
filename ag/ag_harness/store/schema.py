@@ -22,11 +22,13 @@ One SQLite file per gatherer (paths.py):
                          call stores its events (internal)
     _recaps              the harness's recaps of a session (Claude Code's "while you were
                          away" summary), each with when it was made: never history (internal)
+    _names               a session's name, as whoever named it gave it (codex's title for its
+                         thread): never history (internal)
     _touches             what each tool call did to files, as the hook server found them on
                          disk once its result was in: never history (internal)
 
 A leading underscore marks a table internal to the manager (`_made_items`,
-`_reads`, `_read_items`, `_polls`, `_pending`, `_recaps`, `_touches`), which the agent has no reason to know about; the
+`_reads`, `_read_items`, `_polls`, `_pending`, `_recaps`, `_names`, `_touches`), which the agent has no reason to know about; the
 others (`event_types`, `events`) it may be pointed at. Operations on these
 tables are in operations.py.
 
@@ -128,6 +130,8 @@ CREATE TABLE IF NOT EXISTS _reads (
                                     -- left out, as it reports); NULL = not known
     pid         INTEGER,            -- the harness's process that made the call, and when it started
     pid_started TEXT,               -- ("<boot id>:<start ticks>", so a reused pid is not it); NULL = not known
+    run         TEXT,               -- the harness's run that made the call, as its launcher named it (the hook
+                                    -- server's /r/<run>/: codex's, the id of the process ag started); NULL = none
     error_status INTEGER,           -- the call failed: the HTTP status its endpoint answered; NULL = it did not
                                     -- fail, or no answer came at all (`error` says why)
     error       TEXT,               -- why the call failed, as the hook server saw it: the endpoint's message, or
@@ -191,6 +195,18 @@ CREATE TABLE IF NOT EXISTS _recaps (
     text        TEXT    NOT NULL    -- the recap, as the model wrote it
 );
 CREATE INDEX IF NOT EXISTS _recaps_session ON _recaps (session, recap_id);
+
+-- A session's name: one per session and namer, the newest kept -- the harness's (codex's title for its
+-- thread, which it asks its model for after the first message) or another's ("user": one typed, which a
+-- reader puts before the others). Not history: never read
+-- back as events, never in a context; kept for a reader of the gatherer (the dashboard's actor list).
+CREATE TABLE IF NOT EXISTS _names (
+    session     TEXT    NOT NULL,   -- the session: its calls' `channel`
+    by          TEXT    NOT NULL,   -- who named it: "codex", ...
+    named_at    TEXT    NOT NULL,   -- when (UTC, ISO)
+    text        TEXT    NOT NULL,   -- the name
+    PRIMARY KEY (session, by)
+);
 
 -- What each tool call of a session did to files, as the hook server found them on disk right after the
 -- call ran (ag/integrations/tools/ag_orchestrator/file_touches/): a row per call, file and how; a row with no path says
@@ -260,7 +276,7 @@ def create(conn: sqlite3.Connection) -> None:
     for column, kind in (("est_tokens", "INTEGER"), ("real_tokens", "INTEGER"), ("limit_tokens", "INTEGER"),
                          ("preamble_json", "TEXT"), ("sent_tokens", "INTEGER"), ("pid", "INTEGER"),
                          ("pid_started", "TEXT"), ("error_status", "INTEGER"),
-                         ("error", "TEXT"), ("answered_at", "TEXT")):                           # a file from before reads had them
+                         ("error", "TEXT"), ("answered_at", "TEXT"), ("run", "TEXT")):                           # a file from before reads had them
         if column not in read_columns:
             conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} {kind}")
     if "yields" not in {c[1] for c in conn.execute("PRAGMA table_info(_open)")}:     # a file from before holders yielded

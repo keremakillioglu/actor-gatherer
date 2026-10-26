@@ -5,6 +5,9 @@ what it changed, at the lines where: by an edit tool, or by a shell command whos
 read from it (`cat > F <<EOF`, `tee`, `sed -i`, a Python script that replaces constant strings in a
 file and writes it back).
 
+A codex code-mode call (`exec`: a script that calls the other tools) is read as the calls its script
+makes (commands.opened_script), each in the list of commands and touching files as itself would.
+
 A turn is what follows one of the user's messages, up to the next -- not counting one written while
 the turn ran (Claude Code sent it mid-turn, or held it until the turn ended), which is part of it. Each call is read from the
 event's parts (data.parts), so whichever harness wrote it; only the tools' names differ.
@@ -33,8 +36,8 @@ from typing import Dict, List, Optional
 from . import data, queued
 from . import home as paths
 from .commands import (  # noqa: F401 - python_changes: tested here
-    EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, python_changes, shell_changes,
-    shell_reads)
+    CODE_MODE, EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, opened_script,
+    python_changes, script_calls, script_output, shell_changes, shell_reads)
 
 MAX_ROWS = 4000            # the most lines one file shows in a turn
 HELD_SECONDS = 30          # a message held until its turn ended: stored this close to when Claude Code sent it
@@ -63,9 +66,9 @@ def _unsplit(name: str, text: str) -> dict:
 
 def _temporary_roots() -> tuple:
     roots = set()
-    for r in ("/tmp", "/var/tmp", "/var/folders", tempfile.gettempdir(), os.environ.get("TMPDIR") or ""):
-        if r:
-            roots |= {os.path.normpath(r), os.path.realpath(r)}        # macOS's /tmp is /private/tmp
+    for r in ("/tmp", "/private/tmp", "/var/tmp", "/var/folders", tempfile.gettempdir(), os.environ.get("TMPDIR") or ""):
+        if r:                                                          # macOS's /tmp is /private/tmp: named
+            roots |= {os.path.normpath(r), os.path.realpath(r)}        # either way, on any system
     return tuple(sorted(roots))
 
 
@@ -241,7 +244,11 @@ class _Turn:
 
 
 def _label(name: str, inp: dict, raw, cwd: str) -> str:
-    """A call in a line: its own description, else its tool and what it worked on."""
+    """A call in a line: its own description, else its tool and what it worked on -- a code-mode
+    script, the calls it makes."""
+    if name == CODE_MODE and isinstance(raw, str) and script_calls(raw):
+        return " · ".join(_label(n, a if isinstance(a, dict) else {"input": a}, a, cwd) or n
+                          for n, a in script_calls(raw))[:200]
     if isinstance(inp.get("description"), str) and inp["description"].strip():
         return inp["description"].strip()[:200]
     if name in SHELLS:
@@ -284,6 +291,21 @@ def short_path(path: str, cwd: str) -> str:
         return "memory" + (m.group(1) or "")
     home = os.path.expanduser("~")
     return "~" + path[len(home):] if path.startswith(home + "/") else path
+
+
+def _opened(part: dict, result: Optional[dict]) -> List[tuple]:
+    """[(call, its result)]: a code-mode script's calls, each with its own result (commands.opened_script),
+    as the hook server checked them -- the last also with what the script printed (`printed`), shown as its
+    output; any other call as it is."""
+    raw = part.get("input")
+    inner = opened_script(part.get("id"), raw, None if result is None else (result.get("text") or "", bool(result.get("error")))) \
+        if part.get("name") == CODE_MODE and isinstance(raw, str) and part.get("id") else []
+    if not inner:
+        return [(part, result)]
+    printed = script_output(result.get("text") or "")[0] if result is not None else ""
+    return [(dict(part, id=iid, name=name, input=inp),
+             None if got is None else dict(result, text=got[0], error=got[1], printed=printed if n == len(inner) else got[0]))
+            for n, (iid, name, inp, got) in enumerate(inner, 1)]
 
 
 def _call_view(part: dict) -> dict:
@@ -539,7 +561,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         if rec:                                                 # every call, in order, with the files it touched
             rec.current = None if name in ("TodoWrite", "update_plan") else {
                 "text": _label(name, inp, part.get("input"), cwd), "error": error, "running": result is None,
-                "call": view, "output": text[:COMMAND_OUTPUT], "files": []}
+                "call": view, "output": (result or {}).get("printed", text)[:COMMAND_OUTPUT], "files": []}
             if rec.current:
                 rec.commands.append(rec.current)
         rows = touched.get(part.get("id")) if part.get("id") and result is not None else None
@@ -749,8 +771,9 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
             loaded(t, p)
         elif p["kind"] == "skill":
             skilled(t, p)
-        else:
-            apply(t, p, results.get(p.get("id")) if p.get("id") else None)
+        else:                                        # a codex script: the calls it makes
+            for q, r in _opened(p, results.get(p.get("id")) if p.get("id") else None):
+                apply(t, q, r)
     out = {"turns": [h.head for h in heads], "turn": pick if heads else None, "files": [], "commands": [],
            "home": os.path.expanduser("~")}
     if want is None:

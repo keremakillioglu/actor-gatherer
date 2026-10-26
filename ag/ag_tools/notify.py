@@ -13,6 +13,7 @@ when it stops. Every write sends each socket there one datagram, a JSON object:
                   events    rows in `events` (an insert, a poll, a bulk load); `row`: the last one
                   pending   `_pending` rows kept or cleared
                   recap     a recap of a session kept in `_recaps`; `row`: its recap_id
+                  name      a session's name kept in `_names`
                   read      a read logged in `_reads` (its made items with it); `row`: its read_id
                   counts    sizes recorded after a call (`record_counts`, `record_real_tokens`)
                   failed    a read's model call failed (`record_failed`); `row`: its read_id
