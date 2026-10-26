@@ -533,6 +533,13 @@ button:disabled { opacity: .5; cursor: default; }
 .asking-note details > summary { cursor: pointer; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
 .asking-note .plan { max-width: 900px; margin-top: 8px; padding: 2px 14px 10px; background: var(--page); border: 1px solid var(--ring); border-radius: 8px; }
 .asking-note .md :is(h1, h2, h3) { font-size: 14px; margin: 10px 0 4px; }
+/* codex's proposed plan in a message (markdown()'s): a card headed "Proposed plan", as the plan in the note above */
+.md .proposed-plan { max-width: 900px; margin: 4px 0 10px; padding: 8px 14px 10px; background: var(--page); border: 1px solid var(--ring); border-radius: 8px; }
+.md .proposed-plan > .pp-head { margin-bottom: 6px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.md > .md + .proposed-plan, .md > .proposed-plan + .md { margin-top: 10px; }
+.md > .proposed-plan:first-child { margin-top: 0; } .md > .proposed-plan:last-child { margin-bottom: 0; }
+.term .md .proposed-plan { background: none; border-color: var(--term-rule); }
+.term .md .proposed-plan > .pp-head { color: var(--term-dim); }
 .asking-note .foot { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 8px 10px 8px 14px;
   border-top: 1px solid var(--ring); background: var(--wash); }
 .asking-note .foot .say { flex: 1 1 220px; min-width: 0; color: var(--muted); font-size: 12px; }
@@ -1052,8 +1059,8 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-bar .g.ok { background: var(--good); } .files .fl-bar .sub.ok { color: var(--ink-2); }
 .files .fl-bar .g.err { background: var(--critical); } .files .fl-bar .sub.err { color: var(--critical); }
 .files .fl-bar .g.run { background: var(--warning); animation: term-blink 1s steps(2) infinite; } .files .fl-bar .sub.run { color: var(--warning); }
-.files .fl-bar .it.bg { padding-top: 12px; border-top: 1px solid var(--ring); width: 18px; }   /* the background apart from the commands */
-.files .fl-bar .g.bg { width: 7px; height: 7px; background: var(--good); }   /* the Background dot */
+.files .fl-bar .sub.kd { color: var(--ink-2); }   /* the files of a kind, by its colour in the tree */
+.files .fl-bar .g.bg { background: var(--good); } .files .fl-bar .sub.bg { color: var(--ink-2); }   /* the Background dot */
 .files .fl-h .fold { flex: none; display: inline-flex; margin: -3px -4px -3px auto; padding: 3px; background: none; border: 0; border-radius: 4px;
   color: var(--muted); cursor: pointer; }
 .files .fl-h .tmp + .fold { margin-left: 0; }
@@ -1063,15 +1070,20 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-sec > .fl-h { flex: none; }
 .files .fl-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
 .files .fl-sec > .fl-legend { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--ring); }
-/* under the commands, what runs in the background: a line, its tasks over the column while it is hovered */
-.files .fl-bg { flex: none; position: relative; display: flex; align-items: center; padding: 5px 12px; border-top: 1px solid var(--ring);
-  font-size: 11.5px; color: var(--ink-2); cursor: default; outline: 0; }
-.files .fl-bg:hover, .files .fl-bg:focus-visible { background: var(--wash); color: var(--ink); }
-.files .fl-bg > .mark { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin-right: 8px; }   /* the Background dot */
-.files .fl-bg > .bg-tasks { display: none; position: absolute; left: 6px; bottom: calc(100% + 4px); z-index: 5;
-  width: max-content; max-width: min(560px, calc(100vw - 48px)); padding: 8px 12px; border: 1px solid var(--ring); border-radius: 8px;
-  background: var(--surface); box-shadow: 0 4px 16px rgba(0,0,0,.12); }
-.files .fl-bg:hover > .bg-tasks, .files .fl-bg:focus-within > .bg-tasks { display: block; }
+/* under the commands, what runs in the background: a section folded to its heading, opened by a click to its tasks,
+   listed as the commands are */
+.files .fl-sec.bg-sec { flex: none; max-height: 40%; border-top: 1px solid var(--ring); }
+.files .fl-sec.bg-sec.open { flex: 0 1 auto; }
+.files .fl-sec.bg-sec > .fl-h { width: 100%; margin: 0; padding: 8px 12px; background: none; border: 0; border-radius: 0; cursor: pointer;
+  font-family: inherit; text-align: left; }
+.files .fl-sec.bg-sec.open > .fl-h { padding-bottom: 4px; }
+.files .fl-sec.bg-sec > .fl-h:hover, .files .fl-sec.bg-sec > .fl-h:focus-visible { background: var(--wash); color: var(--ink-2); }
+.files .fl-sec.bg-sec > .fl-h .tw { flex: none; width: 10px; text-align: center; font-size: 8px; color: var(--ink-2); }   /* as its rows' */
+.files .fl-sec.bg-sec > .fl-h .mark { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--good); }   /* the Background dot */
+.files .fl-cmd .g.bg { color: var(--good); }
+.files .fl-cmd summary .kind { color: var(--muted); font: 10.5px var(--mono); margin-right: 6px; }
+.files .fl-bg-meta { font-size: 11.5px; color: var(--ink-2); margin: 2px 0 6px; }
+.files .fl-bg-meta .p { font: 11px var(--mono); overflow-wrap: anywhere; }
 .files .fl-h { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
   color: var(--muted); padding: 10px 12px 4px; }
 .files .fl-h .tmp { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0;
@@ -1159,11 +1171,11 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fv-block .diff .ctx { color: var(--muted); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
-  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } .files .fl-bar .it.bg { width: auto; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid var(--ring); } }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } }
 /* the same by the pane's width: one of several side by side is narrower than the window */
 @container pane (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
-  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } .files .fl-bar .it.bg { width: auto; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid var(--ring); } }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } }
 /* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
@@ -1779,6 +1791,7 @@ const ICONS = {
   layers: "M8 2.25l6 3-6 3-6-3zM2 8l6 3 6-3M2 10.75l6 3 6-3",
   panel: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM9.75 2.75v10.5",
   sidebar: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM6.25 2.75v10.5",
+  pulse: "M1.5 8.5h2.75l1.75-4.25 2.5 7.5 2-5.5 1.25 2.25h2.75",   // what runs in the background: alive
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -2462,8 +2475,24 @@ const SLASH = /^\s*<command-message>[^<]*<\/command-message>\s*<command-name>\/?
 // without the tags, a blank line either side of them.
 const PASTED = /\s*<\/?pasted_content\b[^>]*>\s*/g;
 const unpasted = (text) => text && text.includes("pasted_content") ? text.replace(PASTED, "\n\n").trim() : text;
+// The user's answers to what codex asked as it worked (request_user_input_async), as codex sends them, one message for
+// each submitted: <send_user_message_question_reply>[{"answer", "question", "questionItemId"}]</send_user_message_question_reply>.
+// As the answer they are, a line each: "Which fruit do you prefer? → mango please".
+const REPLIED = /^\s*<send_user_message_question_reply>\s*([\s\S]*?)\s*(?:<\/send_user_message_question_reply>\s*)?$/;
+const replied = (text) => {
+  const m = text && REPLIED.exec(text);
+  if (!m) return null;
+  try {
+    const got = JSON.parse(m[1]);
+    const out = (Array.isArray(got) ? got : []).filter((r) => r && typeof r === "object")
+      .map((r) => `${String(r.question ?? "").trim()}${r.question ? " → " : ""}${String(r.answer ?? "").trim()}`);
+    return out.length ? out.join("\n") : null;
+  } catch (e) { return null; }                    // cut off, or not codex's: shown as it is
+};
 const asked = (text) => {
   text = unpasted(text);
+  const r = replied(text);
+  if (r) return r;
   const b = text && BANG.exec(text);
   if (b) return `! ${b[1].trim()}`;
   const c = text && SLASH.exec(text);
@@ -3287,9 +3316,12 @@ function backgroundNote(info, term = false) {
 // picked is typed into the terminal's dialog (POST /api/answer, sessions.py's `answer`), and the terminal shows
 // it answered as if it had been picked there; elsewhere it is answered in the terminal that runs the session.
 // `answerable` false (a view to read by): shown, and answered in Chat or the terminal. Null while it waits on nothing.
+// Codex's questions asked as it goes on working (`async`) show while it runs; its plan, once its turn proposed one
+// and its terminal (the dashboard's) asks whether to implement it.
 function askingNote(info, answerable = true) {
-  const ask = info && info.status === "asking" ? info.asking : null;
+  const ask = info && (info.status === "asking" || (info.status === "running" && info.asking && info.asking.async)) ? info.asking : null;
   if (!ask) return null;
+  const codex = ask.harness === "codex";
   const qs = ask.questions || [];
   const s = info.session || {};
   // the dashboard's terminal, and nothing typed into it since it asked: answered from here
@@ -3297,8 +3329,8 @@ function askingNote(info, answerable = true) {
   const here = answerable && !SNAPSHOT && !!s.terminal && !touched;
   const sent = info.answer && info.answer.call === ask.call ? info.answer : null;
   const who = info.harness ? harnessName(info.harness) : "The agent";
-  const what = ask.kind === "plan" ? `${who} has a plan for you to approve`
-    : `${who} asked you ${qs.length > 1 ? plural(qs.length, "question") : "a question"}`;
+  const what = ask.kind === "plan" ? `${who} has a plan for you to ${codex ? "implement" : "approve"}`
+    : `${who} asked you ${qs.length > 1 ? plural(qs.length, "question") : "a question"}${ask.async ? " as it works" : ""}`;
   const d = draftOf(ask);
   const late = sent && Date.now() / 1000 - sent.at > ANSWER_LATE;
   if (sent && !late && !lateTimers.has(sent.call)) {   // drawn again once it would count as lost
@@ -3346,7 +3378,7 @@ function askingNote(info, answerable = true) {
       q.multiSelect ? el("span", { class: "hint", text: "Pick any" }) : null),
     el(here ? "div" : "ol", { class: "opts" + (q.multiSelect ? " multi" : ""), role: here ? (q.multiSelect ? "group" : "radiogroup") : null,
       "aria-label": q.question || null }, ...(q.options || []).map(option(q, i))),
-    here && !q.multiSelect ? own(i, "Or type your own answer", () => { const n = nextOpen(); if (n >= 0) go(n); else if (ready && !busy) send(choice()); }) : null);
+    here && !q.multiSelect ? own(i, codex && !ask.async ? "None of these? Say what, instead" : "Or type your own answer", () => { const n = nextOpen(); if (n >= 0) go(n); else if (ready && !busy) send(choice()); }) : null);
   // answered here, several questions: one at a time, as the terminal asks them, a tab each
   const tabs = here && qs.length > 1 ? el("div", { class: "qtabs", role: "tablist", "aria-label": "Questions" }, ...qs.map((q, i) =>
     el("button", { type: "button", class: "qtab", role: "tab", "aria-selected": i === tab ? "true" : "false", onclick: () => go(i) },
@@ -3370,8 +3402,12 @@ function askingNote(info, answerable = true) {
     const change = () => d.change.trim() && send({ plan: "change", text: d.change.trim() });
     foot = el("div", { class: "foot", "data-morph": "" },
       said(true),
-      el("div", { class: "change", "data-morph": "" }, own("plan", "Or tell Claude what to change", change),
-        el("button", { type: "button", disabled: busy || !d.change.trim() ? "" : null, onclick: change }, "Ask for changes")),
+      el("div", { class: "change", "data-morph": "" }, own("plan", `Or tell ${codex ? "Codex" : "Claude"} what to change`, change),
+        el("button", { type: "button", disabled: busy || !d.change.trim() ? "" : null, onclick: change,
+          title: codex ? "Codex's “No, stay in Plan mode”, then your words" : null }, "Ask for changes")),
+      codex ? el("div", { class: "acts" },              // its "clear context and implement" starts another thread: the terminal's
+        el("button", { type: "button", class: "primary", disabled: busy ? "" : null, onclick: () => send({ plan: "implement" }),
+          title: "Codex's “Yes, implement this plan”: Default mode, and it starts coding" }, "Implement the plan")) :
       el("div", { class: "acts" },
         el("button", { type: "button", disabled: busy ? "" : null, onclick: () => send({ plan: "manual" }),
           title: "Claude Code's “Yes, manually approve edits”" }, "Approve, I'll approve edits"),
@@ -3805,8 +3841,19 @@ if (markdownReady) {
   marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text) } });
   DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } });
 }
+// Codex's plan, as its Plan mode has the model write it: between <proposed_plan> and </proposed_plan> (the closing tag
+// perhaps not streamed yet). markdown() draws it as a card headed "Proposed plan", as codex's own terminal heads it.
+const PLAN_TAGS = /<proposed_plan>\s*([\s\S]*?)\s*(?:<\/proposed_plan>|$)/;
+const unplanned = (t) => String(t ?? "").replace(/<\/?proposed_plan>\s*/g, "");
 // `breaks`: each line break kept, for text written as lines rather than as markdown (a subagent's report)
 function markdown(text, breaks = false) {
+  const plan = typeof text === "string" && text.includes("<proposed_plan>") ? PLAN_TAGS.exec(text) : null;
+  if (plan) {                                      // codex's plan: what is around it as it is, the plan as a card
+    const before = text.slice(0, plan.index).trim(), after = text.slice(plan.index + plan[0].length).trim();
+    return el("div", { class: "md" }, ...[before && markdown(before, breaks),
+      el("div", { class: "proposed-plan" }, el("div", { class: "pp-head", text: "Proposed plan" }), markdown(plan[1], breaks)),
+      after && markdown(after, breaks)].filter(Boolean));
+  }
   const box = el("div", { class: "md" });
   if (!markdownReady) { box.style.whiteSpace = "pre-wrap"; box.textContent = text; return box; }
   const k = (breaks ? "\u0001" : "") + text;
@@ -3871,6 +3918,8 @@ const SUMMARIES = {
   shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
   exec_command: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
   local_shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
+  // codex's code-mode script that calls no tool (one that does is shown as its calls: summary()): its first line
+  exec: (i) => ({ title: "Script", arg: firstLine(str(i.input).trim(), 200) }),
   Read: (i) => ({ title: "Read", arg: shortPath(i.file_path) + (i.offset ? ` (from line ${i.offset})` : ""),
     result: (text, id) => { const n = lines(text).length; return el("details", { id }, el("summary", { text: `Read ${plural(n, "line")}` }), el("pre", { text })); } }),
   Write: (i) => ({ title: "Write", arg: shortPath(i.file_path),
@@ -3892,6 +3941,8 @@ const SUMMARIES = {
   web_search: (i) => ({ title: "Web Search", arg: `"${str(i.query ?? (i.action && i.action.query))}"` }),
   Agent: (i) => ({ title: i.subagent_type ? `${i.subagent_type}` : "Agent", arg: str(i.description) }),
   Task: (i) => ({ title: i.subagent_type ? `${i.subagent_type}` : "Task", arg: str(i.description) }),
+  // codex's: its subagent by its task's name (what it is asked is encrypted)
+  spawn_agent: (i) => ({ title: "Agent", arg: str(i.task_name) }),
   TodoWrite: (i) => ({ title: "Update Todos", body: () => todoView(i.todos), quiet: true }),
   update_plan: (i) => ({ title: "Update Plan", body: () => todoView(i.plan), quiet: true }),
   Skill: (i) => ({ title: "Skill", arg: str(i.skill) }),
@@ -4361,8 +4412,8 @@ function kindSwitches() {
       } }, el("i", { class: "fb", style: `background: ${color}` }), name);
   }));
 }
-// The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched
-// only them: hidden until asked for, the choice kept in this browser.
+// The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders): hidden until asked for, the choice
+// kept in this browser. The commands are all listed, whatever folders they touched.
 const TMP_KEY = "ag-dashboard-files-tmp";
 let showTmp = (() => { try { return localStorage.getItem(TMP_KEY) === "1"; } catch (e) { return false; } })();
 function tmpSwitch(n) {
@@ -4373,7 +4424,7 @@ function tmpSwitch(n) {
     try { localStorage.setItem(TMP_KEY, showTmp ? "1" : "0"); } catch (e) { /* this page only */ }
     keepingPlace(renderMain);
   });
-  return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched only them" },
+  return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders)" },
     box, `tmp (${n})`);
 }
 // The files and commands at the left, folded to a thin bar of what they hold until opened: by a click on the
@@ -4387,22 +4438,38 @@ function foldSide(fold, draw = true) {
   if (fold && state.files && state.files.turn !== null) return setFilesTurn(null);   // folded: the latest turn, which its bar counts
   if (draw) keepingPlace(renderMain);
 }
-// The bar: the number of files; of commands, by how they went, in the colours of the commands' dots; of tasks
-// in the background, apart under a line.
+// The background's section under the commands: folded to its heading until opened, the choice kept in this browser.
+const BG_KEY = "ag-dashboard-files-bg-open";
+let bgOpen = (() => { try { return localStorage.getItem(BG_KEY) === "1"; } catch (e) { return false; } })();
+function openBackground(open, draw = true) {
+  bgOpen = open;
+  try { localStorage.setItem(BG_KEY, open ? "1" : "0"); } catch (e) { /* this page only */ }
+  if (draw) keepingPlace(renderMain);
+}
+// The bar: the files, by kind, in the colours of the tree's (a file of two kinds counted in both; the kinds switched
+// off left out); the commands, by how they went, in the colours of the commands' dots; the tasks in the background.
+// A click on the background's opens their section too.
 function sideBar(files, cmds, info) {
   const bg = (info.background || []).length, n = cmds.ok + cmds.err + cmds.run;
+  const kinds = Object.entries(FILE_KINDS).filter(([k]) => !hiddenKinds.has(k))
+    .map(([k, [name, color]]) => [files.filter((f) => f.kinds.includes(k)).length, color, name]).filter(([c]) => c);
   const how = [[cmds.ok, "ok", "passed"], [cmds.err, "err", "failed"], [cmds.run, "run", "running"]].filter(([k]) => k);
-  const said = [plural(files, "file"), plural(n, "command") + (how.length ? ": " + how.map(([k, , w]) => `${full(k)} ${w}`).join(", ") : ""),
+  const said = [plural(files.length, "file") + (kinds.length ? ": " + kinds.map(([c, , w]) => `${full(c)} ${w}`).join(", ") : ""),
+    plural(n, "command") + (how.length ? ": " + how.map(([k, , w]) => `${full(k)} ${w}`).join(", ") : ""),
     bg ? plural(bg, "background task") : null].filter(Boolean).join(" · ");
-  const dot = (cls) => el("i", { class: "g " + cls, "aria-hidden": "true" });
+  const dot = (cls, color) => el("i", { class: "g " + cls, "aria-hidden": "true", style: color ? `background: ${color}` : null });
   return el("button", { type: "button", class: "fl-bar", title: `${said}. Show the files and commands`,
-    "aria-label": `Show the files and commands: ${said}`, onclick: () => foldSide(false) },
+    "aria-label": `Show the files and commands: ${said}`,
+    onclick: (ev) => { if (ev.target.closest(".it.bg")) openBackground(true, false); foldSide(false); } },
     strokeIcon(ICONS.sidebar, 15),
     el("span", { class: "stats" },
-      el("span", { class: "it" }, strokeIcon(ICONS.page, 13), el("span", { text: full(files) })),
+      el("span", { class: "it" }, strokeIcon(ICONS.page, 13),
+        ...(kinds.length ? kinds.map(([c, color]) => el("span", { class: "sub kd" }, dot("", color), full(c)))
+          : [el("span", { text: full(files.length) })])),
       el("span", { class: "it" }, strokeIcon(ICONS.terminal, 13),
         ...(how.length ? how.map(([k, cls]) => el("span", { class: "sub " + cls }, dot(cls), full(k))) : [el("span", { text: "0" })])),
-      bg ? el("span", { class: "it bg" }, dot("bg"), el("span", { text: full(bg) })) : null));
+      bg ? el("span", { class: "it bg", title: `${plural(bg, "background task")}: show them` }, strokeIcon(ICONS.pulse, 13),
+        el("span", { class: "sub bg" }, dot("bg"), full(bg))) : null));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
@@ -4511,7 +4578,7 @@ function filesRender({ info, running }) {
   const files = kept.filter((f) => !f.kinds.length || f.kinds.some((k) => !hiddenKinds.has(k)));
   const kindHidden = kept.length - files.length;
   const tmpFiles = d.files.filter((f) => f.temporary).length;
-  const commands = d.commands.map((c, i) => [c, i]).filter(([c]) => showTmp || !c.temporary);   // each with its index: its id
+  const commands = d.commands;
   const UNKNOWN = "\0";
   const root = { dirs: new Map(), files: [] };
   for (const f of files) {
@@ -4564,14 +4631,13 @@ function filesRender({ info, running }) {
     : running && d.turn === d.turns.length - 1 ? "No files yet in this turn." : "The agent touched no files in this turn." }));
   // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one)
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
-  commands.forEach(([c, i]) => cmds.append(el("div", { class: "fl-cmd" },
+  commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
     el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), firstLine(c.text, 140)),
       (c.files || []).length ? el("div", { class: "fl-cmd-files" }, ...c.files.map((p) => el("button", { type: "button", title: p,
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, rel(p).split("/").pop()))) : null,
       el("pre", { class: "call", text: callText(c.call) }), c.output ? el("pre", { class: "out", text: c.output }) : null))));
-  if (!commands.length) cmds.append(el("div", { class: "fv-note", text: d.commands.length ? "Only commands in temporary folders."
-    : "No commands in this turn." }));
+  if (!commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
   const shown = `${state.files.key}:${d.turn}`;
   if (cmdsShown !== shown) requestAnimationFrame(() => {   // once each time a turn is shown, the latest or one picked: at its end
     const n = document.querySelector(`[data-keep="files-cmds-${d.turn}"]`);
@@ -4582,13 +4648,13 @@ function filesRender({ info, running }) {
   // two sections, each its own size and scrolling, each with the legend of its colours
   const legend = (pairs) => el("div", { class: "fl-legend" }, ...pairs.map(([name, color]) =>
     el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
-  const failed = commands.filter(([c]) => c.error).length;
-  const busy = commands.filter(([c]) => !c.error && c.running && running).length;
-  const side = sideFolded ? sideBar(files.length, { ok: commands.length - failed - busy, err: failed, run: busy }, info)
+  const failed = commands.filter((c) => c.error).length;
+  const busy = commands.filter((c) => !c.error && c.running && running).length;
+  const side = sideFolded ? sideBar(files, { ok: commands.length - failed - busy, err: failed, run: busy }, info)
     : el("div", { class: "fl-side" },
     el("section", { class: "fl-sec files-sec" },
       el("div", { class: "fl-h" }, el("span", { text: files.length ? plural(files.length, "file") : "No files" }),
-        tmpFiles || d.commands.some((c) => c.temporary) ? tmpSwitch(tmpFiles) : null,
+        tmpFiles ? tmpSwitch(tmpFiles) : null,
         el("button", { type: "button", class: "fold", title: "Fold the files and commands to a bar", "aria-label": "Fold the files and commands",
           onclick: () => foldSide(true) }, strokeIcon(ICONS.sidebar, 14))),
       cwd ? el("div", { class: "fl-wd", title: cwd }, el("span", { text: "Working directory" }),
@@ -4605,13 +4671,28 @@ function filesRender({ info, running }) {
     el("div", { class: "fl-right", "data-morph": "" }, filesTalk(d, info, running), asking));
 }
 let cmdsShown = null;
-// What runs in the background, under the commands: one line, the tasks themselves (backgroundNote) over
-// it while it is hovered or focused. Null when none runs.
+// What runs in the background, under the commands: a section folded to its heading (openBackground), opened to
+// its tasks, each a row as a command is -- its dot, what kind it is and what it is for, opened to when it started,
+// its last sign of life and the file it writes to. Null when none runs.
 function filesBackground(info) {
-  const note = backgroundNote(info);
-  if (!note) return null;
-  return el("div", { class: "fl-bg", tabindex: "0" },
-    el("span", { class: "mark", "aria-hidden": "true" }), plural(info.background.length, "background task"), note);
+  const tasks = info.background || [];
+  if (!tasks.length) return null;
+  const head = el("button", { type: "button", class: "fl-h", "aria-expanded": bgOpen ? "true" : "false",
+    title: bgOpen ? "Fold the background tasks" : "Show the background tasks", onclick: () => openBackground(!bgOpen) },
+    el("span", { class: "tw", "aria-hidden": "true", text: bgOpen ? "▼" : "▶" }), el("span", { class: "mark", "aria-hidden": "true" }),
+    el("span", { text: `${plural(tasks.length, "background task")} running` }));
+  if (!bgOpen) return el("section", { class: "fl-sec bg-sec" }, head);
+  const meta = (k, v, cls) => v ? el("div", { class: "fl-bg-meta" }, `${k} `, el("span", { class: cls || "", text: v })) : null;
+  return el("section", { class: "fl-sec bg-sec open" }, head,
+    el("div", { class: "fl-scroll", "data-keep": "files-bg" }, ...tasks.map((t) => el("div", { class: "fl-cmd" },
+      el("span", { class: "g bg", text: "●" }),
+      el("details", { id: `fl-bg-${t.id}` },
+        el("summary", {}, el("span", { class: "kind", text: TASK_KINDS[t.kind] || t.kind }), firstLine(t.label || t.id, 140)),
+        el("div", { class: "fl-bg-meta" }, "started ", el("span", { "data-ago": t.started || "", text: ago(t.started) }),
+          t.active && t.active - t.started > 2 && !t.event ? el("span", {}, " · active ", el("span", { "data-ago": t.active, text: ago(t.active) })) : null),
+        t.event ? el("div", { class: "fl-bg-meta" }, "last event ", el("span", { "data-ago": t.event_at || "", text: ago(t.event_at) }),
+          ": ", el("span", { text: t.event })) : null,
+        meta("writes to", t.output, "p"))))));
 }
 // The conversation, at the right: each of the user's messages a turn, at the right, and under it the agent's:
 // its last message whole (a click folds it to its first line), the ones before it -- what it said on the way,
@@ -4698,7 +4779,7 @@ function filesTalk(d, info, running) {
         open: main && !closed.has(id) ? "" : null, ontoggle: main ? fold : null },
         el("summary", { title: thought ? "Fold or show what it thought" : "Fold or show the whole message" },
           el("span", { class: "dot", text: "●" }), thought ? el("span", { class: "lbl", text: "Thought:" }) : null,
-          el("span", { class: "first", text: firstLine(text.replace(/`|\*\*|^#{1,6}\s+/gm, ""), 200) })),   // its first line, less the markdown's marks
+          el("span", { class: "first", text: firstLine(unplanned(text).replace(/`|\*\*|^#{1,6}\s+/gm, ""), 200) })),   // its first line, less the markdown's marks
         markdown(text));
     };
     const toggle = () => { opened.has(t.n) ? opened.delete(t.n) : opened.add(t.n); keepingPlace(renderMain); };

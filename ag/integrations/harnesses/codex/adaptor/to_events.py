@@ -39,7 +39,8 @@ CODEX_TYPES = {
     "message":                   None,
     "additional_tools":          CONTEXT,                 # tool definitions
     "reasoning":                 AGENT_REASONING,
-    "agent_message":             AGENT_MESSAGE,           # a message from another agent
+    "agent_message":             CONTEXT,                 # another agent's message to this one (a subagent's
+                                                          # report): codex's, not the model's -- as Claude Code's
     "compaction":                CONTEXT,                 # codex's summary of dropped history
     "compaction_summary":        CONTEXT,                 # older name codex still accepts
     "context_compaction":        CONTEXT,

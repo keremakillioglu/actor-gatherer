@@ -91,7 +91,7 @@ from typing import Any, Dict, List, Optional
 
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
-from . import answers, avatars, hiding, live, queued, saved, sessions
+from . import answers, avatars, hiding, live, queued, rollout, saved, sessions
 from .commands import CODE_MODE, script_calls
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
@@ -100,6 +100,9 @@ RUNNING, IDLE, CLOSED, BACKGROUND, ASKING, ERROR = "running", "idle", "closed", 
 #: Claude Code's tools that wait for the user in its terminal before the turn goes on: a question, with
 #: options to pick from; a plan, to approve. What each asks, `asking` returns.
 ASKS = {"AskUserQuestion": "question", "ExitPlanMode": "plan"}
+#: Codex's tool that asks the user in its terminal, its turn waiting on the answer (Plan mode's): a question, with
+#: options to pick from -- codex adds "None of the above" to each, with a note in the user's own words.
+CODEX_ASKS = {rollout.ASK: "question"}
 ASK_CHARS = 4000               # the most of a question's words `asking` returns
 PLAN_CHARS = 20000             # the most of a plan it returns
 #: Claude Code's own record of a session, a line per message as it is made: <its config dir>/projects/<the session's
@@ -139,6 +142,8 @@ OUTPUT_FILE = re.compile(r"(?:Output is being written to: |output_file: )(\S+?\.
 GOES_ON = {"tool_use", "pause_turn", "streaming"}
 OVER = {"end_turn", "stop_sequence", "max_tokens", "refusal"}
 CHANNEL = "p_channel"          # the channel property's column (ag.ag_policies.tools.channel)
+# A channel's events and reads are found by ifnull(CHANNEL, '') = ?, as ag's indexes on them have it (schema.index):
+# by the bare column, SQLite cannot use them and reads every event of the gatherer.
 
 
 def _connect(gatherer: str) -> Optional[sqlite3.Connection]:
@@ -301,8 +306,13 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
         a["session"] = s
-        if s.get("answer"):                      # the last answer typed from the page: what Claude Code made of it
-            result = _result(s["gatherer"], a["channel"], s["answer"]["call"])
+        offer = a.pop("offer", None)             # a codex plan: asked about where its terminal is the dashboard's, not
+        if offer and s.get("terminal") and a["status"] == IDLE and (s.get("since") or 0) <= offer["at"] \
+                and not (s.get("typed") and s["typed"] >= offer["at"]):     # restarted since, nor anything typed there
+            a["asking"], a["status"] = offer, ASKING
+        if s.get("answer"):                      # the last answer typed from the page: what the harness made of it
+            result = rollout.result(rollout.read(rollout.record(a["channel"])), s["answer"]["call"]) \
+                if a.get("harness") == "codex" else _result(s["gatherer"], a["channel"], s["answer"]["call"])
             a["answer"] = {**s["answer"], "result": _clip(result, ASK_CHARS) if result else None,
                            "recorded": answers.recorded(result, s["answer"]["expect"])}
         if a.get("holder") and paths.runs_under(a["holder"]["pid"], s.get("pid")):
@@ -318,6 +328,7 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
         g["last"] = max(g["last"] or 0, a["last"] or 0) or None
     for g in gatherers:                  # newest created first, as `_agents` has them
         for a in g["agents"]:
+            a.pop("offer", None)
             a["chattable"] = chattable(a)
             _settle_background(a, time.time() if now is None else now)
         g["agents"].sort(key=lambda a: a.get("created") or 0, reverse=True)
@@ -359,16 +370,16 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         process = [c for c in ("pid", "pid_started") if c in cols]
         for ch, a in out.items():
             last = conn.execute(f"SELECT {', '.join(['read_id'] + sizes + (['p_cwd'] if cwd else []))} FROM _reads "
-                                f"WHERE {CHANNEL} = ? ORDER BY read_id DESC LIMIT 1", (ch,)).fetchone()
+                                f"WHERE ifnull({CHANNEL}, '') = ? ORDER BY read_id DESC LIMIT 1", (ch,)).fetchone()
             if last is not None:
                 a.update({k: last[k] for k in sizes}, cwd=last["p_cwd"] if cwd else None,
                          sent_tokens=_sent(conn, last["read_id"]))
             if len(process) == 2:                    # the newest call that named its process
-                p = conn.execute(f"SELECT pid, pid_started FROM _reads WHERE {CHANNEL} = ? AND pid IS NOT NULL "
+                p = conn.execute(f"SELECT pid, pid_started FROM _reads WHERE ifnull({CHANNEL}, '') = ? AND pid IS NOT NULL "
                                  f"ORDER BY read_id DESC LIMIT 1", (ch,)).fetchone()
                 if p is not None:
                     a["pid"], a["alive"] = p["pid"], paths.process_alive(p["pid"], p["pid_started"])
-                    a["since"] = _seconds(conn.execute(f"SELECT min(read_at) FROM _reads WHERE {CHANNEL} = ? AND pid = ? "
+                    a["since"] = _seconds(conn.execute(f"SELECT min(read_at) FROM _reads WHERE ifnull({CHANNEL}, '') = ? AND pid = ? "
                                                        "AND pid_started = ?", (ch, p["pid"], p["pid_started"])).fetchone()[0])
     if "_open" in _tables(conn):                     # which process has each session open (ag's launcher, its calls)
         for ch, pid, started, by, opened in conn.execute("SELECT session, pid, pid_started, opened_by, opened_at FROM _open"):
@@ -412,34 +423,78 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         a["building"] = ch in building
         a["turn_over"] = turn_over(conn, ch, tables)[0]
         a["status"] = status_of(a.get("alive"), a["turn_over"], a["last"], now)
-        a["asking"] = asking(conn, ch, tables) if a["status"] == RUNNING else None
-        record = queued.record(ch, a.get("cwd")) if a["asking"] and a["harness"] in ("claude", None) else None
-        seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
-        how = settled(ch, a.get("cwd"), a["asking"]["call"], record) if record else None
-        if a["asking"] and not how and record:
-            a["record"] = (record, seen)                 # watched (live.py) while it asks
-        if how:
-            a["asking"] = None
-            if how == "dismissed":
-                a["status"], a["turn_over"] = IDLE, True
-        if a["asking"]:
-            a["status"] = ASKING
-        a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
-        claude = a["harness"] in ("claude", None)
-        record = (record or queued.record(ch, a.get("cwd"))) if a["status"] == RUNNING and claude else None
-        seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
-        a["stopped"] = stopped(record, a["last"]) if record else None
-        if a["stopped"] and a["stopped"]["kind"] == "interrupted":
-            a["status"], a["turn_over"], a["failing"] = IDLE, True, None
-        elif a["stopped"] or (a["failing"] and given_up(a["failing"], bool(record), now)):
-            a["status"], a["turn_over"] = ERROR, True
-        elif a["failing"] and not a["failing"]["retrying"]:
-            a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], bool(record)) + 1   # when it would be given up
-        if a["status"] == RUNNING and record and not a.get("record"):
-            a["record"] = (record, seen)                 # watched (live.py) while it runs: it may stop unseen
+        if a["harness"] == "codex":
+            _codex_status(conn, ch, a, tables, now)
+        else:
+            _claude_status(conn, ch, a, tables, now)
         a["running"] = a["building"] or a["status"] == RUNNING
-        a["background"] = background.get(ch, [])
+        a["background"] = background.get(ch, []) + a.pop("codex_background", [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
+
+
+def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
+    """The agent's status as Claude Code's own record of the session tells it (module doc): what it asks the user,
+    whether it was answered or dismissed there, and whether its turn stopped on an error or was interrupted."""
+    a["asking"] = asking(conn, ch, tables) if a["status"] == RUNNING else None
+    record = queued.record(ch, a.get("cwd")) if a["asking"] and a["harness"] in ("claude", None) else None
+    seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
+    how = settled(ch, a.get("cwd"), a["asking"]["call"], record) if record else None
+    if a["asking"] and not how and record:
+        a["record"] = (record, seen)                 # watched (live.py) while it asks
+    if how:
+        a["asking"] = None
+        if how == "dismissed":
+            a["status"], a["turn_over"] = IDLE, True
+    if a["asking"]:
+        a["status"] = ASKING
+    a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
+    claude = a["harness"] in ("claude", None)
+    record = (record or queued.record(ch, a.get("cwd"))) if a["status"] == RUNNING and claude else None
+    seen = live._stat(record) if record else None   # before it is read: a change after it is noticed
+    a["stopped"] = stopped(record, a["last"]) if record else None
+    if a["stopped"] and a["stopped"]["kind"] == "interrupted":
+        a["status"], a["turn_over"], a["failing"] = IDLE, True, None
+    elif a["stopped"] or (a["failing"] and given_up(a["failing"], bool(record), now)):
+        a["status"], a["turn_over"] = ERROR, True
+    elif a["failing"] and not a["failing"]["retrying"]:
+        a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], bool(record)) + 1   # when it would be given up
+    if a["status"] == RUNNING and record and not a.get("record"):
+        a["record"] = (record, seen)                 # watched (live.py) while it runs: it may stop unseen
+
+
+def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
+    """The agent's status as codex's own record of the thread tells it (rollout.py; module doc): its turn over,
+    interrupted (Esc) or stopped on an error where ag heard nothing of it; what it asks the user (`codex_asking`) --
+    a plan it proposed kept as `offer`, for `_with_started` to show only where the dashboard's terminal shows codex
+    asking whether to implement it; and the subagents and commands it left running, as `codex_background`."""
+    path = rollout.record(ch) if a["status"] in (RUNNING, IDLE) else None
+    seen = live._stat(path) if path else None       # before it is read: a change after it is noticed
+    rec = rollout.read(path)
+    a["stopped"] = None
+    a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
+    got = rollout.stopped(rec, a["last"]) if a["status"] == RUNNING else None
+    if got and got["kind"] == "error":
+        a["stopped"], a["status"], a["turn_over"] = got, ERROR, True
+    elif got:                                        # over, or interrupted: its turn ended with no call ag saw
+        a["stopped"] = got if got["kind"] == "interrupted" else None
+        a["status"], a["turn_over"], a["failing"] = IDLE, True, None
+    elif a["failing"] and given_up(a["failing"], bool(rec), now):
+        a["status"], a["turn_over"] = ERROR, True
+    elif a["failing"] and not a["failing"]["retrying"]:
+        a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], bool(rec)) + 1
+    ask = codex_asking(conn, ch, tables, a["status"], rec) if a["status"] in (RUNNING, IDLE) else None
+    offer = bool(ask) and ask["kind"] == "plan" and ask["call"].startswith("plan:")   # its proposed plan, not a call
+    a["asking"] = None if offer else ask
+    if offer:
+        a["offer"] = ask
+    elif ask and not ask.get("async"):               # its turn waits on the answer; an async one's goes on
+        a["status"] = ASKING
+    a["codex_background"] = [{"id": t["id"], "kind": "agent", "label": t["path"], "started": t["started"], "output": None,
+                              "event": None, "event_at": None} for t in rollout.agents(rec)] + \
+                            [{"id": t["id"], "kind": "command", "label": t["label"], "started": t["started"], "output": None,
+                              "event": None, "event_at": None} for t in rollout.commands(rec)]
+    if path and (a["status"] in (RUNNING, ASKING) or ask or a["codex_background"]):
+        a["record"] = (path, seen)                   # watched (live.py): it may stop, be answered, end, unseen
 
 
 def turn_over(conn, channel: str, tables: set):
@@ -456,7 +511,7 @@ def turn_over(conn, channel: str, tables: set):
             over = False if why in GOES_ON else True if why in OVER else last["type"] == "agent_message"
             return over, _seconds(last["received_at"])
     last = conn.execute(f"SELECT t.name, e.inserted_at FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
-                        f"WHERE e.{CHANNEL} = ? AND t.name NOT IN ('environment_update', 'context_stream') "
+                        f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name NOT IN ('environment_update', 'context_stream') "
                         "ORDER BY e.row_id DESC LIMIT 1", (channel,)).fetchone()
     if last is None:
         return True, None
@@ -477,9 +532,17 @@ def asking(conn, channel: str, tables: set) -> Optional[dict]:
         if r["type"] != "tool_call":
             continue
         try:
-            content = json.loads(r["payload_json"]).get("content")
+            payload = json.loads(r["payload_json"])
+            content = payload.get("content")
         except (ValueError, AttributeError):
             continue
+        if payload.get("type") == "function_call" and payload.get("name") in CODEX_ASKS:
+            try:                                     # codex's: its arguments a JSON string
+                got = json.loads(payload.get("arguments") or "{}")
+            except ValueError:
+                got = {}
+            return {"kind": CODEX_ASKS[payload["name"]], "harness": "codex", "at": _seconds(r["received_at"]),
+                    "call": payload.get("call_id"), "questions": codex_questions(got.get("questions") if isinstance(got, dict) else None)}
         for b in content if isinstance(content, list) else []:
             if not isinstance(b, dict) or b.get("type") != "tool_use" or b.get("name") not in ASKS:
                 continue
@@ -497,14 +560,51 @@ def asking(conn, channel: str, tables: set) -> Optional[dict]:
     return None
 
 
+def codex_questions(given) -> List[dict]:
+    """Codex's questions (request_user_input's: {id, header, question, options: [{label, description}]}; the
+    async one's: {title, options: [label]}) as `asking` returns them, each with its `id` (None: the async one's)."""
+    out = []
+    for q in given if isinstance(given, list) else []:
+        if not isinstance(q, dict):
+            continue
+        options = [o if isinstance(o, dict) else {"label": str(o)} for o in q.get("options") or [] if isinstance(o, (dict, str))]
+        out.append({"id": q.get("id"), "header": q.get("header"), "question": _clip(q.get("question") or q.get("title"), ASK_CHARS),
+                    "multiSelect": False, "options": [{"label": o.get("label"), "description": _clip(o.get("description"), ASK_CHARS)}
+                                                      for o in options]})
+    return out
+
+
+def codex_asking(conn, channel: str, tables: set, status: str, record) -> Optional[dict]:
+    """What a codex agent waits on the user for (module doc), None if nothing: RUNNING, a question it asked in its
+    terminal (`asking`) while codex's record (`record`, rollout.py's) does not say it was answered or dismissed, else
+    one it asked as its turn goes on (async: True); its turn over (IDLE), the plan it proposed, which its terminal
+    asks whether to implement -- {kind: "plan", call: "plan:<its turn>", at: when the turn ended, plan}."""
+    if status == RUNNING:
+        ask = asking(conn, channel, tables)
+        if ask is not None and not rollout.settled(record, ask["call"]):
+            return ask
+        got = rollout.open_question(record)
+        return {"kind": "question", "harness": "codex", "async": True, "at": got["at"], "call": got["call"],
+                "questions": codex_questions(got["questions"])} if got else None
+    got = rollout.offer(record) if status == IDLE else None
+    return {"kind": "plan", "harness": "codex", "at": got["at"], "call": f"plan:{got['turn']}",
+            "plan": _clip(got["text"], PLAN_CHARS)} if got else None
+
+
 def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optional[dict]:
-    """What the agent waits on the user for now (`asking`, less what Claude Code's record says is `settled`), None if
-    nothing; `cwd`, where the session runs."""
+    """What the agent waits on the user for now (`asking`, less what Claude Code's record says is `settled`; a codex
+    agent's, `codex_asking`), None if nothing; `cwd`, where the session runs."""
     conn = _connect(gatherer)
     if conn is None:
         return None
     try:
-        ask = asking(conn, channel, _tables(conn)) if _channels_kept(conn) else None
+        if not _channels_kept(conn):
+            return None
+        tables = _tables(conn)
+        if _harness(conn, channel) == "codex":
+            over = turn_over(conn, channel, tables)[0]
+            return codex_asking(conn, channel, tables, IDLE if over else RUNNING, rollout.read(rollout.record(channel)))
+        ask = asking(conn, channel, tables)
     finally:
         conn.close()
     return None if ask is None or settled(channel, cwd, ask["call"]) else ask
@@ -519,7 +619,7 @@ def failing(conn, channel: str) -> Optional[dict]:
     if "error" not in cols or CHANNEL not in cols:
         return None                                   # a file from before ag kept failures
     counted = "real_tokens" if "real_tokens" in cols else "NULL AS real_tokens"
-    rows = conn.execute(f"SELECT read_at, row_id, {counted}, error_status, error FROM _reads WHERE {CHANNEL} = ? "
+    rows = conn.execute(f"SELECT read_at, row_id, {counted}, error_status, error FROM _reads WHERE ifnull({CHANNEL}, '') = ? "
                         "ORDER BY read_id DESC LIMIT ?", (channel, FAILED_READS)).fetchall()
     retrying = bool(rows) and rows[0]["error"] is None
     if retrying:                                      # a try under way, after a failure at the same event
@@ -641,7 +741,7 @@ def _result(gatherer: str, channel: str, call: Optional[str]) -> Optional[str]:
         if not _channels_kept(conn):
             return None
         r = conn.execute(f"SELECT e.text, e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
-                         f"WHERE t.name = 'tool_output' AND e.{CHANNEL} = ? AND instr(e.payload_json, ?) > 0 "
+                         f"WHERE t.name = 'tool_output' AND ifnull(e.{CHANNEL}, '') = ? AND instr(e.payload_json, ?) > 0 "
                          "ORDER BY e.row_id DESC LIMIT 1", (channel, json.dumps(call))).fetchone()
         return (r["text"] or readable(r["payload_json"]) or "") if r else None
     finally:
@@ -653,7 +753,7 @@ def _plan(conn, channel: str, pending: List[str]) -> Optional[str]:
     plans (PLAN_FILE) it last wrote to -- in the answer that asks (`pending`, its events' payloads, newest
     first), else before it -- as it is now, else as that write had it. None: none written."""
     stored = (p for (p,) in conn.execute(
-        f"SELECT payload_json FROM events WHERE {CHANNEL} = ? AND payload_json LIKE '%/.claude/plans/%' "
+        f"SELECT payload_json FROM events WHERE ifnull({CHANNEL}, '') = ? AND payload_json LIKE '%/.claude/plans/%' "
         "ORDER BY row_id DESC LIMIT 20", (channel,)))
     for payload in [*pending, *stored]:
         try:
@@ -832,7 +932,7 @@ def _task_label(conn, channel: str, row_id: int, payload_json: Optional[str]) ->
     except (ValueError, AttributeError, StopIteration):
         return None
     for (raw,) in conn.execute(f"SELECT e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
-                               f"WHERE e.{CHANNEL} = ? AND t.name = 'tool_call' AND e.row_id < ? AND e.row_id >= ? "
+                               f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'tool_call' AND e.row_id < ? AND e.row_id >= ? "
                                "ORDER BY e.row_id DESC", (channel, row_id, row_id - 400)):
         try:
             for b in (json.loads(raw) or {}).get("content") or []:
@@ -917,7 +1017,7 @@ def harness_of(payloads) -> Optional[str]:
 
 
 def _harness(conn, channel: str) -> Optional[str]:
-    rows = conn.execute(f"SELECT payload_json FROM events WHERE {CHANNEL} = ? ORDER BY row_id LIMIT 60", (channel,))
+    rows = conn.execute(f"SELECT payload_json FROM events WHERE ifnull({CHANNEL}, '') = ? ORDER BY row_id LIMIT 60", (channel,))
     payloads = []
     for (raw,) in rows:
         try:
@@ -938,7 +1038,7 @@ def _usage(conn, channel: str, tables: set) -> dict:
     provider counted beyond them, over the calls it counted. Kept until the channel's next read:
     a long agent's sum is a scan of every read."""
     path = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
-    last = conn.execute(f"SELECT max(read_id) FROM _reads WHERE {CHANNEL} = ?", (channel,)).fetchone()[0]
+    last = conn.execute(f"SELECT max(read_id) FROM _reads WHERE ifnull({CHANNEL}, '') = ?", (channel,)).fetchone()[0]
     kept = _USAGE.get((path, channel))
     if kept and kept[0] == last:
         return dict(kept[1])
@@ -947,7 +1047,7 @@ def _usage(conn, channel: str, tables: set) -> dict:
     rows = conn.execute(
         f"SELECT CASE WHEN i.row_id IS NULL THEN 'made' WHEN {since} THEN 'recent' ELSE 'kept' END AS kind, "
         "coalesce(t.name, m.name, '?') AS item, count(*) AS n, sum(coalesce(e.tokens, m.tokens, 0)) AS tok "
-        f"FROM _read_items i JOIN _reads r ON r.read_id = i.read_id AND r.{CHANNEL} = ? {cut}"
+        f"FROM _read_items i JOIN _reads r ON r.read_id = i.read_id AND ifnull(r.{CHANNEL}, '') = ? {cut}"
         "LEFT JOIN events e ON e.row_id = i.row_id LEFT JOIN event_types t ON t.event_type_id = e.event_type_id "
         "LEFT JOIN _made_items m ON m.made_id = i.made_id GROUP BY 1, 2", (channel,)).fetchall()
     entries = [{"group": RECENT if r["kind"] == "recent" else KEPT if r["kind"] == "kept"
@@ -956,7 +1056,7 @@ def _usage(conn, channel: str, tables: set) -> dict:
     cols = _columns(conn, "_reads")
     pre = "preamble_json" if "preamble_json" in cols else "NULL"
     real = "real_tokens" if "real_tokens" in cols else "NULL"
-    per_read = conn.execute(f"SELECT read_id, {pre}, {real} FROM _reads WHERE {CHANNEL} = ?", (channel,)).fetchall()
+    per_read = conn.execute(f"SELECT read_id, {pre}, {real} FROM _reads WHERE ifnull({CHANNEL}, '') = ?", (channel,)).fetchall()
     ids = {r[0]: _preamble_ids(r[1]) for r in per_read}
     known = _preambles(conn, [i for v in ids.values() for i in v])
     by_name: Dict[str, dict] = {}
@@ -969,7 +1069,7 @@ def _usage(conn, channel: str, tables: set) -> dict:
     entries += list(by_name.values())
     sent = dict(conn.execute(
         "SELECT i.read_id, coalesce(sum(e.tokens), 0) + coalesce(sum(m.tokens), 0) FROM _read_items i "
-        f"JOIN _reads r ON r.read_id = i.read_id AND r.{CHANNEL} = ? LEFT JOIN events e ON e.row_id = i.row_id "
+        f"JOIN _reads r ON r.read_id = i.read_id AND ifnull(r.{CHANNEL}, '') = ? LEFT JOIN events e ON e.row_id = i.row_id "
         "LEFT JOIN _made_items m ON m.made_id = i.made_id GROUP BY i.read_id", (channel,)))
     not_counted = sum(max(0, r[2] - sent.get(r[0], 0) - sum(known[i]["tokens"] for i in ids[r[0]] if i in known))
                       for r in per_read if r[2])
@@ -1007,13 +1107,13 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
     recorded = "sent_tokens" if "sent_tokens" in read_cols else "NULL"
     reads = []
     for r in conn.execute(f"SELECT read_id, read_at, row_id, basis{''.join(', ' + c for c in sizes)}, "
-                          f"{recorded} AS recorded FROM _reads WHERE {CHANNEL} = ? ORDER BY read_id", (channel,)):
+                          f"{recorded} AS recorded FROM _reads WHERE ifnull({CHANNEL}, '') = ? ORDER BY read_id", (channel,)):
         reads.append({"read_id": r["read_id"], "at": _seconds(r["read_at"]), "row_id": r["row_id"],
                       "basis": r["basis"], "recorded_tokens": r["recorded"],
                       **{k: (r[k] if k in sizes else None) for k in ("est_tokens", "real_tokens", "limit_tokens")}})
     tasks = []
     if "tasks" in tables:
-        times = dict(conn.execute(f"SELECT row_id, inserted_at FROM events WHERE {CHANNEL} = ?", (channel,)))
+        times = dict(conn.execute(f"SELECT row_id, inserted_at FROM events WHERE ifnull({CHANNEL}, '') = ?", (channel,)))
         for r in conn.execute("SELECT task_index, name, description, first_row, last_row, tokens FROM tasks "
                               "WHERE channel_key = ? ORDER BY task_index", (channel,)):
             tasks.append({"index": r["task_index"], "name": r["name"], "description": r["description"],
@@ -1021,10 +1121,10 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
                           "started": _seconds(times.get(r["first_row"])), "ended": _seconds(times.get(r["last_row"]))})
     sent = dict(conn.execute(                # ag's count of all it sent: what each read returned, added up
         "SELECT i.read_id, coalesce(sum(e.tokens), 0) + coalesce(sum(m.tokens), 0) FROM _read_items i "
-        f"JOIN _reads r ON r.read_id = i.read_id AND r.{CHANNEL} = ? "
+        f"JOIN _reads r ON r.read_id = i.read_id AND ifnull(r.{CHANNEL}, '') = ? "
         "LEFT JOIN events e ON e.row_id = i.row_id LEFT JOIN _made_items m ON m.made_id = i.made_id "
         "GROUP BY i.read_id", (channel,)))
-    pre = dict(conn.execute(f"SELECT read_id, preamble_json FROM _reads WHERE {CHANNEL} = ?", (channel,))) \
+    pre = dict(conn.execute(f"SELECT read_id, preamble_json FROM _reads WHERE ifnull({CHANNEL}, '') = ?", (channel,))) \
         if "preamble_json" in read_cols else {}
     known = _preambles(conn, [i for raw in pre.values() for i in _preamble_ids(raw)])
     for r in reads:
@@ -1100,7 +1200,7 @@ def _pending(conn, channel: str, tables: set) -> List[dict]:
         return []
     items = []
     for r in conn.execute(f"SELECT pending_id, received_at, type, payload_json, text FROM _pending "
-                          f"WHERE {CHANNEL} = ? ORDER BY pending_id", (channel,)):
+                          f"WHERE ifnull({CHANNEL}, '') = ? ORDER BY pending_id", (channel,)):
         text = r["text"] if r["text"] else readable(r["payload_json"])
         items.append({"position": None, "group": PENDING, "name": r["type"], "tokens": _count(r["text"] or ""),
                       "row_id": None, "made_id": None, "at": _seconds(r["received_at"]),
@@ -1118,7 +1218,7 @@ def _after_read(conn, channel: str, tables: set, row_id: Optional[int]) -> List[
     if row_id is not None:
         for r in conn.execute(
                 "SELECT e.row_id, t.name AS type, e.tokens, e.text, e.payload_json, e.inserted_at FROM events e "
-                f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.{CHANNEL} = ? AND e.row_id > ? "
+                f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? AND e.row_id > ? "
                 "ORDER BY e.row_id LIMIT ?", (channel, row_id, HISTORY_ITEMS)):
             text = r["text"] if r["text"] else readable(r["payload_json"])
             items.append({"position": None, "group": AFTER_READ, "name": r["type"] or "?", "tokens": r["tokens"] or 0,
@@ -1261,7 +1361,7 @@ def history(gatherer: str, channel: str, first_row: int, last_row: Optional[int]
         if not _channels_kept(conn):
             return dict(NOTHING_YET)
         top = last_row if last_row is not None else 2 ** 62
-        where = f"e.{CHANNEL} = ? AND e.row_id >= ? AND e.row_id <= ?"
+        where = f"ifnull(e.{CHANNEL}, '') = ? AND e.row_id >= ? AND e.row_id <= ?"
         n = conn.execute(f"SELECT count(*) FROM events e WHERE {where}", (channel, first_row, top)).fetchone()[0]
         items = []
         for r in conn.execute(
@@ -1343,7 +1443,8 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
                                                     code-mode script also has `calls`: [{name, input}], the
                                                     calls it makes (input None: not written out)
         {"kind": "result", "id", "error", "text"}   a tool's result, `id` its call's
-        {"kind": "note", "name", "text"}            anything else: the harness's or ag's own messages
+        {"kind": "note", "name", "text"}            anything else: the harness's or ag's own messages (codex's
+                                                    message from another agent, "agent_message", among them)
     The harness's own format is read here (Claude Code's content blocks, codex's Responses items),
     and nowhere else: anything this does not know shows as its readable text. Each text and input is
     clipped at `chars` (None: kept whole)."""
@@ -1355,7 +1456,10 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
     if role is None:                         # not the conversation: a system message, ag's notices
         return [{"kind": "note", "name": event_type, "text": text or readable(payload_json)}]
     out: List[dict] = []
-    if isinstance(p, dict) and p.get("type") in CODEX_TYPES | {"tool_search_call", "tool_search_output"}:
+    if isinstance(p, dict) and p.get("type") == "agent_message" and ("author" in p or "recipient" in p):
+        out.append({"kind": "note", "name": "agent_message",      # codex's: another agent's message to this one
+                    "text": "\n".join(b.get("text") or "" for b in p.get("content") or [] if isinstance(b, dict))})
+    elif isinstance(p, dict) and p.get("type") in CODEX_TYPES | {"tool_search_call", "tool_search_output"}:
         kind = p["type"]
         if kind in ("function_call", "custom_tool_call", "tool_search_call"):
             call = {"kind": "call", "id": p.get("call_id") or p.get("id"), "name": p.get("name") or kind,
@@ -1418,7 +1522,7 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
         if not _channels_kept(conn):
             return dict(NOTHING_YET)
         cols = ("SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at FROM events e "
-                f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.{CHANNEL} = ? ")
+                f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? ")
         if after is not None:
             rows = conn.execute(cols + "AND e.row_id > ? ORDER BY e.row_id LIMIT ?",
                                 (channel, after, TRANSCRIPT_ITEMS + 1)).fetchall()
@@ -1432,7 +1536,7 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
                   "parts": parts(r["type"] or "?", r["payload_json"], r["text"])} for r in rows]
         earlier = False
         if items:
-            earlier = conn.execute(f"SELECT 1 FROM events WHERE {CHANNEL} = ? AND row_id < ? LIMIT 1",
+            earlier = conn.execute(f"SELECT 1 FROM events WHERE ifnull({CHANNEL}, '') = ? AND row_id < ? LIMIT 1",
                                    (channel, items[0]["row_id"])).fetchone() is not None
         elif after is not None:
             earlier = True

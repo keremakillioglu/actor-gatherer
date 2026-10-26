@@ -92,8 +92,9 @@ text is in the `cleaned_messages` table (`row_id` = that N).
 A task in 2, 3 or 4 still has its requests in section 1. That is deliberate.
 
 Requests the user made in a parallel channel after these sections were put together are
-not in them: each is a separate message, right before the request you are answering. They
-have the same standing as the parallel requests in section 1.
+not in them: each is a separate message, where it arrived -- right before the request you
+are answering, or after your latest step if it came while you were working. They have the
+same standing as the parallel requests in section 1.
 
 HOW TO READ A TASK. Each opens with its name, one sentence on what it did, and then any
 of four labelled lines recording what the user ESTABLISHED in it. Those lines are
@@ -252,7 +253,8 @@ def clip(text: str, budget: int, tok: Tokenizer) -> str:
 # definition, a convention, a correction -- binds here too, so each context
 # carries the other channels' requests: in the index, up to the build
 # (`index_block`); those that arrived since are shown in place, before the
-# channel's latest request (the policy's `parallel_requests`). The requests
+# channel's latest request, or mid-turn after its latest step (the policy's
+# `parallel_requests`, `parallel_places`). The requests
 # themselves come from `tools/history.other_requests`.
 
 INDEX_HEADER = "## Requests made in parallel sessions"

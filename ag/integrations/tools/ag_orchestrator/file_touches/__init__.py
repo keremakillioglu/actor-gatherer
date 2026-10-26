@@ -19,6 +19,11 @@ before the harness runs its calls, and the results come back in the next call:
     watch.py      the files that change under a directory, as the operating system reports them
     calls.py      the tool calls and results in either harness's messages
 
+The two may come the other way round: codex runs a call as soon as the answer has streamed it, and sends its
+results while the hook is still at the answer's end (asking for its count first). Results whose answer has not
+been seen end wait for it (END_WAIT), and are checked against it once it comes -- not against the answer before,
+whose window of changes on disk would then be the wrong one.
+
 Nothing here holds up a model call: the files a finished answer names are looked at before the
 harness is given its end (a few files, each read once, at most check.MAX_BYTES), and everything else
 runs after the call has gone on. Nothing raises into the hook: a failure is a line in its log."""
@@ -33,6 +38,8 @@ from .watch import LAG, Watcher
 
 SETTLE = 0.3                # seconds after a call's results arrive before they are checked: the watcher's
                             # last reports of what the calls changed, to come in (macOS's come in ~20 ms)
+END_WAIT = 10.0             # seconds results that came before their answer's end wait for it: then checked as
+                            # results whose answer was not seen end (what they read)
 SEEN_FILES = 256            # the files whose lines, as last seen, are kept: a change to one no call names
 SEEN_BYTES = 32 << 20       # is shown at its lines
 
@@ -50,6 +57,7 @@ class Files:
         self.ag_clients, self.log = ag_clients, log
         self.watcher = Watcher(log=lambda line: log("files", line)) if watcher is ... else watcher
         self.open: Dict[Tuple[str, str], dict] = {}     # (gatherer, channel) -> the answer whose calls run
+        self.early: Dict[Tuple[str, str], dict] = {}    # (gatherer, channel) -> results that came before their answer's end
         self.seen: "OrderedDict[str, List[str]]" = OrderedDict()
         self.tasks = set()
 
@@ -62,19 +70,51 @@ class Files:
             if not calls:
                 self.open.pop((gatherer, channel), None)
                 return
-            self.open[(gatherer, channel)] = {"at": since or time.time(), "calls": calls, "cwd": cwd,
-                                              "was": check.before(scripts_opened(calls)[0], cwd)}
+            opened = {"at": since or time.time(), "calls": calls, "cwd": cwd, "was": check.before(scripts_opened(calls)[0], cwd)}
             if self.watcher is not None:
                 self.watcher.watch(cwd)
+            early = self.early.get((gatherer, channel))
+            if early is not None and any(i in calls for i in early["ids"]):     # its calls' results came first
+                early["opened"] = opened
+                early["end"].set()
+                return
+            self.open[(gatherer, channel)] = opened
         except Exception as exc:  # noqa: BLE001 - never in the way of the answer
             self.log(gatherer, f"[{channel}] files: not looked at before the calls ran: {exc!r}")
 
     def arrived(self, gatherer: str, channel: str, cwd: Optional[str], messages) -> None:
         """A call of the session's has come in: the results of its last answer's calls are in it, and
-        are checked in the background. With no answer seen end (the hook began since), the results
-        the messages end with are checked -- what they read, not what they changed."""
+        are checked in the background. Results that came before their answer's end wait for it (END_WAIT);
+        with none seen end then (the hook began since), the results the messages end with are checked --
+        what they read, not what they changed."""
         try:
-            opened = self.open.pop((gatherer, channel), None)
+            key = (gatherer, channel)
+            opened = self.open.pop(key, None)
+            latest = last_results(messages)               # the results of the calls of the answer before this call
+            if opened is not None and latest and not any(i in opened["calls"] for i in latest):
+                opened = None                             # an earlier answer's: not these results'
+            if opened is None and latest:
+                early = self.early[key] = {"ids": latest, "end": asyncio.Event(), "opened": None}
+                self._run(self._later(gatherer, channel, cwd, messages, early, time.time()))
+            else:
+                self._checking(gatherer, channel, cwd, messages, opened, time.time())
+        except Exception as exc:  # noqa: BLE001
+            self.log(gatherer, f"[{channel}] files: not checked: {exc!r}")
+
+    async def _later(self, gatherer: str, channel: str, cwd: Optional[str], messages, early: dict, arrived: float) -> None:
+        """Results that came before their answer's end, checked once it comes (`started`), or after END_WAIT."""
+        try:
+            await asyncio.wait_for(early["end"].wait(), END_WAIT)
+        except asyncio.TimeoutError:
+            pass
+        if self.early.get((gatherer, channel)) is early:
+            del self.early[(gatherer, channel)]
+        self._checking(gatherer, channel, cwd, messages, early["opened"], arrived)
+
+    def _checking(self, gatherer: str, channel: str, cwd: Optional[str], messages, opened: Optional[dict],
+                  arrived: float) -> None:
+        """The results of `opened`'s calls (None: of those the messages end with) checked, in the background."""
+        try:
             results = results_in(messages)
             if opened:
                 calls = opened["calls"]
@@ -88,11 +128,14 @@ class Files:
             if not ids:
                 return
             entries = [(i, calls[i][0], calls[i][1], results[i][0], results[i][1]) for i in ids]
-            task = asyncio.ensure_future(self._check(gatherer, channel, cwd, entries, opened, time.time()))
-            self.tasks.add(task)
-            task.add_done_callback(self.tasks.discard)
+            self._run(self._check(gatherer, channel, cwd, entries, opened, arrived))
         except Exception as exc:  # noqa: BLE001
             self.log(gatherer, f"[{channel}] files: not checked: {exc!r}")
+
+    def _run(self, work) -> None:
+        task = asyncio.ensure_future(work)
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
 
     async def _check(self, gatherer: str, channel: str, cwd: Optional[str], entries: list, opened: Optional[dict],
                      arrived: float) -> None:
@@ -137,8 +180,11 @@ class Files:
         return out
 
     async def close(self) -> None:
-        """Let checks under way finish; stop watching."""
-        if self.tasks:
+        """Let checks under way finish -- results waiting for their answer's end, as results whose answer was
+        not seen end; stop watching."""
+        for early in list(self.early.values()):
+            early["end"].set()
+        while self.tasks:
             await asyncio.gather(*list(self.tasks), return_exceptions=True)
         if self.watcher is not None:
             self.watcher.close()
