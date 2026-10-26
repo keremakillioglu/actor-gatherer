@@ -176,7 +176,7 @@ class ProactiveContextManagerConfig:
     # `{channel_column}` where its work can be read.
     parallel_message: str = (
         "The user sent this to another session working in parallel with you:\n{text}\n\n"
-        "This is how ag shows you what the user asks the gatherer's other sessions, where it arrived in "
+        "This is how the gatherer shows you what the user asks its other sessions, where it arrived in "
         "your conversation. It is not addressed to you: do not answer it or take it up, and carry on with "
         "your own task. But a definition, convention, correction or exclusion the user states in it "
         "applies to your work too. That session's work is in {db_path}, table events, where "
