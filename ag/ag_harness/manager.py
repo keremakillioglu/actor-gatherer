@@ -417,6 +417,17 @@ class Manager(ContextManager):
             notify(gatherer_id, "counts", None, read_id)
         return found
 
+    def withdraw(self, gatherer_id: str, properties: Optional[dict], row_ids, read_id: Optional[int] = None) -> int:
+        """Not part of the interface: withdraw these events (`store.withdraw`) -- the harness took them back: stored
+        for a model call it hung up on, and not in what it sends after. They stay stored but are in no read, until
+        it sends one again. How many were withdrawn."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return 0
+        n = store.withdraw(self._conn(gatherer_id), row_ids, read_id)
+        if n:
+            notify(gatherer_id, "events", properties)
+        return n
+
     def record_failed(self, gatherer_id: str, read_id: int, status: Optional[int], error: str) -> bool:
         """Not part of the interface: record that the model call read `read_id` was for failed --
         the HTTP status its endpoint answered (None: none came) and why (`store.record_failed`) --

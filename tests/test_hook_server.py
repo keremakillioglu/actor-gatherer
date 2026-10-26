@@ -6,6 +6,7 @@ hook that passes, changes or fails is relayed as it should be."""
 
 import asyncio
 import json
+import time
 import os
 import sys
 import tempfile
@@ -348,6 +349,35 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hook.failures, [(hook_server.HUNG_UP, hook_server.HUNG_UP_WHY)])
         self.assertEqual(hook.answers, [])
         self.assertLess(len(frames), 40)                     # the model's call given up with it
+
+    async def test_a_hang_up_while_the_model_is_quiet_is_seen_at_once(self):
+        class Kept(ToyHook):
+            async def __call__(self, request):
+                request.state["kept"] = True
+                return await super().__call__(request)
+
+            async def failed(self, request, status, error):
+                self.failures.append((status, time.monotonic()))
+
+        hook = Kept()
+        hook.failures = []
+
+        async def upstream(request):                         # the model, thinking: nothing for 5 s after its start
+            await request.read()
+            resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            await resp.prepare(request)
+            try:
+                await resp.write(b"data: start\n\n")
+                await asyncio.sleep(5)
+                await resp.write(b"data: late\n\n")
+            except (ConnectionResetError, asyncio.CancelledError):
+                pass
+            return resp
+        began = time.monotonic()
+        await self._hang_up(hook, upstream, b"data: start\n")
+        (status, at), = hook.failures
+        self.assertEqual(status, hook_server.HUNG_UP)
+        self.assertLess(at - began, 2)                       # not at the model's next bytes, 5 s on
 
     async def test_streamed_gets_each_part_as_it_ends_while_the_answer_streams(self):
         """The upstream holds the rest of its answer until the hook has been given the text that came

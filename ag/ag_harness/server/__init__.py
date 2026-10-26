@@ -73,7 +73,9 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 provider has not counted yet (`counted`). A harness
                                                 that counts the context exactly before sending
                                                 it, and finds it over `budget`, reports that
-                                                count (`measured`) and asks again
+                                                count (`measured`) and asks again. `inserted`: the
+                                                rows of the events it stored (not those already
+                                                stored), for a `withdraw`
     {"op": "context", "gatherer", "properties", "cwd", "events", "limit"?, "preamble"?}
         -> {"context": [...] or null, "note", "tokens", "budget", "sent_tokens", "basis"}
                                                 a rewrite's context, read only: the events are
@@ -100,6 +102,12 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 the HTTP status its endpoint answered (none:
                                                 no answer came) and why, kept on the read
                                                 (`_reads`) for a reader of the gatherer
+    {"op": "withdraw", "gatherer", "properties", "rows", "read_id"?} -> {"withdrawn": n}
+                                                the harness took these events back (a call's
+                                                `inserted`): it hung up on the call before the
+                                                answer came, and does not send them again. Kept,
+                                                but in no read and not in `latest`, until the
+                                                harness sends one again (`insert` keeps it)
     {"op": "counted", "gatherer", "properties", "counts"?: {event_id: n}, "made"?: {made_id: n},
      "preamble_counts"?: [{"name", "text", "tokens"}], "left_out"?: {read_id: n}}
         -> {"events", "made", "preamble"}       sizes the model's provider counted after the
@@ -404,6 +412,14 @@ class Server:
         """Record the provider's count of the context read `read_id` returned."""
         return {"recorded": self.manager(gatherer).record_real_tokens(gatherer, read_id, tokens)}
 
+    def withdraw(self, gatherer: str, properties: Dict[str, Any], rows: list, read_id: Optional[int] = None) -> dict:
+        """Withdraw the events of `rows`: the harness took them back (`Manager.withdraw`)."""
+        n = self.manager(gatherer).withdraw(gatherer, properties, rows, read_id)
+        if n:
+            self.log(gatherer, tag(properties) + f"{n} events withdrawn: the harness took them back"
+                     + (f" (read {read_id})" if read_id is not None else ""))
+        return {"withdrawn": n}
+
     def failed(self, gatherer: str, read_id: int, status: Optional[int], error: str) -> dict:
         """Record that the model call read `read_id` was for failed: its endpoint's status, and why."""
         recorded = self.manager(gatherer).record_failed(gatherer, read_id, status, error)
@@ -498,6 +514,7 @@ class Server:
             self.log(gatherer, prefix + f"could not tell which events are counted: {exc!r}")
             uncounted = None
         return {"context": context, "note": note, "read_id": answer["read_id"], "uncounted": uncounted,
+                "inserted": [r for r in inserted["rows"] if r is not None],
                 **{k: answer.get(k) for k in ("tokens", "budget", "sent_tokens", "basis")}}
 
     def open(self, gatherer: str, properties: Dict[str, Any]) -> dict:
@@ -537,6 +554,12 @@ class Server:
                 return {"error": "no read_id and error"}
             return self.failed(gatherer, read_id, status if isinstance(status, int) and not isinstance(status, bool) else None,
                                error)
+        if op == "withdraw":
+            rows, read_id = request.get("rows"), request.get("read_id")
+            if not isinstance(rows, list) or not all(isinstance(r, int) and not isinstance(r, bool) for r in rows):
+                return {"error": "no rows"}
+            return self.withdraw(gatherer, properties, rows,
+                                 read_id if isinstance(read_id, int) and not isinstance(read_id, bool) else None)
         if op == "counted":
             sizes = counted_of(request)
             if sizes is None:

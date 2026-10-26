@@ -136,6 +136,17 @@ class HungUpTest(ErrorsBase):
         self.assertEqual(a["stopped"]["kind"], "interrupted")
         self.assertIsNone(self.failing())
 
+    def test_claude_code_has_the_message_back_only_after_the_key_that_stopped_it(self):
+        from ag_dashboard import sessions
+        now = time.time()
+        self.read(now - 5)
+        self.assertFalse(sessions.took_back("g", SESSION, now - 2))             # the call not hung up on
+        self.read(now - 1, status=data.HUNG_UP, error="hung up")             # read for after the Esc: ag was reading
+        self.assertTrue(sessions.took_back("g", SESSION, now - 2))              # Esc, in this turn
+        self.assertFalse(sessions.took_back("g", SESSION, 0.0))                 # something typed since
+        self.assertFalse(sessions.took_back("g", SESSION, now - 10))            # a key from an earlier turn
+        self.assertFalse(sessions.took_back("nope", SESSION, now))
+
     def test_a_try_after_it_is_not_a_retry_of_a_failure(self):
         now = time.time()
         self.read(now - 20, status=data.HUNG_UP, error="hung up")

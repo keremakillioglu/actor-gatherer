@@ -404,7 +404,7 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
             f"SELECT e.{CHANNEL}, e.text, e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
             f"WHERE t.name = 'user_message' AND e.row_id IN (SELECT max(e2.row_id) FROM events e2 "
             f"JOIN event_types t2 ON t2.event_type_id = e2.event_type_id WHERE t2.name = 'user_message' "
-            f"AND ifnull(e2.text, '') NOT LIKE '%[Subagent hand-back]%' GROUP BY e2.{CHANNEL})"):
+            f"AND ifnull(e2.text, '') NOT LIKE '%[Subagent hand-back]%'{kept(_tables(conn), 'e2')} GROUP BY e2.{CHANNEL})"):
         last_user[ch] = (text if text else readable(payload)) or ""
     tables = _tables(conn)
     recaps = {}                                      # each agent's newest recap (Claude Code's, while the user was away)
@@ -647,6 +647,13 @@ def failing(conn, channel: str) -> Optional[dict]:
         return None
     return {"at": _seconds(run[0]["read_at"]), "first": _seconds(run[-1]["read_at"]), "attempts": len(run),
             "status": run[0]["error_status"], "error": _clip(run[0]["error"], ERROR_CHARS), "retrying": retrying}
+
+
+def kept(tables: set, alias: str = "e") -> str:
+    """A condition on the events row `alias`: not one the harness took back (ag's `_withdrawn`: stored for a call it
+    hung up on, and not sent again -- Claude Code put the user's message back in its input box). Nothing for a file
+    from before ag kept them."""
+    return f" AND {alias}.row_id NOT IN (SELECT row_id FROM _withdrawn)" if "_withdrawn" in tables else ""
 
 
 def hung_up(conn, channel: str) -> Optional[float]:

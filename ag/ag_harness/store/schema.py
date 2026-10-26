@@ -185,6 +185,16 @@ CREATE TABLE IF NOT EXISTS _pending (
     text        TEXT                -- its readable text, as given; NULL = none
 );
 
+-- The events the harness took back: stored for a model call it hung up on before the answer came (the
+-- user stopped it), and not in what it sent after -- Claude Code puts the user's message back in its input
+-- box. Kept, but in no read (`rows`) and not where a request picks up its history (`latest`). An event
+-- sent again is stored again as itself: its row is no longer withdrawn (`insert`).
+CREATE TABLE IF NOT EXISTS _withdrawn (
+    row_id       INTEGER PRIMARY KEY,  -- the event (an events row)
+    withdrawn_at TEXT    NOT NULL,     -- when (UTC, ISO)
+    read_id      INTEGER               -- the read of the call it came with; NULL = not known
+);
+
 -- A harness's recap of a session: Claude Code's "while you were away" summary, which it asks its model
 -- for after a turn when the user has left. Not a turn and not history: never read back as events, never
 -- in a context; kept for a reader of the gatherer (the dashboard's actor list), newest last.

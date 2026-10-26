@@ -131,6 +131,22 @@ def hung_up(request) -> bool:
     return transport is None or transport.is_closing()
 
 
+WATCH_SECONDS = 0.25     # while the answer's next bytes are awaited, how often the harness is looked at (`next_bytes`)
+
+
+async def next_bytes(up, request) -> bytes:
+    """The answer's next bytes from upstream (`up`), b"" at its end -- the harness looked at meanwhile: one that hung
+    up raises ConnectionResetError then, not when the next bytes come, which while the model thinks can be seconds."""
+    got = asyncio.ensure_future(up.content.readany())
+    while True:
+        done, _ = await asyncio.wait({got}, timeout=WATCH_SECONDS)
+        if done:
+            return got.result()
+        if hung_up(request):
+            got.cancel()
+            raise ConnectionResetError("the harness hung up")
+
+
 def route_of(path: str):
     """(the label the URL names, or None; the path to forward):
     `/h/<label>/v1/chat` is label `label` and `/v1/chat`. A label
@@ -316,7 +332,10 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                     resp = web.StreamResponse(status=up.status, headers={
                         k: v for k, v in up.headers.items() if k.lower() not in HOP})
                     await resp.prepare(request)
-                    async for chunk in up.content.iter_any():
+                    while True:
+                        chunk = await next_bytes(up, request)
+                        if not chunk:
+                            break
                         if given.answer_started is None:
                             given.answer_started = time.time()
                         if answer is not None:
