@@ -45,6 +45,11 @@ told by the links, not by the rows: notes ag stored before the request they foll
 (`request_last`) still link where Claude Code sends them. Without a link (the first
 call, Claude Code rewriting the pieces at the end themselves), every piece's id is the
 chain from the request's start, which the history re-sent unchanged reproduces.
+One rewrite reaches a piece itself: when Claude Code joins two user messages in a row
+into one -- a turn that got no answer and the user's next words, or the last message a
+compaction summarizes and its instruction -- it adds a newline to the end of the first
+one's last text block. A stored user text is found in that form too (`merged_key`); its
+id is still checked against the piece as stored.
 Nothing of the context manager is imported here.
 """
 
@@ -54,7 +59,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from harness_kit import Kind, claude as rules
 from ag.integrations.tools.ag_orchestrator.adaptor import part_properties
-from harness_kit.claude import (COMPACTED, HARNESS_MARKERS, HARNESS_TEXTS, RETRY_NOTES,  # noqa: F401 - the rules, as
+from harness_kit.claude import (COMPACTED, HARNESS_MARKERS, OTHERS_WROTE, HARNESS_TEXTS, RETRY_NOTES,  # noqa: F401 - the rules, as
                                 RETRY_OPENINGS, SKILL, TYPED_COMMAND, blocks_of, is_compacted_summary,  # this module
                                 is_harness_text, pieces, text_of, typed_command, without_cache_control)  # had them
 
@@ -114,14 +119,27 @@ def chain_ids(items: list) -> List[str]:
     return ids
 
 
+def merged_key(item) -> Optional[str]:
+    """The piece_key of a user's text piece as Claude Code sends it joined with the user message after
+    it: the newline it adds to the end of the first one's last text block. None: not a user's text."""
+    blocks = blocks_of(item) if isinstance(item, dict) and item.get("role") == "user" else []
+    if len(blocks) != 1 or blocks[0].get("type") != "text" or not isinstance(blocks[0].get("text"), str):
+        return None
+    return piece_key({**item, "content": [{**blocks[0], "text": blocks[0]["text"] + "\n"}]})
+
+
 class Continuity:
     """Where a request carries on from its channel's history as the gatherer stored it: `stored`, the
     channel's last TAIL events as (payload, id), oldest first (the server's `latest`)."""
 
     def __init__(self, stored: Iterable[Tuple[object, str]] = ()):
-        self.known: Dict[str, List[str]] = {}       # piece_key -> the ids it is stored with
+        self.known: Dict[str, List[str]] = {}       # piece_key, or its merged_key -> the ids it is stored with
+        self.stored: Dict[str, str] = {}            # id -> the piece_key it is the hash of
         for payload, event_id in stored:
-            self.known.setdefault(piece_key(payload), []).append(event_id)
+            key = piece_key(payload)
+            self.stored[event_id] = key
+            for k in dict.fromkeys(k for k in (key, merged_key(payload)) if k is not None):
+                self.known.setdefault(k, []).append(event_id)
 
     def ids(self, items: list) -> Tuple[List[Optional[str]], int]:
         """(each piece's id, None for one not sent; the index of the first piece to send). The last piece
@@ -145,7 +163,7 @@ class Continuity:
         run: List[str] = []
         for k in range(end, 0, -1):
             pair = next(([before, this] for this in (run[:1] or self.known.get(keys[k], ()))
-                         for before in self.known.get(keys[k - 1], ()) if key_id(keys[k], before) == this), None)
+                         for before in self.known.get(keys[k - 1], ()) if key_id(self.stored[this], before) == this), None)
             if pair is None:
                 break
             run[:1] = pair

@@ -79,7 +79,9 @@ RETRY_NOTES = (
 # session -- a subagent's report as it hands back ("Another Claude session sent a message:\n<agent-message
 # from=...>"); its copy for the model of what /context shows ("## Context Usage ..."); a hook's reason for not
 # letting the turn end ("Stop hook feedback:\n..."); the notes of RETRY_OPENINGS; and its note that the user
-# declined its Chrome extension.
+# declined its Chrome extension. Its summary may come after its line that content others wrote is in it (OTHERS_WROTE):
+# "<artifact-content-authored-by-others/>\nThe summarized conversation included Artifact content ...".
+OTHERS_WROTE = "<artifact-content-authored-by-others/>"
 OPENINGS = (
     ("<system-reminder>", Kind.ENVIRONMENT),
     ("<local-command-caveat>", Kind.OTHER),
@@ -100,6 +102,7 @@ OPENINGS = (
     ("<bash-stdout>", Kind.COMMAND_OUTPUT),
     ("<bash-stderr>", Kind.COMMAND_OUTPUT),
     ("This session is being continued from a previous conversation that ran out of context", Kind.COMPACTION_SUMMARY),
+    (OTHERS_WROTE, Kind.COMPACTION_SUMMARY),
     ("Base directory for this skill:", Kind.SKILL),
     ("Another Claude session sent a message:", Kind.PEER_MESSAGE),
     ("<agent-message ", Kind.AGENT_REPORT),
@@ -387,10 +390,13 @@ def text_of(item) -> Optional[str]:
 
 
 def is_compacted_summary(item) -> bool:
-    """Whether a piece is the summary Claude Code goes on from after compacting its history."""
+    """Whether a piece is the summary Claude Code goes on from after compacting its history -- perhaps after its notice
+    that content others wrote is in it (OTHERS_WROTE)."""
     blocks = blocks_of(item) if isinstance(item, dict) and item.get("role") == "user" else []
-    return len(blocks) == 1 and blocks[0].get("type") == "text" and \
-        str(blocks[0].get("text") or "").lstrip().startswith(COMPACTED)
+    text = str(blocks[0].get("text") or "").lstrip() if len(blocks) == 1 and blocks[0].get("type") == "text" else ""
+    if text.startswith(OTHERS_WROTE):                    # its line and the notice on the next
+        text = text.split("\n", 2)[-1].lstrip()
+    return text.startswith(COMPACTED)
 
 
 def notices(text: str) -> List[dict]:
@@ -569,7 +575,8 @@ def recap_at(messages: list) -> Optional[int]:
 def compaction_split(messages: list) -> Optional[Tuple[list, list]]:
     """(the conversation, the instruction's blocks) of a compaction call -- the last user message's text blocks
     from the one opening with `CRITICAL: Respond with TEXT ONLY` on are the instruction, the rest the conversation
-    -- or None: not a compaction."""
+    -- or None: not a compaction. Claude Code joins the instruction to the last message it summarizes, adding a newline
+    to that one's text: ag's Claude adaptor finds the message, if stored, in that form (its to_events.merged_key)."""
     at = next((i for i in range(len(messages) - 1, -1, -1)
                if isinstance(messages[i], dict) and messages[i].get("role") == "user"), None)
     if at is None or at < len(messages) - 2:          # the last user message, or just before a system note

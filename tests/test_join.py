@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ag.ag_harness  # noqa: E402,F401
-from ag.ag_harness import Manager  # noqa: E402
+from ag.ag_harness import Manager, db_path  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_interface import Jobs  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
@@ -96,7 +96,7 @@ class GuideTest(JoinBase):
         for kind in ("History sections", "Requests made in parallel", "File-change notices",
                      "Messages from a stream", "Left-out notes"):
             self.assertIn(kind, guide)
-        self.assertIn(self.m._conn("w").execute("PRAGMA database_list").fetchone()[2], guide)
+        self.assertIn(db_path("w"), guide)       # as configured: SQLite's own name for it follows symlinks (macOS: /var is /private/var)
         self.assertIn("`p_channel`", guide)
 
     def test_the_sections_no_longer_say_where_the_history_is_themselves(self):
