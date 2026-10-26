@@ -44,7 +44,6 @@ HELD_SECONDS = 30          # a message held until its turn ended: stored this cl
 LINE_CHARS = 400           # the most of one line's text sent
 COMMAND_OUTPUT = 4000      # the most of a command's output sent
 CONTEXT = 2                # the lines known around a change shown with it
-REPLY_CHARS = 4000         # the most of a user message or one of the agent's replies sent
 # as the hook server's file_touches/check.py has them: Claude Code's note after a command's output, codex's header before it
 SHELL_CWD_NOTE = re.compile(r"\n?Shell cwd was reset to [^\n]*\s*$")
 CODEX_HEADER = re.compile(r"^(?:Chunk ID: [^\n]*\n)?(?:Wall time: [^\n]*\n)?(?:Process exited with code [^\n]*\n)?"
@@ -196,7 +195,7 @@ def _runs(numbered: List[tuple]) -> List[tuple]:
 
 class _Turn:
     def __init__(self, n, row_id, at, text):
-        self.head = {"n": n, "row_id": row_id, "at": at, "text": text[:REPLY_CHARS], "replies": [], "now": None, "more": [],
+        self.head = {"n": n, "row_id": row_id, "at": at, "text": text, "replies": [], "now": None, "more": [],
                      "last": None}
         self.acts: Dict[str, dict] = {}              # its calls, by id, for what it is doing (work.summary)
         self.files: Dict[str, dict] = {}
@@ -341,17 +340,17 @@ def _note(text: str) -> Optional[dict]:
     m = SKILL.match(text)
     if m:
         return {"kind": "skill", "name": os.path.basename(m.group(1).strip().rstrip("/")), "args": (m.group(3) or "").strip(),
-                "text": m.group(2).strip()[:REPLY_CHARS]}
+                "text": m.group(2).strip()}
     m = AGENT_MESSAGE.search(text) if text.lstrip().startswith(("Another Claude session sent a message:", "<agent-message ")) else None
     if m:
         body = m.group(2)
         if REPORT_FOLLOWS in body:                   # a hand-back: the report, each of its lines indented by Claude Code
             body = textwrap.dedent(body.split(REPORT_FOLLOWS, 1)[1])
-        return {"kind": "report", "from": m.group(1), "text": body.strip()[:REPLY_CHARS]}
+        return {"kind": "report", "from": m.group(1), "text": body.strip()}
     m = PEER_MESSAGE.search(text) if text.lstrip().startswith("Another Claude session sent a message:") else None
     if m:
         who = dict(re.findall(r'([\w-]+)="([^"]*)"', m.group(1)))
-        return {"kind": "peer", "name": who.get("from-name") or who.get("from") or "", "text": m.group(2).strip()[:REPLY_CHARS]}
+        return {"kind": "peer", "name": who.get("from-name") or who.get("from") or "", "text": m.group(2).strip()}
     m = RAN.match(text)
     if m:
         args = (m.group(2) or "").strip()
@@ -692,7 +691,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     meanwhile = True
             text = said[0] if text is None else text
             if meanwhile and starts:
-                more.setdefault(len(starts) - 1, []).append({"row_id": row_id, "at": at, "text": text.rstrip()[:REPLY_CHARS]})
+                more.setdefault(len(starts) - 1, []).append({"row_id": row_id, "at": at, "text": text.rstrip()})
             else:
                 starts.append((i, row_id, at, text))
     heads = [_Turn(n, row_id, at, t) for n, (i, row_id, at, t) in enumerate(starts)]
@@ -744,14 +743,14 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 if m:
                     agents[m.group(1)] = str((started.get("input") or {}).get("description") or "")
             elif p["kind"] == "text" and p.get("role") == "assistant" and p["text"].strip():
-                head["replies"].append({"kind": "text", "text": p["text"][:REPLY_CHARS]})
+                head["replies"].append({"kind": "text", "text": p["text"]})
                 head["now"] = head["last"] = None
             elif p["kind"] == "thinking":                    # a run of thinking between two replies: one, its words gathered
                 said = head["replies"]
                 if not said or said[-1]["kind"] != "thinking":
                     said.append({"kind": "thinking", "texts": []})
                 if p["text"].strip():
-                    said[-1]["texts"].append(p["text"][:REPLY_CHARS])
+                    said[-1]["texts"].append(p["text"])
                     head["last"] = None                      # shown after the call: the call is no longer the last
                 head["now"] = {"kind": "thinking"}
             elif p["kind"] == "note":                        # Claude Code's own: a report, a message, a skill loaded, a ! command's output
