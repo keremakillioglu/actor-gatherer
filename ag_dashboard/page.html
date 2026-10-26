@@ -733,74 +733,81 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-status { display: flex; align-items: center; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: .93em; }
 .files .fl-status .spin { flex: none; }
 .files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* an avatar's effect round its character (its avatar_motion's second word, avatars/README.md), while the actor thinks on its
-   stage: three of each, laid over the character (.stage-box). Every animation runs on the page's clock (--t), so a redraw
-   does not restart it. */
-.buddy { pointer-events: none; isolation: isolate; --t: 0s; }
+/* the actor at work, "Simple" (buddy()): its avatar's character out of its circle, small, moving as it would -- its
+   data-motion, a move and an effect (avatars/README.md); and on the stage, while it thinks, the same effect laid over the
+   character (.stage-box). Every animation runs on the page's clock (--t), so a redraw does not restart it. */
+.buddy { position: relative; display: inline-block; width: 24px; height: 24px; flex: none; isolation: isolate; pointer-events: none; --t: 0s; }
+/* a soft edge round it, so a white character stands out on a light page (--buddy-edge: the theme's) */
+.buddy img { width: 100%; height: 100%; display: block; transform-origin: var(--o, 50% 50%);
+  filter: drop-shadow(0 0 .7px var(--buddy-edge, rgba(0, 0, 0, .45))) drop-shadow(0 1px 1px var(--buddy-edge2, rgba(0, 0, 0, .12)));
+  animation: var(--m, b-bob) var(--d, 2.4s) var(--e, ease-in-out) infinite var(--t); }
 .buddy i { position: absolute; pointer-events: none; opacity: 0; font-style: normal; line-height: 1;
   animation: var(--f, none) var(--fd, 2.4s) var(--fe, ease-out) infinite; }
 .buddy i:nth-of-type(1) { --k: 0; animation-delay: var(--t); }
 .buddy i:nth-of-type(2) { --k: 1; animation-delay: calc(var(--t) - var(--fd, 2.4s) / 3); }
 .buddy i:nth-of-type(3) { --k: 2; animation-delay: calc(var(--t) - var(--fd, 2.4s) * 2 / 3); }
-@media (prefers-reduced-motion: reduce) { .buddy i, .buddy::before { animation: none !important; } }
+.buddy.still img, .buddy.still i, .buddy.still::before { animation: none; }
+.buddy.still { opacity: .55; filter: grayscale(.6); }
+@media (prefers-reduced-motion: reduce) { .buddy img, .buddy i, .buddy::before { animation: none !important; } }
 
-/* moves: its character as it thinks on its stage (.me), about its middle, its foot (50% 100%) or the string it hangs from (50% 0) */
-.me.m-bob { --m: b-bob; --d: 2.4s; }
+/* moves: the character (small, .buddy; or on its stage as it thinks, .me), about its middle, its foot (50% 100%) or the string it
+   hangs from (50% 0) */
+.m-bob { --m: b-bob; --d: 2.4s; }
 @keyframes b-bob { 50% { transform: translateY(-2px); } }
-.me.m-float { --m: b-float; --d: 3.6s; }
+.m-float { --m: b-float; --d: 3.6s; }
 @keyframes b-float { 25% { transform: translateY(-1.5px) rotate(-3deg); } 75% { transform: translateY(.5px) rotate(3deg); } }
-.me.m-hop { --m: b-hop; --d: 2.2s; --e: ease-out; --o: 50% 100%; }
+.m-hop { --m: b-hop; --d: 2.2s; --e: ease-out; --o: 50% 100%; }
 @keyframes b-hop { 0%, 55%, 100% { transform: none; } 8% { transform: scale(1.08, .9); } 24% { transform: translateY(-5px) scale(.96, 1.05); }
   42% { transform: translateY(0) scale(1.07, .93); } }
-.me.m-swim { --m: b-swim; --d: 3s; }
+.m-swim { --m: b-swim; --d: 3s; }
 @keyframes b-swim { 0%, 100% { transform: translateX(-1.5px) rotate(4deg); } 50% { transform: translate(1.5px, -.5px) rotate(-4deg); } }
-.me.m-glide { --m: b-glide; --d: 5s; }
+.m-glide { --m: b-glide; --d: 5s; }
 @keyframes b-glide { 0%, 100% { transform: translateX(-2.5px) rotate(1deg); } 50% { transform: translateX(2.5px) rotate(-1deg); } }
-.me.m-pulse { --m: b-pulse; --d: 2.6s; --o: 50% 100%; }
+.m-pulse { --m: b-pulse; --d: 2.6s; --o: 50% 100%; }
 @keyframes b-pulse { 0%, 100% { transform: none; } 25% { transform: scale(1.08, .88); } 50% { transform: translateY(-3px) scale(.95, 1.06); }
   75% { transform: translateY(-1px); } }
-.me.m-puff { --m: b-puff; --d: 3.2s; }
+.m-puff { --m: b-puff; --d: 3.2s; }
 @keyframes b-puff { 0%, 30%, 100% { transform: none; } 45% { transform: scale(1.15); } 70% { transform: scale(1.13); } 85% { transform: scale(.98); } }
-.me.m-waddle { --m: b-waddle; --d: 1.3s; --e: linear; --o: 50% 100%; }
+.m-waddle { --m: b-waddle; --d: 1.3s; --e: linear; --o: 50% 100%; }
 @keyframes b-waddle { 0%, 100% { transform: rotate(-6deg); } 25% { transform: translateY(-1px); } 50% { transform: rotate(6deg); } 75% { transform: translateY(-1px); } }
-.me.m-wobble { --m: b-wobble; --d: 3s; --o: 50% 100%; }
+.m-wobble { --m: b-wobble; --d: 3s; --o: 50% 100%; }
 @keyframes b-wobble { 0%, 70%, 100% { transform: none; } 10% { transform: rotate(-11deg); } 25% { transform: rotate(8deg); } 40% { transform: rotate(-5deg); }
   55% { transform: rotate(2deg); } }
-.me.m-swing { --m: b-swing; --d: 3s; --o: 50% 0; }
+.m-swing { --m: b-swing; --d: 3s; --o: 50% 0; }
 @keyframes b-swing { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
-.me.m-sway { --m: b-sway; --d: 4s; --o: 50% 100%; }
+.m-sway { --m: b-sway; --d: 4s; --o: 50% 100%; }
 @keyframes b-sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
-.me.m-nod { --m: b-nod; --d: 2.8s; --o: 50% 100%; }
+.m-nod { --m: b-nod; --d: 2.8s; --o: 50% 100%; }
 @keyframes b-nod { 0%, 60%, 100% { transform: none; } 70% { transform: translateY(1px) rotate(7deg); } 80% { transform: none; } 88% { transform: translateY(.5px) rotate(5deg); } }
-.me.m-peck { --m: b-peck; --d: 2.2s; --o: 50% 100%; }
+.m-peck { --m: b-peck; --d: 2.2s; --o: 50% 100%; }
 @keyframes b-peck { 0%, 50%, 100% { transform: none; } 10%, 30% { transform: rotate(-13deg); } 20%, 40% { transform: none; } }
-.me.m-roll { --m: b-roll; --d: 3.6s; }
+.m-roll { --m: b-roll; --d: 3.6s; }
 @keyframes b-roll { 0%, 100% { transform: translateX(-3px) rotate(-17deg); } 50% { transform: translateX(3px) rotate(17deg); } }
-.me.m-fan { --m: b-fan; --d: 1.2s; --o: 50% 90%; }
+.m-fan { --m: b-fan; --d: 1.2s; --o: 50% 90%; }
 @keyframes b-fan { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(10deg); } }
-.me.m-beckon { --m: b-beckon; --d: 2.6s; --o: 50% 100%; }
+.m-beckon { --m: b-beckon; --d: 2.6s; --o: 50% 100%; }
 @keyframes b-beckon { 0%, 45%, 100% { transform: none; } 10%, 30% { transform: translateY(-1px) rotate(-7deg); } 20% { transform: none; } }
-.me.m-squish { --m: b-squish; --d: 2.4s; --o: 50% 100%; }
+.m-squish { --m: b-squish; --d: 2.4s; --o: 50% 100%; }
 @keyframes b-squish { 0%, 100% { transform: none; } 30% { transform: scale(1.09, .91); } 60% { transform: scale(.96, 1.05); } 80% { transform: scale(1.02, .98); } }
-.me.m-crawl { --m: b-crawl; --d: 6s; }
+.m-crawl { --m: b-crawl; --d: 6s; }
 @keyframes b-crawl { 0%, 100% { transform: translateX(-2.5px); } 25%, 75% { transform: translateY(-.5px); } 50% { transform: translateX(2.5px); } }
-.me.m-wag { --m: b-wag; --d: 2s; }
+.m-wag { --m: b-wag; --d: 2s; }
 @keyframes b-wag { 0%, 50%, 100% { transform: none; } 10%, 30% { transform: rotate(6deg); } 20% { transform: rotate(-6deg); } 40% { transform: rotate(-3deg); } }
-.me.m-patter { --m: b-patter; --d: 1.8s; --o: 50% 100%; }
+.m-patter { --m: b-patter; --d: 1.8s; --o: 50% 100%; }
 @keyframes b-patter { 0%, 45%, 100% { transform: none; } 8%, 24% { transform: translateY(-1.5px) scale(1.02, .98); } 16%, 32% { transform: none; } }
-.me.m-flutter { --m: b-flutter; --d: 2.6s; }
+.m-flutter { --m: b-flutter; --d: 2.6s; }
 @keyframes b-flutter { 0%, 100% { transform: none; } 6% { transform: translateY(-2px); } 12% { transform: translateY(-1px); } 18% { transform: translateY(-3px); }
   24% { transform: translateY(-2px); } 30% { transform: translateY(-3.5px); } 55% { transform: translateY(-2.5px) rotate(-3deg); } 80% { transform: none; } }
-.me.m-lookabout { --m: b-lookabout; --d: 4.4s; --o: 50% 100%; }
+.m-lookabout { --m: b-lookabout; --d: 4.4s; --o: 50% 100%; }
 @keyframes b-lookabout { 0%, 100% { transform: none; } 15%, 75% { transform: translateY(-1.5px); } 30% { transform: translateY(-1.5px) rotate(-8deg); }
   55% { transform: translateY(-1.5px) rotate(8deg); } 90% { transform: none; } }
-.me.m-flip { --m: b-flip; --d: 4s; }
+.m-flip { --m: b-flip; --d: 4s; }
 @keyframes b-flip { 0%, 72% { transform: none; } 84% { transform: translateY(-4px) rotateY(180deg); } 96%, 100% { transform: rotateY(360deg); } }
-.me.m-whisk { --m: b-whisk; --d: 2s; --e: linear; }
+.m-whisk { --m: b-whisk; --d: 2s; --e: linear; }
 @keyframes b-whisk { 0%, 50%, 100% { transform: none; } 6%, 18%, 30%, 42% { transform: translateX(-1px); } 12%, 24%, 36% { transform: translateX(1px); } }
-.me.m-wiggle { --m: b-wiggle; --d: 1.6s; }
+.m-wiggle { --m: b-wiggle; --d: 1.6s; }
 @keyframes b-wiggle { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
-.me.m-spin { --m: b-spin; --d: 10s; --e: linear; }
+.m-spin { --m: b-spin; --d: 10s; --e: linear; }
 @keyframes b-spin { 100% { transform: rotate(360deg); } }
 
 /* effects: three of each, a third of the way apart (or, a spout, together), around the avatar */
@@ -857,6 +864,7 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-talk > .fl-status { margin: 4px 6px 0 8px; }
 .files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
 .files .fl-status .spin { font-size: 1.4em; }
+.files .fl-status > .buddy { margin: 2px 0 0 4px; }
 /* the turn over: the actor small, done -- a check at its corner, still; grown in if the page saw it end (--r) */
 .files .fl-done { display: flex; align-items: center; margin: 6px 6px 0 17px; }
 .files .fl-done .done { position: relative; display: inline-flex; flex: none; transform-origin: 30% 90%;
@@ -1355,6 +1363,9 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
             <div><h4>Theme</h4>
               <div class="views" id="theme" role="group" aria-label="Theme">
                 <button type="button" data-theme-pick="system">System</button><button type="button" data-theme-pick="light">Light</button><button type="button" data-theme-pick="dark">Dark</button></div></div>
+            <div><h4>Avatar at work</h4>
+              <div class="views" id="avatar-mode" role="group" aria-label="Avatar at work">
+                <button type="button" data-avatar-pick="acting" title="Acting out what it does: a book, a magnifying glass, gears…">Acting</button><button type="button" data-avatar-pick="simple" title="Small, moving as its character does">Simple</button></div></div>
             <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
           </div>
         </div>
@@ -1566,10 +1577,20 @@ function atRest(a, turn) {
     src ? el("img", { src, alt: "", draggable: "false" }) : null, el("span", { class: "ok" }, ok));
 }
 // The actor at work in the Chat view: its avatar acting out its turn -- `t`, the turn, its `work` (work.py's summary) --
-// on the stage; an actor with no avatar has the turning glyph.
+// on the stage; or, the setting "Simple" (avatarMode), buddy()'s one motion. An actor with no avatar has the turning glyph.
 function atWork(a, t) {
   const src = bareAvatar(a);
-  return src ? stage(a, (t && t.work) || {}, src) : el("span", { class: "spin", "aria-hidden": "true" });
+  if (!src) return el("span", { class: "spin", "aria-hidden": "true" });
+  return avatarMode === "simple" ? buddy(a, !!a.failing) : stage(a, (t && t.work) || {}, src);
+}
+// The actor at work, small: its avatar's character out of its circle, moving as it does (its avatar_motion: a move, then an
+// effect round it, if any -- the .buddy CSS), on the page's clock so a redraw does not start it over; `still`, its calls
+// failing: not moving.
+function buddy(a, still) {
+  const [move, fx] = (a.avatar_motion || "").split(/\s+/).map((w) => /^[a-z0-9-]+$/.test(w) ? w : "");
+  return el("span", { class: ["buddy", move && `m-${move}`, fx && `f-${fx}`, still && "still"].filter(Boolean).join(" "),
+    style: `--t: -${Math.round(performance.now())}ms`, "aria-hidden": "true" },
+    el("img", { src: bareAvatar(a), alt: "", draggable: "false" }), ...(fx ? [el("i"), el("i"), el("i")] : []));
 }
 // What an actor's stage reacts to, once: a call that ended, its turn over (`id`: which; null, none). Started when the
 // page sees it change -- or, seen on first drawing the actor, from when it happened, if that was lately; null once over.
@@ -2007,6 +2028,22 @@ function setTheme(pick, keep) {
   window.dispatchEvent(new Event("ag-theme"));
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => window.dispatchEvent(new Event("ag-theme")));
+// The actor at work in the Chat view: acting out what it does (the stage), or small with its one motion ("simple"); kept in
+// this browser, acting until one is picked.
+const AVATAR_KEY = "ag-dashboard-avatar";
+let avatarMode = "acting";
+function setAvatarMode(pick, keep, draw = true) {
+  avatarMode = pick === "simple" ? "simple" : "acting";
+  for (const b of document.querySelectorAll("[data-avatar-pick]")) b.setAttribute("aria-pressed", b.dataset.avatarPick === avatarMode ? "true" : "false");
+  if (keep) { try { localStorage.setItem(AVATAR_KEY, avatarMode); } catch (e) { /* this page only */ } }
+  for (const p of panes.others) p.call("avatar", avatarMode);
+  if (draw && chatView().id === "files") keepingPlace(renderMain);
+}
+setAvatarMode((() => { try { return localStorage.getItem(AVATAR_KEY); } catch (e) { return null; } })(), false, false);
+document.getElementById("avatar-mode").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-avatar-pick]");
+  if (b) setAvatarMode(b.dataset.avatarPick, true);
+});
 setTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })() || "dark", false);
 document.getElementById("theme").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-theme-pick]");
@@ -2785,6 +2822,7 @@ function paneReady() {
     select: (g, c, view) => { if (view) chatViewId = view; select(g, c); },
     view: (id) => setChatView(id),
     theme: (pick) => setTheme(pick, false),
+    avatar: (pick) => setAvatarMode(pick, false),
     focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
     top: (h) => setTopRow(h),
   });

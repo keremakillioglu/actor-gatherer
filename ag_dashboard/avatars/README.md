@@ -25,7 +25,7 @@ then an effect round it if any. With none, or a move the page does not know, it 
   `patter`, `flutter`, `lookabout`, `flip`, `whisk`, `wiggle`, `spin`;
 - effects: `steam`, `bubbles`, `spout`, `petals`, `snow`, `sparkle`, `notes`, `breeze`, `ripple`, `glow`.
 
-They are page.html's `.me.m-<move>` and `.buddy.f-<effect>`; the drawn ones name theirs in their kind's
+They are page.html's `.m-<move>` and `.buddy.f-<effect>`; the drawn ones name theirs in their kind's
 MOTIONS (assets/src/avatars).
 
 It works on a stage (page.html's `stage`), the same for every avatar: for each kind of call its turn makes
@@ -35,5 +35,7 @@ sent off (ship), an hourglass (wait), little copies of itself (team). As a call 
 the tool away, then thinks until the next, with a thought bubble whose dots are in its hue; only then does it
 move as its own character, its move and its effect. It reacts the same way to how a call ended: a failure, failures
 in a row, tests passed or failed, a commit. Its turn over, it sits small under it, done.
+The dashboard's settings can switch this to "Simple" instead (kept in the browser): the character small,
+with only its own move and effect.
 
 A dashboard running sees a new one at once. Removing one gives its actors another.

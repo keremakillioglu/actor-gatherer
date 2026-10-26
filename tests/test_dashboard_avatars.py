@@ -123,7 +123,7 @@ class AvatarsTest(AvatarsBase):
             page = fh.read()
         with open(os.path.join(avatars.DIR, "README.md"), encoding="utf-8") as fh:
             readme = fh.read()
-        moves = set(re.findall(r"\.me\.m-([a-z-]+) \{ --m: b-\1;", page))
+        moves = set(re.findall(r"^\.m-([a-z-]+) \{ --m: b-\1;", page, re.M))
         effects = set(re.findall(r"\.buddy\.f-([a-z-]+)[ :]", page))
         listed = lambda kind: set(re.findall(r"`([a-z]+)`", re.search(rf"^- {kind}: (.*?)(?:^- |\n\n)", readme, re.M | re.S).group(1)))
         self.assertEqual(listed("moves"), moves)
