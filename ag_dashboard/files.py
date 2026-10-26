@@ -33,7 +33,7 @@ import tempfile
 import textwrap
 from typing import Dict, List, Optional
 
-from . import data, queued, rollout
+from . import data, queued, rollout, work
 from . import home as paths
 from .commands import (  # noqa: F401 - python_changes: tested here
     CODE_MODE, EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, opened_script,
@@ -44,7 +44,6 @@ HELD_SECONDS = 30          # a message held until its turn ended: stored this cl
 LINE_CHARS = 400           # the most of one line's text sent
 COMMAND_OUTPUT = 4000      # the most of a command's output sent
 CONTEXT = 2                # the lines known around a change shown with it
-REPLY_CHARS = 4000         # the most of a user message or one of the agent's replies sent
 # as the hook server's file_touches/check.py has them: Claude Code's note after a command's output, codex's header before it
 SHELL_CWD_NOTE = re.compile(r"\n?Shell cwd was reset to [^\n]*\s*$")
 CODEX_HEADER = re.compile(r"^(?:Chunk ID: [^\n]*\n)?(?:Wall time: [^\n]*\n)?(?:Process exited with code [^\n]*\n)?"
@@ -152,7 +151,7 @@ def _events(conn, channel: str):
     parts unclipped, the lines of a long read all there."""
     rows = conn.execute(
         "SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at FROM events e "
-        f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.{data.CHANNEL} = ? ORDER BY e.row_id",
+        f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{data.CHANNEL}, '') = ? ORDER BY e.row_id",
         (channel,)).fetchall()
     for r in rows:
         yield r["row_id"], r["type"] or "?", data._seconds(r["inserted_at"]), data.parts(r["type"] or "?", r["payload_json"], r["text"], None)
@@ -196,8 +195,9 @@ def _runs(numbered: List[tuple]) -> List[tuple]:
 
 class _Turn:
     def __init__(self, n, row_id, at, text):
-        self.head = {"n": n, "row_id": row_id, "at": at, "text": text[:REPLY_CHARS], "replies": [], "now": None, "more": [],
+        self.head = {"n": n, "row_id": row_id, "at": at, "text": text, "replies": [], "now": None, "more": [],
                      "last": None}
+        self.acts: Dict[str, dict] = {}              # its calls, by id, for what it is doing (work.summary)
         self.files: Dict[str, dict] = {}
         self.commands: List[dict] = []
         self.order: List[str] = []
@@ -359,21 +359,21 @@ def _note(text: str) -> Optional[dict]:
     m = SKILL.match(text)
     if m:
         return {"kind": "skill", "name": os.path.basename(m.group(1).strip().rstrip("/")), "args": (m.group(3) or "").strip(),
-                "text": m.group(2).strip()[:REPLY_CHARS]}
+                "text": m.group(2).strip()}
     m = AGENT_MESSAGE.search(text) if text.lstrip().startswith(("Another Claude session sent a message:", "<agent-message ")) else None
     if m:
         body = m.group(2)
         if REPORT_FOLLOWS in body:                   # a hand-back: the report, each of its lines indented by Claude Code
             body = textwrap.dedent(body.split(REPORT_FOLLOWS, 1)[1])
-        return {"kind": "report", "from": m.group(1), "text": body.strip()[:REPLY_CHARS]}
+        return {"kind": "report", "from": m.group(1), "text": body.strip()}
     m = CODEX_AGENT.match(text)
     if m:
         kind = "report" if m.group(1) == "FINAL_ANSWER" else "peer"
-        return {"kind": kind, ("from" if kind == "report" else "name"): m.group(2).strip(), "text": m.group(3).strip()[:REPLY_CHARS]}
+        return {"kind": kind, ("from" if kind == "report" else "name"): m.group(2).strip(), "text": m.group(3).strip()}
     m = PEER_MESSAGE.search(text) if text.lstrip().startswith("Another Claude session sent a message:") else None
     if m:
         who = dict(re.findall(r'([\w-]+)="([^"]*)"', m.group(1)))
-        return {"kind": "peer", "name": who.get("from-name") or who.get("from") or "", "text": m.group(2).strip()[:REPLY_CHARS]}
+        return {"kind": "peer", "name": who.get("from-name") or who.get("from") or "", "text": m.group(2).strip()}
     m = RAN.match(text)
     if m:
         args = (m.group(2) or "").strip()
@@ -411,7 +411,7 @@ def _loaded(text: str) -> List[tuple]:
 
 
 def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = "") -> dict:
-    """The session's turns ({n, row_id, at, text, more, replies, now, last}: what the user asked, and what they wrote while it
+    """The session's turns ({n, row_id, at, text, more, replies, now, last, work}: what the user asked, and what they wrote while it
     ran ({row_id, at, text}: sent mid-turn, or held until it ended; queued.py) -- part of it, not a turn of its own; what the agent
     said back and thought, in order -- each {kind: "text", text} or {kind: "thinking", texts} (a run of
     thinking between two replies, its readable words: none when encrypted), and among them a subagent's report
@@ -420,7 +420,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     ran with ! printed, when it is one; what it was doing
     last -- {kind: "thinking"}, {kind: "call", id, text} (a call with no result yet), or None; and its latest
     call while nothing readable was said or thought after it -- {id, text, call, running, error, output} -- or
-    None), and for turn `turn` (None:
+    None; and what its calls are doing and how they ended, work.summary's), and for turn `turn` (None:
     the latest) the files it worked on, in the order first touched, each
         {path, kinds (read, edit, write, hit), created,
          sources: [{via, kind, kinds, error, call, blocks}]: the calls that touched it, in order, each
@@ -434,7 +434,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     A source the hook server checked on disk also has `checked` (True: what the call showed of the file
     is on disk; False: it is not; None: nothing to match), and `unnamed` when the file changed while
     the call ran but the call doesn't name it; its kinds may be "delete" too. A file in a temporary
-    folder (`temporary`) has `temporary` true, and so has a call whose every file is in one.
+    folder (`temporary`) has `temporary` true.
     Relative paths in shell commands are taken from `cwd` (the session's directory). `home`: the
     user's home folder, which the page shows as ~."""
     conn = data._connect(gatherer)
@@ -715,7 +715,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     meanwhile = True
             text = said[0] if text is None else text
             if meanwhile and starts:
-                more.setdefault(len(starts) - 1, []).append({"row_id": row_id, "at": at, "text": text.rstrip()[:REPLY_CHARS]})
+                more.setdefault(len(starts) - 1, []).append({"row_id": row_id, "at": at, "text": text.rstrip()})
             else:
                 starts.append((i, row_id, at, text))
     heads = [_Turn(n, row_id, at, t) for n, (i, row_id, at, t) in enumerate(starts)]
@@ -742,6 +742,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     for i, (row_id, typ, at, parts) in enumerate(evs):
         cur = begins.get(i, cur)
         head = cur.head if cur is not None else {"replies": [], "now": None, "last": None}   # before the first message: kept nowhere
+        acts = cur.acts if cur is not None else {}
         for p in parts:
             if p["kind"] == "call":
                 order.append((cur, p))
@@ -751,8 +752,13 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 label = _label(p.get("name") or "", inp, p.get("input"), cwd)
                 head["now"] = {"kind": "call", "id": p.get("id"), "text": label}
                 head["last"] = {"id": p.get("id"), "text": label, "call": _call_view(p), "running": True, "error": False, "output": ""}
+                acts[p.get("id") or f"#{len(acts)}"] = {"id": p.get("id"), "kind": work.doing(p.get("name") or "", p.get("input")),
+                                                         "ended": None, "ok": True}
             elif p["kind"] == "result" and p.get("id"):
                 results[p["id"]] = dict(p, row_id=row_id)      # where it is stored: its image is fetched from there
+                if p["id"] in acts and acts[p["id"]]["ended"] is None:
+                    a = acts[p["id"]]
+                    a.update(ended=at or 0, seq=len(results), ok=work.ok(a["kind"], bool(p.get("error")), p.get("text") or ""))
                 if (head["now"] or {}).get("id") == p["id"]:
                     head["now"] = None
                 if (head["last"] or {}).get("id") == p["id"]:
@@ -767,14 +773,14 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                         agents[path] = path.rsplit("/", 1)[-1]
                         spawned[path] = {"head": head, "given": False}
             elif p["kind"] == "text" and p.get("role") == "assistant" and p["text"].strip():
-                head["replies"].append({"kind": "text", "text": p["text"][:REPLY_CHARS]})
+                head["replies"].append({"kind": "text", "text": p["text"]})
                 head["now"] = head["last"] = None
             elif p["kind"] == "thinking":                    # a run of thinking between two replies: one, its words gathered
                 said = head["replies"]
                 if not said or said[-1]["kind"] != "thinking":
                     said.append({"kind": "thinking", "texts": []})
                 if p["text"].strip():
-                    said[-1]["texts"].append(p["text"][:REPLY_CHARS])
+                    said[-1]["texts"].append(p["text"])
                     head["last"] = None                      # shown after the call: the call is no longer the last
                 head["now"] = {"kind": "thinking"}
             elif p["kind"] == "note":                        # Claude Code's own: a report, a message, a skill loaded, a ! command's output
@@ -807,7 +813,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         for path, x in spawned.items():
             said = rollout.report(rec, path) if not x["given"] else None
             if said:
-                x["head"]["replies"].append({"kind": "report", "name": agents.get(path, ""), "text": said[:REPLY_CHARS]})
+                x["head"]["replies"].append({"kind": "report", "name": agents.get(path, ""), "text": said})
     for t, p in order:
         if p["kind"] == "loaded":
             loaded(t, p)
@@ -816,6 +822,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         else:                                        # a codex script: the calls it makes
             for q, r in _opened(p, results.get(p.get("id")) if p.get("id") else None):
                 apply(t, q, r)
+    for h in heads:                                  # its newest call, while nothing readable was said or thought after it
+        h.head["work"] = dict(work.summary(list(h.acts.values())), **({} if h.head["last"] else {"last": None}))
     out = {"turns": [h.head for h in heads], "turn": pick if heads else None, "files": [], "commands": [],
            "home": os.path.expanduser("~")}
     if want is None:
@@ -832,8 +840,6 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     room = max(0, room - len(b[key]))
         out["files"].append({"path": path, "kinds": sorted(f["kinds"]), "created": f["created"],
                              "temporary": temporary(path), "sources": f["sources"]})
-    for c in want.commands:
-        c["temporary"] = bool(c["files"]) and all(temporary(p) for p in c["files"])
     out["commands"] = want.commands
     return out
 

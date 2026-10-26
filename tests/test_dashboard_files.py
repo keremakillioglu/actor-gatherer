@@ -212,6 +212,24 @@ class FilesTest(unittest.TestCase):
         self.add(call("b10", "Bash", {"command": "make"}), result("b10", "ok"), said("Built."))
         self.assertIsNone(files.files("g", "c1")["turns"][-1]["last"])     # a reply after it
 
+    def test_what_its_calls_are_doing_and_how_they_ended(self):
+        work = files.files("g", "c1")["turns"][-1]["work"]                  # the edits, the failed tests, then the reads
+        self.assertEqual((work["doing"], work["last"], work["failed"]), (None, "read", 0))
+        self.assertEqual({k: work["ended"][k] for k in ("id", "kind", "ok")}, {"id": "i1", "kind": "read", "ok": True})
+        self.add(asked("again"), call("t2", "Bash", {"command": "cd tests && python -m unittest"}))
+        work = files.files("g", "c1")["turns"][-1]["work"]
+        self.assertEqual((work["doing"], work["last"], work["ended"]), ("test", "test", None))
+        self.add(result("t2", "Ran 3 tests\n\nFAILED (failures=1)"))       # exits 0 through a pipe, all the same failed
+        work = files.files("g", "c1")["turns"][-1]["work"]
+        self.assertEqual((work["doing"], work["last"], work["ended"]["ok"], work["failed"]), (None, "test", False, 1))
+        self.add(call("g1", "Grep", {"pattern": "x"}), result("g1", "nothing", True), call("a1", "Agent", {"prompt": "p"}),
+                 call("a2", "Agent", {"prompt": "q"}))
+        work = files.files("g", "c1")["turns"][-1]["work"]
+        self.assertEqual((work["doing"], work["helpers"], work["failed"]), ("team", 2, 2))
+        self.add(result("a1", "done"), said("Both helpers are working."))
+        work = files.files("g", "c1")["turns"][-1]["work"]
+        self.assertEqual((work["doing"], work["last"], work["failed"]), ("team", None, 0))   # a reply after: no last call
+
     def test_a_read_shows_its_lines_at_their_numbers(self):
         a = files.files("g", "c1", 0)["files"][0]
         self.assertEqual(a["kinds"], ["read"])
@@ -325,13 +343,13 @@ class FilesTest(unittest.TestCase):
         by = {f["path"]: f["sources"][0]["blocks"] for f in got["files"]}
         self.assertEqual([(b["t"], b["lines"]) for b in by["/w/d.py"]], [("output", ["def c():", "    pass"])])
 
-    def test_files_in_temporary_folders_and_commands_touching_only_them_are_marked(self):
+    def test_files_in_temporary_folders_are_marked_and_every_command_is_listed(self):
         tmp = os.path.join(files.TEMPORARY[0], "scratch", "x.txt")
         self.add(asked("scratch"), call("s1", "Bash", {"command": f"cat {tmp}", "description": "Read scratch"}), result("s1", "hi"),
                  call("s2", "Bash", {"command": f"cat {tmp}; sed -n 1p a.py", "description": "Both"}), result("s2", "hi\ndef f():"))
         got = files.files("g", "c1", 2, cwd="/w")
         self.assertEqual({f["path"]: f["temporary"] for f in got["files"]}, {tmp: True, "/w/a.py": False})
-        self.assertEqual([(c["text"], c["temporary"]) for c in got["commands"]], [("Read scratch", True), ("Both", False)])
+        self.assertEqual([c["text"] for c in got["commands"]], ["Read scratch", "Both"])
         self.assertTrue(files.temporary("/tmp/x") and files.temporary("/private/tmp/x") and not files.temporary("/tmpx/y"))
 
     def test_every_call_is_listed_in_order_with_its_files(self):
@@ -387,6 +405,18 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(replies, [{"kind": "text", "text": "Building it."},
                                    {"kind": "peer", "name": "ucbepic-actor-gatherer-6c", "text": "Your branch predates #108.\n\nMerge main."},
                                    {"kind": "text", "text": "The other session is right."}])
+
+    def test_long_messages_are_sent_whole(self):
+        long = lambda what: f"{what} " + "word " * 3000 + "the end."      # over 15,000 characters: as long replies run
+        midturn = ("The user sent a new message while you were working:\n" + long("Also") + "\n\nThis is how Claude Code "
+                   "surfaces messages the user sends mid-turn — within the running turn, often alongside the next tool result, "
+                   "rather than as a separate conversation turn. Address the message above as you continue this turn.")
+        self.add(asked(long("Read this")), thought(long("Thinking")), call("b8", "Bash", {"command": "ls"}),
+                 result("b8", "a.py"), asked(midturn), said(long("Here")))
+        turn = files.files("g", "c1", cwd="/w")["turns"][-1]
+        got = [turn["text"], *(m["text"] for m in turn["more"]), *turn["replies"][0]["texts"], turn["replies"][1]["text"]]
+        self.assertEqual([len(t) for t in got], [len(long(w)) for w in ("Read this", "Also", "Thinking", "Here")])
+        self.assertEqual(got, [long(w) for w in ("Read this", "Also", "Thinking", "Here")])
 
     def test_files_claude_code_gives_the_agent_are_read_in_the_turn(self):
         start = ("<system-reminder>\nCodebase and user instructions are shown below.\n\nContents of /w/CLAUDE.md (project instructions, "

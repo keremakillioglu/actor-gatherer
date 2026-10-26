@@ -330,7 +330,9 @@ class Manager(ContextManager):
             if not ctx.items:
                 return [], sizes
             sizes["sent_tokens"] = self.sent_tokens(copy, ctx, preamble)
-            return self.as_events(copy, ctx, made_ids=False), sizes
+            opened = store.basis_opened(copy, properties, ctx.basis)     # no read made from it before: now
+            return self.as_events(copy, ctx, made_ids=False,
+                                  opened=row_id if opened is None and ctx.basis is not None else opened), sizes
         finally:
             copy.close()
 
@@ -361,19 +363,27 @@ class Manager(ContextManager):
             return [], None, sizes
         conn = self._conn(gatherer_id)
         sizes["sent_tokens"] = self.sent_tokens(conn, ctx, preamble)          # as the read log keeps it
-        return self.as_events(conn, ctx), read_id, sizes
+        return self.as_events(conn, ctx, opened=store.basis_opened(conn, properties, ctx.basis)), read_id, sizes
 
     @staticmethod
-    def as_events(conn, ctx: Context, made_ids: bool = True) -> List[dict]:
+    def as_events(conn, ctx: Context, made_ids: bool = True, opened: Optional[int] = None) -> List[dict]:
         """A context as the server answers it: a stored event as it was given, `{"type", "id",
-        "payload"}`; the policy's own message an `ag` message, `{"type": "ag", "name", "text"}`, with
+        "payload"}`, with its size as stored (`tokens`) and whether that is the provider's count
+        (`counted`) -- and, when the context switched to its basis at the row `opened`
+        (`store.basis_opened`), `before_basis` on an event from before that row and `opens_basis` on
+        that row's; the policy's own message an `ag` message, `{"type": "ag", "name", "text"}`, with
         its `made_id` (unless `made_ids` is false: an id in a copy of the database names nothing)."""
         rows = store.rows_by_id(conn, [r.row_id for r in ctx.refs if r.row_id is not None])
+        counted = store.counted_rows(conn, rows)
         out = []
         for item, ref in zip(ctx.items, ctx.refs):
             if ref.row_id is not None and ref.row_id in rows:
                 row = rows[ref.row_id]
-                out.append({"type": row.type.name, "id": row.event_id, "payload": row.payload})
+                event = {"type": row.type.name, "id": row.event_id, "payload": row.payload,
+                         "tokens": row.tokens, "counted": row.row_id in counted}
+                if opened is not None and row.row_id <= opened:
+                    event["before_basis" if row.row_id < opened else "opens_basis"] = True
+                out.append(event)
             elif is_ag(item):
                 ag = {"type": AG, "name": item.get("name"), "text": item["text"]}
                 out.append(dict(ag, made_id=ref.made_id) if made_ids else ag)
@@ -423,6 +433,13 @@ class Manager(ContextManager):
         if any(counted.values()) or left_out:
             notify(gatherer_id, "counts", properties)
         return counted
+
+    def uncounted(self, gatherer_id: str, properties: Optional[dict], event_ids) -> List[str]:
+        """Not part of the interface: those of the events with these ids (and properties) the model's
+        provider has not counted yet (`store.uncounted`): what a harness that counts them still has to."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return []
+        return store.uncounted(self._conn(gatherer_id), properties, event_ids)
 
     def record_pending(self, gatherer_id: str, properties: Optional[dict], events: List[dict],
                        answer: Optional[str] = None, stop: Optional[str] = None,

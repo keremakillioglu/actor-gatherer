@@ -19,7 +19,7 @@ import codex_items as codex  # noqa: E402
 from test_core import PREAMBLE, Base, ScriptedLLM, agent, conversation, user  # noqa: E402
 from channels import ch  # noqa: E402
 
-GUIDE_START = "About this context, from ag."
+GUIDE_START = "About this context, from the gatherer."
 JOINED = layout.JOINED_OPENING.split("\n")[0]
 
 

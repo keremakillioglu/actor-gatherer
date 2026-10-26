@@ -58,6 +58,11 @@ to keep_pinned_tokens, the newest kept. What still does not fit -- a step
 larger than the room the build leaves -- is left out with a note naming its
 rows (`stubbed`).
 
+A user message the boundary check finds starts a new task gets its build: the read waits
+for it up to build_wait_seconds. One that takes longer is taken up at the turn's next call
+(`for_this_turn`), not left for the next user message: the turn itself stays verbatim, so
+the switch replaces only the history before it.
+
 Everything below `assemble` is the sections' logic: segmentation, ranking,
 builds and their adoption.
 """
@@ -278,7 +283,7 @@ class ProactiveContextManager(Policy):
         at_user = history.opens_turn(rows[-1], types, self.groups)
         latest = tables.build_for(conn, ch)
         last = conn.last_read(channel.of(ch))
-        build, made = self.choose(conn, types, rows, latest, last, at_user, read)
+        build, made = self.choose(conn, types, rows, latest, last, at_user or self.for_this_turn(latest, rows, types), read)
         items, refs, size, own = self.assemble(conn, rows, build, made, types, read)
         over = size > cfg.max_context_tokens or self.measured_over(last, build, ch)
         if over and not at_user and tables.waiting(latest, last):        # a ready build: taken now, not at the user
@@ -301,6 +306,16 @@ class ProactiveContextManager(Policy):
         self.last_tokens = own                      # the part of it the policy arranges
         return Context(items, refs, str(build["build_id"]) if build else None, tokens=own,
                        budget=cfg.max_context_tokens)
+
+    def for_this_turn(self, build: Optional[dict], rows, types: TypeIds) -> bool:
+        """Whether `build` is a new task's build made at this turn's own user message: its check found
+        the new task there, and the read at it went on without it (the build took longer than the read
+        waited). It is taken up at the turn's next call, not at the next user message: the sections
+        replace only what came before the turn, and the turn itself stays verbatim, as it was."""
+        if not build or build.get("reason") != tables.BOUNDARY or build["status"] != "ready":
+            return False
+        opening = next((r.row_id for r in reversed(rows) if history.opens_turn(r, types, self.groups)), None)
+        return opening is not None and build["through_row"] == opening
 
     def measured_over(self, last: Optional[dict], build: Optional[dict], ch) -> bool:
         """Whether the provider's count of the last call's context (`real_tokens`, reported
@@ -329,9 +344,9 @@ class ProactiveContextManager(Policy):
         and a notice at the place of each environment update of the verbatim
         part whose subject the agent's tool calls before it opened (`notices`). Messages and notices
         are made items; the events are never returned. Then the requests made
-        to the other channels (`parallel_requests`): each before the user
-        message it was first shown before, a new one before this channel's
-        latest (`parallel_places`).
+        to the other channels (`parallel_requests`): each where it was first
+        shown, a new one before this channel's latest user message -- or,
+        mid-turn, at the end (`parallel_places`).
 
         `tokens` is all the model gets with the context, what min_ and
         max_context_tokens are checked against: the context, and what the
@@ -484,41 +499,54 @@ class ProactiveContextManager(Policy):
 
     def parallel_places(self, conn, refs: list, tail_from: int, rows, types: TypeIds, channel_id,
                         shown: List[tuple]) -> List[int]:
-        """Where in the context each of `shown` goes, before any is inserted: before the row it came
-        before in the channel's last read (`shown_before`) -- or, that row condensed away, before the
-        first row of the verbatim part (`refs[tail_from:]`) after it -- and a request not shown
-        before goes before this channel's latest user message (the end, if it has none)."""
-        own = [r.row_id for r in rows if channel_of(r) == channel_id and history.opens_turn(r, types, self.groups)]
-        before = self.shown_before(conn, channel_id)
+        """Where in the context each of `shown` goes, before any is inserted: where it was in the
+        channel's last read (`shown_before`) -- before the row it came before, or, shown last, before
+        the first row after the one it came after -- or, that row condensed away, before the first
+        row of the verbatim part (`refs[tail_from:]`) after it. A request not shown before goes
+        before this channel's latest user message, the call being at it; mid-turn (a step of the
+        agent's own after that message), or with none, at the end. Not before the turn's steps: a
+        thinking block counts, and the model reads it, only after the history it was written in, so
+        a request put before them would leave out all the turn's thinking so far."""
+        mine = [r for r in rows if channel_of(r) == channel_id]
+        own = [r.row_id for r in mine if history.opens_turn(r, types, self.groups)]
+        latest = own[-1] if own else None
+        steps = types.of(*self.groups.messages, *self.groups.tools, *self.groups.verbatim)
+        if latest is not None and any(r.row_id > latest and r.type.id in steps for r in mine):
+            latest = None                                # mid-turn: a new one goes at the end
+        before, after = self.shown_before(conn, channel_id)
         places = []
         for _, _, _, row in shown:
-            anchor = before.get(row, own[-1] if own else None)
+            if row in after:                             # shown last: right after the row it followed
+                anchor = after[row] + 1
+            else:
+                anchor = before.get(row, latest)
             at = len(refs) if anchor is None else next(
                 (i for i in range(tail_from, len(refs)) if refs[i].row_id is not None and refs[i].row_id >= anchor),
                 len(refs))
             places.append(at)
         return places
 
-    def shown_before(self, conn, channel_id) -> Dict[int, int]:
-        """{request row: the row it came before} for each other channel's request the channel's last
-        read showed (its made item's source names the request); one shown last, with no row after it,
-        is left out: it goes where a new one would. Every request since the build's mark is shown on
-        every read, so the last read has each one shown before, in its place."""
+    def shown_before(self, conn, channel_id) -> Tuple[Dict[int, int], Dict[int, int]]:
+        """({request row: the row it came before}, {request row: the row it came after}) for each other
+        channel's request the channel's last read showed (its made item's source names the request):
+        the second for one shown last, with no row after it (shown mid-turn, at the end). Every request
+        since the build's mark is shown on every read, so the last read has each one shown before, in
+        its place."""
         last = conn.last_read(channel.of(channel_id))
         refs = last["refs"] if last else []
         made = [r.made_id for r in refs if r.made_id is not None]
         if not made:
-            return {}
+            return {}, {}
         sources = dict(conn.execute(f"SELECT made_id, source FROM _made_items WHERE name = ? AND made_id IN "
                                     f"({','.join('?' * len(made))})", [PARALLEL_REQUEST, *made]).fetchall())
-        out, waiting = {}, []
+        out, waiting, previous = {}, [], None
         for ref in refs:
             if ref.made_id in sources and str(sources[ref.made_id]).startswith("request "):
                 waiting.append(int(str(sources[ref.made_id]).split()[1]))
-            elif ref.row_id is not None and waiting:
+            elif ref.row_id is not None:
                 out.update((request, ref.row_id) for request in waiting)
-                waiting = []
-        return out
+                waiting, previous = [], ref.row_id
+        return out, ({request: previous for request in waiting} if previous is not None else {})
 
     def parallel_requests(self, conn, types: TypeIds, channel_id, after_row: int) -> List[tuple]:
         """(made_id, item, tokens, its row id) for each user message stored in
@@ -666,8 +694,9 @@ class ProactiveContextManager(Policy):
                read: Read) -> Tuple[Optional[dict], List[int]]:
         """(the build in use, its section items' made_ids in order), or
         (None, []). A ready build newer than the last read's is switched to
-        when `at_user` -- at a user message, or when the context is over
-        max_context_tokens -- and laid out then (`adopt`)."""
+        when `at_user` -- at a user message, when the context is over
+        max_context_tokens, or at a later call of the turn a new task's build was
+        made for (`for_this_turn`) -- and laid out then (`adopt`)."""
         if at_user and tables.waiting(latest, last_read):
             made = self.adopt(conn, types, rows, latest, read)
             if made is not None:
@@ -880,7 +909,11 @@ class ProactiveContextManager(Policy):
         return {"started": build_id, "messages": n}
 
     def wait(self, conn, channel_id, row_id: int, started: str, seconds: float) -> bool:
-        deadline = time.monotonic() + seconds
+        """Whether the build the read started (or the one its check found a new task for) is ready
+        within `seconds` -- for a check that finds a new task, within build_wait_seconds, if longer:
+        the check answers in seconds, the build it starts takes tens of them."""
+        begun = time.monotonic()
+        deadline = begun + seconds
         started = "build" if started == "join" else started
         while True:
             if started == "check":
@@ -889,6 +922,7 @@ class ProactiveContextManager(Policy):
                     return False
                 if verdict and verdict["new_task"] is True:
                     started = "build"
+                    deadline = max(deadline, begun + self.config.build_wait_seconds)
             if started == "build":
                 build = tables.latest_build(conn, channel_id)
                 if build and build["status"] == "ready":
