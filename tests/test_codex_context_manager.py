@@ -466,7 +466,7 @@ class RealServerTest(ProxyBase):
             fh.write("y = 2\n")
         sent1 = await self.named(one + [agent("ok", 1), user("and now?", 2)], "th1")   # th1's read finds it
         sent2 = await self.named(two + [agent("ok", 7), user("again?", 8)], "th2")     # th2 hears of it too
-        parallel = lambda item: "message from the user in parallel" in json.dumps(item)  # noqa: E731
+        parallel = lambda item: "another session working in parallel with you" in json.dumps(item)  # noqa: E731
         sent1, sent2 = ([i for i in sent if not parallel(i)] for sent in (sent1, sent2))  # the other's requests aside
         notice = lambda item: str(item.get("content", [{}])[0].get("text", "")).startswith(  # noqa: E731
             "File a.py was changed on disk")
