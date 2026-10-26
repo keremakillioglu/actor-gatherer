@@ -53,7 +53,7 @@ class Adaptor(ABC):
     `accepts`, `properties`).
 
     - `to_events` returns one dict per event: `type` (one of `outputs`), `id`, `payload`, and
-      optionally `text` and `tokens`.
+      optionally `text`, `tokens` and `properties`.
         - **`id`:** the harness re-sends its whole conversation on every call, so give each
           message a stable id. Use the harness's own id, or a hash of the message, so that a
           message is stored once.
@@ -62,6 +62,9 @@ class Adaptor(ABC):
         - **`text`:** what the policy should read: the words, a tool call's name and arguments,
           a tool's output, without ids and metadata.
         - **`tokens`:** set it to 0 for opaque content such as encrypted reasoning.
+        - **`properties`:** values of the event's own, beside those the hook sets on every event
+          (`properties`), each one the adaptor declares in `event_properties`. The server declares
+          them, optional, on the event's type the first time it sees them, so no policy has to.
     - `to_messages` gets back events in the order the model should see them, and must rebuild
       valid messages for the harness's API. It also shows the policy's `ag` messages, as a
       developer, system or user message.
@@ -90,8 +93,12 @@ class Adaptor(ABC):
             return [as_system_message(e["text"]) if e["type"] == AG else e["payload"] for e in context]
     ```
 
-    Working adaptors: `ClaudeAdaptor` (ag/integrations/harnesses/claude/adaptor/), the smallest
-    Python one, and `PiAdaptor` and `OpencodeAdaptor` in TypeScript.
+    Working adaptors: `ClaudeAdaptor` (ag/integrations/harnesses/claude/adaptor/) and `CodexAdaptor`,
+    and `PiAdaptor` and `OpencodeAdaptor` in TypeScript. The first two are `HarnessAdaptor`s: the
+    rules that say what each of the harness's messages is live in its module of `harness_kit` (a
+    package of its own, which imports nothing of ag), and the adaptor says which event type each
+    kind of message becomes (`event_types`), and carries what the rules read of it as its
+    properties (`event_properties`: KIND, WORDS, ACTION, CALL_ID).
     """
     name: ClassVar[str] = ""
     outputs: ClassVar[Tuple[str, ...]] = ()
