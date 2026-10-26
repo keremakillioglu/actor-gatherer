@@ -68,8 +68,12 @@ folder -- a monitor's event) for STALE_SECONDS
 counts as over.
 
 Each read has these sizes: `sent_tokens`, ag's own count of everything it sent (what the
-read returned, `_read_items`, added up -- what read() breaks down); `preamble_tokens`, its
-count of what the harness sent besides (None: not recorded); `est_tokens`, the
+read returned, `_read_items`, added up, by the sizes stored now -- what read() breaks down);
+`preamble_tokens`, its count of what the harness sent besides (None: not recorded);
+`recorded_tokens`, ag's count of all the call sent, preamble included, as the read log kept it
+at the call (`_reads.sent_tokens`, less what the harness left out; None: not kept) -- what ag
+believed then, which a size set since (a provider's count, a thinking block no longer sent and
+set to 0) does not change; `est_tokens`, the
 policy's count of it against its budget (which leaves out the agent's preamble and the
 sections' fixed overview); and `real_tokens`, the provider's count. A database written
 before a column existed reads as None there. Nothing here writes anything.
@@ -1000,12 +1004,13 @@ def agent(gatherer: str, channel: str, llm: Optional[List[dict]] = None) -> dict
 def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
     tables, read_cols = _tables(conn), _columns(conn, "_reads")
     sizes = [c for c in ("est_tokens", "real_tokens", "limit_tokens") if c in read_cols]
+    recorded = "sent_tokens" if "sent_tokens" in read_cols else "NULL"
     reads = []
-    for r in conn.execute(f"SELECT read_id, read_at, row_id, basis{''.join(', ' + c for c in sizes)} FROM _reads "
-                          f"WHERE {CHANNEL} = ? ORDER BY read_id", (channel,)):
+    for r in conn.execute(f"SELECT read_id, read_at, row_id, basis{''.join(', ' + c for c in sizes)}, "
+                          f"{recorded} AS recorded FROM _reads WHERE {CHANNEL} = ? ORDER BY read_id", (channel,)):
         reads.append({"read_id": r["read_id"], "at": _seconds(r["read_at"]), "row_id": r["row_id"],
-                      "basis": r["basis"], **{k: (r[k] if k in sizes else None)
-                                             for k in ("est_tokens", "real_tokens", "limit_tokens")}})
+                      "basis": r["basis"], "recorded_tokens": r["recorded"],
+                      **{k: (r[k] if k in sizes else None) for k in ("est_tokens", "real_tokens", "limit_tokens")}})
     tasks = []
     if "tasks" in tables:
         times = dict(conn.execute(f"SELECT row_id, inserted_at FROM events WHERE {CHANNEL} = ?", (channel,)))
