@@ -255,6 +255,7 @@ header .brand .list-btns { display: none; margin-left: -6px; }
 :root.list-full .monitor { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; padding: 14px 20px 0; background: var(--page); }
 .monitor .m-top { flex: none; display: flex; align-items: baseline; gap: 8px; }
 .monitor .m-top h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.monitor .m-top .m-old { font-size: 12.5px; color: var(--warning); }
 .monitor .m-board { flex: 1; min-height: 0; display: flex; gap: 12px; margin-top: 12px; padding-bottom: 14px; overflow-x: auto; }
 .monitor .m-col { flex: 1 1 0; min-width: 250px; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--grid);
   border-radius: 12px; background: color-mix(in srgb, var(--ink) 2.5%, var(--page)); container: mcol / inline-size; }
@@ -286,7 +287,8 @@ header .brand .list-btns { display: none; margin-left: -6px; }
 .m-card .c-pic.acting { width: 72px; color: var(--term-accent); }
 .m-card .c-pic svg.stage { height: 58px; margin: -6px -6px -4px -8px; }
 .m-card .c-pic .buddy { width: 36px; height: 36px; margin-top: 2px; }
-.m-card .c-pic .spin::before { content: "✻"; display: inline-block; font-size: 22px; animation: term-spin 1.2s steps(1) infinite; }
+.m-card .c-pic .spin { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.m-card .c-pic .spin::before { content: "✻"; font-size: 22px; line-height: 1; animation: term-spin 1.2s steps(1) infinite; }
 .m-card .c-who { min-width: 0; flex: 1; }
 .m-card .c-name { font-size: 13.5px; font-weight: 600; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-card .c-asked { font-size: 13px; line-height: 1.4; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
@@ -295,8 +297,10 @@ header .brand .list-btns { display: none; margin-left: -6px; }
 .m-card .c-asked.none { color: var(--muted); font-style: italic; font-weight: 400; }
 .m-card .c-meta { display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; color: var(--muted);
   font-variant-numeric: tabular-nums; }
-.monitor .status.running i { background: none; width: auto; height: auto; color: var(--good); font-style: normal; font-size: 11px; line-height: 1; }
-.monitor .status.running i::before { content: "✻"; display: inline-block; animation: term-spin 1.2s steps(1) infinite; animation-delay: var(--spin-at, 0s); }
+/* the glyph turning in a box of its own size: each of its shapes is as wide as it is, so nothing after it moves */
+.monitor .status.running i { background: none; width: 12px; height: 12px; border-radius: 0; display: inline-flex; align-items: center;
+  justify-content: center; overflow: hidden; color: var(--good); font-style: normal; font-size: 11px; line-height: 1; }
+.monitor .status.running i::before { content: "✻"; animation: term-spin 1.2s steps(1) infinite; animation-delay: var(--spin-at, 0s); }
 .m-card .c-meta .gname { color: var(--ink-2); background: var(--wash); border-radius: 4px; padding: 0 6px; }
 .m-card .c-now { display: flex; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.4; min-width: 0; }
 .m-card .c-now .lbl { flex: none; font-weight: 600; font-size: 12px; }
@@ -2869,7 +2873,8 @@ const monFolded = (() => {
   try { const v = JSON.parse(localStorage.getItem(MON_FOLD_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
   return new Set(["Saved", "Closed"]);
 })();
-const mon = { got: new Map(), cards: new Map(), secs: new Map(), box: null, visible: new Set(), timer: null, busy: false, last: -Infinity, seen: null };
+const mon = { got: new Map(), cards: new Map(), secs: new Map(), box: null, visible: new Set(), timer: null, busy: false, last: -Infinity, seen: null,
+  old: false };                                    // old: the server started before the monitor was, and has no /api/monitor
 const monSig = (a) => `${a.last}|${a.events}|${statusOf(a)[0]}`;
 function monForget() {                                 // left: nothing in view; what was read stays, for coming back
   if (mon.seen) mon.seen.disconnect();
@@ -2902,7 +2907,9 @@ function renderMonitor() {
   by.get("Closed").sort(([, x], [, y]) => (y.last || 0) - (x.last || 0));
   const total = shown.reduce((n, g) => n + g.agents.length, 0);
   const top = el("div", { class: "m-top" },
-    el("h2", { text: `${plural(total, "actor")}${many ? ` in ${plural(shown.length, "gatherer")}` : ""}` }));
+    el("h2", { text: `${plural(total, "actor")}${many ? ` in ${plural(shown.length, "gatherer")}` : ""}` }),
+    mon.old ? el("span", { class: "m-old", role: "status",
+      text: "This dashboard's server is older than its page: restart the dashboard to see each actor's calls and what it said." }) : null);
   const want = new Set(), columns = [];
   for (const n of MON_ORDER) {
     const list = by.get(n);
@@ -2933,7 +2940,7 @@ function renderMonitor() {
 function monCard(g, a, many) {
   const k = key(g.name, a.channel), got = mon.got.get(k), d = got ? got.data : null;
   const current = isAt(focusedActor(), g.name, a.channel), open = !current && openActors().some((sel) => isAt(sel, g.name, a.channel));
-  const sig = signature([a, d, many, current, open, avatarMode, savedAs(g.name, a)]);
+  const sig = signature([a, d, got !== undefined, many, current, open, avatarMode, savedAs(g.name, a)]);   // read, even if to no avail: no "…"
   const had = mon.cards.get(k);
   if (had && had.sig === sig) return had.node;
   const node = drawCard(g, a, d, many, current, open, got !== undefined);
@@ -3029,7 +3036,9 @@ async function monLoad() {
   try {
     const got = await get(`/api/monitor?actors=${enc(JSON.stringify(batch.map((b) => b.ask)))}`);
     batch.forEach((b, i) => { const d = (got.actors || [])[i]; mon.got.set(b.k, { sig: b.sig, data: d && !d.error ? d : null }); });
+    mon.old = false;
   } catch (e) {
+    if (/: 404$/.test(e.message)) mon.old = true;
     for (const b of batch) mon.got.set(b.k, { sig: b.sig, data: (mon.got.get(b.k) || {}).data || null });   // tried again once it changes
   } finally { mon.busy = false; }
   renderMonitor();
