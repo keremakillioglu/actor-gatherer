@@ -636,10 +636,11 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-grid:not(.open) .fl-talk { font-size: 14px; --lh: 21px; }
 .files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px 10px; }
 .files .fl-grid:not(.folded) .fl-turn.on { box-shadow: inset 2px 0 0 var(--muted); }   /* the turn whose files and commands show: a grey bar */
-/* the user's message: at the right, in the colour the page gives the user (--s7), as a chat shows it */
-.files .fl-user { display: flex; gap: 8px; width: fit-content; max-width: min(86%, 680px); margin: 0 0 0 auto; text-align: left;
+/* the user's message: a band across the turn, at its head, in the colour the page gives the user (--s7) -- at the left,
+   with the replies under it, however wide the page */
+.files .fl-user { display: flex; gap: 8px; width: 100%; margin: 0; text-align: left;
   background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--s7) 28%, transparent);
-  border-radius: 12px 12px 4px 12px; padding: 6px 12px; font: inherit; line-height: var(--lh); color: var(--ink); cursor: pointer; }
+  border-radius: 8px; padding: 6px 12px; font: inherit; line-height: var(--lh); color: var(--ink); cursor: pointer; }
 .files .fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
 .files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .files .fl-turn.on .fl-user .tx { -webkit-line-clamp: unset; }
@@ -647,20 +648,20 @@ button:disabled { opacity: .5; cursor: default; }
    The ring, in the page's colour, keeps the edge of each it covers. */
 .files .fl-user.joined { position: relative; margin-top: -7px; box-shadow: 0 0 0 2px var(--surface); }
 /* written while it works, not sent yet: at the turn's end, faded, until Claude Code gives it to the agent */
-.files .fl-pending { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-top: 10px; }
+.files .fl-pending { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
 .files .fl-pending .fl-user { opacity: .55; cursor: default; }
 .files .fl-pending .fl-user:hover { background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 28%, transparent); }
-.files .fl-pending .lbl { color: var(--muted); font-size: 11.5px; margin-right: 4px; }
+.files .fl-pending .lbl { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
 .files .fl-user .tx.bang { font: .92em/var(--lh) var(--mono); }   /* a command the user ran with `!`, or typed as /name */
-/* a bash bubble (bashBubble): a command the user ran with `!`, as a terminal shows it -- its `!` in bash mode's colour,
-   the bubble edged in it -- and under a rule, in the same bubble, what it printed */
+/* a bash band (bashBubble): a command the user ran with `!`, as a terminal shows it -- its `!` in bash mode's colour,
+   the band edged in it -- and under a rule, in the same band, what it printed */
 .files .fl-user.bash { background: var(--term-code); border-color: color-mix(in srgb, var(--term-bash) 45%, transparent); }
 .files .fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, var(--term-code)); border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
 .files .fl-user .bash-mark { color: var(--term-bash); font-weight: 700; }
-.files .fl-bash { display: flex; flex-direction: column; width: fit-content; min-width: 0; max-width: min(86%, 680px); margin: 0 0 0 auto;
-  background: var(--term-code); border: 1px solid color-mix(in srgb, var(--term-bash) 45%, transparent); border-radius: 12px 12px 4px 12px; overflow: hidden; }
+.files .fl-bash { display: flex; flex-direction: column; min-width: 0; margin: 0;
+  background: var(--term-code); border: 1px solid color-mix(in srgb, var(--term-bash) 45%, transparent); border-radius: 8px; overflow: hidden; }
 .files .fl-bash:hover { border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
-.files .fl-bash > .fl-user.bash { max-width: none; width: 100%; margin: 0; border: 0; border-radius: 0; background: none; }
+.files .fl-bash > .fl-user.bash { border: 0; border-radius: 0; background: none; }
 .files .fl-bash > .fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, transparent); }
 .files .fl-bash-out { margin: 0; padding: 6px 12px 8px; border-top: 1px solid var(--term-rule); max-height: 15em; overflow: auto;
   font: 12px/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; background: none; }
