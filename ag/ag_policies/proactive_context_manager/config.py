@@ -112,14 +112,15 @@ class ProactiveContextManagerConfig:
     db_hint: bool = True
 
     # The gatherer guide: the first item of every context, after the harness's own set-up, on
-    # every read -- with or without a build -- so the agent knows from its first call what ag
-    # adds to its context and where the rest is. `{db_path}` is the context database. With
+    # every read -- with or without a build -- so the agent knows from its first call what the
+    # gatherer adds to its context and where the rest is. `{db_path}` is the context database. With
     # db_hint, the database's layout follows it (layout.DB_HINT). "" = no guide.
     gatherer_guide: str = (
-        "About this context, from ag.\n\n"
-        "This session runs inside an ag gatherer: ag puts your context together on every call, and "
+        "About this context, from the gatherer.\n\n"
+        "This session runs inside a gatherer: it puts your context together on every call, and "
         "other sessions may be working in the same gatherer, in parallel or before you, for the same "
-        "user. Besides the conversation itself, your context may hold these messages from ag:\n\n"
+        "user. Besides the conversation itself, your context may hold these messages from the "
+        "gatherer:\n\n"
         "- **History sections**: earlier history, of this session or of the gatherer's other "
         "sessions, put together to fit. The first of them says how they are organised and how to "
         "read them.\n"

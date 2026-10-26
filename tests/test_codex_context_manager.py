@@ -506,7 +506,7 @@ class RealServerTest(ProxyBase):
         first = [DEV, env(work), user("please read a.py", 1), *cat("a.py", 1)]
         await self.call(first, thread="real")
         sent = self.received[-1][2]["input"]
-        guide = [i for i in sent if json.dumps(i).find("About this context, from ag.") >= 0]
+        guide = [i for i in sent if json.dumps(i).find("About this context, from the gatherer.") >= 0]
         self.assertEqual(len(guide), 1)                                      # the gatherer guide, after the set-up
         self.assertEqual(sent.index(guide[0]), 2)
         self.assertEqual([i for i in sent if i not in guide], first)         # nothing else to add yet
