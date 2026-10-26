@@ -388,6 +388,18 @@ class FilesTest(unittest.TestCase):
                                    {"kind": "peer", "name": "ucbepic-actor-gatherer-6c", "text": "Your branch predates #108.\n\nMerge main."},
                                    {"kind": "text", "text": "The other session is right."}])
 
+    def test_long_messages_are_sent_whole(self):
+        long = lambda what: f"{what} " + "word " * 3000 + "the end."      # over 15,000 characters: as long replies run
+        midturn = ("The user sent a new message while you were working:\n" + long("Also") + "\n\nThis is how Claude Code "
+                   "surfaces messages the user sends mid-turn — within the running turn, often alongside the next tool result, "
+                   "rather than as a separate conversation turn. Address the message above as you continue this turn.")
+        self.add(asked(long("Read this")), thought(long("Thinking")), call("b8", "Bash", {"command": "ls"}),
+                 result("b8", "a.py"), asked(midturn), said(long("Here")))
+        turn = files.files("g", "c1", cwd="/w")["turns"][-1]
+        got = [turn["text"], *(m["text"] for m in turn["more"]), *turn["replies"][0]["texts"], turn["replies"][1]["text"]]
+        self.assertEqual([len(t) for t in got], [len(long(w)) for w in ("Read this", "Also", "Thinking", "Here")])
+        self.assertEqual(got, [long(w) for w in ("Read this", "Also", "Thinking", "Here")])
+
     def test_files_claude_code_gives_the_agent_are_read_in_the_turn(self):
         start = ("<system-reminder>\nCodebase and user instructions are shown below.\n\nContents of /w/CLAUDE.md (project instructions, "
                  "checked into the codebase):\n\n# Project\n\nBe brief.\n\nContents of /h/.claude/projects/-w/memory/MEMORY.md (user's "
