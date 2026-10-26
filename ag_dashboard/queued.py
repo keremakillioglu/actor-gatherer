@@ -19,7 +19,8 @@ task's end, a subagent's report as it hands back: NOTES) are queued too, in the 
     mid_turn(text)   the message a user message is, if it is one sent mid-turn (else None)
     Watcher          every POLL_SECONDS, the queue of each session a page shows: its streams rung on a change
 
-A record is read from where it was last read, so a long one costs only its new lines. Standard library only."""
+A record is read from where it was last read, so a long one costs only its new lines. Claude Code's wording is
+harness_kit.claude's; each message is given as the user typed it (`words_of`)."""
 import glob
 import json
 import os
@@ -29,20 +30,15 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+from harness_kit import claude as claude_rules
+
 SENT_SECONDS = 30.0
 POLL_SECONDS = 1.0
 BUSY_SECONDS = 1.0              # held longer than this: written while a turn ran (one written between turns goes at once)
 CHUNK = 1 << 22                 # a record is read this much at a time
-NOTES = ("<task-notification>", "<agent-message ", "Another Claude session sent a message:")
-#: A message sent mid-turn, as Claude Code wraps it for the model (its words, 2.1.x).
-MID_TURN = re.compile(r"^\s*The user sent a new message while you were working:\s*([\s\S]*?)\s*"
-                      r"This is how Claude Code surfaces messages the user sends mid-turn\b[\s\S]*$")
-
-
-def mid_turn(text: str) -> Optional[str]:
-    """The user's message, if `text` is one Claude Code sent mid-turn (MID_TURN); else None."""
-    m = MID_TURN.match(text or "")
-    return m.group(1) if m and m.group(1) else None
+NOTES = claude_rules.QUEUED_NOTES          # its own notes, queued in the user's name (harness_kit.claude's)
+MID_TURN = claude_rules.MID_TURN           # a message sent mid-turn, as Claude Code wraps it for the model
+mid_turn = claude_rules.mid_turn           # the user's message, if a text is one Claude Code sent mid-turn; else None
 
 
 class _Read:
@@ -158,8 +154,8 @@ def typed(session: str, cwd: Optional[str] = None, now: Optional[float] = None) 
     if path is None:
         return []
     now = time.time() if now is None else now
-    return [{"text": q["text"], "at": q["at"], "sent": q["sent"], "joins": _joins(q)} for q in _read(path)
-            if not q["note"] and (q["sent"] is None or now - q["sent"] <= SENT_SECONDS)]
+    return [{"text": claude_rules.words_of(q["text"])[1], "at": q["at"], "sent": q["sent"], "joins": _joins(q)}
+            for q in _read(path) if not q["note"] and (q["sent"] is None or now - q["sent"] <= SENT_SECONDS)]
 
 
 def _held(q: dict) -> bool:

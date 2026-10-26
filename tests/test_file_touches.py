@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ag.integrations.tools.ag_orchestrator.file_touches import Files, check as ck, watch  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.file_touches.calls import calls_in, last_results, results_in  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.file_touches.calls import opened  # noqa: E402
-from ag.integrations.tools.ag_orchestrator.file_touches.commands import (  # noqa: E402
+from harness_kit.shell import (  # noqa: E402
     opened_script, script_calls, script_output, script_prints_result, shell_changes, shell_reads)
 
 # As codex 0.164 wrote it live: its code-mode script (`exec`), and what the call gave back
@@ -29,17 +29,6 @@ SCRIPT_OUT = [{"type": "input_text", "text": "Script completed\nWall time 0.1 se
 
 class CommandsTest(unittest.TestCase):
     """A call read from its words and output alone: what was found wrong in real sessions."""
-
-    def test_the_dashboard_s_copy_is_the_same_but_for_its_docstring(self):
-        import ast
-        import ag_dashboard.commands
-        from ag.integrations.tools.ag_orchestrator.file_touches import commands
-
-        def body(module):
-            with open(module.__file__, encoding="utf-8") as fh:
-                tree = ast.parse(fh.read())
-            return ast.dump(ast.Module(body=tree.body[1:], type_ignores=[]))      # all but the docstring
-        self.assertEqual(body(ag_dashboard.commands), body(commands))
 
     def test_a_line_of_another_command_s_output_is_not_a_search_match(self):
         found, _ = shell_reads("grep -n foo a.py; date", "3:foo\nSat Oct 24 18:12:34 2026", "/r")

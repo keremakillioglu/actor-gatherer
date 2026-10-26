@@ -11,7 +11,7 @@ A change to a file in ag's home (AG_HOME, ~/.ag: its databases, its logs) is ag'
 as the calls run, a gatherer's database at every model call -- and is left out, unless a call says it
 writes the file: `sqlite3 ~/.ag/.../context.db "SELECT ..."` is not an edit of it.
 
-A read is found by reading the call's output (commands.py), and kept only where the file says so:
+A read is found by reading the call's output (harness_kit/shell.py), and kept only where the file says so:
 a path is kept when it is a file; a line shown as line 12 of a file, when line 12 of the file is that
 text -- one that is not (another command's output in the same form, a match of another of the files
 searched) is left out. What a call showed of a file it changed itself, or that changed while the
@@ -33,7 +33,7 @@ import shlex
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from ag.integrations.tools.ag_connection.ag_client import home
-from .commands import (EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _expand, _patch_files, _path, _resolve,
+from harness_kit.shell import (EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _expand, _patch_files, _path, _resolve,
                        _shell_text, _simple_commands, shell_changes, shell_reads)
 
 MAX_BYTES = 2 << 20        # the most of a file read: a larger one is told changed by its size and time alone
@@ -502,7 +502,7 @@ def _share(change: Tuple[str, dict], owners: List[str], calls: Dict[str, Tuple[s
 
 
 def _writes(name: str, inp, cwd: Optional[str]) -> set:
-    """The files a call says it changes: an edit tool's, or a shell command's that says so (commands.py)."""
+    """The files a call says it changes: an edit tool's, or a shell command's that says so (harness_kit/shell.py)."""
     if name in EDITS:
         return set(named(name, inp, cwd))
     if name in SHELLS:

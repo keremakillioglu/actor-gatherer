@@ -7,7 +7,7 @@ out of it (commands.opened_script), for what they do to files."""
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
-from .commands import CODE_MODE, opened_script
+from harness_kit.shell import CODE_MODE, opened_script
 
 CALLS = ("function_call", "custom_tool_call")
 OUTPUTS = ("function_call_output", "custom_tool_call_output")

@@ -1,0 +1,744 @@
+"""Claude Code, as harness_kit reads it (2.1.310): its model calls (the Anthropic Messages API), the
+pieces of its conversation, its own text among them, and its tools.
+
+    calls        a POST to .../messages: the session's own turn, a subagent's (X-Claude-Code-Agent-Id),
+                 a prompt suggestion ([SUGGESTION MODE:), a recap (The user stepped away ...), a
+                 compaction (CRITICAL: Respond with TEXT ONLY), or a side call of its own (no tools
+                 offered, the web search tool alone, X-Claude-Code-Request-Class auxiliary or
+                 side_reply); the session in X-Claude-Code-Session-Id (else the body's metadata), the
+                 working directory in its environment notes ("Primary working directory:")
+    pieces       each message split into one piece per content block, its cache_control taken out:
+                 the message with that block alone (`items`)
+    kinds        by the block: text (the user's, the model's, or Claude Code's own -- told by how it
+                 opens, HARNESS_MARKERS, or by its whole text, HARNESS_TEXTS), image and document (the
+                 user's), tool_use, tool_result, thinking; a system-role message is Claude Code's own
+
+Claude Code writes a lot in the user's name besides what the user said: its reminders, the output of a
+command the user ran, a skill's instructions, a subagent's report, its notes after a response that went
+wrong. Each has its opening; `read` tells them apart (its Kinds) and keeps what each says (Part.detail).
+"""
+
+import copy
+import json
+import os
+import re
+import textwrap
+from typing import List, Optional, Tuple
+
+from .base import Action, Call, CallKind, Harness, Kind, Part, ToolCall, ToolResult, output_of
+
+# ---------------------------------------------------------------- Claude Code's own text, in the user's name
+
+# Its notes to the model after a response that went wrong -- a safety classifier stopped it, it was cut off
+# mid-stream or at the output limit, its tool call could not be parsed -- or that send it back to work (a
+# goal check-in): sent in the user's name, as a message of their own. Claude Code 2.1.310 tells them from the
+# user's words by these openings and, the rest, by their whole text; so does this module (RETRY_OPENINGS in
+# HARNESS_MARKERS, RETRY_NOTES in HARNESS_TEXTS).
+RETRY_OPENINGS = ("[structured-output-enforce]", "[projects-reply-gate]",
+                  "You ended the turn without calling SendUserMessage.", "Goal check-in: «")
+_CLASSIFIER = ("Your response above was stopped by a safety classifier — this is not a tool or API error. The rest "
+               "of it was withheld, and tool calls in it that had not finished did not run. Do not produce that "
+               "content again, even reworded.")
+RETRY_NOTES = (
+    "The previous response failed to produce a valid tool call. Please retry the tool call now.",
+    "Your tool call was malformed and could not be parsed. Please retry.",
+    "[Your previous response had no visible output. Please continue and produce a user-visible response.]",
+    "The PermissionDenied hook indicated you may retry this tool call.",
+    "The turn did not end: a tool call in your last message asked to end it, but another call in that message "
+    "failed. Deal with the failure, then finish the turn. The calls that succeeded took effect, so do not repeat them.",
+    _CLASSIFIER,
+    _CLASSIFIER + ' Exception: a tool call whose result reads "Interrupted" was already running when the response '
+    "was stopped; it may have partially or fully completed.",
+    "Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if "
+    "that is where the cut happened. Break remaining work into smaller pieces.",
+    "Output token limit hit while you were still reasoning, before this response produced any text or tool call. "
+    "That reasoning was not kept and is not part of this conversation, so there is nothing to resume. Continue from "
+    "the conversation above: reason much more briefly and produce your answer or next tool call well within the "
+    "output limit.",
+    "[Your previous response reached the output limit with no visible output. Please continue and produce a brief "
+    "user-visible response or tool call right away.]",
+    "Your response was cut off because it exceeded the output token limit. Continue from where you left off. What "
+    "you write next is shown as a separate block below the text so far, so begin at the start of the line, table "
+    "row, list item or sentence that was cut, writing it again in full, and if you were inside a code block or a "
+    "table, open it again first (the same code fence and language, the table's header row). Repeat nothing before "
+    "that point and do not comment on the interruption. Keep going until the response is complete.",
+    "Your response above was cut off mid-stream. Resume directly from where it stops — no apology, no recap. If "
+    "none of it survived, answer the request from the start.",
+    "Your response above was cut off mid-stream and only your next message is delivered. Write the complete "
+    "response again from the start — no apology, no mention of the cut-off.")
+
+# Its own text, sent in the user's name: a user text block opening with one of these is Claude Code's, not the
+# user's, each of the Kind it says. Besides its reminders and command output: its notes on an attachment, put
+# after it (an image read through a tool, shrunk to fit: "[Image: original 1400x2400, displayed at 1167x2000.
+# Multiply coordinates by 1.20 ...]"), not the "[Image #1]" it writes into the user's own words where an image
+# was pasted; its note that the user stopped a turn ("[Request interrupted by user]", before the user's next
+# words); the output of a command the user ran with `!` (its `<bash-stdout>`; the `<bash-input>`, what the user
+# typed, is theirs); its summary of a compacted conversation, which opens the history after it ("This session
+# is being continued from a previous conversation that ran out of context. ..."); a skill's instructions, loaded
+# by the Skill tool or by the user's /name ("Base directory for this skill: ..."); a message from another
+# session -- a subagent's report as it hands back ("Another Claude session sent a message:\n<agent-message
+# from=...>"); its copy for the model of what /context shows ("## Context Usage ..."); a hook's reason for not
+# letting the turn end ("Stop hook feedback:\n..."); the notes of RETRY_OPENINGS; and its note that the user
+# declined its Chrome extension.
+OPENINGS = (
+    ("<system-reminder>", Kind.ENVIRONMENT),
+    ("<local-command-caveat>", Kind.OTHER),
+    ("<local-command-stdout>", Kind.COMMAND_OUTPUT),
+    ("<local-command-stderr>", Kind.COMMAND_OUTPUT),
+    ("<command-name>", Kind.LOCAL_COMMAND),
+    ("<command-message>", Kind.LOCAL_COMMAND),
+    ("<command-args>", Kind.LOCAL_COMMAND),
+    ("Caveat: The messages below were generated by the user while running local commands", Kind.OTHER),
+    ("[Image: original ", Kind.ATTACHMENT_NOTE),
+    ("[Image: source: ", Kind.ATTACHMENT_NOTE),
+    ("[Image source: ", Kind.ATTACHMENT_NOTE),
+    ("[Image could not be processed", Kind.ATTACHMENT_NOTE),
+    ("[Image left out:", Kind.ATTACHMENT_NOTE),
+    ("[Image not shown, read it from ", Kind.ATTACHMENT_NOTE),
+    ("[Document removed:", Kind.ATTACHMENT_NOTE),
+    ("[Request interrupted by user", Kind.INTERRUPT),
+    ("<bash-stdout>", Kind.COMMAND_OUTPUT),
+    ("<bash-stderr>", Kind.COMMAND_OUTPUT),
+    ("This session is being continued from a previous conversation that ran out of context", Kind.COMPACTION_SUMMARY),
+    ("Base directory for this skill:", Kind.SKILL),
+    ("Another Claude session sent a message:", Kind.PEER_MESSAGE),
+    ("<agent-message ", Kind.AGENT_REPORT),
+    ("## Context Usage\n", Kind.COMMAND_OUTPUT),
+    ("Stop hook feedback:\n", Kind.HOOK_FEEDBACK),
+    ("TeammateIdle hook feedback:\n", Kind.HOOK_FEEDBACK),
+    ("TaskCreated hook feedback:\n", Kind.HOOK_FEEDBACK),
+    ("TaskCompleted hook feedback:\n", Kind.HOOK_FEEDBACK),
+    ("The user declined to install the Claude in Chrome extension", Kind.OTHER),
+) + tuple((o, Kind.RETRY_NOTE) for o in RETRY_OPENINGS)
+HARNESS_MARKERS = tuple(o for o, _ in OPENINGS)
+# Its own text that is a whole block, word for word: its note after a tool search's result, in the message of the
+# results, that the tools found are loaded ("Tool loaded."), and RETRY_NOTES.
+WHOLE_TEXTS = ((("Tool loaded.", Kind.TOOL_NOTICE),) + tuple((t, Kind.RETRY_NOTE) for t in RETRY_NOTES))
+HARNESS_TEXTS = tuple(t for t, _ in WHOLE_TEXTS)
+SKILL = "Base directory for this skill:"
+COMPACTED = "This session is being continued from a previous conversation that ran out of context"
+# A command the user typed that Claude Code expands into a prompt -- a skill's /name, a command file's: Claude Code
+# sends the line typed as "<command-message>greet</command-message>\n<command-name>/greet</command-name>\n
+# <command-args>Bob</command-args>", then the prompt it expands to (the skill's instructions, the file's text). The
+# line is the user's message, read as they typed it ("/greet Bob"); the prompt is Claude Code's (COMMAND_PROMPT).
+# A command Claude Code runs itself (/context, /model) opens with <command-name> and is followed by its output: its
+# own, as its other notes are (LOCAL_COMMAND).
+TYPED_COMMAND = re.compile(r"\s*<command-message>[^<]*</command-message>\s*<command-name>([^<]*)</command-name>"
+                           r"\s*(?:<command-args>([\s\S]*?)</command-args>)?\s*$")
+RAN = re.compile(r"^\s*<command-name>/?([^<]*)</command-name>\s*<command-message>[^<]*</command-message>"
+                 r"\s*(?:<command-args>([\s\S]*?)</command-args>)?\s*$")
+# A command the user ran with `!`, as Claude Code sends it ("<bash-input>ls -la</bash-input>", its output after it as
+# its own text, PRINTED): the user's, as they typed it, "! ls -la". The closing tag may be cut off with a long one.
+BANG = re.compile(r"^\s*<bash-input>([\s\S]*?)(?:</bash-input>\s*)?$")
+PRINTED = re.compile(r"^\s*<bash-stdout>([\s\S]*?)</bash-stdout>\s*(?:<bash-stderr>([\s\S]*?)</bash-stderr>)?\s*$")
+#: A message the user wrote while a turn ran, as Claude Code wraps it for the model mid-turn (its words, 2.1.x).
+MID_TURN = re.compile(r"^\s*The user sent a new message while you were working:\s*([\s\S]*?)\s*"
+                      r"This is how Claude Code surfaces messages the user sends mid-turn\b[\s\S]*$")
+# What the user pasted, as Claude Code sends it when it is long -- one pasted in its terminal, or a long message sent
+# into it: between <pasted_content id="55b6"> and </pasted_content id="55b6">. The words, without the tags.
+PASTED = re.compile(r"\s*</?pasted_content\b[^>]*>\s*")
+#: Claude Code's notes queued in the user's name (its queue, in its record of the session): not the user's words.
+QUEUED_NOTES = ("<task-notification>", "<agent-message ", "Another Claude session sent a message:")
+
+SKILL_TEXT = re.compile(r"^\s*Base directory for this skill: ([^\n]*)\n+([\s\S]*?)(?:\n+ARGUMENTS: ([\s\S]*?))?\s*$")
+AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]*)"[^>]*>\n?([\s\S]*?)\n?</agent-message>')
+# another session's message, sent to this one (Claude Code's SendMessage across sessions), as it hands it on: the
+# sender's name in `from-name` (its socket in `from`), and after the tag Claude Code's own caution about it
+PEER_MESSAGE = re.compile(r'<cross-session-message\b([^>]*)>\n?([\s\S]*?)\n?</cross-session-message>')
+REPORT_FOLLOWS = "The report follows:\n"
+# files a note gives the agent the lines of: one the user @-mentioned (read as the Read tool reads it), the CLAUDE.md
+# files and memory it loads ("Contents of <path>:")
+MENTIONED = re.compile(r"Called the Read tool with the following input: (\{[^\n]*\})\nResult of calling the Read tool:\n")
+LOADED = re.compile(r"(?:^|\n)Contents of (/[^\n]*?)(?: \([^)\n]*\))?:\n\n")
+READ_LINE = re.compile(r"^\s*(\d+)(?:\t|→)(.*)$")
+
+# ---------------------------------------------------------------- background tasks, as its tools' results say
+
+#: A background task's start, as its tool's result begins: its kind, and its id.
+STARTS = ((re.compile(r"Command running in background with ID: ([\w-]+)"), "command"),
+          (re.compile(r"Async agent launched successfully\.[\s\S]*?\bagentId: ([\w-]+)"), "agent"),
+          (re.compile(r"Monitor started \(task ([\w-]+)"), "monitor"),
+          (re.compile(r"Workflow launched in background\. Task ID: ([\w-]+)"), "workflow"))
+SUMMARY = re.compile(r"^Summary: (.+)$", re.M)        # a workflow's: what it is for (its call has no description)
+RESUMED = re.compile(r'\{[^\n]*?"resumedAgentId":\s*"([\w-]+)"')    # SendMessage's result, when it resumed an agent
+STOPPED = re.compile(r'^(?:\{"message":\s*")?Successfully stopped task: ([\w-]+)')
+OUTPUT_FILE = re.compile(r"(?:Output is being written to: |output_file: )(\S+?\.output)\b|^Transcript dir: (\S+)$", re.M)
+#: Its end: Claude Code's notification with a status (one without is a monitor's event), or an agent's report handed back.
+HANDBACK = re.compile(r'<agent-message from="([\w-]+)">\s*\[Subagent hand-back\]')
+NOTIFICATION = re.compile(r"<task-notification>([\s\S]*?)</task-notification>")
+TASK_ID, TASK_STATUS = re.compile(r"<task-id>([\w-]+)</task-id>"), re.compile(r"<status>(\w+)</status>")
+TASK_EVENT = re.compile(r"<event>([\s\S]*?)</event>")
+WAITING = re.compile(r"waiting on its own background work|stopped with background work of its own still running")
+MONITOR_END = re.compile(r"^\s*\[Monitor (?:expired|stopped)\b")
+AGENT_ID = re.compile(r"\bagentId: ([\w-]+)")
+
+# ---------------------------------------------------------------- its model calls
+
+SESSION_HEADER = "x-claude-code-session-id"
+AGENT_HEADER = "x-claude-code-agent-id"           # set on a subagent's calls only
+REQUEST_CLASS_HEADER = "x-claude-code-request-class"   # main, subagent, workflow, compaction, auxiliary, side_reply
+SIDE_CLASSES = ("auxiliary", "side_reply")       # Claude Code's side calls, not the session's turns
+SUGGESTION = "[SUGGESTION MODE:"                 # how Claude Code's prompt suggestion asks
+RECAP = "The user stepped away and is coming back."   # how Claude Code's away recap asks
+COMPACTION = "CRITICAL: Respond with TEXT ONLY"  # how Claude Code's compaction call asks for its summary
+WEB_SEARCH = "web_search_"                       # the web search server tool's type, before its version
+CWD = re.compile(r"Primary working directory:\s*(\S+)")
+VERSION = re.compile(r"claude-cli/([\d.]+)")      # its User-Agent
+
+# ---------------------------------------------------------------- its tools
+
+#: Each tool's action, and the input key that names the file it works on (None: none).
+TOOLS = {"Read": (Action.READ, "file_path"), "NotebookRead": (Action.READ, "notebook_path"),
+         "Edit": (Action.EDIT, "file_path"), "MultiEdit": (Action.EDIT, "file_path"),
+         "Write": (Action.EDIT, "file_path"), "NotebookEdit": (Action.EDIT, "notebook_path"),
+         "Bash": (Action.SHELL, None), "BashOutput": (Action.TASK, None), "KillShell": (Action.TASK, None),
+         "Grep": (Action.SEARCH, "path"), "Glob": (Action.SEARCH, "path"), "LS": (Action.SEARCH, "path"),
+         "WebSearch": (Action.WEB, None), "WebFetch": (Action.WEB, None),
+         "Skill": (Action.SKILL, None), "Agent": (Action.DELEGATE, None), "Task": (Action.DELEGATE, None),
+         "SendMessage": (Action.DELEGATE, None), "Workflow": (Action.DELEGATE, None),
+         "AskUserQuestion": (Action.ASK, None), "ExitPlanMode": (Action.ASK, None),
+         "Monitor": (Action.TASK, None), "TaskStop": (Action.TASK, None), "TaskOutput": (Action.TASK, None)}
+#: Its tools that wait for the user in its terminal before the turn goes on: a question, with options to pick
+#: from; a plan, to approve.
+ASKS = {"AskUserQuestion": "question", "ExitPlanMode": "plan"}
+#: Where Claude Code writes the plan it asks to have approved (ExitPlanMode's call carries none).
+PLAN_FILE = re.compile(r"/\.claude/plans/[^/\\]+\.md$")
+#: The kinds of the user's words, as a piece alone shows them (an image the user sent among them); and the model's turn.
+SAID = (Kind.USER, Kind.USER_COMMAND, Kind.MID_TURN, Kind.ASK_REPLY)
+TURNS = (Kind.AGENT, Kind.REASONING, Kind.TOOL_CALL, Kind.TOOL_RESULT)
+BLOCK_KINDS = {"text": None, "image": Kind.USER, "document": Kind.USER, "tool_result": Kind.TOOL_RESULT,
+               "tool_use": Kind.TOOL_CALL, "server_tool_use": Kind.TOOL_CALL, "thinking": Kind.REASONING,
+               "redacted_thinking": Kind.REASONING, "tool_addition": Kind.TOOL_NOTICE, "tool_removal": Kind.TOOL_NOTICE}
+
+
+def without_cache_control(value):
+    """`value` with every `cache_control` key taken out, at any depth."""
+    if isinstance(value, dict):
+        return {k: without_cache_control(v) for k, v in value.items() if k != "cache_control"}
+    if isinstance(value, list):
+        return [without_cache_control(v) for v in value]
+    return value
+
+
+def blocks_of(message) -> list:
+    """A message's content as blocks: a string is one text block."""
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}]
+    return [b for b in content or [] if isinstance(b, dict)]
+
+
+def pieces(messages: list) -> List[dict]:
+    """The items a message list is: each message split into one piece per content block, in order, without
+    cache_control, and with its role and content alone. A message's other fields (Claude Code puts
+    `output_config`, its effort, on its last message) belong to the request, not the conversation. A message
+    with no blocks is one piece as it is."""
+    out = []
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        m = {k: v for k, v in without_cache_control(m).items() if k in ("role", "content")}
+        blocks = blocks_of(m)
+        if not blocks:
+            out.append(m)
+            continue
+        for b in blocks:
+            out.append({**m, "content": [b]})
+    return out
+
+
+def opening(text: str) -> Optional[str]:
+    """The Kind of Claude Code's own text a user text block is, by how it opens or its whole text; None: the
+    user's. An empty one is its own (OTHER)."""
+    text = text.strip()
+    if not text:
+        return Kind.OTHER
+    for start, kind in OPENINGS:
+        if text.startswith(start):
+            return kind
+    return next((kind for whole, kind in WHOLE_TEXTS if text == whole), None)
+
+
+def is_harness_text(text: str) -> bool:
+    return opening(text) is not None
+
+
+def typed_command(item) -> Optional[str]:
+    """The command a piece says the user typed, as they typed it ("/greet Bob"), when it is one Claude Code
+    expands into a prompt (TYPED_COMMAND); else None."""
+    blocks = blocks_of(item) if isinstance(item, dict) and item.get("role") == "user" else []
+    m = TYPED_COMMAND.match(str(blocks[0].get("text") or "")) if len(blocks) == 1 and blocks[0].get("type") == "text" else None
+    if not m:
+        return None
+    name, args = m.group(1).strip(), (m.group(2) or "").strip()
+    name = name if name.startswith("/") else "/" + name
+    return f"{name} {args}" if args else name
+
+
+def unpasted(text: str) -> str:
+    """The user's words without the tags Claude Code puts around what was pasted (PASTED)."""
+    return PASTED.sub("\n\n", text).strip() if text and "pasted_content" in text else text
+
+
+def words_of(text: str) -> Tuple[str, str]:
+    """(the Kind of the user's own words in a text block, the words as they typed them): a command they ran with
+    `!` ("! ls"), a /name they typed ("/greet Bob"), a message sent mid-turn (unwrapped) -- else theirs as said."""
+    text = unpasted(text)
+    m = BANG.match(text)
+    if m:
+        return Kind.USER_COMMAND, f"! {m.group(1).strip()}"
+    m = TYPED_COMMAND.match(text)
+    if m:
+        name, args = m.group(1).strip(), (m.group(2) or "").strip()
+        name = name if name.startswith("/") else "/" + name
+        return Kind.USER_COMMAND, f"{name} {args}" if args else name
+    m = MID_TURN.match(text)
+    if m and m.group(1):
+        return Kind.MID_TURN, m.group(1)
+    return Kind.USER, text
+
+
+def mid_turn(text: str) -> Optional[str]:
+    """The user's message, if `text` is one Claude Code sent mid-turn (MID_TURN); else None."""
+    m = MID_TURN.match(text or "")
+    return m.group(1) if m and m.group(1) else None
+
+
+def kind_of(item) -> str:
+    """A piece's Kind, by its own content alone (not its neighbours: `ClaudeCode.read`). Never raises: anything it
+    does not know is OTHER."""
+    if not isinstance(item, dict):
+        return Kind.OTHER
+    role = item.get("role")
+    blocks = blocks_of(item)
+    if role == "system":
+        text = " ".join(str(b.get("text") or "") for b in blocks)
+        return Kind.TASK_NOTICE if "<task-notification>" in text else Kind.ENVIRONMENT
+    if not blocks:
+        return Kind.OTHER
+    kind = blocks[0].get("type")
+    if kind == "text":
+        if role == "assistant":
+            return Kind.AGENT
+        text = str(blocks[0].get("text") or "")
+        own = opening(text)
+        if own is not None:
+            return own
+        return words_of(text)[0]
+    return BLOCK_KINDS.get(kind) or Kind.OTHER
+
+
+def _result_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    out = []
+    for b in content or []:
+        if isinstance(b, dict):
+            if isinstance(b.get("text"), str):
+                out.append(b["text"])
+            elif b.get("type") in ("image", "document"):
+                out.append(f"[{b['type']}]")
+    return "\n".join(out)
+
+
+def text_of(item) -> Optional[str]:
+    """What the model reads of a piece, without the API's bookkeeping; None for thinking (an opaque or omitted
+    blob) or a shape Claude Code does not make.
+
+        text                its words
+        image, document     [image], [document]
+        tool_use            name(input as JSON)
+        tool_result         the result's text (prefixed `error: ` when it is one)
+        tool_addition       `tool added: <name>: <description>` and its input schema as JSON (Claude Code's
+                            notice that tool search, or a connector, made a tool available: the model gets its
+                            whole definition)
+        tool_removal        `tool removed: <name>`
+    """
+    if not isinstance(item, dict):
+        return None
+    blocks = blocks_of(item)
+    if not blocks:
+        return None
+    b = blocks[0]
+    kind = b.get("type")
+    if kind == "text":
+        return str(b.get("text") or "")
+    if kind in ("image", "document"):
+        return f"[{kind}]"
+    if kind in ("tool_use", "server_tool_use"):
+        return f"{b.get('name')}({json.dumps(b.get('input'), ensure_ascii=False)})"
+    if kind == "tool_result":
+        text = _result_text(b.get("content"))
+        return ("error: " + text) if b.get("is_error") else text
+    if kind in ("tool_addition", "tool_removal"):
+        tool = b.get("tool") if isinstance(b.get("tool"), dict) else {}
+        definition = tool.get("definition") if isinstance(tool.get("definition"), dict) else tool
+        name = definition.get("name") or tool.get("name")
+        if not name:
+            return None
+        if kind == "tool_removal":
+            return f"tool removed: {name}"
+        text = f"tool added: {name}" + (f": {definition['description']}" if definition.get("description") else "")
+        schema = definition.get("input_schema")
+        return text + (f"\n{json.dumps(schema, ensure_ascii=False)}" if schema else "")
+    return None
+
+
+def is_compacted_summary(item) -> bool:
+    """Whether a piece is the summary Claude Code goes on from after compacting its history."""
+    blocks = blocks_of(item) if isinstance(item, dict) and item.get("role") == "user" else []
+    return len(blocks) == 1 and blocks[0].get("type") == "text" and \
+        str(blocks[0].get("text") or "").lstrip().startswith(COMPACTED)
+
+
+def notices(text: str) -> List[dict]:
+    """The task notifications in a text, each {id, status, event, ended, waiting}: `ended` when it says the task
+    ended (a status; a monitor's expiry), `waiting` when an agent stopped while background work of its own runs."""
+    out = []
+    for note in NOTIFICATION.finditer(text or ""):
+        body = note.group(1)
+        found, status, event = TASK_ID.search(body), TASK_STATUS.search(body), TASK_EVENT.search(body)
+        waiting = bool(WAITING.search(body))
+        out.append({"id": found.group(1) if found else None, "status": status.group(1) if status else None,
+                    "event": event.group(1) if event else None, "waiting": waiting,
+                    "ended": not waiting and bool(status or (event and MONITOR_END.match(event.group(1))))})
+    return out
+
+
+def loaded(text: str) -> List[tuple]:
+    """The files a note of Claude Code's gives the agent the lines of, not by a call of its own: one the user
+    @-mentioned (read as the Read tool reads it), the CLAUDE.md files and memory it loads ("Contents of <path>:") --
+    each (path, [(n, line)], how)."""
+    out = []
+    for m in MENTIONED.finditer(text):
+        try:
+            path = json.loads(m.group(1)).get("file_path")
+        except (ValueError, AttributeError):
+            continue
+        rows = []
+        for line in text[m.end():].split("\n"):
+            r = READ_LINE.match(line)
+            if not r:
+                break
+            rows.append((int(r.group(1)), r.group(2)))
+        if isinstance(path, str) and path:
+            out.append((path, rows, "@-mentioned: read into the message by Claude Code"))
+    found = list(LOADED.finditer(text))
+    for k, m in enumerate(found):
+        body = text[m.end():found[k + 1].start() if k + 1 < len(found) else len(text)]
+        body = re.sub(r"\n*</system-reminder>[\s\S]*$", "", body).rstrip("\n")
+        out.append((m.group(1), list(enumerate(body.split("\n"), 1)), "loaded into the context by Claude Code"))
+    return out
+
+
+def note_detail(text: str) -> Optional[dict]:
+    """What a note of Claude Code's says, as Part.detail has it, with its Kind: None for a note that says nothing
+    more than its words.
+        SKILL          name, args, instructions: a skill's instructions, loaded by the Skill tool or the user's /name
+        AGENT_REPORT   from, text: another session's message, a subagent's report as it hands back
+        PEER_MESSAGE   name, text: a message another Claude session sent this one
+        LOCAL_COMMAND  name: a command the user ran that Claude Code runs itself (/context, /mcp)
+        COMMAND_OUTPUT text: what a command the user ran with ! printed"""
+    m = SKILL_TEXT.match(text)
+    if m:
+        return {"kind": Kind.SKILL, "name": os.path.basename(m.group(1).strip().rstrip("/")),
+                "args": (m.group(3) or "").strip(), "instructions": m.group(2).strip()}
+    m = AGENT_MESSAGE.search(text) if text.lstrip().startswith(("Another Claude session sent a message:", "<agent-message ")) else None
+    if m:
+        body = m.group(2)
+        if REPORT_FOLLOWS in body:                   # a hand-back: the report, each of its lines indented by Claude Code
+            body = textwrap.dedent(body.split(REPORT_FOLLOWS, 1)[1])
+        return {"kind": Kind.AGENT_REPORT, "from": m.group(1), "text": body.strip()}
+    m = PEER_MESSAGE.search(text) if text.lstrip().startswith("Another Claude session sent a message:") else None
+    if m:
+        who = dict(re.findall(r'([\w-]+)="([^"]*)"', m.group(1)))
+        return {"kind": Kind.PEER_MESSAGE, "name": who.get("from-name") or who.get("from") or "", "text": m.group(2).strip()}
+    m = RAN.match(text)
+    if m:
+        args = (m.group(2) or "").strip()
+        return {"kind": Kind.LOCAL_COMMAND, "name": "/" + m.group(1).strip() + (f" {args}" if args else "")}
+    m = PRINTED.match(text)
+    if m:
+        return {"kind": Kind.COMMAND_OUTPUT,
+                "text": "\n".join(x for x in (m.group(1).rstrip("\n"), (m.group(2) or "").rstrip("\n")) if x)}
+    return None
+
+
+def task_of(text: str) -> Optional[dict]:
+    """The background task a tool's result says it started, resumed or stopped: {id, kind, how ("started",
+    "resumed", "stopped"), output, label}; None if none."""
+    text = text or ""
+    m = STOPPED.match(text)
+    if m:
+        return {"id": m.group(1), "kind": None, "how": "stopped", "output": None, "label": None}
+    m = RESUMED.match(text)
+    if m:
+        return {"id": m.group(1), "kind": "agent", "how": "resumed", "output": None, "label": None}
+    for pattern, kind in STARTS:
+        m = pattern.match(text)
+        if m:
+            out, summary = OUTPUT_FILE.search(text), SUMMARY.search(text)
+            return {"id": m.group(1), "kind": kind, "how": "started",
+                    "output": (out.group(1) or out.group(2)) if out else None,
+                    "label": summary.group(1).strip()[:160] if summary else None}
+    return None
+
+
+def ask_of(name: str, inp) -> Optional[dict]:
+    """What a call of one of its asking tools asks (ToolCall.ask); None for any other call."""
+    if name not in ASKS:
+        return None
+    got = inp if isinstance(inp, dict) else {}
+    if ASKS[name] == "plan":
+        return {"kind": "plan", "plan": got["plan"] if isinstance(got.get("plan"), str) else None}
+    return {"kind": "question", "questions": [
+        {"id": None, "header": q.get("header"), "question": q.get("question"), "multiSelect": bool(q.get("multiSelect")),
+         "options": [{"label": o.get("label"), "description": o.get("description")}
+                     for o in q.get("options") or [] if isinstance(o, dict)]}
+        for q in got.get("questions") or [] if isinstance(q, dict)]}
+
+
+def tool_call(b: dict) -> ToolCall:
+    name = b.get("name") or "tool"
+    action, key = TOOLS.get(name, (Action.OTHER, None))
+    inp = b.get("input")
+    path = inp.get(key) if key and isinstance(inp, dict) else None
+    return ToolCall(b.get("id"), name, inp, action, [path] if isinstance(path, str) and path else [], ask_of(name, inp))
+
+
+def is_model_call(method: str, path: str, body) -> bool:
+    """Whether the request is the agent's own model call: a POST to .../messages with a messages list holding a
+    user message, offering tools -- not the web search server tool alone, which is Claude Code's WebSearch tool
+    searching."""
+    if method != "POST" or not path.split("?", 1)[0].rstrip("/").endswith("/messages"):
+        return False
+    if not isinstance(body, dict) or not isinstance(body.get("messages"), list) or not body.get("tools"):
+        return False
+    if all(is_web_search(t) for t in body["tools"]):
+        return False
+    return any(isinstance(m, dict) and m.get("role") == "user" for m in body["messages"])
+
+
+def is_web_search(tool) -> bool:
+    """Whether a tool offered is the API's web search server tool (`web_search_20250305`, ...)."""
+    return isinstance(tool, dict) and str(tool.get("type") or "").startswith(WEB_SEARCH)
+
+
+def session_of(headers, body: dict) -> Optional[str]:
+    """The Claude Code session the request belongs to, or None."""
+    lower = {k.lower(): v for k, v in (headers or {}).items()}
+    if lower.get(SESSION_HEADER):
+        return lower[SESSION_HEADER]
+    user = (body.get("metadata") or {}).get("user_id") if isinstance(body, dict) else None
+    try:
+        return json.loads(user).get("session_id") or None if isinstance(user, str) else None
+    except (ValueError, AttributeError):
+        return None
+
+
+def request_class(headers) -> Optional[str]:
+    """What Claude Code says the call is (`X-Claude-Code-Request-Class`), or None."""
+    return next((str(v).lower() for k, v in (headers or {}).items() if k.lower() == REQUEST_CLASS_HEADER and v), None)
+
+
+def suggestion_at(messages: list, opening: str = SUGGESTION) -> Optional[int]:
+    """Where a prompt suggestion's own message is -- a user message of text alone opening with `opening`
+    (`[SUGGESTION MODE:`), after the conversation it forks -- or None: not a suggestion. It is the last message, or
+    followed only by the suggestion's own tool calls, each an assistant message and the user message of its results:
+    Claude Code refuses a tool the suggestion's model calls (`No tools needed for suggestion`) and asks it again,
+    the refusal after the call."""
+    if len(messages) < 2 or not isinstance(messages[-1], dict) or messages[-1].get("role") != "user":
+        return None
+    at = len(messages) - 1
+    while at >= 2 and any(b.get("type") == "tool_result" for b in blocks_of(messages[at])) and \
+            isinstance(messages[at - 1], dict) and messages[at - 1].get("role") == "assistant":
+        at -= 2                                           # a call of the suggestion's own, and its refusal
+    blocks = blocks_of(messages[at])
+    if at < 1 or not blocks or messages[at].get("role") != "user" or any(b.get("type") != "text" for b in blocks):
+        return None
+    return at if str(blocks[0].get("text") or "").lstrip().startswith(opening) else None
+
+
+def recap_at(messages: list) -> Optional[int]:
+    """Where a recap's own message is, as `suggestion_at` finds a suggestion's; None: not a recap."""
+    return suggestion_at(messages, RECAP)
+
+
+def compaction_split(messages: list) -> Optional[Tuple[list, list]]:
+    """(the conversation, the instruction's blocks) of a compaction call -- the last user message's text blocks
+    from the one opening with `CRITICAL: Respond with TEXT ONLY` on are the instruction, the rest the conversation
+    -- or None: not a compaction."""
+    at = next((i for i in range(len(messages) - 1, -1, -1)
+               if isinstance(messages[i], dict) and messages[i].get("role") == "user"), None)
+    if at is None or at < len(messages) - 2:          # the last user message, or just before a system note
+        return None
+    blocks = blocks_of(messages[at])
+    start = next((j for j, b in enumerate(blocks) if b.get("type") == "text"
+                  and str(b.get("text") or "").lstrip().startswith(COMPACTION)), None)
+    if start is None:
+        return None
+    rest = [dict(messages[at], content=blocks[:start])] if start else []
+    return messages[:at] + rest + messages[at + 1:], blocks[start:]
+
+
+def is_subagent(headers) -> bool:
+    """Whether the call is a subagent's (Claude Code's `Agent` tool), not the session's own."""
+    return any(k.lower() == AGENT_HEADER and v for k, v in (headers or {}).items())
+
+
+def cwd_of(messages: list) -> Optional[str]:
+    """The agent's working directory as Claude Code's notes last state it, or None."""
+    found = None
+    for m in messages:
+        for b in blocks_of(m):
+            for match in CWD.findall(str(b.get("text") or "")):
+                found = match
+    return found
+
+
+class ClaudeCode(Harness):
+    name = "claude"
+    label = "Claude Code"
+    checked_with = "2.1.310"
+
+    def call(self, method: str, path: str, headers, body) -> Optional[Call]:
+        """The request as a model call: None unless it is a POST to .../messages with messages holding a user's.
+        `detail["model"]` says whether it is one ag takes part in -- tools offered, not the web search tool alone
+        (`is_model_call`); a call without is OTHER."""
+        if method != "POST" or not path.split("?", 1)[0].rstrip("/").endswith("/messages") or not isinstance(body, dict):
+            return None
+        messages = body.get("messages")
+        if not isinstance(messages, list) or not any(isinstance(m, dict) and m.get("role") == "user" for m in messages):
+            return None
+        agent = next((str(v) for k, v in (headers or {}).items() if k.lower() == "user-agent"), "")
+        found = VERSION.search(agent)
+        out = Call(CallKind.TURN, session_of(headers, body), cwd_of(messages), found.group(1) if found else None,
+                   history=messages, detail={"model": is_model_call(method, path, body), "class": request_class(headers)})
+        if is_subagent(headers):
+            out.kind = CallKind.SUBAGENT
+            return out
+        if not out.detail["model"]:
+            out.kind = CallKind.OTHER
+            return out
+        at = recap_at(messages)
+        kind = CallKind.RECAP if at is not None else None
+        if at is None:
+            at = suggestion_at(messages)
+            kind = CallKind.SUGGESTION if at is not None else None
+        if at is not None:
+            out.kind, out.history, out.own = kind, messages[:at], messages[at:]
+            return out
+        if out.detail["class"] in SIDE_CLASSES:
+            out.kind = CallKind.OTHER
+            return out
+        split = compaction_split(messages)
+        if split is not None:
+            out.kind, out.history, out.own = CallKind.COMPACTION, split[0], [{"role": "user", "content": split[1]}]
+        return out
+
+    def items(self, history: list) -> list:
+        return pieces(copy.deepcopy(history))
+
+    def words(self, text: str) -> tuple:
+        return words_of(text)
+
+    def owns(self, payload) -> bool:
+        if not isinstance(payload, dict) or "info" in payload or "api" in payload:
+            return False
+        if payload.get("role") == "system":
+            return True
+        blocks = [c for c in payload.get("content") or [] if isinstance(c, dict)] if isinstance(payload.get("content"), list) else []
+        kinds = {c.get("type") for c in blocks}
+        if kinds & {"input_text", "output_text", "toolCall"} or payload.get("type") is not None:
+            return False
+        return payload.get("role") in ("user", "assistant") and (bool(kinds & set(BLOCK_KINDS)) or isinstance(payload.get("content"), str))
+
+    def read(self, items: list) -> List[Part]:
+        """Each piece read (module doc). Its neighbours tell two things a piece alone does not: the prompt a command the
+        user typed expands to -- the first of the user's words after it, before the agent says anything (a skill's
+        instructions are Claude Code's already) -- is Claude Code's (COMMAND_PROMPT); and when the history opens
+        with Claude Code's summary of a compacted conversation, its notes up to the first reply to the user's first
+        words after it are what it sends again with the summary (COMPACTION_REPEAT)."""
+        out = [self.part(it) for it in items]
+        alone = [kind_of(it) for it in items]           # as each piece is alone: a typed command is LOCAL_COMMAND here
+        for k, it in enumerate(items):
+            if typed_command(it) is None:
+                continue
+            for j in range(k + 1, len(items)):
+                if not isinstance(items[j], dict) or items[j].get("role") == "assistant":
+                    break
+                if alone[j] == Kind.SKILL or (alone[j] in SAID and not out[j].detail.get("expands")):
+                    if out[j].kind != Kind.SKILL:
+                        out[j].kind, out[j].words = Kind.COMMAND_PROMPT, None
+                    out[j].detail["expands"] = True
+                    break
+        if items and is_compacted_summary(items[0]):
+            out[0].detail["opens"] = True
+            asked = next((i for i, p in enumerate(out) if i and p.kind in SAID), len(items))
+            end = next((i for i in range(asked + 1, len(items)) if isinstance(items[i], dict)
+                        and items[i].get("role") == "assistant"), len(items))
+            for i in range(1, end):
+                if out[i].kind not in SAID and out[i].kind not in TURNS and not out[i].detail.get("expands"):
+                    out[i].detail["repeated"] = out[i].kind
+                    out[i].kind = Kind.COMPACTION_REPEAT
+        return out
+
+    def part(self, item) -> Part:
+        """One piece read on its own."""
+        typed = typed_command(item)
+        kind = Kind.USER_COMMAND if typed is not None else kind_of(item)
+        role = item.get("role") if isinstance(item, dict) else None
+        blocks = blocks_of(item) if isinstance(item, dict) else []
+        b = blocks[0] if blocks else {}
+        p = Part(kind, role, text_of(item), detail={"block": b.get("type")})
+        if p.text is not None and b.get("type") == "text":
+            p.cwd = next(iter(CWD.findall(p.text)[-1:]), None)
+            found = notices(p.text)
+            if found:
+                p.detail["notices"] = found
+            back = HANDBACK.findall(p.text)
+            if back:
+                p.detail["handed_back"] = back
+        if typed is not None:
+            p.words = typed
+        elif kind in SAID and b.get("type") == "text":
+            p.words = words_of(p.text or "")[1]
+        elif b.get("type") == "text" and role != "assistant":
+            said = note_detail(p.text or "")
+            if said:
+                said.pop("kind")
+                p.detail.update(said)
+            got = loaded(p.text or "")
+            if got:
+                p.detail["loaded"] = got
+        if kind in (Kind.PEER_MESSAGE, Kind.AGENT_REPORT) and "text" in p.detail:   # which, as its tag says
+            p.kind = Kind.AGENT_REPORT if "from" in p.detail else Kind.PEER_MESSAGE
+        if b.get("type") in ("tool_use", "server_tool_use"):
+            p.tool = tool_call(b)
+        elif b.get("type") in ("tool_result", "web_search_tool_result"):
+            p.result = ToolResult(b.get("tool_use_id"), bool(b.get("is_error")), output_of(b.get("content")))
+            if b.get("type") == "tool_result":
+                p.result.task = task_of(p.text)
+        elif p.kind == Kind.REASONING:
+            p.opaque = b.get("type") == "redacted_thinking" or not (b.get("thinking") or "").strip()
+            p.detail["thinking"] = b.get("thinking") or b.get("text") or ""
+        return p
+
+
+def split_turn_notes(text: str) -> bool:
+    """Whether a message queued in the user's name is one of Claude Code's notes (QUEUED_NOTES), not theirs."""
+    return text.lstrip().startswith(QUEUED_NOTES)
+
+
+def plan_path(payload) -> Optional[Tuple[str, Optional[str]]]:
+    """(the plan file a stored tool call writes, what it writes there), for the last such call in a piece; None."""
+    for b in reversed(blocks_of(payload) if isinstance(payload, dict) else []):
+        got = b.get("input") if b.get("type") == "tool_use" else None
+        path = got.get("file_path") if isinstance(got, dict) else None
+        if isinstance(path, str) and PLAN_FILE.search(path):
+            return path, got["content"] if isinstance(got.get("content"), str) else None
+    return None
+
+
+__all__ = ["ClaudeCode", "Kind", "blocks_of", "pieces", "without_cache_control", "text_of", "kind_of", "typed_command",
+           "words_of", "mid_turn", "notices", "loaded", "note_detail", "task_of", "is_compacted_summary"]

@@ -61,10 +61,12 @@ for the dashboard's Files view -- as the Claude Code hook does (its Files).
 import importlib
 import json
 import os
-import re
 import sys
 import time
 from typing import Callable, Optional, Tuple, Union
+
+from harness_kit.codex import (METADATA, TRIGGER, TURN, compaction_split, cwd_of,  # noqa: F401 - codex's rules for
+                               is_model_call, metadata_of, side_call, texts_of, thread_of)  # its calls, as this module had them
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
@@ -75,13 +77,8 @@ from .ag_clients import AgClients
 from .counting import Counter
 from ..adaptor.adaptor import CodexAdaptor
 
-CWD = re.compile(r"<cwd>\s*(.*?)\s*</cwd>", re.S)
-ROOT = re.compile(r"<workspace_roots>\s*<root>\s*(.*?)\s*</root>", re.S)
 ANSWERED = "codex_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
 FILES = "codex_files"         # the same, for what the answer's calls do to files: (gatherer, thread, cwd, since)
-METADATA = "x-codex-turn-metadata"   # codex's header (and client_metadata key) saying what a call is for
-TURN = "user"                         # the thread_source of a thread's own turn; any other is a side call
-TRIGGER = "compaction_trigger"        # a compaction call's last item, which codex requires last
 SIDE = "codex_side"                   # the same, for a side call whose answer is kept: (kind, gatherer, thread)
 KEPT = ("thread_title", "system")     # the side calls whose answers are kept: a title, a recap
 NAME_CHARS = 120                      # the longest name kept (codex asks for 36 characters at most)
@@ -97,65 +94,6 @@ def load_adaptor(spec: str) -> Adaptor:
     return cls()
 
 
-def is_model_call(method: str, path: str, body) -> bool:
-    """Whether the request is a model call whose input the context manager
-    answers for: a POST to .../responses with an input list holding a user
-    message."""
-    if method != "POST" or not path.split("?", 1)[0].rstrip("/").endswith("/responses"):
-        return False
-    if not isinstance(body, dict) or not isinstance(body.get("input"), list):
-        return False
-    return any(isinstance(i, dict) and i.get("role") == "user" for i in body["input"])
-
-
-def thread_of(headers, body: dict) -> Optional[str]:
-    """The codex thread id the request belongs to, or None."""
-    lower = {k.lower(): v for k, v in (headers or {}).items()}
-    return lower.get("thread-id") or lower.get("session-id") or body.get("prompt_cache_key") or None
-
-
-def metadata_of(headers, body: dict) -> dict:
-    """What codex says of the call (its turn metadata: thread_source, request_kind, parent_thread_id,
-    ...), from its header, else the body's client_metadata; {} when it says nothing."""
-    lower = {k.lower(): v for k, v in (headers or {}).items()}
-    raw = lower.get(METADATA) or ((body.get("client_metadata") or {}) if isinstance(body.get("client_metadata"), dict)
-                                  else {}).get(METADATA)
-    try:
-        found = json.loads(raw) if isinstance(raw, str) else raw
-    except ValueError:
-        return {}
-    return found if isinstance(found, dict) else {}
-
-
-def side_call(metadata: dict) -> Optional[str]:
-    """The kind of codex's own side call this is (its thread_source: thread_title, system, subagent,
-    guardian_review, ...), or None: the thread's own turn -- a user source, or none said."""
-    source = metadata.get("thread_source")
-    if metadata.get("parent_thread_id") and source in (None, TURN):
-        source = "subagent"
-    return None if source in (None, TURN) else str(source)
-
-
-def compaction_split(metadata: dict, items: list) -> Optional[Tuple[list, list]]:
-    """(the history, the trigger) of a compaction call -- `request_kind` compaction, or an input ending
-    with a `compaction_trigger` -- else None."""
-    last = items[-1] if items else None
-    if isinstance(last, dict) and last.get("type") == TRIGGER:
-        return items[:-1], [last]
-    if metadata.get("request_kind") == "compaction":
-        return items, []
-    return None
-
-
-def texts_of(item) -> list:
-    if not isinstance(item, dict):
-        return []
-    parts = item.get("content")
-    if isinstance(parts, str):
-        return [parts]
-    return [p["text"] for p in parts or [] if isinstance(p, dict) and isinstance(p.get("text"), str)]
-
-
 def answer_object(answer: dict) -> dict:
     """What a side call's answer says, read as the JSON object codex asked for (its output schema): the
     text of its messages; {} when it is not one."""
@@ -166,20 +104,6 @@ def answer_object(answer: dict) -> dict:
     except ValueError:
         return {}
     return found if isinstance(found, dict) else {}
-
-
-def cwd_of(items: list) -> Optional[str]:
-    """The agent's working directory, as the last <environment_context> in
-    the input states it -- its <cwd>, or, where codex writes none, the first
-    of its <workspace_roots> -- None if none does."""
-    found = None
-    for item in items:
-        for text in texts_of(item):
-            if "<environment_context>" in text:
-                match = CWD.findall(text) or ROOT.findall(text)
-                if match:
-                    found = match[-1]
-    return found
 
 
 def _print(gatherer: str, line: str) -> None:

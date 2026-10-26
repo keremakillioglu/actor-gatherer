@@ -2459,55 +2459,17 @@ function renderAgents() {
   document.getElementById("servers").textContent = servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";
 }
-// A message the user sent mid-turn, as Claude Code wraps it ("The user sent a new message while you were
-// working: ... This is how Claude Code surfaces messages ..."): just the message, for the list. The stored
-// message is left as it is.
-const MID_TURN = /^\s*The user sent a new message while you were working:\s*([\s\S]*?)\s*This is how Claude Code surfaces messages the user sends mid-turn\b[\s\S]*$/;
-// A command the user ran with `!`, as Claude Code sends it ("<bash-input>ls -la</bash-input>", its output after it as
-// its own text): as the user typed it, "! ls -la". The closing tag may be cut off with the end of a long one.
-const BANG = /^\s*<bash-input>([\s\S]*?)(?:<\/bash-input>\s*)?$/;
-// A command the user typed that Claude Code expands into a prompt (a skill's /name, a command file's), as it sends it
-// ("<command-message>greet</command-message>\n<command-name>/greet</command-name>\n<command-args>Bob</command-args>"):
-// as the user typed it, "/greet Bob".
-const SLASH = /^\s*<command-message>[^<]*<\/command-message>\s*<command-name>\/?([^<]*)<\/command-name>\s*(?:<command-args>([\s\S]*?)<\/command-args>)?\s*$/;
-// What the user pasted, as Claude Code sends it when it is long -- one pasted in its terminal, or a long message from this
-// page's box, which is pasted there too: between <pasted_content id="55b6"> and </pasted_content id="55b6">. Its words
-// without the tags, a blank line either side of them.
-const PASTED = /\s*<\/?pasted_content\b[^>]*>\s*/g;
-const unpasted = (text) => text && text.includes("pasted_content") ? text.replace(PASTED, "\n\n").trim() : text;
-// The user's answers to what codex asked as it worked (request_user_input_async), as codex sends them, one message for
-// each submitted: <send_user_message_question_reply>[{"answer", "question", "questionItemId"}]</send_user_message_question_reply>.
-// As the answer they are, a line each: "Which fruit do you prefer? → mango please".
-const REPLIED = /^\s*<send_user_message_question_reply>\s*([\s\S]*?)\s*(?:<\/send_user_message_question_reply>\s*)?$/;
-const replied = (text) => {
-  const m = text && REPLIED.exec(text);
-  if (!m) return null;
-  try {
-    const got = JSON.parse(m[1]);
-    const out = (Array.isArray(got) ? got : []).filter((r) => r && typeof r === "object")
-      .map((r) => `${String(r.question ?? "").trim()}${r.question ? " → " : ""}${String(r.answer ?? "").trim()}`);
-    return out.length ? out.join("\n") : null;
-  } catch (e) { return null; }                    // cut off, or not codex's: shown as it is
-};
-const asked = (text) => {
-  text = unpasted(text);
-  const r = replied(text);
-  if (r) return r;
-  const b = text && BANG.exec(text);
-  if (b) return `! ${b[1].trim()}`;
-  const c = text && SLASH.exec(text);
-  if (c) return `/${c[1].trim()}${c[2] && c[2].trim() ? " " + c[2].trim() : ""}`;
-  const m = text && MID_TURN.exec(text); return m && m[1] ? m[1] : text;
-};
-// A user's message in a chat bubble: as asked() gives it, a command (`!`, or /name) in the terminal's type -- one
-// typed in this page's box ("!ls") too, which Claude Code runs as one. A `!` command's bubble is a bash bubble
-// (bubbleClass): its `!` in bash mode's colour, as Claude Code marks it, and under it, once run, what it printed.
-const isBash = (text) => !!text && (BANG.test(text) || /^\s*!/.test(text));
+// A user's message in a chat bubble: as the server gives it -- the user's words as their harness's rules read them
+// (harness_kit: a command run with `!` as "! ls", a /name as "/greet Bob", a message sent mid-turn unwrapped) -- a
+// command (its `kind` "user_command") in the terminal's type, as is one typed in this page's box ("!ls"), which Claude
+// Code runs as one. A `!` command's bubble is a bash bubble (bubbleClass): its `!` in bash mode's colour, as Claude Code
+// marks it, and under it, once run, what it printed.
+const isBash = (text) => !!text && /^\s*!/.test(text);
 const bubbleClass = (text) => isBash(text) ? " bash" : "";
-const userWords = (text) => isBash(text)
+const userWords = (text, kind) => isBash(text)
   ? el("span", { class: "tx bang" }, el("span", { class: "bash-mark", "aria-hidden": "true", text: "!" }),
-    " " + asked(text).trim().replace(/^!\s*/, ""))
-  : el("span", { class: "tx" + (text && SLASH.test(text) ? " bang" : ""), text: asked(text) });
+    " " + String(text).trim().replace(/^!\s*/, ""))
+  : el("span", { class: "tx" + (kind === "user_command" ? " bang" : ""), text: text });
 function agentRow(g, a, group) {
   const [cls, label] = statusOf(a);
   const saved = !!savedAs(g.name, a);
@@ -2521,7 +2483,7 @@ function agentRow(g, a, group) {
     actorLogo(a),
     el("div", {},
       a.name && a.name.text ? el("div", { class: "name", text: a.name.text }) : null,
-      el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: asked(a.last_user_message) || "No message yet" }),
+      el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: a.last_user_message || "No message yet" }),
       a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
         el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
       // the list is drawn again on every change: the glyph's turn set by the clock, not restarted each time
@@ -2745,8 +2707,8 @@ function drawWho() {
   drawn.who = sig;
   const who = document.getElementById("pane-who");
   const named = info && info.name && info.name.text;
-  who.replaceChildren(...(info ? [actorLogo(info), el("span", { class: "tx", text: named || asked(info.last_user_message) || info.channel })] : []));
-  who.title = info ? [named, asked(info.last_user_message), `${harnessName(info.harness)} · ${state.selected[0]} · ${info.channel}`]
+  who.replaceChildren(...(info ? [actorLogo(info), el("span", { class: "tx", text: named || info.last_user_message || info.channel })] : []));
+  who.title = info ? [named, info.last_user_message, `${harnessName(info.harness)} · ${state.selected[0]} · ${info.channel}`]
     .filter(Boolean).join("\n") : "";
 }
 // The bar at a pane's left: dragged, it gives the two panes beside it their widths, each at least MIN_PANE.
@@ -4716,9 +4678,9 @@ function heard(info) {
     .filter((q) => !stored.some((m) => m.at >= (q.at || 0) - 1 && sameWords(m.text, q.text)));
   return { stored, typed, queued: (info && info.session && info.session.queued) || [] };
 }
-// A message as the user typed it, to match what was sent with what is stored: a command as Claude Code stores it
-// ("<bash-input>echo hi</bash-input>", a /name's tags) as typed (asked()), and "!echo hi" the same as "! echo hi".
-const typedAs = (text) => asked(String(text ?? "")).trim().replace(/^!\s*/, "! ");
+// A message as the user typed it, to match what was sent with what is stored (the server gives the user's words as
+// typed: harness_kit's): "!echo hi" the same as "! echo hi".
+const typedAs = (text) => String(text ?? "").trim().replace(/^!\s*/, "! ");
 // whether two say the same: their start, as a stored message is clipped
 const sameWords = (a, b) => typedAs(a).slice(0, 200) === typedAs(b).slice(0, 200);
 const heardCount = (h, text) => [...h.stored, ...h.typed].filter((m) => sameWords(m.text, text)).length
@@ -4794,12 +4756,12 @@ function filesTalk(d, info, running) {
           if (sideFolded) foldSide(false, on);
           if (!on) setFilesTurn(t.n);
         } },
-        userWords(t.text))),
+        userWords(t.text, t.kind))),
       ...[...(t.more || []), ...(t.n === d.turns.length - 1 ? joined : [])].map((m) =>
         el("button", { type: "button", class: "fl-user joined" + bubbleClass(m.text), "aria-pressed": on ? "true" : "false",
           title: "Written while it worked, and given to the agent in this turn",
           onclick: () => { if (sideFolded) foldSide(false, false); setFilesTurn(t.n); } },
-          userWords(m.text))),
+          userWords(m.text, m.kind))),
       before.length ? el("div", { class: "fl-minor" },
         extra ? el("button", { type: "button", class: "fl-more", "aria-expanded": hidden ? "false" : "true", onclick: toggle,
           title: hidden ? "Show everything the agent said and thought in this turn" : "Fold the earlier messages again" },
@@ -4918,7 +4880,6 @@ async function loadOutlineNow() {
     if (fresh.length || signature(got.tasks) !== signature(h.tasks) || signature(got.builds) !== signature(h.builds) || h.error
       || h.more !== got.more) h.version++;
     h.error = ""; h.tasks = got.tasks; h.builds = got.builds || {}; h.more = got.more;
-    for (const e of fresh) if (e.type === "user_message") e.text = asked(e.text);   // ag's cleaned text, else without the wrapper
     h.events.push(...fresh);
     if (fresh.length) h.last = fresh[fresh.length - 1].row_id;
     if (!got.more) break;

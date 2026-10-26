@@ -92,17 +92,20 @@ from typing import Any, Dict, List, Optional
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
 from . import answers, avatars, hiding, live, queued, rollout, saved, sessions
-from .commands import CODE_MODE, script_calls
+import harness_kit
+from harness_kit import Kind, claude as claude_rules, codex as codex_rules
+from harness_kit.base import output_of as _output  # noqa: F401 - a tool result's words, as files.py reads them
+from harness_kit.shell import CODE_MODE, script_calls
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
 RUNNING, IDLE, CLOSED, BACKGROUND, ASKING, ERROR = "running", "idle", "closed", "background", "asking", "error"
 #: Claude Code's tools that wait for the user in its terminal before the turn goes on: a question, with
-#: options to pick from; a plan, to approve. What each asks, `asking` returns.
-ASKS = {"AskUserQuestion": "question", "ExitPlanMode": "plan"}
+#: options to pick from; a plan, to approve. What each asks, `asking` returns (harness_kit.claude's).
+ASKS = claude_rules.ASKS
 #: Codex's tool that asks the user in its terminal, its turn waiting on the answer (Plan mode's): a question, with
 #: options to pick from -- codex adds "None of the above" to each, with a note in the user's own words.
-CODEX_ASKS = {rollout.ASK: "question"}
+CODEX_ASKS = {codex_rules.ASK: "question"}
 ASK_CHARS = 4000               # the most of a question's words `asking` returns
 PLAN_CHARS = 20000             # the most of a plan it returns
 #: Claude Code's own record of a session, a line per message as it is made: <its config dir>/projects/<the session's
@@ -116,26 +119,13 @@ GIVE_UP_SECONDS = 90           # a failed call with no try since: given up (Clau
 GIVE_UP_LONG = 600             # the same for an error answered, where the record could still say (Retry-After)
 FAILED_READS = 50              # how many of its newest reads `failing` looks at
 ERROR_CHARS = 2000             # the most of an error's words it returns
-#: Where Claude Code writes the plan it asks to have approved (ExitPlanMode's call carries none): the file
-#: of its plans its latest write to one names.
-PLAN_FILE = re.compile(r"/\.claude/plans/[^/\\]+\.md$")
-#: A background task's start, as its tool's result begins (Claude Code's words): its kind, and its id.
-STARTS = ((re.compile(r"Command running in background with ID: ([\w-]+)"), "command"),
-          (re.compile(r"Async agent launched successfully\.[\s\S]*?\bagentId: ([\w-]+)"), "agent"),
-          (re.compile(r"Monitor started \(task ([\w-]+)"), "monitor"),
-          (re.compile(r"Workflow launched in background\. Task ID: ([\w-]+)"), "workflow"))
-SUMMARY = re.compile(r"^Summary: (.+)$", re.M)        # a workflow's: what it is for (its call has no description)
-RESUMED = re.compile(r'\{[^\n]*?"resumedAgentId":\s*"([\w-]+)"')    # SendMessage's result, when it resumed an agent
-#: Its end: Claude Code's notification with a status (one without is a monitor's event), an agent's report
-#: handed back, or TaskStop's result.
-HANDBACK = re.compile(r'<agent-message from="([\w-]+)">\s*\[Subagent hand-back\]')
-NOTIFICATION = re.compile(r"<task-notification>([\s\S]*?)</task-notification>")
-TASK_ID, TASK_STATUS = re.compile(r"<task-id>([\w-]+)</task-id>"), re.compile(r"<status>(\w+)</status>")
-TASK_EVENT = re.compile(r"<event>([\s\S]*?)</event>")
-WAITING = re.compile(r"waiting on its own background work|stopped with background work of its own still running")
-MONITOR_END = re.compile(r"^\s*\[Monitor (?:expired|stopped)\b")
-STOPPED = re.compile(r'^(?:\{"message":\s*")?Successfully stopped task: ([\w-]+)')
-OUTPUT_FILE = re.compile(r"(?:Output is being written to: |output_file: )(\S+?\.output)\b|^Transcript dir: (\S+)$", re.M)
+#: Claude Code's words for a background task's start and end, and where it writes its plans (harness_kit.claude's)
+PLAN_FILE, STARTS, SUMMARY, RESUMED = claude_rules.PLAN_FILE, claude_rules.STARTS, claude_rules.SUMMARY, claude_rules.RESUMED
+HANDBACK, NOTIFICATION, TASK_ID, TASK_STATUS = (claude_rules.HANDBACK, claude_rules.NOTIFICATION, claude_rules.TASK_ID,
+                                                claude_rules.TASK_STATUS)
+TASK_EVENT, WAITING, MONITOR_END, STOPPED = (claude_rules.TASK_EVENT, claude_rules.WAITING, claude_rules.MONITOR_END,
+                                             claude_rules.STOPPED)
+OUTPUT_FILE = claude_rules.OUTPUT_FILE
 #: An answer's stop reason, as the provider gives it: the turn goes on (a tool to run, a paused
 #: turn, or ag's "streaming": the parts of an answer complete while the rest still streams), or is
 #: over. Any other (Codex's `completed` on every answer, none) tells nothing: its last event does.
@@ -415,7 +405,8 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
             names[ch] = {"text": " ".join((text or "").split())[:120], "by": by}
     for ch, a in out.items():
         a["harness"] = _harness(conn, ch)
-        a["last_user_message"] = " ".join(last_user.get(ch, "").split())[:600] or None
+        said = harness_kit.words(last_user.get(ch, ""), a["harness"])[1]          # as the user typed it
+        a["last_user_message"] = " ".join(said.split())[:600] or None
         a["recap"] = recaps.get(ch)
         a["name"] = names.get(ch)
         a["last"] = max(a["last_read"] or 0, a.get("last_answer") or 0, answered.get(ch) or 0,   # its latest activity:
@@ -990,30 +981,8 @@ def _settle_background(a: dict, now: float) -> None:
         a["status"], a["running"] = BACKGROUND, True
 
 
-CODEX_TYPES = {"message", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output",
-               "reasoning", "local_shell_call", "web_search_call", "compaction", "compaction_summary"}
-
-
-def harness_of(payloads) -> Optional[str]:
-    """The harness an agent runs on, as its events' shape tells -- ag stores no name: codex's
-    Responses items, Claude Code's Anthropic message pieces, pi's messages, opencode's
-    {info, parts} messages; None when none of them shows."""
-    for p in payloads:
-        if not isinstance(p, dict):
-            continue
-        if "info" in p and ("parts" in p or "sessionID" in (p.get("info") or {})) or "sessionID" in p:
-            return "opencode"
-        if p.get("type") in CODEX_TYPES and ("role" in p or "call_id" in p or "summary" in p or "id" in p):
-            return "codex"
-        blocks = [c for c in p.get("content") or [] if isinstance(c, dict)] if isinstance(p.get("content"), list) else []
-        kinds = {c.get("type") for c in blocks}
-        if kinds & {"input_text", "output_text"}:
-            return "codex"
-        if "api" in p or p.get("role") == "toolResult" or kinds & {"toolCall"}:
-            return "pi"
-        if kinds & {"tool_use", "tool_result", "redacted_thinking"} or p.get("role") == "system":
-            return "claude"
-    return None
+CODEX_TYPES = codex_rules.SHAPES
+harness_of = harness_kit.harness_of
 
 
 def _harness(conn, channel: str) -> Optional[str]:
@@ -1398,42 +1367,6 @@ def _clip(value, chars: int = TEXT_CHARS):
     return value
 
 
-def _output(value) -> str:
-    """A tool result's words: a string, or the text of its blocks ("[image]" for an image, "Loaded <tool>" for a
-    tool a tool search loaded)."""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        words = []
-        for b in value:
-            if isinstance(b, str):
-                words.append(b)
-            elif isinstance(b, dict):
-                if isinstance(b.get("text"), str):
-                    words.append(b["text"])
-                elif b.get("type") in ("image", "input_image"):
-                    words.append("[image]")
-                elif b.get("type") == "tool_reference" and b.get("tool_name"):    # Claude Code's tool search: a tool loaded
-                    words.append(f"Loaded {b['tool_name']}")
-        return "\n".join(words)
-    if isinstance(value, dict):
-        for k in ("output", "content", "text"):
-            if k in value:
-                return _output(value[k])
-    return "" if value is None else json.dumps(value, ensure_ascii=False)
-
-
-def _arguments(raw):
-    """A codex call's arguments: a JSON string, read as its object when it is one."""
-    if isinstance(raw, str):
-        try:
-            got = json.loads(raw)
-            return got if isinstance(got, dict) else raw
-        except ValueError:
-            return raw
-    return raw
-
-
 def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
           chars: Optional[int] = TEXT_CHARS) -> List[dict]:
     """An event as the transcript shows it, whatever harness wrote it: its parts, each one of
@@ -1445,9 +1378,9 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
         {"kind": "result", "id", "error", "text"}   a tool's result, `id` its call's
         {"kind": "note", "name", "text"}            anything else: the harness's or ag's own messages (codex's
                                                     message from another agent, "agent_message", among them)
-    The harness's own format is read here (Claude Code's content blocks, codex's Responses items),
-    and nowhere else: anything this does not know shows as its readable text. Each text and input is
-    clipped at `chars` (None: kept whole)."""
+    The harness's own format is read by its rules (harness_kit: Claude Code's content blocks, codex's Responses
+    items), and drawn here; a format they do not know (pi's, opencode's) is drawn from its content blocks, and
+    anything else shows as its readable text. Each text and input is clipped at `chars` (None: kept whole)."""
     try:
         p = json.loads(payload_json) if payload_json else None
     except ValueError:
@@ -1455,47 +1388,16 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
     role = ROLES.get(event_type)
     if role is None:                         # not the conversation: a system message, ag's notices
         return [{"kind": "note", "name": event_type, "text": text or readable(payload_json)}]
-    out: List[dict] = []
-    if isinstance(p, dict) and p.get("type") == "agent_message" and ("author" in p or "recipient" in p):
-        out.append({"kind": "note", "name": "agent_message",      # codex's: another agent's message to this one
-                    "text": "\n".join(b.get("text") or "" for b in p.get("content") or [] if isinstance(b, dict))})
-    elif isinstance(p, dict) and p.get("type") in CODEX_TYPES | {"tool_search_call", "tool_search_output"}:
-        kind = p["type"]
-        if kind in ("function_call", "custom_tool_call", "tool_search_call"):
-            call = {"kind": "call", "id": p.get("call_id") or p.get("id"), "name": p.get("name") or kind,
-                    "input": _arguments(p.get("arguments", p.get("input")))}
-            if call["name"] == CODE_MODE and isinstance(call["input"], str) and script_calls(call["input"]):
-                call["calls"] = [{"name": n, "input": _clip(a, chars) if chars else a} for n, a in script_calls(call["input"])]
-            out.append(call)
-        elif kind == "local_shell_call":
-            out.append({"kind": "call", "id": p.get("call_id") or p.get("id"), "name": "local_shell",
-                        "input": (p.get("action") or {})})
-        elif kind == "web_search_call":
-            out.append({"kind": "call", "id": p.get("id"), "name": "web_search", "input": p.get("action") or {}})
-        elif kind.endswith("_output"):
-            out.append({"kind": "result", "id": p.get("call_id"), "error": False,
-                        "text": _output(p.get("output", p.get("tools")))})
-        elif kind == "reasoning":
-            out.append({"kind": "thinking", "text": "\n\n".join(s.get("text", "") for s in p.get("summary") or []
-                                                                if isinstance(s, dict))})
-    elif isinstance(p, dict) and isinstance(p.get("content"), list):
+    out: Optional[List[dict]] = None
+    h = harness_kit.owner(p)
+    if h is not None and h.name == "codex" and isinstance(p, dict) and p.get("type") is not None:
+        out = _codex_view(h.read_one(p), chars)
+    elif h is not None and h.name == "claude" and isinstance(p.get("content"), list):
         speaker = "system" if p.get("role") in ("system", "developer") else role
-        for b in p["content"]:
-            if not isinstance(b, dict):
-                continue
-            t = b.get("type")
-            if t in ("text", "input_text", "output_text"):
-                if (b.get("text") or "").strip():
-                    out.append({"kind": "text", "role": speaker, "text": b["text"]})
-            elif t in ("thinking", "redacted_thinking", "reasoning_text"):
-                out.append({"kind": "thinking", "text": b.get("thinking") or b.get("text") or ""})
-            elif t in ("tool_use", "server_tool_use"):
-                out.append({"kind": "call", "id": b.get("id"), "name": b.get("name") or "tool", "input": b.get("input")})
-            elif t in ("tool_result", "web_search_tool_result"):
-                out.append({"kind": "result", "id": b.get("tool_use_id"), "error": bool(b.get("is_error")),
-                            "text": _output(b.get("content"))})
-            elif t in ("image", "input_image"):
-                out.append({"kind": "note", "name": "image", "text": "[image]"})
+        out = [v for x in h.read_one(p) for v in _claude_view(x, speaker)]
+    if out is None and isinstance(p, dict) and isinstance(p.get("content"), list):
+        out = _blocks_view(p["content"], "system" if p.get("role") in ("system", "developer") else role)
+    out = out or []
     if not out:                              # a format this does not read: its words, as its type says
         words = text or readable(payload_json)
         if event_type == "agent_reasoning":
@@ -1506,6 +1408,68 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
         for k in ("text", "input"):
             if k in part:
                 part[k] = _clip(part[k], chars)
+    return out
+
+
+def _claude_view(x: "harness_kit.Part", speaker: str) -> List[dict]:
+    """A piece of Claude Code's, read (harness_kit.claude), as the transcript draws it."""
+    block = x.detail.get("block")
+    if block == "text":
+        return [{"kind": "text", "role": speaker, "text": x.text}] if (x.text or "").strip() else []
+    if x.kind == Kind.REASONING:
+        return [{"kind": "thinking", "text": x.detail.get("thinking") or ""}]
+    if x.tool is not None:
+        return [{"kind": "call", "id": x.tool.id, "name": x.tool.name, "input": x.tool.input}]
+    if x.result is not None:
+        return [{"kind": "result", "id": x.result.call_id, "error": x.result.error, "text": x.result.output}]
+    if block == "image":
+        return [{"kind": "note", "name": "image", "text": "[image]"}]
+    return []
+
+
+def _codex_view(read: List["harness_kit.Part"], chars: Optional[int]) -> Optional[List[dict]]:
+    """A codex item, read (harness_kit.codex), as the transcript draws it: its call, its result, its reasoning's summary,
+    or another agent's message to it; [] for a message (its words, by its type) -- None for an item drawn from its
+    content blocks instead."""
+    out: List[dict] = []
+    for x in read:
+        t = x.detail.get("block")
+        if t == "agent_message" and x.detail.get("between"):  # codex's: another agent's message to this one
+            out.append({"kind": "note", "name": "agent_message", "text": x.text or ""})
+        elif t not in CODEX_TYPES | {"tool_search_call", "tool_search_output"}:
+            return None
+        elif x.tool is not None:
+            call = {"kind": "call", "id": x.tool.id, "name": x.tool.name, "input": x.tool.input}
+            if call["name"] == CODE_MODE and isinstance(call["input"], str) and script_calls(call["input"]):
+                call["calls"] = [{"name": n, "input": _clip(a, chars) if chars else a} for n, a in script_calls(call["input"])]
+            out.append(call)
+        elif x.result is not None:
+            out.append({"kind": "result", "id": x.result.call_id, "error": False, "text": x.result.output})
+        elif x.kind == Kind.REASONING:
+            out.append({"kind": "thinking", "text": x.detail.get("thinking") or ""})
+    return out
+
+
+def _blocks_view(content: list, speaker: str) -> List[dict]:
+    """Content blocks of a format no harness's rules read (pi's; an item codex sends untyped), as the transcript draws
+    them: their words and thinking, any calls and results among them, an image as a note."""
+    out = []
+    for b in content:
+        if not isinstance(b, dict):
+            continue
+        t = b.get("type")
+        if t in ("text", "input_text", "output_text"):
+            if (b.get("text") or "").strip():
+                out.append({"kind": "text", "role": speaker, "text": b["text"]})
+        elif t in ("thinking", "redacted_thinking", "reasoning_text"):
+            out.append({"kind": "thinking", "text": b.get("thinking") or b.get("text") or ""})
+        elif t in ("tool_use", "server_tool_use"):
+            out.append({"kind": "call", "id": b.get("id"), "name": b.get("name") or "tool", "input": b.get("input")})
+        elif t in ("tool_result", "web_search_tool_result"):
+            out.append({"kind": "result", "id": b.get("tool_use_id"), "error": bool(b.get("is_error")),
+                        "text": _output(b.get("content"))})
+        elif t in ("image", "input_image"):
+            out.append({"kind": "note", "name": "image", "text": "[image]"})
     return out
 
 

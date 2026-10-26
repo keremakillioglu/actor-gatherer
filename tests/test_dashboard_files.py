@@ -383,7 +383,8 @@ class FilesTest(unittest.TestCase):
                  note("## Context Usage\n\n**Model:** claude-haiku-5-5\n"),
                  note("<local-command-stdout>Login successful</local-command-stdout>"))
         turns = files.files("g", "c1", cwd="/w")["turns"][2:]
-        self.assertEqual([t["text"][:16] for t in turns], ["Greet Alice. Use", "<command-message", "<bash-input>echo", "Count the files "])
+        self.assertEqual([t["text"][:16] for t in turns], ["Greet Alice. Use", "/greet Bob", "! echo hi", "Count the files "])
+        self.assertEqual([t["kind"] for t in turns], ["user", "user_command", "user_command", "user"])   # as typed
         alice, bob, bang, count = [t["replies"] for t in turns]
         self.assertEqual((alice, bob), ([{"kind": "text", "text": "Ahoy, Alice!"}], [{"kind": "text", "text": "Ahoy, Bob!"}]))
         instructions = "# Greeting\n\nReply with exactly: \"Ahoy, <name>!\""             # a skill loaded: among the commands

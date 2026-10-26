@@ -48,6 +48,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+import harness_kit
+
 from . import data, files, home, sessions
 
 CHANNEL = data.CHANNEL
@@ -235,7 +237,8 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
         events = [{"row_id": r["row_id"], "channel": r["ch"], "type": r["type"] or "?", "tokens": r["tokens"] or 0,
                    "at": data._seconds(r["inserted_at"]),
                    "text": (_call_label(r["payload"], r["text"], cwd.get(r["ch"]) or "") if r["type"] == "tool_call" else "")
-                   or _preview(r["text"], r["payload"])}
+                   or _preview(harness_kit.words(r["text"])[1] if r["type"] == "user_message" and r["text"] else r["text"],
+                               r["payload"])}
                   for r in rows[:OUTLINE_ITEMS]]
         return {"events": events, "tasks": _tasks(conn, channel), "builds": _builds(conn, channel),
                 "more": len(rows) > OUTLINE_ITEMS}

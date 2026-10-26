@@ -20,7 +20,7 @@ A change it found to a file in ag's home (the databases and logs ag writes as ca
 unless the call says it writes the file -- as the hook server now does itself, for what it kept before.
 
 Any other call (one from before the hook checked calls) is read from what the model saw alone
-(file_touches/commands.py): a Read's lines carry their numbers, but an edit carries only the text it
+(harness_kit/shell.py): a Read's lines carry their numbers, but an edit carries only the text it
 replaced. An edit is placed by finding that text among the lines seen of the file so far in the
 session (earlier turns too); one that is not found is listed apart. The files themselves are never
 read here: they show what the agent saw then, not what is there now."""
@@ -30,12 +30,14 @@ import json
 import os
 import re
 import tempfile
-import textwrap
 from typing import Dict, List, Optional
+
+import harness_kit
+from harness_kit import Kind, claude as claude_rules, codex as codex_rules
 
 from . import data, queued, rollout, work
 from . import home as paths
-from .commands import (  # noqa: F401 - python_changes: tested here
+from harness_kit.shell import (  # noqa: F401 - python_changes: tested here
     CODE_MODE, EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, opened_script,
     python_changes, script_calls, script_output, shell_changes, shell_reads)
 
@@ -318,24 +320,10 @@ def _call_view(part: dict) -> dict:
     return {"name": part.get("name"), "input": data._clip(part.get("input"), COMMAND_OUTPUT)}
 
 
-# ------------------------------------------------------------------ Claude Code's notes, as the conversation shows them
+# ------------------------------------------------------------------ the harness's notes, as the conversation shows them
 
-SKILL = re.compile(r"^\s*Base directory for this skill: ([^\n]*)\n+([\s\S]*?)(?:\n+ARGUMENTS: ([\s\S]*?))?\s*$")
-AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]*)"[^>]*>\n?([\s\S]*?)\n?</agent-message>')
-# another session's message, sent to this one (Claude Code's SendMessage across sessions), as it hands it on: the sender's
-# name in `from-name` (its socket in `from`), and after the tag Claude Code's own caution about it
-PEER_MESSAGE = re.compile(r'<cross-session-message\b([^>]*)>\n?([\s\S]*?)\n?</cross-session-message>')
-REPORT_FOLLOWS = "The report follows:\n"
-RAN = re.compile(r"^\s*<command-name>/?([^<]*)</command-name>\s*<command-message>[^<]*</command-message>"
-                 r"\s*(?:<command-args>([\s\S]*?)</command-args>)?\s*$")
-PRINTED = re.compile(r"^\s*<bash-stdout>([\s\S]*?)</bash-stdout>\s*(?:<bash-stderr>([\s\S]*?)</bash-stderr>)?\s*$")
-AGENT_ID = re.compile(r"\bagentId: ([\w-]+)")
-# codex's message from another of its agents (an `agent_message` item: a subagent's report handed back, FINAL_ANSWER;
-# any other message between them), as it words it for the model
-CODEX_AGENT = re.compile(r"^\s*Message Type: (\w+)\s*\nTask name: [^\n]*\nSender: ([^\n]*)\nPayload:\n?([\s\S]*)$")
-CODEX_SPAWN = "spawn_agent"                                               # codex's tool that starts a subagent
-MENTIONED = re.compile(r"Called the Read tool with the following input: (\{[^\n]*\})\nResult of calling the Read tool:\n")
-LOADED = re.compile(r"(?:^|\n)Contents of (/[^\n]*?)(?: \([^)\n]*\))?:\n\n")
+AGENT_ID = claude_rules.AGENT_ID                                          # a subagent's id, in its call's result
+CODEX_SPAWN = codex_rules.SPAWN                                           # codex's tool that starts a subagent
 
 
 def _json(text) -> Optional[dict]:
@@ -347,8 +335,13 @@ def _json(text) -> Optional[dict]:
     return got if isinstance(got, dict) else None
 
 
+NOTES = {Kind.SKILL: "skill", Kind.AGENT_REPORT: "report", Kind.PEER_MESSAGE: "peer", Kind.LOCAL_COMMAND: "command",
+         Kind.COMMAND_OUTPUT: "printed"}
+
+
 def _note(text: str) -> Optional[dict]:
-    """What a note of Claude Code's in the conversation is, as the Chat view shows it; None for one it doesn't:
+    """What a note of the harness's in the conversation is, as the Chat view shows it (its harness's rules read it:
+    harness_kit.claude's `note_detail`, harness_kit.codex's `report_of`); None for one it doesn't:
         {kind: "skill", name, args, text}   a skill's instructions, loaded by the Skill tool or the user's /name
         {kind: "report", from, text}        another session's message: a subagent's report as it hands back (codex's
                                             FINAL_ANSWER from another of its agents, `from` its agent path)
@@ -356,58 +349,18 @@ def _note(text: str) -> Optional[dict]:
         {kind: "command", name}             a command the user ran that Claude Code runs itself (/context, /mcp): not
                                             shown, only matched with what was sent from the page
         {kind: "printed", text}             what a command the user ran with ! printed"""
-    m = SKILL.match(text)
-    if m:
-        return {"kind": "skill", "name": os.path.basename(m.group(1).strip().rstrip("/")), "args": (m.group(3) or "").strip(),
-                "text": m.group(2).strip()}
-    m = AGENT_MESSAGE.search(text) if text.lstrip().startswith(("Another Claude session sent a message:", "<agent-message ")) else None
-    if m:
-        body = m.group(2)
-        if REPORT_FOLLOWS in body:                   # a hand-back: the report, each of its lines indented by Claude Code
-            body = textwrap.dedent(body.split(REPORT_FOLLOWS, 1)[1])
-        return {"kind": "report", "from": m.group(1), "text": body.strip()}
-    m = CODEX_AGENT.match(text)
-    if m:
-        kind = "report" if m.group(1) == "FINAL_ANSWER" else "peer"
-        return {"kind": kind, ("from" if kind == "report" else "name"): m.group(2).strip(), "text": m.group(3).strip()}
-    m = PEER_MESSAGE.search(text) if text.lstrip().startswith("Another Claude session sent a message:") else None
-    if m:
-        who = dict(re.findall(r'([\w-]+)="([^"]*)"', m.group(1)))
-        return {"kind": "peer", "name": who.get("from-name") or who.get("from") or "", "text": m.group(2).strip()}
-    m = RAN.match(text)
-    if m:
-        args = (m.group(2) or "").strip()
-        return {"kind": "command", "name": "/" + m.group(1).strip() + (f" {args}" if args else "")}
-    m = PRINTED.match(text)
-    if m:
-        return {"kind": "printed", "text": "\n".join(x for x in (m.group(1).rstrip("\n"), (m.group(2) or "").rstrip("\n")) if x)[:COMMAND_OUTPUT]}
-    return None
+    said = claude_rules.note_detail(text) or codex_rules.report_of(text)
+    if said is None:
+        return None
+    kind = NOTES[said.pop("kind")]
+    if kind == "skill":
+        return {"kind": kind, "name": said["name"], "args": said["args"], "text": said["instructions"]}
+    if kind == "printed":
+        return {"kind": kind, "text": said["text"][:COMMAND_OUTPUT]}
+    return {"kind": kind, **said}
 
 
-def _loaded(text: str) -> List[tuple]:
-    """The files a note of Claude Code's gives the agent the lines of, not by a call of its own: one the user
-    @-mentioned (read as the Read tool reads it), the CLAUDE.md files and memory it loads ("Contents of <path>:")
-    -- each (path, [(n, line)], how)."""
-    out = []
-    for m in MENTIONED.finditer(text):
-        try:
-            path = json.loads(m.group(1)).get("file_path")
-        except (ValueError, AttributeError):
-            continue
-        rows = []
-        for line in text[m.end():].split("\n"):
-            r = READ_LINE.match(line)
-            if not r:
-                break
-            rows.append((int(r.group(1)), r.group(2)))
-        if isinstance(path, str) and path:
-            out.append((path, rows, "@-mentioned: read into the message by Claude Code"))
-    found = list(LOADED.finditer(text))
-    for k, m in enumerate(found):
-        body = text[m.end():found[k + 1].start() if k + 1 < len(found) else len(text)]
-        body = re.sub(r"\n*</system-reminder>[\s\S]*$", "", body).rstrip("\n")
-        out.append((m.group(1), list(enumerate(body.split("\n"), 1)), "loaded into the context by Claude Code"))
-    return out
+_loaded = claude_rules.loaded       # the files a note gives the agent the lines of: (path, [(n, line)], how)
 
 
 def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = "") -> dict:
@@ -706,19 +659,20 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     for i, (row_id, typ, at, parts) in enumerate(evs):
         said = [p["text"] for p in parts if p["kind"] == "text" and p.get("role") == "user"]
         if said and typ == "user_message":
-            text = queued.mid_turn(said[0])
-            meanwhile = text is not None or rollout.replies(said[0])
+            kind, text = harness_kit.words(said[0])          # the user's words, its harness's wrapper off
+            meanwhile = kind in (Kind.MID_TURN, Kind.ASK_REPLY)
             if not meanwhile and at is not None:
                 q = next((q for q in held if q["text"].strip() == said[0].strip() and abs(at - q["sent"]) <= HELD_SECONDS), None)
                 if q is not None:
                     held.remove(q)
                     meanwhile = True
-            text = said[0] if text is None else text
             if meanwhile and starts:
-                more.setdefault(len(starts) - 1, []).append({"row_id": row_id, "at": at, "text": text.rstrip()})
+                more.setdefault(len(starts) - 1, []).append({"row_id": row_id, "at": at, "text": text.rstrip(), "kind": kind})
             else:
-                starts.append((i, row_id, at, text))
-    heads = [_Turn(n, row_id, at, t) for n, (i, row_id, at, t) in enumerate(starts)]
+                starts.append((i, row_id, at, text, kind))
+    heads = [_Turn(n, row_id, at, t) for n, (i, row_id, at, t, kind) in enumerate(starts)]
+    for h, start in zip(heads, starts):
+        h.head["kind"] = start[4]
     for n, got in more.items():
         heads[n].head["more"] = got
     pick = len(heads) - 1 if turn is None or not heads else max(0, min(turn, len(heads) - 1))

@@ -77,12 +77,15 @@ directory taken -- in the background, the call not held up.
 """
 
 import copy
-import json
 import os
-import re
 import sys
 import time
 from typing import Callable, Optional, Tuple, Union
+
+from harness_kit.claude import (AGENT_HEADER, COMPACTION, RECAP, REQUEST_CLASS_HEADER,  # noqa: F401 - Claude Code's
+                                SESSION_HEADER, SIDE_CLASSES, SUGGESTION, WEB_SEARCH, compaction_split,  # rules for its
+                                cwd_of, is_model_call, is_subagent, is_web_search, recap_at,  # calls, as this module
+                                request_class, session_of, suggestion_at)  # had them
 
 from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
 from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load_adaptor
@@ -94,117 +97,18 @@ from ag.integrations.tools.ag_orchestrator.call_ag import (STREAMING, call_ag, k
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
-from ..adaptor.to_events import TAIL, Continuity, blocks_of
+from ..adaptor.to_events import TAIL, Continuity
 from .counting import Counter, countable, fresh_thinking  # noqa: F401 - countable: this module's before counting.py
 
-CWD = re.compile(r"Primary working directory:\s*(\S+)")
-SESSION_HEADER = "x-claude-code-session-id"
-AGENT_HEADER = "x-claude-code-agent-id"           # set on a subagent's calls only
-REQUEST_CLASS_HEADER = "x-claude-code-request-class"   # main, subagent, workflow, compaction, auxiliary, side_reply
-SIDE_CLASSES = ("auxiliary", "side_reply")       # Claude Code's side calls, not the session's turns
-SUGGESTION = "[SUGGESTION MODE:"                 # how Claude Code's prompt suggestion asks
-RECAP = "The user stepped away and is coming back."   # how Claude Code's away recap asks
-COMPACTION = "CRITICAL: Respond with TEXT ONLY"  # how Claude Code's compaction call asks for its summary
-WEB_SEARCH = "web_search_"                       # the web search server tool's type, before its version
 ANSWERED = "claude_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
 RECAPPED = "claude_recap"      # the same, for a recap: (gatherer, session), its answer kept as the session's recap
 FILES = "claude_files"         # the same, for what the answer's calls do to files: (gatherer, session, cwd, since)
 COUNT_FROM = 0.5            # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
-def is_model_call(method: str, path: str, body) -> bool:
-    """Whether the request is the agent's own model call: a POST to .../messages with a messages
-    list holding a user message, offering tools -- not the web search server tool alone, which is
-    Claude Code's WebSearch tool searching."""
-    if method != "POST" or not path.split("?", 1)[0].rstrip("/").endswith("/messages"):
-        return False
-    if not isinstance(body, dict) or not isinstance(body.get("messages"), list) or not body.get("tools"):
-        return False
-    if all(is_web_search(t) for t in body["tools"]):
-        return False
-    return any(isinstance(m, dict) and m.get("role") == "user" for m in body["messages"])
-
-
-def is_web_search(tool) -> bool:
-    """Whether a tool offered is the API's web search server tool (`web_search_20250305`, ...)."""
-    return isinstance(tool, dict) and str(tool.get("type") or "").startswith(WEB_SEARCH)
-
-
-def session_of(headers, body: dict) -> Optional[str]:
-    """The Claude Code session the request belongs to, or None."""
-    lower = {k.lower(): v for k, v in (headers or {}).items()}
-    if lower.get(SESSION_HEADER):
-        return lower[SESSION_HEADER]
-    user = (body.get("metadata") or {}).get("user_id") if isinstance(body, dict) else None
-    try:
-        return json.loads(user).get("session_id") or None if isinstance(user, str) else None
-    except (ValueError, AttributeError):
-        return None
-
-
-def request_class(headers) -> Optional[str]:
-    """What Claude Code says the call is (`X-Claude-Code-Request-Class`), or None."""
-    return next((str(v).lower() for k, v in (headers or {}).items() if k.lower() == REQUEST_CLASS_HEADER and v), None)
-
-
-def suggestion_at(messages: list, opening: str = SUGGESTION) -> Optional[int]:
-    """Where a prompt suggestion's own message is -- a user message of text alone opening with
-    `opening` (`[SUGGESTION MODE:`), after the conversation it forks -- or None: not a suggestion.
-    It is the last message, or followed only by the suggestion's own tool calls, each an assistant
-    message and the user message of its results: Claude Code refuses a tool the suggestion's model
-    calls (`No tools needed for suggestion`) and asks it again, the refusal after the call."""
-    if len(messages) < 2 or not isinstance(messages[-1], dict) or messages[-1].get("role") != "user":
-        return None
-    at = len(messages) - 1
-    while at >= 2 and any(b.get("type") == "tool_result" for b in blocks_of(messages[at])) and \
-            isinstance(messages[at - 1], dict) and messages[at - 1].get("role") == "assistant":
-        at -= 2                                           # a call of the suggestion's own, and its refusal
-    blocks = blocks_of(messages[at])
-    if at < 1 or not blocks or messages[at].get("role") != "user" or any(b.get("type") != "text" for b in blocks):
-        return None
-    return at if str(blocks[0].get("text") or "").lstrip().startswith(opening) else None
-
-
-def recap_at(messages: list) -> Optional[int]:
-    """Where a recap's own message is, as `suggestion_at` finds a suggestion's; None: not a recap."""
-    return suggestion_at(messages, RECAP)
-
-
-def compaction_split(messages: list) -> Optional[Tuple[list, list]]:
-    """(the conversation, the instruction's blocks) of a compaction call -- the last user message's
-    text blocks from the one opening with `CRITICAL: Respond with TEXT ONLY` on are the instruction,
-    the rest the conversation -- or None: not a compaction."""
-    at = next((i for i in range(len(messages) - 1, -1, -1)
-               if isinstance(messages[i], dict) and messages[i].get("role") == "user"), None)
-    if at is None or at < len(messages) - 2:          # the last user message, or just before a system note
-        return None
-    blocks = blocks_of(messages[at])
-    start = next((j for j, b in enumerate(blocks) if b.get("type") == "text"
-                  and str(b.get("text") or "").lstrip().startswith(COMPACTION)), None)
-    if start is None:
-        return None
-    rest = [dict(messages[at], content=blocks[:start])] if start else []
-    return messages[:at] + rest + messages[at + 1:], blocks[start:]
-
-
-def is_subagent(headers) -> bool:
-    """Whether the call is a subagent's (Claude Code's `Agent` tool), not the session's own."""
-    return any(k.lower() == AGENT_HEADER and v for k, v in (headers or {}).items())
-
-
 def is_gemini(model) -> bool:
     """Whether the request's model is a Gemini model (as a gateway names it: gemini-..., or provider/gemini-...)."""
     return isinstance(model, str) and model.lower().rsplit("/", 1)[-1].startswith("gemini")
-
-
-def cwd_of(messages: list) -> Optional[str]:
-    """The agent's working directory as Claude Code's notes last state it, or None."""
-    found = None
-    for m in messages:
-        for b in blocks_of(m):
-            for match in CWD.findall(str(b.get("text") or "")):
-                found = match
-    return found
 
 
 def _print(gatherer: str, line: str) -> None:

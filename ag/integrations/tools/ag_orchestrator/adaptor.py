@@ -23,7 +23,9 @@ same in TypeScript.
 """
 
 from abc import ABC, abstractmethod
-from typing import ClassVar, List, Tuple
+from typing import ClassVar, Dict, List, Tuple
+
+from harness_kit import Harness, Part
 
 #: The type of the context manager's own messages in a context.
 AG = "ag"
@@ -101,3 +103,18 @@ class Adaptor(ABC):
     def to_messages(self, context: List[dict], messages: list) -> list:
         """The context -- events as they were sent, and `ag` messages -- as the
         messages the harness sends its model."""
+
+
+class HarnessAdaptor(Adaptor):
+    r"""An adaptor built on a harness module (harness_kit): the harness's rules read each piece (`Part`, of a
+    `Kind`), and the adaptor says which of the policy's event types each Kind becomes (`event_types`; a Kind not in
+    it is `other`, the type for the harness's own text). A policy that wants, say, skills or interrupts as types of
+    their own subclasses the adaptor and changes the table (and its `outputs`); the harness module stays as it is.
+    The harness's adaptor names the types (its to_events.py): the routing names none."""
+    harness: ClassVar[Harness]
+    event_types: ClassVar[Dict[str, str]] = {}
+    other: ClassVar[str] = ""
+
+    def type_of(self, part: Part) -> str:
+        """The event type a piece read becomes."""
+        return self.event_types.get(part.kind, self.other)
