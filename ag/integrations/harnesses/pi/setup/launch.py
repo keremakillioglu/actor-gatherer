@@ -30,7 +30,7 @@ def settings_files(cwd: str, env: Dict[str, str]) -> List[str]:
 
 
 def _same(path: str, base: str, target: str) -> bool:
-    full = os.path.join(base, os.path.expanduser(path))
+    full = os.path.normpath(os.path.join(base, os.path.expanduser(path)))   # `..` first, as pi reads it, then symlinks
     return os.path.realpath(full) == os.path.realpath(target)
 
 
