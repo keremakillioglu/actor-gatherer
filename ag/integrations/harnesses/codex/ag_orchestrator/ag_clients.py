@@ -1,7 +1,8 @@
 """A context manager server per gatherer, for the hooks behind the hook server (codex's and
 Claude Code's), which serve many gatherers at once: each gatherer gets a client of its own
-(ag/integrations/tools/ag_connection/ag_client.py), started on its first request and kept, so a read
-that waits for a background build (up to the policy's `sync_seconds`) holds up only its own gatherer.
+(ag/integrations/tools/ag_connection/ag_client.py), started on its first request and kept. Within
+it, the server runs each session's requests in a lane of its own (ag/ag_harness/server/), so a read
+that waits for a background build (up to the policy's `sync_seconds`) holds up only its own session.
 
     ag_clients = AgClients(lambda gatherer: AgClient("codex"))
     client = ag_clients.client(gatherer)           # made the first time

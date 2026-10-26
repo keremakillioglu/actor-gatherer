@@ -16,13 +16,13 @@ class LiteLLM(Tokenizer):
         self._tried = False
 
     def _load(self):
-        if not self._tried:
-            self._tried = True
+        if not self._tried:                 # set after it, so a thread never counts with one not loaded yet
             try:
                 import litellm
                 self._counter = litellm.token_counter
             except Exception:  # noqa: BLE001 - not installed
                 self._counter = None
+            self._tried = True
         return self._counter
 
     def count(self, text: str) -> int:

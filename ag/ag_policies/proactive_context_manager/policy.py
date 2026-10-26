@@ -249,7 +249,8 @@ class ProactiveContextManager(Policy):
     def within(self, limit: Optional[int]):
         """`self.config` as a harness's own limit makes it (`config.within_limit`), while in
         the block: one read, or one build. Not when the gatherer sets max_context_tokens, or
-        none is stated. (The server answers one request at a time, the worker runs one job.)"""
+        none is stated. (A policy is made for each request the server answers, and each job the
+        worker runs: no other thread reads its config meanwhile.)"""
         saved = self.config
         if limit and not self.max_given:
             if limit not in self._limited:
