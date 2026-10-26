@@ -121,6 +121,9 @@ class Server:
         self.asked = []
 
     async def request(self, op, body=None, timeout=None):
+        if op == "latest":                   # the channel's newest stored, as the gatherer answers it
+            kept = {e["id"]: e for _, b in self.asked for e in b.get("events", [])}
+            return {"events": [{"id": e["id"], "payload": e["payload"]} for e in list(kept.values())[-body["n"]:]]}
         self.asked.append((op, body))
         if op in ("rewrite", "context"):
             return {"context": [{"type": "ag", "name": "earlier", "text": "SUMMARY"}] + body["events"], "note": "ok",

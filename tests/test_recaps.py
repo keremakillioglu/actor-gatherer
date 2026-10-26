@@ -44,6 +44,8 @@ class Server:
         self.asked = []
 
     async def request(self, op, body=None, timeout=None):
+        if op == "latest":                   # a gatherer with nothing stored yet
+            return {"events": []}
         self.asked.append((op, body))
         if op in ("rewrite", "context"):
             return {"context": [{"type": "ag", "name": "earlier", "text": "SUMMARY"}] + body["events"], "note": "ok",
