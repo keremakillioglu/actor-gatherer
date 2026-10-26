@@ -432,7 +432,7 @@ class Manager(ContextManager):
         carried back yet (`store.record_pending`); and on read `read_id`, the one the answered call's
         context came from, when the answer came. How many were kept."""
         kept = store.record_pending(self._conn(gatherer_id), properties, events, answer, stop, read_id)
-        if kept:
+        if kept or answer is not None:          # a named answer's may have replaced (or dropped) its parts
             notify(gatherer_id, "pending", properties)
         return kept
 
@@ -466,12 +466,13 @@ class Manager(ContextManager):
             return []
         return store.pending(self._conn(gatherer_id), properties)
 
-    def clear_pending(self, gatherer_id: str, properties: Optional[dict]) -> int:
+    def clear_pending(self, gatherer_id: str, properties: Optional[dict], stop: Optional[str] = None) -> int:
         """Not part of the interface: delete the pending events with these identifying properties,
-        once a call with them has stored new events (`store.clear_pending`). How many."""
+        once a call with them has stored new events -- with `stop`, only those that stopped so
+        (`store.clear_pending`). How many."""
         if not os.path.exists(db_path(gatherer_id)):
             return 0
-        cleared = store.clear_pending(self._conn(gatherer_id), properties)
+        cleared = store.clear_pending(self._conn(gatherer_id), properties, stop)
         if cleared:
             notify(gatherer_id, "pending", properties)
         return cleared

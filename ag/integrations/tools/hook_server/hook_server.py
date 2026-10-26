@@ -37,6 +37,11 @@ A hook with an `answered(request, status, answer)`
 has it called (awaited) once a POST's answer has come back whole and the harness has seen its end,
 for the same requests as `measured`: the HTTP status, and the answer as trace.py reads it
 (`response_of`: {response_id, status, token_usage, output_items, error}). A hook with a
+`streamed(request, answer)` has it called, for the same requests, while the answer streams: each
+time a part of it is complete (an Anthropic content block has ended, a Responses output item is
+done), with the parts complete so far (trace.py's `streamed_of`: {response_id, output_items}) --
+in the background, one call after another, so the answer is never held up for it, and all of them
+done before `answered`. A hook with a
 `failed(request, status, error)` has it called (awaited), for the same requests, when the call failed:
 its endpoint answered an error -- a status other than 200, or an error in the answer (`status` that
 status, `error` the endpoint's message) -- once the harness has it; or no answer came at all -- the
@@ -60,6 +65,7 @@ Needs aiohttp.
 """
 
 import argparse
+import asyncio
 import importlib
 import inspect
 import itertools
@@ -74,11 +80,13 @@ from typing import Any, Callable, Optional
 from aiohttp import ClientSession, ClientTimeout, web
 
 from . import peer
-from .trace import ModelTrace, response_of
+from .trace import ModelTrace, response_of, streamed_of
 
 HOP = {"host", "content-length", "transfer-encoding", "connection", "content-encoding", "accept-encoding"}
 LABEL_PREFIX = re.compile(r"^/h/([A-Za-z0-9._-]+)(?=/|$)")
 LIMIT_PREFIX = re.compile(r"^/l/([0-9]+)(?=/|$)")
+PART_DONE = (b'"content_block_stop"', b'"response.output_item.done"')   # a part of an answer is complete
+ANSWER_DONE = (b'"message_stop"', b'"response.completed"')               # all of it: `answered` keeps it
 
 
 @dataclass
@@ -138,6 +146,37 @@ async def _report(n: int, name: str, method: Callable, *args) -> None:
             await result
     except Exception as exc:  # noqa: BLE001 - a lost report never breaks the answer
         print(f"#{n:04d} {name} failed: {exc!r}", file=sys.stderr, flush=True)
+
+
+class Parts:
+    """A hook's `streamed` for one answer: called each time a chunk relayed completes a part of it
+    (PART_DONE) -- not the chunk that ends it (ANSWER_DONE), `answered`'s -- with the parts complete so
+    far: in the background, each call after the one before."""
+
+    def __init__(self, n: int, method: Callable, request: Request):
+        self.n, self.method, self.request = n, method, request
+        self.tail, self.parts, self.task = b"", 0, None
+
+    def chunk(self, chunk: bytes, answer: list) -> None:
+        """`chunk` was relayed; `answer`, every chunk so far."""
+        seen, self.tail = self.tail + chunk, chunk[-64:]           # a marker split across two chunks
+        if not any(marker in seen for marker in PART_DONE) or any(marker in seen for marker in ANSWER_DONE):
+            return
+        read = streamed_of(b"".join(answer))
+        if len(read["output_items"]) <= self.parts:
+            return
+        self.parts = len(read["output_items"])
+        self.task = asyncio.ensure_future(self.report(self.task, read))
+
+    async def report(self, before, read: dict) -> None:
+        if before is not None:
+            await before
+        await _report(self.n, "streamed", self.method, self.request, read)
+
+    async def done(self) -> None:
+        """Once every call made so far has returned."""
+        if self.task is not None:
+            await self.task
 
 
 def error_of(status: Optional[int], read: Optional[dict], raw: bytes) -> str:
@@ -229,7 +268,9 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         answered = getattr(hook, "answered", None) if request.method == "POST" and given.state else None
         before_end = getattr(hook, "before_end", None) if request.method == "POST" and given.state else None
         failed = getattr(hook, "failed", None) if request.method == "POST" and given.state else None
-        answer = [] if call or measured or answered or before_end or failed else None
+        streamed = getattr(hook, "streamed", None) if request.method == "POST" and given.state else None
+        parts = Parts(n, streamed, given) if streamed else None
+        answer = [] if call or measured or answered or before_end or failed or streamed else None
         timeout = ClientTimeout(total=None, sock_read=1800)
         status, error, resp = None, None, None
         try:
@@ -245,6 +286,8 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                         if answer is not None:
                             answer.append(chunk)
                         await resp.write(chunk)
+                        if parts is not None:
+                            parts.chunk(chunk, answer)
                     whole = b"".join(answer) if answer is not None else b""
                     if call:                                  # traced before the harness sees the end
                         trace.completed(call[0], call[1], status, whole, time.time() - record["t_start"])
@@ -268,6 +311,8 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                     record["status"] = up.status
                     if failed and (status != 200 or (read or {}).get("error")):   # after the harness has it
                         await _report(n, "failed", failed, given, status, error_of(status, read, whole))
+                    if parts is not None:                     # the parts kept before the whole answer is
+                        await parts.done()
                     if answered:                              # after the harness has the answer: it waits on nothing
                         try:
                             result = answered(given, status, read)
