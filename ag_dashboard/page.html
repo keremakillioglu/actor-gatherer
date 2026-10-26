@@ -533,6 +533,13 @@ button:disabled { opacity: .5; cursor: default; }
 .asking-note details > summary { cursor: pointer; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
 .asking-note .plan { max-width: 900px; margin-top: 8px; padding: 2px 14px 10px; background: var(--page); border: 1px solid var(--ring); border-radius: 8px; }
 .asking-note .md :is(h1, h2, h3) { font-size: 14px; margin: 10px 0 4px; }
+/* codex's proposed plan in a message (markdown()'s): a card headed "Proposed plan", as the plan in the note above */
+.md .proposed-plan { max-width: 900px; margin: 4px 0 10px; padding: 8px 14px 10px; background: var(--page); border: 1px solid var(--ring); border-radius: 8px; }
+.md .proposed-plan > .pp-head { margin-bottom: 6px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.md > .md + .proposed-plan, .md > .proposed-plan + .md { margin-top: 10px; }
+.md > .proposed-plan:first-child { margin-top: 0; } .md > .proposed-plan:last-child { margin-bottom: 0; }
+.term .md .proposed-plan { background: none; border-color: var(--term-rule); }
+.term .md .proposed-plan > .pp-head { color: var(--term-dim); }
 .asking-note .foot { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 8px 10px 8px 14px;
   border-top: 1px solid var(--ring); background: var(--wash); }
 .asking-note .foot .say { flex: 1 1 220px; min-width: 0; color: var(--muted); font-size: 12px; }
@@ -2064,8 +2071,24 @@ const SLASH = /^\s*<command-message>[^<]*<\/command-message>\s*<command-name>\/?
 // without the tags, a blank line either side of them.
 const PASTED = /\s*<\/?pasted_content\b[^>]*>\s*/g;
 const unpasted = (text) => text && text.includes("pasted_content") ? text.replace(PASTED, "\n\n").trim() : text;
+// The user's answers to what codex asked as it worked (request_user_input_async), as codex sends them, one message for
+// each submitted: <send_user_message_question_reply>[{"answer", "question", "questionItemId"}]</send_user_message_question_reply>.
+// As the answer they are, a line each: "Which fruit do you prefer? → mango please".
+const REPLIED = /^\s*<send_user_message_question_reply>\s*([\s\S]*?)\s*(?:<\/send_user_message_question_reply>\s*)?$/;
+const replied = (text) => {
+  const m = text && REPLIED.exec(text);
+  if (!m) return null;
+  try {
+    const got = JSON.parse(m[1]);
+    const out = (Array.isArray(got) ? got : []).filter((r) => r && typeof r === "object")
+      .map((r) => `${String(r.question ?? "").trim()}${r.question ? " → " : ""}${String(r.answer ?? "").trim()}`);
+    return out.length ? out.join("\n") : null;
+  } catch (e) { return null; }                    // cut off, or not codex's: shown as it is
+};
 const asked = (text) => {
   text = unpasted(text);
+  const r = replied(text);
+  if (r) return r;
   const b = text && BANG.exec(text);
   if (b) return `! ${b[1].trim()}`;
   const c = text && SLASH.exec(text);
@@ -2888,9 +2911,12 @@ function backgroundNote(info, term = false) {
 // picked is typed into the terminal's dialog (POST /api/answer, sessions.py's `answer`), and the terminal shows
 // it answered as if it had been picked there; elsewhere it is answered in the terminal that runs the session.
 // `answerable` false (a view to read by): shown, and answered in Chat or the terminal. Null while it waits on nothing.
+// Codex's questions asked as it goes on working (`async`) show while it runs; its plan, once its turn proposed one
+// and its terminal (the dashboard's) asks whether to implement it.
 function askingNote(info, answerable = true) {
-  const ask = info && info.status === "asking" ? info.asking : null;
+  const ask = info && (info.status === "asking" || (info.status === "running" && info.asking && info.asking.async)) ? info.asking : null;
   if (!ask) return null;
+  const codex = ask.harness === "codex";
   const qs = ask.questions || [];
   const s = info.session || {};
   // the dashboard's terminal, and nothing typed into it since it asked: answered from here
@@ -2898,8 +2924,8 @@ function askingNote(info, answerable = true) {
   const here = answerable && !SNAPSHOT && !!s.terminal && !touched;
   const sent = info.answer && info.answer.call === ask.call ? info.answer : null;
   const who = info.harness ? harnessName(info.harness) : "The agent";
-  const what = ask.kind === "plan" ? `${who} has a plan for you to approve`
-    : `${who} asked you ${qs.length > 1 ? plural(qs.length, "question") : "a question"}`;
+  const what = ask.kind === "plan" ? `${who} has a plan for you to ${codex ? "implement" : "approve"}`
+    : `${who} asked you ${qs.length > 1 ? plural(qs.length, "question") : "a question"}${ask.async ? " as it works" : ""}`;
   const d = draftOf(ask);
   const late = sent && Date.now() / 1000 - sent.at > ANSWER_LATE;
   if (sent && !late && !lateTimers.has(sent.call)) {   // drawn again once it would count as lost
@@ -2947,7 +2973,7 @@ function askingNote(info, answerable = true) {
       q.multiSelect ? el("span", { class: "hint", text: "Pick any" }) : null),
     el(here ? "div" : "ol", { class: "opts" + (q.multiSelect ? " multi" : ""), role: here ? (q.multiSelect ? "group" : "radiogroup") : null,
       "aria-label": q.question || null }, ...(q.options || []).map(option(q, i))),
-    here && !q.multiSelect ? own(i, "Or type your own answer", () => { const n = nextOpen(); if (n >= 0) go(n); else if (ready && !busy) send(choice()); }) : null);
+    here && !q.multiSelect ? own(i, codex && !ask.async ? "None of these? Say what, instead" : "Or type your own answer", () => { const n = nextOpen(); if (n >= 0) go(n); else if (ready && !busy) send(choice()); }) : null);
   // answered here, several questions: one at a time, as the terminal asks them, a tab each
   const tabs = here && qs.length > 1 ? el("div", { class: "qtabs", role: "tablist", "aria-label": "Questions" }, ...qs.map((q, i) =>
     el("button", { type: "button", class: "qtab", role: "tab", "aria-selected": i === tab ? "true" : "false", onclick: () => go(i) },
@@ -2971,8 +2997,12 @@ function askingNote(info, answerable = true) {
     const change = () => d.change.trim() && send({ plan: "change", text: d.change.trim() });
     foot = el("div", { class: "foot", "data-morph": "" },
       said(true),
-      el("div", { class: "change", "data-morph": "" }, own("plan", "Or tell Claude what to change", change),
-        el("button", { type: "button", disabled: busy || !d.change.trim() ? "" : null, onclick: change }, "Ask for changes")),
+      el("div", { class: "change", "data-morph": "" }, own("plan", `Or tell ${codex ? "Codex" : "Claude"} what to change`, change),
+        el("button", { type: "button", disabled: busy || !d.change.trim() ? "" : null, onclick: change,
+          title: codex ? "Codex's “No, stay in Plan mode”, then your words" : null }, "Ask for changes")),
+      codex ? el("div", { class: "acts" },              // its "clear context and implement" starts another thread: the terminal's
+        el("button", { type: "button", class: "primary", disabled: busy ? "" : null, onclick: () => send({ plan: "implement" }),
+          title: "Codex's “Yes, implement this plan”: Default mode, and it starts coding" }, "Implement the plan")) :
       el("div", { class: "acts" },
         el("button", { type: "button", disabled: busy ? "" : null, onclick: () => send({ plan: "manual" }),
           title: "Claude Code's “Yes, manually approve edits”" }, "Approve, I'll approve edits"),
@@ -3406,8 +3436,19 @@ if (markdownReady) {
   marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text) } });
   DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } });
 }
+// Codex's plan, as its Plan mode has the model write it: between <proposed_plan> and </proposed_plan> (the closing tag
+// perhaps not streamed yet). markdown() draws it as a card headed "Proposed plan", as codex's own terminal heads it.
+const PLAN_TAGS = /<proposed_plan>\s*([\s\S]*?)\s*(?:<\/proposed_plan>|$)/;
+const unplanned = (t) => String(t ?? "").replace(/<\/?proposed_plan>\s*/g, "");
 // `breaks`: each line break kept, for text written as lines rather than as markdown (a subagent's report)
 function markdown(text, breaks = false) {
+  const plan = typeof text === "string" && text.includes("<proposed_plan>") ? PLAN_TAGS.exec(text) : null;
+  if (plan) {                                      // codex's plan: what is around it as it is, the plan as a card
+    const before = text.slice(0, plan.index).trim(), after = text.slice(plan.index + plan[0].length).trim();
+    return el("div", { class: "md" }, ...[before && markdown(before, breaks),
+      el("div", { class: "proposed-plan" }, el("div", { class: "pp-head", text: "Proposed plan" }), markdown(plan[1], breaks)),
+      after && markdown(after, breaks)].filter(Boolean));
+  }
   const box = el("div", { class: "md" });
   if (!markdownReady) { box.style.whiteSpace = "pre-wrap"; box.textContent = text; return box; }
   const k = (breaks ? "\u0001" : "") + text;
@@ -3472,6 +3513,8 @@ const SUMMARIES = {
   shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
   exec_command: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
   local_shell: (i) => ({ title: "Bash", arg: firstLine(shell(i), 200) }),
+  // codex's code-mode script that calls no tool (one that does is shown as its calls: summary()): its first line
+  exec: (i) => ({ title: "Script", arg: firstLine(str(i.input).trim(), 200) }),
   Read: (i) => ({ title: "Read", arg: shortPath(i.file_path) + (i.offset ? ` (from line ${i.offset})` : ""),
     result: (text, id) => { const n = lines(text).length; return el("details", { id }, el("summary", { text: `Read ${plural(n, "line")}` }), el("pre", { text })); } }),
   Write: (i) => ({ title: "Write", arg: shortPath(i.file_path),
@@ -3493,6 +3536,8 @@ const SUMMARIES = {
   web_search: (i) => ({ title: "Web Search", arg: `"${str(i.query ?? (i.action && i.action.query))}"` }),
   Agent: (i) => ({ title: i.subagent_type ? `${i.subagent_type}` : "Agent", arg: str(i.description) }),
   Task: (i) => ({ title: i.subagent_type ? `${i.subagent_type}` : "Task", arg: str(i.description) }),
+  // codex's: its subagent by its task's name (what it is asked is encrypted)
+  spawn_agent: (i) => ({ title: "Agent", arg: str(i.task_name) }),
   TodoWrite: (i) => ({ title: "Update Todos", body: () => todoView(i.todos), quiet: true }),
   update_plan: (i) => ({ title: "Update Plan", body: () => todoView(i.plan), quiet: true }),
   Skill: (i) => ({ title: "Skill", arg: str(i.skill) }),
@@ -4297,7 +4342,7 @@ function filesTalk(d, info, running) {
         open: main && !closed.has(id) ? "" : null, ontoggle: main ? fold : null },
         el("summary", { title: thought ? "Fold or show what it thought" : "Fold or show the whole message" },
           el("span", { class: "dot", text: "●" }), thought ? el("span", { class: "lbl", text: "Thought:" }) : null,
-          el("span", { class: "first", text: firstLine(text.replace(/`|\*\*|^#{1,6}\s+/gm, ""), 200) })),   // its first line, less the markdown's marks
+          el("span", { class: "first", text: firstLine(unplanned(text).replace(/`|\*\*|^#{1,6}\s+/gm, ""), 200) })),   // its first line, less the markdown's marks
         markdown(text));
     };
     const toggle = () => { opened.has(t.n) ? opened.delete(t.n) : opened.add(t.n); keepingPlace(renderMain); };

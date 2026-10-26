@@ -46,7 +46,7 @@ class ClassifyTest(unittest.TestCase):
         for kind in ("function_call_output", "custom_tool_call_output", "tool_search_output"):
             self.check({"type": kind}, TOOL_OUTPUT)
         self.check({"type": "reasoning", "summary": []}, AGENT_REASONING)
-        self.check({"type": "agent_message", "author": "a", "recipient": "b"}, AGENT_MESSAGE)
+        self.check({"type": "agent_message", "author": "a", "recipient": "b"}, CONTEXT)    # another agent's: codex's
         for kind in ("compaction", "compaction_summary", "context_compaction", "compaction_trigger"):
             self.check({"type": kind}, CONTEXT)
         self.check({"type": "additional_tools", "role": "developer", "tools": []}, CONTEXT)

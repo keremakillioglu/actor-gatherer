@@ -1085,8 +1085,9 @@ class Sessions:
         """What the session's terminal asks (data.py's `asking`: a question, a plan to approve) answered with
         `choice` (answers.py): its keys typed into the terminal one at a time, ANSWER_GAP apart, as if picked
         there. Refused where the dashboard has no terminal for the session, or where something was typed into
-        it since it asked -- its dialog may no longer be as it first showed. -> the answer, as `list` then has
-        it: {call, summary, expect (what Claude Code's result for the call will hold), at}."""
+        it since it asked -- its dialog may no longer be as it first showed -- or, codex's, where the terminal
+        opened after it asked: codex does not ask again on resuming. -> the answer, as `list` then has it:
+        {call, summary, expect (what the harness's result for the call will hold), at}."""
         with self.lock:
             t = self.terms.get(session_id)
             if t is None:
@@ -1095,6 +1096,8 @@ class Sessions:
                 raise SessionError("an answer is being typed into it already")
             if t.typed and ask.get("at") and t.typed >= ask["at"]:
                 raise SessionError("something was typed into its terminal since it asked: finish answering there")
+            if ask.get("harness") == "codex" and ask.get("at") and t.since > ask["at"]:
+                raise SessionError("its terminal opened after it asked, and does not ask it: answer in a message")
             keys = answers.keys(ask, choice)             # AnswerError, a ValueError: a choice that does not fit
             sent = {"call": ask.get("call"), "summary": answers.summary(ask, choice),
                     "expect": answers.expected(ask, choice), "at": time.time()}

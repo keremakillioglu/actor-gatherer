@@ -33,7 +33,7 @@ import tempfile
 import textwrap
 from typing import Dict, List, Optional
 
-from . import data, queued
+from . import data, queued, rollout
 from . import home as paths
 from .commands import (  # noqa: F401 - python_changes: tested here
     CODE_MODE, EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, opened_script,
@@ -249,11 +249,16 @@ def _label(name: str, inp: dict, raw, cwd: str) -> str:
     if name == CODE_MODE and isinstance(raw, str) and script_calls(raw):
         return " · ".join(_label(n, a if isinstance(a, dict) else {"input": a}, a, cwd) or n
                           for n, a in script_calls(raw))[:200]
+    if name == CODE_MODE and isinstance(raw, str):    # a script that calls no tool: its first line
+        first = next((x.strip() for x in raw.split("\n") if x.strip()), "")
+        return f"Script {first}".strip()[:200]
     if isinstance(inp.get("description"), str) and inp["description"].strip():
         return inp["description"].strip()[:200]
     if name in SHELLS:
         command, _ = _shell_text(name, raw)
         return re.sub(r"^cd \S+ && ", "", command.strip().split("\n")[0])[:200]
+    if name == CODEX_SPAWN and isinstance(inp.get("task_name"), str):    # codex's subagent (what it is asked: encrypted)
+        return f"Agent {inp['task_name']}"[:200]
     if name == "Skill" and isinstance(inp.get("skill"), str):
         args = inp.get("args") if isinstance(inp.get("args"), str) else ""
         return f"Load skill {inp['skill']}{' ' + args if args.strip() else ''}"[:200]
@@ -325,14 +330,28 @@ RAN = re.compile(r"^\s*<command-name>/?([^<]*)</command-name>\s*<command-message
                  r"\s*(?:<command-args>([\s\S]*?)</command-args>)?\s*$")
 PRINTED = re.compile(r"^\s*<bash-stdout>([\s\S]*?)</bash-stdout>\s*(?:<bash-stderr>([\s\S]*?)</bash-stderr>)?\s*$")
 AGENT_ID = re.compile(r"\bagentId: ([\w-]+)")
+# codex's message from another of its agents (an `agent_message` item: a subagent's report handed back, FINAL_ANSWER;
+# any other message between them), as it words it for the model
+CODEX_AGENT = re.compile(r"^\s*Message Type: (\w+)\s*\nTask name: [^\n]*\nSender: ([^\n]*)\nPayload:\n?([\s\S]*)$")
+CODEX_SPAWN = "spawn_agent"                                               # codex's tool that starts a subagent
 MENTIONED = re.compile(r"Called the Read tool with the following input: (\{[^\n]*\})\nResult of calling the Read tool:\n")
 LOADED = re.compile(r"(?:^|\n)Contents of (/[^\n]*?)(?: \([^)\n]*\))?:\n\n")
+
+
+def _json(text) -> Optional[dict]:
+    """A tool's result that is a JSON object, as one; None for any other."""
+    try:
+        got = json.loads(text) if isinstance(text, str) else None
+    except ValueError:
+        return None
+    return got if isinstance(got, dict) else None
 
 
 def _note(text: str) -> Optional[dict]:
     """What a note of Claude Code's in the conversation is, as the Chat view shows it; None for one it doesn't:
         {kind: "skill", name, args, text}   a skill's instructions, loaded by the Skill tool or the user's /name
-        {kind: "report", from, text}        another session's message: a subagent's report as it hands back
+        {kind: "report", from, text}        another session's message: a subagent's report as it hands back (codex's
+                                            FINAL_ANSWER from another of its agents, `from` its agent path)
         {kind: "peer", name, text}          another session's message: one another Claude session sent this one
         {kind: "command", name}             a command the user ran that Claude Code runs itself (/context, /mcp): not
                                             shown, only matched with what was sent from the page
@@ -347,6 +366,10 @@ def _note(text: str) -> Optional[dict]:
         if REPORT_FOLLOWS in body:                   # a hand-back: the report, each of its lines indented by Claude Code
             body = textwrap.dedent(body.split(REPORT_FOLLOWS, 1)[1])
         return {"kind": "report", "from": m.group(1), "text": body.strip()[:REPLY_CHARS]}
+    m = CODEX_AGENT.match(text)
+    if m:
+        kind = "report" if m.group(1) == "FINAL_ANSWER" else "peer"
+        return {"kind": kind, ("from" if kind == "report" else "name"): m.group(2).strip(), "text": m.group(3).strip()[:REPLY_CHARS]}
     m = PEER_MESSAGE.search(text) if text.lstrip().startswith("Another Claude session sent a message:") else None
     if m:
         who = dict(re.findall(r'([\w-]+)="([^"]*)"', m.group(1)))
@@ -676,14 +699,15 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
 
     # the turns, first: which one is wanted. A message the user wrote while a turn ran is part of it, not a turn of
     # its own: one Claude Code sent mid-turn (wrapped), or held until the turn ended and sent then, as its record
-    # says (queued.py's `meanwhile`: matched by its words, stored as it was sent)
+    # says (queued.py's `meanwhile`: matched by its words, stored as it was sent); and codex's answers to what it asked
+    # as it worked (rollout.py's `replies`), which it sends as the user's while the turn runs
     held = queued.meanwhile(channel, cwd)
     starts, more = [], {}                            # more: what was written while a turn ran, by the turn it is part of
     for i, (row_id, typ, at, parts) in enumerate(evs):
         said = [p["text"] for p in parts if p["kind"] == "text" and p.get("role") == "user"]
         if said and typ == "user_message":
             text = queued.mid_turn(said[0])
-            meanwhile = text is not None
+            meanwhile = text is not None or rollout.replies(said[0])
             if not meanwhile and at is not None:
                 q = next((q for q in held if q["text"].strip() == said[0].strip() and abs(at - q["sent"]) <= HELD_SECONDS), None)
                 if q is not None:
@@ -714,6 +738,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     order: List[tuple] = []                          # (turn, call part), in the order called
     results: Dict[str, dict] = {}
     agents: Dict[str, str] = {}                      # a subagent's id: what it was started for (its call's description)
+    spawned: Dict[str, dict] = {}                    # a codex subagent's path: the turn that started it, its report there
     for i, (row_id, typ, at, parts) in enumerate(evs):
         cur = begins.get(i, cur)
         head = cur.head if cur is not None else {"replies": [], "now": None, "last": None}   # before the first message: kept nowhere
@@ -736,6 +761,11 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 m = AGENT_ID.search(p.get("text") or "") if started.get("name") in ("Agent", "Task") else None
                 if m:
                     agents[m.group(1)] = str((started.get("input") or {}).get("description") or "")
+                if started.get("name") == CODEX_SPAWN:      # {"task_name": "/root/count_a"}: its path
+                    path = (_json(p.get("text")) or {}).get("task_name")
+                    if isinstance(path, str) and path:
+                        agents[path] = path.rsplit("/", 1)[-1]
+                        spawned[path] = {"head": head, "given": False}
             elif p["kind"] == "text" and p.get("role") == "assistant" and p["text"].strip():
                 head["replies"].append({"kind": "text", "text": p["text"][:REPLY_CHARS]})
                 head["now"] = head["last"] = None
@@ -752,10 +782,16 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 if n is None:
                     pass
                 elif n["kind"] == "report":
-                    n["name"] = agents.get(n.pop("from"), "")
-                    head["replies"].append(n)
-                elif n["kind"] == "peer":
-                    head["replies"].append(n)
+                    by = n.pop("from")
+                    n["name"] = agents.get(by, "")
+                    start = spawned.get(by)
+                    if start is None:
+                        head["replies"].append(n)
+                    elif not start["given"]:                 # codex's, handed back with a later call: where it started
+                        start["given"] = True
+                        start["head"]["replies"].append(n)
+                elif n["kind"] == "peer" and n["text"]:      # (codex's between its agents: by the sender's task name)
+                    head["replies"].append(dict(n, name=agents.get(n["name"], n["name"])))
                 elif n["kind"] == "skill":                   # among the calls, not the conversation (skilled)
                     order.append((cur, n))
                     if ((head["last"] or {}).get("call") or {}).get("name") == "Skill":
@@ -766,6 +802,12 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     head["output"] = n["text"]               # what a ! command printed: under it
                 for path, rows, how in _loaded(p.get("text") or ""):
                     order.append((ahead[i] or cur, {"kind": "loaded", "path": path, "rows": rows, "via": how}))
+    if any(not x["given"] for x in spawned.values()):    # ended, its report not handed back yet: from its own record
+        rec = rollout.read(rollout.record(channel))
+        for path, x in spawned.items():
+            said = rollout.report(rec, path) if not x["given"] else None
+            if said:
+                x["head"]["replies"].append({"kind": "report", "name": agents.get(path, ""), "text": said[:REPLY_CHARS]})
     for t, p in order:
         if p["kind"] == "loaded":
             loaded(t, p)
