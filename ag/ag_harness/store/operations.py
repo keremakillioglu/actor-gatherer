@@ -564,8 +564,8 @@ def preamble_tokens(conn: sqlite3.Connection, parts) -> int:
 def raw_texts(conn: sqlite3.Connection, skip_types: Iterable[str] = ("environment_update", "context_stream")) -> List[str]:
     """The texts of the conversation's raw part: the events each set of properties' latest read sent
     verbatim (its stored rows), and every event since the earliest of those reads -- all of them,
-    before any read -- the events of `skip_types` (the pollers') left out. An event with no text
-    stands in by its payload."""
+    before any read -- the events of `skip_types` (the pollers') left out, and those with no text:
+    an opaque blob (a model's encrypted reasoning), whose payload names nothing a reader could."""
     names = property_names(conn)
     group = f" GROUP BY {', '.join(property_column(n) for n in names)}" if names else ""
     latest = conn.execute(f"SELECT read_id, row_id FROM _reads WHERE read_id IN "
@@ -575,11 +575,11 @@ def raw_texts(conn: sqlite3.Connection, skip_types: Iterable[str] = ("environmen
     skip = list(skip_types)
     marks, skipped = ",".join("?" * len(reads)) or "NULL", ",".join("?" * len(skip)) or "NULL"
     rows = conn.execute(
-        f"SELECT e.text, e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
-        f"WHERE t.name NOT IN ({skipped}) AND (e.row_id > ? OR e.row_id IN "
+        f"SELECT e.text FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+        f"WHERE t.name NOT IN ({skipped}) AND e.text IS NOT NULL AND (e.row_id > ? OR e.row_id IN "
         f"(SELECT row_id FROM _read_items WHERE read_id IN ({marks}) AND row_id IS NOT NULL)) ORDER BY e.row_id",
         (*skip, since, *reads)).fetchall()
-    return [text if text is not None else payload for text, payload in rows]
+    return [text for (text,) in rows]
 
 
 def record_real_tokens(conn: sqlite3.Connection, read_id: int, tokens: int) -> bool:

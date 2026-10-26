@@ -23,7 +23,7 @@ matches against the conversation; its `what` says what happened in words:
 
 import os
 import re
-from typing import Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from ag.ag_interface import Event, EventType, Poller
 
@@ -63,9 +63,26 @@ PATH = re.compile(r"[~\w.\-/]*/[\w.\-/]+|[\w\-][\w.\-]*\.[A-Za-z0-9]{1,12}\b")
 WATCHED = 5000
 
 
+#: The names found in each text lately (names_in), kept by the text: a gatherer's server is asked to watch for every
+#: call, and the texts it is given are mostly the same ones again (stored events never change), so each is searched
+#: once. Dropped whole when it holds more than KEPT_CHARS of them.
+_FOUND: Dict[str, Tuple[str, ...]] = {}
+_FOUND_CHARS = [0]
+KEPT_CHARS = 64 << 20
+
+
 def names_in(text: Optional[str]) -> List[str]:
     """The path-like names in `text`, in order."""
-    return [n for n in (m.rstrip(".") for m in PATH.findall(text or "")) if n]
+    text = text or ""
+    got = _FOUND.get(text)
+    if got is None:
+        got = tuple(n for n in (m.rstrip(".") for m in PATH.findall(text)) if n)
+        if _FOUND_CHARS[0] + len(text) > KEPT_CHARS:
+            _FOUND.clear()
+            _FOUND_CHARS[0] = 0
+        _FOUND[text] = got
+        _FOUND_CHARS[0] += len(text)
+    return list(got)
 
 
 def resolve(root: str, name: str) -> Optional[str]:
