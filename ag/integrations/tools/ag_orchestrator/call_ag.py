@@ -43,7 +43,9 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     note): the adaptor's `to_events`, a `rewrite` to the server, its `to_messages`.
     `out`, when given, gets the read's `read_id` (what the provider's count of
     this call is reported against, `measured`), and its `tokens`, `budget` and
-    `sent_tokens` by the policy's count and its `basis` (the server's `rewrite`), the
+    `sent_tokens` by the policy's count and its `basis` (the server's `rewrite`), the `context`
+    as answered (its stored events with their sizes as stored), the ids of the events given the
+    provider has not counted yet (`uncounted`; None: not known), the
     `events` sent, and the context manager's own items as [(made_id, text)] (`ag_items`);
     `measured`, {"read_id",
     "tokens"}, is an earlier call's count, sent with this one; `limit` the
@@ -94,7 +96,8 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     except Exception as exc:  # noqa: BLE001
         return None, f"could not make messages: {exc!r}; request unchanged"
     if out is not None:                                   # a read-only context's too, but its read_id
-        out["basis"] = answer.get("basis")
+        out["basis"], out["context"] = answer.get("basis"), context
+        out["uncounted"] = answer.get("uncounted") if isinstance(answer.get("uncounted"), list) else None
         out.update({k: answer[k] for k in ("tokens", "budget", "sent_tokens") if isinstance(answer.get(k), int)})
     if out is not None and isinstance(answer.get("read_id"), int):
         out["read_id"] = answer["read_id"]                # the read's context is what is sent

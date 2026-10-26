@@ -95,7 +95,7 @@ from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
 from ..adaptor.to_events import Continuity, blocks_of
-from .counting import Counter, countable  # noqa: F401 - countable: this module's before counting.py
+from .counting import Counter, countable, fresh_thinking  # noqa: F401 - countable: this module's before counting.py
 
 CWD = re.compile(r"Primary working directory:\s*(\S+)")
 SESSION_HEADER = "x-claude-code-session-id"
@@ -318,8 +318,8 @@ class ClaudeContextManager:
                     new, out = again, out_again
         keep_read(request, gatherer, out)                 # what was sent is the read's context either way
         if new is not None and "read_id" in out:
-            new = self.counter.fresh_thinking(gatherer, channel, out.get("basis"), new)
-            out["left_out"] = self.counter.left_out(gatherer, channel)     # off the read's sent_tokens
+            new, out["left_out_events"] = fresh_thinking(out.get("context"), new)
+            out["left_out"] = sum(out["left_out_events"].values())          # off the read's sent_tokens
         sent = messages if new is None else new
         if self.count_events and "read_id" in out:
             self.counter.start(request, client, gatherer, {CHANNEL: channel}, body, messages, sent, out)
@@ -358,7 +358,7 @@ class ClaudeContextManager:
         self.log(gatherer, f"[{channel}] {what}: {note}")
         if new is None:
             return None
-        new = self.counter.fresh_thinking(gatherer, channel, out.get("basis"), new)
+        new, _ = fresh_thinking(out.get("context"), new)
         joined = new + [dict(m) for m in prompt]
         joined = back.as_user(back.tools_placed(joined)) if mode == "user" else back.placed(back.tools_placed(joined))
         return dict(body, messages=joined)

@@ -261,6 +261,7 @@ class CodexContextManager:
             return new, out
 
         messages, out = await read()
+        self.counter.learn(gatherer, channel, out.get("context"))      # reasoning as costed: for the check
         size, budget = out.get("sent_tokens"), out.get("budget")      # all of it, as the provider counts
         if "read_id" in out and budget and size is not None and size >= COUNT_FROM * budget:
             counted = await self.counter.exact(gatherer, channel, request,
