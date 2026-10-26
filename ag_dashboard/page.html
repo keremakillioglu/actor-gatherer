@@ -4367,8 +4367,8 @@ function kindSwitches() {
       } }, el("i", { class: "fb", style: `background: ${color}` }), name);
   }));
 }
-// The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched
-// only them: hidden until asked for, the choice kept in this browser.
+// The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders): hidden until asked for, the choice
+// kept in this browser. The commands are all listed, whatever folders they touched.
 const TMP_KEY = "ag-dashboard-files-tmp";
 let showTmp = (() => { try { return localStorage.getItem(TMP_KEY) === "1"; } catch (e) { return false; } })();
 function tmpSwitch(n) {
@@ -4379,7 +4379,7 @@ function tmpSwitch(n) {
     try { localStorage.setItem(TMP_KEY, showTmp ? "1" : "0"); } catch (e) { /* this page only */ }
     keepingPlace(renderMain);
   });
-  return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders), and the commands that touched only them" },
+  return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders)" },
     box, `tmp (${n})`);
 }
 // The files and commands at the left, folded to a thin bar of what they hold until opened: by a click on the
@@ -4533,7 +4533,7 @@ function filesRender({ info, running }) {
   const files = kept.filter((f) => !f.kinds.length || f.kinds.some((k) => !hiddenKinds.has(k)));
   const kindHidden = kept.length - files.length;
   const tmpFiles = d.files.filter((f) => f.temporary).length;
-  const commands = d.commands.map((c, i) => [c, i]).filter(([c]) => showTmp || !c.temporary);   // each with its index: its id
+  const commands = d.commands;
   const UNKNOWN = "\0";
   const root = { dirs: new Map(), files: [] };
   for (const f of files) {
@@ -4586,14 +4586,13 @@ function filesRender({ info, running }) {
     : running && d.turn === d.turns.length - 1 ? "No files yet in this turn." : "The agent touched no files in this turn." }));
   // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one)
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
-  commands.forEach(([c, i]) => cmds.append(el("div", { class: "fl-cmd" },
+  commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
     el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), firstLine(c.text, 140)),
       (c.files || []).length ? el("div", { class: "fl-cmd-files" }, ...c.files.map((p) => el("button", { type: "button", title: p,
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, rel(p).split("/").pop()))) : null,
       el("pre", { class: "call", text: callText(c.call) }), c.output ? el("pre", { class: "out", text: c.output }) : null))));
-  if (!commands.length) cmds.append(el("div", { class: "fv-note", text: d.commands.length ? "Only commands in temporary folders."
-    : "No commands in this turn." }));
+  if (!commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
   const shown = `${state.files.key}:${d.turn}`;
   if (cmdsShown !== shown) requestAnimationFrame(() => {   // once each time a turn is shown, the latest or one picked: at its end
     const n = document.querySelector(`[data-keep="files-cmds-${d.turn}"]`);
@@ -4604,13 +4603,13 @@ function filesRender({ info, running }) {
   // two sections, each its own size and scrolling, each with the legend of its colours
   const legend = (pairs) => el("div", { class: "fl-legend" }, ...pairs.map(([name, color]) =>
     el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
-  const failed = commands.filter(([c]) => c.error).length;
-  const busy = commands.filter(([c]) => !c.error && c.running && running).length;
+  const failed = commands.filter((c) => c.error).length;
+  const busy = commands.filter((c) => !c.error && c.running && running).length;
   const side = sideFolded ? sideBar(files, { ok: commands.length - failed - busy, err: failed, run: busy }, info)
     : el("div", { class: "fl-side" },
     el("section", { class: "fl-sec files-sec" },
       el("div", { class: "fl-h" }, el("span", { text: files.length ? plural(files.length, "file") : "No files" }),
-        tmpFiles || d.commands.some((c) => c.temporary) ? tmpSwitch(tmpFiles) : null,
+        tmpFiles ? tmpSwitch(tmpFiles) : null,
         el("button", { type: "button", class: "fold", title: "Fold the files and commands to a bar", "aria-label": "Fold the files and commands",
           onclick: () => foldSide(true) }, strokeIcon(ICONS.sidebar, 14))),
       cwd ? el("div", { class: "fl-wd", title: cwd }, el("span", { text: "Working directory" }),

@@ -411,7 +411,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     A source the hook server checked on disk also has `checked` (True: what the call showed of the file
     is on disk; False: it is not; None: nothing to match), and `unnamed` when the file changed while
     the call ran but the call doesn't name it; its kinds may be "delete" too. A file in a temporary
-    folder (`temporary`) has `temporary` true, and so has a call whose every file is in one.
+    folder (`temporary`) has `temporary` true.
     Relative paths in shell commands are taken from `cwd` (the session's directory). `home`: the
     user's home folder, which the page shows as ~."""
     conn = data._connect(gatherer)
@@ -798,8 +798,6 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     room = max(0, room - len(b[key]))
         out["files"].append({"path": path, "kinds": sorted(f["kinds"]), "created": f["created"],
                              "temporary": temporary(path), "sources": f["sources"]})
-    for c in want.commands:
-        c["temporary"] = bool(c["files"]) and all(temporary(p) for p in c["files"])
     out["commands"] = want.commands
     return out
 
