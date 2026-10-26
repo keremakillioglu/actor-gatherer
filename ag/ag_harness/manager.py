@@ -47,6 +47,9 @@ from ag.ag_tools.tokenizers import Tiktoken
 # (the home builds them once per directory), and a poller is told what to watch, then asked.
 _POLLING: Dict[str, threading.Lock] = {}
 _POLLING_LOCK = threading.Lock()
+#: A read-only context (`context_only`) is read from a copy of the whole database, in memory: one at a time in the
+#: process, so the server's lanes (each session's side calls at once) do not hold a copy each.
+_COPYING = threading.Lock()
 
 
 def polling(name: str) -> threading.Lock:
@@ -344,6 +347,11 @@ class Manager(ContextManager):
         if not os.path.exists(db_path(gatherer_id)):
             return [], {}
         conn = self._conn(gatherer_id)
+        with _COPYING:
+            return self._context_copy(conn, gatherer_id, row_id, properties, limit, preamble)
+
+    def _context_copy(self, conn, gatherer_id: str, row_id: int, properties: Optional[dict], limit: Optional[int],
+                      preamble: Optional[List[dict]]) -> Tuple[List[dict], dict]:
         copy = sqlite3.connect(":memory:", check_same_thread=False)
         try:
             conn.backup(copy)                       # the policy reads, and writes, the copy alone
