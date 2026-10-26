@@ -486,6 +486,53 @@ class FilesTrackerTest(unittest.TestCase):
         self.assertEqual([(h["at"], h["new"]) for h in got["e", "shapes.py"]["hunks"]], [(2, ["    return h * w"])])
         self.assertEqual([(h["at"], h["new"]) for h in got["s", "shapes.py"]["hunks"]], [(6, ["    return (w + h) * 2"])])
 
+    def test_results_that_come_before_their_answer_s_end_are_checked_against_it(self):
+        """As codex did live: it runs a call as soon as the answer streams it, and its next call (the results)
+        comes while the hook is still at the answer's end. The results wait for that answer; a file the NEXT
+        answer's call creates is that call's, not the one before's (as it was: it took the earlier window)."""
+
+        class Watched:                               # what the watcher reported, each change at its time
+            def __init__(self):
+                self.changes = []
+
+            def watch(self, cwd):
+                pass
+
+            def between(self, t0, t1):
+                return {p: how for when, p, how in self.changes if t0 <= when <= t1}
+
+            def close(self):
+                pass
+
+        server, seen = Server(), Watched()
+        files = Files(SimpleNamespace(client=lambda g: server), log=lambda g, l: None, watcher=seen)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        d = os.path.realpath(tmp.name)
+        shell = lambda cid, cmd: {"type": "function_call", "call_id": cid, "name": "exec_command", "arguments": json.dumps({"cmd": cmd})}
+        out = lambda cid: {"type": "function_call_output", "call_id": cid, "output": "Process exited with code 0"}
+        b, c = shell("b1", "printf 'x' > x.txt"), shell("c1", "printf 'y' > y.txt")
+
+        async def go():
+            began = time.time()
+            sh("printf 'x' > x.txt", d)                                      # b1, run as answer B streamed it in
+            seen.changes.append((began + 0.01, os.path.join(d, "x.txt"), "created"))
+            files.arrived("g", "s", d, [b, out("b1")])                       # its results, before B's end
+            arrived = time.time()
+            seen.changes.append((arrived + 0.5, os.path.join(d, "y.txt"), "created"))   # c1, answer C's, later
+            files.started("g", "s", d, [b], since=began)                     # B's end, at last
+            await asyncio.sleep(0.6)
+            sh("printf 'y' > y.txt", d)
+            files.arrived("g", "s", d, [b, out("b1"), c, out("c1")])         # C's results, again before its end
+            files.started("g", "s", d, [c], since=arrived + 0.4)
+            await files.close()
+        asyncio.run(go())
+        got = {(t["call_id"], os.path.basename(t["path"]), t["how"]) for _, body in server.asked for t in body["touches"]
+               if t.get("path")}
+        self.assertIn(("b1", "x.txt", "created"), got)
+        self.assertIn(("c1", "y.txt", "created"), got)
+        self.assertNotIn("y.txt", {p for cid, p, how in got if cid == "b1"})
+
     def test_a_call_whose_answer_was_not_seen_end_is_checked_for_what_it_read(self):
         server = Server()
         files = Files(SimpleNamespace(client=lambda g: server), log=lambda g, l: None, watcher=None)

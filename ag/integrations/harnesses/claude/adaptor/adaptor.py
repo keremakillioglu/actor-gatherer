@@ -18,10 +18,10 @@ class ClaudeAdaptor(Adaptor):
     accepts = OUTPUTS + (AG,)
     properties = (CHANNEL, CWD)
     system_messages = "keep"
-    continuity = None       # the channel's Continuity (to_events.py), for an adaptor `for_channel` made
+    continuity = None       # where the request carries on (to_events.py), for an adaptor `for_channel` made
 
     def for_channel(self, continuity: Continuity) -> "ClaudeAdaptor":
-        """This adaptor, for one channel's requests: its events' ids carry on from the previous request's."""
+        """This adaptor, for one request of a channel: its events' ids carry on from the channel's stored ones."""
         a = copy.copy(self)
         a.continuity = continuity
         return a

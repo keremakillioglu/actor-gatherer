@@ -47,7 +47,9 @@ A session can be opened in a TERMINAL instead (`terminal`): Claude Code's own in
 the same process a terminal outside would run, less ag's notes on what it set up, so it shows and
 asks what it would there (the trust dialog, permission prompts) and its keys are its own. The page
 gets what it prints (`output`, kept the last TERM_KEEP bytes so a page that comes back redraws it) and sends what is typed (`type`) and
-the window's size (`resize`). Opening it ends the session's idle `-p` agent first; from then on the
+the window's size (`resize`). A full screen draws only what changed, so once what is kept no longer holds the
+last time it was drawn whole, a page replaying it would miss whatever has not changed since -- Claude Code's
+input box, its status line: its process is made to draw it all again (`redraw`). Opening it ends the session's idle `-p` agent first; from then on the
 terminal has the session, and a message sent from any view is typed into it -- pasted, then Enter --
 until it is closed (`stop`) or exits. Unix only: it needs `pty` (TERMINALS).
 
@@ -168,6 +170,8 @@ TERM_KEEP = 512 * 1024             # how much of a terminal's output is kept, fo
 THREAD_POLL = 1.0                  # how often a new codex terminal's thread is looked for in the gatherer
 PASTE_ENTER = 0.15                 # after a message is pasted into a terminal, how long before its Enter
 ANSWER_GAP = 0.3                   # between the keys of an answer typed into a dialog: several at once are one input to it
+CLEARED = b"\x1b[2J"               # a full screen clearing it, to draw it all again (Claude Code's, at its start and each resize)
+REDRAW_WAIT = 1.0                  # a full screen made a row shorter (`redraw`): how long it is given to draw, before it is put back
 #: What a page's terminal sends that no one typed: focus in and out, the terminal's answers to the program's
 #: questions (device attributes, cursor position, OSC replies), mouse reports. Not typing: a dialog is as it was.
 REPORTS = re.compile(r"\x1b\[[IO]|\x1b\[[?>]?[\d;]*[cRn]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b\[<[\d;]*[Mm]")
@@ -179,7 +183,7 @@ def _has_calls(gatherer: str, session_id: str) -> bool:
     if conn is None:
         return False
     try:
-        return conn.execute("SELECT 1 FROM _reads WHERE p_channel = ? LIMIT 1", (session_id,)).fetchone() is not None
+        return conn.execute("SELECT 1 FROM _reads WHERE ifnull(p_channel, '') = ? LIMIT 1", (session_id,)).fetchone() is not None
     except sqlite3.Error:
         return False
     finally:
@@ -214,7 +218,7 @@ def holder(gatherer: str, session_id: str) -> Optional[dict]:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(_reads)")} if "_reads" in tables else set()
         if {"pid", "pid_started", "p_channel"} <= cols:
             rows += [(r["pid"], r["pid_started"], "call") for r in conn.execute(
-                "SELECT pid, pid_started FROM _reads WHERE p_channel = ? AND pid IS NOT NULL ORDER BY read_id DESC LIMIT 1",
+                "SELECT pid, pid_started FROM _reads WHERE ifnull(p_channel, '') = ? AND pid IS NOT NULL ORDER BY read_id DESC LIMIT 1",
                 (session_id,))]
     except sqlite3.Error:
         return None
@@ -232,7 +236,7 @@ def _session_cwd(gatherer: str, session_id: str) -> Optional[str]:
     if conn is None:
         return None
     try:
-        r = conn.execute("SELECT p_cwd FROM _reads WHERE p_channel = ? AND p_cwd IS NOT NULL ORDER BY read_id DESC LIMIT 1",
+        r = conn.execute("SELECT p_cwd FROM _reads WHERE ifnull(p_channel, '') = ? AND p_cwd IS NOT NULL ORDER BY read_id DESC LIMIT 1",
                          (session_id,)).fetchone()
     except sqlite3.Error:
         return None
@@ -248,7 +252,7 @@ def _session_harness(gatherer: str, session_id: str) -> str:
     if conn is None:
         return "claude"
     try:
-        rows = conn.execute("SELECT payload_json FROM events WHERE p_channel = ? ORDER BY row_id LIMIT 60", (session_id,))
+        rows = conn.execute("SELECT payload_json FROM events WHERE ifnull(p_channel, '') = ? ORDER BY row_id LIMIT 60", (session_id,))
         payloads = []
         for (raw,) in rows:
             try:
@@ -455,6 +459,9 @@ class _Term:
         self.typed = 0.0                # when anything was last typed into it (epoch seconds): keys, a message
         self.answering = False          # an answer's keys being typed into it (`answer`)
         self.kept = False               # put away (`put_away`): its end is kept
+        self.drawn = -1                 # where in what it printed it last cleared its screen (CLEARED), to draw it all
+        self.sizing = threading.Lock()  # its size set by one at a time: the page's (`resize`), or `redraw`'s
+        self.redrawing = False          # `redraw` at it
 
 
 class Sessions:
@@ -1030,6 +1037,10 @@ class Sessions:
             if not chunk:
                 break
             with t.changed:
+                back = bytes(t.out[-(len(CLEARED) - 1):])         # one split across two reads found too
+                at = (back + chunk).rfind(CLEARED)
+                if at >= 0:
+                    t.drawn = t.end - len(back) + at
                 t.out += chunk
                 t.end += len(chunk)
                 if len(t.out) > TERM_KEEP:
@@ -1072,6 +1083,40 @@ class Sessions:
             data = bytes(t.out) if reset else bytes(t.out[since - start:])
             return data, t.end, reset, t.exited
 
+    def redraw(self, session_id: str) -> None:
+        """The session's full-screen terminal drawn all again by its process, where what is kept of what it
+        printed (`output`) no longer holds the last time it was: a full screen draws only what changed, so a
+        page starting over from what is kept would miss what has not changed since. Its height is made a row
+        less and, once it has drawn at that (or after REDRAW_WAIT), put back: each a SIGWINCH it draws all of
+        it at -- the same size twice would be no change to it. What the page is sent after what is kept. Not
+        for one in the classic screen, printed into the page's own scrollback."""
+        t = self.terms.get(session_id)
+        if t is None or not t.fullscreen:
+            return
+        with t.changed:
+            start = t.end - len(t.out)
+            if t.exited is not None or t.redrawing or not start or t.drawn >= start:
+                return
+            t.redrawing = True
+        threading.Thread(target=self._redraw, args=(t,), daemon=True).start()
+
+    def _redraw(self, t: _Term) -> None:
+        try:
+            with t.sizing:
+                rows, cols = struct.unpack("HHHH", fcntl.ioctl(t.fd, termios.TIOCGWINSZ, b"\0" * 8))[:2]
+                short = struct.pack("HHHH", rows - 1 if rows > 5 else rows + 1, cols, 0, 0)
+                drawn = t.drawn
+                fcntl.ioctl(t.fd, termios.TIOCSWINSZ, short)
+            with t.changed:
+                t.changed.wait_for(lambda: t.drawn > drawn or t.exited is not None, REDRAW_WAIT)
+            with t.sizing:                           # unless the page has sized it meanwhile
+                if fcntl.ioctl(t.fd, termios.TIOCGWINSZ, b"\0" * 8) == short:
+                    fcntl.ioctl(t.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        except OSError:                              # its terminal gone meanwhile
+            pass
+        finally:
+            t.redrawing = False
+
     def type(self, session_id: str, data: str) -> None:
         """What was typed in the page, to the session's terminal, as typed."""
         t = self.terms.get(session_id)
@@ -1085,8 +1130,9 @@ class Sessions:
         """What the session's terminal asks (data.py's `asking`: a question, a plan to approve) answered with
         `choice` (answers.py): its keys typed into the terminal one at a time, ANSWER_GAP apart, as if picked
         there. Refused where the dashboard has no terminal for the session, or where something was typed into
-        it since it asked -- its dialog may no longer be as it first showed. -> the answer, as `list` then has
-        it: {call, summary, expect (what Claude Code's result for the call will hold), at}."""
+        it since it asked -- its dialog may no longer be as it first showed -- or, codex's, where the terminal
+        opened after it asked: codex does not ask again on resuming. -> the answer, as `list` then has it:
+        {call, summary, expect (what the harness's result for the call will hold), at}."""
         with self.lock:
             t = self.terms.get(session_id)
             if t is None:
@@ -1095,6 +1141,8 @@ class Sessions:
                 raise SessionError("an answer is being typed into it already")
             if t.typed and ask.get("at") and t.typed >= ask["at"]:
                 raise SessionError("something was typed into its terminal since it asked: finish answering there")
+            if ask.get("harness") == "codex" and ask.get("at") and t.since > ask["at"]:
+                raise SessionError("its terminal opened after it asked, and does not ask it: answer in a message")
             keys = answers.keys(ask, choice)             # AnswerError, a ValueError: a choice that does not fit
             sent = {"call": ask.get("call"), "summary": answers.summary(ask, choice),
                     "expect": answers.expected(ask, choice), "at": time.time()}
@@ -1122,7 +1170,8 @@ class Sessions:
             raise SessionError("the session has no terminal open")
         cols, rows = max(20, min(int(cols), 500)), max(5, min(int(rows), 200))
         try:
-            fcntl.ioctl(t.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+            with t.sizing:
+                fcntl.ioctl(t.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         except OSError:
             pass
 

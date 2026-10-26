@@ -100,6 +100,32 @@ class DataTest(HomeBase):
         self.assertEqual(created, sorted(created, reverse=True))          # whatever happened since
         self.assertEqual(g["created"], min(created))
 
+    def test_the_home_reads_every_event_a_fixed_number_of_times_however_many_agents(self):
+        """Each agent's events found by ag's index on the channel, not by a scan of them all: by the bare column,
+        a home of 64 agents in a 425 MB file took 2 s, every update."""
+        def scans():
+            run, connect = [], data._connect
+
+            def traced(gatherer):
+                conn = connect(gatherer)
+                if conn is not None:
+                    conn.set_trace_callback(run.append)
+                return conn
+            with unittest.mock.patch.object(data, "_connect", traced):
+                data.home()
+            conn = sqlite3.connect(paths.db_path("g"))
+            try:
+                return sum(any(d.split(" USING")[0] in ("SCAN events", "SCAN e", "SCAN e2")
+                               for *_, d in conn.execute("EXPLAIN QUERY PLAN " + sql))
+                           for sql in run if sql.lstrip().upper().startswith("SELECT"))
+            finally:
+                conn.close()
+        two = scans()
+        items = codex_items.CodexItems(self.m)
+        for c in ("c3", "c4", "c5"):
+            items.insert("g", PREAMBLE[0], channel_id=c)
+        self.assertEqual(scans(), two)
+
     def test_an_agent_over_time(self):
         a = data.agent("g", "c1", [])
         self.assertEqual([r["read_id"] for r in a["reads"]], self.reads)

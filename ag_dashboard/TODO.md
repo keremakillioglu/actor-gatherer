@@ -16,7 +16,37 @@ Not detected yet: the actor shows as Running while Claude Code waits.
   to the hook server ag already runs. The wait ends at the next model call, when a hook says the tool ran,
   failed or was denied, or when keys are typed into the dashboard's terminal.
 - [ ] **Other dialogs**, such as an MCP server asking for input (elicitation). The same hook may cover some.
-- [ ] **Codex**: its approval and waiting prompts need their own look.
+- [ ] **Codex's approval prompts** ("Would you like to run the following command?"). Codex writes nothing of them to
+  its rollout file, and ag records only the model's call asking for `require_escalated`. The dashboard runs codex
+  with `--approve-for-me`, which sends them to codex's reviewer, so its own terminals never show one; a codex run
+  elsewhere with another approval policy does. Codex 0.164 has a `PermissionRequest` hook (hooks.json), which may
+  be the way in, as Claude Code's `Notification` is for its permission prompts.
+
+### Codex
+
+Codex asks in three ways, all read from its own record of the thread (rollout.py: `<CODEX_HOME>/sessions/.../rollout-
+<time>-<thread>.jsonl`, written as codex goes) and answered by keys typed into the dashboard's terminal (answers.py):
+
+- **A question** (`request_user_input`, Plan mode's; its turn waits): from ag's pending answer, as Claude Code's
+  are, until the record has its output -- answered, or "aborted by user" (Esc). Single choice only: codex adds "None
+  of the above", with a note in the user's own words.
+- **A question asked as it works** (`request_user_input_async`): shown while that turn runs, the actor still Running.
+  Once the turn ends it can no longer be opened in the terminal, and the user simply writes back.
+- **The plan a Plan-mode turn proposed** ("Implement this plan?", drawn once the turn is over): shown only where
+  the dashboard runs the terminal, it opened before the plan, and nothing was typed into it since. Codex records
+  neither the prompt nor its dismissal (Esc), so outside that the plan is not known to be asked about. A message
+  from any view while it is asked is "No, stay in Plan mode" plus the message (server.py's `codex_dialog`): typed
+  as it is, its Enter would have implemented the plan. A message while codex waits on a question there is refused.
+
+Not covered yet:
+
+- [ ] **"Yes, clear context and implement"** (the plan's choice 2) starts another thread: left to the terminal.
+- [x] **Codex's wrappers in the Chat view**: a `<proposed_plan>` is drawn as a card headed "Proposed plan"
+  (page.html's `markdown`), and the answers to what codex asked as it worked as "question → answer" (`asked`), part
+  of the turn that asked (files.py, rollout.py's `replies`).
+- [ ] **A question in a codex terminal outside the dashboard** is shown but not answerable, as Claude Code's are.
+- The keys are codex 0.164's. As for Claude Code, what codex records is checked against what was picked
+  (`recorded`), so a change shows up as a warning.
 
 Shown, but not answerable from the page:
 
@@ -58,8 +88,8 @@ Not covered yet:
 - [ ] **An answer that breaks off once it has begun** is not kept as a failure: the hook server can't tell the
   endpoint breaking it from the harness closing it (an interrupted turn). Claude Code's record still shows the
   give-up; for codex it shows as Running until its next call.
-- [ ] **Codex's own record** (its rollout file) is not read: Error comes only by time, and an interrupted codex turn
-  shows as Running.
+- [x] **Codex's own record** (its rollout file, rollout.py) is read: a turn that gave up (`task_complete` with an
+  `error`) is Error at once, one interrupted (`turn_aborted`) or completed with no call ag saw is Idle.
 - [ ] **Calls with no read** (Claude Code's compaction, recaps) are not kept when they fail.
 - [ ] **A session whose record is elsewhere** (another `CLAUDE_CONFIG_DIR`, another machine) waits GIVE_UP_SECONDS
   for Error, and an interruption there is not seen.
@@ -137,8 +167,14 @@ Not covered yet:
 - [ ] **A build under codex, live.** Not yet watched: with a low `max_context_tokens` on a test gatherer, check that
   builds start before codex's own compaction point (its stated limit, 90% of the window) and codex never compacts
   by itself.
-- [ ] **Codex's subagents** (`subagent` side calls, the agents it spawns, /review's reviewer) are passed through, not
-  shown as background work the way Claude Code's background agents are.
+- [x] **Codex's subagents and background terminals** are background work, as Claude Code's background agents and
+  commands are: from its rollout (`SubAgentActivity` started/ended; a command's output naming its session, until
+  its `CommandExecution` completes). /review's reviewer and the `subagent` side calls are still only passed through.
+- [x] **Codex's subagents' reports** are notes, as Claude Code's are: its `agent_message` items (another of its agents'
+  message) are context, not the model's (codex adaptor), and the Chat view shows a FINAL_ANSWER as "Subagent's report:
+  <its task>" under the turn that started it -- read from the subagent's own record while codex has not handed it
+  back yet, which waits for the thread's next call (files.py, rollout.py's `report`). What a subagent was asked is
+  encrypted in `spawn_agent`'s call, so it is named by its task name.
 - [ ] **The approval reviewer** (`guardian_review`, for `--approve-for-me`, which the dashboard always uses) is passed
   through; its verdict could say why codex did not run something.
 - [ ] **Codex tries a WebSocket first.** The hook server answers 426, and codex logs "failed to connect to

@@ -35,23 +35,30 @@ event of its own, not the earlier one again. Claude Code moves its `cache_contro
 markers from block to block between calls, so they are taken out of the piece (and
 its hash): the same block is the same event wherever the marker sits.
 
-When Claude Code rewrites history further back (its own compaction), every chained
-id after the change would differ. A `Continuity`, kept per channel by the hook,
-guards against that: it remembers the last TAIL pieces of the previous request
-with their ids, finds them in the next one (searching back from the end), keeps
-their ids, chains the pieces after them from there -- new, whatever they repeat
--- and sends only from there on: what came before is stored already. Without a
-match (the first call, a restarted hook, Claude Code rewriting those pieces
-themselves), every piece's id is the chain from the request's start, which the
-history re-sent unchanged reproduces. Nothing of the context manager is
-imported here.
+When Claude Code rewrites history further back (its own compaction; or, resuming a
+session, its notes at the start: the tools a connector announced mid-session listed
+among the deferred ones instead), every chained id after the change would differ, and
+the whole history after it would be stored again. A `Continuity` guards against that.
+It holds the channel's last TAIL events as the gatherer stored them (the server's
+`latest`, read on every call: nothing is remembered between calls, so a hook server
+started again, or another one, carries on as well), and finds where they are in the
+request by the ids themselves: an id is the hash of its piece and of the id before it,
+so two stored events whose ids link pieces next to each other in the request are
+there, in that order. The last such link, searching back from the end, is where the
+request carries on: the pieces after it are chained from there -- new, whatever they
+repeat -- and only those, and the stored ones linked before them, are sent. Order is
+told by the links, not by the rows: notes ag stored before the request they followed
+(`request_last`) still link where Claude Code sends them. Without a link (the first
+call, Claude Code rewriting the pieces at the end themselves), every piece's id is the
+chain from the request's start, which the history re-sent unchanged reproduces.
+Nothing of the context manager is imported here.
 """
 
 import copy
 import hashlib
 import json
 import re
-from typing import List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 USER_MESSAGE, AGENT_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT = (
     "user_message", "agent_message", "tool_call", "tool_output", "context")
@@ -234,7 +241,7 @@ def types_of(items: list) -> Tuple[List[str], Set[int]]:
                 break
     return types, expansions
 
-TAIL = 20      # pieces of the previous request a Continuity remembers, to find in the next
+TAIL = 20      # the channel's last stored events a Continuity looks for in the request
 
 
 def piece_key(item) -> str:
@@ -244,8 +251,12 @@ def piece_key(item) -> str:
 
 def item_id(item, previous: str = "") -> str:
     """`sha256:` of the id of the piece before it (none: "") and the piece's JSON."""
-    raw = previous + "\n" + piece_key(item)
-    return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return key_id(piece_key(item), previous)
+
+
+def key_id(key: str, previous: str = "") -> str:
+    """item_id, of a piece's `piece_key`."""
+    return "sha256:" + hashlib.sha256((previous + "\n" + key).encode("utf-8")).hexdigest()
 
 
 def chain_ids(items: list) -> List[str]:
@@ -258,32 +269,41 @@ def chain_ids(items: list) -> List[str]:
 
 
 class Continuity:
-    """One channel's memory between requests: the last TAIL pieces Claude Code sent, with their ids."""
+    """Where a request carries on from its channel's history as the gatherer stored it: `stored`, the
+    channel's last TAIL events as (payload, id), oldest first (the server's `latest`)."""
 
-    def __init__(self, tail: int = TAIL):
-        self.size = tail
-        self.tail: List[Tuple[str, str]] = []        # (piece_key, id), oldest first
+    def __init__(self, stored: Iterable[Tuple[object, str]] = ()):
+        self.known: Dict[str, List[str]] = {}       # piece_key -> the ids it is stored with
+        for payload, event_id in stored:
+            self.known.setdefault(piece_key(payload), []).append(event_id)
 
-    def ids(self, items: list) -> Tuple[List[str], int]:
-        """(each piece's id; the index of the first piece to send). The previous request's last pieces,
-        found in this one, keep their ids, and what follows them is chained from there and sent from
-        their start; else every id is chained from the request's start and every piece is sent.
-        Then the request's last pieces are remembered for the next."""
+    def ids(self, items: list) -> Tuple[List[Optional[str]], int]:
+        """(each piece's id, None for one not sent; the index of the first piece to send). The last piece
+        stored with an id that links it to the stored piece before it is where the request carries on: it
+        and the stored pieces linked before it keep their ids and are sent, and the pieces after it are
+        chained from it. Without one, every id is chained from the request's start and every piece is sent."""
         keys = [piece_key(it) for it in items]
-        ids, start = None, 0
-        known = [k for k, _ in self.tail]
-        n = len(known)
-        if n:
-            at = next((s for s in range(len(keys) - n, -1, -1) if keys[s:s + n] == known), None)
-            if at is not None:
-                ids = [None] * at + [i for _, i in self.tail]
-                for item in items[at + n:]:
-                    ids.append(item_id(item, ids[-1]))
-                start = at
-        if ids is None:
-            ids = chain_ids(items)
-        self.tail = list(zip(keys, ids))[-self.size:]
-        return ids, start
+        for end in range(len(keys) - 1, 0, -1):
+            run = self.linked(keys, end)
+            if run:
+                start = end + 1 - len(run)
+                ids: List[Optional[str]] = [None] * start + run
+                for key in keys[end + 1:]:
+                    ids.append(key_id(key, ids[-1]))
+                return ids, start
+        return chain_ids(items), 0
+
+    def linked(self, keys: List[str], end: int) -> List[str]:
+        """The stored ids of the pieces up to `end` that link to one another, back from it -- at least it
+        and the one before it -- oldest first; [] if those two do not."""
+        run: List[str] = []
+        for k in range(end, 0, -1):
+            pair = next(([before, this] for this in (run[:1] or self.known.get(keys[k], ()))
+                         for before in self.known.get(keys[k - 1], ()) if key_id(keys[k], before) == this), None)
+            if pair is None:
+                break
+            run[:1] = pair
+        return run
 
 
 def _result_text(content) -> str:

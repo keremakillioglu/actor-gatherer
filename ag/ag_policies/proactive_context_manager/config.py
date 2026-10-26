@@ -112,19 +112,21 @@ class ProactiveContextManagerConfig:
     db_hint: bool = True
 
     # The gatherer guide: the first item of every context, after the harness's own set-up, on
-    # every read -- with or without a build -- so the agent knows from its first call what ag
-    # adds to its context and where the rest is. `{db_path}` is the context database. With
+    # every read -- with or without a build -- so the agent knows from its first call what the
+    # gatherer adds to its context and where the rest is. `{db_path}` is the context database. With
     # db_hint, the database's layout follows it (layout.DB_HINT). "" = no guide.
     gatherer_guide: str = (
-        "About this context, from ag.\n\n"
-        "This session runs inside an ag gatherer: ag puts your context together on every call, and "
+        "About this context, from the gatherer.\n\n"
+        "This session runs inside a gatherer: it puts your context together on every call, and "
         "other sessions may be working in the same gatherer, in parallel or before you, for the same "
-        "user. Besides the conversation itself, your context may hold these messages from ag:\n\n"
+        "user. Besides the conversation itself, your context may hold these messages from the "
+        "gatherer:\n\n"
         "- **History sections**: earlier history, of this session or of the gatherer's other "
         "sessions, put together to fit. The first of them says how they are organised and how to "
         "read them.\n"
-        "- **Requests made in parallel** (\"For your context, message from the user in parallel to "
-        "another agent: ...\"): a request the user made to another session. It is not your task, but "
+        "- **Requests made in parallel** (\"The user sent this to another session working in parallel "
+        "with you: ...\"): a request the user made to another session, where it arrived -- before "
+        "your user message, or after your latest step if it came mid-turn. It is not your task, but "
         "the same user gave it, on the same material: a definition, convention, correction or "
         "exclusion stated there applies to your work too.\n"
         "- **File-change notices**: a file you read has been modified by someone else since. What "
@@ -166,15 +168,20 @@ class ProactiveContextManagerConfig:
     notice_names: int = 5
 
     # The developer message each request the user made to another channel since
-    # the build in use (all of them, before one) is shown as, right before the
-    # user message the agent is working on. `{text}` is the request; `{channel}`
-    # the other channel's id; `{db_path}` and `{channel_column}` where its work
-    # can be read.
+    # the build in use (all of them, before one) is shown as: right before the
+    # user message the agent is working on, or, arriving mid-turn, after the
+    # turn's latest step -- as Claude Code shows a message the user sends
+    # mid-turn. Its text is the same wherever it goes: it stays there, and a
+    # changed text would leave out the thinking after it. `{text}` is the
+    # request; `{channel}` the other channel's id; `{db_path}` and
+    # `{channel_column}` where its work can be read.
     parallel_message: str = (
-        "For your context, message from the user in parallel to another agent: {text}\n\n"
-        "This indicates work happening in parallel (you can see the work in channel {channel} in your "
-        "context database, {db_path}, column {channel_column}). Be aware if this impacts your work. "
-        "This is not your task, but may change how you should solve your task.")
+        "The user sent this to another session working in parallel with you:\n{text}\n\n"
+        "This is how the gatherer shows you what the user asks its other sessions, where it arrived in "
+        "your conversation. It is not addressed to you: do not answer it or take it up, and carry on with "
+        "your own task. But a definition, convention, correction or exclusion the user states in it "
+        "applies to your work too. That session's work is in {db_path}, table events, where "
+        "{channel_column} = '{channel}'.")
 
     def __post_init__(self):
         held = self.section_budgets + self.keep_pinned_tokens
