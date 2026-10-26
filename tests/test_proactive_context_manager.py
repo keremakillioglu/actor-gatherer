@@ -1,6 +1,6 @@
 """The proactive context manager: the sectioned context, with every request the user
-made to another channel since the build in use shown right before the user
-message this channel is working on."""
+made to another channel since the build in use shown where it arrived: right before
+the user message this channel is working on, or, mid-turn, after the turn's latest step."""
 
 import json
 import os
@@ -16,7 +16,7 @@ from ag.ag_policies.proactive_context_manager.events import environment_update  
 from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
-from test_core import PREAMBLE, Base, ScriptedLLM, agent, call, conversation, output, user  # noqa: E402
+from test_core import PREAMBLE, Base, ScriptedLLM, agent, call, conversation, note, output, user  # noqa: E402
 from channels import ch, on  # noqa: E402
 
 KNOBS = dict(min_context_tokens=0, build_every_request=True, require_smaller=False, sync_seconds=0)
@@ -48,10 +48,31 @@ class ParallelBase(Base):
 
 class ShownTest(ParallelBase):
     def test_another_channel_s_request_comes_right_before_the_latest_user_message(self):
+        self.put(PREAMBLE + [user("their task", 2)], channel="c2")
+        self.put(PREAMBLE + [user("my task", 1)])
+        texts = self.texts(self.read())
+        self.assertEqual(texts[texts.index("P[c2]: their task") + 1], "my task")
+
+    def test_mid_turn_it_comes_after_the_turn_s_latest_step(self):
         self.put(PREAMBLE + [user("my task", 1), call(1), output(1)])
         self.put(PREAMBLE + [user("their task", 2)], channel="c2")
         texts = self.texts(self.read())
+        self.assertEqual(texts[-1], "P[c2]: their task")              # after the output, not before the turn
+        self.assertLess(texts.index("my task"), texts.index("P[c2]: their task"))
+
+    def test_the_harness_s_own_notes_after_the_message_are_not_a_turn_begun(self):
+        self.put(PREAMBLE + [user("their task", 2)], channel="c2")
+        self.put(PREAMBLE + [user("my task", 1), note(1)])
+        texts = self.texts(self.read())
         self.assertEqual(texts[texts.index("P[c2]: their task") + 1], "my task")
+
+    def test_nothing_new_comes_before_the_turn_s_steps(self):
+        self.put(PREAMBLE + [user("my task", 1), call(1)])
+        first = self.texts(self.read())
+        self.put(PREAMBLE + [user("their task", 2)], channel="c2")
+        self.put([output(1)])
+        second = self.texts(self.read())
+        self.assertEqual(second[:len(first)], first)                  # what the turn's thinking was written after
 
     def test_several_in_the_order_they_arrived_from_every_other_channel(self):
         self.put(PREAMBLE + [user("my task", 1)])
@@ -73,7 +94,7 @@ class ShownTest(ParallelBase):
         self.put([output(1)])
         second = self.texts(self.read())
         self.assertEqual(self.parallel(first), [])
-        self.assertEqual(second[second.index("P[c2]: their task") + 1], "my task")
+        self.assertEqual(second[-1], "P[c2]: their task")
 
     def test_it_moves_to_the_next_user_message(self):
         self.put(PREAMBLE + [user("my task", 1), call(1), output(1), agent("done", 1)])
@@ -84,20 +105,30 @@ class ShownTest(ParallelBase):
         self.assertEqual(texts[texts.index("P[c2]: their task") + 1], "my next task")
 
     def test_once_shown_it_stays_where_it_was(self):
-        self.put(PREAMBLE + [user("my task", 1), call(1), output(1)])
         self.put(PREAMBLE + [user("their task", 2)], channel="c2")
+        self.put(PREAMBLE + [user("my task", 1)])
         first = self.texts(self.read())
-        self.put([agent("done", 1), user("my next task", 3)])
+        self.put([call(1), output(1), agent("done", 1), user("my next task", 3)])
         second = self.texts(self.read())
         self.assertEqual(second[:len(first)], first)                 # a prefix: nothing moved
         self.assertEqual(second[second.index("P[c2]: their task") + 1], "my task")
+
+    def test_once_shown_mid_turn_it_stays_where_it_was(self):
+        self.put(PREAMBLE + [user("my task", 1), call(1), output(1)])
+        self.put(PREAMBLE + [user("their task", 2)], channel="c2")
+        first = self.texts(self.read())
+        again = self.texts(self.read())                              # the same call again: nothing after it yet
+        self.put([agent("done", 1), user("my next task", 3)])
+        second = self.texts(self.read())
+        self.assertEqual(again, first)
+        self.assertEqual(second[:len(first)], first)                 # a prefix: nothing moved
         self.assertEqual(second[len(first):], ["done", "my next task"])
 
     def test_a_new_one_goes_before_the_latest_and_the_old_ones_stay(self):
-        self.put(PREAMBLE + [user("my task", 1), call(1), output(1)])
         self.put(PREAMBLE + [user("first", 2)], channel="c2")
+        self.put(PREAMBLE + [user("my task", 1)])
         self.read()
-        self.put([agent("done", 1), user("my next task", 3)])
+        self.put([call(1), output(1), agent("done", 1), user("my next task", 3)])
         self.put([user("second", 4)], channel="c2")
         texts = self.texts(self.read())
         self.assertEqual(texts[texts.index("P[c2]: first") + 1], "my task")
@@ -131,14 +162,14 @@ class ShownTest(ParallelBase):
         self.wrapped.init("w")
         self.put(PREAMBLE + [user("my task", 1)])
         self.put(PREAMBLE + [user("their task", 2)], channel="c2")
-        shown = [t for t in self.texts(self.read()) if t.startswith("For your context")]
+        shown = [t for t in self.texts(self.read()) if t.startswith("The user sent this to another session")]
         self.assertEqual(len(shown), 1)
-        self.assertTrue(shown[0].startswith("For your context, message from the user in parallel to another agent: "
-                                            "their task\n\nThis indicates work happening in parallel (you can see "
-                                            "the work in channel c2 in your context database, "))
-        self.assertIn(os.path.join("w", "context.db") + ", column p_channel)", shown[0])
-        self.assertTrue(shown[0].endswith("Be aware if this impacts your work. This is not your task, but may "
-                                          "change how you should solve your task."))
+        self.assertTrue(shown[0].startswith("The user sent this to another session working in parallel with you:\n"
+                                            "their task\n\nThis is how the gatherer shows you what the user asks "
+                                            "its other sessions, where it arrived in your conversation. It is "
+                                            "not addressed to you: do not answer it or take it up, and carry on with "
+                                            "your own task. "))
+        self.assertTrue(shown[0].endswith(os.path.join("w", "context.db") + ", table events, where p_channel = 'c2'."))
 
 
 class BuildTest(ParallelBase):
