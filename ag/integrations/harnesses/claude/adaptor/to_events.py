@@ -59,6 +59,44 @@ AGENT_REASONING = "agent_reasoning"
 #: Every event type to_events makes, and nothing else.
 OUTPUTS = (USER_MESSAGE, AGENT_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT, AGENT_REASONING)
 
+# Claude Code's notes to the model after a response that went wrong -- a safety classifier stopped it,
+# it was cut off mid-stream or at the output limit, its tool call could not be parsed -- or that sends
+# it back to work (a goal check-in): sent in the user's name, as a message of their own. Claude Code
+# 2.1.310 tells them from the user's words by these openings and, the rest, by their whole text; so does
+# this adaptor (RETRY_OPENINGS in HARNESS_MARKERS, RETRY_NOTES in HARNESS_TEXTS).
+RETRY_OPENINGS = ("[structured-output-enforce]", "[projects-reply-gate]",
+                  "You ended the turn without calling SendUserMessage.", "Goal check-in: «")
+_CLASSIFIER = ("Your response above was stopped by a safety classifier — this is not a tool or API error. The rest "
+               "of it was withheld, and tool calls in it that had not finished did not run. Do not produce that "
+               "content again, even reworded.")
+RETRY_NOTES = (
+    "The previous response failed to produce a valid tool call. Please retry the tool call now.",
+    "Your tool call was malformed and could not be parsed. Please retry.",
+    "[Your previous response had no visible output. Please continue and produce a user-visible response.]",
+    "The PermissionDenied hook indicated you may retry this tool call.",
+    "The turn did not end: a tool call in your last message asked to end it, but another call in that message "
+    "failed. Deal with the failure, then finish the turn. The calls that succeeded took effect, so do not repeat them.",
+    _CLASSIFIER,
+    _CLASSIFIER + ' Exception: a tool call whose result reads "Interrupted" was already running when the response '
+    "was stopped; it may have partially or fully completed.",
+    "Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if "
+    "that is where the cut happened. Break remaining work into smaller pieces.",
+    "Output token limit hit while you were still reasoning, before this response produced any text or tool call. "
+    "That reasoning was not kept and is not part of this conversation, so there is nothing to resume. Continue from "
+    "the conversation above: reason much more briefly and produce your answer or next tool call well within the "
+    "output limit.",
+    "[Your previous response reached the output limit with no visible output. Please continue and produce a brief "
+    "user-visible response or tool call right away.]",
+    "Your response was cut off because it exceeded the output token limit. Continue from where you left off. What "
+    "you write next is shown as a separate block below the text so far, so begin at the start of the line, table "
+    "row, list item or sentence that was cut, writing it again in full, and if you were inside a code block or a "
+    "table, open it again first (the same code fence and language, the table's header row). Repeat nothing before "
+    "that point and do not comment on the interruption. Keep going until the response is complete.",
+    "Your response above was cut off mid-stream. Resume directly from where it stops — no apology, no recap. If "
+    "none of it survived, answer the request from the start.",
+    "Your response above was cut off mid-stream and only your next message is delivered. Write the complete "
+    "response again from the start — no apology, no mention of the cut-off.")
+
 # Claude Code's own text, sent in the user's name: a user text block starting with one of these is
 # CONTEXT, not USER_MESSAGE -- the user did not say it. Besides its reminders and command output:
 # its notes on an attachment, put after it (an image read through a tool, shrunk to fit: "[Image:
@@ -70,17 +108,20 @@ OUTPUTS = (USER_MESSAGE, AGENT_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT, AGENT_R
 # session is being continued from a previous conversation that ran out of context. ..."); a skill's
 # instructions, loaded by the Skill tool or by the user's /name ("Base directory for this skill:
 # ..."); a message from another session -- a subagent's report as it hands back ("Another Claude
-# session sent a message:\n<agent-message from=...>"); and its copy for the model of what /context
-# shows ("## Context Usage ...").
+# session sent a message:\n<agent-message from=...>"); its copy for the model of what /context
+# shows ("## Context Usage ..."); a hook's reason for not letting the turn end ("Stop hook feedback:
+# \n..."); the notes of RETRY_OPENINGS; and its note that the user declined its Chrome extension.
 HARNESS_MARKERS = ("<system-reminder>", "<local-command-caveat>", "<local-command-stdout>",
                    "<local-command-stderr>", "<command-name>", "<command-message>", "<command-args>",
                    "Caveat: The messages below were generated by the user while running local commands",
-                   "[Image: original ", "[Image source: ", "[Image could not be processed", "[Image left out:",
-                   "[Image not shown, read it from ", "[Document removed:", "[Request interrupted by user",
-                   "<bash-stdout>", "<bash-stderr>",
+                   "[Image: original ", "[Image: source: ", "[Image source: ", "[Image could not be processed",
+                   "[Image left out:", "[Image not shown, read it from ", "[Document removed:",
+                   "[Request interrupted by user", "<bash-stdout>", "<bash-stderr>",
                    "This session is being continued from a previous conversation that ran out of context",
                    "Base directory for this skill:", "Another Claude session sent a message:", "<agent-message ",
-                   "## Context Usage\n")
+                   "## Context Usage\n", "Stop hook feedback:\n", "TeammateIdle hook feedback:\n",
+                   "TaskCreated hook feedback:\n", "TaskCompleted hook feedback:\n",
+                   "The user declined to install the Claude in Chrome extension") + RETRY_OPENINGS
 SKILL = "Base directory for this skill:"
 # A command the user typed that Claude Code expands into a prompt -- a skill's /name, a command file's:
 # Claude Code sends the line typed as "<command-message>greet</command-message>\n<command-name>/greet
@@ -91,8 +132,8 @@ SKILL = "Base directory for this skill:"
 TYPED_COMMAND = re.compile(r"\s*<command-message>[^<]*</command-message>\s*<command-name>([^<]*)</command-name>"
                            r"\s*(?:<command-args>([\s\S]*?)</command-args>)?\s*$")
 # Claude Code's own text that is a whole block, word for word: its note after a tool search's result,
-# in the message of the results, that the tools found are loaded ("Tool loaded.").
-HARNESS_TEXTS = ("Tool loaded.",)
+# in the message of the results, that the tools found are loaded ("Tool loaded."), and RETRY_NOTES.
+HARNESS_TEXTS = ("Tool loaded.",) + RETRY_NOTES
 
 BLOCK_TYPES = {"text": None, "image": USER_MESSAGE, "document": USER_MESSAGE, "tool_result": TOOL_OUTPUT,
                "tool_use": TOOL_CALL, "server_tool_use": TOOL_CALL, "thinking": AGENT_REASONING,

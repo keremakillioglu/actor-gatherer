@@ -112,6 +112,28 @@ class EventsTest(unittest.TestCase):
         said = {"role": "user", "content": [{"type": "text", "text": "Tool loaded. Now use it"}]}
         self.assertEqual(claude.classify(said), USER_MESSAGE)                         # the user's own words
 
+    def test_claude_code_s_note_after_a_response_that_went_wrong_is_not_the_user_speaking(self):
+        # as Claude Code 2.1.310 sent it after a response a safety classifier stopped (stored in a live gatherer)
+        stopped = ("Your response above was stopped by a safety classifier — this is not a tool or API error. The rest of "
+                   "it was withheld, and tool calls in it that had not finished did not run. Do not produce that content "
+                   "again, even reworded.")
+        sent = [{"role": "user", "content": "check the log"},
+                {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_5", "name": "Bash",
+                                                   "input": {"command": "tail log"}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_5", "content": "ok"},
+                                             {"type": "text", "text": stopped}]}]
+        events = claude.to_events(sent)
+        self.assertEqual([e["type"] for e in events], [USER_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT])
+        self.assertEqual(back.to_messages(events, sent)[-1]["content"], sent[-1]["content"])   # in its place
+        for text in ("Your response above was cut off mid-stream. Resume directly from where it stops — no apology, no "
+                     "recap. If none of it survived, answer the request from the start.",
+                     "Goal check-in: «ship the fix» — keep going.", "Stop hook feedback:\nthe tests still fail",
+                     "[Image: source: /Users/sep/Desktop/Screenshot.png]"):
+            self.assertEqual(claude.classify({"role": "user", "content": [{"type": "text", "text": text}]}), CONTEXT)
+        for text in ("Your response above was stopped by a safety classifier, why?", "Output token limit hit again?"):
+            said = {"role": "user", "content": [{"type": "text", "text": text}]}
+            self.assertEqual(claude.classify(said), USER_MESSAGE)                     # the user's own words
+
     # as Claude Code 2.1.310 sends them (saved from a live session)
     SKILL_TEXT = ("Base directory for this skill: /w/.claude/skills/greet\n\n# Greeting in the house style\n\n"
                   'Reply with exactly: "Ahoy, <name>! Welcome aboard." and nothing else.\n\n\nARGUMENTS: {}')
