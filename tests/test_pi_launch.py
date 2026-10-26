@@ -45,5 +45,14 @@ class Pi(Home):
         self.assertEqual(pi.argv(["pi"], ["install", "npm:y"], self.tmp, {"PI_CODING_AGENT_DIR": self.tmp}),
                          ["pi", "install", "npm:y"])
 
+    def test_a_relative_path_climbs_out_of_a_symlinked_agent_dir_by_its_own_name(self):
+        real = os.path.join(self.tmp, "deep", "er", "real")
+        os.makedirs(os.path.join(real, "agent"))
+        os.symlink(real, os.path.join(self.tmp, "link"))
+        agent = os.path.join(self.tmp, "link", "agent")     # its `..` is link's folder, not deep/er
+        with open(os.path.join(agent, "settings.json"), "w") as fh:
+            json.dump({"packages": [os.path.relpath(pi.REPO, agent)]}, fh)
+        self.assertEqual(pi.installed_in(self.tmp, {"PI_CODING_AGENT_DIR": agent}), os.path.join(agent, "settings.json"))
+
 if __name__ == "__main__":
     unittest.main()
