@@ -157,6 +157,12 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 named `took_over`. A harness's call is refused when
                                                 it is not claimed
     {"op": "locate", "gatherer", "properties", "event_id"} -> {"row"}      (`id` is the request's own)
+    {"op": "latest", "gatherer", "properties", "n"} -> {"events": [{"id", "payload"}, ...]}
+                                                the `n` events last stored with exactly these
+                                                identifying properties, oldest first: where a
+                                                harness that re-sends its whole history, and
+                                                gives its events ids of its own making, picks
+                                                it up (the claude adaptor's Continuity)
     {"op": "init", "gatherer", "event_types"?: [TYPE]} -> {"event_types": [TYPE with its id]}
     {"op": "event_types", "gatherer"} -> {"event_types": [...]}
     {"op": "add_event_type", "gatherer", TYPE's fields} -> {"type_id"}
@@ -580,6 +586,12 @@ class Server:
             if not isinstance(request.get("event_id"), str):
                 return {"error": "no event_id"}
             return self.locate(gatherer, properties, request["event_id"])
+        if op == "latest":
+            n = request.get("n")
+            if not isinstance(n, int) or isinstance(n, bool) or n < 0:
+                return {"error": "no n"}
+            manager = self.factory(gatherer)        # read only, and on every model call: no `init`
+            return {"events": [{"id": i, "payload": p} for i, p in manager.latest(gatherer, properties, n)]}
         if op == "init":
             return self.init(gatherer, request.get("event_types"))
         if op == "event_types":

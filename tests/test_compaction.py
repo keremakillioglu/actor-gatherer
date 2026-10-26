@@ -88,6 +88,8 @@ class Server:
         self.asked = []
 
     async def request(self, op, body=None, timeout=None):
+        if op == "latest":                   # a gatherer with nothing stored yet
+            return {"events": []}
         self.asked.append((op, body))
         if op in ("rewrite", "context", "compaction"):
             return {"context": body["events"], "note": "ok", **({"read_id": len(self.asked)} if op == "rewrite" else {}),

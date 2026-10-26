@@ -82,6 +82,8 @@ class Client:
         self.asked = []
 
     async def request(self, op, body=None, timeout=None):
+        if op == "latest":                   # a gatherer with nothing stored yet
+            return {"events": []}
         self.asked.append((op, body))
         return {}
 
@@ -292,6 +294,8 @@ class HookTest(unittest.IsolatedAsyncioTestCase):
                 self.asked = []
 
             async def request(self, op, body=None, timeout=None):
+                if op == "latest":                   # a gatherer with nothing stored yet
+                    return {"events": []}
                 self.asked.append((op, body))
                 if op != "rewrite":
                     return {}
@@ -327,6 +331,8 @@ class HookTest(unittest.IsolatedAsyncioTestCase):
                 self.asked = []
 
             async def request(self, op, body=None, timeout=None):
+                if op == "latest":                   # a gatherer with nothing stored yet
+                    return {"events": []}
                 self.asked.append((op, body))
                 if op != "rewrite":
                     return {}

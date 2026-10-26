@@ -452,6 +452,8 @@ class FakeClient:
         self.asked = []
 
     async def request(self, op, body=None, timeout=None):
+        if op == "latest":                   # a gatherer with nothing stored yet
+            return {"events": []}
         self.asked.append((op, body))
         return {"context": [{"type": "ag", "name": "earlier", "text": "SUMMARY"}] + body["events"], "note": "ok"}
 
@@ -510,13 +512,15 @@ class HookTest(unittest.TestCase):
 
 
 class StoreClient:
-    """A stand-in for the context manager's server: stores each event once by its id, in order, and
-    answers a rewrite with everything stored -- as a read before any build does."""
+    """A stand-in for the context manager's server: stores each event once by its id, in order, answers a
+    rewrite with everything stored -- as a read before any build does -- and `latest` with the newest stored."""
 
     def __init__(self):
         self.ids, self.events = set(), []
 
     async def request(self, op, body=None, timeout=None):
+        if op == "latest":
+            return {"events": [{"id": e["id"], "payload": e["payload"]} for e in self.events[-body["n"]:]]}
         for e in body["events"]:
             if e["id"] not in self.ids:
                 self.ids.add(e["id"])
@@ -598,6 +602,37 @@ class RepeatsTest(unittest.TestCase):
         stored = len(self.client.events)
         self.call(REMOVED, hook=self.new_hook())                 # no memory of the last request
         self.assertEqual(len(self.client.events), stored)
+
+    def test_a_restarted_hook_carries_on_when_claude_code_rewrote_the_start(self):
+        """Resuming a session, Claude Code sends its notes at the start as they are now (the tools a connector
+        announced mid-session, listed with the others): every id chained from there differs, so a hook that
+        chained from the start stored the whole history again. The stored history's end is found instead."""
+        turns = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(30)]
+        self.call([txt("user", "go"), txt("system", "Tools: a")] + turns)
+        stored = len(self.client.events)
+        resumed = [txt("user", "go"), txt("system", "Tools: a, b")] + turns + [txt("user", "next")]
+        self.call(resumed, hook=self.new_hook())
+        self.assertEqual([e["payload"]["content"][0]["text"] for e in self.client.events[stored:]], ["next"])
+
+    def test_notes_stored_before_the_request_they_followed_are_not_stored_again(self):
+        """The notes after a turn's request are stored before it (request_last); the next call sends them
+        after it, as before: found where Claude Code sends them, by their ids."""
+        first = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(24)] + \
+            [txt("user", "q"), txt("system", "note 1"), txt("system", "note 2")]
+        self.call(first)
+        stored = [e["payload"]["content"][0]["text"] for e in self.client.events]
+        self.assertEqual(stored[-3:], ["note 1", "note 2", "q"])
+        self.call(first + [txt("assistant", "a")], hook=self.new_hook())
+        self.assertEqual([e["payload"]["content"][0]["text"] for e in self.client.events[len(stored):]], ["a"])
+
+    def test_a_repeat_right_after_the_stored_end_is_new(self):
+        """Issue #35 at the stored end: the same words again after it are an event of their own, not the
+        stored one -- told by the ids' links, never by the words alone."""
+        first = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(25)] + [txt("user", "continue")]
+        self.call(first)
+        stored = len(self.client.events)
+        self.call(first + [txt("assistant", "done"), txt("user", "continue")], hook=self.new_hook())
+        self.assertEqual([e["payload"]["content"][0]["text"] for e in self.client.events[stored:]], ["done", "continue"])
 
     def test_history_rewritten_further_back_stores_only_what_is_new(self):
         long = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(40)]
