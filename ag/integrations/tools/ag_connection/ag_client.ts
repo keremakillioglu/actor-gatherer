@@ -2,7 +2,8 @@
  * The harness side's client of the context manager's server, for plugins that
  * run in Node or Bun (ag_client.py is the same for hooks in Python): starts
  * `python -m ag.ag_harness.server` on first use, again if it has exited, sends
- * it one JSON line per request and matches each answer line to its request by id. The protocol is ag/ag_harness/server/__init__.py's; `harness` only
+ * it one JSON line per request and matches each answer line to its request by id,
+ * in whatever order they come (the server answers sessions side by side). The protocol is ag/ag_harness/server/__init__.py's; `harness` only
  * names the server's log.
  *
  * A request never rejects: it resolves with the answer, or with `{error}` when

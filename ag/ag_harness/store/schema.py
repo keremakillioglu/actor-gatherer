@@ -47,7 +47,9 @@ properties only describe it, and keep the values it was first stored with.
 
 import os
 import sqlite3
-from typing import List
+import threading
+from contextlib import contextmanager
+from typing import List, Optional
 
 from ag.ag_interface import property_column
 
@@ -268,29 +270,50 @@ def create(conn: sqlite3.Connection) -> None:
                                "delete it or load the gatherer again")
     conn.executescript(SCHEMA)
     if "text" not in {c[1] for c in conn.execute("PRAGMA table_info(events)")}:
-        conn.execute("ALTER TABLE events ADD COLUMN text TEXT")      # a file from before events had text
+        add_column(conn, "events", "text TEXT")                       # a file from before events had text
     for table in ("events", "_made_items", "_preambles"):            # a file from before counts were set
         if "counted" not in {c[1] for c in conn.execute(f"PRAGMA table_info({table})")}:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN counted INTEGER")
+            add_column(conn, table, "counted INTEGER")
     read_columns = {c[1] for c in conn.execute("PRAGMA table_info(_reads)")}
     for column, kind in (("est_tokens", "INTEGER"), ("real_tokens", "INTEGER"), ("limit_tokens", "INTEGER"),
                          ("preamble_json", "TEXT"), ("sent_tokens", "INTEGER"), ("pid", "INTEGER"),
                          ("pid_started", "TEXT"), ("error_status", "INTEGER"),
                          ("error", "TEXT"), ("answered_at", "TEXT"), ("run", "TEXT")):                           # a file from before reads had them
         if column not in read_columns:
-            conn.execute(f"ALTER TABLE _reads ADD COLUMN {column} {kind}")
+            add_column(conn, "_reads", f"{column} {kind}")
     if "yields" not in {c[1] for c in conn.execute("PRAGMA table_info(_open)")}:     # a file from before holders yielded
-        conn.execute("ALTER TABLE _open ADD COLUMN yields INTEGER NOT NULL DEFAULT 0")
+        add_column(conn, "_open", "yields INTEGER NOT NULL DEFAULT 0")
     pending_columns = {c[1] for c in conn.execute("PRAGMA table_info(_pending)")}
     if "stop" not in pending_columns:                                # a file from before pending kept it
-        conn.execute("ALTER TABLE _pending ADD COLUMN stop TEXT")
+        add_column(conn, "_pending", "stop TEXT")
     for name in property_names(conn):                                # a file from before _pending: its properties
         if property_column(name) not in pending_columns:
-            conn.execute(f"ALTER TABLE _pending ADD COLUMN {property_column(name)}")
+            add_column(conn, "_pending", property_column(name))
     if "identifies" not in {c[1] for c in conn.execute("PRAGMA table_info(event_type_properties)")}:
-        conn.execute("ALTER TABLE event_type_properties ADD COLUMN identifies INTEGER NOT NULL DEFAULT 0")
+        add_column(conn, "event_type_properties", "identifies INTEGER NOT NULL DEFAULT 0")
     if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'events_id'").fetchone() is None:
-        index(conn, property_names(conn))            # a new file: over no property yet
+        with writing(conn):                          # a new file: over no property yet
+            index(conn, property_names(conn))
+
+
+def add_column(conn: sqlite3.Connection, table: str, column: str) -> None:
+    """`ALTER TABLE table ADD COLUMN column`, unless another connection has just added it."""
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc):
+            raise
+
+
+@contextmanager
+def writing(conn: sqlite3.Connection):
+    """A transaction that holds the database's write lock from its start (BEGIN IMMEDIATE), committed
+    at the end: what it reads of the schema no other connection changes before it writes. Within a
+    transaction already begun, that one."""
+    with conn:
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        yield conn
 
 
 def property_names(conn: sqlite3.Connection) -> List[str]:
@@ -330,22 +353,29 @@ def index(conn: sqlite3.Connection, names: List[str]) -> None:
             raise OutdatedDatabase(f"{file}: holds the same event more than once by its identifying properties "
                                    f"(written before they were declared); delete the gatherer") from exc
     every = "".join(f"ifnull({property_column(n)}, ''), " for n in names)
-    conn.execute("DROP INDEX IF EXISTS _reads_properties")
-    conn.execute(f"CREATE INDEX _reads_properties ON _reads ({every}read_id)")
+    sql = f"CREATE INDEX _reads_properties ON _reads ({every}read_id)"
+    found = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = '_reads_properties'").fetchone()
+    if found is None or found[0] != sql:
+        conn.execute("DROP INDEX IF EXISTS _reads_properties")
+        conn.execute(sql)
 
 
 def add_properties(conn: sqlite3.Connection, names) -> None:
     """A column in each of PROPERTY_TABLES for every one of `names` the gatherer
-    has none for yet, and the indexes over them all. Its own transaction."""
-    have = property_names(conn)
-    new = [n for n in dict.fromkeys(names) if n not in have]
-    if not new:
+    has none for yet, and the indexes over them all. Its own transaction, which
+    looks at the columns again once it holds the write lock (`writing`): another
+    connection may have just added them."""
+    names, have = list(dict.fromkeys(names)), property_names(conn)
+    if all(n in have for n in names):
         return
-    with conn:
+    with writing(conn):
+        have = property_names(conn)
+        new = [n for n in names if n not in have]
         for name in new:
             for table in PROPERTY_TABLES:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {property_column(name)}")
-        index(conn, have + new)
+        if new:
+            index(conn, have + new)
 
 
 def connect(gatherer_id: str) -> sqlite3.Connection:
@@ -368,17 +398,34 @@ def connect(gatherer_id: str) -> sqlite3.Connection:
     return conn
 
 
-# One open connection per database for the life of the process. `insert` is
-# called once per event, and the server inserts every event of a request on
-# every model call, so opening a connection (and re-running the schema) each time
-# would dominate its cost.
-_CONNECTIONS = {}
+# One open connection per database for each thread, kept until the thread ends
+# (`release`). `insert` is called once per event, and the server inserts every
+# event of a request on every model call, so opening a connection (and re-running
+# the schema) each time would dominate its cost. Per thread, as a connection is
+# used by one thread at a time: the server answers each channel's requests on a
+# thread of its own, side by side (ag/ag_harness/server/).
+_LOCAL = threading.local()
 
 
 def connection(gatherer_id: str) -> sqlite3.Connection:
-    """The process's connection to the gatherer's database, opened on first use."""
+    """This thread's connection to the gatherer's database, opened on first use."""
     path = db_path(gatherer_id)
-    conn = _CONNECTIONS.get(path)
+    connections = getattr(_LOCAL, "connections", None)
+    if connections is None:
+        connections = _LOCAL.connections = {}
+    conn = connections.get(path)
     if conn is None:
-        conn = _CONNECTIONS[path] = connect(gatherer_id)
+        conn = connections[path] = connect(gatherer_id)
     return conn
+
+
+def opened(gatherer_id: str) -> Optional[sqlite3.Connection]:
+    """This thread's connection to the gatherer's database, if `connection` has opened one."""
+    return (getattr(_LOCAL, "connections", None) or {}).get(db_path(gatherer_id))
+
+
+def release() -> None:
+    """Close this thread's connections (`connection`): what a thread that ends does."""
+    connections, _LOCAL.connections = getattr(_LOCAL, "connections", None) or {}, {}
+    for conn in connections.values():
+        conn.close()
