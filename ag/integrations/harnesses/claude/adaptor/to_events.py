@@ -216,10 +216,11 @@ def request_last(events: List[dict], expansions: frozenset = frozenset()) -> Lis
 def compacted_opening(items: list, typed=None) -> set:
     """The pieces Claude Code sends with a compacted history that are not the conversation (by index): when the history
     opens with its summary (`COMPACTED`), the summary and every note of its own up to the first reply to the user's
-    first words after it -- its reminders and environment notes again, the /compact command's lines, the files it read
+    first words after it, or to a note queued in their name that opens the turn instead (another session's message) --
+    its reminders and environment notes again, the /compact command's lines, the files it read
     before restored ("Called the Read tool ..."), its tools announced again (COMPACTION_REPEAT). The gatherer holds the
     history they stand for, and built in its place; what the conversation said there (the reply it kept, the user's
-    words, the prompt a command they typed expands to) stays. Nothing, for a history that does not open with the
+    words, the note that opened the turn, the prompt a command they typed expands to) stays. Nothing, for a history that does not open with the
     summary."""
     return {i for i, p in enumerate(HARNESS.read(items)) if p.kind == Kind.COMPACTION_REPEAT or p.detail.get("opens")}
 
