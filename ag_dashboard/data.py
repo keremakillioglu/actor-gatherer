@@ -77,7 +77,6 @@ import json
 import os
 import re
 import sqlite3
-import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -86,7 +85,7 @@ from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
 from . import answers, avatars, hiding, live, saved, sessions
 import harness_kit
-from harness_kit import Kind, claude as claude_rules, codex as codex_rules
+from harness_kit import Kind, codex as codex_rules
 from harness_kit.base import output_of as _output  # noqa: F401 - a tool result's words, as files.py reads them
 from harness_kit.shell import CODE_MODE, script_calls
 
