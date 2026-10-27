@@ -36,15 +36,19 @@ class StoreTest(unittest.TestCase):
         self.type_id = self.conn.execute("SELECT event_type_id FROM event_types WHERE name = 'user_message'").fetchone()[0]
         self.tok = SimpleNamespace(count=lambda text: len(text.split()))
 
-    def add(self, event_id, text):
-        return store.insert(self.conn, Event(self.type_id, {"text": text}, id=event_id, text=text), self.tok)
+    def add(self, event_id, text, kept=None):
+        return store.insert(self.conn, Event(self.type_id, {"text": text}, id=event_id, text=text), self.tok, kept=kept)
 
     def test_withdrawn_events_are_in_no_read_until_sent_again(self):
         a, b, c = self.add("a", "first"), self.add("b", "taken back"), self.add("c", "a note after it")
         self.assertEqual(store.withdraw(self.conn, [b, c, c, 999]), 2)        # each once; no such row: none
         self.assertEqual([r.payload["text"] for r in store.rows(self.conn)], ["first"])
         self.assertEqual([i for i, _ in store.latest(self.conn, {}, 10)], ["a"])
-        self.assertIsNone(self.add("b", "taken back"))                       # sent again: stored, and kept again
+        kept = []
+        self.assertIsNone(self.add("b", "taken back", kept))                 # sent again: stored, and kept again
+        self.assertEqual(kept, [b])                                          # its row, for the caller to withdraw
+        self.add("a", "first", kept)
+        self.assertEqual(kept, [b])                                          # one never taken back: not
         self.assertEqual([r.payload["text"] for r in store.rows(self.conn)], ["first", "taken back"])
         self.assertEqual([i for i, _ in store.latest(self.conn, {}, 10)], ["a", "b"])
         self.assertEqual(store.withdraw(self.conn, [b]), 1)                  # and may be taken back again
@@ -117,6 +121,19 @@ class HookTest(unittest.TestCase):
         sent, _ = self.call(first + [user("And 3+3?")])
         self.assertEqual(sent[-2:], ["4", "And 3+3?"])
         self.assertNotIn("Now write a long essay.", sent)
+
+    def test_a_message_taken_back_twice_is_left_out(self):
+        """Esc before the answer, Enter on the message Claude Code put back, Esc again: sent again, it was kept again,
+        and the second hang-up withdrew nothing -- the next message was taken for it, and the model answered it."""
+        first = [user(*REMINDERS, "Reply with just the word hello."), NOTES, user("hello")]
+        first[-1]["role"] = "assistant"
+        self.call(first)
+        for _ in range(2):
+            _, req = self.call(first + [user("Write a 300-word story about a lighthouse.")])
+            self.hang_up(req)
+        sent, _ = self.call(first + [user("Reply with just the word fresh.")])
+        self.assertEqual(sent[-2:], ["hello", "Reply with just the word fresh."])
+        self.assertNotIn("Write a 300-word story about a lighthouse.", sent)
 
     def test_a_message_claude_code_kept_and_sent_again_stays(self):
         """Esc once some of the answer came: Claude Code keeps the message, and sends it again with the next."""

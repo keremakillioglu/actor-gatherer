@@ -308,10 +308,14 @@ def locate(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], event
     return row[0] if row and row[0] is not None else None
 
 
-def insert(conn: sqlite3.Connection, event: Event, tokenizer: Tokenizer, spec_: Optional[Spec] = None) -> Optional[int]:
+def insert(conn: sqlite3.Connection, event: Event, tokenizer: Tokenizer, spec_: Optional[Spec] = None, *,
+           kept: Optional[List[int]] = None) -> Optional[int]:
     """Store one event in its own transaction. Returns its row id, or None if
     it was already stored (same id, same identifying properties). An event without an
     id is always stored. `spec_`: the gatherer's (`spec`), if the caller keeps it.
+    `kept`, if given, gets the rows of an event the harness took back (`withdraw`)
+    and now sends again: in reads again, and for the caller to withdraw again
+    should the harness take it back once more.
 
     A re-sent event is recognised by its id BEFORE it is serialized and
     counted: a caller inserts the whole conversation on every model call, and
@@ -330,7 +334,9 @@ def insert(conn: sqlite3.Connection, event: Event, tokenizer: Tokenizer, spec_: 
     sp = spec_ or spec(conn)
     values = property_values(event, sp)
     if event.id and stored(conn, sp, values, event.id):
-        sent_again(conn, sp, values, event.id)          # one the harness took back, sent again: kept again
+        back = sent_again(conn, sp, values, event.id)   # one the harness took back, sent again: kept again
+        if kept is not None:
+            kept.extend(back)
         return None
     row_values = row_of(event, values, tokenizer)
     try:
