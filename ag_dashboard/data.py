@@ -150,6 +150,7 @@ FACTS_READ = 400               # the newest of an actor's facts read for its sta
 MESSAGES_READ = 200            # the newest of its messages' facts read for what the user wrote as it worked
 SENT_SECONDS = 30.0            # a message sent from the queue: shown as written until ag stores it, at most this long
 PROMPT_SECONDS = 120.0         # one sent between turns: the same
+CHAT_SECONDS = 60.0            # one sent from Chat the harness has not had: shown as pending at most this long
 #: SQL: an event (`e`) that is the conversation, not a record.
 NOT_RECORD = ("e.event_type_id NOT IN (SELECT event_type_id FROM event_types WHERE name IN ("
               + ", ".join(f"'{t}'" for t in RECORDS) + "))")
@@ -326,10 +327,11 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
         if offer and s.get("terminal") and a["status"] == IDLE and (s.get("since") or 0) <= offer["at"] \
                 and not (s.get("typed") and s["typed"] >= offer["at"]):     # restarted since, nor anything typed there
             a["asking"], a["status"] = offer, ASKING
-        if s.get("answer"):                      # the last answer typed from the page: what the harness made of it
-            result = answer_result(s["gatherer"], a["channel"], s["answer"]["call"])
-            a["answer"] = {**s["answer"], "result": _clip(result, ASK_CHARS) if result else None,
-                           "recorded": answers.recorded(result, s["answer"]["expect"])}
+        given = s.get("answer") or _answer_given(s["gatherer"], a["channel"])   # kept, should the dashboard restart
+        if given:                                # the last answer typed from the page: what the harness made of it
+            result = answer_result(s["gatherer"], a["channel"], given["call"])
+            a["answer"] = {**given, "result": _clip(result, ASK_CHARS) if result else None,
+                           "recorded": answers.recorded(result, given.get("expect") or [])}
         if a.get("holder") and paths.runs_under(a["holder"]["pid"], s.get("pid")):
             a["holder"]["dashboard"] = True          # the dashboard's own agent or terminal (or a process under it)
         a["created"] = min((x for x in (a["created"], _seconds(s["created_at"])) if x), default=None)
@@ -937,11 +939,18 @@ def typed(conn, channel: str, now: Optional[float] = None) -> List[dict]:
     sent, joins}], oldest first -- the messages queued and not sent yet (`sent` None), the ones sent from the queue in
     the last SENT_SECONDS (`sent`: when; ag may not have stored them yet), `joins` when sent as part of the turn it was
     written in (mid-turn, or held until it ended), not as the next turn's first; and the messages sent between turns
-    in the last PROMPT_SECONDS, each the next turn's first (`sent` its `at`). Each in the user's words."""
+    in the last PROMPT_SECONDS, each the next turn's first (`sent` its `at`). Each in the user's words. And a message
+    sent from Chat (the dashboard's `chat_sent`) that the harness has not had yet -- no message of its words queued,
+    sent or stored since -- in the last CHAT_SECONDS (`chat`: True, `sent` None)."""
     now = time.time() if now is None else now
     queued: Dict[str, dict] = {}
-    prompts = []
-    for t, f in _facts(conn, channel, ("message_queued", "message_sent", "message_withdrawn"), MESSAGES_READ):
+    prompts, chats, heard = [], [], []
+    for t, f in _facts(conn, channel, ("message_queued", "message_sent", "message_withdrawn", "chat_sent"), MESSAGES_READ):
+        if t == "chat_sent" and f.get("text") and f.get("at") is not None and now - f["at"] <= CHAT_SECONDS:
+            chats.append(f)
+            continue
+        if t in ("message_queued", "message_sent"):
+            heard.append((f.get("at") or 0, " ".join((f.get("words") or f.get("text") or "").split())))
         if t == "message_queued" and f.get("queued"):
             queued[f["queued"]] = {"text": f.get("words") or f.get("text") or "", "at": f.get("at"), "sent": None, "joins": False}
         elif t == "message_withdrawn":
@@ -952,7 +961,48 @@ def typed(conn, channel: str, now: Optional[float] = None) -> List[dict]:
             prompts.append({"text": f.get("words") or f.get("text") or "", "at": f["at"], "sent": f["at"], "joins": False})
     got = [q for q in queued.values() if q["sent"] is None or now - q["sent"] <= SENT_SECONDS]
     got += [p for p in prompts if now - p["at"] <= PROMPT_SECONDS]
+    if chats:                                        # the user's messages ag stored since: had, if not by the record
+        words = "e.p_words" if "p_words" in _columns(conn, "events") else "NULL"
+        heard += [(_seconds(at) or 0, " ".join((said or text or "").split())) for at, said, text in conn.execute(
+            f"SELECT e.inserted_at, {words}, e.text FROM events e JOIN event_types t ON {BY_CHANNEL} WHERE "
+            f"ifnull(e.{CHANNEL}, '') = ? AND t.name = 'user_message' ORDER BY e.row_id DESC LIMIT 20", (channel,))]
+    for c in chats:
+        said = " ".join(c["text"].split())
+        if not any(at >= c["at"] - 1 and (w == said or said in w) for at, w in heard):
+            got.append({"text": c["text"], "at": c["at"], "sent": None, "joins": False, "chat": True})
     return sorted(got, key=lambda q: q["at"] or 0)
+
+
+def answer_of(conn, channel: str) -> Optional[dict]:
+    """The newest answer the dashboard gave what the harness asks (its `answer_given`): {call, summary, expect, at}."""
+    got = _facts(conn, channel, ("answer_given",), 1)
+    return {k: got[0][1].get(k) for k in ("call", "summary", "expect", "at")} if got else None
+
+
+def _answer_given(gatherer: str, channel: str) -> Optional[dict]:
+    conn = _connect(gatherer)
+    if conn is None:
+        return None
+    try:
+        return answer_of(conn, channel) if CHANNEL in _columns(conn, "events") else None
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
+def typed_at(gatherer: str, channel: str) -> Optional[float]:
+    """When keys were last typed into the session's terminal from a page, as the dashboard kept it (`terminal_input`)."""
+    conn = _connect(gatherer)
+    if conn is None:
+        return None
+    try:
+        got = _facts(conn, channel, ("terminal_input",), 1)
+        return got[0][1].get("at") if got else None
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
 
 
 def meanwhile(conn, channel: str) -> List[dict]:

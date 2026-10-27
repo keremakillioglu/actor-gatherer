@@ -298,6 +298,15 @@ class RecordedTest(GathererBase):
                   event("tool_output", {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": result}]}, result)])
         self.assertTrue(self.actor(sent2)["answer"]["recorded"])
 
+    def test_kept_in_the_gatherer_it_outlasts_the_dashboard_that_typed_it(self):
+        sent = {"call": "t1", "summary": "Which color? → Blue", "expect": ['"Which color?"="Blue"'], "at": time.time()}
+        self.add([("answer_given", {"at": sent["at"], **{k: sent[k] for k in ("call", "summary", "expect")}}, None)])
+        result = 'Your questions have been answered: "Which color?"="Blue".'
+        self.add([call("t1", "AskUserQuestion", {}),
+                  event("tool_output", {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": result}]}, result)])
+        got = self.actor(None)["answer"]                                       # the session has none: restarted since
+        self.assertEqual((got["call"], got["summary"], got["recorded"]), ("t1", "Which color? → Blue", True))
+
 
 @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
 class TypedTest(SessionsBase):

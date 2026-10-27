@@ -6010,7 +6010,9 @@ function pendingTalk(info, h) {
   for (let i = sentHere.length - 1; i >= 0; i--)
     if (sentHere[i].key === k && heardCount(h, sentHere[i].text) > sentHere[i].base) sentHere.splice(i, 1);
   const mine = sentHere.filter((m) => m.key === k);
-  const list = [...h.typed.filter((q) => q.sent === null).map((q) => q.text), ...h.queued, ...mine.map((m) => m.text)];
+  const list = [...h.typed.filter((q) => q.sent === null && !q.chat).map((q) => q.text), ...h.queued, ...mine.map((m) => m.text)];
+  for (const q of h.typed)            // sent from Chat, here or elsewhere, and not had yet (its `chat_sent`): once
+    if (q.chat && q.sent === null && !list.includes(q.text)) list.push(q.text);
   if (!list.length) return null;
   const unseen = mine.some((m) => Date.now() - m.at > UNSEEN_MS);
   return el("div", { class: "fl-pending" }, ...list.map((text) =>

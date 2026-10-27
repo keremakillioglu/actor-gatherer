@@ -101,7 +101,7 @@ from urllib.parse import urlsplit
 import harness_kit
 from harness_kit.codex import PERMISSIONS as CODEX_PERMISSIONS
 
-from . import answers, home
+from . import actions, answers, home
 
 try:                                    # a terminal needs a pseudo-terminal: Unix only
     import fcntl
@@ -648,7 +648,13 @@ class Sessions:
         """The message to the session: typed into its terminal, if one is open; else, as `chat_mode` says, its
         terminal opened (`cols` x `rows`, `fullscreen` as `terminal` takes it) with the message its first
         prompt, or a turn of its agent -- now, or, while one runs, after it -- the agent started if it is not
-        running. A turn of the agent's running or waiting takes it in either mode. The session as `list` has it."""
+        running. A turn of the agent's running or waiting takes it in either mode. The session as `list` has it;
+        the message kept in its gatherer as sent from Chat (actions.py's `chat_sent`)."""
+        got = self._send(session_id, text, cols, rows, fullscreen)
+        actions.chat_sent(got.get("gatherer"), got.get("session_id"), (text or "").strip())
+        return got
+
+    def _send(self, session_id: str, text: str, cols: int, rows: int, fullscreen: bool) -> dict:
         text = (text or "").strip()
         if not text:
             raise SessionError("an empty message")
@@ -1232,6 +1238,8 @@ class Sessions:
             t.typed = time.time()
             t.stopped = t.typed if data in STOP_KEYS else 0.0
             t.drafted = drafted(t.drafted, REPORTS.sub("", data))
+            if not SHELL_ID.fullmatch(session_id):     # kept in its gatherer (actions.py's `terminal_input`)
+                actions.terminal_input((self._row(session_id) or {}).get("gatherer"), session_id, t.typed)
         self._write(t, data.encode("utf-8"))
 
     def rename(self, session_id: str, command: str) -> bool:
@@ -1279,7 +1287,9 @@ class Sessions:
                 raise SessionError("the dashboard does not run this session's terminal: answer it in the one that does")
             if t.answering:
                 raise SessionError("an answer is being typed into it already")
-            if t.typed and ask.get("at") and t.typed >= ask["at"]:
+            from . import data                       # data imports this module
+            typed = max(t.typed or 0, data.typed_at((self._row(session_id) or {}).get("gatherer") or "", session_id) or 0)
+            if typed and ask.get("at") and typed >= ask["at"]:      # here, or as the gatherer kept it (terminal_input)
                 raise SessionError("something was typed into its terminal since it asked: finish answering there")
             if ask.get("harness") == "codex" and ask.get("at") and t.since > ask["at"]:
                 raise SessionError("its terminal opened after it asked, and does not ask it: answer in a message")
@@ -1289,6 +1299,7 @@ class Sessions:
             self.answered[session_id] = sent
             t.answering = True
             gatherer = (self._row(session_id) or {}).get("gatherer")
+        actions.answer_given(gatherer, session_id, sent)        # kept in its gatherer
         threading.Thread(target=self._keys, args=(t, keys), daemon=True).start()
         self._changed(gatherer, session_id)
         return sent

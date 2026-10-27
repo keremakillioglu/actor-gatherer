@@ -102,7 +102,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import harness_kit
 
-from . import avatars, data, files, hiding, history, home, live, monitor, naming, saved, seen, sessions, settings
+from . import actions, avatars, data, files, hiding, history, home, live, monitor, naming, saved, seen, sessions, settings
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -552,6 +552,8 @@ class Server(ThreadingHTTPServer):
         self.hub.on_llm = self.calls.changed
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         super().__init__(address, handler(self.calls, self.hub, self.sessions))
+        self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
+        actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
         self.rest = saved.Rest(self.sessions, self.hub.shown)
@@ -560,6 +562,8 @@ class Server(ThreadingHTTPServer):
         for part in (self.listener, self.fallback, self.rest):
             if part is not None:
                 part.close()
+        if self.keeps_actions:
+            actions.ENABLED = False
         super().server_close()
         self.sessions.close()
 
