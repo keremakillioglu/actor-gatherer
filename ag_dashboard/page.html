@@ -4148,8 +4148,8 @@ function chatCard(info) {
     ...[viewSwitcher(view)].filter(Boolean),
     el("div", { class: "side-btns" },
       SNAPSHOT ? null : el("button", { type: "button", class: "details-btn", "aria-expanded": edShown() ? "true" : "false", "aria-label": "Editor",
-        title: "Editor, at this actor's working directory: files edited live, above the actors' views -- with everyone who has a file open, and what the actors write to them as it lands. Closed by its ×",
-        onclick: () => setEditor(true, edActorDir()) }, strokeIcon(ICONS.code, 16)),
+        title: "Editor, at this actor's work -- the folder holding the files it changed lately, else its working directory: files edited live, above the actors' views -- with everyone who has a file open, and what the actors write to them as it lands. Closed by its ×",
+        onclick: edAtActor }, strokeIcon(ICONS.code, 16)),
       el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false", "aria-label": "Details",
         title: "Details: what ag saw and did for this actor (its context, calls, history and builds), and the history's other views",
         onclick: () => setDetails(!state.details) }, strokeIcon(ICONS.panel, 16)))];
@@ -5966,7 +5966,8 @@ function barActs() {
   return el("div", { class: "fl-acts", role: "group", "aria-label": "This pane" },
     ...[...CHAT_VIEWS.values()].filter((v) => !v.more || v.id === now).map((v) =>
       act(v.name, v.description || v.name, v.icon ? strokeIcon(v.icon, 14) : v.name.slice(0, 1), () => setChatView(v.id), v.id === now)),
-    act("Editor", "Editor: this actor's working directory in it", strokeIcon(ICONS.code, 14), () => setEditor(true, edActorDir())),
+    act("Editor", "Editor: this actor's work in it -- the folder holding the files it changed lately, else its working directory",
+      strokeIcon(ICONS.code, 14), edAtActor),
     act("Details", "Details: what ag saw and did for this actor, and the history's other views", strokeIcon(ICONS.panel, 14),
       () => setDetails(!state.details), !!state.details),
     act("Close this pane", "Close this pane", "×", () => $("pane-close").click(), null, "close"));
@@ -7969,6 +7970,19 @@ function setEditor(open, dir = null) {
 }
 // The selected actor's working directory (this page's: a pane's, in its frame).
 const edActorDir = () => { const info = selectedInfo(); return (info && (info.cwd || (info.session && info.session.cwd))) || null; };
+// The Editor opened by a pane's button, at the actor's work: the folder holding the files it changed lately -- in its
+// latest turn that changed any, and the last few minutes; not by git, nor its scratch files (editor.place) -- else its
+// working directory.
+async function edAtActor() {
+  const cwd = edActorDir();
+  let dir = null;
+  if (state.selected && !isShell(state.selected[1])) {
+    const [gatherer, channel] = state.selected;
+    try { dir = (await get(`/api/edit/place?${new URLSearchParams({ gatherer, channel, cwd: cwd || "" })}`)).dir; }
+    catch (e) { /* its working directory */ }
+  }
+  setEditor(true, dir || cwd);
+}
 if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor };
 const edCloseBtn = () => el("button", { type: "button", class: "ed-close", title: "Close the editor", "aria-label": "Close the editor",
   onclick: () => setEditor(false) }, "×");

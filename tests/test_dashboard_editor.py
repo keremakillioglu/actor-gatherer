@@ -562,6 +562,136 @@ class WritersTest(unittest.TestCase):
         self.assertEqual([w["channel"] for w in got["src"]], ["c2", "c1"])
 
 
+def asked(text):
+    return ("user_message", {"role": "user", "content": [{"type": "text", "text": text}]})
+
+
+def bash(cid, command):
+    return ("tool_call", {"role": "assistant", "content": [{"type": "tool_use", "id": cid, "name": "Bash", "input": {"command": command}}]})
+
+
+class PlaceTest(unittest.TestCase):
+    """Where an actor's work is, the Editor opened from its pane shows: the folder holding all the files it changed
+    lately -- in its latest turn that changed any, and the last few minutes -- but not by git."""
+
+    def setUp(self):
+        import sqlite3
+        from ag_dashboard import files, home as dashboard_home
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        top = os.path.realpath(self.tmp.name)
+        self.saved, dashboard_home.HOME = dashboard_home.HOME, os.path.join(top, "home")
+        self.addCleanup(setattr, dashboard_home, "HOME", self.saved)
+        self.work, self.scratch, self.claude = (os.path.join(top, n) for n in ("work", "scratch", "claude"))
+        for d in ("src/app", "src/lib", "docs"):
+            os.makedirs(os.path.join(self.work, d))
+        # the test's own folder is in the system's temporary one: only `scratch` is, here
+        for patcher in (mock.patch.object(files, "TEMPORARY", (self.scratch,)), mock.patch.object(files, "HARNESS_FOLDERS", (self.claude,))):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        os.makedirs(os.path.join(dashboard_home.HOME, "gatherers", "g"))
+        self.conn = sqlite3.connect(os.path.join(dashboard_home.HOME, "gatherers", "g", "context.db"))
+        self.addCleanup(self.conn.close)
+        self.conn.executescript("""CREATE TABLE event_types (event_type_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT);
+            CREATE TABLE events (row_id INTEGER PRIMARY KEY, inserted_at TEXT NOT NULL, event_id TEXT, event_type_id INTEGER NOT NULL,
+              payload_json TEXT NOT NULL, tokens INTEGER NOT NULL, text TEXT, counted INTEGER, p_channel);""")
+
+    def add(self, channel: str, *events, ago: float = 3600.0) -> None:
+        """Events of `channel`, after those there, stored `ago` seconds back: (type, payload), each."""
+        from datetime import datetime, timezone
+        at = datetime.fromtimestamp(time.time() - ago, timezone.utc).isoformat()
+        for typ, payload in events:
+            got = self.conn.execute("SELECT event_type_id FROM event_types WHERE name = ?", (typ,)).fetchone()
+            tid = got[0] if got else self.conn.execute("INSERT INTO event_types (name) VALUES (?)", (typ,)).lastrowid
+            self.conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, p_channel) VALUES (?, ?, ?, 0, ?)",
+                              (at, tid, json.dumps(payload), channel))
+        self.conn.commit()
+
+    def touched(self, channel: str, *changes, call: str = "t", ago: float = 3600.0) -> None:
+        """A call's changes, as ag's hook records them: (path, how), each."""
+        self.add(channel, *[("file_touched", {"call": call, "path": p, "how": how}) for p, how in changes], ago=ago)
+
+    def test_the_folder_holding_all_its_changes(self):
+        w = self.work
+        self.touched("c1", (f"{w}/src/app/a.py", "modified"), (f"{w}/src/lib/b.py", "created"), (f"{w}/src/lib/c.py", "deleted"),
+                     (f"{w}/docs/d.md", "read"), (f"{w}/docs/e.md", "hit"), (None, None))    # a read is no change
+        self.touched("c2", (f"{w}/docs/x.md", "modified"))                                   # another actor's
+        self.assertEqual(editor.place("g", "c1", w), os.path.join(w, "src"))
+        self.assertEqual(editor.place("g", "c2", w), os.path.join(w, "docs"))
+
+    def test_a_temporary_folder_ag_s_home_or_a_harness_s_own_is_not_the_work(self):
+        from ag_dashboard import home as dashboard_home
+        w = self.work
+        self.touched("c1", (f"{w}/src/app/a.py", "modified"), (f"{self.scratch}/notes.md", "created"),
+                     (f"{dashboard_home.HOME}/gatherers/g/context.db", "modified"),
+                     (f"{self.claude}/projects/-work/c1.jsonl", "modified"), (f"{self.claude}/projects/-work/memory/m.md", "created"))
+        self.assertEqual(editor.place("g", "c1", w), os.path.join(w, "src", "app"))
+
+    def test_under_its_working_directory_a_temporary_folder_is_its_work(self):
+        project = os.path.join(self.scratch, "project")
+        os.makedirs(os.path.join(project, "src"))
+        self.touched("c1", (f"{project}/src/a.py", "modified"), (f"{project}/README.md", "modified"),
+                     (f"{self.scratch}/other/notes.md", "created"))
+        self.assertEqual(editor.place("g", "c1", project), project)
+
+    def test_a_folder_since_removed_gives_the_nearest_still_there(self):
+        self.touched("c1", (f"{self.work}/src/gone/deeper/a.py", "deleted"))
+        self.assertEqual(editor.place("g", "c1", self.work), os.path.join(self.work, "src"))
+
+    def test_none_without_a_change_counted(self):
+        self.touched("c1", (f"{self.work}/src/app/a.py", "read"), (f"{self.scratch}/notes.md", "created"))
+        self.assertIsNone(editor.place("g", "c1", self.work))
+        self.assertIsNone(editor.place("g", "nobody", self.work))
+        self.assertIsNone(editor.place("no such gatherer", "c1", self.work))
+
+    def test_what_git_changed_is_not_its_work_but_what_the_command_names(self):
+        from ag_dashboard import files
+        w = self.work
+        self.add("c1", ("model_call", {"kind": "turn", "harness": "claude"}), asked("pull, then fix the docs"),
+                 bash("g1", f"cd {w} && git status --short; git pull -q origin main > docs/pull.log 2>&1"))
+        self.touched("c1", (f"{w}/src/app/a.py", "modified"), (f"{w}/src/lib/b.py", "created"), (f"{w}/docs/pull.log", "created"), call="g1")
+        self.add("c1", bash("b1", f"cd {w} && git status --short && sed -i '' 's/a/b/' docs/x.md"))   # git changing nothing
+        self.touched("c1", (f"{w}/docs/x.md", "modified"), call="b1")
+        self.assertEqual(files.lately_changed("g", "c1", w), [f"{w}/docs/pull.log", f"{w}/docs/x.md"])
+        self.assertEqual(editor.place("g", "c1", w), os.path.join(w, "docs"))
+
+    def test_a_change_no_call_names_is_not_its_work(self):
+        w = self.work
+        self.add("c1", ("file_touched", {"call": "e1", "path": f"{w}/docs/x.md", "how": "modified", "named": True}),
+                 ("file_touched", {"call": "b1", "path": f"{w}/src/app/a.py", "how": "modified", "named": False}))  # changed meanwhile
+        self.assertEqual(editor.place("g", "c1", w), os.path.join(w, "docs"))
+
+    def test_its_latest_turn_that_changed_files(self):
+        w = self.work
+        self.add("c1", asked("fix a"))
+        self.touched("c1", (f"{w}/src/app/a.py", "modified"), call="t1")
+        self.add("c1", asked("now b"))
+        self.touched("c1", (f"{w}/src/lib/b.py", "modified"), (f"{w}/src/lib/c.py", "created"), call="t2")
+        self.add("c1", asked("thanks"))                                                       # a turn that changed none
+        self.assertEqual(editor.place("g", "c1", w), os.path.join(w, "src", "lib"))
+
+    def test_and_what_it_changed_in_the_last_minutes(self):
+        w = self.work
+        self.add("c1", asked("write the docs"))
+        self.touched("c1", (f"{w}/docs/d.md", "created"), call="t1")                          # an hour ago
+        self.add("c1", asked("fix a"), ago=300)
+        self.touched("c1", (f"{w}/src/app/a.py", "modified"), call="t2", ago=290)
+        self.add("c1", asked("now b"), ago=60)
+        self.touched("c1", (f"{w}/src/lib/b.py", "modified"), call="t3", ago=50)
+        self.assertEqual(editor.place("g", "c1", w), os.path.join(w, "src"))
+
+    def test_the_page_asks_the_server(self):
+        from ag_dashboard import server
+        self.touched("c1", (f"{self.work}/src/app/a.py", "modified"), (f"{self.work}/src/lib/b.py", "modified"))
+        httpd = server.serve("127.0.0.1", 0, live_updates=False)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(httpd.shutdown)
+        q = urllib.parse.urlencode({"gatherer": "g", "channel": "c1", "cwd": self.work})
+        got = json.load(urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_port}/api/edit/place?{q}", timeout=10))
+        self.assertEqual(got, {"dir": os.path.join(self.work, "src")})
+
+
 @unittest.skipIf(Doc is None, "pycrdt is not installed")
 class ServerTest(unittest.TestCase):
     """The pages' side: a file opened by a stream, edited and saved by POSTs, through the dashboard's server."""
