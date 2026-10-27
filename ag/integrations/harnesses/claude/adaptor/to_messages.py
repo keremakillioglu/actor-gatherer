@@ -25,7 +25,11 @@ back where it sent them (`as_sent`). `finish` does all of this.
 System-role messages, by `system_messages`: "keep" (the default) sends them as
 Claude Code does, but one the API would refuse where it is made user text
 (`placed`) -- its tool search blocks, which only a system message may hold, first
-moved on to where one is taken (`tools_placed`); "user" sends every one that says something as user-turn
+moved on to where one is taken (`tools_placed`). The API takes one that says something
+only where Claude Code puts its own (`fits`): right after a user message (or the
+model's turn ending in a server tool's result: `takes_system`), and last or right
+before the model's turn; an effort directive alone (`content: []`) anywhere.
+"user" sends every one that says something as user-turn
 `<system-reminder>` text (`as_user`), for a gateway that moves system messages
 into the model's system instruction, where a new one per call would keep the
 request from caching. Nothing of the context manager is imported here.
@@ -173,21 +177,45 @@ def as_sent(out: List[dict], messages: Optional[list], whole: bool = False) -> L
     return rebuilt
 
 
+SERVER_RESULT = "_tool_result"         # a server tool's result block: web_search_tool_result, ... (not tool_result)
+
+
+def takes_system(prev: Optional[dict]) -> bool:
+    """Whether the API takes a system message that says something right after `prev`: a user message, or the
+    model's turn ending in a server tool's result (Anthropic's rule: "role 'system' must follow a 'user' message or
+    an 'assistant' message ending in a server tool result"). Not first, nor after the model's words."""
+    if prev is None or prev.get("role") not in ("user", "assistant"):
+        return False
+    if prev.get("role") == "user":
+        return True
+    blocks = prev.get("content")
+    last = blocks[-1] if isinstance(blocks, list) and blocks and isinstance(blocks[-1], dict) else {}
+    kind = str(last.get("type") or "")
+    return kind.endswith(SERVER_RESULT) and kind != "tool_result"
+
+
+def fits(prev: Optional[dict], nxt: Optional[dict]) -> bool:
+    """Whether a system message that says something may sit between `prev` and `nxt` (None: none) -- where Claude
+    Code puts its own: after a user message (`takes_system`), and last or right before the model's turn."""
+    return takes_system(prev) and (nxt is None or nxt.get("role") == "assistant")
+
+
 def tools_placed(out: List[dict]) -> List[dict]:
     """`out` with the tool search blocks (`tool_addition`, `tool_removal`) of each system-role message
-    the API would refuse where it is -- one neither last nor right before an assistant message -- moved
-    on to the next place it takes one: a system message right before the next assistant message, else
-    at the end. Only a system message may hold them, so they cannot go into the user turn as its text
-    does (`placed`). In Claude Code's own history they always sit right before an assistant reply; a
-    context that leaves that reply out (a build's summary in its place) leaves them before a user
-    turn. Moved on, the tools are still offered before the model next answers. They go out ahead of
-    a system message that keeps its place, so the blocks stay in order: a tool added, then removed,
-    is still added before it is removed (the API refuses a removal of a tool not yet added)."""
+    the API would refuse where it is (`fits`) moved on to the next place it takes one: a system message
+    right before the next assistant message that follows a user message, else at the end. Only a system
+    message may hold them, so they cannot go into the user turn as its text does (`placed`). In Claude
+    Code's own history they always sit between a user message and an assistant reply; a context that
+    leaves that reply out (a build's summary in its place) leaves them before a user turn. Moved on,
+    the tools are still offered before the model next answers. They go out ahead of a system message
+    that keeps its place, so the blocks stay in order: a tool added, then removed, is still added
+    before it is removed (the API refuses a removal of a tool not yet added)."""
     fixed, moving = [], []
     for i, m in enumerate(out):
         nxt = out[i + 1] if i + 1 < len(out) else None
-        stays = m.get("role") == "system" and (nxt is None or nxt.get("role") == "assistant")
-        if moving and (m.get("role") == "assistant" or stays):
+        prev = fixed[-1] if fixed else None
+        stays = m.get("role") == "system" and fits(prev, nxt)
+        if moving and ((m.get("role") == "assistant" and takes_system(prev)) or stays):
             fixed.append({"role": "system", "content": moving})
             moving = []
         blocks = m.get("content")
@@ -206,12 +234,14 @@ def tools_placed(out: List[dict]) -> List[dict]:
 
 
 def placed(out: List[dict]) -> List[dict]:
-    """`out` with each system-role message the API would refuse where it is -- one neither last nor
-    right before an assistant message -- made a user message, joined into the user turn beside it."""
+    """`out` with each system-role message that says something the API would refuse where it is (`fits`) --
+    before a user message, or after the model's words: a context that ends on the model's last reply, with the
+    context manager's notes after it -- made a user message, joined into the user turn beside it. An effort
+    directive alone (`content: []`) the API takes anywhere: it stays."""
     fixed = []
     for i, m in enumerate(out):
         nxt = out[i + 1] if i + 1 < len(out) else None
-        if m.get("role") == "system" and nxt is not None and nxt.get("role") != "assistant":
+        if m.get("role") == "system" and m.get("content") and not fits(out[i - 1] if i else None, nxt):
             m = {**m, "role": "user"}
         fixed.append(m)
     return join(fixed)

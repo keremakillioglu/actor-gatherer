@@ -175,6 +175,36 @@ class HookTest(unittest.TestCase):
         plain = [{"role": "user", "content": [reminder, {"type": "text", "text": "hi"}]}]
         self.assertEqual([e["type"] for e in claude.to_events(plain)], [claude.CONTEXT, claude.USER_MESSAGE])   # not compacted: kept
 
+    def test_a_message_that_wakes_a_session_compacted_while_idle_is_stored(self):
+        # the layout of Claude Code 2.1.311's first call after it compacted while idle, woken by another session's
+        # message (live, 2026-10-27): no words of the user's open the turn, so the message itself does; it was
+        # left out as sent again with the summary, and the call went out ending on the model's kept reply
+        reminder = {"type": "text", "text": "<system-reminder>\nCodebase and user instructions ...\n</system-reminder>"}
+        tool = {"type": "tool_addition", "tool": {"type": "tool_definition", "definition": {"name": "mcp__x__y",
+                                                                                            "input_schema": {}}}}
+        peer = ('Another Claude session sent a message:\n<cross-session-message from="uds:/tmp/cc-socks/1.sock" '
+                'from-name="other" from-mode="prompting">\nPlease fix the tests.\n</cross-session-message>')
+        report = ('<agent-message from="a1b2">\n[Subagent hand-back] The tests pass.\n</agent-message>')
+        task = ("[SYSTEM NOTIFICATION - NOT USER INPUT] This is an automated background-task event ...\n"
+                "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>")
+        restored = {"role": "system", "content": [{"type": "text", "text": "Called the Read tool with the following input: "
+                                                   "{\"file_path\": \"/w/a.md\"}\nResult of calling the Read tool: ..."}, tool]}
+        for note in (peer, report, task):
+            woken = ([{"role": "user", "content": [reminder]}, {"role": "system", "content": [{"type": "text", "text": note}]},
+                      {"role": "user", "content": "<system-reminder>\nToday's date is 2026-10-26.\n</system-reminder>"}]
+                     if note is task else [{"role": "user", "content": [reminder, {"type": "text", "text": note}]}])
+            opening = [{"role": "user", "content": NOTICE + SUMMARY},
+                       {"role": "system", "content": [], "output_config": {"effort": "xhigh"}},
+                       {"role": "assistant", "content": [{"type": "text", "text": "The median is 55,120."}]},
+                       *woken, restored]
+            events = claude.to_events(opening)
+            self.assertEqual([(e["type"], e["payload"]["content"][0].get("text")) for e in events],
+                             [(claude.AGENT_MESSAGE, "The median is 55,120."), (claude.CONTEXT, note)], note[:20])
+        later = opening + [{"role": "assistant", "content": [{"type": "text", "text": "Fixed."}]},
+                           {"role": "user", "content": [{"type": "text", "text": "thanks"}]}]
+        self.assertEqual([e["type"] for e in claude.to_events(later)],
+                         [claude.AGENT_MESSAGE, claude.CONTEXT, claude.AGENT_MESSAGE, claude.USER_MESSAGE])
+
     def test_the_summary_claude_code_goes_on_from_is_not_stored(self):
         after = [{"role": "user", "content": [{"type": "text", "text": SUMMARY}]},
                  {"role": "assistant", "content": [{"type": "text", "text": "Three."}]},

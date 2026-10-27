@@ -209,6 +209,9 @@ PLAN_FILE = re.compile(r"/\.claude/plans/[^/\\]+\.md$")
 #: The kinds of the user's words, as a piece alone shows them (an image the user sent among them); and the model's turn.
 SAID = (Kind.USER, Kind.USER_COMMAND, Kind.MID_TURN, Kind.ASK_REPLY)
 TURNS = (Kind.AGENT, Kind.REASONING, Kind.TOOL_CALL, Kind.TOOL_RESULT)
+#: What opens a turn: the user's words, or a note Claude Code queues in their name (QUEUED_NOTES) -- another
+#: session's message, a subagent's report, a background task's notice -- which wakes an idle session as they do.
+OPENS = SAID + (Kind.PEER_MESSAGE, Kind.AGENT_REPORT, Kind.TASK_NOTICE)
 BLOCK_KINDS = {"text": None, "image": Kind.USER, "document": Kind.USER, "tool_result": Kind.TOOL_RESULT,
                "tool_use": Kind.TOOL_CALL, "server_tool_use": Kind.TOOL_CALL, "thinking": Kind.REASONING,
                "redacted_thinking": Kind.REASONING, "tool_addition": Kind.TOOL_NOTICE, "tool_removal": Kind.TOOL_NOTICE}
@@ -666,8 +669,9 @@ class ClaudeCode(Harness):
         """Each piece read (module doc). Its neighbours tell two things a piece alone does not: the prompt a command the
         user typed expands to -- the first of the user's words after it, before the agent says anything (a skill's
         instructions are Claude Code's already) -- is Claude Code's (COMMAND_PROMPT); and when the history opens
-        with Claude Code's summary of a compacted conversation, its notes up to the first reply to the user's first
-        words after it are what it sends again with the summary (COMPACTION_REPEAT)."""
+        with Claude Code's summary of a compacted conversation, its notes up to the first reply to what first opens a
+        turn after it -- the user's words, or a note queued in their name (OPENS: another session's message waking a
+        session compacted while idle) -- are what it sends again with the summary (COMPACTION_REPEAT)."""
         out = [self.part(it) for it in items]
         alone = [kind_of(it) for it in items]           # as each piece is alone: a typed command is LOCAL_COMMAND here
         for k, it in enumerate(items):
@@ -683,11 +687,11 @@ class ClaudeCode(Harness):
                     break
         if items and is_compacted_summary(items[0]):
             out[0].detail["opens"] = True
-            asked = next((i for i, p in enumerate(out) if i and p.kind in SAID), len(items))
+            asked = next((i for i, p in enumerate(out) if i and p.kind in OPENS), len(items))
             end = next((i for i in range(asked + 1, len(items)) if isinstance(items[i], dict)
                         and items[i].get("role") == "assistant"), len(items))
             for i in range(1, end):
-                if out[i].kind not in SAID and out[i].kind not in TURNS and not out[i].detail.get("expands"):
+                if out[i].kind not in OPENS and out[i].kind not in TURNS and not out[i].detail.get("expands"):
                     out[i].detail["repeated"] = out[i].kind
                     out[i].kind = Kind.COMPACTION_REPEAT
         return out

@@ -254,10 +254,37 @@ class MessagesTest(unittest.TestCase):
         sent = first_turn() + tool_turn() + [ENV, {"role": "user", "content": "next"}]
         ctx = [{"type": "ag", "name": "earlier", "text": "S"}] + claude.to_events(sent)
         out = back.to_messages(ctx, sent)
-        for i, m in enumerate(out):
-            if m["role"] == "system":
-                self.assertTrue(i == len(out) - 1 or out[i + 1]["role"] == "assistant", out)
-        self.assertTrue(all(out[i]["role"] != out[i + 1]["role"] for i in range(len(out) - 1)))
+        self.assert_takes(out)
+
+    def test_a_note_after_the_models_last_reply_is_user_text(self):
+        # Claude Code's request after it compacted while idle ended where ag had stored nothing new: the context
+        # ended on the model's last reply, and the context manager's notes after it went out as a system message
+        # the API refused (400: "role 'system' must follow a 'user' message or an 'assistant' message ending in a
+        # server tool result")
+        events = claude.to_events([{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}])
+        out = back.to_messages(events + [{"type": "ag", "name": "parallel", "text": "N"}])
+        self.assert_takes(out)
+        self.assertEqual(out[-1], {"role": "user", "content": [{"type": "text", "text": "N"}]})
+
+    def test_a_note_between_two_replies_is_user_text(self):
+        sent = [{"role": "user", "content": "q"},
+                {"role": "assistant", "content": [{"type": "text", "text": "a"},
+                                                  {"type": "tool_use", "id": "t", "name": "Bash", "input": {}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}]
+        events = claude.to_events(sent)
+        out = back.to_messages(events[:2] + [{"type": "ag", "name": "left_out", "text": "N"}] + events[2:])
+        self.assert_takes(out)
+        self.assertEqual([m["role"] for m in out], ["user", "assistant", "user", "assistant", "user"])
+        self.assertEqual(out[2]["content"], [{"type": "text", "text": "N"}])
+
+    def test_a_note_after_a_server_tools_result_stays_a_system_message(self):
+        searched = {"role": "assistant", "content": [
+            {"type": "server_tool_use", "id": "srv", "name": "web_search", "input": {"query": "x"}},
+            {"type": "web_search_tool_result", "tool_use_id": "srv", "content": []}]}
+        events = claude.to_events([{"role": "user", "content": "q"}, searched])
+        out = back.to_messages(events + [{"type": "ag", "name": "notice", "text": "N"}])
+        self.assert_takes(out)
+        self.assertEqual(out[-1], {"role": "system", "content": [{"type": "text", "text": "N"}]})
 
     def rebuilt(self, tail=()):
         """A build's context as ag sends it: Claude Code's notes, a summary in place of the reply that
@@ -273,8 +300,14 @@ class MessagesTest(unittest.TestCase):
         return back.to_messages(ctx, sent)
 
     def assert_takes(self, out):
+        """Every system message where the API takes it: after a user message (or the model's turn ending in a
+        server tool's result), and last or right before the model's turn; an effort directive alone anywhere."""
         for i, m in enumerate(out):
-            if m["role"] == "system":
+            if m["role"] == "system" and m["content"]:
+                after = out[i - 1] if i else None
+                self.assertTrue(after is not None and (after["role"] == "user" or (
+                    after["role"] == "assistant" and after["content"][-1]["type"].endswith("_tool_result")
+                    and after["content"][-1]["type"] != "tool_result")), out)
                 self.assertTrue(i == len(out) - 1 or out[i + 1]["role"] == "assistant", out)
             for b in m["content"] if isinstance(m["content"], list) else []:
                 if b.get("type") in ("tool_addition", "tool_removal"):
@@ -404,8 +437,8 @@ class MessagesTest(unittest.TestCase):
         self.assertEqual([m["role"] for m in out], ["user", "system"])      # the notes back at the end, as sent
         self.assertEqual(out[-1]["output_config"], {"effort": "medium"})   # and the request's fields with them
         self.assertEqual(sum("output_config" in m for m in out), 1)
-        later = sent + [{"role": "assistant", "content": "a"}, {**ENV, "content": [{"type": "text", "text": "n2"}],
-                                                                "output_config": {"effort": "low"}}]
+        later = sent + [{"role": "assistant", "content": "a"}, {"role": "user", "content": "b"},
+                        {**ENV, "content": [{"type": "text", "text": "n2"}], "output_config": {"effort": "low"}}]
         out = back.to_messages(claude.to_events(later), later)
         self.assertEqual([m["role"] for m in out], [m["role"] for m in later])
         self.assertEqual([m.get("output_config") for m in out], [m.get("output_config") for m in later])
