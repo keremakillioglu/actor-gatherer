@@ -629,7 +629,7 @@ button:disabled { opacity: .5; cursor: default; }
 .chat .chat-frame > * { content-visibility: auto; contain-intrinsic-size: auto 48px; }
 .chat .chat-frame > :nth-last-child(-n+30) { content-visibility: visible; }
 .chat .composer, .chat .readonly, .chat .err { flex: none; }
-.chat .composer { margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--ring); }
+.chat .composer { margin: 0; padding: 8px 16px 10px; border-top: 1px solid var(--ring); }
 .chat .readonly { color: var(--muted); font-size: 12px; padding: 8px 16px; border-top: 1px solid var(--ring); }
 .chat > .err { color: var(--critical); font-size: 12px; padding: 6px 16px; }
 /* what Claude Code still runs in the background (backgroundNote): under the chat, or a terminal's status line in it */
@@ -781,9 +781,7 @@ button:disabled { opacity: .5; cursor: default; }
 @keyframes views-flash { 50% { background: color-mix(in srgb, var(--s1) 45%, transparent); color: var(--ink); } }
 @media (prefers-reduced-motion: reduce) { .views button.flash { animation: none; outline: 2px solid var(--s1); } }
 .composer { display: grid; gap: 6px; margin-top: 12px; }
-.composer textarea { width: 100%; min-height: 64px; resize: vertical; }
-.composer .row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
-.composer .hint { color: var(--muted); font-size: 12px; }
+.composer textarea { width: 100%; min-height: 0; max-height: calc(3lh + 12px); resize: none; overflow-y: auto; }   /* a line, growing to three as they are typed, then scrolling (fitBox) */
 .queued { color: var(--muted); font-size: 12px; padding: 6px 4px 6px 17px; border-bottom: 1px solid var(--grid); }
 .chat .err:empty { display: none; }
 /* The Terminal view: Claude Code's own UI, drawn by xterm.js on the page's terminal colors, so it follows
@@ -2386,7 +2384,13 @@ async function refresh(userAction = false) {
 }
 // Draw what changed since the last draw (everything, for what the reader asked for).
 let lastKey = 0, heldDraw = null;
-document.addEventListener("input", (ev) => { if (ev.target && ev.target.id === "composer-text") lastKey = performance.now(); }, true);
+document.addEventListener("input", (ev) => { if (ev.target && ev.target.id === "composer-text") { lastKey = performance.now(); fitBox(ev.target); } }, true);
+// The message box as tall as what is typed in it: a line, up to its CSS's most (then scrolling).
+function fitBox(box) {
+  if (!box) return;
+  box.style.height = "auto";
+  box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;
+}
 const TYPING_MS = 300;                               // an update that comes while the reader types waits this long after a key
 function render(userAction = false) {
   if (!state.home) return;
@@ -2567,7 +2571,7 @@ function keepingPlace(draw) {
   draw();
   if (refocus && refocus.isConnected && refocus.agFocus) refocus.agFocus();
   const again = document.getElementById("composer-text");
-  if (again && typed && again !== box) { again.value = typed[0]; if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
+  if (again && typed && again !== box) { again.value = typed[0]; fitBox(again); if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
   for (const id of open) { const d = document.getElementById(id); if (d) d.open = true; }
   for (const [k, top, left] of scrolled) {
     const n = main.querySelector(`[data-keep="${k}"]`);
@@ -4057,7 +4061,7 @@ function chatCard(info) {
   let sending = false;
   ctx.send = async (t) => {
     t = String(t ?? "").trim();
-    if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) box.value = ""; return true; }
+    if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) { box.value = ""; fitBox(box); } return true; }
     if (!t || sending || held) return false;
     sending = true; err.textContent = "";
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
@@ -4069,7 +4073,7 @@ function chatCard(info) {
     const mine = slash ? null : { key: key(...state.selected), text: t, base: heardCount(heard(info), t), at: Date.now() };
     const box = document.getElementById("composer-text"), was = box ? box.value : "";
     if (mine) sentHere.push(mine);
-    if (box) box.value = "";
+    if (box) { box.value = ""; fitBox(box); }
     if (mine) {
       keepingPlace(renderMain); talkToEnd();
       setTimeout(() => { if (sentHere.includes(mine)) keepingPlace(renderMain); }, UNSEEN_MS + 100);
@@ -4085,16 +4089,18 @@ function chatCard(info) {
       return true;
     } catch (e) {
       if (mine && sentHere.includes(mine)) sentHere.splice(sentHere.indexOf(mine), 1);
-      const again = document.getElementById("composer-text"); if (again && !again.value) again.value = was;
+      const again = document.getElementById("composer-text"); if (again && !again.value) { again.value = was; fitBox(again); }
       keepingPlace(renderMain);
       err.textContent = e.message; return false;
     }
     finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = !!held; }
   };
   // The text box a composer is built around: Enter sends it, Shift+Enter starts a new line, and what is
-  // typed in it survives the tab being drawn again (keepingPlace finds it by its id).
+  // typed in it survives the tab being drawn again (keepingPlace finds it by its id). A line high, growing with
+  // the lines typed (fitBox).
   ctx.input = (attrs = {}) => {
-    const box = el("textarea", { rows: "3", placeholder: "Message the agent", "aria-label": "Message the agent", ...attrs, id: "composer-text",
+    const box = el("textarea", { rows: "1", placeholder: "Message the agent", "aria-label": "Message the agent", title: "Enter sends · Shift+Enter for a new line",
+      enterkeyhint: "send", ...attrs, id: "composer-text",
       ...(held ? { disabled: "", placeholder: "Open in another process" } : {}) });
     box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ctx.send(box.value); } });
     return box;
@@ -4305,12 +4311,10 @@ function errorHint(f, st) {
   if (status === 401 || status === 403) return "Not authorized: the harness may need to log in again.";
   return null;
 }
-// The message box a view gets unless it brings its own: a text box and a Send button.
+// The message box a view gets unless it brings its own: a text box, Enter sending it.
 function defaultComposer(ctx) {
   const text = ctx.input();
-  const form = el("form", { class: "composer" }, text,
-    el("div", { class: "row" }, el("span", { class: "hint", text: "Enter sends · Shift+Enter for a new line" }),
-      el("button", { type: "submit", class: "primary", "data-send": "1" }, "Send")));
+  const form = el("form", { class: "composer" }, text);
   form.addEventListener("submit", (ev) => { ev.preventDefault(); ctx.send(text.value); });
   return form;
 }
