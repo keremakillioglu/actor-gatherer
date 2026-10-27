@@ -2023,7 +2023,7 @@ function atRest(a, turn) {
   const gone = a ? reaction(`${a.channel} done`, turn, a.last) : null;
   const ok = svgEl("svg", { viewBox: "0 0 10 10", "aria-hidden": "true" });
   ok.append(svgEl("path", { d: "M2.2 5.2L4.2 7.1L7.9 3.1", fill: "none", stroke: "#fff", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-  return el("span", { class: "done", style: `--r: -${Math.round(gone === null ? 60000 : gone)}ms` },
+  return el("span", { class: "done", style: `--r: -${Math.round(gone === null ? 60000 : gone)}ms`, "data-sig": signature([src, turn]) },
     src ? el("img", { src, alt: "", draggable: "false" }) : null, el("span", { class: "ok" }, ok));
 }
 // The actor at work in the Chat view: its avatar acting out its turn -- `t`, the turn, its `work` (work.py's summary) --
@@ -2045,7 +2045,7 @@ function greeting(a) {
   if (avatarMode === "simple") return buddy(a, false);
   const hand = (cls, w, r) => `<g class="${cls}">${HAND.map(([x1, y1, x2, y2]) =>
     `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${w}"/>`).join("")}<circle cy="-5.6" r="${r}" stroke="none"/></g>`;
-  const box = el("span", { class: "stage-box" });
+  const box = el("span", { class: "stage-box", "data-sig": signature(["hello", src, a.avatar_hue]) });   // kept while the same
   box.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="stage s-hello" viewBox="-8 -14 102 82" aria-hidden="true" style="`
     + `--t: -${Math.round(performance.now())}ms; --dot: ${HUE_MAIN[a.avatar_hue] || "var(--muted)"}">`
     + `<g class="me"><image href="${escapeHtml(src)}" x="0" y="0" width="64" height="64"/></g>`
@@ -2066,7 +2066,7 @@ function helloLine(text) {
 function buddy(a, still) {
   const [move, fx] = (a.avatar_motion || "").split(/\s+/).map((w) => /^[a-z0-9-]+$/.test(w) ? w : "");
   return el("span", { class: ["buddy", move && `m-${move}`, fx && `f-${fx}`, still && "still"].filter(Boolean).join(" "),
-    style: `--t: -${Math.round(performance.now())}ms`, "aria-hidden": "true" },
+    style: `--t: -${Math.round(performance.now())}ms`, "aria-hidden": "true", "data-sig": signature([bareAvatar(a), move, fx, !!still]) },
     el("img", { src: bareAvatar(a), alt: "", draggable: "false" }), ...(fx ? [el("i"), el("i"), el("i")] : []));
 }
 // What an actor's stage reacts to, once: a call that ended, its turn over (`id`: which; null, none). Started when the
@@ -2220,11 +2220,24 @@ const stage = (() => {
       + `<g class="me${move ? ` m-${move}` : ""}"><image href="${href}" x="0" y="0" width="64" height="64"/></g>`
       + `${q && q.front ? `<g class="leave">${q.front}</g>` : ""}${p.front ? `<g class="enter">${p.front}</g>` : ""}${OVER}</svg>`;
     if (fx) box.append(el("span", { class: `buddy f-${fx}`, style: `--t: -${Math.round(t0)}ms` }, el("i"), el("i"), el("i")));
+    // what it shows, not when it was drawn (its clock's --t, --a): drawn again the same, the one on the page is kept --
+    // also once a moment is over, its one-time animation done (popping, arriving; the tool put away faded out, `was`):
+    // the one kept looks the same
+    const shows = cls.split(" ").filter((c) => c !== "popping" && c !== "arriving").join(" ");
+    box.dataset.sig = signature([shows, look, href, fx, a.avatar_hue]);
     const svg = box.firstElementChild;
     if (musing) requestAnimationFrame(() => windDown(svg, since, wound(since, t0)));   // once drawn: its animations exist
     const left = Math.max(gone === null ? 0 : REACT_MS - gone, moving ? MOVE_MS - (t0 - sh.at) : 0,
       putting ? sh.putAt + PUT_MS - t0 : 0);         // put away: drawn thinking
-    if (left) setTimeout(() => { if (box.isConnected) box.replaceWith(stage(a, w, src)); }, left + 30);   // over: drawn as it is now
+    // over: drawn as it is now -- the one shown kept if it shows the same, to look again when what is next is due
+    box.agLeft = left;
+    const again = () => {
+      if (!box.isConnected) return;
+      const next = stage(a, w, src);
+      if (next.dataset.sig !== box.dataset.sig) box.replaceWith(next);
+      else if (next.agLeft) setTimeout(again, next.agLeft + 30);
+    };
+    if (left) setTimeout(again, left + 30);
     return box;
   };
   // its turn over (atRest): the next turn's actor arrives
@@ -4186,7 +4199,10 @@ function chatCard(info) {
   const err = el("div", { class: "err", role: "alert", text: held || (s.status === "failed" && s.last_error ? s.last_error : "") });
   let sending = false;
   const draft = key(...state.selected);              // what is typed for this actor and not sent (keepDraft)
-  ctx.send = async (t) => {
+  // A message box kept from an earlier draw (`patch`) still calls the send it was drawn with: each send goes to the
+  // latest draw's (chatSend), which knows the session as it is now.
+  ctx.send = (t) => chatSend(t);
+  chatSend = async (t) => {
     t = String(t ?? "").trim();
     if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) { box.value = ""; fitBox(box); } keepDraft(draft, ""); return true; }
     if (!t || sending || held) return false;
@@ -4240,10 +4256,16 @@ function chatCard(info) {
     box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ctx.send(box.value); } });
     return box;
   };
-  // the box kept across redraws while what it shows is unchanged: no redraw under the reader's typing
+  // the composer kept across redraws while what it shows is unchanged: no redraw under the reader's typing. The text box
+  // itself is kept while it is the same actor's and as usable (its data-sig), the rest patched round it (data-morph):
+  // a turn's end, changing the rest, no longer replaces the box being typed in.
   const sig = signature([ctx.running, held, s.status, s.last_error, s.permission_mode, s.cwd]);
   const composer = safely(() => (view.composer || defaultComposer)(ctx), true);
-  for (const n of composer) if (n.nodeType === 1) n.dataset.sig = sig;
+  for (const n of composer) if (n.nodeType === 1) {
+    const box = n.id === "composer-text" ? n : n.querySelector("#composer-text");
+    if (box) box.dataset.sig = signature([draft, !!held]);
+    if (box && box !== n) n.dataset.morph = ""; else if (!box) n.dataset.sig = sig;
+  }
   card.append(...composer, err, ...safely(() => view.footer && view.footer(ctx)));
   if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
   return card;
@@ -6159,8 +6181,8 @@ function filesRender({ info, session, running, writable, held }) {
     // none yet: the actor waving hello, saying its line (or that there is none yet) -- under the first message while it
     // waits to reach the agent
     const says = writable && !held && session.status !== "starting" && info.avatar && info.avatar_hello;
-    return [el("div", { class: "fl-talk hi" }, first && el("div", { class: "fl-turn" }, first),
-      el("div", { class: "fl-hello" }, greeting(info), first ? null : says ? helloLine(info.avatar_hello)
+    return [el("div", { class: "fl-talk hi", "data-morph": "" }, first && el("div", { class: "fl-turn" }, first),
+      el("div", { class: "fl-hello", "data-morph": "" }, greeting(info), first ? null : says ? helloLine(info.avatar_hello)
         : el("div", { text: session.status === "starting" ? "Starting the agent…" : writable && !held ? "No messages yet. Write one below." : "No messages yet." }))),
       asking].filter(Boolean);
   }
@@ -6335,6 +6357,7 @@ const heardCount = (h, text) => [...h.stored, ...h.typed.filter((q) => !q.chat)]
 // actor's records hold one more message of its words than when it was sent (`base`) -- from then on, as they say.
 // One not seen for UNSEEN_MS says so.
 const sentHere = [], UNSEEN_MS = 15000;
+let chatSend = async () => false;                    // the message box's send, as the latest draw made it (chatCard)
 // What waits to reach the agent, at the latest turn's end, faded: sent from here and not seen yet; in Claude Code's
 // queue; in the dashboard agent's queue. Not seen for long, with its terminal open: it may be asking something there
 // first (whether to trust the folder, on a new actor's first message), and the way to it.
@@ -6393,7 +6416,7 @@ function openedTurn(info, q, latest, h) {
       userWords(q.text)),
     latest ? working(info, Math.max(q.sent, (info && info.last) || 0), q.sent, "Working…") : null,
     latest ? pendingTalk(info, h) : null),
-    latest ? el("div", { class: "fl-status", "aria-hidden": "true" }, atWork(info, { work: {} })) : null].filter(Boolean);
+    latest ? el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, { work: {} })) : null].filter(Boolean);
 }
 const talkToEnd = () => { const n = document.querySelector("#main .fl-talk"); if (n) n.scrollTop = n.scrollHeight; };
 // Show more of the conversation above where the reader is, keeping what they look at in place.
@@ -6404,8 +6427,12 @@ function showMore(change) {
   const again = document.querySelector(".fl-talk");
   if (n && again) again.scrollTop = again.scrollHeight - below;
 }
+// Drawn again (renderMain's `patch`), the conversation is patched in place, turn by turn (data-morph): only what changed
+// is replaced -- a turn's new reply, the times under it -- and the rest kept, the actor at work among it, its
+// animations running on (its data-sig, what it shows). Replaced whole, the actor restarted at every redraw, every pause
+// in the reader's typing while it worked.
 function filesTalk(d, info, running) {
-  const box = el("div", { class: "fl-talk", "data-keep": "files-talk", "data-follow": "1" });
+  const box = el("div", { class: "fl-talk", "data-keep": "files-talk", "data-follow": "1", "data-morph": "" });
   const closed = state.files.closed || (state.files.closed = new Set());   // the last messages folded by a click
   const opened = state.files.opened || (state.files.opened = new Set());   // the turns whose earlier messages are all shown
   const fold = (ev) => { const n = ev.currentTarget; if (n.open) closed.delete(n.id); else closed.add(n.id); };
@@ -6442,7 +6469,7 @@ function filesTalk(d, info, running) {
     const done = !live && t.n === d.turns.length - 1 && !opens.length && !!info && ["idle", "finished", "closed"].includes(statusOf(info)[0]);
     const starts = live ? [t.at, began(t)].filter(Boolean) : [];
     const from = starts.length ? Math.min(...starts) : null;      // when it began: sent (began), or stored
-    box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
+    box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}`, "data-morph": "" },
       // a click: this turn's files and commands shown at the left, or folded away when they already are
       bashBubble(t, el("button", { type: "button", class: "fl-user" + bubbleClass(t.text), "aria-pressed": on ? "true" : "false",
         title: on && !sideFolded ? "Fold this turn's files and commands" : "Show this turn's files and commands",
@@ -6470,7 +6497,7 @@ function filesTalk(d, info, running) {
       done ? finished(info, t) : null,
       t.n === d.turns.length - 1 && !opens.length ? pendingTalk(info, h) : null));
     // under the latest turn's box: the actor at work; or, its turn over, the actor done
-    if (live) box.append(el("div", { class: "fl-status", "aria-hidden": "true" }, atWork(info, t)));
+    if (live) box.append(el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, t)));
     else if (done) box.append(el("div", { class: "fl-done", title: `Done · ${ago(info.last)}` }, atRest(info, t.row_id)));
   }
   box.append(...opens.flatMap((q, i) => openedTurn(info, q, i === opens.length - 1, h)));
