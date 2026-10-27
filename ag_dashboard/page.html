@@ -4867,10 +4867,11 @@ if (markdownReady) {
   marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text), code: ({ text, lang }) => codeFence(text, lang) } });
   DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } });
 }
-// Codex's plan, as its Plan mode has the model write it: between <proposed_plan> and </proposed_plan> (the closing tag
-// perhaps not streamed yet). markdown() draws it as a card headed "Proposed plan", as codex's own terminal heads it.
-const PLAN_TAGS = /<proposed_plan>\s*([\s\S]*?)\s*(?:<\/proposed_plan>|$)/;
-const unplanned = (t) => String(t ?? "").replace(/<\/?proposed_plan>\s*/g, "");
+// Codex's plan, as its Plan mode has the model write it: between <proposed_plan> and </proposed_plan>, each tag on a
+// line of its own (codex's rule; the closing tag perhaps not streamed yet). markdown() draws it as a card headed
+// "Proposed plan", as codex's own terminal heads it. A tag in a sentence (`<proposed_plan>`) is only words about one.
+const PLAN_TAGS = /^<proposed_plan>[ \t]*(?:\r?\n|$)([\s\S]*?)\s*(?:^<\/proposed_plan>[ \t]*$|(?![\s\S]))/m;
+const unplanned = (t) => String(t ?? "").replace(/^<\/?proposed_plan>[ \t]*(?:\r?\n|$)/gm, "");
 // `breaks`: each line break kept, for text written as lines rather than as markdown (a subagent's report)
 function markdown(text, breaks = false) {
   const plan = typeof text === "string" && text.includes("<proposed_plan>") ? PLAN_TAGS.exec(text) : null;
