@@ -11,6 +11,7 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/history?gatherer=G&channel=C&from=A[&to=B]   data.history(G, C, A, B)
     GET /api/transcript?gatherer=G&channel=C[&after=A|&before=B]   data.transcript(G, C, A, B)
     GET /api/files?gatherer=G&channel=C[&turn=N][&cwd=D]   files.files(G, C, N, D): a turn's files
+    GET /api/files/changes?gatherer=G&channel=C&path=P&since=S[&cwd=D]   files.changes(G, C, P, S, D): its changes to P since S
     GET /api/monitor?actors=[[G, C, D], ...]               monitor.actors: what each is doing, its latest turn
     GET /api/image?gatherer=G&row_id=R&id=I                files.image(G, R, I): the image call I's result holds
     GET /api/outline?gatherer=G[&channel=C][&after=A]      history.outline(G, C, A): the events, light, and the tasks
@@ -31,6 +32,15 @@ context manager's home (data.py), read-only. Standard library only.
         a full screen then drawn all again, sessions.py's `redraw`)}, then `exit` {code} when its process
         ends; `none` when it has no terminal
     GET /api/views                        the reader's own chat views: <home>/dashboard/views/*.js, by name
+    GET /vendor/editor.js                 the Editor panel's editor (CodeMirror and Yjs, assets/src/editor), loaded the
+                                          first time the page shows the view
+    GET /api/edit/list?dir=D&root=R       editor.listing(D, R): a directory under R, each entry with who edits it
+    GET /api/edit/stream?path=P&root=R&conn=C&client=N   server-sent events, until the page goes: the file P (under
+        R) opened for editing (editor.py), shared with every other page editing it: `init` {epoch, update (the
+        document, a Yjs update, base64), sv (its state vector), aware (the other pages' cursors)}, then `update`
+        {update, disk (true: the file's own change on disk)}, `aware` {update}, `left` {client} and `state`
+        {dirty, missing, error, changed, saved, editors, conflicts: [{id, from, to (UTF-16), base, theirs, at, zone}],
+        zone: [[from, to], ...] (the conflict zone)} as they come; `failed` {error} when it cannot be opened
     GET /views/<name>.js                  one of them, which the page loads (page.html: chat views)
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
     POST /api/sessions {gatherer, cwd?, permission_mode?, harness?, model?}  a new one (harness claude, the
@@ -70,6 +80,14 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/history/build {gatherer, channel}   ag asked to build the actor's history (history.build)
     POST /api/history/save {id, target, dir?, version?}  where Claude Code reads it: the plan, without
                                           `version`; with the plan's, the files written -> {saved, where}
+    POST /api/edit/update {path, root, conn, update}   the page's edit of an open file (a Yjs update, base64) ->
+                                          its state
+    POST /api/edit/aware {path, root, conn, update}    the page's cursor in it (a y-protocols awareness update)
+    POST /api/edit/save {path, root}      the file written as its document has it -> its state
+    POST /api/edit/settle {path, root, conflict, take}   a conflict with the file on disk settled: the lines kept
+                                          (take "mine"), the file's in their place ("theirs"), or both -> its state
+    POST /api/edit/zone/clear {path, root}   the conflict zone cleared: the lines edited here the file's to change,
+                                          as any other -> its state
     GET /api/settings                     ag's settings, its config.toml (settings.py)
     POST /api/settings/model {model, api_base?, key_env?}   the Gatherer's model, by `ag model` -> the settings
     POST /api/settings/defaults {version, policy?, pollers?, gatherer?}   a new gatherer's defaults -> the settings
@@ -79,7 +97,8 @@ The POSTs are the only writes, and only to the dashboard's own tables and record
 runs (and the shells it opens), the gatherers `ag new` makes, the builds and model calls `ag home build` and `ag home complete`
 start, its own events `ag home insert` puts in (an actor's name), the harness's own store of a name
 (naming.py), the files a History extract is saved as (where Claude Code reads them, once the reader has
-seen them), and ag's config.toml -- besides the avatar the home gives an actor it has not seen before
+seen them), ag's config.toml, and the files edited in the Editor panel (editor.py: under the directory the
+page names) -- besides the avatar the home gives an actor it has not seen before
 (avatars.py), kept in the dashboard's own table:
 the gatherers' databases are otherwise only read. They are taken from the dashboard's own page only
 (`own_page`), and the server listens on localhost unless told otherwise.
@@ -87,11 +106,14 @@ the gatherers' databases are otherwise only read. They are taken from the dashbo
 `page(snapshot)` is the page itself, the libraries it renders markdown with (VENDOR: marked,
 and DOMPurify to make what it makes safe) and draws terminals with (TERMINAL: xterm.js, its
 fit and WebGL add-ons, and its stylesheet) inside it, never fetched; with a snapshot (data.snapshot()) it
-stands alone, its data inside it (`ag dashboard --out`), and no terminal: it has none to draw."""
+stands alone, its data inside it (`ag dashboard --out`), and no terminal: it has none to draw.
+
+Standard library only, but for the Editor panel's shared documents (editor.py: pycrdt), offered only with it."""
 
 import base64
 import json
 import os
+import queue
 import select
 import socket
 import threading
@@ -102,13 +124,14 @@ from urllib.parse import parse_qs, urlsplit
 
 import harness_kit
 
-from . import (actions, avatars, data, files, hiding, history, home, live, migrating, monitor, naming, saved, seen,
+from . import (actions, avatars, data, editor, files, hiding, history, home, live, migrating, monitor, naming, saved, seen,
                sessions, settings)
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 VENDOR = [os.path.join(_VENDOR_DIR, n) for n in ("marked.min.js", "purify.min.js")]
 TERMINAL = [os.path.join(_VENDOR_DIR, n) for n in ("xterm.js", "addon-fit.js", "addon-webgl.js", "xterm.css")]
+EDITOR = os.path.join(_VENDOR_DIR, "editor.js")
 LLM_SECONDS = 10.0          # how long the Gatherer's call log is reused before it is read again
 KEEPALIVE = 15.0            # the most a stream stays silent
 COALESCE = 0.03             # after a wake, how long to wait for the rest of a burst (a call stores many events)
@@ -157,7 +180,7 @@ def _signature(value) -> str:
     return json.dumps(value, sort_keys=True, default=str)
 
 
-def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
+def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: editor.Editors):
     def home_view() -> dict:
         """The home as the page gets it: with the sessions' state, and what a new session starts from -- the
         harnesses it can run on here (sessions.py's `available`); the shells open, and the user's home directory,
@@ -169,7 +192,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                                if a.get("turn_over") and a.get("status") not in (data.ASKING, data.RUNNING))
         return {**avatars.assign(home), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
                 "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "shells": started.shells(),
-                "home_dir": os.path.expanduser("~")}
+                "home_dir": os.path.expanduser("~"), "editor": editor.AVAILABLE}
 
     def codex_dialog(sid: str) -> Optional[dict]:
         """What a codex session's terminal -- the dashboard's -- shows asking the user now, where a message typed
@@ -226,6 +249,15 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.answer(home.view_names())
                 if url.path == "/api/settings":
                     return self.answer(settings.read())
+                if url.path == "/vendor/editor.js":
+                    with open(EDITOR, "rb") as fh:
+                        return self.send(200, fh.read(), "text/javascript; charset=utf-8")
+                if url.path in ("/api/edit/list", "/api/edit/stream") and not self.local_host():
+                    return self.send(403, b"only the dashboard's own page may do that", "text/plain")
+                if url.path == "/api/edit/list":
+                    return self.answer(editors.listing(q.get("dir", ""), q.get("root", "")))
+                if url.path == "/api/edit/stream":
+                    return self.edit_stream(q)
                 if url.path.startswith("/avatars/") and url.path.endswith(".svg"):
                     return self.avatar(url.path[len("/avatars/"):-len(".svg")], "bare" in q)
                 if url.path.startswith("/views/"):
@@ -249,6 +281,9 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.answer(data.transcript(q["gatherer"], q["channel"],
                                                        int(q["after"]) if "after" in q else None,
                                                        int(q["before"]) if "before" in q else None))
+                if url.path == "/api/files/changes" and q.get("gatherer") and "channel" in q and q.get("path") \
+                        and q.get("since", "").replace(".", "", 1).isdigit():
+                    return self.answer(files.changes(q["gatherer"], q["channel"], q["path"], float(q["since"]), q.get("cwd", "")))
                 if url.path == "/api/files" and q.get("gatherer") and "channel" in q and q.get("turn", "0").isdigit():
                     return self.answer(files.files(q["gatherer"], q["channel"],
                                                    int(q["turn"]) if "turn" in q else None, q.get("cwd", "")))
@@ -266,6 +301,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                 if url.path == "/api/extracts" and q.get("gatherer"):
                     return self.answer(history.extracts(q["gatherer"]))
                 return self.send(404, b"not found", "text/plain")
+            except editor.EditorError as exc:
+                return self.send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
             except Exception as exc:  # noqa: BLE001 - the page shows the error and keeps its last view
                 return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
 
@@ -376,6 +413,45 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     self.wfile.flush()
             except OSError:                              # the page went away
                 pass
+
+        def edit_stream(self, q: dict) -> None:
+            """A file open for editing, as the other pages and the disk change it (editor.py)."""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")      # it has no length: it ends when the connection does
+            self.close_connection = True
+            self.end_headers()
+            try:
+                room, conn = editors.join(q.get("path", ""), q.get("root", ""), q.get("conn", ""),
+                                          int(q["client"]) if q.get("client", "").isdigit() else 0)
+            except (editor.EditorError, OSError) as exc:
+                self.event("failed", {"error": str(exc)})
+                return self.wfile.flush()
+            try:
+                while True:
+                    try:
+                        item = conn.queue.get(timeout=editor.GONE_CHECK)
+                    except queue.Empty:
+                        if self.gone():
+                            return
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                        continue
+                    if item is None:             # another stream of the page's took its place, or the server stops
+                        return
+                    self.event(*item)
+                    if conn.queue.empty():
+                        self.wfile.flush()
+            except OSError:                              # the page went away
+                pass
+            finally:
+                room.leave(conn)
+
+        def local_host(self) -> bool:
+            """Whether the request is to this host as named (not a name rebound to it): what reads files' text."""
+            host = self.headers.get("Host") or ""
+            return urlsplit("//" + host).hostname in ("127.0.0.1", "localhost", "::1", self.server.server_address[0])
 
         def own_page(self) -> bool:
             """Whether a POST comes from the dashboard's own page: JSON (which a page elsewhere can
@@ -500,6 +576,20 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                         str(body.get("version") or ""), None if body.get("policy") is None else str(body["policy"]),
                         None if pollers is None else [str(p) for p in pollers] if isinstance(pollers, list) else [],
                         None if body.get("gatherer") is None else str(body["gatherer"])))
+                if url.path in ("/api/edit/update", "/api/edit/aware"):
+                    path, root, cid = str(body.get("path") or ""), str(body.get("root") or ""), str(body.get("conn") or "")
+                    update = base64.b64decode(str(body.get("update") or ""), validate=True)
+                    if url.path == "/api/edit/aware":
+                        editors.aware(path, root, cid, update)
+                        return self.answer({})
+                    return self.answer(editors.edit(path, root, cid, update))
+                if url.path == "/api/edit/save":
+                    return self.answer(editors.save(str(body.get("path") or ""), str(body.get("root") or "")))
+                if url.path == "/api/edit/zone/clear":
+                    return self.answer(editors.clear_zone(str(body.get("path") or ""), str(body.get("root") or "")))
+                if url.path == "/api/edit/settle":
+                    return self.answer(editors.settle(str(body.get("path") or ""), str(body.get("root") or ""),
+                                                      str(body.get("conflict") or ""), str(body.get("take") or "")))
                 if url.path == "/api/settings/file":
                     return self.answer(settings.save_text(str(body.get("text") or ""), str(body.get("version") or "")))
                 return self.send(404, b"not found", "text/plain")
@@ -552,7 +642,8 @@ class Server(ThreadingHTTPServer):
         self.calls, self.hub = _Calls(), live.Hub()
         self.hub.on_llm = self.calls.changed
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
-        super().__init__(address, handler(self.calls, self.hub, self.sessions))
+        self.editors = editor.Editors()                                # the files open in the Editor panel
+        super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors))
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
         self.migrating = migrating.start(self.hub.ring) if live_updates else None   # an older gatherer's tables, once
@@ -561,7 +652,7 @@ class Server(ThreadingHTTPServer):
         self.rest = saved.Rest(self.sessions, self.hub.shown)
 
     def server_close(self) -> None:
-        for part in (self.listener, self.fallback, self.rest):
+        for part in (self.listener, self.fallback, self.rest, self.editors):
             if part is not None:
                 part.close()
         if self.keeps_actions:

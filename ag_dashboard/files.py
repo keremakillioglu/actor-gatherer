@@ -202,12 +202,13 @@ def _runs(numbered: List[tuple]) -> List[tuple]:
 class _Turn:
     def __init__(self, n, row_id, at, text):
         self.head = {"n": n, "row_id": row_id, "at": at, "text": text, "replies": [], "now": None, "more": [],
-                     "last": None}
+                     "last": None, "end": None}       # end: its last event's time
         self.acts: Dict[str, dict] = {}              # its calls, by id, for what it is doing (work.summary)
         self.files: Dict[str, dict] = {}
         self.commands: List[dict] = []
         self.order: List[str] = []
         self.current: Optional[dict] = None              # the call being read, as `commands` lists it
+        self.at_call: Optional[float] = None             # when it was made (its sources' `at`)
 
     def file(self, path: str) -> dict:
         f = self.files.get(path)
@@ -225,7 +226,8 @@ class _Turn:
         if last and last["call"] is call:
             last["kinds"] = sorted(set(last["kinds"]) | {kind})
             return len(f["sources"]) - 1
-        f["sources"].append({"via": via, "kind": kind, "kinds": [kind], "error": error, "call": call, "blocks": []})
+        f["sources"].append({"via": via, "kind": kind, "kinds": [kind], "error": error, "call": call, "blocks": [],
+                             "at": self.at_call})
         return len(f["sources"]) - 1
 
     def checked(self, f: dict, src: int, checked: Optional[bool], named: bool) -> None:
@@ -414,6 +416,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     and every call it made, in order: {text, error, running, call, output, files (the paths it touched), did (each
     one's kinds, by path), changed (the lines its changes added and removed, as above)} -- a skill
     loaded with them, as its Skill call, its instructions its output, or as a call of its own when the user typed its /name.
+    Each source has `at`, when its call was made (None for what was not a call).
     A source the hook server checked on disk also has `checked` (True: what the call showed of the file
     is on disk; False: it is not; None: nothing to match), and `unnamed` when the file changed while
     the call ran but the call doesn't name it; its kinds may be "delete" too. A file in a temporary
@@ -728,8 +731,11 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         cur = begins.get(i, cur)
         head = cur.head if cur is not None else {"replies": [], "now": None, "last": None}   # before the first message: kept nowhere
         acts = cur.acts if cur is not None else {}
+        if at and (head.get("end") or 0) < at:
+            head["end"] = at
         for p in parts:
             if p["kind"] == "call":
+                p["_at"] = at                            # when it was made: its sources' `at`
                 order.append((cur, p))
                 if p.get("id"):
                     calls[p["id"]] = p
@@ -799,6 +805,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
             if said:
                 x["head"]["replies"].append({"kind": "report", "name": agents.get(path, ""), "text": said})
     for t, p in order:
+        if t is not None:
+            t.at_call = p.get("_at")
         if p["kind"] == "loaded":
             loaded(t, p)
         elif p["kind"] == "skill":
@@ -838,6 +846,31 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
 
 IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
+
+
+CHANGED_KINDS = {"edit", "write", "delete"}
+
+
+def changes(gatherer: str, channel: str, path: str, since: float, cwd: str = "") -> dict:
+    """What the session did to the file `path` since `since` (seconds): {path, changes, home}, `changes` the calls
+    that wrote, edited or deleted it since then, the oldest first -- each a source of `files`' ({via, kinds, error,
+    call, blocks, changed, checked, at}) with its turn's `turn` (n) and `asked` (what the user asked in it). The
+    file is the same by its path as given or followed through links (/tmp, /private/tmp)."""
+    got = files(gatherer, channel, None, cwd)
+    if "error" in got:
+        return got
+    same = {os.path.abspath(path), os.path.realpath(path)}
+    out: List[dict] = []
+    for t in got["turns"]:
+        if (t.get("end") or t.get("at") or 0) < since:
+            continue                                 # over before then
+        those = got if t["n"] == got["turn"] else files(gatherer, channel, t["n"], cwd)
+        for f in those.get("files", []):
+            if f["path"] not in same and os.path.realpath(f["path"]) not in same:
+                continue
+            out += [dict(src, turn=t["n"], asked=t["text"]) for src in f["sources"]
+                    if CHANGED_KINDS & set(src["kinds"]) and (src.get("at") or 0) >= since]
+    return {"path": path, "changes": out, "home": got.get("home")}
 
 def image(gatherer: str, row_id: int, call_id: str) -> Optional[tuple]:
     """The image a call's result holds, as stored in event `row_id`: (media type, bytes), or None.

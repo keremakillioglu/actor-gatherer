@@ -262,7 +262,7 @@ header .brand .list-btns { display: none; margin-left: -6px; }
 .rail .r-about { position: relative; margin-top: 6px; }
 .rail .r-about .state-dot { position: absolute; right: 3px; bottom: 4px; box-shadow: 0 0 0 1.5px var(--side); }
 :root.list-full .side { position: fixed; inset: 0; z-index: 25; border-right: 0; }
-:root.list-full .panes { grid-column: 2; grid-row: 1; }
+:root.list-full .work { grid-column: 2; grid-row: 1; }
 :root.list-full #agents { display: none; }
 .monitor:focus { outline: none; }
 /* the monitor: a column for each status, side by side in a fixed order, as wide as each other, each scrolling on its own
@@ -365,6 +365,9 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
    controls, a close -- the one in focus a shade darker; dividers between them to drag. The first is this
    page's own view; the others are the page again in a frame, each its own actor's (PANE) */
 .panes { display: flex; min-width: 0; min-height: 0; position: relative; }
+/* the column right of the list: the Editor (when open) above the panes */
+.work { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.work > .panes { flex: 1 1 0; }
 .pane-note { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 10; max-width: calc(100% - 32px);
   background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 6px 12px; font-size: 12px; color: var(--ink-2);
   box-shadow: 0 4px 16px rgba(0,0,0,.12); }
@@ -390,12 +393,12 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 :is(.panes.split, :root.pane-mode .panes) :is(.pane-who, .pane-close) { display: flex; }
 :is(.panes.split, :root.pane-mode .panes) .controls { display: contents; }
 .pane-who { grid-area: who; } .pane-close { grid-area: close; }
-.pane-head .views { grid-area: views; flex-wrap: wrap; } .pane-head .details-btn { grid-area: details; }
+.pane-head .views { grid-area: views; flex-wrap: wrap; } .pane-head .side-btns { grid-area: details; }
 :is(.panes.split, :root.pane-mode .panes) .chat-tools { grid-area: tools; justify-content: flex-end; margin-top: 6px; }
 @container pane (max-width: 460px) {
   :is(.panes.split, :root.pane-mode .panes) .pane-head { grid-template-columns: auto auto minmax(0, 1fr) auto;
     grid-template-areas: "who who who close" "views details . ." "tools tools tools tools"; }
-  :is(.panes.split, :root.pane-mode .panes) :is(.views, .details-btn) { margin-top: 6px; }
+  :is(.panes.split, :root.pane-mode .panes) :is(.views, .side-btns) { margin-top: 6px; }
   :is(.panes.split, :root.pane-mode .panes) .chat-tools { justify-content: flex-start; } }
 .pane.focused > .pane-top, :root.pane-focused .pane-top { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
 .pane-who { align-items: center; gap: 8px; min-width: 0; min-height: 28px; align-self: stretch; font-size: 12.5px;
@@ -411,7 +414,7 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 :root.pane-mode .side { display: none; }
 :root.pane-mode body { height: 100vh; display: flex; }
 :root.pane-mode .layout { display: grid; grid-template-columns: minmax(0, 1fr); }
-:root.pane-mode .panes { display: flex; }
+:root.pane-mode :is(.panes, .work) { display: flex; }
 :root.pane-mode main { overflow: hidden; }
 :root.pane-mode .chat .chat-frame { flex: 1; height: auto; }
 :root.pane-mode .drawer { position: absolute; inset: 0 0 0 auto; width: min(100%, 600px); box-shadow: -8px 0 24px rgba(0,0,0,.10); z-index: 3; }
@@ -445,7 +448,8 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 @media (max-width: 760px) { body { height: auto; display: block; } .layout { display: block; } .side { border-right: 0; }
   #agents { max-height: 40vh; border-bottom: 1px solid var(--ring); }
   main { overflow: visible; }
-  .panes { display: block; } .panes.split .pane:not(.focused), .pane-gutter { display: none; } .pane > iframe { height: 85vh; } }
+  .panes, .work { display: block; } .panes.split .pane:not(.focused), .pane-gutter { display: none; } .pane > iframe { height: 85vh; }
+  .ed-top { height: 70vh; } }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 td { padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
@@ -625,7 +629,7 @@ button:disabled { opacity: .5; cursor: default; }
 .chat .chat-frame > * { content-visibility: auto; contain-intrinsic-size: auto 48px; }
 .chat .chat-frame > :nth-last-child(-n+30) { content-visibility: visible; }
 .chat .composer, .chat .readonly, .chat .err { flex: none; }
-.chat .composer { margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--ring); }
+.chat .composer { margin: 0; padding: 8px 16px 10px; border-top: 1px solid var(--ring); }
 .chat .readonly { color: var(--muted); font-size: 12px; padding: 8px 16px; border-top: 1px solid var(--ring); }
 .chat > .err { color: var(--critical); font-size: 12px; padding: 6px 16px; }
 /* what Claude Code still runs in the background (backgroundNote): under the chat, or a terminal's status line in it */
@@ -777,9 +781,7 @@ button:disabled { opacity: .5; cursor: default; }
 @keyframes views-flash { 50% { background: color-mix(in srgb, var(--s1) 45%, transparent); color: var(--ink); } }
 @media (prefers-reduced-motion: reduce) { .views button.flash { animation: none; outline: 2px solid var(--s1); } }
 .composer { display: grid; gap: 6px; margin-top: 12px; }
-.composer textarea { width: 100%; min-height: 64px; resize: vertical; }
-.composer .row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
-.composer .hint { color: var(--muted); font-size: 12px; }
+.composer textarea { width: 100%; min-height: 0; max-height: calc(3lh + 12px); resize: none; overflow-y: auto; }   /* a line, growing to three as they are typed, then scrolling (fitBox) */
 .queued { color: var(--muted); font-size: 12px; padding: 6px 4px 6px 17px; border-bottom: 1px solid var(--grid); }
 .chat .err:empty { display: none; }
 /* The Terminal view: Claude Code's own UI, drawn by xterm.js on the page's terminal colors, so it follows
@@ -790,8 +792,143 @@ button:disabled { opacity: .5; cursor: default; }
 .xterm-cover { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center;
   background: color-mix(in srgb, var(--term-bg) 82%, transparent); color: var(--term-ink); font-size: 13px; padding: 20px; }
 .xterm-cover .desc { color: var(--term-dim); max-width: 46ch; }
+/* The Editor, above the panes (the actors' views shorter while it is open), the edge between them dragged to resize:
+   a folder's tree, and a file in it edited by everyone who has it open, in the page's code colours; what is written
+   to the file on disk marked as it lands, in its actor's hue (--who); the actors that changed each file, their avatars */
+.ed-top { flex: 0 0 var(--ed-h, 50%); min-height: 140px; display: flex; flex-direction: column; position: relative;
+  background: var(--page); border-bottom: 5px solid color-mix(in srgb, var(--ink) 14%, var(--page));   /* the edge between it and the panes: a bar, its grip over it */
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ed-top[hidden] { display: none; }
+/* in the page's top row, as tall as it (--top-h), so the rule under the row runs straight across: the file's head, and
+   the folder's bar beside it */
+.ed-top .ed-head { min-height: var(--top-h, 40px); box-sizing: border-box; }
+.ed-top .ed-bar { min-height: var(--top-h, 40px); box-sizing: border-box; align-content: center; padding-top: 6px;
+  border-bottom: 1px solid var(--grid); margin-bottom: 6px; }
+.ed-bar { position: sticky; top: 0; z-index: 1; background: var(--page); padding: 0 8px 6px; display: grid; gap: 5px; }
+.ed-tree:has(> .ed-bar) { padding-top: 0; }
+.ed-bar .row { display: flex; gap: 4px; }
+.ed-up { flex: none; display: inline-flex; align-items: center; padding: 2px 6px; color: var(--ink-2); }
+.ed-pick { min-width: 0; width: 100%; font: 12px/1.4 var(--mono); padding: 3px 6px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--ring); border-radius: 5px; }
+.ed-avs { display: inline-flex; align-items: center; flex: none; }
+.ed-avs img, .ed-avs .ed-noav { width: 15px; height: 15px; border-radius: 50%; margin-left: -5px; box-shadow: 0 0 0 1.5px var(--page); }
+.ed-avs > :first-child { margin-left: 0; }
+/* the header's: each a button, its actor's changes to the file (edChanges) */
+.ed-avs > .ed-av { display: inline-flex; padding: 0; margin-left: -5px; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.ed-avs > .ed-av:first-child { margin-left: 0; }
+.ed-avs > .ed-av img, .ed-avs > .ed-av .ed-noav { width: 18px; height: 18px; margin-left: 0; }
+.ed-avs > .ed-av:hover img, .ed-avs > .ed-av:focus-visible img { box-shadow: 0 0 0 2px var(--axis); }
+.ed-avs > .ed-av.on img, .ed-avs > .ed-av.on .ed-noav { box-shadow: 0 0 0 2px var(--ink); }
+/* beside the file: an actor's changes to it (edDrawChanges), as the Chat view shows a file's */
+.ed-work { flex: 1; min-height: 0; display: flex; }
+.ed-work > .ed-body { min-width: 0; }
+.ed-changes { flex: none; width: min(460px, 46%); min-height: 0; overflow-y: auto; border-left: 1px solid var(--ring); background: var(--surface); }
+.ed-changes[hidden] { display: none; }
+.ed-changes .ed-ch-h { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 12px;
+  background: var(--surface); border-bottom: 1px solid var(--ring); font-size: 12.5px; color: var(--ink-2); }
+.ed-changes .ed-ch-h .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-changes .ed-ch-h b { color: var(--ink); font-weight: 600; }
+.ed-changes .ed-ch-x { flex: none; border: 0; background: none; font-size: 17px; line-height: 1; padding: 3px 7px; color: var(--muted); }
+.ed-changes .ed-ch-x:hover { color: var(--ink); background: var(--wash); }
+.ed-changes .ed-ch-go { flex: none; margin-left: auto; padding: 1px 8px; font-size: 11.5px; }
+.ed-changes .asked { padding: 0 16px 6px 34px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-changes .none { padding: 14px 16px; color: var(--muted); font-size: 12.5px; }
+.ed-noav { display: inline-block; background: var(--who); }
+.ed-avs.many { padding: 1px 5px 1px 2px; border-radius: 10px; background: color-mix(in srgb, var(--warning) 26%, transparent); }
+.ed-avs .n { font-size: 10.5px; font-weight: 650; margin-left: 4px; color: var(--ink); }
+.ed-writers { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); min-width: 0; }
+.ed-writers.many { color: var(--ink); background: color-mix(in srgb, var(--warning) 22%, transparent); padding: 2px 8px 2px 6px; border-radius: 10px; }
+.ed-writers.many .lbl { font-weight: 600; }
+.ed-writer { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); white-space: nowrap; }
+.ed-writer img, .ed-writer .ed-noav { width: 16px; height: 16px; border-radius: 50%; }
+.ed-writer .nm { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; }
+/* narrow (Details open beside it, or a small window): a narrower tree, and the header on one line -- each editor
+   its colour's dot, its name on hover; the disk's change its dot, said on hover */
+.ed-top { container: ed / inline-size; }
+@container ed (max-width: 760px) {
+  .ed-tree { width: 170px; } .ed-head { flex-wrap: nowrap; }
+  .ed-person { width: 10px; height: 10px; padding: 0; font-size: 0; border-radius: 50%; background: var(--who); border: 0; flex: none; }
+  .ed-changed { font-size: 0; } .ed-changed::before { margin-right: 0; } .ed-writer .nm { display: none; } }
+.ed-grip { position: absolute; left: 0; right: 0; bottom: -7px; height: 9px; cursor: row-resize; z-index: 4; touch-action: none; }
+.ed-grip:hover, .ed-grip.on { background: color-mix(in srgb, var(--s1) 35%, transparent); }
+.ed-close { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 6px; color: var(--muted); }
+.ed-close:hover { color: var(--ink); background: var(--wash); }
+.side-btns { display: flex; gap: 6px; }
+.ed { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.ed-tree { width: 250px; flex: none; overflow: auto; border-right: 1px solid var(--grid); padding: 6px 0 12px; font-size: 12.5px; }
+.ed-row { display: flex; align-items: center; gap: 5px; width: 100%; min-height: 23px; border: 0; border-radius: 0; background: none;
+  color: var(--ink); font: inherit; text-align: left; padding: 2px 10px; cursor: pointer; white-space: nowrap; }
+.ed-row:hover { background: var(--wash); }
+.ed-row.on { background: color-mix(in srgb, var(--s1) 16%, transparent); }
+.ed-row.dir { font-weight: 550; }
+.ed-row .chev { width: 10px; flex: none; color: var(--muted); font-size: 10px; }
+.ed-row .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ed-row .mk { flex: none; }
+.ed-row .mk.dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
+.ed-row .mk.fresh { width: 6px; height: 6px; border-radius: 50%; background: var(--s2); }
+.ed-row .mk.eds { font-size: 10.5px; color: var(--muted); border: 1px solid var(--ring); border-radius: 8px; padding: 0 5px; line-height: 14px; }
+.ed-note { color: var(--muted); font-size: 12px; padding: 2px 10px; } .ed-note.err { color: var(--critical); }
+.ed-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ed-head { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; padding: 6px 12px; min-height: 40px;
+  border-bottom: 1px solid var(--grid); font-size: 12.5px; }
+.ed-path { font-family: var(--mono); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-status { font-size: 11.5px; padding: 1px 8px; border-radius: 9px; background: var(--wash); color: var(--muted); white-space: nowrap; }
+.ed-status.ok { color: var(--good); } .ed-status.warn { color: var(--warning); } .ed-status.bad { color: var(--critical); white-space: normal; }
+.ed-changed { color: var(--muted); font-size: 12px; }
+.ed-changed::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--who, var(--s2));
+  margin-right: 6px; vertical-align: 1px; }
+.ed-people { display: flex; gap: 6px; margin-left: auto; align-items: center; flex-wrap: wrap; }
+.ed-person { font: inherit; font-size: 11.5px; padding: 1px 8px; border-radius: 10px; color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--who) 55%, transparent); background: color-mix(in srgb, var(--who) 14%, transparent); }
+button.ed-person { cursor: pointer; }
+.ed-hint { color: var(--muted); }
+.ed-auto { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); white-space: nowrap; cursor: pointer; }
+.ed-auto input { margin: 0; }
+.ed-body { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--hl-bg); }
+.ed-body .cm-editor { flex: 1; min-height: 0; background: var(--hl-bg); color: var(--ink); font-size: 12.5px; }
+.ed-body .cm-editor.cm-focused { outline: none; }
+.ed-body .cm-scroller { font-family: var(--mono); line-height: 1.55; }
+.ed-body .cm-gutters { background: var(--hl-bg); color: var(--muted); border-right: 1px solid var(--grid); }
+.ed-body .cm-activeLine { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.ed-body .cm-activeLineGutter { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
+.ed-body .cm-cursor, .ed-body .cm-dropCursor { border-left-color: var(--ink); }
+.ed-body .cm-selectionLayer .cm-selectionBackground { background: color-mix(in srgb, var(--s1) 30%, transparent) !important; }
+.ed-body .cm-matchingBracket { background: color-mix(in srgb, var(--s1) 22%, transparent); outline: none; }
+.ed-body .cm-searchMatch { background: color-mix(in srgb, var(--s4) 30%, transparent); outline: none; }
+.ed-body .cm-panels { background: var(--surface); color: var(--ink); border-color: var(--grid); }
+.ed-body .cm-textfield { background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 4px; }
+.ed-body .cm-button { background: var(--wash); background-image: none; color: var(--ink); border: 1px solid var(--ring); border-radius: 4px; }
+.ed-body .cm-tooltip { background: var(--surface); color: var(--ink); border: 1px solid var(--ring); }
+.ed-body .ed-disk { background: color-mix(in srgb, var(--who, var(--s2)) 26%, transparent); }
+/* the conflict zone: the lines edited here since the file was opened, tinted very lightly */
+.ed-body .ed-zone { background: color-mix(in srgb, var(--s1) 7%, transparent); }
+.ed-zone-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 11.5px; color: var(--ink-2); white-space: nowrap;
+  padding: 1px 2px 1px 8px; border-radius: 9px; background: color-mix(in srgb, var(--s1) 13%, transparent); }
+.ed-zone-chip button { border: 0; background: none; font: inherit; color: var(--s1); padding: 0 6px; cursor: pointer; border-radius: 7px; }
+.ed-zone-chip button:hover { background: color-mix(in srgb, var(--s1) 16%, transparent); }
+/* a conflict with the file on disk: the lines kept here, and under them the file's, with what to do about them */
+.ed-body .ed-cf-mine { background: color-mix(in srgb, var(--warning) 14%, transparent); box-shadow: inset 3px 0 0 var(--warning); }
+.ed-body .ed-cf { margin: 2px 0 6px; border: 1px solid color-mix(in srgb, var(--critical) 45%, var(--ring)); border-radius: 6px;
+  background: var(--surface); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; white-space: normal;
+  position: sticky; left: 0; max-width: min(100%, 900px); box-sizing: border-box; }
+.ed-body .ed-cf-head .what { min-width: 0; overflow-wrap: anywhere; }
+.ed-body .ed-cf-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 5px 8px; font-size: 12px; color: var(--ink-2);
+  background: color-mix(in srgb, var(--critical) 8%, var(--surface)); }
+.ed-body .ed-cf-head .grow { flex: 1; }
+.ed-body .ed-cf-head button { font-size: 12px; padding: 2px 9px; }
+.ed-body .ed-cf-label { padding: 5px 8px 0 12px; font-size: 11px; color: var(--muted);
+  background: color-mix(in srgb, var(--critical) 6%, transparent); box-shadow: inset 3px 0 0 var(--critical); }
+.ed-body .ed-cf-theirs { margin: 0; padding: 4px 8px 6px 12px; font: 12.5px/1.55 var(--mono); white-space: pre; overflow-x: auto;
+  color: var(--ink); background: color-mix(in srgb, var(--critical) 6%, transparent); box-shadow: inset 3px 0 0 var(--critical); }
+button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px; }
+.ed-unmark { border: 0; background: none; color: var(--muted); font-size: 14px; line-height: 1; padding: 0 3px; margin-left: 3px; }
+.ed-unmark:hover { color: var(--ink); background: var(--wash); }
+.ed-row .mk.cf { font-size: 10.5px; font-weight: 700; color: #fff; background: var(--critical); border-radius: 7px; padding: 0 5px; line-height: 14px; }
+.ed-body .ed-disk-line { box-shadow: inset 3px 0 0 var(--who, var(--s2)); }
+@media (max-width: 760px) { .ed-tree { width: 140px; } }
 /* the Files view: a turn's files, each as the agent saw it (files.py) */
-.chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  container: talk / size; }   /* its height the layout's: short (under the Editor, say), the actor at work said on one line */
 .files .fl-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }
 .files .fl-grid.open { grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
 /* --lh: a line of the conversation, which a reply's dot and its first line share */
@@ -1039,6 +1176,19 @@ button:disabled { opacity: .5; cursor: default; }
 .files .fl-working .now { color: var(--term-accent); }
 /* when it last did something, and how long the turn has run: counting, dim, above the words */
 .files .fl-working .fl-times { color: var(--muted); font-size: .86em; opacity: .8; font-variant-numeric: tabular-nums; }
+.files .fl-working > .fl-mini { display: none; }
+.files .fl-working.fl-finished { display: none; }   /* short of height only */
+.files .fl-mini img { display: block; width: 1.3em; height: 1.3em; }
+/* short of height: the actor at work on one line -- its avatar small, as tall as the words, "Working…", then the times --
+   in place of the two lines and the avatar under them */
+@container talk (max-height: 420px) {
+  .files .fl-working { display: flex; align-items: center; gap: 6px; }
+  .files .fl-working > .fl-mini { display: inline-flex; flex: none; order: 0; color: var(--term-accent); }
+  .files .fl-working > .now { order: 1; flex: none; }
+  .files .fl-working > .fl-times { order: 2; flex: 0 1 auto; }
+  .files .fl-working > .fl-times::before { content: "· "; }
+  .files .fl-status { display: none; }
+  .files .fl-working.fl-finished { display: flex; } .files .fl-talk > .fl-done { display: none; } }
 .files .fl-talk > .fl-status { margin: 4px 6px 0 8px; }
 .files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
 .files .fl-status .spin { font-size: 1.4em; }
@@ -1214,7 +1364,7 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
   height: calc(64 / 82 * 100%); }
 .stage-box > svg.s-think:not(.retry) + .buddy { display: block; }
 .stage-box > .buddy.f-glow { z-index: -1; }
-.files .fl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ring); }
+.files .fl-side { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-right: 1px solid var(--ring); }
 /* the files and commands folded: a thin bar of their numbers, opened again by a click */
 .files .fl-grid.folded { grid-template-columns: 30px minmax(0, 1fr); }
 .files .fl-grid.folded.open { grid-template-columns: 30px minmax(0, 1fr) minmax(240px, 340px); }
@@ -1223,6 +1373,19 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
   font: 10.5px var(--mono); color: var(--muted); cursor: pointer; }
 .files .fl-bar:hover, .files .fl-bar:focus-visible { background: var(--wash); color: var(--ink-2); }
 .files .fl-bar > svg { flex: none; color: var(--ink-2); }
+/* the Editor open: the bar in a box with the pane's head's icons (barActs) at its top -- the numbers at its foot -- or,
+   a row, at its right; the head itself hidden */
+.files .fl-barbox { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--ring); }
+.files .fl-barbox > .fl-bar { flex: 1 1 auto; border: 0; }
+.files .fl-acts { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 0;
+  border-bottom: 1px solid var(--grid); }
+.files .fl-act { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 5px; background: none; color: var(--ink-2); font-size: 16px; line-height: 1; cursor: pointer; }
+.files .fl-act:hover, .files .fl-act:focus-visible { background: var(--wash); color: var(--ink); }
+.files .fl-act[aria-pressed="true"] { background: var(--selected); color: var(--ink); }
+.files .fl-act.close { display: none; color: var(--muted); }
+:is(.panes.split, :root.pane-mode .panes) .files .fl-act.close { display: inline-flex; }
+.pane:has(.files .fl-acts) > .pane-top { display: none; }
 .files .fl-bar .it { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .files .fl-bar .stats { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: auto; }   /* the latest turn's, at the foot */
 .files .fl-bar .sub { display: inline-flex; align-items: center; gap: 2px; }
@@ -1238,6 +1401,9 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-h .fold:hover { background: var(--wash); color: var(--ink); }
 .files .fl-sec { display: flex; flex-direction: column; min-height: 0; }
 .files .fl-sec.files-sec { flex: 3 1 0; } .files .fl-sec.cmds-sec { flex: 2 1 0; border-top: 1px solid var(--ring); }
+/* short of room (a short window, a pane under another): each keeps its heading, a few rows and its legend, nothing of it
+   over the next, and the files and commands scroll whole */
+.files .fl-sec:is(.files-sec, .cmds-sec) { min-height: 120px; overflow: hidden; }
 .files .fl-sec > .fl-h { flex: none; }
 .files .fl-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
 .files .fl-sec > .fl-legend { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--ring); }
@@ -1400,11 +1566,15 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .cmdline { font: .92em var(--mono); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
-  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; }
+  .files .fl-barbox { flex-direction: row-reverse; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-barbox > .fl-bar { border: 0; }
+  .files .fl-acts { flex-direction: row; padding: 0 6px; border-bottom: 0; border-left: 1px solid var(--grid); } }
 /* the same by the pane's width: one of several side by side is narrower than the window */
 @container pane (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
-  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; }
+  .files .fl-barbox { flex-direction: row-reverse; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-barbox > .fl-bar { border: 0; }
+  .files .fl-acts { flex-direction: row; padding: 0 6px; border-bottom: 0; border-left: 1px solid var(--grid); } }
 /* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
@@ -1618,6 +1788,8 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
     <nav class="rail" id="rail" aria-label="Actors"></nav>
     <div class="monitor" id="monitor" tabindex="-1"></div>
   </div>
+  <div class="work">
+  <section class="ed-top" id="ed-top" hidden aria-label="Editor"></section>
   <div class="panes" id="panes">
     <section class="pane" id="pane-here">
       <div class="pane-top"><div class="pane-head" id="pane-head">
@@ -1627,6 +1799,7 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
       </div></div>
       <main id="main"><div class="empty">Loading…</div></main>
     </section>
+  </div>
   </div>
 </div>
 <!-- config.toml, edited over the whole page: outside the header, whose layer would keep it under the page -->
@@ -1707,11 +1880,13 @@ const ago = (t) => {
 };
 // " (… <what> Ns ago)", counting: the time `t` (the server's seconds) set every second (the ticker by `data-since`);
 // hidden from screen readers, so a status line holding it is not read out again each second.
-// How long since the time `t` (the server's seconds), as a clock counting up: "45s", "2m 05s", "1h 12m".
-const lasting = (t) => {
-  const s = Math.max(0, Math.floor(Date.now() / 1000 - t)), pad = (n) => String(n).padStart(2, "0");
+// How long since the time `t` (the server's seconds), as a clock counting up: "45s", "2m 05s", "1h 12m" (spell: `s`
+// seconds, so).
+const spell = (s) => {
+  s = Math.max(0, Math.floor(s)); const pad = (n) => String(n).padStart(2, "0");
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${pad(s % 60)}s` : `${Math.floor(s / 3600)}h ${pad(Math.floor(s / 60) % 60)}m`;
 };
+const lasting = (t) => spell(Date.now() / 1000 - t);
 const agoEl = (what, t) => el("span", { "aria-hidden": "true" }, ` (${what} `, el("span", { "data-ago": t || "", text: ago(t) }), ")");
 const span = (a, b) => {
   if (!a || !b) return "–";
@@ -2026,6 +2201,8 @@ const ICONS = {
   panel: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM9.75 2.75v10.5",
   sidebar: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM6.25 2.75v10.5",
   pulse: "M1.5 8.5h2.75l1.75-4.25 2.5 7.5 2-5.5 1.25 2.25h2.75",   // what runs in the background: alive
+  code: "M5.25 4.75L2 8l3.25 3.25M10.75 4.75L14 8l-3.25 3.25M9.25 2.75l-2.5 10.5",   // the Editor: a file's code
+  folderUp: "M1.75 4a1 1 0 0 1 1-1h3.4l1.5 1.6h5.6a1 1 0 0 1 1 1v6.65a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1zM8 11.1V7.1M6.3 8.8 8 7.1l1.7 1.7",   // the folder above
   power: "M8 1.75v5.5M4.6 3.9a5.25 5.25 0 1 0 6.8 0",                  // a shell terminated
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
@@ -2232,7 +2409,13 @@ async function refresh(userAction = false) {
 }
 // Draw what changed since the last draw (everything, for what the reader asked for).
 let lastKey = 0, heldDraw = null;
-document.addEventListener("input", (ev) => { if (ev.target && ev.target.id === "composer-text") lastKey = performance.now(); }, true);
+document.addEventListener("input", (ev) => { if (ev.target && ev.target.id === "composer-text") { lastKey = performance.now(); fitBox(ev.target); } }, true);
+// The message box as tall as what is typed in it: a line, up to its CSS's most (then scrolling).
+function fitBox(box) {
+  if (!box) return;
+  box.style.height = "auto";
+  box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;
+}
 const TYPING_MS = 300;                               // an update that comes while the reader types waits this long after a key
 function render(userAction = false) {
   if (!state.home) return;
@@ -2259,7 +2442,7 @@ const mainSignature = () => {
   return signature([state.selected, state.agentVersion, state.readId, state.context && state.context.read_id, info && info.session,
     info && [info.chattable, info.holder], state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
-    state.details && state.detailsTab]);
+    state.details && state.detailsTab, edShown()]);
 };
 // The page's state, small under its name: its dot green while live, amber paused, red on an error.
 const setLive = (text) => {
@@ -2413,7 +2596,7 @@ function keepingPlace(draw) {
   draw();
   if (refocus && refocus.isConnected && refocus.agFocus) refocus.agFocus();
   const again = document.getElementById("composer-text");
-  if (again && typed && again !== box) { again.value = typed[0]; if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
+  if (again && typed && again !== box) { again.value = typed[0]; fitBox(again); if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
   for (const id of open) { const d = document.getElementById(id); if (d) d.open = true; }
   for (const [k, top, left] of scrolled) {
     const n = main.querySelector(`[data-keep="${k}"]`);
@@ -3330,7 +3513,8 @@ function layout() {
 // The page's top row -- the page's name at the left, each pane's head -- as tall as the tallest of them, so the
 // rule under it runs straight across the page: each says how tall it is by itself (`tops`: the name's, this
 // page's head's, each frame's), and all are given the tallest (--top-h). Not where the page is a phone's, its
-// panes one under the other. A frame tells the page around it, and is told.
+// panes one under the other. A frame tells the page around it, and is told. A head put in its Chat view's bar (the
+// Editor open: barActs) is hidden, of no height.
 const tops = new Map(), NARROW = matchMedia("(max-width: 760px)");
 function topRow(who, height) {
   if (height === null) tops.delete(who); else tops.set(who, height);
@@ -3476,6 +3660,7 @@ function paneReady() {
     avatar: (pick) => setAvatarMode(pick, false),
     focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
     top: (h) => setTopRow(h),
+    editor: () => keepingPlace(renderMain),          // the Editor opened or closed above the panes: its head, in the bar or not
   });
   PANE.ready(window, state.selected);
   watchTop(document.getElementById("pane-head"), "here");
@@ -3688,8 +3873,10 @@ function legend(items) {
 // ------------------------------------------------------------------ the selected agent
 // The main view is the actor's conversation (chatCard): all of it, with the message box under it where
 // the actor can be messaged here. What ag saw and did for it -- the Actor and Gatherer views -- is the
-// details panel (detailsPanel), opened from the page's header, at the chat's right.
+// details panel (detailsPanel), opened from the page's header, at the chat's right. The Editor is above the
+// panes, its own (edMount).
 function renderMain() {
+  edMount();
   const main = document.getElementById("main");
   if (!state.selected) {
     document.getElementById("controls").replaceChildren();
@@ -3858,9 +4045,13 @@ function chatCard(info) {
   const controls = document.getElementById("controls");
   const heading = [...(tools.length ? [el("div", { class: "chat-tools" }, ...tools)] : []),
     ...[viewSwitcher(view)].filter(Boolean),
-    el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false", "aria-label": "Details",
-      title: "Details: what ag saw and did for this actor (its context, calls, history and builds), and the history's other views",
-      onclick: () => setDetails(!state.details) }, strokeIcon(ICONS.panel, 16))];
+    el("div", { class: "side-btns" },
+      SNAPSHOT ? null : el("button", { type: "button", class: "details-btn", "aria-expanded": edShown() ? "true" : "false", "aria-label": "Editor",
+        title: "Editor, at this actor's working directory: files edited live, above the actors' views -- with everyone who has a file open, and what the actors write to them as it lands. Closed by its ×",
+        onclick: () => setEditor(true, edActorDir()) }, strokeIcon(ICONS.code, 16)),
+      el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false", "aria-label": "Details",
+        title: "Details: what ag saw and did for this actor (its context, calls, history and builds), and the history's other views",
+        onclick: () => setDetails(!state.details) }, strokeIcon(ICONS.panel, 16)))];
   // the page's own buttons, unchanged, kept as they are: a view that redraws every few seconds (History, while
   // the Gatherer works) does not make them flash under the pointer. A view's own tools are made again each
   // draw: what they do may be the draw's.
@@ -3895,7 +4086,7 @@ function chatCard(info) {
   let sending = false;
   ctx.send = async (t) => {
     t = String(t ?? "").trim();
-    if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) box.value = ""; return true; }
+    if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) { box.value = ""; fitBox(box); } return true; }
     if (!t || sending || held) return false;
     sending = true; err.textContent = "";
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
@@ -3907,7 +4098,7 @@ function chatCard(info) {
     const mine = slash ? null : { key: key(...state.selected), text: t, base: heardCount(heard(info), t), at: Date.now() };
     const box = document.getElementById("composer-text"), was = box ? box.value : "";
     if (mine) sentHere.push(mine);
-    if (box) box.value = "";
+    if (box) { box.value = ""; fitBox(box); }
     if (mine) {
       keepingPlace(renderMain); talkToEnd();
       setTimeout(() => { if (sentHere.includes(mine)) keepingPlace(renderMain); }, UNSEEN_MS + 100);
@@ -3923,16 +4114,18 @@ function chatCard(info) {
       return true;
     } catch (e) {
       if (mine && sentHere.includes(mine)) sentHere.splice(sentHere.indexOf(mine), 1);
-      const again = document.getElementById("composer-text"); if (again && !again.value) again.value = was;
+      const again = document.getElementById("composer-text"); if (again && !again.value) { again.value = was; fitBox(again); }
       keepingPlace(renderMain);
       err.textContent = e.message; return false;
     }
     finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = !!held; }
   };
   // The text box a composer is built around: Enter sends it, Shift+Enter starts a new line, and what is
-  // typed in it survives the tab being drawn again (keepingPlace finds it by its id).
+  // typed in it survives the tab being drawn again (keepingPlace finds it by its id). A line high, growing with
+  // the lines typed (fitBox).
   ctx.input = (attrs = {}) => {
-    const box = el("textarea", { rows: "3", placeholder: "Message the agent", "aria-label": "Message the agent", ...attrs, id: "composer-text",
+    const box = el("textarea", { rows: "1", placeholder: "Message the actor", "aria-label": "Message the actor", title: "Enter sends · Shift+Enter for a new line",
+      enterkeyhint: "send", ...attrs, id: "composer-text",
       ...(held ? { disabled: "", placeholder: "Open in another process" } : {}) });
     box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ctx.send(box.value); } });
     return box;
@@ -4143,12 +4336,10 @@ function errorHint(f, st) {
   if (status === 401 || status === 403) return "Not authorized: the harness may need to log in again.";
   return null;
 }
-// The message box a view gets unless it brings its own: a text box and a Send button.
+// The message box a view gets unless it brings its own: a text box, Enter sending it.
 function defaultComposer(ctx) {
   const text = ctx.input();
-  const form = el("form", { class: "composer" }, text,
-    el("div", { class: "row" }, el("span", { class: "hint", text: "Enter sends · Shift+Enter for a new line" }),
-      el("button", { type: "submit", class: "primary", "data-send": "1" }, "Send")));
+  const form = el("form", { class: "composer" }, text);
   form.addEventListener("submit", (ev) => { ev.preventDefault(); ctx.send(text.value); });
   return form;
 }
@@ -5633,7 +5824,7 @@ function sideBar(files, cmds, info) {
     plural(n, "command") + (how.length ? ": " + how.map(([k, , w]) => `${full(k)} ${w}`).join(", ") : ""),
     bg ? plural(bg, "background task") : null].filter(Boolean).join(" · ");
   const dot = (cls, color) => el("i", { class: "g " + cls, "aria-hidden": "true", style: color ? `background: ${color}` : null });
-  return el("button", { type: "button", class: "fl-bar", title: `${said}. Show the files and commands`,
+  const bar = el("button", { type: "button", class: "fl-bar", title: `${said}. Show the files and commands`,
     "aria-label": `Show the files and commands: ${said}`,
     onclick: (ev) => { if (ev.target.closest(".it.bg")) openBackground(true, false); foldSide(false); } },
     strokeIcon(ICONS.sidebar, 15),
@@ -5647,6 +5838,24 @@ function sideBar(files, cmds, info) {
         ...(how.length ? how.map(([k, cls]) => el("span", { class: "sub " + cls }, dot(cls), full(k))) : [el("span", { text: "0" })])),
       bg ? el("span", { class: "it bg", title: `${plural(bg, "background task")}: show them` }, strokeIcon(ICONS.pulse, 13),
         el("span", { class: "sub bg" }, dot("bg"), full(bg))) : null));
+  const acts = barActs();
+  return acts ? el("div", { class: "fl-barbox" }, acts, bar) : bar;
+}
+// With the Editor open above the panes, a pane's head is put in its Chat view's folded bar, at the other end from the
+// numbers, as small icons -- which view, the Editor at this actor's folder, Details, and (panes side by side) the
+// pane's close -- and the head itself hidden (.pane:has(.fl-acts)), its room the chat's.
+function barActs() {
+  if (SNAPSHOT || !edShown()) return null;
+  const now = chatView().id;
+  const act = (label, title, icon, onclick, pressed = null, cls = "") => el("button", { type: "button", class: `fl-act ${cls}`.trim(),
+    title, "aria-label": label, "aria-pressed": pressed === null ? null : pressed ? "true" : "false", onclick }, icon);
+  return el("div", { class: "fl-acts", role: "group", "aria-label": "This pane" },
+    ...[...CHAT_VIEWS.values()].filter((v) => !v.more || v.id === now).map((v) =>
+      act(v.name, v.description || v.name, v.icon ? strokeIcon(v.icon, 14) : v.name.slice(0, 1), () => setChatView(v.id), v.id === now)),
+    act("Editor", "Editor: this actor's working directory in it", strokeIcon(ICONS.code, 14), () => setEditor(true, edActorDir())),
+    act("Details", "Details: what ag saw and did for this actor, and the history's other views", strokeIcon(ICONS.panel, 14),
+      () => setDetails(!state.details), !!state.details),
+    act("Close this pane", "Close this pane", "×", () => $("pane-close").click(), null, "close"));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
@@ -6031,11 +6240,21 @@ function opened(a) {
 }
 // The line under a running turn: when the actor last did something (`last`; its last try, `retrying`) and how long the
 // turn has run (since `at`), and what it does now.
+// Short of height (the `talk` container), all on one line, behind the actor's avatar small (`fl-mini`).
+const miniAvatar = (info, none) => el("span", { class: "fl-mini", "aria-hidden": "true" }, info && bareAvatar(info)
+  ? el("img", { src: bareAvatar(info), alt: "", draggable: "false" }) : none);
 const working = (info, last, at, now, retrying = false) => el("div", { class: "fl-working" },
+  miniAvatar(info, el("span", { class: "spin" })),
   el("div", { class: "fl-times", "aria-hidden": "true" }, retrying ? "last try " : "last activity ",
     el("span", { "data-ago": last || "", text: ago(last) }),
     at ? " · " : null, at ? el("span", { "data-lasting": at, text: lasting(at) }) : null, at ? " so far" : null),
   el("div", { class: "now", role: "status", style: hueInk(info) }, now));
+// The latest turn over, short of height: on one line as the actor at work is -- its avatar small, "Done", and how long
+// the turn took, from its message to its last event (`end`; from a server without it, the actor's last activity) --
+// in place of the avatar done under it (.fl-done). Otherwise not shown.
+const finished = (info, t) => el("div", { class: "fl-working fl-finished" }, miniAvatar(info, el("span", { text: "✓" })),
+  el("div", { class: "fl-times" }, t.at ? `took ${spell((t.end || info.last || t.at) - t.at)}` : ""),
+  el("div", { class: "now", style: hueInk(info) }, "Done"));
 // A turn Claude Code has started that ag has not stored yet (openings): its first message, sent -- in full, as the terminal
 // shows it -- and, the latest, the actor at work under it and what waits to reach it; drawn from what ag stores once it has,
 // from when it was sent still (began: by the actor and the message's words).
@@ -6095,6 +6314,7 @@ function filesTalk(d, info, running) {
     const toggle = () => { opened.has(t.n) ? opened.delete(t.n) : opened.add(t.n); keepingPlace(renderMain); };
     // a call under way is drawn above, as the turn's latest call: the line under it only says the agent works
     const now = !live ? "" : info && info.failing ? "Retrying…" : t.now && t.now.kind === "thinking" ? "Thinking…" : "Working…";
+    const done = !live && t.n === d.turns.length - 1 && !opens.length && !!info && ["idle", "finished", "closed"].includes(statusOf(info)[0]);
     const starts = live ? [t.at, began(t)].filter(Boolean) : [];
     const from = starts.length ? Math.min(...starts) : null;      // when it began: sent (began), or stored
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
@@ -6122,11 +6342,11 @@ function filesTalk(d, info, running) {
       t.last ? el("div", { class: "fl-minor" }, lastCall(t, live, info ? statusOf(info)[0] : "")) : null,
       live ? working(info, info.failing ? info.failing.at : Math.max(info.last || 0, from || 0) || null, from, now, !!info.failing)
         : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null,
+      done ? finished(info, t) : null,
       t.n === d.turns.length - 1 && !opens.length ? pendingTalk(info, h) : null));
     // under the latest turn's box: the actor at work; or, its turn over, the actor done
     if (live) box.append(el("div", { class: "fl-status", "aria-hidden": "true" }, atWork(info, t)));
-    else if (t.n === d.turns.length - 1 && !opens.length && info && ["idle", "finished", "closed"].includes(statusOf(info)[0]))
-      box.append(el("div", { class: "fl-done", title: `Done · ${ago(info.last)}` }, atRest(info, t.row_id)));
+    else if (done) box.append(el("div", { class: "fl-done", title: `Done · ${ago(info.last)}` }, atRest(info, t.row_id)));
   }
   box.append(...opens.flatMap((q, i) => openedTurn(info, q, i === opens.length - 1, h)));
   const at = `${state.files && state.files.key}:${d.turn}`;
@@ -6907,6 +7127,776 @@ if (!SNAPSHOT) addChatView({
   description: "The history, searched, and picked by actor, task, turn or message: exported, or given to the Gatherer's model to summarize, or to make a memory or a skill of.",
   render: histRender,
 });
+
+// ------------------------------------------------------------------ the Editor
+// Above the panes, the actors' views below it (each shorter while it is open; Cmd/Ctrl+click in the list opens more of
+// them side by side): a folder's tree, any folder -- an actor's, or one typed, or the one above -- and its files to
+// edit (editor.py): each file shared live by every page that has it open -- their edits and cursors shown as they
+// type -- and the file on disk one more of its editors, so what an actor writes to it lands in the editor as it is
+// written, around what was typed and not saved, marked in that actor's hue until the next change on disk -- but for
+// the conflict zone: the lines edited here since the file was opened, tinted, which an actor's change is asked about
+// (Restore yours / Accept its rewrite / Keep both), not merged into, until the zone is cleared (its button in the
+// header) or the file closed. Who changed each file, of the
+// actors, is what ag's hook found each tool call did on disk (the listing's `writers`): two or more changing one file
+// are said in the tree and over the file. Saved by Save (or ⌘S / Ctrl+S): until then the file on disk, which the
+// actors read, is as it was -- or, with Auto-save on (as it is unless the reader turns it off, kept in this browser), a moment after each
+// edit. The editor (CodeMirror and Yjs, vendor/editor.js) is loaded the first time a file opens.
+const ED_TICK = 2500;            // ms between looks at the open folders (and the header's "Ns ago")
+const ED_SEND = 40;              // ms the edits of a burst of keys are gathered before they are sent
+const ED_CREDIT = [3, 20];       // s an actor's recorded change may come before, and after, a change seen on disk, to be its
+const ED_AUTO_MS = 1000;         // ms after the last edit to a file that Auto-save saves it
+const ED_NAME_KEY = "ag-editor-name", ED_COLOR_KEY = "ag-editor-color", ED_ROOT_KEY = "ag-editor-folder", ED_AUTO_KEY = "ag-editor-autosave";
+const ED_SHOWN_KEY = "ag-dashboard-editor", ED_HEIGHT_KEY = "ag-dashboard-editor-height";
+const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, s: null, lib: null, me: null, user: "", err: "",
+  timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null, side: null, changes: null,
+  auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })() };   // on unless turned off
+const edB64 = (u8) => { let t = ""; for (let i = 0; i < u8.length; i += 0x8000) t += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(t); };
+const edBytes = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+const edJoin = (dir, name) => (dir === "/" ? "/" : dir + "/") + name;
+const edUnder = (p, dir) => dir === "/" ? p.startsWith("/") : p === dir || p.startsWith(dir + "/");
+const edDir = (p) => p.slice(0, p.lastIndexOf("/")) || "/";
+const edBase = (p) => p.slice(p.lastIndexOf("/") + 1);
+const edTilde = (p) => tildePath(p, ed.home);
+const edRel = (p) => ed.root && ed.root !== "/" && p.startsWith(ed.root + "/") ? p.slice(ed.root.length + 1) : edTilde(p);
+function edLib() {
+  return ed.lib ||= new Promise((ok, no) => {
+    const tag = document.createElement("script");
+    tag.src = "/vendor/editor.js";
+    tag.onload = () => window.agEditor ? ok(window.agEditor) : no(new Error("The editor did not load."));
+    tag.onerror = () => { ed.lib = null; tag.remove(); no(new Error("The editor did not load: is the dashboard still running?")); };
+    document.head.append(tag);
+  });
+}
+// Who this page is to the others with a file open: a name (the login, until the reader gives another, kept in this
+// browser) and a colour of this tab's own.
+function edMe() {
+  if (ed.me) return ed.me;
+  let name = "", color = "";
+  try { name = localStorage.getItem(ED_NAME_KEY) || ""; color = sessionStorage.getItem(ED_COLOR_KEY) || ""; } catch (e) { /* this page only */ }
+  if (!color) {
+    const hues = Object.values(HUE_MAIN);
+    color = hues[Math.floor(Math.random() * hues.length)];
+    try { sessionStorage.setItem(ED_COLOR_KEY, color); } catch (e) { /* this page only */ }
+  }
+  return ed.me = { name: name || ed.user || "Someone", color, colorLight: color + "40" };
+}
+function edRename() {
+  const name = (prompt("Your name, as the others with a file open see it", edMe().name) || "").trim();
+  if (!name) return;
+  try { localStorage.setItem(ED_NAME_KEY, name); } catch (e) { /* this page only */ }
+  ed.me = { ...edMe(), name };
+  if (ed.s) ed.s.awareness.setLocalStateField("user", ed.me);
+  edHead();
+}
+
+// The actors: as the list has them (their names, avatars, hues), by gatherer and channel.
+function edActor(g, c) {
+  const gat = ((state.home && state.home.gatherers) || []).find((x) => x.name === g);
+  return gat ? gat.agents.find((a) => a.channel === c) || null : null;
+}
+const edWhoName = (a) => {                           // its name; without one, its first message, quoted
+  if (a.name && a.name.text) return a.name.text;
+  const said = firstLine(a.last_user_message || "");
+  return said ? `“${said.length > 40 ? said.slice(0, 40).trimEnd() + "…" : said}”` : a.channel.slice(0, 8);
+};
+const edWhoColor = (a) => (a && HUE_MAIN[a.avatar_hue]) || null;
+// Until ag's hook has recorded who changed the file (a moment after), whose a change seen on disk likely is: the one
+// actor running in a directory that holds the file, if just one is.
+function edWho(path) {
+  const found = [];
+  for (const g of (state.home && state.home.gatherers) || [])
+    for (const a of g.agents)
+      if (a.cwd && edUnder(path, a.cwd.replace(/\/$/, "")) && statusOf(a)[0] === "running") found.push(a);
+  return found.length === 1 ? found[0] : null;
+}
+// A file's writers (the listing's: [{gatherer, channel, at, how}], the latest first), one per actor, each with its actor.
+const edWriters = (entry) => {
+  const seen = new Set(), out = [];
+  for (const w of (entry && entry.writers) || []) {
+    const k = w.gatherer + "\u0000" + w.channel;
+    if (!seen.has(k)) { seen.add(k); out.push({ ...w, actor: edActor(w.gatherer, w.channel) }); }
+  }
+  return out;
+};
+const edWriterName = (w) => w.actor ? edWhoName(w.actor) : w.channel.slice(0, 8);
+const edAvatar = (w) => w.actor && w.actor.avatar
+  ? el("img", { src: `/avatars/${w.actor.avatar}.svg`, alt: "", draggable: "false" })
+  : el("span", { class: "ed-noav", style: `--who: ${edWhoColor(w.actor) || "var(--axis)"}` });
+// An actor's changes to the file open, in the last ED_CHANGES_S, beside it (ed.side): opened by its avatar in the
+// header, closed by it again or the panel's ×, or another file opened. Each change as the Chat view shows a file's
+// (fileBlock), the latest first, under what the actor was asked; one whose new lines are in the file now has "Show",
+// which selects them there. Fetched again when the actor changes the file again (edHead).
+const ED_CHANGES_S = 600;
+const edKey = (w) => `${w.gatherer}\u0000${w.channel}`;
+function edChanges(w) {
+  if (ed.changes && ed.changes.k === edKey(w) && ed.changes.path === ed.file) return edChangesClose();
+  ed.changes = { k: edKey(w), w, path: ed.file, got: null, err: "", seen: w.at };
+  edDrawChanges(); edHead(); edFetchChanges();
+}
+function edChangesClose() { ed.changes = null; edDrawChanges(); edHead(); }
+async function edFetchChanges() {
+  const c = ed.changes;
+  if (!c) return;
+  const q = new URLSearchParams({ gatherer: c.w.gatherer, channel: c.w.channel, path: c.path,
+    since: String(Math.floor(Date.now() / 1000 - ED_CHANGES_S)), cwd: (c.w.actor && c.w.actor.cwd) || "" });
+  let got = null, err = "";
+  try { got = await get(`/api/files/changes?${q}`); err = got.error || ""; } catch (e) { err = e.message; }
+  if (ed.changes !== c) return;
+  c.got = got; c.err = err;
+  edDrawChanges();
+}
+function edDrawChanges() {
+  const side = ed.side, c = ed.changes;
+  if (!side) return;
+  if (!c || c.path !== ed.file) {
+    ed.changes = null;
+    if (!side.hidden) { side.hidden = true; side.replaceChildren(); }
+    return;
+  }
+  side.hidden = false;
+  const name = edWriterName(c.w), mins = `${ED_CHANGES_S / 60} minutes`;
+  const list = c.got && !c.err ? [...(c.got.changes || [])].reverse() : [];
+  const doc = ed.s && ed.s.view ? ed.s.view.state.doc.toString() : "";
+  side.replaceChildren(
+    el("div", { class: "ed-ch-h" }, el("span", { class: "ed-avs" }, edAvatar(c.w)),
+      el("span", { class: "t", title: `${name}'s changes to ${edRel(c.path)} in the last ${mins}` }, el("b", { text: name }), ` · changes in the last ${mins}`),
+      el("button", { type: "button", class: "ed-ch-x", title: "Close", "aria-label": "Close the changes", onclick: edChangesClose }, "×")),
+    ...(c.err ? [el("div", { class: "none", text: c.err })] : !c.got ? [el("div", { class: "none", text: "Loading…" })]
+      : !list.length ? [el("div", { class: "none", text: `No changes to this file in the last ${mins}.` })]
+      : list.map((x) => edChangeView(x, doc))));
+}
+function edChangeView(x, doc) {
+  const code = el("div", { class: "code" });
+  for (const b of x.blocks) code.append(...fileBlock(b, langOfPath(ed.file)));
+  const there = x.blocks.filter((b) => b.t === "diff" && b.new.length).map((b) => b.new.join("\n")).find((t) => doc.includes(t));
+  return el("details", { class: "fv-call" + (x.error ? " err" : ""), open: "" },
+    el("summary", {}, el("span", { class: "tw", text: "▸" }),
+      el("span", { class: "kinds" }, ...x.kinds.map((k) => kindMark(k, 12))),
+      el("span", { class: "via", text: firstLine(x.via, 160) }), changedCount(x.changed),
+      el("span", { class: "what", text: x.at ? ago(x.at) : "" }),
+      there ? el("button", { type: "button", class: "ed-ch-go", title: "Select these lines in the file",
+        onclick: (ev) => { ev.preventDefault(); edSelectText(there); } }, "Show") : null),
+    x.asked ? el("div", { class: "asked", title: x.asked, text: `Asked: ${firstLine(x.asked, 200)}` }) : null,
+    code);
+}
+function edSelectText(text) {
+  const s = ed.s, v = s && s.view, i = v ? v.state.doc.toString().indexOf(text) : -1;
+  if (i < 0) return;
+  v.dispatch({ selection: { anchor: i, head: i + text.length }, effects: s.A.EditorView.scrollIntoView(i, { y: "center" }) });
+  v.focus();
+}
+// The writers in the tree: their avatars, overlapped; two or more, on an amber ground with their count.
+function edAvatars(writers, what) {
+  if (!writers.length) return null;
+  const many = writers.length > 1;
+  return el("span", { class: "ed-avs" + (many ? " many" : ""),
+    title: `${many ? `${writers.length} actors changed ${what}` : `Changed ${what}`} in the last half hour:\n`
+      + writers.map((w) => `${edWriterName(w)}, ${ago(w.at)}`).join("\n") },
+    ...writers.slice(0, 3).map(edAvatar), many ? el("span", { class: "n", text: String(writers.length) }) : null);
+}
+// Whose a change seen on disk at `t` was: the actor whose recorded change is nearest it, and not long before it (ag records
+// a call's change a moment after the call made it; one recorded well before was an earlier change).
+const edCredit = (writers, t) => writers.filter((w) => w.at >= t - ED_CREDIT[0] && w.at <= t + ED_CREDIT[1])
+  .sort((a, b) => Math.abs(a.at - t) - Math.abs(b.at - t))[0] || null;
+const edEntry = (path) => ((ed.lists.get(edDir(path)) || {}).entries || []).find((e) => e.name === edBase(path)) || null;
+
+// The tree: the folder's entries, and those of each folder opened in it; drawn again only when what it shows changed.
+async function edList(dir, draw = true) {
+  let got;
+  try { got = await get(`/api/edit/list?${new URLSearchParams({ dir, root: "/" })}`); }
+  catch (e) { got = { error: e.message, entries: [] }; }
+  if (!(ed.root && edUnder(dir, ed.root)) && !(ed.file && dir === edDir(ed.file))) return;   // a folder shown before
+  if (got.user) ed.user = got.user;
+  if (got.home) ed.home = got.home;
+  ed.lists.set(dir, got);
+  if (draw) { edTree(); edHead(); }
+}
+function edToggle(dir) {
+  if (ed.open.has(dir)) ed.open.delete(dir);
+  else { ed.open.add(dir); if (!ed.lists.has(dir)) edList(dir); }
+  edTree();
+}
+function edTree() {
+  if (!ed.tree || !ed.root) return;
+  const rows = [], sig = [ed.root, ed.file];
+  const walk = (dir, depth) => {
+    const got = ed.lists.get(dir), pad = `padding-left: ${10 + depth * 14}px`;
+    if (!got || got.error || !got.entries.length) {
+      sig.push(dir, got ? got.error || "empty" : "loading");
+      rows.push(el("div", { class: "ed-note" + (got && got.error ? " err" : ""), style: pad, text: !got ? "Loading…" : got.error || "Empty" }));
+      return;
+    }
+    for (const e of got.entries) {
+      const p = edJoin(dir, e.name), writers = edWriters(e);
+      if (e.dir) {
+        const open = ed.open.has(p);
+        sig.push(p, open, writers.map((w) => w.channel));
+        rows.push(el("button", { type: "button", class: "ed-row dir", style: pad, title: edTilde(p), "aria-expanded": open ? "true" : "false",
+          onclick: () => edToggle(p) }, el("span", { class: "chev", text: open ? "▾" : "▸" }), el("span", { class: "n", text: e.name }),
+          open ? null : edAvatars(writers, "files in it")));
+        if (open) walk(p, depth + 1);
+        continue;
+      }
+      const fresh = got.now - e.mtime < 60 && !writers.some((w) => got.now - w.at < 60), on = p === ed.file;
+      sig.push(p, fresh, e.editors, e.dirty, e.conflicts, writers.map((w) => w.channel));
+      rows.push(el("button", { type: "button", class: "ed-row" + (on ? " on" : ""), style: pad, "aria-current": on ? "true" : null,
+        title: [edTilde(p), fresh ? `Changed ${ago(e.mtime)}` : "", e.editors ? `Open in ${plural(e.editors, "editor")}` : "",
+          e.dirty ? "Unsaved changes" : ""].filter(Boolean).join("\n"), onclick: () => edOpen(p) },
+        el("span", { class: "chev" }), el("span", { class: "n", text: e.name }),
+        edAvatars(writers, "it"),
+        fresh ? el("span", { class: "mk fresh", title: "Changed in the last minute" }) : null,
+        e.conflicts ? el("span", { class: "mk cf", title: `${plural(e.conflicts, "conflict")} with the file on disk`, text: "!" }) : null,
+        e.dirty && !e.conflicts ? el("span", { class: "mk dirty", title: "Unsaved changes" }) : null,
+        e.editors ? el("span", { class: "mk eds", title: `Open in ${plural(e.editors, "editor")}`, text: String(e.editors) }) : null));
+    }
+    if (got.more) rows.push(el("div", { class: "ed-note", style: pad, text: "More not listed" }));
+  };
+  walk(ed.root, 0);
+  const now = JSON.stringify(sig);
+  if (now === ed.treeSig && ed.tree.childElementCount) return;          // the same: left as it is (focus, hover)
+  ed.treeSig = now;
+  ed.tree.replaceChildren(...rows);
+}
+// Above the tree: the folder shown -- typed, or the one above it, or an actor's working directory.
+function edFolders() {
+  const by = new Map();
+  for (const g of (state.home && state.home.gatherers) || [])
+    for (const a of g.agents) {
+      const d = (a.cwd || "").replace(/\/+$/, "");
+      if (!d) continue;
+      const had = by.get(d) || { last: 0, names: [] };
+      had.last = Math.max(had.last, a.last || 0);
+      if (statusOf(a)[0] !== "closed" && had.names.length < 3) had.names.push(edWhoName(a));
+      by.set(d, had);
+    }
+  return [...by.entries()].sort((x, y) => y[1].last - x[1].last).slice(0, 15);
+}
+// The folder shown, picked among the actors' (itself first, when not one of theirs); the folder above it, beside.
+// A long path said by its last two folders, the end of it what tells one from another (the whole in its title).
+const edShort = (p) => { const t = edTilde(p), parts = t.split("/").filter(Boolean); return t.length <= 26 || parts.length <= 2 ? t : `…/${parts.slice(-2).join("/")}`; };
+function edBar() {
+  if (!ed.bar) return;
+  const folders = edFolders();
+  const sig = JSON.stringify([ed.root, ed.home, folders.map(([d, v]) => [d, v.names])]);
+  if (sig === ed.barSig) return;
+  ed.barSig = sig;
+  const theirs = folders.some(([d]) => d === ed.root);
+  const pick = el("select", { class: "ed-pick", "aria-label": "The folder shown", title: `The folder shown: ${edTilde(ed.root)}` },
+    theirs ? null : el("option", { value: ed.root, selected: "", title: edTilde(ed.root), text: edShort(ed.root) }),
+    folders.length ? el("optgroup", { label: "Actors' folders" },
+      ...folders.map(([d, v]) => el("option", { value: d, selected: d === ed.root ? "" : null, title: edTilde(d),
+        text: `${edShort(d)}${v.names.length ? " — " + v.names.join(", ") : ""}` }))) : null);
+  pick.addEventListener("change", () => { if (pick.value) edGo(pick.value); });
+  const above = edDir(ed.root);
+  ed.bar.replaceChildren(el("div", { class: "row" },
+    el("button", { type: "button", class: "ed-up", title: ed.root === "/" ? "The top folder" : `The folder above: ${edTilde(above)}`,
+      "aria-label": "The folder above", disabled: ed.root === "/" ? "" : null, onclick: () => edGo(above) }, strokeIcon(ICONS.folderUp, 15)),
+    pick));
+}
+function edGo(dir) {
+  dir = (dir || "").replace(/\/+$/, "") || "/";
+  if (!dir.startsWith("/")) { ed.barSig = ""; edBar(); return; }        // not a path: shown as it was
+  if (dir === ed.root) return;
+  ed.root = dir;
+  ed.lists = new Map([...ed.lists].filter(([d]) => ed.file && d === edDir(ed.file)));
+  ed.open.clear(); ed.treeSig = ""; ed.barSig = "";
+  try { localStorage.setItem(ED_ROOT_KEY, dir); } catch (e) { /* this page only */ }
+  edBar(); edTree(); edList(dir);
+}
+function edTick() {
+  if (ed.timer) return;
+  ed.timer = setInterval(() => {
+    if (!state.editor) { clearInterval(ed.timer); ed.timer = null; return; }
+    if (document.hidden || !ed.root) return;
+    const dirs = new Set([ed.root, ...ed.open, ...(ed.file ? [edDir(ed.file)] : [])]);
+    Promise.all([...dirs].map((d) => edList(d, false))).then(() => { edTree(); edHead(); if (ed.s) edConflicts(ed.s); });
+    edBar();
+    if (ed.s) edConflicts(ed.s);
+  }, ED_TICK);
+}
+
+// A file open: its document (Yjs), shared through the dashboard with every page that has it open and with the disk.
+async function edOpen(path) {
+  if (ed.s && ed.s.path === path && !ed.s.err) return;
+  edClose();
+  ed.file = path; ed.err = "";
+  if (!ed.lists.has(edDir(path))) edList(edDir(path));      // its writers
+  edTree(); edHead();
+  let A;
+  try { A = await edLib(); } catch (e) { ed.err = e.message; edHead(); return; }
+  if (ed.file !== path || ed.s) return;              // another picked meanwhile
+  const doc = new A.Y.Doc(), ytext = doc.getText("text"), awareness = new A.Awareness(doc);
+  const conn = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const s = ed.s = { A, path, root: "/", doc, ytext, awareness, conn, es: null, view: null, marks: null, markN: 0,
+    epoch: null, state: null, err: "", note: "", out: [], sending: false, awareAt: null, who: null };
+  awareness.setLocalStateField("user", edMe());
+  doc.on("update", (u, origin) => { if (origin !== "remote" && origin !== "disk") { s.out.push(u); edFlush(s); } });
+  awareness.on("update", (_, origin) => { if (origin === "local") edAware(s); });
+  awareness.on("change", () => { if (ed.s === s) edHead(); });
+  ytext.observe((ev, tr) => { if (tr.origin === "disk") edDiskMarks(s, ev.delta); });
+  const es = s.es = new EventSource(`/api/edit/stream?${new URLSearchParams({ path, root: s.root, conn, client: doc.clientID })}`);
+  const on = (name, f) => es.addEventListener(name, (e) => {
+    if (ed.s !== s) return;
+    try { f(JSON.parse(e.data)); } catch (err) { console.error(err); }
+  });
+  on("init", (v) => {
+    if (s.epoch && s.epoch !== v.epoch) return edReopen(s);     // the dashboard restarted: its document is another
+    const first = !s.epoch;
+    s.epoch = v.epoch;
+    A.Y.applyUpdate(doc, edBytes(v.update), "remote");
+    if (!first) {                                    // back after the stream broke: what was typed meanwhile, sent
+      const mine = A.Y.encodeStateAsUpdate(doc, edBytes(v.sv));
+      if (mine.length > 2) { s.out.push(mine); edFlush(s); }
+    }
+    for (const u of v.aware) A.applyAwarenessUpdate(awareness, edBytes(u), "remote");
+    edAware(s);                                      // this page's cursor, to the stream's new end
+    if (first) edView(s);
+    edHead();
+  });
+  on("update", (v) => A.Y.applyUpdate(doc, edBytes(v.update), v.disk ? "disk" : "remote"));
+  on("aware", (v) => A.applyAwarenessUpdate(awareness, edBytes(v.update), "remote"));
+  on("left", (v) => A.removeAwarenessStates(awareness, [v.client], "remote"));
+  on("state", (v) => { s.state = v; edZone(s); edConflicts(s); edAutoLater(s); edHead(); });   // after each edit, any page's, and the disk's
+  on("failed", (v) => { s.err = v.error; es.close(); edHead(); });
+  es.onerror = es.onopen = () => { if (ed.s === s) edHead(); };   // the header says while it reconnects
+}
+function edView(s) {
+  const A = s.A;
+  const add = A.StateEffect.define(), clear = A.StateEffect.define();
+  const marks = A.StateField.define({                // what was written to the file on disk, marked a moment
+    create: () => A.Decoration.none,
+    update(deco, tr) {
+      deco = deco.map(tr.changes);
+      for (const e of tr.effects) {
+        if (e.is(add)) deco = deco.update({ add: e.value, sort: true });
+        else if (e.is(clear)) deco = A.Decoration.none;
+      }
+      return deco;
+    },
+    provide: (f) => A.EditorView.decorations.from(f),
+  });
+  s.marks = { add, clear };
+  const setConflicts = A.StateEffect.define();
+  const conflicts = A.StateField.define({            // the conflicts with the file on disk: this page's lines, its file's under them
+    create: () => A.Decoration.none,
+    update(deco, tr) {
+      deco = deco.map(tr.changes);
+      for (const e of tr.effects) if (e.is(setConflicts)) deco = e.value;
+      return deco;
+    },
+    provide: (f) => A.EditorView.decorations.from(f),
+  });
+  s.conflicts = { set: setConflicts, field: conflicts, sig: "" };
+  const setZone = A.StateEffect.define();
+  const zone = A.StateField.define({                 // the conflict zone: the lines edited here, tinted
+    create: () => A.Decoration.none,
+    update(deco, tr) {
+      deco = deco.map(tr.changes);
+      for (const e of tr.effects) if (e.is(setZone)) deco = e.value;
+      return deco;
+    },
+    provide: (f) => A.EditorView.decorations.from(f),
+  });
+  s.zone = { set: setZone, sig: "" };
+  ed.body.replaceChildren();
+  s.view = new A.EditorView({
+    parent: ed.body,
+    state: A.EditorState.create({
+      doc: s.ytext.toString(),
+      extensions: [
+        A.keymap.of([...A.yUndoManagerKeymap, { key: "Mod-s", preventDefault: true, run: () => { edSave(s); return true; } }, A.indentWithTab]),
+        A.basicSetup, A.EditorState.lineSeparator.of("\n"), A.highlight, A.language(s.path), A.yCollab(s.ytext, s.awareness), marks,
+        zone, conflicts,
+      ],
+    }),
+  });
+  edZone(s);
+  edConflicts(s);
+}
+// The conflict zone (the state's `zone`: ranges of the document), drawn: each line a range is on, or an empty one is at.
+function edZone(s) {
+  const v = s.view, list = (s.state && s.state.zone) || [];
+  if (!v || !s.zone) return;
+  const sig = JSON.stringify(list);
+  if (sig === s.zone.sig) return;
+  s.zone.sig = sig;
+  const A = s.A, doc = v.state.doc, lines = new Set();
+  for (const [a, b] of list) {
+    const from = Math.min(a, doc.length), to = Math.min(Math.max(b, from), doc.length);
+    const last = doc.lineAt(Math.max(from, to - 1)).number;
+    for (let n = doc.lineAt(from).number; n <= last && lines.size < 20000; n++) lines.add(doc.line(n).from);
+  }
+  v.dispatch({ effects: s.zone.set.of(A.Decoration.set([...lines].map((at) => A.Decoration.line({ class: "ed-zone" }).range(at)), true)) });
+}
+async function edClearZone(s) {
+  try { s.state = await post("/api/edit/zone/clear", { path: s.path, root: s.root }); s.err = ""; }
+  catch (e) { s.err = e.message; }
+  if (ed.s === s) { edZone(s); edHead(); }
+}
+// The conflicts, drawn: the lines kept here marked, and under them the file's lines, with what to do about them.
+let EdConflict = null;
+function edConflictWidget(A) {
+  return EdConflict ||= class extends A.WidgetType {
+    constructor(s, c, by) { super(); this.s = s; this.c = c; this.by = by; }
+    eq(other) { return other.c.id === this.c.id && other.c.theirs === this.c.theirs && other.by.names.join("\n") === this.by.names.join("\n"); }
+    toDOM() {
+      const { s, c } = this, name = this.by.label, many = this.by.names.length > 1;
+      const pick = (take, label, title) => el("button", { type: "button", title,
+        onclick: (ev) => { ev.preventDefault(); edSettle(s, c.id, take); } }, label);
+      const mine = c.to > c.from, kind = !c.theirs ? "deleted" : mine ? "rewrote" : "added";
+      let what, picks;
+      if (c.zone) {                                  // in the conflict zone: the reader's lines, rewritten on disk
+        what = { rewrote: name ? `${name} rewrote lines you edited` : "Lines you edited were rewritten on disk",
+          deleted: name ? `${name} deleted lines you edited` : "Lines you edited were deleted on disk",
+          added: name ? `${name} added lines among those you edited` : "Lines were added on disk among those you edited" }[kind];
+        picks = [
+          pick("mine", mine ? "Restore yours" : "Leave them out", mine ? "Keep your lines; a save (or Auto-save) writes them over the file's"
+            : "Leave the file's new lines out; a save (or Auto-save) writes the file without them"),
+          pick("theirs", { rewrote: many ? "Accept their rewrite" : "Accept its rewrite", deleted: "Accept the deletion", added: "Add them" }[kind],
+            c.theirs ? "Put the file's lines in place of yours" : "Delete your lines, as the file did"),
+          kind === "rewrote" ? pick("both", "Keep both", "Keep your lines, and the file's after them") : null];
+      } else {                                       // both changed, differently, outside the zone (it was cleared)
+        what = `${c.theirs ? "Changed" : "Deleted"} on disk${name ? ` by ${name}` : ""} where it was edited here too`;
+        picks = [pick("mine", "Keep yours", "Keep the lines above; the file's are left out (a save writes yours)"),
+          pick("theirs", c.theirs ? "Take theirs" : "Delete them", c.theirs ? "Put the file's lines in place of yours" : "Delete your lines, as the file did"),
+          c.theirs && mine ? pick("both", "Keep both", "Keep your lines, and the file's after them") : null];
+      }
+      return el("div", { class: "ed-cf" },
+        el("div", { class: "ed-cf-head" }, el("span", { class: "what", title: many ? `Their changes, one after the other:\n${this.by.names.join("\n")}` : null,
+          text: `${what}, ${ago(c.at)}.` }), el("span", { class: "grow" }), ...picks),
+        c.theirs ? el("div", { class: "ed-cf-label", text: mine ? "On disk now, in place of the lines above:" : "On disk now:" }) : null,
+        c.theirs ? el("pre", { class: "ed-cf-theirs", text: c.theirs.replace(/\n$/, "") }) : null);
+    }
+    ignoreEvent() { return true; }
+  };
+}
+// Drawn again when the conflicts or their places change, or who made one is known (ag records an actor's change a
+// moment after it lands: the listing's `writers`), and whenever one's box is missing -- an edit can take it away (one
+// that deletes the line break after it) while leaving the conflict where it was. Called with each state, and with each
+// of the panel's ticks.
+// Who made a conflict: every actor whose change landed from the first of its lines' changes (`since`) to its last.
+function edConflictBy(s, c) {
+  const ws = edWriters(edEntry(s.path)).filter((w) => w.at >= (c.since ?? c.at) - ED_CREDIT[0] && w.at <= c.at + ED_CREDIT[1]).reverse();
+  return { label: ws.length > 1 ? `${ws.length} actors` : ws.length ? edWriterName(ws[0]) : "", names: ws.map(edWriterName) };
+}
+function edConflicts(s) {
+  const v = s.view, list = (s.state && s.state.conflicts) || [];
+  if (!v || !s.conflicts) return;
+  const sig = JSON.stringify(list.map((c) => [c.id, c.from, c.to, c.theirs, edConflictBy(s, c)]));
+  const shown = new Set();
+  v.state.field(s.conflicts.field).between(0, v.state.doc.length, (from, to, d) => { if (d.spec.cf) shown.add(d.spec.cf); });
+  if (sig === s.conflicts.sig && list.every((c) => shown.has(c.id))) return;
+  try { edDrawConflicts(s, list); s.conflicts.sig = sig; }
+  catch (err) { console.error("the conflicts were not drawn:", err); }   // drawn at the next state, or tick
+}
+function edDrawConflicts(s, list) {
+  const v = s.view, A = s.A, doc = v.state.doc, Widget = edConflictWidget(A), out = [];
+  for (const c of list) {
+    const from = Math.min(c.from, doc.length), to = Math.min(Math.max(c.to, from), doc.length);
+    if (to > from) {
+      for (let p = from; p < to; ) { const line = doc.lineAt(p); out.push(A.Decoration.line({ class: "ed-cf-mine" }).range(line.from)); p = line.to + 1; }
+      const last = doc.lineAt(Math.max(from, to - 1));
+      out.push(A.Decoration.widget({ widget: new Widget(s, c, edConflictBy(s, c)), block: true, side: 1, cf: c.id }).range(last.to));
+    } else {
+      out.push(A.Decoration.widget({ widget: new Widget(s, c, edConflictBy(s, c)), block: true, side: -1, cf: c.id }).range(doc.lineAt(from).from));
+    }
+  }
+  v.dispatch({ effects: s.conflicts.set.of(A.Decoration.set(out, true)) });
+}
+async function edSettle(s, conflict, take) {
+  try { s.state = await post("/api/edit/settle", { path: s.path, root: s.root, conflict, take }); s.err = ""; }
+  catch (e) { s.err = e.message; }
+  if (ed.s === s) { edConflicts(s); edHead(); }
+}
+function edUnmark(s) {
+  if (s.view) s.view.dispatch({ effects: s.marks.clear.of(null) });
+  s.marked = false;
+  edHead();
+}
+function edToConflict(s) {                             // the first conflict, shown
+  const c = ((s.state && s.state.conflicts) || [])[0];
+  if (c && s.view) s.view.dispatch({ effects: s.A.EditorView.scrollIntoView(Math.min(c.from, s.view.state.doc.length), { y: "center" }) });
+}
+// The disk's change, marked where it landed -- each line it touched, and the text it put there -- until the next
+// one, or until the reader clears it (the header's ×).
+function edDiskMarks(s, delta) {
+  queueMicrotask(() => {                             // once y-codemirror has put the change in the editor
+    const v = s.view;
+    if (!v || ed.s !== s) return;
+    const A = s.A, doc = v.state.doc, len = doc.length, n = ++s.markN, out = [], lines = new Set(), within = new Map();
+    s.who = edWho(s.path);
+    const color = edWhoColor(s.who), attributes = color ? { style: `--who: ${color}` } : undefined;
+    const mark = (a, b) => out.push(A.Decoration.mark({ class: "ed-disk", n, attributes }).range(a, b));
+    const part = (line, a, b) => { if (!within.has(line.from)) within.set(line.from, []); within.get(line.from).push([a, b]); };
+    let pos = 0;
+    for (const op of delta) {
+      if (op.retain) pos += op.retain;
+      else if (op.insert) {
+        const k = typeof op.insert === "string" ? op.insert.length : 1, a = Math.min(pos, len), b = Math.min(pos + k, len);
+        if (b > a) {                                 // its first and last lines' parts by word (edWords); the lines between whole
+          const first = doc.lineAt(a), last = doc.lineAt(b);
+          if (first.number === last.number) part(first, a, b);
+          else {
+            part(first, a, first.to);
+            if (last.from > first.to + 1) mark(first.to + 1, last.from - 1);
+            if (b > last.from) part(last, last.from, b);
+          }
+        }
+        let p = a;
+        do { const line = doc.lineAt(p); lines.add(line.from); p = line.to + 1; } while (p < b && lines.size < 2000);
+        pos += k;
+      } else if (op.delete) lines.add(doc.lineAt(Math.min(pos, len)).from);
+    }
+    for (const [from, parts] of within) for (const [a, b] of edWords(doc.lineAt(from), parts)) mark(a, b);
+    for (const from of lines) out.push(A.Decoration.line({ class: "ed-disk-line", n, attributes }).range(from));
+    if (!out.length) return;
+    v.dispatch({ effects: [s.marks.clear.of(null), s.marks.add.of(out)] });
+    s.marked = true;
+    edHead();
+  });
+}
+// What a change put in a line, to mark, by word: it is put in by character (editor.py's change), so that what others type
+// stays where it is -- which leaves a rewritten line in bits, the letters old and new have in common not put in. Each
+// part grown to the words it falls in; parts apart by spaces only, or one mark between words, joined; and a line it
+// mostly put in (most of its letters), marked from its first letter to its last.
+const ED_WORD = /[\p{L}\p{N}_]/u, ED_MOSTLY = 0.6;   // ED_MOSTLY: of a line's letters put in, it is marked whole
+function edWords(line, parts) {
+  const t = line.text, w = (i) => i >= 0 && i < t.length && ED_WORD.test(t[i]);
+  const grown = parts.map(([a, b]) => {
+    a -= line.from; b -= line.from;
+    while (a > 0 && w(a - 1) && w(a)) a--;
+    while (b < t.length && w(b - 1) && w(b)) b++;
+    return [a, b];
+  }).sort((x, y) => x[0] - y[0]);
+  const joined = [];
+  for (const [a, b] of grown) {
+    const prev = joined[joined.length - 1], gap = prev ? t.slice(prev[1], a) : null;
+    if (prev && (a <= prev[1] || /^\s*$/.test(gap) || /^\s*[^\p{L}\p{N}_\s]\s*$/u.test(gap))) prev[1] = Math.max(prev[1], b);
+    else joined.push([a, b]);
+  }
+  const letters = (x) => x.replace(/\s+/g, "").length;
+  const put = joined.reduce((k, [a, b]) => k + letters(t.slice(a, b)), 0), all = letters(t);
+  if (all && put / all >= ED_MOSTLY) {
+    const a = t.length - t.trimStart().length, b = t.trimEnd().length;
+    return b > a ? [[line.from + a, line.from + b]] : [];
+  }
+  return joined.filter(([a, b]) => b > a).map(([a, b]) => [line.from + a, line.from + b]);
+}
+// This page's edits, sent a burst at a time, one request at a time; kept to send again if one fails.
+function edFlush(s) {
+  if (s.sending || !s.out.length || !s.epoch || ed.s !== s) return;
+  s.sending = true;
+  setTimeout(async () => {
+    const u = s.out.length === 1 ? s.out[0] : s.A.Y.mergeUpdates(s.out);
+    s.out = [];
+    try {
+      s.state = await post("/api/edit/update", { path: s.path, root: s.root, conn: s.conn, update: edB64(u) });
+      s.err = "";
+    } catch (e) {
+      s.out.unshift(u);
+      s.err = e.message;
+      setTimeout(() => edFlush(s), 2000);
+    }
+    s.sending = false;
+    if (ed.s === s) { edHead(); if (s.out.length && !s.err) edFlush(s); }
+  }, ED_SEND);
+}
+// This page's user and cursor, to the others: at most one request at a time, the latest after it.
+function edAware(s) {
+  if (!s.epoch) return;
+  if (s.awareAt) { s.awareAgain = true; return; }
+  s.awareAt = Date.now();
+  post("/api/edit/aware", { path: s.path, root: s.root, conn: s.conn,
+    update: edB64(s.A.encodeAwarenessUpdate(s.awareness, [s.doc.clientID])) }).catch(() => {}).finally(() => {
+    s.awareAt = null;
+    if (s.awareAgain) { s.awareAgain = false; edAware(s); }
+  });
+}
+async function edSave(s) {
+  for (let i = 0; i < 100 && (s.sending || s.out.length) && !s.err; i++) await new Promise((r) => setTimeout(r, 20));   // its last keys first
+  try { s.state = await post("/api/edit/save", { path: s.path, root: s.root }); s.err = ""; }
+  catch (e) { s.err = e.message; }
+  if (ed.s === s) edHead();
+}
+// Auto-save: the file saved ED_AUTO_MS after the last edit to it, this page's or another's -- not a file deleted on disk,
+// which only Save writes again, nor one with a conflict with the file on disk, which waits for the reader.
+function edAutoLater(s) {
+  clearTimeout(s.autoT);
+  const due = () => ed.auto && ed.s === s && s.state && s.state.dirty && !s.state.missing && !(s.state.conflicts || []).length;
+  if (due()) s.autoT = setTimeout(() => { if (due()) edSave(s); }, ED_AUTO_MS);
+}
+function edSetAuto(on) {
+  ed.auto = on;
+  try { localStorage.setItem(ED_AUTO_KEY, on ? "1" : "0"); } catch (e) { /* this page only */ }
+  if (ed.s) edAutoLater(ed.s);
+  edHead();
+}
+function edClose() {
+  const s = ed.s;
+  if (!s) return;
+  ed.s = null;
+  clearTimeout(s.autoT);
+  let sent = Promise.resolve();
+  if (s.out.length && s.epoch) {                     // its last keys, still sent
+    const u = s.A.Y.mergeUpdates(s.out);
+    sent = post("/api/edit/update", { path: s.path, root: s.root, conn: s.conn, update: edB64(u) });
+  }
+  if (ed.auto && s.epoch && (s.out.length || (s.state && s.state.dirty && !s.state.missing))
+      && !((s.state && s.state.conflicts) || []).length)   // and, auto-saved, saved -- not over a conflict
+    sent = sent.then(() => post("/api/edit/save", { path: s.path, root: s.root }));
+  sent.catch(() => {});
+  s.awareness.setLocalState(null);                   // its cursor gone from the others' at once
+  s.awareness.destroy();
+  if (s.es) s.es.close();
+  if (s.view) s.view.destroy();
+  s.doc.destroy();
+}
+function edReopen(s) {
+  const lost = s.state && s.state.dirty;
+  edClose();
+  edOpen(s.path).then(() => {
+    if (lost && ed.s) { ed.s.note = "The dashboard restarted, and this file's unsaved changes there were lost: it was opened again from disk."; edHead(); }
+  });
+}
+window.addEventListener("pagehide", edClose);
+
+function edHead() {
+  if (!ed.head) return;
+  const s = ed.s;
+  if (!ed.file) {
+    ed.head.replaceChildren(el("span", { class: "ed-hint", text: "Pick a file to edit it. Everyone with it open sees the others' edits as they type, and what an actor writes to it shows here as it lands." }),
+      el("span", { class: "grow", style: "flex: 1" }), edCloseBtn());
+    return;
+  }
+  const st = s && s.state;
+  const nc = ((st && st.conflicts) || []).length;
+  const [cls, said] = ed.err || (s && s.err) ? ["bad", ed.err || s.err]
+    : nc ? ["bad", `${plural(nc, "conflict")} with the file on disk`]
+    : !s || !s.epoch ? ["", "Opening…"]
+    : s.es.readyState !== 1 ? ["warn", "Reconnecting…"]
+    : st && st.missing ? ["bad", "Deleted on disk: Save writes it again"]
+    : st && st.error ? ["bad", st.error]
+    : st && st.dirty ? (ed.auto ? ["", "Saving…"] : ["warn", "Unsaved"]) : ["ok", "Saved"];
+  const others = s ? [...s.awareness.getStates().entries()].filter(([id, v]) => id !== s.doc.clientID && v && v.user) : [];
+  // who changed it on disk last: the actor whose recorded change is nearest it, else (not yet recorded) the likely one
+  const writers = edWriters(edEntry(ed.file));
+  if (ed.changes && ed.changes.path !== ed.file) edDrawChanges();          // another file: its panel closed
+  else if (ed.changes) {                                                   // the actor changed it again: fetched again
+    const w = writers.find((x) => edKey(x) === ed.changes.k);
+    if (w && w.at > ed.changes.seen) { ed.changes.seen = w.at; ed.changes.w = w; edFetchChanges(); }
+  }
+  let changed = null;
+  if (st && st.changed && (s.marked || Date.now() / 1000 - st.changed < 120)) {
+    const near = edCredit(writers, st.changed);
+    const who = near ? near.actor : s.who, color = edWhoColor(who);
+    changed = el("span", { class: "ed-changed", style: color ? `--who: ${color}` : null,
+      title: near ? `By ${edWriterName(near)}, as ag's hook recorded the actor's change` : s.who ? `Likely by ${edWhoName(s.who)}: the one actor running in a directory that holds the file, until ag records who it was`
+        : "Written to the file by something other than this editor" },
+      `Changed on disk ${ago(st.changed)}`,
+      s.marked ? el("button", { type: "button", class: "ed-unmark", title: "Clear the marks of what changed on disk", "aria-label": "Clear the marks",
+        onclick: () => edUnmark(s) }, "×") : null);
+  }
+  const zoned = s && st && (st.zone || []).length ? el("span", { class: "ed-zone-chip",
+    title: "The lines edited here since the file was opened, tinted: an actor's change to them is asked about, not merged in. Cleared when the file is closed, or by Clear." },
+    "Conflict zone", el("button", { type: "button", title: "Clear the conflict zone: the actors' changes to its lines merge in, as anywhere else",
+      onclick: () => edClearZone(s) }, "Clear")) : null;
+  const many = writers.length > 1;
+  const by = writers.length ? el("span", { class: "ed-writers" + (many ? " many" : ""),
+    title: `${many ? `${writers.length} actors are changing this file` : "The actor changing this file"} (in the last half hour):\n`
+      + writers.map((w) => `${edWriterName(w)}, ${ago(w.at)}`).join("\n") },
+    el("span", { class: "ed-avs" }, ...writers.slice(0, 4).map((w) => el("button", { type: "button",
+      class: "ed-av" + (ed.changes && ed.changes.k === edKey(w) ? " on" : ""), "aria-label": `${edWriterName(w)}'s changes to this file`,
+      title: `${edWriterName(w)}: its changes to this file in the last ${ED_CHANGES_S / 60} minutes`, onclick: () => edChanges(w) }, edAvatar(w)))),
+    many ? el("span", { class: "lbl", text: `${writers.length} actors changing it` }) : null) : null;
+  ed.head.replaceChildren(...[
+    el("span", { class: "ed-path", title: ed.file, text: edRel(ed.file) }),
+    nc && !(ed.err || (s && s.err)) ? el("button", { type: "button", class: `ed-status ${cls}`, role: "status", title: "Show the first: keep yours, take the file's, or both",
+      onclick: () => edToConflict(s) }, said) : el("span", { class: `ed-status ${cls}`, role: "status", text: said }),
+    zoned, by, changed,
+    s && s.note ? el("span", { class: "ed-status bad", text: s.note }) : null,
+    el("span", { class: "ed-people" },
+      ...others.map(([, v]) => el("span", { class: "ed-person", style: `--who: ${v.user.color}`, title: `${v.user.name} has it open`, text: v.user.name })),
+      s ? el("button", { type: "button", class: "ed-person", style: `--who: ${edMe().color}`, title: "You, as the others see you: click to change your name",
+        onclick: edRename, text: `${edMe().name} (you)` }) : null),
+    el("label", { class: "ed-auto", title: "Save the file a moment after each edit to it, yours or another's: the actors read it as it is typed. Not while a conflict with the file waits." },
+      el("input", { type: "checkbox", checked: ed.auto ? "" : null, onchange: (ev) => edSetAuto(ev.target.checked) }), "Auto-save"),
+    el("button", { type: "button", class: "primary", title: nc ? "Write it to the file on disk, your lines kept where they conflict (⌘S / Ctrl+S)" : "Write it to the file on disk (⌘S / Ctrl+S)",
+      disabled: s && st && (st.dirty || st.missing) ? null : "", onclick: () => s && edSave(s) }, "Save"),
+    edCloseBtn()].filter(Boolean));
+}
+
+// The panel: above the panes, opened from a pane's header (setEditor; from a pane's frame, through this page:
+// agEditorPanel). Its height is the reader's, by the edge between it and the panes (kept in this browser). Closed,
+// its file is closed too -- the others no longer see this page in it -- and opened again with it.
+state.editor = !PANE && !SNAPSHOT && (() => { try { return localStorage.getItem(ED_SHOWN_KEY) === "1"; } catch (e) { return false; } })();
+const edShown = () => PANE ? !!(window.parent.agEditorPanel && window.parent.agEditorPanel.shown()) : !!state.editor;
+// `dir`: the folder to show in it, opened -- a pane's actor's working directory, by its button.
+function setEditor(open, dir = null) {
+  if (PANE) { if (window.parent.agEditorPanel) window.parent.agEditorPanel.set(open, dir); return; }
+  state.editor = open;
+  if (!open) edClose();
+  try { localStorage.setItem(ED_SHOWN_KEY, open ? "1" : ""); } catch (e) { /* this page only */ }
+  for (const p of panes.others) p.call("editor", open);
+  edMount();
+  if (open && dir) edGo(dir);
+  keepingPlace(renderMain);                          // its button in the header: pressed, or not
+  drawn.main = mainSignature();
+}
+// The selected actor's working directory (this page's: a pane's, in its frame).
+const edActorDir = () => { const info = selectedInfo(); return (info && (info.cwd || (info.session && info.session.cwd))) || null; };
+if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor };
+const edCloseBtn = () => el("button", { type: "button", class: "ed-close", title: "Close the editor", "aria-label": "Close the editor",
+  onclick: () => setEditor(false) }, "×");
+// Shown or hidden as `state.editor` says, drawn the first time it is shown: called by each draw of the main view.
+function edMount() {
+  if (PANE || SNAPSHOT) return;
+  const top = document.getElementById("ed-top");
+  if (!state.editor) { top.hidden = true; return; }
+  if (state.home && state.home.editor === false) {
+    top.hidden = false;
+    if (!top.firstChild) top.append(el("div", { class: "ed-head" }, el("span", { class: "ed-hint",
+      text: "The editor needs pycrdt where the dashboard runs: pip install pycrdt, then restart the dashboard." }), edCloseBtn()));
+    return;
+  }
+  if (!ed.host) {
+    ed.bar = el("div", { class: "ed-bar" });
+    ed.tree = el("div", { class: "ed-rows" });
+    ed.head = el("div", { class: "ed-head" });
+    ed.body = el("div", { class: "ed-body" });
+    ed.side = el("aside", { class: "ed-changes files", hidden: "", "aria-label": "An actor's changes to the file" });
+    ed.host = el("div", { class: "ed" }, el("nav", { class: "ed-tree", "aria-label": "Files" }, ed.bar, ed.tree),
+      el("div", { class: "ed-main" }, ed.head, el("div", { class: "ed-work" }, ed.body, ed.side)));
+    const grip = el("div", { class: "ed-grip", title: "Drag to resize", "aria-hidden": "true" });
+    top.replaceChildren(ed.host, grip);
+    try { const h = Number(localStorage.getItem(ED_HEIGHT_KEY)); if (h > 0) top.style.setProperty("--ed-h", `${h}px`); } catch (e) { /* this page only */ }
+    grip.addEventListener("pointerdown", (ev) => {
+      ev.preventDefault();
+      grip.setPointerCapture(ev.pointerId);
+      grip.classList.add("on");
+      const at = top.getBoundingClientRect().top, room = top.parentElement.getBoundingClientRect().height;
+      let h = null;                                  // the panes below keep room for a view and its message box
+      const move = (e) => { h = Math.round(Math.max(140, Math.min(e.clientY - at, room - 220))); top.style.setProperty("--ed-h", `${h}px`); };
+      const up = () => {
+        grip.classList.remove("on");
+        grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); grip.removeEventListener("pointercancel", up);
+        if (h !== null) try { localStorage.setItem(ED_HEIGHT_KEY, String(h)); } catch (e) { /* this page only */ }
+      };
+      grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up); grip.addEventListener("pointercancel", up);
+    });
+  }
+  const opening = top.hidden;
+  top.hidden = false;
+  if (!ed.root) {                                    // the folder last shown, else the actor's, else the dashboard's
+    let dir = "";
+    try { dir = localStorage.getItem(ED_ROOT_KEY) || ""; } catch (e) { /* this page only */ }
+    edGo(dir || edActorDir() || (state.home && state.home.cwd) || "/");
+  }
+  if (opening) {                                     // shown again: drawn, and its file opened again
+    ed.barSig = ""; edBar(); edTree(); edHead();
+    if (ed.file && !ed.s) edOpen(ed.file);
+  }
+  edTick();
+}
 
 // What a view gets to draw with -- and, for one in a file of its own, how it adds itself.
 const agDashboard = window.agDashboard = Object.freeze({
