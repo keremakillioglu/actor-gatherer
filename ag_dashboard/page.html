@@ -7512,26 +7512,64 @@ function edDiskMarks(s, delta) {
   queueMicrotask(() => {                             // once y-codemirror has put the change in the editor
     const v = s.view;
     if (!v || ed.s !== s) return;
-    const A = s.A, doc = v.state.doc, len = doc.length, n = ++s.markN, out = [], lines = new Set();
+    const A = s.A, doc = v.state.doc, len = doc.length, n = ++s.markN, out = [], lines = new Set(), within = new Map();
     s.who = edWho(s.path);
     const color = edWhoColor(s.who), attributes = color ? { style: `--who: ${color}` } : undefined;
+    const mark = (a, b) => out.push(A.Decoration.mark({ class: "ed-disk", n, attributes }).range(a, b));
+    const part = (line, a, b) => { if (!within.has(line.from)) within.set(line.from, []); within.get(line.from).push([a, b]); };
     let pos = 0;
     for (const op of delta) {
       if (op.retain) pos += op.retain;
       else if (op.insert) {
         const k = typeof op.insert === "string" ? op.insert.length : 1, a = Math.min(pos, len), b = Math.min(pos + k, len);
-        if (b > a) out.push(A.Decoration.mark({ class: "ed-disk", n, attributes }).range(a, b));
+        if (b > a) {                                 // its first and last lines' parts by word (edWords); the lines between whole
+          const first = doc.lineAt(a), last = doc.lineAt(b);
+          if (first.number === last.number) part(first, a, b);
+          else {
+            part(first, a, first.to);
+            if (last.from > first.to + 1) mark(first.to + 1, last.from - 1);
+            if (b > last.from) part(last, last.from, b);
+          }
+        }
         let p = a;
         do { const line = doc.lineAt(p); lines.add(line.from); p = line.to + 1; } while (p < b && lines.size < 2000);
         pos += k;
       } else if (op.delete) lines.add(doc.lineAt(Math.min(pos, len)).from);
     }
+    for (const [from, parts] of within) for (const [a, b] of edWords(doc.lineAt(from), parts)) mark(a, b);
     for (const from of lines) out.push(A.Decoration.line({ class: "ed-disk-line", n, attributes }).range(from));
     if (!out.length) return;
     v.dispatch({ effects: [s.marks.clear.of(null), s.marks.add.of(out)] });
     s.marked = true;
     edHead();
   });
+}
+// What a change put in a line, to mark, by word: it is put in by character (editor.py's change), so that what others type
+// stays where it is -- which leaves a rewritten line in bits, the letters old and new have in common not put in. Each
+// part grown to the words it falls in; parts apart by spaces only, or one mark between words, joined; and a line it
+// mostly put in (most of its letters), marked from its first letter to its last.
+const ED_WORD = /[\p{L}\p{N}_]/u, ED_MOSTLY = 0.6;   // ED_MOSTLY: of a line's letters put in, it is marked whole
+function edWords(line, parts) {
+  const t = line.text, w = (i) => i >= 0 && i < t.length && ED_WORD.test(t[i]);
+  const grown = parts.map(([a, b]) => {
+    a -= line.from; b -= line.from;
+    while (a > 0 && w(a - 1) && w(a)) a--;
+    while (b < t.length && w(b - 1) && w(b)) b++;
+    return [a, b];
+  }).sort((x, y) => x[0] - y[0]);
+  const joined = [];
+  for (const [a, b] of grown) {
+    const prev = joined[joined.length - 1], gap = prev ? t.slice(prev[1], a) : null;
+    if (prev && (a <= prev[1] || /^\s*$/.test(gap) || /^\s*[^\p{L}\p{N}_\s]\s*$/u.test(gap))) prev[1] = Math.max(prev[1], b);
+    else joined.push([a, b]);
+  }
+  const letters = (x) => x.replace(/\s+/g, "").length;
+  const put = joined.reduce((k, [a, b]) => k + letters(t.slice(a, b)), 0), all = letters(t);
+  if (all && put / all >= ED_MOSTLY) {
+    const a = t.length - t.trimStart().length, b = t.trimEnd().length;
+    return b > a ? [[line.from + a, line.from + b]] : [];
+  }
+  return joined.filter(([a, b]) => b > a).map(([a, b]) => [line.from + a, line.from + b]);
 }
 // This page's edits, sent a burst at a time, one request at a time; kept to send again if one fails.
 function edFlush(s) {
