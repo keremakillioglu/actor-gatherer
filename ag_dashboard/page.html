@@ -956,6 +956,7 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-pending .fl-user { opacity: .55; cursor: default; }
 .files .fl-pending .fl-user:hover { background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 28%, transparent); }
 .files .fl-pending .lbl { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
+.files .fl-pending .to-term { font-size: inherit; padding: 0; border: 0; background: none; color: var(--term-link); text-decoration: underline; }
 /* a turn begun, its message sent, that ag has not stored yet: in full, as the latest turn shows it, not yet one to pick */
 .files .fl-turn.opened .fl-user { cursor: default; }
 .files .fl-turn.opened .fl-user:hover { background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 28%, transparent); }
@@ -1204,6 +1205,17 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-done .done .ok { position: absolute; right: -4px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: #22a55a;
   box-shadow: 0 0 0 1.5px var(--surface); display: grid; place-items: center; }
 .files .fl-done .done .ok svg { width: 8px; height: 8px; }
+/* before its first message: the actor waving hello (greeting()), in the middle of the conversation's space -- under the
+   message sent, while it waits to reach the agent */
+.files .fl-talk.hi { display: flex; flex-direction: column; }
+.files .fl-hello { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px; color: var(--muted);
+  text-align: center; }
+.files .fl-hello svg.stage { height: 84px; }
+.files .fl-hello > .buddy { width: 40px; height: 40px; }
+/* what it says (helloLine()): a haiku's lines in italics */
+.files .fl-say { max-width: 340px; }
+.files .fl-say.verse { font-style: italic; }
+@container talk (max-height: 420px) { .files .fl-hello svg.stage { height: 48px; } }
 svg.stage { height: 32px; width: auto; flex: none; overflow: visible; --t: 0s; --a: 0s; --r: -60s; --x: -60s; --y: -60s; --z: -60s; --p: -60s;
   --b: -60s; --dot: #f97316; --metal: light-dark(#94a3b8, #8a94a3); }
 .stage .me, .stage .prop, .stage .tb, .stage .bd, .stage .cf, .stage .o-bang, .stage .mag, .stage .gear, .stage .parcel, .stage .flip,
@@ -1359,6 +1371,20 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .stage.retry .me, .stage.retry .prop { filter: grayscale(.9); opacity: .55; }
 .stage.retry .o-q { display: inline; }
 .stage .qb { fill: var(--surface); stroke: var(--muted); stroke-width: .8; } .stage .qt { fill: var(--muted); font: 800 9px system-ui, sans-serif; }
+/* hello, before its first message: a hand in its hue raised beside it (an outline under, its fill over), waving a few
+   times with a swish at each end of a wave, then resting; the character leaning into it */
+.stage.s-hello .me { animation: w-greet 4s ease-in-out var(--t) infinite; }
+@keyframes w-greet { 0%, 62%, 100% { transform: none; } 8% { transform: translateY(-2px) rotate(-2deg); } 16%, 50% { transform: rotate(3deg); } }
+.stage .hand { transform-box: fill-box; transform-origin: 50% 100%; animation: w-wave 4s ease-in-out var(--t) infinite; }
+@keyframes w-wave { 0%, 62%, 100% { transform: none; } 10% { transform: rotate(-22deg); } 20% { transform: rotate(16deg); }
+  30% { transform: rotate(-22deg); } 40% { transform: rotate(16deg); } 50% { transform: rotate(-12deg); } }
+.stage .hand line { stroke-linecap: round; }
+.stage .hand .ho { stroke: color-mix(in srgb, var(--dot) 62%, #000); fill: color-mix(in srgb, var(--dot) 62%, #000); }
+.stage .hand .hf { stroke: var(--dot); fill: var(--dot); }
+.stage .swish { fill: none; stroke: var(--dot); stroke-width: 1.3; stroke-linecap: round; opacity: 0; animation: w-swish 4s linear var(--t) infinite; }
+.stage .swish.s2 { animation-name: w-swish2; }
+@keyframes w-swish { 0%, 6%, 14%, 26%, 34%, 100% { opacity: 0; } 10%, 30% { opacity: .9; } }
+@keyframes w-swish2 { 0%, 16%, 24%, 36%, 44%, 100% { opacity: 0; } 20%, 40% { opacity: .9; } }
 @media (prefers-reduced-motion: reduce) { svg.stage, svg.stage *, .files .fl-done .done { animation: none !important; }
   svg.stage .leave, svg.stage .o-confetti { display: none !important; } }
 /* the stage and, while it thinks, its character's effect round it (.buddy) laid over the character */
@@ -2007,6 +2033,33 @@ function atWork(a, t) {
   if (!src) return el("span", { class: "spin", "aria-hidden": "true" });
   return avatarMode === "simple" ? buddy(a, !!a.failing) : stage(a, (t && t.work) || {}, src);
 }
+// The actor before its first message, in the Chat view: its avatar waving hello -- a hand in its hue, its wrist at 0, 0
+// (HAND: its fingers and thumb, each a line), raised beside it on the stage; or, the setting "Simple" (avatarMode),
+// buddy()'s one motion. On the page's clock, so a redraw does not start it over. Its first turn's actor then arrives on
+// the stage (stage.rest). An actor with no avatar: none.
+const HAND = [[-3.4, -8, -4.9, -14.6], [-1.1, -9, -1.6, -16.6], [1.3, -9, 1.7, -16.2], [3.4, -7.6, 4.8, -13.4], [-3.8, -4.6, -8.4, -8.2]];
+function greeting(a) {
+  const src = bareAvatar(a);
+  if (!src) return null;
+  stage.rest(a.channel);
+  if (avatarMode === "simple") return buddy(a, false);
+  const hand = (cls, w, r) => `<g class="${cls}">${HAND.map(([x1, y1, x2, y2]) =>
+    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${w}"/>`).join("")}<circle cy="-5.6" r="${r}" stroke="none"/></g>`;
+  const box = el("span", { class: "stage-box" });
+  box.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="stage s-hello" viewBox="-8 -14 102 82" aria-hidden="true" style="`
+    + `--t: -${Math.round(performance.now())}ms; --dot: ${HUE_MAIN[a.avatar_hue] || "var(--muted)"}">`
+    + `<g class="me"><image href="${escapeHtml(src)}" x="0" y="0" width="64" height="64"/></g>`
+    + `<g transform="translate(66 30) scale(1.25)"><g class="hand"><rect x="-9" y="-17.5" width="18" height="17.5" fill="none"/>`
+    + `${hand("ho", 4.4, 6.1)}${hand("hf", 2.8, 5.3)}</g>`
+    + `<path class="swish" d="M-12 -15q-2.2 3.4 -.6 7"/><path class="swish s2" d="M11.5 -15q2.2 3.4 .6 7"/></g></svg>`;
+  return box;
+}
+// What the actor says before its first message, under it waving: its line (avatar_hello: one of its avatar's in
+// avatars/hello.toml, the same for it always -- avatars.py's), a haiku's lines each on its own.
+function helloLine(text) {
+  const parts = String(text).split("\n");
+  return el("div", { class: "fl-say" + (parts.length > 1 ? " verse" : "") }, ...parts.flatMap((part, k) => k ? [el("br"), part] : [part]));
+}
 // The actor at work, small: its avatar's character out of its circle, moving as it does (its avatar_motion: a move, then an
 // effect round it, if any -- the .buddy CSS), on the page's clock so a redraw does not start it over; `still`, its calls
 // failing: not moving.
@@ -2463,6 +2516,7 @@ const mainSignature = () => {
   return signature([state.selected, state.agentVersion, state.readId, state.context && state.context.read_id, info && info.session,
     info && [info.chattable, info.holder],
     info && [statusOf(info)[0], info.failing, info.stopped, info.asking, info.answer, (info.background || []).map((t) => t.id)],
+    info && info.avatar_hello,
     state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
     state.details && state.detailsTab, edShown()]);
@@ -3773,7 +3827,8 @@ async function addSession(g, harness) {
   const first = document.querySelector(".newform input");
   if (first) first.focus();
 }
-// The new session shown in a terminal, opened there (the Terminal view opens it), where the terminal can be.
+// The new session shown in Chat, its message box ready: its agent starts with its first message. Listed before it is
+// shown: drawn at once, the box there to take the focus.
 async function startSession(gatherer, cwd, harness) {
   state.starting = { gatherer, harness };
   renderAgents();
@@ -3781,9 +3836,10 @@ async function startSession(gatherer, cwd, harness) {
     const s = await post("/api/sessions", { gatherer, cwd, harness });
     state.adding = null;
     collapsed.delete(s.gatherer);
-    await show(s.gatherer, s.session_id, CHAT_VIEWS.has("terminal") && state.home.terminals !== false ? "terminal" : null);
+    await loadHome();
+    await show(s.gatherer, s.session_id, "files");
   } finally { state.starting = null; renderAgents(); }
-  const box = panes.focus !== panes.here || chatViewId === "terminal" ? null : document.getElementById("composer-text");
+  const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
   if (box) box.focus();
 }
 // A shell started: shown in the pane in focus, its terminal opened at once (sessions.py's `shell`), at the size of the
@@ -4071,7 +4127,7 @@ function chatCard(info) {
     ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}: `
       + "close it there to message it here." : "";
   const data = feed.data() || { items: [], pending: [], earlier: false };
-  const ctx = { info, session: s, data, running: ["running", "building"].includes(statusOf(info)[0]), queued: s.queued || [], held,
+  const ctx = { info, session: s, data, running: ["running", "building"].includes(statusOf(info)[0]), queued: s.queued || [], held, writable,
     loadEarlier: async () => {                         // the view's "earlier" control: kept where the reader was
       if (!feed.loadEarlier) return;
       const n = document.getElementById("chat-list"), from = n ? n.scrollHeight - n.scrollTop : 0;
@@ -4108,7 +4164,7 @@ function chatCard(info) {
   const blocks = frame.kids = safely(() => view.render(ctx), true);
   if (view.feed !== "none" && view.chat !== false) {  // a view that draws the history: what waits, or that there is none yet
     if (view.queued !== false) for (const q of ctx.queued) blocks.push(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
-    if (!data.items.length && !data.pending.length && !ctx.queued.length)
+    if (!data.items.length && !data.pending.length && !ctx.queued.length && !view.greets)
       blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation: run `ag dashboard` live to see it."
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
@@ -5466,6 +5522,8 @@ function notesSwitch() {
 //                                       // by default under the frame of a view of the history
 //     queued: false,                    // optional: false to draw what waits for the agent's turn to end
 //                                       // (ctx.queued) itself; by default listed after the view's blocks
+//     greets: true,                     // optional: to say itself that there is no conversation yet; by
+//                                       // default "No messages yet" after the view's blocks
 //     tools(ctx) { return [nodes] },    // optional: controls in the page's header (filters, switches)
 //     render(ctx) { return node or [nodes] },
 //     composer(ctx) { return node },    // optional: the box to write the next message, under the frame;
@@ -5477,7 +5535,8 @@ function notesSwitch() {
 //
 // `ctx`: {info (the actor), session (its row: status, cwd, ...), data: {items, pending (what the model
 // answered that no call has stored yet: row_id null), earlier (older items not loaded)}, running,
-// queued, held (why the session cannot be messaged here -- another process has it open -- or ""),
+// queued, held (why the session cannot be messaged here -- another process has it open -- or ""), writable
+// (whether it can be messaged from here at all),
 // loadEarlier(), rerender(), api (agDashboard: el, markdown, the page's other helpers)}, and for
 // a composer: input(attrs), the text box to build it around (Enter sends, Shift+Enter a new line, what
 // is typed kept across redraws), and send(text), which sends it, clears the box, and shows an error
@@ -5794,8 +5853,9 @@ async function loadFilesNow() {
   const cwd = (info && (info.cwd || (info.session && info.session.cwd))) || "";
   const got = await get(`/api/files?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`
     + `${f.turn === null ? "" : `&turn=${f.turn}`}&cwd=${encodeURIComponent(cwd)}`);
-  if (got.error || state.files !== f) return;
-  f.data = got;
+  if (state.files !== f) return;
+  if (!got.error) f.data = got;                      // no database yet (none before the gatherer's first call): no turns
+  else if (got.error.startsWith("no database")) f.data = { turns: [], turn: null, files: [], commands: [], home: "" };
 }
 CHAT_FEEDS.files = {
   load: loadFiles,
@@ -6088,14 +6148,20 @@ function fileBlock(b, lang) {
   }
   return out;
 }
-function filesRender({ info, running }) {
+function filesRender({ info, session, running, writable, held }) {
   const d = state.files && state.files.data;
   const asking = errorNote(info) || askingNote(info) || answeredNote(info);
-  if (!d) return [el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" }), asking];
+  if (!d) return [el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" }), asking].filter(Boolean);
   if (!d.turns.length) {                             // the first message: pending, sent from here; or sent, its turn begun
     const h = heard(info), opens = openings(h), first = opens.length ? null : pendingTalk(info, h);
     if (opens.length) return [el("div", { class: "fl-talk" }, ...opens.flatMap((q, i) => openedTurn(info, q, i === opens.length - 1, h))), asking];
-    return [first && el("div", { class: "fl-talk" }, el("div", { class: "fl-turn" }, first)), asking].filter(Boolean);
+    // none yet: the actor waving hello, saying its line (or that there is none yet) -- under the first message while it
+    // waits to reach the agent
+    const says = writable && !held && session.status !== "starting" && info.avatar && info.avatar_hello;
+    return [el("div", { class: "fl-talk hi" }, first && el("div", { class: "fl-turn" }, first),
+      el("div", { class: "fl-hello" }, greeting(info), first ? null : says ? helloLine(info.avatar_hello)
+        : el("div", { text: session.status === "starting" ? "Starting the agent…" : writable && !held ? "No messages yet. Write one below." : "No messages yet." }))),
+      asking].filter(Boolean);
   }
   // the view opened afresh (from another view, or the page's first draw): the conversation and the
   // commands start where they would for a new turn -- the commands at their end, the conversation at its end or at the turn picked
@@ -6269,7 +6335,8 @@ const heardCount = (h, text) => [...h.stored, ...h.typed.filter((q) => !q.chat)]
 // One not seen for UNSEEN_MS says so.
 const sentHere = [], UNSEEN_MS = 15000;
 // What waits to reach the agent, at the latest turn's end, faded: sent from here and not seen yet; in Claude Code's
-// queue; in the dashboard agent's queue.
+// queue; in the dashboard agent's queue. Not seen for long, with its terminal open: it may be asking something there
+// first (whether to trust the folder, on a new actor's first message), and the way to it.
 function pendingTalk(info, h) {
   const k = state.selected && key(...state.selected);
   for (let i = sentHere.length - 1; i >= 0; i--)
@@ -6280,9 +6347,12 @@ function pendingTalk(info, h) {
   list.push(...chats.map((q) => q.text));  // sent from Chat elsewhere (or before a reload), not had yet: its `chat_sent`
   if (!list.length) return null;
   const unseen = mine.some((m) => Date.now() - m.at > UNSEEN_MS) || chats.some((q) => Date.now() - q.at * 1000 > UNSEEN_MS);
+  const asks = unseen && info && info.session && info.session.terminal && CHAT_VIEWS.has("terminal");
   return el("div", { class: "fl-pending" }, ...list.map((text) =>
     el("div", { class: "fl-user" + bubbleClass(text), title: "Written while it works: given to the agent at its next step" }, userWords(text))),
-    el("span", { class: "lbl", text: unseen ? "Pending · not seen by the session yet" : "Pending" }));
+    el("span", { class: "lbl" }, unseen ? "Pending · not seen by the session yet" : "Pending",
+      asks ? "; its terminal may be asking something first. " : null,
+      asks ? el("button", { type: "button", class: "to-term", onclick: () => setChatView("terminal") }, "Open the terminal") : null));
 }
 // The turns Claude Code has started and ag has not stored yet, each by its first message as Claude Code recorded it when
 // it went to the model (the agent's `typed`, data.py's: sent, not as part of the turn it was written in; data.py's
@@ -6451,6 +6521,7 @@ addChatView({
   // "files": named so once, and kept as its id, with the readers' choices of it
   id: "files", name: "Chat", feed: "files", frame: "files", icon: ICONS.bubble,
   background: false,                                 // drawn under its commands
+  greets: true,                                      // says itself that there is no conversation yet
   asking: false,                                     // drawn under its conversation, at the right
   queued: false,                                     // what waits for the turn to end: at its conversation's end, pending
   description: "The conversation, and beside it each turn's files and commands: what the agent read, searched and changed, with the lines it saw and its changes in place.",
