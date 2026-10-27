@@ -410,6 +410,22 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 :is(.panes.split, :root.pane-mode .panes) .views button { padding: 3px 8px; }
 .pane-close { flex: none; border: 0; background: none; font-size: 18px; line-height: 1; padding: 5px 7px; color: var(--muted); }
 .pane-close:hover { color: var(--ink); background: var(--wash); }
+/* Where a pointer hovers (`head-hover`: not a phone's page), a pane's head is out of the way until it is wanted: over
+   the pane's top, all but its bottom edge above it -- a strip the pointer finds it by, a handle on it while the pointer
+   is over the pane -- shown whole while the pointer is on it (or the keyboard in it), and put away a moment after */
+:root.head-hover .pane { position: relative; overflow: hidden; }
+:root.head-hover .pane > .pane-top { position: absolute; top: 0; left: 0; right: 0; z-index: 6; transform: translateY(calc(-100% + 8px));
+  transition: transform .16s ease .3s, background-color .16s ease .3s, border-color .16s ease .3s, box-shadow .16s ease .3s; }
+:root.head-hover .pane > .pane-top:not(:hover, :has(:focus-visible)) { background: transparent; border-bottom-color: transparent; }
+:root.head-hover .pane > .pane-top > .pane-head { opacity: 0; pointer-events: none; transition: opacity .12s ease .3s; }
+:root.head-hover .pane > .pane-top::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 40px; height: 4px;
+  margin-left: -20px; border-radius: 2px; background: var(--axis); opacity: 0; transition: opacity .15s; pointer-events: none; }
+:root.head-hover .pane:hover > .pane-top::after { opacity: .55; }
+:root.head-hover .pane > .pane-top:is(:hover, :has(:focus-visible)) { transform: none; box-shadow: 0 8px 20px -10px rgba(0,0,0,.3);
+  transition-delay: 0s; }
+:root.head-hover .pane > .pane-top:is(:hover, :has(:focus-visible)) > .pane-head { opacity: 1; pointer-events: auto; transition-delay: 0s; }
+:root.head-hover .pane > .pane-top:is(:hover, :has(:focus-visible))::after { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { :root.head-hover .pane > .pane-top, :root.head-hover .pane > .pane-top > .pane-head { transition: none; } }
 /* in a frame, the page is one pane: no header or list of its own, and never the phone's page-long layout, however narrow */
 :root.pane-mode .side { display: none; }
 :root.pane-mode body { height: 100vh; display: flex; }
@@ -3467,9 +3483,18 @@ function layout() {
 // The page's top row -- the page's name at the left, each pane's head -- as tall as the tallest of them, so the
 // rule under it runs straight across the page: each says how tall it is by itself (`tops`: the name's, this
 // page's head's, each frame's), and all are given the tallest (--top-h). Not where the page is a phone's, its
-// panes one under the other. A frame tells the page around it, and is told.
-const tops = new Map(), NARROW = matchMedia("(max-width: 760px)");
+// panes one under the other. A frame tells the page around it, and is told. Where the heads are shown on hover
+// (`head-hover`, over their panes' tops), the row is the page's name's alone.
+const tops = new Map(), NARROW = matchMedia("(max-width: 760px)"), HOVER = matchMedia("(hover: hover)");
+const headHover = () => HOVER.matches && (!!PANE || !NARROW.matches);
+function setHeadHover() {
+  document.documentElement.classList.toggle("head-hover", headHover());
+  const head = document.getElementById("pane-head");
+  if (head) topRow("here", head.getBoundingClientRect().height);
+}
+for (const m of [HOVER, NARROW]) m.addEventListener("change", setHeadHover);
 function topRow(who, height) {
+  if (who !== "brand" && headHover()) height = null;       // a head shown on hover: not in the row
   if (height === null) tops.delete(who); else tops.set(who, height);
   if (PANE) return PANE.top(window, height);
   const tallest = NARROW.matches ? 0 : Math.ceil(Math.max(0, ...tops.values())) + 1;   // and the rule under it
@@ -3479,6 +3504,7 @@ function topRow(who, height) {
   for (const p of panes.others) p.call("top", tallest);
 }
 const setTopRow = (h) => document.documentElement.style.setProperty("--top-h", `${h}px`);
+document.documentElement.classList.toggle("head-hover", headHover());
 function watchTop(node, who) {
   new ResizeObserver(() => topRow(who, node.getBoundingClientRect().height)).observe(node);
 }
