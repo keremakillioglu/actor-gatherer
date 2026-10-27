@@ -410,23 +410,6 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 :is(.panes.split, :root.pane-mode .panes) .views button { padding: 3px 8px; }
 .pane-close { flex: none; border: 0; background: none; font-size: 18px; line-height: 1; padding: 5px 7px; color: var(--muted); }
 .pane-close:hover { color: var(--ink); background: var(--wash); }
-/* Where a pointer hovers and the Editor is open above the panes (`head-hover`: not a phone's page), a pane's head is
-   out of the way until it is wanted: over the pane's top, all but its bottom edge above it -- a strip the pointer finds
-   it by, under the Editor's grip, a handle on it while the pointer is over the pane -- shown whole while the pointer
-   is on it (or the keyboard in it), and put away a moment after */
-:root.head-hover .pane { position: relative; overflow: hidden; }
-:root.head-hover .pane > .pane-top { position: absolute; top: 0; left: 0; right: 0; z-index: 6; transform: translateY(calc(-100% + 12px));
-  transition: transform .16s ease .3s, background-color .16s ease .3s, border-color .16s ease .3s, box-shadow .16s ease .3s; }
-:root.head-hover .pane > .pane-top:not(:hover, :has(:focus-visible)) { background: transparent; border-bottom-color: transparent; }
-:root.head-hover .pane > .pane-top > .pane-head { opacity: 0; pointer-events: none; transition: opacity .12s ease .3s; }
-:root.head-hover .pane > .pane-top::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 40px; height: 4px;
-  margin-left: -20px; border-radius: 2px; background: var(--axis); opacity: 0; transition: opacity .15s; pointer-events: none; }
-:root.head-hover .pane:hover > .pane-top::after { opacity: .55; }
-:root.head-hover .pane > .pane-top:is(:hover, :has(:focus-visible)) { transform: none; box-shadow: 0 8px 20px -10px rgba(0,0,0,.3);
-  transition-delay: 0s; }
-:root.head-hover .pane > .pane-top:is(:hover, :has(:focus-visible)) > .pane-head { opacity: 1; pointer-events: auto; transition-delay: 0s; }
-:root.head-hover .pane > .pane-top:is(:hover, :has(:focus-visible))::after { opacity: 0; }
-@media (prefers-reduced-motion: reduce) { :root.head-hover .pane > .pane-top, :root.head-hover .pane > .pane-top > .pane-head { transition: none; } }
 /* in a frame, the page is one pane: no header or list of its own, and never the phone's page-long layout, however narrow */
 :root.pane-mode .side { display: none; }
 :root.pane-mode body { height: 100vh; display: flex; }
@@ -847,7 +830,7 @@ button:disabled { opacity: .5; cursor: default; }
   .ed-tree { width: 170px; } .ed-head { flex-wrap: nowrap; }
   .ed-person { width: 10px; height: 10px; padding: 0; font-size: 0; border-radius: 50%; background: var(--who); border: 0; flex: none; }
   .ed-changed { font-size: 0; } .ed-changed::before { margin-right: 0; } .ed-writer .nm { display: none; } }
-.ed-grip { position: absolute; left: 0; right: 0; bottom: -5px; height: 9px; cursor: row-resize; z-index: 7; touch-action: none; }   /* over a head on hover's strip */
+.ed-grip { position: absolute; left: 0; right: 0; bottom: -5px; height: 9px; cursor: row-resize; z-index: 4; touch-action: none; }
 .ed-grip:hover, .ed-grip.on { background: color-mix(in srgb, var(--s1) 35%, transparent); }
 .ed-close { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 6px; color: var(--muted); }
 .ed-close:hover { color: var(--ink); background: var(--wash); }
@@ -1369,6 +1352,19 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
   font: 10.5px var(--mono); color: var(--muted); cursor: pointer; }
 .files .fl-bar:hover, .files .fl-bar:focus-visible { background: var(--wash); color: var(--ink-2); }
 .files .fl-bar > svg { flex: none; color: var(--ink-2); }
+/* the Editor open: the bar in a box with the pane's head's icons (barActs) at its top -- the numbers at its foot -- or,
+   a row, at its right; the head itself hidden */
+.files .fl-barbox { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--ring); }
+.files .fl-barbox > .fl-bar { flex: 1 1 auto; border: 0; }
+.files .fl-acts { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 0;
+  border-bottom: 1px solid var(--grid); }
+.files .fl-act { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 5px; background: none; color: var(--ink-2); font-size: 16px; line-height: 1; cursor: pointer; }
+.files .fl-act:hover, .files .fl-act:focus-visible { background: var(--wash); color: var(--ink); }
+.files .fl-act[aria-pressed="true"] { background: var(--selected); color: var(--ink); }
+.files .fl-act.close { display: none; color: var(--muted); }
+:is(.panes.split, :root.pane-mode .panes) .files .fl-act.close { display: inline-flex; }
+.pane:has(.files .fl-acts) > .pane-top { display: none; }
 .files .fl-bar .it { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .files .fl-bar .stats { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: auto; }   /* the latest turn's, at the foot */
 .files .fl-bar .sub { display: inline-flex; align-items: center; gap: 2px; }
@@ -1549,11 +1545,15 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .cmdline { font: .92em var(--mono); }
 @media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
-  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; }
+  .files .fl-barbox { flex-direction: row-reverse; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-barbox > .fl-bar { border: 0; }
+  .files .fl-acts { flex-direction: row; padding: 0 6px; border-bottom: 0; border-left: 1px solid var(--grid); } }
 /* the same by the pane's width: one of several side by side is narrower than the window */
 @container pane (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
 @container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
-  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; } }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; }
+  .files .fl-barbox { flex-direction: row-reverse; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-barbox > .fl-bar { border: 0; }
+  .files .fl-acts { flex-direction: row; padding: 0 6px; border-bottom: 0; border-left: 1px solid var(--grid); } }
 /* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
@@ -3484,20 +3484,10 @@ function layout() {
 // The page's top row -- the page's name at the left, each pane's head -- as tall as the tallest of them, so the
 // rule under it runs straight across the page: each says how tall it is by itself (`tops`: the name's, this
 // page's head's, each frame's), and all are given the tallest (--top-h). Not where the page is a phone's, its
-// panes one under the other. A frame tells the page around it, and is told. Where the heads are shown on hover
-// (`head-hover`, over their panes' tops: while the Editor is open above the panes, its room theirs), the row is the
-// page's name's alone.
-const tops = new Map(), NARROW = matchMedia("(max-width: 760px)"), HOVER = matchMedia("(hover: hover)");
-const headHover = () => HOVER.matches && (!!PANE || !NARROW.matches)
-  && (PANE ? !!(window.parent.agEditorPanel && window.parent.agEditorPanel.shown()) : !!state.editor);
-function setHeadHover() {
-  document.documentElement.classList.toggle("head-hover", headHover());
-  const head = document.getElementById("pane-head");
-  if (head) topRow("here", head.getBoundingClientRect().height);
-}
-for (const m of [HOVER, NARROW]) m.addEventListener("change", setHeadHover);
+// panes one under the other. A frame tells the page around it, and is told. A head put in its Chat view's bar (the
+// Editor open: barActs) is hidden, of no height.
+const tops = new Map(), NARROW = matchMedia("(max-width: 760px)");
 function topRow(who, height) {
-  if (who !== "brand" && headHover()) height = null;       // a head shown on hover: not in the row
   if (height === null) tops.delete(who); else tops.set(who, height);
   if (PANE) return PANE.top(window, height);
   const tallest = NARROW.matches ? 0 : Math.ceil(Math.max(0, ...tops.values())) + 1;   // and the rule under it
@@ -3507,7 +3497,6 @@ function topRow(who, height) {
   for (const p of panes.others) p.call("top", tallest);
 }
 const setTopRow = (h) => document.documentElement.style.setProperty("--top-h", `${h}px`);
-document.documentElement.classList.toggle("head-hover", headHover());
 function watchTop(node, who) {
   new ResizeObserver(() => topRow(who, node.getBoundingClientRect().height)).observe(node);
 }
@@ -3642,9 +3631,8 @@ function paneReady() {
     avatar: (pick) => setAvatarMode(pick, false),
     focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
     top: (h) => setTopRow(h),
-    editor: () => setHeadHover(),                    // the Editor opened or closed above the panes
+    editor: () => keepingPlace(renderMain),          // the Editor opened or closed above the panes: its head, in the bar or not
   });
-  setHeadHover();
   PANE.ready(window, state.selected);
   watchTop(document.getElementById("pane-head"), "here");
 }
@@ -5807,7 +5795,7 @@ function sideBar(files, cmds, info) {
     plural(n, "command") + (how.length ? ": " + how.map(([k, , w]) => `${full(k)} ${w}`).join(", ") : ""),
     bg ? plural(bg, "background task") : null].filter(Boolean).join(" · ");
   const dot = (cls, color) => el("i", { class: "g " + cls, "aria-hidden": "true", style: color ? `background: ${color}` : null });
-  return el("button", { type: "button", class: "fl-bar", title: `${said}. Show the files and commands`,
+  const bar = el("button", { type: "button", class: "fl-bar", title: `${said}. Show the files and commands`,
     "aria-label": `Show the files and commands: ${said}`,
     onclick: (ev) => { if (ev.target.closest(".it.bg")) openBackground(true, false); foldSide(false); } },
     strokeIcon(ICONS.sidebar, 15),
@@ -5821,6 +5809,24 @@ function sideBar(files, cmds, info) {
         ...(how.length ? how.map(([k, cls]) => el("span", { class: "sub " + cls }, dot(cls), full(k))) : [el("span", { text: "0" })])),
       bg ? el("span", { class: "it bg", title: `${plural(bg, "background task")}: show them` }, strokeIcon(ICONS.pulse, 13),
         el("span", { class: "sub bg" }, dot("bg"), full(bg))) : null));
+  const acts = barActs();
+  return acts ? el("div", { class: "fl-barbox" }, acts, bar) : bar;
+}
+// With the Editor open above the panes, a pane's head is put in its Chat view's folded bar, at the other end from the
+// numbers, as small icons -- which view, the Editor at this actor's folder, Details, and (panes side by side) the
+// pane's close -- and the head itself hidden (.pane:has(.fl-acts)), its room the chat's.
+function barActs() {
+  if (SNAPSHOT || !edShown()) return null;
+  const now = chatView().id;
+  const act = (label, title, icon, onclick, pressed = null, cls = "") => el("button", { type: "button", class: `fl-act ${cls}`.trim(),
+    title, "aria-label": label, "aria-pressed": pressed === null ? null : pressed ? "true" : "false", onclick }, icon);
+  return el("div", { class: "fl-acts", role: "group", "aria-label": "This pane" },
+    ...[...CHAT_VIEWS.values()].filter((v) => !v.more || v.id === now).map((v) =>
+      act(v.name, v.description || v.name, v.icon ? strokeIcon(v.icon, 14) : v.name.slice(0, 1), () => setChatView(v.id), v.id === now)),
+    act("Editor", "Editor: this actor's working directory in it", strokeIcon(ICONS.code, 14), () => setEditor(true, edActorDir())),
+    act("Details", "Details: what ag saw and did for this actor, and the history's other views", strokeIcon(ICONS.panel, 14),
+      () => setDetails(!state.details), !!state.details),
+    act("Close this pane", "Close this pane", "×", () => $("pane-close").click(), null, "close"));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
@@ -7719,7 +7725,6 @@ function setEditor(open, dir = null) {
   state.editor = open;
   if (!open) edClose();
   try { localStorage.setItem(ED_SHOWN_KEY, open ? "1" : ""); } catch (e) { /* this page only */ }
-  setHeadHover();
   for (const p of panes.others) p.call("editor", open);
   edMount();
   if (open && dir) edGo(dir);
@@ -7729,7 +7734,6 @@ function setEditor(open, dir = null) {
 // The selected actor's working directory (this page's: a pane's, in its frame).
 const edActorDir = () => { const info = selectedInfo(); return (info && (info.cwd || (info.session && info.session.cwd))) || null; };
 if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor };
-setHeadHover();                                      // the Editor open from the last visit: the heads on hover
 const edCloseBtn = () => el("button", { type: "button", class: "ed-close", title: "Close the editor", "aria-label": "Close the editor",
   onclick: () => setEditor(false) }, "×");
 // Shown or hidden as `state.editor` says, drawn the first time it is shown: called by each draw of the main view.
