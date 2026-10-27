@@ -909,7 +909,8 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .ed-body .ed-disk-line { box-shadow: inset 3px 0 0 var(--who, var(--s2)); }
 @media (max-width: 760px) { .ed-tree { width: 140px; } }
 /* the Files view: a turn's files, each as the agent saw it (files.py) */
-.chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  container: talk / size; }   /* its height the layout's: short (under the Editor, say), the actor at work said on one line */
 .files .fl-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }
 .files .fl-grid.open { grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
 /* --lh: a line of the conversation, which a reply's dot and its first line share */
@@ -1157,6 +1158,17 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-working .now { color: var(--term-accent); }
 /* when it last did something, and how long the turn has run: counting, dim, above the words */
 .files .fl-working .fl-times { color: var(--muted); font-size: .86em; opacity: .8; font-variant-numeric: tabular-nums; }
+.files .fl-working > .fl-mini { display: none; }
+.files .fl-mini img { display: block; width: 1.3em; height: 1.3em; }
+/* short of height: the actor at work on one line -- its avatar small, as tall as the words, "Working…", then the times --
+   in place of the two lines and the avatar under them */
+@container talk (max-height: 420px) {
+  .files .fl-working { display: flex; align-items: center; gap: 6px; }
+  .files .fl-working > .fl-mini { display: inline-flex; flex: none; order: 0; color: var(--term-accent); }
+  .files .fl-working > .now { order: 1; flex: none; }
+  .files .fl-working > .fl-times { order: 2; flex: 0 1 auto; }
+  .files .fl-working > .fl-times::before { content: "· "; }
+  .files .fl-status { display: none; } }
 .files .fl-talk > .fl-status { margin: 4px 6px 0 8px; }
 .files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
 .files .fl-status .spin { font-size: 1.4em; }
@@ -6159,7 +6171,10 @@ function opened(a) {
 }
 // The line under a running turn: when the actor last did something (`last`; its last try, `retrying`) and how long the
 // turn has run (since `at`), and what it does now.
+// Short of height (the `talk` container), all on one line, behind the actor's avatar small (`fl-mini`).
 const working = (info, last, at, now, retrying = false) => el("div", { class: "fl-working" },
+  el("span", { class: "fl-mini", "aria-hidden": "true" }, info && bareAvatar(info)
+    ? el("img", { src: bareAvatar(info), alt: "", draggable: "false" }) : el("span", { class: "spin" })),
   el("div", { class: "fl-times", "aria-hidden": "true" }, retrying ? "last try " : "last activity ",
     el("span", { "data-ago": last || "", text: ago(last) }),
     at ? " · " : null, at ? el("span", { "data-lasting": at, text: lasting(at) }) : null, at ? " so far" : null),
