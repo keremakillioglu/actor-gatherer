@@ -299,6 +299,19 @@ class Harness(ABC):
         return " · ".join(f"{p['question']} → {p['text'].strip() if p['text'] is not None else ', '.join(p['labels'])}"
                           for p in picked(ask, choice))
 
+    # ---- what its calls and answers say happened, besides the conversation
+
+    #: Whether what it asks in its terminal is in its own record of each session (its follower's `asked`): then its
+    #: answers' asking calls are not read for it again.
+    asks_recorded = False
+
+    def derived(self, parts: List["Part"], at: float, history: Optional[list] = None) -> List["Fact"]:
+        """The facts pieces of a call or an answer say (`parts`, read; `history`, the conversation they came with, its
+        pieces as the harness sent them) -- what it asks the user, a background task its tool's result says started,
+        resumed or was stopped, a task's notice -- each keyed by the harness's own ids, so the same piece read again
+        is the same fact; `at`, when they were seen. None by default."""
+        return []
+
     # ---- its own record of a session
 
     def record_path(self, session: str, cwd: Optional[str] = None, config: Optional[str] = None) -> Optional[str]:
@@ -313,8 +326,9 @@ class Harness(ABC):
 
 
 class Facts:
-    """What a harness's record says happened, besides what its model calls carry: each fact's type, the event it
-    becomes in the gatherer. Each fact's data:
+    """What a harness's record says happened, besides what its model calls carry -- and what its calls and answers say
+    of it besides the conversation (`Harness.derived`): each fact's type, the event it becomes in the gatherer. Each
+    fact's data:
 
         message_queued     queued (its key), text (as the harness keeps it), words (as the user typed it): a message
                            written while the agent works, held until it can be sent
@@ -325,13 +339,17 @@ class Facts:
         message_withdrawn  queued: taken back before it was sent
         asked              call (its tool call's id, or "plan:<turn>"), kind ("question" or "plan"), questions or
                            plan, async (the turn goes on while it asks), turn: what the harness asks the user in its
-                           terminal, where no model call says so
+                           terminal -- from its record where no model call says so, else from the answer that asks
         ask_settled        call, how ("answered" or "dismissed"), result (what the harness recorded as its answer;
                            None: none, or not known yet): it no longer waits on it
         turn_stopped       how ("over", "interrupted": Esc; "error": it gave up on a model call), error, status (the
                            error's HTTP status), turn
-        task_started       task, kind ("agent", "command"), label: a background task it went on without
-        task_ended         task, kind, report (what an agent answered, once known)
+        task_started       task, kind ("agent", "command", "monitor", "workflow"), label, output (the file it writes
+                           to), how ("started", "resumed"): a background task it went on without
+        task_ended         task, kind, status (as its notice says: "completed", "failed", "killed", "stopped"), report
+                           (what an agent answered, once known)
+        task_activity      task, event (a monitor's, or an agent waiting on its own background work; None: its output
+                           grew): a sign that a background task lives
     """
     MESSAGE_QUEUED = "message_queued"
     MESSAGE_SENT = "message_sent"
@@ -341,7 +359,9 @@ class Facts:
     TURN_STOPPED = "turn_stopped"
     TASK_STARTED = "task_started"
     TASK_ENDED = "task_ended"
-    ALL = (MESSAGE_QUEUED, MESSAGE_SENT, MESSAGE_WITHDRAWN, ASKED, ASK_SETTLED, TURN_STOPPED, TASK_STARTED, TASK_ENDED)
+    TASK_ACTIVITY = "task_activity"
+    ALL = (MESSAGE_QUEUED, MESSAGE_SENT, MESSAGE_WITHDRAWN, ASKED, ASK_SETTLED, TURN_STOPPED, TASK_STARTED, TASK_ENDED,
+           TASK_ACTIVITY)
 
 
 @dataclass

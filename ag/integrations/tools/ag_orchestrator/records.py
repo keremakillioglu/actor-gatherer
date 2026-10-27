@@ -14,13 +14,18 @@ gatherer beside the conversation's, which no policy groups, so they never reach 
 and, from the harness's own record of the session as it grows (session_files.py), what no model call carries:
 
     session_file  the record followed: the harness, and the file's path
-    message_queued, message_sent, message_withdrawn, asked, ask_settled, turn_stopped, task_started, task_ended
-                  each a fact the record says (harness_kit's Facts), its data the payload with `at`, when it happened
+    message_queued, message_sent, message_withdrawn, asked, ask_settled, turn_stopped, task_started, task_ended,
+    task_activity each a fact the record says (harness_kit's Facts), its data the payload with `at`, when it happened
+
+and, from a call's or an answer's pieces (harness_kit's `derived`; proxy_hook.py's `derive`): what the harness asks
+the user (asked), an asking call's result (ask_settled), the background tasks its tools' results start and stop and
+their notices (task_started, task_ended, task_activity) -- and a task's output growing, as the hook sees its file
+(task_activity, session_files.py).
 
 Each is `{"type", "id", "payload", "properties"?}`, as the server's `insert` takes it, its own properties declared
 on its type the first time it is seen. An id says what makes it the same: a reply part by its answer and its place in
-it, a reply's end by its answer, a failure by its read, a fact of the record by its place in the file; any other is new
-each time (`uuid4`). Sent by `record`, which
+it, a reply's end by its answer, a failure by its read, a fact of the record by its place in the file, a derived one by
+the harness's own ids (`derived`); any other is new each time (`uuid4`). Sent by `record`, which
 never raises: a lost record never holds up a call.
 """
 
@@ -90,6 +95,12 @@ def session_file(harness: str, path: str) -> dict:
 def fact(f: Fact, path: str) -> dict:
     """A fact the harness's record at `path` says, the same each time the record is read: by its line's place there."""
     return {"type": f.type, "id": f"{f.type}:{os.path.basename(path)}:{f.key}", "payload": {"at": f.at, **f.data}}
+
+
+def derived(f: Fact) -> dict:
+    """A fact a call's or an answer's pieces say (harness_kit's `derived`), the same each time they are read: by the
+    harness's own ids (an asking call's, a task's) its key holds."""
+    return {"type": f.type, "id": f"{f.type}:{f.key}", "payload": {"at": f.at, **f.data}}
 
 
 async def record(client, gatherer: str, channel: str, events: List[dict],

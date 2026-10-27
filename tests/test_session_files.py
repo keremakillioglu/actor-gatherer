@@ -19,6 +19,7 @@ from harness_kit import claude as claude_rules, codex as codex_rules  # noqa: E4
 from ag.integrations.harnesses.claude.setup.launch import base_url  # noqa: E402
 from ag.integrations.harnesses.codex.setup.hook_servers import config_part  # noqa: E402
 from ag.integrations.harnesses.codex.setup.launch import Plan  # noqa: E402
+from ag.integrations.tools.ag_orchestrator import session_files  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.session_files import SessionFiles  # noqa: E402
 
 SESSION = "0e1d2c3b-0000-4000-8000-000000000009"
@@ -144,6 +145,27 @@ class FollowTest(unittest.IsolatedAsyncioTestCase):
                     "message": {"role": "assistant", "content": [{"type": "text", "text": "Invalid API key"}]}})
         await self.until(lambda: self.server.types() == ["session_file", "turn_stopped"])     # no next call needed
         self.assertEqual(self.server.inserted[-1][1]["payload"]["status"], 401)
+
+    async def test_a_running_task_s_output_growing_is_its_activity_until_it_ends(self):
+        self.write(self.op("enqueue", "one"))
+        self.follow()
+        await self.until(lambda: len(self.server.inserted) == 2)
+        out = os.path.join(self.tmp.name, "b1.output")
+        with open(out, "w") as fh:
+            fh.write("...")
+        now = time.time()
+        os.utime(out, (now - 30, now - 30))
+        with unittest.mock.patch.object(session_files, "ACTIVITY_SECONDS", 0.0):
+            self.files.task("g", SESSION, "b1", out)                   # the hook saw it start
+            await self.until(lambda: self.server.types()[-1:] == ["task_activity"])
+            self.assertEqual((self.server.inserted[-1][1]["payload"]["task"], round(self.server.inserted[-1][1]["payload"]["at"])),
+                             ("b1", round(now - 30)))
+            os.utime(out, (now, now))                                   # written again
+            await self.until(lambda: self.server.types().count("task_activity") == 2)
+            self.files.task("g", SESSION, "b1", None)                  # it ended
+            os.utime(out, (now + 5, now + 5))
+            await asyncio.sleep(0.1)
+            self.assertEqual(self.server.types().count("task_activity"), 2)
 
     async def test_written_anew_it_is_read_from_its_start(self):
         self.write(self.op("enqueue", "a long first message"))

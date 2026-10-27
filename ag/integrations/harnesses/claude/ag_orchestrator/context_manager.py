@@ -209,6 +209,10 @@ class ClaudeContextManager(ProxyHook):
                 request.state[FILES] = (gatherer, channel, cwd, since)
         if self.files is not None:                         # the results of the last answer's calls: checked
             self.files.arrived(gatherer, channel, cwd, messages)
+        # its last answer and what came after -- its calls' results, tasks' notices: what they say of its asks and tasks
+        last = next((i for i in range(len(messages) - 1, -1, -1) if isinstance(messages[i], dict)
+                     and messages[i].get("role") == "assistant"), 0)
+        self.derive(gatherer, channel, self.harness.read(self.harness.items(messages[last:])), asks=False)
 
         async def read():
             out = {}

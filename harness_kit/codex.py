@@ -478,6 +478,8 @@ class Codex(Harness):
             raise RenameError(f"Codex did not take the name: {error.get('message') if isinstance(error, dict) else error}")
         return "named in its state"
 
+    asks_recorded = True          # its asks, and their answers, are in its rollout (Rollout)
+
     def command(self, session: str, resume: bool = False, model: Optional[str] = None,
                 permission_mode: Optional[str] = None, fullscreen: bool = True) -> List[str]:
         """Its own options (PERMISSIONS), its classic inline screen where not `fullscreen`, and `resume <thread>`."""

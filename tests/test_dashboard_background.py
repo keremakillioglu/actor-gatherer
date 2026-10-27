@@ -289,6 +289,24 @@ class BackgroundTest(unittest.TestCase):
         self.record(queued("a7f3", "killed", time.time()))
         self.assertEqual(self.actor([self.session()])["status"], data.IDLE)
 
+    def test_from_a_hook_that_records_them_tasks_are_its_facts_and_no_file_is_read(self):
+        then = time.time() - 60
+        derives = ("model_call", {"kind": "turn", "harness": "claude", "version": "2.1.311", "derives": True}, None)
+        self.add([derives] + command("t1", "b1", "/nowhere/b1.output") + [said("The server is starting.")], at=then)
+        self.assertEqual(self.actor([self.session()])["status"], data.IDLE)     # its start, unrecorded: not read off the text
+        self.add([("task_started", {"at": then, "task": "b1", "kind": "command", "how": "started", "label": "Run the server",
+                                    "output": "/nowhere/b1.output"}, None),
+                  ("task_activity", {"at": time.time() - 5, "task": "b1", "event": None}, None)])
+        a = self.actor([self.session()])
+        [task] = a["background"]
+        self.assertEqual((a["status"], task["id"], task["label"]), (data.BACKGROUND, "b1", "Run the server"))
+        self.assertAlmostEqual(task["active"], time.time() - 5, delta=2)        # its output's growth, as recorded
+        self.add([("task_activity", {"at": time.time(), "task": "b1", "event": "line 4 matched"}, None)])
+        self.assertEqual(self.actor([self.session()])["background"][0]["event"], "line 4 matched")
+        self.add([("task_ended", {"at": time.time(), "task": "b1", "kind": None, "status": "completed"}, None)])
+        a = self.actor([self.session()])
+        self.assertEqual((a["status"], a["background"]), (data.IDLE, []))
+
     def test_only_the_rows_added_since_are_read_again(self):
         self.add(command("t1", "b1", self.output("b1")))
         self.assertEqual(len(self.actor([self.session()])["background"]), 1)

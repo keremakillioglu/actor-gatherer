@@ -24,6 +24,7 @@ import json
 import os
 import re
 import textwrap
+import zlib
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -223,6 +224,7 @@ PLAN_KEYS = {"auto": "1", "manual": "2", "change": "3"}
 PLAN_APPROVED = "User has approved your plan"         # its result, once a plan is approved
 #: Where Claude Code writes the plan it asks to have approved (ExitPlanMode's call carries none).
 PLAN_FILE = re.compile(r"/\.claude/plans/[^/\\]+\.md$")
+PLAN_CHARS = 20000          # the most of a plan read from its file
 #: The kinds of the user's words, as a piece alone shows them (an image the user sent among them); and the model's turn.
 SAID = (Kind.USER, Kind.USER_COMMAND, Kind.MID_TURN, Kind.ASK_REPLY)
 TURNS = (Kind.AGENT, Kind.REASONING, Kind.TOOL_CALL, Kind.TOOL_RESULT)
@@ -742,6 +744,48 @@ class ClaudeCode(Harness):
                 choice.get("plan"), f"Change: {(choice.get('text') or '').strip()}")
         return super().answer_summary(ask, choice)
 
+    def derived(self, parts: List[Part], at: float, history: Optional[list] = None) -> List[Fact]:
+        """What an answer asks the user (its calls of ASKS, a plan's text read from the plan file it wrote), and what a
+        call's new pieces say: an asking call's result (answered, or dismissed: Esc rejects the call), a background
+        task its tool's result started, resumed or stopped (task_of), a task's notice (an end, a monitor's event, an
+        agent waiting on its own work), an agent's report handed back (its end). Keyed by the call's or the task's id,
+        and a notice by its words."""
+        calls = {p.tool.id: p.tool for p in parts if p.tool is not None and p.tool.id}
+        out: List[Fact] = []
+        for p in parts:
+            t, r = p.tool, p.result
+            if t is not None and t.ask and t.id:
+                ask = dict(t.ask)
+                if ask.get("kind") == "plan" and not ask.get("plan"):
+                    ask["plan"] = plan_text(parts, history)
+                out.append(Fact(Facts.ASKED, t.id, at, {"call": t.id, **ask, "async": False, "turn": None}))
+            if r is not None and r.call_id:
+                asking = calls.get(r.call_id)
+                if asking is not None and asking.ask:
+                    out.append(Fact(Facts.ASK_SETTLED, r.call_id, at, {"call": r.call_id, "how": "dismissed" if r.error
+                                                                       else "answered", "result": r.output}))
+                task = r.task
+                if task and task.get("id") and task.get("how") == "stopped":
+                    out.append(Fact(Facts.TASK_ENDED, f"{task['id']}.{r.call_id}", at,
+                                    {"task": task["id"], "kind": None, "status": "stopped"}))
+                elif task and task.get("id"):
+                    out.append(Fact(Facts.TASK_STARTED, f"{task['id']}.{r.call_id}", at,
+                                    {"task": task["id"], "kind": task.get("kind"), "how": task.get("how"),
+                                     "label": task.get("label") or label_of(calls.get(r.call_id)), "output": task.get("output")}))
+            for n in p.detail.get("notices") or []:
+                if not n.get("id"):
+                    continue
+                key = f"{n['id']}.{zlib.crc32(json.dumps(n, sort_keys=True).encode()):08x}"
+                if n.get("ended"):
+                    out.append(Fact(Facts.TASK_ENDED, key, at, {"task": n["id"], "kind": None, "status": n.get("status")}))
+                else:
+                    event = "waiting on its own background work" if n.get("waiting") else " ".join((n.get("event") or "").split())[:200]
+                    out.append(Fact(Facts.TASK_ACTIVITY, key, at, {"task": n["id"], "event": event or None}))
+            for agent in p.detail.get("handed_back") or []:
+                out.append(Fact(Facts.TASK_ENDED, f"{agent}.{zlib.crc32((p.text or '').encode()):08x}", at,
+                                {"task": agent, "kind": "agent", "status": "completed"}))
+        return out
+
     def owns(self, payload) -> bool:
         if not isinstance(payload, dict) or "info" in payload or "api" in payload:
             return False
@@ -829,6 +873,42 @@ class ClaudeCode(Harness):
 def split_turn_notes(text: str) -> bool:
     """Whether a message queued in the user's name is one of Claude Code's notes (QUEUED_NOTES), not theirs."""
     return text.lstrip().startswith(QUEUED_NOTES)
+
+
+def plan_text(parts: List[Part], history: Optional[list] = None) -> Optional[str]:
+    """The plan an ExitPlanMode call asks to have approved, where its call does not carry it: the plan file (PLAN_FILE)
+    last written -- among `parts` (the answer that asks), else in `history` -- as it is now, else as that write had it;
+    at most PLAN_CHARS. None: none written."""
+    found = None
+    for p in reversed(parts):
+        got = p.tool.input if p.tool is not None and isinstance(p.tool.input, dict) else None
+        path = got.get("file_path") if got else None
+        if isinstance(path, str) and PLAN_FILE.search(path):
+            found = (path, got["content"] if isinstance(got.get("content"), str) else None)
+            break
+    for item in reversed(history or []) if found is None else []:
+        found = plan_path(item)
+        if found:
+            break
+    if not found:
+        return None
+    try:
+        with open(found[0], encoding="utf-8", errors="replace") as fh:
+            return fh.read(PLAN_CHARS)
+    except OSError:
+        return found[1][:PLAN_CHARS] if found[1] else None
+
+
+def label_of(call: Optional[ToolCall]) -> Optional[str]:
+    """What a call that started a background task said it was for: its `description` (Bash, Agent, Monitor take one;
+    SendMessage, its `summary`), else the start of its command or prompt, else its tool's name."""
+    if call is None:
+        return None
+    given = call.input if isinstance(call.input, dict) else {}
+    for k in ("description", "summary", "command", "prompt", "message"):
+        if isinstance(given.get(k), str) and given[k].strip():
+            return " ".join(given[k].split())[:160]
+    return call.name
 
 
 def plan_path(payload) -> Optional[Tuple[str, Optional[str]]]:

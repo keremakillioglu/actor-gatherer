@@ -145,7 +145,7 @@ RECORDS = ("model_call", "reply_part", "reply_end", "call_failed", "recap", "nam
 #: rollout), as the hook records it while it follows the record (ag's session_files.py; harness_kit's Facts): the
 #: record followed (`session_file`), then a fact per thing the record says that no model call carries.
 FACTS = ("session_file", "message_queued", "message_sent", "message_withdrawn", "asked", "ask_settled", "turn_stopped",
-         "task_started", "task_ended")
+         "task_started", "task_ended", "task_activity")
 FACTS_READ = 400               # the newest of an actor's facts read for its status
 MESSAGES_READ = 200            # the newest of its messages' facts read for what the user wrote as it worked
 SENT_SECONDS = 30.0            # a message sent from the queue: shown as written until ag stores it, at most this long
@@ -438,7 +438,9 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
             recaps[ch] = {"text": " ".join((text or "").split())[:600], "at": _seconds(made)}
     names = _names(conn, tables)
     for ch, a in out.items():
-        a["harness"] = _harness(conn, ch)
+        newest_call = _newest_call(conn, ch)
+        a["harness"] = _harness(conn, ch, newest_call)
+        a["derives"] = bool(newest_call.get("derives"))      # its hook records asks and tasks: read from them
         typed, text = last_user.get(ch, (None, ""))
         said = typed if typed is not None else harness_kit.words(text, a["harness"])[1]   # as the user typed it
         a["last_user_message"] = " ".join(said.split())[:600] or None
@@ -456,7 +458,7 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
             _claude_status(conn, ch, a, tables, now)
         del a["said_at"]
         a["running"] = a["building"] or a["status"] == RUNNING
-        a["background"] = background.get(ch, []) + a.pop("codex_background", [])
+        a["background"] = a.pop("record_background") if "record_background" in a else background.get(ch, [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
 
 
@@ -466,7 +468,11 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
     the background tasks the record says ended (`task_ends`, for `_settle_background`)."""
     rec = record_of(conn, ch) if a["status"] in (RUNNING, IDLE) else Record()
     a["task_ends"] = rec.ends()
-    a["asking"] = asking(conn, ch, tables) if a["status"] == RUNNING else None
+    if a.get("derives"):                             # what it asks, and its tasks, as its hook recorded them
+        a["record_background"] = rec.tasks()
+        a["asking"] = ask_view(rec.asking()) if a["status"] == RUNNING else None
+    else:
+        a["asking"] = asking(conn, ch, tables) if a["status"] == RUNNING else None
     how = rec.settled(a["asking"]["call"]) if a["asking"] else None
     if how:
         a["asking"] = None
@@ -495,7 +501,7 @@ def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
     """The agent's status as codex's own record of the thread tells it (its rollout; `Record`; module doc): its turn
     over, interrupted (Esc) or stopped on an error where ag heard nothing of it; what it asks the user (`codex_asking`)
     -- a plan it proposed kept as `offer`, for `_with_started` to show only where the dashboard's terminal shows codex
-    asking whether to implement it; and the subagents and commands it left running, as `codex_background`."""
+    asking whether to implement it; and the subagents and commands it left running, as `record_background`."""
     rec = record_of(conn, ch) if a["status"] in (RUNNING, IDLE) else Record()
     a["stopped"] = None
     cut = since_said(a, hung_up(conn, ch)) if a["status"] == RUNNING else None
@@ -519,7 +525,7 @@ def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
         a["offer"] = ask
     elif ask and not ask.get("async"):               # its turn waits on the answer; an async one's goes on
         a["status"] = ASKING
-    a["codex_background"] = rec.tasks()
+    a["record_background"] = rec.tasks()
 
 
 def newest(a: dict) -> Optional[float]:
@@ -657,6 +663,22 @@ def asking(conn, channel: str, tables: set) -> Optional[dict]:
     return None
 
 
+def ask_view(f: Optional[dict]) -> Optional[dict]:
+    """An `asked` fact as `asking` returns what it asks: {kind, at, call, questions (clipped) or plan}; None for None."""
+    if not f:
+        return None
+    out = {"kind": f.get("kind") or "question", "at": f.get("at"), "call": f.get("call")}
+    if out["kind"] == "plan":
+        out["plan"] = _clip(f.get("plan"), PLAN_CHARS)
+    else:
+        out["questions"] = [{"header": q.get("header"), "question": _clip(q.get("question"), ASK_CHARS),
+                             "multiSelect": bool(q.get("multiSelect")),
+                             "options": [{"label": o.get("label"), "description": _clip(o.get("description"), ASK_CHARS)}
+                                         for o in q.get("options") or [] if isinstance(o, dict)]}
+                            for q in f.get("questions") or [] if isinstance(q, dict)]
+    return out
+
+
 def codex_questions(given) -> List[dict]:
     """Codex's questions (request_user_input's: {id, header, question, options: [{label, description}]}; the
     async one's: {title, options: [label]}) as `asking` returns them, each with its `id` (None: the async one's)."""
@@ -702,7 +724,7 @@ def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optiona
         if _harness(conn, channel) == "codex":
             over = turn_over(conn, channel, tables)[0]
             return codex_asking(conn, channel, tables, IDLE if over else RUNNING, rec)
-        ask = asking(conn, channel, tables)
+        ask = ask_view(rec.asking()) if _newest_call(conn, channel).get("derives") else asking(conn, channel, tables)
         return None if ask is None or rec.settled(ask["call"]) else ask
     finally:
         conn.close()
@@ -822,11 +844,11 @@ class Record:
         self.followed = any(t == "session_file" for t, _ in self.facts)
         self._settled: Dict[str, dict] = {}
         self._results: Dict[str, str] = {}
-        for t, f in self.facts:
-            if t == "ask_settled" and f.get("call"):
-                self._settled[f["call"]] = f
+        for t, f in self.facts:                         # the first word of each: the record's Esc before the call
+            if t == "ask_settled" and f.get("call"):    # that carries the rejected result back
+                self._settled.setdefault(f["call"], f)
                 if f.get("result") is not None:
-                    self._results[f["call"]] = f["result"]
+                    self._results.setdefault(f["call"], f["result"])
 
     def settled(self, call: Optional[str]) -> Optional[str]:
         got = self._settled.get(call) if call else None
@@ -846,6 +868,15 @@ class Record:
         for t, f in self.facts:
             if t == "asked" and f.get("kind") == kind and (wait is None or bool(f.get("async")) != wait) \
                     and f.get("call") not in self._settled:
+                return f
+        return None
+
+    def asking(self) -> Optional[dict]:
+        """What an answer asked that is not settled, the newest: {kind, at, call, questions or plan} (a question
+        asked as the turn goes on, and a proposed plan's offer, are `open_question`'s and `offer`'s)."""
+        for t, f in reversed(self.facts):
+            if t == "asked" and f.get("call") and not f.get("async") and not str(f["call"]).startswith("plan:") \
+                    and f["call"] not in self._settled:
                 return f
         return None
 
@@ -869,9 +900,15 @@ class Record:
         for t, f in self.facts:
             if t == "task_started" and f.get("task"):
                 out[f["task"]] = {"id": f["task"], "kind": f.get("kind"), "label": f.get("label"), "started": f.get("at"),
-                                  "output": None, "event": None, "event_at": None}
+                                  "output": f.get("output"), "event": None, "event_at": None, "written": None}
             elif t == "task_ended":
                 out.pop(f.get("task"), None)
+            elif t == "task_activity" and f.get("task") in out:       # a sign of life: its output grew, or its event
+                task = out[f["task"]]
+                if f.get("event"):
+                    task["event"], task["event_at"] = f["event"], f.get("at")
+                else:
+                    task["written"] = max(task["written"] or 0, f.get("at") or 0) or None
         return list(out.values())
 
     def reports(self) -> Dict[str, str]:
@@ -1115,7 +1152,7 @@ def _settle_background(a: dict, now: float) -> None:
     for t in tasks:
         if since and t["started"] and t["started"] < since:
             continue                                 # an earlier process's
-        wrote = _written(t.get("output"))
+        wrote = t["written"] if "written" in t else _written(t.get("output"))     # as recorded; an older hook's: the file
         active = max((x for x in (t["started"], t.get("event_at"), wrote) if x), default=None)
         if not known and (active is None or now - active > STALE_SECONDS):
             continue
@@ -1131,13 +1168,20 @@ CODEX_TYPES = codex_rules.SHAPES
 harness_of = harness_kit.harness_of
 
 
-def _harness(conn, channel: str) -> Optional[str]:
-    """The harness the channel runs on: as its hook recorded it with each model call, else as its events' shape tells."""
+def _newest_call(conn, channel: str) -> dict:
+    """The channel's newest model call as its hook recorded it (`model_call`): {kind, harness, version, derives (its hook
+    records what answers ask and the tasks calls start: step 5's), ...}; {} before hooks recorded calls."""
     said = conn.execute(f"SELECT e.payload_json FROM events e JOIN event_types t ON {BY_CHANNEL} "
                         f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'model_call' ORDER BY e.row_id DESC LIMIT 1",
                         (channel,)).fetchone()
-    if said and (_json(said[0]) or {}).get("harness"):
-        return _json(said[0])["harness"]
+    return (_json(said[0]) or {}) if said else {}
+
+
+def _harness(conn, channel: str, newest: Optional[dict] = None) -> Optional[str]:
+    """The harness the channel runs on: as its hook recorded it with each model call, else as its events' shape tells."""
+    said = _newest_call(conn, channel) if newest is None else newest
+    if said.get("harness"):
+        return said["harness"]
     rows = conn.execute(f"SELECT payload_json FROM events e WHERE ifnull({CHANNEL}, '') = ? AND {NOT_RECORD} "
                         "ORDER BY row_id LIMIT 60", (channel,))
     payloads = []

@@ -3,8 +3,9 @@ call's answer, as it streams and once whole, the answer is recorded as events of
 (`reply_part`), then its end (`reply_end`) -- and a call that failed as `call_failed`; every call it sees is recorded as
 `model_call` (records.py). A side call whose answer is the session's recap or name is the subclass's to read
 (`side_answered`). From each call of a session on, the harness's own record of it is followed (`following`,
-session_files.py): what it says that no call carries recorded as it is written. What a call is, the harness's rules
-say (its `harness`, harness_kit's).
+session_files.py): what it says that no call carries recorded as it is written. What an answer asks the user, and what
+a call's new pieces say of background tasks, are recorded too (`derive`: harness_kit's `derived`), each once, by the
+harness's own ids. What a call is, the harness's rules say (its `harness`, harness_kit's).
 
 A subclass gives:
     harness           the harness's rules (harness_kit.Harness)
@@ -19,12 +20,13 @@ background, so the call is not held up for it; `close` waits for what is under w
 """
 
 import asyncio
-from typing import Callable, Optional, Set
+import time
+from typing import Callable, List, Optional, Set
 
-from harness_kit import Call, Harness
+from harness_kit import Call, Facts, Harness, Part
 
 from .call_ag import read_of, report_measured
-from .records import call_failed, model_call, record, recap, reply_end, reply_parts, name
+from .records import call_failed, derived, model_call, record, recap, reply_end, reply_parts, name
 from .session_files import SessionFiles
 
 
@@ -52,9 +54,32 @@ class ProxyHook:
         return await record(self.ag_clients.client(gatherer), gatherer, channel, events, self.log) if events else None
 
     def called(self, gatherer: str, channel: str, call: Call, read_id: Optional[int] = None, **detail) -> None:
-        """A model call the hook saw, recorded (`model_call`), in the background: its kind, the harness and its version."""
-        self.keep(self.recorded(gatherer, channel,
-                                [model_call(call.kind, self.harness.name, call.version, read_id, detail or None)]))
+        """A model call the hook saw, recorded (`model_call`), in the background: its kind, the harness and its version
+        -- and `derives`, that this hook records what its answers ask and its tasks (`derive`), so a reader may take
+        their absence as none."""
+        self.keep(self.recorded(gatherer, channel, [model_call(call.kind, self.harness.name, call.version, read_id,
+                                                               {"derives": True, **detail})]))
+
+    def derive(self, gatherer: str, channel: str, parts: List[Part], history: Optional[list] = None,
+               asks: bool = True) -> None:
+        """What `parts` -- an answer's, or a call's new pieces -- say besides the conversation (harness_kit's `derived`:
+        an ask, an asking call's result, a background task started, stopped or noticed), recorded in the background,
+        beside the session's reads; a task's output file followed while it runs (session_files.py's `task`). `asks`:
+        what the parts ask too (a call's new pieces open with the answer that asked: recorded already)."""
+        try:
+            facts = [f for f in self.harness.derived(parts, time.time(), history)
+                     if not (f.type == Facts.ASKED and (self.harness.asks_recorded or not asks))]
+        except Exception as exc:  # noqa: BLE001 - a lost record never breaks the call
+            self.log(gatherer, f"[{channel}] nothing derived: {exc!r}")
+            return
+        if not facts:
+            return
+        if self.sessions is not None:
+            for f in facts:
+                if f.type in (Facts.TASK_STARTED, Facts.TASK_ENDED):
+                    self.sessions.task(gatherer, channel, f.data["task"], f.data.get("output") if f.type == Facts.TASK_STARTED else None)
+        self.keep(record(self.ag_clients.client(gatherer), gatherer, channel, [derived(f) for f in facts], self.log,
+                         beside=True))
 
     def following(self, request, gatherer: str, channel: str, call: Call) -> None:
         """The session's own record followed (session_files.py), from this call of it on: where it runs, and the
@@ -105,6 +130,11 @@ class ProxyHook:
         if ended:
             out.append(reply_end(answer_id, answer.get("status"), read_of(request)))
         await self.recorded(gatherer, channel, out)
+        if ended:                                         # what it asks the user, once the answer is whole
+            body = getattr(request, "body", None)
+            history = body.get("messages") or body.get("input") if isinstance(body, dict) else None
+            self.derive(gatherer, channel, self.harness.read(self.harness.items(self.answer_items(answer["output_items"]))),
+                        self.harness.items(history) if isinstance(history, list) else None)
         return f"{len(events)} parts" + (f", ended ({answer.get('status')})" if ended else "")
 
     async def streamed(self, request, answer: dict) -> None:
