@@ -177,6 +177,15 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .name { font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
 .agent .name + .asked { font-size: 12px; font-weight: 400; color: var(--ink-2); -webkit-line-clamp: 2; }
+/* the one shown: its top line clicked names it */
+.agent[aria-current="true"] .name[title], .agent[aria-current="true"] .asked[title] { cursor: text; }
+.agent.renaming { cursor: default; }
+.agent .name-box { display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; font-weight: 600; line-height: 1.4;
+  color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 5px; padding: 1px 6px; margin: -2px 0 -2px -7px;
+  width: calc(100% + 7px); outline: none; }
+.agent .name-box:focus { border-color: var(--ink-2); }
+.agent .name-box::placeholder { color: var(--muted); font-weight: 400; }
+.agent.renaming .name-box + .asked { font-size: 12px; font-weight: 400; color: var(--ink-2); -webkit-line-clamp: 2; }
 .agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
 .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
@@ -1645,7 +1654,8 @@ let state = { home: null, selected: null, agent: null, readId: null, context: nu
   details: !!SNAPSHOT,  // the details panel open beside the chat: at first in a snapshot, which has no conversation
   detailsTab: (() => { try { const v = localStorage.getItem(DETAILS_KEY); return v === "gatherer" || v === "context" ? v : "actor"; } catch (e) { return "actor"; } })(),
   chat: null,           // the history feed's messages: {key, items (stored, append-only), pending, last_row}
-  adding: null };       // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
+  adding: null,         // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
+  renaming: null };     // the actor being named in the list: {g, c, value (as typed so far), was (its name before)}
 if (PANE) state.selected = [PANE_URL.get("gatherer") || "", PANE_URL.get("channel") || ""];
 // The actors open side by side (panes, below): this page's own view (`here`, its actor state.selected), the
 // first, and the others (`others`), each the page in a frame; `focus` the one a click in the list shows its
@@ -2216,7 +2226,7 @@ function render(userAction = false) {
     opened(selectedInfo()),
     Math.floor(Date.now() / AGO_MS)]);
   // "ago" texts: every 30 s; not while a form in the list is open, which a redraw would empty
-  if ((userAction || agents !== drawn.agents) && !(state.adding && !userAction)) { renderAgents(); drawn.agents = agents; }
+  if ((userAction || agents !== drawn.agents) && !((state.adding || state.renaming) && !userAction)) { renderAgents(); drawn.agents = agents; }
   const view = mainSignature();
   if (userAction || view !== drawn.main) { const end = chatAtEnd(); keepingPlace(renderMain); drawn.main = view; if (end) chatToEnd(); }
   drawWho();
@@ -2602,6 +2612,8 @@ function renderAgents() {
   renderFolded();
   const aside = document.getElementById("agents");
   const was = listPlaces(aside);
+  const typing = nameInput && document.activeElement === nameInput && [nameInput.selectionStart, nameInput.selectionEnd];
+  nameMoving = true;                                 // taken out and put back: not a blur that names it
   document.getElementById("home").textContent = document.getElementById("home").title = state.home.home;
   const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
   aside.replaceChildren(el("div", { class: "aside-head" }, el("h2", { text: "Actors" }),
@@ -2662,6 +2674,9 @@ function renderAgents() {
     aside.append(list);
   }
   slideList(aside, was);
+  nameMoving = false;
+  if (state.renaming && !(nameInput && nameInput.isConnected)) { state.renaming = null; nameInput = null; }   // its row folded away
+  else if (typing) { nameInput.focus({ preventScroll: true }); nameInput.setSelectionRange(...typing); }
   const servers = state.home.hook_servers || [];     // in the dashboard's panel (the header's button)
   document.getElementById("servers").textContent = servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";
@@ -2683,14 +2698,22 @@ function agentRow(g, a, group) {
   const current = isAt(focusedActor(), g.name, a.channel);
   const open = !current && openActors().some((sel) => isAt(sel, g.name, a.channel));
   const size = a.real_tokens ?? a.sent_tokens;
-  return el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false", "data-key": `${g.name}/${a.channel}`, "data-group": group,
+  const naming = !!state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, a.channel);
+  const named = a.name && a.name.text;
+  // its top line -- its name, else what it was last asked -- clicked once it is the one shown: named there
+  const nameIt = SNAPSHOT || !current ? {} : { title: `${nameNote(g, a)}Click to ${named ? "rename" : "name"} it`,
+    onclick: (ev) => { if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return; ev.stopPropagation(); startRename(g, a); } };
+  return el(naming ? "div" : "button", { class: "agent" + (naming ? " renaming" : ""), ...(naming ? {} : { type: "button" }),
+    "aria-current": current ? "true" : "false", "data-key": `${g.name}/${a.channel}`, "data-group": group,
     ...(open ? { "data-open": "true" } : {}),
     title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: open beside the one shown`}`,
-    onclick: (ev) => pick(g.name, a.channel, ev), oncontextmenu: (ev) => pickBeside(g.name, a.channel, ev) },
+    ...(naming ? {} : { onclick: (ev) => pick(g.name, a.channel, ev), oncontextmenu: (ev) => pickBeside(g.name, a.channel, ev),
+      onkeydown: (ev) => { if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startRename(g, a); } } }) },
     actorLogo(a),
     el("div", {},
-      a.name && a.name.text ? el("div", { class: "name", text: a.name.text }) : null,
-      el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: a.last_user_message || "No message yet" }),
+      naming ? nameBox() : named ? el("div", { class: "name", ...nameIt, text: named }) : null,
+      el("div", { class: "asked" + (a.last_user_message ? "" : " none"), ...(naming || named ? {} : nameIt),
+        text: a.last_user_message || "No message yet" }),
       a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
         el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
       // the list is drawn again on every change: the glyph's turn set by the clock, not restarted each time
@@ -2711,6 +2734,66 @@ function agentRow(g, a, group) {
           : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false))),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
         `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null));
+}
+// Naming an actor: its top line in the list, clicked once it is the one shown, becomes a box with its name in it;
+// Enter (or a click elsewhere in the page) keeps what is typed, Esc leaves it as it was, and nothing typed takes the
+// reader's name back -- the harness's own, or what it was last asked, shows again. Kept as an event in its gatherer
+// and given to its harness (POST /api/name): Claude Code's or codex's own list of sessions shows it, and a session
+// in the dashboard's terminal is told with its harness's /rename once its turn is over. The box is one element
+// for as long as it is open (`nameInput`), put back in each redraw of the list (`nameMoving`), its caret kept.
+let nameInput = null, nameMoving = false;
+const nameAnswers = new Map();                       // what came of each name given from this page: actor -> the answer
+const nameKey = (gname, c) => `${gname}\u0000${c}`;
+function nameNote(g, a) {
+  if (!a.name || !a.name.text) return "";
+  if (a.name.by !== "user") return `${a.name.by === "codex" ? "Codex's" : "Its harness's"} name for it\n`;
+  const how = nameAnswers.get(nameKey(g.name, a.channel));
+  return "Named by you" + (!how ? "" : how.error ? ` · not in ${harnessName(a.harness)}: ${how.error}`
+    : how.store || how.terminal ? ` · in ${harnessName(a.harness)} too` : "") + "\n";
+}
+function startRename(g, a) {
+  if (state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, a.channel)) return;
+  const was = (a.name && a.name.by === "user" && a.name.text) || "";
+  state.renaming = { g: g.name, c: a.channel, value: (a.name && a.name.text) || "", was };
+  nameInput = null;
+  renderAgents();
+  if (nameInput) { nameInput.focus(); nameInput.select(); }
+}
+function nameBox() {
+  if (nameInput) return nameInput;
+  const r = state.renaming;
+  nameInput = el("input", { class: "name-box", type: "text", maxlength: "120", spellcheck: "false", autocomplete: "off",
+    placeholder: "Name this actor", "aria-label": "This actor's name" });
+  nameInput.value = r.value;
+  nameInput.addEventListener("input", () => { r.value = nameInput.value; });
+  nameInput.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();                            // the page's own keys are not this box's
+    if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); endRename(true); }
+    else if (ev.key === "Escape") { ev.preventDefault(); endRename(false); }
+  });
+  // a click elsewhere keeps it; not a redraw (`nameMoving`), nor the window going to the back (it comes back focused)
+  nameInput.addEventListener("blur", () => { if (!nameMoving && document.hasFocus() && state.renaming === r) endRename(true); });
+  return nameInput;
+}
+async function endRename(keep) {
+  const r = state.renaming;
+  if (!r) return;
+  state.renaming = null; nameInput = null;
+  const g = state.home.gatherers.find((x) => x.name === r.g), a = g && g.agents.find((x) => x.channel === r.c);
+  const text = r.value.replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!keep || !a || text === ((a.name && a.name.text) || "") || (!text && !r.was)) { renderAgents(); return; }
+  const before = a.name;
+  a.name = text ? { text, by: "user" } : null;     // shown at once; the gatherer's event confirms it (the harness's own back)
+  renderAgents(); drawWho();
+  try {
+    const got = await post("/api/name", { gatherer: r.g, channel: r.c, name: text, harness: a.harness, cwd: a.cwd });
+    nameAnswers.set(nameKey(r.g, r.c), got);
+    if (got.error) setLive(`${text ? "Named" : "Name taken back"} here; not in ${harnessName(a.harness)}: ${got.error}`);
+  } catch (err) {
+    a.name = before;
+    setLive(`Not named: ${err.message}`);
+  }
+  renderAgents(); drawWho();
 }
 // The group an actor is listed under: those waiting on the user first, then those stopped on an error, then saved for later
 // (idle or closed, saved by the reader), then running, then those whose turn is over but something they started still runs,

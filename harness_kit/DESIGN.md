@@ -73,6 +73,14 @@ class Harness(ABC):
 
 Not built yet: `record_path` and `follow` (step 4), `answer_keys`, `command` and `models` (step 5).
 
+A session's name, given in the harness's own store: `rename(session, name, record, env)` -- Claude Code's a
+`custom-title` line added to its record, as its `/rename` adds one; Codex's `thread/name/set` through its app server
+(`codex app-server`), as its own /rename sends it -- and `rename_command(name)`, what to submit in its terminal so a
+running session holds the name too (both harnesses' `/rename <name>`). Neither running harness hears of a name set
+from outside: a running Claude Code writes the name it holds back into its record as the record grows, so a line
+added beside it lasts only until then, and a Codex ag runs has no app server but its own (`--no-daemon`); its
+terminal's `/rename` is what reaches it.
+
 ### Kinds
 
 The doc's kinds, and five more the old rules told apart that the doc's list folded into others:
@@ -150,6 +158,12 @@ no longer parses Claude Code's or Codex's wrappers.
 It still reads the harnesses' session files: Claude Code's queue and prompts sent between turns (`queued.py`,
 #129 added the prompts), its record for questions settled, Esc and given-up calls (`data.py`), and Codex's
 rollout (`rollout.py`). Step 4 replaces those reads.
+
+It writes one event of its own so far, through `ag home insert` (the server's `insert`, run as `ag home build`
+is): an actor's name, as the reader gave it (`name`, by "user", `naming.py`), which the list shows ahead of the
+harness's. It also gives the name to the harness (`Harness.rename`), and to a session in its own terminal by
+typing the harness's `/rename` once its turn is over (`sessions.py`'s `rename`): typed mid-turn, the Enter could land
+on a permission prompt.
 
 ## Order of work
 

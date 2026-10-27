@@ -18,10 +18,14 @@ fragments in core/src/context/contextual_user_message.rs.
 """
 
 import json
+import queue
 import re
+import subprocess
+import threading
+import time
 from typing import List, Optional, Tuple
 
-from .base import Action, Call, CallKind, Harness, Kind, Part, ToolCall, ToolResult, output_of
+from .base import Action, Call, CallKind, Harness, Kind, Part, RenameError, ToolCall, ToolResult, output_of
 
 # Codex item type -> Kind. None = a message: its role decides (ROLES). An item type not listed here is OTHER.
 ITEM_KINDS = {
@@ -341,6 +345,55 @@ def after_compaction(items: list) -> Tuple[int, list]:
     return at, [i for i in range(at + 1, len(items)) if not (isinstance(items[i], dict) and items[i].get("type") == TRIGGER)]
 
 
+APP_SERVER_SECONDS = 20            # the longest codex's app server is waited for (it answers in well under a second)
+
+
+def app_server(messages: List[dict], env=None, timeout: float = APP_SERVER_SECONDS) -> dict:
+    """Codex's app server (`codex app-server`) sent these JSON-RPC messages over its stdin, one per line, each request
+    once the one before is answered: {id: its answer} of the requests answered before it ended or `timeout` passed.
+    Raises RenameError when codex cannot be run."""
+    try:
+        proc = subprocess.Popen(["codex", "app-server"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, text=True, env=env)
+    except OSError as exc:
+        raise RenameError(f"Codex could not be run: {exc}") from None
+    answers: "queue.Queue[Optional[dict]]" = queue.Queue()
+
+    def read() -> None:
+        for line in proc.stdout:
+            try:
+                got = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(got, dict) and "id" in got and "method" not in got:
+                answers.put(got)
+        answers.put(None)
+    reader = threading.Thread(target=read, name="codex-app-server", daemon=True)
+    reader.start()
+    out, end = {}, time.monotonic() + timeout
+    try:
+        for m in messages:
+            proc.stdin.write(json.dumps(m) + "\n")
+            proc.stdin.flush()
+            while "id" in m and m["id"] not in out:
+                got = answers.get(timeout=max(0.0, end - time.monotonic()))
+                if got is None:
+                    return out
+                out[got["id"]] = got
+    except (OSError, ValueError, queue.Empty):
+        pass
+    finally:
+        try:
+            proc.stdin.close()
+            proc.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            proc.kill()
+            proc.wait()
+        reader.join(timeout=1)                       # what it printed last read: its end
+        proc.stdout.close()
+    return out
+
+
 class Codex(Harness):
     name = "codex"
     label = "Codex"
@@ -376,6 +429,29 @@ class Codex(Harness):
         summary, then = str(got.get("summary") or "").strip(), str(got.get("next_action") or "").strip()
         text = summary + (f"\n\nNext: {then}" if summary and then else "")
         return text or None
+
+    def rename_command(self, name: str) -> Optional[str]:
+        """Its own `/rename`, the name after it (without one it asks in a dialog): the name in its status line, and
+        kept in its state. A codex ag runs has no app server of its own to hear of a name set from outside (`--no-daemon`)."""
+        name = " ".join((name or "").split())
+        return f"/rename {name}" if name else None
+
+    def rename(self, session: str, name: str, record: Optional[str] = None, env=None) -> str:
+        """The thread named through codex's app server (`codex app-server`, JSON-RPC over its stdin), as its own
+        /rename names it: `thread/name/set`, kept in its state database and its session index, where `codex resume`
+        lists and finds it. A codex running the thread shows the name it holds until it is resumed, or told by
+        `rename_command`."""
+        name = " ".join((name or "").split())
+        if not name:
+            raise RenameError("Codex keeps no empty name")
+        got = app_server([{"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "harness_kit", "title": None,
+                                                                                      "version": "0"}, "capabilities": None}},
+                          {"method": "initialized"},
+                          {"id": 2, "method": "thread/name/set", "params": {"threadId": session, "name": name}}], env)
+        error = got.get(2, {}).get("error") if 2 in got else {"message": "it did not answer"}
+        if error:
+            raise RenameError(f"Codex did not take the name: {error.get('message') if isinstance(error, dict) else error}")
+        return "named in its state"
 
     def items(self, history: list) -> list:
         return list(history or [])
