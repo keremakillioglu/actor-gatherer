@@ -195,6 +195,22 @@ class FilesTest(unittest.TestCase):
         t = files.files("g", "c1")["turns"][-1]
         self.assertEqual(t["end"] - t["at"], 65)                         # how long it took: its message to its last word
 
+    def test_what_it_changed_of_a_file_since_a_time(self):
+        self.add(asked("fix b"), at="2026-10-24 09:00:00")
+        self.add(call("e1", "Edit", {"file_path": "/w/b.py", "old_string": "x = 1", "new_string": "x = 2"}), at="2026-10-24 09:00:10")
+        self.add(result("e1", "ok"), at="2026-10-24 09:00:11")
+        self.add(call("e2", "Edit", {"file_path": "/w/b.py", "old_string": "x = 2", "new_string": "x = 3"}), at="2026-10-24 09:05:00")
+        self.add(result("e2", "ok"), at="2026-10-24 09:05:01")
+        self.add(call("r1", "Read", {"file_path": "/w/b.py"}), at="2026-10-24 09:06:00")
+        self.add(result("r1", "x = 3"), at="2026-10-24 09:06:01")
+        since = data._seconds("2026-10-24 09:01:00")
+        got = files.changes("g", "c1", "/w/b.py", since, cwd="/w")["changes"]
+        self.assertEqual([c["call"]["input"]["new_string"] for c in got], ["x = 3"])   # the edit since then; not the read
+        self.assertEqual((got[0]["asked"], got[0]["at"]), ("fix b", data._seconds("2026-10-24 09:05:00")))
+        both = files.changes("g", "c1", "/w/b.py", data._seconds("2026-10-24 08:59:00"), cwd="/w")["changes"]
+        self.assertEqual([c["call"]["input"]["new_string"] for c in both], ["x = 2", "x = 3"])
+        self.assertEqual(files.changes("g", "c1", "/w/b.py", data._seconds("2026-10-24 09:10:00"), cwd="/w")["changes"], [])
+
     def test_what_the_agent_is_doing_while_its_turn_runs(self):
         self.add(asked("and now?"), thought(""))
         self.assertEqual(files.files("g", "c1")["turns"][-1]["replies"], [{"kind": "thinking", "texts": []}])   # encrypted

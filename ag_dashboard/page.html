@@ -812,6 +812,26 @@ button:disabled { opacity: .5; cursor: default; }
 .ed-avs { display: inline-flex; align-items: center; flex: none; }
 .ed-avs img, .ed-avs .ed-noav { width: 15px; height: 15px; border-radius: 50%; margin-left: -5px; box-shadow: 0 0 0 1.5px var(--page); }
 .ed-avs > :first-child { margin-left: 0; }
+/* the header's: each a button, its actor's changes to the file (edChanges) */
+.ed-avs > .ed-av { display: inline-flex; padding: 0; margin-left: -5px; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.ed-avs > .ed-av:first-child { margin-left: 0; }
+.ed-avs > .ed-av img, .ed-avs > .ed-av .ed-noav { width: 18px; height: 18px; margin-left: 0; }
+.ed-avs > .ed-av:hover img, .ed-avs > .ed-av:focus-visible img { box-shadow: 0 0 0 2px var(--axis); }
+.ed-avs > .ed-av.on img, .ed-avs > .ed-av.on .ed-noav { box-shadow: 0 0 0 2px var(--ink); }
+/* beside the file: an actor's changes to it (edDrawChanges), as the Chat view shows a file's */
+.ed-work { flex: 1; min-height: 0; display: flex; }
+.ed-work > .ed-body { min-width: 0; }
+.ed-changes { flex: none; width: min(460px, 46%); min-height: 0; overflow-y: auto; border-left: 1px solid var(--ring); background: var(--surface); }
+.ed-changes[hidden] { display: none; }
+.ed-changes .ed-ch-h { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 12px;
+  background: var(--surface); border-bottom: 1px solid var(--ring); font-size: 12.5px; color: var(--ink-2); }
+.ed-changes .ed-ch-h .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-changes .ed-ch-h b { color: var(--ink); font-weight: 600; }
+.ed-changes .ed-ch-x { flex: none; border: 0; background: none; font-size: 17px; line-height: 1; padding: 3px 7px; color: var(--muted); }
+.ed-changes .ed-ch-x:hover { color: var(--ink); background: var(--wash); }
+.ed-changes .ed-ch-go { flex: none; margin-left: auto; padding: 1px 8px; font-size: 11.5px; }
+.ed-changes .asked { padding: 0 16px 6px 34px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-changes .none { padding: 14px 16px; color: var(--muted); font-size: 12.5px; }
 .ed-noav { display: inline-block; background: var(--who); }
 .ed-avs.many { padding: 1px 5px 1px 2px; border-radius: 10px; background: color-mix(in srgb, var(--warning) 26%, transparent); }
 .ed-avs .n { font-size: 10.5px; font-weight: 650; margin-left: 4px; color: var(--ink); }
@@ -7123,7 +7143,7 @@ const ED_AUTO_MS = 1000;         // ms after the last edit to a file that Auto-s
 const ED_NAME_KEY = "ag-editor-name", ED_COLOR_KEY = "ag-editor-color", ED_ROOT_KEY = "ag-editor-folder", ED_AUTO_KEY = "ag-editor-autosave";
 const ED_SHOWN_KEY = "ag-dashboard-editor", ED_HEIGHT_KEY = "ag-dashboard-editor-height";
 const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, s: null, lib: null, me: null, user: "", err: "",
-  timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null,
+  timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null, side: null, changes: null,
   auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })() };   // on unless turned off
 const edB64 = (u8) => { let t = ""; for (let i = 0; i < u8.length; i += 0x8000) t += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(t); };
 const edBytes = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
@@ -7197,6 +7217,69 @@ const edWriterName = (w) => w.actor ? edWhoName(w.actor) : w.channel.slice(0, 8)
 const edAvatar = (w) => w.actor && w.actor.avatar
   ? el("img", { src: `/avatars/${w.actor.avatar}.svg`, alt: "", draggable: "false" })
   : el("span", { class: "ed-noav", style: `--who: ${edWhoColor(w.actor) || "var(--axis)"}` });
+// An actor's changes to the file open, in the last ED_CHANGES_S, beside it (ed.side): opened by its avatar in the
+// header, closed by it again or the panel's ×, or another file opened. Each change as the Chat view shows a file's
+// (fileBlock), the latest first, under what the actor was asked; one whose new lines are in the file now has "Show",
+// which selects them there. Fetched again when the actor changes the file again (edHead).
+const ED_CHANGES_S = 600;
+const edKey = (w) => `${w.gatherer}\u0000${w.channel}`;
+function edChanges(w) {
+  if (ed.changes && ed.changes.k === edKey(w) && ed.changes.path === ed.file) return edChangesClose();
+  ed.changes = { k: edKey(w), w, path: ed.file, got: null, err: "", seen: w.at };
+  edDrawChanges(); edHead(); edFetchChanges();
+}
+function edChangesClose() { ed.changes = null; edDrawChanges(); edHead(); }
+async function edFetchChanges() {
+  const c = ed.changes;
+  if (!c) return;
+  const q = new URLSearchParams({ gatherer: c.w.gatherer, channel: c.w.channel, path: c.path,
+    since: String(Math.floor(Date.now() / 1000 - ED_CHANGES_S)), cwd: (c.w.actor && c.w.actor.cwd) || "" });
+  let got = null, err = "";
+  try { got = await get(`/api/files/changes?${q}`); err = got.error || ""; } catch (e) { err = e.message; }
+  if (ed.changes !== c) return;
+  c.got = got; c.err = err;
+  edDrawChanges();
+}
+function edDrawChanges() {
+  const side = ed.side, c = ed.changes;
+  if (!side) return;
+  if (!c || c.path !== ed.file) {
+    ed.changes = null;
+    if (!side.hidden) { side.hidden = true; side.replaceChildren(); }
+    return;
+  }
+  side.hidden = false;
+  const name = edWriterName(c.w), mins = `${ED_CHANGES_S / 60} minutes`;
+  const list = c.got && !c.err ? [...(c.got.changes || [])].reverse() : [];
+  const doc = ed.s && ed.s.view ? ed.s.view.state.doc.toString() : "";
+  side.replaceChildren(
+    el("div", { class: "ed-ch-h" }, el("span", { class: "ed-avs" }, edAvatar(c.w)),
+      el("span", { class: "t", title: `${name}'s changes to ${edRel(c.path)} in the last ${mins}` }, el("b", { text: name }), ` · changes in the last ${mins}`),
+      el("button", { type: "button", class: "ed-ch-x", title: "Close", "aria-label": "Close the changes", onclick: edChangesClose }, "×")),
+    ...(c.err ? [el("div", { class: "none", text: c.err })] : !c.got ? [el("div", { class: "none", text: "Loading…" })]
+      : !list.length ? [el("div", { class: "none", text: `No changes to this file in the last ${mins}.` })]
+      : list.map((x) => edChangeView(x, doc))));
+}
+function edChangeView(x, doc) {
+  const code = el("div", { class: "code" });
+  for (const b of x.blocks) code.append(...fileBlock(b, langOfPath(ed.file)));
+  const there = x.blocks.filter((b) => b.t === "diff" && b.new.length).map((b) => b.new.join("\n")).find((t) => doc.includes(t));
+  return el("details", { class: "fv-call" + (x.error ? " err" : ""), open: "" },
+    el("summary", {}, el("span", { class: "tw", text: "▸" }),
+      el("span", { class: "kinds" }, ...x.kinds.map((k) => kindMark(k, 12))),
+      el("span", { class: "via", text: firstLine(x.via, 160) }), changedCount(x.changed),
+      el("span", { class: "what", text: x.at ? ago(x.at) : "" }),
+      there ? el("button", { type: "button", class: "ed-ch-go", title: "Select these lines in the file",
+        onclick: (ev) => { ev.preventDefault(); edSelectText(there); } }, "Show") : null),
+    x.asked ? el("div", { class: "asked", title: x.asked, text: `Asked: ${firstLine(x.asked, 200)}` }) : null,
+    code);
+}
+function edSelectText(text) {
+  const s = ed.s, v = s && s.view, i = v ? v.state.doc.toString().indexOf(text) : -1;
+  if (i < 0) return;
+  v.dispatch({ selection: { anchor: i, head: i + text.length }, effects: s.A.EditorView.scrollIntoView(i, { y: "center" }) });
+  v.focus();
+}
 // The writers in the tree: their avatars, overlapped; two or more, on an amber ground with their count.
 function edAvatars(writers, what) {
   if (!writers.length) return null;
@@ -7692,6 +7775,11 @@ function edHead() {
   const others = s ? [...s.awareness.getStates().entries()].filter(([id, v]) => id !== s.doc.clientID && v && v.user) : [];
   // who changed it on disk last: the actor whose recorded change is nearest it, else (not yet recorded) the likely one
   const writers = edWriters(edEntry(ed.file));
+  if (ed.changes && ed.changes.path !== ed.file) edDrawChanges();          // another file: its panel closed
+  else if (ed.changes) {                                                   // the actor changed it again: fetched again
+    const w = writers.find((x) => edKey(x) === ed.changes.k);
+    if (w && w.at > ed.changes.seen) { ed.changes.seen = w.at; ed.changes.w = w; edFetchChanges(); }
+  }
   let changed = null;
   if (st && st.changed && (s.marked || Date.now() / 1000 - st.changed < 120)) {
     const near = edCredit(writers, st.changed);
@@ -7711,7 +7799,9 @@ function edHead() {
   const by = writers.length ? el("span", { class: "ed-writers" + (many ? " many" : ""),
     title: `${many ? `${writers.length} actors are changing this file` : "The actor changing this file"} (in the last half hour):\n`
       + writers.map((w) => `${edWriterName(w)}, ${ago(w.at)}`).join("\n") },
-    el("span", { class: "ed-avs" }, ...writers.slice(0, 4).map(edAvatar)),
+    el("span", { class: "ed-avs" }, ...writers.slice(0, 4).map((w) => el("button", { type: "button",
+      class: "ed-av" + (ed.changes && ed.changes.k === edKey(w) ? " on" : ""), "aria-label": `${edWriterName(w)}'s changes to this file`,
+      title: `${edWriterName(w)}: its changes to this file in the last ${ED_CHANGES_S / 60} minutes`, onclick: () => edChanges(w) }, edAvatar(w)))),
     many ? el("span", { class: "lbl", text: `${writers.length} actors changing it` }) : null) : null;
   ed.head.replaceChildren(...[
     el("span", { class: "ed-path", title: ed.file, text: edRel(ed.file) }),
@@ -7768,8 +7858,9 @@ function edMount() {
     ed.tree = el("div", { class: "ed-rows" });
     ed.head = el("div", { class: "ed-head" });
     ed.body = el("div", { class: "ed-body" });
+    ed.side = el("aside", { class: "ed-changes files", hidden: "", "aria-label": "An actor's changes to the file" });
     ed.host = el("div", { class: "ed" }, el("nav", { class: "ed-tree", "aria-label": "Files" }, ed.bar, ed.tree),
-      el("div", { class: "ed-main" }, ed.head, ed.body));
+      el("div", { class: "ed-main" }, ed.head, el("div", { class: "ed-work" }, ed.body, ed.side)));
     const grip = el("div", { class: "ed-grip", title: "Drag to resize", "aria-hidden": "true" });
     top.replaceChildren(ed.host, grip);
     try { const h = Number(localStorage.getItem(ED_HEIGHT_KEY)); if (h > 0) top.style.setProperty("--ed-h", `${h}px`); } catch (e) { /* this page only */ }

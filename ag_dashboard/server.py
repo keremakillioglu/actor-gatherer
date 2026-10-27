@@ -11,6 +11,7 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/history?gatherer=G&channel=C&from=A[&to=B]   data.history(G, C, A, B)
     GET /api/transcript?gatherer=G&channel=C[&after=A|&before=B]   data.transcript(G, C, A, B)
     GET /api/files?gatherer=G&channel=C[&turn=N][&cwd=D]   files.files(G, C, N, D): a turn's files
+    GET /api/files/changes?gatherer=G&channel=C&path=P&since=S[&cwd=D]   files.changes(G, C, P, S, D): its changes to P since S
     GET /api/monitor?actors=[[G, C, D], ...]               monitor.actors: what each is doing, its latest turn
     GET /api/image?gatherer=G&row_id=R&id=I                files.image(G, R, I): the image call I's result holds
     GET /api/outline?gatherer=G[&channel=C][&after=A]      history.outline(G, C, A): the events, light, and the tasks
@@ -279,6 +280,9 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer(data.transcript(q["gatherer"], q["channel"],
                                                        int(q["after"]) if "after" in q else None,
                                                        int(q["before"]) if "before" in q else None))
+                if url.path == "/api/files/changes" and q.get("gatherer") and "channel" in q and q.get("path") \
+                        and q.get("since", "").replace(".", "", 1).isdigit():
+                    return self.answer(files.changes(q["gatherer"], q["channel"], q["path"], float(q["since"]), q.get("cwd", "")))
                 if url.path == "/api/files" and q.get("gatherer") and "channel" in q and q.get("turn", "0").isdigit():
                     return self.answer(files.files(q["gatherer"], q["channel"],
                                                    int(q["turn"]) if "turn" in q else None, q.get("cwd", "")))
