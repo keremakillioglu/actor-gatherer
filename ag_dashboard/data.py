@@ -36,9 +36,9 @@ says whether Claude Code's result for the call holds what was picked (`recorded`
 A RUNNING agent may also have stopped where ag does not see it. A model call that FAILED is kept on its
 read (`_reads.error`, by ag's hook server): `failing` is the run of them at the newest event the agent's
 calls answered -- the harness tries again, each try a read -- and whether a try is under way. Claude Code's
-own record of the session says how its turn STOPPED, when that came after ag last heard of the session
-(`Record.stopped`): Claude Code's API error -- it gave up on the model call, its
-tries spent, or the error not one to try again -- is ERROR; the user's interruption (Esc), which makes no
+own record of the session says how its turn STOPPED, when that came after ag last heard of the session -- its
+latest activity, or a message ag stored since, as a new turn's read began (`newest`; `Record.stopped`): Claude
+Code's API error -- it gave up on the model call, its tries spent, or the error not one to try again -- is ERROR; the user's interruption (Esc), which makes no
 call, IDLE. A failed call with no try since for GIVE_UP_SECONDS counts as given up too -- with no record
 followed (a session of another machine; a hook server from before it followed them), or one that says nothing: Esc while Claude Code waits to try again
 stops it without a word -- ERROR; GIVE_UP_LONG where the record could still say, the endpoint having answered
@@ -407,14 +407,15 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         answered[ch] = max(answered.get(ch) or 0, _seconds(t) or 0) or None
     building = _running_builds(conn)
     background = _background(conn)
-    last_user = {}                                   # each agent's newest user message: what it was last asked --
+    last_user, user_at = {}, {}                      # each agent's newest user message: what it was last asked --
     words = "e.p_words" if "p_words" in _columns(conn, "events") else "NULL"   # as the user typed it, where it was kept
-    for ch, text, payload, said in conn.execute(     # not a background agent's report, which comes as one (HANDBACK)
-            f"SELECT e.{CHANNEL}, e.text, e.payload_json, {words} FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+    for ch, text, payload, said, stored in conn.execute(   # not a background agent's report, which comes as one (HANDBACK)
+            f"SELECT e.{CHANNEL}, e.text, e.payload_json, {words}, e.inserted_at FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
             f"WHERE t.name = 'user_message' AND e.row_id IN (SELECT max(e2.row_id) FROM events e2 "
             f"JOIN event_types t2 ON t2.event_type_id = e2.event_type_id WHERE t2.name = 'user_message' "
             f"AND ifnull(e2.text, '') NOT LIKE '%[Subagent hand-back]%'{kept(_tables(conn), 'e2')} GROUP BY e2.{CHANNEL})"):
         last_user[ch] = (said, None) if said is not None else (None, (text if text else readable(payload)) or "")
+        user_at[ch] = _seconds(stored)               # and when ag stored it: as a read began, before its context is built
     tables = _tables(conn)
     recaps = {}                                      # each agent's newest recap (Claude Code's, while the user was away):
     found = []                                       # kept in `_recaps` before, recorded as an event now
@@ -450,10 +451,12 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         a["building"] = ch in building
         a["turn_over"] = turn_over(conn, ch, tables)[0]
         a["status"] = status_of(a.get("alive"), a["turn_over"], a["last"], now)
+        a["said_at"] = user_at.get(ch)
         if a["harness"] == "codex":
             _codex_status(conn, ch, a, tables, now)
         else:
             _claude_status(conn, ch, a, tables, now)
+        del a["said_at"]
         a["running"] = a["building"] or a["status"] == RUNNING
         a["background"] = background.get(ch, []) + a.pop("codex_background", [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
@@ -473,11 +476,11 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
             a["status"], a["turn_over"] = IDLE, True
     if a["asking"]:
         a["status"] = ASKING
-    cut = hung_up(conn, ch) if a["status"] == RUNNING else None
+    cut = since_said(a, hung_up(conn, ch)) if a["status"] == RUNNING else None
     if cut is not None:                              # stopped before its answer came: Claude Code records nothing of it
         a["status"], a["turn_over"] = IDLE, True
     a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
-    a["stopped"] = rec.stopped(a["last"]) if a["status"] == RUNNING and a["harness"] in ("claude", None) else None
+    a["stopped"] = rec.stopped(newest(a)) if a["status"] == RUNNING and a["harness"] in ("claude", None) else None
     if a["stopped"] and a["stopped"]["kind"] == "interrupted":
         a["status"], a["turn_over"], a["failing"] = IDLE, True, None
     elif (a["stopped"] and a["stopped"]["kind"] == "error") or (a["failing"] and given_up(a["failing"], rec.followed, now)):
@@ -497,11 +500,11 @@ def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
     asking whether to implement it; and the subagents and commands it left running, as `codex_background`."""
     rec = record_of(conn, ch) if a["status"] in (RUNNING, IDLE) else Record()
     a["stopped"] = None
-    cut = hung_up(conn, ch) if a["status"] == RUNNING else None
+    cut = since_said(a, hung_up(conn, ch)) if a["status"] == RUNNING else None
     if cut is not None:                              # stopped before its answer came (Esc), as ag's hook server saw
         a["stopped"], a["status"], a["turn_over"] = {"kind": "interrupted", "at": cut}, IDLE, True
     a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
-    got = rec.stopped(a["last"]) if a["status"] == RUNNING else None
+    got = rec.stopped(newest(a)) if a["status"] == RUNNING else None
     if got and got["kind"] == "error":
         a["stopped"], a["status"], a["turn_over"] = got, ERROR, True
     elif got:                                        # over, or interrupted: its turn ended with no call ag saw
@@ -519,6 +522,20 @@ def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
     elif ask and not ask.get("async"):               # its turn waits on the answer; an async one's goes on
         a["status"] = ASKING
     a["codex_background"] = rec.tasks()
+
+
+def newest(a: dict) -> Optional[float]:
+    """When the agent was last heard of: its latest activity (`last`), or the newest message ag stored for it
+    (`said_at`), whichever came later -- a message stored as a read begins, before its context is built and the read
+    recorded, so a turn's stop older than it is the last turn's, not this one's."""
+    return max(a.get("last") or 0, a.get("said_at") or 0) or None
+
+
+def since_said(a: dict, cut: Optional[float]) -> Optional[float]:
+    """`cut` (`hung_up`), unless ag has stored a message for the agent since: a new call's, its read under way --
+    the harness hung up to send it (codex, as a question's reply comes), not the user (Claude Code's message taken back
+    on Esc is withdrawn with its read)."""
+    return None if cut is None or (a.get("said_at") or 0) > cut else cut
 
 
 def turn_over(conn, channel: str, tables: set):

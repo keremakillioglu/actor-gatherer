@@ -37,6 +37,7 @@ MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE = (
 #: Every harness event type a proxy hook records.
 RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE) + Facts.ALL
 READ_ID, ANSWER_ID = "read_id", "answer_id"
+RECORDS_LANE = "records"    # ag's server's lane for records, beside a session's (its server's RECORDS_LANE)
 STREAMING = "streaming"     # a reply_part's stop while the answer still streams (no reply_end yet)
 
 
@@ -92,13 +93,15 @@ def fact(f: Fact, path: str) -> dict:
 
 
 async def record(client, gatherer: str, channel: str, events: List[dict],
-                 log: Optional[Callable[[str, str], None]] = None) -> Optional[dict]:
+                 log: Optional[Callable[[str, str], None]] = None, beside: bool = False) -> Optional[dict]:
     """The events inserted into the channel (the server's `insert`); the answer, or None when it failed -- said in the
-    log, never raised."""
+    log, never raised. `beside`: in the server's lane for records, beside the session's own (its RECORDS_LANE), so
+    they are not held up behind a read that waits for its build -- for events no read depends on."""
     if not events:
         return None
+    request = {"gatherer": gatherer, "properties": {CHANNEL: channel}, "events": events}
     try:
-        got = await client.request("insert", {"gatherer": gatherer, "properties": {CHANNEL: channel}, "events": events})
+        got = await client.request("insert", {**request, "lane": RECORDS_LANE} if beside else request)
     except Exception as exc:  # noqa: BLE001 - a lost record never holds up a call
         got = {"error": repr(exc)}
     if not isinstance(got, dict) or got.get("error"):

@@ -6,11 +6,15 @@ Run by the proxy hooks:
 
     a call of a session comes in       `SessionFiles.follow`: its record found (where the session runs, the
                                        harness's own folder for it, as its launcher named it; none yet: looked
-                                       for again with the next call), recorded as followed (`session_file`),
+                                       for every FIND_EVERY seconds for FIND_SECONDS -- a harness may write it
+                                       only once its first call is under way, and a run that ends with that call
+                                       (`claude -p` refused) makes no other -- then again with the next call),
+                                       recorded as followed (`session_file`),
                                        and read on in the background every
                                        POLL_SECONDS while it changes -- each new fact inserted (the server's
-                                       `insert`), each the same event however often it is read, by its line's
-                                       place in the file
+                                       `insert`, in its lane for records: beside the session's, so not held up
+                                       behind a read that waits for its build), each the same event however
+                                       often it is read, by its line's place in the file
     the record unchanged QUIET_SECONDS  followed no more; the session's next call follows it again, from where
                                        it was
 
@@ -29,6 +33,8 @@ from .records import fact, record, session_file
 
 POLL_SECONDS = 0.25         # how often a followed record is looked at
 QUIET_SECONDS = 3600.0      # unchanged this long, with no call of its session: followed no more
+FIND_SECONDS = 30.0         # a record not there at a call: looked for this long
+FIND_EVERY = 0.5            # that often
 BATCH = 200                 # the most events inserted at once
 
 
@@ -51,12 +57,12 @@ class SessionFiles:
     Args:
         ag_clients: the server client per gatherer (the hook's own).
         log: (gatherer, line) -> None.
-        poll, quiet: POLL_SECONDS and QUIET_SECONDS, for a test.
+        poll, quiet, find: POLL_SECONDS, QUIET_SECONDS and FIND_SECONDS, for a test.
     """
 
     def __init__(self, ag_clients, log: Callable[[str, str], None], poll: float = POLL_SECONDS,
-                 quiet: float = QUIET_SECONDS):
-        self.ag_clients, self.log, self.poll, self.quiet = ag_clients, log, poll, quiet
+                 quiet: float = QUIET_SECONDS, find: float = FIND_SECONDS):
+        self.ag_clients, self.log, self.poll, self.quiet, self.find = ag_clients, log, poll, quiet, find
         self.followed: Dict[Tuple[str, str], _Followed] = {}
 
     def follow(self, gatherer: str, channel: str, harness: Harness, session: Optional[str], cwd: Optional[str] = None,
@@ -77,7 +83,7 @@ class SessionFiles:
 
     async def _follow(self, gatherer: str, channel: str, f: _Followed) -> None:
         try:
-            if f.path is None and not await self._found(gatherer, channel, f):
+            if f.path is None and not await self._looked_for(gatherer, channel, f):
                 return
             while True:
                 await self._read(gatherer, channel, f)
@@ -88,6 +94,15 @@ class SessionFiles:
             raise
         except Exception as exc:  # noqa: BLE001 - a lost record never breaks the hook
             self.log(gatherer, f"[{channel}] session file: stopped following {f.path}: {exc!r}")
+
+    async def _looked_for(self, gatherer: str, channel: str, f: _Followed) -> bool:
+        """Whether the session's record is there, or comes within `find` seconds (module doc)."""
+        end = time.time() + self.find
+        while not await self._found(gatherer, channel, f):
+            if time.time() >= end:
+                return False                                  # the next call looks again
+            await asyncio.sleep(min(FIND_EVERY, self.find))
+        return True
 
     async def _found(self, gatherer: str, channel: str, f: _Followed) -> bool:
         """Whether the session's record is there: then recorded as followed."""
@@ -122,7 +137,7 @@ class SessionFiles:
 
     async def _insert(self, gatherer: str, channel: str, events: list) -> None:
         for i in range(0, len(events), BATCH):
-            await record(self.ag_clients.client(gatherer), gatherer, channel, events[i:i + BATCH], self.log)
+            await record(self.ag_clients.client(gatherer), gatherer, channel, events[i:i + BATCH], self.log, beside=True)
 
     async def close(self) -> None:
         """Every record followed no more."""

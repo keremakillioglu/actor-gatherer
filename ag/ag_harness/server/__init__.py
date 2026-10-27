@@ -122,7 +122,7 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 parts; and what the harness left out of a
                                                 read's context before sending it, taken off the
                                                 read's sent_tokens. How many of each were found
-    {"op": "insert", "gatherer", "properties", "events"} -> {"rows": [row id or null, ...], "last", "kept"}
+    {"op": "insert", "gatherer", "properties", "events", "lane"?} -> {"rows": [row id or null, ...], "last", "kept"}
     {"op": "pending", "gatherer", "properties", "events", "answer"?, "stop"?, "read_id"?} -> {"kept"}
                                                 what the model answered, as events, which no
                                                 call has carried back yet: kept (`_pending`, not
@@ -196,7 +196,10 @@ Requests run in LANES, one per gatherer and values of its identifying
 properties -- those its types declare `identifies`: the harness's session, its
 `channel` -- as the request's `properties` give them. A lane's requests are
 answered one at a time, in the order they arrive; different lanes run side by
-side, so a read that waits for its build holds up only its own session. A
+side, so a read that waits for its build holds up only its own session. An
+`insert` that names `"lane": "records"` -- a hook's records of what it saw, which no read
+depends on (the harness's own record of the session as it is written) -- runs in a lane of its
+own beside its session's, in order with the others there, not behind a read that waits. A
 request that gives none (`measured`, `failed`, `claim`, `recap`, `init`, ...)
 runs in its gatherer's lane for none, in order with the others there but not
 with any session's: no read waits on one of them that its sender has not
@@ -226,6 +229,8 @@ from ..store.operations import STREAMING
 #: session's next call usually comes within it, and finds the thread's database
 #: connections still open.
 LINGER = 60.0
+#: An insert's `lane` naming events no read depends on: run beside its session's lane (`lane_of`).
+RECORDS_LANE = "records"
 
 
 def log_line(gatherer: str, line: str) -> None:
@@ -711,10 +716,14 @@ def gatherer_of(request: dict) -> Optional[str]:
 
 def lane_of(request: dict, names: tuple) -> tuple:
     """The lane `request` runs in when its gatherer's identifying properties are `names`
-    (`Server.identifying`): its gatherer, and its values of them (None: not given)."""
+    (`Server.identifying`): its gatherer, and its values of them (None: not given) -- and, for an
+    `insert` of records (RECORDS_LANE), a lane of their own beside those."""
     props = request.get("properties")
     props = props if isinstance(props, dict) else {}
-    return gatherer_of(request), tuple((n, _hashable(props.get(n))) for n in names)
+    key = gatherer_of(request), tuple((n, _hashable(props.get(n))) for n in names)
+    if request.get("op") == "insert" and request.get("lane") == RECORDS_LANE:    # beside its session's (module doc)
+        return key + (RECORDS_LANE,)
+    return key
 
 
 def _hashable(value):

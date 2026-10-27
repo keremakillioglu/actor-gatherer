@@ -101,6 +101,17 @@ class TypedTest(RecordBase):
         self.op("remove", "second", ago=1, reason="cancelled")              # taken back
         self.assertEqual(self.typed(), [("first", True)])
 
+    def test_pulled_back_into_the_prompt_is_taken_back_and_the_next_sent_is_itself(self):
+        # Up while messages wait: Claude Code 2.1.311 writes "popAll" with their words (saved from a live session)
+        self.op("enqueue", "<task-notification>\n<task-id>b1</task-id>", ago=6)
+        self.op("enqueue", "Actually, also list the files here.", ago=5)
+        self.op("popAll", "Actually, also list the files here.", ago=4)
+        self.assertEqual(self.typed(), [])                                  # back in the prompt: not pending
+        self.op("enqueue", "Make the last line rhyme.", ago=3)
+        self.op("dequeue", ago=2)                                           # the note, still queued, is the first in
+        self.op("dequeue", ago=1)
+        self.assertEqual(self.typed(), [("Make the last line rhyme.", True)])
+
     def test_long_sent_is_forgotten_and_claude_code_s_own_notes_are_not_the_user_s(self):
         self.op("enqueue", "old", ago=100)
         self.op("dequeue", ago=data.SENT_SECONDS + 5)

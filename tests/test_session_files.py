@@ -33,13 +33,14 @@ class Server:
     """The gatherer's server, as the hook sees it: each `insert` kept, each event once by its id."""
 
     def __init__(self):
-        self.inserted, self.ids = [], set()
+        self.inserted, self.ids, self.lanes = [], set(), []
 
     def client(self, gatherer):
         return self
 
     async def request(self, op, body=None, timeout=None):
         assert op == "insert", op
+        self.lanes.append(body.get("lane"))
         for e in body["events"]:
             if e["id"] not in self.ids:
                 self.ids.add(e["id"])
@@ -95,6 +96,7 @@ class FollowTest(unittest.IsolatedAsyncioTestCase):
         self.write(self.op("remove", "also do b", reason="absorbed_mid_turn"))           # no call: still followed
         await self.until(lambda: self.server.types()[-1:] == ["message_sent"])
         self.assertEqual(self.server.inserted[-1][1]["payload"]["how"], "mid_turn")
+        self.assertEqual(set(self.server.lanes), {"records"})              # beside the session's reads, not behind them
 
     async def test_read_again_from_its_start_it_is_the_same_events(self):
         self.write(self.op("enqueue", "one"), self.op("dequeue"))
@@ -122,8 +124,9 @@ class FollowTest(unittest.IsolatedAsyncioTestCase):
         await self.until(lambda: self.server.types()[-1:] == ["message_queued"] and len(self.server.inserted) == 3)
         self.assertEqual(self.server.inserted[-1][1]["payload"]["words"], "two")       # read on from where it was
 
-    async def test_none_yet_it_is_looked_for_with_the_next_call(self):
+    async def test_none_yet_it_is_looked_for_a_while_then_with_the_next_call(self):
         os.rmdir(os.path.dirname(self.path))
+        self.files.find = 0.02
         self.follow()
         await asyncio.sleep(0.05)
         self.assertEqual(self.server.inserted, [])
@@ -131,6 +134,16 @@ class FollowTest(unittest.IsolatedAsyncioTestCase):
         self.write(self.op("enqueue", "one"))
         self.follow()
         await self.until(lambda: self.server.types() == ["session_file", "message_queued"])
+
+    async def test_written_only_after_the_call_it_is_found_still(self):
+        os.rmdir(os.path.dirname(self.path))
+        self.follow()                                  # `claude -p`: its one call, the record written after it
+        await asyncio.sleep(0.05)
+        os.makedirs(os.path.dirname(self.path))
+        self.write({"type": "assistant", "isApiErrorMessage": True, "apiErrorStatus": 401, "timestamp": stamp(),
+                    "message": {"role": "assistant", "content": [{"type": "text", "text": "Invalid API key"}]}})
+        await self.until(lambda: self.server.types() == ["session_file", "turn_stopped"])     # no next call needed
+        self.assertEqual(self.server.inserted[-1][1]["payload"]["status"], 401)
 
     async def test_written_anew_it_is_read_from_its_start(self):
         self.write(self.op("enqueue", "a long first message"))

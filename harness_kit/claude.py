@@ -767,8 +767,9 @@ def plan_path(payload) -> Optional[Tuple[str, Optional[str]]]:
 #:     {"type": "queue-operation", "operation", "timestamp", "content"}   its queue of what the user writes while it
 #:         works: "enqueue" when a message is written; "remove", reason "absorbed_mid_turn", when it goes to the model
 #:         with the turn's next call (wrapped: MID_TURN); "dequeue" when the turn ended first and it opens the next
-#:         (the first in); any other "remove": taken back. Its own notes (QUEUED_NOTES) are queued too, in the user's
-#:         name.
+#:         (the first in); any other "remove": taken back; "popAll" when Up takes every message the user wrote back
+#:         into the prompt, to edit (its `content` their words, joined) -- taken back too, its notes staying queued.
+#:         Its own notes (QUEUED_NOTES) are queued too, in the user's name.
 #:     {"type": "user", "origin": {"kind": "human"}, "message"}   a message the user sent between turns: not queued,
 #:         sent at once as the next turn's first (a note's origin is of another kind; a "!" command's line has none)
 #:     {"type": "assistant", "message"}   the model's answer: a call of ASKS waits on the user; with
@@ -905,6 +906,10 @@ class Record(Follower):
             self.sent = (self.sent + [(q["text"], when)])[-SENT_KEPT:]
             held = q["at"] is not None and when is not None and when - q["at"] > BUSY_SECONDS
             return self._sent(q, key, when, "next", held)
+        if kind == "popAll":                                    # back in the prompt, to edit: taken back
+            back = [q for q in self.queue if not q["note"]]
+            self.queue = [q for q in self.queue if q["note"]]
+            return [Fact(Facts.MESSAGE_WITHDRAWN, f"{key}.{i}", when, {"queued": q["key"]}) for i, q in enumerate(back)]
         if kind == "remove":
             q = next((q for q in self.queue if q["text"] == text), None)
             if q is None:

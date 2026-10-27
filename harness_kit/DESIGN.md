@@ -147,7 +147,14 @@ of a session (Claude Code: every call with its session id; codex: the thread's o
 record of the session (`record_path`: where it runs, and the harness's own folder for the run), records that it
 follows it (`session_file`), and reads it on every 0.25 s while it changes, inserting each fact as an event of the
 session. Unchanged for an hour, it is followed no more until the session's next call, which reads on from where it
-was; one not there yet is looked for again with the next call. A hook server that starts reads each record from its
+was; one not there yet is looked for every 0.5 s for 30 s (`claude -p` writes it only once its first call is under
+way, and a run refused at that call makes no other), then again with the next call.
+
+**Beside the session's reads.** ag's server answers a session's requests one at a time (its lanes, #134), and a
+read can wait seconds for the policy's boundary check or a build. The facts go in a lane of their own beside the
+session's (`insert` with `"lane": "records"`): no read depends on them, and policies never load them, so they need
+order only among themselves -- otherwise a message queued, a question answered or Esc would show only once that
+read was done (2-15 s, live). A hook server that starts reads each record from its
 start, and the server stores nothing twice: an event's id is its line, by its place in the file and its bytes
 (`<type>:<file>:<offset>.<crc32>`), so a file written anew has new ids.
 
@@ -161,7 +168,7 @@ without it the hook looks where the harness would by default.
 |---|---|---|
 | `message_queued` | `queue-operation` enqueue (not its own notes) | none |
 | `message_sent` | remove `absorbed_mid_turn` (`mid_turn`), dequeue (`next`, `joins` when held), a `human` user line between turns (`prompt`) | none |
-| `message_withdrawn` | any other remove | none |
+| `message_withdrawn` | any other remove; `popAll` (Up: every message written back in the prompt, to edit) | none |
 | `asked` | none: its asks come with the reply (step 5) | `request_user_input` (and `_async`); a completed Plan-mode turn's plan, `plan:<turn>` |
 | `ask_settled` | an asking call's result: `dismissed` when the interrupt note follows, else `answered`; its result's words | the call's output (`aborted by user`: dismissed); async replies, once every question has one; the turn's end; for a plan, the next turn's start and what it opened with |
 | `turn_stopped` | `isApiErrorMessage` (`error`, its status); the interrupt note (`interrupted`) | `task_complete` (`over`, or `error`), `turn_aborted` (`interrupted`) |
@@ -170,6 +177,11 @@ without it the hook looks where the harness would by default.
 
 The doc's `question_settled`, `turn_interrupted` and `gave_up` are `ask_settled` and `turn_stopped`'s `how`. Codex's
 async question has a result only once every question it asked has its reply (the dashboard read each reply as it came).
+
+A turn's stop counts only while nothing came after it: the dashboard takes the newest of ag's latest activity and
+the newest message ag stored (`data.newest`) -- a message is stored as a read begins, before its context is built and
+the read recorded. The same goes for a hang-up (`since_said`): codex hangs up a call to send a question's reply at
+once, and Claude Code's message taken back on Esc is withdrawn with its read.
 
 **The dashboard** reads them through `data.Record` (`record_of`: an actor's newest 400 facts) and `typed` /
 `meanwhile` (its message facts): what is asked and settled, a turn stopped, background tasks ended (and, for codex,

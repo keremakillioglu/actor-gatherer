@@ -243,6 +243,33 @@ class StoppedTest(ErrorsBase):
         a = self.actor()
         self.assertEqual((a["status"], a["turn_over"], a["stopped"]["kind"]), (data.IDLE, True, "interrupted"))
 
+    def said_again(self):
+        """The user writes again: ag stores the message as the read begins, and records the read only once its
+        context is built (the policy's boundary check, a build) -- here, not yet."""
+        self.add([event("user_message", {"role": "user", "content": [{"type": "text", "text": "next"}]}, "next")],
+                 channel=SESSION)
+
+    def test_a_new_turn_after_an_interruption_runs_while_its_read_is_built(self):
+        self.read(time.time() - 10, tokens=500)
+        self.write({"type": "user", "timestamp": zulu(time.time() - 5), "message": {"role": "user", "content": [
+            {"type": "text", "text": "[Request interrupted by user]"}]}})
+        self.said_again()
+        a = self.actor()
+        self.assertEqual((a["status"], a["stopped"]), (data.RUNNING, None))     # the stop was the last turn's
+
+    def test_a_new_turn_after_an_error_runs_while_its_read_is_built(self):
+        self.read(time.time() - 10, error=DNS)
+        self.give_up(time.time() - 5)
+        self.said_again()
+        self.assertEqual(self.actor()["status"], data.RUNNING)
+
+    def test_a_hang_up_then_a_new_call_runs_while_its_read_is_built(self):
+        self.read(time.time() - 10, status=data.HUNG_UP, error="the harness hung up")
+        a = self.actor()
+        self.assertEqual((a["status"], a["stopped"]["kind"]), (data.IDLE, "interrupted"))    # Esc, as far as ag knows
+        self.said_again()                                       # codex hung up to send a question's reply at once
+        self.assertEqual(self.actor()["status"], data.RUNNING)
+
     def test_a_subagent_s_message_or_one_not_yet_whole_tells_nothing(self):
         self.give_up(time.time())
         self.write({"type": "assistant", "isSidechain": True, "timestamp": zulu(time.time()),
