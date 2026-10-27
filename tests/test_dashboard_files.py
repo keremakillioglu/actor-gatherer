@@ -268,22 +268,32 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(files.image("g", b["row_id"], "i1"), ("image/png", b"\x89PNG\r\n\x1a\n"))
         self.assertIsNone(files.image("g", b["row_id"], "other"))       # another call's: not this one
 
+    TOUCHED = [("b1", "/w/a.py", "read", 0, 1, {"lines": [[4, ["def g():", "    return 2"]]]}),
+               ("e2", "/w/b.py", "modified", None, 1, {"hunks": [{"at": 7, "old": ["x = 1"], "new": ["x = 2"],
+                                                                  "above": [[6, "y = 0"]], "below": []}]}),
+               ("p1", "/w/a.py", "modified", None, 1, {}),
+               ("p1", "/w/out.txt", "created", None, 0, {"lines": ["made"]}),
+               ("t1", None, None, None, None, None)]
+
     def test_a_call_checked_on_disk_is_shown_as_found_there(self):
-        conn = sqlite3.connect(self.db)
+        conn = sqlite3.connect(self.db)                  # as an older hook server kept them
         conn.execute("CREATE TABLE _touches (touch_id INTEGER PRIMARY KEY, session TEXT, call_id TEXT, at TEXT, path TEXT, "
                      "how TEXT, checked INTEGER, named INTEGER, detail_json TEXT)")
-        for call_id, path, how, checked, named, detail in [
-                ("b1", "/w/a.py", "read", 0, 1, {"lines": [[4, ["def g():", "    return 2"]]]}),
-                ("e2", "/w/b.py", "modified", None, 1, {"hunks": [{"at": 7, "old": ["x = 1"], "new": ["x = 2"],
-                                                                   "above": [[6, "y = 0"]], "below": []}]}),
-                ("p1", "/w/a.py", "modified", None, 1, {}),
-                ("p1", "/w/out.txt", "created", None, 0, {"lines": ["made"]}),
-                ("t1", None, None, None, None, None)]:
+        for call_id, path, how, checked, named, detail in self.TOUCHED:
             conn.execute("INSERT INTO _touches (session, call_id, at, path, how, checked, named, detail_json) "
                          "VALUES ('c1', ?, '', ?, ?, ?, ?, ?)", (call_id, path, how, checked, named,
                                                                  None if detail is None else json.dumps(detail)))
         conn.commit()
         conn.close()
+        self.found_there()
+
+    def test_a_call_checked_on_disk_as_its_hook_records_it(self):
+        self.add(*[("file_touched", {"call": call_id, "path": path, "how": how, "checked": None if checked is None else bool(checked),
+                                     "named": None if named is None else bool(named), "detail": detail or {}})
+                   for call_id, path, how, checked, named, detail in self.TOUCHED])
+        self.found_there()
+
+    def found_there(self):
         got = files.files("g", "c1", 1, cwd="/w")
         by = {f["path"]: f for f in got["files"]}
         read, edit, script = by["/w/a.py"]["sources"]

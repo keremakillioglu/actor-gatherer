@@ -298,6 +298,42 @@ class HookTest(unittest.TestCase):
         self.assertEqual(self.server.answers(), [])
 
 
+class DerivedTest(unittest.TestCase):
+    """What an answer asks the user, and what a call's new pieces say of it and of background tasks, recorded beside the
+    session's reads, each once by the harness's own ids (proxy_hook.py's `derive`)."""
+
+    def test_an_ask_its_result_and_a_task_started(self):
+        server = Server()
+        hook = claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda g: server), log=lambda g, l: None, count="off")
+        asks = {"type": "tool_use", "id": "toolu_q", "name": "AskUserQuestion",
+                "input": {"questions": [{"question": "Which?", "options": [{"label": "A"}, {"label": "B"}]}]}}
+
+        def call(messages, answer):
+            req = SimpleNamespace(method="POST", path="/v1/messages", label="g", limit=None, state={}, upstream=None,
+                                  headers={"X-Claude-Code-Session-Id": "s"},
+                                  body={"model": "m", "tools": [{"name": "Bash"}], "messages": messages})
+
+            async def go():
+                await hook(req)
+                await hook.answered(req, 200, response_of(answer))
+                await asyncio.gather(*list(hook.under_way))
+            asyncio.run(go())
+
+        call([ask("pick one")], sse([asks], "tool_use"))
+        call([ask("pick one"), {"role": "assistant", "content": [asks, dict(CALL, id="toolu_b", input={
+                  "command": "sleep 99", "description": "Wait", "run_in_background": True})]},
+              {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_q", "content": '"Which?"="B"'},
+                                           {"type": "tool_result", "tool_use_id": "toolu_b",
+                                            "content": "Command running in background with ID: b1. Output is being "
+                                                       "written to: /tmp/b1.output"}]}], sse([TEXT], "end_turn"))
+        inserted = [(e["type"], e["id"], body.get("lane")) for op, body in server.asked if op == "insert"
+                    for e in body["events"] if e["type"] in ("asked", "ask_settled", "task_started")]
+        self.assertEqual(inserted, [("asked", "asked:toolu_q", "records"), ("ask_settled", "ask_settled:toolu_q", "records"),
+                                    ("task_started", "task_started:b1.toolu_b", "records")])
+        calls = [e["payload"] for op, body in server.asked if op == "insert" for e in body["events"] if e["type"] == "model_call"]
+        self.assertTrue(calls and all(c.get("derives") for c in calls))         # a reader may take none recorded as none
+
+
 RESPONSES = (
     'event: response.completed\ndata: {"type": "response.completed", "response": {"id": "resp_1", "status": '
     '"completed", "output": [{"type": "message", "role": "assistant", "id": "msg_9", "content": [{"type": '

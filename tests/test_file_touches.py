@@ -275,10 +275,19 @@ class Server:
         self.asked = []
 
     async def request(self, op, body=None, timeout=None):
+        touched = [e for e in (body or {}).get("events") or [] if e.get("type") == "file_touched"] if op == "insert" else []
+        if touched:                                    # what the hook records of each call, as the touches it found
+            assert body.get("lane") == "records" and all(e["properties"]["call_id"] == e["payload"]["call"] for e in touched)
+            self.asked.append(("touches", {"session": body["properties"]["channel"], "touches": [
+                {"call_id": e["payload"]["call"], **{k: e["payload"][k] for k in ("path", "how", "checked", "named", "detail")}}
+                for e in touched]}))
+            return {"rows": [1] * len(touched)}
+        if op == "insert":                             # the hook's other records (its model calls): not what is checked here
+            return {"rows": [None] * len(body["events"])}
         self.asked.append((op, body))
         if op == "rewrite":
             return {"context": body["events"], "note": "ok", "read_id": len(self.asked), "basis": None}
-        return {"kept": len(body.get("touches") or [])} if op == "touches" else {}
+        return {}
 
     async def stop(self):
         pass

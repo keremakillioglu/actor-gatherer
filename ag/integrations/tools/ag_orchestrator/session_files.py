@@ -17,6 +17,9 @@ Run by the proxy hooks:
                                        often it is read, by its line's place in the file
     the record unchanged QUIET_SECONDS  followed no more; the session's next call follows it again, from where
                                        it was
+    a background task started          `SessionFiles.task` (the hook's `derive`, from the call's result): its output
+                                       file looked at every ACTIVITY_SECONDS while the record is followed, its
+                                       growing recorded (`task_activity`), until the task ends
 
 The first time a hook server follows a record it reads it from its start, so a fact it missed while it did not run
 is recorded then, and one recorded before is not stored twice. Nothing raises into the hook: a failure is a line in
@@ -26,7 +29,7 @@ import os
 import time
 from typing import Callable, Dict, Optional, Tuple
 
-from harness_kit import Harness
+from harness_kit import Fact, Facts, Harness
 from harness_kit.base import follow as read_on
 
 from .records import fact, record, session_file
@@ -35,6 +38,7 @@ POLL_SECONDS = 0.25         # how often a followed record is looked at
 QUIET_SECONDS = 3600.0      # unchanged this long, with no call of its session: followed no more
 FIND_SECONDS = 30.0         # a record not there at a call: looked for this long
 FIND_EVERY = 0.5            # that often
+ACTIVITY_SECONDS = 5.0      # how often a running background task's output is looked at
 BATCH = 200                 # the most events inserted at once
 
 
@@ -49,6 +53,9 @@ class _Followed:
         self.seen: Optional[Tuple[int, int, int]] = None     # (inode, size, mtime) when last read
         self.called = time.time()                             # the session's newest call
         self.task: Optional[asyncio.Task] = None
+        self.outputs: Dict[str, str] = {}                     # a running background task -> the file it writes to
+        self.written: Dict[str, float] = {}                   # -> when that was last seen written, as recorded
+        self.looked = 0.0                                     # when they were last looked at
 
 
 class SessionFiles:
@@ -115,6 +122,28 @@ class SessionFiles:
         self.log(gatherer, f"[{channel}] session file: following {f.path}")
         return True
 
+    def task(self, gatherer: str, channel: str, task: str, output: Optional[str]) -> None:
+        """A background task of the session started, writing to `output`, which is looked at from now on (module
+        doc); `output` None: it ended, and is looked at no more."""
+        f = self.followed.get((gatherer, channel))
+        if f is None or not task:
+            return
+        if output:
+            f.outputs[task] = output
+        else:
+            f.outputs.pop(task, None)
+            f.written.pop(task, None)
+
+    def _activity(self, f: _Followed) -> list:
+        """The running background tasks whose output was written since last seen: a `task_activity` fact each."""
+        out = []
+        for task, path in list(f.outputs.items()):
+            at = _written(path)
+            if at is not None and at > f.written.get(task, 0):
+                f.written[task] = at
+                out.append(Fact(Facts.TASK_ACTIVITY, f"{task}.output.{int(at * 1000)}", at, {"task": task, "event": None}))
+        return out
+
     async def _read(self, gatherer: str, channel: str, f: _Followed) -> None:
         """What the record says since it was last read, and what has come due, recorded."""
         try:
@@ -132,6 +161,9 @@ class SessionFiles:
                 facts, f.offset = read_on(f.path, f.follower, f.offset)
             f.seen = now
         facts += f.follower.due(time.time())
+        if f.outputs and time.time() - f.looked >= ACTIVITY_SECONDS:
+            f.looked = time.time()
+            facts += await asyncio.to_thread(self._activity, f)
         if facts:
             await self._insert(gatherer, channel, [fact(x, f.path) for x in facts])
 
@@ -146,3 +178,14 @@ class SessionFiles:
             t.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def _written(path: str) -> Optional[float]:
+    """When a task's output was last written: its file's time, or a folder's (a workflow's transcripts) newest file's."""
+    try:
+        if not os.path.isdir(path):
+            return os.stat(path).st_mtime
+        with os.scandir(path) as found:
+            return max((e.stat().st_mtime for e in found if e.is_file()), default=None)
+    except OSError:
+        return None

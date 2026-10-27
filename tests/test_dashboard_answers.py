@@ -179,6 +179,21 @@ class PlanTest(GathererBase):
 SESSION = "0e1d2c3b-0000-4000-8000-000000000001"
 
 
+class AskedTest(GathererBase):
+    """From a hook that records what answers ask (`asked`), what an actor waits on is read from that: no answer's
+    calls looked through, no plan file read."""
+
+    def test_what_it_asks_until_it_is_settled(self):
+        self.add([("model_call", {"kind": "turn", "harness": "claude", "derives": True}, None)])
+        self.pend([call("t1", "AskUserQuestion", {"questions": [{"question": "Old?", "options": [{"label": "A"}]}]})])
+        self.assertIsNone(data.asking_of("g", "s1"))                     # its answer's call: not read once the hook records
+        self.add([("asked", {"at": 1.0, "call": "t2", "kind": "plan", "plan": "1. Do it", "async": False, "turn": None}, None)])
+        self.assertEqual({k: data.asking_of("g", "s1")[k] for k in ("kind", "call", "plan")},
+                         {"kind": "plan", "call": "t2", "plan": "1. Do it"})
+        self.add([("ask_settled", {"at": 2.0, "call": "t2", "how": "answered", "result": "User has approved your plan"}, None)])
+        self.assertIsNone(data.asking_of("g", "s1"))
+
+
 class SettledTest(GathererBase):
     """Claude Code's own record of the session (<config>/projects/<dir>/<session>.jsonl), written as it happens and
     followed by ag's hook (played by followed.py): a question answered or dismissed there is not asked any more --
@@ -282,6 +297,15 @@ class RecordedTest(GathererBase):
         self.add([call("t2", "AskUserQuestion", {}),
                   event("tool_output", {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": result}]}, result)])
         self.assertTrue(self.actor(sent2)["answer"]["recorded"])
+
+    def test_kept_in_the_gatherer_it_outlasts_the_dashboard_that_typed_it(self):
+        sent = {"call": "t1", "summary": "Which color? → Blue", "expect": ['"Which color?"="Blue"'], "at": time.time()}
+        self.add([("answer_given", {"at": sent["at"], **{k: sent[k] for k in ("call", "summary", "expect")}}, None)])
+        result = 'Your questions have been answered: "Which color?"="Blue".'
+        self.add([call("t1", "AskUserQuestion", {}),
+                  event("tool_output", {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": result}]}, result)])
+        got = self.actor(None)["answer"]                                       # the session has none: restarted since
+        self.assertEqual((got["call"], got["summary"], got["recorded"]), ("t1", "Which color? → Blue", True))
 
 
 @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")

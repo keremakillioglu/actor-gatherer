@@ -1,7 +1,7 @@
-"""The tool calls and results in a harness's messages, whichever harness: Claude Code's (Anthropic
-Messages: `tool_use` and `tool_result` blocks) or codex's (Responses items: `function_call`,
-`custom_tool_call`, `local_shell_call` and their outputs) -- as the dashboard reads them from the
-stored events (ag_dashboard/data.py's `parts`), here from the messages themselves. A codex
+"""The tool calls and results in a harness's messages: read by the harness's own rules (harness_kit's `read`, its
+parts' `tool` and `result`) where the harness is given -- else, whichever harness, from the blocks as they are: Claude
+Code's (Anthropic Messages: `tool_use` and `tool_result` blocks) or codex's (Responses items: `function_call`,
+`custom_tool_call`, `local_shell_call` and their outputs). A codex
 code-mode call (`exec`) is one call to its harness, but its script makes others: `opened` reads them
 out of it (commands.opened_script), for what they do to files."""
 import json
@@ -59,8 +59,16 @@ def _output(value) -> str:
     return "" if value is None else json.dumps(value, ensure_ascii=False)
 
 
-def calls_in(items) -> Dict[str, Tuple[str, Any]]:
-    """The tool calls among the messages (or an answer's items), by id: (name, input)."""
+def _parts(harness, items) -> list:
+    return harness.read(harness.items([x for x in items or [] if isinstance(x, dict)]))
+
+
+def calls_in(items, harness=None) -> Dict[str, Tuple[str, Any]]:
+    """The tool calls among the messages (or an answer's items), by id: (name, input) -- the agent's own, not a server
+    tool the provider ran (Claude Code's web search)."""
+    if harness is not None:
+        return {p.tool.id: (p.tool.name, p.tool.input) for p in _parts(harness, items)
+                if p.tool is not None and p.tool.id and p.detail.get("block") != "server_tool_use"}
     out = {}
     for b in _blocks(items):
         t = b.get("type")
@@ -73,8 +81,11 @@ def calls_in(items) -> Dict[str, Tuple[str, Any]]:
     return out
 
 
-def results_in(items) -> Dict[str, Tuple[str, bool]]:
+def results_in(items, harness=None) -> Dict[str, Tuple[str, bool]]:
     """The tool results among the messages, by their call's id: (text, whether it failed)."""
+    if harness is not None:
+        return {p.result.call_id: (p.result.output, p.result.error) for p in _parts(harness, items)
+                if p.result is not None and p.result.call_id}
     out = {}
     for b in _blocks(items):
         t = b.get("type")
