@@ -48,6 +48,15 @@ class ShellReadsTest(unittest.TestCase):
 class ShellChangesTest(unittest.TestCase):
     """What a shell command changed, read from the command."""
 
+    def test_git_changing_a_checkout_s_files_is_told(self):
+        for command in ("git pull -q origin main", "cd /r && git status; git merge origin/main 2>&1 | tail -2",
+                        "git -C ../wt checkout -- a.py", "GIT_EDITOR=true git rebase --continue", "(cd /r && git stash pop)",
+                        "git worktree add -b x ../x origin/main", "gh pr checkout 12"):
+            self.assertTrue(files.runs_git(command), command)
+        for command in ("git status --short", "git log --oneline -5 > log.txt", "git commit -qm 'x'", "git diff | cat",
+                        "echo git pull", "gh pr view 12", "cat > notes.md <<'EOF'\ngit pull\nEOF"):
+            self.assertFalse(files.runs_git(command), command)
+
     def test_a_heredoc_or_echo_into_a_file_writes_it(self):
         self.assertEqual(files.shell_changes("cat > n.txt <<'EOF'\nhello\nworld\nEOF", "/w"),
                          ([("/w/n.txt", "write", "hello\nworld")], True))

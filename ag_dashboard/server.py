@@ -35,6 +35,8 @@ context manager's home (data.py), read-only. Standard library only.
     GET /vendor/editor.js                 the Editor panel's editor (CodeMirror and Yjs, assets/src/editor), loaded the
                                           first time the page shows the view
     GET /api/edit/list?dir=D&root=R       editor.listing(D, R): a directory under R, each entry with who edits it
+    GET /api/edit/place?gatherer=G&channel=C&cwd=D   {dir}: where the actor's work is, the Editor opened from its pane
+        shows (editor.place: the folder holding what it changed lately; null, none)
     GET /api/edit/stream?path=P&root=R&conn=C&client=N   server-sent events, until the page goes: the file P (under
         R) opened for editing (editor.py), shared with every other page editing it: `init` {epoch, update (the
         document, a Yjs update, base64), sv (its state vector), aware (the other pages' cursors)}, then `update`
@@ -252,10 +254,12 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 if url.path == "/vendor/editor.js":
                     with open(EDITOR, "rb") as fh:
                         return self.send(200, fh.read(), "text/javascript; charset=utf-8")
-                if url.path in ("/api/edit/list", "/api/edit/stream") and not self.local_host():
+                if url.path in ("/api/edit/list", "/api/edit/stream", "/api/edit/place") and not self.local_host():
                     return self.send(403, b"only the dashboard's own page may do that", "text/plain")
                 if url.path == "/api/edit/list":
                     return self.answer(editors.listing(q.get("dir", ""), q.get("root", "")))
+                if url.path == "/api/edit/place" and q.get("gatherer") and "channel" in q:
+                    return self.answer({"dir": editor.place(q["gatherer"], q["channel"], q.get("cwd", ""))})
                 if url.path == "/api/edit/stream":
                     return self.edit_stream(q)
                 if url.path.startswith("/avatars/") and url.path.endswith(".svg"):

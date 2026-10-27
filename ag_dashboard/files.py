@@ -31,6 +31,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from typing import Dict, List, Optional
 
 import harness_kit
@@ -40,13 +41,14 @@ from . import data, work
 from . import home as paths
 from harness_kit.shell import (  # noqa: F401 - python_changes: tested here
     CODE_MODE, EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, opened_script,
-    python_changes, script_calls, script_output, shell_changes, shell_reads)
+    python_changes, runs_git, script_calls, script_output, shell_changes, shell_reads)
 
 MAX_ROWS = 4000            # the most lines one file shows in a turn
 HELD_SECONDS = 30          # a message held until its turn ended: stored this close to when Claude Code sent it
 LINE_CHARS = 400           # the most of one line's text sent
 COMMAND_OUTPUT = 4000      # the most of a command's output sent
 CONTEXT = 2                # the lines known around a change shown with it
+LATELY = 600.0             # seconds: a session's changes this recent count as where it works now, besides its latest turn's
 # as the hook server's file_touches/check.py has them: Claude Code's note after a command's output, codex's header before it
 SHELL_CWD_NOTE = re.compile(r"\n?Shell cwd was reset to [^\n]*\s*$")
 CODEX_HEADER = re.compile(r"^(?:Chunk ID: [^\n]*\n)?(?:Wall time: [^\n]*\n)?(?:Process exited with code [^\n]*\n)?"
@@ -77,11 +79,26 @@ def _temporary_roots() -> tuple:
 TEMPORARY = _temporary_roots()   # the temporary folders: /tmp, macOS's per-user /var/folders/..., $TMPDIR
 
 
+def _harness_folders() -> tuple:
+    folders = set()
+    for var, default in (("CLAUDE_CONFIG_DIR", "~/.claude"), ("CODEX_HOME", "~/.codex"), (None, "~/.claude.json")):
+        for f in {(var and os.environ.get(var)) or default, default}:
+            folders |= {os.path.abspath(os.path.expanduser(f)), os.path.realpath(os.path.expanduser(f))}
+    return tuple(sorted(folders))
+
+
+# Claude Code's and Codex's own folders -- the sessions' transcripts, plans, memory -- and Claude Code's settings file
+HARNESS_FOLDERS = _harness_folders()
+
+
+def _under(path: str, roots) -> bool:
+    return any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots)
+
+
 def ags(path: str) -> bool:
     """Whether `path` is in ag's home (AG_HOME, ~/.ag), whose files ag itself writes as calls run: its
     databases at every model call, its logs."""
-    roots = {paths.HOME, os.path.realpath(paths.HOME)}
-    return any(path == r or path.startswith(r.rstrip("/") + "/") for r in roots)
+    return _under(path, {paths.HOME, os.path.realpath(paths.HOME)})
 
 
 def says_writes(name: str, raw, cwd: str) -> set:
@@ -99,7 +116,7 @@ def says_writes(name: str, raw, cwd: str) -> set:
 
 def temporary(path: str) -> bool:
     """Whether `path` is in a temporary folder: a scratchpad's, a test's -- not the work itself."""
-    return any(path == r or path.startswith(r.rstrip("/") + "/") for r in TEMPORARY)
+    return _under(path, TEMPORARY)
 
 
 
@@ -186,6 +203,31 @@ def _touches(conn, channel: str) -> Dict[str, List[dict]]:
 
 
 TOUCH_KINDS = {"read": "read", "hit": "hit", "created": "write", "modified": "edit", "deleted": "delete"}
+
+
+def _turn_starts(evs: list, held: List[dict]) -> tuple:
+    """Where the session's turns start, of its events (`_events`'): ([(index, row_id, at, text, kind)], more) -- `more`,
+    what the user wrote while a turn ran, by the turn's number: [{row_id, at, text, kind}]. A message written while a turn
+    ran is part of it, not a turn of its own: one Claude Code sent mid-turn (wrapped), or held until the turn ended and
+    sent then, as its record says (`held`, data.py's `meanwhile`: matched by its words, stored as it was sent -- taken
+    out of it as matched); and codex's answers to what it asked as it worked (ASK_REPLY), which it sends as the user's
+    while the turn runs."""
+    starts, more = [], {}
+    for i, (row_id, typ, at, parts, stored) in enumerate(evs):
+        said = [p["text"] for p in parts if p["kind"] == "text" and p.get("role") == "user"]
+        if said and typ == "user_message":
+            kind, text = stored or harness_kit.words(said[0])   # the user's words, its harness's wrapper off
+            meanwhile = kind in (Kind.MID_TURN, Kind.ASK_REPLY)
+            if not meanwhile and at is not None:
+                q = next((q for q in held if q["text"].strip() == said[0].strip() and abs(at - q["sent"]) <= HELD_SECONDS), None)
+                if q is not None:
+                    held.remove(q)
+                    meanwhile = True
+            if meanwhile and starts:
+                more.setdefault(len(starts) - 1, []).append({"row_id": row_id, "at": at, "text": text.rstrip(), "kind": kind})
+            else:
+                starts.append((i, row_id, at, text, kind))
+    return starts, more
 
 
 def _runs(numbered: List[tuple]) -> List[tuple]:
@@ -685,25 +727,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                               {"t": "note", "text": "listed by name"})
             return
 
-    # the turns, first: which one is wanted. A message the user wrote while a turn ran is part of it, not a turn of
-    # its own: one Claude Code sent mid-turn (wrapped), or held until the turn ended and sent then, as its record
-    # says (data.py's `meanwhile`: matched by its words, stored as it was sent); and codex's answers to what it asked
-    # as it worked (ASK_REPLY), which it sends as the user's while the turn runs
-    starts, more = [], {}                            # more: what was written while a turn ran, by the turn it is part of
-    for i, (row_id, typ, at, parts, stored) in enumerate(evs):
-        said = [p["text"] for p in parts if p["kind"] == "text" and p.get("role") == "user"]
-        if said and typ == "user_message":
-            kind, text = stored or harness_kit.words(said[0])   # the user's words, its harness's wrapper off
-            meanwhile = kind in (Kind.MID_TURN, Kind.ASK_REPLY)
-            if not meanwhile and at is not None:
-                q = next((q for q in held if q["text"].strip() == said[0].strip() and abs(at - q["sent"]) <= HELD_SECONDS), None)
-                if q is not None:
-                    held.remove(q)
-                    meanwhile = True
-            if meanwhile and starts:
-                more.setdefault(len(starts) - 1, []).append({"row_id": row_id, "at": at, "text": text.rstrip(), "kind": kind})
-            else:
-                starts.append((i, row_id, at, text, kind))
+    # the turns, first: which one is wanted
+    starts, more = _turn_starts(evs, held)
     heads = [_Turn(n, row_id, at, t) for n, (i, row_id, at, t, kind) in enumerate(starts)]
     for h, start in zip(heads, starts):
         h.head["kind"] = start[4]
@@ -871,6 +896,53 @@ def changes(gatherer: str, channel: str, path: str, since: float, cwd: str = "")
             out += [dict(src, turn=t["n"], asked=t["text"]) for src in f["sources"]
                     if CHANGED_KINDS & set(src["kinds"]) and (src.get("at") or 0) >= since]
     return {"path": path, "changes": out, "home": got.get("home")}
+
+def lately_changed(gatherer: str, channel: str, cwd: str = "", within: float = LATELY) -> List[str]:
+    """The files the session changed lately -- in its latest turn that changed any, and in the last `within` seconds --
+    as ag's hook found its calls did (`file_touched`: created, modified or deleted), the first changed first. Not
+    counted: what a file changed while a command ran but no call names (`named` false: a pull's files, another
+    session's writes meanwhile); what a git command changed (a checkout of a file, a pull: `runs_git`), but for the
+    files the command writes itself (`> log`); nor, unless under the session's directory `cwd`, what is in a temporary
+    folder, ag's home or a harness's own (HARNESS_FOLDERS) -- none of it the session's work."""
+    conn = data._connect(gatherer)
+    if conn is None:
+        return []
+    try:
+        evs = list(_events(conn, channel))
+        held = data.meanwhile(conn, channel)
+        kind = conn.execute("SELECT event_type_id FROM event_types WHERE name = 'file_touched'").fetchone()
+        touches = conn.execute(f"SELECT row_id, inserted_at, payload_json FROM events WHERE event_type_id = ? "
+                               f"AND ifnull({data.CHANNEL}, '') = ? ORDER BY row_id", (kind[0], channel)).fetchall() if kind else []
+    finally:
+        conn.close()
+    both = lambda p: {os.path.normpath(p), os.path.realpath(p)}   # noqa: E731 - /tmp is /private/tmp, on macOS
+    git: Dict[str, set] = {}                         # a call that ran git: the files it names itself
+    for _, _, _, parts, _ in evs:
+        for p in parts:
+            if p["kind"] != "call":
+                continue
+            ran = [(p["name"], p.get("input"))] + [(c["name"], c.get("input")) for c in p.get("calls") or []]   # a codex script's
+            if any(name in SHELLS and runs_git(_shell_text(name, inp)[0]) for name, inp in ran):
+                git[p["id"]] = {q for name, inp in ran for w in says_writes(name, inp, cwd) for q in both(w)}
+    mine = both(cwd) if cwd else set()
+    kept = []                                        # (row_id, at, path)
+    for row_id, inserted_at, raw in touches:
+        t = data._json(raw) or {}
+        path = t.get("path")
+        if t.get("how") not in ("created", "modified", "deleted") or not isinstance(path, str) or not os.path.isabs(path) \
+                or t.get("named") == 0:                     # 0 or false: not named; None: not known
+            continue
+        path = os.path.normpath(path)
+        if t.get("call") in git and not both(path) & git[t["call"]]:
+            continue
+        if _under(path, mine) or not (temporary(path) or ags(path) or _under(path, HARNESS_FOLDERS)):
+            kept.append((row_id, data._seconds(inserted_at), path))
+    if not kept:
+        return []
+    begun = max((s[1] for s in _turn_starts(evs, held)[0] if s[1] < kept[-1][0]), default=0)   # the latest change's turn
+    since = time.time() - within
+    return list(dict.fromkeys(p for row_id, at, p in kept if row_id > begun or (at or 0) >= since))
+
 
 def image(gatherer: str, row_id: int, call_id: str) -> Optional[tuple]:
     """The image a call's result holds, as stored in event `row_id`: (media type, bytes), or None.

@@ -45,7 +45,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-from . import data
+from . import data, files
 
 try:
     from pycrdt import Doc, Text
@@ -284,6 +284,19 @@ def writers(directories: List[str], since: float) -> Dict[str, List[dict]]:
         finally:
             conn.close()
     return {rel: sorted(by.values(), key=lambda w: -w["at"]) for rel, by in out.items()}
+
+
+def place(gatherer: str, channel: str, cwd: str = "") -> Optional[str]:
+    """Where an actor's work is, for the Editor opened from its pane: the deepest folder holding every file it changed
+    lately -- in its latest turn that changed any, and the last few minutes; not what git or its harness wrote, nor
+    its scratch files (files.lately_changed) -- or the nearest above it that is still there. None: none of those."""
+    changed = files.lately_changed(gatherer, channel, cwd)
+    if not changed:
+        return None
+    at = os.path.commonpath([os.path.dirname(p) for p in changed])
+    while not os.path.isdir(at) and at != os.path.dirname(at):
+        at = os.path.dirname(at)                    # a folder since removed
+    return at
 
 
 def _latest(found: List[dict]) -> List[dict]:

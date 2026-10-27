@@ -477,6 +477,32 @@ def shell_changes(command: str, cwd: str):
     return out, pure and bool(out)
 
 
+# git's commands that change a checkout's files (`git worktree list`, `git stash list` among them: changing nothing, no harm)
+GIT_CHANGES = frozenset({"pull", "merge", "checkout", "switch", "reset", "rebase", "stash", "cherry-pick", "revert",
+                         "restore", "clone", "am", "apply", "worktree", "rm", "mv", "clean", "submodule"})
+GIT_TAKES = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"})   # its options with a value
+
+
+def runs_git(command: str) -> bool:
+    """Whether a shell command runs git so as to change a checkout's files: a pull, a merge, a checkout ... (GIT_CHANGES),
+    `gh pr checkout` too -- the files git writes then are the repository's, not the command's own work."""
+    for words, _ in _simple_commands(command) or []:
+        words = [w.strip("()") for w in words]           # (cd x && git pull)
+        while words and (ASSIGNMENT.fullmatch(words[0]) or words[0] in ("env", "command", "time", "nohup")):
+            words = words[1:]                            # GIT_EDITOR=true git merge ...
+        cmd = os.path.basename(words[0]) if words else ""
+        if cmd == "gh" and words[1:3] in (["pr", "checkout"], ["repo", "clone"]):
+            return True
+        if cmd != "git":
+            continue
+        k = 1
+        while k < len(words) and words[k].startswith("-"):
+            k += 2 if words[k] in GIT_TAKES else 1      # git -C <path> pull
+        if k < len(words) and words[k] in GIT_CHANGES:
+            return True
+    return False
+
+
 def _fold(node, env):
     """A Python expression's value when it is made of string constants: a str, or a list/tuple of them
     (nested); None otherwise."""
