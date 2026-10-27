@@ -796,7 +796,8 @@ button:disabled { opacity: .5; cursor: default; }
    a folder's tree, and a file in it edited by everyone who has it open, in the page's code colours; what is written
    to the file on disk marked as it lands, in its actor's hue (--who); the actors that changed each file, their avatars */
 .ed-top { flex: 0 0 var(--ed-h, 50%); min-height: 140px; display: flex; flex-direction: column; position: relative;
-  background: var(--page); border-bottom: 1px solid var(--ring); --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  background: var(--page); border-bottom: 5px solid color-mix(in srgb, var(--ink) 14%, var(--page));   /* the edge between it and the panes: a bar, its grip over it */
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .ed-top[hidden] { display: none; }
 /* in the page's top row, as tall as it (--top-h), so the rule under the row runs straight across: the file's head, and
    the folder's bar beside it */
@@ -848,7 +849,7 @@ button:disabled { opacity: .5; cursor: default; }
   .ed-tree { width: 170px; } .ed-head { flex-wrap: nowrap; }
   .ed-person { width: 10px; height: 10px; padding: 0; font-size: 0; border-radius: 50%; background: var(--who); border: 0; flex: none; }
   .ed-changed { font-size: 0; } .ed-changed::before { margin-right: 0; } .ed-writer .nm { display: none; } }
-.ed-grip { position: absolute; left: 0; right: 0; bottom: -5px; height: 9px; cursor: row-resize; z-index: 4; touch-action: none; }
+.ed-grip { position: absolute; left: 0; right: 0; bottom: -7px; height: 9px; cursor: row-resize; z-index: 4; touch-action: none; }
 .ed-grip:hover, .ed-grip.on { background: color-mix(in srgb, var(--s1) 35%, transparent); }
 .ed-close { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 6px; color: var(--muted); }
 .ed-close:hover { color: var(--ink); background: var(--wash); }
