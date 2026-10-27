@@ -362,7 +362,9 @@ class TurnsTest(StatusBase):
         put(self.conn, THREAD, "user_message", said("user", "thanks"))
         got = files.files("g", THREAD)
         self.assertEqual([t["text"] for t in got["turns"]], ["ask me", "thanks"])
-        self.assertEqual([m["text"] for m in got["turns"][0]["more"]], replies)       # drawn as answers by the page
+        self.assertEqual([m["text"] for m in got["turns"][0]["more"]],                # as the answers they are
+                         ["Which fruit? → mango please", "Which drink? → Coffee"])
+        self.assertEqual({m["kind"] for m in got["turns"][0]["more"]}, {"ask_reply"})
         self.assertFalse(rollout.replies("ask me"))
 
     def test_each_subagent_s_report_under_the_turn_that_started_it(self):

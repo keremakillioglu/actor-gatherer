@@ -81,7 +81,7 @@ class FakeClient:
     made = []
 
     def __init__(self, gatherer):
-        self.gatherer, self.requests, self.stopped = gatherer, [], False
+        self.gatherer, self.requests, self.records, self.stopped = gatherer, [], [], False
         self.answer = lambda body: {"context": [{"type": "ag", "name": "earlier", "text": "MANAGED"}]
                                     + [{"type": e["type"], "id": e["id"], "payload": e["payload"]}
                                        for e in body["events"]],
@@ -89,6 +89,9 @@ class FakeClient:
         FakeClient.made.append(self)
 
     async def request(self, op, body=None):
+        if op == "insert":                     # what the hook records besides the conversation (a model call, ...)
+            self.records += [dict(e, channel=body["properties"]["channel"]) for e in body["events"]]
+            return {"rows": []}
         self.requests.append((op, body))
         return self.answer(body)
 
@@ -220,10 +223,10 @@ class SideCallTest(HookTest):
             self.assertIsNone(self.call(hook, side))                      # as it is
             asyncio.run(hook.answered(side, 200, said(text)))
         client = hook.ag_clients.client("demo")
-        kept = [(op, body) for op, body in client.requests if op in ("name", "recap")]
-        self.assertEqual(kept, [("name", {"gatherer": "demo", "session": "t1", "text": "Add 2 and 3", "by": "codex"}),
-                                ("recap", {"gatherer": "demo", "session": "t1", "text": "2 + 3 is 5.\n\nNext: Multiply it."})])
-        self.assertNotIn("pending", [op for op, _ in client.requests])     # never the thread's own answer
+        kept = [(e["type"], e["channel"], e["payload"]) for e in client.records if e["type"] in ("name", "recap")]
+        self.assertEqual(kept, [("name", "t1", {"text": "Add 2 and 3", "by": "codex"}),
+                                ("recap", "t1", {"text": "2 + 3 is 5.\n\nNext: Multiply it."})])
+        self.assertNotIn("reply_part", [e["type"] for e in client.records])   # never the thread's own answer
 
     def test_an_answer_a_later_call_has_carried_back_is_not_kept_as_pending(self):
         """Codex sends its next call once it has the whole answer, before the hook server is done with
@@ -241,8 +244,8 @@ class SideCallTest(HookTest):
         asyncio.run(hook.streamed(first, said))
         asyncio.run(hook.answered(first, 200, said))       # read 2 is under way: read 1's answer is in it
         asyncio.run(hook.answered(second, 200, dict(said, response_id="resp_2")))
-        kept = [b["answer"] for op, b in hook.ag_clients.client("t1").requests if op == "pending"]
-        self.assertEqual(kept, ["resp_2"])
+        kept = {e["properties"]["answer_id"] for e in hook.ag_clients.client("t1").records if e["type"] == "reply_part"}
+        self.assertEqual(kept, {"resp_2"})
 
     def test_a_turn_s_run_is_sent_with_it(self):
         hook = self.hook()

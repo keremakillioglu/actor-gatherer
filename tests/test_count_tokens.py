@@ -41,6 +41,8 @@ class Client:
     async def request(self, op, body=None, timeout=None):
         if op == "latest":                   # a gatherer with nothing stored yet
             return {"events": []}
+        if op == "insert":                   # what the hook records besides the conversation: kept apart
+            return {"rows": []}
         self.asked.append((op, body))
         if op == "measured":
             return {"recorded": True}

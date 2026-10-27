@@ -449,11 +449,14 @@ class FakeClient:
     """Answers a `rewrite` with an ag message in front of the events it was sent."""
 
     def __init__(self):
-        self.asked = []
+        self.asked, self.records = [], []
 
     async def request(self, op, body=None, timeout=None):
         if op == "latest":                   # a gatherer with nothing stored yet
             return {"events": []}
+        if op == "insert":                   # what the hook records besides the conversation (a model call, ...)
+            self.records += body["events"]
+            return {"rows": []}
         self.asked.append((op, body))
         return {"context": [{"type": "ag", "name": "earlier", "text": "SUMMARY"}] + body["events"], "note": "ok"}
 
@@ -516,11 +519,15 @@ class StoreClient:
     rewrite with everything stored -- as a read before any build does -- and `latest` with the newest stored."""
 
     def __init__(self):
-        self.ids, self.events = set(), []
+        self.ids, self.events, self.records = set(), [], []
 
     async def request(self, op, body=None, timeout=None):
-        if op == "latest":
-            return {"events": [{"id": e["id"], "payload": e["payload"]} for e in self.events[-body["n"]:]]}
+        if op == "latest":                   # of the conversation's types: not what the hook records besides
+            ours = [e for e in self.events if e["type"] in body.get("types", [e["type"]])]
+            return {"events": [{"id": e["id"], "payload": e["payload"]} for e in ours[-body["n"]:]]}
+        if op == "insert":
+            self.records += body["events"]
+            return {"rows": []}
         for e in body["events"]:
             if e["id"] not in self.ids:
                 self.ids.add(e["id"])

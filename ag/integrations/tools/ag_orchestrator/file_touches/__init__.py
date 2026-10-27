@@ -14,7 +14,7 @@ before the harness runs its calls, and the results come back in the next call:
                                                 and changed, where the files say so -- and sent to
                                                 the gatherer's server (its `touches`)
 
-    commands.py   a call read: the files a shell command reads and changes, as it says
+    harness_kit/shell.py  a call read: the files a shell command reads and changes, as it says
     check.py      the same, against the disk: what is kept, what changed, at which lines
     watch.py      the files that change under a directory, as the operating system reports them
     calls.py      the tool calls and results in either harness's messages

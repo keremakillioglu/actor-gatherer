@@ -36,7 +36,6 @@ Each line is {"timestamp", "type", "payload"}; what is read of them (codex 0.164
 
 Not in it: codex's prompts themselves as they show -- a command's approval ("Would you like to run the following
 command?"), the plan's ("Implement this plan?") -- nor the plan's dismissed (Esc), which leaves no line anywhere.
-Standard library only.
 """
 
 import glob
@@ -48,11 +47,13 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+from harness_kit import codex as codex_rules
+
 CHUNK = 1 << 22                 # a record is read this much at a time
 NO_RECORD_SECONDS = 60          # a thread with no record found: not searched for again before this
-ASK, ASK_ASYNC = "request_user_input", "request_user_input_async"
+ASK, ASK_ASYNC = codex_rules.ASK, codex_rules.ASK_ASYNC
 ABORTED = "aborted by user"     # a question's output when it was dismissed (Esc), its turn interrupted
-REPLY = "<send_user_message_question_reply>"
+REPLY = codex_rules.REPLY
 #: A subagent's activity that says it ended (any other but "started" is not taken for an end).
 AGENT_ENDS = {"completed", "interrupted", "errored", "failed", "closed", "shutdown", "cancelled", "stopped", "exited"}
 #: A command codex left running, as its call's output names it (a code-mode script's, as JSON in its text).
@@ -228,10 +229,7 @@ def _take(r: Record, line: bytes) -> None:
             r.after_plan = None
 
 
-def replies(text) -> bool:
-    """Whether a user message is codex's wrapper of answers to what it asked as it worked (REPLY): the user's words,
-    sent while the turn that asked runs -- part of that turn, not one of its own."""
-    return isinstance(text, str) and text.lstrip().startswith(REPLY)
+replies = codex_rules.replies   # whether a user message is codex's answers to what it asked as it worked
 
 
 def _reply(r: Record, text: str, at: Optional[float]) -> None:

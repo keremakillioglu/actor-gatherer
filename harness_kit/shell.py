@@ -1,15 +1,17 @@
-"""A copy of ag/integrations/tools/ag_orchestrator/file_touches/commands.py, which the hook server
-reads calls with before it checks them against the disk: the dashboard imports nothing of ag
-(test_dashboard.SeparateTest), and reads the calls the hook server did not check (those from
-before it did) the same way. tests/test_file_touches.py checks that the two are the same, but for
-this docstring: change that one, and copy it here.
-
-What a call says it did to files, read from the call alone: the files a shell command reads
+"""What a call says it did to files, read from the call alone: the files a shell command reads
 (by a command that only prints part of a file: `sed -n`, `cat`, `head`, `tail`, `nl`, `grep -n`)
 and which of its output lines are each one's; the files it changes, and how, when the command
 says (`cat > F <<EOF`, `tee`, `sed -i`, a Python script that replaces constant strings in a file
-and writes it back); and the files a codex patch adds, changes or deletes; a codex code-mode call
-(`exec`) read as the calls its script makes. Read, not run."""
+and writes it back); and the files a codex patch adds, changes or deletes. A codex code-mode call
+(`exec`: a JavaScript script that calls the other tools, `tools.exec_command({cmd: ...})`) is read as
+the calls its script makes, where it writes their arguments out (`opened_script`).
+
+Read, not run: what a command reads or writes is told from its words, the way a reader of it
+would. Words the command fills in itself are filled in (`S=/tmp/x; cat $S/a`), as is `cd`; a
+path that still holds a variable is not a path known, and is left out. The hook server reads calls
+this way as each call's result arrives, before it checks what was found against the disk
+(ag/integrations/tools/ag_orchestrator/file_touches/check.py); the dashboard's Chat view reads
+those it did not check the same way. One copy, for both: harness_kit imports nothing of ag."""
 import ast
 import fnmatch
 import os

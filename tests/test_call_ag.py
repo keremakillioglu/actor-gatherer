@@ -93,6 +93,13 @@ class RouteTest(unittest.TestCase):
         self.assertIn("does not declare the properties user", note)
         self.assertEqual(client.requests, [])
 
+    def test_a_property_of_an_event_s_own_the_adaptor_does_not_declare_sends_nothing(self):
+        client = Client({"context": []})
+        out, note = run(client, events=lambda m: [{"type": "t", "id": "1", "payload": "a", "properties": {"kind": "user"}}])
+        self.assertIsNone(out)
+        self.assertIn("set properties on its events it does not declare (kind)", note)
+        self.assertEqual(client.requests, [])
+
     def test_a_context_entry_the_adaptor_does_not_accept_is_noted(self):
         client = Client({"context": [{"type": "environment_update", "payload": "x"}, {"type": "t", "payload": "a"}],
                          "note": "ok"})

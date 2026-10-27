@@ -275,15 +275,22 @@ def sent_again(conn: sqlite3.Connection, sp: Spec, values: tuple, event_id: str)
     return back
 
 
-def latest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: int) -> List[Tuple[str, Any]]:
+def latest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: int,
+           types: Optional[List[str]] = None) -> List[Tuple[str, Any]]:
     """(event id, payload) of the `n` events last stored with exactly these identifying properties (one
-    not given: unset) and an id, oldest first: where a harness that re-sends its history picks it up --
-    not one it took back (`withdraw`)."""
+    not given: unset) and an id -- of these `types` alone, when given (a harness's conversation, not what it
+    records besides) -- oldest first: where a harness that re-sends its history picks it up -- not one it took
+    back (`withdraw`)."""
     names = identifying_names(conn)
     given = properties or {}
-    found = conn.execute(f"SELECT event_id, payload_json FROM events e WHERE {_same(names, 'e.')}event_id IS NOT NULL"
+    typed, named = "", []
+    if types is not None:
+        named = [t for t in types if isinstance(t, str)]
+        typed = (f"e.event_type_id IN (SELECT event_type_id FROM event_types WHERE name IN "
+                 f"({', '.join('?' * len(named))})) AND " if named else "0 AND ")
+    found = conn.execute(f"SELECT event_id, payload_json FROM events e WHERE {_same(names, 'e.')}{typed}event_id IS NOT NULL"
                          f"{KEPT} ORDER BY row_id DESC LIMIT ?",
-                         (*_unset_is_empty([given.get(name) for name in names]), max(0, n))).fetchall()
+                         (*_unset_is_empty([given.get(name) for name in names]), *named, max(0, n))).fetchall()
     return [(event_id, json.loads(payload)) for event_id, payload in reversed(found)]
 
 

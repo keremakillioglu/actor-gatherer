@@ -19,7 +19,7 @@ import os
 import re
 from typing import List, Optional
 
-from .commands import EDITS, SHELLS, _shell_text, _simple_commands, shell_changes
+from harness_kit.shell import EDITS, SHELLS, _shell_text, _simple_commands, shell_changes
 
 KINDS = ("test", "ship", "run", "edit", "wait", "search", "read")    # most first: what a command of several is
 TOOLS = {

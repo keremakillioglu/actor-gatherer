@@ -161,6 +161,8 @@ class HookRefusalTest(unittest.TestCase):
         async def request(self, op, body=None, timeout=None):
             if op == "latest":                   # a gatherer with nothing stored yet
                 return {"events": []}
+            if op == "insert":                   # what the hook records besides the conversation: kept apart
+                return {"rows": []}
             self.asked.append(op)
             if op == "claim":
                 return {"claimed": True} if self.claimed else {"claimed": False, "holder": {"pid": 4242, "opened_at": "t"}}

@@ -154,11 +154,15 @@ class ProxyTest(unittest.IsolatedAsyncioTestCase):
         self.tmp.cleanup()
 
     def failures(self):
+        """Each call_failed recorded: (its read, the status, why), in order -- each on the read it was for."""
         conn = sqlite3.connect(os.path.join(self.home, "gatherers", "t1", "context.db"))
         try:
-            return conn.execute("SELECT error_status, error FROM _reads ORDER BY read_id").fetchall()
+            rows = conn.execute("SELECT e.p_read_id, e.payload_json FROM events e JOIN event_types t USING (event_type_id) "
+                                "WHERE t.name = 'call_failed' ORDER BY e.row_id").fetchall()
+            reads = [r for (r,) in conn.execute("SELECT read_id FROM _reads ORDER BY read_id")]
         finally:
             conn.close()
+        return [(read, json.loads(p)["status"], json.loads(p)["error"]) for read, p in rows], reads
 
     async def call(self, client, items):
         resp = await client.post("/v1/responses", json={"model": "m", "input": items, "stream": True},
@@ -171,10 +175,11 @@ class ProxyTest(unittest.IsolatedAsyncioTestCase):
         status, body = await self.call(await self.serve("http://api.example.invalid"), [DEV, user("q", 1)])
         self.assertEqual(status, 502)
         self.assertIn(b"ag's hook server got no answer", body)
-        (first_status, first), (second_status, second) = self.failures()
+        ((first_read, first_status, first), (second_read, second_status, second)), reads = self.failures()
         self.assertEqual((first_status, first), (429, "rate_limit_error: Rate limit reached"))
         self.assertIsNone(second_status)
         self.assertIn("api.example.invalid", second)
+        self.assertEqual([first_read, second_read], reads)                   # each on the read it was for
 
 
 class HelpersTest(unittest.TestCase):

@@ -23,7 +23,9 @@ same in TypeScript.
 """
 
 from abc import ABC, abstractmethod
-from typing import ClassVar, List, Tuple
+from typing import ClassVar, Dict, List, Tuple
+
+from harness_kit import Harness, Part
 
 #: The type of the context manager's own messages in a context.
 AG = "ag"
@@ -34,6 +36,12 @@ CHANNEL = "channel"
 #: The property call_ag sets from the request's working directory: where the
 #: agent works, which the file poller's events are matched against.
 CWD = "cwd"
+#: The properties an adaptor built on a harness module sets on each event of its own (`event_properties`), from what
+#: the harness's rules read of it: its Kind; the user's words, as they typed them; what a tool call does; the tool
+#: call it is or answers. Optional, and no part of an event's identity: the server declares them on the event's
+#: type the first time it sees them, so a policy need not -- it may read them, or not.
+KIND, WORDS, ACTION, CALL_ID = "kind", "words", "action", "call_id"
+EVENT_PROPERTIES = (KIND, WORDS, ACTION, CALL_ID)
 
 
 class Adaptor(ABC):
@@ -45,7 +53,7 @@ class Adaptor(ABC):
     `accepts`, `properties`).
 
     - `to_events` returns one dict per event: `type` (one of `outputs`), `id`, `payload`, and
-      optionally `text` and `tokens`.
+      optionally `text`, `tokens` and `properties`.
         - **`id`:** the harness re-sends its whole conversation on every call, so give each
           message a stable id. Use the harness's own id, or a hash of the message, so that a
           message is stored once.
@@ -54,6 +62,9 @@ class Adaptor(ABC):
         - **`text`:** what the policy should read: the words, a tool call's name and arguments,
           a tool's output, without ids and metadata.
         - **`tokens`:** set it to 0 for opaque content such as encrypted reasoning.
+        - **`properties`:** values of the event's own, beside those the hook sets on every event
+          (`properties`), each one the adaptor declares in `event_properties`. The server declares
+          them, optional, on the event's type the first time it sees them, so no policy has to.
     - `to_messages` gets back events in the order the model should see them, and must rebuild
       valid messages for the harness's API. It also shows the policy's `ag` messages, as a
       developer, system or user message.
@@ -82,13 +93,18 @@ class Adaptor(ABC):
             return [as_system_message(e["text"]) if e["type"] == AG else e["payload"] for e in context]
     ```
 
-    Working adaptors: `ClaudeAdaptor` (ag/integrations/harnesses/claude/adaptor/), the smallest
-    Python one, and `PiAdaptor` and `OpencodeAdaptor` in TypeScript.
+    Working adaptors: `ClaudeAdaptor` (ag/integrations/harnesses/claude/adaptor/) and `CodexAdaptor`,
+    and `PiAdaptor` and `OpencodeAdaptor` in TypeScript. The first two are `HarnessAdaptor`s: the
+    rules that say what each of the harness's messages is live in its module of `harness_kit` (a
+    package of its own, which imports nothing of ag), and the adaptor says which event type each
+    kind of message becomes (`event_types`), and carries what the rules read of it as its
+    properties (`event_properties`: KIND, WORDS, ACTION, CALL_ID).
     """
     name: ClassVar[str] = ""
     outputs: ClassVar[Tuple[str, ...]] = ()
     accepts: ClassVar[Tuple[str, ...]] = ()
     properties: ClassVar[Tuple[str, ...]] = ()
+    event_properties: ClassVar[Tuple[str, ...]] = ()     # what an event of its own may carry besides (KIND, ...)
 
     @abstractmethod
     def to_events(self, messages: list) -> List[dict]:
@@ -101,3 +117,28 @@ class Adaptor(ABC):
     def to_messages(self, context: List[dict], messages: list) -> list:
         """The context -- events as they were sent, and `ag` messages -- as the
         messages the harness sends its model."""
+
+
+class HarnessAdaptor(Adaptor):
+    r"""An adaptor built on a harness module (harness_kit): the harness's rules read each piece (`Part`, of a
+    `Kind`), and the adaptor says which of the policy's event types each Kind becomes (`event_types`; a Kind not in
+    it is `other`, the type for the harness's own text). A policy that wants, say, skills or interrupts as types of
+    their own subclasses the adaptor and changes the table (and its `outputs`); the harness module stays as it is.
+    The harness's adaptor names the types (its to_events.py): the routing names none."""
+    harness: ClassVar[Harness]
+    event_types: ClassVar[Dict[str, str]] = {}
+    other: ClassVar[str] = ""
+    event_properties = EVENT_PROPERTIES
+
+    def type_of(self, part: Part) -> str:
+        """The event type a piece read becomes."""
+        return self.event_types.get(part.kind, self.other)
+
+
+def part_properties(part: Part) -> Dict[str, str]:
+    """What an event carries of what its harness's rules read (EVENT_PROPERTIES): its Kind, the user's words, a tool
+    call's Action, the call's id (a result's: the call it answers) -- each that is set."""
+    call = part.tool.id if part.tool is not None else part.result.call_id if part.result is not None else None
+    found = {KIND: part.kind, WORDS: part.words, ACTION: part.tool.action if part.tool is not None else None,
+             CALL_ID: call}
+    return {k: v for k, v in found.items() if isinstance(v, str) and v}

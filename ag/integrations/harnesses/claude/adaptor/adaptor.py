@@ -1,20 +1,23 @@
 """Claude Code's adaptor: its Anthropic Messages API messages as the context
 manager's events (to_events.py), and the context back as messages (to_messages.py)."""
 
-from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, AG, CWD, Adaptor
+from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, AG, CWD, HarnessAdaptor
 
 import copy
 
-from .to_events import OUTPUTS, Continuity, to_events
+from .to_events import CONTEXT, EVENT_TYPES, HARNESS, OUTPUTS, Continuity, to_events
 from .to_messages import to_messages
 
 
-class ClaudeAdaptor(Adaptor):
+class ClaudeAdaptor(HarnessAdaptor):
     """`system_messages`: how the context goes back -- "keep" (system messages as Claude Code sends
     them) or "user" (as user-turn system reminders, for a gateway that moves system messages into the
     model's system instruction). The hook sets it per request (see to_messages.finish)."""
     name = "claude"
+    harness = HARNESS
     outputs = OUTPUTS
+    event_types = EVENT_TYPES
+    other = CONTEXT
     accepts = OUTPUTS + (AG,)
     properties = (CHANNEL, CWD)
     system_messages = "keep"
@@ -27,7 +30,7 @@ class ClaudeAdaptor(Adaptor):
         return a
 
     def to_events(self, messages: list):
-        return to_events(messages, self.continuity)
+        return to_events(messages, self.continuity, self.event_types)
 
     def to_messages(self, context: list, messages: list):
         return to_messages(context, messages, self.system_messages)

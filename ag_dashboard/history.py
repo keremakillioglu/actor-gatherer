@@ -48,6 +48,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+import harness_kit
+
 from . import data, files, home, sessions
 
 CHANNEL = data.CHANNEL
@@ -216,7 +218,7 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
     try:
         if not data._channels_kept(conn):
             return dict(data.NOTHING_YET)
-        where, args = f"e.row_id > ? AND e.{CHANNEL} IS NOT NULL", [after]
+        where, args = f"e.row_id > ? AND e.{CHANNEL} IS NOT NULL AND {data.NOT_RECORD}", [after]
         if channel is not None:
             where, args = where + f" AND ifnull(e.{CHANNEL}, '') = ?", args + [channel]
         # a user message as ag stored it cleaned -- the harness's wrapper around it taken off -- where it has
@@ -235,7 +237,8 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
         events = [{"row_id": r["row_id"], "channel": r["ch"], "type": r["type"] or "?", "tokens": r["tokens"] or 0,
                    "at": data._seconds(r["inserted_at"]),
                    "text": (_call_label(r["payload"], r["text"], cwd.get(r["ch"]) or "") if r["type"] == "tool_call" else "")
-                   or _preview(r["text"], r["payload"])}
+                   or _preview(harness_kit.words(r["text"])[1] if r["type"] == "user_message" and r["text"] else r["text"],
+                               r["payload"])}
                   for r in rows[:OUTLINE_ITEMS]]
         return {"events": events, "tasks": _tasks(conn, channel), "builds": _builds(conn, channel),
                 "more": len(rows) > OUTLINE_ITEMS}
@@ -274,7 +277,7 @@ def search(gatherer: str, channel: Optional[str], q: str) -> dict:
             return {"hits": [], "more": False}
         like = "%" + re.sub(r"([\\%_])", r"\\\1", q) + "%"
         words = "CASE WHEN e.text IS NULL OR e.text = '' THEN e.payload_json ELSE e.text END"
-        where, args = f"e.{CHANNEL} IS NOT NULL AND {words} LIKE ? ESCAPE '\\'", [like]
+        where, args = f"e.{CHANNEL} IS NOT NULL AND {data.NOT_RECORD} AND {words} LIKE ? ESCAPE '\\'", [like]
         if channel is not None:
             where, args = where + f" AND ifnull(e.{CHANNEL}, '') = ?", args + [channel]
         rows = conn.execute(f"SELECT e.row_id, e.text, e.payload_json FROM events e WHERE {where} ORDER BY e.row_id LIMIT ?",

@@ -3,27 +3,21 @@ half of the claude harness, with `to_messages.py` (the way back).
 
     events = to_events(messages)        # what the hook's routing sends in a `rewrite`
 
-Claude Code speaks the Anthropic Messages API: a request's `messages` are
-`{"role", "content"}`, the content a string or a list of blocks -- `text`,
-`image`, `tool_use`, `tool_result`, `thinking`, `redacted_thinking` -- and the
-role `user`, `assistant`, or `system` (Claude Code puts its environment notes in
-a system-role message of the list). One message carries several blocks where the
-policies expect an event each (a user turn's system reminders and its request;
-an assistant's thinking, words and tool calls), so a message is split into
-PIECES, one per block -- the message with that block alone -- and each piece is
-typed by its block:
+What Claude Code's messages are is harness_kit's (harness_kit/claude.py): a message
+is split into PIECES, one per content block -- the message with that block alone --
+and each piece is read as a Part of a Kind: the user's words, the model's, its tool
+calls and their results, or one of Claude Code's own notes. Which event type each
+Kind becomes is the adaptor's (`HarnessAdaptor.event_types`):
 
-    user text            USER_MESSAGE, or CONTEXT when it is Claude Code's own
-                         (a `<system-reminder>`, a command's caveats or output, a skill's
-                         instructions, a subagent's report); a command the user typed
-                         that Claude Code expands into a prompt is theirs, and the
-                         prompt Claude Code's (`types_of`)
-    user image           USER_MESSAGE
-    tool_result          TOOL_OUTPUT
-    assistant text       AGENT_MESSAGE
-    tool_use             TOOL_CALL
+    the user's words     USER_MESSAGE (a command they typed that Claude Code expands
+                         into a prompt is theirs, and the prompt Claude Code's)
+    the user's image     USER_MESSAGE
+    a tool's result      TOOL_OUTPUT
+    the model's words    AGENT_MESSAGE
+    a tool call          TOOL_CALL
     thinking             AGENT_REASONING (0 tokens, no text: kept and sent back, never read)
-    a system message     CONTEXT
+    Claude Code's own    CONTEXT (its reminders, a command's caveats or output, a skill's
+                         instructions, a subagent's report, a system message)
 
 Anthropic messages have no ids, so to_events gives each piece one: a hash of its
 content CHAINED to the id of the piece before it (`chain_ids`). Claude Code re-sends
@@ -59,197 +53,44 @@ id is still checked against the piece as stored.
 Nothing of the context manager is imported here.
 """
 
-import copy
 import hashlib
 import json
-import re
 from typing import Dict, Iterable, List, Optional, Set, Tuple
+
+from harness_kit import Kind, claude as rules
+from ag.integrations.tools.ag_orchestrator.adaptor import part_properties
+from harness_kit.claude import (COMPACTED, HARNESS_MARKERS, OTHERS_WROTE, HARNESS_TEXTS, RETRY_NOTES,  # noqa: F401 - the rules, as
+                                RETRY_OPENINGS, SKILL, TYPED_COMMAND, blocks_of, is_compacted_summary,  # this module
+                                is_harness_text, pieces, text_of, typed_command, without_cache_control)  # had them
 
 USER_MESSAGE, AGENT_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT = (
     "user_message", "agent_message", "tool_call", "tool_output", "context")
 AGENT_REASONING = "agent_reasoning"
 #: Every event type to_events makes, and nothing else.
 OUTPUTS = (USER_MESSAGE, AGENT_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT, AGENT_REASONING)
+#: Which event type each Kind of a piece becomes (the adaptor's `event_types`): the user's words (typed commands, a
+#: message sent mid-turn, answers to what the harness asked as it worked) a user message; the model's words, reasoning
+#: and calls, and the tools' results, their own; any other Kind -- the harness's own notes, a skill's instructions, a
+#: subagent's report -- CONTEXT, carried as it is and never conversation.
+EVENT_TYPES = {Kind.USER: USER_MESSAGE, Kind.USER_COMMAND: USER_MESSAGE, Kind.MID_TURN: USER_MESSAGE,
+               Kind.ASK_REPLY: USER_MESSAGE, Kind.AGENT: AGENT_MESSAGE, Kind.REASONING: AGENT_REASONING,
+               Kind.TOOL_CALL: TOOL_CALL, Kind.TOOL_RESULT: TOOL_OUTPUT}
 
-# Claude Code's notes to the model after a response that went wrong -- a safety classifier stopped it,
-# it was cut off mid-stream or at the output limit, its tool call could not be parsed -- or that sends
-# it back to work (a goal check-in): sent in the user's name, as a message of their own. Claude Code
-# 2.1.310 tells them from the user's words by these openings and, the rest, by their whole text; so does
-# this adaptor (RETRY_OPENINGS in HARNESS_MARKERS, RETRY_NOTES in HARNESS_TEXTS).
-RETRY_OPENINGS = ("[structured-output-enforce]", "[projects-reply-gate]",
-                  "You ended the turn without calling SendUserMessage.", "Goal check-in: «")
-_CLASSIFIER = ("Your response above was stopped by a safety classifier — this is not a tool or API error. The rest "
-               "of it was withheld, and tool calls in it that had not finished did not run. Do not produce that "
-               "content again, even reworded.")
-RETRY_NOTES = (
-    "The previous response failed to produce a valid tool call. Please retry the tool call now.",
-    "Your tool call was malformed and could not be parsed. Please retry.",
-    "[Your previous response had no visible output. Please continue and produce a user-visible response.]",
-    "The PermissionDenied hook indicated you may retry this tool call.",
-    "The turn did not end: a tool call in your last message asked to end it, but another call in that message "
-    "failed. Deal with the failure, then finish the turn. The calls that succeeded took effect, so do not repeat them.",
-    _CLASSIFIER,
-    _CLASSIFIER + ' Exception: a tool call whose result reads "Interrupted" was already running when the response '
-    "was stopped; it may have partially or fully completed.",
-    "Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if "
-    "that is where the cut happened. Break remaining work into smaller pieces.",
-    "Output token limit hit while you were still reasoning, before this response produced any text or tool call. "
-    "That reasoning was not kept and is not part of this conversation, so there is nothing to resume. Continue from "
-    "the conversation above: reason much more briefly and produce your answer or next tool call well within the "
-    "output limit.",
-    "[Your previous response reached the output limit with no visible output. Please continue and produce a brief "
-    "user-visible response or tool call right away.]",
-    "Your response was cut off because it exceeded the output token limit. Continue from where you left off. What "
-    "you write next is shown as a separate block below the text so far, so begin at the start of the line, table "
-    "row, list item or sentence that was cut, writing it again in full, and if you were inside a code block or a "
-    "table, open it again first (the same code fence and language, the table's header row). Repeat nothing before "
-    "that point and do not comment on the interruption. Keep going until the response is complete.",
-    "Your response above was cut off mid-stream. Resume directly from where it stops — no apology, no recap. If "
-    "none of it survived, answer the request from the start.",
-    "Your response above was cut off mid-stream and only your next message is delivered. Write the complete "
-    "response again from the start — no apology, no mention of the cut-off.")
-
-# Claude Code's own text, sent in the user's name: a user text block starting with one of these is
-# CONTEXT, not USER_MESSAGE -- the user did not say it. Besides its reminders and command output:
-# its notes on an attachment, put after it (an image read through a tool, shrunk to fit: "[Image:
-# original 1400x2400, displayed at 1167x2000. Multiply coordinates by 1.20 ...]"), not the "[Image
-# #1]" it writes into the user's own words where an image was pasted; its note that the user
-# stopped a turn ("[Request interrupted by user]", before the user's next words); the output of a
-# command the user ran with `!` (its `<bash-stdout>`; the `<bash-input>`, what the user typed, is
-# theirs); its summary of a compacted conversation, which opens the history after it ("This
-# session is being continued from a previous conversation that ran out of context. ...") or after
-# its notice that the conversation summarized held content others wrote (OTHERS_WROTE); a skill's
-# instructions, loaded by the Skill tool or by the user's /name ("Base directory for this skill:
-# ..."); a message from another session -- a subagent's report as it hands back ("Another Claude
-# session sent a message:\n<agent-message from=...>"); its copy for the model of what /context
-# shows ("## Context Usage ..."); a hook's reason for not letting the turn end ("Stop hook feedback:
-# \n..."); the notes of RETRY_OPENINGS; and its note that the user declined its Chrome extension.
-# Claude Code's line before its notice that what follows holds content others wrote (an Artifact's):
-# "<artifact-content-authored-by-others/>\nThe summarized conversation included Artifact content ...".
-OTHERS_WROTE = "<artifact-content-authored-by-others/>"
-HARNESS_MARKERS = ("<system-reminder>", "<local-command-caveat>", "<local-command-stdout>",
-                   "<local-command-stderr>", "<command-name>", "<command-message>", "<command-args>",
-                   "Caveat: The messages below were generated by the user while running local commands",
-                   "[Image: original ", "[Image: source: ", "[Image source: ", "[Image could not be processed",
-                   "[Image left out:", "[Image not shown, read it from ", "[Document removed:",
-                   "[Request interrupted by user", "<bash-stdout>", "<bash-stderr>",
-                   "This session is being continued from a previous conversation that ran out of context",
-                   OTHERS_WROTE,
-                   "Base directory for this skill:", "Another Claude session sent a message:", "<agent-message ",
-                   "## Context Usage\n", "Stop hook feedback:\n", "TeammateIdle hook feedback:\n",
-                   "TaskCreated hook feedback:\n", "TaskCompleted hook feedback:\n",
-                   "The user declined to install the Claude in Chrome extension") + RETRY_OPENINGS
-SKILL = "Base directory for this skill:"
-# A command the user typed that Claude Code expands into a prompt -- a skill's /name, a command file's:
-# Claude Code sends the line typed as "<command-message>greet</command-message>\n<command-name>/greet
-# </command-name>\n<command-args>Bob</command-args>", then the prompt it expands to (the skill's
-# instructions, the file's text). The line is the user's message, read as they typed it ("/greet Bob");
-# the prompt is Claude Code's (`types_of`). A command Claude Code runs itself (/context, /model) opens
-# with <command-name> and is followed by its output: its own, as its other notes are.
-TYPED_COMMAND = re.compile(r"\s*<command-message>[^<]*</command-message>\s*<command-name>([^<]*)</command-name>"
-                           r"\s*(?:<command-args>([\s\S]*?)</command-args>)?\s*$")
-# Claude Code's own text that is a whole block, word for word: its note after a tool search's result,
-# in the message of the results, that the tools found are loaded ("Tool loaded."), and RETRY_NOTES.
-HARNESS_TEXTS = ("Tool loaded.",) + RETRY_NOTES
-
-BLOCK_TYPES = {"text": None, "image": USER_MESSAGE, "document": USER_MESSAGE, "tool_result": TOOL_OUTPUT,
-               "tool_use": TOOL_CALL, "server_tool_use": TOOL_CALL, "thinking": AGENT_REASONING,
-               "redacted_thinking": AGENT_REASONING}
+HARNESS = rules.ClaudeCode()
 
 
-def without_cache_control(value):
-    """`value` with every `cache_control` key taken out, at any depth."""
-    if isinstance(value, dict):
-        return {k: without_cache_control(v) for k, v in value.items() if k != "cache_control"}
-    if isinstance(value, list):
-        return [without_cache_control(v) for v in value]
-    return value
+def classify(item, event_types: Dict[str, str] = EVENT_TYPES) -> str:
+    """The name of a piece's event type, by the piece alone (a command the user typed is Claude Code's here: its
+    neighbours make it theirs, `types_of`). Never raises: anything it does not know is CONTEXT."""
+    return event_types.get(rules.kind_of(item), CONTEXT)
 
 
-def blocks_of(message) -> list:
-    """A message's content as blocks: a string is one text block."""
-    content = message.get("content") if isinstance(message, dict) else None
-    if isinstance(content, str):
-        return [{"type": "text", "text": content}]
-    return [b for b in content or [] if isinstance(b, dict)]
-
-
-def pieces(messages: list) -> List[dict]:
-    """The items a message list is: each message split into one piece per content block, in
-    order, without cache_control, and with its role and content alone. A message's other fields
-    (Claude Code puts `output_config`, its effort, on its last message) belong to the request, not
-    the conversation: they are not stored, and to_messages.py puts the request's back on its last
-    message. A message with no blocks is one piece as it is."""
-    out = []
-    for m in messages:
-        if not isinstance(m, dict):
-            continue
-        m = {k: v for k, v in without_cache_control(m).items() if k in ("role", "content")}
-        blocks = blocks_of(m)
-        if not blocks:
-            out.append(m)
-            continue
-        for b in blocks:
-            out.append({**m, "content": [b]})
-    return out
-
-
-def is_harness_text(text: str) -> bool:
-    text = text.strip()
-    return not text or text.startswith(HARNESS_MARKERS) or text in HARNESS_TEXTS
-
-
-def classify(item) -> str:
-    """The name of a piece's event type. Never raises: anything it does not know is CONTEXT."""
-    if not isinstance(item, dict):
-        return CONTEXT
-    role = item.get("role")
-    if role == "system":
-        return CONTEXT
-    blocks = blocks_of(item)
-    if not blocks:
-        return CONTEXT
-    kind = blocks[0].get("type")
-    if kind == "text":
-        if role == "assistant":
-            return AGENT_MESSAGE
-        return CONTEXT if is_harness_text(str(blocks[0].get("text") or "")) else USER_MESSAGE
-    return BLOCK_TYPES.get(kind) or CONTEXT
-
-
-def typed_command(item) -> Optional[str]:
-    """The command a piece says the user typed, as they typed it ("/greet Bob"), when it is one Claude
-    Code expands into a prompt (TYPED_COMMAND); else None."""
-    blocks = blocks_of(item) if isinstance(item, dict) and item.get("role") == "user" else []
-    m = TYPED_COMMAND.match(str(blocks[0].get("text") or "")) if len(blocks) == 1 and blocks[0].get("type") == "text" else None
-    if not m:
-        return None
-    name, args = m.group(1).strip(), (m.group(2) or "").strip()
-    name = name if name.startswith("/") else "/" + name
-    return f"{name} {args}" if args else name
-
-
-def types_of(items: list) -> Tuple[List[str], Set[int]]:
-    """Each piece's event type, as `classify` has it -- but a command the user typed that Claude Code
-    expands into a prompt is the user's message, and the prompt it expands to, the first of the user's
-    words after it before the agent says anything (a skill's instructions are Claude Code's already),
-    Claude Code's -- and the indexes of those prompts."""
-    types = [classify(it) for it in items]
-    expansions: Set[int] = set()
-    for k, it in enumerate(items):
-        if typed_command(it) is None:
-            continue
-        types[k] = USER_MESSAGE
-        for j in range(k + 1, len(items)):
-            if not isinstance(items[j], dict) or items[j].get("role") == "assistant":
-                break
-            blocks = blocks_of(items[j])
-            skill = bool(blocks) and blocks[0].get("type") == "text" and str(blocks[0].get("text") or "").lstrip().startswith(SKILL)
-            if skill or types[j] == USER_MESSAGE:
-                types[j] = CONTEXT
-                expansions.add(j)
-                break
-    return types, expansions
+def types_of(items: list, event_types: Dict[str, str] = EVENT_TYPES) -> Tuple[List[str], Set[int]]:
+    """Each piece's event type, as its Part reads (`ClaudeCode.read`) -- a command the user typed that Claude Code
+    expands into a prompt the user's message, and the prompt it expands to Claude Code's -- and the indexes of those
+    prompts."""
+    parts = HARNESS.read(items)
+    return [event_types.get(p.kind, CONTEXT) for p in parts], {i for i, p in enumerate(parts) if p.detail.get("expands")}
 
 TAIL = 20      # the channel's last stored events a Continuity looks for in the request
 
@@ -329,71 +170,19 @@ class Continuity:
         return run
 
 
-def _result_text(content) -> str:
-    if isinstance(content, str):
-        return content
-    out = []
-    for b in content or []:
-        if isinstance(b, dict):
-            if isinstance(b.get("text"), str):
-                out.append(b["text"])
-            elif b.get("type") in ("image", "document"):
-                out.append(f"[{b['type']}]")
-    return "\n".join(out)
-
-
-def text_of(item) -> Optional[str]:
-    """What the model reads of a piece, without the API's bookkeeping; None for thinking (an
-    opaque or omitted blob) or a shape Claude Code does not make -- its JSON then stands in.
-
-        text                its words
-        image, document     [image], [document]
-        tool_use            name(input as JSON)
-        tool_result         the result's text (prefixed `error: ` when it is one)
-        tool_addition       `tool added: <name>: <description>` and its input schema as JSON
-                            (Claude Code's notice that tool search, or a connector, made a tool
-                            available: the model gets its whole definition)
-        tool_removal        `tool removed: <name>`
-    """
-    if not isinstance(item, dict):
-        return None
-    blocks = blocks_of(item)
-    if not blocks:
-        return None
-    b = blocks[0]
-    kind = b.get("type")
-    if kind == "text":
-        return str(b.get("text") or "")
-    if kind in ("image", "document"):
-        return f"[{kind}]"
-    if kind in ("tool_use", "server_tool_use"):
-        return f"{b.get('name')}({json.dumps(b.get('input'), ensure_ascii=False)})"
-    if kind == "tool_result":
-        text = _result_text(b.get("content"))
-        return ("error: " + text) if b.get("is_error") else text
-    if kind in ("tool_addition", "tool_removal"):
-        tool = b.get("tool") if isinstance(b.get("tool"), dict) else {}
-        definition = tool.get("definition") if isinstance(tool.get("definition"), dict) else tool
-        name = definition.get("name") or tool.get("name")
-        if not name:
-            return None
-        if kind == "tool_removal":
-            return f"tool removed: {name}"
-        text = f"tool added: {name}" + (f": {definition['description']}" if definition.get("description") else "")
-        schema = definition.get("input_schema")
-        return text + (f"\n{json.dumps(schema, ensure_ascii=False)}" if schema else "")
-    return None
-
-
-def event(item, item_id: str, kind: Optional[str] = None) -> dict:
-    """The piece as an event of type `kind` (None: as `classify` has it). A command the user typed reads
-    as they typed it ("/greet Bob"), not as Claude Code's tags around it."""
+def event(item, item_id: str, kind: Optional[str] = None, part=None) -> dict:
+    """The piece as an event of type `kind` (None: as `classify` has it). A command the user typed reads as they typed it
+    ("/greet Bob"), not as Claude Code's tags around it. With its `part` (the rules' reading of it), it carries what
+    they read as its properties (`part_properties`)."""
     out = {"type": kind or classify(item), "id": item_id, "payload": item}
     text = (typed_command(item) if out["type"] == USER_MESSAGE else None) or text_of(item)
     if text is not None:
         out["text"] = text
     if out["type"] == AGENT_REASONING:
         out["tokens"] = 0
+    found = part_properties(part) if part is not None else {}
+    if found:
+        out["properties"] = found
     return out
 
 
@@ -424,46 +213,27 @@ def request_last(events: List[dict], expansions: frozenset = frozenset()) -> Lis
     return events[:first] + notes + events[first:last + 1] + [e for e in after if not is_system(e)]
 
 
-#: How the summary Claude Code goes on from after compacting its history opens: not an event -- the
-#: gatherer holds the history it summarizes, and built in its place (the hook's `compaction`). It may
-#: come after Claude Code's notice that content others wrote is in it (OTHERS_WROTE).
-COMPACTED = "This session is being continued from a previous conversation that ran out of context"
+def compacted_opening(items: list, typed=None) -> set:
+    """The pieces Claude Code sends with a compacted history that are not the conversation (by index): when the history
+    opens with its summary (`COMPACTED`), the summary and every note of its own up to the first reply to the user's
+    first words after it -- its reminders and environment notes again, the /compact command's lines, the files it read
+    before restored ("Called the Read tool ..."), its tools announced again (COMPACTION_REPEAT). The gatherer holds the
+    history they stand for, and built in its place; what the conversation said there (the reply it kept, the user's
+    words, the prompt a command they typed expands to) stays. Nothing, for a history that does not open with the
+    summary."""
+    return {i for i, p in enumerate(HARNESS.read(items)) if p.kind == Kind.COMPACTION_REPEAT or p.detail.get("opens")}
 
 
-def is_compacted_summary(item) -> bool:
-    """Whether a piece is the summary Claude Code goes on from after compacting its history."""
-    blocks = blocks_of(item) if isinstance(item, dict) and item.get("role") == "user" else []
-    text = str(blocks[0].get("text") or "").lstrip() if len(blocks) == 1 and blocks[0].get("type") == "text" else ""
-    if text.startswith(OTHERS_WROTE):                    # its line and the notice on the next
-        text = text.split("\n", 2)[-1].lstrip()
-    return text.startswith(COMPACTED)
-
-
-def compacted_opening(items: list, typed: Optional[Tuple[List[str], Set[int]]] = None) -> set:
-    """The pieces Claude Code sends with a compacted history that are not the conversation (by index):
-    when the history opens with its summary (`COMPACTED`), the summary and every note of its own up to
-    the first reply to the user's first words after it -- its reminders and environment notes again,
-    the /compact command's lines, the files it read before restored ("Called the Read tool ..."), its
-    tools announced again. The gatherer holds the history they stand for, and built in its place; what
-    the conversation said there (the reply it kept, the user's words, the prompt a command they typed
-    expands to) stays. Nothing, for a history that does not open with the summary. `typed`: types_of(items),
-    when known."""
-    if not items or not is_compacted_summary(items[0]):
-        return set()
-    types, expansions = typed or types_of(items)
-    asked = next((i for i, t in enumerate(types) if i and t == USER_MESSAGE), len(items))
-    end = next((i for i in range(asked + 1, len(items)) if items[i].get("role") == "assistant"), len(items))
-    return {0} | {i for i in range(1, end) if types[i] == CONTEXT and i not in expansions}
-
-
-def to_events(messages: list, continuity: Optional[Continuity] = None) -> List[dict]:
-    """The events Claude Code's messages are, in order -- but for its notes after the user's last
-    request, moved before it (`request_last`), and, after it compacted its history, its summary and
-    the notes it sent with it, left out (`compacted_opening`). With the channel's `continuity`, only
-    from the previous request's last pieces on (see the module's doc)."""
-    items = pieces(copy.deepcopy(messages))
+def to_events(messages: list, continuity: Optional[Continuity] = None,
+              event_types: Dict[str, str] = EVENT_TYPES) -> List[dict]:
+    """The events Claude Code's messages are, in order -- but for its notes after the user's last request, moved
+    before it (`request_last`), and, after it compacted its history, its summary and the notes it sent with it, left
+    out (COMPACTION_REPEAT). With the channel's `continuity`, only from the previous request's last pieces on (see the
+    module's doc). `event_types`: which event type each Kind becomes (HarnessAdaptor's)."""
+    items = HARNESS.items(messages)
     ids, start = continuity.ids(items) if continuity is not None else (chain_ids(items), 0)
-    types, expansions = typed = types_of(items)
-    dropped = compacted_opening(items, typed)
-    return request_last([event(items[k], ids[k], types[k]) for k in range(start, len(items)) if k not in dropped],
-                        frozenset(ids[k] for k in expansions))
+    parts = HARNESS.read(items)
+    types = [event_types.get(p.kind, CONTEXT) for p in parts]
+    dropped = {i for i, p in enumerate(parts) if p.kind == Kind.COMPACTION_REPEAT or p.detail.get("opens")}
+    return request_last([event(items[k], ids[k], types[k], parts[k]) for k in range(start, len(items)) if k not in dropped],
+                        frozenset(ids[k] for k, p in enumerate(parts) if p.detail.get("expands")))

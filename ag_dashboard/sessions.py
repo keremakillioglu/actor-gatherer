@@ -254,7 +254,9 @@ def _session_harness(gatherer: str, session_id: str) -> str:
     if conn is None:
         return "claude"
     try:
-        rows = conn.execute("SELECT payload_json FROM events WHERE ifnull(p_channel, '') = ? ORDER BY row_id LIMIT 60", (session_id,))
+        rows = conn.execute("SELECT payload_json FROM events WHERE ifnull(p_channel, '') = ? AND event_type_id NOT IN "
+                            "(SELECT event_type_id FROM event_types WHERE name IN ('model_call', 'reply_part', 'reply_end')) "
+                            "ORDER BY row_id LIMIT 60", (session_id,))
         payloads = []
         for (raw,) in rows:
             try:
@@ -458,9 +460,8 @@ def took_back(gatherer: str, channel: str, stopped: float) -> bool:
     conn = data._connect(gatherer)
     if conn is None:
         return False
-    try:
-        last = conn.execute(f"SELECT read_at, error_status FROM _reads WHERE ifnull({data.CHANNEL}, '') = ? "
-                            "ORDER BY read_id DESC LIMIT 2", (channel,)).fetchall()
+    try:                                               # the hang-up as ag kept it on the read, or the hook's `call_failed`
+        last = data._newest_reads(conn, channel, 2) or []
     except sqlite3.Error:
         return False
     finally:
