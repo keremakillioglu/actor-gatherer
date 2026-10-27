@@ -256,11 +256,8 @@ class RunTest(unittest.TestCase):
         self.assertEqual(CODEX.command("t1", resume=True, permission_mode="manual"), ["resume", "t1"])     # it asks
 
 
-class OwnerTest(unittest.TestCase):
-    def test_a_stored_piece_s_harness_by_its_shape(self):
-        self.assertIs(harness_kit.owner(user("hi")), CLAUDE)
-        self.assertIs(harness_kit.owner(item("user", "hi")), CODEX)
-        self.assertIsNone(harness_kit.owner({"info": {}, "parts": []}))
+class WordsTest(unittest.TestCase):
+    def test_a_message_s_words_whichever_harness_s_wrapper(self):
         self.assertEqual(harness_kit.words("<bash-input>ls</bash-input>"), (Kind.USER_COMMAND, "! ls"))
 
 

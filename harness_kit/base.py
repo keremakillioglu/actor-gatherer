@@ -183,7 +183,8 @@ def picked(ask: dict, choice: dict) -> List[dict]:
     out = []
     for q, a in zip(questions, answers):
         a = a if isinstance(a, dict) else {}
-        labels = [o.get("label") or "" for o in q.get("options") or []]
+        q = {**q, "question": q.get("question") or q.get("title")}      # codex's async one: {title, options: [label]}
+        labels = [(o.get("label") or "") if isinstance(o, dict) else str(o) for o in q.get("options") or []]
         places = a.get("options") or []
         text = a.get("text") if isinstance(a.get("text"), str) and a["text"].strip() else None
         if not all(isinstance(i, int) and 0 <= i < len(labels) for i in places) or len(set(places)) != len(places):
@@ -210,7 +211,7 @@ def one_line(text) -> str:
 
 
 class Harness(ABC):
-    """One harness's rules. Subclasses implement `items`, `read` and `owns`; `call` says what a request
+    """One harness's rules. Subclasses implement `items` and `read`; `call` says what a request
     is (None by default: the harness's calls not known). `name` is how ag and the dashboard name it,
     `label` how a person does, `checked_with` the harness's version the rules were read from."""
     name: str = ""
@@ -241,10 +242,6 @@ class Harness(ABC):
     def read(self, items: list) -> List[Part]:
         """Each piece read, one Part per piece, in order. The whole list, because what a piece is may
         depend on its neighbours."""
-
-    @abstractmethod
-    def owns(self, payload) -> bool:
-        """Whether a stored piece is in this harness's format, as far as its shape tells."""
 
     def read_one(self, payload) -> List[Part]:
         """A stored piece read on its own (its neighbours not known): one Part per piece it splits into."""

@@ -1,0 +1,2252 @@
+{
+ "calls": [
+  {
+   "name": "compaction-compaction",
+   "call": {
+    "kind": "compaction",
+    "session": "bab78d62-90d6-42ea-ad17-010da5619042",
+    "cwd": "/private/tmp/claude-501/f7cl109347/w",
+    "version": "2.1.311",
+    "detail": {
+     "model": true,
+     "class": "compaction"
+    },
+    "history": 8,
+    "own": 1,
+    "kinds": [
+     "environment",
+     "environment",
+     "user",
+     "environment",
+     "reasoning",
+     "agent",
+     "user_command",
+     "command_output",
+     "agent",
+     "local_command",
+     "command_output",
+     "command_output",
+     "user",
+     "agent",
+     "user",
+     "user"
+    ],
+    "own_parts": [
+     {
+      "kind": "user",
+      "role": "user",
+      "text": "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.\n\n- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other…[1431 aac2ffcb]",
+      "words": "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.\n\n- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other…[1431 aac2ffcb]",
+      "detail": {
+       "block": "text"
+      },
+      "says": [
+       "user",
+       "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.\n\n- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other…[1431 aac2ffcb]"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "other-auxiliary",
+   "call": {
+    "kind": "other",
+    "session": "bab78d62-90d6-42ea-ad17-010da5619042",
+    "cwd": null,
+    "version": "2.1.311",
+    "detail": {
+     "model": false,
+     "class": "auxiliary"
+    },
+    "history": 1,
+    "own": 0,
+    "kinds": [
+     "user"
+    ]
+   }
+  },
+  {
+   "name": "subagent-subagent",
+   "call": {
+    "kind": "subagent",
+    "session": "bab78d62-90d6-42ea-ad17-010da5619042",
+    "cwd": "/private/tmp/claude-501/f7cl109347/w",
+    "version": "2.1.311",
+    "detail": {
+     "model": true,
+     "class": "subagent"
+    },
+    "history": 2,
+    "own": 0,
+    "kinds": [
+     "environment",
+     "environment",
+     "user",
+     "environment",
+     "environment",
+     "tool_notice",
+     "tool_notice",
+     "tool_notice"
+    ]
+   }
+  },
+  {
+   "name": "suggestion-auxiliary",
+   "call": {
+    "kind": "suggestion",
+    "session": "bab78d62-90d6-42ea-ad17-010da5619042",
+    "cwd": "/private/tmp/claude-501/f7cl109347/w",
+    "version": "2.1.311",
+    "detail": {
+     "model": true,
+     "class": "auxiliary"
+    },
+    "history": 7,
+    "own": 1,
+    "kinds": [
+     "environment",
+     "environment",
+     "user",
+     "environment",
+     "agent",
+     "user",
+     "tool_call",
+     "tool_result",
+     "agent"
+    ],
+    "own_parts": [
+     {
+      "kind": "user",
+      "role": "user",
+      "text": "[SUGGESTION MODE: Suggest what the user might naturally type next into Claude Code.]\n\nFIRST: Look at the user's recent m…[1363 ba8bcb60]",
+      "words": "[SUGGESTION MODE: Suggest what the user might naturally type next into Claude Code.]\n\nFIRST: Look at the user's recent m…[1363 ba8bcb60]",
+      "detail": {
+       "block": "text"
+      },
+      "says": [
+       "user",
+       "[SUGGESTION MODE: Suggest what the user might naturally type next into Claude Code.]\n\nFIRST: Look at the user's recent m…[1363 ba8bcb60]"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "turn",
+   "call": {
+    "kind": "turn",
+    "session": "bab78d62-90d6-42ea-ad17-010da5619042",
+    "cwd": "/private/tmp/claude-501/f7cl109347/w",
+    "version": "2.1.311",
+    "detail": {
+     "model": true,
+     "class": "main"
+    },
+    "history": 2,
+    "own": 0,
+    "kinds": [
+     "environment",
+     "environment",
+     "user",
+     "environment"
+    ]
+   }
+  },
+  {
+   "name": "turn-compacted",
+   "call": {
+    "kind": "turn",
+    "session": "bab78d62-90d6-42ea-ad17-010da5619042",
+    "cwd": null,
+    "version": "2.1.311",
+    "detail": {
+     "model": true,
+     "class": "main"
+    },
+    "history": 5,
+    "own": 0,
+    "kinds": [
+     "compaction_summary",
+     "compaction_repeat",
+     "agent",
+     "compaction_repeat",
+     "compaction_repeat",
+     "compaction_repeat",
+     "compaction_repeat",
+     "compaction_repeat",
+     "user",
+     "compaction_repeat",
+     "compaction_repeat",
+     "compaction_repeat",
+     "compaction_repeat",
+     "compaction_repeat"
+    ]
+   }
+  },
+  {
+   "name": "turn-error",
+   "call": {
+    "kind": "turn",
+    "session": "bab78d62-90d6-42ea-ad17-010da5619042",
+    "cwd": "/private/tmp/claude-501/f7cl109347/w",
+    "version": "2.1.311",
+    "detail": {
+     "model": true,
+     "class": "main"
+    },
+    "history": 8,
+    "own": 0,
+    "kinds": [
+     "environment",
+     "environment",
+     "user",
+     "environment",
+     "reasoning",
+     "agent",
+     "user_command",
+     "command_output",
+     "agent",
+     "local_command",
+     "command_output",
+     "command_output",
+     "user",
+     "agent",
+     "user"
+    ]
+   }
+  },
+  {
+   "name": "unread-count_tokens",
+   "call": null
+  }
+ ],
+ "parts": [
+  {
+   "kind": "environment",
+   "role": "user",
+   "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# userEmail\nThe user's email ad…[556 69f0daab]",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "user",
+   "text": "<system-reminder>\nAttribution for git commits and pull requests you create from here on (this replaces Claude Code's own…[575 d1285af4]",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Read notes.txt and tell me the secret number, in one sentence.",
+   "words": "Read notes.txt and tell me the secret number, in one sentence.",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Read notes.txt and tell me the secret number, in one sentence."
+   ]
+  },
+  {
+   "kind": "environment",
+   "role": "system",
+   "text": "# Environment\nYou have been invoked in the following environment: \n - Primary working directory: /private/tmp/claude-501…[1432 cbf22e08]",
+   "cwd": "/private/tmp/claude-501/f7cl109347/w",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "Reading a file is read-only, so I'll do that directly.",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Read({\"file_path\": \"/private/tmp/claude-501/f7cl109347/w/notes.txt\"})",
+   "tool": {
+    "id": "toolu_017qYyh2UkMqbS51Pda4wtEq",
+    "name": "Read",
+    "action": "read",
+    "paths": [
+     "/private/tmp/claude-501/f7cl109347/w/notes.txt"
+    ],
+    "input": "{\"file_path\": \"/private/tmp/claude-501/f7cl109347/w/notes.txt\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "1\tThe secret number is 4127.\n2\t",
+   "result": {
+    "call_id": "toolu_017qYyh2UkMqbS51Pda4wtEq",
+    "error": false,
+    "output": "1\tThe secret number is 4127.\n2\t"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "system",
+   "text": "The following tools just became available and are ready to use:\nSendFeedback\nmcp__x\nmcp__x\nmcp__x\n\nThe following deferre…[1431 f9c2f22c]",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "tool_notice",
+   "role": "system",
+   "text": "tool added: SendFeedback: Use this tool to draft feedback about Claude Code when you hit a high-signal moment. That incl…[3481 89a481bf]",
+   "detail": {
+    "block": "tool_addition"
+   }
+  },
+  {
+   "kind": "tool_notice",
+   "role": "system",
+   "text": "tool added: mcp__x: Create a doc, or apply several operations to one doc atomically.\n{\"type\": \"object\", \"properties\": {\"…[362 be8cc1e3]",
+   "detail": {
+    "block": "tool_addition"
+   }
+  },
+  {
+   "kind": "tool_notice",
+   "role": "system",
+   "text": "tool added: mcp__x: Docs guides: topic.instructions repeats the server instructions. Read it only if your client dropped…[446 091eb6f8]",
+   "detail": {
+    "block": "tool_addition"
+   }
+  },
+  {
+   "kind": "tool_notice",
+   "role": "system",
+   "text": "tool added: mcp__x: Edit a tab's contents, rename a doc or tab, or change a stored value.\n{\"type\": \"object\", \"properties…[709 a6293bb9]",
+   "detail": {
+    "block": "tool_addition"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "The secret number in notes.txt is 4127.",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Use the AskUserQuestion tool once, with two questions: 'Which fruit?' (single choice: Apple, Mango) and 'Which pets?' (m…[189 1f708ec1]",
+   "words": "Use the AskUserQuestion tool once, with two questions: 'Which fruit?' (single choice: Apple, Mango) and 'Which pets?' (m…[189 1f708ec1]",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Use the AskUserQuestion tool once, with two questions: 'Which fruit?' (single choice: Apple, Mango) and 'Which pets?' (m…[189 1f708ec1]"
+   ]
+  },
+  {
+   "kind": "environment",
+   "role": "system",
+   "text": "The following deferred tools are now available via ToolSearch. Their schemas are NOT loaded — calling them directly will…[484 5a2f7f7f]",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "AskUserQuestion({\"questions\": [{\"question\": \"Which fruit?\", \"header\": \"Fruit\", \"multiSelect\": false, \"options\": [{\"label…[442 f43ced23]",
+   "tool": {
+    "id": "toolu_01XSAp4DPxFyg5P3TaPWf4AM",
+    "name": "AskUserQuestion",
+    "action": "ask",
+    "paths": [],
+    "input": "{\"questions\": [{\"header\": \"Fruit\", \"multiSelect\": false, \"options\": [{\"description\": \"Choose Apple\", \"label\": \"Apple\"}, …[425 4bb39943]",
+    "ask": {
+     "kind": "question",
+     "questions": [
+      {
+       "id": null,
+       "header": "Fruit",
+       "question": "Which fruit?",
+       "multiSelect": false,
+       "options": [
+        {
+         "label": "Apple",
+         "description": "Choose Apple"
+        },
+        {
+         "label": "Mango",
+         "description": "Choose Mango"
+        }
+       ]
+      },
+      {
+       "id": null,
+       "header": "Pets",
+       "question": "Which pets?",
+       "multiSelect": true,
+       "options": [
+        {
+         "label": "Cat",
+         "description": "Choose Cat"
+        },
+        {
+         "label": "Dog",
+         "description": "Choose Dog"
+        },
+        {
+         "label": "Fish",
+         "description": "Choose Fish"
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "Your questions have been answered: \"Which fruit?\"=\"Mango\", \"Which pets?\"=\"Cat, Fish\". You can now continue with these answers in mind.",
+   "result": {
+    "call_id": "toolu_01XSAp4DPxFyg5P3TaPWf4AM",
+    "error": false,
+    "output": "Your questions have been answered: \"Which fruit?\"=\"Mango\", \"Which pets?\"=\"Cat, Fish\". You can now continue with these answers in mind."
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "You answered:\n- Which fruit? **Mango**\n- Which pets? **Cat, Fish**",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Use the AskUserQuestion tool to ask me one question: 'Tea or coffee?' with options Tea and Coffee. Then reply with just my answer.",
+   "words": "Use the AskUserQuestion tool to ask me one question: 'Tea or coffee?' with options Tea and Coffee. Then reply with just my answer.",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Use the AskUserQuestion tool to ask me one question: 'Tea or coffee?' with options Tea and Coffee. Then reply with just my answer."
+   ]
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "AskUserQuestion({\"questions\": [{\"header\": \"Drink\", \"multiSelect\": false, \"options\": [{\"label\": \"Tea\", \"description\": \"Ch…[218 95981670]",
+   "tool": {
+    "id": "toolu_01XLcqgyf6e5693itRqnCjjb",
+    "name": "AskUserQuestion",
+    "action": "ask",
+    "paths": [],
+    "input": "{\"questions\": [{\"header\": \"Drink\", \"multiSelect\": false, \"options\": [{\"description\": \"Choose Tea\", \"label\": \"Tea\"}, {\"de…[201 d5707b7a]",
+    "ask": {
+     "kind": "question",
+     "questions": [
+      {
+       "id": null,
+       "header": "Drink",
+       "question": "Tea or coffee?",
+       "multiSelect": false,
+       "options": [
+        {
+         "label": "Tea",
+         "description": "Choose Tea"
+        },
+        {
+         "label": "Coffee",
+         "description": "Choose Coffee"
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "error: The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the ne…[443 7c73cb6b]",
+   "result": {
+    "call_id": "toolu_01XLcqgyf6e5693itRqnCjjb",
+    "error": true,
+    "output": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_strin…[436 d665f858]"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "interrupt",
+   "role": "user",
+   "text": "[Request interrupted by user for tool use]\n",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Plan creating a file plan.txt holding the word hi. Keep the plan to two lines, write it, then ask me to approve it.",
+   "words": "Plan creating a file plan.txt holding the word hi. Keep the plan to two lines, write it, then ask me to approve it.",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Plan creating a file plan.txt holding the word hi. Keep the plan to two lines, write it, then ask me to approve it."
+   ]
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Write({\"file_path\": \"/Users/me/.claude/plans/read-notes-txt-and-tell-synthetic-heron.md\", \"content\": \"1. Create plan.txt…[237 bdfbcb31]",
+   "tool": {
+    "id": "toolu_01S91bgPwbAsH3GDVYTSp654",
+    "name": "Write",
+    "action": "edit",
+    "paths": [
+     "/Users/me/.claude/plans/read-notes-txt-and-tell-synthetic-heron.md"
+    ],
+    "input": "{\"content\": \"1. Create plan.txt in /private/tmp/claude-501/f7cl109347/w containing the single word \\\"hi\\\".\\n2. Verify by…[230 22763a8d]"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "ToolSearch({\"query\": \"select:ExitPlanMode\", \"max_results\": 1})",
+   "tool": {
+    "id": "toolu_01CzAsWm3K9SDYQAzery5Jh7",
+    "name": "ToolSearch",
+    "action": "other",
+    "paths": [],
+    "input": "{\"max_results\": 1, \"query\": \"select:ExitPlanMode\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "File created successfully at: /Users/me/.claude/plans/read-notes-txt-and-tell-synthetic-heron.md (file state is current …[162 c89309b7]",
+   "result": {
+    "call_id": "toolu_01S91bgPwbAsH3GDVYTSp654",
+    "error": false,
+    "output": "File created successfully at: /Users/me/.claude/plans/read-notes-txt-and-tell-synthetic-heron.md (file state is current …[162 c89309b7]"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "[Tool references removed - tool search not enabled]",
+   "result": {
+    "call_id": "toolu_01CzAsWm3K9SDYQAzery5Jh7",
+    "error": false,
+    "output": "[Tool references removed - tool search not enabled]"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "tool_notice",
+   "role": "user",
+   "text": "Tool loaded.",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "ExitPlanMode({})",
+   "tool": {
+    "id": "toolu_016ijGM8e5S38ZTrpP3F8vkZ",
+    "name": "ExitPlanMode",
+    "action": "ask",
+    "paths": [],
+    "input": "{}",
+    "ask": {
+     "kind": "plan",
+     "plan": null
+    }
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "error: The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the ne…[439 a563dbfb]",
+   "result": {
+    "call_id": "toolu_016ijGM8e5S38ZTrpP3F8vkZ",
+    "error": true,
+    "output": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_strin…[432 5a9b1025]"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Write({\"content\": \"1. Create plan.txt in /private/tmp/claude-501/f7cl109347/w containing the single word \\\"hello\\\".\\n2. …[240 1f63139e]",
+   "tool": {
+    "id": "toolu_01P7TpZUKkSDCyXbvXubxrpD",
+    "name": "Write",
+    "action": "edit",
+    "paths": [
+     "/Users/me/.claude/plans/read-notes-txt-and-tell-synthetic-heron.md"
+    ],
+    "input": "{\"content\": \"1. Create plan.txt in /private/tmp/claude-501/f7cl109347/w containing the single word \\\"hello\\\".\\n2. Verify…[233 43647643]"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "ExitPlanMode({})",
+   "tool": {
+    "id": "toolu_017ofbFEZFDYFHFxQrgbSJPF",
+    "name": "ExitPlanMode",
+    "action": "ask",
+    "paths": [],
+    "input": "{}",
+    "ask": {
+     "kind": "plan",
+     "plan": null
+    }
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "The file /Users/me/.claude/plans/read-notes-txt-and-tell-synthetic-heron.md has been updated successfully. (file state i…[172 29296947]",
+   "result": {
+    "call_id": "toolu_01P7TpZUKkSDCyXbvXubxrpD",
+    "error": false,
+    "output": "The file /Users/me/.claude/plans/read-notes-txt-and-tell-synthetic-heron.md has been updated successfully. (file state i…[172 29296947]"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "User has approved your plan. You can now start coding. Start with updating your todo list if applicable\n\nYour plan has b…[409 33829a06]",
+   "result": {
+    "call_id": "toolu_017ofbFEZFDYFHFxQrgbSJPF",
+    "error": false,
+    "output": "User has approved your plan. You can now start coding. Start with updating your todo list if applicable\n\nYour plan has b…[409 33829a06]"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "system",
+   "text": "## Exited Plan Mode\n\nYou have exited plan mode. You can now make edits, run tools, and take actions. The plan file is lo…[224 9b3c4412]",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Write({\"content\": \"hello\\n\", \"file_path\": \"/private/tmp/claude-501/f7cl109347/w/plan.txt\"})",
+   "tool": {
+    "id": "toolu_01Jp68L1HhpqcitbpvrCxCC7",
+    "name": "Write",
+    "action": "edit",
+    "paths": [
+     "/private/tmp/claude-501/f7cl109347/w/plan.txt"
+    ],
+    "input": "{\"content\": \"hello\\n\", \"file_path\": \"/private/tmp/claude-501/f7cl109347/w/plan.txt\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Read({\"file_path\": \"/private/tmp/claude-501/f7cl109347/w/plan.txt\"})",
+   "tool": {
+    "id": "toolu_01MyPaxjEwW13my7f47PmCLT",
+    "name": "Read",
+    "action": "read",
+    "paths": [
+     "/private/tmp/claude-501/f7cl109347/w/plan.txt"
+    ],
+    "input": "{\"file_path\": \"/private/tmp/claude-501/f7cl109347/w/plan.txt\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "File created successfully at: /private/tmp/claude-501/f7cl109347/w/plan.txt (file state is current in your context — no need to Read it back)",
+   "result": {
+    "call_id": "toolu_01Jp68L1HhpqcitbpvrCxCC7",
+    "error": false,
+    "output": "File created successfully at: /private/tmp/claude-501/f7cl109347/w/plan.txt (file state is current in your context — no need to Read it back)"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "1\thello\n2\t",
+   "result": {
+    "call_id": "toolu_01MyPaxjEwW13my7f47PmCLT",
+    "error": false,
+    "output": "1\thello\n2\t"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "I created `/private/tmp/claude-501/f7cl109347/w/plan.txt` containing the word \"hello\", and I read it back to check.",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Start `for i in $(seq 1 60); do echo tick $i; sleep 1; done` with Bash using run_in_background: true, then reply 'started' and end your turn.",
+   "words": "Start `for i in $(seq 1 60); do echo tick $i; sleep 1; done` with Bash using run_in_background: true, then reply 'started' and end your turn.",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Start `for i in $(seq 1 60); do echo tick $i; sleep 1; done` with Bash using run_in_background: true, then reply 'started' and end your turn."
+   ]
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Bash({\"command\": \"for i in $(seq 1 60); do echo tick $i; sleep 1; done\", \"description\": \"Run a 60-second tick loop in background\", \"run_in_background\": true})",
+   "tool": {
+    "id": "toolu_01Y6dp9FVt2njA2ERMqh4A5Y",
+    "name": "Bash",
+    "action": "shell",
+    "paths": [],
+    "input": "{\"command\": \"for i in $(seq 1 60); do echo tick $i; sleep 1; done\", \"description\": \"Run a 60-second tick loop in background\", \"run_in_background\": true}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "Command running in background with ID: blvigr5vw. Output is being written to: /private/tmp/claude-501/-private-tmp-claud…[429 bdc9a0a9]",
+   "result": {
+    "call_id": "toolu_01Y6dp9FVt2njA2ERMqh4A5Y",
+    "error": false,
+    "output": "Command running in background with ID: blvigr5vw. Output is being written to: /private/tmp/claude-501/-private-tmp-claud…[429 bdc9a0a9]",
+    "task": {
+     "id": "blvigr5vw",
+     "kind": "command",
+     "how": "started",
+     "output": "/private/tmp/claude-501/-private-tmp-claude-501-f7cl109347-w/bab78d62-90d6-42ea-ad17-010da5619042/tasks/blvigr5vw.output",
+     "label": null
+    }
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "started",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Stop the background command you started, with the tool for stopping background tasks, then reply 'stopped'.",
+   "words": "Stop the background command you started, with the tool for stopping background tasks, then reply 'stopped'.",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Stop the background command you started, with the tool for stopping background tasks, then reply 'stopped'."
+   ]
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "ToolSearch({\"query\": \"select:TaskStop\", \"max_results\": 1})",
+   "tool": {
+    "id": "toolu_01EeUDcJxoq5w5HA3jZYdrTJ",
+    "name": "ToolSearch",
+    "action": "other",
+    "paths": [],
+    "input": "{\"max_results\": 1, \"query\": \"select:TaskStop\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "[Tool references removed - tool search not enabled]",
+   "result": {
+    "call_id": "toolu_01EeUDcJxoq5w5HA3jZYdrTJ",
+    "error": false,
+    "output": "[Tool references removed - tool search not enabled]"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "tool_notice",
+   "role": "user",
+   "text": "Tool loaded.",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "TaskStop({\"task_id\": \"blvigr5vw\"})",
+   "tool": {
+    "id": "toolu_01Q6o9iAV54h8MGX4Vc5vuB3",
+    "name": "TaskStop",
+    "action": "task",
+    "paths": [],
+    "input": "{\"task_id\": \"blvigr5vw\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "{\"message\":\"Successfully stopped task: blvigr5vw (for i in $(seq 1 60); do echo tick $i; sleep 1; done)\",\"task_id\":\"blvi…[217 0358350e]",
+   "result": {
+    "call_id": "toolu_01Q6o9iAV54h8MGX4Vc5vuB3",
+    "error": false,
+    "output": "{\"message\":\"Successfully stopped task: blvigr5vw (for i in $(seq 1 60); do echo tick $i; sleep 1; done)\",\"task_id\":\"blvi…[217 0358350e]",
+    "task": {
+     "id": "blvigr5vw",
+     "kind": null,
+     "how": "stopped",
+     "output": null,
+     "label": null
+    }
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "stopped",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Use the Agent tool with run_in_background: true (subagent_type general-purpose, description 'sleepy helper'): the subage…[248 242ca5b5]",
+   "words": "Use the Agent tool with run_in_background: true (subagent_type general-purpose, description 'sleepy helper'): the subage…[248 242ca5b5]",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Use the Agent tool with run_in_background: true (subagent_type general-purpose, description 'sleepy helper'): the subage…[248 242ca5b5]"
+   ]
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Agent({\"description\": \"sleepy helper\", \"prompt\": \"Run `sleep 15` with the Bash tool, then answer with the single word: d…[162 cf17fb28]",
+   "tool": {
+    "id": "toolu_015QdPB6BndRy9pJC2ch8qcy",
+    "name": "Agent",
+    "action": "delegate",
+    "paths": [],
+    "input": "{\"description\": \"sleepy helper\", \"prompt\": \"Run `sleep 15` with the Bash tool, then answer with the single word: done\", \"subagent_type\": \"general-purpose\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "Async agent launched successfully. (This tool result is internal metadata — never quote or paste any part of it, includi…[1069 e648b1e2]",
+   "result": {
+    "call_id": "toolu_015QdPB6BndRy9pJC2ch8qcy",
+    "error": false,
+    "output": "Async agent launched successfully. (This tool result is internal metadata — never quote or paste any part of it, includi…[1069 e648b1e2]",
+    "task": {
+     "id": "a16adb1ffab6c29d8",
+     "kind": "agent",
+     "how": "started",
+     "output": "/private/tmp/claude-501/-private-tmp-claude-501-f7cl109347-w/bab78d62-90d6-42ea-ad17-010da5619042/tasks/a16adb1ffab6c29d8.output",
+     "label": null
+    }
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "launched",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "agent_report",
+   "role": "user",
+   "text": "Another Claude session sent a message:\n<agent-message from=\"a16adb1ffab6c29d8\">\n[Subagent hand-back] The text below is t…[1213 38b549d4]",
+   "detail": {
+    "block": "text",
+    "handed_back": [
+     "a16adb1ffab6c29d8"
+    ],
+    "from": "a16adb1ffab6c29d8",
+    "text": "done"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "The background helper finished and reported back \"done\".",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "user",
+   "text": "<system-reminder>\n<tools-used-before-summary>SubagentHandback</tools-used-before-summary>\n</system-reminder>\n",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "task_notice",
+   "role": "user",
+   "text": "<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event, NOT a message from …[1388 244fa7ee]",
+   "detail": {
+    "block": "text",
+    "notices": [
+     {
+      "id": "a16adb1ffab6c29d8",
+      "status": "completed",
+      "event": null,
+      "waiting": false,
+      "ended": true
+     }
+    ]
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Use the Monitor tool to watch the output of `for i in 1 2 3; do echo line $i; sleep 4; done`. Reply 'watching' and end your turn.",
+   "words": "Use the Monitor tool to watch the output of `for i in 1 2 3; do echo line $i; sleep 4; done`. Reply 'watching' and end your turn.",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Use the Monitor tool to watch the output of `for i in 1 2 3; do echo line $i; sleep 4; done`. Reply 'watching' and end your turn."
+   ]
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "ToolSearch({\"max_results\": 1, \"query\": \"select:Monitor\"})",
+   "tool": {
+    "id": "toolu_017YvzaViqExxBnqpfhPFVCk",
+    "name": "ToolSearch",
+    "action": "other",
+    "paths": [],
+    "input": "{\"max_results\": 1, \"query\": \"select:Monitor\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "[Tool references removed - tool search not enabled]",
+   "result": {
+    "call_id": "toolu_017YvzaViqExxBnqpfhPFVCk",
+    "error": false,
+    "output": "[Tool references removed - tool search not enabled]"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "tool_notice",
+   "role": "user",
+   "text": "Tool loaded.",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Monitor({\"command\": \"for i in 1 2 3; do echo line $i; sleep 4; done\", \"description\": \"Output lines of a 3-step loop\", \"timeout_ms\": 60000})",
+   "tool": {
+    "id": "toolu_01VLsfy4DXzddu2pPUwVxbK4",
+    "name": "Monitor",
+    "action": "task",
+    "paths": [],
+    "input": "{\"command\": \"for i in 1 2 3; do echo line $i; sleep 4; done\", \"description\": \"Output lines of a 3-step loop\", \"timeout_ms\": 60000}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "Monitor started (task bm5yy4o8g, expires in 1m unless the source ends first; you get one notice at expiry — re-arm if yo…[301 0808c7cf]",
+   "result": {
+    "call_id": "toolu_01VLsfy4DXzddu2pPUwVxbK4",
+    "error": false,
+    "output": "Monitor started (task bm5yy4o8g, expires in 1m unless the source ends first; you get one notice at expiry — re-arm if yo…[301 0808c7cf]",
+    "task": {
+     "id": "bm5yy4o8g",
+     "kind": "monitor",
+     "how": "started",
+     "output": null,
+     "label": null
+    }
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "watching",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "task_notice",
+   "role": "user",
+   "text": "<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event, NOT a message from …[688 ff9076a6]",
+   "detail": {
+    "block": "text",
+    "notices": [
+     {
+      "id": "bm5yy4o8g",
+      "status": null,
+      "event": "line 1",
+      "waiting": false,
+      "ended": false
+     }
+    ]
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "Monitor event: \"line 1\" arrived. Two more lines are expected.",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "task_notice",
+   "role": "user",
+   "text": "<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event, NOT a message from …[688 b50901d2]",
+   "detail": {
+    "block": "text",
+    "notices": [
+     {
+      "id": "bm5yy4o8g",
+      "status": null,
+      "event": "line 2",
+      "waiting": false,
+      "ended": false
+     }
+    ]
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "Monitor event: \"line 2\" arrived. One more line is expected.",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "task_notice",
+   "role": "user",
+   "text": "<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event, NOT a message from …[772 48b3b727]",
+   "detail": {
+    "block": "text",
+    "notices": [
+     {
+      "id": "bm5yy4o8g",
+      "status": null,
+      "event": "[Monitor expired after 1m with 2 events delivered. Re-arm it if you still need the watch.]",
+      "waiting": false,
+      "ended": true
+     }
+    ]
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "The monitor expired after 1 minute, having delivered two events (\"line 1\" and \"line 2\"). I never received \"line 3\". The …[305 12fb7589]",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Run `sleep 12` with Bash (not in the background), then reply 'slept'.",
+   "words": "Run `sleep 12` with Bash (not in the background), then reply 'slept'.",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Run `sleep 12` with Bash (not in the background), then reply 'slept'."
+   ]
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Bash({\"command\": \"sleep 12\", \"description\": \"Sleep for 12 seconds\"})",
+   "tool": {
+    "id": "toolu_01XLygvk61Rfr6GMpHVuBoG9",
+    "name": "Bash",
+    "action": "shell",
+    "paths": [],
+    "input": "{\"command\": \"sleep 12\", \"description\": \"Sleep for 12 seconds\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "(Bash completed with no output)",
+   "result": {
+    "call_id": "toolu_01XLygvk61Rfr6GMpHVuBoG9",
+    "error": false,
+    "output": "(Bash completed with no output)"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "mid_turn",
+   "role": "user",
+   "text": "The user sent a new message while you were working:\nAlso tell me what 6 times 7 is.\n\nThis is how Claude Code surfaces me…[313 62faa7b6]",
+   "words": "Also tell me what 6 times 7 is.",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "mid_turn",
+    "Also tell me what 6 times 7 is."
+   ]
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "slept\n\n6 times 7 is 42.",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Run `sleep 10` with Bash (not in the background), then reply 'done'.",
+   "words": "Run `sleep 10` with Bash (not in the background), then reply 'done'.",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Run `sleep 10` with Bash (not in the background), then reply 'done'."
+   ]
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Bash({\"command\": \"sleep 10\", \"description\": \"Sleep for 10 seconds\"})",
+   "tool": {
+    "id": "toolu_019Jm4F8pTvtsxeTiTpKFT4F",
+    "name": "Bash",
+    "action": "shell",
+    "paths": [],
+    "input": "{\"command\": \"sleep 10\", \"description\": \"Sleep for 10 seconds\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "error: Exit code 143\nCommand timed out after 2m 0s",
+   "result": {
+    "call_id": "toolu_019Jm4F8pTvtsxeTiTpKFT4F",
+    "error": true,
+    "output": "Exit code 143\nCommand timed out after 2m 0s"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "interrupt",
+   "role": "user",
+   "text": "[Request interrupted by user]\n",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Never mind this oneRun `sleep 40` with Bash (not in the background), then reply 'done'.",
+   "words": "Never mind this oneRun `sleep 40` with Bash (not in the background), then reply 'done'.",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Never mind this oneRun `sleep 40` with Bash (not in the background), then reply 'done'."
+   ]
+  },
+  {
+   "kind": "tool_call",
+   "role": "assistant",
+   "text": "Bash({\"command\": \"sleep 40\", \"description\": \"Sleep for 40 seconds\"})",
+   "tool": {
+    "id": "toolu_01BerhVFZT9yxDmsuNBDKFVV",
+    "name": "Bash",
+    "action": "shell",
+    "paths": [],
+    "input": "{\"command\": \"sleep 40\", \"description\": \"Sleep for 40 seconds\"}"
+   },
+   "detail": {
+    "block": "tool_use"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": "user",
+   "text": "error: <tool_use_error>Blocked: standalone sleep 40. To wait for a condition, use Monitor with an until-loop (e.g. `unti…[286 b92ee17d]",
+   "result": {
+    "call_id": "toolu_01BerhVFZT9yxDmsuNBDKFVV",
+    "error": true,
+    "output": "<tool_use_error>Blocked: standalone sleep 40. To wait for a condition, use Monitor with an until-loop (e.g. `until <chec…[279 945c7fdc]"
+   },
+   "detail": {
+    "block": "tool_result"
+   }
+  },
+  {
+   "kind": "reasoning",
+   "role": "assistant",
+   "text": null,
+   "opaque": true,
+   "detail": {
+    "block": "thinking",
+    "thinking": ""
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "I didn't run `sleep 40`. The harness blocked it as a standalone foreground sleep, so I'm not replying 'done'. I haven't …[356 dd654b0c]",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user_command",
+   "role": "user",
+   "text": "<bash-input>echo bang</bash-input>\n",
+   "words": "! echo bang",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user_command",
+    "! echo bang"
+   ]
+  },
+  {
+   "kind": "command_output",
+   "role": "user",
+   "text": "<bash-stdout>bang</bash-stdout><bash-stderr></bash-stderr>",
+   "detail": {
+    "block": "text",
+    "text": "bang"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "Your `echo bang` ran and printed `bang`.",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "local_command",
+   "role": "user",
+   "text": "<command-name>/context</command-name>\n            <command-message>context</command-message>\n            <command-args></command-args>\n",
+   "detail": {
+    "block": "text",
+    "name": "/context"
+   }
+  },
+  {
+   "kind": "command_output",
+   "role": "user",
+   "text": "<local-command-stdout> \u001b[1mContext Usage\u001b[22m\n\u001b[38;2;136;136;136m⛀ \u001b[38;2;153;153;153m⛁ ⛁ ⛁ ⛁ \u001b[38;2;22;163;74m⛀ \u001b[38;2;…[1430 8695156d]",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "command_output",
+   "role": "user",
+   "text": "## Context Usage\n\n**Model:** claude-sonnet-5-5  \n**Tokens:** 55.9k / 1m (6%)\n\n### Estimated usage by category\n\n| Categor…[1431 24a2a937]",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Reply with just: ok",
+   "words": "Reply with just: ok",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "Reply with just: ok"
+   ]
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "ok",
+   "detail": {
+    "block": "text"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "PROBE-API-ERROR: reply with just: ok",
+   "words": "PROBE-API-ERROR: reply with just: ok",
+   "detail": {
+    "block": "text"
+   },
+   "says": [
+    "user",
+    "PROBE-API-ERROR: reply with just: ok"
+   ]
+  },
+  {
+   "kind": "environment",
+   "role": "system",
+   "text": "ToolSearch is no longer available. Tools listed earlier as deferred that are still available are declared in full: call them directly.",
+   "detail": {
+    "block": "text"
+   }
+  }
+ ],
+ "derived": [
+  {
+   "at": 8,
+   "answer": [
+    [
+     "asked",
+     "toolu_01XSAp4DPxFyg5P3TaPWf4AM",
+     1000000000.0,
+     {
+      "call": "toolu_01XSAp4DPxFyg5P3TaPWf4AM",
+      "kind": "question",
+      "questions": [
+       {
+        "id": null,
+        "header": "Fruit",
+        "question": "Which fruit?",
+        "multiSelect": false,
+        "options": [
+         {
+          "label": "Apple",
+          "description": "Choose Apple"
+         },
+         {
+          "label": "Mango",
+          "description": "Choose Mango"
+         }
+        ]
+       },
+       {
+        "id": null,
+        "header": "Pets",
+        "question": "Which pets?",
+        "multiSelect": true,
+        "options": [
+         {
+          "label": "Cat",
+          "description": "Choose Cat"
+         },
+         {
+          "label": "Dog",
+          "description": "Choose Dog"
+         },
+         {
+          "label": "Fish",
+          "description": "Choose Fish"
+         }
+        ]
+       }
+      ],
+      "async": false,
+      "turn": null
+     }
+    ]
+   ],
+   "call": [
+    [
+     "ask_settled",
+     "toolu_01XSAp4DPxFyg5P3TaPWf4AM",
+     1000000000.0,
+     {
+      "call": "toolu_01XSAp4DPxFyg5P3TaPWf4AM",
+      "how": "answered",
+      "result": "Your questions have been answered: \"Which fruit?\"=\"Mango\", \"Which pets?\"=\"Cat, Fish\". You can now continue with these answers in mind."
+     }
+    ]
+   ]
+  },
+  {
+   "at": 12,
+   "answer": [
+    [
+     "asked",
+     "toolu_01XLcqgyf6e5693itRqnCjjb",
+     1000000000.0,
+     {
+      "call": "toolu_01XLcqgyf6e5693itRqnCjjb",
+      "kind": "question",
+      "questions": [
+       {
+        "id": null,
+        "header": "Drink",
+        "question": "Tea or coffee?",
+        "multiSelect": false,
+        "options": [
+         {
+          "label": "Tea",
+          "description": "Choose Tea"
+         },
+         {
+          "label": "Coffee",
+          "description": "Choose Coffee"
+         }
+        ]
+       }
+      ],
+      "async": false,
+      "turn": null
+     }
+    ]
+   ],
+   "call": [
+    [
+     "ask_settled",
+     "toolu_01XLcqgyf6e5693itRqnCjjb",
+     1000000000.0,
+     {
+      "call": "toolu_01XLcqgyf6e5693itRqnCjjb",
+      "how": "dismissed",
+      "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_strin…[436 d665f858]"
+     }
+    ]
+   ]
+  },
+  {
+   "at": 16,
+   "answer": [
+    [
+     "asked",
+     "toolu_016ijGM8e5S38ZTrpP3F8vkZ",
+     1000000000.0,
+     {
+      "call": "toolu_016ijGM8e5S38ZTrpP3F8vkZ",
+      "kind": "plan",
+      "plan": "1. Create plan.txt in /private/tmp/claude-501/f7cl109347/w containing the single word \"hi\".\n2. Verify by reading the file back.\n",
+      "async": false,
+      "turn": null
+     }
+    ]
+   ],
+   "call": [
+    [
+     "ask_settled",
+     "toolu_016ijGM8e5S38ZTrpP3F8vkZ",
+     1000000000.0,
+     {
+      "call": "toolu_016ijGM8e5S38ZTrpP3F8vkZ",
+      "how": "answered",
+      "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_strin…[432 5a9b1025]"
+     }
+    ]
+   ]
+  },
+  {
+   "at": 18,
+   "answer": [
+    [
+     "asked",
+     "toolu_017ofbFEZFDYFHFxQrgbSJPF",
+     1000000000.0,
+     {
+      "call": "toolu_017ofbFEZFDYFHFxQrgbSJPF",
+      "kind": "plan",
+      "plan": "1. Create plan.txt in /private/tmp/claude-501/f7cl109347/w containing the single word \"hello\".\n2. Verify by reading the file back.\n",
+      "async": false,
+      "turn": null
+     }
+    ]
+   ],
+   "call": [
+    [
+     "ask_settled",
+     "toolu_017ofbFEZFDYFHFxQrgbSJPF",
+     1000000000.0,
+     {
+      "call": "toolu_017ofbFEZFDYFHFxQrgbSJPF",
+      "how": "answered",
+      "result": "User has approved your plan. You can now start coding. Start with updating your todo list if applicable\n\nYour plan has b…[409 33829a06]"
+     }
+    ]
+   ]
+  },
+  {
+   "at": 25,
+   "answer": [],
+   "call": [
+    [
+     "task_started",
+     "blvigr5vw.toolu_01Y6dp9FVt2njA2ERMqh4A5Y",
+     1000000000.0,
+     {
+      "task": "blvigr5vw",
+      "kind": "command",
+      "how": "started",
+      "label": "Run a 60-second tick loop in background",
+      "output": "/private/tmp/claude-501/-private-tmp-claude-501-f7cl109347-w/bab78d62-90d6-42ea-ad17-010da5619042/tasks/blvigr5vw.output"
+     }
+    ]
+   ]
+  },
+  {
+   "at": 31,
+   "answer": [],
+   "call": [
+    [
+     "task_ended",
+     "blvigr5vw.toolu_01Q6o9iAV54h8MGX4Vc5vuB3",
+     1000000000.0,
+     {
+      "task": "blvigr5vw",
+      "kind": null,
+      "status": "stopped"
+     }
+    ]
+   ]
+  },
+  {
+   "at": 35,
+   "answer": [],
+   "call": [
+    [
+     "task_started",
+     "a16adb1ffab6c29d8.toolu_015QdPB6BndRy9pJC2ch8qcy",
+     1000000000.0,
+     {
+      "task": "a16adb1ffab6c29d8",
+      "kind": "agent",
+      "how": "started",
+      "label": "sleepy helper",
+      "output": "/private/tmp/claude-501/-private-tmp-claude-501-f7cl109347-w/bab78d62-90d6-42ea-ad17-010da5619042/tasks/a16adb1ffab6c29d8.output"
+     }
+    ]
+   ]
+  },
+  {
+   "at": 37,
+   "answer": [],
+   "call": [
+    [
+     "task_ended",
+     "a16adb1ffab6c29d8.38b549d4",
+     1000000000.0,
+     {
+      "task": "a16adb1ffab6c29d8",
+      "kind": "agent",
+      "status": "completed"
+     }
+    ]
+   ]
+  },
+  {
+   "at": 39,
+   "answer": [],
+   "call": [
+    [
+     "task_ended",
+     "a16adb1ffab6c29d8.59c5301f",
+     1000000000.0,
+     {
+      "task": "a16adb1ffab6c29d8",
+      "kind": null,
+      "status": "completed"
+     }
+    ]
+   ]
+  },
+  {
+   "at": 43,
+   "answer": [],
+   "call": [
+    [
+     "task_started",
+     "bm5yy4o8g.toolu_01VLsfy4DXzddu2pPUwVxbK4",
+     1000000000.0,
+     {
+      "task": "bm5yy4o8g",
+      "kind": "monitor",
+      "how": "started",
+      "label": "Output lines of a 3-step loop",
+      "output": null
+     }
+    ]
+   ]
+  },
+  {
+   "at": 45,
+   "answer": [],
+   "call": [
+    [
+     "task_activity",
+     "bm5yy4o8g.4499ea14",
+     1000000000.0,
+     {
+      "task": "bm5yy4o8g",
+      "event": "line 1"
+     }
+    ]
+   ]
+  },
+  {
+   "at": 47,
+   "answer": [],
+   "call": [
+    [
+     "task_activity",
+     "bm5yy4o8g.6226de6d",
+     1000000000.0,
+     {
+      "task": "bm5yy4o8g",
+      "event": "line 2"
+     }
+    ]
+   ]
+  },
+  {
+   "at": 49,
+   "answer": [],
+   "call": [
+    [
+     "task_ended",
+     "bm5yy4o8g.d2b97f32",
+     1000000000.0,
+     {
+      "task": "bm5yy4o8g",
+      "kind": null,
+      "status": null
+     }
+    ]
+   ]
+  }
+ ],
+ "record": [
+  [
+   "message_sent",
+   "0.a7c59d09",
+   1793109351.246,
+   {
+    "queued": null,
+    "text": "Read notes.txt and tell me the secret number, in one sentence.",
+    "words": "Read notes.txt and tell me the secret number, in one sentence.",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793109351.246
+   }
+  ],
+  [
+   "message_sent",
+   "11570.cf175bc0",
+   1793109357.929,
+   {
+    "queued": null,
+    "text": "Use the AskUserQuestion tool once, with two questions: 'Which fruit?' (single choice: Apple, Mango) and 'Which pets?' (m…[189 1f708ec1]",
+    "words": "Use the AskUserQuestion tool once, with two questions: 'Which fruit?' (single choice: Apple, Mango) and 'Which pets?' (m…[189 1f708ec1]",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793109357.929
+   }
+  ],
+  [
+   "ask_settled",
+   "14924.3b04488b.toolu_01XSAp4DPxFyg5P3TaPWf4AM",
+   1793109363.419,
+   {
+    "call": "toolu_01XSAp4DPxFyg5P3TaPWf4AM",
+    "how": "answered",
+    "result": "Your questions have been answered: \"Which fruit?\"=\"Mango\", \"Which pets?\"=\"Cat, Fish\". You can now continue with these answers in mind."
+   }
+  ],
+  [
+   "message_sent",
+   "18408.22cd8963",
+   1793109368.031,
+   {
+    "queued": null,
+    "text": "Use the AskUserQuestion tool to ask me one question: 'Tea or coffee?' with options Tea and Coffee. Then reply with just my answer.",
+    "words": "Use the AskUserQuestion tool to ask me one question: 'Tea or coffee?' with options Tea and Coffee. Then reply with just my answer.",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793109368.031
+   }
+  ],
+  [
+   "ask_settled",
+   "21293.92b62adc.toolu_01XLcqgyf6e5693itRqnCjjb",
+   1793110299.356,
+   {
+    "call": "toolu_01XLcqgyf6e5693itRqnCjjb",
+    "how": "dismissed",
+    "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_strin…[436 d665f858]"
+   }
+  ],
+  [
+   "turn_stopped",
+   "22892.fd6e9055",
+   1793110299.357,
+   {
+    "how": "interrupted"
+   }
+  ],
+  [
+   "message_sent",
+   "23498.f42baff3",
+   1793110300.101,
+   {
+    "queued": null,
+    "text": "Plan creating a file plan.txt holding the word hi. Keep the plan to two lines, write it, then ask me to approve it.",
+    "words": "Plan creating a file plan.txt holding the word hi. Keep the plan to two lines, write it, then ask me to approve it.",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793110300.101
+   }
+  ],
+  [
+   "ask_settled",
+   "32652.e7657c63.toolu_016ijGM8e5S38ZTrpP3F8vkZ",
+   1793110309.585,
+   {
+    "call": "toolu_016ijGM8e5S38ZTrpP3F8vkZ",
+    "how": "answered",
+    "result": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_strin…[432 5a9b1025]"
+   }
+  ],
+  [
+   "ask_settled",
+   "38617.627a8769.toolu_017ofbFEZFDYFHFxQrgbSJPF",
+   1793110314.311,
+   {
+    "call": "toolu_017ofbFEZFDYFHFxQrgbSJPF",
+    "how": "answered",
+    "result": "User has approved your plan. You can now start coding. Start with updating your todo list if applicable\n\nYour plan has b…[409 33829a06]"
+   }
+  ],
+  [
+   "message_sent",
+   "42003.9ac0797a",
+   1793110321.15,
+   {
+    "queued": null,
+    "text": "Start `for i in $(seq 1 60); do echo tick $i; sleep 1; done` with Bash using run_in_background: true, then reply 'started' and end your turn.",
+    "words": "Start `for i in $(seq 1 60); do echo tick $i; sleep 1; done` with Bash using run_in_background: true, then reply 'started' and end your turn.",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793110321.15
+   }
+  ],
+  [
+   "message_sent",
+   "42772.7cbed46b",
+   1793110337.949,
+   {
+    "queued": null,
+    "text": "Stop the background command you started, with the tool for stopping background tasks, then reply 'stopped'.",
+    "words": "Stop the background command you started, with the tool for stopping background tasks, then reply 'stopped'.",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793110337.949
+   }
+  ],
+  [
+   "message_sent",
+   "47191.17b3d1eb",
+   1793111330.854,
+   {
+    "queued": null,
+    "text": "Use the Agent tool with run_in_background: true (subagent_type general-purpose, description 'sleepy helper'): the subage…[248 242ca5b5]",
+    "words": "Use the Agent tool with run_in_background: true (subagent_type general-purpose, description 'sleepy helper'): the subage…[248 242ca5b5]",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793111330.854
+   }
+  ],
+  [
+   "task_ended",
+   "48763.6be1801a.a16adb1ffab6c29d8",
+   1793111354.69,
+   {
+    "task": "a16adb1ffab6c29d8",
+    "kind": null,
+    "status": "completed"
+   }
+  ],
+  [
+   "task_ended",
+   "50063.d52f1015.a16adb1ffab6c29d8",
+   1793111356.313,
+   {
+    "task": "a16adb1ffab6c29d8",
+    "kind": null,
+    "status": "completed"
+   }
+  ],
+  [
+   "message_sent",
+   "51616.df50895c",
+   1793111363.163,
+   {
+    "queued": null,
+    "text": "Use the Monitor tool to watch the output of `for i in 1 2 3; do echo line $i; sleep 4; done`. Reply 'watching' and end your turn.",
+    "words": "Use the Monitor tool to watch the output of `for i in 1 2 3; do echo line $i; sleep 4; done`. Reply 'watching' and end your turn.",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793111363.163
+   }
+  ],
+  [
+   "task_ended",
+   "58707.a09d6d13.bm5yy4o8g",
+   1793112286.37,
+   {
+    "task": "bm5yy4o8g",
+    "kind": null,
+    "status": null
+   }
+  ],
+  [
+   "task_ended",
+   "59245.d091ace5.bm5yy4o8g",
+   1793112288.779,
+   {
+    "task": "bm5yy4o8g",
+    "kind": null,
+    "status": null
+   }
+  ],
+  [
+   "message_sent",
+   "60200.b8bf2238",
+   1793112298.247,
+   {
+    "queued": null,
+    "text": "Run `sleep 12` with Bash (not in the background), then reply 'slept'.",
+    "words": "Run `sleep 12` with Bash (not in the background), then reply 'slept'.",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793112298.247
+   }
+  ],
+  [
+   "message_queued",
+   "60898.b018cc71",
+   1793112302.678,
+   {
+    "queued": "60898.b018cc71",
+    "text": "Also tell me what 6 times 7 is.",
+    "words": "Also tell me what 6 times 7 is."
+   }
+  ],
+  [
+   "message_sent",
+   "61081.0aabdbcf",
+   1793112315.267,
+   {
+    "queued": "60898.b018cc71",
+    "text": "Also tell me what 6 times 7 is.",
+    "words": "Also tell me what 6 times 7 is.",
+    "how": "mid_turn",
+    "joins": true,
+    "written": 1793112302.678
+   }
+  ],
+  [
+   "message_sent",
+   "61397.5a9175f6",
+   1793112322.276,
+   {
+    "queued": null,
+    "text": "Run `sleep 10` with Bash (not in the background), then reply 'done'.",
+    "words": "Run `sleep 10` with Bash (not in the background), then reply 'done'.",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793112322.276
+   }
+  ],
+  [
+   "message_queued",
+   "62095.fe818f81",
+   1793112326.96,
+   {
+    "queued": "62095.fe818f81",
+    "text": "Never mind this one",
+    "words": "Never mind this one"
+   }
+  ],
+  [
+   "message_withdrawn",
+   "62266.54d17d8a.0",
+   1793112329.47,
+   {
+    "queued": "62095.fe818f81"
+   }
+  ],
+  [
+   "turn_stopped",
+   "62436.87e4c34d",
+   1793112780.569,
+   {
+    "how": "interrupted"
+   }
+  ],
+  [
+   "message_sent",
+   "63083.d1d03d1e",
+   1793112781.715,
+   {
+    "queued": null,
+    "text": "Never mind this oneRun `sleep 40` with Bash (not in the background), then reply 'done'.",
+    "words": "Never mind this oneRun `sleep 40` with Bash (not in the background), then reply 'done'.",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793112781.715
+   }
+  ],
+  [
+   "message_sent",
+   "64415.b884d6ae",
+   1793112814.739,
+   {
+    "queued": null,
+    "text": "Reply with just: ok",
+    "words": "Reply with just: ok",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793112814.739
+   }
+  ],
+  [
+   "message_sent",
+   "65064.f7399385",
+   1793112828.02,
+   {
+    "queued": null,
+    "text": "PROBE-API-ERROR: reply with just: ok",
+    "words": "PROBE-API-ERROR: reply with just: ok",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793112828.02
+   }
+  ],
+  [
+   "turn_stopped",
+   "69414.2b363a6a",
+   1793112828.087,
+   {
+    "how": "error",
+    "error": "API Error: 400 probe: refused on purpose",
+    "status": 400
+   }
+  ],
+  [
+   "message_sent",
+   "70656.6189c5c2",
+   1793112833.924,
+   {
+    "queued": null,
+    "text": "Reply with just: ok",
+    "words": "Reply with just: ok",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793112833.924
+   }
+  ],
+  [
+   "message_sent",
+   "72635.305c58eb",
+   1793112874.621,
+   {
+    "queued": null,
+    "text": "Reply with just: ok",
+    "words": "Reply with just: ok",
+    "how": "prompt",
+    "joins": false,
+    "written": 1793112874.621
+   }
+  ]
+ ],
+ "answers": [
+  {
+   "call": "toolu_01XSAp4DPxFyg5P3TaPWf4AM",
+   "kind": "question",
+   "async": false,
+   "choices": {
+    "first": {
+     "keys": [
+      "1",
+      "1",
+      "2",
+      "\t",
+      "1"
+     ],
+     "expected": [
+      "\"Which fruit?\"=\"Apple\"",
+      "\"Which pets?\"=\"Cat, Dog\""
+     ],
+     "summary": "Which fruit? → Apple · Which pets? → Cat, Dog"
+    },
+    "own": {
+     "keys": [
+      "3",
+      "My own answer",
+      "\r",
+      "1",
+      "\t",
+      "1"
+     ],
+     "expected": [
+      "\"Which fruit?\"=\"My own answer\"",
+      "\"Which pets?\"=\"Cat\""
+     ],
+     "summary": "Which fruit? → My own answer · Which pets? → Cat"
+    }
+   }
+  },
+  {
+   "call": "toolu_01XLcqgyf6e5693itRqnCjjb",
+   "kind": "question",
+   "async": false,
+   "choices": {
+    "first": {
+     "keys": [
+      "1"
+     ],
+     "expected": [
+      "\"Tea or coffee?\"=\"Tea\""
+     ],
+     "summary": "Tea or coffee? → Tea"
+    },
+    "own": {
+     "keys": [
+      "3",
+      "My own answer",
+      "\r"
+     ],
+     "expected": [
+      "\"Tea or coffee?\"=\"My own answer\""
+     ],
+     "summary": "Tea or coffee? → My own answer"
+    }
+   }
+  },
+  {
+   "call": "toolu_016ijGM8e5S38ZTrpP3F8vkZ",
+   "kind": "plan",
+   "async": false,
+   "choices": {
+    "auto": {
+     "keys": [
+      "1"
+     ],
+     "expected": [
+      "User has approved your plan"
+     ],
+     "summary": "Approved, with auto mode"
+    },
+    "manual": {
+     "keys": [
+      "2"
+     ],
+     "expected": [
+      "User has approved your plan"
+     ],
+     "summary": "Approved, edits approved by hand"
+    },
+    "change": {
+     "keys": [
+      "3",
+      "Make it shorter",
+      "\r"
+     ],
+     "expected": [
+      "Make it shorter"
+     ],
+     "summary": "Change: Make it shorter"
+    }
+   }
+  },
+  {
+   "call": "toolu_017ofbFEZFDYFHFxQrgbSJPF",
+   "kind": "plan",
+   "async": false,
+   "choices": {
+    "auto": {
+     "keys": [
+      "1"
+     ],
+     "expected": [
+      "User has approved your plan"
+     ],
+     "summary": "Approved, with auto mode"
+    },
+    "manual": {
+     "keys": [
+      "2"
+     ],
+     "expected": [
+      "User has approved your plan"
+     ],
+     "summary": "Approved, edits approved by hand"
+    },
+    "change": {
+     "keys": [
+      "3",
+      "Make it shorter",
+      "\r"
+     ],
+     "expected": [
+      "Make it shorter"
+     ],
+     "summary": "Change: Make it shorter"
+    }
+   }
+  }
+ ]
+}

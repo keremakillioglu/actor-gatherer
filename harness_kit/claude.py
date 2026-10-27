@@ -349,6 +349,8 @@ def kind_of(item) -> str:
             return Kind.AGENT
         text = str(blocks[0].get("text") or "")
         own = opening(text)
+        if own == Kind.ENVIRONMENT and "<task-notification>" in text:
+            return Kind.TASK_NOTICE                       # a notice Claude Code wraps in a reminder (2.1.311)
         if own is not None:
             return own
         return words_of(text)[0]
@@ -788,17 +790,6 @@ class ClaudeCode(Harness):
                                 {"task": agent, "kind": "agent", "status": "completed"}))
         return out
 
-    def owns(self, payload) -> bool:
-        if not isinstance(payload, dict) or "info" in payload or "api" in payload:
-            return False
-        if payload.get("role") == "system":
-            return True
-        blocks = [c for c in payload.get("content") or [] if isinstance(c, dict)] if isinstance(payload.get("content"), list) else []
-        kinds = {c.get("type") for c in blocks}
-        if kinds & {"input_text", "output_text", "toolCall"} or payload.get("type") is not None:
-            return False
-        return payload.get("role") in ("user", "assistant") and (bool(kinds & set(BLOCK_KINDS)) or isinstance(payload.get("content"), str))
-
     def read(self, items: list) -> List[Part]:
         """Each piece read (module doc). Its neighbours tell two things a piece alone does not: the prompt a command the
         user typed expands to -- the first of the user's words after it, before the agent says anything (a skill's
@@ -1104,9 +1095,10 @@ class Record(Follower):
 
     @staticmethod
     def _ended(m: dict, key: str, when: Optional[float]) -> List[Fact]:
-        """The background tasks a line's notifications say ended (`notices`) -- whether or not a call has carried them."""
-        if when is None:                                  # when, unknown: perhaps before an agent was resumed
-            return []
+        """The background tasks a line's notifications say ended (`notices`) -- whether or not a call has carried them;
+        not a line of what it sent the model (`api-request`, its blobs), which holds a notification again."""
+        if when is None or str(m.get("type") or "").startswith("api-request"):   # when, unknown: perhaps before an
+            return []                                                          # agent was resumed
         out, seen = [], set()
         for text in _strings(m):
             for n in notices(text):

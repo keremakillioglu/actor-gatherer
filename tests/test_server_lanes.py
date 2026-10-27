@@ -261,8 +261,9 @@ class GathererTest(unittest.TestCase):
                 session = {"gatherer": "g", "properties": {"channel": c}}
                 requests += [
                     {"op": "rewrite", **session, "events": codex.to_events(history[:-1])},
-                    {"op": "pending", **session, "events": codex.to_events(history[-1:]), "answer": f"{c}-{turn}",
-                     "stop": "end_turn"},
+                    {"op": "insert", **session, "lane": "records", "events": [         # its answer, as the hook records it
+                        {"type": "reply_part", "id": f"{c}-{turn}:0", "payload": codex.to_events(history[-1:])[0],
+                         "properties": {"answer_id": f"{c}-{turn}"}}]},
                     {"op": "insert", **session, "events": [{"type": f"note_{c}", "id": f"n{turn}", "payload": turn}]},
                     {"op": "latest", **session, "n": 2}]
         Server.answer = seen
@@ -279,7 +280,7 @@ class GathererTest(unittest.TestCase):
             for c in ("c1", "c2", "c3"):
                 ids = [e for (e,) in conn.execute("SELECT event_id FROM events WHERE p_channel = ?", (c,))]
                 self.assertEqual(len(ids), len(set(ids)))                        # each event once
-                self.assertEqual(len(ids), 9 + 5)               # 5 turns' messages but the last answer; 5 notes
+                self.assertEqual(len(ids), 9 + 5 + 5)           # 5 turns' messages but the last answer; 5 notes; 5 answers' parts
         finally:
             conn.close()
 

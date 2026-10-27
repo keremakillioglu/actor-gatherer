@@ -15,7 +15,8 @@ database, opened read-only, and ag's own logs -- as plain JSON-ready dicts.
     transcript(gatherer, channel, ...)  its conversation, each event as harness-free parts
 
 An agent is a channel of a gatherer: one harness session (codex's thread, Claude Code's
-session, ...), some of them started from the page (sessions.py); which harness, its events' shape tells (`harness_of`). Its STATUS (`status_of`):
+session, ...), some of them started from the page (sessions.py); which harness, as its hook recorded it with each call
+(`model_call`; a session from before, as its gatherer's old tables were copied: `harness`). Its STATUS (`status_of`):
 CLOSED when the harness's process that made its last call no longer runs; else IDLE when its turn
 is over -- its last answer ended without a tool call -- and RUNNING when it is not (waiting on a
 tool, or on the model). Where the process is not known (a call from before ag recorded it, not
@@ -25,16 +26,14 @@ is IDLE, not CLOSED; one whose process the dashboard saw end otherwise (closed f
 sessions.py's `ended`) is CLOSED where
 the process cannot be told, unless something happened for it since. An IDLE agent whose BACKGROUND
 tasks still run (`background`) is BACKGROUND: its turn is over, but Claude Code is not done. A RUNNING
-agent whose turn waits on the user (`asking`) is ASKING: its newest answer, not yet carried back by a
-call, calls a tool of Claude Code's that asks the user in its terminal (ASKS) -- a question, a plan to
-approve -- and nothing comes until they answer. Until, that is, Claude Code's own record of the session
-says the call has its result (`Record.settled`; the hook records what the record says as FACTS, following it as it
-is written): answered there, the turn goes on and ag hears of it with the next
-call; dismissed there (Esc), no call comes, so ag's record would go on asking -- IDLE instead, its turn over.
+agent whose turn waits on the user (`asking`) is ASKING: its hook recorded that an answer asks the user in its
+terminal (`asked`: a question, a plan to approve; codex's, as its rollout says) -- and nothing comes until they
+answer -- and nothing says the call has its result yet (`ask_settled`; `Record.settled`): answered there, the turn
+goes on; dismissed there (Esc), no call comes -- IDLE, its turn over.
 Answered from the page (sessions.py's `answer`), its `answer`
 says whether Claude Code's result for the call holds what was picked (`recorded`; None: no result yet).
-A RUNNING agent may also have stopped where ag does not see it. A model call that FAILED is kept on its
-read (`_reads.error`, by ag's hook server): `failing` is the run of them at the newest event the agent's
+A RUNNING agent may also have stopped where ag does not see it. A model call that FAILED is recorded by ag's
+hook server (`call_failed`, by its read): `failing` is the run of them at the newest event the agent's
 calls answered -- the harness tries again, each try a read -- and whether a try is under way. Claude Code's
 own record of the session says how its turn STOPPED, when that came after ag last heard of the session -- its
 latest activity, or a message ag stored since, as a new turn's read began (`newest`; `Record.stopped`): Claude
@@ -43,8 +42,8 @@ call, IDLE. A failed call with no try since for GIVE_UP_SECONDS counts as given 
 followed (a session of another machine; a hook server from before it followed them), or one that says nothing: Esc while Claude Code waits to try again
 stops it without a word -- ERROR; GIVE_UP_LONG where the record could still say, the endpoint having answered
 an error that may ask for a longer wait (Retry-After). `running` is RUNNING or BACKGROUND, or a build running for it. Its `last` is its latest activity: a call (its read), or an
-answer to one -- pending (the reply that ends a turn, which no call stores until the user writes again), or
-kept on its read (`answered_at`) once a call stored it -- what the page compares with when the reader last
+answer to one, recorded as it came (`reply_part`, `reply_end`) -- the reply that ends a turn among them, which no
+call stores until the user writes again -- what the page compares with when the reader last
 looked at it, to show it FINISHED. Not the events stored: a side call of Claude Code's (a recap, a prompt
 suggestion) stores the conversation's -- the reply that ended the turn among them, minutes after it came --
 which is no activity of the agent's; only an agent with no reads (a history loaded whole) goes by its newest
@@ -52,21 +51,14 @@ event. A REBUILD is a
 read whose context comes from another build than the agent's read before it: the condensed
 history was replaced.
 
-A BACKGROUND TASK is one Claude Code started and went on without (`background`): a command run in the
-background, an agent, a monitor, a workflow. Its tool's result says it started (STARTS) -- an agent that ended
-starts again when SendMessage resumes it (RESUMED); Claude Code tells the
-model it ended in a `<task-notification>` with a `<status>`, which reaches the gatherer with the next
-call -- an agent's end, as soon as it ends, by its report, handed back as a message from it (HANDBACK),
-its notification perhaps much later; an agent that stopped while background work of its own runs is
-notified too, but WAITING, not ended; a monitor's end may come as its last event, that it expired
-(MONITOR_END) -- or TaskStop's result says it was stopped; or Claude Code's own record of the session has its
-notification already, written after it started (`Record.ends`): one the user stopped from Claude Code's list of
-them waits there for their next message, and no call carries it till then. One with none still runs, while its
-session's process does: none when that process is known gone, or started after the task (a process
-the dashboard runs, `session.since`; else the reads that named it). Where the process is not known,
-one with no sign of life (its start, its output file changing -- a workflow's, any file in its transcript
-folder -- a monitor's event) for STALE_SECONDS
-counts as over.
+A BACKGROUND TASK is one the harness started and went on without (`background`): a command run in the
+background, an agent, a monitor, a workflow. Its hook records that it started (`task_started`: its tool's result
+said so, or a SendMessage resumed an agent; codex's, its rollout), its signs of life (`task_activity`: its output
+growing, a monitor's event, an agent waiting on its own background work) and its end (`task_ended`: a notification
+with a status, an agent's report handed back, TaskStop's result, a monitor that expired). One not ended still runs,
+while its session's process does: none when that process is known gone, or started after the task (a process the
+dashboard runs, `session.since`; else the reads that named it). Where the process is not known, one with no sign of
+life for STALE_SECONDS counts as over.
 
 Each read has these sizes: `sent_tokens`, ag's own count of everything it sent (what the
 read returned, `_read_items`, added up, by the sizes stored now -- what read() breaks down);
@@ -85,7 +77,6 @@ import json
 import os
 import re
 import sqlite3
-import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -94,20 +85,14 @@ from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
 from . import answers, avatars, hiding, live, saved, sessions
 import harness_kit
-from harness_kit import Kind, claude as claude_rules, codex as codex_rules
+from harness_kit import Kind, codex as codex_rules
 from harness_kit.base import output_of as _output  # noqa: F401 - a tool result's words, as files.py reads them
 from harness_kit.shell import CODE_MODE, script_calls
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
 RUNNING, IDLE, CLOSED, BACKGROUND, ASKING, ERROR = "running", "idle", "closed", "background", "asking", "error"
-#: Claude Code's tools that wait for the user in its terminal before the turn goes on: a question, with
-#: options to pick from; a plan, to approve. What each asks, `asking` returns (harness_kit.claude's).
-ASKS = claude_rules.ASKS
-#: Codex's tool that asks the user in its terminal, its turn waiting on the answer (Plan mode's): a question, with
-#: options to pick from -- codex adds "None of the above" to each, with a note in the user's own words.
-CODEX_ASKS = {codex_rules.ASK: "question"}
-ASK_CHARS = 4000               # the most of a question's words `asking` returns
+ASK_CHARS = 4000               # the most of a question's words `ask_view` returns
 PLAN_CHARS = 20000             # the most of a plan it returns
 GIVE_UP_SECONDS = 90           # a failed call with no try since: given up (Claude Code waits at most ~40 s
                                # between its tries)
@@ -117,13 +102,6 @@ FAILED_READS = 50              # how many of its newest reads `failing` looks at
 #: "client closed request"): the user stopped it (Esc) -- not a failure.
 HUNG_UP = 499
 ERROR_CHARS = 2000             # the most of an error's words it returns
-#: Claude Code's words for a background task's start and end, and where it writes its plans (harness_kit.claude's)
-PLAN_FILE, STARTS, SUMMARY, RESUMED = claude_rules.PLAN_FILE, claude_rules.STARTS, claude_rules.SUMMARY, claude_rules.RESUMED
-HANDBACK, NOTIFICATION, TASK_ID, TASK_STATUS = (claude_rules.HANDBACK, claude_rules.NOTIFICATION, claude_rules.TASK_ID,
-                                                claude_rules.TASK_STATUS)
-TASK_EVENT, WAITING, MONITOR_END, STOPPED = (claude_rules.TASK_EVENT, claude_rules.WAITING, claude_rules.MONITOR_END,
-                                             claude_rules.STOPPED)
-OUTPUT_FILE = claude_rules.OUTPUT_FILE
 #: An answer's stop reason, as the provider gives it: the turn goes on (a tool to run, a paused
 #: turn, or ag's "streaming": the parts of an answer complete while the rest still streams), or is
 #: over. Any other (Codex's `completed` on every answer, none) tells nothing: its last event does.
@@ -138,7 +116,7 @@ CHANNEL = "p_channel"          # the channel property's column (ag.ag_policies.t
 #: The events a harness's hook records of a session besides its conversation (ag's
 #: integrations/tools/ag_orchestrator/records.py) and the dashboard of what it did: read for what they say, never shown
 #: as the conversation.
-RECORDS = ("model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "session_file", "asked",
+RECORDS = ("model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "harness", "session_file", "asked",
            "ask_settled", "turn_stopped", "task_started", "task_ended", "task_activity", "message_queued", "message_sent",
            "message_withdrawn", "file_touched", "chat_sent", "answer_given", "terminal_input")
 #: What the harness's own record of a session says (its file: Claude Code's under its projects folder, codex's
@@ -381,11 +359,9 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
                         "limit_tokens": None, "sent_tokens": None, "pid": None, "alive": None}
     if CHANNEL in _columns(conn, "_reads"):
         cols = _columns(conn, "_reads")
-        answer = "max(answered_at)" if "answered_at" in cols else "NULL"
-        for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, max(read_at) AS last, {answer} AS answered "
-                              f"FROM _reads GROUP BY {CHANNEL}"):
+        for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, max(read_at) AS last FROM _reads GROUP BY {CHANNEL}"):
             if r["ch"] in out:
-                out[r["ch"]].update(reads=r["n"], last_read=_seconds(r["last"]), last_answer=_seconds(r["answered"]))
+                out[r["ch"]].update(reads=r["n"], last_read=_seconds(r["last"]))
         cwd = "p_cwd" in cols
         process = [c for c in ("pid", "pid_started") if c in cols]
         for ch, a in out.items():
@@ -410,16 +386,12 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         for r in conn.execute("SELECT channel_key AS ch, count(*) AS n FROM tasks GROUP BY channel_key"):
             if r["ch"] in out:
                 out[r["ch"]]["tasks"] = r["n"]
-    answered = {}                                    # each agent's newest answer: pending (one no call has carried yet),
-    if "_pending" in _tables(conn) and CHANNEL in _columns(conn, "_pending"):     # or recorded as it came (`reply_*`)
-        answered = {ch: _seconds(t) for ch, t in conn.execute(
-            f"SELECT {CHANNEL}, max(received_at) FROM _pending WHERE {CHANNEL} IS NOT NULL GROUP BY {CHANNEL}")}
+    answered = {}                                    # each agent's newest answer, recorded as it came (`reply_*`)
     for ch, t in conn.execute(f"SELECT e.{CHANNEL}, max(e.inserted_at) FROM events e JOIN event_types t ON "
                               f"t.event_type_id = e.event_type_id WHERE t.name IN ('reply_part', 'reply_end') "
                               f"AND e.{CHANNEL} IS NOT NULL GROUP BY e.{CHANNEL}"):
         answered[ch] = max(answered.get(ch) or 0, _seconds(t) or 0) or None
     building = _running_builds(conn)
-    background = _background(conn)
     last_user, user_at = {}, {}                      # each agent's newest user message: what it was last asked --
     words = "e.p_words" if "p_words" in _columns(conn, "events") else "NULL"   # as the user typed it, where it was kept
     for ch, text, payload, said, stored in conn.execute(   # not a background agent's report, which comes as one (HANDBACK)
@@ -430,12 +402,8 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         last_user[ch] = (said, None) if said is not None else (None, (text if text else readable(payload)) or "")
         user_at[ch] = _seconds(stored)               # and when ag stored it: as a read began, before its context is built
     tables = _tables(conn)
-    recaps = {}                                      # each agent's newest recap (Claude Code's, while the user was away):
-    found = []                                       # kept in `_recaps` before, recorded as an event now
-    if "_recaps" in tables:
-        found += conn.execute("SELECT session, made_at, text FROM _recaps WHERE recap_id IN "
-                              "(SELECT max(recap_id) FROM _recaps GROUP BY session)").fetchall()
-    found += [(ch, at, (_json(raw) or {}).get("text")) for ch, at, raw in conn.execute(
+    recaps = {}                                      # each agent's newest recap (Claude Code's, while the user was away)
+    found = [(ch, at, (_json(raw) or {}).get("text")) for ch, at, raw in conn.execute(
         f"SELECT e.{CHANNEL}, e.inserted_at, e.payload_json FROM events e WHERE e.row_id IN (SELECT max(x.row_id) FROM "
         f"events x JOIN event_types t ON t.event_type_id = x.event_type_id WHERE t.name = 'recap' GROUP BY x.{CHANNEL})")]
     for ch, made, text in found:
@@ -443,15 +411,13 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
             recaps[ch] = {"text": " ".join((text or "").split())[:600], "at": _seconds(made)}
     names = _names(conn, tables)
     for ch, a in out.items():
-        newest_call = _newest_call(conn, ch)
-        a["harness"] = _harness(conn, ch, newest_call)
-        a["derives"] = bool(newest_call.get("derives"))      # its hook records asks and tasks: read from them
+        a["harness"] = _harness(conn, ch)
         typed, text = last_user.get(ch, (None, ""))
         said = typed if typed is not None else harness_kit.words(text, a["harness"])[1]   # as the user typed it
         a["last_user_message"] = " ".join(said.split())[:600] or None
         a["recap"] = recaps.get(ch)
         a["name"] = names.get(ch)
-        a["last"] = max(a["last_read"] or 0, a.get("last_answer") or 0, answered.get(ch) or 0,   # its latest activity:
+        a["last"] = max(a["last_read"] or 0, answered.get(ch) or 0,                             # its latest activity:
                         0 if a["reads"] else a["last_event"] or 0) or None                     # not a side call's events
         a["building"] = ch in building
         a["turn_over"] = turn_over(conn, ch, tables)[0]
@@ -463,26 +429,17 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
             _claude_status(conn, ch, a, tables, now)
         del a["said_at"]
         a["running"] = a["building"] or a["status"] == RUNNING
-        a["background"] = a.pop("record_background") if "record_background" in a else background.get(ch, [])
+        a["background"] = a.pop("record_background", [])
     return sorted(out.values(), key=lambda a: a["created"] or 0, reverse=True)   # in place: newest created first
 
 
 def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
-    """The agent's status as Claude Code's own record of the session tells it (module doc; `Record`): what it asks the
-    user, whether it was answered or dismissed there, and whether its turn stopped on an error or was interrupted; and
-    the background tasks the record says ended (`task_ends`, for `_settle_background`)."""
+    """The agent's status as its hook recorded what Claude Code's answers, calls and own record of the session say
+    (module doc; `Record`): what it asks the user and has not had answered or dismissed, whether its turn stopped on an
+    error or was interrupted, and the background tasks it left running (`record_background`)."""
     rec = record_of(conn, ch) if a["status"] in (RUNNING, IDLE) else Record()
-    a["task_ends"] = rec.ends()
-    if a.get("derives"):                             # what it asks, and its tasks, as its hook recorded them
-        a["record_background"] = rec.tasks()
-        a["asking"] = ask_view(rec.asking()) if a["status"] == RUNNING else None
-    else:
-        a["asking"] = asking(conn, ch, tables) if a["status"] == RUNNING else None
-    how = rec.settled(a["asking"]["call"]) if a["asking"] else None
-    if how:
-        a["asking"] = None
-        if how == "dismissed":
-            a["status"], a["turn_over"] = IDLE, True
+    a["record_background"] = rec.tasks()
+    a["asking"] = ask_view(rec.asking()) if a["status"] == RUNNING else None
     if a["asking"]:
         a["status"] = ASKING
     cut = since_said(a, hung_up(conn, ch)) if a["status"] == RUNNING else None
@@ -549,11 +506,8 @@ def since_said(a: dict, cut: Optional[float]) -> Optional[float]:
 
 def _names(conn, tables: set) -> Dict[str, dict]:
     """Each channel's name, {text, by}: the reader's newest (`by` "user", given in the dashboard: naming.py), else the
-    newest another gave (codex's title for its thread) -- from the `name` records, and the old `_names` table. A
-    reader's "" takes theirs back."""
+    newest another gave (codex's title for its thread) -- from the `name` records. A reader's "" takes theirs back."""
     given = []
-    if "_names" in tables:
-        given += [(ch, by, text, named) for ch, by, text, named in conn.execute("SELECT session, by, text, named_at FROM _names")]
     for ch, at, raw in conn.execute(f"SELECT e.{CHANNEL}, e.inserted_at, e.payload_json FROM events e JOIN event_types t "
                                     f"ON t.event_type_id = e.event_type_id WHERE t.name = 'name' ORDER BY e.row_id"):
         got = _json(raw) or {}
@@ -594,18 +548,11 @@ def _json(raw):
 
 def replies(conn, channel: str, tables: Optional[set] = None) -> List[dict]:
     """What the model answered that no call of the channel has carried back yet, oldest first, each {answer,
-    received_at, type, payload_json, text, stop}: from ag's `_pending` (as kept before its hooks recorded answers as
-    events), and the answers recorded as they came (`reply_part`, `reply_end`) after the channel's newest event of the
-    conversation -- the call that carries an answer back stores it as conversation, after it. `stop`: why its answer
-    stopped (its `reply_end`'s), "streaming" while it has none; an answer that broke off as it streamed -- no end, and a
-    turn's call since -- is left out, as ag dropped it from `_pending`."""
-    tables = _tables(conn) if tables is None else tables
+    received_at, type, payload_json, text, stop}: the answers recorded as they came (`reply_part`, `reply_end`) after
+    the channel's newest event of the conversation -- the call that carries an answer back stores it as conversation,
+    after it. `stop`: why its answer stopped (its `reply_end`'s), "streaming" while it has none; an answer that broke
+    off as it streamed -- no end, and a turn's call since -- is left out."""
     out = []
-    if "_pending" in tables and CHANNEL in _columns(conn, "_pending"):
-        stop = "stop" in _columns(conn, "_pending")
-        for r in conn.execute(f"SELECT answer, received_at, type, payload_json, text{', stop' if stop else ', NULL AS stop'} "
-                              f"FROM _pending WHERE ifnull({CHANNEL}, '') = ? ORDER BY pending_id", (channel,)):
-            out.append({k: r[k] for k in ("answer", "received_at", "type", "payload_json", "text", "stop")})
     if "p_answer_id" not in _columns(conn, "events"):
         return out
     since = conn.execute(f"SELECT max(e.row_id) FROM events e WHERE ifnull(e.{CHANNEL}, '') = ? AND {NOT_RECORD}",
@@ -629,47 +576,8 @@ def replies(conn, channel: str, tables: Optional[set] = None) -> List[dict]:
     return out
 
 
-def asking(conn, channel: str, tables: set) -> Optional[dict]:
-    """What the agent waits on the user for (module doc), None if nothing: from its newest pending answer,
-    its calls to a tool of ASKS -- {kind: "question" or "plan", at: when it was answered, call: the call's
-    id, questions: [{header, question, multiSelect, options: [{label, description}]}] or plan: its text}."""
-    rows = replies(conn, channel, tables)[::-1]
-    for r in rows:
-        if r["answer"] != rows[0]["answer"]:
-            break                                    # an earlier answer's
-        if r["type"] != "tool_call":
-            continue
-        try:
-            payload = json.loads(r["payload_json"])
-            content = payload.get("content")
-        except (ValueError, AttributeError):
-            continue
-        if payload.get("type") == "function_call" and payload.get("name") in CODEX_ASKS:
-            try:                                     # codex's: its arguments a JSON string
-                got = json.loads(payload.get("arguments") or "{}")
-            except ValueError:
-                got = {}
-            return {"kind": CODEX_ASKS[payload["name"]], "harness": "codex", "at": _seconds(r["received_at"]),
-                    "call": payload.get("call_id"), "questions": codex_questions(got.get("questions") if isinstance(got, dict) else None)}
-        for b in content if isinstance(content, list) else []:
-            if not isinstance(b, dict) or b.get("type") != "tool_use" or b.get("name") not in ASKS:
-                continue
-            got = b.get("input") if isinstance(b.get("input"), dict) else {}
-            out = {"kind": ASKS[b["name"]], "at": _seconds(r["received_at"]), "call": b.get("id")}
-            if out["kind"] == "plan":
-                out["plan"] = _clip(got["plan"], PLAN_CHARS) if isinstance(got.get("plan"), str) else _plan(conn, channel, [x["payload_json"] for x in rows])
-            else:
-                out["questions"] = [{"header": q.get("header"), "question": _clip(q.get("question"), ASK_CHARS),
-                                     "multiSelect": bool(q.get("multiSelect")),
-                                     "options": [{"label": o.get("label"), "description": _clip(o.get("description"), ASK_CHARS)}
-                                                 for o in q.get("options") or [] if isinstance(o, dict)]}
-                                    for q in got.get("questions") or [] if isinstance(q, dict)]
-            return out
-    return None
-
-
 def ask_view(f: Optional[dict]) -> Optional[dict]:
-    """An `asked` fact as `asking` returns what it asks: {kind, at, call, questions (clipped) or plan}; None for None."""
+    """What an `asked` fact asks, for the page: {kind, at, call, questions (clipped) or plan}; None for None."""
     if not f:
         return None
     out = {"kind": f.get("kind") or "question", "at": f.get("at"), "call": f.get("call")}
@@ -686,7 +594,7 @@ def ask_view(f: Optional[dict]) -> Optional[dict]:
 
 def codex_questions(given) -> List[dict]:
     """Codex's questions (request_user_input's: {id, header, question, options: [{label, description}]}; the
-    async one's: {title, options: [label]}) as `asking` returns them, each with its `id` (None: the async one's)."""
+    async one's: {title, options: [label]}) as `ask_view` returns them, each with its `id` (None: the async one's)."""
     out = []
     for q in given if isinstance(given, list) else []:
         if not isinstance(q, dict):
@@ -700,13 +608,14 @@ def codex_questions(given) -> List[dict]:
 
 def codex_asking(conn, channel: str, tables: set, status: str, rec: "Record") -> Optional[dict]:
     """What a codex agent waits on the user for (module doc), None if nothing: RUNNING, a question it asked in its
-    terminal (`asking`) while its record (`rec`) does not say it was answered or dismissed, else one it asked as its
-    turn goes on (async: True); its turn over (IDLE), the plan it proposed, which its terminal asks whether to
-    implement -- {kind: "plan", call: "plan:<its turn>", at: when the turn ended, plan}."""
+    terminal, its turn waiting (Plan mode's), that its record (`rec`) does not say was answered or dismissed, else one it
+    asked as its turn goes on (async: True); its turn over (IDLE), the plan it proposed, which its terminal asks whether
+    to implement -- {kind: "plan", call: "plan:<its turn>", at: when the turn ended, plan}."""
     if status == RUNNING:
-        ask = asking(conn, channel, tables)
-        if ask is not None and not rec.settled(ask["call"]):
-            return ask
+        got = rec.asking()
+        if got is not None:
+            return {"kind": "question", "harness": "codex", "async": False, "at": got.get("at"), "call": got["call"],
+                    "questions": codex_questions(got.get("questions"))}
         got = rec.open_question()
         return {"kind": "question", "harness": "codex", "async": True, "at": got["at"], "call": got["call"],
                 "questions": codex_questions(got["questions"])} if got else None
@@ -716,7 +625,7 @@ def codex_asking(conn, channel: str, tables: set, status: str, rec: "Record") ->
 
 
 def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optional[dict]:
-    """What the agent waits on the user for now (`asking`, less what its record says is settled; a codex agent's,
+    """What the agent waits on the user for now, as its hook recorded it (`Record.asking`; a codex agent's,
     `codex_asking`), None if nothing; `cwd`, where the session runs (no longer needed: the record is read from events)."""
     conn = _connect(gatherer)
     if conn is None:
@@ -729,8 +638,7 @@ def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optiona
         if _harness(conn, channel) == "codex":
             over = turn_over(conn, channel, tables)[0]
             return codex_asking(conn, channel, tables, IDLE if over else RUNNING, rec)
-        ask = ask_view(rec.asking()) if _newest_call(conn, channel).get("derives") else asking(conn, channel, tables)
-        return None if ask is None or rec.settled(ask["call"]) else ask
+        return ask_view(rec.asking())
     finally:
         conn.close()
 
@@ -794,15 +702,15 @@ def hung_up(conn, channel: str) -> Optional[float]:
 
 def _newest_reads(conn, channel: str, n: int) -> Optional[List[dict]]:
     """The channel's `n` newest reads, newest first, each {read_id, read_at, row_id, real_tokens, error_status, error}:
-    how its call failed as ag kept it on the read (`_reads.error`), or as the hook recorded it since (`call_failed`).
-    None in a file from before reads had channels."""
+    how its call failed, as the hook recorded it (`call_failed`, by its read). None in a file from before reads had
+    channels."""
     cols = _columns(conn, "_reads")
     if CHANNEL not in cols:
         return None
     counted = "real_tokens" if "real_tokens" in cols else "NULL AS real_tokens"
-    errors = "error_status, error" if "error" in cols else "NULL AS error_status, NULL AS error"
-    rows = [dict(r) for r in conn.execute(f"SELECT read_id, read_at, row_id, {counted}, {errors} FROM _reads WHERE "
-                                          f"ifnull({CHANNEL}, '') = ? ORDER BY read_id DESC LIMIT ?", (channel, n))]
+    rows = [{**dict(r), "error_status": None, "error": None} for r in conn.execute(
+        f"SELECT read_id, read_at, row_id, {counted} FROM _reads WHERE ifnull({CHANNEL}, '') = ? "
+        f"ORDER BY read_id DESC LIMIT ?", (channel, n))]
     if rows and "p_read_id" in _columns(conn, "events"):
         for read, raw in conn.execute(f"SELECT e.p_read_id, e.payload_json FROM events e JOIN event_types t ON "
                                       f"{BY_CHANNEL} WHERE ifnull(e.{CHANNEL}, '') = ? AND "
@@ -840,8 +748,7 @@ class Record:
                           words, status: its HTTP status}; None: it goes on, or ended before, or not known
         open_question()   a question asked as the turn goes on (codex's async one), not yet replied to
         offer()           the plan its last turn proposed, its terminal asking whether to implement it (codex's)
-        tasks()           the background tasks it started that have not ended, as the record says (codex's)
-        ends()            {task id: when the record last said it ended}
+        tasks()           the background tasks it started that have not ended, with their newest signs of life
     """
 
     def __init__(self, facts: List[tuple] = ()):
@@ -893,21 +800,18 @@ class Record:
         got = self._asked("plan")
         return {"call": got["call"], "at": got.get("at"), "text": got.get("plan") or ""} if got else None
 
-    def ends(self) -> Dict[str, float]:
-        out: Dict[str, float] = {}
-        for t, f in self.facts:
-            if t == "task_ended" and f.get("task") and f.get("at") is not None:
-                out[f["task"]] = max(out.get(f["task"], 0), f["at"])
-        return out
-
     def tasks(self) -> List[dict]:
         out: Dict[str, dict] = {}
+        outputs: Dict[str, str] = {}                 # each task's output, as its first start said: a resumed agent's too
         for t, f in self.facts:
             if t == "task_started" and f.get("task"):
+                output = outputs.setdefault(f["task"], f.get("output")) or f.get("output")
                 out[f["task"]] = {"id": f["task"], "kind": f.get("kind"), "label": f.get("label"), "started": f.get("at"),
-                                  "output": f.get("output"), "event": None, "event_at": None, "written": None}
-            elif t == "task_ended":
-                out.pop(f.get("task"), None)
+                                  "output": output, "event": None, "event_at": None, "written": None}
+            elif t == "task_ended" and f.get("task") in out:           # an end from before it started (again): not
+                started, ended = out[f["task"]]["started"], f.get("at")    # this run's -- stored late, by a follower
+                if started is None or ended is None or ended >= started:   # that read the record from its start
+                    del out[f["task"]]
             elif t == "task_activity" and f.get("task") in out:       # a sign of life: its output grew, or its event
                 task = out[f["task"]]
                 if f.get("event"):
@@ -1050,31 +954,6 @@ def _result(gatherer: str, channel: str, call: Optional[str]) -> Optional[str]:
         conn.close()
 
 
-def _plan(conn, channel: str, pending: List[str]) -> Optional[str]:
-    """The plan the agent asks to have approved, where its call does not carry it: the file of Claude Code's
-    plans (PLAN_FILE) it last wrote to -- in the answer that asks (`pending`, its events' payloads, newest
-    first), else before it -- as it is now, else as that write had it. None: none written."""
-    stored = (p for (p,) in conn.execute(
-        f"SELECT payload_json FROM events WHERE ifnull({CHANNEL}, '') = ? AND payload_json LIKE '%/.claude/plans/%' "
-        "ORDER BY row_id DESC LIMIT 20", (channel,)))
-    for payload in [*pending, *stored]:
-        try:
-            content = json.loads(payload).get("content")
-        except (ValueError, AttributeError):
-            continue
-        for b in reversed(content if isinstance(content, list) else []):
-            got = b.get("input") if isinstance(b, dict) and b.get("type") == "tool_use" else None
-            path = got.get("file_path") if isinstance(got, dict) else None
-            if not isinstance(path, str) or not PLAN_FILE.search(path):
-                continue
-            try:
-                with open(path, encoding="utf-8", errors="replace") as fh:
-                    return _clip(fh.read(PLAN_CHARS + 1), PLAN_CHARS)
-            except OSError:
-                return _clip(got["content"], PLAN_CHARS) if isinstance(got.get("content"), str) else None
-    return None
-
-
 def status_of(alive: Optional[bool], over: bool, last: Optional[float], now: float) -> str:
     """CLOSED, IDLE or RUNNING (module doc): `alive`, whether the harness's process runs (None:
     not known); `over`, whether the turn is; `last`, when anything last happened for it."""
@@ -1085,129 +964,6 @@ def status_of(alive: Optional[bool], over: bool, last: Optional[float], now: flo
     if alive is None and (last is None or now - last > STALE_SECONDS):
         return IDLE
     return RUNNING
-
-
-_BACKGROUND: Dict[str, dict] = {}   # database -> {row: the last row read, tasks: {channel: {id: task}}}, ended ones
-                                    # kept (`open` False): an agent resumed is the same task, its file the same
-_BACKGROUND_LOCK = threading.Lock()
-BACKGROUND_SCAN = ("SELECT e.row_id, e.{ch} AS ch, t.name AS type, e.text, e.payload_json, e.inserted_at FROM events e "
-                   "JOIN event_types t ON t.event_type_id = e.event_type_id WHERE e.row_id > ? AND e.row_id <= ? "
-                   "AND e.{ch} IS NOT NULL AND ((t.name = 'tool_output' AND (e.text LIKE 'Command running in background%' "
-                   "OR e.text LIKE 'Async agent launched%' OR e.text LIKE 'Monitor started (task %' "
-                   "OR e.text LIKE 'Workflow launched in background%' "
-                   "OR e.text LIKE '%Successfully stopped task: %' OR e.text LIKE '{{%\"resumedAgentId\"%')) "
-                   "OR (t.name IN ('context', 'user_message') AND (e.text LIKE '%<task-notification>%' "
-                   "OR e.text LIKE '%[Subagent hand-back]%'))) ORDER BY e.row_id")
-
-
-def _background(conn) -> Dict[str, List[dict]]:
-    """Each channel's background tasks that started and have not ended (module doc), oldest first:
-    {id, kind, label, started, output (its file, None: none named), event (a monitor's last), event_at}.
-    The database's events are read once: kept, each time only the rows added since are."""
-    path = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
-    top = conn.execute("SELECT max(row_id) FROM events").fetchone()[0] or 0
-    with _BACKGROUND_LOCK:
-        seen = _BACKGROUND.get(path)
-        if seen is None or top < seen["row"]:           # new, or not the database it was
-            seen = _BACKGROUND[path] = {"row": 0, "tasks": {}}
-        if top > seen["row"]:
-            for r in conn.execute(BACKGROUND_SCAN.format(ch=CHANNEL), (seen["row"], top)):
-                _background_event(conn, seen["tasks"].setdefault(r["ch"], {}), r)
-            seen["row"] = top
-        out = {ch: [{k: v for k, v in t.items() if k != "open"} for t in tasks.values() if t["open"]]
-               for ch, tasks in seen["tasks"].items()}
-        return {ch: open_ for ch, open_ in out.items() if open_}
-
-
-def _background_event(conn, tasks: Dict[str, dict], r) -> None:
-    """One event of the scan, on its channel's `tasks`: a start, an end, or a monitor's event."""
-    text = r["text"] or ""
-    if r["type"] == "tool_output":
-        stopped = STOPPED.match(text)
-        if stopped:
-            _end(tasks, stopped.group(1))
-            return
-        resumed = RESUMED.match(text)
-        if resumed:                                  # an agent sent a message after it ended: it runs again
-            before = tasks.get(resumed.group(1)) or {"id": resumed.group(1), "kind": "agent", "output": None, "label": None}
-            tasks[before["id"]] = {**before, "open": True, "started": _seconds(r["inserted_at"]), "event": None, "event_at": None,
-                                   "label": _task_label(conn, r["ch"], r["row_id"], r["payload_json"]) or before["label"]}
-            return
-        for pattern, kind in STARTS:
-            m = pattern.match(text)
-            if m:
-                out, summary = OUTPUT_FILE.search(text), SUMMARY.search(text)
-                tasks[m.group(1)] = {"id": m.group(1), "kind": kind, "started": _seconds(r["inserted_at"]),
-                                     "output": (out.group(1) or out.group(2)) if out else None, "event": None, "event_at": None,
-                                     "label": summary.group(1).strip()[:160] if summary
-                                     else _task_label(conn, r["ch"], r["row_id"], r["payload_json"]), "open": True}
-                return
-        return
-    for back in HANDBACK.finditer(text):             # an agent's report: it has ended
-        _end(tasks, back.group(1))
-    for note in NOTIFICATION.finditer(text):
-        found = TASK_ID.search(note.group(1))
-        task = tasks.get(found.group(1)) if found else None
-        if task is None or not task["open"]:
-            continue
-        event = TASK_EVENT.search(note.group(1))
-        if WAITING.search(note.group(1)):            # an agent stopped, its own background work running: not ended
-            task["event"], task["event_at"] = "waiting on its own background work", _seconds(r["inserted_at"])
-        elif _ending(note.group(1)):
-            _end(tasks, task["id"])                  # it ended: completed, failed, killed; a monitor expired
-        else:                                        # a monitor's event: it lives
-            task["event"] = " ".join(event.group(1).split())[:200] if event else None
-            task["event_at"] = _seconds(r["inserted_at"])
-
-
-def _ending(note: str) -> bool:
-    """Whether a task's notification says it ended: a status (completed, failed, killed, stopped), or a monitor's
-    expiry -- not an agent waiting on its own background work."""
-    event = TASK_EVENT.search(note)
-    return not WAITING.search(note) and bool(TASK_STATUS.search(note) or (event and MONITOR_END.match(event.group(1))))
-
-
-def _end(tasks: Dict[str, dict], task_id: str) -> None:
-    if task_id in tasks:
-        tasks[task_id]["open"] = False
-
-
-def _task_label(conn, channel: str, row_id: int, payload_json: Optional[str]) -> Optional[str]:
-    """What the tool call that started a task said it was for: its `description` (Bash, Agent, Monitor
-    take one; SendMessage, its `summary`), else the start of its command or prompt. None when the call
-    is not found."""
-    try:
-        blocks = (json.loads(payload_json) or {}).get("content") or []
-        call_id = next(b.get("tool_use_id") for b in blocks if isinstance(b, dict) and b.get("tool_use_id"))
-    except (ValueError, AttributeError, StopIteration):
-        return None
-    for (raw,) in conn.execute(f"SELECT e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
-                               f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'tool_call' AND e.row_id < ? AND e.row_id >= ? "
-                               "ORDER BY e.row_id DESC", (channel, row_id, row_id - 400)):
-        try:
-            for b in (json.loads(raw) or {}).get("content") or []:
-                if isinstance(b, dict) and b.get("id") == call_id and isinstance(b.get("input"), dict):
-                    given = b["input"]
-                    for k in ("description", "summary", "command", "prompt", "message"):
-                        if isinstance(given.get(k), str) and given[k].strip():
-                            return " ".join(given[k].split())[:160]
-                    return b.get("name")
-        except (ValueError, AttributeError):
-            continue
-    return None
-
-
-def _written(path: Optional[str]) -> Optional[float]:
-    """When a task's output was last written: its file's time, or a folder's (a workflow's transcripts) newest file's."""
-    try:
-        if not path:
-            return None
-        if not os.path.isdir(path):
-            return os.stat(path).st_mtime
-        with os.scandir(path) as found:
-            return max((e.stat().st_mtime for e in found if e.is_file()), default=None)
-    except OSError:
-        return None
 
 
 def _settle_background(a: dict, now: float) -> None:
@@ -1223,45 +979,38 @@ def _settle_background(a: dict, now: float) -> None:
     for t in tasks:
         if since and t["started"] and t["started"] < since:
             continue                                 # an earlier process's
-        wrote = t["written"] if "written" in t else _written(t.get("output"))     # as recorded; an older hook's: the file
-        active = max((x for x in (t["started"], t.get("event_at"), wrote) if x), default=None)
+        active = max((x for x in (t["started"], t.get("event_at"), t.get("written")) if x), default=None)
         if not known and (active is None or now - active > STALE_SECONDS):
             continue
         out.append({**t, "active": active})
-    ends = a.pop("task_ends", None) or {}           # ended since it started, as the harness's record says
-    out = [t for t in out if ends.get(t["id"], 0) <= (t["started"] or 0)]
     a["background"] = out
     if out and a.get("status") == IDLE:
         a["status"], a["running"] = BACKGROUND, True
 
 
 CODEX_TYPES = codex_rules.SHAPES
-harness_of = harness_kit.harness_of
 
 
-def _newest_call(conn, channel: str) -> dict:
-    """The channel's newest model call as its hook recorded it (`model_call`): {kind, harness, version, derives (its hook
-    records what answers ask and the tasks calls start: step 5's), ...}; {} before hooks recorded calls."""
+def _harness(conn, channel: str) -> Optional[str]:
+    """The harness the channel runs on: as its hook recorded it with its newest model call (`model_call`), or for a
+    session from before, as its gatherer's old tables were copied into records (`harness`); None: neither says."""
     said = conn.execute(f"SELECT e.payload_json FROM events e JOIN event_types t ON {BY_CHANNEL} "
-                        f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'model_call' ORDER BY e.row_id DESC LIMIT 1",
-                        (channel,)).fetchone()
-    return (_json(said[0]) or {}) if said else {}
+                        f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name IN ('model_call', 'harness') ORDER BY e.row_id DESC "
+                        "LIMIT 1", (channel,)).fetchone()
+    return (_json(said[0]) or {}).get("harness") if said else None
 
 
-def _harness(conn, channel: str, newest: Optional[dict] = None) -> Optional[str]:
-    """The harness the channel runs on: as its hook recorded it with each model call, else as its events' shape tells."""
-    said = _newest_call(conn, channel) if newest is None else newest
-    if said.get("harness"):
-        return said["harness"]
-    rows = conn.execute(f"SELECT payload_json FROM events e WHERE ifnull({CHANNEL}, '') = ? AND {NOT_RECORD} "
-                        "ORDER BY row_id LIMIT 60", (channel,))
-    payloads = []
-    for (raw,) in rows:
-        try:
-            payloads.append(json.loads(raw))
-        except ValueError:
-            continue
-    return harness_of(payloads)
+def harness_of(gatherer: str, channel: str) -> Optional[str]:
+    """The harness a channel of the gatherer runs on (`_harness`), its database opened for it; None: not known."""
+    conn = _connect(gatherer)
+    if conn is None:
+        return None
+    try:
+        return _harness(conn, channel) if CHANNEL in _columns(conn, "events") else None
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
 
 
 _USAGE: Dict[tuple, dict] = {}      # (database, channel) -> (its last read, its usage): reads only add up
@@ -1648,7 +1397,7 @@ def _clip(value, chars: int = TEXT_CHARS):
 
 
 def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
-          chars: Optional[int] = TEXT_CHARS) -> List[dict]:
+          chars: Optional[int] = TEXT_CHARS, harness: Optional[str] = None) -> List[dict]:
     """An event as the transcript shows it, whatever harness wrote it: its parts, each one of
         {"kind": "text", "role": user/assistant/system, "text"}
         {"kind": "thinking", "text"}                ("" when it is encrypted)
@@ -1658,9 +1407,10 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
         {"kind": "result", "id", "error", "text"}   a tool's result, `id` its call's
         {"kind": "note", "name", "text"}            anything else: the harness's or ag's own messages (codex's
                                                     message from another agent, "agent_message", among them)
-    The harness's own format is read by its rules (harness_kit: Claude Code's content blocks, codex's Responses
-    items), and drawn here; a format they do not know (pi's, opencode's) is drawn from its content blocks, and
-    anything else shows as its readable text. Each text and input is clipped at `chars` (None: kept whole)."""
+    The channel's harness's own format (`harness`, as `_harness` has it) is read by its rules (harness_kit: Claude
+    Code's content blocks, codex's Responses items), and drawn here; a format they do not know (pi's, opencode's) is
+    drawn from its content blocks, and anything else shows as its readable text. Each text and input is clipped at
+    `chars` (None: kept whole)."""
     try:
         p = json.loads(payload_json) if payload_json else None
     except ValueError:
@@ -1669,10 +1419,10 @@ def parts(event_type: str, payload_json: Optional[str], text: Optional[str],
     if role is None:                         # not the conversation: a system message, ag's notices
         return [{"kind": "note", "name": event_type, "text": text or readable(payload_json)}]
     out: Optional[List[dict]] = None
-    h = harness_kit.owner(p)
+    h = harness_kit.get(harness)
     if h is not None and h.name == "codex" and isinstance(p, dict) and p.get("type") is not None:
         out = _codex_view(h.read_one(p), chars)
-    elif h is not None and h.name == "claude" and isinstance(p.get("content"), list):
+    elif h is not None and h.name == "claude" and isinstance(p, dict) and isinstance(p.get("content"), list):
         speaker = "system" if p.get("role") in ("system", "developer") else role
         out = [v for x in h.read_one(p) for v in _claude_view(x, speaker)]
     if out is None and isinstance(p, dict) and isinstance(p.get("content"), list):
@@ -1776,8 +1526,9 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
             rows = conn.execute(cols + "AND e.row_id < ? ORDER BY e.row_id DESC LIMIT ?",
                                 (channel, before if before is not None else 2 ** 62, TRANSCRIPT_ITEMS)).fetchall()[::-1]
             newest = before is None
+        harness = _harness(conn, channel)
         items = [{"row_id": r["row_id"], "type": r["type"] or "?", "at": _seconds(r["inserted_at"]),
-                  "parts": parts(r["type"] or "?", r["payload_json"], r["text"])} for r in rows]
+                  "parts": parts(r["type"] or "?", r["payload_json"], r["text"], harness=harness)} for r in rows]
         earlier = False
         if items:
             earlier = conn.execute(f"SELECT 1 FROM events e WHERE ifnull(e.{CHANNEL}, '') = ? AND e.row_id < ? AND {NOT_RECORD} LIMIT 1",
@@ -1787,7 +1538,7 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
         if newest:
             for r in replies(conn, channel):
                 items.append({"row_id": None, "type": r["type"], "at": _seconds(r["received_at"]),
-                              "parts": parts(r["type"], r["payload_json"], r["text"])})
+                              "parts": parts(r["type"], r["payload_json"], r["text"], harness=harness)})
         return {"items": items, "earlier": earlier, "newest": newest}
     finally:
         conn.close()

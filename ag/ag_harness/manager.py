@@ -468,18 +468,6 @@ class Manager(ContextManager):
             notify(gatherer_id, "events", properties)
         return n
 
-    def record_failed(self, gatherer_id: str, read_id: int, status: Optional[int], error: str) -> bool:
-        """Not part of the interface: record that the model call read `read_id` was for failed --
-        the HTTP status its endpoint answered (None: none came) and why (`store.record_failed`) --
-        for a reader of the gatherer (the dashboard) to tell a turn that stopped on an error from
-        one under way. Whether that read exists."""
-        if not os.path.exists(db_path(gatherer_id)):
-            return False
-        found = store.record_failed(self._conn(gatherer_id), read_id, status, error)
-        if found:
-            notify(gatherer_id, "failed", None, read_id)
-        return found
-
     def record_counts(self, gatherer_id: str, properties: Optional[dict], events: dict, made: dict,
                       preamble: list, left_out: Optional[dict] = None) -> dict:
         """Not part of the interface: sizes the model's provider counted after the fact -- of
@@ -499,71 +487,24 @@ class Manager(ContextManager):
             return []
         return store.uncounted(self._conn(gatherer_id), properties, event_ids)
 
-    def record_pending(self, gatherer_id: str, properties: Optional[dict], events: List[dict],
-                       answer: Optional[str] = None, stop: Optional[str] = None,
-                       read_id: Optional[int] = None) -> int:
-        """Not part of the interface: keep what the model answered -- its events, {"type",
-        "payload", "text"?}, and why it stopped -- until the next call with these properties stores its events
-        (`clear_pending`): what a reader of the gatherer can see of an answer no call has
-        carried back yet (`store.record_pending`); and on read `read_id`, the one the answered call's
-        context came from, when the answer came. How many were kept."""
-        kept = store.record_pending(self._conn(gatherer_id), properties, events, answer, stop, read_id)
-        if kept or answer is not None:          # a named answer's may have replaced (or dropped) its parts
-            notify(gatherer_id, "pending", properties)
-        return kept
+    def insert_at(self, gatherer_id: str, events: List[Event], times: List[Optional[str]]) -> None:
+        """Not part of the interface: `events` stored in one transaction, each at its time (`times`, UTC, ISO; None:
+        now) -- what happened before they were recorded as events, copied in once (`store.insert_many`: one stored
+        already skipped). The pollers are not asked."""
+        if events:
+            store.insert_many(self._conn(gatherer_id), events, self.tokenizer, times)
+            notify(gatherer_id, "events", None)
 
-    def record_recap(self, gatherer_id: str, session: str, text: str) -> int:
-        """Not part of the interface: keep a harness's recap of `session` (`store.record_recap`),
-        for a reader of the gatherer; never history. Its recap_id."""
-        recap_id = store.record_recap(self._conn(gatherer_id), session, text)
-        notify(gatherer_id, "recap", None, recap_id)   # no property named: every stream of the gatherer looks
-        return recap_id
-
-    def record_name(self, gatherer_id: str, session: str, text: str, by: str) -> None:
-        """Not part of the interface: keep `by`'s name for `session` (`store.record_name`), for a reader
-        of the gatherer; never history."""
-        store.record_name(self._conn(gatherer_id), session, text, by)
-        notify(gatherer_id, "name")              # no property named: every stream of the gatherer looks
-
-    def names(self, gatherer_id: str, session: Optional[str] = None) -> List[dict]:
-        """Not part of the interface: every session's names, or one session's (`store.names`)."""
+    def old_tables(self, gatherer_id: str, by: Optional[str] = None, types=(), first: int = 0) -> dict:
+        """Not part of the interface: what an older file's tables kept that are no longer kept (`store.old_tables`),
+        for the harness side to copy into events once; {} with no database."""
         if not os.path.exists(db_path(gatherer_id)):
-            return []
-        return store.names(self._conn(gatherer_id), session)
+            return {}
+        return store.old_tables(self._conn(gatherer_id), by, types, first)
 
-    def record_touches(self, gatherer_id: str, session: str, touches: List[dict]) -> int:
-        """Not part of the interface: keep what tool calls of `session` did to files, as the hook server
-        found them on disk (`store.record_touches`), for a reader of the gatherer; never history. How
-        many were kept."""
-        kept = store.record_touches(self._conn(gatherer_id), session, touches)
-        if kept:
-            notify(gatherer_id, "touches")       # no property named: every stream of the gatherer looks
-        return kept
-
-    def recaps(self, gatherer_id: str, session: Optional[str] = None) -> List[dict]:
-        """Not part of the interface: each session's newest recap, or one session's every recap
-        (`store.recaps`)."""
-        if not os.path.exists(db_path(gatherer_id)):
-            return []
-        return store.recaps(self._conn(gatherer_id), session)
-
-    def pending(self, gatherer_id: str, *, properties: Optional[dict] = None) -> List[dict]:
-        """Not part of the interface: the pending events with these properties, oldest first
-        (`store.pending`)."""
-        if not os.path.exists(db_path(gatherer_id)):
-            return []
-        return store.pending(self._conn(gatherer_id), properties)
-
-    def clear_pending(self, gatherer_id: str, properties: Optional[dict], stop: Optional[str] = None) -> int:
-        """Not part of the interface: delete the pending events with these identifying properties,
-        once a call with them has stored new events -- with `stop`, only those that stopped so
-        (`store.clear_pending`). How many."""
-        if not os.path.exists(db_path(gatherer_id)):
-            return 0
-        cleared = store.clear_pending(self._conn(gatherer_id), properties, stop)
-        if cleared:
-            notify(gatherer_id, "pending", properties)
-        return cleared
+    def mark_migrated(self, gatherer_id: str, name: str) -> None:
+        """Not part of the interface: that the one-time copy `name` was made (`store.mark_migrated`)."""
+        store.mark_migrated(self._conn(gatherer_id), name)
 
     def bulk_load(self, gatherer_id: str, events, *, properties: Optional[dict] = None):
         """Not part of the interface: store a whole recorded history in one

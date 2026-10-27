@@ -10,6 +10,8 @@ gatherer beside the conversation's, which no policy groups, so they never reach 
     call_failed   a call failed: its endpoint's HTTP status (None: no answer came), and why; `read_id`
     recap         a recap of the session the harness made, in its words: what it did, and what comes next
     name          a name for the session, as `by` gave it (codex's title for its thread)
+    harness       the harness a session from before `model_call` ran on, as its pieces' shapes told when its gatherer's
+                  old tables were copied into records (migrate.py)
 
 and, from the harness's own record of the session as it grows (session_files.py), what no model call carries:
 
@@ -38,10 +40,10 @@ from harness_kit.base import Fact, Facts
 
 from .adaptor import CHANNEL
 
-MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE, FILE_TOUCHED = (
-    "model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "session_file", "file_touched")
+MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE, FILE_TOUCHED, HARNESS = (
+    "model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "session_file", "file_touched", "harness")
 #: Every harness event type a proxy hook records.
-RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE, FILE_TOUCHED) + Facts.ALL
+RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE, FILE_TOUCHED, HARNESS) + Facts.ALL
 READ_ID, ANSWER_ID = "read_id", "answer_id"
 RECORDS_LANE = "records"    # ag's server's lane for records, beside a session's (its server's RECORDS_LANE)
 STREAMING = "streaming"     # a reply_part's stop while the answer still streams (no reply_end yet)

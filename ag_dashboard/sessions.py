@@ -275,26 +275,11 @@ def _session_cwd(gatherer: str, session_id: str) -> Optional[str]:
 
 
 def _session_harness(gatherer: str, session_id: str) -> str:
-    """The harness a session of the gatherer runs on, as its events' shape tells: claude when none shows."""
+    """The harness a session of the gatherer runs on, as its hook recorded it (data.py's `harness_of`): claude when
+    none says."""
     from .data import harness_of        # data imports this module: asked here, once it is loaded
-    conn = _gatherer_db(gatherer)
-    if conn is None:
-        return "claude"
-    try:
-        rows = conn.execute("SELECT payload_json FROM events WHERE ifnull(p_channel, '') = ? AND event_type_id NOT IN "
-                            "(SELECT event_type_id FROM event_types WHERE name IN ('model_call', 'reply_part', 'reply_end')) "
-                            "ORDER BY row_id LIMIT 60", (session_id,))
-        payloads = []
-        for (raw,) in rows:
-            try:
-                payloads.append(json.loads(raw))
-            except (TypeError, ValueError):
-                pass
-    except sqlite3.Error:
-        return "claude"
-    finally:
-        conn.close()
-    return harness_of(payloads) if harness_of(payloads) in HARNESSES else "claude"
+    got = harness_of(gatherer, session_id)
+    return got if got in HARNESSES else "claude"
 
 
 def _thread_of(gatherer: str, pid: int, known) -> Optional[str]:

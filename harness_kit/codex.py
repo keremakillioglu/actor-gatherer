@@ -555,16 +555,6 @@ class Codex(Harness):
     def follower(self, path: str) -> Follower:
         return Rollout(path)
 
-    def owns(self, payload) -> bool:
-        if not isinstance(payload, dict):
-            return False
-        if payload.get("type") == "agent_message" and ("author" in payload or "recipient" in payload):
-            return True
-        if payload.get("type") in SHAPES | {"tool_search_call", "tool_search_output"}:
-            return True
-        blocks = [c for c in payload.get("content") or [] if isinstance(c, dict)] if isinstance(payload.get("content"), list) else []
-        return bool({c.get("type") for c in blocks} & {"input_text", "output_text"})
-
     def read(self, items: list) -> List[Part]:
         """Each item read. After codex compacts its history, its input starts again: its preamble re-sent under new ids,
         the user messages it kept, and its encrypted summary (a `compaction` item), then what comes after -- the

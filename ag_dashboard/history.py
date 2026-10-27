@@ -149,12 +149,12 @@ class HistoryError(ValueError):
 
 # ---------------------------------------------------------------- the outline, and search
 
-def _call_label(payload: Optional[str], text: Optional[str], cwd: str) -> str:
+def _call_label(payload: Optional[str], text: Optional[str], cwd: str, harness: Optional[str]) -> str:
     """A tool call in a line, as the Files view names it: its own description, else its command, else its tool
-    and what it worked on; "" when the event holds no call."""
+    and what it worked on; "" when the event holds no call. `harness`: its channel's (data.py's `_harness`)."""
     labels = [files._label(p.get("name") or "", p["input"] if isinstance(p.get("input"), dict) else {"input": p.get("input")},
                            p.get("input"), cwd)
-              for p in data.parts("tool_call", payload, text, chars=None) if p.get("kind") == "call"]
+              for p in data.parts("tool_call", payload, text, chars=None, harness=harness) if p.get("kind") == "call"]
     return "; ".join(x for x in labels if x)[:PREVIEW]
 
 
@@ -234,9 +234,11 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
         if "p_cwd" in data._columns(conn, "_reads") and CHANNEL in data._columns(conn, "_reads"):
             cwd = dict(conn.execute(f"SELECT {CHANNEL}, p_cwd FROM _reads WHERE read_id IN "
                                     f"(SELECT max(read_id) FROM _reads WHERE p_cwd IS NOT NULL GROUP BY {CHANNEL})"))
+        harnesses = {ch: data._harness(conn, ch) for ch in {r["ch"] for r in rows[:OUTLINE_ITEMS] if r["type"] == "tool_call"}}
         events = [{"row_id": r["row_id"], "channel": r["ch"], "type": r["type"] or "?", "tokens": r["tokens"] or 0,
                    "at": data._seconds(r["inserted_at"]),
-                   "text": (_call_label(r["payload"], r["text"], cwd.get(r["ch"]) or "") if r["type"] == "tool_call" else "")
+                   "text": (_call_label(r["payload"], r["text"], cwd.get(r["ch"]) or "", harnesses.get(r["ch"]))
+                            if r["type"] == "tool_call" else "")
                    or _preview(harness_kit.words(r["text"])[1] if r["type"] == "user_message" and r["text"] else r["text"],
                                r["payload"])}
                   for r in rows[:OUTLINE_ITEMS]]
