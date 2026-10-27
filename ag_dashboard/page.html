@@ -2455,11 +2455,15 @@ function render(userAction = false) {
   setLive(SNAPSHOT ? `Snapshot · ${clock(state.home.now, true)}` : state.paused ? "Paused"
     : !state.stream ? "Connecting…" : state.stream.readyState === EventSource.OPEN ? `Live · updated ${clock(Date.now() / 1000)}` : "Reconnecting…");
 }
-// What the main view draws from: drawn again only when it changed.
+// What the main view draws from: drawn again only when it changed. The selected actor's state among it -- its status, what
+// it waits on, why it stopped, what runs in the background (which, not how lately): a turn's end may change only that (its
+// answer's end comes after its last words, which the actor's data already had), and its "Working…" would stay.
 const mainSignature = () => {
   const info = selectedInfo();
   return signature([state.selected, state.agentVersion, state.readId, state.context && state.context.read_id, info && info.session,
-    info && [info.chattable, info.holder], state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
+    info && [info.chattable, info.holder],
+    info && [statusOf(info)[0], info.failing, info.stopped, info.asking, info.answer, (info.background || []).map((t) => t.id)],
+    state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
     state.details && state.detailsTab, edShown()]);
 };
