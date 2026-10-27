@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from followed import Followed  # noqa: E402
+import harness_kit  # noqa: E402
 from ag_dashboard import answers, data, server, sessions  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 from test_dashboard_sessions import SessionsBase  # noqa: E402
@@ -103,7 +104,8 @@ def call(cid, name, inp):
 
 
 class GathererBase(unittest.TestCase):
-    """A home of the test's own, gatherer `g` holding Claude Code's events as they reach ag, and its pending answer."""
+    """A home of the test's own, gatherer `g` holding Claude Code's events as they reach ag, and its answer no call has
+    carried back yet, as ag's hook records it."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -115,33 +117,36 @@ class GathererBase(unittest.TestCase):
         conn = sqlite3.connect(self.path)
         conn.executescript("""CREATE TABLE event_types (event_type_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
             CREATE TABLE events (row_id INTEGER PRIMARY KEY, inserted_at TEXT NOT NULL, event_id TEXT, event_type_id INTEGER NOT NULL,
-              payload_json TEXT NOT NULL, tokens INTEGER NOT NULL, text TEXT, counted INTEGER, p_channel);
-            CREATE TABLE _pending (pending_id INTEGER PRIMARY KEY, received_at TEXT NOT NULL, answer TEXT, stop TEXT,
-              type TEXT NOT NULL, payload_json TEXT NOT NULL, text TEXT, p_channel);""")
+              payload_json TEXT NOT NULL, tokens INTEGER NOT NULL, text TEXT, counted INTEGER, p_channel, p_answer_id,
+              p_read_id);""")
         conn.commit()
         conn.close()
+        self.answers = 0
         self.add([event("user_message", {"role": "user", "content": [{"type": "text", "text": "plan it"}]}, "plan it")])
 
-    def add(self, events, channel="s1"):
+    def add(self, events, channel="s1", answer=None):
+        """`events` -- (type, payload, text) -- stored for `channel`; `answer`, the answer a record is of."""
         stamp = datetime.now(timezone.utc).isoformat()
         conn = sqlite3.connect(self.path)
         for typ, payload, text in events:
             conn.execute("INSERT OR IGNORE INTO event_types (name, created_at) VALUES (?, ?)", (typ, stamp))
             tid = conn.execute("SELECT event_type_id FROM event_types WHERE name = ?", (typ,)).fetchone()[0]
-            conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, text, p_channel) "
-                         "VALUES (?, ?, ?, 1, ?, ?)", (stamp, tid, json.dumps(payload), text, channel))
+            conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, text, p_channel, p_answer_id) "
+                         "VALUES (?, ?, ?, 1, ?, ?, ?)", (stamp, tid, json.dumps(payload), text, channel, answer))
         conn.commit()
         conn.close()
 
-    def pend(self, events, channel="s1", answer="msg_1"):
-        conn = sqlite3.connect(self.path)
-        conn.execute("DELETE FROM _pending WHERE p_channel = ?", (channel,))
-        for typ, payload, text in events:
-            conn.execute("INSERT INTO _pending (received_at, answer, stop, type, payload_json, text, p_channel) "
-                         "VALUES (?, ?, 'tool_use', ?, ?, ?, ?)",
-                         (datetime.now(timezone.utc).isoformat(), answer, typ, json.dumps(payload), text, channel))
-        conn.commit()
-        conn.close()
+    def pend(self, events, channel="s1", answer=None):
+        """An answer that calls tools, as ag's hook records it while no call has carried it back: its parts
+        (`reply_part`), its end (`reply_end`), and what it asks the user (`asked`: harness_kit's `derived`)."""
+        self.answers += 1
+        answer = answer or f"msg_{self.answers}"
+        claude = harness_kit.get("claude")
+        asked = [f for f in claude.derived(claude.read(claude.items([p for _, p, _ in events])), time.time())
+                 if f.type == "asked"]
+        self.add([("reply_part", {"type": t, "payload": p, "text": x}, None) for t, p, x in events]
+                 + [("reply_end", {"stop": "tool_use"}, None)], channel=channel, answer=answer)
+        self.add([(f.type, {"at": f.at, **f.data}, None) for f in asked], channel=channel)
 
     def plan_file(self, name, text):
         d = os.path.join(self.tmp.name, "user", ".claude", "plans")
@@ -152,31 +157,23 @@ class GathererBase(unittest.TestCase):
         return path
 
 
-class PlanTest(GathererBase):
-    """ExitPlanMode's call carries no plan (Claude Code 2.1.310): it is the plan file Claude Code wrote."""
-
-    def test_the_plan_written_in_the_same_answer(self):
-        path = self.plan_file("plan-a.md", "1. Move it\n2. Test it\n")
-        self.pend([call("t1", "Write", {"file_path": path, "content": "1. Move it\n"}), call("t2", "ExitPlanMode", {})])
-        got = data.asking_of("g", "s1")
-        self.assertEqual((got["kind"], got["call"], got["plan"]), ("plan", "t2", "1. Move it\n2. Test it\n"))   # the file, as it is now
-
-    def test_the_plan_written_before_and_its_write_once_the_file_is_gone(self):
-        path = os.path.join(self.tmp.name, "user", ".claude", "plans", "plan-gone.md")
-        self.add([call("t1", "Write", {"file_path": path, "content": "1. As written\n"}),
-                  call("t9", "Write", {"file_path": os.path.join(self.tmp.name, "notes.md"), "content": "not a plan"})])
-        self.pend([call("t2", "ExitPlanMode", {})])
-        self.assertEqual(data.asking_of("g", "s1")["plan"], "1. As written\n")
-        self.pend([call("t3", "ExitPlanMode", {"plan": "1. Carried"})])                   # an older Claude Code: in the call
-        self.assertEqual(data.asking_of("g", "s1")["plan"], "1. Carried")
-
-    def test_none_written_none_shown(self):
-        self.pend([call("t2", "ExitPlanMode", {})])
-        self.assertIsNone(data.asking_of("g", "s1")["plan"])
-        self.assertIsNone(data.asking_of("g", "nobody"))
-
-
 SESSION = "0e1d2c3b-0000-4000-8000-000000000001"
+
+
+class AskedTest(GathererBase):
+    """What an actor waits on is what its hook recorded an answer asks (`asked`): no answer's calls looked through, no
+    plan file read."""
+
+    def test_what_it_asks_until_it_is_settled(self):
+        self.add([("model_call", {"kind": "turn", "harness": "claude", "derives": True}, None)])
+        self.add([("reply_part", {"type": "tool_call", "payload": call("t1", "AskUserQuestion", {"questions": [
+            {"question": "Old?", "options": [{"label": "A"}]}]})[1]}, None)], answer="msg_old")
+        self.assertIsNone(data.asking_of("g", "s1"))                     # its answer's call alone: no record of it asking
+        self.add([("asked", {"at": 1.0, "call": "t2", "kind": "plan", "plan": "1. Do it", "async": False, "turn": None}, None)])
+        self.assertEqual({k: data.asking_of("g", "s1")[k] for k in ("kind", "call", "plan")},
+                         {"kind": "plan", "call": "t2", "plan": "1. Do it"})
+        self.add([("ask_settled", {"at": 2.0, "call": "t2", "how": "answered", "result": "User has approved your plan"}, None)])
+        self.assertIsNone(data.asking_of("g", "s1"))
 
 
 class SettledTest(GathererBase):
@@ -200,8 +197,10 @@ class SettledTest(GathererBase):
         self.pend([call("toolu_q", "AskUserQuestion", {"questions": [SIZE]})], channel=SESSION)
 
     def write(self, line, now=None):
+        """A line of Claude Code's record, stamped as it stamps each (now, or `now`), followed into the gatherer."""
+        stamp = datetime.fromtimestamp(now or time.time(), timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         with open(self.record, "a") as fh:
-            fh.write(json.dumps(line) + "\n")
+            fh.write(json.dumps({"timestamp": stamp, **line}) + "\n")
         self.follow(now)
 
     def follow(self, now=None):
@@ -242,7 +241,7 @@ class SettledTest(GathererBase):
         self.result('Your questions have been answered: "Which size?"="Large".')
         self.write({"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Large it is."}]}})
         self.write({"type": "user", "message": {"role": "user", "content": [
-            {"type": "text", "text": "[Request interrupted by user]"}]}})                  # later, another turn's
+            {"type": "text", "text": "[Request interrupted by user]"}]}}, time.time() - 3600)   # another turn's, before
         self.assertEqual(self.settled(), "answered")
         a = self.actor()
         self.assertEqual((a["status"], a["asking"]), (data.RUNNING, None))              # until the next call says more
@@ -282,6 +281,15 @@ class RecordedTest(GathererBase):
         self.add([call("t2", "AskUserQuestion", {}),
                   event("tool_output", {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": result}]}, result)])
         self.assertTrue(self.actor(sent2)["answer"]["recorded"])
+
+    def test_kept_in_the_gatherer_it_outlasts_the_dashboard_that_typed_it(self):
+        sent = {"call": "t1", "summary": "Which color? → Blue", "expect": ['"Which color?"="Blue"'], "at": time.time()}
+        self.add([("answer_given", {"at": sent["at"], **{k: sent[k] for k in ("call", "summary", "expect")}}, None)])
+        result = 'Your questions have been answered: "Which color?"="Blue".'
+        self.add([call("t1", "AskUserQuestion", {}),
+                  event("tool_output", {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": result}]}, result)])
+        got = self.actor(None)["answer"]                                       # the session has none: restarted since
+        self.assertEqual((got["call"], got["summary"], got["recorded"]), ("t1", "Which color? → Blue", True))
 
 
 @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
@@ -360,12 +368,17 @@ class EndpointTest(SessionsBase):
         conn = sqlite3.connect(db)
         conn.executescript("""CREATE TABLE event_types (event_type_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
             CREATE TABLE events (row_id INTEGER PRIMARY KEY, inserted_at TEXT NOT NULL, event_id TEXT, event_type_id INTEGER NOT NULL,
-              payload_json TEXT NOT NULL, tokens INTEGER NOT NULL, text TEXT, counted INTEGER, p_channel);
-            CREATE TABLE _pending (pending_id INTEGER PRIMARY KEY, received_at TEXT NOT NULL, answer TEXT, stop TEXT,
-              type TEXT NOT NULL, payload_json TEXT NOT NULL, text TEXT, p_channel);""")
-        conn.execute("INSERT INTO _pending (received_at, answer, stop, type, payload_json, p_channel) VALUES (?, 'm', 'tool_use', 'tool_call', ?, ?)",
-                     (datetime.now(timezone.utc).isoformat(),
-                      json.dumps(call("toolu_q", "AskUserQuestion", {"questions": [SIZE]})[1]), sid))
+              payload_json TEXT NOT NULL, tokens INTEGER NOT NULL, text TEXT, counted INTEGER, p_channel, p_answer_id);""")
+        now = datetime.now(timezone.utc).isoformat()
+        for typ, payload, answer in (("reply_part", {"type": "tool_call", "payload": call("toolu_q", "AskUserQuestion",
+                                                                                           {"questions": [SIZE]})[1]}, "m"),
+                                     ("reply_end", {"stop": "tool_use"}, "m"),         # as ag's hook records the answer,
+                                     ("asked", {"at": time.time(), "call": "toolu_q", "kind": "question",   # and what it asks
+                                                "questions": [SIZE], "async": False, "turn": None}, None)):
+            conn.execute("INSERT OR IGNORE INTO event_types (name, created_at) VALUES (?, ?)", (typ, now))
+            conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, p_channel, p_answer_id) "
+                         "VALUES (?, (SELECT event_type_id FROM event_types WHERE name = ?), ?, 1, ?, ?)",
+                         (now, typ, json.dumps(payload), sid, answer))
         conn.commit()
         conn.close()
         self.assertEqual(self.post({"session_id": sid, "call": "toolu_old", "choice": {"answers": [{"options": [0]}]}})[0], 400)

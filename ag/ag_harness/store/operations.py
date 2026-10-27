@@ -4,12 +4,14 @@
     properties  Spec, spec (what each type declares), property_values
     events      row_of, insert, insert_many, locate; Row, rows, read; high_water
     made items  make_item, made_items
-    read log    Ref, record_read, last_read, basis_opened, record_failed
+    read log    Ref, record_read, last_read, basis_opened
     counts      counted_rows, uncounted, record_counts
     polls       polled_at, mark_polled
-    pending     record_pending, pending, clear_pending
-    recaps      record_recap, recaps
-    touches     record_touches
+    old tables  old_tables, mark_migrated
+
+What the harness's hooks recorded besides the conversation before they recorded it as events (`_pending`,
+`_recaps`, `_names`, `_touches`, `_reads.error`) is no longer kept: an older gatherer's is copied into records once
+(`old_tables`, `mark_migrated`; the harness side's ag/integrations/tools/ag_orchestrator/migrate.py).
 
 What a property means is not known here: an event carries the values its
 type declares, each in its column, NULL when unset. Two filters read them
@@ -206,14 +208,14 @@ def check(event: Event) -> None:
         raise TypeError(f"an event's type_id must be an int (an EventType's id), not {event.type_id!r}")
 
 
-def row_of(event: Event, values: tuple, tokenizer: Tokenizer) -> tuple:
+def row_of(event: Event, values: tuple, tokenizer: Tokenizer, at: Optional[str] = None) -> tuple:
     """The values for one INSERT, in `insert_sql`'s column order; `values`
     are its properties' (`property_values`).
 
     The payload is serialized with sorted keys. An empty event id is stored
     as NULL. The event's tokens are its own `tokens` if given, else the
     tokenizer's count of its text -- of the JSON, if it has none -- taken
-    here, once.
+    here, once. Stored now, or `at` (UTC, ISO): when what it records happened, where that was before.
 
     Raises:
         TypeError: `event` is not an Event, its `type_id` is not an int, or
@@ -223,7 +225,7 @@ def row_of(event: Event, values: tuple, tokenizer: Tokenizer) -> tuple:
     raw = json.dumps(event.payload, sort_keys=True, ensure_ascii=False)
     text = event.text if isinstance(event.text, str) else None
     tokens = event.tokens if event.tokens is not None else tokenizer.count(raw if text is None else text)
-    return (_now(), event.id or None, event.type_id, raw, tokens, text, *values)
+    return (at or _now(), event.id or None, event.type_id, raw, tokens, text, *values)
 
 
 def unknown_type(conn: sqlite3.Connection, exc: sqlite3.IntegrityError, event: Event) -> Exception:
@@ -347,9 +349,10 @@ def insert(conn: sqlite3.Connection, event: Event, tokenizer: Tokenizer, spec_: 
     return row[0] if row else None
 
 
-def insert_many(conn: sqlite3.Connection, events, tokenizer: Tokenizer) -> None:
+def insert_many(conn: sqlite3.Connection, events, tokenizer: Tokenizer, times: Optional[List[Optional[str]]] = None) -> None:
     """Store a whole history in ONE transaction (a bulk load). Events already
-    stored (same id, same identifying properties) are skipped, as `insert` skips them.
+    stored (same id, same identifying properties) are skipped, as `insert` skips them. `times`: each one's
+    `inserted_at` (`row_of`'s `at`), where it is not now.
 
     Raises:
         TypeError, LookupError, ValueError: as `insert`. Nothing is stored.
@@ -359,9 +362,9 @@ def insert_many(conn: sqlite3.Connection, events, tokenizer: Tokenizer) -> None:
     event = None
     try:
         with conn:
-            for event in events:
+            for i, event in enumerate(events):
                 check(event)
-                conn.execute(sql, row_of(event, property_values(event, sp), tokenizer))
+                conn.execute(sql, row_of(event, property_values(event, sp), tokenizer, times[i] if times else None))
     except sqlite3.IntegrityError as exc:
         raise unknown_type(conn, exc, event) from exc
 
@@ -634,16 +637,6 @@ def record_real_tokens(conn: sqlite3.Connection, read_id: int, tokens: int) -> b
     return cur.rowcount > 0
 
 
-def record_failed(conn: sqlite3.Connection, read_id: int, status: Optional[int], error: str) -> bool:
-    """Set read `read_id`'s `error_status` and `error`: the model call it was read for failed -- its
-    endpoint answered `status` (None: no answer came: it could not be reached), and `error` says why.
-    Whether that read exists."""
-    with conn:
-        cur = conn.execute("UPDATE _reads SET error_status = ?, error = ? WHERE read_id = ?",
-                           (status, error, read_id))
-    return cur.rowcount > 0
-
-
 def high_water(conn: sqlite3.Connection) -> int:
     """The highest row id stored in the gatherer (whatever its properties); 0 when empty."""
     row = conn.execute("SELECT max(row_id) FROM events").fetchone()
@@ -673,135 +666,81 @@ def last_inserted_at(conn: sqlite3.Connection) -> Optional[str]:
     return row[0] if row else None
 
 
-# ---------------------------------------------------------------- pending
+# ---------------------------------------------------------------- the old tables, copied once
 
-STREAMING = "streaming"    # a pending answer's stop while it still streams: the parts of it complete so far
-
-def record_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], events: List[dict],
-                   answer: Optional[str] = None, stop: Optional[str] = None, read_id: Optional[int] = None) -> int:
-    """Keep an answer's events -- {"type", "payload", "text"?} -- in `_pending` with the
-    properties of the call it answered, until that channel's next call (`clear_pending`); `stop`
-    is why the answer stopped, as the provider says it (end_turn, tool_use, ...), on each. A named
-    `answer`'s events replace those kept for it before (the parts of it complete while it streamed,
-    then all of it), each one there before keeping when it came. With `read_id`, the read that
-    call's context came from: its `answered_at` set to when they were kept, which stays once they
-    are cleared -- when the answer came, whatever call stores it later. Returns how many were kept."""
-    names, values = _given(conn, properties, "a pending event")
-    now = _now()
-    with conn:
-        came = []
-        if answer is not None:                     # the channel's: its identifying properties, as clear_pending
-            ids = identifying_names(conn)
-            same = (f"{_same(ids)}answer = ?", (*_unset_is_empty((properties or {}).get(n) for n in ids), answer))
-            came = [t for (t,) in conn.execute(f"SELECT received_at FROM _pending WHERE {same[0]} "
-                                               "ORDER BY pending_id", same[1])]
-            conn.execute(f"DELETE FROM _pending WHERE {same[0]}", same[1])
-        rows = [(came[i] if i < len(came) else now, answer, stop, e["type"], json.dumps(e["payload"], ensure_ascii=False),
-                 e.get("text") if isinstance(e.get("text"), str) else None, *values) for i, e in enumerate(events)]
-        conn.executemany(f"INSERT INTO _pending (received_at, answer, stop, type, payload_json, text{_columns(names)}) "
-                         f"VALUES (?, ?, ?, ?, ?, ?{', ?' * len(names)})", rows)
-        if read_id is not None:
-            conn.execute("UPDATE _reads SET answered_at = ? WHERE read_id = ?", (now, read_id))
-    return len(rows)
+OLD_TABLES = ("_pending", "_recaps", "_names", "_touches")
 
 
-def pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]] = None) -> List[dict]:
-    """The pending events with these properties -- each given one its value (None: unset),
-    those not given any value -- oldest first: {pending_id, received_at, answer, stop, type,
-    payload, text, properties}."""
+def old_tables(conn: sqlite3.Connection, by: Optional[str] = None, types: Iterable[str] = (), first: int = 0) -> dict:
+    """What an older file's tables kept that are no longer kept -- for the harness side to copy into events once
+    (`migrated`): {"migrated": whether that was done ("records"), "recaps": [{recap_id, session, made_at, text}],
+    "names": [{session, by, named_at, text}], "touches": [{session, call_id, at, path, how, checked, named, detail}],
+    "pending": [{pending_id, received_at, answer, stop, type, payload, text, properties}], "failed": [{read_id,
+    read_at, properties, status, error}] (`_reads.error`), and with `by` (a property: the harness's session, e.g.) each
+    value its events have, "groups": [{value, first (its first event's time), types (those of `types`
+    it has events of), payloads (its first `first` events' payloads, of other types)}], and its newest answer kept on
+    a read, "answered": [{read_id, answered_at, properties}] (`_reads.answered_at`) -- [] for a table the file does
+    not have."""
+    tables = {n for (n,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     names = property_names(conn)
-    given = {n: v for n, v in (properties or {}).items() if n in names}
-    if any(v is not None for n, v in (properties or {}).items() if n not in names):
-        return []                                  # a property no event has: none has it set
-    out = []
-    for r in conn.execute(f"SELECT pending_id, received_at, answer, stop, type, payload_json, text{_columns(names)} "
-                          f"FROM _pending WHERE {_same(list(given))}1 ORDER BY pending_id",
-                          _unset_is_empty(given.values())):
-        out.append({"pending_id": r[0], "received_at": r[1], "answer": r[2], "stop": r[3], "type": r[4],
-                    "payload": json.loads(r[5]), "text": r[6],
-                    "properties": {n: v for n, v in zip(names, r[7:]) if v is not None}})
+    out = {"migrated": "_migrated" in tables and conn.execute(
+        "SELECT 1 FROM _migrated WHERE name = 'records'").fetchone() is not None,
+        "recaps": [], "names": [], "touches": [], "pending": [], "failed": [], "groups": [], "answered": []}
+    if "_recaps" in tables:
+        out["recaps"] = [{"recap_id": r[0], "session": r[1], "made_at": r[2], "text": r[3]} for r in conn.execute(
+            "SELECT recap_id, session, made_at, text FROM _recaps ORDER BY recap_id")]
+    if "_names" in tables:
+        out["names"] = [{"session": r[0], "by": r[1], "named_at": r[2], "text": r[3]} for r in conn.execute(
+            "SELECT session, by, named_at, text FROM _names ORDER BY named_at")]
+    if "_touches" in tables:
+        out["touches"] = [{"session": r[0], "call_id": r[1], "at": r[2], "path": r[3], "how": r[4], "checked": r[5],
+                           "named": r[6], "detail": json.loads(r[7]) if r[7] else None} for r in conn.execute(
+            "SELECT session, call_id, at, path, how, checked, named, detail_json FROM _touches ORDER BY touch_id")]
+    if "_pending" in tables:
+        have = {c[1] for c in conn.execute("PRAGMA table_info(_pending)")}
+        own = [n for n in names if property_column(n) in have]
+        stop = "stop" if "stop" in have else "NULL"
+        for r in conn.execute(f"SELECT pending_id, received_at, answer, {stop}, type, payload_json, text{_columns(own)} "
+                              "FROM _pending ORDER BY pending_id"):
+            out["pending"].append({"pending_id": r[0], "received_at": r[1], "answer": r[2], "stop": r[3], "type": r[4],
+                                   "payload": json.loads(r[5]), "text": r[6],
+                                   "properties": {n: v for n, v in zip(own, r[7:]) if v is not None}})
+    read_columns = {c[1] for c in conn.execute("PRAGMA table_info(_reads)")}
+    if "error" in read_columns:
+        own = [n for n in names if property_column(n) in read_columns]
+        for r in conn.execute(f"SELECT read_id, read_at, error_status, error{_columns(own)} FROM _reads "
+                              "WHERE error IS NOT NULL ORDER BY read_id"):
+            out["failed"].append({"read_id": r[0], "read_at": r[1], "status": r[2], "error": r[3],
+                                  "properties": {n: v for n, v in zip(own, r[4:]) if v is not None}})
+    column = property_column(by) if by else None
+    if column and {"answered_at", column} <= read_columns:
+        own = [n for n in names if property_column(n) in read_columns]
+        for r in conn.execute(f"SELECT read_id, answered_at{_columns(own)} FROM _reads WHERE read_id IN (SELECT "
+                              f"max(read_id) FROM _reads WHERE answered_at IS NOT NULL GROUP BY {column})"):
+            out["answered"].append({"read_id": r[0], "answered_at": r[1],
+                                    "properties": {n: v for n, v in zip(own, r[2:]) if v is not None}})
+    if column and column in {c[1] for c in conn.execute("PRAGMA table_info(events)")}:
+        types = list(dict.fromkeys(types))
+        marks = ", ".join("?" * len(types)) or "NULL"
+        has: Dict[str, List[str]] = {}
+        for value, t in conn.execute(f"SELECT DISTINCT e.{column}, t.name FROM events e JOIN event_types t "
+                                  f"ON t.event_type_id = e.event_type_id WHERE t.name IN ({marks}) "
+                                  f"AND e.{column} IS NOT NULL", types):
+            has.setdefault(value, []).append(t)
+        for value, at in conn.execute(f"SELECT {column}, min(inserted_at) FROM events WHERE {column} IS NOT NULL "
+                                      f"GROUP BY {column}"):
+            payloads = [json.loads(p) for (p,) in conn.execute(
+                f"SELECT e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+                f"WHERE ifnull(e.{column}, '') = ? AND t.name NOT IN ({marks}) ORDER BY e.row_id LIMIT ?",
+                (value, *types, first))] if first else []
+            out["groups"].append({"value": value, "first": at, "types": sorted(has.get(value, [])), "payloads": payloads})
     return out
 
 
-def clear_pending(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], stop: Optional[str] = None) -> int:
-    """Delete the pending events with these identifying properties (`identifying_names`: the
-    channel's, whatever directory the call came from): a call with them has stored its events,
-    the answers they were kept for among them. With `stop`, only those that stopped so (STREAMING:
-    the parts of an answer that broke off, which no call will carry back). How many."""
-    if any(v is not None for n, v in (properties or {}).items() if n not in property_names(conn)):
-        return 0
-    names = identifying_names(conn)
-    values = _unset_is_empty((properties or {}).get(n) for n in names)
+def mark_migrated(conn: sqlite3.Connection, name: str) -> None:
+    """That the one-time copy `name` was made in the file (`_migrated`)."""
     with conn:
-        if stop is None:
-            cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}1", values)
-        else:
-            cur = conn.execute(f"DELETE FROM _pending WHERE {_same(names)}stop = ?", (*values, stop))
-    return cur.rowcount
-
-
-# ---------------------------------------------------------------- recaps
-
-def record_recap(conn: sqlite3.Connection, session: str, text: str) -> int:
-    """Keep a recap of `session` (`_recaps`), made now. Its recap_id."""
-    with conn:
-        cur = conn.execute("INSERT INTO _recaps (session, made_at, text) VALUES (?, ?, ?)", (session, _now(), text))
-    return cur.lastrowid
-
-
-def recaps(conn: sqlite3.Connection, session: Optional[str] = None) -> List[dict]:
-    """Each session's newest recap -- or, given one, that session's every recap, oldest first:
-    {recap_id, session, made_at, text}."""
-    if session is not None:
-        rows = conn.execute("SELECT recap_id, session, made_at, text FROM _recaps WHERE session = ? "
-                            "ORDER BY recap_id", (session,))
-    else:
-        rows = conn.execute("SELECT recap_id, session, made_at, text FROM _recaps WHERE recap_id IN "
-                            "(SELECT max(recap_id) FROM _recaps GROUP BY session) ORDER BY recap_id")
-    return [{"recap_id": r[0], "session": r[1], "made_at": r[2], "text": r[3]} for r in rows]
-
-
-# ---------------------------------------------------------------- names
-
-def record_name(conn: sqlite3.Connection, session: str, text: str, by: str) -> None:
-    """Keep `by`'s name for `session` (`_names`), named now, in place of the one `by` gave before."""
-    with conn:
-        conn.execute("INSERT OR REPLACE INTO _names (session, by, named_at, text) VALUES (?, ?, ?, ?)",
-                     (session, by, _now(), text))
-
-
-def names(conn: sqlite3.Connection, session: Optional[str] = None) -> List[dict]:
-    """Every session's names -- or one session's -- newest last: {session, by, named_at, text}."""
-    rows = conn.execute("SELECT session, by, named_at, text FROM _names" + (" WHERE session = ?" if session else "")
-                        + " ORDER BY named_at", (session,) if session else ())
-    return [{"session": r[0], "by": r[1], "named_at": r[2], "text": r[3]} for r in rows]
-
-
-# ---------------------------------------------------------------- touches
-
-TOUCH_HOWS = ("read", "hit", "created", "modified", "deleted")
-
-
-def record_touches(conn: sqlite3.Connection, session: str, touches: List[dict]) -> int:
-    """Keep what tool calls of `session` did to files (`_touches`), checked now: each {"call_id",
-    "path"?, "how"?, "checked"?, "named"?, "detail"?} -- no path: the call touched none. One already
-    kept for its call, file and how is not kept again; one with no call id, or a `how` not one of
-    TOUCH_HOWS, is not kept. How many were kept."""
-    at, kept = _now(), 0
-    with conn:
-        for t in touches:
-            path, how = t.get("path"), t.get("how")
-            if not isinstance(t.get("call_id"), str) or not t["call_id"] or (path is None) != (how is None) \
-                    or (path is not None and (not isinstance(path, str) or how not in TOUCH_HOWS)):
-                continue
-            flag = lambda v: None if v is None else int(bool(v))          # noqa: E731
-            detail = t.get("detail")
-            cur = conn.execute("INSERT OR IGNORE INTO _touches (session, call_id, at, path, how, checked, named, "
-                               "detail_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                               (session, t["call_id"], at, path, how, flag(t.get("checked")), flag(t.get("named")),
-                                None if detail is None else json.dumps(detail, ensure_ascii=False)))
-            kept += cur.rowcount
-    return kept
+        conn.execute("INSERT OR REPLACE INTO _migrated (name, at) VALUES (?, ?)", (name, _now()))
 
 
 # ---------------------------------------------------------------- which process has a session open

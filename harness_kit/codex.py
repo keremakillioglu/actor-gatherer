@@ -27,8 +27,8 @@ import threading
 import time
 from typing import Dict, List, Optional, Tuple
 
-from .base import (Action, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError, ToolCall,
-                   ToolResult, output_of, seconds)
+from .base import (Action, AnswerError, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
+                   ToolCall, ToolResult, one_line, output_of, picked, seconds)
 
 # Codex item type -> Kind. None = a message: its role decides (ROLES). An item type not listed here is OTHER.
 ITEM_KINDS = {
@@ -97,6 +97,28 @@ TOOLS = {"exec_command": (Action.SHELL, None), "shell": (Action.SHELL, None), "s
 #: Its tool that asks the user in its terminal, its turn waiting on the answer (Plan mode's); and the one it asks
 #: with as its turn goes on.
 ASK, ASK_ASYNC = "request_user_input", "request_user_input_async"
+#: Answering what it asks in its terminal (`answer_keys`), its keys as 0.164 takes them -- in three ways:
+#:
+#:     a question (request_user_input, Plan mode's; its turn waits): a dialog, one question at a time
+#:         an option                  its number: picked, and on to the next question -- after the last, all sent
+#:         the reader's own words     Down to "None of the above" (the one after the options), Tab (a note), the
+#:                                    words, Enter
+#:       and it tells the model {"answers": {<id>: {"answers": [label, "user_note: <words>"]}}}
+#:     a question asked as the turn goes on (request_user_input_async): Shift+Left from the prompt opens it
+#:         an option                  its number (it only moves there), Enter
+#:         the reader's own words     the number after the options' ("Other"), the words (in its place), Enter
+#:       and it sends the replies as the user's next message: [{"answer", "question", "questionItemId"}]
+#:     a plan its turn proposed (its <proposed_plan>), once the turn is over: "Implement this plan?"
+#:         "implement"                1 "Yes, implement this plan": Default mode, and "Implement the plan." sent
+#:         "change"                   3 "No, stay in Plan mode", then the words and Enter, as a message in Plan mode
+#:       (2 "Yes, clear context and implement" starts another thread: left to the terminal)
+PLAN_KEYS = {"implement": "1", "change": "3"}
+IMPLEMENT = "Implement the plan."
+NOTE = "user_note: "
+DOWN, OPEN_ASYNC = "\x1b[B", "\x1b[1;2D"            # Down; Shift+Left, which opens its question asked as it works
+#: What it may do unasked, by Claude Code's names for it: auto is --approve-for-me (its reviewer approves), bypass
+#: its bypass; any other, nothing (it asks).
+PERMISSIONS = {"auto": ["--approve-for-me"], "bypassPermissions": ["--dangerously-bypass-approvals-and-sandbox"]}
 #: The item types the dashboard reads as codex's, by shape.
 SHAPES = {"message", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output",
           "reasoning", "local_shell_call", "web_search_call", "compaction", "compaction_summary"}
@@ -456,6 +478,67 @@ class Codex(Harness):
             raise RenameError(f"Codex did not take the name: {error.get('message') if isinstance(error, dict) else error}")
         return "named in its state"
 
+    asks_recorded = True          # its asks, and their answers, are in its rollout (Rollout)
+
+    def command(self, session: str, resume: bool = False, model: Optional[str] = None,
+                permission_mode: Optional[str] = None, fullscreen: bool = True) -> List[str]:
+        """Its own options (PERMISSIONS), its classic inline screen where not `fullscreen`, and `resume <thread>`."""
+        return [*(["-m", model] if model else []), *PERMISSIONS.get(permission_mode or "", []),
+                *([] if fullscreen else ["--no-alt-screen"]), *(["resume", session] if resume else [])]
+
+    def models(self, env: Optional[Dict[str, str]] = None) -> dict:
+        """Its catalog (`codex debug models`, the ones it lists), and the model its config.toml names."""
+        found = []
+        try:
+            done = subprocess.run(["codex", "debug", "models"], env=env, capture_output=True, text=True, timeout=30,
+                                  stdin=subprocess.DEVNULL)
+            listed = json.loads(done.stdout).get("models") if done.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+            listed = None
+        for m in listed if isinstance(listed, list) else []:
+            if isinstance(m, dict) and m.get("slug") and m.get("visibility", "list") == "list":
+                found.append({"slug": m["slug"], "name": m.get("display_name") or m["slug"], "description": m.get("description") or ""})
+        default = None
+        try:
+            import tomllib
+            with open(os.path.join(codex_home((env or {}).get("CODEX_HOME")), "config.toml"), "rb") as fh:
+                default = tomllib.load(fh).get("model")
+        except (OSError, ValueError, ImportError):
+            pass
+        return {"models": found, "default": default}
+
+    def answer_keys(self, ask: dict, choice: dict) -> List[str]:
+        """Its dialogs' keys (PLAN_KEYS' notes)."""
+        if ask.get("kind") == "plan":
+            how = choice.get("plan")
+            if how not in PLAN_KEYS:
+                raise AnswerError("implement the plan or say what to change")
+            return [PLAN_KEYS[how]] if how == "implement" else [PLAN_KEYS[how], one_line(choice.get("text")), "\r"]
+        out: List[str] = [OPEN_ASYNC] if ask.get("async") else []
+        for p in picked(ask, choice):
+            if ask.get("async"):
+                out += [str(p["count"] + 1), p["text"].strip(), "\r"] if p["text"] is not None else [str(p["places"][0] + 1), "\r"]
+            elif p["text"] is not None:
+                out += [DOWN] * p["count"] + ["\t", p["text"].strip(), "\r"]
+            else:
+                out.append(str(p["places"][0] + 1))
+        return out
+
+    def answer_expected(self, ask: dict, choice: dict) -> List[str]:
+        """In the JSON it records: each a string as its JSON has it."""
+        if ask.get("kind") == "plan":
+            return [IMPLEMENT] if choice.get("plan") == "implement" else [one_line(choice.get("text"))]
+        if ask.get("async"):
+            return ['"answer":' + _json_str(p["text"].strip() if p["text"] is not None else p["labels"][0])
+                    for p in picked(ask, choice)]
+        return [_json_str(NOTE + p["text"].strip()) if p["text"] is not None else _json_str(p["labels"][0])
+                for p in picked(ask, choice)]
+
+    def answer_summary(self, ask: dict, choice: dict) -> str:
+        if ask.get("kind") == "plan":
+            return "Implement the plan" if choice.get("plan") == "implement" else f"Change: {(choice.get('text') or '').strip()}"
+        return super().answer_summary(ask, choice)
+
     def items(self, history: list) -> list:
         return list(history or [])
 
@@ -471,16 +554,6 @@ class Codex(Harness):
 
     def follower(self, path: str) -> Follower:
         return Rollout(path)
-
-    def owns(self, payload) -> bool:
-        if not isinstance(payload, dict):
-            return False
-        if payload.get("type") == "agent_message" and ("author" in payload or "recipient" in payload):
-            return True
-        if payload.get("type") in SHAPES | {"tool_search_call", "tool_search_output"}:
-            return True
-        blocks = [c for c in payload.get("content") or [] if isinstance(c, dict)] if isinstance(payload.get("content"), list) else []
-        return bool({c.get("type") for c in blocks} & {"input_text", "output_text"})
 
     def read(self, items: list) -> List[Part]:
         """Each item read. After codex compacts its history, its input starts again: its preamble re-sent under new ids,
@@ -576,6 +649,11 @@ TAIL = 1 << 20                  # how much of a subagent's rollout's end is read
 #: What a line must hold to be one `take` reads: anything else (most of it) is not parsed at all.
 WANTED = (b'"task_started"', b'"task_complete"', b'"turn_aborted"', b'"SubAgentActivity"', b'"type":"Plan"',
           b'"name":"request_user_input', REPLY.encode(), b'"CommandExecution"', b'session_id', b'session ID')
+
+
+def _json_str(text: str) -> str:
+    """A string as its record has it in its JSON."""
+    return json.dumps(text, ensure_ascii=False)
 
 
 def codex_home(config: Optional[str] = None) -> str:

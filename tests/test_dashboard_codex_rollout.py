@@ -43,7 +43,7 @@ def gatherer_db(path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     conn = sqlite3.connect(path)
     schema.create(conn)
-    schema.add_properties(conn, ["channel"])
+    schema.add_properties(conn, ["channel", "answer_id"])
     conn.commit()
     return conn
 
@@ -59,11 +59,20 @@ def put(conn, channel, kind, payload, at=None, read=True):
     conn.commit()
 
 
+def called(conn, channel, at=None):
+    """A codex call of the channel, as its hook records it (`model_call`): which harness the channel runs on."""
+    put(conn, channel, "model_call", {"kind": "turn", "harness": "codex", "version": "0.164.0"}, at, read=False)
+
+
 def pending(conn, channel, kind, payload, at=None):
-    """The channel's pending answer, this one event of it."""
-    conn.execute("DELETE FROM _pending WHERE p_channel = ?", (channel,))
-    conn.execute("INSERT INTO _pending (received_at, answer, stop, type, payload_json, p_channel) VALUES (?, 'resp_1', 'completed', ?, ?, ?)",
-                 (stamp(at), kind, json.dumps(payload), channel))
+    """The channel's answer no call has carried back, this one event of it, as ag's hook records it: its part
+    (`reply_part`) and its end (`reply_end`, codex's `completed`) -- a new answer each time."""
+    answer = f"resp_{time.time_ns()}"
+    for typ, got in (("reply_part", {"type": kind, "payload": payload}), ("reply_end", {"stop": "completed"})):
+        conn.execute("INSERT OR IGNORE INTO event_types (name, created_at) VALUES (?, ?)", (typ, stamp()))
+        conn.execute("INSERT INTO events (inserted_at, event_id, event_type_id, payload_json, tokens, p_channel, p_answer_id) "
+                     "VALUES (?, ?, (SELECT event_type_id FROM event_types WHERE name = ?), ?, 1, ?, ?)",
+                     (stamp(at), f"{answer}:{typ}", typ, json.dumps(got), channel, answer))
     conn.commit()
 
 
@@ -273,6 +282,7 @@ class StatusBase(RolloutBase):
         self.conn = self.db = gatherer_db(os.path.join(dashboard_home.HOME, "gatherers", "g", "context.db"))
         self.addCleanup(self.conn.close)
         super().setUp()
+        called(self.conn, THREAD, at=time.time() - 121)
         put(self.conn, THREAD, "user_message", {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "ask me"}]},
             at=time.time() - 120)
 
@@ -404,7 +414,7 @@ class TurnsTest(StatusBase):
                                  ("report", "count_b", "1, 2, 3, 4")])
         self.assertEqual([r["text"] for r in got["turns"][1]["replies"]], ["One is done."])
         self.assertEqual([c["text"] for c in files.files("g", THREAD, turn=0)["commands"]], ["Agent count_a", "Agent count_b"])
-        note = data.parts("agent_message", json.dumps(report("/root/x", "done")), None)   # stored before codex's were context
+        note = data.parts("agent_message", json.dumps(report("/root/x", "done")), None, harness="codex")   # stored before codex's were context
         self.assertEqual([p["kind"] for p in note], ["note"])
 
 
@@ -452,6 +462,7 @@ class SendTest(SessionsBase, RolloutBase):
 
     def gatherer(self, sid, answer):
         conn = gatherer_db(os.path.join(dashboard_home.HOME, "gatherers", "g", "context.db"))
+        called(conn, sid)
         put(conn, sid, "user_message", {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]})
         pending(conn, sid, *answer)
         Followed("codex", self.record_for(sid)).into(conn, sid)       # its record, as the hook follows it
@@ -474,7 +485,7 @@ class SendTest(SessionsBase, RolloutBase):
         self.post("/api/terminal", {"session_id": sid, "cols": 100, "rows": 30})
         self.until(lambda: os.path.exists(self.log) and self.logged())
         time.sleep(0.3)
-        self.record_for(sid)
+        self.write(started("t1", "plan"), asked("q", [FRUIT]), path=self.record_for(sid))   # codex's rollout: it asks
         self.gatherer(sid, ("tool_call", {"type": "function_call", "name": "request_user_input", "call_id": "q",
                                           "arguments": json.dumps({"questions": [FRUIT]})}))
         code, got = self.post("/api/send", {"session_id": sid, "text": "2 more things"})

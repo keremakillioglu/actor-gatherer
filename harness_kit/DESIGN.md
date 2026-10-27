@@ -1,8 +1,8 @@
 # Harnesses as events: design
 
 The design behind `harness_kit/` and the events ag's hooks record, as built so far. It follows the design doc
-"Harnesses as events: design" (a Claude Doc), and says where the build went another way and why. Steps 1–3 of
-its order of work are built (#138), and step 4 (its own PR); steps 5–7 are not.
+"Harnesses as events: design" (a Claude Doc), and says where the build went another way and why. Steps 1–4 of
+its order of work are built (#138, #144), step 5 (#149), and steps 6–7 (one PR).
 
 ## Goal
 
@@ -52,13 +52,20 @@ class Harness(ABC):
     def read_one(self, payload) -> List[Part]: ...                       # a stored piece, its neighbours unknown
     def words(self, text: str) -> tuple: ...                             # (Kind, the user's words as typed)
 
-    # A stored piece's harness, by its shape
-    @abstractmethod
-    def owns(self, payload) -> bool: ...
-
     # Its own record of a session (step 4)
     def record_path(self, session, cwd=None, config=None) -> Optional[str]: ...
     def follower(self, path) -> Optional[Follower]: ...
+
+    # What its calls and answers say besides the conversation (step 5)
+    asks_recorded = False                                                 # Codex: True, its record has them
+    def derived(self, parts, at, history=None) -> List[Fact]: ...
+
+    # Run in a terminal, and answered there (step 5)
+    def command(self, session, resume=False, model=None, permission_mode=None, fullscreen=True) -> List[str]: ...
+    def models(self, env=None) -> dict: ...
+    def answer_keys(self, ask, choice) -> List[str]: ...
+    def answer_expected(self, ask, choice) -> List[str]: ...
+    def answer_summary(self, ask, choice) -> str: ...
 ```
 
 - `Call(kind, session, cwd, version, history, own, detail)`: `kind` one of TURN, SUBAGENT, SUGGESTION, RECAP,
@@ -71,11 +78,14 @@ class Harness(ABC):
 - `ToolCall(id, name, input, action, paths, ask)`, `ToolResult(call_id, error, output, task)`, as the doc has
   them; `task` is a background task a result says started, resumed or was stopped.
 - `words(text)` is new: the History outline and the actor list have only an event's text, not its payload.
-- `owns(payload)` is new, and is the `recognizes` the user said is not needed: ag now records which harness made
-  each call (`model_call.harness`), and the dashboard reads that first. `owns` stays only for events stored before
-  `model_call` existed, and goes with step 6, once those channels have their harness recorded.
+- No `owns`, the doc's `recognizes`: ag records which harness made each call (`model_call.harness`), and a channel
+  from before that has its harness recorded once, by the shape of its pieces, as its gatherer's old tables are copied
+  (`harness`, step 6). The shape test lives there alone (migrate.py's `shape_of`).
 
-Not built yet: `answer_keys`, `command` and `models` (step 5).
+`command` is the harness's own options for a session in a terminal (after `ag ... <name>`), `models` the models it
+lists (Codex's catalog), and `answer_keys` / `answer_expected` / `answer_summary` how a question or plan it asks in its
+terminal is answered by keys, what it then records, and the answer in a line -- each harness's dialogs described beside
+its rules (Claude Code's `PLAN_KEYS`, Codex's). The dashboard's answers.py hands each question to its harness.
 
 A `Follower` reads one record as it grows: `take(line, at)` gives the `Fact`s a line says, keeping what it needs
 between lines (the queue, the questions open, the turn); `due(now)` gives what time alone decides (Claude Code: a
@@ -144,9 +154,11 @@ Against the doc's "Changes to ag's core":
   them in a group would see them; nothing refuses that yet.
 - **`latest` takes `types`.** Claude Code's ids are chained from the channel's last stored events (#125); with
   records among them the chain would break, so the hook asks for the conversation's types alone.
-- **The old ops stay.** The hooks no longer call `pending`, `failed`, `recap` or `name` (nor did the TypeScript
-  plugins), but a hook server keeps its old code until it restarts, so they stay until step 6, as does
-  `call_ag.pending_ag` / `report_failed`.
+- **The old ops are gone (step 6).** `pending`, `failed`, `recap`, `name` and `touches`, the tables they kept
+  (`_pending`, `_recaps`, `_names`, `_touches`, `_reads.error`), and `call_ag.pending_ag` / `report_failed`. Pi's
+  and OpenCode's plugins, which still kept their answers with `pending`, record them as the Python hooks do
+  (`call_ag.ts`'s `answered_ag`: `reply_part`s and their `reply_end`) and each call as a `model_call` with their
+  harness's name (`called`), in the records lane. An older file keeps its tables, copied into records once (below).
 
 ## The session-file watcher (step 4)
 
@@ -177,10 +189,10 @@ without it the hook looks where the harness would by default.
 | `message_queued` | `queue-operation` enqueue (not its own notes) | none |
 | `message_sent` | remove `absorbed_mid_turn` (`mid_turn`), dequeue (`next`, `joins` when held), a `human` user line between turns (`prompt`) | none |
 | `message_withdrawn` | any other remove; `popAll` (Up: every message written back in the prompt, to edit) | none |
-| `asked` | none: its asks come with the reply (step 5) | `request_user_input` (and `_async`); a completed Plan-mode turn's plan, `plan:<turn>` |
+| `asked` | none: its asks come with the reply (`derived`, below) | `request_user_input` (and `_async`); a completed Plan-mode turn's plan, `plan:<turn>` |
 | `ask_settled` | an asking call's result: `dismissed` when the interrupt note follows, else `answered`; its result's words | the call's output (`aborted by user`: dismissed); async replies, once every question has one; the turn's end; for a plan, the next turn's start and what it opened with |
 | `turn_stopped` | `isApiErrorMessage` (`error`, its status); the interrupt note (`interrupted`) | `task_complete` (`over`, or `error`), `turn_aborted` (`interrupted`) |
-| `task_started` | none: its starts come with tool results (step 5) | a subagent started; a command left running |
+| `task_started` | none: its starts come with tool results (`derived`, below) | a subagent started; a command left running |
 | `task_ended` | a `<task-notification>` that ends one, the moment it is written | a subagent's end (with its `report`), a command's |
 
 The doc's `question_settled`, `turn_interrupted` and `gave_up` are `ask_settled` and `turn_stopped`'s `how`. Codex's
@@ -195,9 +207,45 @@ once, and Claude Code's message taken back on Esc is withdrawn with its read.
 `meanwhile` (its message facts): what is asked and settled, a turn stopped, background tasks ended (and, for codex,
 started), what the user wrote as it worked, a subagent's report. `queued.py`, `rollout.py`, `data.settled`,
 `stopped` and `_ends`, and `live.py`'s watching of record files are gone: a fact's insert rings the page through ag's
-notifications. GIVE_UP_LONG now applies where the record is followed (`Record.followed`). It still reads two files
-of the harness's: a background task's output file's time (`_written`) and Claude Code's plan file (`_plan`), both for
-step 5 (`task_activity`, `asked`).
+notifications. GIVE_UP_LONG now applies where the record is followed (`Record.followed`). Since step 5 it reads
+no file of the harness's for a channel whose hook derives (below): a task's output file's time and Claude Code's plan
+file are the hook's to read.
+
+## Derived and dashboard events (step 5)
+
+**Derived from calls and answers** (`Harness.derived`; ProxyHook's `derive`), recorded beside the session's reads,
+each by the harness's own ids (`<type>:<key>`):
+
+| Type | Key | When |
+|---|---|---|
+| `asked` | the asking call's id | an answer ends with a call of ASKS (Claude Code's AskUserQuestion, ExitPlanMode); a plan's text read from the plan file the session wrote (`plan_text`) |
+| `ask_settled` | the asking call's id | a call carries its result: `dismissed` when it is an error and the interrupt note comes with it (Esc rejects the call), else `answered` -- a plan sent back with what to change is an error too, with no note, and its turn goes on. The session-file watcher records it as well (above): this one is the sooner once a call goes out, the watcher's the one for Esc, which makes no call |
+| `task_started` | `<task>.<call>` | a tool's result says a background task started or resumed (`task_of`), labelled by its call (`label_of`) |
+| `task_ended` | `<task>.<call>`; `<task>.<crc of the notice>` | a task stopped (TaskStop); a notice that it ended; an agent's report handed back |
+| `task_activity` | `<task>.<crc of the notice>` | a monitor's event; an agent waiting on its own background work |
+
+An answer's are read once it is whole; a call's from its last answer on (the results and notices that came after),
+less the asks, which its answer recorded. Codex's asks and tasks are its rollout's (`asks_recorded`). Each model call
+says `derives`, so the dashboard knows a channel's hook records them and reads them in place of looking through the
+answers' calls and the events' texts (`Record.asking`, `Record.tasks`); a channel whose newest call does not say so
+keeps the readers it had, until step 6. The session-file watcher looks at each running task's output file every 5 s
+(`task_activity`, by the file's time), so the dashboard reads no file to know a task lives. The dashboard reads a
+channel's activity apart from its other facts (the newest 200, beside the newest 400 others), so a task that writes
+all along never pushes its own start, or what is asked, out of what is read.
+
+**`file_touched`.** What each call did to files (file_touches/) is recorded as `file_touched` events (`<call>:<how>:
+<path>`, property `call_id`) beside the session's reads, in place of the `touches` op and `_touches`, which stay for
+older hook servers until step 6; the dashboard reads the events, and the table for a call with none. The checks read
+calls and results by the harness's rules (`read`'s `tool` and `result`): on the 9,344 calls of the last 60,000 events
+in making_ag both readings agreed, but for 15 ToolSearch results, which touch no files.
+
+**The dashboard's own** (actions.py), put in by ag (`ag home insert`), in the background, while a server runs the page:
+
+| Type | Payload | Read by |
+|---|---|---|
+| `chat_sent` | text | `data.typed`: pending (`chat`) until a message of its words is queued, sent or stored, at most 60 s -- not a "/" command, which the harness runs itself; the page that sent it shows it pending until the harness has it. A new codex session's waits for its thread's id (`sessions._rename`) |
+| `answer_given` | call, summary, expect | `data._with_started`: the answer and whether it was recorded, past a restart |
+| `terminal_input` | | `sessions.answer`'s check that nothing was typed since a question was asked: one per burst of keys (2 s quiet) |
 
 **After merging:** the hook servers must restart (`ag stop`, then any session's next run) for a session's record to
 be followed. Until then the dashboard sees no facts for it -- no queued messages, questions settled in the terminal,
@@ -212,16 +260,35 @@ Each subclass keeps its own flow: Claude Code's continuity of ids, claims, count
 Codex's runs, side calls and compaction. On a hang-up (499) the Claude hook also withdraws what the call stored
 (#133). From each call of a session on, it follows the session's own record (`following`, the watcher above).
 
+## The old tables (step 6)
+
+What ag kept before its hooks recorded it as events is copied into records once per gatherer, so the dashboard
+reads records alone. The core keeps its tables and knows no harness: its server serves what they kept (`old_tables`:
+the rows of `_recaps`, `_names`, `_touches`, `_pending`, `_reads.error` and each channel's newest `_reads.answered_at`,
+and for a property given, `by`, each of its values with the record types it has and its first pieces), takes events
+with the time they happened (`insert`'s `at`, stored in one transaction) and keeps that the copy was made
+(`migrated`, its `_migrated` table). The harness side does the copy (`ag/integrations/tools/ag_orchestrator/
+migrate.py`, a program on ag's server's client): each row as the record the hooks would have made, by the same id
+(`file_touched:<call>:<how>:<path>`, `failed:<read>`, an answer's `reply_part`s and `reply_end`), skipping a channel
+that has records of that type already, and for a channel with no `model_call`, its harness by its pieces' shapes
+(`harness`, migrate.py's `shape_of`). A dashboard that serves the page runs it for each gatherer that still has the
+old tables (`migrating.py`), in the background. On the real `making_ag` (763 MB) it copied 10,483 file touches, 33
+recaps, 68 pending parts, 92 failed calls and 87 channels' harnesses in about 6 s; the dashboard then read each actor
+as it had read the tables, but for the background tasks a hook server not yet restarted had not recorded.
+
 ## The dashboard
 
-It reads records where a channel has them, and the old tables where it has not: what is pending (`replies`:
-`reply_part`s after the newest conversation event, ended or not; a part that broke off is dropped at the next
-turn's call, as `_pending` dropped it), whether a turn is over, a failing or hung-up call (`_newest_reads`), the
-recap, the name, the harness. It leaves records out of every view of the conversation (`NOT_RECORD`). The user's
+It reads records alone: what is pending (`replies`: `reply_part`s after the newest conversation event, ended or
+not; a part that broke off is dropped at the next turn's call), whether a turn is over, a failing or hung-up call
+(`call_failed`, by its read: `_newest_reads`), the recap, the name, the harness (`model_call`, else `harness`),
+what is asked and its tasks (`Record`), what calls did to files (`file_touched`). Since step 6 its fallbacks are
+gone: a channel whose hook has not recorded something (a hook server not restarted since) shows none of it, and
+`data.parts` reads a piece by its channel's harness, not its shape. It leaves records out of every view of the conversation (`NOT_RECORD`). The user's
 words come as typed, with their kind, from the `words` and `kind` properties, else from `Harness.words`; the page
 no longer parses Claude Code's or Codex's wrappers.
 
-Since step 4 it reads no harness's record of a session: the hooks record what those say as facts (above).
+Since step 4 it reads no harness's record of a session: the hooks record what those say as facts (above); since step
+5 no plan or output file either, where a channel's hook derives.
 
 It writes one event of its own so far, through `ag home insert` (the server's `insert`, run as `ag home build`
 is): an actor's name, as the reader gave it (`name`, by "user", `naming.py`), which the list shows ahead of the
@@ -239,19 +306,32 @@ The doc planned a PR per step. Steps 1–3 went into one PR: they were built tog
 3. **Built.** Calls and replies as records; `ProxyHook`.
 4. **Built.** The session-file watcher in the hook server (above); `queued.py`, `rollout.py` and the dashboard's
    session-file reads gone; the harness's folder in the hook server's URL (`/c/`).
-5. **Next.** Derived and dashboard events: `asked` (Claude Code's, from its replies; the plan file read then),
-   `task_started` / `task_ended` derived from tool results, `task_activity`, `file_touched` (with
-   `file_touches/calls.py` reading calls from `Part.tool`, which it still parses itself), `chat_sent`,
-   `answer_given`, `terminal_input`. The status rules move to events. Decided (2026-10-26): the dashboard writes its
-   own action events as events itself.
-6. Old tables: copy `_recaps`, `_names`, `_touches`, `_pending` and `_reads.error` into records, record each old
-   channel's harness; then drop the dashboard's fallbacks, `Harness.owns`, and the old ops.
-7. Fixtures per harness version, and a probe that triggers each feature live.
+5. **Built.** Derived and dashboard events (above): `asked`, `ask_settled`, `task_*` from calls and answers,
+   `task_activity`, `file_touched` (its calls read by the harness's rules), `chat_sent`, `answer_given`,
+   `terminal_input`; `answer_keys`, `command`, `models`. A channel's asks and tasks are read from events. The
+   dashboard writes its own action events itself (decided 2026-10-26).
+6. **Built.** Old tables copied into records once (above); the dashboard's fallbacks, `Harness.owns` and
+   `harness_of`, and the old ops gone; Pi's and OpenCode's plugins record their calls and answers.
+7. **Built.** Fixtures per harness version: `tests/fixtures/harnesses/<harness>/<version>/` holds a live session's
+   model calls (one of each kind, headers and trimmed bodies), its longest conversation and the harness's own record,
+   with what harness_kit reads of them (`expected.json`: calls, parts and `words`, derived facts as the hook runs
+   `derive`, the follower's facts, answer keys). `tests/test_harness_fixtures.py` checks every version; a new version
+   is a new folder, and older ones must still read as they did (`tests/probe/rewrite.py` rewrites a reading on
+   purpose). `tests/probe/probe.py <harness>` makes a folder from a live run: the harness's command wrapped so a tap
+   records each call as sent, the session driven through the dashboard's API through every feature, the API error by
+   the tap refusing a message's calls, and what it did not trigger said. Claude Code 2.1.311 and Codex 0.164.0 are
+   captured. Their readings found two rules to fix: Claude Code 2.1.311 wraps a task's notice in a reminder, read
+   as `environment` (now `task_notice`, which opens a turn); and codex's async question, as its rollout records it
+   (`{title, options: [label]}`), was not taken by `answer_keys` (`picked` takes it now). A notification is seen
+   twice in Claude Code's record -- queued, then sent as the user's -- and recorded as two `task_ended`, which read as
+   one.
 
 ## Open questions
 
 - Sessions run outside ag's launcher: the watcher learns a session's file from the launcher's URL.
-- How often `task_activity` is recorded.
+- How often `task_activity` is recorded: every 5 s at most from a task's output, for now.
+- `terminal_input` granularity: one per burst (2 s quiet), enough for the typed-since check.
 - `codex exec` exits once it has its final answer, before the hook server is through with it, so since #133 that
   last call is recorded as a hang-up (499) and the run shows as interrupted rather than over.
-- Pi and OpenCode: their plugins would insert the records themselves; neither inserts any yet.
+- Pi and OpenCode: their plugins record each call and answer (step 6), none of the facts the Python hooks derive
+  or follow -- their asks and tasks are not known.

@@ -151,14 +151,6 @@ class WritesTest(Base):
         thread.join(5)
         self.assertEqual(seen, [1])
 
-    def test_pending_kept_and_cleared(self):
-        self.m.record_pending("s", ch("c1"), [{"type": "agent_message", "payload": {"x": 1}, "text": "done"}], "a1")
-        self.assertEqual(self.told(), [("pending", "c1", None)])
-        self.m.clear_pending("s", ch("c2"))                  # nothing of c2's: nothing told
-        self.assertEqual(self.told(), [])
-        self.m.clear_pending("s", ch("c1"))
-        self.assertEqual(self.told(), [("pending", "c1", None)])
-
     def test_a_logged_read_and_the_counts_after_it(self):
         self.put([user("hello", 1)])
         self.told()

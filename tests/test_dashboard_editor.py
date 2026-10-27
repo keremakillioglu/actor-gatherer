@@ -513,7 +513,7 @@ class RoomTest(unittest.TestCase):
 
 @unittest.skipIf(Doc is None, "pycrdt is not installed")
 class WritersTest(unittest.TestCase):
-    """Who changed each listed file, of the actors: what ag's hook found their tool calls did on disk (`_touches`)."""
+    """Who changed each listed file, of the actors: what ag's hook found their tool calls did on disk (`file_touched`)."""
 
     def setUp(self):
         from datetime import datetime, timezone
@@ -530,17 +530,20 @@ class WritersTest(unittest.TestCase):
                 fh.write("x = 1\n")
         os.makedirs(os.path.join(dashboard_home.HOME, "gatherers", "g"))
         conn = sqlite3.connect(os.path.join(dashboard_home.HOME, "gatherers", "g", "context.db"))
-        conn.execute("CREATE TABLE _touches (touch_id INTEGER PRIMARY KEY, session TEXT, call_id TEXT, at TEXT, path TEXT, "
-                     "how TEXT, checked INTEGER, named INTEGER, detail_json TEXT)")
+        conn.executescript("""CREATE TABLE event_types (event_type_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT);
+            CREATE TABLE events (row_id INTEGER PRIMARY KEY, inserted_at TEXT NOT NULL, event_id TEXT, event_type_id INTEGER NOT NULL,
+              payload_json TEXT NOT NULL, tokens INTEGER NOT NULL, text TEXT, counted INTEGER, p_channel);
+            INSERT INTO event_types (name) VALUES ('user_message'), ('file_touched');""")
         stamp = lambda ago: datetime.fromtimestamp(time.time() - ago, timezone.utc).isoformat()   # noqa: E731
         src = os.path.join(self.work, "src")
-        conn.executemany("INSERT INTO _touches (session, call_id, at, path, how) VALUES (?, ?, ?, ?, ?)", [
-            ("c1", "t1", stamp(300), f"{src}/a.py", "modified"),
-            ("c1", "t2", stamp(60), f"{src}/a.py", "modified"),          # c1's latest
-            ("c2", "t3", stamp(30), f"{src}/a.py", "modified"),          # a second actor on the same file
-            ("c1", "t4", stamp(20), f"{src}/b.py", "read"),              # a read changes nothing
-            ("c3", "t5", stamp(editor.RECENT + 600), f"{src}/c.py", "modified"),   # too long ago
-            ("c1", "t6", stamp(10), None, None)])                        # a call that touched no file
+        conn.executemany("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, p_channel) VALUES (?, ?, ?, 0, ?)", [
+            (stamp(editor.RECENT + 600), 2, json.dumps({"call": "t5", "path": f"{src}/c.py", "how": "modified"}), "c3"),   # too long ago
+            (stamp(300), 2, json.dumps({"call": "t1", "path": f"{src}/a.py", "how": "modified"}), "c1"),
+            (stamp(60), 2, json.dumps({"call": "t2", "path": f"{src}/a.py", "how": "modified"}), "c1"),       # c1's latest
+            (stamp(30), 2, json.dumps({"call": "t3", "path": f"{src}/a.py", "how": "modified"}), "c2"),       # a second actor on it
+            (stamp(25), 1, json.dumps({"role": "user", "content": "hi"}), "c1"),                               # not a touch
+            (stamp(20), 2, json.dumps({"call": "t4", "path": f"{src}/b.py", "how": "read"}), "c1"),           # a read changes nothing
+            (stamp(10), 2, json.dumps({"call": "t6", "path": None, "how": None}), "c1")])                     # a call that touched no file
         conn.commit()
         conn.close()
         self.editors = editor.Editors(poll=3600)

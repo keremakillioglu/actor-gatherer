@@ -252,25 +252,33 @@ def _utf16(raw: bytes, at: int) -> int:
 def writers(directories: List[str], since: float) -> Dict[str, List[dict]]:
     """The actors that changed a file under any of `directories` since `since` (seconds), by the file's path from
     its directory: [{gatherer, channel, at, how}], each actor's latest change, the latest first -- what ag's hook found
-    each tool call did on disk (every gatherer's `_touches`)."""
-    stamp = datetime.fromtimestamp(since, timezone.utc).isoformat()
+    each tool call did on disk (every gatherer's `file_touched` events; an older gatherer's `_touches`, copied there
+    once). Read newest first, by the events' type, and only back to `since`: the events are in the order they came
+    (copied ones, in theirs, before any that came after)."""
+    prefixes = [d.rstrip("/") + "/" for d in set(directories)]
     out: Dict[str, Dict[tuple, dict]] = {}
     for gatherer in data.gatherer_names():
         conn = data._connect(gatherer)
         if conn is None:
             continue
         try:
-            if "_touches" not in data._tables(conn):
+            kind = conn.execute("SELECT event_type_id FROM event_types WHERE name = 'file_touched'").fetchone()
+            if kind is None:
                 continue
-            for directory in set(directories):
-                prefix = directory.rstrip("/") + "/"
-                for r in conn.execute("SELECT session, path, how, max(at) AS at FROM _touches WHERE how IN "
-                                      "('created', 'modified', 'deleted') AND path >= ? AND path < ? AND at >= ? "
-                                      "GROUP BY session, path", (prefix, prefix[:-1] + "0", stamp)):
-                    at, key = data._seconds(r["at"]), (gatherer, r["session"])
-                    kept = out.setdefault(r["path"][len(prefix):], {})
-                    if key not in kept or at > kept[key]["at"]:
-                        kept[key] = {"gatherer": gatherer, "channel": r["session"], "at": at, "how": r["how"]}
+            for r in conn.execute(f"SELECT {data.CHANNEL} AS session, inserted_at, payload_json FROM events "
+                                  "WHERE event_type_id = ? ORDER BY row_id DESC", (kind[0],)):
+                at = data._seconds(r["inserted_at"])
+                if at is None or at < since:
+                    break
+                t = data._json(r["payload_json"]) or {}
+                path = t.get("path")
+                if t.get("how") not in ("created", "modified", "deleted") or not isinstance(path, str):
+                    continue
+                for prefix in prefixes:
+                    if path.startswith(prefix):
+                        key, kept = (gatherer, r["session"]), out.setdefault(path[len(prefix):], {})
+                        if key not in kept or at > kept[key]["at"]:
+                            kept[key] = {"gatherer": gatherer, "channel": r["session"], "at": at, "how": t["how"]}
         except sqlite3.Error:                       # being written, or not ag's: the next listing
             continue
         finally:

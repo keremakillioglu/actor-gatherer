@@ -156,6 +156,20 @@ class ExecTest(CodexBase):
         again = self.logged()[1]["argv"]
         self.assertEqual(again[again.index("resume") + 1:], [THREAD, "-"])
 
+    def test_a_message_from_chat_is_kept_in_the_thread_s_channel_not_the_id_it_started_under(self):
+        with unittest.mock.patch.object(sessions.actions, "chat_sent") as kept:
+            first = self.s.create("g", self.work, harness="codex")["session_id"]
+            before = time.time()
+            self.s.send(first, "Reply with pong")
+            self.until(lambda: kept.call_args_list)
+            [(args, _)] = kept.call_args_list
+            self.assertEqual(args[:3], ("g", THREAD, "Reply with pong"))         # once it has its thread, sent when sent
+            self.assertTrue(before <= args[3] <= time.time())
+            self.until(lambda: (self.session(THREAD) or {}).get("turns") == 1)
+            self.s.send(THREAD, "again")                                       # its thread's from the start
+            self.assertEqual(kept.call_args_list[-1].args, ("g", THREAD, "again"))
+            self.assertEqual(self.s.unsent, {})
+
     def test_a_message_sent_while_a_turn_runs_is_the_next_turn(self):
         os.environ["FAKE_AG_DELAY"] = "0.4"
         sid = self.s.create("g", self.work, harness="codex")["session_id"]

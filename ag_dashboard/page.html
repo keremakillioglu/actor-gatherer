@@ -6206,7 +6206,9 @@ function heard(info) {
 const typedAs = (text) => String(text ?? "").trim().replace(/^!\s*/, "! ");
 // whether two say the same: their start, as a stored message is clipped
 const sameWords = (a, b) => typedAs(a).slice(0, 200) === typedAs(b).slice(0, 200);
-const heardCount = (h, text) => [...h.stored, ...h.typed].filter((m) => sameWords(m.text, text)).length
+// how many messages of these words the actor has had -- not counting one sent from Chat it has not had yet (`chat`: its
+// `chat_sent`, the dashboard's own record of sending it)
+const heardCount = (h, text) => [...h.stored, ...h.typed.filter((q) => !q.chat)].filter((m) => sameWords(m.text, text)).length
   + h.queued.filter((q) => sameWords(q, text)).length;
 // Messages sent from this page's box, each {key, text, base, at}: shown pending the moment it is sent, until the
 // actor's records hold one more message of its words than when it was sent (`base`) -- from then on, as they say.
@@ -6219,9 +6221,11 @@ function pendingTalk(info, h) {
   for (let i = sentHere.length - 1; i >= 0; i--)
     if (sentHere[i].key === k && heardCount(h, sentHere[i].text) > sentHere[i].base) sentHere.splice(i, 1);
   const mine = sentHere.filter((m) => m.key === k);
-  const list = [...h.typed.filter((q) => q.sent === null).map((q) => q.text), ...h.queued, ...mine.map((m) => m.text)];
+  const list = [...h.typed.filter((q) => q.sent === null && !q.chat).map((q) => q.text), ...h.queued, ...mine.map((m) => m.text)];
+  const chats = h.typed.filter((q) => q.chat && q.sent === null && !list.some((t) => sameWords(t, q.text)));
+  list.push(...chats.map((q) => q.text));  // sent from Chat elsewhere (or before a reload), not had yet: its `chat_sent`
   if (!list.length) return null;
-  const unseen = mine.some((m) => Date.now() - m.at > UNSEEN_MS);
+  const unseen = mine.some((m) => Date.now() - m.at > UNSEEN_MS) || chats.some((q) => Date.now() - q.at * 1000 > UNSEEN_MS);
   return el("div", { class: "fl-pending" }, ...list.map((text) =>
     el("div", { class: "fl-user" + bubbleClass(text), title: "Written while it works: given to the agent at its next step" }, userWords(text))),
     el("span", { class: "lbl", text: unseen ? "Pending · not seen by the session yet" : "Pending" }));

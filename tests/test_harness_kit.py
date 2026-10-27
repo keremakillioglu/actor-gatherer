@@ -3,6 +3,7 @@ what its tools do."""
 import ast
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -168,11 +169,95 @@ class CodexTest(unittest.TestCase):
         self.assertEqual((turn.kind, turn.version), (CallKind.TURN, "0.164.0"))    # its terminal's User-Agent
 
 
-class OwnerTest(unittest.TestCase):
-    def test_a_stored_piece_s_harness_by_its_shape(self):
-        self.assertIs(harness_kit.owner(user("hi")), CLAUDE)
-        self.assertIs(harness_kit.owner(item("user", "hi")), CODEX)
-        self.assertIsNone(harness_kit.owner({"info": {}, "parts": []}))
+class DerivedTest(unittest.TestCase):
+    """What an answer's and a call's pieces say besides the conversation (`derived`), keyed by the harness's own ids."""
+
+    def facts(self, *messages, history=None):
+        return [(f.type, f.key, f.data) for f in CLAUDE.derived(CLAUDE.read(CLAUDE.items(list(messages))), 100.0, history)]
+
+    def test_what_an_answer_asks_and_what_its_result_says_of_it(self):
+        ask = {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "AskUserQuestion", "input": {
+            "questions": [{"question": "Which?", "header": "Pick", "options": [{"label": "A"}, {"label": "B"}]}]}}]}
+        [(typ, key, data)] = self.facts(ask)
+        self.assertEqual((typ, key, data["call"], data["kind"], data["async"]), ("asked", "t1", "t1", "question", False))
+        self.assertEqual([o["label"] for o in data["questions"][0]["options"]], ["A", "B"])
+        answered = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": 'User has answered: "Which?"="B"'}]}
+        # Esc, as Claude Code 2.1.311 sends it on (saved from a live session): the call rejected, and its note
+        dismissed = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True,
+                                                  "content": "The user doesn't want to proceed with this tool use. The tool "
+                                                             "use was rejected (eg. if it was a file edit, the new_string was "
+                                                             "NOT written to the file). STOP what you are doing and wait for "
+                                                             "the user to tell you how to proceed."},
+                                                 {"type": "text", "text": "[Request interrupted by user for tool use]"}]}
+        self.assertEqual([(t, d["how"]) for t, _, d in self.facts(ask, answered) if t == "ask_settled"], [("ask_settled", "answered")])
+        self.assertEqual([(t, d["how"]) for t, _, d in self.facts(ask, dismissed) if t == "ask_settled"], [("ask_settled", "dismissed")])
+
+    def test_a_plan_sent_back_with_what_to_change_is_answered(self):
+        # "Tell Claude what to change", as Claude Code 2.1.311 sends it on (saved from a live session): rejected, no note,
+        # and its turn goes on with the reader's words
+        ask = {"role": "assistant", "content": [{"type": "tool_use", "id": "t2", "name": "ExitPlanMode", "input": {}}]}
+        change = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "is_error": True,
+                                               "content": "The user doesn't want to proceed with this tool use. The tool use "
+                                                          "was rejected (eg. if it was a file edit, the new_string was NOT "
+                                                          "written to the file). To tell you how to proceed, the user said:\n"
+                                                          "Append the word ciao instead of bye"}]}
+        [(_, _, data)] = [f for f in self.facts(ask, change) if f[0] == "ask_settled"]
+        self.assertEqual(data["how"], "answered")
+        self.assertIn("ciao", data["result"])
+
+    def test_a_plan_s_text_from_the_file_it_wrote(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, ".claude", "plans", "p.md")
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w") as fh:
+                fh.write("## Plan\n1. Do it")
+            wrote = {"role": "assistant", "content": [{"type": "tool_use", "id": "w1", "name": "Write",
+                                                       "input": {"file_path": path, "content": "draft"}}]}
+            ask = {"role": "assistant", "content": [{"type": "tool_use", "id": "t9", "name": "ExitPlanMode", "input": {}}]}
+            [(_, _, data)] = self.facts(ask, history=[wrote, {"role": "user", "content": "ok"}])
+            self.assertEqual((data["kind"], data["plan"]), ("plan", "## Plan\n1. Do it"))     # as it is now
+            os.remove(path)
+            [(_, _, data)] = self.facts(ask, history=[wrote])
+            self.assertEqual(data["plan"], "draft")                                            # as that write had it
+
+    def test_tasks_started_stopped_noticed_and_handed_back(self):
+        calls = {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "c1", "name": "Bash", "input": {"command": "sleep 99", "description": "Wait a while",
+                                                                        "run_in_background": True}},
+            {"type": "tool_use", "id": "c2", "name": "TaskStop", "input": {"task_id": "b2"}}]}
+        results = {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "c1", "content": "Command running in background with ID: b1. "
+                                                                     "Output is being written to: /tmp/b1.output"},
+            {"type": "tool_result", "tool_use_id": "c2", "content": "Successfully stopped task: b2"},
+            {"type": "text", "text": "<task-notification>\n<task-id>b3</task-id>\n<status>completed</status>\n</task-notification>"},
+            {"type": "text", "text": "<task-notification>\n<task-id>m1</task-id>\n<event>line 4 matched</event>\n</task-notification>"}]}
+        got = self.facts(calls, results)
+        self.assertEqual([(t, k, d) for t, k, d in got if t == "task_started"],
+                         [("task_started", "b1.c1", {"task": "b1", "kind": "command", "how": "started", "label": "Wait a while",
+                                                     "output": "/tmp/b1.output"})])
+        self.assertEqual({(d["task"], d["status"]) for t, _, d in got if t == "task_ended"}, {("b2", "stopped"), ("b3", "completed")})
+        self.assertEqual([(d["task"], d["event"]) for t, _, d in got if t == "task_activity"], [("m1", "line 4 matched")])
+        self.assertEqual(self.facts(calls, results), got)                      # read again: the same facts, the same keys
+        self.assertEqual(CODEX.derived(CODEX.read([item("assistant", "hi")]), 1.0), [])   # codex's are in its record
+
+
+class RunTest(unittest.TestCase):
+    """Each harness started in a terminal (`command`), as the dashboard starts it."""
+
+    def test_claude_code_s_options(self):
+        self.assertEqual(CLAUDE.command("s1", permission_mode="auto", model="sonnet"),
+                         ["--permission-mode", "auto", "--model", "sonnet", "--session-id", "s1"])
+        self.assertEqual(CLAUDE.command("s1", resume=True, permission_mode="plan"), ["--permission-mode", "plan", "--resume", "s1"])
+        self.assertEqual(CLAUDE.models(), {"models": [], "default": None})                               # its own default
+
+    def test_codex_s_options(self):
+        self.assertEqual(CODEX.command("t1", permission_mode="auto", model="gpt-x", fullscreen=False),
+                         ["-m", "gpt-x", "--approve-for-me", "--no-alt-screen"])
+        self.assertEqual(CODEX.command("t1", resume=True, permission_mode="manual"), ["resume", "t1"])     # it asks
+
+
+class WordsTest(unittest.TestCase):
+    def test_a_message_s_words_whichever_harness_s_wrapper(self):
         self.assertEqual(harness_kit.words("<bash-input>ls</bash-input>"), (Kind.USER_COMMAND, "! ls"))
 
 

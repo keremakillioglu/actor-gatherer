@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag_dashboard import data, files  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
-from followed import Followed, schema  # noqa: E402
+from followed import Followed, insert, schema  # noqa: E402
 from harness_kit import claude as claude_rules  # noqa: E402
 from test_dashboard_files import asked, call, result, said  # noqa: E402
 
@@ -111,6 +111,27 @@ class TypedTest(RecordBase):
         self.op("dequeue", ago=2)                                           # the note, still queued, is the first in
         self.op("dequeue", ago=1)
         self.assertEqual(self.typed(), [("Make the last line rhyme.", True)])
+
+    def test_sent_from_chat_it_is_pending_until_the_harness_has_it(self):
+        chat = lambda text, ago: {"type": "chat_sent", "id": f"chat_sent:{text}",                 # noqa: E731
+                                  "payload": {"at": self.now - ago, "text": text}}
+        insert(self.db, SESSION, [chat("look at a.py", 3), chat("long ago", data.CHAT_SECONDS + 5)])
+        self.assertEqual([(q["text"], q["sent"], q.get("chat")) for q in self.got()], [("look at a.py", None, True)])
+        self.op("enqueue", "look at a.py", ago=2)                          # the harness has it: its own entry from now on
+        self.assertEqual([(q["text"], q.get("chat")) for q in self.got()], [("look at a.py", None)])
+        insert(self.db, SESSION, [chat("and b.py", 1), {"type": "user_message", "id": "u1", "payload": {"text": "and b.py"}}])
+        self.assertEqual([q["text"] for q in self.got() if q.get("chat")], ["and b.py"])
+        self.db.execute("UPDATE events SET text = 'and b.py' WHERE event_id = 'u1'")      # as ag stores it, its words
+        self.assertEqual([q["text"] for q in self.got() if q.get("chat")], [])     # stored as the user's: had
+
+    def test_sent_from_chat_a_command_of_the_harness_s_is_not_pending_and_one_run_with_bang_is_had(self):
+        chat = lambda text, ago: {"type": "chat_sent", "id": f"chat_sent:{text}",                 # noqa: E731
+                                  "payload": {"at": self.now - ago, "text": text}}
+        insert(self.db, SESSION, [chat("/cost", 3), chat("!ls", 2)])       # /cost: run by Claude Code, never sent on
+        self.assertEqual([q["text"] for q in self.got() if q.get("chat")], ["!ls"])
+        insert(self.db, SESSION, [{"type": "user_message", "id": "u2", "payload": {"text": "<bash-input>ls</bash-input>"}}])
+        self.db.execute("UPDATE events SET text = '! ls' WHERE event_id = 'u2'")           # its words, as harness_kit gives them
+        self.assertEqual([q["text"] for q in self.got() if q.get("chat")], [])
 
     def test_long_sent_is_forgotten_and_claude_code_s_own_notes_are_not_the_user_s(self):
         self.op("enqueue", "old", ago=100)

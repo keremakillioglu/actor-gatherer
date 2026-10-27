@@ -310,8 +310,7 @@ Not done yet:
 
 - **Who changed it comes a moment late.** ag records a call's changes when its results come back, a few seconds after
   the file changed: until then the change is credited to the one actor running in a directory that holds the file,
-  if there is just one (said as "likely"). Once file changes arrive as events (the harnesses-as-events design's
-  `file_touched`), the editor should read those instead of `_touches`.
+  if there is just one (said as "likely").
 - **The actors are not told.** A save from the Editor changes a file an actor may be working on; Claude Code's Edit
   and Write then refuse ("modified since read") and re-read it, but nothing says who changed it or why. Once the
   dashboard writes its own actions as events, a save should be one (the user's edit of the file), for the gatherer

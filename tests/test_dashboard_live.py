@@ -18,6 +18,7 @@ from channels import ch  # noqa: E402
 from test_core import user  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
 import codex_items  # noqa: E402
+from replies import answered  # noqa: E402
 
 
 class Events:
@@ -164,7 +165,7 @@ class StreamTest(HomeBase):
         self.m._context("g", top, ch("c1"))                    # a read: a new call on the chart
         got = s.until(lambda name, a: name == "agent" and len(a["reads"]) == 4, 2)
         self.assertIsNotNone(got)
-        self.m.record_pending("g", ch("c1"), [{"type": "agent_message", "payload": {"x": 1}, "text": "Done."}], "a1")
+        answered(self.m, "g", ch("c1"), [{"type": "agent_message", "payload": {"x": 1}, "text": "Done."}], "a1")
         got = s.until(lambda name, a: name == "agent" and a["pending"], 2)
         self.assertEqual(got[1]["pending"][-1]["text"], "Done.")
 

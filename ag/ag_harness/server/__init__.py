@@ -102,11 +102,6 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 context: the call's input tokens, cached
                                                 ones included, reported after the call (or
                                                 counted exactly before it)
-    {"op": "failed", "gatherer", "read_id", "status"?, "error"} -> {"recorded": bool}
-                                                the model call read `read_id` was for failed:
-                                                the HTTP status its endpoint answered (none:
-                                                no answer came) and why, kept on the read
-                                                (`_reads`) for a reader of the gatherer
     {"op": "withdraw", "gatherer", "properties", "rows", "read_id"?} -> {"withdrawn": n}
                                                 the harness took these events back (a call's
                                                 `inserted`): it hung up on the call before the
@@ -123,42 +118,19 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 read's context before sending it, taken off the
                                                 read's sent_tokens. How many of each were found
     {"op": "insert", "gatherer", "properties", "events", "lane"?} -> {"rows": [row id or null, ...], "last", "kept"}
-    {"op": "pending", "gatherer", "properties", "events", "answer"?, "stop"?, "read_id"?} -> {"kept"}
-                                                what the model answered, as events, which no
-                                                call has carried back yet: kept (`_pending`, not
-                                                as events, ids ignored) until the next rewrite,
-                                                context or compaction with the same properties
-                                                stores new events, and then deleted; a call that
-                                                stores none (Claude Code's idle compaction, whose
-                                                history ends before the reply) keeps them. `answer`
-                                                names the answer (the provider's id), `stop`
-                                                why it stopped (end_turn, tool_use, ...), or
-                                                "streaming": the parts of an answer complete
-                                                while it streams, each time replacing those kept
-                                                for it before, until all of it does (a named
-                                                answer's events always replace its earlier
-                                                ones; none drops them); a rewrite that stores
-                                                nothing drops those still streaming;
-                                                `read_id`, the read the answered call's
-                                                context came from: when the answer came is
-                                                kept on it (`_reads.answered_at`), for good
-    {"op": "recap", "gatherer", "session", "text"} -> {"recap_id"}
-                                                the harness's recap of a session (Claude Code's
-                                                "while you were away" summary), kept with when it
-                                                was made (`_recaps`): never an event, never in a
-                                                context; for a reader of the gatherer
-    {"op": "name", "gatherer", "session", "text", "by"} -> {}
-                                                a session's name as `by` gave it (codex's title
-                                                for its thread), in place of the one `by` gave
-                                                before (`_names`): never an event, never in a
-                                                context; for a reader of the gatherer
-    {"op": "touches", "gatherer", "session", "touches": [...]} -> {"kept"}
-                                                what the session's tool calls did to files, as
-                                                the harness side found them on disk once each
-                                                call's result was in (ag/integrations/tools/
-                                                file_touches/): each {"call_id", "path"?, "how"?,
-                                                "checked"?, "named"?, "detail"?}, kept (`_touches`)
-                                                for a reader of the gatherer; never history
+                                                events as they are, each {"type", "payload", "id"?, "text"?,
+                                                "properties"?, "at"?}: with `at` (UTC, ISO), what happened then
+                                                and is recorded only now (an older file's tables copied), each
+                                                stored at its time, all in one transaction ({"rows": []})
+    {"op": "old_tables", "gatherer", "by"?, "types"?, "first"?} -> {"migrated", "recaps", "names", "touches",
+                                                "pending", "failed", "groups", "answered"}
+                                                what an older file's tables kept that are no longer kept
+                                                (`_recaps`, `_names`, `_touches`, `_pending`, `_reads.error`),
+                                                for the harness side to copy into events once; and each value
+                                                of the property `by` its events have, with which of `types` it
+                                                has events of and its first `first` events of other types
+                                                (store.old_tables); {} with no database
+    {"op": "migrated", "gatherer", "name"} -> {}  that the one-time copy `name` was made ("records")
     {"op": "read", "gatherer", "properties", "cwd", "row", "limit"?, "process"?, "run"?} -> {"context": [...], "read_id", "tokens", "budget", "sent_tokens", "basis"}
     {"op": "claim", "gatherer", "session", "process", "by"?} -> {"claimed": true, "took_over"?} or {"claimed": false, "holder"}
                                                 `process` ({"pid", "started"}) opens the session
@@ -200,7 +172,7 @@ side, so a read that waits for its build holds up only its own session. An
 `insert` that names `"lane": "records"` -- a hook's records of what it saw, which no read
 depends on (the harness's own record of the session as it is written) -- runs in a lane of its
 own beside its session's, in order with the others there, not behind a read that waits. A
-request that gives none (`measured`, `failed`, `claim`, `recap`, `init`, ...)
+request that gives none (`measured`, `claim`, `init`, ...)
 runs in its gatherer's lane for none, in order with the others there but not
 with any session's: no read waits on one of them that its sender has not
 waited for itself (a `measured` is answered before the harness sees the call's
@@ -223,7 +195,6 @@ from urllib.request import pathname2url
 
 from ag.ag_interface import Event, EventType, Property
 from ..store import paths, schema
-from ..store.operations import STREAMING
 
 #: How long a lane's thread waits for its next request before it ends (seconds): a
 #: session's next call usually comes within it, and finds the thread's database
@@ -446,30 +417,20 @@ class Server:
 
     def insert(self, gatherer: str, properties: Dict[str, Any], events: list, manager=None) -> dict:
         """The events stored: each one's row (None: stored already), the one to respond to (`last`), and the rows of
-        those the harness had taken back and sends again (`kept`), in reads again."""
+        those the harness had taken back and sends again (`kept`), in reads again. Events given their time (`at`):
+        each stored at it, in one transaction, no rows said."""
         manager = manager or self.manager(gatherer)
         stored = self.events_of(manager, gatherer, events, properties)
+        times = [e.get("at") if isinstance(e, dict) and isinstance(e.get("at"), str) else None for e in events]
+        if any(times):
+            manager.insert_at(gatherer, stored, times)
+            return {"rows": [], "last": None, "kept": []}
         kept: List[int] = []
         rows = [manager.insert_kept(gatherer, e, kept) for e in stored]
         last = rows[-1] if rows else None
         if stored and last is None and stored[-1].id:          # the last one was already stored
             last = manager.locate(gatherer, stored[-1].id, properties=properties)
         return {"rows": rows, "last": last, "kept": kept}
-
-    def pending(self, gatherer: str, properties: Dict[str, Any], events: list, answer=None, stop=None,
-                read_id=None) -> dict:
-        """Keep what the model answered until the channel's next call stores its events; and when it
-        came, on the read its call's context came from."""
-        for e in events:
-            if not isinstance(e, dict) or not isinstance(e.get("type"), str) or not e["type"] or "payload" not in e:
-                raise BadEvent(f"not an event: {str(e)[:120]}")
-        kept = self.manager(gatherer).record_pending(gatherer, properties, events,
-                                                     answer if isinstance(answer, str) else None,
-                                                     stop if isinstance(stop, str) else None,
-                                                     read_id if isinstance(read_id, int) and not isinstance(read_id, bool)
-                                                     else None)
-        self.log(gatherer, tag(properties) + f"{kept} events pending")
-        return {"kept": kept}
 
     def read(self, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], row: int, manager=None,
              limit: Optional[int] = None, preamble: Optional[List[dict]] = None,
@@ -490,13 +451,6 @@ class Server:
             self.log(gatherer, tag(properties) + f"{n} events withdrawn: the harness took them back"
                      + (f" (read {read_id})" if read_id is not None else ""))
         return {"withdrawn": n}
-
-    def failed(self, gatherer: str, read_id: int, status: Optional[int], error: str) -> dict:
-        """Record that the model call read `read_id` was for failed: its endpoint's status, and why."""
-        recorded = self.manager(gatherer).record_failed(gatherer, read_id, status, error)
-        if recorded:
-            self.log(gatherer, f"read {read_id}: the call failed ({status or 'no answer'}): {error[:300]}")
-        return {"recorded": recorded}
 
     def counted(self, gatherer: str, properties: Dict[str, Any], events: dict, made: dict, preamble: list,
                 left_out: Optional[dict] = None) -> dict:
@@ -546,13 +500,6 @@ class Server:
             note = f"insert failed: {exc!r}; messages unchanged"
             self.log(gatherer, prefix + note)
             return {"context": None, "note": note}
-        try:
-            if any(r is not None for r in inserted["rows"]):    # it stored something: the answers kept with it
-                manager.clear_pending(gatherer, properties)
-            elif not read_only:                                 # the channel's next turn: an answer still
-                manager.clear_pending(gatherer, properties, STREAMING)   # streaming broke off (a retry's)
-        except Exception as exc:  # noqa: BLE001 - stale pending events never block the call
-            self.log(gatherer, prefix + f"could not clear the pending events: {exc!r}")
         if last is None:
             note = f"{len(events)} events in, no event to respond to; messages unchanged"
             self.log(gatherer, prefix + note)
@@ -619,12 +566,6 @@ class Server:
             if measured is None:
                 return {"error": "no read_id and tokens"}
             return self.measured(gatherer, measured["read_id"], measured["tokens"])
-        if op == "failed":
-            read_id, status, error = request.get("read_id"), request.get("status"), request.get("error")
-            if not isinstance(read_id, int) or isinstance(read_id, bool) or not isinstance(error, str) or not error:
-                return {"error": "no read_id and error"}
-            return self.failed(gatherer, read_id, status if isinstance(status, int) and not isinstance(status, bool) else None,
-                               error)
         if op == "withdraw":
             rows, read_id = request.get("rows"), request.get("read_id")
             if not isinstance(rows, list) or not all(isinstance(r, int) and not isinstance(r, bool) for r in rows):
@@ -640,32 +581,18 @@ class Server:
             if not isinstance(events, list):
                 return {"error": "no events"}
             return self.insert(gatherer, properties, events)
-        if op == "pending":
-            if not isinstance(events, list):
-                return {"error": "no events"}
-            return self.pending(gatherer, properties, events, request.get("answer"), request.get("stop"),
-                                request.get("read_id"))
-        if op == "recap":
-            session, text = request.get("session"), request.get("text")
-            if not isinstance(session, str) or not session or not isinstance(text, str) or not text.strip():
-                return {"error": "no session and text"}
-            recap_id = self.manager(gatherer).record_recap(gatherer, session, text.strip())
-            self.log(gatherer, f"[{session}] recap kept")
-            return {"recap_id": recap_id}
-        if op == "name":
-            session, text, by = request.get("session"), request.get("text"), request.get("by")
-            if not all(isinstance(x, str) and x.strip() for x in (session, text, by)):
-                return {"error": "no session, text and by"}
-            self.manager(gatherer).record_name(gatherer, session, " ".join(text.split()), by)
-            self.log(gatherer, f"[{session}] named by {by}")
+        if op == "old_tables":
+            by, types, first = request.get("by"), request.get("types"), request.get("first")
+            return self.factory(gatherer).old_tables(
+                gatherer, by if isinstance(by, str) and by else None,
+                [t for t in types if isinstance(t, str)] if isinstance(types, list) else [],
+                first if isinstance(first, int) and not isinstance(first, bool) and first > 0 else 0)
+        if op == "migrated":
+            if not isinstance(request.get("name"), str) or not request["name"]:
+                return {"error": "no name"}
+            self.manager(gatherer).mark_migrated(gatherer, request["name"])
+            self.log(gatherer, f"{request['name']}: copied once")
             return {}
-        if op == "touches":
-            session, touches = request.get("session"), request.get("touches")
-            if not isinstance(session, str) or not session or not isinstance(touches, list):
-                return {"error": "no session and touches"}
-            kept = self.manager(gatherer).record_touches(gatherer, session, [t for t in touches if isinstance(t, dict)])
-            self.log(gatherer, f"[{session}] {kept} file touches kept")
-            return {"kept": kept}
         if op == "read":
             if not isinstance(request.get("row"), int):
                 return {"error": "no row"}

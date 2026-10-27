@@ -114,41 +114,6 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
     return routed, note
 
 
-STREAMING = "streaming"    # `pending_ag`'s stop for the parts of an answer complete while it still streams
-
-
-async def pending_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Optional[str], answer: list,
-                     adaptor: Adaptor, answer_id: Optional[str] = None, stop: Optional[str] = None,
-                     read_id: Optional[int] = None) -> str:
-    """What the model answered -- `answer`, the harness's messages it makes -- through the adaptor's
-    `to_events`, kept by the server as pending (its `pending`): seen by a reader of the gatherer
-    until the next call with these properties stores its events, with why it stopped (`stop`: the
-    provider's end_turn, tool_use, ...; STREAMING: the parts of it complete so far, which the next
-    keeping of the same `answer_id` replaces), and on `read_id`, the read the call's context came
-    from (`keep_read`), when it came. The properties are a call's (CWD
-    from `cwd`, as `call_ag` sets it), so that call's are what clears them. A note; never raises."""
-    if cwd:
-        properties = {**properties, CWD: cwd}
-    try:
-        events = adaptor.to_events(answer)
-    except Exception as exc:  # noqa: BLE001
-        return f"could not make events: {exc!r}; nothing kept"
-    if not events:
-        return "no events; nothing kept"
-    body = {"gatherer": gatherer, "properties": properties,
-            "events": [{k: e[k] for k in ("type", "payload", "text") if k in e} for e in events if isinstance(e, dict)]}
-    if answer_id:
-        body["answer"] = answer_id
-    if stop:
-        body["stop"] = stop
-    if isinstance(read_id, int):
-        body["read_id"] = read_id
-    kept = await client.request("pending", body)
-    if not isinstance(kept, dict) or kept.get("error"):
-        return f"server: {kept.get('error') if isinstance(kept, dict) else repr(kept)}; nothing kept"
-    return f"{kept.get('kept')} events pending"
-
-
 READ = "ag_read"      # a proxy hook's key in the hook server's `request.state`: (gatherer, read_id)
 STORED = "ag_stored"  # and (gatherer, properties, the rows the call stored), for `report_withdrawn`
 #: The hook server's status for a call the harness hung up on before its answer was through (hook_server.HUNG_UP).
@@ -220,14 +185,3 @@ async def report_withdrawn(ag_clients, request) -> None:
     if state.get(READ):
         body["read_id"] = state[READ][1]
     await ag_clients.client(gatherer).request("withdraw", body)
-
-
-async def report_failed(ag_clients, request, status: Optional[int], error: str) -> None:
-    """For a proxy hook's `failed`: that the request's model call failed -- its endpoint's HTTP status
-    (None: no answer came) and why -- to the read it came from (`keep_read`). Nothing when that is unknown."""
-    kept = (getattr(request, "state", None) or {}).get(READ)
-    if kept is None:
-        return
-    gatherer, read_id = kept
-    await ag_clients.client(gatherer).request("failed", {"gatherer": gatherer, "read_id": read_id,
-                                                         "status": status, "error": error})

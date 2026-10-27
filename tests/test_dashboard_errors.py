@@ -36,7 +36,7 @@ class ErrorsBase(GathererBase):
         super().setUp()
         conn = sqlite3.connect(self.path)
         conn.execute("CREATE TABLE _reads (read_id INTEGER PRIMARY KEY, read_at TEXT NOT NULL, row_id INTEGER, "
-                     "p_cwd, p_channel)")                                    # with the properties' columns: ag's own adds them
+                     "p_cwd, p_channel, p_answer_id, p_read_id)")           # with the properties' columns: ag's own adds them
         schema.create(conn)                                                  # the rest of the read log, as ag has it
         conn.commit()
         conn.close()
@@ -55,9 +55,15 @@ class ErrorsBase(GathererBase):
         conn.close()
 
     def read(self, at, row=2, status=None, error=None, tokens=None):
+        """A read for a model call; one that failed (`status`, `error`), recorded as the hook records it (`call_failed`)."""
         conn = sqlite3.connect(self.path)
-        conn.execute("INSERT INTO _reads (read_at, row_id, real_tokens, p_cwd, p_channel, error_status, error) "
-                     "VALUES (?, ?, ?, ?, ?, ?, ?)", (iso(at), row, tokens, self.cwd, SESSION, status, error))
+        read_id = conn.execute("INSERT INTO _reads (read_at, row_id, real_tokens, p_cwd, p_channel) VALUES (?, ?, ?, ?, ?)",
+                               (iso(at), row, tokens, self.cwd, SESSION)).lastrowid
+        if status is not None or error is not None:
+            conn.execute("INSERT OR IGNORE INTO event_types (name, created_at) VALUES ('call_failed', ?)", (iso(at),))
+            conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, p_channel, p_read_id) VALUES "
+                         "(?, (SELECT event_type_id FROM event_types WHERE name = 'call_failed'), ?, 1, ?, ?)",
+                         (iso(at), json.dumps({"status": status, "error": error}), SESSION, read_id))
         conn.commit()
         conn.close()
 

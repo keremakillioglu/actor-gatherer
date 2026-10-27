@@ -22,7 +22,8 @@
 
 import type { Answer } from "../ag_connection/ag_client.ts";
 import type { ContextEntry, Event } from "../ag_connection/protocol.ts";
-import { type Adaptor, CWD, declarations } from "./adaptor.ts";
+import { randomUUID } from "node:crypto";
+import { type Adaptor, CHANNEL, CWD, declarations } from "./adaptor.ts";
 
 export type Where = { gatherer: string; properties: Record<string, string | number | null>; cwd?: string | null };
 export type Requester = { request(op: string, body?: Record<string, unknown>): Promise<Answer> };
@@ -80,27 +81,45 @@ export async function call_ag<M>(server: Requester, where: Where, messages: M[],
 }
 
 /**
- * What the model answered -- `answer`, the harness's messages it makes -- through the adaptor's `toEvents`, kept by
- * the server as pending (its `pending`): seen by a reader of the gatherer until the next call with these properties
- * stores its events. The properties are a call's (CWD from `where.cwd`, as `call_ag` sets it), so that call's are
- * what clears them. A note; it never throws. call_ag.py's `pending_ag` is the same in Python.
+ * Records of a session besides its conversation, as call_ag.py's ProxyHook records them (records.py): `events`, each
+ * {type, id, payload, properties?}, inserted by the server (its `insert`) into the session's channel, in its lane for
+ * records -- no read depends on them, so none waits behind a read. A note; it never throws.
  */
-export async function pending_ag<M>(server: Requester, where: Where, answer: M[], adaptor: Adaptor<M>,
+export async function record(server: Requester, where: Where, events: Record<string, unknown>[]): Promise<string> {
+	if (!events.length) return "nothing recorded";
+	const body = { gatherer: where.gatherer, properties: { [CHANNEL]: where.properties[CHANNEL] ?? null }, events, lane: "records" };
+	const kept = await server.request("insert", body).catch((err: Error) => ({ error: err.message }) as Answer);
+	if (kept.error) return `server: ${kept.error}; nothing recorded`;
+	return `${events.length} recorded`;
+}
+
+/** A model call the plugin saw, as records.py's `model_call`: its kind, and the harness (`harness`: pi, opencode). */
+export async function called(server: Requester, where: Where, harness: string, readId?: number): Promise<string> {
+	return record(server, where, [{ type: "model_call", id: `call:${randomUUID().replace(/-/g, "")}`,
+		payload: { kind: "turn", harness }, properties: readId === undefined ? {} : { read_id: readId } }]);
+}
+
+/**
+ * What the model answered -- `answer`, the harness's messages it makes, once it ended -- through the adaptor's
+ * `toEvents`, recorded as records.py records an answer: each event a `reply_part` (the conversation event it will be,
+ * stored once by its answer, `answerId`, and its place in it) and the answer's `reply_end` -- seen by a reader of the
+ * gatherer (the dashboard) until a call stores it as conversation, the turn's last reply among them, which no call
+ * carries until the user writes again. A note; it never throws. call_ag.py's ProxyHook does the same in Python.
+ */
+export async function answered_ag<M>(server: Requester, where: Where, answer: M[], adaptor: Adaptor<M>,
 	answerId?: string | null): Promise<string> {
-	const properties = where.cwd ? { ...where.properties, [CWD]: where.cwd } : where.properties;
 	let events: Event[];
 	try {
 		events = adaptor.toEvents(answer);
 	} catch (err) {
-		return `could not make events: ${(err as Error).message}; nothing kept`;
+		return `could not make events: ${(err as Error).message}; nothing recorded`;
 	}
-	if (!events.length) return "no events; nothing kept";
-	const body: Record<string, unknown> = {
-		gatherer: where.gatherer, properties,
-		events: events.map((e) => (e.text === undefined ? { type: e.type, payload: e.payload } : { type: e.type, payload: e.payload, text: e.text })),
-	};
-	if (answerId) body.answer = answerId;
-	const kept = await server.request("pending", body).catch((err: Error) => ({ error: err.message }) as Answer);
-	if (kept.error) return `server: ${kept.error}; nothing kept`;
-	return `${kept.kept} events pending`;
+	if (!events.length) return "no events; nothing recorded";
+	const id = answerId || `answer:${randomUUID().replace(/-/g, "")}`;
+	const parts = events.map((e, i) => ({
+		type: "reply_part", id: `${id}:${i}`, properties: { answer_id: id },
+		payload: { type: e.type, payload: e.payload, ...(e.text === undefined ? {} : { text: e.text }) },
+	}));
+	const note = await record(server, where, [...parts, { type: "reply_end", id: `${id}:end`, payload: {}, properties: { answer_id: id } }]);
+	return note.startsWith("server:") ? note : `${events.length} reply parts recorded`;
 }

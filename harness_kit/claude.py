@@ -24,11 +24,12 @@ import json
 import os
 import re
 import textwrap
+import zlib
 import time
 from typing import Dict, List, Optional, Tuple
 
-from .base import (Action, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError, ToolCall,
-                   ToolResult, output_of, seconds)
+from .base import (Action, AnswerError, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
+                   ToolCall, ToolResult, one_line, output_of, picked, seconds)
 
 # ---------------------------------------------------------------- Claude Code's own text, in the user's name
 
@@ -207,8 +208,23 @@ TOOLS = {"Read": (Action.READ, "file_path"), "NotebookRead": (Action.READ, "note
 #: Its tools that wait for the user in its terminal before the turn goes on: a question, with options to pick
 #: from; a plan, to approve.
 ASKS = {"AskUserQuestion": "question", "ExitPlanMode": "plan"}
+#: Answering them in its terminal (`answer_keys`), its dialogs as 2.1.310 shows them. A QUESTION
+#: (AskUserQuestion), its options numbered as the call has them:
+#:
+#:     one option of a question       its number: picked, and on to the next question
+#:     the reader's own words         the number after the options' ("Type something."), the words, Enter
+#:     options of a multiSelect one   each one's number (ticked), then Tab: on to the next question
+#:     then, after several questions  "1": the review's "Submit answers" -- after a lone multiSelect one too;
+#:                                    a lone question of one option is answered by its key
+#:
+#: and it tells the model `"<question>"="<answer>"` for each, the options' labels joined by ", ". A PLAN
+#: (ExitPlanMode): its own choices, which the call says nothing of -- 1 "Yes, and use auto mode", 2 "Yes,
+#: manually approve edits", 3 "Tell Claude what to change" (the words, then Enter).
+PLAN_KEYS = {"auto": "1", "manual": "2", "change": "3"}
+PLAN_APPROVED = "User has approved your plan"         # its result, once a plan is approved
 #: Where Claude Code writes the plan it asks to have approved (ExitPlanMode's call carries none).
 PLAN_FILE = re.compile(r"/\.claude/plans/[^/\\]+\.md$")
+PLAN_CHARS = 20000          # the most of a plan read from its file
 #: The kinds of the user's words, as a piece alone shows them (an image the user sent among them); and the model's turn.
 SAID = (Kind.USER, Kind.USER_COMMAND, Kind.MID_TURN, Kind.ASK_REPLY)
 TURNS = (Kind.AGENT, Kind.REASONING, Kind.TOOL_CALL, Kind.TOOL_RESULT)
@@ -333,6 +349,8 @@ def kind_of(item) -> str:
             return Kind.AGENT
         text = str(blocks[0].get("text") or "")
         own = opening(text)
+        if own == Kind.ENVIRONMENT and "<task-notification>" in text:
+            return Kind.TASK_NOTICE                       # a notice Claude Code wraps in a reminder (2.1.311)
         if own is not None:
             return own
         return words_of(text)[0]
@@ -690,16 +708,87 @@ class ClaudeCode(Harness):
             raise RenameError(f"Claude Code's record of the session could not be written: {exc}") from None
         return "named in its record"
 
-    def owns(self, payload) -> bool:
-        if not isinstance(payload, dict) or "info" in payload or "api" in payload:
-            return False
-        if payload.get("role") == "system":
-            return True
-        blocks = [c for c in payload.get("content") or [] if isinstance(c, dict)] if isinstance(payload.get("content"), list) else []
-        kinds = {c.get("type") for c in blocks}
-        if kinds & {"input_text", "output_text", "toolCall"} or payload.get("type") is not None:
-            return False
-        return payload.get("role") in ("user", "assistant") and (bool(kinds & set(BLOCK_KINDS)) or isinstance(payload.get("content"), str))
+    def command(self, session: str, resume: bool = False, model: Optional[str] = None,
+                permission_mode: Optional[str] = None, fullscreen: bool = True) -> List[str]:
+        """Its own options: what it may do unasked, the model, and the session -- resumed, or started with its id."""
+        return [*(["--permission-mode", permission_mode] if permission_mode else []), *(["--model", model] if model else []),
+                *(["--resume", session] if resume else ["--session-id", session])]
+
+    def answer_keys(self, ask: dict, choice: dict) -> List[str]:
+        """Its dialogs' keys (PLAN_KEYS' notes)."""
+        if ask.get("kind") == "plan":
+            how = choice.get("plan")
+            if how not in PLAN_KEYS:
+                raise AnswerError("approve the plan (auto or manual) or say what to change")
+            return [PLAN_KEYS[how]] if how != "change" else [PLAN_KEYS[how], one_line(choice.get("text")), "\r"]
+        got = picked(ask, choice)
+        out: List[str] = []
+        for p in got:
+            if p["text"] is not None:
+                out += [str(p["count"] + 1), p["text"].strip(), "\r"]
+            elif p["multi"]:
+                out += [str(i + 1) for i in p["places"]] + ["\t"]
+            else:
+                out.append(str(p["places"][0] + 1))
+        if len(got) > 1 or got[0]["multi"]:
+            out.append("1")
+        return out
+
+    def answer_expected(self, ask: dict, choice: dict) -> List[str]:
+        if ask.get("kind") == "plan":
+            return [one_line(choice.get("text"))] if choice.get("plan") == "change" else [PLAN_APPROVED]
+        return [f'"{p["question"]}"="{p["text"].strip() if p["text"] is not None else ", ".join(p["labels"])}"'
+                for p in picked(ask, choice)]
+
+    def answer_summary(self, ask: dict, choice: dict) -> str:
+        if ask.get("kind") == "plan":
+            return {"auto": "Approved, with auto mode", "manual": "Approved, edits approved by hand"}.get(
+                choice.get("plan"), f"Change: {(choice.get('text') or '').strip()}")
+        return super().answer_summary(ask, choice)
+
+    def derived(self, parts: List[Part], at: float, history: Optional[list] = None) -> List[Fact]:
+        """What an answer asks the user (its calls of ASKS, a plan's text read from the plan file it wrote), and what a
+        call's new pieces say: an asking call's result (answered; dismissed: Esc rejected the call, its INTERRUPTED note
+        with the result -- a plan sent back with what to change is rejected too, and answered), a background
+        task its tool's result started, resumed or stopped (task_of), a task's notice (an end, a monitor's event, an
+        agent waiting on its own work), an agent's report handed back (its end). Keyed by the call's or the task's id,
+        and a notice by its words."""
+        calls = {p.tool.id: p.tool for p in parts if p.tool is not None and p.tool.id}
+        stopped = any(p.kind == Kind.INTERRUPT for p in parts)
+        out: List[Fact] = []
+        for p in parts:
+            t, r = p.tool, p.result
+            if t is not None and t.ask and t.id:
+                ask = dict(t.ask)
+                if ask.get("kind") == "plan" and not ask.get("plan"):
+                    ask["plan"] = plan_text(parts, history)
+                out.append(Fact(Facts.ASKED, t.id, at, {"call": t.id, **ask, "async": False, "turn": None}))
+            if r is not None and r.call_id:
+                asking = calls.get(r.call_id)
+                if asking is not None and asking.ask:
+                    out.append(Fact(Facts.ASK_SETTLED, r.call_id, at, {"call": r.call_id, "how": "dismissed"
+                                                                       if r.error and stopped else "answered", "result": r.output}))
+                task = r.task
+                if task and task.get("id") and task.get("how") == "stopped":
+                    out.append(Fact(Facts.TASK_ENDED, f"{task['id']}.{r.call_id}", at,
+                                    {"task": task["id"], "kind": None, "status": "stopped"}))
+                elif task and task.get("id"):
+                    out.append(Fact(Facts.TASK_STARTED, f"{task['id']}.{r.call_id}", at,
+                                    {"task": task["id"], "kind": task.get("kind"), "how": task.get("how"),
+                                     "label": task.get("label") or label_of(calls.get(r.call_id)), "output": task.get("output")}))
+            for n in p.detail.get("notices") or []:
+                if not n.get("id"):
+                    continue
+                key = f"{n['id']}.{zlib.crc32(json.dumps(n, sort_keys=True).encode()):08x}"
+                if n.get("ended"):
+                    out.append(Fact(Facts.TASK_ENDED, key, at, {"task": n["id"], "kind": None, "status": n.get("status")}))
+                else:
+                    event = "waiting on its own background work" if n.get("waiting") else " ".join((n.get("event") or "").split())[:200]
+                    out.append(Fact(Facts.TASK_ACTIVITY, key, at, {"task": n["id"], "event": event or None}))
+            for agent in p.detail.get("handed_back") or []:
+                out.append(Fact(Facts.TASK_ENDED, f"{agent}.{zlib.crc32((p.text or '').encode()):08x}", at,
+                                {"task": agent, "kind": "agent", "status": "completed"}))
+        return out
 
     def read(self, items: list) -> List[Part]:
         """Each piece read (module doc). Its neighbours tell two things a piece alone does not: the prompt a command the
@@ -777,6 +866,42 @@ class ClaudeCode(Harness):
 def split_turn_notes(text: str) -> bool:
     """Whether a message queued in the user's name is one of Claude Code's notes (QUEUED_NOTES), not theirs."""
     return text.lstrip().startswith(QUEUED_NOTES)
+
+
+def plan_text(parts: List[Part], history: Optional[list] = None) -> Optional[str]:
+    """The plan an ExitPlanMode call asks to have approved, where its call does not carry it: the plan file (PLAN_FILE)
+    last written -- among `parts` (the answer that asks), else in `history` -- as it is now, else as that write had it;
+    at most PLAN_CHARS. None: none written."""
+    found = None
+    for p in reversed(parts):
+        got = p.tool.input if p.tool is not None and isinstance(p.tool.input, dict) else None
+        path = got.get("file_path") if got else None
+        if isinstance(path, str) and PLAN_FILE.search(path):
+            found = (path, got["content"] if isinstance(got.get("content"), str) else None)
+            break
+    for item in reversed(history or []) if found is None else []:
+        found = plan_path(item)
+        if found:
+            break
+    if not found:
+        return None
+    try:
+        with open(found[0], encoding="utf-8", errors="replace") as fh:
+            return fh.read(PLAN_CHARS)
+    except OSError:
+        return found[1][:PLAN_CHARS] if found[1] else None
+
+
+def label_of(call: Optional[ToolCall]) -> Optional[str]:
+    """What a call that started a background task said it was for: its `description` (Bash, Agent, Monitor take one;
+    SendMessage, its `summary`), else the start of its command or prompt, else its tool's name."""
+    if call is None:
+        return None
+    given = call.input if isinstance(call.input, dict) else {}
+    for k in ("description", "summary", "command", "prompt", "message"):
+        if isinstance(given.get(k), str) and given[k].strip():
+            return " ".join(given[k].split())[:160]
+    return call.name
 
 
 def plan_path(payload) -> Optional[Tuple[str, Optional[str]]]:
@@ -970,9 +1095,10 @@ class Record(Follower):
 
     @staticmethod
     def _ended(m: dict, key: str, when: Optional[float]) -> List[Fact]:
-        """The background tasks a line's notifications say ended (`notices`) -- whether or not a call has carried them."""
-        if when is None:                                  # when, unknown: perhaps before an agent was resumed
-            return []
+        """The background tasks a line's notifications say ended (`notices`) -- whether or not a call has carried them;
+        not a line of what it sent the model (`api-request`, its blobs), which holds a notification again."""
+        if when is None or str(m.get("type") or "").startswith("api-request"):   # when, unknown: perhaps before an
+            return []                                                          # agent was resumed
         out, seen = [], set()
         for text in _strings(m):
             for n in notices(text):

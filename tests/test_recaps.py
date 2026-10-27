@@ -1,8 +1,8 @@
 """Claude Code's away recaps. When the user has left, Claude Code forks the session's conversation with
 a user message asking for a short recap (`The user stepped away and is coming back. ...`). It is not a
 turn: the hook sends it as it sends a prompt suggestion -- the context read only, the recap's message
-after it -- and keeps its answer as the session's recap (the server's `recap`: `_recaps`), never as
-events or pending. The dashboard shows each session's newest recap."""
+after it -- and records its answer as the session's recap (a `recap` record, records.py), never as the
+conversation or its reply. The dashboard shows each session's newest recap."""
 import asyncio
 import io
 import json
@@ -114,60 +114,6 @@ class HookTest(unittest.TestCase):
                   sse([{"type": "text", "text": "3 columns."}], "end_turn"))
         self.assertEqual([op for op, _ in self.server.asked], ["rewrite"])
         self.assertEqual([t for t, _, _ in self.recorded("reply_part", "reply_end", "recap")], ["reply_part", "reply_end"])
-
-
-class ServerTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.saved = paths.TRACE_DIR, paths.AG_HOME
-        paths.AG_HOME = os.path.join(self.tmp.name, "ag")
-        paths.TRACE_DIR = os.path.join(paths.AG_HOME, "gatherers")
-        ag_home._HOMES.clear()
-
-    def tearDown(self):
-        paths.TRACE_DIR, paths.AG_HOME = self.saved
-        ag_home._HOMES.clear()
-        self.tmp.cleanup()
-
-    def ask(self, *requests):
-        out = io.StringIO()
-        serve(server_for(), [json.dumps(dict(r, id=i)) for i, r in enumerate(requests, 1)], out)
-        answers = [json.loads(line) for line in out.getvalue().splitlines()]
-        return sorted(answers, key=lambda a: a["id"])        # as asked: each comes out as it is ready
-
-    def rows(self, sql):
-        conn = sqlite3.connect(paths.db_path("g"))
-        try:
-            return conn.execute(sql).fetchall()
-        finally:
-            conn.close()
-
-    def test_a_recap_is_kept_with_when_it_was_made_and_never_as_an_event(self):
-        call = {"op": "rewrite", "gatherer": "g", "properties": {"channel": "c1"}, "cwd": None,
-                "events": claude.to_events(conversation_so_far())}
-        _, kept, again, bad = self.ask(call, {"op": "recap", "gatherer": "g", "session": "c1", "text": " First. "},
-                                       {"op": "recap", "gatherer": "g", "session": "c1", "text": "Second."},
-                                       {"op": "recap", "gatherer": "g", "session": "c1", "text": " "})
-        self.assertEqual((kept["recap_id"], again["recap_id"]), (1, 2))
-        self.assertIn("error", bad)
-        recaps = self.rows("SELECT session, text, made_at FROM _recaps ORDER BY recap_id")
-        self.assertEqual([(s, t) for s, t, _ in recaps], [("c1", "First."), ("c1", "Second.")])
-        self.assertTrue(all(m for _, _, m in recaps))
-        self.assertEqual(self.rows("SELECT count(*) FROM events WHERE text IN ('First.', 'Second.')"), [(0,)])
-
-    def test_a_name_is_kept_per_session_and_namer_the_newest_in_place(self):
-        _, first, again, other, bad = self.ask(
-            {"op": "rewrite", "gatherer": "g", "properties": {"channel": "c1"}, "cwd": None,
-             "events": claude.to_events(conversation_so_far())},
-            {"op": "name", "gatherer": "g", "session": "c1", "text": " Tally  things ", "by": "codex"},
-            {"op": "name", "gatherer": "g", "session": "c1", "text": "Tally the things", "by": "codex"},
-            {"op": "name", "gatherer": "g", "session": "c2", "text": "Other", "by": "codex"},
-            {"op": "name", "gatherer": "g", "session": "c1", "text": "No namer"})
-        self.assertEqual((first, again, other), ({"id": 2}, {"id": 3}, {"id": 4}))
-        self.assertIn("error", bad)
-        self.assertEqual(self.rows("SELECT session, by, text FROM _names ORDER BY session"),
-                         [("c1", "codex", "Tally the things"), ("c2", "codex", "Other")])
-        self.assertEqual(self.rows("SELECT count(*) FROM events WHERE text LIKE '%Tally%'"), [(0,)])
 
 
 if __name__ == "__main__":

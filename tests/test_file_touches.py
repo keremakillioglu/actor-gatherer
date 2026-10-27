@@ -233,41 +233,6 @@ class WatchTest(unittest.TestCase):
         self.assertTrue(until(lambda: w.status[os.path.realpath(big)].startswith("too big")))
 
 
-class StoreTest(unittest.TestCase):
-    """`_touches`, through the server's `touches`."""
-
-    def test_kept_once_for_each_call_file_and_how(self):
-        from ag.ag_harness import home as ag_home
-        from ag.ag_harness.server.__main__ import server_for
-        from ag.ag_harness.store import paths
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        saved = paths.TRACE_DIR, paths.AG_HOME
-        paths.AG_HOME = os.path.join(tmp.name, "ag")
-        paths.TRACE_DIR = os.path.join(paths.AG_HOME, "gatherers")
-        ag_home._HOMES.clear()
-
-        def restore():
-            paths.TRACE_DIR, paths.AG_HOME = saved
-            ag_home._HOMES.clear()
-        self.addCleanup(restore)
-        server = server_for()
-        server.log = lambda gatherer, line: None
-        touches = [{"call_id": "c1", "path": "/r/a.py", "how": "read", "checked": True, "named": True,
-                    "detail": {"lines": [[1, ["x"]]]}},
-                   {"call_id": "c2"},                                           # checked: touched none
-                   {"call_id": "c3", "path": "/r/a.py", "how": "renamed"},      # not a way to touch a file
-                   {"path": "/r/b.py", "how": "read"}]                          # no call
-        self.assertEqual(server.handle({"op": "touches", "gatherer": "g", "session": "s", "touches": touches}), {"kept": 2})
-        self.assertEqual(server.handle({"op": "touches", "gatherer": "g", "session": "s", "touches": touches[:1]}), {"kept": 0})
-        conn = sqlite3.connect(paths.db_path("g"))
-        rows = conn.execute("SELECT session, call_id, path, how, checked, named, detail_json FROM _touches ORDER BY touch_id").fetchall()
-        conn.close()
-        self.assertEqual(rows, [("s", "c1", "/r/a.py", "read", 1, 1, json.dumps({"lines": [[1, ["x"]]]})),
-                                ("s", "c2", None, None, None, None, None)])
-        self.assertIn("error", server.handle({"op": "touches", "gatherer": "g", "touches": []}))
-
-
 class Server:
     """The context manager's server, as the hooks see it: answers what it is asked, recording it."""
 
@@ -275,10 +240,19 @@ class Server:
         self.asked = []
 
     async def request(self, op, body=None, timeout=None):
+        touched = [e for e in (body or {}).get("events") or [] if e.get("type") == "file_touched"] if op == "insert" else []
+        if touched:                                    # what the hook records of each call, as the touches it found
+            assert body.get("lane") == "records" and all(e["properties"]["call_id"] == e["payload"]["call"] for e in touched)
+            self.asked.append(("touches", {"session": body["properties"]["channel"], "touches": [
+                {"call_id": e["payload"]["call"], **{k: e["payload"][k] for k in ("path", "how", "checked", "named", "detail")}}
+                for e in touched]}))
+            return {"rows": [1] * len(touched)}
+        if op == "insert":                             # the hook's other records (its model calls): not what is checked here
+            return {"rows": [None] * len(body["events"])}
         self.asked.append((op, body))
         if op == "rewrite":
             return {"context": body["events"], "note": "ok", "read_id": len(self.asked), "basis": None}
-        return {"kept": len(body.get("touches") or [])} if op == "touches" else {}
+        return {}
 
     async def stop(self):
         pass

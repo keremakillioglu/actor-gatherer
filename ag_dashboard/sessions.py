@@ -98,7 +98,10 @@ from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
 from urllib.parse import urlsplit
 
-from . import answers, home
+import harness_kit
+from harness_kit.codex import PERMISSIONS as CODEX_PERMISSIONS
+
+from . import actions, answers, home
 
 try:                                    # a terminal needs a pseudo-terminal: Unix only
     import fcntl
@@ -110,8 +113,6 @@ except ImportError:
     TERMINALS = False
 
 HARNESSES = ("claude", "codex")
-# codex's flags for each permission mode: what it has (else none: codex asks, in a terminal)
-CODEX_PERMISSIONS = {"auto": ["--approve-for-me"], "bypassPermissions": ["--dangerously-bypass-approvals-and-sandbox"]}
 PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "manual")
 CHAT_MODES = ("terminal", "headless")          # what a message opens for a session with no terminal (`chat_mode`)
 SHELL_ID = re.compile(r"shell:[0-9a-f]{12}")   # a shell's id (`shell`): never a channel's
@@ -274,26 +275,11 @@ def _session_cwd(gatherer: str, session_id: str) -> Optional[str]:
 
 
 def _session_harness(gatherer: str, session_id: str) -> str:
-    """The harness a session of the gatherer runs on, as its events' shape tells: claude when none shows."""
+    """The harness a session of the gatherer runs on, as its hook recorded it (data.py's `harness_of`): claude when
+    none says."""
     from .data import harness_of        # data imports this module: asked here, once it is loaded
-    conn = _gatherer_db(gatherer)
-    if conn is None:
-        return "claude"
-    try:
-        rows = conn.execute("SELECT payload_json FROM events WHERE ifnull(p_channel, '') = ? AND event_type_id NOT IN "
-                            "(SELECT event_type_id FROM event_types WHERE name IN ('model_call', 'reply_part', 'reply_end')) "
-                            "ORDER BY row_id LIMIT 60", (session_id,))
-        payloads = []
-        for (raw,) in rows:
-            try:
-                payloads.append(json.loads(raw))
-            except (TypeError, ValueError):
-                pass
-    except sqlite3.Error:
-        return "claude"
-    finally:
-        conn.close()
-    return harness_of(payloads) if harness_of(payloads) in HARNESSES else "claude"
+    got = harness_of(gatherer, session_id)
+    return got if got in HARNESSES else "claude"
 
 
 def _thread_of(gatherer: str, pid: int, known) -> Optional[str]:
@@ -437,33 +423,17 @@ MODELS_KEEP = 600                       # how long a harness's list of models is
 
 
 def models(harness: str) -> dict:
-    """The models a new session of `harness` can run on, as the harness says: {"models": [{slug, name,
-    description}], "default": the one its config names, if any}. Codex's from its catalog (`codex debug
-    models`, the ones it lists); none for Claude Code, which runs its own default."""
-    if harness != "codex":
+    """The models a new session of `harness` can run on, as the harness says (harness_kit's `models`): {"models":
+    [{slug, name, description}], "default": the one its config names, if any}. Codex's from its catalog; none for
+    Claude Code, which runs its own default. Kept MODELS_KEEP once a harness has listed some."""
+    h = harness_kit.get(harness)
+    if h is None:
         return {"models": [], "default": None}
     kept = _models.get(harness)
     if kept and time.time() - kept["at"] < MODELS_KEEP:
         return kept["value"]
-    found = []
-    try:
-        done = subprocess.run(["codex", "debug", "models"], env=agent_env(), capture_output=True, text=True, timeout=30,
-                              stdin=subprocess.DEVNULL)
-        listed = json.loads(done.stdout).get("models") if done.returncode == 0 else None
-    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
-        listed = None
-    for m in listed if isinstance(listed, list) else []:
-        if isinstance(m, dict) and m.get("slug") and m.get("visibility", "list") == "list":
-            found.append({"slug": m["slug"], "name": m.get("display_name") or m["slug"], "description": m.get("description") or ""})
-    default = None
-    try:
-        import tomllib
-        with open(os.path.join(os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex"), "config.toml"), "rb") as fh:
-            default = tomllib.load(fh).get("model")
-    except (OSError, ValueError, ImportError):
-        pass
-    value = {"models": found, "default": default}
-    if found:
+    value = h.models(agent_env())
+    if value.get("models"):
         _models[harness] = {"at": time.time(), "value": value}
     return value
 
@@ -543,6 +513,7 @@ class Sessions:
         self._shells: Dict[str, dict] = {}       # the shells open, by id: {id, gatherer, cwd, since}
         self.answered: Dict[str, dict] = {}      # each session's last answer typed from the page (`answer`)
         self.renames: Dict[str, str] = {}        # each session's command naming it, held for its turn's end (`rename`)
+        self.unsent: Dict[str, List[tuple]] = {}  # a codex session's messages from Chat, (text, at), kept for its thread
         self.closing = False            # the dashboard stopping: what ends now is kept
         conn = self._db()               # a process from before is gone: what it was running stopped, and kept
         try:
@@ -663,7 +634,20 @@ class Sessions:
         """The message to the session: typed into its terminal, if one is open; else, as `chat_mode` says, its
         terminal opened (`cols` x `rows`, `fullscreen` as `terminal` takes it) with the message its first
         prompt, or a turn of its agent -- now, or, while one runs, after it -- the agent started if it is not
-        running. A turn of the agent's running or waiting takes it in either mode. The session as `list` has it."""
+        running. A turn of the agent's running or waiting takes it in either mode. The session as `list` has it;
+        the message kept in its gatherer as sent from Chat (actions.py's `chat_sent`) -- a new codex session's once it
+        has its thread (`_rename`), the id it is started under being no channel of the gatherer's."""
+        got = self._send(session_id, text, cols, rows, fullscreen)
+        text, sid = (text or "").strip(), got.get("session_id")
+        with self.lock:                          # a codex session still under the id it was started under: no channel yet
+            s = self._row(sid)
+            if s is not None and s["harness"] == "codex" and s["started_as"] == sid:
+                self.unsent.setdefault(sid, []).append((text, time.time()))
+                return got
+        actions.chat_sent(got.get("gatherer"), sid, text)
+        return got
+
+    def _send(self, session_id: str, text: str, cols: int, rows: int, fullscreen: bool) -> dict:
         text = (text or "").strip()
         if not text:
             raise SessionError("an empty message")
@@ -878,7 +862,8 @@ class Sessions:
 
     def _rename(self, old: str, new: str) -> str:
         """The session started as `old`, now known as its harness's `new` (codex's thread): its row, its
-        process, its log moved over, `started_as` kept. The id it has now (the lock held)."""
+        process, its log moved over, `started_as` kept, the messages sent from Chat before kept in its channel now
+        (`send`). The id it has now (the lock held)."""
         if old == new or not SESSION_ID.fullmatch(new):
             return old
         conn = self._db()
@@ -893,6 +878,8 @@ class Sessions:
         for table in (self.agents, self.terms):
             if old in table:
                 table[new] = table.pop(old)
+        for text, at in self.unsent.pop(old, []) if row is not None else []:
+            actions.chat_sent(row["gatherer"], new, text, at)
         try:
             os.replace(log_path(old), log_path(new))
         except OSError:
@@ -1040,14 +1027,12 @@ class Sessions:
         sid = s["session_id"]
         resume = bool(s["turns"]) or _has_calls(s["gatherer"], sid)
         first = ["--", prompt] if prompt else []     # its first message: after `--`, never read as an option
-        if s["harness"] == "codex":                  # codex's own UI; its classic screen is inline, not alternate
-            argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], "codex",       # quiet: ag's notes not on its screen
-                    *(["-m", s["model"]] if s.get("model") else []), *CODEX_PERMISSIONS.get(s["permission_mode"], []),
-                    *([] if fullscreen else ["--no-alt-screen"]), *(["resume", sid] if resume else []), *first]
-        else:
-            argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"], "--permission-mode",
-                    s["permission_mode"], *(["--model", s["model"]] if s.get("model") else []),
-                    *(["--resume", sid] if resume else ["--session-id", sid]), *first]
+        h = harness_kit.get(s["harness"])               # its own options: the harness's (harness_kit's `command`)
+        if h is None:
+            raise SessionError(f"no rules for {s['harness']} to start it with")
+        argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"],     # quiet: ag's notes not on its screen
+                *h.command(sid, resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
+                           fullscreen=fullscreen), *first]
         env = {**{k: v for k, v in agent_env().items() if k not in OUTER_TERMINAL and not (fullscreen and k in CLASSIC)},
                "TERM": "xterm-256color", "COLORTERM": "truecolor", **({} if fullscreen else CLASSIC)}   # full screen even if the dashboard's own is classic
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
@@ -1249,6 +1234,8 @@ class Sessions:
             t.typed = time.time()
             t.stopped = t.typed if data in STOP_KEYS else 0.0
             t.drafted = drafted(t.drafted, REPORTS.sub("", data))
+            if not SHELL_ID.fullmatch(session_id):     # kept in its gatherer (actions.py's `terminal_input`)
+                actions.terminal_input((self._row(session_id) or {}).get("gatherer"), session_id, t.typed)
         self._write(t, data.encode("utf-8"))
 
     def rename(self, session_id: str, command: str) -> bool:
@@ -1296,7 +1283,9 @@ class Sessions:
                 raise SessionError("the dashboard does not run this session's terminal: answer it in the one that does")
             if t.answering:
                 raise SessionError("an answer is being typed into it already")
-            if t.typed and ask.get("at") and t.typed >= ask["at"]:
+            from . import data                       # data imports this module
+            typed = max(t.typed or 0, data.typed_at((self._row(session_id) or {}).get("gatherer") or "", session_id) or 0)
+            if typed and ask.get("at") and typed >= ask["at"]:      # here, or as the gatherer kept it (terminal_input)
                 raise SessionError("something was typed into its terminal since it asked: finish answering there")
             if ask.get("harness") == "codex" and ask.get("at") and t.since > ask["at"]:
                 raise SessionError("its terminal opened after it asked, and does not ask it: answer in a message")
@@ -1306,6 +1295,7 @@ class Sessions:
             self.answered[session_id] = sent
             t.answering = True
             gatherer = (self._row(session_id) or {}).get("gatherer")
+        actions.answer_given(gatherer, session_id, sent)        # kept in its gatherer
         threading.Thread(target=self._keys, args=(t, keys), daemon=True).start()
         self._changed(gatherer, session_id)
         return sent
