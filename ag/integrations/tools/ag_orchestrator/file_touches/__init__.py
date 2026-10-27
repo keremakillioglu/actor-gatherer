@@ -1,6 +1,6 @@
 """What each tool call of a session did to files, found on disk as the calls run -- not told from
-what the calls say alone -- and kept in the gatherer's database (`_touches`) for the dashboard's
-Files view. Run by the proxy hooks (the Claude Code and codex hooks), which see each answer end
+what the calls say alone -- and recorded in the gatherer as events of the session (`file_touched`,
+records.py), for the dashboard's Files view. Run by the proxy hooks (the Claude Code and codex hooks), which see each answer end
 before the harness runs its calls, and the results come back in the next call:
 
     an answer of the session's ends,            `Files.started`: the files its calls name, looked at
@@ -11,8 +11,8 @@ before the harness runs its calls, and the results come back in the next call:
                                                 in, before the answer ends
     the session's next call, the results        `Files.arrived`: in the background, a moment later,
     of those calls in it                        each call checked (check.py's `check`): what it read
-                                                and changed, where the files say so -- and sent to
-                                                the gatherer's server (its `touches`)
+                                                and changed, where the files say so -- and recorded
+                                                (`file_touched`, beside the session's reads)
 
     harness_kit/shell.py  a call read: the files a shell command reads and changes, as it says
     check.py      the same, against the disk: what is kept, what changed, at which lines
@@ -44,6 +44,17 @@ SEEN_FILES = 256            # the files whose lines, as last seen, are kept: a c
 SEEN_BYTES = 32 << 20       # is shown at its lines
 
 
+def touched(t: dict) -> dict:
+    """What a tool call did to a file (check.py's), as the event that records it (`file_touched`, records.py): {call
+    (its id), path (None: it touched none), how (read, hit, created, modified, deleted), checked, named, detail} -- the
+    same each time, by its call, file and how."""
+    path, how = t.get("path"), t.get("how")
+    return {"type": "file_touched", "id": f"file_touched:{t['call_id']}:{how or '-'}:{path or '-'}",
+            "payload": {"call": t["call_id"], "path": path, "how": how, "checked": t.get("checked"),
+                        "named": t.get("named"), "detail": t.get("detail") or {}},
+            "properties": {"call_id": t["call_id"]}}
+
+
 class Files:
     """The hook's: `started` as an answer ends, `arrived` as the session's next call comes in.
 
@@ -51,10 +62,11 @@ class Files:
         ag_clients: the server client per gatherer (the hook's own).
         log: (gatherer, line) -> None.
         watcher: what reports the files changed (watch.Watcher by default; None: none watched).
+        harness: the harness's rules (harness_kit's), its calls and results read by them; None: from the blocks.
     """
 
-    def __init__(self, ag_clients, log: Callable[[str, str], None], watcher: Optional[Watcher] = ...):
-        self.ag_clients, self.log = ag_clients, log
+    def __init__(self, ag_clients, log: Callable[[str, str], None], watcher: Optional[Watcher] = ..., harness=None):
+        self.ag_clients, self.log, self.harness = ag_clients, log, harness
         self.watcher = Watcher(log=lambda line: log("files", line)) if watcher is ... else watcher
         self.open: Dict[Tuple[str, str], dict] = {}     # (gatherer, channel) -> the answer whose calls run
         self.early: Dict[Tuple[str, str], dict] = {}    # (gatherer, channel) -> results that came before their answer's end
@@ -66,7 +78,7 @@ class Files:
         its calls name, as they are before the calls run; `since`, when the answer began to come back
         (None: now) -- the changes reported from then on are its calls'."""
         try:
-            calls = calls_in(items)
+            calls = calls_in(items, self.harness)
             if not calls:
                 self.open.pop((gatherer, channel), None)
                 return
@@ -115,13 +127,13 @@ class Files:
                   arrived: float) -> None:
         """The results of `opened`'s calls (None: of those the messages end with) checked, in the background."""
         try:
-            results = results_in(messages)
+            results = results_in(messages, self.harness)
             if opened:
                 calls = opened["calls"]
                 ids = [i for i in calls if i in results]
                 cwd = opened["cwd"] or cwd
             else:
-                calls = calls_in(messages)
+                calls = calls_in(messages, self.harness)
                 ids = [i for i in last_results(messages) if i in calls]
             calls, results = scripts_opened({i: calls[i] for i in ids}, results)   # a script: the calls it makes
             ids = [i for i in calls if i in results]
@@ -142,11 +154,13 @@ class Files:
         try:
             await asyncio.sleep(SETTLE)
             touches = await asyncio.to_thread(self.touches, cwd, entries, opened, arrived + SETTLE)
-            got = await self.ag_clients.client(gatherer).request(
-                "touches", {"gatherer": gatherer, "session": channel, "touches": touches})
+            events = [touched(t) for t in touches if isinstance(t.get("call_id"), str) and t["call_id"]]
+            got = await self.ag_clients.client(gatherer).request("insert", {     # beside the session's reads (records.py)
+                "gatherer": gatherer, "properties": {"channel": channel}, "events": events, "lane": "records"}) if events else {}
             files = len({t["path"] for t in touches if t.get("path")})
             self.log(gatherer, f"[{channel}] files: {len(entries)} calls checked, {files} files: "
-                               + (f"{got.get('kept')} kept" if isinstance(got, dict) and "kept" in got else f"{got}"))
+                               + (f"{sum(r is not None for r in got.get('rows') or [])} kept" if isinstance(got, dict)
+                                  else "none kept"))
         except Exception as exc:  # noqa: BLE001
             self.log(gatherer, f"[{channel}] files: not checked: {exc!r}")
 

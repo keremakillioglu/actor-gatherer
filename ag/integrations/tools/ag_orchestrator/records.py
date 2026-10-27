@@ -20,7 +20,8 @@ and, from the harness's own record of the session as it grows (session_files.py)
 and, from a call's or an answer's pieces (harness_kit's `derived`; proxy_hook.py's `derive`): what the harness asks
 the user (asked), an asking call's result (ask_settled), the background tasks its tools' results start and stop and
 their notices (task_started, task_ended, task_activity) -- and a task's output growing, as the hook sees its file
-(task_activity, session_files.py).
+(task_activity, session_files.py); and what each tool call did to files, found on disk as it ran (file_touched,
+file_touches/'s `touched`).
 
 Each is `{"type", "id", "payload", "properties"?}`, as the server's `insert` takes it, its own properties declared
 on its type the first time it is seen. An id says what makes it the same: a reply part by its answer and its place in
@@ -37,10 +38,10 @@ from harness_kit.base import Fact, Facts
 
 from .adaptor import CHANNEL
 
-MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE = (
-    "model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "session_file")
+MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE, FILE_TOUCHED = (
+    "model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "session_file", "file_touched")
 #: Every harness event type a proxy hook records.
-RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE) + Facts.ALL
+RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE, FILE_TOUCHED) + Facts.ALL
 READ_ID, ANSWER_ID = "read_id", "answer_id"
 RECORDS_LANE = "records"    # ag's server's lane for records, beside a session's (its server's RECORDS_LANE)
 STREAMING = "streaming"     # a reply_part's stop while the answer still streams (no reply_end yet)

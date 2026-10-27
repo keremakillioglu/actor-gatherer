@@ -151,7 +151,7 @@ class ClaudeContextManager(ProxyHook):
         ag_clients = ag_clients or AgClients(lambda gatherer: AgClient("claude", args=args))
         if files not in ("on", "off"):
             raise ValueError(f"files: {files!r}, not on or off")
-        super().__init__(ag_clients, log, Files(ag_clients, log) if files == "on" else None)
+        super().__init__(ag_clients, log, Files(ag_clients, log, harness=self.harness) if files == "on" else None)
         self.cwd = cwd
         self.adaptor = load_adaptor(adaptor) if isinstance(adaptor, str) else (adaptor or ClaudeAdaptor())
         if system_messages not in ("auto", "keep", "user"):

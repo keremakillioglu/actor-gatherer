@@ -12,7 +12,8 @@ A turn is what follows one of the user's messages, up to the next -- not countin
 the turn ran (Claude Code sent it mid-turn, or held it until the turn ended), which is part of it. Each call is read from the
 event's parts (data.parts), so whichever harness wrote it; only the tools' names differ.
 
-Where ag's hook server checked a call against the disk as it ran (`_touches`, written by
+Where ag's hook server checked a call against the disk as it ran (`file_touched` events, or `_touches` as an older one
+kept them, written by
 ag/integrations/tools/ag_orchestrator/file_touches/), that is what is shown of it: the files it read, kept where the
 file says so, each marked checked (what the call showed of it is on disk) or not; what it changed,
 at the lines the file itself says; and the files that changed while it ran, which it doesn't name.
@@ -169,19 +170,32 @@ def _events(conn, channel: str):
 
 def _touches(conn, channel: str) -> Dict[str, List[dict]]:
     """What the hook server found each of the session's calls did to files, by call id (none: the
-    call was not checked): [{path (None: it touched none), how, checked, named, detail}]."""
-    if "_touches" not in data._tables(conn):
-        return {}
+    call was not checked): [{path (None: it touched none), how, checked, named, detail}] -- as it records them
+    (`file_touched`), and as an older hook server kept them (`_touches`) for a call with none recorded."""
     out: Dict[str, List[dict]] = {}
+    flag = lambda v: None if v is None else int(bool(v))          # noqa: E731 - as the table keeps them
+    for (raw,) in conn.execute(f"SELECT e.payload_json FROM events e JOIN event_types t ON {data.BY_CHANNEL} "
+                               f"WHERE ifnull(e.{data.CHANNEL}, '') = ? AND t.name = 'file_touched' ORDER BY e.row_id",
+                               (channel,)):
+        t = data._json(raw) or {}
+        if t.get("call"):
+            out.setdefault(t["call"], []).append({"path": t.get("path"), "how": t.get("how"), "checked": flag(t.get("checked")),
+                                                  "named": flag(t.get("named")),
+                                                  "detail": t["detail"] if isinstance(t.get("detail"), dict) else {}})
+    if "_touches" not in data._tables(conn):
+        return out
+    kept: Dict[str, List[dict]] = {}
     for r in conn.execute("SELECT call_id, path, how, checked, named, detail_json FROM _touches WHERE session = ? "
                           "ORDER BY touch_id", (channel,)):
+        if r["call_id"] in out:
+            continue
         try:
             detail = json.loads(r["detail_json"]) if r["detail_json"] else {}
         except ValueError:
             detail = {}
-        out.setdefault(r["call_id"], []).append({"path": r["path"], "how": r["how"], "checked": r["checked"],
-                                                 "named": r["named"], "detail": detail if isinstance(detail, dict) else {}})
-    return out
+        kept.setdefault(r["call_id"], []).append({"path": r["path"], "how": r["how"], "checked": r["checked"],
+                                                  "named": r["named"], "detail": detail if isinstance(detail, dict) else {}})
+    return {**kept, **out}
 
 
 TOUCH_KINDS = {"read": "read", "hit": "hit", "created": "write", "modified": "edit", "deleted": "delete"}

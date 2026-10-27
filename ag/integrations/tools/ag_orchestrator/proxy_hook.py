@@ -184,7 +184,7 @@ class ProxyHook:
         if kept is None or self.files is None or status != 200 or not isinstance(answer, dict) or answer.get("error"):
             return
         gatherer, channel, cwd, since = kept              # the answer's calls can't have run before it began
-        self.files.started(gatherer, channel, cwd, answer.get("output_items") or [],
+        self.files.started(gatherer, channel, cwd, self.answer_items(answer.get("output_items") or []),
                            getattr(request, "answer_started", None) or since)
 
     async def close(self) -> None:
