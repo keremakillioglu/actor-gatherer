@@ -301,7 +301,7 @@ change to them is a conflict -- the pages' lines kept, the file's shown under th
 Accept its rewrite / Keep both -- however it came to change them (an actor rewriting what was typed and auto-saved, a
 script's write from the file before the save, the save undone on purpose). The zone stays until "Clear" in the header,
 or until no page has the file open (ZONE_GRACE seconds after the last goes). Save writes the document to the file;
-with Auto-save on (a switch in its header, the reader's, kept in the browser), so does a pause of a second after any
+with Auto-save on (a switch in its header, on by default; turned off, kept so in the browser), so does a pause of a second after any
 edit to it -- except of a file deleted on disk, which only Save writes again.
 Each listed file and folder has the actors that changed it in the last half hour, from what ag's hook found their tool
 calls did on disk (`_touches`): two or more are an amber badge in the tree, and "N actors changing it" over the file.

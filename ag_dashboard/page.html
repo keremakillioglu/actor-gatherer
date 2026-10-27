@@ -7043,7 +7043,7 @@ if (!SNAPSHOT) addChatView({
 // header) or the file closed. Who changed each file, of the
 // actors, is what ag's hook found each tool call did on disk (the listing's `writers`): two or more changing one file
 // are said in the tree and over the file. Saved by Save (or ⌘S / Ctrl+S): until then the file on disk, which the
-// actors read, is as it was -- or, with Auto-save on (the reader's choice, kept in this browser), a moment after each
+// actors read, is as it was -- or, with Auto-save on (as it is unless the reader turns it off, kept in this browser), a moment after each
 // edit. The editor (CodeMirror and Yjs, vendor/editor.js) is loaded the first time a file opens.
 const ED_TICK = 2500;            // ms between looks at the open folders (and the header's "Ns ago")
 const ED_SEND = 40;              // ms the edits of a burst of keys are gathered before they are sent
@@ -7053,7 +7053,7 @@ const ED_NAME_KEY = "ag-editor-name", ED_COLOR_KEY = "ag-editor-color", ED_ROOT_
 const ED_SHOWN_KEY = "ag-dashboard-editor", ED_HEIGHT_KEY = "ag-dashboard-editor-height";
 const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, s: null, lib: null, me: null, user: "", err: "",
   timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null,
-  auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) === "1"; } catch (e) { return false; } })() };
+  auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })() };   // on unless turned off
 const edB64 = (u8) => { let t = ""; for (let i = 0; i < u8.length; i += 0x8000) t += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(t); };
 const edBytes = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
 const edJoin = (dir, name) => (dir === "/" ? "/" : dir + "/") + name;
@@ -7524,7 +7524,7 @@ function edAutoLater(s) {
 }
 function edSetAuto(on) {
   ed.auto = on;
-  try { localStorage.setItem(ED_AUTO_KEY, on ? "1" : ""); } catch (e) { /* this page only */ }
+  try { localStorage.setItem(ED_AUTO_KEY, on ? "1" : "0"); } catch (e) { /* this page only */ }
   if (ed.s) edAutoLater(ed.s);
   edHead();
 }
