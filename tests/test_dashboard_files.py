@@ -147,14 +147,14 @@ class FilesTest(unittest.TestCase):
                 {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}}]}]}),
         )
 
-    def add(self, *events):
-        """Events of channel c1, after those there."""
+    def add(self, *events, at="2026-10-24 08:00:00"):
+        """Events of channel c1, after those there (written at `at`)."""
         conn = sqlite3.connect(self.db)
         for typ, payload in events:
             got = conn.execute("SELECT event_type_id FROM event_types WHERE name = ?", (typ,)).fetchone()
             tid = got[0] if got else conn.execute("INSERT INTO event_types (name, created_at) VALUES (?, '')", (typ,)).lastrowid
             conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, p_channel) VALUES "
-                         "('2026-10-24 08:00:00', ?, ?, 1, 'c1')", (tid, json.dumps(payload)))
+                         "(?, ?, ?, 1, 'c1')", (at, tid, json.dumps(payload)))
         conn.commit()
         conn.close()
 
@@ -187,6 +187,13 @@ class FilesTest(unittest.TestCase):
         self.assertEqual([t["now"] for t in got["turns"]], [None, None])    # done: nothing under way
         self.assertEqual([f["path"] for f in got["files"]], ["/w/a.py", "/w/b.py", "/w/new.py", "/w/notes.md", "/w/shot.png"])
         self.assertIn("error", files.files("nope", "c1"))
+
+    def test_a_turn_ends_at_its_last_event(self):
+        self.add(asked("and now?"), at="2026-10-24 09:00:00")
+        self.add(said("Thinking it over."), at="2026-10-24 09:00:20")
+        self.add(said("Done."), at="2026-10-24 09:01:05")
+        t = files.files("g", "c1")["turns"][-1]
+        self.assertEqual(t["end"] - t["at"], 65)                         # how long it took: its message to its last word
 
     def test_what_the_agent_is_doing_while_its_turn_runs(self):
         self.add(asked("and now?"), thought(""))

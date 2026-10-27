@@ -1156,6 +1156,7 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 /* when it last did something, and how long the turn has run: counting, dim, above the words */
 .files .fl-working .fl-times { color: var(--muted); font-size: .86em; opacity: .8; font-variant-numeric: tabular-nums; }
 .files .fl-working > .fl-mini { display: none; }
+.files .fl-working.fl-finished { display: none; }   /* short of height only */
 .files .fl-mini img { display: block; width: 1.3em; height: 1.3em; }
 /* short of height: the actor at work on one line -- its avatar small, as tall as the words, "Working…", then the times --
    in place of the two lines and the avatar under them */
@@ -1165,7 +1166,8 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
   .files .fl-working > .now { order: 1; flex: none; }
   .files .fl-working > .fl-times { order: 2; flex: 0 1 auto; }
   .files .fl-working > .fl-times::before { content: "· "; }
-  .files .fl-status { display: none; } }
+  .files .fl-status { display: none; }
+  .files .fl-working.fl-finished { display: flex; } .files .fl-talk > .fl-done { display: none; } }
 .files .fl-talk > .fl-status { margin: 4px 6px 0 8px; }
 .files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
 .files .fl-status .spin { font-size: 1.4em; }
@@ -1857,11 +1859,13 @@ const ago = (t) => {
 };
 // " (… <what> Ns ago)", counting: the time `t` (the server's seconds) set every second (the ticker by `data-since`);
 // hidden from screen readers, so a status line holding it is not read out again each second.
-// How long since the time `t` (the server's seconds), as a clock counting up: "45s", "2m 05s", "1h 12m".
-const lasting = (t) => {
-  const s = Math.max(0, Math.floor(Date.now() / 1000 - t)), pad = (n) => String(n).padStart(2, "0");
+// How long since the time `t` (the server's seconds), as a clock counting up: "45s", "2m 05s", "1h 12m" (spell: `s`
+// seconds, so).
+const spell = (s) => {
+  s = Math.max(0, Math.floor(s)); const pad = (n) => String(n).padStart(2, "0");
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${pad(s % 60)}s` : `${Math.floor(s / 3600)}h ${pad(Math.floor(s / 60) % 60)}m`;
 };
+const lasting = (t) => spell(Date.now() / 1000 - t);
 const agoEl = (what, t) => el("span", { "aria-hidden": "true" }, ` (${what} `, el("span", { "data-ago": t || "", text: ago(t) }), ")");
 const span = (a, b) => {
   if (!a || !b) return "–";
@@ -6212,13 +6216,20 @@ function opened(a) {
 // The line under a running turn: when the actor last did something (`last`; its last try, `retrying`) and how long the
 // turn has run (since `at`), and what it does now.
 // Short of height (the `talk` container), all on one line, behind the actor's avatar small (`fl-mini`).
+const miniAvatar = (info, none) => el("span", { class: "fl-mini", "aria-hidden": "true" }, info && bareAvatar(info)
+  ? el("img", { src: bareAvatar(info), alt: "", draggable: "false" }) : none);
 const working = (info, last, at, now, retrying = false) => el("div", { class: "fl-working" },
-  el("span", { class: "fl-mini", "aria-hidden": "true" }, info && bareAvatar(info)
-    ? el("img", { src: bareAvatar(info), alt: "", draggable: "false" }) : el("span", { class: "spin" })),
+  miniAvatar(info, el("span", { class: "spin" })),
   el("div", { class: "fl-times", "aria-hidden": "true" }, retrying ? "last try " : "last activity ",
     el("span", { "data-ago": last || "", text: ago(last) }),
     at ? " · " : null, at ? el("span", { "data-lasting": at, text: lasting(at) }) : null, at ? " so far" : null),
   el("div", { class: "now", role: "status", style: hueInk(info) }, now));
+// The latest turn over, short of height: on one line as the actor at work is -- its avatar small, "Done", and how long
+// the turn took, from its message to its last event (`end`; from a server without it, the actor's last activity) --
+// in place of the avatar done under it (.fl-done). Otherwise not shown.
+const finished = (info, t) => el("div", { class: "fl-working fl-finished" }, miniAvatar(info, el("span", { text: "✓" })),
+  el("div", { class: "fl-times" }, t.at ? `took ${spell((t.end || info.last || t.at) - t.at)}` : ""),
+  el("div", { class: "now", style: hueInk(info) }, "Done"));
 // A turn Claude Code has started that ag has not stored yet (openings): its first message, sent -- in full, as the terminal
 // shows it -- and, the latest, the actor at work under it and what waits to reach it; drawn from what ag stores once it has,
 // from when it was sent still (began: by the actor and the message's words).
@@ -6278,6 +6289,7 @@ function filesTalk(d, info, running) {
     const toggle = () => { opened.has(t.n) ? opened.delete(t.n) : opened.add(t.n); keepingPlace(renderMain); };
     // a call under way is drawn above, as the turn's latest call: the line under it only says the agent works
     const now = !live ? "" : info && info.failing ? "Retrying…" : t.now && t.now.kind === "thinking" ? "Thinking…" : "Working…";
+    const done = !live && t.n === d.turns.length - 1 && !opens.length && !!info && ["idle", "finished", "closed"].includes(statusOf(info)[0]);
     const starts = live ? [t.at, began(t)].filter(Boolean) : [];
     const from = starts.length ? Math.min(...starts) : null;      // when it began: sent (began), or stored
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}` },
@@ -6305,11 +6317,11 @@ function filesTalk(d, info, running) {
       t.last ? el("div", { class: "fl-minor" }, lastCall(t, live, info ? statusOf(info)[0] : "")) : null,
       live ? working(info, info.failing ? info.failing.at : Math.max(info.last || 0, from || 0) || null, from, now, !!info.failing)
         : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null,
+      done ? finished(info, t) : null,
       t.n === d.turns.length - 1 && !opens.length ? pendingTalk(info, h) : null));
     // under the latest turn's box: the actor at work; or, its turn over, the actor done
     if (live) box.append(el("div", { class: "fl-status", "aria-hidden": "true" }, atWork(info, t)));
-    else if (t.n === d.turns.length - 1 && !opens.length && info && ["idle", "finished", "closed"].includes(statusOf(info)[0]))
-      box.append(el("div", { class: "fl-done", title: `Done · ${ago(info.last)}` }, atRest(info, t.row_id)));
+    else if (done) box.append(el("div", { class: "fl-done", title: `Done · ${ago(info.last)}` }, atRest(info, t.row_id)));
   }
   box.append(...opens.flatMap((q, i) => openedTurn(info, q, i === opens.length - 1, h)));
   const at = `${state.files && state.files.key}:${d.turn}`;

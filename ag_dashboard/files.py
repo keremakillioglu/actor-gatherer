@@ -201,7 +201,7 @@ def _runs(numbered: List[tuple]) -> List[tuple]:
 class _Turn:
     def __init__(self, n, row_id, at, text):
         self.head = {"n": n, "row_id": row_id, "at": at, "text": text, "replies": [], "now": None, "more": [],
-                     "last": None}
+                     "last": None, "end": None}       # end: its last event's time
         self.acts: Dict[str, dict] = {}              # its calls, by id, for what it is doing (work.summary)
         self.files: Dict[str, dict] = {}
         self.commands: List[dict] = []
@@ -727,6 +727,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         cur = begins.get(i, cur)
         head = cur.head if cur is not None else {"replies": [], "now": None, "last": None}   # before the first message: kept nowhere
         acts = cur.acts if cur is not None else {}
+        if at and (head.get("end") or 0) < at:
+            head["end"] = at
         for p in parts:
             if p["kind"] == "call":
                 order.append((cur, p))
