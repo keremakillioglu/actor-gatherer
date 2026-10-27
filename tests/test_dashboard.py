@@ -24,6 +24,9 @@ from ag_dashboard import home as dashboard_home  # noqa: E402
 from channels import ch  # noqa: E402
 from test_core import PREAMBLE, ScriptedLLM, agent, conversation, long_turn, user  # noqa: E402
 import codex_items  # noqa: E402
+from replies import answered, insert, turn  # noqa: E402
+from ag.integrations.tools.ag_orchestrator import records  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.migrate import shape_of  # noqa: E402
 
 
 class HomeBase(unittest.TestCase):
@@ -44,6 +47,8 @@ class HomeBase(unittest.TestCase):
         self.m = Manager(self.policy)
         self.m.init("g")
         items = codex_items.CodexItems(self.m)
+        turn(self.m, "g", ch("c1"), "codex")                                 # its hook recorded its call, and the harness
+        turn(self.m, "g", ch("c2"), "codex")
         for item in PREAMBLE + conversation(4) + long_turn(2, start=50):
             items.insert("g", item, channel_id="c1")
         self.reads = []
@@ -79,19 +84,22 @@ class DataTest(HomeBase):
         self.assertEqual((c1["reads"], c1["limit_tokens"], c1["harness"]), (3, 244800, "codex"))
         self.assertEqual(c1["last_user_message"], "the next request")        # what it was last asked
         self.assertIsNone(c1["recap"])
-        self.m.record_recap("g", "c1", "An older recap.")
-        self.m.record_recap("g", "c1", "Counting rows; next, the columns.")
+        insert(self.m, "g", ch("c1"), [records.recap("An older recap.")])
+        insert(self.m, "g", ch("c1"), [records.recap("Counting rows; next, the columns.")])
         c1 = next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")
         self.assertEqual(c1["recap"]["text"], "Counting rows; next, the columns.")   # its newest recap
         self.assertTrue(c1["recap"]["at"])
         self.assertEqual(c1["last_user_message"], "the next request")        # a recap is not a message
         self.assertIsNone(c1["name"])
-        self.m.record_name("g", "c1", "Count rows", "codex")
-        self.m.record_name("g", "c1", "Count the rows", "codex")
+        insert(self.m, "g", ch("c1"), [records.name("Count rows", "codex")])
+        time.sleep(0.002)
+        insert(self.m, "g", ch("c1"), [records.name("Count the rows", "codex")])
         c1 = next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")
         self.assertEqual(c1["name"], {"text": "Count the rows", "by": "codex"})   # the newest it was given
-        self.m.record_name("g", "c1", "Rows", "user")
-        self.m.record_name("g", "c1", "Count rows again", "codex")
+        time.sleep(0.002)
+        insert(self.m, "g", ch("c1"), [records.name("Rows", "user")])
+        time.sleep(0.002)
+        insert(self.m, "g", ch("c1"), [records.name("Count rows again", "codex")])
         c1 = next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")
         self.assertEqual(c1["name"], {"text": "Rows", "by": "user"})              # the user's, over a newer one
         self.assertTrue(c1["running"])                      # read just now
@@ -208,7 +216,7 @@ class DataTest(HomeBase):
         before = c1()["last"]
         time.sleep(0.01)
         reply = {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}
-        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Done."}], "msg_1")
+        answered(self.m, "g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Done."}], "msg_1")
         self.assertGreater(c1()["last"], before)                                  # the turn's answer: something new to look at
         self.assertEqual(next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c2")["last"],
                          next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c2")["last_event"])
@@ -220,53 +228,49 @@ class DataTest(HomeBase):
         again; nor does its status change."""
         c1 = lambda: next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")   # noqa: E731
         reply = agent("Done.", 91)
-        self.m.record_pending("g", {"channel": "c1"}, [{"type": "message", "payload": reply, "text": "Done."}],
-                              "msg_1", "end_turn", read_id=self.reads[-1])
+        answered(self.m, "g", {"channel": "c1"}, [{"type": "message", "payload": reply, "text": "Done."}],
+                 "msg_1", "end_turn", read_id=self.reads[-1])
         before = c1()
         time.sleep(0.01)
-        codex_items.CodexItems(self.m).insert("g", reply, channel_id="c1")      # the side call: stored, and
-        self.m.clear_pending("g", {"channel": "c1"})                            # the pending answer cleared
+        codex_items.CodexItems(self.m).insert("g", reply, channel_id="c1")      # the side call: stored, so no longer pending
         after = c1()
         self.assertGreater(after["last_event"], before["last"])
-        self.assertEqual((after["last"], after["status"], after["turn_over"]),
+        self.assertEqual((after["last"], after["status"], after["turn_over"]),     # when the reply came
                          (before["last"], before["status"], before["turn_over"]))
-        self.assertEqual(after["last"], after["last_answer"])                   # when the reply came
 
     def test_the_pending_answer_follows_the_latest_context(self):
         self.assertEqual(data.agent("g", "c1", [])["pending"], [])                 # the last call carried all of it
         reply = {"role": "assistant", "content": [{"type": "text", "text": "There are 42 rows."}]}
-        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply,
-                                                         "text": "There are 42 rows."}], "msg_1")
-        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_reasoning", "payload": {"content": [
-            {"type": "thinking", "thinking": "count them"}]}}])                        # no text: its words
+        answered(self.m, "g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "There are 42 rows."},
+                                                   {"type": "agent_reasoning", "payload": {"content": [
+                                                       {"type": "thinking", "thinking": "count them"}]}}], "msg_1")   # no text: its words
         got = data.agent("g", "c1", [])["pending"]
         self.assertEqual([(i["group"], i["name"], i["text"]) for i in got],
                          [("Pending", "agent_message", "There are 42 rows."), ("Pending", "agent_reasoning", "count them")])
         self.assertGreater(got[0]["tokens"], 0)
         self.assertEqual(data.agent("g", "c2", [])["pending"], [])                 # another channel's: not this one's
-        self.m.clear_pending("g", {"channel": "c1"})                               # the next call carried it
+        codex_items.CodexItems(self.m).insert("g", agent("There are 42 rows.", 92), channel_id="c1")   # the next call carried it
         self.assertEqual(data.agent("g", "c1", [])["pending"], [])
 
     def test_what_came_after_the_latest_read_follows_it(self):
         self.assertEqual(data.agent("g", "c1", [])["after_read"], [])           # the latest read has all of it
         reply = {"role": "assistant", "content": [{"type": "text", "text": "Checking."}]}
-        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Checking."}], "msg_1")
+        answered(self.m, "g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Checking."}], "msg_1")
         self.assertEqual([i["text"] for i in data.agent("g", "c1", [])["after_read"]], ["Checking."])   # pending alone
         items = codex_items.CodexItems(self.m)
         items.insert("g", agent("All done.", 91), channel_id="c1")             # a side call stored the answer, logged no read
-        self.m.clear_pending("g", {"channel": "c1"})
         got = data.agent("g", "c1", [])
         self.assertEqual(got["pending"], [])
         after = got["after_read"]
         self.assertEqual([i["group"] for i in after], [data.AFTER_READ])
         self.assertIn("All done.", after[0]["text"])
         self.assertGreater(after[0]["row_id"], got["reads"][-1]["row_id"])
-        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Next."}], "msg_2")
+        answered(self.m, "g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Next."}], "msg_2")
         self.assertEqual([i["group"] for i in data.agent("g", "c1", [])["after_read"]],
                          [data.AFTER_READ, data.PENDING])                       # by time: the stored one, then pending
         self.assertEqual(data.agent("g", "c2", [])["after_read"], [])           # another channel's: not this one's
+        items.insert("g", agent("Next.", 93), channel_id="c1")                  # the next call carried it
         self.reads.append(self.m._context("g", store.high_water(self.m._conn("g")), ch("c1"), 244800)[1])
-        self.m.clear_pending("g", {"channel": "c1"})
         self.assertEqual(data.agent("g", "c1", [])["after_read"], [])           # a new read: in its context now
 
     def test_a_stretch_of_the_agent_s_own_history(self):
@@ -280,7 +284,7 @@ class DataTest(HomeBase):
         self.assertTrue(all(i["row_id"] > tasks[-1]["last_row"] for i in since["items"]))
         self.assertEqual(data.history("g", "c2", 1)["items"][0]["name"], "context")   # only the channel's own
         reply = {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}
-        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Done."}], "msg_2")
+        answered(self.m, "g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Done."}], "msg_2")
         self.assertEqual(data.history("g", "c1", tasks[-1]["last_row"] + 1)["items"][-1]["text"], "Done.")   # to the end: the pending answer last
         self.assertNotIn("Done.", [i["text"] for i in data.history("g", "c1", first["first_row"], first["last_row"])["items"]])
 
@@ -302,7 +306,7 @@ class DataTest(HomeBase):
             self.assertEqual([i["row_id"] for i in after["items"]], rows[1:4])
             self.assertFalse(after["newest"])
         reply = {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}
-        self.m.record_pending("g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Done."}], "msg_2")
+        answered(self.m, "g", {"channel": "c1"}, [{"type": "agent_message", "payload": reply, "text": "Done."}], "msg_2")
         since = data.transcript("g", "c1", after=rows[-1])                      # nothing stored since: the pending answer
         self.assertEqual(since["items"], [{"row_id": None, "type": "agent_message", "at": since["items"][0]["at"],
                                            "parts": [{"kind": "text", "role": "assistant", "text": "Done."}]}])
@@ -338,35 +342,36 @@ class ReadableTest(unittest.TestCase):
 
 
 class PartsTest(unittest.TestCase):
-    """Each harness's events as the transcript's parts: the same parts whoever wrote them."""
+    """Each harness's events as the transcript's parts, read by its channel's harness's rules: the same parts whoever
+    wrote them."""
 
     def test_claude_code_s_blocks(self):
         call = {"role": "assistant", "content": [{"type": "thinking", "thinking": "Look first.", "signature": "s"},
                                                  {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}}]}
-        self.assertEqual(data.parts("tool_call", json.dumps(call), None),
+        self.assertEqual(data.parts("tool_call", json.dumps(call), None, harness="claude"),
                          [{"kind": "thinking", "text": "Look first."},
                           {"kind": "call", "id": "t1", "name": "Bash", "input": {"command": "ls"}}])
         out = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True,
                                             "content": [{"type": "text", "text": "no such file"}, {"type": "image"}]}]}
-        self.assertEqual(data.parts("tool_output", json.dumps(out), None),
+        self.assertEqual(data.parts("tool_output", json.dumps(out), None, harness="claude"),
                          [{"kind": "result", "id": "t1", "error": True, "text": "no such file\n[image]"}])
         said = {"role": "assistant", "content": [{"type": "text", "text": "**Done.**"}]}
-        self.assertEqual(data.parts("agent_message", json.dumps(said), None), [{"kind": "text", "role": "assistant", "text": "**Done.**"}])
+        self.assertEqual(data.parts("agent_message", json.dumps(said), None, harness="claude"), [{"kind": "text", "role": "assistant", "text": "**Done.**"}])
         system = {"role": "system", "content": [{"type": "text", "text": "env"}]}
-        self.assertEqual(data.parts("context", json.dumps(system), "env"), [{"kind": "note", "name": "context", "text": "env"}])
+        self.assertEqual(data.parts("context", json.dumps(system), "env", harness="claude"), [{"kind": "note", "name": "context", "text": "env"}])
 
     def test_codex_s_items(self):
         call = {"type": "function_call", "name": "shell", "arguments": json.dumps({"command": ["ls"]}), "call_id": "c1"}
-        self.assertEqual(data.parts("tool_call", json.dumps(call), None),
+        self.assertEqual(data.parts("tool_call", json.dumps(call), None, harness="codex"),
                          [{"kind": "call", "id": "c1", "name": "shell", "input": {"command": ["ls"]}}])
         out = {"type": "function_call_output", "call_id": "c1", "output": "a\nb"}
-        self.assertEqual(data.parts("tool_output", json.dumps(out), None), [{"kind": "result", "id": "c1", "error": False, "text": "a\nb"}])
+        self.assertEqual(data.parts("tool_output", json.dumps(out), None, harness="codex"), [{"kind": "result", "id": "c1", "error": False, "text": "a\nb"}])
         patch = {"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch", "call_id": "c2"}
-        self.assertEqual(data.parts("tool_call", json.dumps(patch), None)[0]["input"], "*** Begin Patch")
+        self.assertEqual(data.parts("tool_call", json.dumps(patch), None, harness="codex")[0]["input"], "*** Begin Patch")
         said = {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Done."}]}
-        self.assertEqual(data.parts("agent_message", json.dumps(said), None), [{"kind": "text", "role": "assistant", "text": "Done."}])
+        self.assertEqual(data.parts("agent_message", json.dumps(said), None, harness="codex"), [{"kind": "text", "role": "assistant", "text": "Done."}])
         hidden = {"type": "reasoning", "summary": [], "encrypted_content": "zz"}
-        self.assertEqual(data.parts("agent_reasoning", json.dumps(hidden), None), [{"kind": "thinking", "text": ""}])
+        self.assertEqual(data.parts("agent_reasoning", json.dumps(hidden), None, harness="codex"), [{"kind": "thinking", "text": ""}])
 
     def test_an_unknown_shape_shows_its_words_and_long_text_is_clipped(self):
         self.assertEqual(data.parts("user_message", json.dumps({"info": {}, "text": "x"}), "hello"),
@@ -378,7 +383,8 @@ class PartsTest(unittest.TestCase):
 
 
 class HarnessTest(unittest.TestCase):
-    """Which harness an agent runs on, from its events' shape."""
+    """Which harness an agent from before its hook recorded its calls ran on, from its events' shape: what copying an
+    older gatherer's tables into records records (migrate.py's `shape_of`)."""
 
     def test_each_harness_s_events(self):
         user = {"role": "user", "content": [{"type": "text", "text": "hi"}]}       # pi and Claude Code alike
@@ -389,8 +395,8 @@ class HarnessTest(unittest.TestCase):
             "opencode": [{"info": {"role": "user", "sessionID": "ses_1"}, "parts": []}],
         }
         for harness, payloads in cases.items():
-            self.assertEqual(data.harness_of(payloads), harness, harness)
-        self.assertIsNone(data.harness_of([user]))          # a lone user message tells nothing
+            self.assertEqual(shape_of(payloads), harness, harness)
+        self.assertIsNone(shape_of([user]))                 # a lone user message tells nothing
 
 
 class PageTest(HomeBase):

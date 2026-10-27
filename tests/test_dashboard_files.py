@@ -127,6 +127,7 @@ class FilesTest(unittest.TestCase):
             CREATE TABLE events (row_id INTEGER PRIMARY KEY, inserted_at TEXT NOT NULL, event_id TEXT, event_type_id INTEGER NOT NULL,
               payload_json TEXT NOT NULL, tokens INTEGER NOT NULL, text TEXT, counted INTEGER, p_channel);""")
         conn.close()
+        self.add(("model_call", {"kind": "turn", "harness": "claude"}))       # its hook recorded its call, and the harness
         self.add(
             asked("look at a.py"),
             thought("Read it first."), thought(""),
@@ -147,27 +148,27 @@ class FilesTest(unittest.TestCase):
                 {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}}]}]}),
         )
 
-    def add(self, *events):
-        """Events of channel c1, after those there."""
+    def add(self, *events, channel="c1"):
+        """Events of `channel`, after those there."""
         conn = sqlite3.connect(self.db)
         for typ, payload in events:
             got = conn.execute("SELECT event_type_id FROM event_types WHERE name = ?", (typ,)).fetchone()
             tid = got[0] if got else conn.execute("INSERT INTO event_types (name, created_at) VALUES (?, '')", (typ,)).lastrowid
             conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, p_channel) VALUES "
-                         "('2026-10-24 08:00:00', ?, ?, 1, 'c1')", (tid, json.dumps(payload)))
+                         "('2026-10-24 08:00:00', ?, ?, 1, ?)", (tid, json.dumps(payload), channel))
         conn.commit()
         conn.close()
 
     def test_a_codex_script_is_the_calls_it_makes(self):
-        self.add(asked("make notes"),
+        self.add(("model_call", {"kind": "turn", "harness": "codex"}), asked("make notes"),           # a codex thread
                  ("tool_call", {"type": "custom_tool_call", "call_id": "x1", "name": "exec", "input": SCRIPT}),
-                 ("tool_output", {"type": "custom_tool_call_output", "call_id": "x1", "output": SCRIPT_OUT}))
-        got = files.files("g", "c1", cwd="/w")
+                 ("tool_output", {"type": "custom_tool_call_output", "call_id": "x1", "output": SCRIPT_OUT}), channel="cx")
+        got = files.files("g", "cx", cwd="/w")
         self.add(asked("the same, run directly"),
                  ("tool_call", {"type": "function_call", "call_id": "f1", "name": "exec_command", "arguments": json.dumps(
                      {"cmd": "printf 'one\\n' > notes.txt && printf 'two\\n' > notes.txt && cat notes.txt"})}),
-                 ("tool_output", {"type": "function_call_output", "call_id": "f1", "output": "two\n"}))
-        direct = files.files("g", "c1", cwd="/w")
+                 ("tool_output", {"type": "function_call_output", "call_id": "f1", "output": "two\n"}), channel="cx")
+        direct = files.files("g", "cx", cwd="/w")
         self.assertEqual([f["path"] for f in got["files"]], ["/w/notes.txt"])
         blocks = lambda g: [b for f in g["files"] for s in f["sources"] for b in s["blocks"]]
         self.assertEqual(blocks(got), blocks(direct))                      # read as its call would be on its own
@@ -175,7 +176,7 @@ class FilesTest(unittest.TestCase):
         self.assertEqual({k: one[k] for k in ("text", "output", "files")}, {k: other[k] for k in ("text", "output", "files")})
         self.assertEqual(one["output"], "two\n")                          # what it printed, without codex's head
         part, = [p for p in data.parts("tool_call", json.dumps({"type": "custom_tool_call", "call_id": "x1", "name": "exec",
-                                                                "input": SCRIPT}), None) if p["kind"] == "call"]
+                                                                "input": SCRIPT}), None, harness="codex") if p["kind"] == "call"]
         self.assertEqual([c["name"] for c in part["calls"]], ["exec_command"])  # the Chat view titles it by its call
 
     def test_the_turns_and_the_latest_by_default(self):
@@ -275,18 +276,6 @@ class FilesTest(unittest.TestCase):
                ("p1", "/w/out.txt", "created", None, 0, {"lines": ["made"]}),
                ("t1", None, None, None, None, None)]
 
-    def test_a_call_checked_on_disk_is_shown_as_found_there(self):
-        conn = sqlite3.connect(self.db)                  # as an older hook server kept them
-        conn.execute("CREATE TABLE _touches (touch_id INTEGER PRIMARY KEY, session TEXT, call_id TEXT, at TEXT, path TEXT, "
-                     "how TEXT, checked INTEGER, named INTEGER, detail_json TEXT)")
-        for call_id, path, how, checked, named, detail in self.TOUCHED:
-            conn.execute("INSERT INTO _touches (session, call_id, at, path, how, checked, named, detail_json) "
-                         "VALUES ('c1', ?, '', ?, ?, ?, ?, ?)", (call_id, path, how, checked, named,
-                                                                 None if detail is None else json.dumps(detail)))
-        conn.commit()
-        conn.close()
-        self.found_there()
-
     def test_a_call_checked_on_disk_as_its_hook_records_it(self):
         self.add(*[("file_touched", {"call": call_id, "path": path, "how": how, "checked": None if checked is None else bool(checked),
                                      "named": None if named is None else bool(named), "detail": detail or {}})
@@ -310,14 +299,8 @@ class FilesTest(unittest.TestCase):
         db, notes = os.path.join(self.tmp.name, "gatherers", "g", "context.db"), os.path.join(self.tmp.name, "notes.txt")
         self.add(asked("look it up"), call("q1", "Bash", {"command": f"sqlite3 {db} 'SELECT 1'", "description": "Query"}),
                  result("q1", "1"), call("n1", "Bash", {"command": f"echo hi > {notes}", "description": "Note"}), result("n1", ""))
-        conn = sqlite3.connect(self.db)
-        conn.execute("CREATE TABLE _touches (touch_id INTEGER PRIMARY KEY, session TEXT, call_id TEXT, at TEXT, path TEXT, "
-                     "how TEXT, checked INTEGER, named INTEGER, detail_json TEXT)")
-        for call_id, path in [("q1", db), ("n1", notes)]:                   # as the hook server kept them before
-            conn.execute("INSERT INTO _touches (session, call_id, at, path, how, checked, named, detail_json) "
-                         "VALUES ('c1', ?, '', ?, 'modified', NULL, 1, '{}')", (call_id, path))
-        conn.commit()
-        conn.close()
+        self.add(*[("file_touched", {"call": call_id, "path": path, "how": "modified", "checked": None, "named": True,
+                                     "detail": {}}) for call_id, path in [("q1", db), ("n1", notes)]])   # as the hook records them
         got = files.files("g", "c1", 2, cwd="/w")
         self.assertEqual([f["path"] for f in got["files"]], [notes])        # the query's: ag's own write
         self.assertEqual([(c["text"], c["files"]) for c in got["commands"]], [("Query", []), ("Note", [notes])])
@@ -341,14 +324,8 @@ class FilesTest(unittest.TestCase):
             self.assertEqual((out["t"], out["lines"]), ("output", ["def f():", "    return 1", "x = 1"]))
             self.assertIn("can't be told apart", out["note"])
         self.assertEqual(by["/w/e.py"], [{"t": "note", "text": "read, but the output was empty"}])
-        conn = sqlite3.connect(self.db)                                 # checked on disk as it ran: the same
-        conn.execute("CREATE TABLE _touches (touch_id INTEGER PRIMARY KEY, session TEXT, call_id TEXT, at TEXT, path TEXT, "
-                     "how TEXT, checked INTEGER, named INTEGER, detail_json TEXT)")
-        for path in ("/w/c.py", "/w/d.py"):
-            conn.execute("INSERT INTO _touches (session, call_id, at, path, how, checked, named, detail_json) "
-                         "VALUES ('c1', 'u2', '', ?, 'read', NULL, 1, ?)", (path, json.dumps({"unsplit": True})))
-        conn.commit()
-        conn.close()
+        self.add(*[("file_touched", {"call": "u2", "path": path, "how": "read", "checked": None, "named": True,   # checked on
+                                     "detail": {"unsplit": True}}) for path in ("/w/c.py", "/w/d.py")])         # disk: the same
         got = files.files("g", "c1", 2, cwd="/w")
         by = {f["path"]: f["sources"][0]["blocks"] for f in got["files"]}
         self.assertEqual([(b["t"], b["lines"]) for b in by["/w/d.py"]], [("output", ["def c():", "    pass"])])

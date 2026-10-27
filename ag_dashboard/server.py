@@ -102,7 +102,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import harness_kit
 
-from . import actions, avatars, data, files, hiding, history, home, live, monitor, naming, saved, seen, sessions, settings
+from . import (actions, avatars, data, files, hiding, history, home, live, migrating, monitor, naming, saved, seen,
+               sessions, settings)
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -554,6 +555,7 @@ class Server(ThreadingHTTPServer):
         super().__init__(address, handler(self.calls, self.hub, self.sessions))
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
+        self.migrating = migrating.start(self.hub.ring) if live_updates else None   # an older gatherer's tables, once
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
         self.rest = saved.Rest(self.sessions, self.hub.shown)

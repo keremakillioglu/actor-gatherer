@@ -17,18 +17,15 @@ One SQLite file per gatherer (paths.py):
                          definitions), each text once; a read names its own (internal)
     _polls               when each poller (a source of events from outside the
                          conversation) was last asked (internal)
-    _pending             what the model answered that no model call has carried back
-                         yet, as events, per channel: kept until that channel's next
-                         call stores its events (internal)
-    _recaps              the harness's recaps of a session (Claude Code's "while you were
-                         away" summary), each with when it was made: never history (internal)
-    _names               a session's name, as whoever named it gave it (codex's title for its
-                         thread): never history (internal)
-    _touches             what each tool call did to files, as the hook server found them on
-                         disk once its result was in: never history (internal)
+    _withdrawn           the events the harness took back (internal)
+    _open                which process has each session open (internal)
+    _migrated            which one-time copies were made in the file (internal): "records", an older
+                         gatherer's `_pending`, `_recaps`, `_names`, `_touches` and `_reads.error` copied
+                         into events (ag/integrations/tools/ag_orchestrator/migrate.py); those tables
+                         are no longer made, and stay in an older file as they were
 
 A leading underscore marks a table internal to the manager (`_made_items`,
-`_reads`, `_read_items`, `_polls`, `_pending`, `_recaps`, `_names`, `_touches`), which the agent has no reason to know about; the
+`_reads`, `_read_items`, `_polls`, `_withdrawn`, `_open`, `_migrated`), which the agent has no reason to know about; the
 others (`event_types`, `events`) it may be pointed at. Operations on these
 tables are in operations.py.
 
@@ -37,8 +34,8 @@ calls after `create`; none of them are here.
 
 Event types are not enumerated here or anywhere else in the package: they are
 the rows a caller puts in `event_types`, at init or later, and every event
-points at one of them. Nor are their PROPERTIES: `events`, `_made_items`, `_reads`
-and `_pending` get a column for each property a registered type declares
+points at one of them. Nor are their PROPERTIES: `events`, `_made_items` and `_reads`
+get a column for each property a registered type declares
 (`add_properties`, `p_<name>`, NULL = unset), and the unique index on events
 covers the identifying ones (`identifying_names`: those a type declares
 `identifies`), so an event id is one event per combination of them; the other
@@ -134,12 +131,9 @@ CREATE TABLE IF NOT EXISTS _reads (
     pid_started TEXT,               -- ("<boot id>:<start ticks>", so a reused pid is not it); NULL = not known
     run         TEXT,               -- the harness's run that made the call, as its launcher named it (the hook
                                     -- server's /r/<run>/: codex's, the id of the process ag started); NULL = none
-    error_status INTEGER,           -- the call failed: the HTTP status its endpoint answered; NULL = it did not
-                                    -- fail, or no answer came at all (`error` says why)
-    error       TEXT,               -- why the call failed, as the hook server saw it: the endpoint's message, or
-                                    -- why it could not be reached; NULL = it did not fail, or not known
-    answered_at TEXT                -- UTC time the call's answer came back whole (as `_pending` keeps it, but
-                                    -- not cleared when a call stores it); NULL = not yet, failed, or not known
+    error_status INTEGER,           -- no longer set: a failed call is a `call_failed` event (an older
+    error       TEXT,               -- file's copied there once, `_migrated`)
+    answered_at TEXT                -- no longer set: an answer is its `reply_end` event
 );
 
 -- What a harness sends besides its messages -- its system prompt, its tool definitions --
@@ -172,21 +166,6 @@ CREATE TABLE IF NOT EXISTS _polls (
     polled_at   REAL    NOT NULL        -- seconds since the epoch
 );
 
--- What the model answered that no model call has carried back yet: the answer's events as
--- the harness made them, kept from when the answer came back until the next call with the
--- same properties (the same channel) stores its events -- the answer among them -- and
--- deletes them. Not history: never read back as events, never in a context.
-CREATE TABLE IF NOT EXISTS _pending (
-    pending_id  INTEGER PRIMARY KEY,
-    received_at TEXT    NOT NULL,   -- (and the properties of the call it answered)
-    answer      TEXT,               -- the answer it is part of, as the provider names it; NULL = not named
-    stop        TEXT,               -- why that answer stopped, as the provider says it (Anthropic's stop
-                                    -- reason: end_turn, tool_use, ...; a Responses status); NULL = not said
-    type        TEXT    NOT NULL,   -- the event type's name, as the harness gave it
-    payload_json TEXT   NOT NULL,   -- the event's payload, as given
-    text        TEXT                -- its readable text, as given; NULL = none
-);
-
 -- The events the harness took back: stored for a model call it hung up on before the answer came (the
 -- user stopped it), and not in what it sent after -- Claude Code puts the user's message back in its input
 -- box. Kept, but in no read (`rows`) and not where a request picks up its history (`latest`). An event
@@ -196,48 +175,6 @@ CREATE TABLE IF NOT EXISTS _withdrawn (
     withdrawn_at TEXT    NOT NULL,     -- when (UTC, ISO)
     read_id      INTEGER               -- the read of the call it came with; NULL = not known
 );
-
--- A harness's recap of a session: Claude Code's "while you were away" summary, which it asks its model
--- for after a turn when the user has left. Not a turn and not history: never read back as events, never
--- in a context; kept for a reader of the gatherer (the dashboard's actor list), newest last.
-CREATE TABLE IF NOT EXISTS _recaps (
-    recap_id    INTEGER PRIMARY KEY,
-    session     TEXT    NOT NULL,   -- the session: its calls' `channel`
-    made_at     TEXT    NOT NULL,   -- when its answer came back (UTC, ISO)
-    text        TEXT    NOT NULL    -- the recap, as the model wrote it
-);
-CREATE INDEX IF NOT EXISTS _recaps_session ON _recaps (session, recap_id);
-
--- A session's name: one per session and namer, the newest kept -- the harness's (codex's title for its
--- thread, which it asks its model for after the first message) or another's ("user": one typed, which a
--- reader puts before the others). Not history: never read
--- back as events, never in a context; kept for a reader of the gatherer (the dashboard's actor list).
-CREATE TABLE IF NOT EXISTS _names (
-    session     TEXT    NOT NULL,   -- the session: its calls' `channel`
-    by          TEXT    NOT NULL,   -- who named it: "codex", ...
-    named_at    TEXT    NOT NULL,   -- when (UTC, ISO)
-    text        TEXT    NOT NULL,   -- the name
-    PRIMARY KEY (session, by)
-);
-
--- What each tool call of a session did to files, as the hook server found them on disk right after the
--- call ran (ag/integrations/tools/ag_orchestrator/file_touches/): a row per call, file and how; a row with no path says
--- the call was checked and touched no file. Not history: never read back as events, never in a context;
--- kept for a reader of the gatherer (the dashboard's Files view). The first row for a call, file and how
--- is the one kept: the same results sent again (a retried call) are not checked again.
-CREATE TABLE IF NOT EXISTS _touches (
-    touch_id    INTEGER PRIMARY KEY,
-    session     TEXT    NOT NULL,   -- the session: its calls' `channel`
-    call_id     TEXT    NOT NULL,   -- the tool call, by the harness's id for it
-    at          TEXT    NOT NULL,   -- when it was checked (UTC, ISO)
-    path        TEXT,               -- the file, absolute; NULL: the call touched none
-    how         TEXT,               -- read, hit, created, modified, deleted
-    checked     INTEGER,            -- 1: what the call showed of the file is on disk; 0: it is not; NULL:
-                                    -- nothing to match (a change; a read whose lines can't be told apart)
-    named       INTEGER,            -- 1: the call names the file; 0: the file changed while the call ran
-    detail_json TEXT                -- at which lines, and what (file_touches/check.py); NULL: none
-);
-CREATE UNIQUE INDEX IF NOT EXISTS _touches_one ON _touches (session, call_id, ifnull(path, ''), ifnull(how, ''));
 
 -- Which process has each session open: one per session, so two processes (a terminal, the
 -- dashboard's chat) never run it at once. Claimed by ag's launcher as it starts the harness on a
@@ -253,6 +190,12 @@ CREATE TABLE IF NOT EXISTS _open (
     opened_by   TEXT,                  -- what claimed it: "launcher", "call"
     yields      INTEGER NOT NULL DEFAULT 0   -- 1: idle, and gives way to another process's claim
 );
+
+-- The one-time copies made in the file, by name, and when.
+CREATE TABLE IF NOT EXISTS _migrated (
+    name        TEXT    PRIMARY KEY,
+    at          TEXT    NOT NULL
+);
 """
 
 
@@ -264,7 +207,7 @@ class OutdatedDatabase(RuntimeError):
 
 
 #: The tables that carry the properties.
-PROPERTY_TABLES = ("events", "_made_items", "_reads", "_pending")
+PROPERTY_TABLES = ("events", "_made_items", "_reads")
 
 
 def create(conn: sqlite3.Connection) -> None:
@@ -293,12 +236,6 @@ def create(conn: sqlite3.Connection) -> None:
             add_column(conn, "_reads", f"{column} {kind}")
     if "yields" not in {c[1] for c in conn.execute("PRAGMA table_info(_open)")}:     # a file from before holders yielded
         add_column(conn, "_open", "yields INTEGER NOT NULL DEFAULT 0")
-    pending_columns = {c[1] for c in conn.execute("PRAGMA table_info(_pending)")}
-    if "stop" not in pending_columns:                                # a file from before pending kept it
-        add_column(conn, "_pending", "stop TEXT")
-    for name in property_names(conn):                                # a file from before _pending: its properties
-        if property_column(name) not in pending_columns:
-            add_column(conn, "_pending", property_column(name))
     if "identifies" not in {c[1] for c in conn.execute("PRAGMA table_info(event_type_properties)")}:
         add_column(conn, "event_type_properties", "identifies INTEGER NOT NULL DEFAULT 0")
     if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'events_id'").fetchone() is None:

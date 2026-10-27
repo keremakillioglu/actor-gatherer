@@ -1,9 +1,6 @@
-"""A model call that failed, kept on the read it was for (`_reads.error_status`, `_reads.error`): its
-endpoint answered an error, or could not be reached. The hook server reports it to the hook's `failed`
-(test_hook_server.py), the hook to the server's `failed` op, which records it and tells the listeners --
-so a reader of the gatherer (the dashboard) can tell a turn that stopped on an error from one under way."""
-import asyncio
-import io
+"""A model call that failed, recorded on the read it was for (`call_failed`, records.py): its endpoint answered an
+error, or could not be reached. The hook server reports it to the hook's `failed` (test_hook_server.py), which records
+it -- so a reader of the gatherer (the dashboard) can tell a turn that stopped on an error from one under way."""
 import json
 import os
 import sqlite3
@@ -19,13 +16,7 @@ try:
 except ImportError:
     web = None
 
-from ag.ag_harness import home as ag_home  # noqa: E402
-from ag.ag_harness.server import serve  # noqa: E402
-from ag.ag_harness.server.__main__ import server_for  # noqa: E402
-from ag.ag_harness.store import operations as store  # noqa: E402
-from ag.ag_harness.store import paths, schema  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
-from ag.integrations.tools.ag_orchestrator.call_ag import keep_read, report_failed  # noqa: E402
 
 if web is not None:
     from ag.integrations.harnesses.codex.ag_orchestrator import context_manager as codex_ag  # noqa: E402
@@ -38,84 +29,6 @@ def user(text, n):
     return {"type": "message", "role": "user", "id": f"u{n}", "content": [{"type": "input_text", "text": text}]}
 
 
-class StoreTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.conn = sqlite3.connect(os.path.join(self.tmp.name, "g.db"))
-        schema.create(self.conn)
-
-    def tearDown(self):
-        self.conn.close()
-        self.tmp.cleanup()
-
-    def failure(self, read_id):
-        return self.conn.execute("SELECT error_status, error FROM _reads WHERE read_id = ?", (read_id,)).fetchone()
-
-    def test_a_read_s_call_that_failed_is_kept_on_it(self):
-        read_id = store.record_read(self.conn, None, [], manager="m")
-        self.assertEqual(self.failure(read_id), (None, None))               # not failed, or not known
-        self.assertTrue(store.record_failed(self.conn, read_id, 529, "overloaded_error: Overloaded"))
-        self.assertEqual(self.failure(read_id), (529, "overloaded_error: Overloaded"))
-        other = store.record_read(self.conn, None, [], manager="m")
-        self.assertTrue(store.record_failed(self.conn, other, None, "Cannot connect to host api.anthropic.com:443"))
-        self.assertEqual(self.failure(other), (None, "Cannot connect to host api.anthropic.com:443"))   # no answer came
-        self.assertFalse(store.record_failed(self.conn, other + 1, 500, "x"))   # no such read
-
-    def test_a_file_from_before_reads_kept_failures_gets_the_columns(self):
-        old = sqlite3.connect(os.path.join(self.tmp.name, "old.db"))
-        old.execute("CREATE TABLE _reads (read_id INTEGER PRIMARY KEY, read_at TEXT NOT NULL, row_id INTEGER, "
-                    "manager TEXT, basis TEXT)")
-        old.execute("INSERT INTO _reads (read_at, manager) VALUES ('t', 'm')")
-        schema.create(old)
-        self.assertTrue(store.record_failed(old, 1, 500, "api_error: Internal server error"))
-        old.close()
-
-
-class ServerTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.saved = paths.TRACE_DIR, paths.AG_HOME
-        paths.AG_HOME = os.path.join(self.tmp.name, "ag")
-        paths.TRACE_DIR = os.path.join(paths.AG_HOME, "gatherers")
-        ag_home._HOMES.clear()
-
-    def tearDown(self):
-        paths.TRACE_DIR, paths.AG_HOME = self.saved
-        ag_home._HOMES.clear()
-        self.tmp.cleanup()
-
-    def ask(self, *requests):
-        out = io.StringIO()
-        serve(server_for(), [json.dumps(dict(r, id=i)) for i, r in enumerate(requests, 1)], out)
-        answers = [json.loads(line) for line in out.getvalue().splitlines()]
-        return sorted(answers, key=lambda a: a["id"])        # as asked: each comes out as it is ready
-
-    def test_a_failure_is_recorded_on_its_read_and_told(self):
-        told = []
-        import ag.ag_harness.manager as manager_module
-        saved = manager_module.notify
-        manager_module.notify = lambda gatherer, what, properties=None, row=None: told.append((what, row))
-        try:
-            first, failed, bad, none = self.ask(
-                {"op": "rewrite", "gatherer": "s", "events": codex.to_events([DEV, user("q", 1)])},
-                {"op": "failed", "gatherer": "s", "read_id": 1, "status": 502, "error": "bad gateway"},
-                {"op": "failed", "gatherer": "s", "read_id": 1, "status": 502},          # no error: refused
-                {"op": "failed", "gatherer": "s", "read_id": 99, "error": "x"})          # no such read
-        finally:
-            manager_module.notify = saved
-        self.assertEqual((failed["recorded"], none["recorded"]), (True, False))
-        self.assertIn("error", bad)
-        conn = sqlite3.connect(paths.db_path("s"))
-        try:
-            self.assertEqual(conn.execute("SELECT read_id, error_status, error FROM _reads").fetchall(),
-                             [(first["read_id"], 502, "bad gateway")])
-        finally:
-            conn.close()
-        self.assertIn(("failed", 1), told)
-        self.assertNotIn(("failed", 99), told)                                  # nothing recorded: nothing told
-
-
-@unittest.skipIf(web is None, "the hook server needs aiohttp")
 class ProxyTest(unittest.IsolatedAsyncioTestCase):
     """The codex hook behind the real hook server, the real context manager server behind it: a call its
     endpoint answers with an error, and one with no endpoint to reach, each end up on the read they were for."""
@@ -180,29 +93,6 @@ class ProxyTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(second_status)
         self.assertIn("api.example.invalid", second)
         self.assertEqual([first_read, second_read], reads)                   # each on the read it was for
-
-
-class HelpersTest(unittest.TestCase):
-    def test_a_failure_is_reported_to_the_read_kept_on_the_request(self):
-        sent = []
-
-        class Client:
-            async def request(self, op, body):
-                sent.append((op, body))
-                return {}
-
-        class Clients:
-            def client(self, gatherer):
-                return Client()
-
-        class Req:
-            state = {}
-
-        asyncio.run(report_failed(Clients(), Req(), 500, "x"))              # no read kept: nothing sent
-        req = Req()
-        keep_read(req, "g", {"read_id": 3})
-        asyncio.run(report_failed(Clients(), req, None, "Cannot connect"))
-        self.assertEqual(sent, [("failed", {"gatherer": "g", "read_id": 3, "status": None, "error": "Cannot connect"})])
 
 
 if __name__ == "__main__":

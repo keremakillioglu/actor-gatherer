@@ -19,7 +19,7 @@
  */
 
 import { AgClient } from "../../../tools/ag_connection/ag_client.ts";
-import { type Preamble, type Requester, call_ag, pending_ag } from "../../../tools/ag_orchestrator/call_ag.ts";
+import { type Preamble, type Requester, answered_ag, call_ag, called } from "../../../tools/ag_orchestrator/call_ag.ts";
 import type { Message } from "../adaptor/to_events.ts";
 import { type Adaptor, CHANNEL } from "../../../tools/ag_orchestrator/adaptor.ts";
 import { Measurements, n } from "../../../tools/ag_orchestrator/measured.ts";
@@ -76,6 +76,7 @@ export class OpencodeContextManager {
 		const routed = await call_ag(this.server, { ...where, cwd: directory }, messages, this.adaptor,
 			this.measurements.take(channel, messages), this.limits.get(channel), this.preamble(channel));
 		this.measurements.keep(channel, routed.messages !== null ? routed.readId : undefined, messages);
+		void called(this.server, where, "opencode", routed.readId);     // recorded beside the call, never waited for
 		return routed.messages as Message[] | null;
 	}
 
@@ -104,10 +105,9 @@ export class OpencodeContextManager {
 	/**
 	 * One of opencode's events (the plugin's `event` hook). A part of an assistant message is kept (`message.part.updated`)
 	 * until the message has completed (`message.updated`, with `time.completed`): then the message -- what the model
-	 * answered -- is kept as pending (the server's `pending`) until the session's next call stores it, so a reader of the
-	 * gatherer sees the turn's last reply, which no call carries until the user writes again, and a tool call while it
-	 * runs. An answer that failed is not kept. `directory` is the one the calls state (the plugin's), so the next call's
-	 * properties are the pending events' and clear them. A note, or null for none.
+	 * answered -- is recorded as the answer's parts (`answered_ag`) until the session's next call stores it, so a reader
+	 * of the gatherer sees the turn's last reply, which no call carries until the user writes again, and a tool call
+	 * while it runs. An answer that failed is not recorded. A note, or null for none.
 	 */
 	async event(event: any, directory?: string): Promise<string | null> {
 		const props = event?.properties;
@@ -128,8 +128,7 @@ export class OpencodeContextManager {
 		if (info.error || !parts.length) return null;
 		const where = this.where([{ info, parts } as Message]);
 		if (!where) return null;
-		return pending_ag(this.server, { ...where, cwd: directory },
-			[{ info, parts } as Message], this.adaptor, info.id);
+		return answered_ag(this.server, where, [{ info, parts } as Message], this.adaptor, info.id);
 	}
 
 	/** Stop the server: it finishes what it is answering and exits. */
