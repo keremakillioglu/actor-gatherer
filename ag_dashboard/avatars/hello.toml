@@ -1,0 +1,530 @@
+# What each actor says before its first message: in the dashboard's Chat view, under its avatar waving.
+# Read by the dashboard as it runs (ag_dashboard/avatars.py): change a line here and it shows from the next
+# update, or reload the page -- nothing to restart or redraw.
+#
+# One entry per character, by its picture's name (ag_dashboard/avatars/<kind>/<name>.svg): one drawn in every
+# hue ("daruma-red", "daruma-blue", ...) by its name without the hue ("daruma"). Its lines, any number of them:
+# each new actor is given one and keeps it -- with four, at random, the next actor another, all four coming round
+# in turn. A line over several lines (a haiku) is a multi-line string, its lines shown as they are.
+#
+# The drawn ones have four each, one of each style: playful, in its own voice about itself; plain, its name and
+# the ask; its sound, then "Ready when you are."; and a haiku, 5-7-5.
+
+# animals
+axolotl = [
+  "Gills fluffed, smile on. What are we working on?",
+  "Hi, I'm Axolotl. What should I start on?",
+  "Blip! Ready when you are.",
+  '''
+Pink gills gently sway
+I smile at the bottom here
+what shall we explore?''',
+]
+bear = [
+  "Awake after a long nap. What shall we tackle first?",
+  "Hi, I'm Bear. What should I start on?",
+  "Rawr! Ready when you are.",
+  '''
+Winter sleep is done
+I stretch my paws in the sun
+what shall we take on?''',
+]
+capybara = [
+  "Fresh from the hot spring, very relaxed. What's first?",
+  "Hi, I'm Capybara. What should I start on?",
+  "Ahh… Ready when you are.",
+  '''
+Warm water, calm mind
+a yuzu floats beside me
+what shall we work on?''',
+]
+chick = [
+  "Just hatched and full of questions. What's first?",
+  "Hi, I'm Chick. What should I start on?",
+  "Peep peep! Ready when you are.",
+  '''
+Out of my small shell
+the whole world is new to me
+show me where to start''',
+]
+deer = [
+  "Ears up, listening closely. What can I help with?",
+  "Hi, I'm Deer. What should I start on?",
+  "A polite bow! Ready when you are.",
+  '''
+Through the quiet woods
+I bow to you politely
+what brings you here now?''',
+]
+enaga = [
+  "A tiny snowball with a tail, at your service. What's first?",
+  "Hi, I'm Enaga. What should I start on?",
+  "Chee-chee! Ready when you are.",
+  '''
+Small as a snowflake
+I perch upon a bare branch
+what shall we look at?''',
+]
+frog = [
+  "Hopped over from the pond. What shall we leap into?",
+  "Hi, I'm Frog. What should I start on?",
+  "Ribbit! Ready when you are.",
+  '''
+An old quiet pond
+I sit on a lily pad
+what shall we leap to?''',
+]
+goldfish = [
+  "Blub! Fresh water, fresh start. What's first?",
+  "Hi, I'm Goldfish. What should I start on?",
+  "Blub blub! Ready when you are.",
+  '''
+Ripples in my bowl
+I am circling, waiting here
+drop in your first word''',
+]
+hamster = [
+  "Cheeks empty, wheel spinning. What are we working on?",
+  "Hi, I'm Hamster. What should I start on?",
+  "Squeak! Ready when you are.",
+  '''
+Cheeks empty, wheel still
+tiny paws are ready now
+what shall we gather?''',
+]
+jellyfish = [
+  "Just drifting by… point me at something!",
+  "Hi, I'm Jellyfish. What should I start on?",
+  "Bloop! Ready when you are.",
+  '''
+Drifting on the tide
+soft and glowing, I await
+guide me where to go''',
+]
+koala = [
+  "Awake for once! Quick, what are we working on?",
+  "Hi, I'm Koala. What should I start on?",
+  "Yawn! Ready when you are.",
+  '''
+Hugging my gum tree
+I opened one sleepy eye
+what do you need, friend?''',
+]
+koi = [
+  "Ready to swim up any waterfall. What's first?",
+  "Hi, I'm Koi. What should I start on?",
+  "Splash! Ready when you are.",
+  '''
+Up the waterfall
+I swim to be a dragon
+what is our first climb?''',
+]
+mejiro = [
+  "Hopped over from the plum blossoms. What shall we do?",
+  "Hi, I'm Mejiro. What should I start on?",
+  "Chi-chi! Ready when you are.",
+  '''
+Among plum blossoms
+a small green bird sings to you
+what shall we begin?''',
+]
+mochi-usagi = [
+  "Done pounding mochi on the moon. What's next?",
+  "Hi, I'm Mochi-usagi. What should I start on?",
+  "Pettan! Ready when you are.",
+  '''
+Rabbit on the moon
+I set my mallet aside
+what shall we pound out?''',
+]
+octopus = [
+  "Eight arms, all free. What shall we get our hands on?",
+  "Hi, I'm Octopus. What should I start on?",
+  "Wiggle wiggle! Ready when you are.",
+  '''
+Eight arms, all ready
+I curl out from my sea cave
+what shall we reach for?''',
+]
+panda = [
+  "Bamboo break's over. What are we working on?",
+  "Hi, I'm Panda. What should I start on?",
+  "Munch munch! Ready when you are.",
+  '''
+Bamboo in my paws
+I roll over to greet you
+what shall we start on?''',
+]
+penguin = [
+  "Suited up and ready. Where do we start?",
+  "Hi, I'm Penguin. What should I start on?",
+  "Waddle, waddle… Ready when you are.",
+  '''
+Fresh snow, a clean slate
+I waddle up to the edge
+where shall we dive in?''',
+]
+pufferfish = [
+  "Puffed up with excitement. What's first?",
+  "Hi, I'm Pufferfish. What should I start on?",
+  "Puff! Ready when you are.",
+  '''
+Round as a balloon
+I am all puffed up for you
+tell me what to do''',
+]
+red-panda = [
+  "Tail fluffed, paws up. What are we doing today?",
+  "Hi, I'm Red panda. What should I start on?",
+  "Eep! Ready when you are.",
+  '''
+Standing on hind legs
+my fluffy tail curls behind
+what is our first task?''',
+]
+seal = [
+  "Flippers clapping. What shall we work on?",
+  "Hi, I'm Seal. What should I start on?",
+  "Arf arf! Ready when you are.",
+  '''
+Resting on the ice
+I clap my flippers for you
+what shall we dive for?''',
+]
+shark = [
+  "Friendly shark, sharp focus. What are we hunting down?",
+  "Hi, I'm Shark. What should I start on?",
+  "Chomp! Ready when you are.",
+  '''
+Gliding through the deep
+I smell a problem nearby
+point me to the bug''',
+]
+shiba = [
+  "Much ready. Very help. Wow. What's first?",
+  "Hi, I'm Shiba. What should I start on?",
+  "Woof! Ready when you are.",
+  '''
+Curly tail wagging
+I sit and wait for your word
+what shall we fetch first?''',
+]
+tanuki = [
+  "Tanuki at your service, no tricks. What shall we do?",
+  "Hi, I'm Tanuki. What should I start on?",
+  "Pon-poko! Ready when you are.",
+  '''
+Pon-poko, I drum
+a tanuki full of tricks
+what shall we try first?''',
+]
+turtle = [
+  "Slow and steady, ready to go. What's first?",
+  "Hi, I'm Turtle. What should I start on?",
+  "Plod, plod… Ready when you are.",
+  '''
+Slow and steady steps
+I carry my home with me
+where shall we go first?''',
+]
+whale = [
+  "Surfaced and ready. What big thing are we doing?",
+  "Hi, I'm Whale. What should I start on?",
+  "Whoosh! Ready when you are.",
+  '''
+Up from the deep blue
+I spout a hello to you
+where shall we swim to?''',
+]
+
+# food
+bao = [
+  "Fresh from the steamer, soft and ready. What's first?",
+  "Hi, I'm Bao. What should I start on?",
+  "Squish! Ready when you are.",
+  '''
+Soft and pillowy
+steam curls up from my bamboo
+what's filling today?''',
+]
+boba = [
+  "Shaken, pearls and all. What's first?",
+  "Hi, I'm Boba. What should I start on?",
+  "Sip! Ready when you are.",
+  '''
+Pearls at the bottom
+a straw ready for the sip
+what shall we mix up?''',
+]
+bok-choy = [
+  "Crisp, green and ready to grow. What shall we work on?",
+  "Hi, I'm Bok choy. What should I start on?",
+  "Crunch! Ready when you are.",
+  '''
+Fresh from the garden
+my green leaves are crisp and bright
+what shall we grow here?''',
+]
+dorayaki = [
+  "Two pancakes, sweet bean inside, all ready. What's first?",
+  "Hi, I'm Dorayaki. What should I start on?",
+  "Flip! Ready when you are.",
+  '''
+Two warm golden cakes
+sweet red bean tucked in between
+what shall we stack up?''',
+]
+edamame = [
+  "Three beans in a pod, all eager. What's first?",
+  "Hi, I'm Edamame. What should I start on?",
+  "Pop pop! Ready when you are.",
+  '''
+Three beans in a pod
+we all popped out to greet you
+what shall we shell first?''',
+]
+kakigori = [
+  "Freshly shaved and still cool. What shall we work on?",
+  "Hi, I'm Kakigori. What should I start on?",
+  "Brrr! Ready when you are.",
+  '''
+Shaved ice piled up high
+sweet syrup drizzled on top
+what shall we cool down?''',
+]
+lychee = [
+  "Peeled and ready, sweet inside. What's first?",
+  "Hi, I'm Lychee. What should I start on?",
+  "Boing! Ready when you are.",
+  '''
+Bumpy pink outside
+sweet and juicy underneath
+what shall we peel back?''',
+]
+matcha = [
+  "Whisked to a fine foam. What shall we work on?",
+  "Hi, I'm Matcha. What should I start on?",
+  "Whisk whisk! Ready when you are.",
+  '''
+Green tea, frothy, warm
+I bow and turn the bowl round
+shall we begin now?''',
+]
+melon-pan = [
+  "Crisp on top, soft inside, ready. What's first?",
+  "Hi, I'm Melon pan. What should I start on?",
+  "Ding! Ready when you are.",
+  '''
+Warm from the oven
+crackly sugar on my top
+what shall we bake up?''',
+]
+mikan = [
+  "A little mikan from the kotatsu. What's first?",
+  "Hi, I'm Mikan. What should I start on?",
+  "Roll roll! Ready when you are.",
+  '''
+On the kotatsu
+a small orange rolls to you
+what shall we peel first?''',
+]
+mitarashi = [
+  "Three dango, glazed and glossy. What's first?",
+  "Hi, I'm Mitarashi. What should I start on?",
+  "Mochi-mochi! Ready when you are.",
+  '''
+Dango on a stick
+sweet soy glaze shining on top
+where shall we bite first?''',
+]
+mooncake = [
+  "Full moon, full of ideas. What shall we work on?",
+  "Hi, I'm Mooncake. What should I start on?",
+  "Ooh, full moon! Ready when you are.",
+  '''
+Under the full moon
+a sweet surprise waits inside
+what shall we share first?''',
+]
+nigiri = [
+  "Freshly pressed by the chef. What's the first order?",
+  "Hi, I'm Nigiri. What should I start on?",
+  "Irasshaimase! Ready when you are.",
+  '''
+Rice pressed in a palm
+fresh fish resting on its top
+what's the first order?''',
+]
+onigiri = [
+  "Freshly rolled and ready. What's on the plate today?",
+  "Hi, I'm Onigiri. What should I start on?",
+  "Ta-da! Ready when you are.",
+  '''
+Rice warm in your hand
+wrapped in a sheet of nori
+what is on the plate?''',
+]
+peach-bun = [
+  "Soft, sweet and blushing. What shall we work on?",
+  "Hi, I'm Peach bun. What should I start on?",
+  "Steamy! Ready when you are.",
+  '''
+A peach made of bread
+pink-tipped and steaming for you
+what shall we wish for?''',
+]
+ramen = [
+  "The broth is hot. What shall we cook up?",
+  "Hi, I'm Ramen. What should I start on?",
+  "Slurp! Ready when you are.",
+  '''
+Steam rises slowly
+the broth has simmered all night
+what shall we cook up?''',
+]
+ramune = [
+  "Marble popped, bubbles fizzing. What's first?",
+  "Hi, I'm Ramune. What should I start on?",
+  "Fizz! Ready when you are.",
+  '''
+Marble clinks inside
+summer bubbles rising up
+what shall we open?''',
+]
+sakura-mochi = [
+  "Wrapped in a cherry leaf, ready for spring. What's first?",
+  "Hi, I'm Sakura mochi. What should I start on?",
+  "Spring is here! Ready when you are.",
+  '''
+Pink rice, a sweet bean
+wrapped up in a cherry leaf
+shall we take a bite?''',
+]
+taiyaki = [
+  "Fish-shaped, bean-filled, ready to swim. What's first?",
+  "Hi, I'm Taiyaki. What should I start on?",
+  "Sizzle! Ready when you are.",
+  '''
+A fish made of cake
+swimming off the hot iron
+head or tail first, then?''',
+]
+yaki-imo = [
+  "Roasted on hot stones, warm and ready. What's first?",
+  "Hi, I'm Yaki-imo. What should I start on?",
+  "Yaki-imo~! Ready when you are.",
+  '''
+Roasted on hot stones
+sweet and golden, warm inside
+what shall we dig up?''',
+]
+
+# charms
+chochin = [
+  "Lit up and ready to light the way. What's first?",
+  "Hi, I'm Chochin. What should I start on?",
+  "Flicker! Ready when you are.",
+  '''
+A paper lantern
+glowing softly in the dark
+what shall we light up?''',
+]
+daruma = [
+  "Round, red and always back on my feet. What's first?",
+  "Hi, I'm Daruma. What should I start on?",
+  "Wobble… still standing! Ready when you are.",
+  '''
+Fall down seven times
+I rise up again the eighth
+what shall we tackle?''',
+]
+furin = [
+  "Chiming in the summer breeze. What shall we work on?",
+  "Hi, I'm Furin. What should I start on?",
+  "Chirin chirin! Ready when you are.",
+  '''
+A cool summer breeze
+my glass bell chimes out to you
+shall we start the song?''',
+]
+kappa = [
+  "Water on my head, cucumber in hand. What's first?",
+  "Hi, I'm Kappa. What should I start on?",
+  "Splish! Ready when you are.",
+  '''
+Up from the river
+careful not to spill my plate
+a task for me, please?''',
+]
+kitsune = [
+  "A clever fox at your service. What's the puzzle?",
+  "Hi, I'm Kitsune. What should I start on?",
+  "Kon kon! Ready when you are.",
+  '''
+From the shrine gate red
+a clever fox comes to help
+what puzzle awaits?''',
+]
+kokeshi = [
+  "Hand-painted and ready. What shall we make today?",
+  "Hi, I'm Kokeshi. What should I start on?",
+  "Sway, sway! Ready when you are.",
+  '''
+Carved from cherry wood
+a painted smile just for you
+what shall we make now?''',
+]
+maneki-neko = [
+  "Paw raised for good luck. What can I bring you?",
+  "Hi, I'm Maneki-neko. What should I start on?",
+  "Nya~ Ready when you are.",
+  '''
+One paw raised to you
+beckoning good luck inside
+what brings you today?''',
+]
+omamori = [
+  "Good luck charm, fully charged. What's first?",
+  "Hi, I'm Omamori. What should I start on?",
+  "Jingle! Ready when you are.",
+  '''
+A small silk charm bag
+blessed for luck in all you do
+what shall we achieve?''',
+]
+sakura = [
+  "In full bloom and ready. What shall we work on?",
+  "Hi, I'm Sakura. What should I start on?",
+  "Flutter! Ready when you are.",
+  '''
+Petals on the wind
+spring has come to visit you
+what shall we start fresh?''',
+]
+teru-teru = [
+  "I wished for sunshine, and here we are. What's first?",
+  "Hi, I'm Teru-teru. What should I start on?",
+  "Swing swing! Ready when you are.",
+  '''
+Hung by the window
+I wish for a sunny day
+what shall we do first?''',
+]
+uchiwa = [
+  "Fanning away the summer heat. What shall we work on?",
+  "Hi, I'm Uchiwa. What should I start on?",
+  "Flap flap! Ready when you are.",
+  '''
+Paper fan in hand
+I wave away the hot air
+where shall we begin?''',
+]
+yuki-daruma = [
+  "Freshly built from snow, ready before I melt. What's first?",
+  "Hi, I'm Yuki-daruma. What should I start on?",
+  "Snow day! Ready when you are.",
+  '''
+Two snowballs stacked high
+a bucket hat on my head
+let's start before spring''',
+]

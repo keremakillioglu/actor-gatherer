@@ -1649,7 +1649,8 @@ def snapshot() -> dict:
     agent over time, and the last read's contents of each (by kind, and item by item); and the
     avatars the actors were given (avatars.py), each picture inside it."""
     pool = avatars.pictures()
-    h = avatars.attach(home(), avatars.stored(), pool)
+    has, said = avatars.kept()
+    h = avatars.attach(home(), has, pool, said)
     llm = llm_calls()
     agents, reads, contexts = {}, {}, {}
     for g in h["gatherers"]:

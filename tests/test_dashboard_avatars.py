@@ -1,11 +1,14 @@
 """Each actor's avatar (ag_dashboard/avatars.py): the pictures in the folder, who is given which and
 kept, the open actors of a gatherer in different hues, how each moves at work, and the server serving them."""
+import io
 import os
 import re
+import sqlite3
 import sys
 import tempfile
 import threading
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 
@@ -101,15 +104,78 @@ class AvatarsTest(AvatarsBase):
         os.rmdir(os.path.join(avatars.DIR, "robot"))
         self.assertEqual(self.given(avatars.assign(home))[("g", "c1")], None)   # none left: the harness's mark
 
-    def test_each_actor_carries_its_pictures_hue_and_motion(self):
-        self.pictures({"robot/plain": "red"})
+    def said(self, text):
+        """The pictures' lines, LINES, as `text` (TOML): a new time on it, read again."""
+        os.makedirs(avatars.DIR, exist_ok=True)
+        p = os.path.join(avatars.DIR, avatars.LINES)
+        at = os.stat(p).st_mtime + 1 if os.path.exists(p) else None
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        if at is not None:
+            os.utime(p, (at, at))
+
+    def test_each_actor_carries_its_pictures_hue_motion_and_the_line_it_says(self):
+        self.pictures({"robot/plain": "red", "robot/eel-sky": "sky"})
         with open(os.path.join(avatars.DIR, "robot", "fish.svg"), "w") as fh:
             fh.write(CIRCLE.format(' data-hue="sky" data-motion="swim bubbles"'))
+        self.said('fish = ["Blub & hi!", """\nRipples in my bowl\nI am circling\ndrop in a word""", "  "]\n'
+                  'eel = ["Zap!"]\n')
+        pool = avatars.pictures()
+        self.assertEqual([avatars.hello(n) for n in ("robot/fish", "robot/eel-sky", "robot/plain")],
+                         [["Blub & hi!", "Ripples in my bowl\nI am circling\ndrop in a word"], ["Zap!"], []])   # one in a hue: its name's
         home = {"gatherers": [{"name": "g", "agents": [actor("c1", 1), actor("c2", 2), actor("c3", 3)]}]}
-        avatars.attach(home, {("g", "c1"): "robot/fish", ("g", "c2"): "robot/plain", ("g", "c3"): "robot/gone"}, avatars.pictures())
-        got = {a["channel"]: (a["avatar"], a["avatar_hue"], a["avatar_motion"]) for a in home["gatherers"][0]["agents"]}
-        self.assertEqual(got, {"c1": ("robot/fish", "sky", "swim bubbles"), "c2": ("robot/plain", "red", ""),
-                               "c3": (None, None, None)})
+        avatars.attach(home, {("g", "c1"): "robot/fish", ("g", "c2"): "robot/plain", ("g", "c3"): "robot/gone"}, pool, {("g", "c1"): 3})
+        got = {a["channel"]: (a["avatar"], a["avatar_hue"], a["avatar_motion"], a["avatar_hello"]) for a in home["gatherers"][0]["agents"]}
+        self.assertEqual(got, {"c1": ("robot/fish", "sky", "swim bubbles", "Ripples in my bowl\nI am circling\ndrop in a word"),
+                               "c2": ("robot/plain", "red", "", None), "c3": (None, None, None, None)})   # its 3rd of 2: the 2nd
+
+    def test_a_line_changed_in_the_file_is_said_at_once_and_a_slip_keeps_the_last(self):
+        self.pictures({"robot/fish": "sky"})
+        self.said('fish = ["Blub!"]\n')
+        avatars.pictures()
+        self.assertEqual(avatars.hello("robot/fish"), ["Blub!"])
+        self.said('fish = ["Splash!"]\n')                        # changed: read again
+        self.assertEqual(avatars.hello("robot/fish"), ["Splash!"])
+        with unittest.mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.said('fish = ["Spla\n')                         # a slip mid-edit: as it last read
+            self.assertEqual(avatars.hello("robot/fish"), ["Splash!"])
+        self.assertIn("does not read", err.getvalue())
+        os.remove(os.path.join(avatars.DIR, avatars.LINES))
+        self.assertEqual(avatars.hello("robot/fish"), [])         # no file: nothing to say
+
+    def test_each_actor_says_one_line_kept_the_next_another_every_style_in_turn(self):
+        self.pictures({f"robot/r{i}": f"h{i}" for i in range(3)})
+        said_lines = [f"line {i}" for i in range(avatars.STYLES)]
+        self.said("".join(f"r{i} = {said_lines!r}\n".replace("'", '"') for i in range(3)))
+        agents = []
+        home = lambda: {"gatherers": [{"name": "g", "agents": [dict(a) for a in agents]}]}
+        said = []
+        for n in range(3 * avatars.STYLES):                       # actors coming one after another
+            agents.append(actor(f"c{n}", n))
+            said.append(avatars.assign(home())["gatherers"][0]["agents"][-1]["avatar_hello"])
+        again = {a["channel"]: a["avatar_hello"] for a in avatars.assign(home())["gatherers"][0]["agents"]}
+        self.assertEqual([again[f"c{n}"] for n in range(len(said))], said)   # each keeps its own
+        self.assertTrue(all(x != y for x, y in zip(said, said[1:])))         # the next says another
+        for r in range(0, len(said), avatars.STYLES):                        # each round, every style once
+            self.assertEqual(sorted(said[r:r + avatars.STYLES]), said_lines)
+
+    def test_an_actor_given_its_picture_before_there_were_lines_says_one_fixed_by_it(self):
+        self.pictures({"robot/a": "red"})
+        self.said('a = ["one", "two", "three", "four"]\n')
+        os.makedirs(dashboard_home.HOME)
+        conn = sqlite3.connect(os.path.join(dashboard_home.HOME, "dashboard.db"))
+        conn.execute("CREATE TABLE avatars (gatherer TEXT NOT NULL, channel TEXT NOT NULL, avatar TEXT NOT NULL, at TEXT NOT NULL, "
+                     "PRIMARY KEY (gatherer, channel))")                    # as it was
+        conn.execute("INSERT INTO avatars VALUES ('g', 'old', 'robot/a', '2026-10-01T00:00:00+00:00')")
+        conn.commit()
+        conn.close()
+        home = lambda: {"gatherers": [{"name": "g", "agents": [actor("old", 1), actor("new", 2)]}]}
+        first = {a["channel"]: a["avatar_hello"] for a in avatars.assign(home())["gatherers"][0]["agents"]}
+        self.assertEqual(first["old"], avatars.says("old", ["one", "two", "three", "four"], None))
+        self.assertIn(first["new"], ["one", "two", "three", "four"])
+        has, said = avatars.kept()                                           # read again: as kept
+        self.assertEqual({a["channel"]: a["avatar_hello"] for a in avatars.attach(home(), has, avatars.pictures(), said)["gatherers"][0]["agents"]},
+                         first)
 
     def test_a_bare_picture_is_its_character_without_its_circle(self):
         drawn = b'<svg data-hue="red"><circle cx="32" cy="32" r="32" fill="#fdd"/><circle cx="32" cy="32" r="32" fill="#f00"/></svg>'
@@ -140,6 +206,14 @@ class AvatarsTest(AvatarsBase):
         self.assertEqual(set(re.findall(r"(\w+): \[", ink)), set(pool.values()))   # every hue's words in its color
         main = re.search(r"const HUE_MAIN = \{(.*?)\};", page, re.S).group(1)
         self.assertEqual(set(re.findall(r"(\w+): \"", main)), set(pool.values()))   # and its thought's dots
+
+    def test_the_drawn_avatars_each_say_four_lines_the_last_a_haiku(self):
+        avatars.DIR = self.saved[1]
+        for name in avatars.pictures():
+            said = avatars.hello(name)
+            self.assertEqual(len(said), 4, name)
+            self.assertTrue(said[1].startswith("Hi, I'm ") and said[2].endswith("Ready when you are."), name)
+            self.assertEqual(len(said[3].split("\n")), 3, name)
 
     def test_the_drawn_avatars_are_in_one_hue_of_the_palette_each(self):
         avatars.DIR = self.saved[1]
