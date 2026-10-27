@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PAGE = os.path.join(ROOT, "ag_dashboard", "page.html")
 START = "// ------------------------------------------------------------------ code, coloured"
 END = "// a code block's Copy"
-API = "hlTokens, hlLines, shellHtml, outputHtml, ansiHtml, hlLang, langOfPath, guessWeb"
+API = "hlTokens, hlLines, hlPart, hlInside, shellHtml, outputHtml, ansiHtml, hlLang, langOfPath, guessWeb"
 # the section, given what it uses of the page, its functions called on each case: [name, ...arguments] -> the result
 RUN = r"""
 const escapeHtml = (t) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -98,6 +98,46 @@ class HighlightTest(unittest.TestCase):
         for (_, text, lang), lines in zip(cases, run(*cases)):
             self.assertEqual(plain("\n".join(lines)), text, lang)
 
+
+@unittest.skipUnless(shutil.which("node"), "needs Node to run the page's code")
+class PartTest(unittest.TestCase):
+    """A part of a file (a change, lines read, a search's hits) that begins inside a comment or a string opened above
+    it: read from there, not from code, when the comment's end or the string's closing quotes are in it."""
+
+    def test_a_docstrings_closing_quotes_close_it_and_the_code_after_them_is_code(self):
+        text = '    the value is None when it is not set.\n    """\n    x = load(path)\n    return x'
+        inside, [lines] = run(["hlInside", "python", text], ["hlPart", "python", text])
+        self.assertEqual(inside, '"""')
+        self.assertEqual(lines[0], '<span class="hl-str">    the value is None when it is not set.</span>')
+        self.assertEqual(lines[2:], ['    x = <span class="hl-fn">load</span>(path)', '    <span class="hl-kw">return</span> x'])
+        self.assertEqual(plain("\n".join(lines)), text)
+
+    def test_a_comments_end_closes_it_in_a_script_and_in_a_style(self):
+        [js], [css] = run(["hlPart", "js", "   * the user's own list\n   */\n  go(a);"],
+                          ["hlPart", "css", "   and the page's rows */\n.x { color: red; }"])
+        self.assertEqual(js, ['<span class="hl-com">   * the user&#39;s own list</span>', '<span class="hl-com">   */</span>',
+                              '  <span class="hl-fn">go</span>(a);'])
+        self.assertEqual(css[0], '<span class="hl-com">   and the page&#39;s rows */</span>')
+
+    def test_a_templates_closing_backtick_closes_it(self):
+        [[lines]] = run(["hlPart", "js", '    <div class="x">${y}</div>\n  `;\n  const z = f(1);'])
+        self.assertEqual(lines[0], '<span class="hl-str">    &lt;div class=&quot;x&quot;&gt;${y}&lt;/div&gt;</span>')
+        self.assertEqual(lines[2], '  <span class="hl-kw">const</span> z = <span class="hl-fn">f</span>(<span class="hl-num">1</span>);')
+
+    def test_a_changes_two_sides_begin_inside_the_same(self):
+        [[was, now]] = run(["hlPart", "python", 'end of the doc.\n"""\nx = 1', "end of the doc, and more of it."])
+        self.assertEqual(was[2], 'x = <span class="hl-num">1</span>')
+        self.assertEqual(now, ['<span class="hl-str">end of the doc, and more of it.</span>'])
+
+    def test_a_part_that_begins_in_code_is_read_from_code(self):
+        cases = [["python", 'def f():\n    """\n    Doc.\n    """\n    return 1'],    # a docstring opened, alone on its line
+                 ["python", 'x = """a\nb"""'], ["python", '    return r"""\n    text"""'], ["python", '    """Summary.\n\n    More."""'],
+                 ["js", "const re = /\\w*/y;\nf();"],                                   # a regex's /a*/, not a comment's end
+                 ["js", 'glob("**/*.js");\nx = 1;'],                                     # nor a glob's, in a string
+                 ["js", 'const t = s.replace(/`|\\*\\*/g, "");\nx();'],                   # a backtick in a regex
+                 ["js", "el.innerHTML = cond ? `<b>${x}</b>` : y;"], ["css", ".a { b: c; } /* d */"],
+                 ["js", "// a closing */ in a comment\nf();"]]
+        self.assertEqual(run(*[["hlInside", lang, text] for lang, text in cases]), [""] * len(cases))
 
 @unittest.skipUnless(shutil.which("node"), "needs Node to run the page's code")
 class ShellTest(unittest.TestCase):

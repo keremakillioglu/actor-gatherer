@@ -255,6 +255,7 @@ header .brand .list-btns { display: none; margin-left: -6px; }
 :root.list-full .monitor { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; padding: 14px 20px 0; background: var(--page); }
 .monitor .m-top { flex: none; display: flex; align-items: baseline; gap: 8px; }
 .monitor .m-top h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.monitor .m-top .m-old { font-size: 12.5px; color: var(--warning); }
 .monitor .m-board { flex: 1; min-height: 0; display: flex; gap: 12px; margin-top: 12px; padding-bottom: 14px; overflow-x: auto; }
 .monitor .m-col { flex: 1 1 0; min-width: 250px; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--grid);
   border-radius: 12px; background: color-mix(in srgb, var(--ink) 2.5%, var(--page)); container: mcol / inline-size; }
@@ -286,7 +287,8 @@ header .brand .list-btns { display: none; margin-left: -6px; }
 .m-card .c-pic.acting { width: 72px; color: var(--term-accent); }
 .m-card .c-pic svg.stage { height: 58px; margin: -6px -6px -4px -8px; }
 .m-card .c-pic .buddy { width: 36px; height: 36px; margin-top: 2px; }
-.m-card .c-pic .spin::before { content: "✻"; display: inline-block; font-size: 22px; animation: term-spin 1.2s steps(1) infinite; }
+.m-card .c-pic .spin { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.m-card .c-pic .spin::before { content: "✻"; font-size: 22px; line-height: 1; animation: term-spin 1.2s steps(1) infinite; }
 .m-card .c-who { min-width: 0; flex: 1; }
 .m-card .c-name { font-size: 13.5px; font-weight: 600; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-card .c-asked { font-size: 13px; line-height: 1.4; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
@@ -295,8 +297,10 @@ header .brand .list-btns { display: none; margin-left: -6px; }
 .m-card .c-asked.none { color: var(--muted); font-style: italic; font-weight: 400; }
 .m-card .c-meta { display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; color: var(--muted);
   font-variant-numeric: tabular-nums; }
-.monitor .status.running i { background: none; width: auto; height: auto; color: var(--good); font-style: normal; font-size: 11px; line-height: 1; }
-.monitor .status.running i::before { content: "✻"; display: inline-block; animation: term-spin 1.2s steps(1) infinite; animation-delay: var(--spin-at, 0s); }
+/* the glyph turning in a box of its own size: each of its shapes is as wide as it is, so nothing after it moves */
+.monitor .status.running i { background: none; width: 12px; height: 12px; border-radius: 0; display: inline-flex; align-items: center;
+  justify-content: center; overflow: hidden; color: var(--good); font-style: normal; font-size: 11px; line-height: 1; }
+.monitor .status.running i::before { content: "✻"; animation: term-spin 1.2s steps(1) infinite; animation-delay: var(--spin-at, 0s); }
 .m-card .c-meta .gname { color: var(--ink-2); background: var(--wash); border-radius: 4px; padding: 0 6px; }
 .m-card .c-now { display: flex; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.4; min-width: 0; }
 .m-card .c-now .lbl { flex: none; font-weight: 600; font-size: 12px; }
@@ -2831,7 +2835,8 @@ const monFolded = (() => {
   try { const v = JSON.parse(localStorage.getItem(MON_FOLD_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
   return new Set(["Saved", "Closed"]);
 })();
-const mon = { got: new Map(), cards: new Map(), secs: new Map(), box: null, visible: new Set(), timer: null, busy: false, last: -Infinity, seen: null };
+const mon = { got: new Map(), cards: new Map(), secs: new Map(), box: null, visible: new Set(), timer: null, busy: false, last: -Infinity, seen: null,
+  old: false };                                    // old: the server started before the monitor was, and has no /api/monitor
 const monSig = (a) => `${a.last}|${a.events}|${statusOf(a)[0]}`;
 function monForget() {                                 // left: nothing in view; what was read stays, for coming back
   if (mon.seen) mon.seen.disconnect();
@@ -2864,7 +2869,9 @@ function renderMonitor() {
   by.get("Closed").sort(([, x], [, y]) => (y.last || 0) - (x.last || 0));
   const total = shown.reduce((n, g) => n + g.agents.length, 0);
   const top = el("div", { class: "m-top" },
-    el("h2", { text: `${plural(total, "actor")}${many ? ` in ${plural(shown.length, "gatherer")}` : ""}` }));
+    el("h2", { text: `${plural(total, "actor")}${many ? ` in ${plural(shown.length, "gatherer")}` : ""}` }),
+    mon.old ? el("span", { class: "m-old", role: "status",
+      text: "This dashboard's server is older than its page: restart the dashboard to see each actor's calls and what it said." }) : null);
   const want = new Set(), columns = [];
   for (const n of MON_ORDER) {
     const list = by.get(n);
@@ -2895,7 +2902,7 @@ function renderMonitor() {
 function monCard(g, a, many) {
   const k = key(g.name, a.channel), got = mon.got.get(k), d = got ? got.data : null;
   const current = isAt(focusedActor(), g.name, a.channel), open = !current && openActors().some((sel) => isAt(sel, g.name, a.channel));
-  const sig = signature([a, d, many, current, open, avatarMode, savedAs(g.name, a)]);
+  const sig = signature([a, d, got !== undefined, many, current, open, avatarMode, savedAs(g.name, a)]);   // read, even if to no avail: no "…"
   const had = mon.cards.get(k);
   if (had && had.sig === sig) return had.node;
   const node = drawCard(g, a, d, many, current, open, got !== undefined);
@@ -2991,7 +2998,9 @@ async function monLoad() {
   try {
     const got = await get(`/api/monitor?actors=${enc(JSON.stringify(batch.map((b) => b.ask)))}`);
     batch.forEach((b, i) => { const d = (got.actors || [])[i]; mon.got.set(b.k, { sig: b.sig, data: d && !d.error ? d : null }); });
+    mon.old = false;
   } catch (e) {
+    if (/: 404$/.test(e.message)) mon.old = true;
     for (const b of batch) mon.got.set(b.k, { sig: b.sig, data: (mon.got.get(b.k) || {}).data || null });   // tried again once it changes
   } finally { mon.busy = false; }
   renderMonitor();
@@ -4307,31 +4316,32 @@ const HL = {
   python: { rules: [[/#.*/y, "com"], [/[rRbBuUfF]{0,2}("""|''')[\s\S]*?(?:\1|$)/y, "str"], [/[rRbBuUfF]{0,2}(["'])(?:(?!\1)[^\\\n]|\\.)*\1?/y, "str"],
     [/@[A-Za-z_][\w.]*/y, "meta"], [NUM, "num"], [/[A-Za-z_]\w*/y, "id"]],
     kw: words("and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield"),
-    lit: words("True False None"), defs: words("def class") },
+    lit: words("True False None"), defs: words("def class"), inside: ['"""', "'''"] },
   js: { rules: [...C_COMMENTS, [/`(?:[^`\\]|\\[\s\S])*`?/y, "str"], ...QUOTED, [/@[A-Za-z_][\w.]*/y, "meta"], [NUM, "num"], [/[A-Za-z_$][\w$]*/y, "id"]],
     kw: words("async await break case catch class const continue debugger default delete do else enum export extends finally for function if implements import in instanceof interface let new private protected public return static super switch throw try typeof var void while with yield"),
-    lit: words("true false null undefined this NaN Infinity"), defs: words("function class interface enum") },
+    lit: words("true false null undefined this NaN Infinity"), defs: words("function class interface enum"), inside: ["/*", "`"] },
   json: { rules: [[/"(?:[^"\\\n]|\\.)*"(?=\s*:)/y, "prop"], [/"(?:[^"\\\n]|\\.)*"?/y, "str"], [/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/y, "num"], [/[A-Za-z_]\w*/y, "id"]],
     lit: words("true false null") },
   clike: { rules: [...C_COMMENTS, [/(?<=^[ \t]*)#[ \t]*[a-z]+/my, "meta"], [/#!?\[[^\]\n]*\]/y, "meta"], [/@[A-Za-z_]\w*/y, "meta"], [/"(?:[^"\\\n]|\\.)*"?/y, "str"],
     [/'(?:[^'\\\n]|\\.){1,8}'/y, "str"], [/`[^`]*`?/y, "str"], [NUM, "num"], [/[A-Za-z_]\w*/y, "id"]],
     kw: words("abstract async auto await break case catch char class const continue default defer do double dyn else enum extends extern final float fn for fun func go goto if impl implements import in inline int interface let long loop match mod move mut namespace new override package private protected pub public ref return short signed sizeof static struct super switch template throw throws trait try type typedef typename union unsafe unsigned use using val var virtual void volatile when where while yield"),
-    lit: words("true false null nil NULL nullptr None Some Ok Err self Self this"), defs: words("fn func fun class struct enum trait impl interface type union") },
+    lit: words("true false null nil NULL nullptr None Some Ok Err self Self this"), defs: words("fn func fun class struct enum trait impl interface type union"),
+    inside: ["/*"] },
   toml: { rules: [[/#.*/y, "com"], [/(?<=^[ \t]*);.*/my, "com"], [/(?<=^[ \t]*)\[\[?[^\]\n]*\]\]?/my, "sec"], [/(?<=^[ \t]*)[\w.\-"' ]*?[\w"'](?=[ \t]*=)/my, "prop"],
     [/("""|''')[\s\S]*?(?:\1|$)/y, "str"], ...QUOTED, [/\d{4}-\d\d-\d\d(?:[T ][\d:.]+)?(?:Z|[+-]\d\d:\d\d)?/y, "num"], [/[+-]?(?:\d[\d_]*\.?[\d_]*(?:[eE][+-]?\d+)?|inf|nan)\b/y, "num"],
     [/[A-Za-z_][\w-]*/y, "id"]],
-    lit: words("true false") },
+    lit: words("true false"), inside: ['"""', "'''"] },
   yaml: { rules: [[/(?<=^|[ \t])#.*/my, "com"], [/(?<=^[ \t]*(?:-[ \t]+)*)(?:"[^"\n]*"|'[^'\n]*'|[^\s#'"\-?:,\[\]{}][^\n#]*?)(?=[ \t]*:(?:[ \t]|$))/my, "prop"],
     [/(?<=(?:^|[:\-,\[{])[ \t]*)(?:"(?:[^"\\\n]|\\.)*"?|'[^'\n]*'?)/my, "str"], [/[&*][\w-]+/y, "meta"], [/(?<=^)(?:---|\.\.\.)$/my, "meta"], [NUM, "num"], [/[A-Za-z_][\w-]*/y, "id"]],
     lit: words("true false null True False Null") },
   md: { rules: [[/(?<=^[ \t]{0,3})#{1,6}[ \t].*/my, "sec"], [/(?<=^[ \t]*)(?:```|~~~).*/my, "meta"], [/<!--[\s\S]*?(?:-->|$)/y, "com"], [/(?<=^[ \t]*)>.*/my, "com"],
-    [/(?<=^[ \t]*)(?:[-*+]|\d+[.)])(?=[ \t])/my, "kw"], [/`[^`\n]+`/y, "str"], [/\*\*[^*\n]+\*\*|__[^_\n]+__/y, "b"], [/\[[^\]\n]*\]\([^)\n]*\)/y, "fn"]] },
-  html: { rules: [[/<!--[\s\S]*?(?:-->|$)/y, "com"], [/<![A-Za-z][^>]*>?/y, "meta"], [/<\/?[A-Za-z][\w:.-]*(?:[^>"']|"[^"]*"|'[^']*')*>?/y, tagTokens], [/&#?\w+;/y, "num"]] },
+    [/(?<=^[ \t]*)(?:[-*+]|\d+[.)])(?=[ \t])/my, "kw"], [/`[^`\n]+`/y, "str"], [/\*\*[^*\n]+\*\*|__[^_\n]+__/y, "b"], [/\[[^\]\n]*\]\([^)\n]*\)/y, "fn"]], inside: ["<!--"] },
+  html: { rules: [[/<!--[\s\S]*?(?:-->|$)/y, "com"], [/<![A-Za-z][^>]*>?/y, "meta"], [/<\/?[A-Za-z][\w:.-]*(?:[^>"']|"[^"]*"|'[^']*')*>?/y, tagTokens], [/&#?\w+;/y, "num"]], inside: ["<!--"] },
   css: { rules: [[/\/\*[\s\S]*?(?:\*\/|$)/y, "com"], ...QUOTED, [/@[\w-]+/y, "kw"], [/-{0,2}[A-Za-z_][\w-]*(?=[ \t]*:[^{};\n]*(?:[;}]|$))/my, "prop"], [/--[\w-]+/y, "prop"],
-    [/#[\da-fA-F]{3,8}(?![\w-])/y, "num"], [/-?(?:\d+\.?\d*|\.\d+)(?:%|[a-zA-Z]+)?/y, "num"], [/!important\b/y, "kw"], [/[A-Za-z_-][\w-]*/y, "id"]] },
+    [/#[\da-fA-F]{3,8}(?![\w-])/y, "num"], [/-?(?:\d+\.?\d*|\.\d+)(?:%|[a-zA-Z]+)?/y, "num"], [/!important\b/y, "kw"], [/[A-Za-z_-][\w-]*/y, "id"]], inside: ["/*"] },
   sql: { rules: [[/--.*/y, "com"], [/\/\*[\s\S]*?(?:\*\/|$)/y, "com"], [/'(?:[^']|'')*'?/y, "str"], [NUM, "num"], [/[A-Za-z_]\w*/y, "id"]], ci: true,
     kw: words("all alter and as asc begin between by case check collate commit create cross default delete desc distinct drop else end exists explain foreign from glob group having if ignore in index inner insert into is join key left like limit not null offset on or order outer pragma primary recursive references replace returning right rollback select set table then transaction trigger union unique update using vacuum values view when where with"),
-    lit: words("true false") },
+    lit: words("true false"), inside: ["/*"] },
   diff: { rules: [[/^(?:\+\+\+|---|\*\*\*|diff |index ).*/my, "meta"], [/^@@.*/my, "fn"], [/^\+.*/my, "add"], [/^-.*/my, "del"], [/.+/y, ""]] },
   console: { rules: [[/^[$%] .*/my, (m) => [["sp", m[0].slice(0, 2)], ...hlTokens(m[0].slice(2), "shell")]], [/.+/y, ""]] },   // a session: its commands after their prompts
   shell: {},                                                                                                                   // read by shLex
@@ -4408,19 +4418,100 @@ function tokenLines(toks) {
   });
   return lines;
 }
-const hlCache = new Map();
-// `text` as HTML lines, coloured as `lang` (one hlLang gives; none: only escaped). The same text colours the same.
-function hlLines(text, lang) {
+// `text` read as beginning inside `inside` (a comment's or a string's opening, "" none): the opening put before it,
+// and taken off the token it begins
+function hlTokensIn(text, lang, inside) {
+  if (!inside) return hlTokens(text, lang);
+  const toks = hlTokens(inside + text, lang);
+  toks[0] = [toks[0][0], toks[0][1].slice(inside.length)];
+  return toks[0][1] ? toks : toks.slice(1);
+}
+// A part of a file (lines read, a change, a search's hits) may begin inside a comment or a string opened above it,
+// which then ends in it. Read from code, its words colour as code, and a string's closing quotes open one that runs on
+// to the end. What it begins inside (one of the language's `inside`; "" none), told by the first closing of one in
+// it: a comment's end (*/, -->) where code is read, or quotes the same at both ends (""", `) that close a string
+// (quoteRole). Without one, code. Each of `texts` is the same place read on (a change's lines before and after it).
+const HL_ENDS = { "/*": "*/", "<!--": "-->" };
+function hlInside(lang, ...texts) {
+  const L = HL[lang];
+  if (!L || !L.inside) return "";
+  for (const text of texts) {
+    if (!text) continue;
+    const toks = [];                                 // read from code: each token with where it starts
+    let at = 0;
+    for (const [cls, t] of hlTokens(text, lang)) { toks.push([cls, t, at]); at += t.length; }
+    const tokAt = (p) => toks.find(([, t, a]) => p >= a && p < a + t.length);
+    const lead = (t) => /^[A-Za-z]{0,2}/.exec(t)[0].length;   // a string's prefix: r""" f"
+    // a string that ends as it began ("**/*.js", '"""'), not one an apostrophe in a comment's words began
+    const closed = (t) => { const s = t.slice(lead(t)); return s.length > 1 && s.endsWith(s[0]); };
+    let best = null;                                 // [where its closing ends, the opening]
+    for (const open of L.inside) {
+      const end = HL_ENDS[open] || open;
+      for (let p = text.indexOf(end); p >= 0; p = text.indexOf(end, p + 1)) {
+        const [cls, t, a] = tokAt(p);
+        if (cls === "com" || (cls === "str" && p !== a + lead(t) && closed(t))) continue;   // in a comment, or a string
+        const ends = HL_ENDS[open]
+          // a comment's end with no opening before it, and a space after it: a regex's /a*/ has its flags
+          ? !text.slice(0, p).includes(open) && !/\S/.test(text[p + end.length] || " ")
+          : quoteRole(text, p, end) === "close";
+        if (ends && (!best || p < best[0])) best = [p + end.length, open];
+        break;
+      }
+    }
+    // read from inside it, what it opens must run to that closing: none comes first (in a string, read from code)
+    if (best && ((hlTokensIn(text, lang, best[1])[0] || [])[1] || "").length >= best[0]) return best[1];
+  }
+  return "";
+}
+// Whether quotes the same at both ends (""", ''', `) at `p` open a string or close one, by what is around them: a
+// value's place before them (=, (, return) or words after them open one; words before them, or ), ; or . after them,
+// close one. Alone on their line, the line before says (a def's colon or a value's place opens one, words close it),
+// and on the first line, the one after (code: they closed one). null: no telling.
+function quoteRole(text, p, q) {
+  const ls = text.lastIndexOf("\n", p - 1) + 1, le = text.indexOf("\n", p) < 0 ? text.length : text.indexOf("\n", p);
+  const raw = text.slice(ls, p);
+  if (q.length === 3 && /(?:^|[^\w])[rRbBuUfF]{1,2}$/.test(raw)) return "open";      // r""" b''' f"""
+  const b = raw.trim(), a = text.slice(p + q.length, le).trim();
+  // a script's template comes after a ternary's ? or an ||, a docstring's words may end with either; a backtick in a
+  // regex (/`|\*\*/, [^`]) follows its marks
+  if (q === "`" && /[/\\[^$|]$/.test(b)) return null;
+  if (b) return (q === "`" ? /(?:[=(,[{:?+|&]|=>|\b(?:return|yield|await|in|of))$/ : /(?:[=(,[{:+]|\b(?:return|yield|await))$/).test(b) ? "open" : "close";
+  if (a) return /^(?:[)\]},.;:+%#]|\/\/)/.test(a) ? "close" : "open";
+  const prev = text.slice(0, ls).split("\n").reverse().find((l) => l.trim());
+  if (prev !== undefined) return /(?:[:=([{+]|=>)\s*$/.test(prev) ? "open" : "close";
+  const next = text.slice(le + 1).split("\n").find((l) => l.trim());
+  return next !== undefined && HL_CODE_LINE.test(next.trim()) ? "close" : null;
+}
+// a line that is plainly code, not words: a def, an import, an assignment, a call, a statement's end
+const HL_CODE_LINE = /^(?:(?:async\s+)?def\s+\w+\s*\(|class\s+\w+|import\s+[\w.{*]|from\s+[\w.]+\s+import\b|@[\w.]+|(?:const|let|var)\s+[\w${[]|function\b|export\b|[\w.$[\]]+\s*(?:[-+*/%|&]|\*\*|\/\/)?=(?!=)|[\w.$]+\(.*\)[;,]?$|[})\]])|[;{]$/;
+const hlCache = new Map(), hlInCache = new Map();
+// `text` as HTML lines, coloured as `lang` (one hlLang gives; none: only escaped), read from inside `inside` if given
+// (hlInside). The same text colours the same.
+function hlLines(text, lang, inside = "") {
   text = String(text ?? "");
   if (!lang || !HL[lang] || text.length > 300000) return text.split("\n").map(escapeHtml);
-  const k = lang + "\0" + text;
+  const k = lang + "\0" + inside + "\0" + text;
   let got = hlCache.get(k);
   if (!got) {
-    try { got = tokenLines(hlTokens(text, lang)); } catch (e) { got = text.split("\n").map(escapeHtml); }
+    try { got = tokenLines(hlTokensIn(text, lang, inside)); } catch (e) { got = text.split("\n").map(escapeHtml); }
     if (hlCache.size > 500) hlCache.clear();
     hlCache.set(k, got);
   }
   return got;
+}
+// A part of a file as HTML lines, coloured as the file's language (`lang`, langOfPath's; a web page's part as its
+// markup, style or script), read from inside the comment or string it begins in (hlInside). Each of `texts` is the
+// same place read on, so all begin inside the same: [the lines of each].
+function hlPart(lang, ...texts) {
+  texts = texts.map((t) => String(t ?? ""));
+  const L = lang === "html" ? guessWeb(texts.join("\n")) : lang, k = L + "\0" + texts.join("\0\0");
+  let inside = hlInCache.get(k);
+  if (inside === undefined && L && HL[L] && texts.every((t) => t.length <= 300000)) {
+    try { inside = hlInside(L, ...texts); } catch (e) { inside = ""; }
+    if (hlInCache.size > 500) hlInCache.clear();
+    hlInCache.set(k, inside);
+  }
+  return texts.map((t) => hlLines(t, L, inside || ""));
 }
 const shellSpan = (text) => { const s = el("span", { class: "sh-t" }); s.innerHTML = hlLines(text, "shell").join("\n"); return s; };
 
@@ -5380,8 +5471,7 @@ function callView(call, output, error) {
     return el("div", { class: "cv-in " + cls }, src,
       copy === undefined ? null : el("button", { type: "button", class: "code-copy", title: "Copy it as written", "data-copy": copy }, "Copy"));
   };
-  const lined = (t, lang, cls, mark) => hlLines(t, lang === "html" ? guessWeb(t) : lang)
-    .map((h) => `<div class="cl ${cls}"><span class="mk">${mark}</span><span class="tx">${h || "&#8203;"}</span></div>`).join("");
+  const lined = (hs, cls, mark) => hs.map((h) => `<div class="cl ${cls}"><span class="mk">${mark}</span><span class="tx">${h || "&#8203;"}</span></div>`).join("");
   const cwd = ((selectedInfo() || {}).cwd || "").replace(/\/$/, "");   // a path from the session's directory, else from ~
   const path = (p) => el("div", { class: "cv-path", title: str(p), text: cwd && str(p).startsWith(cwd + "/") ? str(p).slice(cwd.length + 1) : tildePath(str(p), homeDir()) });
   const cmd = shellCommand(call);
@@ -5398,8 +5488,10 @@ function callView(call, output, error) {
   } else if (["Edit", "MultiEdit", "Write", "NotebookEdit"].includes(call.name)) {
     const p = input.file_path || input.notebook_path, lang = call.name === "NotebookEdit" ? "python" : langOfPath(p);
     const edits = call.name === "MultiEdit" ? input.edits || [] : call.name === "Edit" ? [input] : [];
-    const html = edits.length ? edits.map((e) => lined(str(e.old_string), lang, "del", "−") + lined(str(e.new_string), lang, "add", "+")).join('<div class="cv-sep"></div>')
-      : lined(str(input.content ?? input.new_source), lang, "", "");
+    // a change's two sides read from inside a comment or a string they begin in; a whole file, or cell, from its top
+    const whole = str(input.content ?? input.new_source), pair = (e) => hlPart(lang, str(e.old_string), str(e.new_string));
+    const html = edits.length ? edits.map((e) => { const [was, now] = pair(e); return lined(was, "del", "−") + lined(now, "add", "+"); })
+      .join('<div class="cv-sep"></div>') : lined(hlLines(whole, lang === "html" ? guessWeb(whole) : lang), "", "");
     box.append(path(p), code("diff", html));
   } else {
     const args = typeof call.input === "string" || !call.input ? [["", str(call.input)]] : Object.entries(input);
@@ -5451,15 +5543,16 @@ const fileLine = (n, cls, mark, text, html) => {
   return el("div", { class: "ln " + cls }, el("span", { class: "no", text: n === null || n === undefined ? "" : String(n) }), el("span", { class: "mk", text: mark }), tx);
 };
 const fileGap = (text) => el("div", { class: "gap", text });
-// a block of the file's lines (`lang` the file's language, langOfPath), each run of them coloured together; what a
-// command printed (an "output" block) as it printed it
+// a block of the file's lines (`lang` the file's language, langOfPath), each run of them coloured together -- from
+// inside a comment or a string it begins in, unless it starts at the file's top (hlPart); what a command printed (an
+// "output" block) as it printed it
 function fileBlock(b, lang) {
   const out = [];
-  const hl = (ls) => { const t = ls.join("\n"); return lang ? hlLines(t, lang === "html" ? guessWeb(t) : lang) : ls.map(escapeHtml); };
+  const hl = (ls, top) => { const t = ls.join("\n"); return top ? hlLines(t, lang === "html" ? guessWeb(t) : lang) : hlPart(lang, t)[0]; };
   const cut = () => { if (b.cut) out.push(fileGap(`+${plural(b.cut, "more line")} not shown`)); };
   if (b.t === "lines") {
     if (b.start === null) out.push(fileGap("where in the file is not known"));
-    const h = hl(b.lines);
+    const h = hl(b.lines, b.start === 1);
     b.lines.forEach((t, i) => out.push(fileLine(b.start === null ? null : b.start + i, "read", "", t, h[i])));
     cut();
   } else if (b.t === "output") {                 // the file's lines are somewhere in it: which, not known
@@ -5480,20 +5573,21 @@ function fileBlock(b, lang) {
   } else if (b.t === "diff") {
     if (b.at === null) out.push(fileGap("where in the file is not known: its lines were not seen"));
     const above = b.above || [], below = b.below || [], ctx = (rows) => rows.map((r) => r[1]);
-    // the lines before and after, coloured once with the old lines between them and once with the new
-    const was = hl([...ctx(above), ...b.old, ...ctx(below)]), now = hl([...ctx(above), ...b.new, ...ctx(below)]);
+    // the lines before and after, coloured once with the old lines between them and once with the new, both from
+    // inside what the lines above begin in
+    const [was, now] = hlPart(lang, [...ctx(above), ...b.old, ...ctx(below)].join("\n"), [...ctx(above), ...b.new, ...ctx(below)].join("\n"));
     above.forEach(([n, t], i) => out.push(fileLine(n, "ctx", "", t, was[i])));
     b.old.forEach((t, i) => out.push(fileLine(b.at === null ? null : b.at + i, "del", "−", t, was[above.length + i])));
     b.new.forEach((t, i) => out.push(fileLine(b.at === null ? null : b.at + i, "add", "+", t, now[above.length + i])));
     below.forEach(([n, t], i) => out.push(fileLine(n, "ctx", "", t, now[above.length + b.new.length + i])));
     out.push(el("div", { class: "sep" }));
   } else if (b.t === "write") {
-    const h = hl(b.lines);
+    const h = hl(b.lines, true);
     b.lines.forEach((t, i) => out.push(fileLine(i + 1, "add", "+", t, h[i])));
     cut();
   } else if (b.t === "append") {
     out.push(fileGap("added at the end of the file"));
-    const h = hl(b.lines);
+    const h = hl(b.lines, true);
     b.lines.forEach((t, i) => out.push(fileLine(null, "add", "+", t, h[i])));
     cut();
   } else if (b.t === "image") {
