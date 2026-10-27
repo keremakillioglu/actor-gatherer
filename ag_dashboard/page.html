@@ -112,6 +112,12 @@ header .about-btn .gear .state-dot { position: absolute; right: -2px; bottom: -1
 .controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; flex: 0 1 auto; min-width: 0; }
 .controls:empty { visibility: hidden; }
 .controls .details-btn { display: inline-flex; align-items: center; padding: 5px 7px; }
+/* a shell's Terminate (shellCard): a word beside its mark, so it is not taken for the pane's × */
+.controls .terminate { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; font-size: 12.5px; color: var(--ink-2); }
+.controls .terminate svg { display: block; }
+.controls .terminate:hover:not(:disabled), .controls .terminate:focus-visible { color: var(--critical);
+  border-color: color-mix(in srgb, var(--critical) 55%, var(--ring)); }
+.pane-head .terminate { grid-area: views; }
 .controls .details-btn svg { display: block; }
 .controls .details-btn[aria-expanded="true"] { background: var(--selected); border-color: transparent; }
 button { font: inherit; font-size: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
@@ -177,6 +183,15 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .name { font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
 .agent .name + .asked { font-size: 12px; font-weight: 400; color: var(--ink-2); -webkit-line-clamp: 2; }
+/* the one shown: its top line clicked names it */
+.agent[aria-current="true"] .name[title], .agent[aria-current="true"] .asked[title] { cursor: text; }
+.agent.renaming { cursor: default; }
+.agent .name-box { display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; font-weight: 600; line-height: 1.4;
+  color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 5px; padding: 1px 6px; margin: -2px 0 -2px -7px;
+  width: calc(100% + 7px); outline: none; }
+.agent .name-box:focus { border-color: var(--ink-2); }
+.agent .name-box::placeholder { color: var(--muted); font-weight: 400; }
+.agent.renaming .name-box + .asked { font-size: 12px; font-weight: 400; color: var(--ink-2); -webkit-line-clamp: 2; }
 .agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .agent .meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
 .agent .meta .dot.building { background: var(--warning); } .agent .meta .dot.failed { background: var(--critical); }
@@ -562,12 +577,19 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .gatherer-row .act.add { font-size: 16px; }
 .gatherer-row .act:disabled { cursor: default; opacity: .45; }
 .gatherer-row .act:disabled:hover { background: none; color: var(--muted); }
+/* a shell's mark: a terminal's window, in the terminal's colours -- in the list, its pane's head */
+.logo.shell-logo { width: 28px; height: 28px; margin-top: 1px; border-radius: 7px; display: grid; place-items: center;
+  background: var(--term-bg); color: var(--term-ink); box-shadow: inset 0 0 0 1px var(--ring); }
+.pane-who .shell-logo { width: 20px; height: 20px; border-radius: 5px; margin: 0; flex: none; }
+.pane-who .shell-logo svg { width: 14px; height: 14px; }
 /* a start button: "+" and its harness's mark, the tooltip the button's (not the mark's own) */
 .gatherer-row .act.start { gap: 1px; padding: 0 4px; font-size: 14px; }
 .gatherer-row .act.start + .act.start { margin-left: 2px; }
 .gatherer-row .act.start .badge { width: 16px; height: 16px; display: block; pointer-events: none; }
 .gatherer-row .act.start.busy { opacity: 1; }
 .gatherer-row .act.start.busy .badge { animation: term-blink 1s ease-in-out infinite; }
+.gatherer-row .act.start.shell svg { display: block; pointer-events: none; }
+.gatherer-row .act.start.shell.busy svg { animation: term-blink 1s ease-in-out infinite; }
 .newform { margin: 4px 16px 12px; padding: 10px 12px; border: 1px solid var(--ring); border-radius: 8px; background: var(--page); display: grid; gap: 8px; }
 .newform label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); }
 .newform input, .newform select, .composer textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
@@ -1758,7 +1780,8 @@ let state = { home: null, selected: null, agent: null, readId: null, context: nu
   details: !!SNAPSHOT,  // the details panel open beside the chat: at first in a snapshot, which has no conversation
   detailsTab: (() => { try { const v = localStorage.getItem(DETAILS_KEY); return v === "gatherer" || v === "context" ? v : "actor"; } catch (e) { return "actor"; } })(),
   chat: null,           // the history feed's messages: {key, items (stored, append-only), pending, last_row}
-  adding: null };       // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
+  adding: null,         // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
+  renaming: null };     // the actor being named in the list: {g, c, value (as typed so far), was (its name before)}
 if (PANE) state.selected = [PANE_URL.get("gatherer") || "", PANE_URL.get("channel") || ""];
 // The actors open side by side (panes, below): this page's own view (`here`, its actor state.selected), the
 // first, and the others (`others`), each the page in a frame; `focus` the one a click in the list shows its
@@ -2117,6 +2140,7 @@ const ICONS = {
   sidebar: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM6.25 2.75v10.5",
   pulse: "M1.5 8.5h2.75l1.75-4.25 2.5 7.5 2-5.5 1.25 2.25h2.75",   // what runs in the background: alive
   code: "M5.25 4.75L2 8l3.25 3.25M10.75 4.75L14 8l-3.25 3.25M9.25 2.75l-2.5 10.5",   // the Editor: a file's code
+  power: "M8 1.75v5.5M4.6 3.9a5.25 5.25 0 1 0 6.8 0",                  // a shell terminated
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -2169,6 +2193,11 @@ const statusOf = (a) => sessionStatus(a.session) || (opened(a) ? ["running", "Ru
 // to resume it in. Its message box works while no other process has it open (data.py's `chattable`).
 const CHAT_HARNESSES = ["claude", "codex"];
 const hasChat = (a) => !!a && (!!a.session || (CHAT_HARNESSES.includes(a.harness) && !!a.cwd));
+// A shell: the user's own shell in a terminal, opened from a gatherer's row (sessions.py's `shell`) and listed under it --
+// no actor, but shown as one is, in a pane, by its id in a channel's place ("shell:…", which no channel is).
+const isShell = (c) => typeof c === "string" && c.startsWith("shell:");
+const shellOf = (c) => (isShell(c) && state.home && (state.home.shells || []).find((s) => s.id === c)) || null;
+const shellPath = (s) => tildePath(s.cwd, state.home && state.home.home_dir);
 const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
 
 async function get(path) {
@@ -2196,7 +2225,7 @@ async function loadHome() {
   if (!hidingMoved && !PANE) { hidingMoved = true; await moveHidingToServer(); }
 }
 async function loadAgent() {
-  if (!state.selected) return;
+  if (!state.selected || isShell(state.selected[1])) return;
   const [g, c] = state.selected;
   await takeAgent(SNAPSHOT ? SNAPSHOT.agents[key(g, c)] || null
     : await get(`/api/agent?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`));
@@ -2269,7 +2298,7 @@ function loadChatHistory() {
 // What the chat shows, loaded: the feed its view draws from (chat views, below), for the selected actor --
 // any actor: one that cannot be messaged here is shown all the same, without the message box.
 async function loadChat() {
-  if (!state.selected || SNAPSHOT) return;
+  if (!state.selected || SNAPSHOT || isShell(state.selected[1])) return;
   try { await chatFeed().load(); } catch (err) { /* no database yet: the gatherer is made on the first call */ }
 }
 async function loadChatHistoryNow() {
@@ -2326,11 +2355,12 @@ function render(userAction = false) {
     if (!heldDraw) heldDraw = setTimeout(() => { heldDraw = null; render(); }, TYPING_MS - since + 10);
     return;
   }
-  const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.saved, state.home.seen, state.home.harnesses, paneSig(),
+  const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.saved, state.home.seen, state.home.harnesses,
+    state.home.shells, paneSig(),
     opened(selectedInfo()),
     Math.floor(Date.now() / AGO_MS)]);
   // "ago" texts: every 30 s; not while a form in the list is open, which a redraw would empty
-  if ((userAction || agents !== drawn.agents) && !(state.adding && !userAction)) { renderAgents(); drawn.agents = agents; }
+  if ((userAction || agents !== drawn.agents) && !((state.adding || state.renaming) && !userAction)) { renderAgents(); drawn.agents = agents; }
   const view = mainSignature();
   if (userAction || view !== drawn.main) { const end = chatAtEnd(); keepingPlace(renderMain); drawn.main = view; if (end) chatToEnd(); }
   drawWho();
@@ -2517,9 +2547,9 @@ function connect() {
   if (PANE) { state.stream = PANE.stream; paneUrl(); PANE.shows(window, state.selected); return; }
   if (state.stream) { state.stream.close(); state.stream = null; }
   if (SNAPSHOT || state.paused) return;
-  const sel = state.selected;
-  const q = [...(sel ? [`gatherer=${encodeURIComponent(sel[0])}`, `channel=${encodeURIComponent(sel[1])}`] : []),
-    ...(panes.others.length ? [`also=${encodeURIComponent(JSON.stringify(panes.others.map((p) => [p.g, p.c])))}`] : [])];
+  const sel = state.selected, also = panes.others.filter((p) => !isShell(p.c));   // a shell: nothing to stream but its terminal
+  const q = [...(sel && !isShell(sel[1]) ? [`gatherer=${encodeURIComponent(sel[0])}`, `channel=${encodeURIComponent(sel[1])}`] : []),
+    ...(also.length ? [`also=${encodeURIComponent(JSON.stringify(also.map((p) => [p.g, p.c])))}`] : [])];
   const es = new EventSource("/api/stream" + (q.length ? "?" + q.join("&") : ""));
   state.stream = es;
   panes.actors.clear();
@@ -2640,8 +2670,9 @@ const collapsed = (() => {                        // gatherers the reader folded
   return new Set();
 })();
 // Closed actors (their process gone), and those saved for later, are each folded away under a line ("N closed",
-// "N saved"), unless the reader opened that gatherer's, kept in this browser. A selected one stays in view.
-const FOLD_KEYS = { Closed: "ag-dashboard-closed-shown", Saved: "ag-dashboard-saved-shown" };
+// "N saved"), unless the reader opened that gatherer's, kept in this browser. A selected one stays in view. So are the
+// gatherer's shells ("N terminals", SHELLS) -- but none in view while folded, even one open in a pane.
+const FOLD_KEYS = { Closed: "ag-dashboard-closed-shown", Saved: "ag-dashboard-saved-shown", Terminals: "ag-dashboard-terminals-shown" };
 const foldOpen = Object.fromEntries(Object.entries(FOLD_KEYS).map(([group, key]) => {
   try { const v = JSON.parse(localStorage.getItem(key)); if (Array.isArray(v)) return [group, new Set(v)]; } catch (e) { /* none kept */ }
   return [group, new Set()];
@@ -2716,6 +2747,8 @@ function renderAgents() {
   renderFolded();
   const aside = document.getElementById("agents");
   const was = listPlaces(aside);
+  const typing = nameInput && document.activeElement === nameInput && [nameInput.selectionStart, nameInput.selectionEnd];
+  nameMoving = true;                                 // taken out and put back: not a blur that names it
   document.getElementById("home").textContent = document.getElementById("home").title = state.home.home;
   const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
   aside.replaceChildren(el("div", { class: "aside-head" }, el("h2", { text: "Actors" }),
@@ -2750,7 +2783,20 @@ function renderAgents() {
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
     for (const [name, list] of groups) if (name === "Closed") list.sort((x, y) => (y.last || 0) - (x.last || 0));
     keepOrder(g.name, groups);   // so drawn first; from then on, each group in the order its actors were last in
+    const shells = (state.home.shells || []).filter((s) => s.gatherer === g.name);
+    if (shells.length) {         // its shells, oldest first, just above the closed actors
+      const at = groups.findIndex(([name]) => name === "Closed");
+      groups.splice(at < 0 ? groups.length : at, 0, [SHELLS, shells]);
+    }
     for (const [name, list] of open ? groups : []) {
+      if (name === SHELLS) {
+        const shown = foldOpen[name].has(g.name);
+        box.append(el("button", { class: "agent-group", type: "button", "aria-expanded": shown ? "true" : "false", "data-key": `${g.name}/${name}`,
+          title: shown ? "Hide the terminals" : "Show the terminals", onclick: () => toggleFold(name, g.name) },
+          `${shown ? "▾" : "▸"} ${plural(list.length, "terminal")}`));
+        for (const s of shown ? list : []) box.append(shellRow(g, s));
+        continue;
+      }
       if (name in FOLD_KEYS) {
         const shown = foldOpen[name].has(g.name), what = name.toLowerCase();
         const selected = list.filter((a) => openActors().some((sel) => isAt(sel, g.name, a.channel)));
@@ -2776,6 +2822,9 @@ function renderAgents() {
     aside.append(list);
   }
   slideList(aside, was);
+  nameMoving = false;
+  if (state.renaming && !(nameInput && nameInput.isConnected)) { state.renaming = null; nameInput = null; }   // its row folded away
+  else if (typing) { nameInput.focus({ preventScroll: true }); nameInput.setSelectionRange(...typing); }
   const servers = state.home.hook_servers || [];     // in the dashboard's panel (the header's button)
   document.getElementById("servers").textContent = servers.length
     ? servers.map((s) => `:${s.port} → ${s.upstream}`).join("\n") : "None running.";
@@ -2797,14 +2846,22 @@ function agentRow(g, a, group) {
   const current = isAt(focusedActor(), g.name, a.channel);
   const open = !current && openActors().some((sel) => isAt(sel, g.name, a.channel));
   const size = a.real_tokens ?? a.sent_tokens;
-  return el("button", { class: "agent", type: "button", "aria-current": current ? "true" : "false", "data-key": `${g.name}/${a.channel}`, "data-group": group,
+  const naming = !!state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, a.channel);
+  const named = a.name && a.name.text;
+  // its top line -- its name, else what it was last asked -- clicked once it is the one shown: named there
+  const nameIt = SNAPSHOT || !current ? {} : { title: `${nameNote(g, a)}Click to ${named ? "rename" : "name"} it`,
+    onclick: (ev) => { if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return; ev.stopPropagation(); startRename(g, a); } };
+  return el(naming ? "div" : "button", { class: "agent" + (naming ? " renaming" : ""), ...(naming ? {} : { type: "button" }),
+    "aria-current": current ? "true" : "false", "data-key": `${g.name}/${a.channel}`, "data-group": group,
     ...(open ? { "data-open": "true" } : {}),
     title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: open beside the one shown`}`,
-    onclick: (ev) => pick(g.name, a.channel, ev), oncontextmenu: (ev) => pickBeside(g.name, a.channel, ev) },
+    ...(naming ? {} : { onclick: (ev) => pick(g.name, a.channel, ev), oncontextmenu: (ev) => pickBeside(g.name, a.channel, ev),
+      onkeydown: (ev) => { if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startRename(g, a); } } }) },
     actorLogo(a),
     el("div", {},
-      a.name && a.name.text ? el("div", { class: "name", text: a.name.text }) : null,
-      el("div", { class: "asked" + (a.last_user_message ? "" : " none"), text: a.last_user_message || "No message yet" }),
+      naming ? nameBox() : named ? el("div", { class: "name", ...nameIt, text: named }) : null,
+      el("div", { class: "asked" + (a.last_user_message ? "" : " none"), ...(naming || named ? {} : nameIt),
+        text: a.last_user_message || "No message yet" }),
       a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
         el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
       // the list is drawn again on every change: the glyph's turn set by the clock, not restarted each time
@@ -2825,6 +2882,90 @@ function agentRow(g, a, group) {
           : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false))),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
         `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null));
+}
+// Naming an actor: its top line in the list, clicked once it is the one shown, becomes a box with its name in it;
+// Enter (or a click elsewhere in the page) keeps what is typed, Esc leaves it as it was, and nothing typed takes the
+// reader's name back -- the harness's own, or what it was last asked, shows again. Kept as an event in its gatherer
+// and given to its harness (POST /api/name): Claude Code's or codex's own list of sessions shows it, and a session
+// in the dashboard's terminal is told with its harness's /rename once its turn is over. The box is one element
+// for as long as it is open (`nameInput`), put back in each redraw of the list (`nameMoving`), its caret kept.
+let nameInput = null, nameMoving = false;
+const nameAnswers = new Map();                       // what came of each name given from this page: actor -> the answer
+const nameKey = (gname, c) => `${gname}\u0000${c}`;
+function nameNote(g, a) {
+  if (!a.name || !a.name.text) return "";
+  if (a.name.by !== "user") return `${a.name.by === "codex" ? "Codex's" : "Its harness's"} name for it\n`;
+  const how = nameAnswers.get(nameKey(g.name, a.channel));
+  return "Named by you" + (!how ? "" : how.error ? ` · not in ${harnessName(a.harness)}: ${how.error}`
+    : how.store || how.terminal ? ` · in ${harnessName(a.harness)} too` : "") + "\n";
+}
+function startRename(g, a) {
+  if (state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, a.channel)) return;
+  const was = (a.name && a.name.by === "user" && a.name.text) || "";
+  state.renaming = { g: g.name, c: a.channel, value: (a.name && a.name.text) || "", was };
+  nameInput = null;
+  renderAgents();
+  if (nameInput) { nameInput.focus(); nameInput.select(); }
+}
+function nameBox() {
+  if (nameInput) return nameInput;
+  const r = state.renaming;
+  nameInput = el("input", { class: "name-box", type: "text", maxlength: "120", spellcheck: "false", autocomplete: "off",
+    placeholder: "Name this actor", "aria-label": "This actor's name" });
+  nameInput.value = r.value;
+  nameInput.addEventListener("input", () => { r.value = nameInput.value; });
+  nameInput.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();                            // the page's own keys are not this box's
+    if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); endRename(true); }
+    else if (ev.key === "Escape") { ev.preventDefault(); endRename(false); }
+  });
+  // a click elsewhere keeps it; not a redraw (`nameMoving`), nor the window going to the back (it comes back focused)
+  nameInput.addEventListener("blur", () => { if (!nameMoving && document.hasFocus() && state.renaming === r) endRename(true); });
+  return nameInput;
+}
+async function endRename(keep) {
+  const r = state.renaming;
+  if (!r) return;
+  state.renaming = null; nameInput = null;
+  const g = state.home.gatherers.find((x) => x.name === r.g), a = g && g.agents.find((x) => x.channel === r.c);
+  const text = r.value.replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!keep || !a || text === ((a.name && a.name.text) || "") || (!text && !r.was)) { renderAgents(); return; }
+  const before = a.name;
+  a.name = text ? { text, by: "user" } : null;     // shown at once; the gatherer's event confirms it (the harness's own back)
+  renderAgents(); drawWho();
+  try {
+    const got = await post("/api/name", { gatherer: r.g, channel: r.c, name: text, harness: a.harness, cwd: a.cwd });
+    nameAnswers.set(nameKey(r.g, r.c), got);
+    if (got.error) setLive(`${text ? "Named" : "Name taken back"} here; not in ${harnessName(a.harness)}: ${got.error}`);
+  } catch (err) {
+    a.name = before;
+    setLive(`Not named: ${err.message}`);
+  }
+  renderAgents(); drawWho();
+}
+// A shell's row (isShell): where it was opened, and when; its close button closes its terminal, as a window's does.
+const SHELLS = "Terminals";
+function shellRow(g, s) {
+  const current = isAt(focusedActor(), g.name, s.id);
+  const open = !current && openActors().some((sel) => isAt(sel, g.name, s.id));
+  const where = shellPath(s), close = (ev) => { ev.stopPropagation(); closeShell(s); };
+  return el("button", { class: "agent shell", type: "button", "aria-current": current ? "true" : "false", "data-key": `${g.name}/${s.id}`,
+    "data-group": SHELLS, ...(open ? { "data-open": "true" } : {}),
+    title: `Terminal · ${s.cwd}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: open beside the one shown`}`,
+    onclick: (ev) => pick(g.name, s.id, ev), oncontextmenu: (ev) => pickBeside(g.name, s.id, ev) },
+    shellLogo(),
+    el("div", {},
+      el("div", { class: "name", text: where.split("/").filter(Boolean).pop() || where }),
+      el("div", { class: "asked", text: where }),
+      el("div", { class: "meta" }, el("span", { text: `Terminal · opened ${ago(s.since)}` }),
+        el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Terminate: end the shell, and whatever runs in it",
+          "aria-label": "Terminate the terminal", onclick: close,
+          onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); close(ev); } } }, closeIcon()))));
+}
+const shellLogo = () => el("span", { class: "logo shell-logo", "aria-hidden": "true" }, strokeIcon(ICONS.terminal, 18));
+async function closeShell(s) {
+  try { await post("/api/shells/close", { id: s.id }); }
+  catch (err) { setLive(`Not closed: ${err.message}`); }
 }
 // The group an actor is listed under: those waiting on the user first, then those stopped on an error, then saved for later
 // (idle or closed, saved by the reader), then running, then those whose turn is over but something they started still runs,
@@ -3248,7 +3389,7 @@ function openBeside(g, c) {
 function addPane(g, c, view, at, size = 1) {
   const p = { g, c, view: view || null, size, ready: false };
   const q = new URLSearchParams({ pane: "1", gatherer: g, channel: c, ...(view ? { view } : {}) });
-  p.frame = el("iframe", { src: `/?${q}`, title: `Actor ${c} of ${g}` });
+  p.frame = el("iframe", { src: `/?${q}`, title: isShell(c) ? `Terminal in ${g}` : `Actor ${c} of ${g}` });
   p.node = el("section", { class: "pane" }, p.frame);
   p.gutter = gutterFor(p);
   p.call = (what, ...args) => {                      // what the frame's page does when asked (agPane, its paneReady)
@@ -3322,6 +3463,16 @@ if (!PANE) NARROW.addEventListener("change", () => { panes.top = null; topRow("b
 // The pane's head: whose it is, as the list has the actor -- its avatar, its name or what it was last asked.
 function drawWho() {
   if (!PANE && !panes.others.length) return;
+  const sh = state.selected && isShell(state.selected[1]) ? shellOf(state.selected[1]) : null;
+  if (sh) {
+    const sig = signature([state.selected, sh, state.home.home_dir]);
+    if (sig === drawn.who) return;
+    drawn.who = sig;
+    const who = document.getElementById("pane-who");
+    who.replaceChildren(shellLogo(), el("span", { class: "tx", text: shellPath(sh) }));
+    who.title = `Terminal · ${sh.gatherer}\n${sh.cwd}`;
+    return;
+  }
   const info = selectedInfo();
   const sig = signature([state.selected, info && [info.avatar, info.harness, info.last_user_message, info.name && info.name.text]]);
   if (sig === drawn.who) return;
@@ -3377,7 +3528,8 @@ function restorePanes() {
   let kept = null;
   try { kept = JSON.parse(localStorage.getItem(PANES_KEY)); } catch (e) { /* none kept */ }
   if (!kept || !Array.isArray(kept.others)) return;
-  const exists = (g, c) => state.home.gatherers.some((x) => x.name === g && x.agents.some((a) => a.channel === c));
+  const exists = (g, c) => isShell(c) ? (state.home.shells || []).some((s) => s.id === c && s.gatherer === g)
+    : state.home.gatherers.some((x) => x.name === g && x.agents.some((a) => a.channel === c));
   if (!state.selected && Array.isArray(kept.here) && exists(...kept.here)) state.selected = kept.here;
   if (!state.selected) return;
   panes.here.size = +kept.size || 1;
@@ -3478,20 +3630,29 @@ function gathererForm() {
 // asks for the directory first, its buttons the same.
 const startable = () => (state.home.harnesses || []).filter((h) => CHAT_HARNESSES.includes(h));
 const NO_HARNESS = "Neither Claude Code nor Codex is set up here: install one, or set its command in config.toml ([cli.harnesses])";
+// Last, its terminal button: a shell (isShell), in that same directory -- or, with none, the form asks for it too.
+const SHELL_START = "shell";                       // the terminal button's, where a harness's name goes
+const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a session started here: its own, before any call names one
+const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
 function startButtons(g) {
-  const hs = startable();
-  if (!hs.length) return [el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+")];
-  return hs.map((h) => el("button", { class: "act start" + (state.starting && state.starting.gatherer === g.name && state.starting.harness === h ? " busy" : ""),
+  const hs = startable(), cwd = startCwd(g);
+  const busy = (h) => state.starting && state.starting.gatherer === g.name && state.starting.harness === h ? " busy" : "";
+  const shell = state.home.terminals === false ? [] : [el("button", { class: "act start shell" + busy(SHELL_START), type: "button",
+    ...(state.starting ? { disabled: "" } : {}), title: `New terminal in ${cwd ? tildePath(cwd, state.home.home_dir) : "a directory you choose"}`,
+    "aria-label": `New terminal, listed under ${g.name}`, onclick: () => addSession(g, SHELL_START) },
+    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.terminal, 16))];
+  if (!hs.length) return [el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+"), ...shell];
+  return [...hs.map((h) => el("button", { class: "act start" + busy(h),
     type: "button", ...(state.starting ? { disabled: "" } : {}), title: `New ${harnessName(h)} session in ${g.name}`,
     "aria-label": `New ${harnessName(h)} session in ${g.name}`, onclick: () => addSession(g, h) },
-    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), harnessBadge(h)));
+    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), harnessBadge(h))), ...shell];
 }
 async function addSession(g, harness) {
-  const last = g.agents.filter((a) => a.cwd).sort((x, y) => (y.last || 0) - (x.last || 0))[0];
-  if (harness && last) {
-    try { return await startSession(g.name, last.cwd, harness); }
-    catch (e) { state.adding = { gatherer: g.name, cwd: last.cwd, harness, error: e.message }; }
-  } else state.adding = { gatherer: g.name, cwd: last ? last.cwd : "", harness };
+  const cwd = startCwd(g);
+  if (harness && cwd) {
+    try { return await (harness === SHELL_START ? startShell(g.name, cwd) : startSession(g.name, cwd, harness)); }
+    catch (e) { state.adding = { gatherer: g.name, cwd, harness, error: e.message }; }
+  } else state.adding = { gatherer: g.name, cwd, harness };
   renderAgents();
   const first = document.querySelector(".newform input");
   if (first) first.focus();
@@ -3509,14 +3670,30 @@ async function startSession(gatherer, cwd, harness) {
   const box = panes.focus !== panes.here || chatViewId === "terminal" ? null : document.getElementById("composer-text");
   if (box) box.focus();
 }
+// A shell started: shown in the pane in focus, its terminal opened at once (sessions.py's `shell`), at the size of the
+// terminal this page draws now, if it draws one (fitted to its pane once drawn there).
+async function startShell(gatherer, cwd) {
+  state.starting = { gatherer, harness: SHELL_START };
+  renderAgents();
+  try {
+    const size = term.opened && term.host && term.host.isConnected ? { cols: term.xterm.cols, rows: term.xterm.rows } : {};
+    const s = await post("/api/shells", { gatherer, cwd, ...size });
+    state.adding = null;
+    collapsed.delete(gatherer);
+    await loadHome();                                // listed before it is shown: its pane's head says where it is
+    await show(gatherer, s.id);
+  } finally { state.starting = null; renderAgents(); }
+}
 function newForm() {
-  const adding = state.adding, fixed = adding.gatherer, hs = startable();
+  const adding = state.adding, fixed = adding.gatherer, hs = startable(), shell = adding.harness === SHELL_START;
   const cwd = el("input", { name: "cwd", value: adding.cwd || state.home.cwd || "", spellcheck: "false" });
-  const err = el("div", { class: "err", role: "alert", text: adding.error || (hs.length ? "" : NO_HARNESS) });
+  const err = el("div", { class: "err", role: "alert", text: adding.error || (hs.length || shell ? "" : NO_HARNESS) });
   const starts = hs.map((h) => el("button", { type: "submit", value: h, class: h === (adding.harness || hs[0]) ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, harnessBadge(h), harnessName(h)));
+  if (state.home.terminals !== false) starts.push(el("button", { type: "submit", value: SHELL_START, class: shell ? "primary" : "",
+    ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.terminal, 14), "Terminal"));
   const form = el("form", { class: "newform", "aria-label": "New session" },
-    el("div", { class: "desc", text: `A new session in ${fixed}` }),
+    el("div", { class: "desc", text: shell ? `A new terminal, listed under ${fixed}` : `A new session in ${fixed}` }),
     el("label", {}, "Working directory", cwd),
     err,
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), ...starts));
@@ -3530,7 +3707,7 @@ function newForm() {
     ev.preventDefault();
     const harness = ev.submitter ? ev.submitter.value : adding.harness;
     Object.assign(adding, { cwd: cwd.value.trim(), harness, error: "" });
-    try { await startSession(fixed, adding.cwd, harness); }
+    try { await (harness === SHELL_START ? startShell(fixed, adding.cwd) : startSession(fixed, adding.cwd, harness)); }
     catch (e) { adding.error = e.message; renderAgents(); }
   });
   return form;
@@ -3635,6 +3812,10 @@ function renderMain() {
     main.replaceChildren(el("div", { class: "empty", text: "No actors yet. Run a harness through ag and it appears here." }));
     return;
   }
+  const x = document.getElementById("pane-close"), shell = isShell(state.selected[1]);
+  x.title = shell ? "Close this pane: the terminal runs on, under its gatherer (Terminate ends it)" : "Close this pane";
+  x.setAttribute("aria-label", x.title);
+  if (shell) { patch(main, [shellCard(state.selected[1])]); return; }
   const info = selectedInfo() || {};
   const kids = [chatCard(info), ...(state.details ? [detailsPanel(info)] : [])];
   const open = new Set([...main.querySelectorAll("details[open][id]")].map((d) => d.id));
@@ -3695,7 +3876,8 @@ function dashboardCommand(text) {
 }
 // Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn.
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")) setDetails(false);
+  if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")
+    && !(state.selected && isShell(state.selected[1]))) setDetails(false);
 });
 // Its Context side, what the model was sent, beside the chat: what `/context` in the message box opens (dashboardCommand).
 function detailsPanel(info) {
@@ -4888,10 +5070,11 @@ if (markdownReady) {
   marked.use({ gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text), code: ({ text, lang }) => codeFence(text, lang) } });
   DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } });
 }
-// Codex's plan, as its Plan mode has the model write it: between <proposed_plan> and </proposed_plan> (the closing tag
-// perhaps not streamed yet). markdown() draws it as a card headed "Proposed plan", as codex's own terminal heads it.
-const PLAN_TAGS = /<proposed_plan>\s*([\s\S]*?)\s*(?:<\/proposed_plan>|$)/;
-const unplanned = (t) => String(t ?? "").replace(/<\/?proposed_plan>\s*/g, "");
+// Codex's plan, as its Plan mode has the model write it: between <proposed_plan> and </proposed_plan>, each tag on a
+// line of its own (codex's rule; the closing tag perhaps not streamed yet). markdown() draws it as a card headed
+// "Proposed plan", as codex's own terminal heads it. A tag in a sentence (`<proposed_plan>`) is only words about one.
+const PLAN_TAGS = /^<proposed_plan>[ \t]*(?:\r?\n|$)([\s\S]*?)\s*(?:^<\/proposed_plan>[ \t]*$|(?![\s\S]))/m;
+const unplanned = (t) => String(t ?? "").replace(/^<\/?proposed_plan>[ \t]*(?:\r?\n|$)/gm, "");
 // `breaks`: each line break kept, for text written as lines rather than as markdown (a subagent's report)
 function markdown(text, breaks = false) {
   const plan = typeof text === "string" && text.includes("<proposed_plan>") ? PLAN_TAGS.exec(text) : null;
@@ -5317,7 +5500,10 @@ function termDrop() {
   if (term.xterm) term.xterm.dispose();
   Object.assign(term, { sid: null, xterm: null, fit: null, host: null, es: null, opened: false, exited: null, unsent: "", tried: false });
 }
-const termRunning = (sid) => { const info = selectedInfo(); return !!(info && info.channel === sid && info.session && info.session.terminal); };
+const termRunning = (sid) => {
+  if (isShell(sid)) return term.sid === sid && term.exited === null;
+  const info = selectedInfo(); return !!(info && info.channel === sid && info.session && info.session.terminal);
+};
 // What is typed, to the process, in order: one request at a time (two at once could arrive swapped), and
 // what is typed while one is on its way goes together in the next -- fast typing is a few requests, not a queue.
 function termType(sid, data) {
@@ -5351,6 +5537,7 @@ function termListen(sid) {
   const ended = (ev) => {
     if (!mine()) return;
     es.close(); term.es = null;
+    if (isShell(sid)) { term.exited = ev.type === "exit" ? JSON.parse(ev.data).code : -1; return shellEnded(sid); }
     if (ev.type === "exit") { term.exited = JSON.parse(ev.data).code; term.xterm.write("\r\n\x1b[2m[the session's process ended]\x1b[0m\r\n"); }
     else if (term.exited === null) term.exited = -1;  // gone before it was listened to: ended all the same
     refresh();
@@ -5400,6 +5587,43 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
   },
   composer: () => [],
 });
+
+// ------------------------------------------------------------------ a shell
+// A shell (isShell) in its pane: its terminal, drawn as a session's is (`term`), and nothing else -- no views, no details,
+// no message box -- but, in the pane's head, its Terminate button: the shell ended, whatever runs in it, as by the list's ×.
+// Not the pane's own ×, split, which closes the pane alone, the shell running on under its gatherer. Its button opened it
+// (startShell), so here it is only listened to. Once it ends -- exited, or terminated -- its pane closes, as a terminal's
+// window does (shellEnded).
+function shellCard(id) {
+  const end = el("button", { type: "button", class: "terminate", "data-shell": id, "aria-label": "Terminate the terminal",
+    title: "Terminate: end the shell, and whatever runs in it",
+    onclick: async (ev) => { const b = ev.currentTarget; b.disabled = true; await closeShell({ id }); b.disabled = false; } },
+    strokeIcon(ICONS.power, 14), "Terminate");
+  const controls = document.getElementById("controls");      // kept as it is while the same: no flash under the pointer
+  if (!(controls.children.length === 1 && controls.firstElementChild.isEqualNode(end))) controls.replaceChildren(end);
+  const t = termFor(id);
+  termListen(id);
+  requestAnimationFrame(() => {                      // drawn into the page: opened there once, then fitted to it
+    if (!t.host.isConnected) return;
+    if (!t.opened) { t.xterm.open(t.host); t.opened = true; termWebgl(t); t.xterm.focus(); }
+    try { t.fit.fit(); } catch (e) { /* not shown */ }
+  });
+  const frame = el("div", { class: "chat-frame xterm-frame", "data-morph": "" });
+  frame.kids = [t.host];                             // put in by patch(): the same node each draw
+  return el("section", { class: "chat", "aria-label": "Terminal", "data-morph": "", "data-for": signature([id]) }, frame);
+}
+// The shell this page shows ended: its pane closed -- in a frame, by the page around it; this page's own, the next pane's
+// actor moved into it, or with none, its gatherer's actor shown (firstAgent), else the first gatherer's.
+function shellEnded(sid) {
+  if (!state.selected || state.selected[1] !== sid) return;
+  if (PANE) return PANE.close(window);
+  if (panes.others.length) return closeHere();
+  const shown = state.home ? state.home.gatherers.filter((g) => g.agents.length && !isHidden(g)) : [];
+  const g = shown.find((x) => x.name === state.selected[0]) || shown[0];
+  if (g) return select(g.name, firstAgent(g).channel);
+  state.selected = null;
+  savePanes(); connect(); render(true);
+}
 
 // ------------------------------------------------------------------ the Files view
 // A turn's files instead of its conversation: each file the agent read, searched or changed in it, the
@@ -5871,13 +6095,13 @@ function filesBackground(info) {
 // shown, the earlier behind a click too. While the turn runs, what the agent is doing at its end, as the
 // Transcript's status line. Clicking a message shows its turn's files. What the user wrote while a turn ran is
 // part of it: once sent to the agent (`more`; in the latest turn also Claude Code's queue, the agent's `typed`,
-// queued.py), stacked on its first message; until then, at the latest turn's end, faded and marked pending
+// data.py's, from its record of the session), stacked on its first message; until then, at the latest turn's end, faded and marked pending
 // (pendingTalk) -- as is a message sent from this page's box, from the moment it is sent. A message that opened a
 // turn ag has not stored yet is that turn's, in full, the moment Claude Code has it (openedTurn).
 const MINOR_SHOWN = 2, TURNS_SHOWN = 3;
 let talkShown = null;
 // What the selected actor's own records say the user wrote: ag's stored messages (each turn's first, and what was written
-// while it ran), Claude Code's queue less what ag has stored since (the agent's `typed`, queued.py), and the dashboard
+// while it ran), Claude Code's queue less what ag has stored since (the agent's `typed`, data.py's), and the dashboard
 // agent's queue (its session's `queued`).
 // A command the user ran that Claude Code runs itself (/context: no message of theirs is stored, only Claude Code's
 // note of it, files.py's `ran` -- not shown) counts as one of their messages too.
@@ -5914,7 +6138,7 @@ function pendingTalk(info, h) {
     el("span", { class: "lbl", text: unseen ? "Pending · not seen by the session yet" : "Pending" }));
 }
 // The turns Claude Code has started and ag has not stored yet, each by its first message as Claude Code recorded it when
-// it went to the model (the agent's `typed`, queued.py: sent, not as part of the turn it was written in; data.py's
+// it went to the model (the agent's `typed`, data.py's: sent, not as part of the turn it was written in; data.py's
 // _unstored leaves out those ag has stored) -- for an actor, the selected one's (opened()).
 const openings = (h) => h.typed.filter((q) => q.sent !== null && !q.joins);
 function opened(a) {

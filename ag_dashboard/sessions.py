@@ -74,6 +74,12 @@ process that names a directory (codex's side calls -- a title for the thread -- 
 
 A new gatherer, with no session yet, is made by `ag new <name>` (`new_gatherer`).
 
+A SHELL is opened from a gatherer's row too (`shell`): no session, the user's own login shell in a
+terminal of its own, in the directory the page gives it (where a new session there would start), drawn
+as a session's terminal is -- by its id, "shell:" and 12 hex digits, which no channel has, to `output`,
+`type` and `resize` -- and listed under the gatherer (`shells`) until it exits or is closed
+(`close_shell`). Not run through ag, and not kept: it lives as long as the dashboard does.
+
 ag is run as a command (AG_COMMAND, else `ag` on the PATH), never imported."""
 
 import json
@@ -97,6 +103,7 @@ from . import answers, home
 try:                                    # a terminal needs a pseudo-terminal: Unix only
     import fcntl
     import pty
+    import pwd
     import termios
     TERMINALS = True
 except ImportError:
@@ -107,6 +114,7 @@ HARNESSES = ("claude", "codex")
 CODEX_PERMISSIONS = {"auto": ["--approve-for-me"], "bypassPermissions": ["--dangerously-bypass-approvals-and-sandbox"]}
 PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "manual")
 CHAT_MODES = ("terminal", "headless")          # what a message opens for a session with no terminal (`chat_mode`)
+SHELL_ID = re.compile(r"shell:[0-9a-f]{12}")   # a shell's id (`shell`): never a channel's
 GATHERER = re.compile(r"[A-Za-z0-9._-]+")      # the names ag takes
 # What says the dashboard itself runs inside a Claude Code session; its agents are sessions of their own.
 PARENT_SESSION = ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID",
@@ -177,6 +185,24 @@ REDRAW_WAIT = 1.0                  # a full screen made a row shorter (`redraw`)
 #: What a page's terminal sends that no one typed: focus in and out, the terminal's answers to the program's
 #: questions (device attributes, cursor position, OSC replies), mouse reports. Not typing: a dialog is as it was.
 REPORTS = re.compile(r"\x1b\[[IO]|\x1b\[[?>]?[\d;]*[cRn]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b\[<[\d;]*[Mm]")
+# A key that is no character in the input box: an escape sequence (an arrow, a function key, a paste's brackets) whole.
+NOT_TYPED = re.compile(r"\x1b(?:\[[\d;?]*[ -/]*[@-~]|O.|.)?")
+
+
+def drafted(n: int, keys: str) -> int:
+    """How many characters the reader has typed into the terminal's input box and not sent, after `keys`, of `n`
+    before: Enter sends them, Ctrl+C empties the box (Claude Code's, of any it holds), a Backspace takes one back,
+    any other character adds one. A count, never sure -- a dialog's keys count too -- so a rename waits on it
+    (`rename_due`) rather than add to what the reader wrote."""
+    for ch in NOT_TYPED.sub("", keys):
+        if ch in "\r\x03":
+            n = 0
+        elif ch in "\x7f\b":
+            n = max(0, n - 1)
+        elif ch >= " ":
+            n += 1
+    return n
+
 
 
 def _has_calls(gatherer: str, session_id: str) -> bool:
@@ -329,6 +355,18 @@ def agent_env(environ: Optional[Dict[str, str]] = None) -> Dict[str, str]:
             env.pop("ANTHROPIC_BASE_URL")
     env["AG_HOME"] = home.HOME
     return env
+
+
+def login_shell() -> str:
+    """The user's shell: $SHELL, else the one their account names, else /bin/sh -- the first that can be run."""
+    try:
+        theirs = pwd.getpwuid(os.getuid()).pw_shell
+    except (KeyError, NameError):
+        theirs = ""
+    for program in (os.environ.get("SHELL"), theirs, "/bin/sh"):
+        if program and os.path.isabs(program) and os.access(program, os.X_OK):
+            return program
+    raise SessionError("no shell to run: set SHELL")
 
 
 def new_gatherer(name: str) -> dict:
@@ -485,6 +523,7 @@ class _Term:
         self.typed = 0.0                # when anything was last typed into it (epoch seconds): keys, a message
         self.stopped = 0.0              # when the last thing typed was a key that stops a turn alone (STOP_KEYS); 0: it was not
         self.answering = False          # an answer's keys being typed into it (`answer`)
+        self.drafted = 0                # characters the reader typed into its input box and has not sent (`drafted`)
         self.kept = False               # put away (`put_away`): its end is kept
         self.drawn = -1                 # where in what it printed it last cleared its screen (CLEARED), to draw it all
         self.sizing = threading.Lock()  # its size set by one at a time: the page's (`resize`), or `redraw`'s
@@ -500,8 +539,10 @@ class Sessions:
         self.on_change = on_change
         self.lock = threading.RLock()
         self.agents: Dict[str, _Agent] = {}
-        self.terms: Dict[str, _Term] = {}
+        self.terms: Dict[str, _Term] = {}         # by session id; a shell's by its own (`shell`)
+        self._shells: Dict[str, dict] = {}       # the shells open, by id: {id, gatherer, cwd, since}
         self.answered: Dict[str, dict] = {}      # each session's last answer typed from the page (`answer`)
+        self.renames: Dict[str, str] = {}        # each session's command naming it, held for its turn's end (`rename`)
         self.closing = False            # the dashboard stopping: what ends now is kept
         conn = self._db()               # a process from before is gone: what it was running stopped, and kept
         try:
@@ -1037,6 +1078,56 @@ class Sessions:
             threading.Thread(target=self._find_thread, args=(sid, s["gatherer"], t), daemon=True).start()
         return t
 
+    def shell(self, gatherer: str, cwd: str, cols: int = 120, rows: int = 32) -> dict:
+        """A new shell (module doc), listed under `gatherer`: the user's login shell in `cwd`, in a terminal
+        `cols` x `rows`, in the environment a session's terminal has. The shell as `shells` has it."""
+        if not TERMINALS:
+            raise SessionError("a terminal needs a Unix pseudo-terminal, which this system does not have")
+        gatherer = (gatherer or "").strip()
+        if not GATHERER.fullmatch(gatherer):
+            raise SessionError("a gatherer's name may hold letters, digits, '.', '_' and '-' only")
+        cwd = os.path.abspath(os.path.expanduser((cwd or "").strip() or "~"))
+        if not os.path.isdir(cwd):
+            raise SessionError(f"no directory {cwd}")
+        program = login_shell()
+        env = {**{k: v for k, v in agent_env().items() if k not in OUTER_TERMINAL and k != "OLDPWD"},
+               "TERM": "xterm-256color", "COLORTERM": "truecolor", "PWD": cwd, "SHELL": program}
+        cols, rows = max(20, min(int(cols), 500)), max(5, min(int(rows), 200))
+        with self.lock:
+            shell_id = "shell:" + uuid.uuid4().hex[:12]
+            try:
+                pid, fd = pty.fork()
+            except OSError as exc:
+                raise SessionError(f"could not open a terminal: {exc}") from exc
+            if pid == 0:                             # the child: its terminal sized, then the shell, as a login one
+                try:
+                    fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+                    os.chdir(cwd)
+                    os.execve(program, ["-" + os.path.basename(program)], env)
+                finally:
+                    os._exit(127)
+            t = _Term(pid, fd, open(os.devnull, "w", encoding="utf-8"))    # nothing of a shell's logged
+            self.terms[shell_id] = t
+            self._shells[shell_id] = {"id": shell_id, "gatherer": gatherer, "cwd": cwd, "since": t.since}
+            t.reader = threading.Thread(target=self._read_terminal, args=(shell_id, t), daemon=True)
+            t.reader.start()
+            self._changed(gatherer, shell_id)
+            return dict(self._shells[shell_id])
+
+    def shells(self) -> List[dict]:
+        """The shells open (`shell`), the oldest first: {id, gatherer, cwd, since}."""
+        with self.lock:
+            return sorted((dict(s) for s in self._shells.values()), key=lambda s: s["since"])
+
+    def close_shell(self, shell_id: str) -> None:
+        """The shell's terminal closed as a window is: hung up, and gone from `shells` before this returns."""
+        with self.lock:
+            t = self.terms.get(shell_id) if shell_id in self._shells else None
+            if t is None:
+                raise SessionError(f"no shell {shell_id} open")
+            self._hang_up(t)
+        self._gone(t)                                # its end recorded by its reader, which takes the lock
+
     def _find_thread(self, session_id: str, gatherer: str, t: _Term) -> None:
         """A new codex terminal's thread, looked for in the gatherer's calls each second while it runs:
         the session renamed to it once found."""
@@ -1092,6 +1183,10 @@ class Sessions:
             session_id = next((k for k, v in self.terms.items() if v is t), session_id)   # renamed meanwhile (codex)
             if self.terms.get(session_id) is t:
                 del self.terms[session_id]
+                shell = self._shells.pop(session_id, None)
+                if shell is not None:                # a shell: gone from the list
+                    self._changed(shell["gatherer"], session_id)
+                    return
                 s = self._row(session_id)
                 self._set(session_id, status="stopped", ended=time.time(), kept=time.time() if self.closing or t.kept else 0,
                           **({"turns": max(1, s["turns"])} if s and _has_calls(s["gatherer"], session_id) else {}))
@@ -1153,7 +1248,40 @@ class Sessions:
         if REPORTS.sub("", data):
             t.typed = time.time()
             t.stopped = t.typed if data in STOP_KEYS else 0.0
+            t.drafted = drafted(t.drafted, REPORTS.sub("", data))
         self._write(t, data.encode("utf-8"))
+
+    def rename(self, session_id: str, command: str) -> bool:
+        """The harness's command that names the session (harness_kit's `rename_command`: the harness's `/rename ...`),
+        held to be typed into its terminal once its turn is over (`rename_due`), in place of one held before: True,
+        or False when the dashboard runs no terminal for it (nothing is held)."""
+        with self.lock:
+            t = self.terms.get(session_id)
+            if t is None or t.exited is not None:
+                self.renames.pop(session_id, None)
+                return False
+            self.renames[session_id] = command
+            return True
+
+    def rename_due(self, idle) -> List[str]:
+        """Each command held by `rename` typed into its session's terminal, where the session is in `idle` -- its turn
+        over and nothing asked, so its terminal waits on a prompt, not in a dialog where Enter would pick an option --
+        and its input box is the harness's alone: no answer being typed, nothing the reader typed and has not sent
+        (`drafted`), no message Claude Code put back there (`took_back`). The sessions it was typed for."""
+        typed = []
+        idle = set(idle)
+        with self.lock:
+            for sid in [x for x in self.renames if x in idle]:
+                t = self.terms.get(sid)
+                if t is None or t.exited is not None:
+                    self.renames.pop(sid)
+                    continue
+                s = self._row(sid) or {}
+                if t.answering or t.drafted or (s.get("gatherer") and took_back(s["gatherer"], sid, t.stopped)):
+                    continue
+                self._paste(t, self.renames.pop(sid))
+                typed.append(sid)
+        return typed
 
     def answer(self, session_id: str, ask: dict, choice: dict) -> dict:
         """What the session's terminal asks (data.py's `asking`: a question, a plan to approve) answered with
@@ -1215,7 +1343,7 @@ class Sessions:
         """A message from a view's message box, typed into the terminal: pasted as one block (so its
         new lines stay in it), then Enter once the paste has landed. With `clear`, Claude Code's input box
         emptied first (Ctrl+C), of the message it put back there (`took_back`), so the two do not go as one."""
-        t.typed, t.stopped = time.time(), 0.0
+        t.typed, t.stopped, t.drafted = time.time(), 0.0, 0
         paste = b"\x1b[200~" + text.replace("\x1b", "").encode("utf-8") + b"\x1b[201~"
         if not clear:
             self._write(t, paste)

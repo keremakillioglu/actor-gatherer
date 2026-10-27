@@ -55,7 +55,9 @@ class as `module:Class`; `cwd`, the working directory when a request states
 none; `factory` and `path` (paths joined by the OS's path separator), handed
 to each gatherer's server; `files`, "on" (the default) or "off": what each of the
 thread's tool calls did to files, found on disk as they run and kept in the gatherer
-for the dashboard's Files view -- as the Claude Code hook does (its Files).
+for the dashboard's Files view -- as the Claude Code hook does (its Files). From each of the thread's own turns on,
+codex's rollout of it is followed, and what it says recorded as events of the thread (harness_kit.codex's Rollout;
+session_files.py) -- as the Claude Code hook does its record.
 """
 
 import importlib
@@ -168,6 +170,7 @@ class CodexContextManager(ProxyHook):
             return None
         if run:
             self.runs[(request.label, run)] = (gatherer, channel)
+        self.following(request, gatherer, channel, call)       # its rollout, followed (session_files.py)
         items, out = body["input"], {}
         cwd = cwd_of(items) or self.cwd
         compaction = compaction_split(metadata, items)

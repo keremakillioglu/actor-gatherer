@@ -9,6 +9,7 @@ its setup and upstream, or starts one on the first free port from the one
 asked for.
 """
 
+import base64
 import json
 import os
 import signal
@@ -35,6 +36,12 @@ class HookServer:
     @property
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
+
+
+def config_part(folder: str) -> str:
+    """A hook server URL's part naming the harness's own folder for a run (its config folder, where the hook finds its
+    record of each session): /c/<the path, base64url-encoded, unpadded> -- the hook server's `config_of` reads it."""
+    return "/c/" + base64.urlsafe_b64encode(folder.encode()).decode().rstrip("=")
 
 
 def _alive(pid: int) -> bool:

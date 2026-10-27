@@ -2,7 +2,8 @@
 context manager's home (data.py), read-only. Standard library only.
 
     GET /                                 the page
-    GET /api/home                         data.home(), each actor with its avatar (avatars.py's `assign`)
+    GET /api/home                         data.home(), each actor with its avatar (avatars.py's `assign`), and the
+                                          shells open (sessions.py's `shells`)
     GET /avatars/<kind>/<name>.svg        an avatar's picture (ag_dashboard/avatars/); ?bare=1: without its circle
     GET /api/agent?gatherer=G&channel=C   data.agent(G, C)
     GET /api/read?gatherer=G&read_id=N    data.read(G, N)
@@ -18,15 +19,15 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/extracts?gatherer=G                           history.extracts(G): what the model made of the history
     GET /api/stream[?gatherer=G&channel=C][&also=[[G2, C2], ...]]   server-sent events, until the page goes:
         `home` (data.home()) and, with a channel, `agent` (data.agent(G, C)) at once, then again
-        each time they change -- woken by ag's notifications or the fallback check (live.py), or by
-        what the user writes to a session it shows while it works (queued.py) --
-        and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle).
+        each time they change -- woken by ag's notifications or the fallback check (live.py) -- what the
+        harness's own record of a session says (the user writing to it as it works, a question answered in its
+        terminal, Esc) among them, as ag's hook records it -- and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle).
         `also` (JSON): the page's other actors, its other panes, each sent the same way as `actor`
         {gatherer, channel, agent}: one stream for all a page shows, as a browser keeps few open
     GET /api/sessions                     the sessions started from the page (sessions.py)
     GET /api/models?harness=H             the models a new session of H can run on (sessions.py's `models`)
-    GET /api/terminal?session_id=S        server-sent events, until the page goes: what the session's
-        terminal prints, `out` {data (base64), at (where it ends), reset (all that is kept: start over --
+    GET /api/terminal?session_id=S        server-sent events, until the page goes: what the session's (or the
+        shell's: S its id) terminal prints, `out` {data (base64), at (where it ends), reset (all that is kept: start over --
         a full screen then drawn all again, sessions.py's `redraw`)}, then `exit` {code} when its process
         ends; `none` when it has no terminal
     GET /api/views                        the reader's own chat views: <home>/dashboard/views/*.js, by name
@@ -59,8 +60,16 @@ context manager's home (data.py), read-only. Standard library only.
                                           answered with `choice` (answers.py): its keys typed there -> the answer
     POST /api/terminal/input {session_id, data}       what was typed in it
     POST /api/terminal/resize {session_id, cols, rows}  its new size
+    POST /api/shells {gatherer, cwd, cols?, rows?}  a shell opened in `cwd`, listed under the gatherer (sessions.py's
+                                          `shell`) -> the shell, its id the session_id its terminal is reached by
+    POST /api/shells/close {id}           the shell's terminal closed, as a window is
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
     POST /api/saved {gatherer, channel, saved}  the actor saved for later, or no longer (saved.py) -> every one saved
+    POST /api/name {gatherer, channel, name, harness?, cwd?}  the reader's name for the actor ("": none), a `name`
+                                          event in its gatherer, put in by ag (naming.py), given to its harness's own
+                                          store too, and -- where the dashboard runs its terminal -- typed there as the
+                                          harness's own command once its turn is over (sessions.py's `rename`)
+                                          -> {name, store: what was done there, error: why not, terminal: held for it}
     POST /api/seen {seen: [[gatherer, channel, last], ...]}  those actors looked at, each with its `last`
                                           (seen.py) -> every one seen
     POST /api/history/export {gatherer, rows, format}   those events as a file: {name, text} (history.py)
@@ -82,12 +91,13 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/settings/file {version, text}   config.toml as the reader edited it -> the settings
 
 The POSTs are the only writes, and only to the dashboard's own tables and records, the agents it
-runs, the gatherers `ag new` makes, the builds and model calls `ag home build` and `ag home complete`
-start, the files a History extract is saved as (where Claude Code reads them, once the reader has
+runs (and the shells it opens), the gatherers `ag new` makes, the builds and model calls `ag home build` and `ag home complete`
+start, its own events `ag home insert` puts in (an actor's name), the harness's own store of a name
+(naming.py), the files a History extract is saved as (where Claude Code reads them, once the reader has
 seen them), ag's config.toml, and the files edited in the Editor panel (editor.py: under the directory the
 page names) -- besides the avatar the home gives an actor it has not seen before
 (avatars.py), kept in the dashboard's own table:
-the gatherers' databases are only read. They are taken from the dashboard's own page only
+the gatherers' databases are otherwise only read. They are taken from the dashboard's own page only
 (`own_page`), and the server listens on localhost unless told otherwise.
 
 `page(snapshot)` is the page itself, the libraries it renders markdown with (VENDOR: marked,
@@ -109,7 +119,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import avatars, data, editor, files, hiding, history, home, live, monitor, queued, saved, seen, sessions, settings
+import harness_kit
+
+from . import avatars, data, editor, files, hiding, history, home, live, monitor, naming, saved, seen, sessions, settings
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -167,9 +179,16 @@ def _signature(value) -> str:
 def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: editor.Editors):
     def home_view() -> dict:
         """The home as the page gets it: with the sessions' state, and what a new session starts from -- the
-        harnesses it can run on here (sessions.py's `available`)."""
-        return {**avatars.assign(data.home(started.list())), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
-                "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "editor": editor.AVAILABLE}
+        harnesses it can run on here (sessions.py's `available`); the shells open, and the user's home directory,
+        which the page shows their directories under as ~. A name held for a session's terminal is typed there once
+        its turn is over (`rename_due`)."""
+        home = data.home(started.list())
+        if started.renames:
+            started.rename_due(a["channel"] for g in home["gatherers"] for a in g["agents"]
+                               if a.get("turn_over") and a.get("status") not in (data.ASKING, data.RUNNING))
+        return {**avatars.assign(home), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
+                "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "shells": started.shells(),
+                "home_dir": os.path.expanduser("~"), "editor": editor.AVAILABLE}
 
     def codex_dialog(sid: str) -> Optional[dict]:
         """What a codex session's terminal -- the dashboard's -- shows asking the user now, where a message typed
@@ -497,6 +516,12 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 if url.path == "/api/terminal/resize":
                     started.resize(str(body.get("session_id") or ""), int(body.get("cols") or 0), int(body.get("rows") or 0))
                     return self.answer({})
+                if url.path == "/api/shells":
+                    return self.answer(started.shell(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
+                                                     int(body.get("cols") or 120), int(body.get("rows") or 32)))
+                if url.path == "/api/shells/close":
+                    started.close_shell(str(body.get("id") or ""))
+                    return self.answer({})
                 if url.path == "/api/hiding":
                     kept = hiding.choose(str(body.get("gatherer") or ""), str(body.get("choice") or ""))
                     hub.ring(None)                       # every open page's list
@@ -505,6 +530,20 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     kept = saved.choose(str(body.get("gatherer") or ""), str(body.get("channel") or ""), bool(body.get("saved")))
                     hub.ring(None)
                     return self.answer(kept)
+                if url.path == "/api/name":
+                    g, c, name = str(body.get("gatherer") or ""), str(body.get("channel") or ""), naming.clean(body.get("name"))
+                    naming.record(g, c, name)
+                    harness = str(body.get("harness") or "") or None
+                    out = {"name": name, "store": None, "error": None, "terminal": False}
+                    try:
+                        out["store"] = naming.in_store(harness, c, name, str(body.get("cwd") or "") or None)
+                    except harness_kit.RenameError as exc:
+                        out["error"] = str(exc)
+                    rules = harness_kit.get(harness)
+                    command = rules.rename_command(name) if rules is not None else None
+                    out["terminal"] = bool(command) and started.rename(c, command)
+                    hub.ring(g)                          # every open page's home: one types it, once it may
+                    return self.answer(out)
                 if url.path == "/api/seen":              # not rung: a home costs every stream a read of every
                     return self.answer(seen.look(body.get("seen")))   # gatherer; the page that looked has it, the
                                                          # others with their next home (KEEPALIVE at most)
@@ -598,11 +637,10 @@ class Server(ThreadingHTTPServer):
         super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors))
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
-        self.queued = queued.Watcher(self.hub) if live_updates else None   # what is written to a session as it works
         self.rest = saved.Rest(self.sessions, self.hub.shown)
 
     def server_close(self) -> None:
-        for part in (self.listener, self.fallback, self.queued, self.rest, self.editors):
+        for part in (self.listener, self.fallback, self.rest, self.editors):
             if part is not None:
                 part.close()
         super().server_close()

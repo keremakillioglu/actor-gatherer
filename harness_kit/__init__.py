@@ -3,21 +3,23 @@ it sends is its own, what its tools do, what its own records of a session hold. 
 imports nothing of ag (tests/test_harness_kit.py), so ag's integrations and the dashboard both read
 harnesses through it.
 
-    harness_kit.get("claude")        a harness's rules (ClaudeCode, Codex): `call`, `items`, `read`
+    harness_kit.get("claude")        a harness's rules (ClaudeCode, Codex): `call`, `items`, `read`; a session's
+                                     name given in the harness's own store (`rename`, `rename_command`)
     harness_kit.owner(payload)       the harness whose format a stored piece is in, as its shape tells; None
     harness_kit.harness_of(payloads) the harness a session runs on, as its pieces' shapes tell (pi's and
                                      opencode's too, which have no rules here yet)
 
-    base.py      the Harness class, and what reading gives: Call, Part (of a Kind), ToolCall, ToolResult
-    claude.py    Claude Code (ClaudeCode)
-    codex.py     Codex (Codex)
+    base.py      the Harness class, and what reading gives: Call, Part (of a Kind), ToolCall, ToolResult; and what
+                 reading its own record of a session gives: a Follower's Facts (`follow`)
+    claude.py    Claude Code (ClaudeCode); its record of a session (Record)
+    codex.py     Codex (Codex); its rollout of a thread (Rollout)
     shell.py     what a shell command reads and writes, read from its words: shared by every harness
 """
 
 from typing import Dict, Iterable, Optional
 
-from .base import (MODELS, USERS, Action, Call, CallKind, Harness, Kind, Part,  # noqa: F401 - the package's API
-                   ToolCall, ToolResult)
+from .base import (MODELS, USERS, Action, Call, CallKind, Fact, Facts, Follower, Harness, Kind,  # noqa: F401 - the
+                   Part, RenameError, ToolCall, ToolResult, follow)                                   # package's API
 from . import codex
 from .claude import ClaudeCode
 from .codex import Codex

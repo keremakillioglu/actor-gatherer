@@ -11,22 +11,33 @@ gatherer beside the conversation's, which no policy groups, so they never reach 
     recap         a recap of the session the harness made, in its words: what it did, and what comes next
     name          a name for the session, as `by` gave it (codex's title for its thread)
 
+and, from the harness's own record of the session as it grows (session_files.py), what no model call carries:
+
+    session_file  the record followed: the harness, and the file's path
+    message_queued, message_sent, message_withdrawn, asked, ask_settled, turn_stopped, task_started, task_ended
+                  each a fact the record says (harness_kit's Facts), its data the payload with `at`, when it happened
+
 Each is `{"type", "id", "payload", "properties"?}`, as the server's `insert` takes it, its own properties declared
 on its type the first time it is seen. An id says what makes it the same: a reply part by its answer and its place in
-it, a reply's end by its answer, a failure by its read; any other is new each time (`uuid4`). Sent by `record`, which
+it, a reply's end by its answer, a failure by its read, a fact of the record by its place in the file; any other is new
+each time (`uuid4`). Sent by `record`, which
 never raises: a lost record never holds up a call.
 """
 
+import os
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
+from harness_kit.base import Fact, Facts
+
 from .adaptor import CHANNEL
 
-MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME = (
-    "model_call", "reply_part", "reply_end", "call_failed", "recap", "name")
+MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE = (
+    "model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "session_file")
 #: Every harness event type a proxy hook records.
-RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME)
+RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE) + Facts.ALL
 READ_ID, ANSWER_ID = "read_id", "answer_id"
+RECORDS_LANE = "records"    # ag's server's lane for records, beside a session's (its server's RECORDS_LANE)
 STREAMING = "streaming"     # a reply_part's stop while the answer still streams (no reply_end yet)
 
 
@@ -71,14 +82,26 @@ def name(text: str, by: str) -> dict:
     return {"type": NAME, "id": f"name:{uuid.uuid4().hex}", "payload": {"text": text, "by": by}}
 
 
+def session_file(harness: str, path: str) -> dict:
+    """The harness's record of the session, followed from now on."""
+    return {"type": SESSION_FILE, "id": f"file:{path}", "payload": {"harness": harness, "path": path}}
+
+
+def fact(f: Fact, path: str) -> dict:
+    """A fact the harness's record at `path` says, the same each time the record is read: by its line's place there."""
+    return {"type": f.type, "id": f"{f.type}:{os.path.basename(path)}:{f.key}", "payload": {"at": f.at, **f.data}}
+
+
 async def record(client, gatherer: str, channel: str, events: List[dict],
-                 log: Optional[Callable[[str, str], None]] = None) -> Optional[dict]:
+                 log: Optional[Callable[[str, str], None]] = None, beside: bool = False) -> Optional[dict]:
     """The events inserted into the channel (the server's `insert`); the answer, or None when it failed -- said in the
-    log, never raised."""
+    log, never raised. `beside`: in the server's lane for records, beside the session's own (its RECORDS_LANE), so
+    they are not held up behind a read that waits for its build -- for events no read depends on."""
     if not events:
         return None
+    request = {"gatherer": gatherer, "properties": {CHANNEL: channel}, "events": events}
     try:
-        got = await client.request("insert", {"gatherer": gatherer, "properties": {CHANNEL: channel}, "events": events})
+        got = await client.request("insert", {**request, "lane": RECORDS_LANE} if beside else request)
     except Exception as exc:  # noqa: BLE001 - a lost record never holds up a call
         got = {"error": repr(exc)}
     if not isinstance(got, dict) or got.get("error"):

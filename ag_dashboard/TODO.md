@@ -24,8 +24,8 @@ Not detected yet: the actor shows as Running while Claude Code waits.
 
 ### Codex
 
-Codex asks in three ways, all read from its own record of the thread (rollout.py: `<CODEX_HOME>/sessions/.../rollout-
-<time>-<thread>.jsonl`, written as codex goes) and answered by keys typed into the dashboard's terminal (answers.py):
+Codex asks in three ways, all read from its own record of the thread (`<CODEX_HOME>/sessions/.../rollout-<time>-<thread>.jsonl`,
+written as codex goes; followed by ag's hook, harness_kit.codex's `Rollout`, what it says recorded as events) and answered by keys typed into the dashboard's terminal (answers.py):
 
 - **A question** (`request_user_input`, Plan mode's; its turn waits): from ag's pending answer, as Claude Code's
   are, until the record has its output -- answered, or "aborted by user" (Esc). Single choice only: codex adds "None
@@ -43,7 +43,7 @@ Not covered yet:
 - [ ] **"Yes, clear context and implement"** (the plan's choice 2) starts another thread: left to the terminal.
 - [x] **Codex's wrappers in the Chat view**: a `<proposed_plan>` is drawn as a card headed "Proposed plan"
   (page.html's `markdown`), and the answers to what codex asked as it worked as "question → answer" (`asked`), part
-  of the turn that asked (files.py, rollout.py's `replies`).
+  of the turn that asked (files.py, harness_kit.codex's `replies`).
 - [ ] **A question in a codex terminal outside the dashboard** is shown but not answerable, as Claude Code's are.
 - The keys are codex 0.164's. As for Claude Code, what codex records is checked against what was picked
   (`recorded`), so a change shows up as a warning.
@@ -88,7 +88,7 @@ Not covered yet:
 - [ ] **An answer the endpoint breaks off once it has begun** is not kept as a failure. The harness hanging up is
   now told apart (see "Stopped before the answer"); the endpoint breaking off is not. Claude Code's record still
   shows the give-up; for codex it shows as Running until its next call.
-- [x] **Codex's own record** (its rollout file, rollout.py) is read: a turn that gave up (`task_complete` with an
+- [x] **Codex's own record** (its rollout file, followed by ag's hook) is read: a turn that gave up (`task_complete` with an
   `error`) is Error at once, one interrupted (`turn_aborted`) or completed with no call ag saw is Idle.
 - [ ] **Calls with no read** (Claude Code's compaction, recaps) are not kept when they fail.
 - [ ] **A session whose record is elsewhere** (another `CLAUDE_CONFIG_DIR`, another machine) waits GIVE_UP_SECONDS
@@ -125,8 +125,8 @@ Not covered yet:
 
 ## Sent at once, in Chat
 
-A message shows as sent the moment Claude Code sends it: queued.py reads the line Claude Code writes to its record
-as it does (`{"type": "user", "origin": {"kind": "human"}}`), every 0.25 s for each actor a page shows, and the Chat
+A message shows as sent the moment Claude Code sends it: ag's hook reads the line Claude Code writes to its record
+as it does (`{"type": "user", "origin": {"kind": "human"}}`), every 0.25 s while the record changes, and records it, and the Chat
 view draws it as its turn's first, with the actor at work, until ag stores the turn (data.py's `_unstored`).
 
 Not covered yet:
@@ -277,7 +277,7 @@ Not covered yet:
 - [x] **Codex's subagents' reports** are notes, as Claude Code's are: its `agent_message` items (another of its agents'
   message) are context, not the model's (codex adaptor), and the Chat view shows a FINAL_ANSWER as "Subagent's report:
   <its task>" under the turn that started it -- read from the subagent's own record while codex has not handed it
-  back yet, which waits for the thread's next call (files.py, rollout.py's `report`). What a subagent was asked is
+  back yet, which waits for the thread's next call (files.py, the `report` on its `task_ended`). What a subagent was asked is
   encrypted in `spawn_agent`'s call, so it is named by its task name.
 - [ ] **The approval reviewer** (`guardian_review`, for `--approve-for-me`, which the dashboard always uses) is passed
   through; its verdict could say why codex did not run something.

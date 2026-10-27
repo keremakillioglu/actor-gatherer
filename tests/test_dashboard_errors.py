@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag.ag_harness.store import schema  # noqa: E402
-from ag_dashboard import data, live, queued  # noqa: E402
+from ag_dashboard import data, live  # noqa: E402
+from followed import Followed  # noqa: E402
 from test_dashboard_answers import GathererBase, event  # noqa: E402
 
 SESSION = "0e1d2c3b-0000-4000-8000-0000000000e1"
@@ -43,9 +44,7 @@ class ErrorsBase(GathererBase):
         env = unittest.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": self.config})
         env.start()
         self.addCleanup(env.stop)
-        self.addCleanup(live.watch_records, {})
         self.addCleanup(live.wake_at, {})
-        queued._NO_RECORD.clear()                                            # an earlier test's session had none
         self.cwd = "/work/my repo"
         self.record = os.path.join(self.config, "projects", "-work-my-repo", f"{SESSION}.jsonl")
         self.asked = time.time() - 300
@@ -63,9 +62,20 @@ class ErrorsBase(GathererBase):
         conn.close()
 
     def write(self, line):
+        """A line of Claude Code's record, followed into the gatherer as ag's hook does."""
         os.makedirs(os.path.dirname(self.record), exist_ok=True)
         with open(self.record, "a") as fh:
             fh.write(json.dumps(line) + "\n")
+        self.follow()
+
+    def follow(self):
+        if not hasattr(self, "followed"):
+            self.followed = Followed("claude", self.record)
+        conn = sqlite3.connect(self.path)
+        try:
+            self.followed.into(conn, SESSION)
+        finally:
+            conn.close()
 
     def actor(self):
         return next(a for g in data.home([])["gatherers"] for a in g["agents"] if a["channel"] == SESSION)
@@ -233,33 +243,42 @@ class StoppedTest(ErrorsBase):
         a = self.actor()
         self.assertEqual((a["status"], a["turn_over"], a["stopped"]["kind"]), (data.IDLE, True, "interrupted"))
 
+    def said_again(self):
+        """The user writes again: ag stores the message as the read begins, and records the read only once its
+        context is built (the policy's boundary check, a build) -- here, not yet."""
+        self.add([event("user_message", {"role": "user", "content": [{"type": "text", "text": "next"}]}, "next")],
+                 channel=SESSION)
+
+    def test_a_new_turn_after_an_interruption_runs_while_its_read_is_built(self):
+        self.read(time.time() - 10, tokens=500)
+        self.write({"type": "user", "timestamp": zulu(time.time() - 5), "message": {"role": "user", "content": [
+            {"type": "text", "text": "[Request interrupted by user]"}]}})
+        self.said_again()
+        a = self.actor()
+        self.assertEqual((a["status"], a["stopped"]), (data.RUNNING, None))     # the stop was the last turn's
+
+    def test_a_new_turn_after_an_error_runs_while_its_read_is_built(self):
+        self.read(time.time() - 10, error=DNS)
+        self.give_up(time.time() - 5)
+        self.said_again()
+        self.assertEqual(self.actor()["status"], data.RUNNING)
+
+    def test_a_hang_up_then_a_new_call_runs_while_its_read_is_built(self):
+        self.read(time.time() - 10, status=data.HUNG_UP, error="the harness hung up")
+        a = self.actor()
+        self.assertEqual((a["status"], a["stopped"]["kind"]), (data.IDLE, "interrupted"))    # Esc, as far as ag knows
+        self.said_again()                                       # codex hung up to send a question's reply at once
+        self.assertEqual(self.actor()["status"], data.RUNNING)
+
     def test_a_subagent_s_message_or_one_not_yet_whole_tells_nothing(self):
         self.give_up(time.time())
         self.write({"type": "assistant", "isSidechain": True, "timestamp": zulu(time.time()),
                     "message": {"role": "assistant", "content": [{"type": "text", "text": "a subagent's"}]}})
         self.assertEqual(self.actor()["status"], data.ERROR)                  # its own, before
         with open(self.record, "a") as fh:
-            fh.write('{"type": "assistant", "timestamp": "')                  # being written
-        self.assertEqual(self.actor()["status"], data.RUNNING)
-
-    def test_its_record_is_watched_while_it_runs_and_a_change_rings_the_actor(self):
-        hub = live.Hub()
-        rung = []
-        hub.ring = lambda gatherer, channel=None, what="": rung.append((gatherer, channel))
-        fallback = live.Fallback(hub, seconds=3600)
-        self.addCleanup(fallback.close)
-        self.read(time.time() - 4, error=DNS)
-        self.assertEqual(self.actor()["status"], data.RUNNING)               # read: watched from now on
-        self.assertEqual(list(live._RECORDS), [self.record])
-        fallback.check_records()
-        self.assertEqual(rung, [])
-        time.sleep(0.01)
-        self.give_up(time.time())                                             # Claude Code stops trying
-        fallback.check_records()
-        self.assertEqual(rung, [("g", SESSION)])
-        self.assertEqual(self.actor()["status"], data.ERROR)                  # read again: not running, not watched
-        self.assertEqual(live._RECORDS, {})
-
+            fh.write('{"type": "assistant", "timestamp": "')                  # being written: read once it is whole
+        self.follow()
+        self.assertEqual(self.actor()["status"], data.ERROR)
 
 class WakeTest(unittest.TestCase):
     def test_an_actor_is_rung_once_its_time_comes(self):
