@@ -2956,12 +2956,29 @@ function agentRow(g, a, group) {
         `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null));
 }
 // Naming an actor: its top line in the list, clicked once it is the one shown, becomes a box with its name in it;
-// Enter (or a click elsewhere in the page) keeps what is typed, Esc leaves it as it was, and nothing typed takes the
-// reader's name back -- the harness's own, or what it was last asked, shows again. Kept as an event in its gatherer
-// and given to its harness (POST /api/name): Claude Code's or codex's own list of sessions shows it, and a session
-// in the dashboard's terminal is told with its harness's /rename once its turn is over. The box is one element
-// for as long as it is open (`nameInput`), put back in each redraw of the list (`nameMoving`), its caret kept.
+// Enter (or a press anywhere else in the page, or Tab away) keeps what is typed, Esc leaves it as it was, and nothing
+// typed takes the reader's name back -- the harness's own, or what it was last asked, shows again. Kept as an event in
+// its gatherer and given to its harness (POST /api/name): Claude Code's or codex's own list of sessions shows it, and
+// a session in the dashboard's terminal is told with its harness's /rename once its turn is over. The box is one
+// element for as long as it is open (`nameInput`), put back in each redraw of the list (`nameMoving`), its caret kept.
 let nameInput = null, nameMoving = false;
+// A press anywhere but in the box ends it -- also where the keys stay put (History's rows, a scroll bar) or go into a
+// pane's frame (agPanes.focus) -- and the list is drawn again only once the press is over (`pressHeld`: what waits
+// for it), so its click still lands on the row it was pressed on: another actor's shows that actor.
+let pressHeld = null;
+document.addEventListener("pointerdown", (ev) => {
+  if (!state.renaming || ev.target === nameInput) return;
+  pressHeld = pressHeld || new Set();
+  const over = () => {
+    removeEventListener("pointerup", over, true); removeEventListener("pointercancel", over, true); clearTimeout(late);
+    setTimeout(() => { const waiting = pressHeld; pressHeld = null; for (const fn of waiting || []) fn(); }, 0);   // after its click
+  };
+  addEventListener("pointerup", over, true); addEventListener("pointercancel", over, true);
+  const late = setTimeout(over, 3000);               // released where this page never hears it
+  endRename(true);
+}, true);
+function drawNamed() { renderAgents(); drawWho(); }
+const redrawNamed = () => pressHeld ? pressHeld.add(drawNamed) : drawNamed();
 const nameAnswers = new Map();                       // what came of each name given from this page: actor -> the answer
 const nameKey = (gname, c) => `${gname}\u0000${c}`;
 function nameNote(g, a) {
@@ -2991,7 +3008,8 @@ function nameBox() {
     if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); endRename(true); }
     else if (ev.key === "Escape") { ev.preventDefault(); endRename(false); }
   });
-  // a click elsewhere keeps it; not a redraw (`nameMoving`), nor the window going to the back (it comes back focused)
+  // Tab away keeps it (a press has ended it already); not a redraw (`nameMoving`), nor the window going to the back
+  // (it comes back focused)
   nameInput.addEventListener("blur", () => { if (!nameMoving && document.hasFocus() && state.renaming === r) endRename(true); });
   return nameInput;
 }
@@ -3001,10 +3019,10 @@ async function endRename(keep) {
   state.renaming = null; nameInput = null;
   const g = state.home.gatherers.find((x) => x.name === r.g), a = g && g.agents.find((x) => x.channel === r.c);
   const text = r.value.replace(/\s+/g, " ").trim().slice(0, 120);
-  if (!keep || !a || text === ((a.name && a.name.text) || "") || (!text && !r.was)) { renderAgents(); return; }
+  if (!keep || !a || text === ((a.name && a.name.text) || "") || (!text && !r.was)) { redrawNamed(); return; }
   const before = a.name;
   a.name = text ? { text, by: "user" } : null;     // shown at once; the gatherer's event confirms it (the harness's own back)
-  renderAgents(); drawWho();
+  redrawNamed();
   try {
     const got = await post("/api/name", { gatherer: r.g, channel: r.c, name: text, harness: a.harness, cwd: a.cwd });
     nameAnswers.set(nameKey(r.g, r.c), got);
@@ -3013,7 +3031,7 @@ async function endRename(keep) {
     a.name = before;
     setLive(`Not named: ${err.message}`);
   }
-  renderAgents(); drawWho();
+  redrawNamed();
 }
 // A shell's row (isShell): where it was opened, and when; its close button closes its terminal, as a window's does.
 const SHELLS = "Terminals";
@@ -3644,7 +3662,7 @@ if (!PANE && !SNAPSHOT) window.agPanes = Object.freeze({
   },
   viewed(win, id) { const p = paneOf(win); if (p) { p.view = id; savePanes(); } },
   top(win, height) { const p = paneOf(win); if (p) topRow(p, height); },
-  focus(win) { const p = paneOf(win); if (p) focusPane(p); },
+  focus(win) { if (state.renaming) endRename(true); const p = paneOf(win); if (p) focusPane(p); },   // a press in its frame
   close(win) { const p = paneOf(win); if (p) closePane(p); },
 });
 // In a frame: its URL says what it shows -- its actor and view -- so that loaded again it shows them still.
