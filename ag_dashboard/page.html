@@ -825,10 +825,9 @@ button:disabled { opacity: .5; cursor: default; }
 .ed-bar { position: sticky; top: 0; z-index: 1; background: var(--page); padding: 0 8px 6px; display: grid; gap: 5px; }
 .ed-tree:has(> .ed-bar) { padding-top: 0; }
 .ed-bar .row { display: flex; gap: 4px; }
-.ed-up { flex: none; padding: 2px 8px; }
-.ed-path-in, .ed-pick { min-width: 0; width: 100%; font: 12px/1.4 var(--mono); padding: 3px 6px; color: var(--ink); background: var(--surface);
+.ed-up { flex: none; display: inline-flex; align-items: center; padding: 2px 6px; color: var(--ink-2); }
+.ed-pick { min-width: 0; width: 100%; font: 12px/1.4 var(--mono); padding: 3px 6px; color: var(--ink); background: var(--surface);
   border: 1px solid var(--ring); border-radius: 5px; }
-.ed-pick { font-family: inherit; color: var(--muted); }
 .ed-avs { display: inline-flex; align-items: center; flex: none; }
 .ed-avs img, .ed-avs .ed-noav { width: 15px; height: 15px; border-radius: 50%; margin-left: -5px; box-shadow: 0 0 0 1.5px var(--page); }
 .ed-avs > :first-child { margin-left: 0; }
@@ -2180,6 +2179,7 @@ const ICONS = {
   sidebar: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM6.25 2.75v10.5",
   pulse: "M1.5 8.5h2.75l1.75-4.25 2.5 7.5 2-5.5 1.25 2.25h2.75",   // what runs in the background: alive
   code: "M5.25 4.75L2 8l3.25 3.25M10.75 4.75L14 8l-3.25 3.25M9.25 2.75l-2.5 10.5",   // the Editor: a file's code
+  folderUp: "M1.75 4a1 1 0 0 1 1-1h3.4l1.5 1.6h5.6a1 1 0 0 1 1 1v6.65a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1zM8 11.1V7.1M6.3 8.8 8 7.1l1.7 1.7",   // the folder above
   power: "M8 1.75v5.5M4.6 3.9a5.25 5.25 0 1 0 6.8 0",                  // a shell terminated
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
@@ -4030,8 +4030,8 @@ function chatCard(info) {
     ...[viewSwitcher(view)].filter(Boolean),
     el("div", { class: "side-btns" },
       SNAPSHOT ? null : el("button", { type: "button", class: "details-btn", "aria-expanded": edShown() ? "true" : "false", "aria-label": "Editor",
-        title: "Editor: files edited live, above the actors' views -- with everyone who has a file open, and what the actors write to them as it lands",
-        onclick: () => setEditor(!edShown()) }, strokeIcon(ICONS.code, 16)),
+        title: "Editor, at this actor's working directory: files edited live, above the actors' views -- with everyone who has a file open, and what the actors write to them as it lands. Closed by its ×",
+        onclick: () => setEditor(true, edActorDir()) }, strokeIcon(ICONS.code, 16)),
       el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false", "aria-label": "Details",
         title: "Details: what ag saw and did for this actor (its context, calls, history and builds), and the history's other views",
         onclick: () => setDetails(!state.details) }, strokeIcon(ICONS.panel, 16)))];
@@ -7261,26 +7261,27 @@ function edFolders() {
     }
   return [...by.entries()].sort((x, y) => y[1].last - x[1].last).slice(0, 15);
 }
+// The folder shown, picked among the actors' (itself first, when not one of theirs); the folder above it, beside.
+// A long path said by its last two folders, the end of it what tells one from another (the whole in its title).
+const edShort = (p) => { const t = edTilde(p), parts = t.split("/").filter(Boolean); return t.length <= 26 || parts.length <= 2 ? t : `…/${parts.slice(-2).join("/")}`; };
 function edBar() {
   if (!ed.bar) return;
   const folders = edFolders();
   const sig = JSON.stringify([ed.root, ed.home, folders.map(([d, v]) => [d, v.names])]);
   if (sig === ed.barSig) return;
   ed.barSig = sig;
-  const path = el("input", { class: "ed-path-in", value: edTilde(ed.root), spellcheck: "false", "aria-label": "The folder shown",
-    title: "The folder shown: type another's path, then Enter" });
-  path.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter") { ev.preventDefault(); edGo(path.value.trim().replace(/^~(?=\/|$)/, ed.home || "~")); }
-    else if (ev.key === "Escape") { path.value = edTilde(ed.root); path.blur(); }
-  });
-  const pick = el("select", { class: "ed-pick", "aria-label": "An actor's folder", title: "An actor's working directory" },
-    el("option", { value: "", text: "Actors' folders…" }),
-    ...folders.map(([d, v]) => el("option", { value: d, text: `${edTilde(d)}${v.names.length ? " — " + v.names.join(", ") : ""}` })));
+  const theirs = folders.some(([d]) => d === ed.root);
+  const pick = el("select", { class: "ed-pick", "aria-label": "The folder shown", title: `The folder shown: ${edTilde(ed.root)}` },
+    theirs ? null : el("option", { value: ed.root, selected: "", title: edTilde(ed.root), text: edShort(ed.root) }),
+    folders.length ? el("optgroup", { label: "Actors' folders" },
+      ...folders.map(([d, v]) => el("option", { value: d, selected: d === ed.root ? "" : null, title: edTilde(d),
+        text: `${edShort(d)}${v.names.length ? " — " + v.names.join(", ") : ""}` }))) : null);
   pick.addEventListener("change", () => { if (pick.value) edGo(pick.value); });
+  const above = edDir(ed.root);
   ed.bar.replaceChildren(el("div", { class: "row" },
-    el("button", { type: "button", class: "ed-up", title: "The folder above", "aria-label": "The folder above",
-      disabled: ed.root === "/" ? "" : null, onclick: () => edGo(edDir(ed.root)) }, "↑"), path),
-    ...(folders.length ? [pick] : []));
+    el("button", { type: "button", class: "ed-up", title: ed.root === "/" ? "The top folder" : `The folder above: ${edTilde(above)}`,
+      "aria-label": "The folder above", disabled: ed.root === "/" ? "" : null, onclick: () => edGo(above) }, strokeIcon(ICONS.folderUp, 15)),
+    pick));
 }
 function edGo(dir) {
   dir = (dir || "").replace(/\/+$/, "") || "/";
@@ -7712,17 +7713,21 @@ function edHead() {
 // its file is closed too -- the others no longer see this page in it -- and opened again with it.
 state.editor = !PANE && !SNAPSHOT && (() => { try { return localStorage.getItem(ED_SHOWN_KEY) === "1"; } catch (e) { return false; } })();
 const edShown = () => PANE ? !!(window.parent.agEditorPanel && window.parent.agEditorPanel.shown()) : !!state.editor;
-function setEditor(open) {
-  if (PANE) { if (window.parent.agEditorPanel) window.parent.agEditorPanel.set(open); return; }
+// `dir`: the folder to show in it, opened -- a pane's actor's working directory, by its button.
+function setEditor(open, dir = null) {
+  if (PANE) { if (window.parent.agEditorPanel) window.parent.agEditorPanel.set(open, dir); return; }
   state.editor = open;
   if (!open) edClose();
   try { localStorage.setItem(ED_SHOWN_KEY, open ? "1" : ""); } catch (e) { /* this page only */ }
   setHeadHover();
   for (const p of panes.others) p.call("editor", open);
   edMount();
+  if (open && dir) edGo(dir);
   keepingPlace(renderMain);                          // its button in the header: pressed, or not
   drawn.main = mainSignature();
 }
+// The selected actor's working directory (this page's: a pane's, in its frame).
+const edActorDir = () => { const info = selectedInfo(); return (info && (info.cwd || (info.session && info.session.cwd))) || null; };
 if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor };
 setHeadHover();                                      // the Editor open from the last visit: the heads on hover
 const edCloseBtn = () => el("button", { type: "button", class: "ed-close", title: "Close the editor", "aria-label": "Close the editor",
@@ -7768,8 +7773,7 @@ function edMount() {
   if (!ed.root) {                                    // the folder last shown, else the actor's, else the dashboard's
     let dir = "";
     try { dir = localStorage.getItem(ED_ROOT_KEY) || ""; } catch (e) { /* this page only */ }
-    const info = selectedInfo();
-    edGo(dir || (info && (info.cwd || (info.session && info.session.cwd))) || (state.home && state.home.cwd) || "/");
+    edGo(dir || edActorDir() || (state.home && state.home.cwd) || "/");
   }
   if (opening) {                                     // shown again: drawn, and its file opened again
     ed.barSig = ""; edBar(); edTree(); edHead();
