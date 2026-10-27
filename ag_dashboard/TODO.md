@@ -252,3 +252,49 @@ Not covered yet:
 - [ ] **A codex patch's command** reads "apply_patch" in the Files view's commands, not the file it changes.
 - [x] **Tests that fail on macOS by path alone:** test_dashboard_codex's ExecTest, test_join's guide test and
   test_pi_launch compare paths as written, not through the /var symlink (#128).
+
+## The Editor panel
+
+The Editor (editor.py, page.html's "the Editor") opens from a pane's header above the panes: the actors' views are
+below it, shorter while it is open, and Cmd/Ctrl+click in the list opens more of them side by side. On its left, a
+folder's tree, any folder: the one above, one typed, or an actor's working directory. A file opens as a shared document
+(Yjs, kept by pycrdt on the dashboard's side): every page with the file open sees the others' edits and cursors as they
+type. A change written to the file (by an actor, or anything else) is merged three ways, by line, as version control
+merges: lines only the file changed take its change (marked until the next change on disk, or the header's ×); lines
+it changed that the pages changed too, differently, are a conflict -- the pages' kept, the file's shown under them,
+with Keep yours / Take theirs / Keep both. So are its changes to lines the pages saved in the last ten minutes
+(SAVE_GUARD), however it came to change them (an actor rewriting what was typed and auto-saved, a script's write from
+the file before the save, the save undone on purpose). Save writes the document to the file;
+with Auto-save on (a switch in its header, the reader's, kept in the browser), so does a pause of a second after any
+edit to it -- except of a file deleted on disk, which only Save writes again.
+Each listed file and folder has the actors that changed it in the last half hour, from what ag's hook found their tool
+calls did on disk (`_touches`): two or more are an amber badge in the tree, and "N actors changing it" over the file.
+
+Not done yet:
+
+- **Who changed it comes a moment late.** ag records a call's changes when its results come back, a few seconds after
+  the file changed: until then the change is credited to the one actor running in a directory that holds the file,
+  if there is just one (said as "likely"). Once file changes arrive as events (the harnesses-as-events design's
+  `file_touched`), the editor should read those instead of `_touches`.
+- **The actors are not told.** A save from the Editor changes a file an actor may be working on; Claude Code's Edit
+  and Write then refuse ("modified since read") and re-read it, but nothing says who changed it or why. Once the
+  dashboard writes its own actions as events, a save should be one (the user's edit of the file), for the gatherer
+  to pass on. Nor are two actors told they are changing the same file: the Editor shows it, but only to the reader.
+- **Lines saved lately, after a change on disk.** A change on disk ends the run of saves its guard counts from: lines
+  saved before it are the file's again, guarded once more only when saved again. And a save made in the moment between
+  its own look at the file and its write can still overwrite a write (`Room._write` looks again just before it
+  replaces the file, which narrows the window, not closes it). Auto-save makes this more frequent, and Claude Code's
+  "modified since read" re-reads too.
+- **Ten minutes is a guess.** An actor asked to rewrite what the reader just wrote is asked about too (Take theirs).
+- **Conflicts are by line.** Two edits on the same line are a conflict even where they touch different words; edits
+  on lines side by side merge. An edit a page sends while the disk's change is being merged (in flight, ~50 ms) is
+  merged by the CRDT, not checked. A conflict's lines are kept in the dashboard's memory: a restart drops them (and
+  the unsaved lines with them).
+- **No "revert to the file".** A page cannot throw away the unsaved changes and take the file as it is, but by
+  saving and putting the file back (which then asks, as a write over the save).
+- **Unsaved edits live in the dashboard's memory.** A dashboard restart loses them: the page says so and opens the
+  file again from disk. They could be kept in the dashboard's own table (the document's update, per file).
+- **One file at a time.** The tree opens one file, with no tabs.
+- **Large pastes.** A single edit over the server's 1 MB request limit (MAX_BODY) is refused; the page should split
+  it, or the edit endpoint take more.
+- **Codex.** Nothing in the panel is Claude Code's, but it has only been tried with Claude Code actors.
