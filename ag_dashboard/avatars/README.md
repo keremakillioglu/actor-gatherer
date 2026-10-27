@@ -34,8 +34,16 @@ a book (read), a magnifying glass (search), a pencil and sheet (edit), a checkli
 sent off (ship), an hourglass (wait), little copies of itself (team). As a call ends it slows to a stop and puts
 the tool away, then thinks until the next, with a thought bubble whose dots are in its hue; only then does it
 move as its own character, its move and its effect. It reacts the same way to how a call ended: a failure, failures
-in a row, tests passed or failed, a commit. Its turn over, it sits small under it, done.
+in a row, tests passed or failed, a commit. Its turn over, it sits small under it, done. Before its first
+message, it waves hello (page.html's `greeting`): a hand in its hue raised beside it, waving a few times, then resting.
 The dashboard's settings can switch this to "Simple" instead (kept in the browser): the character small,
 with only its own move and effect.
+
+Under it waving, it says something to start: one of its lines in `hello.toml`, here, under its name (one in
+every hue, `daruma-red`, under its name without the hue, `daruma`). The drawn ones have four each, one of each
+style -- playful, plain with its name, its sound and "Ready when you are.", a haiku. Each actor says one, the
+same always: the next actor given a picture says another, at random, every style coming round in turn
+(ag_dashboard/avatars.py's `next_said`). The dashboard reads the file again whenever it changes, so an edited
+line shows from the next update, or a reload of the page. With none, it says only that there are no messages yet.
 
 A dashboard running sees a new one at once. Removing one gives its actors another.
