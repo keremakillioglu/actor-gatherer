@@ -1,0 +1,1455 @@
+{
+ "history": [
+  {
+   "type": "additional_tools",
+   "id": "at_01a17cb0-8737-73c3-a0b5-8e93f661133a",
+   "role": "developer",
+   "tools": [
+    {
+     "type": "namespace",
+     "name": "functions",
+     "description": "",
+     "tools": [
+      {
+       "type": "custom",
+       "name": "exec",
+       "description": "Run JavaScript code to orchestrate/compose tool calls\n- Evaluates the provided JavaScript code in a fresh V8 isolate as an async module.\n- All nested tools are available on the global `tools` object, for example `await tools.exec_command(...)`. Tool names are exposed as normalized JavaScript identifiers, for example `await tools.mcp__x(...)`.\n- Nested tool methods take either a string or an object as their input argument.\n- Nested tools return either an object or a string, based on the description.\n- Runs raw JavaScript -- no Node, no file system, no network access, no console.\n- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.\n- You may optionally start the tool input with a first-line pragma like `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.\n- `yield_time_ms` asks `exec` to yield early if the script is still running. Defaults to 30000 ms.\n- `max_output_tokens` sets the token budget for direct `exec` results. Defaults to 10000 t\n[… 23008 characters trimmed …]\nthe given UTC offsets.\n  time?: Array<{\n  // UTC offset formatted like \"+03:00\".\n  utc_offset: string;\n}>;\n  // Look up weather forecasts.\n  weather?: Array<{\n  // Number of days to return. Defaults to 7.\n  duration?: number;\n  // Location in \"Country, Area, City\" format.\n  location: string;\n  // Start date in YYYY-MM-DD format. Defaults to today.\n  start?: string;\n}>;\n}): Promise<unknown>; };\n```",
+       "format": {
+        "type": "grammar",
+        "syntax": "lark",
+        "definition": "\nstart: pragma_source | plain_source\npragma_source: PRAGMA_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\nPRAGMA_LINE: /[ \\t]*\\/\\/ @exec:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n"
+       }
+      },
+      {
+       "type": "function",
+       "name": "wait",
+       "description": "Waits on a yielded `exec` cell and returns new output or completion.\n- Use `wait` only after `exec` returns `Script running with cell ID ...`.\n- `cell_id` identifies the running `exec` cell to resume.\n- `yield_time_ms` controls how long to wait for more output before yielding again. Defaults to 10000 ms.\n- `max_tokens` limits how much new output this wait call returns. Defaults to 10000 tokens.\n- `terminate: true` stops the running cell; false or omitted waits for output.\n- `wait` returns only the new output since the last yield, or the final completion or termination result for that cell.\n- If the cell is still running, `wait` may yield again with the same `cell_id`.\n- If the cell has already finished, `wait` returns the completed result and closes the cell.",
+       "strict": false,
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "cell_id": {
+          "type": "string",
+          "description": "Identifier of the running exec cell."
+         },
+         "max_tokens": {
+          "type": "number",
+          "description": "Output token budget for this wait call. Defaults to 10000 tokens."
+         },
+         "terminate": {
+          "type": "boolean",
+          "description": "True stops the running exec cell; false or omitted waits for output."
+         },
+         "yield_time_ms": {
+          "type": "number",
+          "description": "Wait before yielding more output. Defaults to 10000 ms."
+         }
+        },
+        "required": [
+         "cell_id"
+        ],
+        "additionalProperties": false
+       }
+      },
+      {
+       "type": "function",
+       "name": "request_user_input",
+       "description": "Request user input for one to three short questions and wait for the response. This tool is only available in Plan mode.",
+       "strict": false,
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "questions": {
+          "type": "array",
+          "description": "Questions to show the user. Prefer 1 and do not exceed 3",
+          "items": {
+           "type": "object",
+           "properties": {
+            "header": {
+             "type": "string",
+             "description": "Short header label shown in the UI (12 or fewer chars)."
+            },
+            "id": {
+             "type": "string",
+             "description": "Stable identifier for mapping answers (snake_case)."
+            },
+            "options": {
+             "type": "array",
+             "description": "Provide 2-3 mutually exclusive choices. Put the recommended option first and suffix its label with \"(Recommended)\". Do not include an \"Other\" option in this list; the client will add a free-form \"Other\" option automatically.",
+             "items": {
+              "type": "object",
+              "properties": {
+               "description": {
+                "type": "string",
+                "description": "One short sentence explaining impact/tradeoff if selected."
+               },
+               "label": {
+                "type": "string",
+                "description": "User-facing label (1-5 words)."
+               }
+              },
+              "required": [
+               "label",
+               "description"
+              ],
+              "additionalProperties": false
+             }
+            },
+            "question": {
+             "type": "string",
+             "description": "Single-sentence prompt shown to the user."
+            }
+           },
+           "required": [
+            "id",
+            "header",
+            "question",
+            "options"
+           ],
+           "additionalProperties": false
+          }
+         }
+        },
+        "required": [
+         "questions"
+        ],
+        "additionalProperties": false
+       }
+      },
+      {
+       "type": "function",
+       "name": "request_user_input_async",
+       "description": "Ask the user one or more questions during ongoing work. Use this tool only to request missing information, preferences, constraints, clarification, or approval. The tool returns immediately without ending the turn or waiting for a reply; any reply arrives asynchronously as a new user message. Keep questions concise, self-contained, and easy to understand, using a level of detail appropriate to the user and task. The UI always allows a free-text answer, including when suggested options are provided. A preselected option is not submitted automatically.",
+       "strict": false,
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "questions": {
+          "type": "array",
+          "description": "One or more self-contained questions to present together, in display order.",
+          "items": {
+           "type": "object",
+           "properties": {
+            "options": {
+             "type": "array",
+             "description": "Suggested answers, in display order. Put the recommended answer first; the first option is preselected by default. The user can select one option or enter a free-text answer. Do not include an Other option or a free-text placeholder; the UI provides free-text input automatically. Omit options for a free-text-only question.",
+             "items": {
+              "type": "string"
+             },
+             "minItems": 1
+            },
+            "title": {
+             "type": "string",
+             "description": "The complete question shown to the user, including any context needed to answer it."
+            }
+           },
+           "required": [
+            "title"
+           ],
+           "additionalProperties": false
+          },
+          "minItems": 1
+         }
+        },
+        "required": [
+         "questions"
+        ],
+        "additionalProperties": false
+       }
+      }
+     ]
+    },
+    {
+     "type": "namespace",
+     "name": "clock",
+     "description": "Tools for reading and waiting on time.",
+     "tools": [
+      {
+       "type": "function",
+       "name": "sleep",
+       "description": "Pause execution for a specified duration. The sleep ends early when new input arrives for the active turn. Returns the elapsed wall-clock time.",
+       "strict": false,
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "duration_ms": {
+          "type": "number",
+          "description": "How long to sleep in milliseconds. Must be between 1 and 43200000."
+         }
+        },
+        "required": [
+         "duration_ms"
+        ],
+        "additionalProperties": false
+       }
+      }
+     ]
+    },
+    {
+     "type": "namespace",
+     "name": "collaboration",
+     "description": "Tools for spawning and managing sub-agents.",
+     "tools": [
+      {
+       "type": "function",
+       "name": "followup_task",
+       "description": "Send a follow-up task to an existing non-root target agent and trigger a turn if it is idle. If the target is already running, deliver the task promptly at message boundaries while sampling, or after the pending tool call completes.",
+       "strict": false,
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "message": {
+          "type": "string",
+          "description": "Message text to send to the target agent.",
+          "encrypted": true
+         },
+         "target": {
+          "type": "string",
+          "description": "Agent id or canonical task name to send a follow-up task to (from spawn_agent)."
+         }
+        },
+        "required": [
+         "target",
+         "message"
+        ],
+        "additionalProperties": false
+       }
+      },
+      {
+       "type": "function",
+       "name": "interrupt_agent",
+       "description": "Interrupt an agent's current turn, if any, and return its previous status. The agent remains available for messages and follow-up tasks.",
+       "strict": false,
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "target": {
+          "type": "string",
+          "description": "Agent id or canonical task name to interrupt (from spawn_agent)."
+         }
+        },
+        "required": [
+         "target"
+        ],
+        "additionalProperties": false
+       }
+      },
+      {
+       "type": "function",
+       "name": "list_agents",
+       "description": "List live agents in the current root thread tree. Optionally filter by task-path prefix.",
+       "strict": false,
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "path_prefix": {
+          "type": "string",
+          "description": "Task-path prefix filter without a trailing slash. Omit to list all live agents."
+         }
+        },
+        "additionalProperties": false
+       }
+      },
+      {
+       "type": "function",
+       "name": "send_message",
+       "description": "Send a message to an existing agent. The message will be delivered promptly. Does not trigger a new turn.",
+       "strict": false,
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "message": {
+          "type": "string",
+          "description": "Message text to queue on the target agent.",
+          "encrypted": true
+         },
+         "target": {
+          "type": "string",
+          "description": "Relative or canonical task name to message (from spawn_agent)."
+         }
+        },
+        "required": [
+         "target",
+         "message"
+        ],
+        "additionalProperties": false
+       }
+      },
+      {
+       "type": "function",
+       "name": "spawn_agent",
+       "description": "\n        Available model overrides (optional; inherited parent model is preferred):\n- `gpt-6-luna`: Fast and affordable model for easier tasks. Reasoning efforts: low, medium (default), high, xhigh, max.\n- `gpt-5.6-terra`: Older balanced model for straightforward work. Reasoning efforts: low, medium (default), high, xhigh, max, ultra.\n- `gpt-5.6-luna`: Older fast and efficient model. Reasoning efforts: low, medium (default), high, xhigh, max.\n        Spawns an agent to work on the specified task. If your current task is `/root/task1` and you spawn_agent with task_name \"task_3\" the agent will have canonical task name `/root/task1/task_3`.\nYou are then able to refer to this agent as `task_3` or `/root/task1/task_3` interchangeably. However an agent `/root/task2/task_3` would only be able to communicate with this agent via its canonical name `/root/task1/task_3`.\nThe spawned agent will have the same tools as you and the ability to spawn its own subagents.\n\nIt will be able to send you and other running agents messages, and its final answer will be provided to you when it finishes.\nThe new agent's canonical task name will be provided to it along with the message.\n\nNote that passing `fork_turns=\"none\"` will not pass any surrounding context to the spawned subagent, which may cause the agent to lack the context it needs to complete its task, whereas `fork_turns=\"all\"` will provide the subagent with all surrounding context.",
+       "strict": false,
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "fork_turns": {
+          "type": "string",
+          "description": "Parent history to inherit. Defaults to `all`; use `none` to start without parent history. Only `all` and `none` are supported."
+         },
+         "message": {
+          "type": "string",
+          "description": "Initial plain-text task for the new agent.",
+          "encrypted": true
+         },
+         "model": {
+          "type": "string",
+          "description": "Model override for the new agent. Omit unless an explicit override is needed."
+         },
+         "reasoning_effort": {
+          "type": "string",
+          "description": "Reasoning effort override for the new agent. Omit to inherit the parent effort."
+         },
+         "task_name": {
+          "type": "string",
+          "description": "Task name for the new agent. Use lowercase letters, digits, and underscores."
+         }
+        },
+        "required": [
+         "task_name",
+         "message"
+        ],
+        "additionalProperties": false
+       }
+      },
+      {
+       "type": "function",
+       "name": "wait_agent",
+       "description": "Wait for a mailbox update from any live agent, including queued messages and final-status notifications. The wait also ends early when new user input is steered into the active turn. Does not return the content; returns either a summary of which agents have updates (if any), an interruption summary for steered input, or a timeout summary if no activity arrives before the deadline.",
+       "strict": false,
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "timeout_ms": {
+          "type": "number",
+          "description": "Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000."
+         }
+        },
+        "additionalProperties": false
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cb0-8737-73c3-a0b5-8ea46f5ccb55",
+   "role": "developer",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "You are Codex, an agent based on GPT-6. You and the user share one workspace, and your job is to collaborate with them until their intended goal is completely handled.\n\n# Personality\n\nAs Codex, you are a curious, thoughtful collaborator and a simple, clear communicator. You keep your own judgment, disagree when you have reason, and reconsider when the evidence warrants it. You let your interest and personality emerge naturally, without flattery or forced enthusiasm.\n\n## Writing style\n\nWhen discussing technical concepts, converse like how you would to a colleague or collaborator in conversation. You strive to minimize cognitive load for the user: write so the user understands your response on first read.\n\nPrefer familiar words and concrete descriptions over abstract or technical language when they convey the same meaning. Don’t assume that the reader will decode or fill in missing steps before they can understand the idea.\n\nGive each paragraph one main point and arrange the ideas in an \n[… 16414 characters trimmed …]\nn. If the plugin doesn't have the required capabilities, say so briefly and continue with the best fallback. If the user has an explicit preference, defer to that instead.\n\nA user can also tag a plugin using `[@plugin-name](plugin://{{plugin_id}})` or an app using `[$app-name](app://{{connector_id}})`. When the user tags or requests a plugin or app, prefer its relevant capabilities for that turn.\n"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "create_time": 1793093306.167626,
+    "content_item_kinds": [
+     "model.base_instructions"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "harness",
+       "hook": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cb0-8737-73c3-a0b5-8eb2ff9fa51e",
+   "role": "developer",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expanded into an absolute path using the skill roots table.\n### Skill roots\n- `r0` = `/Users/me/.codex/skills/.system`\n- `r1` = `/Users/me/.codex/plugins/cache/openai-curated-remote/figma/16.0.0/skills`\n- `r2` = `/Users/me/.codex/plugins/cache/openai-curated-remote`\n- `r3` = `/Users/me/.codex/plugins/cache/openai-curated-remote/work-pets/0.1.6/skills`\n### Available skills\n- imagegen: Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. \n[… 9902 characters trimmed …]\nother-app pets; clarify before invoking. (file: r3/pets/SKILL.md)\n- work-pets:update-pet: Inspect, validate, preview, repair, or update a custom pet in ChatGPT Work mode, including its name, description, or sprite sheet. Use for a pet in ChatGPT or established ChatGPT Pets context. Exclude real-world and other-app pets; clarify before invoking. (file: r3/update-pet/SKILL.md)\n</skills_instructions>"
+    },
+    {
+     "type": "input_text",
+     "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `workspace-write`: The sandbox permits reading files, and editing files in `cwd` and `writable_roots`. Editing files in other directories requires approval. Network access is restricted.\n\n`approvals_reviewer` is `auto_review`: Sandbox escalations with require_escalated will be reviewed for compliance with the policy.\nIf a rejection happens, you can continue with a safer alternative, or carry out checks to prove that the action is authorized or low risk before trying again. Complete unaffected work without asking for confirmation. Report anything that remains blocked, clarify why it was blocked by auto-review, inform the user of the risk and ask for approval.\n The writable roots are `/private/tmp`, `/private/tmp/claude-501/f7co93302/w`, `/private/var/folders/jg/h0_z30556xs3mm4sx7bczfxm0000gn/T`.\n</permissions instructions>"
+    },
+    {
+     "type": "input_text",
+     "text": "<collaboration_mode># Collaboration Mode: Default\n\nYou are now in Default mode. Any previous instructions for other modes (e.g. Plan mode) are no longer active.\n\nYour active mode changes only when new developer instructions with a different `<collaboration_mode>...</collaboration_mode>` change it; user requests or tool descriptions do not change mode by themselves. Known mode names are Default and Plan.\n\n## request_user_input availability\n\nUse the `request_user_input` tool only when it is listed in the available tools for this turn.\n\nIn Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions.\n\nUse the `request_user_input` tool only for optional questions where the answer would materially improve the quality of the work.\n\nIf `request_user_input` returns no answers, continue with best judgment instead of asking again or treating the turn as blocked.\n\nNever use the `request_user_input` tool for permission requests or permission-related escalations.\n</collaboration_mode>"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "create_time": 1793093306.167626,
+    "content_item_kinds": [
+     "host_skills.instructions",
+     "permissions.instructions",
+     "collaboration_mode.instructions"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "skills"
+      }
+     },
+     {
+      "provenance": {
+       "type": "harness",
+       "hook": false
+      }
+     },
+     {
+      "provenance": {
+       "type": "harness",
+       "hook": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cb0-8737-73c3-a0b5-8ec49650d669",
+   "role": "developer",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<multi_agent_role>You are `/root`, the primary agent in a team of agents collaborating to fulfill the user's goals.\n\nAt the start of your turn, you are the active agent.\nYou can spawn sub-agents to handle subtasks, and those sub-agents can spawn their own sub-agents.\nAll agents in the team, including the agents that you can assign tasks to, are equally intelligent and capable, and have access to the same set of tools.\n\nYou can use `spawn_agent` to create a new agent, `followup_task` to give an existing agent a new task and trigger a turn, and `send_message` to pass a message to a running agent without triggering a turn.\n`send_message` calls may be read by a human, so ensure they are legible. Always put proper spaces between words and/or numbers.\nChild agents can also spawn their own sub-agents.\nYou can decide how much context you want to propagate to your sub-agents with the `fork_turns` parameter.\n\nYou will receive messages in the analysis channel in the form:\n```\nMessage Type: MESSAG\n[… 1000 characters trimmed …]\nts, meaning that up to 4 agents can be active at once, including you.\n\nFull-history forks (`fork_turns` omitted or `\"all\"`) inherit the parent model and reasoning effort and do not accept overrides. Only set `model` or `reasoning_effort` when explicitly requested by the user, applicable `AGENTS.md` instructions, or skill instructions; when doing so, set `fork_turns` to `\"none\"`.</multi_agent_role>"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "create_time": 1793093306.167626,
+    "content_item_kinds": [
+     "multi_agent.role_instructions"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "tool",
+       "namespace": "collaboration"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cb0-8737-73c3-a0b5-8ed5457e287b",
+   "role": "developer",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.</multi_agent_mode>"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "create_time": 1793093306.167626,
+    "content_item_kinds": [
+     "multi_agent.mode_instructions"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "tool",
+       "namespace": "collaboration"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cb0-8737-73c3-a0b5-8ee53523a52c",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<environment_context>\n  <cwd>/private/tmp/claude-501/f7co93302/w</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-10-27</current_date>\n  <timezone>America/Los_Angeles</timezone>\n  <filesystem><workspace_roots><root>/private/tmp/claude-501/f7co93302/w</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry><entry access=\"write\"><path>/private/tmp/claude-501/f7co93302/w</path></entry><entry access=\"write\"><special>:slash_tmp</special></entry><entry access=\"write\"><special>:tmpdir</special></entry><entry access=\"read\"><path>/private/tmp/claude-501/f7co93302/w/.git</path></entry><entry access=\"read\"><path>/private/tmp/claude-501/f7co93302/w/.agents</path></entry><entry access=\"read\"><path>/private/tmp/claude-501/f7co93302/w/.codex</path></entry><entry access=\"read\"><path>/private/tmp/claude-501/f7co93302/w/.aws</path></entry></file_system></permission_profile></filesystem>\n</environment_context>"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "create_time": 1793093306.167626,
+    "content_item_kinds": [
+     "environments.environment_context"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "harness",
+       "hook": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cb0-873b-72b0-a78a-c9bcd2a779b3",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "Read notes.txt and tell me the secret number, in one sentence."
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "create_time": 1793093306.171023,
+    "content_item_kinds": [
+     "user.text"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "user"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae06ebc100081948ad55696a0924820",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "I’ll read `notes.txt` and report the number in one sentence.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "commentary",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "create_time": 1793093308.0642912,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "custom_tool_call",
+   "id": "ctc_0590293b588359fe016ae06ebc4c9081949fb8ab0783d22b0e",
+   "status": "completed",
+   "call_id": "call_ab036d3c113e45fe806e4ee49b82a9b7",
+   "name": "exec",
+   "input": "const r = await tools.exec_command({cmd:\"cat notes.txt\",max_output_tokens:2000});\ntext(r.output);\n",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "create_time": 1793093308.3003447
+   }
+  },
+  {
+   "type": "custom_tool_call_output",
+   "id": "ctco_01a17cb0-91b6-7af0-bbe0-2f068144c2df",
+   "call_id": "call_ab036d3c113e45fe806e4ee49b82a9b7",
+   "output": [
+    {
+     "type": "input_text",
+     "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"
+    },
+    {
+     "type": "input_text",
+     "text": "The secret number is 4127.\n"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "create_time": 1793093308.854048
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae06ebe5dbc8194a063a6cd7ca9cdd9",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "The secret number is 4127.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "final_answer",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "create_time": 1793093310.3686354,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cbe-ed42-7e21-9f11-b1f9915e264b",
+   "role": "developer",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<collaboration_mode># Plan Mode (Conversational)\n\nYou work in 3 phases, and you should *chat your way* to a great plan before finalizing it. A great plan is very detailed—intent- and implementation-wise—so that it can be handed to another engineer or agent to be implemented right away. It must be **decision complete**, where the implementer does not need to make any decisions.\n\n## Mode rules (strict)\n\nYou are in **Plan Mode** until a developer message explicitly ends it.\n\nPlan Mode is not changed by user intent, tone, or imperative language. If a user asks for execution while still in Plan Mode, treat it as a request to **plan the execution**, not perform it.\n\n## Execution vs. mutation in Plan Mode\n\nYou may explore and execute **non-mutating** actions that improve the plan. You must not perform **mutating** actions.\n\n### Allowed (non-mutating, plan-improving)\n\nActions that gather truth, reduce ambiguity, or validate feasibility without changing repo-tracked state. Examples:\n\n* Reading \n[… 7398 characters trimmed …]\nhe prior plan is not acceptable but does not provide enough information to produce a complete replacement, address the concern and continue planning without producing a `<proposed_plan>` block. If the follow-up neither requires changes nor calls the plan into question (e.g. clarifying question), answer it before the block, then reproduce the prior `<proposed_plan>` unchanged.\n</collaboration_mode>"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "create_time": 1793094249.794484,
+    "content_item_kinds": [
+     "collaboration_mode.instructions"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "harness",
+       "hook": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cbe-ed47-75b3-80fb-003c2f93e4be",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "Use the request_user_input tool to ask me exactly one question: which colour I prefer, with options Red and Blue, and wait for my answer. Then propose a short two-step plan to create colour.txt holding that colour."
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "create_time": 1793094249.799232,
+    "content_item_kinds": [
+     "user.text"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "user"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "custom_tool_call",
+   "id": "ctc_0590293b588359fe016ae0726dbee88194bf4291f9723e5602",
+   "status": "completed",
+   "call_id": "call_d36d8d9f5016432ba9e9e0ec6bb56cd4",
+   "name": "exec",
+   "input": "text(ALL_TOOLS.filter(x => /request_user_input/.test(x.name)));\n",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "create_time": 1793094253.747556
+   }
+  },
+  {
+   "type": "custom_tool_call_output",
+   "id": "ctco_01a17cbe-fda8-7263-8c13-0e9e41b1ac0f",
+   "call_id": "call_d36d8d9f5016432ba9e9e0ec6bb56cd4",
+   "output": [
+    {
+     "type": "input_text",
+     "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+    },
+    {
+     "type": "input_text",
+     "text": "[]"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "create_time": 1793094253.992467
+   }
+  },
+  {
+   "type": "reasoning",
+   "id": "rs_0590293b588359fe016ae0727266d48194b0840cffe92f2672",
+   "summary": [],
+   "encrypted_content": "gAAAAABq4HJyM3uCBq-SrEy5UhhSK2Pd0vlhGxJjaImpY7pIt865qoNAWv4l9arpyfuqt53MEUFMM_IFEnvGrL1tEv_zZUa6iP-7gsA_mke3R9NK_k_KvGHTxm_8hYwYN0_ovxZg5l7FRCzZ7l3d8BdihPByBYBYKIbQ4HVyqtXYJs_GzYS7R_-fyevECuWoqpnCBDA22wPEmy4DMcwph8w8mVw35TRSfaHion8WcG2JQRJionaRKovGRFqqV9xCB6I34qj3myny1oBVQA-BAg7IIYOV97neCkXX-ECkxEpVXltz2DP6tH3COMig2OBb2lFFx5ClumIJ0Kp3f2m7u6I6CgtNa7ywxVEYPLwn479dP0T4MLWsRYxj5eciunZDl4goPjY4tjhHq3XTfp-nYBNudZRVe2DpWap_rKn8KePeli1LrGsKK8J2c-HGU0nZ7BC_-zHs4uCHDm1yyoO6hZFRGQthmRWzSGmAUn6ZFD4BqKwtrwbJz2xugSO-hIma0qSLcTjL00RLHFHCPXPdOBfAGzl-4URfxiSVwBrbi1qIxukDxFBuF_50wgDlh1ld58eg-4GJNT_H-DStnBYiGoKX9gV8mKpV3ssTy0gIOPnWu9ROTCmQX_hLVLjWUxlN1De5EUSc01OkxLZv_nybD8JG5M9wGxmMqQCQ-g0Ico7kBThZafH1LPMu6ObqPZXgFL5INDD98cdau42KeDSyluk3K60-KejHz9i6USomgFhXSaSfmUXqZirKJFYNm8U-suf6_fXqPGONT_iHfjPm82HyiAoTti7DkG0PrMxpOlzxBMf7s5R1iPpYZpNIL55NYX9EvAy8FbKR_9HUdTe20AC_70jyULMIlRyMdBQDxNn6aWHX0L3ufLePZMzzHyJWo8cVFvpVrCuS2zGlrZ91iiP6Q76zyivjhEKEZ1BzjXmJzoa6SpuADL_sXHXRaelHo-wwJHarrAq6fM57Cm4BADuNEHrQAtSTKmEI0yTH\n[… 2260 characters trimmed …]\nkxnnRdohmC74q2GOoavo1qZIXwMFZTeCSbLKD08n2P5XyTIHxHXkAregl3AKDeuvjE3FYHzzhU0pz8KcPFiwNlBOCifzEOVU-ujGp7QAoVN7DIM_EycmnLzwY0noIjWcs_IeCzE8q7n3q9Zh2hYYuVEEBV9_A6w5HmB-jutSo0GV1tO_T15NuAQswTmWwKGUjiU5CxZcvbZhMP2Cb5LyT22spHkeCnHg2xhUKOViiBJvMqGuqPfWKSd-9tzAEQwiGz4SQy9zE47ZBvsK_It-YVTpo-G_zKwUByyWJhjjsQXRXXXGisPdyWtTkkwzqlTbShkvJ0KyFqtAXUORf2JXV8jUELSvhyB4I8R8uAgHoORBQRLXHBz8JogfSO6zr2n6KJ_qsudMXVboeTaV",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cbe-ed36-7710-aa46-492ac373c4a6"
+   }
+  },
+  {
+   "type": "function_call",
+   "status": "completed",
+   "id": "fc_0590293b588359fe016ae072729e64819490b4e58124ddaa82",
+   "name": "request_user_input_async",
+   "arguments": "{\"questions\":[{\"title\":\"Colour preference\",\"options\":[\"Red\",\"Blue\"]}] }",
+   "call_id": "call_03517cd1e94348aaa24dcb361d31ef1b",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "create_time": 1793094258.6200159
+   }
+  },
+  {
+   "type": "function_call_output",
+   "id": "fco_01a17cbf-10b8-77c2-85cb-1a666486db7d",
+   "call_id": "call_03517cd1e94348aaa24dcb361d31ef1b",
+   "output": "{\"accepted\":true}",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "create_time": 1793094258.872207
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cbf-18d9-7a31-8cec-679c954d3b8e",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<send_user_message_question_reply>\n[{\"answer\":\"Blue\",\"question\":\"Colour preference\",\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_03517cd1e94348aaa24dcb361d31ef1b\\\",0]\"}]\n</send_user_message_question_reply>"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "create_time": 1793094260.95376,
+    "content_item_kinds": [
+     "user.text"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "user"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "reasoning",
+   "id": "rs_0590293b588359fe016ae07279fe18819481a7d824c28e5f3e",
+   "summary": [],
+   "encrypted_content": "gAAAAABq4HJ5DqbyW0oT5wYViGG1G4dyMOJpNQ5IplBlJ2MrH8XjIhnhhUaGonZUuuSqQPsUg0EYfpKRro1ATaNkRfedq7SsezUYzcri-7t-ECozFNAWZnZcYB2WzKWMgs88TdAQ86EZBLCk6dF_MFx5NhGXXkxWw0UneU-ar5GJ0W1Gsc8PVME_5o0U5I4nVBm_c5ml8Igli_k7wC4Re6BbTH84P7A5Xrm6dMK7lmeHQPdpZkr6R8wHEs9NUrT5axe-NpTL7Bf97liIZI-9t9H0J8Gnkts72C077CNmzv4qRkziuTjoX1eD64gtrOcKIzS0kUNTcgtI0bMIZqws0gh1klltTGvod-kU-mLZzdKtFj53Ic5WSzFtck0j2c02W-2fhYPsZL0xvZEzPF9fCok2AjVcGcnm82_PmfHhKGXnhEj3yGWD30T4DG3x6c_uHq0KEdPcbNmvlk3N0Bw3mxiNY6_9q-r111vVESJX8UVrjVipd4eXM_vI3Wj_3002de2hQRCeTTIteOsCL-wshBLl8-jgx2-H2aqZw4zEJbwTEpSeU4bVryqJlwEGGEfboMwp6nNyDwtCDD1UV0dpyWYe_NZu2dainKMARgP3tAKD6XhUygDBUrRN-BlbPCctIPozEwugg-HlpDjE_vNuo6UTMBDT0zovP2slUwiEQD9LqzFoOai7g49RKGvcSWfZtm_hItHXlGpLvradhUqI7kMMEKfhtjIgiUd1a9sdnC1JpfF342xzm2WwS6aBMbhpozMbpLdm09v1L_v32G9sTvL_mv4hM2l1vTTaZQDKtZ1k0xh48jmzy3sPCv6SCDRjgNJj2ePL0G5JMmkAdXkNzcM_wkfTh8fA4JRl6iDnYboSFTipz45ILaZWOhTH0H56B8ANK51VyV3qfuhq2viJBBhJiFi_Ig77lY5ZHf7_dK5L37qHR5TiCkFKnkSI55G3lK-4nuLR3Gm5NqVKY0CWqvlo4GdI05kkCs9sw6bY\n[… 620 characters trimmed …]\ncQHtfvNEsTeTEDeI8c41JhuV904ARZ5sD2tP_blhDt7YtJwC5RshPrbQw_gkukOJkHgFkJPFKCUCmkFMtx16FtwnTZunwiYUCCbMMnr3Wb7FaGcooP_9sBUGgLz6awdtWHZZFCq0wFGgk7mUoxe8Ur4kC6qIwVMKazEaGHavG3OhpmaFym9WE5-BhzXwum2T9Iay7NeWHrPy4lJlqXfOIpm0owUUQS-xQn2hBR77pO1IzF0KMlZ0sB9NnSvaK_fgmQk_ys-C5rxirJJdjXk_tVvdoUDWSypeA_V5mpw-JW36TwTr_voridUGZirbcl9Krnfw4AVPQgzVYde8qvOWiHMMWejQQcgbSJCDZftVBnE5mDSgZmxRwgmjjXWwW01T4_ocNBT8DDmagA==",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cbe-ed36-7710-aa46-492ac373c4a6"
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae0727a195081948e4e700aa5d72b79",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "<proposed_plan>\n## Create `colour.txt`\n\n1. Create `colour.txt` in the workspace.\n2. Write `Blue` into the file.\n</proposed_plan>",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "final_answer",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "create_time": 1793094266.100198,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cce-28e8-7481-8ea5-2e7733562fe6",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "Name the file colours.txt instead"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-28d2-7851-b99b-4b952f2528bd",
+    "create_time": 1793095248.104286,
+    "content_item_kinds": [
+     "user.text"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "user"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae076563cb08194b129bcaea5aa1f81",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "<proposed_plan>\n## Create `colours.txt`\n\n1. Create `colours.txt` in the workspace.\n2. Write `Blue` into the file.\n</proposed_plan>",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "final_answer",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-28d2-7851-b99b-4b952f2528bd",
+    "create_time": 1793095254.248902,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cce-4b8b-77c2-b595-8edaef7bca7e",
+   "role": "developer",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<collaboration_mode># Collaboration Mode: Default\n\nYou are now in Default mode. Any previous instructions for other modes (e.g. Plan mode) are no longer active.\n\nYour active mode changes only when new developer instructions with a different `<collaboration_mode>...</collaboration_mode>` change it; user requests or tool descriptions do not change mode by themselves. Known mode names are Default and Plan.\n\n## request_user_input availability\n\nUse the `request_user_input` tool only when it is listed in the available tools for this turn.\n\nIn Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions.\n\nUse the `request_user_input` tool only for optional questions where the answer would materially improve the quality of the work.\n\nIf `request_user_input` returns no answers, continue with best judgment instead of asking again or treating the turn as blocked.\n\nNever use the `request_user_input` tool for permission requests or permission-related escalations.\n</collaboration_mode>"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-4b7b-7c93-8367-c230a080c8c1",
+    "create_time": 1793095256.971922,
+    "content_item_kinds": [
+     "collaboration_mode.instructions"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "harness",
+       "hook": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cce-4b92-7d33-89d9-454e8bf6512b",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "Implement the plan."
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-4b7b-7c93-8367-c230a080c8c1",
+    "create_time": 1793095256.978984,
+    "content_item_kinds": [
+     "user.text"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "user"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae07666c4508194b78a05b659ea1d45",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "I’ll create `colours.txt` with the chosen colour, Blue.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "commentary",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-4b7b-7c93-8367-c230a080c8c1",
+    "create_time": 1793095270.7838647,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "custom_tool_call",
+   "id": "ctc_0590293b588359fe016ae07667a870819497bed02feffcbee9",
+   "status": "completed",
+   "call_id": "call_698a2c3c0d534bcbbb17c216f0472282",
+   "name": "exec",
+   "input": "const r = await tools.exec_command({cmd:\"pwd && ls -la\",max_output_tokens:1000});\ntext(r.output);\n",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-4b7b-7c93-8367-c230a080c8c1",
+    "create_time": 1793095271.7172506
+   }
+  },
+  {
+   "type": "custom_tool_call_output",
+   "id": "ctco_01a17cce-863c-7283-af2b-e305dc5bb347",
+   "call_id": "call_698a2c3c0d534bcbbb17c216f0472282",
+   "output": [
+    {
+     "type": "input_text",
+     "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+    },
+    {
+     "type": "input_text",
+     "text": "/private/tmp/claude-501/f7co93302/w\ntotal 8\ndrwxr-xr-x@ 3 sep  wheel   96 Oct 27 02:28 .\ndrwxr-xr-x@ 7 sep  wheel  224 Oct 27 02:28 ..\n-rw-r--r--@ 1 sep  wheel   27 Oct 27 02:28 notes.txt\n"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-4b7b-7c93-8367-c230a080c8c1",
+    "create_time": 1793095271.996846
+   }
+  },
+  {
+   "type": "reasoning",
+   "id": "rs_0590293b588359fe016ae0766b00d8819488fa3b12a784b6de",
+   "summary": [],
+   "encrypted_content": "gAAAAABq4HZrDiPUJMlY4EKoEcOFxamOxnUdvqgNYk3xNT6I4QRZoAlGGldhFx3hJI5O0U0IgQRxHovsighrdF3wdcXu6Pd2cGfA34zZ2QQ_b9H3v0JtJggIllhpzs8_fqdLU6WDeACYmDmEGkyRuMsdEhceNdmtvosIblxLu50Nml_1mn06En037HdUAcoWuonswWPVfvWkGToEv9AFlMpSD3-n2PwNGiS7RwEQl-ldCSL-t52ADSkh053FE_yjDvdyykADJXgD5TuVxQlEfnfjcu01IVRloP6ViXjvpKmK9Vz8CjYG3Wj6_bDEIscRXhKuN61Ak3IN3G7tn30oR2Sgtm530rn7KHweYBfUDA9Gfq4VBJF-3ZQu3H1aKOemCZOC7LSQbzPQ15bJNL2-qam4LuzPcuewGjs1mzAv_EM6V8-jL1WeJU4OdCuuN-UwZYj4gU0YvGutuI1ed_Yo_m1MVmQW4tWn8oghKdlWnwo0p51K3taoI6t1HYa1WlkZWHCuu2EVPhGNTqCqmJguc3mNwKVPNmtAYBTqIIvIIjc6YtMcuYoc9iv0d2SSoK99OJoczgQFLAqhJN7TSEbZku9RCdiK1TjbZjYjyG3eZQ2SddTNXL-N-12NPsfv2xyHOtOnazlzmKaR1XllVQm7UCr8HmytZwGErvtJqkWv18MD-kf15hZA1w0t54xnNjLp68SDirNyI5FXlSpdRIPk_fWxis34yaxQu7fHGcMeHjxNV4JSzrnLcp0x9T01d9508rRREzsRiKR7WUUF5FLJ4DlYUlAVm4TqI0uqLo-swSY6aJ9CXBWvQqwoYes4dhzzpBmrCNwSfS6CHlbz2ewp0YFc4XQBuoR7PG5l4d1xZQpFt6YNPl7w4Uxbt-tdBzlXYZLEwVK-aTHP5ViyRR9XGPfIZS_hEJg32AO9guOMXsvIg-InWah_dYCxLIRyWcj3n31ckabUs_cLtzOblbTLlJcfUVdhRjwi50ap5nGS\n[… 212 characters trimmed …]\n-F_7_nEQEtIdKesKXRDmNU1AFElAXx7Ouk9F9MHoT9JKHEyfDjOmZXx3ZjPpusEVMn4FwNWmrqRzKfaF_-ktiuzgiizuLW2Mh9FJTbWrjnvA6xKKrN8O2Upx0Lz-N4tGaTYExfSIdSug2MsU2gL7YXucjF7_V5UQdOMgCaWdgK9ORlf2Jw--kSWlRgv2bhT8hhWoDAomLyDrBZsv2ZdXKA5SfgYUssuv4segESVK38NcClIx7d936XQbsMu4EqJw-dSqEvakmjUpMmv_I9UllvkS5WuAeZsH7_yKkaBL2QMRu9RDqOijtfz9oocNiaUYFB3nUS_oxbEXsJUFMHjFWzugJwC6WtddoiVRbzZx7SKI0IYLr6ynzDo-V04JCizn1g4lprX9aS2TWxfa",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-4b7b-7c93-8367-c230a080c8c1"
+   }
+  },
+  {
+   "type": "custom_tool_call",
+   "id": "ctc_0590293b588359fe016ae0766b0e708194afc0c00d21005b02",
+   "status": "completed",
+   "call_id": "call_0a9b5ab976b3450aa78a080a4fcc99e6",
+   "name": "exec",
+   "input": "const r = await tools.exec_command({cmd:\"printf 'Blue\\\\n' > colours.txt\"});\ntext(r.output);\n",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-4b7b-7c93-8367-c230a080c8c1",
+    "create_time": 1793095275.06829
+   }
+  },
+  {
+   "type": "custom_tool_call_output",
+   "id": "ctco_01a17cce-9253-7652-8028-4bee9a3ed107",
+   "call_id": "call_0a9b5ab976b3450aa78a080a4fcc99e6",
+   "output": [
+    {
+     "type": "input_text",
+     "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-4b7b-7c93-8367-c230a080c8c1",
+    "create_time": 1793095275.091056
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae0766d6d60819498ce9b9b1347bf31",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "Created [colours.txt](/private/tmp/claude-501/f7co93302/w/colours.txt) containing `Blue`.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "final_answer",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-4b7b-7c93-8367-c230a080c8c1",
+    "create_time": 1793095277.4292,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cce-ab02-73e3-96da-f60830845723",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "Use the request_user_input_async tool to ask me one question: which number I like, with options One and Two. Don't wait for the answer: right after asking, run `sleep 20` in the shell, then reply 'asked'. When my answer comes, repeat it back in one word."
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33",
+    "create_time": 1793095281.410325,
+    "content_item_kinds": [
+     "user.text"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "user"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae07676d0508194bdf931ccc3b48d39",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "I’ll ask the one question, then run `sleep 20` in the shell as requested.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "commentary",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33",
+    "create_time": 1793095286.8160403,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "function_call",
+   "status": "completed",
+   "id": "fc_0590293b588359fe016ae076771e6881948eb47f08345b19ce",
+   "name": "request_user_input_async",
+   "arguments": "{\"questions\":[{\"title\":\"Number you like\",\"options\":[\"One\",\"Two\"]}]}",
+   "call_id": "call_32b3b26a1172484b88f80bce98ecfe1e",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33",
+    "create_time": 1793095287.1199267
+   }
+  },
+  {
+   "type": "function_call_output",
+   "id": "fco_01a17cce-c23a-70f1-a8db-2a105fd9c1bb",
+   "call_id": "call_32b3b26a1172484b88f80bce98ecfe1e",
+   "output": "{\"accepted\":true}",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33",
+    "create_time": 1793095287.354371
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cce-cb55-7532-bbc2-e82c2b5e08c1",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<send_user_message_question_reply>\n[{\"answer\":\"Two\",\"question\":\"Number you like\",\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_32b3b26a1172484b88f80bce98ecfe1e\\\",0]\"}]\n</send_user_message_question_reply>"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33",
+    "create_time": 1793095289.685709,
+    "content_item_kinds": [
+     "user.text"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "user"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "reasoning",
+   "id": "rs_0590293b588359fe016ae076831d708194aa7bbe98e2681741",
+   "summary": [],
+   "encrypted_content": "gAAAAABq4HaDMY_29xPNR3jGpbDUelrAuiGwhod8YRQCEAILlhdfyc8X96kcsbc54e2qED7PnZGI-D83Ql30zozloNLShy3TaElrKyMD0VdIdVXueSP3gQBHUYlz-D349-b_BSSx_yNdtQNVLOnUbvR1J0RGqpXZVjdhYyyHAzyqbgdCWTeiWGaOAUKEZJtZgNpNC53JuBPr8HIej_y_m52qPLQdY5O-EuFx5ND2Lay1v7dgGvENU__U0wjuSiRrhskTAQ0bwxK9ZxP-5x-W--f9mUiOEg8UMWxvHFjtfZjAsRUQryL_NgFPBXcS_iV1TxEX0hs2y5X44a4XVFL2EjIZWWBubeVz6w1SLFliPNR7YPgu_4cqudMaPZKngCSnwv7MprBkrH00GTKmX7GNv9ElU3CisHR0egzU2cRd0z1a9Wy1KfN31dAgtcSHYXej6GYQgIlg6dU9X5GlgEpBv7ubD3GlEdL57Nl0f9HkW7ugXc2AmYwpfkI8NpKmnmaz5_4n8lsGPK-xPceJtnQsPOhW4kHcArxf63uZJrgL5EzQHzmkxl4IRpB-4nPS2QGFUugOCrXFkMjA2RD5d3f7QH316_kiBNLB1mQbQ63w_JovK1qEhdaO5gZIBvCdOpc4GlpatZYYPCParQ_8FtAtpjL1SYDKgt6Gs7awSu76ybdqFg2R98ZMSph9CIj-RQep6aQZzs0QKZZO6WYA0QGKEMboxPkEngApiB0sj0lcij8hoCqenQKzZNEMWz8XLVsNxSKCqAsoV0vLK5kzVRhydN6aEApa2CasBo0389yyTi-j2sL3PnJQH1kUozZfnOR0kMZj74kypbhNx8NtX8POU6K1B3TaygZ8QvJRReFZRbTiD_QY75DnqT0kI9TFNJvKxumcL9Ao1cK86ayqVpEBAaRIcOSX5k0ceBINNL4w69yE4EF7bsgC_re5PTKwoa3obMe_IB2mzO8rX63CJJTt-jOxGrj2jfMzj-bNVEAB\n[… 4628 characters trimmed …]\nA7RRu4S5MiDdt0n-f0Ida9pZZ6BN6-n-hGC6hvE3CwMrht0_bQn_4LadW_stzjKB5zhC0useXZABZDqPrnGVqZ1ZiLZZ4MPtQiRQW2v5U7upWUcCShub548w4IMc_ZaUpQ9OVTt2cSvQBDvCtK_Gos_7uGgwXldk_8xEDicCOFYxbHsBdWxU9-DyR6dSnZf368OGvMJ-dQfcpapKrkVYI8268tD0yuAEFI117BlYvjIcIBR_u13Z8cIldqN3KuYpuDGl9ONlimnwJtony0n5JEAjeETbC4noSUJQp-fHvPdR_HOS7cy9nwGF4W_JvImbEyfC76fLHJhUroznYAqaS2m_30ePg6sRlxcEK5F6zkr_fXFZRYCMfxSIadCXiE1pVk6R2aNuDJ0dtGdS",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33"
+   }
+  },
+  {
+   "type": "custom_tool_call",
+   "id": "ctc_0590293b588359fe016ae076832c748194905ae4d87b3149d8",
+   "status": "completed",
+   "call_id": "call_1dd96d8cc2bf41059d3601fd6a8a9a71",
+   "name": "exec",
+   "input": "const r = await tools.exec_command({cmd:\"sleep 20\",yield_time_ms:30000});\ntext(r.output || \"sleep completed\");\n",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33",
+    "create_time": 1793095299.175411
+   }
+  },
+  {
+   "type": "custom_tool_call_output",
+   "id": "ctco_01a17ccf-3f61-7ff3-9ce9-64e7c64d8015",
+   "call_id": "call_1dd96d8cc2bf41059d3601fd6a8a9a71",
+   "output": [
+    {
+     "type": "input_text",
+     "text": "Script completed\nWall time 20.0 seconds\nOutput:\n"
+    },
+    {
+     "type": "input_text",
+     "text": "sleep completed"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33",
+    "create_time": 1793095319.393449
+   }
+  },
+  {
+   "type": "reasoning",
+   "id": "rs_0590293b588359fe016ae0769a93108194bf260945262af596",
+   "summary": [],
+   "encrypted_content": "gAAAAABq4Haa6f_8DJsdYkeyn9am58HlA9zkYdkugab-qvQbFj--lMJ8jH9tPHQd7vd5Xzz-lgEkzgrPR75dqmRa7T6jNj-t67u7Z2FrA0I9YJS4W6Yk-T74C-8IYJMJ77ndQpAVQoxUTEuc48D8eAoeylPNaT4gOoapioW8E9UnnaQ36wFWch5MelhK_fV-shdi4atwjC7kmkD2ckitjQntnaUeAbJYqY0zntc4gXWo2jUw5E3PavdFzNetdPfNsrXuZBS5Nj7f4mqNFcH_fifATTW4HuKoz95ZOtUiH4OsK1ysSpIrG4u1jiGuk3ykHexy-8kjRVF5W6n6hIoPJYxUTQ50sNdPoCwWSMLocM8dqZqpqWCk0PRtz65wTq5Z--OMmSnwCh59CNaYb3m_VcEXfGJoX1aVvpiTUUyb_NzYcajTuULUHaqH9eq1_yP-PTkuOx8IuUDTPrXK0MEIrzUwSkYDfK25g9l0TSGhVLK0u1nVeFbuAzLK5ve7CU3YP5dlGqErpAkdA9uGpQ326DVCd6TttV8V4XVvsskw4bRa8wFmsozSY_TRZH4iDY8EmXV6sRP0UHG7xXO4iCGNtX2FmV6VzKf8kF0wnnDZpEZ_j0cz-ZhvV8Hj1P2wtV2XQixZpZXmQEtLLTHKR0-Ia0cfFEt9GXooDmUSgnvFEtk3sq754UAsyf8Pm0PWL5UJR5899sbzoCsHtVRjOVSTOv-mVQX3OQJk2VWfKnAyLRk4uiLZmEPhYFiR_kkrkH5xxWnrqMagZ5plVGlRd4qb4kWzxoFB5VbY8H2IJofTnbbIhqdLMPb1IaXBR2uwVS0sN0vZhdIdDgHC1ZXQfqbctUwGveVMOGgiv9FXfMeZJhPPWvY-HKxk2qke-KQGyEu84XKu52F3rpHNWAreITTpfyXWwigdAAPJJhi77eEj2Vt7kFa9XenZVYWCJ7kowuyD2_4BiIC6kH7pM2lDBXTgraSqFrXmTEtfSoaDidmS\n[… 596 characters trimmed …]\nJyiCWvnBln9M4adt7d0z9xqFxscCtOIeeLVwDCWjWrnitu4jjZy4IOuvilAVjYck7R4bUwi-T2ToxRRaeq9S5ga0zZUq4Y8-f4H5teprSxZjFUenARbDKPFWPZpqKYzp85jcJa69BqIZ8Ax2F6JK9qBp3vxpYSXCg8F_iM0fZIfJQatMzOJYtaBZPcjF2Y6vvApS889RiaT3ccV9ExJq1CvAEn-AHaeOGHs1QrOaT5-dXb6ATwAVUxK9lC99B0wS5_4HF4S9dcp4OVf0VU5LiBoUiBJ1-VIdBx9F1i57R2dgDfZGRZWXdE0A6d37DrTSBVfNgHVD08WtxPGROCQTmSe-F-0ZD4YtV06-VWpORY_Wp8O3Eiw7JE_lLlxS4ZhE5hrME-5jxeb9OWXQ",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33"
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae0769aaa008194b9a5b25906bdf573",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "Two",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "final_answer",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33",
+    "create_time": 1793095322.6653256,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17ccf-5b38-79a1-a6ed-cbe1afc22a15",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "Run `sleep 40` in the shell, then reply 'done'."
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-5b2e-7a53-8300-58ade2f05082",
+    "create_time": 1793095326.520948,
+    "content_item_kinds": [
+     "user.text"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "user"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae076a4c46881948aab926c77d84ac4",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "I’ll run `sleep 40` in the shell now.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "commentary",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-5b2e-7a53-8300-58ade2f05082",
+    "create_time": 1793095332.7965841,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "custom_tool_call",
+   "id": "ctc_0590293b588359fe016ae076a506f88194a60b54cec4c5cbb1",
+   "status": "completed",
+   "call_id": "call_d3da4523f27742a08e847d3a8e9f2324",
+   "name": "exec",
+   "input": "const r = await tools.exec_command({cmd:\"sleep 40\",yield_time_ms:30000});\ntext(r.output || \"sleep completed\");\n",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-5b2e-7a53-8300-58ade2f05082",
+    "create_time": 1793095333.028524
+   }
+  },
+  {
+   "type": "custom_tool_call_output",
+   "id": "ctco_01a17ccf-7792-7081-96f4-836246b14e7c",
+   "call_id": "call_d3da4523f27742a08e847d3a8e9f2324",
+   "output": "aborted by user after 0.6s",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-5b2e-7a53-8300-58ade2f05082",
+    "create_time": 1793095333.778433
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17ccf-7795-7752-b750-7dd0d7607df4",
+   "role": "developer",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<turn_aborted>\nThe previous turn was interrupted on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed.\n</turn_aborted>"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-5b2e-7a53-8300-58ade2f05082",
+    "create_time": 1793095333.781346,
+    "content_item_kinds": [
+     "generic.turn_aborted"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "harness",
+       "hook": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17ccf-791c-71c0-9757-c173868eb3cd",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<user_shell_command>\n<command>\necho bang\n</command>\n<result>\nExit code: 0\nDuration: 0.0132 seconds\nOutput:\nbang\n\n</result>\n</user_shell_command>"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-7907-7053-84b9-1cb96d73fa75",
+    "create_time": 1793095334.172383,
+    "content_item_kinds": [
+     "shell.user_command"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "harness",
+       "hook": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17ccf-ad51-7da2-8455-6dde92256d40",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "Spawn one subagent with your agent tool to run `echo hi` and report back; wait for it, then reply 'done'."
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "create_time": 1793095347.537506,
+    "content_item_kinds": [
+     "user.text"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "user"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae076b920248194a17dd656d142fac8",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "I’ll delegate the `echo hi` command to one subagent and wait for its report.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "commentary",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "create_time": 1793095353.2376544,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "custom_tool_call",
+   "id": "ctc_0590293b588359fe016ae076b9848481948c767bb829dbff40",
+   "status": "completed",
+   "call_id": "call_d64926aadb8c46608ec410e2686dc270",
+   "name": "exec",
+   "input": "text(ALL_TOOLS.filter(x => /agent|spawn|delegate/i.test(x.name+\" \"+x.description)));\n",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "create_time": 1793095353.518974
+   }
+  },
+  {
+   "type": "custom_tool_call_output",
+   "id": "ctco_01a17ccf-c556-70b0-950a-62cc79d33c49",
+   "call_id": "call_d64926aadb8c46608ec410e2686dc270",
+   "output": [
+    {
+     "type": "input_text",
+     "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+    },
+    {
+     "type": "input_text",
+     "text": "[{\"name\":\"mcp__x\",\"description\":\"Create designs, ship to code\\n\\nMCP server instructions: The official Figma MCP server. Use this server whenever the user wants to create, generate, edit, implement, or sync any design, UI, screen, component, mockup, or visual — in Figma, FigJam, Figma Make, or Figma Slides — and whenever the user mentions Figma or provides a figma.com URL.\\n\\nThis server bridges code and design in both directions, and supports designing from scratch using existing design systems and codebases.\\n\\nFILE SESSION:\\nOnce the target fileKey is known, call create_session with that key and a...\\n\\nCreate a session to record the user's current work involving a Figma file. Call once before the first read or edit, including review-only work, as soon as the file key is known. Pass that key and a short description of the requested work. Reuse the returned UUID as sessionId on eligible file tools for this same task, including calls to other files. If creating a file, call `create_ne\n[… 8486 characters trimmed …]\nt to `complete` only when the objective is achieved and no required work remains. Set to `blocked` only after the same blocking condition has recurred for at least three consecutive goal turns and the agent is at an impasse. After a previously blocked goal is resumed, the resumed run starts a fresh blocked audit.\\n  status: \\\"complete\\\" | \\\"blocked\\\" | \\\"paused\\\";\\n}): Promise<unknown>; };\\n```\"}]"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "create_time": 1793095353.686764
+   }
+  },
+  {
+   "type": "reasoning",
+   "id": "rs_0590293b588359fe016ae076bca34481949369eb262458aecf",
+   "summary": [],
+   "encrypted_content": "gAAAAABq4Ha8ZQSC6_IL_eYhREOl8C8GyvciRQgKcVmat6Bqt2hlb55b8to3yVmlM5dUy-ktn5pKD5lmT_fx_DzMiY95d4DSDMXNZLXdBkgjtfBV6wqGOqw_jM0z6HPZSacT5fjILWJfB-e3DBYrmtydYjwObDsysy-_779_0Ibiby03GsG39bwfhdjl3tSfdOcmOi51bwGphisMlI-PHvdp2JFpMUTgQImpijMOyreR2eSIFSh9vyYdWHliUwM5EEd7m_qaipIKQFlOTJ2yuG2UDNYI0EUv7Oym7YBJCS8YCgB4lgBA0mXyvJxCuIvib3ykWsAi3rQWEJo-rvf6iKh9RCePpqOECLVpF0spGCwpPbZSB7wQ4aINWnrz0tHB_xi67PuU3HAVuGIVkBuF-Dw91m4Hm6A2fokJvi9cdodJAJbBweBdsI-JrbiglBfQxkeqk69txv52lND5gFMiMp59Dn4J3Te1IwTtLdSLm7IpS_uJFMJRZBDBLUrrPDa3JPkIuxUku3vQNheilj2wThy3gJLMBLz7f4Rp1g6APoIflD_QTG4gL8h3OY20BksqE3NRAoEaUZw4IKB8jjfQHwaNX8Jyx9pC8qhmr6nrW-A92zChPW8IBlFAfMv_Ewj-x3sW9B5t7DcAb_s3fZsZvIOIKqdE24XY9vESxa7KDJR4sRma3q0dfYReuazG-h72fXvB0D70LcIdg2CZUlL5IfsUCHfZOzX_UnoPQvVOG8mkSgGWpI0ycvONrwXxWH4sLHA4VLGhhuPUrykylbCBVelNkAsy6a18voXmvJ0sGvf6CfUQIXGY_xiyWV20JLFcVeqLb3a5c8kwUszUBcaX5xBsjG0fCSeSs4NWLR07PPrQYeoXbhCvsETui_C5x33jBzoUDoZ9AOs-Eg1Cr4gW5Nv5NAW3sE-uV7cTbWXlcHn1-soFCrofstd7wfpCqoK6YT2qqf9oAYWHE9UA98_gr4d6pf8MyyIdnmdJcDcX\n[… 556 characters trimmed …]\nuiRYfkOGE9qpTpF3180MeXVWDIoAd6naJmiMgz9FcCON0S6jxTAgfYhv808v42UNp3treQ6-2hCnrSpeU61-WtQcXWsS6bEZBG8Jrg_sLLUF6uito-sbuYs9Cur5QJuoZ2NNDS6bzZw5oEd8kuopOLR1_IEQkBv6GIJyM847dZqMHpIzWCMZz4mf99raoEWBYZ-CFBkfTH0xyv79Kiy8JS2ilpHz-q2VyH6IeQRUwBkyULunnETPfHx486_6Qsfol_m_9OJdAwjhYofkm_iCMj8oBTwBQZh7hWSw1M--GwWXXTLjHBrUhJuQ91cqM9gY4gQxiPBtgdC5LyjGyppiZ4tgMajBQ7YjBS2MENjUCQuArUoNTCqSCguIWV_L9I7A86YE1DEqz8MIyQ==",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05"
+   }
+  },
+  {
+   "type": "function_call",
+   "status": "completed",
+   "id": "fc_0590293b588359fe016ae076bcc0b4819480fff65be6bc9c78",
+   "name": "spawn_agent",
+   "namespace": "collaboration",
+   "arguments": "{\"task_name\":\"echo_hi\",\"fork_turns\":\"none\",\"message\":\"gAAAAABq4Ha9tCjn3cInqlVmdT5nuc8O5nXUrCxeB6X8NJfkEOpP_BXYtrYSc8QXJiHDYqwYzLx6WPKlfq_-StFUC9EBgrUVzZrJq-6OuPYHlwiLDIwy4TWuJZq2aphc5JsV_QOedEYcdXJ_x2TZmRmseyYOfTA0neR7L1eBtydi91d64PtoeqHOJbeX0s-g8K42xXb8gVzs\"}",
+   "call_id": "call_678ee2cbbf264c2a81d1f13e215dec2f",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "create_time": 1793095356.7553506
+   }
+  },
+  {
+   "type": "function_call_output",
+   "id": "fco_01a17ccf-d33b-7b20-aa57-54ff1beb7624",
+   "call_id": "call_678ee2cbbf264c2a81d1f13e215dec2f",
+   "output": "{\"task_name\":\"/root/echo_hi\"}",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "create_time": 1793095357.243525
+   }
+  },
+  {
+   "type": "function_call",
+   "status": "completed",
+   "id": "fc_0590293b588359fe016ae076c0b3fc81948155e0127a12ad71",
+   "name": "wait_agent",
+   "namespace": "collaboration",
+   "arguments": "{\"timeout_ms\":30000}",
+   "call_id": "call_1d18bbd3b4b94cf3a4696eaabec3ce75",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "create_time": 1793095360.705144
+   }
+  },
+  {
+   "type": "function_call_output",
+   "id": "fco_01a17ccf-ed5c-72e3-bab4-43f4db677b8f",
+   "call_id": "call_1d18bbd3b4b94cf3a4696eaabec3ce75",
+   "output": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "create_time": 1793095363.932809
+   }
+  },
+  {
+   "type": "agent_message",
+   "id": "amsg_01a17ccf-ed5d-7fc1-a0d8-95b1c3cd9446",
+   "author": "/root/echo_hi",
+   "recipient": "/root",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/echo_hi\nPayload:\n`echo hi` output: `hi`"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "create_time": 1793095363.933881,
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "tool",
+       "namespace": "collaboration"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "status": "completed",
+   "id": "msg_0590293b588359fe016ae076c7098c8194b54b18d5028a5156",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "done",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "final_answer",
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "create_time": 1793095367.0392025,
+    "content_item_kinds": [
+     "unknown"
+    ]
+   }
+  },
+  {
+   "type": "message",
+   "id": "msg_01a17cd0-1088-7680-a30d-a41b939cc8a1",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "PROBE-API-ERROR: reply with just: ok"
+    }
+   ],
+   "internal_chat_message_metadata_passthrough": {
+    "turn_id": "01a17cd0-1080-7963-81f5-02cdf8a5cedf",
+    "create_time": 1793095372.936285,
+    "content_item_kinds": [
+     "user.text"
+    ],
+    "content_item_metadata": [
+     {
+      "provenance": {
+       "type": "user"
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

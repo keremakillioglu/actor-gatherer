@@ -1,0 +1,1329 @@
+{
+ "calls": [
+  {
+   "name": "compaction",
+   "call": {
+    "kind": "compaction",
+    "session": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+    "cwd": null,
+    "version": "0.164.0",
+    "detail": {
+     "metadata": {
+      "installation_id": "00000000-0000-0000-0000-000000000000",
+      "session_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+      "thread_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+      "agent_name": "/root",
+      "turn_id": "01a17cd0-27c8-7b22-958a-4c0a466d8ba3",
+      "window_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516:0",
+      "window_number": 0,
+      "context_window_id": "01a17cb0-8591-72f2-a01f-453026de8004",
+      "request_kind": "compaction",
+      "history_initialization": "new",
+      "root_turn_id": "01a17cd0-27c8-7b22-958a-4c0a466d8ba3",
+      "thread_source": "user",
+      "sandbox": "seatbelt",
+      "sandbox_mode": "workspace-write",
+      "auto_review_enabled": true,
+      "node_repl_auto_review_required": false,
+      "node_repl_disabled": false,
+      "turn_started_at_unix_ms": 1793095378890,
+      "analytics_enabled": true,
+      "compaction": {
+       "trigger": "manual",
+       "reason": "user_requested",
+       "implementation": "responses_compaction_v2",
+       "phase": "standalone_turn",
+       "strategy": "memento"
+      }
+     }
+    },
+    "history": 7,
+    "own": 1,
+    "kinds": [
+     "tool_notice",
+     "environment",
+     "tool_call",
+     "tool_result",
+     "agent_report",
+     "agent",
+     "user"
+    ],
+    "own_parts": [
+     {
+      "kind": "other",
+      "role": null,
+      "text": null,
+      "detail": {
+       "block": "compaction_trigger"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "subagent-subagent",
+   "call": {
+    "kind": "subagent",
+    "session": "01a17ccf-d296-7b81-ae1f-51ac1690b767",
+    "cwd": "/private/tmp/claude-501/f7co93302/w",
+    "version": "0.164.0",
+    "detail": {
+     "metadata": {
+      "installation_id": "00000000-0000-0000-0000-000000000000",
+      "session_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+      "thread_id": "01a17ccf-d296-7b81-ae1f-51ac1690b767",
+      "agent_name": "/root/echo_hi",
+      "turn_id": "01a17ccf-d29a-7323-90ba-770aa0813f87",
+      "window_id": "01a17ccf-d296-7b81-ae1f-51ac1690b767:0",
+      "window_number": 0,
+      "context_window_id": "01a17ccf-d296-7b81-ae1f-51b5e8c75214",
+      "request_kind": "turn",
+      "history_initialization": "new",
+      "parent_thread_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+      "parent_turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+      "root_turn_id": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+      "subagent_kind": "thread_spawn",
+      "thread_source": "subagent",
+      "turn_trigger": "user",
+      "sandbox": "seatbelt",
+      "sandbox_mode": "workspace-write",
+      "auto_review_enabled": true,
+      "node_repl_auto_review_required": false,
+      "node_repl_disabled": false,
+      "turn_started_at_unix_ms": 1793095357084,
+      "analytics_enabled": true,
+      "model": "gpt-6-luna",
+      "reasoning_effort": "low"
+     },
+     "source": "subagent"
+    },
+    "history": 7,
+    "own": 0,
+    "kinds": [
+     "tool_notice",
+     "environment",
+     "environment",
+     "environment",
+     "environment",
+     "environment",
+     "peer_message"
+    ]
+   }
+  },
+  {
+   "name": "title-thread_title",
+   "call": {
+    "kind": "title",
+    "session": "01a17cb0-873f-7b12-b1fe-45b926ec5d24",
+    "cwd": null,
+    "version": "0.164.0",
+    "detail": {
+     "metadata": {
+      "installation_id": "00000000-0000-0000-0000-000000000000",
+      "session_id": "01a17cb0-873f-7b12-b1fe-45b926ec5d24",
+      "thread_id": "01a17cb0-873f-7b12-b1fe-45b926ec5d24",
+      "agent_name": "/root",
+      "turn_id": "01a17cb0-875c-7e51-b855-25766b2021c8",
+      "window_id": "01a17cb0-873f-7b12-b1fe-45b926ec5d24:0",
+      "window_number": 0,
+      "context_window_id": "01a17cb0-873f-7b12-b1fe-45eeef695987",
+      "request_kind": "turn",
+      "history_initialization": "new",
+      "root_turn_id": "01a17cb0-875c-7e51-b855-25766b2021c8",
+      "thread_source": "thread_title",
+      "sandbox": "seatbelt",
+      "sandbox_mode": "read-only",
+      "auto_review_enabled": true,
+      "node_repl_auto_review_required": false,
+      "node_repl_disabled": false,
+      "turn_started_at_unix_ms": 1793093306205,
+      "analytics_enabled": true,
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "low"
+     },
+     "source": "thread_title"
+    },
+    "history": 5,
+    "own": 0,
+    "kinds": [
+     "tool_notice",
+     "environment",
+     "environment",
+     "environment",
+     "user"
+    ]
+   }
+  },
+  {
+   "name": "turn",
+   "call": {
+    "kind": "turn",
+    "session": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+    "cwd": "/private/tmp/claude-501/f7co93302/w",
+    "version": "0.164.0",
+    "detail": {
+     "metadata": {
+      "installation_id": "00000000-0000-0000-0000-000000000000",
+      "session_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+      "thread_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+      "agent_name": "/root",
+      "turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+      "window_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516:0",
+      "window_number": 0,
+      "context_window_id": "01a17cb0-8591-72f2-a01f-453026de8004",
+      "request_kind": "turn",
+      "history_initialization": "new",
+      "root_turn_id": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+      "thread_source": "user",
+      "turn_trigger": "user",
+      "sandbox": "seatbelt",
+      "sandbox_mode": "workspace-write",
+      "auto_review_enabled": true,
+      "node_repl_auto_review_required": false,
+      "node_repl_disabled": false,
+      "turn_started_at_unix_ms": 1793093305772,
+      "analytics_enabled": true,
+      "model": "gpt-6-luna",
+      "reasoning_effort": "low"
+     }
+    },
+    "history": 7,
+    "own": 0,
+    "kinds": [
+     "tool_notice",
+     "environment",
+     "environment",
+     "environment",
+     "environment",
+     "environment",
+     "user"
+    ]
+   }
+  },
+  {
+   "name": "turn-error",
+   "call": {
+    "kind": "turn",
+    "session": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+    "cwd": null,
+    "version": "0.164.0",
+    "detail": {
+     "metadata": {
+      "installation_id": "00000000-0000-0000-0000-000000000000",
+      "session_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+      "thread_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516",
+      "agent_name": "/root",
+      "turn_id": "01a17cd0-1080-7963-81f5-02cdf8a5cedf",
+      "window_id": "01a17cb0-8591-72f2-a01f-4506ca4ce516:0",
+      "window_number": 0,
+      "context_window_id": "01a17cb0-8591-72f2-a01f-453026de8004",
+      "request_kind": "turn",
+      "history_initialization": "new",
+      "root_turn_id": "01a17cd0-1080-7963-81f5-02cdf8a5cedf",
+      "thread_source": "user",
+      "turn_trigger": "user",
+      "sandbox": "seatbelt",
+      "sandbox_mode": "workspace-write",
+      "auto_review_enabled": true,
+      "node_repl_auto_review_required": false,
+      "node_repl_disabled": false,
+      "turn_started_at_unix_ms": 1793095372931,
+      "analytics_enabled": true,
+      "model": "gpt-6-luna",
+      "reasoning_effort": "low"
+     }
+    },
+    "history": 8,
+    "own": 0,
+    "kinds": [
+     "tool_notice",
+     "environment",
+     "tool_result",
+     "tool_call",
+     "tool_result",
+     "agent_report",
+     "agent",
+     "user"
+    ]
+   }
+  }
+ ],
+ "parts": [
+  {
+   "kind": "tool_notice",
+   "role": "developer",
+   "text": null,
+   "detail": {
+    "block": "additional_tools"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "developer",
+   "text": "You are Codex, an agent based on GPT-6. You and the user share one workspace, and your job is to collaborate with them u…[1432 d669e2b6]",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "developer",
+   "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Be…[3433 4f6e5bb1]",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "developer",
+   "text": "<multi_agent_role>You are `/root`, the primary agent in a team of agents collaborating to fulfill the user's goals.\n\nAt …[1431 70d27a4e]",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "developer",
+   "text": "<multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-…[271 16a2f7f8]",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "user",
+   "text": "<environment_context>\n  <cwd>/private/tmp/claude-501/f7co93302/w</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-10-27</…[990 0c01e40c]",
+   "cwd": "/private/tmp/claude-501/f7co93302/w",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Read notes.txt and tell me the secret number, in one sentence.",
+   "words": "Read notes.txt and tell me the secret number, in one sentence.",
+   "detail": {
+    "block": "message"
+   },
+   "says": [
+    "user",
+    "Read notes.txt and tell me the secret number, in one sentence."
+   ]
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "I’ll read `notes.txt` and report the number in one sentence.",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "exec(const r = await tools.exec_command({cmd:\"cat notes.txt\",max_output_tokens:2000});\ntext(r.output);\n)",
+   "tool": {
+    "id": "call_ab036d3c113e45fe806e4ee49b82a9b7",
+    "name": "exec",
+    "action": "other",
+    "paths": [],
+    "input": "\"const r = await tools.exec_command({cmd:\\\"cat notes.txt\\\",max_output_tokens:2000});\\ntext(r.output);\\n\""
+   },
+   "detail": {
+    "block": "custom_tool_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "Script completed\nWall time 0.1 seconds\nOutput:\n\nThe secret number is 4127.\n",
+   "result": {
+    "call_id": "call_ab036d3c113e45fe806e4ee49b82a9b7",
+    "error": false,
+    "output": "Script completed\nWall time 0.1 seconds\nOutput:\n\nThe secret number is 4127.\n"
+   },
+   "detail": {
+    "block": "custom_tool_call_output"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "The secret number is 4127.",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "developer",
+   "text": "<collaboration_mode># Plan Mode (Conversational)\n\nYou work in 3 phases, and you should *chat your way* to a great plan b…[1431 2612c834]",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Use the request_user_input tool to ask me exactly one question: which colour I prefer, with options Red and Blue, and wa…[214 122853b8]",
+   "words": "Use the request_user_input tool to ask me exactly one question: which colour I prefer, with options Red and Blue, and wa…[214 122853b8]",
+   "detail": {
+    "block": "message"
+   },
+   "says": [
+    "user",
+    "Use the request_user_input tool to ask me exactly one question: which colour I prefer, with options Red and Blue, and wa…[214 122853b8]"
+   ]
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "exec(text(ALL_TOOLS.filter(x => /request_user_input/.test(x.name)));\n)",
+   "tool": {
+    "id": "call_d36d8d9f5016432ba9e9e0ec6bb56cd4",
+    "name": "exec",
+    "action": "other",
+    "paths": [],
+    "input": "\"text(ALL_TOOLS.filter(x => /request_user_input/.test(x.name)));\\n\""
+   },
+   "detail": {
+    "block": "custom_tool_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "Script completed\nWall time 0.0 seconds\nOutput:\n\n[]",
+   "result": {
+    "call_id": "call_d36d8d9f5016432ba9e9e0ec6bb56cd4",
+    "error": false,
+    "output": "Script completed\nWall time 0.0 seconds\nOutput:\n\n[]"
+   },
+   "detail": {
+    "block": "custom_tool_call_output"
+   }
+  },
+  {
+   "kind": "reasoning",
+   "role": null,
+   "text": null,
+   "opaque": true,
+   "detail": {
+    "block": "reasoning",
+    "thinking": ""
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "request_user_input_async({\"questions\":[{\"title\":\"Colour preference\",\"options\":[\"Red\",\"Blue\"]}] })",
+   "tool": {
+    "id": "call_03517cd1e94348aaa24dcb361d31ef1b",
+    "name": "request_user_input_async",
+    "action": "ask",
+    "paths": [],
+    "input": "{\"questions\": [{\"options\": [\"Red\", \"Blue\"], \"title\": \"Colour preference\"}]}",
+    "ask": {
+     "kind": "question",
+     "async": true,
+     "questions": [
+      {
+       "id": null,
+       "header": null,
+       "question": "Colour preference",
+       "multiSelect": false,
+       "options": [
+        {
+         "label": "Red",
+         "description": null
+        },
+        {
+         "label": "Blue",
+         "description": null
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "detail": {
+    "block": "function_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "{\"accepted\":true}",
+   "result": {
+    "call_id": "call_03517cd1e94348aaa24dcb361d31ef1b",
+    "error": false,
+    "output": "{\"accepted\":true}"
+   },
+   "detail": {
+    "block": "function_call_output"
+   }
+  },
+  {
+   "kind": "ask_reply",
+   "role": "user",
+   "text": "<send_user_message_question_reply>\n[{\"answer\":\"Blue\",\"question\":\"Colour preference\",\"questionItemId\":\"[\\\"request_user_in…[215 9f05c583]",
+   "words": "Colour preference → Blue",
+   "detail": {
+    "block": "message",
+    "replies": [
+     {
+      "answer": "Blue",
+      "question": "Colour preference",
+      "questionItemId": "[\"request_user_input_async\",\"call_03517cd1e94348aaa24dcb361d31ef1b\",0]"
+     }
+    ]
+   },
+   "says": [
+    "ask_reply",
+    "Colour preference → Blue"
+   ]
+  },
+  {
+   "kind": "reasoning",
+   "role": null,
+   "text": null,
+   "opaque": true,
+   "detail": {
+    "block": "reasoning",
+    "thinking": ""
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "<proposed_plan>\n## Create `colour.txt`\n\n1. Create `colour.txt` in the workspace.\n2. Write `Blue` into the file.\n</proposed_plan>",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Name the file colours.txt instead",
+   "words": "Name the file colours.txt instead",
+   "detail": {
+    "block": "message"
+   },
+   "says": [
+    "user",
+    "Name the file colours.txt instead"
+   ]
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "<proposed_plan>\n## Create `colours.txt`\n\n1. Create `colours.txt` in the workspace.\n2. Write `Blue` into the file.\n</proposed_plan>",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "environment",
+   "role": "developer",
+   "text": "<collaboration_mode># Collaboration Mode: Default\n\nYou are now in Default mode. Any previous instructions for other mode…[1056 f3c3121a]",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Implement the plan.",
+   "words": "Implement the plan.",
+   "detail": {
+    "block": "message"
+   },
+   "says": [
+    "user",
+    "Implement the plan."
+   ]
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "I’ll create `colours.txt` with the chosen colour, Blue.",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "exec(const r = await tools.exec_command({cmd:\"pwd && ls -la\",max_output_tokens:1000});\ntext(r.output);\n)",
+   "tool": {
+    "id": "call_698a2c3c0d534bcbbb17c216f0472282",
+    "name": "exec",
+    "action": "other",
+    "paths": [],
+    "input": "\"const r = await tools.exec_command({cmd:\\\"pwd && ls -la\\\",max_output_tokens:1000});\\ntext(r.output);\\n\""
+   },
+   "detail": {
+    "block": "custom_tool_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "Script completed\nWall time 0.0 seconds\nOutput:\n\n/private/tmp/claude-501/f7co93302/w\ntotal 8\ndrwxr-xr-x@ 3 sep  wheel   9…[236 902e4523]",
+   "result": {
+    "call_id": "call_698a2c3c0d534bcbbb17c216f0472282",
+    "error": false,
+    "output": "Script completed\nWall time 0.0 seconds\nOutput:\n\n/private/tmp/claude-501/f7co93302/w\ntotal 8\ndrwxr-xr-x@ 3 sep  wheel   9…[236 902e4523]"
+   },
+   "detail": {
+    "block": "custom_tool_call_output"
+   }
+  },
+  {
+   "kind": "reasoning",
+   "role": null,
+   "text": null,
+   "opaque": true,
+   "detail": {
+    "block": "reasoning",
+    "thinking": ""
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "exec(const r = await tools.exec_command({cmd:\"printf 'Blue\\\\n' > colours.txt\"});\ntext(r.output);\n)",
+   "tool": {
+    "id": "call_0a9b5ab976b3450aa78a080a4fcc99e6",
+    "name": "exec",
+    "action": "other",
+    "paths": [],
+    "input": "\"const r = await tools.exec_command({cmd:\\\"printf 'Blue\\\\\\\\n' > colours.txt\\\"});\\ntext(r.output);\\n\""
+   },
+   "detail": {
+    "block": "custom_tool_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "Script completed\nWall time 0.0 seconds\nOutput:\n",
+   "result": {
+    "call_id": "call_0a9b5ab976b3450aa78a080a4fcc99e6",
+    "error": false,
+    "output": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+   },
+   "detail": {
+    "block": "custom_tool_call_output"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "Created [colours.txt](/private/tmp/claude-501/f7co93302/w/colours.txt) containing `Blue`.",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Use the request_user_input_async tool to ask me one question: which number I like, with options One and Two. Don't wait …[254 386955a9]",
+   "words": "Use the request_user_input_async tool to ask me one question: which number I like, with options One and Two. Don't wait …[254 386955a9]",
+   "detail": {
+    "block": "message"
+   },
+   "says": [
+    "user",
+    "Use the request_user_input_async tool to ask me one question: which number I like, with options One and Two. Don't wait …[254 386955a9]"
+   ]
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "I’ll ask the one question, then run `sleep 20` in the shell as requested.",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "request_user_input_async({\"questions\":[{\"title\":\"Number you like\",\"options\":[\"One\",\"Two\"]}]})",
+   "tool": {
+    "id": "call_32b3b26a1172484b88f80bce98ecfe1e",
+    "name": "request_user_input_async",
+    "action": "ask",
+    "paths": [],
+    "input": "{\"questions\": [{\"options\": [\"One\", \"Two\"], \"title\": \"Number you like\"}]}",
+    "ask": {
+     "kind": "question",
+     "async": true,
+     "questions": [
+      {
+       "id": null,
+       "header": null,
+       "question": "Number you like",
+       "multiSelect": false,
+       "options": [
+        {
+         "label": "One",
+         "description": null
+        },
+        {
+         "label": "Two",
+         "description": null
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "detail": {
+    "block": "function_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "{\"accepted\":true}",
+   "result": {
+    "call_id": "call_32b3b26a1172484b88f80bce98ecfe1e",
+    "error": false,
+    "output": "{\"accepted\":true}"
+   },
+   "detail": {
+    "block": "function_call_output"
+   }
+  },
+  {
+   "kind": "ask_reply",
+   "role": "user",
+   "text": "<send_user_message_question_reply>\n[{\"answer\":\"Two\",\"question\":\"Number you like\",\"questionItemId\":\"[\\\"request_user_input…[212 52c9addd]",
+   "words": "Number you like → Two",
+   "detail": {
+    "block": "message",
+    "replies": [
+     {
+      "answer": "Two",
+      "question": "Number you like",
+      "questionItemId": "[\"request_user_input_async\",\"call_32b3b26a1172484b88f80bce98ecfe1e\",0]"
+     }
+    ]
+   },
+   "says": [
+    "ask_reply",
+    "Number you like → Two"
+   ]
+  },
+  {
+   "kind": "reasoning",
+   "role": null,
+   "text": null,
+   "opaque": true,
+   "detail": {
+    "block": "reasoning",
+    "thinking": ""
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "exec(const r = await tools.exec_command({cmd:\"sleep 20\",yield_time_ms:30000});\ntext(r.output || \"sleep completed\");\n)",
+   "tool": {
+    "id": "call_1dd96d8cc2bf41059d3601fd6a8a9a71",
+    "name": "exec",
+    "action": "other",
+    "paths": [],
+    "input": "\"const r = await tools.exec_command({cmd:\\\"sleep 20\\\",yield_time_ms:30000});\\ntext(r.output || \\\"sleep completed\\\");\\n\""
+   },
+   "detail": {
+    "block": "custom_tool_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "Script completed\nWall time 20.0 seconds\nOutput:\n\nsleep completed",
+   "result": {
+    "call_id": "call_1dd96d8cc2bf41059d3601fd6a8a9a71",
+    "error": false,
+    "output": "Script completed\nWall time 20.0 seconds\nOutput:\n\nsleep completed"
+   },
+   "detail": {
+    "block": "custom_tool_call_output"
+   }
+  },
+  {
+   "kind": "reasoning",
+   "role": null,
+   "text": null,
+   "opaque": true,
+   "detail": {
+    "block": "reasoning",
+    "thinking": ""
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "Two",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Run `sleep 40` in the shell, then reply 'done'.",
+   "words": "Run `sleep 40` in the shell, then reply 'done'.",
+   "detail": {
+    "block": "message"
+   },
+   "says": [
+    "user",
+    "Run `sleep 40` in the shell, then reply 'done'."
+   ]
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "I’ll run `sleep 40` in the shell now.",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "exec(const r = await tools.exec_command({cmd:\"sleep 40\",yield_time_ms:30000});\ntext(r.output || \"sleep completed\");\n)",
+   "tool": {
+    "id": "call_d3da4523f27742a08e847d3a8e9f2324",
+    "name": "exec",
+    "action": "other",
+    "paths": [],
+    "input": "\"const r = await tools.exec_command({cmd:\\\"sleep 40\\\",yield_time_ms:30000});\\ntext(r.output || \\\"sleep completed\\\");\\n\""
+   },
+   "detail": {
+    "block": "custom_tool_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "aborted by user after 0.6s",
+   "result": {
+    "call_id": "call_d3da4523f27742a08e847d3a8e9f2324",
+    "error": false,
+    "output": "aborted by user after 0.6s"
+   },
+   "detail": {
+    "block": "custom_tool_call_output"
+   }
+  },
+  {
+   "kind": "interrupt",
+   "role": "developer",
+   "text": "<turn_aborted>\nThe previous turn was interrupted on purpose. Any running unified exec processes may still be running in …[221 01542a6e]",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "command_output",
+   "role": "user",
+   "text": "<user_shell_command>\n<command>\necho bang\n</command>\n<result>\nExit code: 0\nDuration: 0.0132 seconds\nOutput:\nbang\n\n</result>\n</user_shell_command>",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "Spawn one subagent with your agent tool to run `echo hi` and report back; wait for it, then reply 'done'.",
+   "words": "Spawn one subagent with your agent tool to run `echo hi` and report back; wait for it, then reply 'done'.",
+   "detail": {
+    "block": "message"
+   },
+   "says": [
+    "user",
+    "Spawn one subagent with your agent tool to run `echo hi` and report back; wait for it, then reply 'done'."
+   ]
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "I’ll delegate the `echo hi` command to one subagent and wait for its report.",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "exec(text(ALL_TOOLS.filter(x => /agent|spawn|delegate/i.test(x.name+\" \"+x.description)));\n)",
+   "tool": {
+    "id": "call_d64926aadb8c46608ec410e2686dc270",
+    "name": "exec",
+    "action": "other",
+    "paths": [],
+    "input": "\"text(ALL_TOOLS.filter(x => /agent|spawn|delegate/i.test(x.name+\\\" \\\"+x.description)));\\n\""
+   },
+   "detail": {
+    "block": "custom_tool_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "Script completed\nWall time 0.0 seconds\nOutput:\n\n[{\"name\":\"mcp__x\",\"description\":\"Create designs, ship to code\\n\\nMCP ser…[1479 c62a0955]",
+   "result": {
+    "call_id": "call_d64926aadb8c46608ec410e2686dc270",
+    "error": false,
+    "output": "Script completed\nWall time 0.0 seconds\nOutput:\n\n[{\"name\":\"mcp__x\",\"description\":\"Create designs, ship to code\\n\\nMCP ser…[1479 c62a0955]"
+   },
+   "detail": {
+    "block": "custom_tool_call_output"
+   }
+  },
+  {
+   "kind": "reasoning",
+   "role": null,
+   "text": null,
+   "opaque": true,
+   "detail": {
+    "block": "reasoning",
+    "thinking": ""
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "spawn_agent({\"task_name\":\"echo_hi\",\"fork_turns\":\"none\",\"message\":\"gAAAAABq4Ha9tCjn3cInqlVmdT5nuc8O5nXUrCxeB6X8NJfkEOpP_B…[273 bc64be45]",
+   "tool": {
+    "id": "call_678ee2cbbf264c2a81d1f13e215dec2f",
+    "name": "spawn_agent",
+    "action": "delegate",
+    "paths": [],
+    "input": "{\"fork_turns\": \"none\", \"message\": \"gAAAAABq4Ha9tCjn3cInqlVmdT5nuc8O5nXUrCxeB6X8NJfkEOpP_BXYtrYSc8QXJiHDYqwYzLx6WPKlfq_-S…[265 044edb1e]"
+   },
+   "detail": {
+    "block": "function_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "{\"task_name\":\"/root/echo_hi\"}",
+   "result": {
+    "call_id": "call_678ee2cbbf264c2a81d1f13e215dec2f",
+    "error": false,
+    "output": "{\"task_name\":\"/root/echo_hi\"}"
+   },
+   "detail": {
+    "block": "function_call_output"
+   }
+  },
+  {
+   "kind": "tool_call",
+   "role": null,
+   "text": "wait_agent({\"timeout_ms\":30000})",
+   "tool": {
+    "id": "call_1d18bbd3b4b94cf3a4696eaabec3ce75",
+    "name": "wait_agent",
+    "action": "other",
+    "paths": [],
+    "input": "{\"timeout_ms\": 30000}"
+   },
+   "detail": {
+    "block": "function_call"
+   }
+  },
+  {
+   "kind": "tool_result",
+   "role": null,
+   "text": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+   "result": {
+    "call_id": "call_1d18bbd3b4b94cf3a4696eaabec3ce75",
+    "error": false,
+    "output": "{\"message\":\"Wait completed.\",\"timed_out\":false}"
+   },
+   "detail": {
+    "block": "function_call_output"
+   }
+  },
+  {
+   "kind": "agent_report",
+   "role": null,
+   "text": "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/echo_hi\nPayload:\n`echo hi` output: `hi`",
+   "detail": {
+    "block": "agent_message",
+    "between": true,
+    "from": "/root/echo_hi",
+    "text": "`echo hi` output: `hi`"
+   }
+  },
+  {
+   "kind": "agent",
+   "role": "assistant",
+   "text": "done",
+   "detail": {
+    "block": "message"
+   }
+  },
+  {
+   "kind": "user",
+   "role": "user",
+   "text": "PROBE-API-ERROR: reply with just: ok",
+   "words": "PROBE-API-ERROR: reply with just: ok",
+   "detail": {
+    "block": "message"
+   },
+   "says": [
+    "user",
+    "PROBE-API-ERROR: reply with just: ok"
+   ]
+  }
+ ],
+ "derived": [],
+ "record": [
+  [
+   "turn_stopped",
+   "1716.6ac83f2b",
+   1793093310.532,
+   {
+    "how": "over",
+    "turn": "01a17cb0-85ab-7853-a749-48c9e91f7aa4",
+    "status": null,
+    "error": null
+   }
+  ],
+  [
+   "asked",
+   "3036.e8e2e056",
+   1793094258.825,
+   {
+    "call": "call_03517cd1e94348aaa24dcb361d31ef1b",
+    "kind": "question",
+    "questions": [
+     {
+      "title": "Colour preference",
+      "options": [
+       "Red",
+       "Blue"
+      ]
+     }
+    ],
+    "async": true,
+    "turn": "01a17cbe-ed36-7710-aa46-492ac373c4a6"
+   }
+  ],
+  [
+   "ask_settled",
+   "3599.906069a9.0",
+   1793094260.953,
+   {
+    "call": "call_03517cd1e94348aaa24dcb361d31ef1b",
+    "how": "answered",
+    "result": "{\"answer\":\"Blue\",\"question\":\"Colour preference\",\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_03517cd1e94348aaa24dcb361d31ef1b\\\",0]\"}"
+   }
+  ],
+  [
+   "turn_stopped",
+   "5725.a4dbd2df",
+   1793094266.572,
+   {
+    "how": "over",
+    "turn": "01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "status": null,
+    "error": null
+   }
+  ],
+  [
+   "asked",
+   "5725.a4dbd2df.plan",
+   1793094266.572,
+   {
+    "call": "plan:01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "kind": "plan",
+    "plan": "## Create `colour.txt`\n\n1. Create `colour.txt` in the workspace.\n2. Write `Blue` into the file.\n",
+    "async": false,
+    "turn": "01a17cbe-ed36-7710-aa46-492ac373c4a6"
+   }
+  ],
+  [
+   "ask_settled",
+   "6062.6a79a686",
+   1793095248.093,
+   {
+    "call": "plan:01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "how": "answered",
+    "result": null
+   }
+  ],
+  [
+   "ask_settled",
+   "6556.ca53c534",
+   1793095248.104,
+   {
+    "call": "plan:01a17cbe-ed36-7710-aa46-492ac373c4a6",
+    "how": "answered",
+    "result": "Name the file colours.txt instead"
+   }
+  ],
+  [
+   "turn_stopped",
+   "7791.affcfee3",
+   1793095254.52,
+   {
+    "how": "over",
+    "turn": "01a17cce-28d2-7851-b99b-4b952f2528bd",
+    "status": null,
+    "error": null
+   }
+  ],
+  [
+   "asked",
+   "7791.affcfee3.plan",
+   1793095254.52,
+   {
+    "call": "plan:01a17cce-28d2-7851-b99b-4b952f2528bd",
+    "kind": "plan",
+    "plan": "## Create `colours.txt`\n\n1. Create `colours.txt` in the workspace.\n2. Write `Blue` into the file.\n",
+    "async": false,
+    "turn": "01a17cce-28d2-7851-b99b-4b952f2528bd"
+   }
+  ],
+  [
+   "ask_settled",
+   "8127.47794721",
+   1793095256.963,
+   {
+    "call": "plan:01a17cce-28d2-7851-b99b-4b952f2528bd",
+    "how": "answered",
+    "result": null
+   }
+  ],
+  [
+   "ask_settled",
+   "8624.133c7335",
+   1793095256.979,
+   {
+    "call": "plan:01a17cce-28d2-7851-b99b-4b952f2528bd",
+    "how": "answered",
+    "result": "Implement the plan."
+   }
+  ],
+  [
+   "turn_stopped",
+   "11925.26ccd26e",
+   1793095277.667,
+   {
+    "how": "over",
+    "turn": "01a17cce-4b7b-7c93-8367-c230a080c8c1",
+    "status": null,
+    "error": null
+   }
+  ],
+  [
+   "asked",
+   "12847.3c3599ba",
+   1793095287.267,
+   {
+    "call": "call_32b3b26a1172484b88f80bce98ecfe1e",
+    "kind": "question",
+    "questions": [
+     {
+      "title": "Number you like",
+      "options": [
+       "One",
+       "Two"
+      ]
+     }
+    ],
+    "async": true,
+    "turn": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33"
+   }
+  ],
+  [
+   "ask_settled",
+   "13407.d0d4f4f2.0",
+   1793095289.685,
+   {
+    "call": "call_32b3b26a1172484b88f80bce98ecfe1e",
+    "how": "answered",
+    "result": "{\"answer\":\"Two\",\"question\":\"Number you like\",\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_32b3b26a1172484b88f80bce98ecfe1e\\\",0]\"}"
+   }
+  ],
+  [
+   "turn_stopped",
+   "16247.bfc3ce4b",
+   1793095322.646,
+   {
+    "how": "over",
+    "turn": "01a17cce-aaf5-7412-89d1-c39ba4ad3d33",
+    "status": null,
+    "error": null
+   }
+  ],
+  [
+   "turn_stopped",
+   "17603.1227b43e",
+   1793095333.782,
+   {
+    "how": "interrupted",
+    "turn": "01a17ccf-5b2e-7a53-8300-58ade2f05082",
+    "status": null,
+    "error": null
+   }
+  ],
+  [
+   "turn_stopped",
+   "19022.8a609de6",
+   1793095334.173,
+   {
+    "how": "over",
+    "turn": "01a17ccf-7907-7053-84b9-1cb96d73fa75",
+    "status": null,
+    "error": null
+   }
+  ],
+  [
+   "task_started",
+   "20315.ee9bd43f",
+   1793095357.083,
+   {
+    "task": "01a17ccf-d296-7b81-ae1f-51ac1690b767",
+    "kind": "agent",
+    "label": "/root/echo_hi"
+   }
+  ],
+  [
+   "task_ended",
+   "20816.8bdbb712",
+   1793095363.93,
+   {
+    "task": "01a17ccf-d296-7b81-ae1f-51ac1690b767",
+    "kind": "agent",
+    "path": "/root/echo_hi",
+    "report": null
+   }
+  ],
+  [
+   "turn_stopped",
+   "21328.80a81559",
+   1793095367.054,
+   {
+    "how": "over",
+    "turn": "01a17ccf-ad3f-71a0-83f9-607152cecc05",
+    "status": null,
+    "error": null
+   }
+  ],
+  [
+   "turn_stopped",
+   "22166.667f7759",
+   1793095372.946,
+   {
+    "how": "error",
+    "turn": "01a17cd0-1080-7963-81f5-02cdf8a5cedf",
+    "status": null,
+    "error": "{\"type\": \"error\", \"error\": {\"type\": \"invalid_request_error\", \"message\": \"probe: refused on purpose\"}}"
+   }
+  ],
+  [
+   "turn_stopped",
+   "23587.45c558f9",
+   1793095391.704,
+   {
+    "how": "over",
+    "turn": "01a17cd0-27c8-7b22-958a-4c0a466d8ba3",
+    "status": null,
+    "error": null
+   }
+  ]
+ ],
+ "answers": [
+  {
+   "call": "call_03517cd1e94348aaa24dcb361d31ef1b",
+   "kind": "question",
+   "async": true,
+   "choices": {
+    "first": {
+     "error": "AttributeError: 'str' object has no attribute 'get'"
+    },
+    "own": {
+     "error": "AttributeError: 'str' object has no attribute 'get'"
+    }
+   }
+  },
+  {
+   "call": "plan:01a17cbe-ed36-7710-aa46-492ac373c4a6",
+   "kind": "plan",
+   "async": false,
+   "choices": {
+    "implement": {
+     "keys": [
+      "1"
+     ],
+     "expected": [
+      "Implement the plan."
+     ],
+     "summary": "Implement the plan"
+    },
+    "change": {
+     "keys": [
+      "3",
+      "Make it shorter",
+      "\r"
+     ],
+     "expected": [
+      "Make it shorter"
+     ],
+     "summary": "Change: Make it shorter"
+    }
+   }
+  },
+  {
+   "call": "plan:01a17cce-28d2-7851-b99b-4b952f2528bd",
+   "kind": "plan",
+   "async": false,
+   "choices": {
+    "implement": {
+     "keys": [
+      "1"
+     ],
+     "expected": [
+      "Implement the plan."
+     ],
+     "summary": "Implement the plan"
+    },
+    "change": {
+     "keys": [
+      "3",
+      "Make it shorter",
+      "\r"
+     ],
+     "expected": [
+      "Make it shorter"
+     ],
+     "summary": "Change: Make it shorter"
+    }
+   }
+  },
+  {
+   "call": "call_32b3b26a1172484b88f80bce98ecfe1e",
+   "kind": "question",
+   "async": true,
+   "choices": {
+    "first": {
+     "error": "AttributeError: 'str' object has no attribute 'get'"
+    },
+    "own": {
+     "error": "AttributeError: 'str' object has no attribute 'get'"
+    }
+   }
+  }
+ ]
+}
