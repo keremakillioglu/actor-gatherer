@@ -1,4 +1,5 @@
-"""Codex's own record of a thread (rollout.py), and what the dashboard makes of it: a turn over, interrupted or
+"""Codex's own record of a thread, its rollout -- followed by ag's hook, what it says recorded as events
+(harness_kit.codex's Rollout; ag's session_files.py, played here by followed.py) -- and what the dashboard makes of it: a turn over, interrupted or
 stopped on an error where ag heard nothing; a question asked in its terminal, answered or dismissed there; one asked
 as the turn goes on; the plan a Plan-mode turn proposed, which its terminal asks whether to implement; the subagents
 and commands it left running -- and the keys that answer each from the page (answers.py), typed into the dashboard's
@@ -20,8 +21,10 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag.ag_harness.store import schema  # noqa: E402
-from ag_dashboard import answers, data, files, rollout, server, sessions  # noqa: E402
+from ag_dashboard import answers, data, files, server, sessions  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
+from followed import Followed, schema as bare_db  # noqa: E402
+from harness_kit import codex as codex_rules  # noqa: E402
 from test_dashboard_sessions import SessionsBase  # noqa: E402
 
 THREAD = "01a17625-344f-7ce2-8c1e-dd7931e0e2d3"
@@ -81,7 +84,7 @@ def aborted(turn, at=None):
     return line("event_msg", {"type": "turn_aborted", "turn_id": turn, "reason": "interrupted"}, at)
 
 
-def asked(call, questions, name=rollout.ASK, at=None):
+def asked(call, questions, name=codex_rules.ASK, at=None):
     return line("response_item", {"type": "function_call", "status": "completed", "name": name, "call_id": call,
                                   "arguments": json.dumps({"questions": questions})}, at)
 
@@ -99,7 +102,9 @@ def item(turn, it, at=None):
 
 
 class RolloutBase(unittest.TestCase):
-    """A CODEX_HOME of the test's own, with the thread's record in it."""
+    """A CODEX_HOME of the test's own, with the thread's record in it -- each line written followed into a gatherer's
+    database (`db`), as the hook records them."""
+    db = None
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -109,83 +114,94 @@ class RolloutBase(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
         self.path = self.record_for(THREAD)
+        self.followed = Followed("codex", self.path)
+        if self.db is None:
+            self.db = bare_db(sqlite3.connect(":memory:"))
+            self.addCleanup(self.db.close)
 
     def record_for(self, thread):
         d = os.path.join(self.codex, "sessions", "2026", "10", "25")
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, f"rollout-2026-10-25T19-58-32-{thread}.jsonl")
         open(path, "a").close()
-        rollout._FOUND.clear()
-        rollout._NO_RECORD.clear()
         return path
 
     def write(self, *lines, path=None):
         with open(path or self.path, "a") as fh:
             for x in lines:
                 fh.write(json.dumps(x, separators=(",", ":")) + "\n")
+        if path in (None, self.path):
+            self.followed.into(self.db, THREAD)
 
     def rec(self):
-        return rollout.read(rollout.record(THREAD))
+        return data.record_of(self.db, THREAD)
+
+    def tasks(self, kind):
+        return [(t["id"], t["label"]) for t in self.rec().tasks() if t["kind"] == kind]
 
 
 class RecordTest(RolloutBase):
     def test_found_by_the_thread_alone_and_none_for_another(self):
-        self.assertEqual(rollout.record(THREAD), self.path)
-        self.assertIsNone(rollout.record("01a17625-0000-0000-0000-000000000000"))
+        self.assertEqual(codex_rules.record_path(THREAD), self.path)
+        self.assertIsNone(codex_rules.record_path("01a17625-0000-0000-0000-000000000000"))
 
     def test_a_turn_over_interrupted_or_given_up(self):
         t0 = time.time() - 60
         self.write(started("t1", at=t0))
-        self.assertIsNone(rollout.stopped(self.rec(), None))                 # it goes on
+        self.assertIsNone(self.rec().stopped(None))                 # it goes on
         self.write(complete("t1", at=t0 + 5))
-        self.assertEqual(rollout.stopped(self.rec(), t0)["kind"], "over")
-        self.assertIsNone(rollout.stopped(self.rec(), t0 + 10))              # ended before ag last heard of it
+        self.assertEqual(self.rec().stopped(t0)["kind"], "over")
+        self.assertIsNone(self.rec().stopped(t0 + 10))              # ended before ag last heard of it
         self.write(started("t2", at=t0 + 20), aborted("t2", at=t0 + 25))
-        self.assertEqual(rollout.stopped(self.rec(), t0 + 20)["kind"], "interrupted")
+        self.assertEqual(self.rec().stopped(t0 + 20)["kind"], "interrupted")
         self.write(started("t3", at=t0 + 30), complete("t3", at=t0 + 40, error={
             "message": "unexpected status 502 Bad Gateway: ag's hook server got no answer",
             "codex_error_info": {"http_connection_failed": {"http_status_code": 502}}}))
-        got = rollout.stopped(self.rec(), t0 + 30)
+        got = self.rec().stopped(t0 + 30)
         self.assertEqual((got["kind"], got["status"], got["text"][:22]), ("error", 502, "unexpected status 502 "))
 
     def test_a_question_answered_or_dismissed_in_its_terminal(self):
         self.write(started("t1", "plan"), asked("c1", [FRUIT]))
-        self.assertIsNone(rollout.settled(self.rec(), "c1"))
+        self.assertIsNone(self.rec().settled("c1"))
         self.write(output("c1", '{"answers":{"fruit":{"answers":["Pear"]}}}'))
-        self.assertEqual(rollout.settled(self.rec(), "c1"), "answered")
-        self.assertEqual(rollout.result(self.rec(), "c1"), '{"answers":{"fruit":{"answers":["Pear"]}}}')
+        self.assertEqual(self.rec().settled("c1"), "answered")
+        self.assertEqual(self.rec().result("c1"), '{"answers":{"fruit":{"answers":["Pear"]}}}')
         self.write(asked("c2", [DRINK]), output("c2", "aborted by user after 13.4s"), aborted("t1"))
-        self.assertEqual(rollout.settled(self.rec(), "c2"), "dismissed")
+        self.assertEqual(self.rec().settled("c2"), "dismissed")
         self.write(started("t2", "plan"), asked("c3", [DRINK]), aborted("t2"))   # its turn ended with no output
-        self.assertEqual(rollout.settled(self.rec(), "c3"), "dismissed")
-        self.assertIsNone(rollout.settled(self.rec(), "c-unknown"))
+        self.assertEqual(self.rec().settled("c3"), "dismissed")
+        self.assertIsNone(self.rec().settled("c-unknown"))
 
     def test_a_question_asked_as_it_works_until_replied_to_or_its_turn_ends(self):
         self.write(started("t1"), asked("a1", [{"title": "Fruit preference", "options": ["Apple", "Pear"]},
-                                               {"title": "Drink preference", "options": ["Tea", "Coffee"]}], rollout.ASK_ASYNC),
+                                               {"title": "Drink preference", "options": ["Tea", "Coffee"]}], codex_rules.ASK_ASYNC),
                    output("a1", '{"accepted":true}'))
-        got = rollout.open_question(self.rec())
+        got = self.rec().open_question()
         self.assertEqual((got["call"], len(got["questions"])), ("a1", 2))
-        self.assertIsNone(rollout.result(self.rec(), "a1"))                  # accepted is no answer
-        self.write(user(rollout.REPLY + '\n[{"answer":"mango please","question":"Fruit preference","questionItemId":'
+        self.assertIsNone(self.rec().result("a1"))                  # accepted is no answer
+        self.write(user(codex_rules.REPLY + '\n[{"answer":"mango please","question":"Fruit preference","questionItemId":'
                         '"[\\"request_user_input_async\\",\\"a1\\",0]"}]\n</send_user_message_question_reply>'))
-        self.assertEqual(rollout.open_question(self.rec())["call"], "a1")   # the second, skipped: still open
-        self.assertIn('"answer":"mango please"', rollout.result(self.rec(), "a1"))
+        self.assertEqual(self.rec().open_question()["call"], "a1")   # the second, skipped: still open
         self.write(complete("t1"))
-        self.assertIsNone(rollout.open_question(self.rec()))                 # its turn over: no longer answerable
+        self.assertIsNone(self.rec().open_question())                 # its turn over: no longer answerable
+        self.write(started("t2"), asked("a2", [{"title": "Fruit preference", "options": ["Apple", "Pear"]}], codex_rules.ASK_ASYNC))
+        self.write(user(codex_rules.REPLY + '\n[{"answer":"Pear","question":"Fruit preference","questionItemId":'
+                        '"[\\"request_user_input_async\\",\\"a2\\",0]"}]\n</send_user_message_question_reply>'))
+        self.assertIsNone(self.rec().open_question())                 # every question replied to
+        self.assertIn('"answer":"Pear"', self.rec().result("a2"))
 
     def test_a_proposed_plan_until_the_next_turn_and_what_that_opened_with(self):
         self.write(started("t1", "plan"), item("t1", {"type": "Plan", "text": "1. Create hello.txt.\n"}))
-        self.assertIsNone(rollout.offer(self.rec()))                          # not until its turn completes
+        self.assertIsNone(self.rec().offer())                          # not until its turn completes
         self.write(complete("t1"))
-        self.assertEqual(rollout.offer(self.rec())["text"], "1. Create hello.txt.\n")
+        self.assertEqual(self.rec().offer()["text"], "1. Create hello.txt.\n")
         self.write(started("t2"), line("response_item", {"type": "message", "role": "developer",
                                                          "content": [{"type": "input_text", "text": "<collaboration_mode>"}]}),
                    user("<environment_context>"), user("Implement the plan."))
-        self.assertIsNone(rollout.offer(self.rec()))
-        self.assertEqual(rollout.result(self.rec(), "plan:t1"), "Implement the plan.")
+        self.assertIsNone(self.rec().offer())
+        self.assertEqual(self.rec().result("plan:t1"), "Implement the plan.")
         self.write(started("t3", "plan"), aborted("t3"))
-        self.assertIsNone(rollout.offer(self.rec()))                          # no plan in it: none asked about
+        self.assertIsNone(self.rec().offer())                          # no plan in it: none asked about
 
     def test_subagents_and_commands_left_running_until_they_end(self):
         self.write(started("t1"),
@@ -200,24 +216,11 @@ class RecordTest(RolloutBase):
                    line("response_item", {"type": "custom_tool_call_output", "call_id": "x2", "output": [
                        {"type": "input_text", "text": '{"session_id":555,"exit_code":0,"output":"a"}'}]}),   # done at once
                    complete("t1"))
-        self.assertEqual([(a["id"], a["path"]) for a in rollout.agents(self.rec())], [("sub1", "/root/sleep_then_ok")])
-        self.assertEqual([(c["id"], c["label"]) for c in rollout.commands(self.rec())], [("36309", "sleep 50; echo bgdone > bg.txt")])
+        self.assertEqual(self.tasks("agent"), [("sub1", "/root/sleep_then_ok")])
+        self.assertEqual(self.tasks("command"), [("36309", "sleep 50; echo bgdone > bg.txt")])
         self.write(item("t1", {"type": "SubAgentActivity", "kind": "completed", "agent_thread_id": "sub1"}),
                    item("t1", {"type": "CommandExecution", "process_id": "36309", "status": "completed", "exit_code": 0}))
-        self.assertEqual((rollout.agents(self.rec()), rollout.commands(self.rec())), ([], []))
-
-    def test_read_on_from_where_it_was_and_anew_once_rewritten(self):
-        self.write(started("t1"))
-        first = self.rec()
-        self.write(complete("t1"))
-        self.assertIs(self.rec(), first)                                       # the same, read on
-        self.assertEqual(first.turn["how"], "complete")
-        with open(self.path, "w") as fh:                                      # written anew
-            fh.write(json.dumps(started("t9")) + "\n")
-        self.assertEqual((self.rec().turn["id"], self.rec().turn["how"]), ("t9", None))
-        with open(self.path, "a") as fh:
-            fh.write('{"timestamp":"2026-10-25T00:00:00Z","type":"event_msg","payload":{"type":"task_comp')   # being written
-        self.assertIsNone(self.rec().turn["how"])
+        self.assertEqual(self.rec().tasks(), [])
 
 
 def codex_ask(*questions, asynchronous=False):
@@ -259,15 +262,17 @@ class KeysTest(unittest.TestCase):
 
 
 class StatusBase(RolloutBase):
-    """Gatherer `g` holding a codex thread's events, its pending answer, and the thread's record."""
+    """Gatherer `g` holding a codex thread's events, its pending answer, and the thread's record, followed into it."""
 
     def setUp(self):
-        super().setUp()
-        self.saved, dashboard_home.HOME = dashboard_home.HOME, os.path.join(self.tmp.name, "ag")
+        self.tmp_home = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp_home.cleanup)
+        self.saved, dashboard_home.HOME = dashboard_home.HOME, os.path.join(self.tmp_home.name, "ag")
         self.addCleanup(setattr, dashboard_home, "HOME", self.saved)
         os.makedirs(os.path.join(dashboard_home.HOME, "gatherers", "g"))
-        self.conn = gatherer_db(os.path.join(dashboard_home.HOME, "gatherers", "g", "context.db"))
+        self.conn = self.db = gatherer_db(os.path.join(dashboard_home.HOME, "gatherers", "g", "context.db"))
         self.addCleanup(self.conn.close)
+        super().setUp()
         put(self.conn, THREAD, "user_message", {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "ask me"}]},
             at=time.time() - 120)
 
@@ -312,7 +317,7 @@ class StatusTest(StatusBase):
         self.assertEqual((self.actor()["status"], self.actor()["stopped"]), (data.IDLE, None))
 
     def test_a_question_asked_as_it_works_is_shown_while_it_runs(self):
-        self.write(started("t1"), asked("a1", [{"title": "Fruit preference", "options": ["Apple", "Pear"]}], rollout.ASK_ASYNC))
+        self.write(started("t1"), asked("a1", [{"title": "Fruit preference", "options": ["Apple", "Pear"]}], codex_rules.ASK_ASYNC))
         self.pend("tool_call", {"type": "function_call", "name": "sleep", "call_id": "z"})
         a = self.actor()
         self.assertEqual((a["status"], a["asking"]["async"], a["asking"]["questions"][0]["question"]), (data.RUNNING, True, "Fruit preference"))
@@ -351,12 +356,12 @@ class TurnsTest(StatusBase):
     def test_its_answers_as_it_works_are_part_of_the_turn_that_asked(self):
         said = lambda role, text: {"type": "message", "role": role, "content": [
             {"type": "input_text" if role == "user" else "output_text", "text": text}]}
-        replies = [rollout.REPLY + '\n[{"answer":"' + a + '","question":"' + q + '","questionItemId":'
+        replies = [codex_rules.REPLY + '\n[{"answer":"' + a + '","question":"' + q + '","questionItemId":'
                    '"[\\"request_user_input_async\\",\\"a1\\",' + str(i) + ']"}]\n</send_user_message_question_reply>'
                    for i, (q, a) in enumerate((("Which fruit?", "mango please"), ("Which drink?", "Coffee")))]
         put(self.conn, THREAD, "agent_message", said("assistant", "Asked; waiting."))
         for r in replies:
-            self.assertTrue(rollout.replies(r))
+            self.assertTrue(codex_rules.replies(r))
             put(self.conn, THREAD, "user_message", said("user", r))
         put(self.conn, THREAD, "agent_message", said("assistant", "Mango and coffee."))
         put(self.conn, THREAD, "user_message", said("user", "thanks"))
@@ -365,7 +370,7 @@ class TurnsTest(StatusBase):
         self.assertEqual([m["text"] for m in got["turns"][0]["more"]],                # as the answers they are
                          ["Which fruit? → mango please", "Which drink? → Coffee"])
         self.assertEqual({m["kind"] for m in got["turns"][0]["more"]}, {"ask_reply"})
-        self.assertFalse(rollout.replies("ask me"))
+        self.assertFalse(codex_rules.replies("ask me"))
 
     def test_each_subagent_s_report_under_the_turn_that_started_it(self):
         """codex hands a subagent's report back as another agent's message (FINAL_ANSWER), with whatever call comes
@@ -387,11 +392,11 @@ class TurnsTest(StatusBase):
         put(self.conn, THREAD, "context", report("/root/count_a", "", "MESSAGE"))       # its words encrypted: nothing to show
         put(self.conn, THREAD, "agent_message", said("assistant", "One is done."))
         sub = "01a17693-0439-7fb2-8a7b-42fbf610de7d"                                  # count_b: ended, not handed back yet
+        self.write(started("s1"), line("event_msg", {"type": "task_complete", "turn_id": "s1", "last_agent_message": "1, 2, 3, 4"}),
+                   path=self.record_for(sub))                                         # its own record, its turn over
         self.write(started("t1"), item("t1", {"type": "SubAgentActivity", "kind": "started", "agent_thread_id": sub,
                                               "agent_path": "/root/count_b"}),
                    item("t1", {"type": "SubAgentActivity", "kind": "completed", "agent_thread_id": sub}))
-        self.write(started("s1"), line("event_msg", {"type": "task_complete", "turn_id": "s1", "last_agent_message": "1, 2, 3, 4"}),
-                   path=self.record_for(sub))
         got = files.files("g", THREAD)
         self.assertEqual([t["text"] for t in got["turns"]], ["ask me", "and now?"])
         first = [(r["kind"], r.get("name"), r.get("text")) for r in got["turns"][0]["replies"]]
@@ -449,6 +454,7 @@ class SendTest(SessionsBase, RolloutBase):
         conn = gatherer_db(os.path.join(dashboard_home.HOME, "gatherers", "g", "context.db"))
         put(conn, sid, "user_message", {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]})
         pending(conn, sid, *answer)
+        Followed("codex", self.record_for(sid)).into(conn, sid)       # its record, as the hook follows it
         conn.close()
 
     def test_a_message_while_its_plan_is_asked_about_is_what_to_change(self):

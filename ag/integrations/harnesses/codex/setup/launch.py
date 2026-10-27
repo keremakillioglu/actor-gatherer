@@ -66,7 +66,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 from ag.cli.launch import Launch, Launcher, LaunchError, Run
-from .hook_servers import HookServers
+from .hook_servers import HookServers, config_part
 
 SETUP = "ag.integrations.harnesses.codex.setup.setup"      # codex's setup: the hook server with codex's hook
 OSS_URL = "CODEX_OSS_BASE_URL"
@@ -133,6 +133,7 @@ class Plan:
     session: Optional[str] = None   # the thread the run resumes (`resume <id>`), claimed by ag; None: a new one
     run: Optional[str] = None       # the run's id (its process's), stated in the base URL; None: not stated
     daemonless: bool = False        # run without codex's shared background server (`--no-daemon`)
+    home_set: bool = False          # CODEX_HOME set for the run: stated in the base URL, where the hook finds rollouts
 
     @property
     def setting(self) -> str:
@@ -142,7 +143,8 @@ class Plan:
 
     def base_url(self, server_url: str, gatherer: Optional[str]) -> str:
         return (server_url + (f"/h/{gatherer}" if gatherer else "") + (f"/r/{self.run}" if self.run else "")
-                + (f"/l/{self.limit}" if self.limit else "") + self.path)
+                + (config_part(self.codex_home) if self.home_set else "") + (f"/l/{self.limit}" if self.limit else "")
+                + self.path)
 
     def argv(self, command: List[str], server_url: str, gatherer: Optional[str]) -> List[str]:
         added = [NO_DAEMON] if self.daemonless and NO_DAEMON not in self.args else []   # before any subcommand
@@ -377,6 +379,7 @@ class CodexLauncher(Launcher):
         notes = list(p.notes)
         p.run = None if run.dry_run else str(os.getpid())                          # codex's, once exec'd
         p.daemonless = takes(list(run.command), {**os.environ, **run.env}, NO_DAEMON)
+        p.home_set = bool(run.env.get("CODEX_HOME") or os.environ.get("CODEX_HOME"))
         if run.dry_run:
             found = self.servers.find(SETUP, p.upstream, log_dir, options)
             server_url = found.url if found else f"http://127.0.0.1:{port}"

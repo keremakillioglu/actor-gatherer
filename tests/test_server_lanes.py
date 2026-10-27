@@ -110,6 +110,31 @@ class LanesTest(unittest.TestCase):
         self.assertFalse(done.is_alive())
         self.assertEqual([a["id"] for a in out.seen][-1], 1)
 
+    def test_a_session_s_records_are_stored_beside_its_read_not_behind_it(self):
+        release = threading.Event()
+
+        class Records(StubServer):
+            def insert(self, gatherer, properties, events, manager=None):
+                self.handled.append((properties.get("channel"), "insert", [e["id"] for e in events]))
+                return {"rows": [], "last": None, "kept": []}
+
+        server = Records(lambda properties, row: release.wait(WAIT))
+        insert = lambda ids, **more: {"op": "insert", "gatherer": "g", "properties": {"channel": "a"},   # noqa: E731
+                                      "events": [{"type": "turn_stopped", "id": i} for i in ids], **more}
+        out = Out()
+        done = in_background(server, [read("a", 1), insert(["f1"], lane="records"), insert(["f2"], lane="records"),
+                                      insert(["e1"])], out)
+        try:
+            out.wait_for([2, 3])                       # the records: while the read waits
+            self.assertEqual([h for h in server.handled if h[1] == "insert"],
+                             [("a", "insert", ["f1"]), ("a", "insert", ["f2"])])        # in the order they came
+            self.assertNotIn(4, [a["id"] for a in out.seen])                          # any other insert: behind it
+        finally:
+            release.set()
+        done.join(WAIT)
+        self.assertFalse(done.is_alive())
+        self.assertEqual([a["id"] for a in out.seen][-2:], [1, 4])
+
     def test_a_session_s_requests_are_answered_in_the_order_they_came(self):
         def hold(properties, row):
             time.sleep(random.uniform(0, 0.01) if row % 2 else 0.03 / row)    # the later, the quicker

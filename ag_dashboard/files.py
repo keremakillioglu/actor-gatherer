@@ -36,7 +36,7 @@ from typing import Dict, List, Optional
 import harness_kit
 from harness_kit import Kind, claude as claude_rules, codex as codex_rules
 
-from . import data, queued, rollout, work
+from . import data, work
 from . import home as paths
 from harness_kit.shell import (  # noqa: F401 - python_changes: tested here
     CODE_MODE, EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, opened_script,
@@ -392,7 +392,7 @@ def _plus(a: Optional[List[int]], b: Optional[List[int]]) -> Optional[List[int]]
 
 def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = "") -> dict:
     """The session's turns ({n, row_id, at, text, more, replies, now, last, work}: what the user asked, and what they wrote while it
-    ran ({row_id, at, text}: sent mid-turn, or held until it ended; queued.py) -- part of it, not a turn of its own; what the agent
+    ran ({row_id, at, text}: sent mid-turn, or held until it ended; data.py's `meanwhile`) -- part of it, not a turn of its own; what the agent
     said back and thought, in order -- each {kind: "text", text} or {kind: "thinking", texts} (a run of
     thinking between two replies, its readable words: none when encrypted), and among them a subagent's report
     handed back (`_note`): {kind: "report", name (what the subagent was started for, else ""), text}; `ran`, the commands the user ran that Claude Code runs itself (/context,
@@ -425,6 +425,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     try:
         evs = list(_events(conn, channel))
         touched = _touches(conn, channel)
+        held = data.meanwhile(conn, channel)          # sent when a turn ended, written while it ran (the record's)
+        reports = data.record_of(conn, channel).reports()   # what each subagent answered, as its own record had it
     finally:
         conn.close()
     known: Dict[str, Sheet] = {}                     # each file's lines as last seen, over the whole session
@@ -681,9 +683,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
 
     # the turns, first: which one is wanted. A message the user wrote while a turn ran is part of it, not a turn of
     # its own: one Claude Code sent mid-turn (wrapped), or held until the turn ended and sent then, as its record
-    # says (queued.py's `meanwhile`: matched by its words, stored as it was sent); and codex's answers to what it asked
-    # as it worked (rollout.py's `replies`), which it sends as the user's while the turn runs
-    held = queued.meanwhile(channel, cwd)
+    # says (data.py's `meanwhile`: matched by its words, stored as it was sent); and codex's answers to what it asked
+    # as it worked (ASK_REPLY), which it sends as the user's while the turn runs
     starts, more = [], {}                            # more: what was written while a turn ran, by the turn it is part of
     for i, (row_id, typ, at, parts, stored) in enumerate(evs):
         said = [p["text"] for p in parts if p["kind"] == "text" and p.get("role") == "user"]
@@ -792,9 +793,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 for path, rows, how in _loaded(p.get("text") or ""):
                     order.append((ahead[i] or cur, {"kind": "loaded", "path": path, "rows": rows, "via": how}))
     if any(not x["given"] for x in spawned.values()):    # ended, its report not handed back yet: from its own record
-        rec = rollout.read(rollout.record(channel))
         for path, x in spawned.items():
-            said = rollout.report(rec, path) if not x["given"] else None
+            said = reports.get(path) if not x["given"] else None
             if said:
                 x["head"]["replies"].append({"kind": "report", "name": agents.get(path, ""), "text": said})
     for t, p in order:

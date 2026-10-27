@@ -19,13 +19,16 @@ wrong. Each has its opening; `read` tells them apart (its Kinds) and keeps what 
 """
 
 import copy
+import glob
 import json
 import os
 import re
 import textwrap
-from typing import List, Optional, Tuple
+import time
+from typing import Dict, List, Optional, Tuple
 
-from .base import Action, Call, CallKind, Harness, Kind, Part, ToolCall, ToolResult, output_of
+from .base import (Action, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, ToolCall, ToolResult, output_of,
+                   seconds)
 
 # ---------------------------------------------------------------- Claude Code's own text, in the user's name
 
@@ -651,6 +654,12 @@ class ClaudeCode(Harness):
     def words(self, text: str) -> tuple:
         return words_of(text)
 
+    def record_path(self, session: str, cwd: Optional[str] = None, config: Optional[str] = None) -> Optional[str]:
+        return record_path(session, cwd, config)
+
+    def follower(self, path: str) -> Follower:
+        return Record()
+
     def owns(self, payload) -> bool:
         if not isinstance(payload, dict) or "info" in payload or "api" in payload:
             return False
@@ -749,5 +758,200 @@ def plan_path(payload) -> Optional[Tuple[str, Optional[str]]]:
     return None
 
 
+# ---------------------------------------------------------------- its own record of a session
+
+#: Claude Code's record of a session: <its config folder: CLAUDE_CONFIG_DIR, else ~/.claude>/projects/<the session's
+#: directory, each character but a letter or a digit made '-'>/<session>.jsonl -- a JSON line per thing as it happens.
+#: What is read of it (2.1.310):
+#:
+#:     {"type": "queue-operation", "operation", "timestamp", "content"}   its queue of what the user writes while it
+#:         works: "enqueue" when a message is written; "remove", reason "absorbed_mid_turn", when it goes to the model
+#:         with the turn's next call (wrapped: MID_TURN); "dequeue" when the turn ended first and it opens the next
+#:         (the first in); any other "remove": taken back; "popAll" when Up takes every message the user wrote back
+#:         into the prompt, to edit (its `content` their words, joined) -- taken back too, its notes staying queued.
+#:         Its own notes (QUEUED_NOTES) are queued too, in the user's name.
+#:     {"type": "user", "origin": {"kind": "human"}, "message"}   a message the user sent between turns: not queued,
+#:         sent at once as the next turn's first (a note's origin is of another kind; a "!" command's line has none)
+#:     {"type": "assistant", "message"}   the model's answer: a call of ASKS waits on the user; with
+#:         "isApiErrorMessage", Claude Code's error once it gave up on a model call (its "apiErrorStatus")
+#:     {"type": "user", "message": {content: [tool_result]}}   an asking call's result, the moment it is answered or
+#:         dismissed -- dismissed (Esc), INTERRUPTED follows it at once
+#:     a user line opening with INTERRUPTED   the user stopped the turn (Esc), which makes no model call
+#:     any line with a <task-notification>   a background task ended, written the moment it is made (`notices`)
+#:
+#: "isSidechain" lines are a subagent's, not the session's.
+INTERRUPTED = "[Request interrupted by user"
+BUSY_SECONDS = 1.0         # held longer than this: written while a turn ran (one written between turns goes at once)
+SETTLE_SECONDS = 1.0       # an asking call's result with nothing after it this long: answered (Esc writes its note at once)
+SENT_KEPT = 20             # the newest messages sent as a turn's first, kept to know the user line that records each
+
+
+def record_dir(config: Optional[str] = None) -> str:
+    """Claude Code's config folder: `config`, else CLAUDE_CONFIG_DIR, else ~/.claude."""
+    return os.path.abspath(os.path.expanduser(config or os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude"))
+
+
+def record_path(session: str, cwd: Optional[str] = None, config: Optional[str] = None) -> Optional[str]:
+    """Claude Code's record of `session`, if it has one now: under its directory's folder, else wherever it is."""
+    if not session:
+        return None
+    root = os.path.join(record_dir(config), "projects")
+    if cwd:
+        path = os.path.join(root, re.sub(r"[^A-Za-z0-9]", "-", cwd), f"{session}.jsonl")
+        if os.path.isfile(path):
+            return path
+    found = glob.glob(os.path.join(glob.escape(root), "*", glob.escape(session) + ".jsonl"))
+    return found[0] if found else None
+
+
+def _content_text(content) -> Optional[str]:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):                  # a message with an image: its words
+        return "\n".join(b["text"] for b in content if isinstance(b, dict) and isinstance(b.get("text"), str)) or None
+    return None
+
+
+def _strings(value):
+    """Every string in a JSON value, at any depth."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _strings(v)
+
+
+class Record(Follower):
+    """Claude Code's record of a session, followed (record_path's module notes): the user's messages as it queues and
+    sends them, what its asking calls came to, its turn interrupted or given up on, its background tasks' ends."""
+
+    def __init__(self):
+        self.queue: List[dict] = []               # [{key, text, at, note}]: not sent yet, in the order queued
+        self.sent: List[Tuple[str, float]] = []   # (text, when) of the newest sent as a turn's first
+        self.asks: Dict[str, str] = {}            # an asking call's id -> its tool, until its result
+        self.results: Dict[str, dict] = {}        # an asking call's id -> {key, at, result, seen}: its result, settling
+
+    def wanted(self, line: bytes) -> bool:
+        if any(k in line for k in (b'"queue-operation"', b'"human"', b"<task-notification>", b"isApiErrorMessage",
+                                   INTERRUPTED.encode(), b"AskUserQuestion", b"ExitPlanMode")):
+            return True
+        if self.results and b'"assistant"' in line:
+            return True
+        return any(c.encode() in line for c in self.asks)
+
+    def take(self, line: bytes, at: str) -> List[Fact]:
+        try:
+            m = json.loads(line)
+        except ValueError:
+            return []
+        if not isinstance(m, dict):
+            return []
+        key, when = str(at), seconds(m.get("timestamp"))
+        out = self._ended(m, key, when) if b"<task-notification>" in line else []
+        if m.get("type") == "queue-operation":
+            return out + self._queued(m, key, when)
+        if m.get("isSidechain") or m.get("type") not in ("user", "assistant"):
+            return out
+        message = m.get("message") if isinstance(m.get("message"), dict) else {}
+        content = message.get("content")
+        blocks = [{"type": "text", "text": content}] if isinstance(content, str) else \
+            [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
+        if m["type"] == "assistant":
+            out += self._settled("answered")                      # the turn went on past an asking call's result
+            for b in blocks:
+                if b.get("type") == "tool_use" and b.get("name") in ASKS and b.get("id"):
+                    self.asks[b["id"]] = b["name"]
+            if m.get("isApiErrorMessage"):
+                text = " ".join(str(b.get("text") or "") for b in blocks if b.get("type") == "text").strip()
+                status = m.get("apiErrorStatus") if isinstance(m.get("apiErrorStatus"), int) else None
+                out.append(Fact(Facts.TURN_STOPPED, key, when, {"how": "error", "error": text or None, "status": status}))
+            return out
+        for b in blocks:
+            if b.get("type") == "tool_result" and b.get("tool_use_id") in self.asks:
+                call = b["tool_use_id"]
+                del self.asks[call]
+                self.results[call] = {"key": f"{key}.{call}", "at": when, "result": output_of(b.get("content")),
+                                      "seen": time.time()}
+        if any(b.get("type") == "text" and str(b.get("text", "")).startswith(INTERRUPTED) for b in blocks):
+            out += self._settled("dismissed")
+            out.append(Fact(Facts.TURN_STOPPED, key, when, {"how": "interrupted"}))
+        elif isinstance(m.get("origin"), dict) and m["origin"].get("kind") == "human" and not m.get("isMeta"):
+            out += self._prompt(_content_text(content), key, when)
+        return out
+
+    def due(self, now: float) -> List[Fact]:
+        """An asking call's result with nothing after it for SETTLE_SECONDS: answered (dismissed, its note comes at once)."""
+        return self._settled("answered", lambda r: now - r["seen"] >= SETTLE_SECONDS)
+
+    def _settled(self, how: str, which=lambda r: True) -> List[Fact]:
+        out = []
+        for call, r in list(self.results.items()):
+            if which(r):
+                del self.results[call]
+                out.append(Fact(Facts.ASK_SETTLED, r["key"], r["at"], {"call": call, "how": how, "result": r["result"]}))
+        return out
+
+    def _queued(self, op: dict, key: str, when: Optional[float]) -> List[Fact]:
+        kind, text = op.get("operation"), _content_text(op.get("content"))
+        if kind == "enqueue" and text is not None:
+            q = {"key": key, "text": text, "at": when, "note": text.lstrip().startswith(QUEUED_NOTES)}
+            self.queue.append(q)
+            return [] if q["note"] else [Fact(Facts.MESSAGE_QUEUED, key, when, {"queued": key, "text": text,
+                                                                                 "words": words_of(text)[1]})]
+        if kind == "dequeue" and self.queue:                    # the first in: it opens the next turn
+            q = self.queue.pop(0)
+            self.sent = (self.sent + [(q["text"], when)])[-SENT_KEPT:]
+            held = q["at"] is not None and when is not None and when - q["at"] > BUSY_SECONDS
+            return self._sent(q, key, when, "next", held)
+        if kind == "popAll":                                    # back in the prompt, to edit: taken back
+            back = [q for q in self.queue if not q["note"]]
+            self.queue = [q for q in self.queue if q["note"]]
+            return [Fact(Facts.MESSAGE_WITHDRAWN, f"{key}.{i}", when, {"queued": q["key"]}) for i, q in enumerate(back)]
+        if kind == "remove":
+            q = next((q for q in self.queue if q["text"] == text), None)
+            if q is None:
+                return []
+            self.queue.remove(q)
+            if op.get("reason") == "absorbed_mid_turn":
+                return self._sent(q, key, when, "mid_turn", True)
+            return [] if q["note"] else [Fact(Facts.MESSAGE_WITHDRAWN, key, when, {"queued": q["key"]})]
+        return []
+
+    @staticmethod
+    def _sent(q: dict, key: str, when: Optional[float], how: str, joins: bool) -> List[Fact]:
+        if q["note"]:
+            return []
+        return [Fact(Facts.MESSAGE_SENT, key, when, {"queued": q["key"], "text": q["text"], "words": words_of(q["text"])[1],
+                                                      "how": how, "joins": joins, "written": q["at"]})]
+
+    def _prompt(self, text: Optional[str], key: str, when: Optional[float]) -> List[Fact]:
+        """A message the user sent between turns -- not one the queue has as dequeued, which Claude Code records again
+        as it sends it."""
+        if text is None or when is None:
+            return []
+        if any(t == text and sent is not None and abs(when - sent) <= BUSY_SECONDS for t, sent in self.sent):
+            return []
+        return [Fact(Facts.MESSAGE_SENT, key, when, {"queued": None, "text": text, "words": words_of(text)[1],
+                                                      "how": "prompt", "joins": False, "written": when})]
+
+    @staticmethod
+    def _ended(m: dict, key: str, when: Optional[float]) -> List[Fact]:
+        """The background tasks a line's notifications say ended (`notices`) -- whether or not a call has carried them."""
+        if when is None:                                  # when, unknown: perhaps before an agent was resumed
+            return []
+        out, seen = [], set()
+        for text in _strings(m):
+            for n in notices(text):
+                if n["ended"] and n["id"] and n["id"] not in seen:
+                    seen.add(n["id"])
+                    out.append(Fact(Facts.TASK_ENDED, f"{key}.{n['id']}", when, {"task": n["id"], "kind": None,
+                                                                                  "status": n["status"]}))
+        return out
+
+
 __all__ = ["ClaudeCode", "Kind", "blocks_of", "pieces", "without_cache_control", "text_of", "kind_of", "typed_command",
-           "words_of", "mid_turn", "notices", "loaded", "note_detail", "task_of", "is_compacted_summary"]
+           "words_of", "mid_turn", "notices", "loaded", "note_detail", "task_of", "is_compacted_summary", "Record",
+           "record_path"]

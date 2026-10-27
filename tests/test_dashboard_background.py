@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from followed import Followed  # noqa: E402
 from ag_dashboard import data  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 from ag_dashboard import live  # noqa: E402
@@ -103,7 +104,6 @@ class BackgroundTest(unittest.TestCase):
         env = unittest.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": self.config})
         env.start()
         self.addCleanup(env.stop)
-        self.addCleanup(live.watch_records, {})
         self.add([asked("start the server and draw the animals")])
 
     def add(self, events, at=None, channel="s1"):
@@ -119,12 +119,20 @@ class BackgroundTest(unittest.TestCase):
         conn.close()
 
     def record(self, *lines):
-        """`lines` added to Claude Code's own record of the session, which runs in "/" (`session`)."""
+        """`lines` added to Claude Code's own record of the session, which runs in "/" (`session`) -- followed into the
+        gatherer, as ag's hook does."""
         path = os.path.join(self.config, "projects", "-", "s1.jsonl")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "a") as fh:
             for line in lines:
                 fh.write(json.dumps(line) + "\n")
+        if not hasattr(self, "followed"):
+            self.followed = Followed("claude", path)
+        conn = sqlite3.connect(self.path)
+        try:
+            self.followed.into(conn, "s1")
+        finally:
+            conn.close()
         return path
 
     def output(self, name, age=0.0):
@@ -259,23 +267,11 @@ class BackgroundTest(unittest.TestCase):
 
     def test_a_command_stopped_from_claude_code_s_list_ends_once_its_record_says_so(self):
         self.add(command("t1", "b1", self.output("b1")) + [said("The server is starting.")], at=time.time() - 60)
-        path = self.record({"type": "user", "message": {"role": "user", "content": "start the server"}})
+        self.record({"type": "user", "message": {"role": "user", "content": "start the server"}})
         self.assertEqual(self.actor([self.session()])["status"], data.BACKGROUND)
-        self.assertEqual(list(live._RECORDS), [path])                              # read: watched from now on
-        hub = live.Hub()
-        rung = []
-        hub.ring = lambda gatherer, channel=None, what="": rung.append(gatherer)
-        fallback = live.Fallback(hub, seconds=3600)
-        self.addCleanup(fallback.close)
-        fallback.check_records()
-        self.assertEqual(rung, [])                                                 # unchanged since it was read
-        time.sleep(0.01)
         self.record(queued("b1", "killed", time.time()))                           # stopped there: no call tells ag
-        fallback.check_records()
-        self.assertEqual(rung, ["g"])
         a = self.actor([self.session()])
         self.assertEqual((a["status"], a["running"], a["background"]), (data.IDLE, False, []))
-        self.assertEqual(live._RECORDS, {})                                        # read again: nothing runs, not watched
 
     def test_an_end_in_the_record_counts_only_after_the_task_started_again(self):
         then = time.time() - 120

@@ -2,7 +2,9 @@
 call's answer, as it streams and once whole, the answer is recorded as events of the session -- each complete part
 (`reply_part`), then its end (`reply_end`) -- and a call that failed as `call_failed`; every call it sees is recorded as
 `model_call` (records.py). A side call whose answer is the session's recap or name is the subclass's to read
-(`side_answered`). What a call is, the harness's rules say (its `harness`, harness_kit's).
+(`side_answered`). From each call of a session on, the harness's own record of it is followed (`following`,
+session_files.py): what it says that no call carries recorded as it is written. What a call is, the harness's rules
+say (its `harness`, harness_kit's).
 
 A subclass gives:
     harness           the harness's rules (harness_kit.Harness)
@@ -23,6 +25,7 @@ from harness_kit import Call, Harness
 
 from .call_ag import read_of, report_measured
 from .records import call_failed, model_call, record, recap, reply_end, reply_parts, name
+from .session_files import SessionFiles
 
 
 class ProxyHook:
@@ -30,8 +33,9 @@ class ProxyHook:
     ANSWERED = "answered"
     FILES = "files"
 
-    def __init__(self, ag_clients, log: Callable[[str, str], None], files=None):
+    def __init__(self, ag_clients, log: Callable[[str, str], None], files=None, sessions: Optional[SessionFiles] = ...):
         self.ag_clients, self.log, self.files = ag_clients, log, files
+        self.sessions = SessionFiles(ag_clients, log) if sessions is ... else sessions
         self.adaptor = getattr(self, "adaptor", None)
         self.under_way: Set[asyncio.Future] = set()
 
@@ -51,6 +55,12 @@ class ProxyHook:
         """A model call the hook saw, recorded (`model_call`), in the background: its kind, the harness and its version."""
         self.keep(self.recorded(gatherer, channel,
                                 [model_call(call.kind, self.harness.name, call.version, read_id, detail or None)]))
+
+    def following(self, request, gatherer: str, channel: str, call: Call) -> None:
+        """The session's own record followed (session_files.py), from this call of it on: where it runs, and the
+        harness's own folder for it as its launcher named it (`request.config`, the URL's /c/)."""
+        if self.sessions is not None and call is not None and call.session:
+            self.sessions.follow(gatherer, channel, self.harness, call.session, call.cwd, getattr(request, "config", None))
 
     async def recapped(self, gatherer: str, channel: str, text: Optional[str]) -> None:
         """A recap the harness made of the session, recorded."""
@@ -156,4 +166,6 @@ class ProxyHook:
             await counter.close()
         if self.files is not None:
             await self.files.close()
+        if self.sessions is not None:
+            await self.sessions.close()
         await self.ag_clients.close()

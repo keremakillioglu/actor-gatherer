@@ -2,7 +2,7 @@
 
 The design behind `harness_kit/` and the events ag's hooks record, as built so far. It follows the design doc
 "Harnesses as events: design" (a Claude Doc), and says where the build went another way and why. Steps 1–3 of
-its order of work are built (the first PR); steps 4–7 are not.
+its order of work are built (#138), and step 4 (its own PR); steps 5–7 are not.
 
 ## Goal
 
@@ -55,6 +55,10 @@ class Harness(ABC):
     # A stored piece's harness, by its shape
     @abstractmethod
     def owns(self, payload) -> bool: ...
+
+    # Its own record of a session (step 4)
+    def record_path(self, session, cwd=None, config=None) -> Optional[str]: ...
+    def follower(self, path) -> Optional[Follower]: ...
 ```
 
 - `Call(kind, session, cwd, version, history, own, detail)`: `kind` one of TURN, SUBAGENT, SUGGESTION, RECAP,
@@ -71,7 +75,14 @@ class Harness(ABC):
   each call (`model_call.harness`), and the dashboard reads that first. `owns` stays only for events stored before
   `model_call` existed, and goes with step 6, once those channels have their harness recorded.
 
-Not built yet: `record_path` and `follow` (step 4), `answer_keys`, `command` and `models` (step 5).
+Not built yet: `answer_keys`, `command` and `models` (step 5).
+
+A `Follower` reads one record as it grows: `take(line, at)` gives the `Fact`s a line says, keeping what it needs
+between lines (the queue, the questions open, the turn); `due(now)` gives what time alone decides (Claude Code: a
+question's result with nothing after it for a second is answered, as Esc writes its note at once; codex: a
+subagent's report, once its own rollout has it). `follow(path, follower, offset) -> (facts, offset)` reads the whole
+lines past `offset`. Against the doc's `follow(path, offset)`: the follower is an object, since the facts need what
+came before (which queued message a `dequeue` sends, which turn a question was asked in).
 
 ### Kinds
 
@@ -129,6 +140,61 @@ Against the doc's "Changes to ag's core":
   plugins), but a hook server keeps its old code until it restarts, so they stay until step 6, as does
   `call_ag.pending_ag` / `report_failed`.
 
+## The session-file watcher (step 4)
+
+`SessionFiles` (`ag/integrations/tools/ag_orchestrator/session_files.py`), run by `ProxyHook.following` on each call
+of a session (Claude Code: every call with its session id; codex: the thread's own turns), finds the harness's own
+record of the session (`record_path`: where it runs, and the harness's own folder for the run), records that it
+follows it (`session_file`), and reads it on every 0.25 s while it changes, inserting each fact as an event of the
+session. Unchanged for an hour, it is followed no more until the session's next call, which reads on from where it
+was; one not there yet is looked for every 0.5 s for 30 s (`claude -p` writes it only once its first call is under
+way, and a run refused at that call makes no other), then again with the next call.
+
+**Beside the session's reads.** ag's server answers a session's requests one at a time (its lanes, #134), and a
+read can wait seconds for the policy's boundary check or a build. The facts go in a lane of their own beside the
+session's (`insert` with `"lane": "records"`): no read depends on them, and policies never load them, so they need
+order only among themselves -- otherwise a message queued, a question answered or Esc would show only once that
+read was done (2-15 s, live). A hook server that starts reads each record from its
+start, and the server stores nothing twice: an event's id is its line, by its place in the file and its bytes
+(`<type>:<file>:<offset>.<crc32>`), so a file written anew has new ids.
+
+**Where the record is.** A hook server is shared by runs, so the launcher puts the harness's own folder in its URL
+when the run sets one (`/c/<folder, base64url>/`, after `/r/`: CLAUDE_CONFIG_DIR, CODEX_HOME), as the doc asked;
+without it the hook looks where the harness would by default.
+
+**The facts** (harness_kit's `Facts`; each payload has `at`, when the record says it happened):
+
+| Type | Claude Code's record | Codex's rollout |
+|---|---|---|
+| `message_queued` | `queue-operation` enqueue (not its own notes) | none |
+| `message_sent` | remove `absorbed_mid_turn` (`mid_turn`), dequeue (`next`, `joins` when held), a `human` user line between turns (`prompt`) | none |
+| `message_withdrawn` | any other remove; `popAll` (Up: every message written back in the prompt, to edit) | none |
+| `asked` | none: its asks come with the reply (step 5) | `request_user_input` (and `_async`); a completed Plan-mode turn's plan, `plan:<turn>` |
+| `ask_settled` | an asking call's result: `dismissed` when the interrupt note follows, else `answered`; its result's words | the call's output (`aborted by user`: dismissed); async replies, once every question has one; the turn's end; for a plan, the next turn's start and what it opened with |
+| `turn_stopped` | `isApiErrorMessage` (`error`, its status); the interrupt note (`interrupted`) | `task_complete` (`over`, or `error`), `turn_aborted` (`interrupted`) |
+| `task_started` | none: its starts come with tool results (step 5) | a subagent started; a command left running |
+| `task_ended` | a `<task-notification>` that ends one, the moment it is written | a subagent's end (with its `report`), a command's |
+
+The doc's `question_settled`, `turn_interrupted` and `gave_up` are `ask_settled` and `turn_stopped`'s `how`. Codex's
+async question has a result only once every question it asked has its reply (the dashboard read each reply as it came).
+
+A turn's stop counts only while nothing came after it: the dashboard takes the newest of ag's latest activity and
+the newest message ag stored (`data.newest`) -- a message is stored as a read begins, before its context is built and
+the read recorded. The same goes for a hang-up (`since_said`): codex hangs up a call to send a question's reply at
+once, and Claude Code's message taken back on Esc is withdrawn with its read.
+
+**The dashboard** reads them through `data.Record` (`record_of`: an actor's newest 400 facts) and `typed` /
+`meanwhile` (its message facts): what is asked and settled, a turn stopped, background tasks ended (and, for codex,
+started), what the user wrote as it worked, a subagent's report. `queued.py`, `rollout.py`, `data.settled`,
+`stopped` and `_ends`, and `live.py`'s watching of record files are gone: a fact's insert rings the page through ag's
+notifications. GIVE_UP_LONG now applies where the record is followed (`Record.followed`). It still reads two files
+of the harness's: a background task's output file's time (`_written`) and Claude Code's plan file (`_plan`), both for
+step 5 (`task_activity`, `asked`).
+
+**After merging:** the hook servers must restart (`ag stop`, then any session's next run) for a session's record to
+be followed. Until then the dashboard sees no facts for it -- no queued messages, questions settled in the terminal,
+Esc or given-up calls -- and falls back to time alone for a failed call (GIVE_UP_SECONDS).
+
 ## The hooks: one ProxyHook
 
 `ProxyHook` (`ag/integrations/tools/ag_orchestrator/proxy_hook.py`) holds what both hooks did alike: recording
@@ -136,7 +202,7 @@ every call (`model_call`), a reply's parts as they stream and its end (`reply_pa
 (`call_failed`), a side call's recap or title (`side_answered`), and the files a call touched (`before_end`).
 Each subclass keeps its own flow: Claude Code's continuity of ids, claims, counting, suggestions and compaction;
 Codex's runs, side calls and compaction. On a hang-up (499) the Claude hook also withdraws what the call stored
-(#133).
+(#133). From each call of a session on, it follows the session's own record (`following`, the watcher above).
 
 ## The dashboard
 
@@ -147,9 +213,7 @@ recap, the name, the harness. It leaves records out of every view of the convers
 words come as typed, with their kind, from the `words` and `kind` properties, else from `Harness.words`; the page
 no longer parses Claude Code's or Codex's wrappers.
 
-It still reads the harnesses' session files: Claude Code's queue and prompts sent between turns (`queued.py`,
-#129 added the prompts), its record for questions settled, Esc and given-up calls (`data.py`), and Codex's
-rollout (`rollout.py`). Step 4 replaces those reads.
+Since step 4 it reads no harness's record of a session: the hooks record what those say as facts (above).
 
 ## Order of work
 
@@ -159,14 +223,13 @@ The doc planned a PR per step. Steps 1–3 went into one PR: they were built tog
 1. **Built.** The harness package, the rules moved as they were; one shell parser (`harness_kit/shell.py`).
 2. **Built.** Conversation events carry `kind`, `words`, `action`, `call_id`.
 3. **Built.** Calls and replies as records; `ProxyHook`.
-4. **Next.** The session-file watcher in the hook server: `ask_settled`, `turn_stopped`, `message_queued` /
-   `sent` / `withdrawn` (Claude Code's prompts sent between turns, #129, among them), Codex's asks and tasks.
-   Then `queued.py`, `rollout.py` and the dashboard's session-file reads go. It needs the harness's config folder
-   in the hook server's URL, from the launcher.
-5. Derived and dashboard events: `asked`, `task_started` / `task_ended`, `file_touched` (with
+4. **Built.** The session-file watcher in the hook server (above); `queued.py`, `rollout.py` and the dashboard's
+   session-file reads gone; the harness's folder in the hook server's URL (`/c/`).
+5. **Next.** Derived and dashboard events: `asked` (Claude Code's, from its replies; the plan file read then),
+   `task_started` / `task_ended` derived from tool results, `task_activity`, `file_touched` (with
    `file_touches/calls.py` reading calls from `Part.tool`, which it still parses itself), `chat_sent`,
-   `answer_given`, `terminal_input`. The status rules move to events. Open: does the dashboard insert its own
-   action events through ag's server, or tell the hook server to (the comment in the doc)?
+   `answer_given`, `terminal_input`. The status rules move to events. Decided (2026-10-26): the dashboard writes its
+   own action events as events itself.
 6. Old tables: copy `_recaps`, `_names`, `_touches`, `_pending` and `_reads.error` into records, record each old
    channel's harness; then drop the dashboard's fallbacks, `Harness.owns`, and the old ops.
 7. Fixtures per harness version, and a probe that triggers each feature live.
