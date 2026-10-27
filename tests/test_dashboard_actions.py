@@ -50,6 +50,14 @@ class ActionsTest(unittest.TestCase):
                 actions.terminal_input("g", "s1", at)
         self.assertEqual(len(record.call_args_list), 2)                   # at 100 and at 105: a quiet spell between
 
+    def test_a_new_gatherer_s_first_action_waits_for_its_database(self):
+        answers = [unittest.mock.Mock(returncode=1, stdout='{"error": "no database for gatherer g"}', stderr=""),
+                   unittest.mock.Mock(returncode=0, stdout='{"rows": [1]}', stderr="")]
+        with unittest.mock.patch.object(actions.subprocess, "run", side_effect=lambda argv, **kw: answers.pop(0)) as run, \
+                unittest.mock.patch.object(actions.time, "sleep"):
+            actions.record("g", "s1", [actions._event(actions.CHAT_SENT, text="hi")], wait=True)
+        self.assertEqual((run.call_count, answers), (2, []))             # tried again once the session's call made it
+
 
 if __name__ == "__main__":
     unittest.main()

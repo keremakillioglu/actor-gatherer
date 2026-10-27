@@ -24,6 +24,8 @@ CHAT_SENT, ANSWER_GIVEN, TERMINAL_INPUT = "chat_sent", "answer_given", "terminal
 ACTIONS = (CHAT_SENT, ANSWER_GIVEN, TERMINAL_INPUT)
 QUIET_SECONDS = 2.0             # keys typed after this long with none: another terminal_input
 ENABLED = False                 # set by the server (server.py) that runs the page
+NO_DATABASE = "no database for gatherer"      # ag's answer before a new gatherer's first call made its database:
+NEW_GATHERER_SECONDS = 30.0                   # tried again for this long
 
 _typed: Dict[Tuple[str, str], float] = {}     # (gatherer, channel) -> when keys were last typed there
 _lock = threading.Lock()
@@ -40,16 +42,23 @@ def record(gatherer: Optional[str], channel: Optional[str], events: List[dict], 
 
     def put() -> None:
         from . import sessions                        # sessions.py records through here
-        try:
-            done = subprocess.run([*sessions.ag_command(), "home", "insert", gatherer, "--properties",
-                                   json.dumps({"channel": channel}), "--events", json.dumps(events)],
-                                  env=sessions.agent_env(), capture_output=True, text=True, timeout=60,
-                                  stdin=subprocess.DEVNULL)
-            if done.returncode:
-                raise RuntimeError((done.stderr or done.stdout).strip()[-300:] or f"exited {done.returncode}")
-        except Exception as exc:  # noqa: BLE001 - never in the reader's way
-            print(f"dashboard: {', '.join(e['type'] for e in events)} not kept for {channel}: {exc}", file=sys.stderr,
-                  flush=True)
+        end = time.time() + NEW_GATHERER_SECONDS
+        while True:
+            try:
+                done = subprocess.run([*sessions.ag_command(), "home", "insert", gatherer, "--properties",
+                                       json.dumps({"channel": channel}), "--events", json.dumps(events)],
+                                      env=sessions.agent_env(), capture_output=True, text=True, timeout=60,
+                                      stdin=subprocess.DEVNULL)
+                if done.returncode:
+                    raise RuntimeError((done.stderr or done.stdout).strip()[-300:] or f"exited {done.returncode}")
+                return
+            except Exception as exc:  # noqa: BLE001 - never in the reader's way
+                if NO_DATABASE in str(exc) and time.time() < end:     # a new gatherer's: made by the session's first call
+                    time.sleep(2)
+                    continue
+                print(f"dashboard: {', '.join(e['type'] for e in events)} not kept for {channel}: {exc}", file=sys.stderr,
+                      flush=True)
+                return
 
     if wait:
         put()
