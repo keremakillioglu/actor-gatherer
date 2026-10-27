@@ -38,8 +38,8 @@ context manager's home (data.py), read-only. Standard library only.
         R) opened for editing (editor.py), shared with every other page editing it: `init` {epoch, update (the
         document, a Yjs update, base64), sv (its state vector), aware (the other pages' cursors)}, then `update`
         {update, disk (true: the file's own change on disk)}, `aware` {update}, `left` {client} and `state`
-        {dirty, missing, error, changed, saved, overwrote, editors, conflicts: [{id, from, to (UTF-16), base, theirs,
-        at}]} as they come; `failed` {error} when it cannot be opened
+        {dirty, missing, error, changed, saved, editors, conflicts: [{id, from, to (UTF-16), base, theirs, at, zone}],
+        zone: [[from, to], ...] (the conflict zone)} as they come; `failed` {error} when it cannot be opened
     GET /views/<name>.js                  one of them, which the page loads (page.html: chat views)
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
     POST /api/sessions {gatherer, cwd?, permission_mode?, harness?, model?}  a new one (harness claude, the
@@ -85,6 +85,8 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/edit/save {path, root}      the file written as its document has it -> its state
     POST /api/edit/settle {path, root, conflict, take}   a conflict with the file on disk settled: the lines kept
                                           (take "mine"), the file's in their place ("theirs"), or both -> its state
+    POST /api/edit/zone/clear {path, root}   the conflict zone cleared: the lines edited here the file's to change,
+                                          as any other -> its state
     GET /api/settings                     ag's settings, its config.toml (settings.py)
     POST /api/settings/model {model, api_base?, key_env?}   the Gatherer's model, by `ag model` -> the settings
     POST /api/settings/defaults {version, policy?, pollers?, gatherer?}   a new gatherer's defaults -> the settings
@@ -578,6 +580,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer(editors.edit(path, root, cid, update))
                 if url.path == "/api/edit/save":
                     return self.answer(editors.save(str(body.get("path") or ""), str(body.get("root") or "")))
+                if url.path == "/api/edit/zone/clear":
+                    return self.answer(editors.clear_zone(str(body.get("path") or ""), str(body.get("root") or "")))
                 if url.path == "/api/edit/settle":
                     return self.answer(editors.settle(str(body.get("path") or ""), str(body.get("root") or ""),
                                                       str(body.get("conflict") or ""), str(body.get("take") or "")))

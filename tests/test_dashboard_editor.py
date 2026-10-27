@@ -102,7 +102,31 @@ class MergeTest(unittest.TestCase):
     def test_lines_guarded_are_a_conflict_when_theirs_changes_them(self):
         text, found, _ = editor.merge(self.BASE, self.BASE, "a\nB\nc\nd\nE\n", guard=[(1, 2)])
         self.assertEqual(text, "a\nb\nc\nd\nE\n")                       # unguarded: merged
-        self.assertEqual([(text[s:e], t, recent) for s, e, _, t, recent in found], [("b\n", "B\n", True)])
+        self.assertEqual([(text[s:e], t, zone) for s, e, _, t, zone in found], [("b\n", "B\n", True)])
+
+    def test_lines_put_in_inside_a_guarded_range_are_a_conflict_at_its_edges_not(self):
+        inside = editor.merge(self.BASE, self.BASE, "a\nb\nNEW\nc\nd\ne\n", guard=[(1, 3)])
+        self.assertEqual(inside[0], self.BASE)
+        self.assertEqual([(t, zone) for _, _, _, t, zone in inside[1]], [("NEW\n", True)])
+        for theirs in ("a\nNEW\nb\nc\nd\ne\n", "a\nb\nc\nNEW\nd\ne\n"):   # just before it, just after it
+            self.assertEqual(editor.merge(self.BASE, self.BASE, theirs, guard=[(1, 3)])[:2], (theirs, []))
+
+    def test_a_change_beside_a_guarded_line_mine_changed_merges(self):
+        mine = "a\nb\nMINE\nd\ne\n"                                        # mine's line 2, guarded
+        text, found, _ = editor.merge(self.BASE, mine, "a\nb\nc\nNEW\nd\ne\n", guard=[(2, 3)])
+        self.assertEqual((text, found), ("a\nb\nMINE\nNEW\nd\ne\n", []))
+        text, found, _ = editor.merge(self.BASE, mine, "a\nb\nc\nd\nE\n", guard=[(2, 3)])
+        self.assertEqual((text, found), ("a\nb\nMINE\nd\nE\n", []))
+
+    def test_a_guarded_line_is_found_after_lines_mine_put_in_before_it(self):
+        mine = "a\nNEW1\nNEW2\nb\nc\nd\ne\n"                              # base's c is mine's line 4, guarded
+        text, found, _ = editor.merge(self.BASE, mine, "a\nb\nC\nd\ne\n", guard=[(1, 3), (4, 5)])
+        self.assertEqual([(text[s:e], t, zone) for s, e, _, t, zone in found], [("c\n", "C\n", True)])
+
+    def test_guarded_lines_are_mine_s_not_base_s(self):
+        mine = "TOP\n" + self.BASE                                          # a line put in here: base's line 1 is mine's 2
+        text, found, _ = editor.merge(self.BASE, mine, "a\nB\nc\nd\ne\n", guard=[(2, 3)])
+        self.assertEqual([(text[s:e], t) for s, e, _, t, _ in found], [("b\n", "B\n")])
 
     def test_it_counts_what_only_mine_has(self):
         self.assertEqual(editor.merge(self.BASE, "a\nB\nc\nd\ne\n", self.BASE)[2], 1)
@@ -275,7 +299,7 @@ class RoomTest(unittest.TestCase):
         room.check()
         self.assertEqual(str(room.text), "def f():\n    return 5\n\nx = f() + 1\n")   # its other change merged
         [c] = room.state()["conflicts"]                                  # the saved line: asked about
-        self.assertEqual((self.region(room, c), c["theirs"], c["recent"]), ("    return 5\n", "    return 1\n", True))
+        self.assertEqual((self.region(room, c), c["theirs"], c["zone"]), ("    return 5\n", "    return 1\n", True))
 
     def test_undoing_a_save_on_purpose_is_asked_then_taken(self):
         room, conn, doc, text = self.open("p1")
@@ -298,7 +322,7 @@ class RoomTest(unittest.TestCase):
         self.assertEqual(str(room.text), self.disk())
         self.assertEqual(room.conflicts, {})
 
-    def test_an_actor_rewriting_lines_saved_lately_is_asked_about(self):
+    def test_an_actor_rewriting_lines_edited_here_is_asked_about(self):
         """Auto-saved as typed, then rewritten by an actor that read them: the lines kept, its rewrite shown."""
         room, conn, doc, text = self.open("p1")
         self.edit(room, "p1", doc, "return 1", "return 5")
@@ -307,18 +331,68 @@ class RoomTest(unittest.TestCase):
         room.save()
         self.write("def f():\n    return 6\n\nx = f() * 3\n")          # read after both, rewrote both
         room.check()
-        found = sorted((self.region(room, c), c["theirs"], c["recent"]) for c in room.state()["conflicts"])
+        found = sorted((self.region(room, c), c["theirs"], c["zone"]) for c in room.state()["conflicts"])
         self.assertEqual(found, [("    return 5\n", "    return 6\n", True), ("x = f() * 2\n", "x = f() * 3\n", True)])
 
-    def test_lines_saved_long_ago_are_the_file_s_again(self):
+    def zone(self, room) -> list:
+        """The conflict zone's text, as the page finds it: its UTF-16 ranges of the document."""
+        return [self.region(room, {"from": a, "to": b}) for a, b in room.state()["zone"]]
+
+    def test_the_zone_is_what_the_pages_changed_moved_with_every_edit(self):
+        room, conn, doc, text = self.open("p1")
+        self.assertEqual(self.zone(room), [])
+        self.edit(room, "p1", doc, "return 1", "return 1  # 😀 one")
+        self.assertEqual(self.zone(room), ["return 1  # 😀 one"])
+        self.write("# a line the actor put on top\ndef f():\n    return 1  # 😀 one\n\nx = f()\n")
+        room.check()                                                     # the disk's: not in it, and it moves
+        self.assertEqual(self.zone(room), ["return 1  # 😀 one"])
+        self.edit(room, "p1", doc, "x = f()\n", "")                        # a line taken out: where it was
+        self.assertEqual(len(room.zone), 2)
+        self.assertEqual(room.zone[1][0], room.zone[1][1])
+
+    def test_a_line_in_the_zone_changed_by_the_actor_after_a_save_is_asked_about(self):
         room, conn, doc, text = self.open("p1")
         self.edit(room, "p1", doc, "return 1", "return 5")
         room.save()
-        room.saved_last -= editor.SAVE_GUARD + 1                          # ten minutes on
+        room.check()
+        self.write("def f():\n    return 6\n\nx = f() + 1\n")          # its line, and another
+        room.check()
+        self.assertEqual(str(room.text), "def f():\n    return 5\n\nx = f() + 1\n")
+        [c] = room.state()["conflicts"]
+        self.assertTrue(c["zone"])
+
+    def test_cleared_the_zone_s_lines_are_the_file_s_again(self):
+        room, conn, doc, text = self.open("p1")
+        self.edit(room, "p1", doc, "return 1", "return 5")
+        room.save()
+        self.assertEqual(room.clear_zone()["zone"], [])
         self.write("def f():\n    return 6\n\nx = f()\n")
         room.check()
         self.assertEqual(room.conflicts, {})
         self.assertIn("return 6", str(room.text))
+
+    def test_the_actor_s_rewrite_taken_is_not_the_zone_s(self):
+        room, conn, doc, text = self.open("p1")
+        self.edit(room, "p1", doc, "return 1", "return 5")
+        room.save()
+        self.write("def f():\n    return 6\n\nx = f()\n")
+        room.check()
+        [c] = room.state()["conflicts"]
+        room.settle(c["id"], "theirs")
+        self.write("def f():\n    return 7\n\nx = f()\n")              # the actor again: merged, not asked
+        room.check()
+        self.assertEqual((room.conflicts, self.disk()), ({}, str(room.text)))
+
+    def test_the_zone_goes_once_the_file_s_last_page_closed_it(self):
+        room, conn, doc, text = self.open("p1")
+        self.edit(room, "p1", doc, "return 1", "return 5")
+        room.save()
+        room.leave(conn)
+        self.editors.look()
+        self.assertTrue(room.zone)                                       # its stream may come back: kept a moment
+        room.idle_since -= editor.ZONE_GRACE + 1
+        self.editors.look()
+        self.assertEqual(room.zone, [])
 
     def test_a_save_writes_its_own_file_only_and_keeps_its_mode(self):
         os.chmod(self.path, 0o755)
@@ -543,6 +617,8 @@ class ServerTest(unittest.TestCase):
         self.assertFalse(saved["dirty"])
         with open(self.path) as fh:
             self.assertEqual(fh.read(), "# Title\n\nTyped. Body.\n\nMore.\n")
+        self.assertTrue(saved["zone"])                                   # what p1 typed: kept after the save
+        self.assertEqual(self.post("/api/edit/zone/clear", {"path": self.path, "root": self.root})["zone"], [])
 
     def test_the_listing_and_what_is_refused(self):
         got = json.load(urllib.request.urlopen(

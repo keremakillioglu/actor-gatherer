@@ -1,13 +1,17 @@
 """Files edited in the page's Editor panel, shared as they are edited: each file open there is one document of a
 CRDT -- Yjs's, kept here by pycrdt (the Python binding of its Rust port) -- of which every page editing it holds
 a copy; and what an actor (or anything else) writes to the file is merged in as it lands, three ways, as version
-control merges: the lines only the file changed take its change, and the lines it changed that the pages changed too,
-differently, are a conflict -- the pages' kept, the file's shown beside them, for a page to take or not.
+control merges: the lines only the file changed take its change, and the lines it changed in the conflict zone -- those
+the pages edited since the file was opened -- or that the pages changed too, differently, are a conflict: the pages'
+kept, the file's shown beside them, for a page to take or not.
 
     a page opens a file        `Editors.join`: the file's document (made from the file the first time it is
                                opened), every other page's cursor, and then -- through its stream (`Conn.queue`) --
                                the others' edits and cursors, and the disk's changes, as they come
-    a page edits               `Room.edit`: its update applied here, and sent on to the other pages
+    a page edits               `Room.edit`: its update applied here, and sent on to the other pages; what it changed,
+                               put in the conflict zone (`zone`: ranges of the document, moved with each edit, until
+                               a page clears it, or the last page goes -- ZONE_GRACE seconds after, a page's stream
+                               may come back)
     a page's cursor moves      `Room.aware`: kept (a page that opens the file later is sent it), and sent on
                                (y-protocols' awareness updates, passed through unread)
     the file changes on disk   `Room.check`, every POLL seconds while the file is open: `merge` of the file as last
@@ -18,15 +22,16 @@ differently, are a conflict -- the pages' kept, the file's shown beside them, fo
     a page saves               `Room.save`: the document written to the file, in place of it (whoever reads it
                                meanwhile reads all of the old or all of the new) -- the file's own change taken in
                                first, and not saved over where it is a conflict found then; a conflict shown before
-                               is settled as the pages' lines. A change on disk to lines the pages saved in the last
-                               SAVE_GUARD seconds is a conflict too (`recent`), whether made from the file before their
-                               save (a script's) or after it (an actor rewriting what was typed): the pages say which
+                               is settled as the pages' lines. Saved, the zone's lines are still its: a change on disk
+                               to them -- an actor rewriting what was typed, a script's write from the file before the
+                               save -- is a conflict (`Conflict.zone`), the pages say which
 
 A file whose document has changes no one saved stays open after its last page goes (a page opened again finds
 them); one with none is closed LINGER seconds after. Only a regular file of UTF-8 text, at most MAX_BYTES, opens,
 and only under the root the page names (the actor's working directory). Needs pycrdt: without it (`AVAILABLE`
 false) the page does not offer the view."""
 import base64
+import bisect
 import difflib
 import getpass
 import os
@@ -55,7 +60,7 @@ MAX_BYTES = 2_000_000       # the largest file opened
 MAX_ENTRIES = 2000          # the most entries listed of one directory
 FINE = 4000                 # changed lines up to this many characters (old and new) are changed by character
 RECENT = 1800.0             # seconds an actor's change to a file counts in a listing's `writers`
-SAVE_GUARD = 600.0          # seconds the lines saved from the pages are kept from changes on disk unasked
+ZONE_GRACE = 5.0            # seconds the conflict zone stays after the last page with the file open goes
 GONE_CHECK = 5.0            # the most a stream waits before it looks whether its page went
 SKIPPED = frozenset({".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache",
                      ".ruff_cache", ".tox", ".DS_Store"})
@@ -144,12 +149,16 @@ def change(text, new: str) -> None:
             text.insert(start, put)
 
 
+def _hunks(base: List[str], new: List[str]) -> List[tuple]:
+    """What `new` changed of `base`'s lines: (start, end, its lines there) of each change."""
+    return [(i1, i2, new[j1:j2]) for t, i1, i2, j1, j2 in
+            difflib.SequenceMatcher(None, base, new, autojunk=False).get_opcodes() if t != "equal"]
+
+
 def _both(base: List[str], mine: List[str], theirs: List[str]) -> Optional[List[str]]:
     """`base`'s lines with `mine`'s changes and `theirs`', if they change different lines of it (side by side is
     different); None if one changes a line the other does, or both put lines in at the same place."""
-    hunks = lambda new: [(i1, i2, new[j1:j2]) for t, i1, i2, j1, j2 in   # noqa: E731
-                         difflib.SequenceMatcher(None, base, new, autojunk=False).get_opcodes() if t != "equal"]
-    ours, others = hunks(mine), hunks(theirs)
+    ours, others = _hunks(base, mine), _hunks(base, theirs)
     for a1, a2, _ in ours:
         for b1, b2, _ in others:
             if a1 < b2 and b1 < a2 or a1 == a2 == b1 == b2 or (a1 == a2 and b1 < a1 < b2) or (b1 == b2 and a1 < b1 < a2):
@@ -161,25 +170,29 @@ def _both(base: List[str], mine: List[str], theirs: List[str]) -> Optional[List[
     return out + base[at:]
 
 
-def _touches(a1: int, a2: int, g1: int, g2: int) -> bool:
-    """Whether lines a1..a2 meet lines g1..g2 (an empty range: a place between lines, which the lines at its edges meet)."""
-    if a1 == a2 or g1 == g2:
-        return g1 <= a2 and a1 <= g2
-    return a1 < g2 and g1 < a2
+def _guarded(a1: int, a2: int, guard) -> bool:
+    """Whether `mine`'s lines a1..a2 are in `guard`'s ranges (start, end) -- an empty range, a place between lines:
+    whether it is inside one, not at its edge."""
+    return any(a1 < g2 and g1 < a2 if a1 < a2 else g1 < a1 < g2 for g1, g2 in guard)
 
 
-def lines_changed(old: str, new: str) -> List[Tuple[int, int]]:
-    """The lines of `new` that differ from `old`'s, as ranges (start, end) of `new`'s lines."""
-    return [(j1, j2) for t, i1, i2, j1, j2 in difflib.SequenceMatcher(
-        None, old.splitlines(True), new.splitlines(True), autojunk=False).get_opcodes() if t != "equal"]
+def _theirs_guarded(was: List[str], ours: List[str], others: List[str], at: int, guard) -> bool:
+    """Whether a change of `others`' to `was`'s lines is in `guard` -- `mine`'s lines, `ours` from line `at` of it: each
+    of `was`'s lines where `ours` has it, after what `ours` changed before it."""
+    mine = _hunks(was, ours)
+    for i1, i2, _ in _hunks(was, others):
+        shift = sum(len(new) - (h2 - h1) for h1, h2, new in mine if h2 <= i1)
+        if _guarded(at + i1 + shift, at + i2 + shift, guard):
+            return True
+    return False
 
 
 def merge(base: str, mine: str, theirs: str, guard: List[Tuple[int, int]] = ()) -> Tuple[str, List[tuple], int]:
     """Three ways, by line, as version control merges: `base`, and what `mine` and `theirs` each made of it. The
     merged text; each conflict -- lines both changed, differently, or that `theirs` changed among `guard`'s (ranges
-    of `base`'s lines it may not change unasked) -- as (start, end) of `mine`'s lines kept in the merged text
-    (characters), with `base`'s and `theirs`' lines there, and whether it is one for `guard`; and how many of `mine`'s
-    changes `theirs` lacks (kept from `mine` alone)."""
+    of `mine`'s lines it may not change unasked: the conflict zone) -- as (start, end) of `mine`'s lines kept in the
+    merged text (characters), with `base`'s and `theirs`' lines there, and whether it is one for `guard`; and how many
+    of `mine`'s changes `theirs` lacks (kept from `mine` alone)."""
     o, a, b = base.splitlines(True), mine.splitlines(True), theirs.splitlines(True)
     ma = difflib.SequenceMatcher(None, o, a, autojunk=False).get_matching_blocks()
     mb = difflib.SequenceMatcher(None, o, b, autojunk=False).get_matching_blocks()
@@ -198,26 +211,25 @@ def merge(base: str, mine: str, theirs: str, guard: List[Tuple[int, int]] = ()) 
     zo = za = zb = 0
     for lo, hi, sa, sb in syncs:
         was, ours, others = o[zo:lo], a[za:sa], b[zb:sb]
-        guarded = others != was and others != ours and any(_touches(zo, lo, g1, g2) for g1, g2 in guard)
-        if guarded:                                 # theirs changed lines it may not, unasked: mine kept, a conflict
-            n = sum(map(len, ours))
-            conflicts.append((size, size + n, "".join(was), "".join(others), True))
-            put = ours
-        elif was or ours or others:
-            if ours == was:                         # only theirs changed it
-                put = others
-            elif others == was or ours == others:   # only mine, or both alike
-                put, kept = ours, kept + (others == was)
+        put, conflict = ours, None
+        if others == was or ours == others:         # only mine changed it, or both alike (or neither)
+            kept += others == was and ours != was
+        elif ours == was:                           # only theirs: taken, but where it may not change mine unasked
+            if _theirs_guarded(was, ours, others, za, guard):
+                conflict = True
             else:
-                put = _both(was, ours, others)
-                if put is None:                     # both, differently: mine kept, a conflict
-                    put = ours
-                    n = sum(map(len, ours))
-                    conflicts.append((size, size + n, "".join(was), "".join(others), False))
-                else:
-                    kept += 1
+                put = others
         else:
-            put = []
+            both = _both(was, ours, others)
+            if both is None:                        # both, differently: mine kept, a conflict
+                conflict = _guarded(za, sa, guard)
+            elif _theirs_guarded(was, ours, others, za, guard):
+                conflict = True
+            else:
+                put, kept = both, kept + 1
+        if conflict is not None:
+            n = sum(map(len, ours))
+            conflicts.append((size, size + n, "".join(was), "".join(others), conflict))
         out += put + o[lo:hi]
         size += sum(map(len, put)) + sum(map(len, o[lo:hi]))
         zo, za, zb = hi, sa + hi - lo, sb + hi - lo
@@ -277,13 +289,13 @@ class Conn:
 
 
 class Conflict:
-    """Lines the pages and the file on disk both changed, differently: the pages' kept in the document -- from `start`
-    to `end`, in UTF-8 bytes, moved with each edit (`Room._move`) -- and the file's (`theirs`, over `base`), until a page
-    settles it."""
+    """Lines the pages and the file on disk both changed, differently, or that the file changed in the conflict zone
+    (`zone`): the pages' kept in the document -- from `start` to `end`, in UTF-8 bytes, moved with each edit
+    (`Room._move`) -- and the file's (`theirs`, over `base`), until a page settles it."""
 
-    def __init__(self, start: int, end: int, base: str, theirs: str, recent: bool = False):
-        self.id, self.at, self.recent = uuid.uuid4().hex[:12], time.time(), recent   # recent: lines saved lately,
-        self.start, self.end, self.base, self.theirs = start, end, base, theirs        # changed on disk since
+    def __init__(self, start: int, end: int, base: str, theirs: str, zone: bool = False):
+        self.id, self.at, self.zone = uuid.uuid4().hex[:12], time.time(), zone
+        self.start, self.end, self.base, self.theirs = start, end, base, theirs
 
 
 class Room:
@@ -299,17 +311,19 @@ class Room:
         self.missing, self.error, self.dirty = False, "", False
         self.changed: Optional[float] = None        # when the file last changed on disk while open
         self.saved: Optional[float] = None          # when it was last saved from here
-        self.saved_from: Optional[str] = None       # the file before the pages' saves of the last SAVE_GUARD seconds
-        self.saved_last = 0.0                       # when the last of them was
+        self.zone: List[List[int]] = []            # the conflict zone: [start, end] of the document, in UTF-8 bytes
+        self._from_page = False                     # an edit being applied is a page's: put in the zone
         self.conflicts: Dict[str, Conflict] = {}
         self.conns: Dict[str, Conn] = {}
         self.idle_since: Optional[float] = None     # when its last page went
         self._moves = self.text.observe(self._move)
 
     def _move(self, event) -> None:
-        """Each conflict's lines moved with an edit to the document, any page's or this one's (pycrdt's delta, which
-        counts UTF-8 bytes): what is put in them, or at their edges, theirs."""
-        if not self.conflicts:
+        """Each conflict's lines, and the conflict zone, moved with an edit to the document, any page's or this one's
+        (pycrdt's delta, which counts UTF-8 bytes): what is put in a conflict's lines, or at their edges, theirs; what
+        is put inside the zone's ranges, not at their edges, theirs. A page's edit is put in the zone: what it put in,
+        and where it took something out (an empty range)."""
+        if not self.conflicts and not self.zone and not self._from_page:
             return
         at = 0
         for op in event.delta:
@@ -322,20 +336,59 @@ class Room:
                         c.start, c.end = c.start + n, c.end + n
                     elif at <= c.end:
                         c.end += n
+                for z in self.zone:
+                    if at <= z[0]:
+                        z[0], z[1] = z[0] + n, z[1] + n
+                    elif at < z[1]:
+                        z[1] += n
+                if self._from_page:
+                    self.zone.append([at, at + n])
                 at += n
             elif "delete" in op:
                 n = op["delete"]
                 for c in self.conflicts.values():
                     c.start = c.start if c.start <= at else max(at, c.start - n)
                     c.end = c.end if c.end <= at else max(at, c.end - n)
+                for z in self.zone:
+                    z[0] = z[0] if z[0] <= at else max(at, z[0] - n)
+                    z[1] = z[1] if z[1] <= at else max(at, z[1] - n)
+                if self._from_page:
+                    self.zone.append([at, at])
+        if self._from_page:                         # ranges that meet, one
+            kept: List[List[int]] = []
+            for z in sorted(self.zone):
+                if kept and z[0] <= kept[-1][1]:
+                    kept[-1][1] = max(kept[-1][1], z[1])
+                else:
+                    kept.append(z)
+            self.zone = kept
+
+    def _zone_lines(self, text: str) -> List[Tuple[int, int]]:
+        """The conflict zone as ranges (start, end) of `text`'s lines: each line a range of it is on, or an empty
+        range is at."""
+        starts, at = [], 0
+        for line in text.splitlines(True):
+            starts.append(at)
+            at += len(line.encode("utf-8"))
+        if not starts:
+            return []
+        return [(bisect.bisect_right(starts, a) - 1, bisect.bisect_right(starts, max(a, b - 1))) for a, b in self.zone]
+
+    def clear_zone(self) -> dict:
+        """The conflict zone cleared: its lines the file's to change, as any other."""
+        with self.lock:
+            self.zone = []
+            self._restate()
+            return self.state()
 
     def state(self) -> dict:
         raw = str(self.text).encode("utf-8")
         return {"dirty": self.dirty, "missing": self.missing, "error": self.error, "changed": self.changed,
                 "saved": self.saved, "editors": len(self.conns), "now": time.time(),
                 "conflicts": [{"id": c.id, "from": _utf16(raw, c.start), "to": _utf16(raw, c.end), "base": c.base,
-                               "theirs": c.theirs, "at": c.at, "recent": c.recent}
-                              for c in sorted(self.conflicts.values(), key=lambda c: c.start)]}
+                               "theirs": c.theirs, "at": c.at, "zone": c.zone}
+                              for c in sorted(self.conflicts.values(), key=lambda c: c.start)],
+                "zone": [[_utf16(raw, a), _utf16(raw, b)] for a, b in self.zone]}
 
     def _send(self, name: str, value, but: Optional[str] = None) -> None:
         for conn in list(self.conns.values()):
@@ -376,7 +429,11 @@ class Room:
 
     def edit(self, cid: str, update: bytes) -> dict:
         with self.lock:
-            self.doc.apply_update(update)
+            self._from_page = True
+            try:
+                self.doc.apply_update(update)
+            finally:
+                self._from_page = False
             self._send("update", {"update": b64(update)}, but=cid)
             self._restate()
             return self.state()
@@ -412,24 +469,20 @@ class Room:
             self.missing, self.error, self.sig = False, "", sig
             if text == self.disk:
                 return self._restate()
-            guard = []                              # the lines saved lately: changed only if a page says so
-            if self.saved_from is not None and time.time() - self.saved_last < SAVE_GUARD:
-                guard = lines_changed(self.saved_from, self.disk)
-            self.saved_from = None                  # from here, the file's own: guarded again from the next save
             mine = str(self.text)
-            merged, found, _ = merge(self.disk, mine, text, guard)
+            merged, found, _ = merge(self.disk, mine, text, self._zone_lines(mine))
             if merged != mine:
                 before = self.doc.get_state()
                 change(self.text, merged)
                 self._send("update", {"update": b64(self.doc.get_update(before)), "disk": True})
             raw = merged.encode("utf-8")
-            for start, end, was, theirs, recent in found:
+            for start, end, was, theirs, zone in found:
                 b0 = len(merged[:start].encode("utf-8"))
                 b1 = b0 + len(merged[start:end].encode("utf-8"))
                 for old in list(self.conflicts.values()):   # the same lines' conflict before: this one in its place
                     if old.start <= b1 and b0 <= old.end:
                         del self.conflicts[old.id]
-                c = Conflict(b0, b1, was, theirs, recent)
+                c = Conflict(b0, b1, was, theirs, zone)
                 if raw[b0:b1].decode("utf-8") != theirs:
                     self.conflicts[c.id] = c
             self.disk, self.changed = text, time.time()
@@ -471,9 +524,7 @@ class Room:
                     break
             else:
                 raise EditorError("the file keeps changing on disk: save again in a moment")
-            if self.saved_from is None or time.time() - self.saved_last > SAVE_GUARD:
-                self.saved_from = self.disk         # the file before this run of saves
-            self.disk, self.sig, self.saved_last = text, sig, time.time()
+            self.disk, self.sig = text, sig
             self.conflicts.clear()                  # those shown: settled as the lines kept here
             self.missing, self.error, self.saved = False, "", time.time()
             self._restate()
@@ -555,6 +606,9 @@ class Editors:
     def settle(self, path: str, root: str, conflict: str, take: str) -> dict:
         return self._room(path, root).settle(conflict, take)
 
+    def clear_zone(self, path: str, root: str) -> dict:
+        return self._room(path, root).clear_zone()
+
     def listing(self, directory: str, root: str) -> dict:
         """The directory's entries -- folders first, then files, by name -- each with whether pages edit it now,
         whether it has changes no one saved, and the actors that changed it lately (`writers`; a folder's: of the
@@ -592,14 +646,22 @@ class Editors:
 
     def _watch(self) -> None:
         while not self.stop.wait(self.poll):
-            for real, room in list(self.rooms.items()):
-                try:
-                    room.check()
-                except Exception:                   # noqa: BLE001 - the next look; the page keeps what it has
-                    pass
-                with self.lock, room.lock:
-                    if room.idle_since is not None and not room.dirty and time.time() - room.idle_since > LINGER:
-                        self.rooms.pop(real, None)
+            self.look()
+
+    def look(self) -> None:
+        """Each open file looked at: its change on disk taken in; with no page left, its conflict zone cleared, and the
+        file closed if nothing in it is unsaved."""
+        for real, room in list(self.rooms.items()):
+            try:
+                room.check()
+            except Exception:                       # noqa: BLE001 - the next look; the page keeps what it has
+                pass
+            with self.lock, room.lock:
+                idle = None if room.idle_since is None else time.time() - room.idle_since
+                if idle is not None and idle > ZONE_GRACE and room.zone:
+                    room.zone = []                  # its pages closed it
+                if idle is not None and not room.dirty and idle > LINGER:
+                    self.rooms.pop(real, None)
 
     def close(self) -> None:
         self.stop.set()

@@ -882,6 +882,12 @@ button.ed-person { cursor: pointer; }
 .ed-body .cm-button { background: var(--wash); background-image: none; color: var(--ink); border: 1px solid var(--ring); border-radius: 4px; }
 .ed-body .cm-tooltip { background: var(--surface); color: var(--ink); border: 1px solid var(--ring); }
 .ed-body .ed-disk { background: color-mix(in srgb, var(--who, var(--s2)) 26%, transparent); }
+/* the conflict zone: the lines edited here since the file was opened, tinted very lightly */
+.ed-body .ed-zone { background: color-mix(in srgb, var(--s1) 7%, transparent); }
+.ed-zone-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 11.5px; color: var(--ink-2); white-space: nowrap;
+  padding: 1px 2px 1px 8px; border-radius: 9px; background: color-mix(in srgb, var(--s1) 13%, transparent); }
+.ed-zone-chip button { border: 0; background: none; font: inherit; color: var(--s1); padding: 0 6px; cursor: pointer; border-radius: 7px; }
+.ed-zone-chip button:hover { background: color-mix(in srgb, var(--s1) 16%, transparent); }
 /* a conflict with the file on disk: the lines kept here, and under them the file's, with what to do about them */
 .ed-body .ed-cf-mine { background: color-mix(in srgb, var(--warning) 14%, transparent); box-shadow: inset 3px 0 0 var(--warning); }
 .ed-body .ed-cf { margin: 2px 0 6px; border: 1px solid color-mix(in srgb, var(--critical) 45%, var(--ring)); border-radius: 6px;
@@ -892,6 +898,8 @@ button.ed-person { cursor: pointer; }
   background: color-mix(in srgb, var(--critical) 8%, var(--surface)); }
 .ed-body .ed-cf-head .grow { flex: 1; }
 .ed-body .ed-cf-head button { font-size: 12px; padding: 2px 9px; }
+.ed-body .ed-cf-label { padding: 5px 8px 0 12px; font-size: 11px; color: var(--muted);
+  background: color-mix(in srgb, var(--critical) 6%, transparent); box-shadow: inset 3px 0 0 var(--critical); }
 .ed-body .ed-cf-theirs { margin: 0; padding: 4px 8px 6px 12px; font: 12.5px/1.55 var(--mono); white-space: pre; overflow-x: auto;
   color: var(--ink); background: color-mix(in srgb, var(--critical) 6%, transparent); box-shadow: inset 3px 0 0 var(--critical); }
 button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px; }
@@ -7029,7 +7037,10 @@ if (!SNAPSHOT) addChatView({
 // them side by side): a folder's tree, any folder -- an actor's, or one typed, or the one above -- and its files to
 // edit (editor.py): each file shared live by every page that has it open -- their edits and cursors shown as they
 // type -- and the file on disk one more of its editors, so what an actor writes to it lands in the editor as it is
-// written, around what was typed and not saved, marked in that actor's hue until the next change on disk. Who changed each file, of the
+// written, around what was typed and not saved, marked in that actor's hue until the next change on disk -- but for
+// the conflict zone: the lines edited here since the file was opened, tinted, which an actor's change is asked about
+// (Restore yours / Accept its rewrite / Keep both), not merged into, until the zone is cleared (its button in the
+// header) or the file closed. Who changed each file, of the
 // actors, is what ag's hook found each tool call did on disk (the listing's `writers`): two or more changing one file
 // are said in the tree and over the file. Saved by Save (or ⌘S / Ctrl+S): until then the file on disk, which the
 // actors read, is as it was -- or, with Auto-save on (the reader's choice, kept in this browser), a moment after each
@@ -7238,7 +7249,7 @@ function edTick() {
     if (!state.editor) { clearInterval(ed.timer); ed.timer = null; return; }
     if (document.hidden || !ed.root) return;
     const dirs = new Set([ed.root, ...ed.open, ...(ed.file ? [edDir(ed.file)] : [])]);
-    Promise.all([...dirs].map((d) => edList(d, false))).then(() => { edTree(); edHead(); });
+    Promise.all([...dirs].map((d) => edList(d, false))).then(() => { edTree(); edHead(); if (ed.s) edConflicts(ed.s); });
     edBar();
     if (ed.s) edConflicts(ed.s);
   }, ED_TICK);
@@ -7285,7 +7296,7 @@ async function edOpen(path) {
   on("update", (v) => A.Y.applyUpdate(doc, edBytes(v.update), v.disk ? "disk" : "remote"));
   on("aware", (v) => A.applyAwarenessUpdate(awareness, edBytes(v.update), "remote"));
   on("left", (v) => A.removeAwarenessStates(awareness, [v.client], "remote"));
-  on("state", (v) => { s.state = v; edConflicts(s); edAutoLater(s); edHead(); });   // after each edit, any page's, and the disk's
+  on("state", (v) => { s.state = v; edZone(s); edConflicts(s); edAutoLater(s); edHead(); });   // after each edit, any page's, and the disk's
   on("failed", (v) => { s.err = v.error; es.close(); edHead(); });
   es.onerror = es.onopen = () => { if (ed.s === s) edHead(); };   // the header says while it reconnects
 }
@@ -7316,6 +7327,17 @@ function edView(s) {
     provide: (f) => A.EditorView.decorations.from(f),
   });
   s.conflicts = { set: setConflicts, field: conflicts, sig: "" };
+  const setZone = A.StateEffect.define();
+  const zone = A.StateField.define({                 // the conflict zone: the lines edited here, tinted
+    create: () => A.Decoration.none,
+    update(deco, tr) {
+      deco = deco.map(tr.changes);
+      for (const e of tr.effects) if (e.is(setZone)) deco = e.value;
+      return deco;
+    },
+    provide: (f) => A.EditorView.decorations.from(f),
+  });
+  s.zone = { set: setZone, sig: "" };
   ed.body.replaceChildren();
   s.view = new A.EditorView({
     parent: ed.body,
@@ -7324,44 +7346,78 @@ function edView(s) {
       extensions: [
         A.keymap.of([...A.yUndoManagerKeymap, { key: "Mod-s", preventDefault: true, run: () => { edSave(s); return true; } }, A.indentWithTab]),
         A.basicSetup, A.EditorState.lineSeparator.of("\n"), A.highlight, A.language(s.path), A.yCollab(s.ytext, s.awareness), marks,
-        conflicts,
+        zone, conflicts,
       ],
     }),
   });
+  edZone(s);
   edConflicts(s);
+}
+// The conflict zone (the state's `zone`: ranges of the document), drawn: each line a range is on, or an empty one is at.
+function edZone(s) {
+  const v = s.view, list = (s.state && s.state.zone) || [];
+  if (!v || !s.zone) return;
+  const sig = JSON.stringify(list);
+  if (sig === s.zone.sig) return;
+  s.zone.sig = sig;
+  const A = s.A, doc = v.state.doc, lines = new Set();
+  for (const [a, b] of list) {
+    const from = Math.min(a, doc.length), to = Math.min(Math.max(b, from), doc.length);
+    const last = doc.lineAt(Math.max(from, to - 1)).number;
+    for (let n = doc.lineAt(from).number; n <= last && lines.size < 20000; n++) lines.add(doc.line(n).from);
+  }
+  v.dispatch({ effects: s.zone.set.of(A.Decoration.set([...lines].map((at) => A.Decoration.line({ class: "ed-zone" }).range(at)), true)) });
+}
+async function edClearZone(s) {
+  try { s.state = await post("/api/edit/zone/clear", { path: s.path, root: s.root }); s.err = ""; }
+  catch (e) { s.err = e.message; }
+  if (ed.s === s) { edZone(s); edHead(); }
 }
 // The conflicts, drawn: the lines kept here marked, and under them the file's lines, with what to do about them.
 let EdConflict = null;
 function edConflictWidget(A) {
   return EdConflict ||= class extends A.WidgetType {
-    constructor(s, c) { super(); this.s = s; this.c = c; }
-    eq(other) { return other.c.id === this.c.id && other.c.theirs === this.c.theirs; }
+    constructor(s, c, name) { super(); this.s = s; this.c = c; this.name = name; }
+    eq(other) { return other.c.id === this.c.id && other.c.theirs === this.c.theirs && other.name === this.name; }
     toDOM() {
-      const { s, c } = this, writers = edWriters(edEntry(s.path));
-      const near = edCredit(writers, c.at), by = near ? ` by ${edWriterName(near)}` : "";
-      const pick = (take, label, title, primary) => el("button", { type: "button", class: primary ? "primary" : "", title,
+      const { s, c, name } = this;
+      const pick = (take, label, title) => el("button", { type: "button", title,
         onclick: (ev) => { ev.preventDefault(); edSettle(s, c.id, take); } }, label);
+      const mine = c.to > c.from, kind = !c.theirs ? "deleted" : mine ? "rewrote" : "added";
+      let what, picks;
+      if (c.zone) {                                  // in the conflict zone: the reader's lines, rewritten on disk
+        what = { rewrote: name ? `${name} rewrote lines you edited` : "Lines you edited were rewritten on disk",
+          deleted: name ? `${name} deleted lines you edited` : "Lines you edited were deleted on disk",
+          added: name ? `${name} added lines among those you edited` : "Lines were added on disk among those you edited" }[kind];
+        picks = [
+          pick("mine", mine ? "Restore yours" : "Leave them out", mine ? "Keep your lines; a save (or Auto-save) writes them over the file's"
+            : "Leave the file's new lines out; a save (or Auto-save) writes the file without them"),
+          pick("theirs", { rewrote: "Accept its rewrite", deleted: "Accept the deletion", added: "Add them" }[kind],
+            c.theirs ? "Put the file's lines in place of yours" : "Delete your lines, as the file did"),
+          kind === "rewrote" ? pick("both", "Keep both", "Keep your lines, and the file's after them") : null];
+      } else {                                       // both changed, differently, outside the zone (it was cleared)
+        what = `${c.theirs ? "Changed" : "Deleted"} on disk${name ? ` by ${name}` : ""} where it was edited here too`;
+        picks = [pick("mine", "Keep yours", "Keep the lines above; the file's are left out (a save writes yours)"),
+          pick("theirs", c.theirs ? "Take theirs" : "Delete them", c.theirs ? "Put the file's lines in place of yours" : "Delete your lines, as the file did"),
+          c.theirs && mine ? pick("both", "Keep both", "Keep your lines, and the file's after them") : null];
+      }
       return el("div", { class: "ed-cf" },
-        el("div", { class: "ed-cf-head" },
-          el("span", { class: "what", title: c.recent ? "Lines saved from here in the last ten minutes are changed on disk only if you say so" : null,
-            text: c.theirs ? `Changed on disk${by}, ${ago(c.at)}, where ${c.recent ? "you edited lately" : "it was edited here too"}:`
-              : `Deleted on disk${by}, ${ago(c.at)}, where ${c.recent ? "you edited lately" : "it was edited here"}:` }),
-          el("span", { class: "grow" }),
-          pick("mine", "Keep yours", "Keep the lines above; the file's are left out (a save writes yours)"),
-          pick("theirs", c.theirs ? "Take theirs" : "Delete them", c.theirs ? "Put the file's lines in place of yours" : "Delete your lines, as the file did", true),
-          c.theirs ? pick("both", "Keep both", "Keep your lines, and the file's after them") : null),
+        el("div", { class: "ed-cf-head" }, el("span", { class: "what", text: `${what}, ${ago(c.at)}.` }), el("span", { class: "grow" }), ...picks),
+        c.theirs ? el("div", { class: "ed-cf-label", text: mine ? "On disk now, in place of the lines above:" : "On disk now:" }) : null,
         c.theirs ? el("pre", { class: "ed-cf-theirs", text: c.theirs.replace(/\n$/, "") }) : null);
     }
     ignoreEvent() { return true; }
   };
 }
-// Drawn again when the conflicts or their places change, and whenever one's box is missing -- an edit can take it away
-// (one that deletes the line break after it) while leaving the conflict where it was. Called with each state, and with
-// each of the panel's ticks.
+// Drawn again when the conflicts or their places change, or who made one is known (ag records an actor's change a
+// moment after it lands: the listing's `writers`), and whenever one's box is missing -- an edit can take it away (one
+// that deletes the line break after it) while leaving the conflict where it was. Called with each state, and with each
+// of the panel's ticks.
+const edConflictBy = (s, c) => { const w = edCredit(edWriters(edEntry(s.path)), c.at); return w ? edWriterName(w) : ""; };
 function edConflicts(s) {
   const v = s.view, list = (s.state && s.state.conflicts) || [];
   if (!v || !s.conflicts) return;
-  const sig = JSON.stringify(list.map((c) => [c.id, c.from, c.to, c.theirs]));
+  const sig = JSON.stringify(list.map((c) => [c.id, c.from, c.to, c.theirs, edConflictBy(s, c)]));
   const shown = new Set();
   v.state.field(s.conflicts.field).between(0, v.state.doc.length, (from, to, d) => { if (d.spec.cf) shown.add(d.spec.cf); });
   if (sig === s.conflicts.sig && list.every((c) => shown.has(c.id))) return;
@@ -7375,9 +7431,9 @@ function edDrawConflicts(s, list) {
     if (to > from) {
       for (let p = from; p < to; ) { const line = doc.lineAt(p); out.push(A.Decoration.line({ class: "ed-cf-mine" }).range(line.from)); p = line.to + 1; }
       const last = doc.lineAt(Math.max(from, to - 1));
-      out.push(A.Decoration.widget({ widget: new Widget(s, c), block: true, side: 1, cf: c.id }).range(last.to));
+      out.push(A.Decoration.widget({ widget: new Widget(s, c, edConflictBy(s, c)), block: true, side: 1, cf: c.id }).range(last.to));
     } else {
-      out.push(A.Decoration.widget({ widget: new Widget(s, c), block: true, side: -1, cf: c.id }).range(doc.lineAt(from).from));
+      out.push(A.Decoration.widget({ widget: new Widget(s, c, edConflictBy(s, c)), block: true, side: -1, cf: c.id }).range(doc.lineAt(from).from));
     }
   }
   v.dispatch({ effects: s.conflicts.set.of(A.Decoration.set(out, true)) });
@@ -7532,6 +7588,10 @@ function edHead() {
       s.marked ? el("button", { type: "button", class: "ed-unmark", title: "Clear the marks of what changed on disk", "aria-label": "Clear the marks",
         onclick: () => edUnmark(s) }, "×") : null);
   }
+  const zoned = s && st && (st.zone || []).length ? el("span", { class: "ed-zone-chip",
+    title: "The lines edited here since the file was opened, tinted: an actor's change to them is asked about, not merged in. Cleared when the file is closed, or by Clear." },
+    "Conflict zone", el("button", { type: "button", title: "Clear the conflict zone: the actors' changes to its lines merge in, as anywhere else",
+      onclick: () => edClearZone(s) }, "Clear")) : null;
   const many = writers.length > 1;
   const by = writers.length ? el("span", { class: "ed-writers" + (many ? " many" : ""),
     title: `${many ? `${writers.length} actors are changing this file` : "The actor changing this file"} (in the last half hour):\n`
@@ -7542,7 +7602,7 @@ function edHead() {
     el("span", { class: "ed-path", title: ed.file, text: edRel(ed.file) }),
     nc && !(ed.err || (s && s.err)) ? el("button", { type: "button", class: `ed-status ${cls}`, role: "status", title: "Show the first: keep yours, take the file's, or both",
       onclick: () => edToConflict(s) }, said) : el("span", { class: `ed-status ${cls}`, role: "status", text: said }),
-    by, changed,
+    zoned, by, changed,
     s && s.note ? el("span", { class: "ed-status bad", text: s.note }) : null,
     el("span", { class: "ed-people" },
       ...others.map(([, v]) => el("span", { class: "ed-person", style: `--who: ${v.user.color}`, title: `${v.user.name} has it open`, text: v.user.name })),
