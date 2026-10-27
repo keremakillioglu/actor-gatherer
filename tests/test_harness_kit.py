@@ -140,6 +140,11 @@ class CodexTest(unittest.TestCase):
                          [(Kind.ENVIRONMENT, None), (Kind.USER, "hi"), (Kind.ASK_REPLY, "Which fruit? → mango"),
                           (Kind.AGENT_REPORT, None), (Kind.INTERRUPT, None)])
         self.assertEqual((got[0].cwd, got[3].detail["from"], got[3].detail["text"]), ("/w", "/root/a", "Done."))
+        # 0.164 sends its note that the turn was stopped as the developer's: still its note, by its marker
+        aborted = {"type": "message", "role": "developer", "content": [{"type": "input_text", "text":
+                   "<turn_aborted>\nThe previous turn was interrupted on purpose.\n</turn_aborted>"}]}
+        instructions = {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "You are Codex."}]}
+        self.assertEqual([p.kind for p in CODEX.read([aborted, instructions])], [Kind.INTERRUPT, Kind.ENVIRONMENT])
 
     def test_after_a_compaction_what_came_before_is_sent_again(self):
         got = CODEX.read([item("user", "kept"), {"type": "compaction", "encrypted_content": "x"}, item("user", "new")])
@@ -157,8 +162,10 @@ class CodexTest(unittest.TestCase):
         self.assertEqual(CODEX.title(CODEX.read([item("assistant", '{"title": "Fix  the tests"}')])), "Fix the tests")
         self.assertEqual(CODEX.recap(CODEX.read([item("assistant", '{"summary": "Did x.", "next_action": "Do y."}')])),
                          "Did x.\n\nNext: Do y.")
-        turn = CODEX.call("POST", "/v1/responses", {"x-codex-turn-metadata": '{"thread_source": "user"}'}, body)
-        self.assertEqual(turn.kind, CallKind.TURN)
+        turn = CODEX.call("POST", "/v1/responses", {"x-codex-turn-metadata": '{"thread_source": "user"}',
+                                                    "user-agent": "codex-tui/0.164.0 (Mac OS 15.7.9; arm64) xterm-256color "
+                                                                  "(codex-tui; 0.164.0)"}, body)
+        self.assertEqual((turn.kind, turn.version), (CallKind.TURN, "0.164.0"))    # its terminal's User-Agent
 
 
 class OwnerTest(unittest.TestCase):

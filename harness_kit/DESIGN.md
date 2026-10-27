@@ -60,7 +60,7 @@ class Harness(ABC):
 - `Call(kind, session, cwd, version, history, own, detail)`: `kind` one of TURN, SUBAGENT, SUGGESTION, RECAP,
   TITLE, COMPACTION, OTHER; `own` the call's own messages after the conversation (a suggestion's prompt, a
   compaction's instruction). Claude Code's version comes from its User-Agent (`claude-cli/<v>`), Codex's from
-  its (`codex_cli_rs/<v>`).
+  its (`codex-tui/<v>` from its terminal, `codex_exec/<v>` from `codex exec`).
 - `Part(kind, role, text, words, tool, result, cwd, opaque, detail)`. Against the doc: what a kind says besides
   its words is in `detail` (a skill's name and arguments; a report's sender; task notices; the files a note
   loads), and what an asking call asks is on its `ToolCall.ask`, not on the part.

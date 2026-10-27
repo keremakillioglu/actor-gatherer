@@ -460,9 +460,8 @@ def took_back(gatherer: str, channel: str, stopped: float) -> bool:
     conn = data._connect(gatherer)
     if conn is None:
         return False
-    try:
-        last = conn.execute(f"SELECT read_at, error_status FROM _reads WHERE ifnull({data.CHANNEL}, '') = ? "
-                            "ORDER BY read_id DESC LIMIT 2", (channel,)).fetchall()
+    try:                                               # the hang-up as ag kept it on the read, or the hook's `call_failed`
+        last = data._newest_reads(conn, channel, 2) or []
     except sqlite3.Error:
         return False
     finally:

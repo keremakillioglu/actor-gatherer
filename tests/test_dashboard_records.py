@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,7 +16,7 @@ from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.integrations.harnesses.claude.adaptor.adaptor import ClaudeAdaptor  # noqa: E402
 from ag.integrations.tools.ag_orchestrator import records  # noqa: E402
-from ag_dashboard import data, files  # noqa: E402
+from ag_dashboard import data, files, sessions  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 ADAPTOR = ClaudeAdaptor()
@@ -98,9 +99,36 @@ class RecordsTest(unittest.TestCase):
     def test_a_call_the_user_stopped_ends_the_turn_and_is_no_failure(self):
         read = self.turn([user("count the rows")])
         self.assertEqual(self.agent()["status"], data.RUNNING)
+        self.assertFalse(sessions.took_back("g", "s", time.time()))
         self.record(records.call_failed(read, data.HUNG_UP, "the harness hung up before the answer was through"))
         a = self.agent()                                                     # Esc: as the hook server reports it
         self.assertEqual((a["status"], a["stopped"]["kind"], a["failing"]), (data.IDLE, "interrupted", None))
+        self.assertTrue(sessions.took_back("g", "s", time.time()))          # its message back in Claude Code's box
+
+    def test_one_actor_s_records_are_found_by_its_channel_not_by_their_type(self):
+        """Searched by type, each actor's would go through every actor's records newer than its own last event: the
+        actor list slowed with every record in the gatherer."""
+        read = self.turn([user("count the rows")])
+        self.reply("msg_1", [TEXT, CALL], "tool_use", read)
+        self.record(records.call_failed(read, 529, "overloaded_error: Overloaded"))
+        conn, plans = data._connect("g"), []
+
+        class Planned:                                                       # the plan of each query on events
+            def execute(self, sql, args=()):
+                if " FROM events e JOIN event_types t" in sql:
+                    plans.append(" ".join(r[3] for r in conn.execute("EXPLAIN QUERY PLAN " + sql, args)))
+                return conn.execute(sql, args)
+
+            def __getattr__(self, name):
+                return getattr(conn, name)
+        data.replies(Planned(), "s")
+        data._harness(Planned(), "s")
+        data._newest_reads(Planned(), "s", 2)
+        conn.close()
+        self.assertEqual(len(plans), 3)
+        for plan in plans:
+            self.assertIn("events_id", plan)
+            self.assertNotIn("events_type", plan)
 
     def test_a_failed_call_a_recap_and_a_name(self):
         read = self.turn([user("count the rows")])

@@ -149,6 +149,10 @@ RECORDS = ("model_call", "reply_part", "reply_end", "call_failed", "recap", "nam
 #: SQL: an event (`e`) that is the conversation, not a record.
 NOT_RECORD = ("e.event_type_id NOT IN (SELECT event_type_id FROM event_types WHERE name IN ("
               + ", ".join(f"'{t}'" for t in RECORDS) + "))")
+#: SQL: an event (`e`) joined to its type (`t`) for one channel's records of a type, SQLite kept on the channel's index
+#: (events_id) by the `+`. Joined on e.event_type_id itself it searches by type, through every channel's records newer
+#: than the row asked for -- once per actor, so the list slowed with every record in the gatherer.
+BY_CHANNEL = "t.event_type_id = +e.event_type_id"
 
 
 def _connect(gatherer: str) -> Optional[sqlite3.Connection]:
@@ -576,7 +580,7 @@ def replies(conn, channel: str, tables: Optional[set] = None) -> List[dict]:
     since = conn.execute(f"SELECT max(e.row_id) FROM events e WHERE ifnull(e.{CHANNEL}, '') = ? AND {NOT_RECORD}",
                          (channel,)).fetchone()[0] or 0
     rows = conn.execute(f"SELECT e.row_id, t.name, e.inserted_at, e.payload_json, e.p_answer_id FROM events e JOIN event_types t "
-                        f"ON t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? AND e.row_id > ? AND "
+                        f"ON {BY_CHANNEL} WHERE ifnull(e.{CHANNEL}, '') = ? AND e.row_id > ? AND "
                         f"t.name IN ('reply_part', 'reply_end', 'model_call') ORDER BY e.row_id", (channel, since)).fetchall()
     ends = {r[4]: (_json(r[3]) or {}).get("stop") for r in rows if r[1] == "reply_end"}
     turned = max((r[0] for r in rows if r[1] == "model_call" and (_json(r[3]) or {}).get("kind") == "turn"), default=0)
@@ -736,7 +740,7 @@ def _newest_reads(conn, channel: str, n: int) -> Optional[List[dict]]:
                                           f"ifnull({CHANNEL}, '') = ? ORDER BY read_id DESC LIMIT ?", (channel, n))]
     if rows and "p_read_id" in _columns(conn, "events"):
         for read, raw in conn.execute(f"SELECT e.p_read_id, e.payload_json FROM events e JOIN event_types t ON "
-                                      f"t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? AND "
+                                      f"{BY_CHANNEL} WHERE ifnull(e.{CHANNEL}, '') = ? AND "
                                       f"t.name = 'call_failed' AND e.p_read_id >= ?", (channel, rows[-1]["read_id"])):
             got = _json(raw) or {}
             for r in rows:
@@ -1103,7 +1107,7 @@ harness_of = harness_kit.harness_of
 
 def _harness(conn, channel: str) -> Optional[str]:
     """The harness the channel runs on: as its hook recorded it with each model call, else as its events' shape tells."""
-    said = conn.execute(f"SELECT e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+    said = conn.execute(f"SELECT e.payload_json FROM events e JOIN event_types t ON {BY_CHANNEL} "
                         f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'model_call' ORDER BY e.row_id DESC LIMIT 1",
                         (channel,)).fetchone()
     if said and (_json(said[0]) or {}).get("harness"):

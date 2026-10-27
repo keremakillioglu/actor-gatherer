@@ -79,7 +79,7 @@ TURN = "user"                         # the thread_source of a thread's own turn
 SIDE_KINDS = {"thread_title": CallKind.TITLE, "system": CallKind.RECAP, "subagent": CallKind.SUBAGENT}
 CWD = re.compile(r"<cwd>\s*(.*?)\s*</cwd>", re.S)
 ROOT = re.compile(r"<workspace_roots>\s*<root>\s*(.*?)\s*</root>", re.S)
-VERSION = re.compile(r"codex_\w+/([\d.]+)")      # its User-Agent: codex_cli_rs/0.164.0
+VERSION = re.compile(r"codex[_-][\w-]+/([\d.]+)")  # its User-Agent: codex-tui/0.164.0 (its terminal), codex_exec/...
 
 #: Its tools: each one's action, and the input key that names the file it works on.
 TOOLS = {"exec_command": (Action.SHELL, None), "shell": (Action.SHELL, None), "shell_command": (Action.SHELL, None),
@@ -136,6 +136,9 @@ def kind_of(item) -> str:
                 return own
             text = "\n".join(texts_of(item))
             return Kind.ASK_REPLY if text.lstrip().startswith(REPLY) else Kind.USER
+        own = own_context(item) if role in ("developer", "system") else None   # 0.164 sends <turn_aborted> as developer
+        if own not in (None, Kind.OTHER):
+            return own
         return ROLES.get(role, Kind.OTHER)
     return ITEM_KINDS.get(kind) or Kind.OTHER
 
