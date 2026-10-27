@@ -414,7 +414,7 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 :root.pane-mode .side { display: none; }
 :root.pane-mode body { height: 100vh; display: flex; }
 :root.pane-mode .layout { display: grid; grid-template-columns: minmax(0, 1fr); }
-:root.pane-mode .panes { display: flex; }
+:root.pane-mode :is(.panes, .work) { display: flex; }
 :root.pane-mode main { overflow: hidden; }
 :root.pane-mode .chat .chat-frame { flex: 1; height: auto; }
 :root.pane-mode .drawer { position: absolute; inset: 0 0 0 auto; width: min(100%, 600px); box-shadow: -8px 0 24px rgba(0,0,0,.10); z-index: 3; }
