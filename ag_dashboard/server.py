@@ -18,9 +18,9 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/extracts?gatherer=G                           history.extracts(G): what the model made of the history
     GET /api/stream[?gatherer=G&channel=C][&also=[[G2, C2], ...]]   server-sent events, until the page goes:
         `home` (data.home()) and, with a channel, `agent` (data.agent(G, C)) at once, then again
-        each time they change -- woken by ag's notifications or the fallback check (live.py), or by
-        what the user writes to a session it shows while it works (queued.py) --
-        and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle).
+        each time they change -- woken by ag's notifications or the fallback check (live.py) -- what the
+        harness's own record of a session says (the user writing to it as it works, a question answered in its
+        terminal, Esc) among them, as ag's hook records it -- and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle).
         `also` (JSON): the page's other actors, its other panes, each sent the same way as `actor`
         {gatherer, channel, agent}: one stream for all a page shows, as a browser keeps few open
     GET /api/sessions                     the sessions started from the page (sessions.py)
@@ -90,7 +90,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import avatars, data, files, hiding, history, home, live, monitor, queued, saved, seen, sessions, settings
+from . import avatars, data, files, hiding, history, home, live, monitor, saved, seen, sessions, settings
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -515,11 +515,10 @@ class Server(ThreadingHTTPServer):
         super().__init__(address, handler(self.calls, self.hub, self.sessions))
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
-        self.queued = queued.Watcher(self.hub) if live_updates else None   # what is written to a session as it works
         self.rest = saved.Rest(self.sessions, self.hub.shown)
 
     def server_close(self) -> None:
-        for part in (self.listener, self.fallback, self.queued, self.rest):
+        for part in (self.listener, self.fallback, self.rest):
             if part is not None:
                 part.close()
         super().server_close()

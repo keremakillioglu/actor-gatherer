@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from followed import Followed  # noqa: E402
 from ag_dashboard import answers, data, server, sessions  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 from test_dashboard_sessions import SessionsBase  # noqa: E402
@@ -179,8 +180,9 @@ SESSION = "0e1d2c3b-0000-4000-8000-000000000001"
 
 
 class SettledTest(GathererBase):
-    """Claude Code's own record of the session (<config>/projects/<dir>/<session>.jsonl), written as it happens: a
-    question answered or dismissed there is not asked any more -- dismissed (Esc), no call tells ag, and the turn is over."""
+    """Claude Code's own record of the session (<config>/projects/<dir>/<session>.jsonl), written as it happens and
+    followed by ag's hook (played by followed.py): a question answered or dismissed there is not asked any more --
+    dismissed (Esc), no call tells ag, and the turn is over."""
 
     def setUp(self):
         super().setUp()
@@ -197,9 +199,26 @@ class SettledTest(GathererBase):
         self.add([event("user_message", {"role": "user", "content": [{"type": "text", "text": "ask me"}]}, "ask me")], channel=SESSION)
         self.pend([call("toolu_q", "AskUserQuestion", {"questions": [SIZE]})], channel=SESSION)
 
-    def write(self, line):
+    def write(self, line, now=None):
         with open(self.record, "a") as fh:
             fh.write(json.dumps(line) + "\n")
+        self.follow(now)
+
+    def follow(self, now=None):
+        if not hasattr(self, "followed"):
+            self.followed = Followed("claude", self.record)
+        conn = sqlite3.connect(self.path)
+        try:
+            self.followed.into(conn, SESSION, now)
+        finally:
+            conn.close()
+
+    def settled(self):
+        conn = sqlite3.connect(self.path)
+        try:
+            return data.record_of(conn, SESSION).settled("toolu_q")
+        finally:
+            conn.close()
 
     def result(self, text, error=False):
         self.write({"type": "user", "message": {"role": "user", "content": [
@@ -210,12 +229,11 @@ class SettledTest(GathererBase):
 
     def test_dismissed_there_the_turn_is_over(self):
         self.assertEqual(self.actor()["status"], data.ASKING)
-        self.assertIsNone(data.settled(SESSION, self.cwd, "toolu_q"))
+        self.assertIsNone(self.settled())
         self.result("The user doesn't want to proceed with this tool use. The tool use was rejected", error=True)
         self.write({"type": "user", "message": {"role": "user", "content": [
             {"type": "text", "text": "[Request interrupted by user for tool use]"}]}})
-        self.assertEqual(data.settled(SESSION, self.cwd, "toolu_q"), "dismissed")
-        self.assertEqual(data.settled(SESSION, None, "toolu_q"), "dismissed")          # found by the session's id alone
+        self.assertEqual(self.settled(), "dismissed")
         a = self.actor()
         self.assertEqual((a["status"], a["turn_over"], a["asking"]), (data.IDLE, True, None))
         self.assertIsNone(data.asking_of("g", SESSION, self.cwd))
@@ -225,38 +243,21 @@ class SettledTest(GathererBase):
         self.write({"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Large it is."}]}})
         self.write({"type": "user", "message": {"role": "user", "content": [
             {"type": "text", "text": "[Request interrupted by user]"}]}})                  # later, another turn's
-        self.assertEqual(data.settled(SESSION, self.cwd, "toolu_q"), "answered")
+        self.assertEqual(self.settled(), "answered")
         a = self.actor()
         self.assertEqual((a["status"], a["asking"]), (data.RUNNING, None))              # until the next call says more
 
-    def test_no_record_no_change(self):
-        os.remove(self.record)
-        self.assertIsNone(data.settled(SESSION, self.cwd, "toolu_q"))
+    def test_answered_there_with_nothing_after_it_yet(self):
+        self.result('Your questions have been answered: "Which size?"="Large".')
+        self.assertIsNone(self.settled())                                       # Esc writes its note at once: not yet
         self.assertEqual(self.actor()["status"], data.ASKING)
+        self.follow(time.time() + 5)                                            # nothing since
+        self.assertEqual(self.settled(), "answered")
+        self.assertEqual(self.actor()["status"], data.RUNNING)
 
-    def test_its_record_is_watched_while_it_asks_and_a_change_rings_its_gatherer(self):
-        from ag_dashboard import live
-        hub = live.Hub()
-        rung = []
-        hub.ring = lambda gatherer, channel=None, what="": rung.append(gatherer)
-        fallback = live.Fallback(hub, seconds=3600)
-        self.addCleanup(fallback.close)
-        self.addCleanup(live.watch_records, {})
-        self.assertEqual(self.actor()["status"], data.ASKING)                    # read: watched from now on
-        self.assertEqual(list(live._RECORDS), [self.record])
-        fallback.check_records()
-        self.assertEqual(rung, [])                                                # unchanged since it was read
-        time.sleep(0.01)
-        self.result("The user doesn't want to proceed with this tool use.", error=True)   # Esc, in its terminal
-        fallback.check_records()
-        self.assertEqual(rung, ["g"])
-        fallback.check_records()
-        self.assertEqual(rung, ["g"])                                             # rung once for a change
-        self.write({"type": "user", "message": {"role": "user", "content": [
-            {"type": "text", "text": "[Request interrupted by user for tool use]"}]}})
-        self.assertEqual(self.actor()["status"], data.IDLE)                       # read again: not asking, not watched
-        self.assertEqual(live._RECORDS, {})
-
+    def test_no_record_no_change(self):
+        self.assertIsNone(self.settled())
+        self.assertEqual(self.actor()["status"], data.ASKING)
 
 class RecordedTest(GathererBase):
     """An answer typed from the page, and what Claude Code's result for the call then says."""

@@ -1,0 +1,133 @@
+"""The harness's own record of each session, followed as it grows, and what it says recorded as events of the session
+(records.py) -- what no model call carries, or carries only much later: a message typed while the agent works, a
+question answered or dismissed in its terminal, Esc, a model call given up on, a background task's end. What each
+line says is the harness's to read (harness_kit's `record_path` and `Follower`); here it is followed and recorded.
+Run by the proxy hooks:
+
+    a call of a session comes in       `SessionFiles.follow`: its record found (where the session runs, the
+                                       harness's own folder for it, as its launcher named it; none yet: looked
+                                       for again with the next call), recorded as followed (`session_file`),
+                                       and read on in the background every
+                                       POLL_SECONDS while it changes -- each new fact inserted (the server's
+                                       `insert`), each the same event however often it is read, by its line's
+                                       place in the file
+    the record unchanged QUIET_SECONDS  followed no more; the session's next call follows it again, from where
+                                       it was
+
+The first time a hook server follows a record it reads it from its start, so a fact it missed while it did not run
+is recorded then, and one recorded before is not stored twice. Nothing raises into the hook: a failure is a line in
+its log, and the call is never held up for it."""
+import asyncio
+import os
+import time
+from typing import Callable, Dict, Optional, Tuple
+
+from harness_kit import Harness
+from harness_kit.base import follow as read_on
+
+from .records import fact, record, session_file
+
+POLL_SECONDS = 0.25         # how often a followed record is looked at
+QUIET_SECONDS = 3600.0      # unchanged this long, with no call of its session: followed no more
+BATCH = 200                 # the most events inserted at once
+
+
+class _Followed:
+    """One session's record, as followed so far."""
+
+    def __init__(self, harness: Harness, session: str, cwd: Optional[str], config: Optional[str]):
+        self.harness, self.session, self.cwd, self.config = harness, session, cwd, config
+        self.path: Optional[str] = None
+        self.follower = None
+        self.offset = 0
+        self.seen: Optional[Tuple[int, int, int]] = None     # (inode, size, mtime) when last read
+        self.called = time.time()                             # the session's newest call
+        self.task: Optional[asyncio.Task] = None
+
+
+class SessionFiles:
+    """The hook's: `follow` on each call of a session.
+
+    Args:
+        ag_clients: the server client per gatherer (the hook's own).
+        log: (gatherer, line) -> None.
+        poll, quiet: POLL_SECONDS and QUIET_SECONDS, for a test.
+    """
+
+    def __init__(self, ag_clients, log: Callable[[str, str], None], poll: float = POLL_SECONDS,
+                 quiet: float = QUIET_SECONDS):
+        self.ag_clients, self.log, self.poll, self.quiet = ag_clients, log, poll, quiet
+        self.followed: Dict[Tuple[str, str], _Followed] = {}
+
+    def follow(self, gatherer: str, channel: str, harness: Harness, session: Optional[str], cwd: Optional[str] = None,
+               config: Optional[str] = None) -> None:
+        """A call of `session` (the channel's) has come in: its record followed, if it is not already."""
+        if not session:
+            return
+        try:
+            f = self.followed.get((gatherer, channel))
+            if f is None or f.harness.name != harness.name:
+                f = self.followed[(gatherer, channel)] = _Followed(harness, session, cwd, config)
+            f.called = time.time()
+            f.cwd, f.config = cwd or f.cwd, config or f.config
+            if f.task is None or f.task.done():
+                f.task = asyncio.ensure_future(self._follow(gatherer, channel, f))
+        except Exception as exc:  # noqa: BLE001 - never in the way of the call
+            self.log(gatherer, f"[{channel}] session file: not followed: {exc!r}")
+
+    async def _follow(self, gatherer: str, channel: str, f: _Followed) -> None:
+        try:
+            if f.path is None and not await self._found(gatherer, channel, f):
+                return
+            while True:
+                await self._read(gatherer, channel, f)
+                if time.time() - max(f.called, f.seen[2] / 1e9 if f.seen else 0) > self.quiet:
+                    return                                    # quiet: the next call follows it again
+                await asyncio.sleep(self.poll)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - a lost record never breaks the hook
+            self.log(gatherer, f"[{channel}] session file: stopped following {f.path}: {exc!r}")
+
+    async def _found(self, gatherer: str, channel: str, f: _Followed) -> bool:
+        """Whether the session's record is there: then recorded as followed."""
+        path = await asyncio.to_thread(f.harness.record_path, f.session, f.cwd, f.config)
+        follower = f.harness.follower(path) if path else None
+        if follower is None:
+            return False
+        f.path, f.follower = path, follower
+        await self._insert(gatherer, channel, [session_file(f.harness.name, f.path)])
+        self.log(gatherer, f"[{channel}] session file: following {f.path}")
+        return True
+
+    async def _read(self, gatherer: str, channel: str, f: _Followed) -> None:
+        """What the record says since it was last read, and what has come due, recorded."""
+        try:
+            st = os.stat(f.path)
+        except OSError:
+            st = None
+        now = (st.st_ino, st.st_size, st.st_mtime_ns) if st else None
+        facts = []
+        if now is not None and now != f.seen:
+            if f.seen is not None and (now[0] != f.seen[0] or now[1] < f.offset):    # written anew: from its start
+                f.follower, f.offset = f.harness.follower(f.path), 0
+            if now[1] - f.offset > 1 << 20:                   # a long read (the first of a long session): off the loop
+                facts, f.offset = await asyncio.to_thread(read_on, f.path, f.follower, f.offset)
+            else:
+                facts, f.offset = read_on(f.path, f.follower, f.offset)
+            f.seen = now
+        facts += f.follower.due(time.time())
+        if facts:
+            await self._insert(gatherer, channel, [fact(x, f.path) for x in facts])
+
+    async def _insert(self, gatherer: str, channel: str, events: list) -> None:
+        for i in range(0, len(events), BATCH):
+            await record(self.ag_clients.client(gatherer), gatherer, channel, events[i:i + BATCH], self.log)
+
+    async def close(self) -> None:
+        """Every record followed no more."""
+        tasks = [f.task for f in self.followed.values() if f.task is not None and not f.task.done()]
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)

@@ -1,6 +1,7 @@
-"""What the user writes to Claude Code while it works (ag_dashboard/queued.py): read from the queue Claude Code
-writes to its own record of the session the moment it changes -- long before ag stores the message with the
-turn's next call -- and in the Chat view, part of the turn it was written in."""
+"""What the user writes to Claude Code while it works (data.py's `typed` and `meanwhile`): read from the queue Claude
+Code writes to its own record of the session the moment it changes -- which ag's hook follows, recording what it says
+as events (harness_kit.claude's Record; ag's session_files.py, played here by followed.py) -- long before ag stores the
+message with the turn's next call; and in the Chat view, part of the turn it was written in."""
 import json
 import os
 import sqlite3
@@ -12,8 +13,10 @@ import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import data, files, live, queued  # noqa: E402
+from ag_dashboard import data, files  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
+from followed import Followed, schema  # noqa: E402
+from harness_kit import claude as claude_rules  # noqa: E402
 from test_dashboard_files import asked, call, result, said  # noqa: E402
 
 SESSION = "0e1d2c3b-0000-4000-8000-000000000002"
@@ -31,7 +34,8 @@ def wrapped(text):
 
 
 class RecordBase(unittest.TestCase):
-    """A Claude Code config folder of the test's own, with the session's record in it."""
+    """A Claude Code config folder of the test's own, with the session's record in it, followed into a gatherer's
+    database (`follow`)."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -44,6 +48,13 @@ class RecordBase(unittest.TestCase):
         os.makedirs(os.path.dirname(self.record))
         self.now = time.time()
         self.write({"type": "user", "message": {"role": "user", "content": "start"}})
+        self.db = schema(sqlite3.connect(":memory:"))
+        self.addCleanup(self.db.close)
+        self.followed = Followed("claude", self.record)
+
+    def follow(self, conn=None):
+        """What the record says since, recorded as the hook records it."""
+        self.followed.into(conn or self.db, SESSION)
 
     def write(self, line, end="\n"):
         with open(self.record, "a") as fh:
@@ -65,8 +76,12 @@ class RecordBase(unittest.TestCase):
 
 
 class TypedTest(RecordBase):
+    def got(self):
+        self.follow()
+        return data.typed(self.db, SESSION, now=self.now)
+
     def typed(self):
-        return [(q["text"], q["sent"] is not None) for q in queued.typed(SESSION, now=self.now)]
+        return [(q["text"], q["sent"] is not None) for q in self.got()]
 
     def test_written_then_sent_mid_turn(self):
         self.assertEqual(self.typed(), [])
@@ -74,8 +89,9 @@ class TypedTest(RecordBase):
         self.assertEqual(self.typed(), [("also do b", False)])            # waiting for the turn's next step
         self.op("remove", "also do b", ago=2, reason="absorbed_mid_turn")
         self.assertEqual(self.typed(), [("also do b", True)])             # sent: ag stores it with that call
-        self.assertEqual(queued.record(SESSION), self.record)               # found without its directory, too
-        self.assertEqual(queued.record(SESSION, "/work/repo"), self.record)
+        self.assertEqual(claude_rules.record_path(SESSION), self.record)    # found without its directory, too
+        self.assertEqual(claude_rules.record_path(SESSION, "/work/repo"), self.record)
+        self.assertIsNone(claude_rules.record_path("0e1d2c3b-0000-4000-8000-0000000000ff"))
 
     def test_one_that_opens_the_next_turn_and_one_taken_back(self):
         self.op("enqueue", "first", ago=4)
@@ -87,7 +103,7 @@ class TypedTest(RecordBase):
 
     def test_long_sent_is_forgotten_and_claude_code_s_own_notes_are_not_the_user_s(self):
         self.op("enqueue", "old", ago=100)
-        self.op("dequeue", ago=queued.SENT_SECONDS + 5)
+        self.op("dequeue", ago=data.SENT_SECONDS + 5)
         self.op("enqueue", "<task-notification>\n<task-id>b1</task-id>", ago=1)
         self.assertEqual(self.typed(), [])
         # a subagent's report as it hands back, as Claude Code 2.1.310 queues it (saved from a live session)
@@ -113,13 +129,13 @@ class TypedTest(RecordBase):
         self.op("dequeue", ago=1)                                           # both sent when the turn ended
         self.op("enqueue", "next thing", ago=0.5)
         self.op("dequeue", ago=0.5)                                         # nothing running: sent at once
-        self.assertEqual([q["text"] for q in queued.meanwhile(SESSION)], ["and cook's theorem?", "and karp's problems?"])
-        self.assertEqual([(q["text"], q["joins"]) for q in queued.typed(SESSION, now=self.now)],   # part of the turn, or the next's
+        self.assertEqual([(q["text"], q["joins"]) for q in self.got()],   # part of the turn, or the next's
                          [("and cook's theorem?", True), ("and karp's problems?", True), ("next thing", False)])
+        self.assertEqual([q["text"] for q in data.meanwhile(self.db, SESSION)], ["and cook's theorem?", "and karp's problems?"])
 
     def test_sent_between_turns_opens_the_next(self):
         self.prompt("look at a.py", ago=3)
-        [q] = queued.typed(SESSION, now=self.now)
+        [q] = self.got()
         self.assertEqual((q["text"], q["joins"]), ("look at a.py", False))          # its turn's first
         self.assertAlmostEqual(q["sent"], self.now - 3, delta=0.002)            # sent as Claude Code recorded it
 
@@ -136,39 +152,14 @@ class TypedTest(RecordBase):
         self.assertEqual(self.typed(), [("and then b", True)])
 
     def test_sent_between_turns_long_ago_is_forgotten(self):
-        self.prompt("old", ago=queued.PROMPT_SECONDS + 5)
+        self.prompt("old", ago=data.PROMPT_SECONDS + 5)
         self.prompt("an image", ago=1, message={"role": "user", "content": [{"type": "text", "text": "this one"},
                                                                              {"type": "image", "source": {}}]})
         self.assertEqual(self.typed(), [("this one", True)])
 
     def test_a_message_sent_mid_turn_unwrapped(self):
-        self.assertEqual(queued.mid_turn(wrapped("change g\ntoo")), "change g\ntoo")
-        self.assertIsNone(queued.mid_turn("change g"))
-
-
-class WatcherTest(RecordBase):
-    def test_a_shown_session_s_queue_rings_its_streams(self):
-        hub = live.Hub()
-        w = hub.watch("g", SESSION)
-        other = hub.watch("g", "c2")
-        self.assertEqual(hub.shown(), {("g", SESSION), ("g", "c2")})
-        watcher = queued.Watcher.__new__(queued.Watcher)                  # its check alone, no thread
-        watcher.hub, watcher.last = hub, {}
-        w.take(), other.take()
-        watcher.check()
-        self.assertEqual(w.take(), (False, False, set()))                   # nothing written: nothing rung
-        self.now = time.time()
-        self.op("enqueue", "also do b")
-        watcher.check()
-        self.assertEqual((w.take()[1], other.take()[1]), (True, False))
-        watcher.check()
-        self.assertFalse(w.take()[1])                                       # unchanged
-        self.op("remove", "also do b", reason="absorbed_mid_turn")
-        watcher.check()
-        self.assertTrue(w.take()[1])                                        # sent: the page draws it in full
-        self.prompt("next thing")
-        watcher.check()
-        self.assertTrue(w.take()[1])                                        # sent between turns: its turn begun
+        self.assertEqual(claude_rules.mid_turn(wrapped("change g\ntoo")), "change g\ntoo")
+        self.assertIsNone(claude_rules.mid_turn("change g"))
 
 
 class UnstoredTest(unittest.TestCase):
@@ -229,6 +220,11 @@ class TurnTest(RecordBase):
         conn.close()
 
     def turns(self):
+        conn = sqlite3.connect(os.path.join(self.tmp.name, "gatherers", "g", "context.db"))
+        try:
+            self.follow(conn)
+        finally:
+            conn.close()
         return [(t["text"], [m["text"] for m in t["more"]]) for t in files.files("g", SESSION, 0, cwd="/w")["turns"]]
 
     def test_one_turn_with_both_messages_and_both_calls(self):

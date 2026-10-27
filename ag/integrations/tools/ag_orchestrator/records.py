@@ -11,21 +11,31 @@ gatherer beside the conversation's, which no policy groups, so they never reach 
     recap         a recap of the session the harness made, in its words: what it did, and what comes next
     name          a name for the session, as `by` gave it (codex's title for its thread)
 
+and, from the harness's own record of the session as it grows (session_files.py), what no model call carries:
+
+    session_file  the record followed: the harness, and the file's path
+    message_queued, message_sent, message_withdrawn, asked, ask_settled, turn_stopped, task_started, task_ended
+                  each a fact the record says (harness_kit's Facts), its data the payload with `at`, when it happened
+
 Each is `{"type", "id", "payload", "properties"?}`, as the server's `insert` takes it, its own properties declared
 on its type the first time it is seen. An id says what makes it the same: a reply part by its answer and its place in
-it, a reply's end by its answer, a failure by its read; any other is new each time (`uuid4`). Sent by `record`, which
+it, a reply's end by its answer, a failure by its read, a fact of the record by its place in the file; any other is new
+each time (`uuid4`). Sent by `record`, which
 never raises: a lost record never holds up a call.
 """
 
+import os
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
+from harness_kit.base import Fact, Facts
+
 from .adaptor import CHANNEL
 
-MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME = (
-    "model_call", "reply_part", "reply_end", "call_failed", "recap", "name")
+MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE = (
+    "model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "session_file")
 #: Every harness event type a proxy hook records.
-RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME)
+RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE) + Facts.ALL
 READ_ID, ANSWER_ID = "read_id", "answer_id"
 STREAMING = "streaming"     # a reply_part's stop while the answer still streams (no reply_end yet)
 
@@ -69,6 +79,16 @@ def recap(text: str) -> dict:
 def name(text: str, by: str) -> dict:
     """A name for the session, as `by` gave it."""
     return {"type": NAME, "id": f"name:{uuid.uuid4().hex}", "payload": {"text": text, "by": by}}
+
+
+def session_file(harness: str, path: str) -> dict:
+    """The harness's record of the session, followed from now on."""
+    return {"type": SESSION_FILE, "id": f"file:{path}", "payload": {"harness": harness, "path": path}}
+
+
+def fact(f: Fact, path: str) -> dict:
+    """A fact the harness's record at `path` says, the same each time the record is read: by its line's place there."""
+    return {"type": f.type, "id": f"{f.type}:{os.path.basename(path)}:{f.key}", "payload": {"at": f.at, **f.data}}
 
 
 async def record(client, gatherer: str, channel: str, events: List[dict],

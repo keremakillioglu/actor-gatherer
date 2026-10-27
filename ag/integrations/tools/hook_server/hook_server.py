@@ -25,7 +25,9 @@ new JSON body or None, or a class, built with the `--option`s, whose
 instances are that. A hook with a `close()` has it called when the server
 stops. A URL's `/h/<label>/` may be followed by `/r/<run>/`: the hook's `request.run` is then
 `run` -- the one run of the harness (its process) the call came from, as its launcher named it,
-whichever thread or session the call is in -- and then by `/l/<n>/`: the hook's
+whichever thread or session the call is in -- then by `/c/<folder>/`: the hook's `request.config` is
+then the harness's own folder for the run (its config folder, where it keeps its records of sessions),
+`folder` the path base64url-encoded, unpadded (the launchers' `config_part`) -- and then by `/l/<n>/`: the hook's
 `request.limit` is then `n` (the prefixes are stripped before forwarding), the
 harness's own limit for its calls. A hook with a `measured(request, tokens)` has it called (awaited) when
 a POST's answer has come back whole, before the harness sees its end: `tokens`
@@ -69,6 +71,8 @@ Needs aiohttp.
 
 import argparse
 import asyncio
+import base64
+import binascii
 import importlib
 import inspect
 import itertools
@@ -88,6 +92,7 @@ from .trace import ModelTrace, response_of, streamed_of
 HOP = {"host", "content-length", "transfer-encoding", "connection", "content-encoding", "accept-encoding"}
 LABEL_PREFIX = re.compile(r"^/h/([A-Za-z0-9._-]+)(?=/|$)")
 RUN_PREFIX = re.compile(r"^/r/([A-Za-z0-9._-]+)(?=/|$)")
+CONFIG_PREFIX = re.compile(r"^/c/([A-Za-z0-9_-]+)(?=/|$)")
 LIMIT_PREFIX = re.compile(r"^/l/([0-9]+)(?=/|$)")
 PART_DONE = (b'"content_block_stop"', b'"response.output_item.done"')   # a part of an answer is complete
 ANSWER_DONE = (b'"message_stop"', b'"response.completed"')               # all of it: `answered` keeps it
@@ -104,6 +109,8 @@ class Request:
     limit: Optional[int] = None                 # the <n> of /l/<n>/..., if the URL had one
     run: Optional[str] = None                   # the <run> of /r/<run>/..., if the URL had one: the harness's
                                                 # run (its process) the call came from, as its launcher named it
+    config: Optional[str] = None                # the folder of /c/<folder>/..., if the URL had one: the harness's
+                                                # own folder for the run (its config folder), as its launcher found it
     upstream: Optional[str] = None              # where the request is forwarded (path_qs after it)
     state: dict = field(default_factory=dict)   # the hook's own, kept until its `measured` for this request
     process: Optional[dict] = None              # who sent it: {"pid", "started"} of the harness's process
@@ -165,6 +172,20 @@ def run_of(path: str):
     if not match:
         return None, path
     return match.group(1), path[match.end():] or "/"
+
+
+def config_of(path: str):
+    """(the harness's own folder the URL names, or None; the path to forward): `/c/<folder>/v1/chat`, after any label
+    and run, is that folder (base64url-encoded, unpadded) and `/v1/chat`."""
+    match = CONFIG_PREFIX.match(path)
+    if not match:
+        return None, path
+    raw = match.group(1)
+    try:
+        folder = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode()
+    except (binascii.Error, UnicodeDecodeError):
+        return None, path
+    return folder, path[match.end():] or "/"
 
 
 def limit_of(path: str):
@@ -278,6 +299,7 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         n = next(counter)
         label, path_qs = route_of(request.path_qs)
         run, path_qs = run_of(path_qs)
+        config, path_qs = config_of(path_qs)
         limit, path_qs = limit_of(path_qs)
         raw = await request.read()
         headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP}
@@ -286,7 +308,7 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         except ValueError:
             body = None                                    # not JSON (e.g. compressed): as it is
         given = Request(request.method, path_qs.split("?", 1)[0], label, dict(request.headers), body, limit,
-                        upstream=upstream, process=sender(request), run=run)
+                        upstream=upstream, process=sender(request), run=run, config=config)
         try:
             new = await _call(hook, given)
         except Exception as exc:  # noqa: BLE001 - a failing hook never blocks the call

@@ -74,6 +74,12 @@ dashboard's Files view: once an answer is back whole, before Claude Code has its
 the files its calls name are looked at; once their results come in, with the session's next call,
 the files are looked at again, and the changes the operating system reported under the session's
 directory taken -- in the background, the call not held up.
+
+Its record (ag/integrations/tools/ag_orchestrator/session_files.py). From each call of a session on, Claude Code's
+own record of it (<its config folder>/projects/<dir>/<session>.jsonl; the folder as the launcher put it in the URL,
+`/c/`) is followed as it is written, and what it says that no call carries -- a message typed while it works, a
+question answered or dismissed in its terminal, Esc, a call given up on, a background task's end -- recorded as events
+of the session (harness_kit.claude's Record).
 """
 
 import copy
@@ -164,6 +170,8 @@ class ClaudeContextManager(ProxyHook):
     async def __call__(self, request) -> Optional[dict]:
         body, since = request.body, time.time()
         call = self.harness.call(request.method, request.path, request.headers, body)
+        if call is not None and call.session:              # its record of the session, followed (session_files.py)
+            self.following(request, *self.where(request, call.session), call)
         if call is None or not call.detail.get("model") or call.kind == CallKind.SUBAGENT:
             if call is not None and call.session:         # a call of its own ag takes no part in: recorded, as it is
                 self.called(*self.where(request, call.session), call)

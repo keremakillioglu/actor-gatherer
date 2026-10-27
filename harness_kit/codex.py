@@ -17,11 +17,15 @@ Codex item types are defined in codex-rs/protocol/src/models.rs (`ResponseItem`)
 fragments in core/src/context/contextual_user_message.rs.
 """
 
+import glob
 import json
+import os
 import re
-from typing import List, Optional, Tuple
+import time
+from typing import Dict, List, Optional, Tuple
 
-from .base import Action, Call, CallKind, Harness, Kind, Part, ToolCall, ToolResult, output_of
+from .base import (Action, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, ToolCall, ToolResult, output_of,
+                   seconds)
 
 # Codex item type -> Kind. None = a message: its role decides (ROLES). An item type not listed here is OTHER.
 ITEM_KINDS = {
@@ -387,6 +391,12 @@ class Codex(Harness):
         return Kind.ASK_REPLY, "\n".join(f"{str(r.get('question') or '').strip()}{' → ' if r.get('question') else ''}"
                                           f"{str(r.get('answer') or '').strip()}" for r in got) or text
 
+    def record_path(self, session: str, cwd: Optional[str] = None, config: Optional[str] = None) -> Optional[str]:
+        return record_path(session, config)
+
+    def follower(self, path: str) -> Follower:
+        return Rollout(path)
+
     def owns(self, payload) -> bool:
         if not isinstance(payload, dict):
             return False
@@ -452,3 +462,252 @@ class Codex(Harness):
             p.detail["thinking"] = "\n\n".join(s.get("text", "") for s in item.get("summary") or [] if isinstance(s, dict))
         return p
 
+
+
+# ---------------------------------------------------------------- its own record of a thread: its rollout file
+
+#: Codex's record of a thread, its rollout: <its home: CODEX_HOME, else ~/.codex>/sessions/<year>/<month>/<day>/
+#: rollout-<time>-<thread>.jsonl, a line {"timestamp", "type", "payload"} per thing as codex does it. What is read
+#: of it (0.164):
+#:
+#:     event_msg task_started       a turn begins: its id, its collaboration mode ("plan", "default")
+#:     event_msg task_complete      it ends; with `error` {message, codex_error_info} when it stopped on a model call
+#:                                  that failed, its tries spent
+#:     event_msg turn_aborted       it ends, interrupted (Esc) -- a question it was asking with it
+#:     event_msg item_completed     a Plan item: the plan a Plan-mode turn proposes (its <proposed_plan>), which its
+#:                                  terminal then asks whether to implement; a SubAgentActivity: a subagent started,
+#:                                  or ended; a CommandExecution: a command ended, its `process_id` that of one left
+#:                                  running
+#:     response_item function_call  request_user_input: questions asked in the terminal, the turn waiting on them;
+#:                                  request_user_input_async: asked while the turn goes on
+#:     response_item function_call_output  a question's answer, the moment it is picked: {"answers": {id: {"answers":
+#:                                  [label, "user_note: ..."]}}}, or "aborted by user after ..." (Esc)
+#:     response_item ..._output     a command left running: its output names its session ("session_id": N, or
+#:                                  "Process running with session ID N"), what write_stdin and wait go on with
+#:     response_item message        the user's: an async question's reply (REPLY), and the message the turn after a
+#:                                  proposed plan opens with ("Implement the plan.", or the reader's own)
+#:
+#: Not in it: codex's prompts themselves as they show -- a command's approval, the plan's "Implement this plan?" --
+#: nor the plan's dismissed (Esc), which leaves no line anywhere.
+ABORTED = "aborted by user"     # a question's output when it was dismissed (Esc), its turn interrupted
+#: A subagent's activity that says it ended (any other but "started" is not taken for an end).
+AGENT_ENDS = {"completed", "interrupted", "errored", "failed", "closed", "shutdown", "cancelled", "stopped", "exited"}
+#: A command codex left running, as its call's output names it (a code-mode script's, as JSON in its text).
+RUNS = re.compile(r'(?:\\?"session_id\\?":\s*|Process running with session ID )(\d+)')
+CMD = re.compile(r'\bcmd\\?"?\s*:\s*\\?"((?:[^"\\]|\\.)*?)\\?"')   # a call's command: {cmd: "..."}
+CALLS_KEPT = 20                 # the newest command calls kept, to name a command left running by its call
+REPORT_SECONDS = 60.0           # how long an ended subagent's report is looked for in its own rollout
+TAIL = 1 << 20                  # how much of a subagent's rollout's end is read for its report
+#: What a line must hold to be one `take` reads: anything else (most of it) is not parsed at all.
+WANTED = (b'"task_started"', b'"task_complete"', b'"turn_aborted"', b'"SubAgentActivity"', b'"type":"Plan"',
+          b'"name":"request_user_input', REPLY.encode(), b'"CommandExecution"', b'session_id', b'session ID')
+
+
+def codex_home(config: Optional[str] = None) -> str:
+    """Codex's home: `config`, else CODEX_HOME, else ~/.codex."""
+    return os.path.abspath(os.path.expanduser(config or os.environ.get("CODEX_HOME") or "~/.codex"))
+
+
+def record_path(thread: str, config: Optional[str] = None, sessions: Optional[str] = None) -> Optional[str]:
+    """Codex's rollout of `thread`, if it has one now (the newest, should there be more); `sessions`, the folder of
+    its sessions, when known (else under its home)."""
+    if not thread:
+        return None
+    root = sessions or os.path.join(codex_home(config), "sessions")
+    found = sorted(glob.glob(os.path.join(glob.escape(root), "*", "*", "*", f"rollout-*-{glob.escape(thread)}.jsonl")))
+    return found[-1] if found else None
+
+
+def last_said(path: Optional[str]) -> Optional[str]:
+    """What a thread answered last, as its rollout has it: its newest turn's last message, once that turn completed;
+    None while it runs, or if it ended otherwise or said nothing."""
+    try:
+        with open(path, "rb") as fh:
+            size = os.path.getsize(path)
+            fh.seek(max(0, size - TAIL))
+            lines = fh.read().split(b"\n")
+    except (OSError, TypeError):
+        return None
+    for line in reversed(lines):
+        if not any(k in line for k in (b'"task_complete"', b'"turn_aborted"', b'"task_started"')):
+            continue
+        try:
+            p = json.loads(line).get("payload") or {}
+        except (ValueError, AttributeError):
+            continue
+        if p.get("type") == "task_complete" and not p.get("error"):
+            said = p.get("last_agent_message")
+            return said if isinstance(said, str) and said.strip() else None
+        if p.get("type") in ("task_complete", "turn_aborted", "task_started"):
+            return None
+    return None
+
+
+def _status(error: Optional[dict]) -> Optional[int]:
+    """The HTTP status a turn's error names ({codex_error_info: {<kind>: {http_status_code}}}), if it names one."""
+    info = error.get("codex_error_info") if error else None
+    for v in info.values() if isinstance(info, dict) else []:
+        if isinstance(v, dict) and isinstance(v.get("http_status_code"), int):
+            return v["http_status_code"]
+    return None
+
+
+class Rollout(Follower):
+    """Codex's rollout of a thread, followed (its notes above): how each turn ended; what it asked in its terminal and
+    what that came to; the plan a turn proposed, and what the next turn opened with; the subagents and commands it
+    left running, and their ends."""
+
+    def __init__(self, path: Optional[str] = None):
+        self.sessions = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(path)))) if path else None
+        self.turn: Optional[dict] = None     # the newest turn: {id, mode, plan (its Plan item's text)}
+        self.asks: Dict[str, dict] = {}       # an open question's call id -> {name, questions, turn}
+        self.replied: Dict[str, dict] = {}    # an async question's call id -> {place: its reply}
+        self.offered: Optional[str] = None    # the turn whose proposed plan is asked about, until the next begins
+        self.after_plan: Optional[str] = None  # a proposed plan's turn, while the turn after it has not said what was chosen
+        self.agents: Dict[str, str] = {}      # a running subagent's thread -> its path
+        self.commands: Dict[str, str] = {}    # a command left running, by its process -> its command
+        self.calls: Dict[str, str] = {}       # the newest command calls: call id -> their command
+        self.reports: Dict[str, dict] = {}    # an ended subagent's thread -> {key, at, path, until}: its report, looked for
+
+    def wanted(self, line: bytes) -> bool:
+        if any(k in line for k in WANTED):
+            return True
+        if b'"exec' in line and (b'"custom_tool_call"' in line or b'"function_call"' in line):
+            return True                                            # a command's call: what names one left running
+        if b'"function_call_output"' in line:                      # the answer to a question asked in the terminal
+            return any(c.encode() in line for c, a in self.asks.items() if a["name"] == ASK)
+        return self.after_plan is not None and b'"role":"user"' in line   # what was chosen of a plan
+
+    def take(self, line: bytes, at: str) -> List[Fact]:
+        try:
+            o = json.loads(line)
+        except ValueError:
+            return []
+        p = o.get("payload") if isinstance(o, dict) else None
+        if not isinstance(p, dict):
+            return []
+        key, when, kind = str(at), seconds(o.get("timestamp")), p.get("type")
+        if o.get("type") == "event_msg":
+            if kind == "task_started":
+                return self._started(p, key, when)
+            if kind in ("task_complete", "turn_aborted") and self.turn is not None and p.get("turn_id") in (self.turn["id"], None):
+                return self._ended(p, kind, key, when)
+            if kind == "item_completed" and isinstance(p.get("item"), dict):
+                return self._item(p, p["item"], key, when)
+            return []
+        if o.get("type") != "response_item":
+            return []
+        out = []
+        if kind in ("function_call", "custom_tool_call") and str(p.get("name") or "").startswith("exec") and p.get("call_id"):
+            m = CMD.search(str(p.get("arguments") or p.get("input") or ""))
+            self.calls[p["call_id"]] = m.group(1).encode().decode("unicode_escape", "replace") if m else ""
+            while len(self.calls) > CALLS_KEPT:
+                self.calls.pop(next(iter(self.calls)))
+            return out
+        if kind in ("function_call_output", "custom_tool_call_output") and p.get("call_id") in self.calls:
+            text = json.dumps(p.get("output"), ensure_ascii=False)
+            if "exit_code" not in text and "Process exited with code" not in text:
+                for i, m in enumerate(RUNS.finditer(text)):
+                    if m.group(1) not in self.commands:
+                        self.commands[m.group(1)] = self.calls[p["call_id"]]
+                        out.append(Fact(Facts.TASK_STARTED, f"{key}.{i}", when, {"task": m.group(1), "kind": "command",
+                                                                                  "label": self.calls[p["call_id"]] or None}))
+        if kind == "function_call" and p.get("name") in (ASK, ASK_ASYNC) and p.get("call_id"):
+            try:
+                args = json.loads(p.get("arguments") or "{}")
+            except ValueError:
+                args = {}
+            questions = args.get("questions") if isinstance(args, dict) else None
+            questions = questions if isinstance(questions, list) else []
+            self.asks[p["call_id"]] = {"name": p["name"], "questions": questions, "turn": self.turn["id"] if self.turn else None}
+            out.append(Fact(Facts.ASKED, key, when, {"call": p["call_id"], "kind": "question", "questions": questions,
+                                                      "async": p["name"] == ASK_ASYNC, "turn": self.asks[p["call_id"]]["turn"]}))
+        elif kind == "function_call_output" and self.asks.get(p.get("call_id"), {}).get("name") == ASK:
+            got = p.get("output")
+            result = got if isinstance(got, str) else json.dumps(got, ensure_ascii=False)
+            del self.asks[p["call_id"]]
+            out.append(Fact(Facts.ASK_SETTLED, key, when, {"call": p["call_id"], "how": "dismissed" if result.startswith(ABORTED)
+                                                            else "answered", "result": result}))
+        elif kind == "message" and p.get("role") == "user":
+            text = "\n".join(c.get("text") or "" for c in p.get("content") or [] if isinstance(c, dict)).strip()
+            if text.startswith(REPLY):
+                out += self._reply(text, key, when)
+            elif self.after_plan is not None and text and not text.startswith("<"):   # not codex's own context
+                out.append(Fact(Facts.ASK_SETTLED, key, when, {"call": f"plan:{self.after_plan}", "how": "answered", "result": text}))
+                self.after_plan = None
+        return out
+
+    def due(self, now: float) -> List[Fact]:
+        """An ended subagent's report, once its own rollout has it (or given up on after REPORT_SECONDS)."""
+        out = []
+        for thread, r in list(self.reports.items()):
+            said = last_said(record_path(thread, sessions=self.sessions))
+            if said is not None:
+                out.append(Fact(Facts.TASK_ENDED, r["key"], r["at"], {"task": thread, "kind": "agent", "path": r["path"], "report": said}))
+            if said is not None or now > r["until"]:
+                del self.reports[thread]
+        return out
+
+    def _started(self, p: dict, key: str, when: Optional[float]) -> List[Fact]:
+        out = []
+        if self.offered is not None:                     # the turn after a proposed plan: the offer is over
+            out.append(Fact(Facts.ASK_SETTLED, key, when, {"call": f"plan:{self.offered}", "how": "answered", "result": None}))
+            self.after_plan, self.offered = self.offered, None
+        self.turn = {"id": p.get("turn_id"), "mode": p.get("collaboration_mode_kind"), "plan": None}
+        return out
+
+    def _ended(self, p: dict, kind: str, key: str, when: Optional[float]) -> List[Fact]:
+        turn = self.turn["id"]
+        error = p.get("error") if isinstance(p.get("error"), dict) else None
+        how = "interrupted" if kind == "turn_aborted" else "error" if error else "over"
+        out = []
+        for call, a in list(self.asks.items()):          # what it asked in the turn: no longer to be answered
+            if a["turn"] == turn:
+                del self.asks[call]
+                out.append(Fact(Facts.ASK_SETTLED, f"{key}.{call}", when, {"call": call, "how": "dismissed", "result": None}))
+        out.append(Fact(Facts.TURN_STOPPED, key, when, {"how": how, "turn": turn, "status": _status(error),
+                                                         "error": str(error.get("message") or "") or None if error else None}))
+        if how == "over" and self.turn["plan"] is not None:
+            self.offered = turn
+            out.append(Fact(Facts.ASKED, f"{key}.plan", when, {"call": f"plan:{turn}", "kind": "plan",
+                                                                "plan": self.turn["plan"], "async": False, "turn": turn}))
+        return out
+
+    def _item(self, p: dict, item: dict, key: str, when: Optional[float]) -> List[Fact]:
+        if item.get("type") == "Plan" and self.turn is not None and p.get("turn_id") == self.turn["id"]:
+            self.turn["plan"] = str(item.get("text") or "")
+        elif item.get("type") == "CommandExecution" and str(item.get("process_id") or "") in self.commands:
+            if item.get("status") != "in_progress":
+                process = str(item["process_id"])
+                del self.commands[process]
+                return [Fact(Facts.TASK_ENDED, key, when, {"task": process, "kind": "command"})]
+        elif item.get("type") == "SubAgentActivity" and item.get("agent_thread_id"):
+            thread, path = item["agent_thread_id"], item.get("agent_path")
+            if item.get("kind") == "started":
+                self.agents[thread] = path or self.agents.get(thread)
+                return [Fact(Facts.TASK_STARTED, key, when, {"task": thread, "kind": "agent", "label": self.agents[thread]})]
+            if item.get("kind") in AGENT_ENDS:
+                path = self.agents.pop(thread, None) or path
+                said = last_said(record_path(thread, sessions=self.sessions))
+                if said is None:
+                    self.reports[thread] = {"key": f"{key}.report", "at": when, "path": path, "until": time.time() + REPORT_SECONDS}
+                return [Fact(Facts.TASK_ENDED, key, when, {"task": thread, "kind": "agent", "path": path, "report": said})]
+        return []
+
+    def _reply(self, text: str, key: str, when: Optional[float]) -> List[Fact]:
+        """An async question's reply: [{answer, question, questionItemId: '["request_user_input_async", call, place]'}]
+        -- settled once every question it asked has its reply."""
+        out = []
+        for i, one in enumerate(replied(text) or []):
+            try:
+                _, call, place = json.loads(one.get("questionItemId") or "")
+            except (ValueError, TypeError, AttributeError):
+                continue
+            got = self.replied.setdefault(call, {})
+            got[place] = json.dumps(one, ensure_ascii=False, separators=(",", ":"))
+            ask = self.asks.get(call)
+            if ask is not None and len(got) >= len(ask["questions"]):
+                del self.asks[call]
+                out.append(Fact(Facts.ASK_SETTLED, f"{key}.{i}", when, {"call": call, "how": "answered",
+                                                                         "result": "\n".join(got[k] for k in sorted(got))}))
+        return out
