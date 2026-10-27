@@ -1179,17 +1179,20 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-working > .fl-mini { display: none; }
 .files .fl-working.fl-finished { display: none; }   /* short of height only */
 .files .fl-mini img { display: block; width: 1.3em; height: 1.3em; }
+.files .fl-talk > .fl-status { margin: 4px 6px 0 8px; }
 /* short of height: the actor at work on one line -- its avatar small, as tall as the words, "Working…", then the times --
-   in place of the two lines and the avatar under them */
+   in place of the two lines and the avatar under them (or the avatar done). Those put away, not display: none: laying the
+   Chat out again -- the message box growing as it is typed in, say -- Chrome tries the frame at no height and at its
+   least on the way, the query true there for that moment; display: none would restart their animations at every key,
+   the avatar done growing in again */
 @container talk (max-height: 420px) {
   .files .fl-working { display: flex; align-items: center; gap: 6px; }
   .files .fl-working > .fl-mini { display: inline-flex; flex: none; order: 0; color: var(--term-accent); }
   .files .fl-working > .now { order: 1; flex: none; }
   .files .fl-working > .fl-times { order: 2; flex: 0 1 auto; }
   .files .fl-working > .fl-times::before { content: "· "; }
-  .files .fl-status { display: none; }
-  .files .fl-working.fl-finished { display: flex; } .files .fl-talk > .fl-done { display: none; } }
-.files .fl-talk > .fl-status { margin: 4px 6px 0 8px; }
+  .files .fl-working.fl-finished { display: flex; }
+  .files .fl-talk > .fl-status, .files .fl-talk > .fl-done { content-visibility: hidden; height: 0; margin: 0; } }
 .files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
 .files .fl-status .spin { font-size: 1.4em; }
 .files .fl-status > .buddy { margin: 2px 0 0 4px; }
