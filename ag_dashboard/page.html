@@ -410,11 +410,12 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
 :is(.panes.split, :root.pane-mode .panes) .views button { padding: 3px 8px; }
 .pane-close { flex: none; border: 0; background: none; font-size: 18px; line-height: 1; padding: 5px 7px; color: var(--muted); }
 .pane-close:hover { color: var(--ink); background: var(--wash); }
-/* Where a pointer hovers (`head-hover`: not a phone's page), a pane's head is out of the way until it is wanted: over
-   the pane's top, all but its bottom edge above it -- a strip the pointer finds it by, a handle on it while the pointer
-   is over the pane -- shown whole while the pointer is on it (or the keyboard in it), and put away a moment after */
+/* Where a pointer hovers and the Editor is open above the panes (`head-hover`: not a phone's page), a pane's head is
+   out of the way until it is wanted: over the pane's top, all but its bottom edge above it -- a strip the pointer finds
+   it by, under the Editor's grip, a handle on it while the pointer is over the pane -- shown whole while the pointer is on it (or the keyboard
+   in it), and put away a moment after */
 :root.head-hover .pane { position: relative; overflow: hidden; }
-:root.head-hover .pane > .pane-top { position: absolute; top: 0; left: 0; right: 0; z-index: 6; transform: translateY(calc(-100% + 8px));
+:root.head-hover .pane > .pane-top { position: absolute; top: 0; left: 0; right: 0; z-index: 6; transform: translateY(calc(-100% + 12px));
   transition: transform .16s ease .3s, background-color .16s ease .3s, border-color .16s ease .3s, box-shadow .16s ease .3s; }
 :root.head-hover .pane > .pane-top:not(:hover, :has(:focus-visible)) { background: transparent; border-bottom-color: transparent; }
 :root.head-hover .pane > .pane-top > .pane-head { opacity: 0; pointer-events: none; transition: opacity .12s ease .3s; }
@@ -847,7 +848,7 @@ button:disabled { opacity: .5; cursor: default; }
   .ed-tree { width: 170px; } .ed-head { flex-wrap: nowrap; }
   .ed-person { width: 10px; height: 10px; padding: 0; font-size: 0; border-radius: 50%; background: var(--who); border: 0; flex: none; }
   .ed-changed { font-size: 0; } .ed-changed::before { margin-right: 0; } .ed-writer .nm { display: none; } }
-.ed-grip { position: absolute; left: 0; right: 0; bottom: -5px; height: 9px; cursor: row-resize; z-index: 4; touch-action: none; }
+.ed-grip { position: absolute; left: 0; right: 0; bottom: -5px; height: 9px; cursor: row-resize; z-index: 7; touch-action: none; }   /* over a head on hover's strip */
 .ed-grip:hover, .ed-grip.on { background: color-mix(in srgb, var(--s1) 35%, transparent); }
 .ed-close { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 6px; color: var(--muted); }
 .ed-close:hover { color: var(--ink); background: var(--wash); }
@@ -3484,9 +3485,11 @@ function layout() {
 // rule under it runs straight across the page: each says how tall it is by itself (`tops`: the name's, this
 // page's head's, each frame's), and all are given the tallest (--top-h). Not where the page is a phone's, its
 // panes one under the other. A frame tells the page around it, and is told. Where the heads are shown on hover
-// (`head-hover`, over their panes' tops), the row is the page's name's alone.
+// (`head-hover`, over their panes' tops: while the Editor is open above the panes, its room theirs), the row is the
+// page's name's alone.
 const tops = new Map(), NARROW = matchMedia("(max-width: 760px)"), HOVER = matchMedia("(hover: hover)");
-const headHover = () => HOVER.matches && (!!PANE || !NARROW.matches);
+const headHover = () => HOVER.matches && (!!PANE || !NARROW.matches)
+  && (PANE ? !!(window.parent.agEditorPanel && window.parent.agEditorPanel.shown()) : !!state.editor);
 function setHeadHover() {
   document.documentElement.classList.toggle("head-hover", headHover());
   const head = document.getElementById("pane-head");
@@ -3639,7 +3642,9 @@ function paneReady() {
     avatar: (pick) => setAvatarMode(pick, false),
     focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
     top: (h) => setTopRow(h),
+    editor: () => setHeadHover(),                    // the Editor opened or closed above the panes
   });
+  setHeadHover();
   PANE.ready(window, state.selected);
   watchTop(document.getElementById("pane-head"), "here");
 }
@@ -7677,11 +7682,14 @@ function setEditor(open, why = null) {
   state.editorClosedFor = open ? null : why;
   if (!open) edClose();
   try { localStorage.setItem(ED_SHOWN_KEY, open ? "1" : ""); } catch (e) { /* this page only */ }
+  setHeadHover();
+  for (const p of panes.others) p.call("editor", open);
   edMount();
   keepingPlace(renderMain);                          // its button in the header: pressed, or not
   drawn.main = mainSignature();
 }
 if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor, closedFor: () => state.editorClosedFor || null };
+setHeadHover();                                      // the Editor open from the last visit: the heads on hover
 // The Chat view's files and commands opened beside the chat (any pane's): they do not fit under the Editor, so it is
 // closed for them -- and opened again when they are folded, if it was they that closed it.
 function edMakeRoom(opening) {
