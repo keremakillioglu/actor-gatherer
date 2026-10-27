@@ -27,8 +27,8 @@ import textwrap
 import time
 from typing import Dict, List, Optional, Tuple
 
-from .base import (Action, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError, ToolCall,
-                   ToolResult, output_of, seconds)
+from .base import (Action, AnswerError, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
+                   ToolCall, ToolResult, one_line, output_of, picked, seconds)
 
 # ---------------------------------------------------------------- Claude Code's own text, in the user's name
 
@@ -207,6 +207,20 @@ TOOLS = {"Read": (Action.READ, "file_path"), "NotebookRead": (Action.READ, "note
 #: Its tools that wait for the user in its terminal before the turn goes on: a question, with options to pick
 #: from; a plan, to approve.
 ASKS = {"AskUserQuestion": "question", "ExitPlanMode": "plan"}
+#: Answering them in its terminal (`answer_keys`), its dialogs as 2.1.310 shows them. A QUESTION
+#: (AskUserQuestion), its options numbered as the call has them:
+#:
+#:     one option of a question       its number: picked, and on to the next question
+#:     the reader's own words         the number after the options' ("Type something."), the words, Enter
+#:     options of a multiSelect one   each one's number (ticked), then Tab: on to the next question
+#:     then, after several questions  "1": the review's "Submit answers" -- after a lone multiSelect one too;
+#:                                    a lone question of one option is answered by its key
+#:
+#: and it tells the model `"<question>"="<answer>"` for each, the options' labels joined by ", ". A PLAN
+#: (ExitPlanMode): its own choices, which the call says nothing of -- 1 "Yes, and use auto mode", 2 "Yes,
+#: manually approve edits", 3 "Tell Claude what to change" (the words, then Enter).
+PLAN_KEYS = {"auto": "1", "manual": "2", "change": "3"}
+PLAN_APPROVED = "User has approved your plan"         # its result, once a plan is approved
 #: Where Claude Code writes the plan it asks to have approved (ExitPlanMode's call carries none).
 PLAN_FILE = re.compile(r"/\.claude/plans/[^/\\]+\.md$")
 #: The kinds of the user's words, as a piece alone shows them (an image the user sent among them); and the model's turn.
@@ -689,6 +703,44 @@ class ClaudeCode(Harness):
         except OSError as exc:
             raise RenameError(f"Claude Code's record of the session could not be written: {exc}") from None
         return "named in its record"
+
+    def command(self, session: str, resume: bool = False, model: Optional[str] = None,
+                permission_mode: Optional[str] = None, fullscreen: bool = True) -> List[str]:
+        """Its own options: what it may do unasked, the model, and the session -- resumed, or started with its id."""
+        return [*(["--permission-mode", permission_mode] if permission_mode else []), *(["--model", model] if model else []),
+                *(["--resume", session] if resume else ["--session-id", session])]
+
+    def answer_keys(self, ask: dict, choice: dict) -> List[str]:
+        """Its dialogs' keys (PLAN_KEYS' notes)."""
+        if ask.get("kind") == "plan":
+            how = choice.get("plan")
+            if how not in PLAN_KEYS:
+                raise AnswerError("approve the plan (auto or manual) or say what to change")
+            return [PLAN_KEYS[how]] if how != "change" else [PLAN_KEYS[how], one_line(choice.get("text")), "\r"]
+        got = picked(ask, choice)
+        out: List[str] = []
+        for p in got:
+            if p["text"] is not None:
+                out += [str(p["count"] + 1), p["text"].strip(), "\r"]
+            elif p["multi"]:
+                out += [str(i + 1) for i in p["places"]] + ["\t"]
+            else:
+                out.append(str(p["places"][0] + 1))
+        if len(got) > 1 or got[0]["multi"]:
+            out.append("1")
+        return out
+
+    def answer_expected(self, ask: dict, choice: dict) -> List[str]:
+        if ask.get("kind") == "plan":
+            return [one_line(choice.get("text"))] if choice.get("plan") == "change" else [PLAN_APPROVED]
+        return [f'"{p["question"]}"="{p["text"].strip() if p["text"] is not None else ", ".join(p["labels"])}"'
+                for p in picked(ask, choice)]
+
+    def answer_summary(self, ask: dict, choice: dict) -> str:
+        if ask.get("kind") == "plan":
+            return {"auto": "Approved, with auto mode", "manual": "Approved, edits approved by hand"}.get(
+                choice.get("plan"), f"Change: {(choice.get('text') or '').strip()}")
+        return super().answer_summary(ask, choice)
 
     def owns(self, payload) -> bool:
         if not isinstance(payload, dict) or "info" in payload or "api" in payload:

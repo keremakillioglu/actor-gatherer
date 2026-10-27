@@ -98,6 +98,9 @@ from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
 from urllib.parse import urlsplit
 
+import harness_kit
+from harness_kit.codex import PERMISSIONS as CODEX_PERMISSIONS
+
 from . import answers, home
 
 try:                                    # a terminal needs a pseudo-terminal: Unix only
@@ -110,8 +113,6 @@ except ImportError:
     TERMINALS = False
 
 HARNESSES = ("claude", "codex")
-# codex's flags for each permission mode: what it has (else none: codex asks, in a terminal)
-CODEX_PERMISSIONS = {"auto": ["--approve-for-me"], "bypassPermissions": ["--dangerously-bypass-approvals-and-sandbox"]}
 PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "manual")
 CHAT_MODES = ("terminal", "headless")          # what a message opens for a session with no terminal (`chat_mode`)
 SHELL_ID = re.compile(r"shell:[0-9a-f]{12}")   # a shell's id (`shell`): never a channel's
@@ -437,33 +438,17 @@ MODELS_KEEP = 600                       # how long a harness's list of models is
 
 
 def models(harness: str) -> dict:
-    """The models a new session of `harness` can run on, as the harness says: {"models": [{slug, name,
-    description}], "default": the one its config names, if any}. Codex's from its catalog (`codex debug
-    models`, the ones it lists); none for Claude Code, which runs its own default."""
-    if harness != "codex":
+    """The models a new session of `harness` can run on, as the harness says (harness_kit's `models`): {"models":
+    [{slug, name, description}], "default": the one its config names, if any}. Codex's from its catalog; none for
+    Claude Code, which runs its own default. Kept MODELS_KEEP once a harness has listed some."""
+    h = harness_kit.get(harness)
+    if h is None:
         return {"models": [], "default": None}
     kept = _models.get(harness)
     if kept and time.time() - kept["at"] < MODELS_KEEP:
         return kept["value"]
-    found = []
-    try:
-        done = subprocess.run(["codex", "debug", "models"], env=agent_env(), capture_output=True, text=True, timeout=30,
-                              stdin=subprocess.DEVNULL)
-        listed = json.loads(done.stdout).get("models") if done.returncode == 0 else None
-    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
-        listed = None
-    for m in listed if isinstance(listed, list) else []:
-        if isinstance(m, dict) and m.get("slug") and m.get("visibility", "list") == "list":
-            found.append({"slug": m["slug"], "name": m.get("display_name") or m["slug"], "description": m.get("description") or ""})
-    default = None
-    try:
-        import tomllib
-        with open(os.path.join(os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex"), "config.toml"), "rb") as fh:
-            default = tomllib.load(fh).get("model")
-    except (OSError, ValueError, ImportError):
-        pass
-    value = {"models": found, "default": default}
-    if found:
+    value = h.models(agent_env())
+    if value.get("models"):
         _models[harness] = {"at": time.time(), "value": value}
     return value
 
@@ -1040,14 +1025,12 @@ class Sessions:
         sid = s["session_id"]
         resume = bool(s["turns"]) or _has_calls(s["gatherer"], sid)
         first = ["--", prompt] if prompt else []     # its first message: after `--`, never read as an option
-        if s["harness"] == "codex":                  # codex's own UI; its classic screen is inline, not alternate
-            argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], "codex",       # quiet: ag's notes not on its screen
-                    *(["-m", s["model"]] if s.get("model") else []), *CODEX_PERMISSIONS.get(s["permission_mode"], []),
-                    *([] if fullscreen else ["--no-alt-screen"]), *(["resume", sid] if resume else []), *first]
-        else:
-            argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"], "--permission-mode",
-                    s["permission_mode"], *(["--model", s["model"]] if s.get("model") else []),
-                    *(["--resume", sid] if resume else ["--session-id", sid]), *first]
+        h = harness_kit.get(s["harness"])               # its own options: the harness's (harness_kit's `command`)
+        if h is None:
+            raise SessionError(f"no rules for {s['harness']} to start it with")
+        argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"],     # quiet: ag's notes not on its screen
+                *h.command(sid, resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
+                           fullscreen=fullscreen), *first]
         env = {**{k: v for k, v in agent_env().items() if k not in OUTER_TERMINAL and not (fullscreen and k in CLASSIC)},
                "TERM": "xterm-256color", "COLORTERM": "truecolor", **({} if fullscreen else CLASSIC)}   # full screen even if the dashboard's own is classic
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)

@@ -168,6 +168,21 @@ class CodexTest(unittest.TestCase):
         self.assertEqual((turn.kind, turn.version), (CallKind.TURN, "0.164.0"))    # its terminal's User-Agent
 
 
+class RunTest(unittest.TestCase):
+    """Each harness started in a terminal (`command`), as the dashboard starts it."""
+
+    def test_claude_code_s_options(self):
+        self.assertEqual(CLAUDE.command("s1", permission_mode="auto", model="sonnet"),
+                         ["--permission-mode", "auto", "--model", "sonnet", "--session-id", "s1"])
+        self.assertEqual(CLAUDE.command("s1", resume=True, permission_mode="plan"), ["--permission-mode", "plan", "--resume", "s1"])
+        self.assertEqual(CLAUDE.models(), {"models": [], "default": None})                               # its own default
+
+    def test_codex_s_options(self):
+        self.assertEqual(CODEX.command("t1", permission_mode="auto", model="gpt-x", fullscreen=False),
+                         ["-m", "gpt-x", "--approve-for-me", "--no-alt-screen"])
+        self.assertEqual(CODEX.command("t1", resume=True, permission_mode="manual"), ["resume", "t1"])     # it asks
+
+
 class OwnerTest(unittest.TestCase):
     def test_a_stored_piece_s_harness_by_its_shape(self):
         self.assertIs(harness_kit.owner(user("hi")), CLAUDE)

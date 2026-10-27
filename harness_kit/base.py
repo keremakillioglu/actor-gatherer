@@ -167,6 +167,48 @@ class RenameError(ValueError):
     """A name the harness's own store could not be given (`Harness.rename`): why, in a few words."""
 
 
+class AnswerError(ValueError):
+    """A choice that does not answer what the harness asks (`Harness.answer_keys`): why, in a few words."""
+
+
+def picked(ask: dict, choice: dict) -> List[dict]:
+    """Each question of a question `ask` with what `choice` picked for it: {question, multi, count (its options),
+    places (the picked options', from 0), labels (theirs), text (the reader's own answer, or None)}. `choice`:
+    {"answers": [one per question: {"options": [places], "text": the reader's own words, or None}]}. Raises
+    AnswerError where it does not fit."""
+    questions = ask.get("questions") or []
+    answers = choice.get("answers")
+    if not questions or not isinstance(answers, list) or len(answers) != len(questions):
+        raise AnswerError(f"an answer for each of the {len(questions)} questions, please")
+    out = []
+    for q, a in zip(questions, answers):
+        a = a if isinstance(a, dict) else {}
+        labels = [o.get("label") or "" for o in q.get("options") or []]
+        places = a.get("options") or []
+        text = a.get("text") if isinstance(a.get("text"), str) and a["text"].strip() else None
+        if not all(isinstance(i, int) and 0 <= i < len(labels) for i in places) or len(set(places)) != len(places):
+            raise AnswerError(f"no such option for {q.get('question')!r}")
+        if text is not None and (q.get("multiSelect") or places):
+            raise AnswerError(f"your own answer to {q.get('question')!r} is the answer: no option with it")
+        if text is not None and ("\r" in text or "\n" in text or "\x1b" in text):
+            raise AnswerError("your own answer on one line, please")
+        if text is None and not places:
+            raise AnswerError(f"nothing picked for {q.get('question')!r}")
+        if not q.get("multiSelect") and len(places) > 1:
+            raise AnswerError(f"one option for {q.get('question')!r}")
+        out.append({"question": q.get("question") or "", "multi": bool(q.get("multiSelect")), "count": len(labels),
+                    "places": sorted(places), "labels": [labels[i] for i in sorted(places)], "text": text})
+    return out
+
+
+def one_line(text) -> str:
+    """The reader's own words for a plan, on one line."""
+    text = text if isinstance(text, str) else ""
+    if not text.strip() or any(c in text for c in "\r\n\x1b"):
+        raise AnswerError("what to change, on one line, please")
+    return text.strip()
+
+
 class Harness(ABC):
     """One harness's rules. Subclasses implement `items`, `read` and `owns`; `call` says what a request
     is (None by default: the harness's calls not known). `name` is how ag and the dashboard name it,
@@ -226,6 +268,36 @@ class Harness(ABC):
         run, read it: `record`, the session's own file, for a harness that keeps the name there; `env`, the
         environment the harness runs in. What was done, in a few words. Raises RenameError where it cannot."""
         raise RenameError(f"{self.label or self.name or 'this harness'} keeps no name ag can set")
+
+    # ---- run in a terminal: started, and what it asks there answered
+
+    def command(self, session: str, resume: bool = False, model: Optional[str] = None,
+                permission_mode: Optional[str] = None, fullscreen: bool = True) -> List[str]:
+        """Its own arguments for `session` run in a terminal, after its name on ag's command line (`ag ... <name>`):
+        `resume`, a session it has had before; `model`, None its own default; `permission_mode`, what it may do
+        unasked ("auto", "acceptEdits", "plan", "bypassPermissions", as Claude Code names them); `fullscreen`, its
+        full-screen interface where it has another. The message it starts with goes after them, after `--`."""
+        raise NotImplementedError(f"{self.label or self.name or 'this harness'} is not run in a terminal here")
+
+    def models(self, env: Optional[Dict[str, str]] = None) -> dict:
+        """The models a new session can run on, as the harness lists them: {"models": [{slug, name, description}],
+        "default": the one its config names, if any}. None listed by default: it runs its own default."""
+        return {"models": [], "default": None}
+
+    def answer_keys(self, ask: dict, choice: dict) -> List[str]:
+        """The keys that answer `ask` -- what it asks in its terminal ({kind: "question", questions} or {kind:
+        "plan"}, as an `asked` event has it) -- with `choice` (`picked`'s; a plan's {"plan": how, "text"}), each typed
+        on its own into the dialog as it first shows. Raises AnswerError where the choice does not fit."""
+        raise AnswerError(f"{self.label or self.name or 'this harness'} can't be answered from here")
+
+    def answer_expected(self, ask: dict, choice: dict) -> List[str]:
+        """What the harness records as the answer once it has `choice`: each of these strings, somewhere in it."""
+        return []
+
+    def answer_summary(self, ask: dict, choice: dict) -> str:
+        """The answer in a line: "Which color? → Blue · Which pets? → Cat, Fish"."""
+        return " · ".join(f"{p['question']} → {p['text'].strip() if p['text'] is not None else ', '.join(p['labels'])}"
+                          for p in picked(ask, choice))
 
     # ---- its own record of a session
 
