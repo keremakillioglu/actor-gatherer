@@ -2,7 +2,8 @@
 context manager's home (data.py), read-only. Standard library only.
 
     GET /                                 the page
-    GET /api/home                         data.home(), each actor with its avatar (avatars.py's `assign`)
+    GET /api/home                         data.home(), each actor with its avatar (avatars.py's `assign`), and the
+                                          shells open (sessions.py's `shells`)
     GET /avatars/<kind>/<name>.svg        an avatar's picture (ag_dashboard/avatars/); ?bare=1: without its circle
     GET /api/agent?gatherer=G&channel=C   data.agent(G, C)
     GET /api/read?gatherer=G&read_id=N    data.read(G, N)
@@ -18,15 +19,15 @@ context manager's home (data.py), read-only. Standard library only.
     GET /api/extracts?gatherer=G                           history.extracts(G): what the model made of the history
     GET /api/stream[?gatherer=G&channel=C][&also=[[G2, C2], ...]]   server-sent events, until the page goes:
         `home` (data.home()) and, with a channel, `agent` (data.agent(G, C)) at once, then again
-        each time they change -- woken by ag's notifications or the fallback check (live.py), or by
-        what the user writes to a session it shows while it works (queued.py) --
-        and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle).
+        each time they change -- woken by ag's notifications or the fallback check (live.py) -- what the
+        harness's own record of a session says (the user writing to it as it works, a question answered in its
+        terminal, Esc) among them, as ag's hook records it -- and every KEEPALIVE seconds a comment, or `home` if the time alone changed it (Running/Idle).
         `also` (JSON): the page's other actors, its other panes, each sent the same way as `actor`
         {gatherer, channel, agent}: one stream for all a page shows, as a browser keeps few open
     GET /api/sessions                     the sessions started from the page (sessions.py)
     GET /api/models?harness=H             the models a new session of H can run on (sessions.py's `models`)
-    GET /api/terminal?session_id=S        server-sent events, until the page goes: what the session's
-        terminal prints, `out` {data (base64), at (where it ends), reset (all that is kept: start over --
+    GET /api/terminal?session_id=S        server-sent events, until the page goes: what the session's (or the
+        shell's: S its id) terminal prints, `out` {data (base64), at (where it ends), reset (all that is kept: start over --
         a full screen then drawn all again, sessions.py's `redraw`)}, then `exit` {code} when its process
         ends; `none` when it has no terminal
     GET /api/views                        the reader's own chat views: <home>/dashboard/views/*.js, by name
@@ -50,6 +51,9 @@ context manager's home (data.py), read-only. Standard library only.
                                           answered with `choice` (answers.py): its keys typed there -> the answer
     POST /api/terminal/input {session_id, data}       what was typed in it
     POST /api/terminal/resize {session_id, cols, rows}  its new size
+    POST /api/shells {gatherer, cwd, cols?, rows?}  a shell opened in `cwd`, listed under the gatherer (sessions.py's
+                                          `shell`) -> the shell, its id the session_id its terminal is reached by
+    POST /api/shells/close {id}           the shell's terminal closed, as a window is
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
     POST /api/saved {gatherer, channel, saved}  the actor saved for later, or no longer (saved.py) -> every one saved
     POST /api/name {gatherer, channel, name, harness?, cwd?}  the reader's name for the actor ("": none), a `name`
@@ -72,7 +76,7 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/settings/file {version, text}   config.toml as the reader edited it -> the settings
 
 The POSTs are the only writes, and only to the dashboard's own tables and records, the agents it
-runs, the gatherers `ag new` makes, the builds and model calls `ag home build` and `ag home complete`
+runs (and the shells it opens), the gatherers `ag new` makes, the builds and model calls `ag home build` and `ag home complete`
 start, its own events `ag home insert` puts in (an actor's name), the harness's own store of a name
 (naming.py), the files a History extract is saved as (where Claude Code reads them, once the reader has
 seen them), and ag's config.toml -- besides the avatar the home gives an actor it has not seen before
@@ -98,7 +102,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import harness_kit
 
-from . import avatars, data, files, hiding, history, home, live, monitor, naming, queued, saved, seen, sessions, settings
+from . import avatars, data, files, hiding, history, home, live, monitor, naming, saved, seen, sessions, settings
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -155,14 +159,16 @@ def _signature(value) -> str:
 def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
     def home_view() -> dict:
         """The home as the page gets it: with the sessions' state, and what a new session starts from -- the
-        harnesses it can run on here (sessions.py's `available`). A name held for a session's terminal is typed
-        there once its turn is over (`rename_due`)."""
+        harnesses it can run on here (sessions.py's `available`); the shells open, and the user's home directory,
+        which the page shows their directories under as ~. A name held for a session's terminal is typed there once
+        its turn is over (`rename_due`)."""
         home = data.home(started.list())
         if started.renames:
             started.rename_due(a["channel"] for g in home["gatherers"] for a in g["agents"]
                                if a.get("turn_over") and a.get("status") not in (data.ASKING, data.RUNNING))
         return {**avatars.assign(home), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
-                "terminals": sessions.TERMINALS, "harnesses": sessions.available()}
+                "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "shells": started.shells(),
+                "home_dir": os.path.expanduser("~")}
 
     def codex_dialog(sid: str) -> Optional[dict]:
         """What a codex session's terminal -- the dashboard's -- shows asking the user now, where a message typed
@@ -440,6 +446,12 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                 if url.path == "/api/terminal/resize":
                     started.resize(str(body.get("session_id") or ""), int(body.get("cols") or 0), int(body.get("rows") or 0))
                     return self.answer({})
+                if url.path == "/api/shells":
+                    return self.answer(started.shell(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
+                                                     int(body.get("cols") or 120), int(body.get("rows") or 32)))
+                if url.path == "/api/shells/close":
+                    started.close_shell(str(body.get("id") or ""))
+                    return self.answer({})
                 if url.path == "/api/hiding":
                     kept = hiding.choose(str(body.get("gatherer") or ""), str(body.get("choice") or ""))
                     hub.ring(None)                       # every open page's list
@@ -542,11 +554,10 @@ class Server(ThreadingHTTPServer):
         super().__init__(address, handler(self.calls, self.hub, self.sessions))
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
-        self.queued = queued.Watcher(self.hub) if live_updates else None   # what is written to a session as it works
         self.rest = saved.Rest(self.sessions, self.hub.shown)
 
     def server_close(self) -> None:
-        for part in (self.listener, self.fallback, self.queued, self.rest):
+        for part in (self.listener, self.fallback, self.rest):
             if part is not None:
                 part.close()
         super().server_close()

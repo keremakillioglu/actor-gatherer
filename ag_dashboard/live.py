@@ -8,12 +8,8 @@
     Fallback   every FALLBACK_SECONDS, the size and time of each gatherer's context.db and
                its -wal, and of the call log: rung on a change. It covers a writer that sends
                nothing (an older ag; Windows, which has no Unix datagram sockets) and a lost message;
-               and every RECORD_SECONDS, Claude Code's own record of each session waiting on the user, on
-               background work, or running (`watch_records`, data.py's): a question answered or dismissed
-               in its terminal, a background task stopped from its list, a turn interrupted, a model call
-               given up on, is written there and nowhere ag sees -- none of them makes a call -- rung on a
-               change; and each actor whose failed call would count as given up by now, with no word of it
-               (`wake_at`), rung once then
+               and every RECORD_SECONDS, each actor whose failed call would count as given up by now, with
+               no word of it (`wake_at`), rung once then
 
 A message only says that something changed; the stream reads what from the database. So a
 lost message delays an update and never makes one wrong. Standard library only; nothing of
@@ -30,7 +26,6 @@ from . import home
 
 FALLBACK_SECONDS = 5.0
 RECORD_SECONDS = 1.0
-_RECORDS: Dict[str, Tuple[str, str, object]] = {}   # Claude Code's records watched: path -> (gatherer, channel, as last read)
 _WAKES: Dict[Tuple[str, str], float] = {}           # (gatherer, channel) -> when to ring it
 _RECORDS_LOCK = threading.Lock()
 LISTENERS = "listeners"         # the folder in the home ag sends to
@@ -161,16 +156,6 @@ def _stat(path: str):
         return None
 
 
-def watch_records(found: Dict[str, Tuple[str, str, object]]) -> None:
-    """Claude Code's records of the sessions waiting on the user, on background work, or running, to watch from now
-    on in place of those before: {path: (gatherer, channel, its `_stat` when it was read)} -- a change since rings
-    the actor. One watched already keeps what it was last seen as."""
-    with _RECORDS_LOCK:
-        kept = {p: _RECORDS[p] for p in found if p in _RECORDS}
-        _RECORDS.clear()
-        _RECORDS.update({**found, **kept})
-
-
 def wake_at(found: Dict[Tuple[str, str], float]) -> None:
     """The actors to ring at a time of their own, from now on in place of those before: {(gatherer, channel): when}
     -- whose status changes then with nothing written (data.py's `given_up`)."""
@@ -212,17 +197,9 @@ class Fallback:
 
     def check_records(self) -> None:
         with _RECORDS_LOCK:
-            watched = dict(_RECORDS)
             due = [k for k, when in _WAKES.items() if when <= time.time()]
             for k in due:
                 del _WAKES[k]
-        for path, (gatherer, channel, seen) in watched.items():
-            now = _stat(path)
-            if now != seen:
-                with _RECORDS_LOCK:
-                    if path in _RECORDS:
-                        _RECORDS[path] = (gatherer, channel, now)
-                self.hub.ring(gatherer, channel)
         for gatherer, channel in due:
             self.hub.ring(gatherer, channel)
 

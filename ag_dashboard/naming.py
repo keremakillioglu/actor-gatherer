@@ -17,7 +17,7 @@ from typing import Optional
 
 import harness_kit
 
-from . import queued, sessions
+from . import sessions
 
 NAME_CHARS = 120                # the longest name kept, as data.py shows names
 BY = "user"                     # who gave it, as the `name` event says
@@ -58,5 +58,5 @@ def in_store(harness: Optional[str], channel: str, name: str, cwd: Optional[str]
     h = harness_kit.get(harness)
     if h is None:
         raise harness_kit.RenameError(f"no rules for {harness or 'its harness'}: named here only")
-    record = queued.record(channel, cwd) if h.name == "claude" else None
+    record = h.record_path(channel, cwd) if h.name == "claude" else None   # codex names its thread by its id alone
     return h.rename(channel, clean(name), record=record, env=sessions.agent_env())

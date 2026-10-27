@@ -7,7 +7,7 @@ import os
 import unittest
 
 from ag.integrations.harnesses.codex.setup import launch as codex
-from ag.integrations.harnesses.codex.setup.hook_servers import HookServers, _listening
+from ag.integrations.harnesses.codex.setup.hook_servers import HookServers, _listening, config_part
 from ag.cli.launch import LaunchError
 from cli_home import Home
 
@@ -143,9 +143,9 @@ class Plan(Home):
         launcher.servers.start = lambda *a, **k: type("Server", (), {"url": "http://127.0.0.1:4013"})()
         launcher.servers.running = lambda: []
         run = lambda dry: Run(["exec", "hi"], ["codex"], dict(os.environ), "demo", "/w", dry_run=dry)
-        url = 'model_providers.gemini.base_url="http://127.0.0.1:4013/h/demo{}/l/244800/v1"'
-        self.assertIn(url.format(f"/r/{os.getpid()}"), launcher.launch(run(False)).argv)   # codex's process, once exec'd
-        self.assertIn(url.format(""), launcher.launch(run(True)).argv)
+        url = 'model_providers.gemini.base_url="http://127.0.0.1:4013/h/demo{}' + config_part(self.codex_home) + '/l/244800/v1"'
+        self.assertIn(url.format(f"/r/{os.getpid()}"), launcher.launch(run(False)).argv)   # codex's process, once exec'd;
+        self.assertIn(url.format(""), launcher.launch(run(True)).argv)                     # its home, where its rollouts are
 
     def test_codex_runs_without_its_background_server_where_it_can(self):
         self.codex_config(GEMINI)
@@ -170,7 +170,7 @@ class Plan(Home):
         before = self.read(path)
         code, out, err = self.run_ag("--dry-run", "--gatherer", "demo", "codex", "exec", "hi")
         self.assertEqual(code, 0, err)
-        self.assertIn('model_providers.gemini.base_url="http://127.0.0.1:4013/h/demo/l/244800/v1"', out)
+        self.assertIn(f'model_providers.gemini.base_url="http://127.0.0.1:4013/h/demo{config_part(self.codex_home)}/l/244800/v1"', out)
         self.assertIn("model_auto_compact_token_limit=1000000000000000", out)
         self.assertNotIn("AG_GATHERER", out)                                              # the URL carries it
         self.assertEqual(self.read(path), before)

@@ -82,6 +82,17 @@ class RouteOfTest(unittest.TestCase):
         self.assertEqual(run_of("/v1/x"), (None, "/v1/x"))
         self.assertEqual(run_of("/r/bad run/v1"), (None, "/r/bad run/v1"))
 
+    def test_the_url_s_config_folder(self):
+        server = __import__("ag.integrations.tools.hook_server.hook_server", fromlist=["config_of"]) if web else None
+        if server is None:
+            self.skipTest("the hook server needs aiohttp")
+        from ag.integrations.harnesses.codex.setup.hook_servers import config_part
+        part = config_part("/Users/me/my claude")
+        self.assertRegex(part, r"^/c/[A-Za-z0-9_-]+$")                              # a URL's part, no padding
+        self.assertEqual(server.config_of(part + "/l/100/v1/messages"), ("/Users/me/my claude", "/l/100/v1/messages"))
+        self.assertEqual(server.config_of("/v1/x"), (None, "/v1/x"))
+        self.assertEqual(server.config_of("/c/!!/v1"), (None, "/c/!!/v1"))       # not one: as it is
+
 
 @unittest.skipIf(web is None, "the hook server needs aiohttp")
 class HookServerTest(unittest.IsolatedAsyncioTestCase):
@@ -181,6 +192,13 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         await self.client.post("/h/demo/r/4242/l/1000/v1/chat", json={"messages": ["x"]})
         seen = self.hook.seen[-1]
         self.assertEqual((seen.label, seen.run, seen.limit, seen.path), ("demo", "4242", 1000, "/v1/chat"))
+        self.assertEqual(self.received[-1][1], "/v1/chat")
+
+    async def test_the_config_folder_is_given_to_the_hook_and_stripped(self):
+        from ag.integrations.harnesses.codex.setup.hook_servers import config_part
+        await self.client.post(f"/h/demo/r/4242{config_part('/tmp/codex home')}/l/1000/v1/chat", json={"messages": ["x"]})
+        seen = self.hook.seen[-1]
+        self.assertEqual((seen.run, seen.config, seen.limit, seen.path), ("4242", "/tmp/codex home", 1000, "/v1/chat"))
         self.assertEqual(self.received[-1][1], "/v1/chat")
 
     async def test_answered_gets_the_whole_answer_after_the_harness_has_it(self):

@@ -17,12 +17,20 @@ A harness module reads what the harness sends at three levels:
 A subclass mostly lists its rules (its tables of openings, whole texts and tools); the functions that
 apply them are its own where its format needs them. `checked_with` is the harness's version the rules
 were read from: a newer one may word things differently.
+
+Besides what it sends, a harness writes its own record of each session, a line per thing as it happens --
+much of it what no model call ever carries: a message typed while the agent works, a question answered or
+dismissed in its terminal, Esc, a call given up on. `record_path` finds it; a `Follower` reads it as it grows,
+each line it cares about giving `Fact`s (`follow`).
 """
 
 import json
+import os
+import zlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class Kind:
@@ -218,6 +226,119 @@ class Harness(ABC):
         run, read it: `record`, the session's own file, for a harness that keeps the name there; `env`, the
         environment the harness runs in. What was done, in a few words. Raises RenameError where it cannot."""
         raise RenameError(f"{self.label or self.name or 'this harness'} keeps no name ag can set")
+
+    # ---- its own record of a session
+
+    def record_path(self, session: str, cwd: Optional[str] = None, config: Optional[str] = None) -> Optional[str]:
+        """The file the harness keeps its record of `session` in, if there is one now: `cwd`, where the session runs;
+        `config`, the harness's own folder for this session (None: as the environment, or the harness, has it).
+        None by default: no record known."""
+        return None
+
+    def follower(self, path: str) -> Optional["Follower"]:
+        """A reader of the record at `path`, from its start (None by default: no record known)."""
+        return None
+
+
+class Facts:
+    """What a harness's record says happened, besides what its model calls carry: each fact's type, the event it
+    becomes in the gatherer. Each fact's data:
+
+        message_queued     queued (its key), text (as the harness keeps it), words (as the user typed it): a message
+                           written while the agent works, held until it can be sent
+        message_sent       queued (the key of the message_queued it was; None: sent at once, between turns), text,
+                           words, how ("mid_turn": into the turn that ran; "next": as the next turn's first, once the
+                           turn ended; "prompt": at once, between turns), joins (part of the turn it was written in),
+                           written (when it was written)
+        message_withdrawn  queued: taken back before it was sent
+        asked              call (its tool call's id, or "plan:<turn>"), kind ("question" or "plan"), questions or
+                           plan, async (the turn goes on while it asks), turn: what the harness asks the user in its
+                           terminal, where no model call says so
+        ask_settled        call, how ("answered" or "dismissed"), result (what the harness recorded as its answer;
+                           None: none, or not known yet): it no longer waits on it
+        turn_stopped       how ("over", "interrupted": Esc; "error": it gave up on a model call), error, status (the
+                           error's HTTP status), turn
+        task_started       task, kind ("agent", "command"), label: a background task it went on without
+        task_ended         task, kind, report (what an agent answered, once known)
+    """
+    MESSAGE_QUEUED = "message_queued"
+    MESSAGE_SENT = "message_sent"
+    MESSAGE_WITHDRAWN = "message_withdrawn"
+    ASKED = "asked"
+    ASK_SETTLED = "ask_settled"
+    TURN_STOPPED = "turn_stopped"
+    TASK_STARTED = "task_started"
+    TASK_ENDED = "task_ended"
+    ALL = (MESSAGE_QUEUED, MESSAGE_SENT, MESSAGE_WITHDRAWN, ASKED, ASK_SETTLED, TURN_STOPPED, TASK_STARTED, TASK_ENDED)
+
+
+@dataclass
+class Fact:
+    """One thing a harness's record says happened: its `type` (of Facts), `key` -- what makes it the same fact when
+    the record is read again: the line that says it, by its place in the file and its bytes (`follow`) -- `at`, when it
+    happened as the record says (seconds since the epoch; None: not said), and `data`, as Facts has it."""
+    type: str
+    key: str
+    at: Optional[float]
+    data: Dict[str, Any] = field(default_factory=dict)
+
+
+class Follower:
+    """A harness's record of one session, read as it grows: `take` each line it `wanted`, in order -- what it keeps
+    between lines (a queue, the questions open) its own -- and `due`, what is known only once time has passed with
+    no line to say otherwise. A subclass gives `take`, and `wanted` where most lines are not worth parsing."""
+
+    def wanted(self, line: bytes) -> bool:
+        return True
+
+    def take(self, line: bytes, at: str) -> List[Fact]:
+        """The facts `line` says; `at` names the line (`follow`), the key of each fact it gives."""
+        return []
+
+    def due(self, now: float) -> List[Fact]:
+        """The facts that came due by `now` (time.time())."""
+        return []
+
+
+CHUNK = 1 << 22                 # a record is read this much at a time
+
+
+def follow(path: str, follower: Follower, offset: int = 0) -> Tuple[List[Fact], int]:
+    """(the facts of every whole line of `path` past `offset`, where the next read goes on from): a line still being
+    written is read with the next. A line longer than CHUNK is skipped (no line worth reading is that long). Each line
+    is named by its place in the file and a checksum of its bytes ("<offset>.<crc32>"): read again, the same line is
+    the same; a file written anew has other lines at the same places."""
+    facts: List[Fact] = []
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as fh:
+            fh.seek(offset)
+            while offset < size:
+                chunk = fh.read(min(CHUNK, size - offset))
+                end = chunk.rfind(b"\n") + 1
+                if not end:
+                    if len(chunk) < CHUNK:
+                        break                                   # a line still being written
+                    end = len(chunk)                            # a line longer than CHUNK: not one to read
+                at = offset
+                for line in chunk[:end].split(b"\n")[:-1]:
+                    if line.strip() and follower.wanted(line):
+                        facts += follower.take(line, f"{at}.{zlib.crc32(line):08x}")
+                    at += len(line) + 1
+                offset += end
+                fh.seek(offset)
+    except OSError:
+        pass
+    return facts, offset
+
+
+def seconds(stamp) -> Optional[float]:
+    """An ISO 8601 time as a record writes it ("2026-10-26T12:00:00.000Z"), in seconds since the epoch; None if not one."""
+    try:
+        got = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (got if got.tzinfo else got.replace(tzinfo=timezone.utc)).timestamp()
 
 
 def _said(reply: List[Part]) -> Optional[str]:

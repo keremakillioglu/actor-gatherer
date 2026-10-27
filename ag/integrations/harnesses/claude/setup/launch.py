@@ -50,7 +50,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 from ag.cli.launch import Launch, Launcher, LaunchError, Run
-from .hook_servers import HookServers
+from .hook_servers import HookServers, config_part
 
 SETUP = "ag.integrations.harnesses.claude.setup.setup"     # Claude Code's setup: the hook server with its hook
 DEFAULT_API = "https://api.anthropic.com"
@@ -72,8 +72,12 @@ def upstream_of(settings: Dict[str, Any], env: Dict[str, str]):
     return f"{parts.scheme}://{parts.netloc}", parts.path.rstrip("/")
 
 
-def base_url(server_url: str, gatherer: Optional[str], path: str, limit: Optional[int] = None) -> str:
-    return server_url + (f"/h/{gatherer}" if gatherer else "") + (f"/l/{limit}" if limit else "") + path
+def base_url(server_url: str, gatherer: Optional[str], path: str, limit: Optional[int] = None,
+             config: Optional[str] = None) -> str:
+    """The hook server's URL for Claude Code: its gatherer, its config folder when one is set (where the hook finds its
+    record of each session), its limit."""
+    return (server_url + (f"/h/{gatherer}" if gatherer else "") + (config_part(config) if config else "")
+            + (f"/l/{limit}" if limit else "") + path)
 
 
 def tokens(value: Any, thousands: bool = False) -> Optional[int]:
@@ -332,7 +336,8 @@ class ClaudeLauncher(Launcher):
         command = list(run.command)
         limit, how = harness_limit(args, run.env, claude_settings(run.env),
                                    lambda: probe(command, args, run.env))
-        url = base_url(server_url, run.gatherer, path, limit)
+        config = run.env.get("CLAUDE_CONFIG_DIR") or os.environ.get("CLAUDE_CONFIG_DIR")
+        url = base_url(server_url, run.gatherer, path, limit, os.path.abspath(os.path.expanduser(config)) if config else None)
         notes.append(f"ANTHROPIC_BASE_URL={url} -> {origin}{path}")
         notes.append(f"Claude Code's own limit: {limit} tokens, {how}; the context manager keeps under it")
         if options.get("system_messages"):

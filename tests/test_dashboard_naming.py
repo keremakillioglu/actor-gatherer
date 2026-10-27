@@ -20,6 +20,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import harness_kit  # noqa: E402
+from harness_kit.claude import ClaudeCode  # noqa: E402
 from ag.ag_harness.home.__main__ import main as home_main  # noqa: E402
 from ag_dashboard import data, naming, server, sessions  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
@@ -263,7 +264,7 @@ class EndpointTest(SessionsBase):
         record = os.path.join(self.tmp.name, "s1.jsonl")
         with open(record, "w") as fh:
             fh.write('{"type":"user"}\n')
-        with unittest.mock.patch.object(naming.queued, "record", lambda channel, cwd=None: record):
+        with unittest.mock.patch.object(ClaudeCode, "record_path", lambda self, session, cwd=None, config=None: record):
             code, got = self.post({"gatherer": "g", "channel": "s1", "name": " Night\n watch ", "harness": "claude", "cwd": self.work})
         self.assertEqual((code, got), (200, {"name": "Night watch", "store": "named in its record", "error": None, "terminal": False}))
         insert = self.held()[-1]
@@ -275,7 +276,7 @@ class EndpointTest(SessionsBase):
             self.assertIn('"customTitle":"Night watch"', fh.read())
 
     def test_a_harness_store_that_fails_still_keeps_the_name_here(self):
-        with unittest.mock.patch.object(naming.queued, "record", lambda channel, cwd=None: None):
+        with unittest.mock.patch.object(ClaudeCode, "record_path", lambda self, session, cwd=None, config=None: None):
             code, got = self.post({"gatherer": "g", "channel": "s1", "name": "x", "harness": "claude"})
         self.assertEqual((code, got["store"], got["error"]), (200, None, "Claude Code's record of the session was not found"))
         code, got = self.post({"gatherer": "g", "channel": "s1", "name": "x", "harness": "pi"})
@@ -286,7 +287,7 @@ class EndpointTest(SessionsBase):
     def test_a_session_in_the_dashboard_s_terminal_is_told_once_idle(self):
         sid = self.httpd.sessions.create("g", self.work)["session_id"]
         self.httpd.sessions.terminal(sid, 100, 30)
-        with unittest.mock.patch.object(naming.queued, "record", lambda channel, cwd=None: None):
+        with unittest.mock.patch.object(ClaudeCode, "record_path", lambda self, session, cwd=None, config=None: None):
             code, got = self.post({"gatherer": "g", "channel": sid, "name": "Keeper", "harness": "claude"})
         self.assertEqual((code, got["terminal"]), (200, True))
         json.load(urllib.request.urlopen(self.url + "/api/home", timeout=20))     # a page's home: idle, so it is typed
