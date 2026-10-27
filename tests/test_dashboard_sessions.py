@@ -14,6 +14,7 @@ import time
 import unittest
 import unittest.mock
 import urllib.error
+import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -727,6 +728,122 @@ class EndedTest(SessionsBase):
         self.assertEqual(ended, {"never": 0, "kept": 0, "open": 0})
 
 
+# A fake shell: says its size, where it runs and what its environment says of it; echoes what is typed; exits on Ctrl+D.
+FAKE_SHELL = textwrap.dedent("""
+    import os, signal, sys, tty
+    tty.setraw(0)
+    size = lambda: "%dx%d" % tuple(os.get_terminal_size(0))
+    signal.signal(signal.SIGWINCH, lambda *_: os.write(1, ("[resized %s]\\r\\n" % size()).encode()))
+    env = lambda k: os.environ.get(k, "-")
+    os.write(1, ("fake shell %s\\r\\n" % size()).encode())
+    for k in ("PWD", "TERM", "SHELL", "ANTHROPIC_BASE_URL", "CLAUDECODE", "TERM_PROGRAM", "AG_HOME"):
+        os.write(1, ("%s=%s\\r\\n" % (k, env(k))).encode())
+    os.write(1, ("cwd=%s\\r\\n" % os.getcwd()).encode())
+    while True:
+        try:
+            got = os.read(0, 1024)
+        except InterruptedError:
+            continue
+        if not got or got == b"\\x04":
+            sys.exit(0)
+        os.write(1, b"[got " + got + b"]\\r\\n")
+""")
+
+
+@unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
+class ShellTest(SessionsBase):
+    """A shell opened from a gatherer's row: the user's own, in a terminal of its own, no session."""
+
+    def setUp(self):
+        super().setUp()
+        self.fake = os.path.join(self.tmp.name, "fake_shell")
+        with open(self.fake, "w") as fh:
+            fh.write(f"#!{sys.executable}\n{FAKE_SHELL}")
+        os.chmod(self.fake, 0o755)
+        self.changed = []
+        self.s.close()
+        self.s = sessions.Sessions(on_change=lambda g, c: self.changed.append((g, c)))
+        self.shell_env = unittest.mock.patch.dict(os.environ, {"SHELL": self.fake, "CLAUDECODE": "1", "TERM_PROGRAM": "iTerm.app",
+                                                               "ANTHROPIC_BASE_URL": "http://127.0.0.1:4113/h/live/"})
+        self.shell_env.start()
+        self.addCleanup(self.shell_env.stop)
+
+    def screen(self, sid):
+        got = self.s.output(sid, -1)
+        return got[0].decode("utf-8", "replace") if got else ""
+
+    def opened(self, cols=100, rows=30):
+        sh = self.s.shell("g", self.work, cols, rows)
+        self.until(lambda: "cwd=" in self.screen(sh["id"]))
+        return sh
+
+    def test_it_runs_the_user_s_shell_in_its_directory_in_a_terminal_of_its_own(self):
+        sh = self.opened()
+        self.assertRegex(sh["id"], sessions.SHELL_ID)
+        self.assertEqual((sh["gatherer"], sh["cwd"]), ("g", os.path.abspath(self.work)))
+        self.assertEqual(self.s.shells(), [sh])
+        out = self.screen(sh["id"])
+        self.assertIn("fake shell 100x30", out)
+        said = dict(line.split("=", 1) for line in out.split("\r\n")[1:] if "=" in line)
+        self.assertEqual(os.path.realpath(said["cwd"]), os.path.realpath(self.work))   # macOS: /var is /private/var
+        self.assertEqual((said["PWD"], said["TERM"], said["SHELL"]), (sh["cwd"], "xterm-256color", self.fake))
+        # not inside the Claude Code session the dashboard may run in, nor its terminal; ag's home the dashboard's
+        self.assertEqual((said["ANTHROPIC_BASE_URL"], said["CLAUDECODE"], said["TERM_PROGRAM"]), ("-", "-", "-"))
+        self.assertEqual(said["AG_HOME"], dashboard_home.HOME)
+        self.assertEqual(self.s.list(), [])                                  # no session
+        self.assertEqual(self.changed, [("g", sh["id"])])                    # the gatherer's streams told
+
+    def test_what_is_typed_and_its_size_reach_it(self):
+        sid = self.opened()["id"]
+        self.s.type(sid, "ls\r")
+        self.until(lambda: "[got ls\r]" in self.screen(sid))
+        self.s.resize(sid, 90, 20)
+        self.until(lambda: "[resized 90x20]" in self.screen(sid))
+
+    def test_closed_it_is_hung_up_and_gone_from_the_list(self):
+        sid = self.opened()["id"]
+        self.s.close_shell(sid)
+        self.assertEqual(self.s.shells(), [])
+        self.assertIsNone(self.s.output(sid, -1))
+        self.assertEqual(self.changed, [("g", sid), ("g", sid)])
+        with self.assertRaises(sessions.SessionError):
+            self.s.close_shell(sid)
+
+    def test_one_that_exits_is_gone_from_the_list(self):
+        sid = self.opened()["id"]
+        self.s.type(sid, "\x04")
+        self.until(lambda: not self.s.shells())
+        self.assertEqual(self.changed[-1], ("g", sid))
+
+    def test_the_dashboard_s_end_closes_its_shells(self):
+        sid = self.opened()["id"]
+        pid = self.s.terms[sid].pid
+        self.s.close()
+        self.assertEqual(self.s.shells(), [])
+        with self.assertRaises(ChildProcessError):                          # reaped: no process left
+            os.waitpid(pid, os.WNOHANG)
+
+    def test_what_it_refuses(self):
+        for gatherer, cwd in (("g", os.path.join(self.work, "none")), ("a b", self.work), ("", self.work)):
+            with self.assertRaises(sessions.SessionError):
+                self.s.shell(gatherer, cwd)
+        with self.assertRaises(sessions.SessionError):
+            self.s.close_shell("shell:000000000000")
+        self.assertEqual(self.s.shells(), [])
+
+    def test_the_user_s_shell_is_one_that_can_be_run(self):
+        self.assertEqual(sessions.login_shell(), self.fake)
+        with unittest.mock.patch.dict(os.environ, {"SHELL": os.path.join(self.work, "none")}):
+            got = sessions.login_shell()                                     # the account's, else /bin/sh
+        self.assertTrue(os.path.isabs(got) and os.access(got, os.X_OK), got)
+
+    def test_a_real_shell_runs_as_a_login_shell(self):
+        with unittest.mock.patch.dict(os.environ, {"SHELL": "/bin/sh", "HOME": self.tmp.name}):   # no profile of the user's
+            sid = self.s.shell("g", self.work)["id"]
+        self.s.type(sid, 'echo "zero=$0 sum=$((6*7))"\r')
+        self.until(lambda: "zero=-sh sum=42" in self.screen(sid))
+
+
 class HomeTest(SessionsBase):
     def test_a_session_with_no_calls_yet_is_listed_in_its_new_gatherer(self):
         made = self.s.create("brand_new", self.work)
@@ -855,6 +972,41 @@ class EndpointTest(SessionsBase):
         self.assertEqual(self.post("/api/terminal/input", {"session_id": sid, "data": "x"})[0], 400)
         none = urllib.request.urlopen(self.url + f"/api/terminal?session_id={sid}", timeout=10).read().decode()
         self.assertIn("event: none", none)
+
+    @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
+    def test_a_shell_opened_typed_into_streamed_and_closed_from_the_page(self):
+        home = lambda: json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))   # noqa: E731
+        self.assertEqual((home()["shells"], home()["home_dir"]), ([], os.path.expanduser("~")))
+        with unittest.mock.patch.dict(os.environ, {"SHELL": "/bin/sh", "HOME": self.tmp.name}):
+            code, sh = self.post("/api/shells", {"gatherer": "g", "cwd": self.work, "cols": 80, "rows": 24})
+        self.assertEqual((code, sh["gatherer"]), (200, "g"))
+        self.assertEqual(home()["shells"], [sh])
+        self.assertEqual(home()["gatherers"], [])                            # listed under it, no actor of it
+        stream = urllib.request.urlopen(self.url + f"/api/terminal?session_id={urllib.parse.quote(sh['id'])}", timeout=10)
+        seen = b""
+
+        def until_seen(what):
+            nonlocal seen
+            while what not in seen:
+                line = stream.readline()
+                if line.startswith(b"data: "):
+                    seen += base64.b64decode(json.loads(line[6:])["data"])
+        self.assertEqual(self.post("/api/terminal/input", {"session_id": sh["id"], "data": "stty size\r"}), (200, {}))
+        until_seen(b"24 80")
+        self.assertEqual(self.post("/api/terminal/resize", {"session_id": sh["id"], "cols": 100, "rows": 30}), (200, {}))
+        self.post("/api/terminal/input", {"session_id": sh["id"], "data": "stty size\r"})
+        until_seen(b"30 100")
+        self.assertEqual(self.post("/api/shells/close", {"id": sh["id"]}), (200, {}))
+        events = []
+        while "exit" not in events:
+            line = stream.readline().decode()
+            if line.startswith("event: "):
+                events.append(line[7:].strip())
+        stream.close()
+        self.assertEqual(home()["shells"], [])
+        self.assertEqual(self.post("/api/shells/close", {"id": sh["id"]})[0], 400)
+        self.assertEqual(self.post("/api/shells", {"gatherer": "g", "cwd": os.path.join(self.work, "none")})[0], 400)
+        self.assertEqual(self.post("/api/shells", {"gatherer": "g", "cwd": self.work}, {"Origin": "https://evil.example"})[0], 403)
 
     def test_a_gatherer_made_from_the_page(self):
         self.assertEqual(self.post("/api/gatherers", {"name": "fresh"}), (200, {"name": "fresh"}))
