@@ -163,6 +163,41 @@ Not covered yet:
 - [ ] **A plugin poller holding something tied to the thread that made it** (a sqlite connection opened in its
   `__init__`) fails when another lane asks it.
 
+## Context sizes: ag's count and the provider's
+
+ag sizes every event and made item with its own tokenizer (tiktoken's o200k_base) when it stores it. After the call,
+the Claude hook asks the API's count_tokens (counting.py) and stores Claude's count in its place (`counted`). A
+read's size is the sum of what is stored at the time. The dashboard shows it beside the provider's count of the call.
+
+Not covered yet (found 2026-10-26, on a90fe776 and 85d66f98 in making_ag):
+
+- [ ] **Events older than a call's own are never counted.** `Counter.steps` counts at most STEPS_PER_CALL (25) new
+  steps a call, and `event_ids` matches the request's blocks only to the events that call sent ag (`out["events"]`:
+  the new ones and the ~20 stored before them). So "the rest after the next ones" never happens: anything a call
+  stores beyond 25 steps keeps its tiktoken size for good. On 85d66f98, 143 of the 175 tool calls (and as many
+  outputs) a resume stored were still uncounted hours later, ag about 94k under the provider. The store already
+  names a context's uncounted events (`uncounted`); they need matching to the request's blocks by their stored ids.
+- [ ] **What is not counted yet is ~35% low.** Claude makes 1.17-1.59 tokens per tiktoken token here, by kind
+  (tool calls and output ~1.5, ag's sections ~1.3). Each call's newest events are low until counted, and a
+  session's first call is low throughout: a90fe776's was 80.7k by ag's count, 100.7k by the provider's. A factor
+  per gatherer and harness, learned from its counted items (Claude's count over tiktoken's), would size the
+  uncounted ones.
+- [ ] **Section budgets are in tiktoken tokens** (layout.py's `every_earlier_request`, `related_tasks`, `clip`), so
+  by Claude's count every section is over its own: a90fe776's join build held "Every earlier request" to 40k at
+  27.1k (35.2k by Claude's count) and its related tasks to 15k at 15.5k (21.6k). The same factor would bring them in.
+- [ ] **The actor list and the monitor drop by the preamble while a call is out.** They show `real_tokens ??
+  sent_tokens`, and `_agents`' `sent_tokens` (data.py's `_sent`) adds up the read's items only, without the tools
+  and system prompt. Until the provider's count comes (1-4 s), an actor shows ~30k less, then jumps back: a busy one
+  flickers. The Context view has it right (`counted_tokens`: `_reads.sent_tokens`, the preamble in it); the list
+  and the monitor could show the same.
+- [ ] **A hook server keeps running the code it started with, and nothing shows it.** 85d66f98's (:4122) started
+  at 08:19, a minute before the checkout pulled #125 (ids from the stored history). Its resume at 12:50, with a
+  message taken back by Esc, still went through the in-memory Continuity, which stored the session's history again
+  (584 events, ~350k tokens; removed by hand, a backup kept). The hook server and ag's server could log, and give
+  the dashboard, the commit they run, and the dashboard could say when one runs older code than the checkout.
+- [ ] **Before its compaction, 85d66f98's ag count was ~12% over the provider's** (641k against 572k, build 75):
+  not explained yet. A guess to check: thinking blocks counted but no longer sent.
+
 ## One process per session, on macOS
 
 ag lets one process at a time run a session (`_open`, store/operations.py's `claim`): a second one -- another
