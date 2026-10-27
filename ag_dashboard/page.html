@@ -1332,7 +1332,7 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
   height: calc(64 / 82 * 100%); }
 .stage-box > svg.s-think:not(.retry) + .buddy { display: block; }
 .stage-box > .buddy.f-glow { z-index: -1; }
-.files .fl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ring); }
+.files .fl-side { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-right: 1px solid var(--ring); }
 /* the files and commands folded: a thin bar of their numbers, opened again by a click */
 .files .fl-grid.folded { grid-template-columns: 30px minmax(0, 1fr); }
 .files .fl-grid.folded.open { grid-template-columns: 30px minmax(0, 1fr) minmax(240px, 340px); }
@@ -1356,6 +1356,9 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-h .fold:hover { background: var(--wash); color: var(--ink); }
 .files .fl-sec { display: flex; flex-direction: column; min-height: 0; }
 .files .fl-sec.files-sec { flex: 3 1 0; } .files .fl-sec.cmds-sec { flex: 2 1 0; border-top: 1px solid var(--ring); }
+/* short of room (a short window, a pane under another): each keeps its heading, a few rows and its legend, nothing of it
+   over the next, and the files and commands scroll whole */
+.files .fl-sec:is(.files-sec, .cmds-sec) { min-height: 120px; overflow: hidden; }
 .files .fl-sec > .fl-h { flex: none; }
 .files .fl-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
 .files .fl-sec > .fl-legend { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--ring); }
@@ -5734,6 +5737,7 @@ function tmpSwitch(n) {
 const SIDE_KEY = "ag-dashboard-files-side-folded-2";   // -2: folded by default
 let sideFolded = (() => { try { return localStorage.getItem(SIDE_KEY) !== "0"; } catch (e) { return true; } })();
 function foldSide(fold, draw = true) {
+  if (fold !== sideFolded) edMakeRoom(!fold);
   sideFolded = fold;
   try { localStorage.setItem(SIDE_KEY, fold ? "1" : "0"); } catch (e) { /* this page only */ }
   if (fold && state.files && state.files.turn !== null) return setFilesTurn(null);   // folded: the latest turn, which its bar counts
@@ -7625,16 +7629,26 @@ function edHead() {
 // its file is closed too -- the others no longer see this page in it -- and opened again with it.
 state.editor = !PANE && !SNAPSHOT && (() => { try { return localStorage.getItem(ED_SHOWN_KEY) === "1"; } catch (e) { return false; } })();
 const edShown = () => PANE ? !!(window.parent.agEditorPanel && window.parent.agEditorPanel.shown()) : !!state.editor;
-function setEditor(open) {
-  if (PANE) { if (window.parent.agEditorPanel) window.parent.agEditorPanel.set(open); return; }
+// `why`: what closed it, when not the reader -- "side": the Chat view's files and commands, opened (edMakeRoom).
+function setEditor(open, why = null) {
+  if (PANE) { if (window.parent.agEditorPanel) window.parent.agEditorPanel.set(open, why); return; }
   state.editor = open;
+  state.editorClosedFor = open ? null : why;
   if (!open) edClose();
   try { localStorage.setItem(ED_SHOWN_KEY, open ? "1" : ""); } catch (e) { /* this page only */ }
   edMount();
   keepingPlace(renderMain);                          // its button in the header: pressed, or not
   drawn.main = mainSignature();
 }
-if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor };
+if (!PANE && !SNAPSHOT) window.agEditorPanel = { shown: () => !!state.editor, set: setEditor, closedFor: () => state.editorClosedFor || null };
+// The Chat view's files and commands opened beside the chat (any pane's): they do not fit under the Editor, so it is
+// closed for them -- and opened again when they are folded, if it was they that closed it.
+function edMakeRoom(opening) {
+  if (SNAPSHOT) return;
+  const closedFor = PANE ? window.parent.agEditorPanel && window.parent.agEditorPanel.closedFor() : state.editorClosedFor;
+  if (opening && edShown()) setEditor(false, "side");
+  else if (!opening && closedFor === "side") setEditor(true);
+}
 const edCloseBtn = () => el("button", { type: "button", class: "ed-close", title: "Close the editor", "aria-label": "Close the editor",
   onclick: () => setEditor(false) }, "×");
 // Shown or hidden as `state.editor` says, drawn the first time it is shown: called by each draw of the main view.
