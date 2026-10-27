@@ -7016,6 +7016,7 @@ function edTick() {
     const dirs = new Set([ed.root, ...ed.open, ...(ed.file ? [edDir(ed.file)] : [])]);
     Promise.all([...dirs].map((d) => edList(d, false))).then(() => { edTree(); edHead(); });
     edBar();
+    if (ed.s) edConflicts(ed.s);
   }, ED_TICK);
 }
 
@@ -7090,7 +7091,7 @@ function edView(s) {
     },
     provide: (f) => A.EditorView.decorations.from(f),
   });
-  s.conflicts = { set: setConflicts, sig: "" };
+  s.conflicts = { set: setConflicts, field: conflicts, sig: "" };
   ed.body.replaceChildren();
   s.view = new A.EditorView({
     parent: ed.body,
@@ -7130,21 +7131,29 @@ function edConflictWidget(A) {
     ignoreEvent() { return true; }
   };
 }
+// Drawn again when the conflicts or their places change, and whenever one's box is missing -- an edit can take it away
+// (one that deletes the line break after it) while leaving the conflict where it was. Called with each state, and with
+// each of the panel's ticks.
 function edConflicts(s) {
   const v = s.view, list = (s.state && s.state.conflicts) || [];
   if (!v || !s.conflicts) return;
   const sig = JSON.stringify(list.map((c) => [c.id, c.from, c.to, c.theirs]));
-  if (sig === s.conflicts.sig) return;
-  s.conflicts.sig = sig;
-  const A = s.A, doc = v.state.doc, Widget = edConflictWidget(A), out = [];
+  const shown = new Set();
+  v.state.field(s.conflicts.field).between(0, v.state.doc.length, (from, to, d) => { if (d.spec.cf) shown.add(d.spec.cf); });
+  if (sig === s.conflicts.sig && list.every((c) => shown.has(c.id))) return;
+  try { edDrawConflicts(s, list); s.conflicts.sig = sig; }
+  catch (err) { console.error("the conflicts were not drawn:", err); }   // drawn at the next state, or tick
+}
+function edDrawConflicts(s, list) {
+  const v = s.view, A = s.A, doc = v.state.doc, Widget = edConflictWidget(A), out = [];
   for (const c of list) {
     const from = Math.min(c.from, doc.length), to = Math.min(Math.max(c.to, from), doc.length);
     if (to > from) {
       for (let p = from; p < to; ) { const line = doc.lineAt(p); out.push(A.Decoration.line({ class: "ed-cf-mine" }).range(line.from)); p = line.to + 1; }
       const last = doc.lineAt(Math.max(from, to - 1));
-      out.push(A.Decoration.widget({ widget: new Widget(s, c), block: true, side: 1 }).range(last.to));
+      out.push(A.Decoration.widget({ widget: new Widget(s, c), block: true, side: 1, cf: c.id }).range(last.to));
     } else {
-      out.push(A.Decoration.widget({ widget: new Widget(s, c), block: true, side: -1 }).range(doc.lineAt(from).from));
+      out.push(A.Decoration.widget({ widget: new Widget(s, c), block: true, side: -1, cf: c.id }).range(doc.lineAt(from).from));
     }
   }
   v.dispatch({ effects: s.conflicts.set.of(A.Decoration.set(out, true)) });
@@ -7249,7 +7258,8 @@ function edClose() {
     const u = s.A.Y.mergeUpdates(s.out);
     sent = post("/api/edit/update", { path: s.path, root: s.root, conn: s.conn, update: edB64(u) });
   }
-  if (ed.auto && s.epoch && (s.out.length || (s.state && s.state.dirty && !s.state.missing)))   // and, auto-saved, saved
+  if (ed.auto && s.epoch && (s.out.length || (s.state && s.state.dirty && !s.state.missing))
+      && !((s.state && s.state.conflicts) || []).length)   // and, auto-saved, saved -- not over a conflict
     sent = sent.then(() => post("/api/edit/save", { path: s.path, root: s.root }));
   sent.catch(() => {});
   s.awareness.setLocalState(null);                   // its cursor gone from the others' at once
