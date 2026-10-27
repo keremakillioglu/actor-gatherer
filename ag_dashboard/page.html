@@ -2412,12 +2412,28 @@ async function refresh(userAction = false) {
 }
 // Draw what changed since the last draw (everything, for what the reader asked for).
 let lastKey = 0, heldDraw = null;
-document.addEventListener("input", (ev) => { if (ev.target && ev.target.id === "composer-text") { lastKey = performance.now(); fitBox(ev.target); } }, true);
+document.addEventListener("input", (ev) => {
+  if (ev.target && ev.target.id === "composer-text") { lastKey = performance.now(); fitBox(ev.target); keepDraft(ev.target.dataset.draft, ev.target.value); }
+}, true);
 // The message box as tall as what is typed in it: a line, up to its CSS's most (then scrolling).
 function fitBox(box) {
   if (!box) return;
   box.style.height = "auto";
   box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;
+}
+// What was typed in an actor's message box and not sent, by actor (key()), kept in this browser tab: its box, drawn
+// again once the reader comes back from another actor or view, or reloads, starts with it (ctx.input). Read and
+// written whole each time, as the panes' frames share it.
+const DRAFTS_KEY = "ag-dashboard-drafts", draftsHere = {};
+function drafts() {
+  try { const v = JSON.parse(sessionStorage.getItem(DRAFTS_KEY)); return v && typeof v === "object" ? v : {}; }
+  catch (e) { return draftsHere; }
+}
+function keepDraft(k, text) {
+  if (!k) return;
+  const d = drafts();
+  if (text) d[k] = text; else delete d[k];
+  try { sessionStorage.setItem(DRAFTS_KEY, JSON.stringify(d)); } catch (e) { /* this page only: draftsHere */ }
 }
 const TYPING_MS = 300;                               // an update that comes while the reader types waits this long after a key
 function render(userAction = false) {
@@ -2593,13 +2609,17 @@ function keepingPlace(draw) {
   const following = [...main.querySelectorAll("[data-follow]")].filter(atEnd).map((n) => n.dataset.keep);
   const pageY = window.scrollY;
   const box = document.getElementById("composer-text"), focused = box && document.activeElement === box;
-  const typed = box ? [box.value, box.selectionStart, box.selectionEnd] : null;
+  const typed = box ? [box.dataset.draft, box.value, box.selectionStart, box.selectionEnd] : null;
   // what keeps its own node across draws (a terminal, data-refocus) and had the focus: given it back
   const refocus = document.activeElement && document.activeElement.closest && document.activeElement.closest("[data-refocus]");
   draw();
   if (refocus && refocus.isConnected && refocus.agFocus) refocus.agFocus();
+  // the box drawn anew for the same actor: as it was, caret and all (another actor's starts with its own draft)
   const again = document.getElementById("composer-text");
-  if (again && typed && again !== box) { again.value = typed[0]; fitBox(again); if (focused) { again.focus(); again.setSelectionRange(typed[1], typed[2]); } }
+  if (again && typed && again !== box && again.dataset.draft === typed[0]) {
+    again.value = typed[1]; fitBox(again);
+    if (focused) { again.focus(); again.setSelectionRange(typed[2], typed[3]); }
+  }
   for (const id of open) { const d = document.getElementById(id); if (d) d.open = true; }
   for (const [k, top, left] of scrolled) {
     const n = main.querySelector(`[data-keep="${k}"]`);
@@ -4105,9 +4125,10 @@ function chatCard(info) {
   // error it gets are the tab's.
   const err = el("div", { class: "err", role: "alert", text: held || (s.status === "failed" && s.last_error ? s.last_error : "") });
   let sending = false;
+  const draft = key(...state.selected);              // what is typed for this actor and not sent (keepDraft)
   ctx.send = async (t) => {
     t = String(t ?? "").trim();
-    if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) { box.value = ""; fitBox(box); } return true; }
+    if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) { box.value = ""; fitBox(box); } keepDraft(draft, ""); return true; }
     if (!t || sending || held) return false;
     sending = true; err.textContent = "";
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
@@ -4120,6 +4141,7 @@ function chatCard(info) {
     const box = document.getElementById("composer-text"), was = box ? box.value : "";
     if (mine) sentHere.push(mine);
     if (box) { box.value = ""; fitBox(box); }
+    keepDraft(draft, "");
     if (mine) {
       keepingPlace(renderMain); talkToEnd();
       setTimeout(() => { if (sentHere.includes(mine)) keepingPlace(renderMain); }, UNSEEN_MS + 100);
@@ -4135,19 +4157,26 @@ function chatCard(info) {
       return true;
     } catch (e) {
       if (mine && sentHere.includes(mine)) sentHere.splice(sentHere.indexOf(mine), 1);
-      const again = document.getElementById("composer-text"); if (again && !again.value) { again.value = was; fitBox(again); }
+      // not sent: back as the actor's draft, unless something new was typed for it meanwhile
+      if (!drafts()[draft]) {
+        keepDraft(draft, was);
+        const again = document.getElementById("composer-text");
+        if (again && again.dataset.draft === draft) { again.value = was; fitBox(again); }
+      }
       keepingPlace(renderMain);
       err.textContent = e.message; return false;
     }
     finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = !!held; }
   };
   // The text box a composer is built around: Enter sends it, Shift+Enter starts a new line, and what is
-  // typed in it survives the tab being drawn again (keepingPlace finds it by its id). A line high, growing with
-  // the lines typed (fitBox).
+  // typed in it survives the tab being drawn again (keepingPlace finds it by its id), and the reader going to another
+  // actor or view and back (it starts with the actor's draft). A line high, growing with the lines typed (fitBox).
   ctx.input = (attrs = {}) => {
     const box = el("textarea", { rows: "1", placeholder: "Message the actor", "aria-label": "Message the actor", title: "Enter sends · Shift+Enter for a new line",
-      enterkeyhint: "send", ...attrs, id: "composer-text",
+      enterkeyhint: "send", ...attrs, id: "composer-text", "data-draft": draft,
       ...(held ? { disabled: "", placeholder: "Open in another process" } : {}) });
+    box.value = drafts()[draft] || "";
+    if (box.value) requestAnimationFrame(() => { if (box.isConnected) fitBox(box); });   // fitted once drawn into the page
     box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ctx.send(box.value); } });
     return box;
   };
