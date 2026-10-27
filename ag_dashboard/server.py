@@ -2,7 +2,8 @@
 context manager's home (data.py), read-only. Standard library only.
 
     GET /                                 the page
-    GET /api/home                         data.home(), each actor with its avatar (avatars.py's `assign`)
+    GET /api/home                         data.home(), each actor with its avatar (avatars.py's `assign`), and the
+                                          shells open (sessions.py's `shells`)
     GET /avatars/<kind>/<name>.svg        an avatar's picture (ag_dashboard/avatars/); ?bare=1: without its circle
     GET /api/agent?gatherer=G&channel=C   data.agent(G, C)
     GET /api/read?gatherer=G&read_id=N    data.read(G, N)
@@ -25,8 +26,8 @@ context manager's home (data.py), read-only. Standard library only.
         {gatherer, channel, agent}: one stream for all a page shows, as a browser keeps few open
     GET /api/sessions                     the sessions started from the page (sessions.py)
     GET /api/models?harness=H             the models a new session of H can run on (sessions.py's `models`)
-    GET /api/terminal?session_id=S        server-sent events, until the page goes: what the session's
-        terminal prints, `out` {data (base64), at (where it ends), reset (all that is kept: start over --
+    GET /api/terminal?session_id=S        server-sent events, until the page goes: what the session's (or the
+        shell's: S its id) terminal prints, `out` {data (base64), at (where it ends), reset (all that is kept: start over --
         a full screen then drawn all again, sessions.py's `redraw`)}, then `exit` {code} when its process
         ends; `none` when it has no terminal
     GET /api/views                        the reader's own chat views: <home>/dashboard/views/*.js, by name
@@ -50,6 +51,9 @@ context manager's home (data.py), read-only. Standard library only.
                                           answered with `choice` (answers.py): its keys typed there -> the answer
     POST /api/terminal/input {session_id, data}       what was typed in it
     POST /api/terminal/resize {session_id, cols, rows}  its new size
+    POST /api/shells {gatherer, cwd, cols?, rows?}  a shell opened in `cwd`, listed under the gatherer (sessions.py's
+                                          `shell`) -> the shell, its id the session_id its terminal is reached by
+    POST /api/shells/close {id}           the shell's terminal closed, as a window is
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
     POST /api/saved {gatherer, channel, saved}  the actor saved for later, or no longer (saved.py) -> every one saved
     POST /api/seen {seen: [[gatherer, channel, last], ...]}  those actors looked at, each with its `last`
@@ -67,7 +71,7 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/settings/file {version, text}   config.toml as the reader edited it -> the settings
 
 The POSTs are the only writes, and only to the dashboard's own tables and records, the agents it
-runs, the gatherers `ag new` makes, the builds and model calls `ag home build` and `ag home complete`
+runs (and the shells it opens), the gatherers `ag new` makes, the builds and model calls `ag home build` and `ag home complete`
 start, the files a History extract is saved as (where Claude Code reads them, once the reader has
 seen them), and ag's config.toml -- besides the avatar the home gives an actor it has not seen before
 (avatars.py), kept in the dashboard's own table:
@@ -147,9 +151,11 @@ def _signature(value) -> str:
 def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
     def home_view() -> dict:
         """The home as the page gets it: with the sessions' state, and what a new session starts from -- the
-        harnesses it can run on here (sessions.py's `available`)."""
+        harnesses it can run on here (sessions.py's `available`); the shells open, and the user's home directory,
+        which the page shows their directories under as ~."""
         return {**avatars.assign(data.home(started.list())), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
-                "terminals": sessions.TERMINALS, "harnesses": sessions.available()}
+                "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "shells": started.shells(),
+                "home_dir": os.path.expanduser("~")}
 
     def codex_dialog(sid: str) -> Optional[dict]:
         """What a codex session's terminal -- the dashboard's -- shows asking the user now, where a message typed
@@ -426,6 +432,12 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     return self.answer({})
                 if url.path == "/api/terminal/resize":
                     started.resize(str(body.get("session_id") or ""), int(body.get("cols") or 0), int(body.get("rows") or 0))
+                    return self.answer({})
+                if url.path == "/api/shells":
+                    return self.answer(started.shell(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
+                                                     int(body.get("cols") or 120), int(body.get("rows") or 32)))
+                if url.path == "/api/shells/close":
+                    started.close_shell(str(body.get("id") or ""))
                     return self.answer({})
                 if url.path == "/api/hiding":
                     kept = hiding.choose(str(body.get("gatherer") or ""), str(body.get("choice") or ""))
