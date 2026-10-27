@@ -709,10 +709,17 @@ class ClaudeCode(Harness):
         return "named in its record"
 
     def command(self, session: str, resume: bool = False, model: Optional[str] = None,
-                permission_mode: Optional[str] = None, fullscreen: bool = True) -> List[str]:
-        """Its own options: what it may do unasked, the model, and the session -- resumed, or started with its id."""
+                permission_mode: Optional[str] = None, fullscreen: bool = True,
+                instructions: Optional[str] = None) -> List[str]:
+        """Its own options: what it may do unasked, the model, its instructions, and the session -- resumed, or started
+        with its id."""
         return [*(["--permission-mode", permission_mode] if permission_mode else []), *(["--model", model] if model else []),
+                *(self.instruction_args(instructions) if instructions else []),
                 *(["--resume", session] if resume else ["--session-id", session])]
+
+    def instruction_args(self, text: str) -> List[str]:
+        """`--append-system-prompt`: after its own system prompt, on every call of the run (headless or not)."""
+        return ["--append-system-prompt", text]
 
     def answer_keys(self, ask: dict, choice: dict) -> List[str]:
         """Its dialogs' keys (PLAN_KEYS' notes)."""

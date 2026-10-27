@@ -36,6 +36,12 @@ Every context opens, after the harness's own set-up, with the GATHERER GUIDE
 parallel requests, notices, stream messages, left-out notes -- and where the full history
 is. On every read, with or without a build; one made item, the same while its text is.
 
+Not every channel is shown to the others. One whose latest `role` record (ROLE: the dashboard's, for a gatherer's
+gatherer agent) says `private` is seen by no other channel -- neither its requests, as parallel messages or in the
+index, nor its tasks, ranked into another's sections -- though it sees theirs (`unseen`). Nor is a message the
+actors send one another (`ag actors`, typed into the receiver's conversation as its user's), known by its opening
+(`unshared_openings`): it is the receiver's to act on, not a request of the user's (`shared`).
+
 A channel with no build of its own, in a gatherer where another channel has a ready one
 (`tables.joinable`), JOINS at its first user message: a `join` build ranks the other
 channels' tasks against its request and marks their requests as seen, and the read waits
@@ -93,6 +99,8 @@ CURRENT_REQUEST = "Current request"   # the running task a `limit` build starts 
 LEFT_OUT = "left_out"           # a step stubbed to keep the context within max_context_tokens
 GUIDE = "gatherer_guide"        # the guide every context opens with
 AGENT_STEP = ("agent_message", "tool_call", "agent_reasoning")   # what an agent step may start with
+ROLE = "role"                   # a channel's role, as the dashboard records it: {role, private} (`unseen`)
+OPENING_CHARS = 600             # how far into a message its opening is looked for, past a harness's wrapper (`shared`)
 
 # A tool call that could have WRITTEN a file it names. Reading one (cat, head, grep, wc, awk, a script
 # that only opens it for reading) does not make a change to it the agent's own: in parallel work the
@@ -552,10 +560,10 @@ class ProactiveContextManager(Policy):
     def parallel_requests(self, conn, types: TypeIds, channel_id, after_row: int) -> List[tuple]:
         """(made_id, item, tokens, its row id) for each user message stored in
         another channel after `after_row`, oldest first."""
-        out = []
+        out, unseen = [], self.unseen(conn, types)
         for r in conn.rows(after_row, types.of(*self.groups.user), differ=channel.of(channel_id)):
             other = channel_of(r)
-            if other is None or other == channel_id:
+            if other is None or other == channel_id or other in unseen or not self.shared(r):
                 continue
             text = self.config.parallel_message.format(text=event_text(r) or "", channel=other, db_path=conn.path,
                                                        channel_column=property_column(CHANNEL))
@@ -564,6 +572,25 @@ class ProactiveContextManager(Policy):
                                      source=f"request {r.row_id}")
             out.append((made_id, item, conn.made_items([made_id])[made_id][2], r.row_id))
         return out
+
+    def unseen(self, conn, types: TypeIds) -> set:
+        """The channels no other channel is shown: those whose latest ROLE record says `private`."""
+        private: Dict[str, bool] = {}
+        for r in conn.rows(0, types.of(ROLE)):
+            ch = channel_of(r)
+            if ch is not None:
+                private[ch] = bool(isinstance(r.payload, dict) and r.payload.get("private"))
+        return {ch for ch, hidden in private.items() if hidden}
+
+    def shared(self, r: Row) -> bool:
+        """Whether another channel's user message is shown to this one as its user's request: not a message the actors
+        sent each other, which opens a line with one of `unshared_openings` -- at its start, or past the wrapper its
+        harness put round it (a mid-turn note, a paste's tags)."""
+        openings = self.config.unshared_openings
+        if not openings:
+            return True
+        head = (event_text(r) or "")[:OPENING_CHARS]
+        return not any(line.lstrip().startswith(openings) for line in head.split("\n"))
 
     def interleave(self, tail, made_here: List[tuple], types: TypeIds) -> List[tuple]:
         """The tail's rows, as ("row", row_id, payload, tokens), and the
@@ -737,7 +764,10 @@ class ProactiveContextManager(Policy):
         ranked = [by_key[tuple(k)] for k in build["ranking"] if tuple(k) in by_key]
         ranked = [t for t in ranked if id(t) not in shown]
         mark = build["parallel_mark"]
-        others = [(c, e) for c, e in history.other_requests(conn, types, groups, tok, ch) if e.row_id <= mark]
+        unseen = self.unseen(conn, types)
+        others = [(c, e) for c, e in history.other_requests(conn, types, groups, tok, ch,
+                                                            keep=lambda r: channel_of(r) not in unseen and self.shared(r))
+                  if e.row_id <= mark]
         with_cleaned(conn, [e for _, e in others])
         sections = layout.build_sections(turns, tasks, ranked, earlier, others, turns_by_channel, ch, cfg, tok,
                                          conn.path, build["through_row"], mark, joined=joining)
@@ -935,9 +965,9 @@ class ProactiveContextManager(Policy):
             time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
 
     def other_tasks(self, conn, types: TypeIds, channel_id) -> Tuple[List, Dict]:
-        found, turns_by_channel = [], {}
+        found, turns_by_channel, unseen = [], {}, self.unseen(conn, types)
         for other in tables.channels_with_tasks(conn):
-            if other == channel_id or other is None:
+            if other == channel_id or other is None or other in unseen:
                 continue
             _, turns = history.split(history.rows(conn, types, self.groups, other), types, self.groups, self.tokenizer)
             with_cleaned(conn, [t.entries[0] for t in turns])

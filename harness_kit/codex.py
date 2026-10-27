@@ -481,10 +481,18 @@ class Codex(Harness):
     asks_recorded = True          # its asks, and their answers, are in its rollout (Rollout)
 
     def command(self, session: str, resume: bool = False, model: Optional[str] = None,
-                permission_mode: Optional[str] = None, fullscreen: bool = True) -> List[str]:
-        """Its own options (PERMISSIONS), its classic inline screen where not `fullscreen`, and `resume <thread>`."""
+                permission_mode: Optional[str] = None, fullscreen: bool = True,
+                instructions: Optional[str] = None) -> List[str]:
+        """Its own options (PERMISSIONS), its instructions, its classic inline screen where not `fullscreen`, and
+        `resume <thread>`."""
         return [*(["-m", model] if model else []), *PERMISSIONS.get(permission_mode or "", []),
+                *(self.instruction_args(instructions) if instructions else []),
                 *([] if fullscreen else ["--no-alt-screen"]), *(["resume", session] if resume else [])]
+
+    def instruction_args(self, text: str) -> List[str]:
+        """Its config's `developer_instructions`, set for the run (`-c`, whose value is TOML: a JSON string is one): a
+        developer message it sends after its own, on every call -- `codex` and `codex exec` alike, before `resume`."""
+        return ["-c", "developer_instructions=" + json.dumps(text)]
 
     def models(self, env: Optional[Dict[str, str]] = None) -> dict:
         """Its catalog (`codex debug models`, the ones it lists), and the model its config.toml names."""

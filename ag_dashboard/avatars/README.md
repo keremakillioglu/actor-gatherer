@@ -47,3 +47,9 @@ same always: the next actor given a picture says another, at random, every style
 line shows from the next update, or a reload of the page. With none, it says only that there are no messages yet.
 
 A dashboard running sees a new one at once. Removing one gives its actors another.
+
+`roles/` holds the pictures of actors with a role, which are never given out: every actor in the role has its role's
+picture (ag_dashboard/avatars.py's `ROLES`). A gatherer's gatherer agent, the actor that coordinates the others, is the
+manager, `roles/manager.svg` (drawn by assets/src/avatars/roles.py); what it says is under `manager` in hello.toml.
+A role's picture is drawn on a gold-edged hexagon, not a circle, so it is never taken for another actor's: its first
+shape is that badge, in a group `<g data-frame="1">`, which the dashboard takes away to show the character alone.

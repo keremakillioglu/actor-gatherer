@@ -55,6 +55,12 @@ context manager's home (data.py), read-only. Standard library only.
                                           a question there (`codex_dialog`)
     POST /api/send {gatherer, channel, text, ...}  the same to a Claude Code or codex session not started here,
                                           taken into the table first (sessions.py's `adopt`)
+    POST /api/coordinator {gatherer, cwd?, harness?}  the gatherer's gatherer agent, started (with no message yet) if it
+                                          has none (coordination.py) -> the session
+    POST /api/actors/<op> {actor, ...}    what an actor's `ag actors` asks (coordination.py; `actor`, its id): list {all?},
+                                          show {ref}, who {path}, send {ref, text}, new {text, cwd?, harness?, model?, like?,
+                                          name?}, when {ref, note?}, watches, unwatch {watch} -> what it answers; an
+                                          error's text for the command to print (400)
     POST /api/stop {session_id}           its agent, idle, ended -- or its terminal closed -> the session
     POST /api/terminal {session_id | gatherer, channel, cols, rows, fullscreen?}  the session opened in a
                                           terminal, Claude Code's own UI (sessions.py's `terminal`), in its
@@ -126,8 +132,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import harness_kit
 
-from . import (actions, avatars, data, editor, files, hiding, history, home, live, migrating, monitor, naming, saved, seen,
-               sessions, settings)
+from . import (actions, avatars, coordination, data, editor, files, hiding, history, home, live, migrating, monitor, naming,
+               saved, seen, sessions, settings)
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -182,7 +188,8 @@ def _signature(value) -> str:
     return json.dumps(value, sort_keys=True, default=str)
 
 
-def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: editor.Editors):
+def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: editor.Editors,
+            crew: coordination.Coordination):
     def home_view() -> dict:
         """The home as the page gets it: with the sessions' state, and what a new session starts from -- the
         harnesses it can run on here (sessions.py's `available`); the shells open, and the user's home directory,
@@ -505,6 +512,11 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                                                     int(body.get("rows") or 32), bool(body.get("fullscreen"))))
                 if url.path == "/api/stop":
                     return self.answer(started.stop(str(body.get("session_id") or "")))
+                if url.path == "/api/coordinator":
+                    return self.answer(crew.page_coordinator(str(body.get("gatherer") or ""), str(body.get("cwd") or "") or None,
+                                                             str(body.get("harness") or "") or None))
+                if url.path.startswith("/api/actors/"):
+                    return self.answer(actors_op(crew, url.path[len("/api/actors/"):], body))
                 if url.path == "/api/terminal":
                     sid = str(body.get("session_id") or "")
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
@@ -605,6 +617,30 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
     return Handler
 
 
+def actors_op(crew: coordination.Coordination, op: str, body: dict):
+    """What an actor's `ag actors <op>` asked (server.py's doc): the coordination's answer."""
+    s = lambda k: str(body.get(k) or "")              # noqa: E731
+    opt = lambda k: s(k) or None                      # noqa: E731
+    me = s("actor")
+    if op == "list":
+        return crew.list(me, bool(body.get("all")))
+    if op == "show":
+        return crew.show(me, s("ref"))
+    if op == "who":
+        return crew.who(me, s("path"))
+    if op == "send":
+        return crew.send(me, s("ref"), s("text"))
+    if op == "new":
+        return crew.new(me, s("text"), opt("cwd"), opt("harness"), opt("model"), opt("like"), opt("name"))
+    if op == "when":
+        return crew.when(me, s("ref"), s("note"))
+    if op == "watches":
+        return crew.watches(me)
+    if op == "unwatch":
+        return crew.unwatch(me, body.get("watch"))
+    raise coordination.CoordinationError(f"no `ag actors {op}`: one of list, show, who, send, new, when, watches, unwatch")
+
+
 MAX_BODY = 1_000_000        # the largest request body taken: a message, not a file
 MAX_ALSO = 8                # the most other actors one stream follows (the page shows at most 4 panes)
 
@@ -647,20 +683,28 @@ class Server(ThreadingHTTPServer):
         self.hub.on_llm = self.calls.changed
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         self.editors = editor.Editors()                                # the files open in the Editor panel
-        super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors))
+        self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates)   # actors' `ag actors`
+        super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew))
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
         self.migrating = migrating.start(self.hub.ring) if live_updates else None   # an older gatherer's tables, once
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
         self.rest = saved.Rest(self.sessions, self.hub.shown)
+        self.address_file = None
+        if live_updates:                     # where actors' `ag actors` reach it: its own, told; any other, by the file
+            host = self.server_address[0]
+            sessions.DASHBOARD = f"http://{'127.0.0.1' if host in ('', '0.0.0.0', '::') else host}:{self.server_address[1]}"
+            self.address_file = home.write_address(sessions.DASHBOARD)
 
     def server_close(self) -> None:
-        for part in (self.listener, self.fallback, self.rest, self.editors):
+        for part in (self.listener, self.fallback, self.rest, self.editors, self.crew):
             if part is not None:
                 part.close()
         if self.keeps_actions:
             actions.ENABLED = False
+        if self.address_file:
+            home.forget_address(self.address_file, sessions.DASHBOARD)
         super().server_close()
         self.sessions.close()
 

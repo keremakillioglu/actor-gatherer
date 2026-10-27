@@ -589,6 +589,20 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .gatherer-row .act.start.busy { opacity: 1; }
 .gatherer-row .act.start.busy .badge { animation: term-blink 1s ease-in-out infinite; }
 .gatherer-row .act.start.shell svg { display: block; pointer-events: none; }
+/* the gatherer agent's button: its face, the manager's (crewFace); hidden from the list, its status at its corner */
+.gatherer-row .act.start.crew { position: relative; }
+.gatherer-row .act.start.crew .crew-face { width: 18px; height: 18px; display: block; pointer-events: none; }
+.gatherer-row .act.start.crew .crew-dot { position: absolute; right: 0; top: 2px; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--axis); box-shadow: 0 0 0 1.5px var(--side); pointer-events: none; }
+.gatherer-row .act.start.crew .crew-dot:is(.running, .background) { background: var(--good); }
+.gatherer-row .act.start.crew .crew-dot.asking { background: var(--warning); }
+.gatherer-row .act.start.crew .crew-dot.error { background: var(--critical); }
+.gatherer-row .act.start.crew .crew-dot.finished { background: var(--s1); }
+/* the gatherer agent's row, at the top of its gatherer: a gold line at its side, as its badge is edged */
+.agent.coordinator { box-shadow: inset 2px 0 0 var(--t-gatherer); }
+.gatherer-row .act.start.crew:not(.on) .crew-face { filter: grayscale(.75); opacity: .8; }
+.gatherer-row .act.start.crew:hover .crew-face { filter: none; opacity: 1; }
+.gatherer-row .act.start.crew.busy .crew-face { animation: term-blink 1s ease-in-out infinite; }
 .gatherer-row .act.start.shell.busy svg { animation: term-blink 1s ease-in-out infinite; }
 .newform { margin: 4px 16px 12px; padding: 10px 12px; border: 1px solid var(--ring); border-radius: 8px; background: var(--page); display: grid; gap: 8px; }
 .newform label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); }
@@ -967,6 +981,29 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-user.bash { background: var(--term-code); border-color: color-mix(in srgb, var(--term-bash) 45%, transparent); }
 .files .fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, var(--term-code)); border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
 .files .fl-user .bash-mark { color: var(--term-bash); font-weight: 700; }
+/* a message between the gatherer's actors (envelope, sentBubble): in a plain band, not the user's colour, its sender's
+   avatar beside it (the receiver's, for one sent) and its name over its words, all of them shown */
+.files .fl-user.crew, .files .fl-sent.crew { background: var(--surface); border: 1px solid var(--ring); }
+.files .fl-user.crew:hover { background: var(--wash); border-color: color-mix(in srgb, var(--ink) 16%, transparent); }
+.files .fl-user.crew .tx { -webkit-line-clamp: unset; display: flex; gap: 10px; align-items: flex-start; }
+.files .crew-face { width: 26px; height: 26px; flex: none; }
+.files .crew-face.none { display: grid; place-items: center; color: var(--muted); background: var(--wash); border-radius: 50%; }
+.files .crew-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.files .crew-from { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.files .crew-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.files .fl-sent { display: flex; gap: 10px; align-items: flex-start; margin: 6px 0 4px; padding: 6px 12px; border-radius: 8px;
+  line-height: var(--lh); color: var(--ink); }
+.files .fl-sent .crew-from { font-weight: 500; color: var(--muted); }
+/* a watch's news: a quiet line, the actor it is about small beside it; what it was asked and said, folded to two lines
+   until its turn is the one shown */
+.files .fl-user.crew.update { background: none; border-color: transparent; padding-top: 3px; padding-bottom: 3px; }
+.files .fl-user.crew.update:hover { background: var(--wash); }
+.files .fl-user.crew.update .crew-face { width: 18px; height: 18px; margin-top: 2px; }
+.files .fl-user.crew.update .crew-from { font-weight: 500; }
+.files .fl-user.crew.update .crew-how { font-weight: 400; color: var(--muted); }
+.files .fl-user.crew.update .crew-text { font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.files .fl-turn.on .fl-user.crew.update .crew-text { -webkit-line-clamp: unset; }
 .files .fl-bash { display: flex; flex-direction: column; min-width: 0; margin: 0;
   background: var(--term-code); border: 1px solid color-mix(in srgb, var(--term-bash) 45%, transparent); border-radius: 8px; overflow: hidden; }
 .files .fl-bash:hover { border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
@@ -2248,6 +2285,9 @@ function strokeIcon(d, size = 15) {
 }
 const ICONS = {
   bubble: "M2.5 4a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 13.5 4v5.5A1.5 1.5 0 0 1 12 11H7l-3 2.5V11a1.5 1.5 0 0 1-1.5-1.5z",
+  // the gatherer agent: one that the others hang from
+  crew: "M8 2.25a1.75 1.75 0 1 1 0 3.5a1.75 1.75 0 1 1 0-3.5zM3.25 10.25a1.75 1.75 0 1 1 0 3.5a1.75 1.75 0 1 1 0-3.5z"
+    + "M12.75 10.25a1.75 1.75 0 1 1 0 3.5a1.75 1.75 0 1 1 0-3.5zM7 5.5l-2.6 4.9M9 5.5l2.6 4.9",
   terminal: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5z"
     + "M4.5 6.25l2 1.75-2 1.75M8.25 10.25h3.25",
   history: "M2.6 8a5.4 5.4 0 1 0 1.58-3.82M2.4 2.6v2.6H5M8 5.2v3l2 1.3",
@@ -2468,11 +2508,32 @@ let lastKey = 0, heldDraw = null;
 document.addEventListener("input", (ev) => {
   if (ev.target && ev.target.id === "composer-text") { lastKey = performance.now(); fitBox(ev.target); keepDraft(ev.target.dataset.draft, ev.target.value); }
 }, true);
-// The message box as tall as what is typed in it: a line, up to its CSS's most (then scrolling).
+// The message box as tall as what is typed in it: a line, up to its CSS's most (then scrolling). Measured on a copy of it
+// kept out of the page's layout (`boxSizer`), and its height set only when that changes -- in most keys, never. Set at
+// every key (to "auto", to measure, then to its height), the whole Chat was laid out twice a key, the conversation a
+// moment taller between: in Chrome 155 at a zoom of 110%, the chat and the page's top row flickered at every key.
+const BOX_COPIED = ["font-family", "font-size", "font-weight", "font-style", "line-height", "letter-spacing", "word-spacing",
+  "text-transform", "tab-size", "white-space", "overflow-wrap", "word-break", "box-sizing", "padding-top", "padding-right",
+  "padding-bottom", "padding-left", "border-top-width", "border-right-width", "border-bottom-width", "border-left-width"];
+let sizerBox = null;
+function boxSizer(box) {
+  if (!sizerBox || !sizerBox.isConnected) {
+    sizerBox = el("textarea", { rows: "1", tabindex: "-1", "aria-hidden": "true",
+      style: "position: fixed; left: -10000px; top: 0; visibility: hidden; pointer-events: none; contain: layout paint style; "
+        + "height: auto; min-height: 0; max-height: none; overflow: hidden; border-style: solid; resize: none" });
+    document.body.append(sizerBox);
+  }
+  const cs = getComputedStyle(box);
+  for (const k of BOX_COPIED) sizerBox.style.setProperty(k, cs.getPropertyValue(k));
+  sizerBox.style.width = `${box.offsetWidth}px`;
+  return sizerBox;
+}
 function fitBox(box) {
-  if (!box) return;
-  box.style.height = "auto";
-  box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;
+  if (!box || !box.isConnected) return;
+  const sizer = boxSizer(box);
+  sizer.value = box.value;
+  const want = `${sizer.scrollHeight + box.offsetHeight - box.clientHeight}px`;
+  if (box.style.height !== want) box.style.height = want;
 }
 // What was typed in an actor's message box and not sent, by actor (key()), kept in this browser tab: its box, drawn
 // again once the reader comes back from another actor or view, or reloads, starts with it (ctx.input). Read and
@@ -2833,6 +2894,18 @@ function toggleFold(group, name) {
   try { localStorage.setItem(FOLD_KEYS[group], JSON.stringify([...open])); } catch (e) { /* kept for this page only */ }
   renderAgents();
 }
+// The gatherer agents the reader hid from the list, by their gatherer, kept in this browser: its face on the gatherer's row
+// (startButtons) shows it again, and opens it.
+const CREW_HIDDEN_KEY = "ag-dashboard-crew-hidden";
+const crewHidden = (() => {
+  try { const v = JSON.parse(localStorage.getItem(CREW_HIDDEN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  return new Set();
+})();
+function setCrewHidden(name, hide) {
+  if (hide) crewHidden.add(name); else crewHidden.delete(name);
+  try { localStorage.setItem(CREW_HIDDEN_KEY, JSON.stringify([...crewHidden])); } catch (e) { /* kept for this page only */ }
+  renderAgents();
+}
 // The actor shown when none is chosen: the newest not closed, else the newest.
 const firstAgent = (g) => g.agents.find((a) => a.status !== "closed") || g.agents[0];
 function toggleGatherer(name) {
@@ -2909,7 +2982,9 @@ function renderAgents() {
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every gatherer is hidden." }));
   for (const g of shown) {
     const open = !collapsed.has(g.name);
-    const groups = GROUPS.map((name) => [name, g.agents.filter((a) => groupOf(g, a) === name)]).filter(([, list]) => list.length);
+    // its gatherer agent (isCoordinator) first, apart from the groups: the actor the reader arranges the others through
+    const crew = g.agents.find(isCoordinator);
+    const groups = GROUPS.map((name) => [name, g.agents.filter((a) => a !== crew && groupOf(g, a) === name)]).filter(([, list]) => list.length);
     const live = g.agents.filter((a) => groupOf(g, a) === "Running").length;
     const waiting = g.agents.filter((a) => groupOf(g, a) === "Waiting for you").length;
     const failed = g.agents.filter((a) => groupOf(g, a) === "Error").length;
@@ -2938,6 +3013,7 @@ function renderAgents() {
       const at = groups.findIndex(([name]) => name === "Closed");
       groups.splice(at < 0 ? groups.length : at, 0, [SHELLS, shells]);
     }
+    if (open && crew && !crewHidden.has(g.name)) box.append(agentRow(g, crew, CREW_GROUP));
     for (const [name, list] of open ? groups : []) {
       if (name === SHELLS) {
         const shown = foldOpen[name].has(g.name);
@@ -2985,11 +3061,68 @@ function renderAgents() {
 // Code runs as one. A `!` command's bubble is a bash bubble (bubbleClass): its `!` in bash mode's colour, as Claude Code
 // marks it, and under it, once run, what it printed.
 const isBash = (text) => !!text && /^\s*!/.test(text);
-const bubbleClass = (text) => isBash(text) ? " bash" : "";
+const bubbleClass = (text) => isBash(text) ? " bash" : !envelope(text) ? "" : envelope(text).from === "update" ? " crew update" : " crew";
 const userWords = (text, kind) => isBash(text)
   ? el("span", { class: "tx bang" }, el("span", { class: "bash-mark", "aria-hidden": "true", text: "!" }),
     " ", shellSpan(String(text).trim().replace(/^!\s*/, "")))
+  : envelope(text) ? crewWords(envelope(text))
   : el("span", { class: "tx" + (kind === "user_command" ? " bang" : ""), text: text });
+// A message between the actors of a gatherer (coordination.py's `envelope`), typed into the receiver's terminal: its first
+// line who it is from -- the gatherer agent, or another actor (its id, its name as JSON) -- and how to answer, then a
+// blank line, then the message (or, as the list has it, its lines made one). Or the news of a watch the actor asked for
+// (coordination.py's `update`, UPDATE): which actor is done, and how, then what it was asked and said. null: neither.
+// A message is drawn with its sender's avatar and name -- the gatherer agent's, the manager -- never folded or clipped;
+// news, as a quiet line with the avatar of the actor it is about.
+const ENVELOPE = /^Message from (the gatherer agent|actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)(?: \(answer it with: [^\n]*?\))?:\s+([\s\S]*)$/;
+const UPDATE = /^Update \(you asked with `ag actors when`, watch (\d+)\): actor ([\w-]+)(?: \(("(?:[^"\\]|\\.)*")\))? is done: ([^\n]*?)\.(?:\s+([\s\S]*))?$/;
+function envelope(text) {
+  const s = String(text ?? "");
+  const named = (raw) => { try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; } };
+  let m = UPDATE.exec(s);
+  if (m) return { from: "update", id: m[2], name: named(m[3]), how: m[4], watch: +m[1], text: m[5] || "" };
+  m = ENVELOPE.exec(s);
+  return m && { from: m[1] === "the gatherer agent" ? "coordinator" : "actor", id: m[2] || null, name: named(m[3]), text: m[4] };
+}
+const COORDINATOR_NAME = "Gatherer agent";
+const MANAGER = "roles/manager";             // the gatherer agent's picture (avatars.py's ROLES), before it has one
+// The actor of the gatherer shown that an envelope names: the gatherer agent, or the one whose id starts with `id`.
+function crewActor(coordinator, id) {
+  const g = state.home && state.selected && state.home.gatherers.find((x) => x.name === state.selected[0]);
+  return !g ? null : coordinator ? g.agents.find(isCoordinator) || null
+    : g.agents.find((a) => id && (a.channel.startsWith(id) || (a.session && (a.session.started_as || "").startsWith(id)))) || null;
+}
+// An actor's avatar, small, as the list draws it (actorLogo) less its harness's mark: `fallback`, the picture with none.
+function crewFace(a, fallback = null) {
+  const name = (a && a.avatar) || fallback;
+  const svg = SNAPSHOT && name && (SNAPSHOT.avatars || {})[name];
+  const src = !name ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg) : `/avatars/${name}.svg`;
+  return src ? el("img", { class: "crew-face", src, alt: "", draggable: "false" })
+    : el("span", { class: "crew-face none", "aria-hidden": "true" }, strokeIcon(ICONS.crew, 12));
+}
+const crewName = (coordinator, a, env) => coordinator ? COORDINATOR_NAME : (a && a.name && a.name.text) || (env && env.name)
+  || `Actor ${env ? env.id : ""}`;
+// in a line (the list's): who it is from, and its words
+const crewLine = (env) => env.from === "update" ? `${env.name || `Actor ${env.id}`} is done: ${env.how}`
+  : `${env.from === "coordinator" ? "From the gatherer agent" : `From ${env.name || `actor ${env.id}`}`}: ${env.text}`;
+function crewWords(env) {
+  const coordinator = env.from === "coordinator", a = crewActor(coordinator, env.id);
+  if (env.from === "update")
+    return el("span", { class: "tx crew" }, crewFace(a), el("span", { class: "crew-body" },
+      el("span", { class: "crew-from" }, `${crewName(false, a, env)} is done`, el("span", { class: "crew-how", text: ` · ${env.how}` })),
+      env.text ? el("span", { class: "crew-text", text: env.text }) : null));
+  return el("span", { class: "tx crew" }, crewFace(a, coordinator ? MANAGER : null), el("span", { class: "crew-body" },
+    el("span", { class: "crew-from", text: crewName(coordinator, a, env) }), el("span", { class: "crew-text", text: env.text })));
+}
+// A message the actor sent another (files.py's `sent`: `ag actors send`, or a new actor started with it), in its turn:
+// with its receiver's avatar and name.
+function sentBubble(m) {
+  const coordinator = m.to_name === COORDINATOR_NAME, to = crewActor(coordinator, String(m.to || "").slice(0, 8));
+  const who = coordinator ? "the gatherer agent" : (to && to.name && to.name.text) || m.to_name || `actor ${String(m.to || "").slice(0, 8)}`;
+  return el("div", { class: "fl-sent crew", title: m.kind === "new" ? "A new actor, started with this message" : "Sent with `ag actors send`" },
+    crewFace(to, coordinator ? MANAGER : null), el("span", { class: "crew-body" },
+      el("span", { class: "crew-from", text: m.kind === "new" ? `Started ${who}` : `To ${who}` }), el("span", { class: "crew-text", text: m.text })));
+}
+const isCoordinator = (a) => !!a && a.role === "coordinator";
 function agentRow(g, a, group) {
   const [cls, label] = statusOf(a);
   const saved = !!savedAs(g.name, a);
@@ -3001,7 +3134,10 @@ function agentRow(g, a, group) {
   // its top line -- its name, else what it was last asked -- clicked once it is the one shown: named there
   const nameIt = SNAPSHOT || !current ? {} : { title: `${nameNote(g, a)}Click to ${named ? "rename" : "name"} it`,
     onclick: (ev) => { if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return; ev.stopPropagation(); startRename(g, a); } };
-  return el(naming ? "div" : "button", { class: "agent" + (naming ? " renaming" : ""), ...(naming ? {} : { type: "button" }),
+  const env = envelope(a.last_user_message);         // a message from another actor: who from, and its words
+  const asked = env ? crewLine(env) : a.last_user_message;
+  return el(naming ? "div" : "button", { class: "agent" + (naming ? " renaming" : "") + (isCoordinator(a) ? " coordinator" : ""),
+    ...(naming ? {} : { type: "button" }),
     "aria-current": current ? "true" : "false", "data-key": `${g.name}/${a.channel}`, "data-group": group,
     ...(open ? { "data-open": "true" } : {}),
     title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: open beside the one shown`}`,
@@ -3009,15 +3145,21 @@ function agentRow(g, a, group) {
       onkeydown: (ev) => { if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startRename(g, a); } } }) },
     actorLogo(a),
     el("div", {},
-      naming ? nameBox() : named ? el("div", { class: "name", ...nameIt, text: named }) : null,
-      el("div", { class: "asked" + (a.last_user_message ? "" : " none"), ...(naming || named ? {} : nameIt),
-        text: a.last_user_message || "No message yet" }),
+      naming ? nameBox() : named ? el("div", { class: "name", ...nameIt },
+        named) : null,
+      el("div", { class: "asked" + (asked ? "" : " none"), ...(naming || named ? {} : nameIt),
+        text: asked || (isCoordinator(a) ? "Coordinates this gatherer's actors: ask it to arrange their work" : "No message yet") }),
       a.recap && a.recap.text ? el("div", { class: "recap", title: `Recap, ${ago(a.recap.at)}:\n${a.recap.text}` },
         el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
       // the list is drawn again on every change: the glyph's turn set by the clock, not restarted each time
       el("div", { class: "meta" }, el("span", { class: `dot ${cls}`, "aria-label": label, style: `--spin-at: -${Date.now() % 1200}ms` }),
         el("span", { text: [size !== null && size !== undefined ? `${compact(size)} tokens` : null, ago(a.last)].filter(Boolean).join(" · ") }),
-        SNAPSHOT ? (saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null)
+        isCoordinator(a) && !SNAPSHOT ? el("span", { class: "save-btn", role: "button", tabindex: "0",     // not saved: hidden
+          title: "Hide the gatherer agent from the list: its face on the gatherer's row shows it again, and opens it",
+          "aria-label": "Hide the gatherer agent", onclick: (ev) => { ev.stopPropagation(); setCrewHidden(g.name, true); },
+          onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); setCrewHidden(g.name, true); } } },
+          hideIcon())
+        : SNAPSHOT ? (saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null)
           : el("span", { class: "save-btn" + (saved ? " on" : ""), role: "button", tabindex: "0", "aria-pressed": saved ? "true" : "false",
             title: saved ? "Saved for later: click to unsave" : "Save for later: kept under Saved, at the top of its gatherer",
             "aria-label": saved ? "Unsave" : "Save for later", onclick: (ev) => { ev.stopPropagation(); setSaved(g.name, a, !saved); },
@@ -3804,15 +3946,43 @@ const NO_HARNESS = "Neither Claude Code nor Codex is set up here: install one, o
 const SHELL_START = "shell";                       // the terminal button's, where a harness's name goes
 const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a session started here: its own, before any call names one
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
+// Its gatherer agent's button, first (CREW_START): the agent shown, started for the gatherer if it has none -- on the
+// first harness a session can run on here, in the directory a new session would start in (coordination.py's `ensure`).
+const CREW_START = "crew", CREW_GROUP = "Gatherer agent";
+async function openCoordinator(g) {
+  if (crewHidden.has(g.name)) setCrewHidden(g.name, false);
+  const there = g.agents.find(isCoordinator);
+  const view = CHAT_VIEWS.has("files") ? "files" : null;
+  if (there) return show(g.name, there.channel, view);
+  state.starting = { gatherer: g.name, harness: CREW_START };
+  renderAgents();
+  try {
+    const s = await post("/api/coordinator", { gatherer: g.name, cwd: startCwd(g), harness: startable()[0] || "" });
+    collapsed.delete(s.gatherer);
+    await show(s.gatherer, s.session_id, view);
+  } catch (e) { state.adding = { gatherer: g.name, cwd: startCwd(g), harness: null, error: e.message }; }
+  finally { state.starting = null; renderAgents(); }
+  const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
+  if (box) box.focus();
+}
 function startButtons(g) {
   const hs = startable(), cwd = startCwd(g);
   const busy = (h) => state.starting && state.starting.gatherer === g.name && state.starting.harness === h ? " busy" : "";
+  const crew = g.agents.find(isCoordinator), hidden = !!crew && crewHidden.has(g.name);
+  const [cls, label] = hidden ? statusOf(crew) : [null, null];      // hidden from the list: its status here
+  const coordinator = hs.length || crew ? [el("button", { class: "act start crew" + busy(CREW_START) + (crew ? " on" : ""), type: "button",
+    ...(state.starting ? { disabled: "" } : {}),
+    title: hidden ? `The gatherer agent (${label.toLowerCase()}), hidden from the list: click to show it and open it`
+      : crew ? "The gatherer agent: it coordinates this gatherer's actors -- tell it what to arrange"
+      : "Start the gatherer agent: it coordinates this gatherer's actors, settles their conflicts, and arranges their work for you",
+    "aria-label": crew ? `The gatherer agent of ${g.name}` : `Start the gatherer agent of ${g.name}`, onclick: () => openCoordinator(g) },
+    crewFace(crew, MANAGER), hidden ? el("i", { class: `crew-dot ${cls}`, "aria-hidden": "true" }) : null)] : [];
   const shell = state.home.terminals === false ? [] : [el("button", { class: "act start shell" + busy(SHELL_START), type: "button",
     ...(state.starting ? { disabled: "" } : {}), title: `New terminal in ${cwd ? tildePath(cwd, state.home.home_dir) : "a directory you choose"}`,
     "aria-label": `New terminal, listed under ${g.name}`, onclick: () => addSession(g, SHELL_START) },
     el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.terminal, 16))];
-  if (!hs.length) return [el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+"), ...shell];
-  return [...hs.map((h) => el("button", { class: "act start" + busy(h),
+  if (!hs.length) return [...coordinator, el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+"), ...shell];
+  return [...coordinator, ...hs.map((h) => el("button", { class: "act start" + busy(h),
     type: "button", ...(state.starting ? { disabled: "" } : {}), title: `New ${harnessName(h)} session in ${g.name}`,
     "aria-label": `New ${harnessName(h)} session in ${g.name}`, onclick: () => addSession(g, h) },
     el("span", { class: "plus", "aria-hidden": "true", text: "+" }), harnessBadge(h))), ...shell];
@@ -6462,6 +6632,7 @@ function filesTalk(d, info, running) {
           title: hidden ? "Show everything the agent said and thought in this turn" : "Fold the earlier messages again" },
           el("span", { class: "sg", "aria-hidden": "true", text: hidden ? "+" : "−" }), plural(extra, "earlier message")) : null,
         ...before.slice(hidden).map((x) => reply(x, false))) : null,
+      ...(t.sent || []).map(sentBubble),
       last < 0 ? null : reply(said[last], true),
       after.length ? el("div", { class: "fl-minor" }, ...after.map((x) => reply(x, false))) : null,
       t.last ? el("div", { class: "fl-minor" }, lastCall(t, live, info ? statusOf(info)[0] : "")) : null,

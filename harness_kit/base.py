@@ -171,6 +171,10 @@ class AnswerError(ValueError):
     """A choice that does not answer what the harness asks (`Harness.answer_keys`): why, in a few words."""
 
 
+class InstructionsError(ValueError):
+    """Instructions the harness cannot be given for a run (`Harness.instruction_args`): why, in a few words."""
+
+
 def picked(ask: dict, choice: dict) -> List[dict]:
     """Each question of a question `ask` with what `choice` picked for it: {question, multi, count (its options),
     places (the picked options', from 0), labels (theirs), text (the reader's own answer, or None)}. `choice`:
@@ -269,12 +273,19 @@ class Harness(ABC):
     # ---- run in a terminal: started, and what it asks there answered
 
     def command(self, session: str, resume: bool = False, model: Optional[str] = None,
-                permission_mode: Optional[str] = None, fullscreen: bool = True) -> List[str]:
+                permission_mode: Optional[str] = None, fullscreen: bool = True,
+                instructions: Optional[str] = None) -> List[str]:
         """Its own arguments for `session` run in a terminal, after its name on ag's command line (`ag ... <name>`):
         `resume`, a session it has had before; `model`, None its own default; `permission_mode`, what it may do
         unasked ("auto", "acceptEdits", "plan", "bypassPermissions", as Claude Code names them); `fullscreen`, its
-        full-screen interface where it has another. The message it starts with goes after them, after `--`."""
+        full-screen interface where it has another; `instructions`, added to its own system prompt for this run
+        (`instruction_args`). The message it starts with goes after them, after `--`."""
         raise NotImplementedError(f"{self.label or self.name or 'this harness'} is not run in a terminal here")
+
+    def instruction_args(self, text: str) -> List[str]:
+        """Its own options that add `text` to the instructions it gives its model, for one run -- given again on each
+        run, as the harness keeps none of it with the session. Raises InstructionsError where it takes none."""
+        raise InstructionsError(f"{self.label or self.name or 'this harness'} takes no instructions ag can add")
 
     def models(self, env: Optional[Dict[str, str]] = None) -> dict:
         """The models a new session can run on, as the harness lists them: {"models": [{slug, name, description}],

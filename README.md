@@ -308,3 +308,24 @@ ag dashboard                                             # http://127.0.0.1:4200
 ag dashboard --port 4300                                 # another port
 ag dashboard --out snapshot.html                         # one page, its data inside it
 ```
+
+### Actors and the gatherer agent
+
+The actors the dashboard runs can reach one another. Every actor is told about
+the others, and about `ag actors`, a command it runs in its shell:
+
+```bash
+ag actors                                    # the other actors of this gatherer: ids, status, what each was asked
+ag actors who page.html                      # which actors changed a file
+ag actors send 1a2b3c4d "I'm editing x.py"   # a message to one, typed into its conversation
+ag actors send gatherer "..."                # a message to the gatherer agent
+```
+
+The **gatherer agent** coordinates a gatherer's actors. Open it from the
+gatherer's row in the dashboard and talk to it like any actor: "after actor A is
+done, tell actor B to do X", or "when A is done, start another actor on what it
+left". When an actor finds another one working on its files or on the same task,
+it stops and tells the gatherer agent, which decides who does what and tells each
+actor. In Chat, a message between actors shows with its sender's avatar -- the
+gatherer agent's is a manager owl. What you tell the gatherer agent stays out of
+the actors' context: they know only what it sends them.

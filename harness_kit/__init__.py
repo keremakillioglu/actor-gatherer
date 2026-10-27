@@ -16,7 +16,7 @@ harnesses through it.
 from typing import Dict, Optional
 
 from .base import (MODELS, USERS, Action, AnswerError, Call, CallKind, Fact, Facts, Follower, Harness,  # noqa: F401 - the
-                   Kind, Part, RenameError, ToolCall, ToolResult, follow)                             # package's API
+                   InstructionsError, Kind, Part, RenameError, ToolCall, ToolResult, follow)                             # package's API
 from . import codex  # noqa: F401 - harness_kit.codex, as before
 from .claude import ClaudeCode
 from .codex import Codex

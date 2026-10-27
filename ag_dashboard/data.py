@@ -118,7 +118,7 @@ CHANNEL = "p_channel"          # the channel property's column (ag.ag_policies.t
 #: as the conversation.
 RECORDS = ("model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "harness", "session_file", "asked",
            "ask_settled", "turn_stopped", "task_started", "task_ended", "task_activity", "message_queued", "message_sent",
-           "message_withdrawn", "file_touched", "chat_sent", "answer_given", "terminal_input")
+           "message_withdrawn", "file_touched", "chat_sent", "answer_given", "terminal_input", "actor_message", "role")
 #: What the harness's own record of a session says (its file: Claude Code's under its projects folder, codex's
 #: rollout), as the hook records it while it follows the record (ag's session_files.py; harness_kit's Facts): the
 #: record followed (`session_file`), then a fact per thing the record says that no model call carries.
@@ -132,6 +132,7 @@ MESSAGES_READ = 200            # the newest of its messages' facts read for what
 SENT_SECONDS = 30.0            # a message sent from the queue: shown as written until ag stores it, at most this long
 PROMPT_SECONDS = 120.0         # one sent between turns: the same
 CHAT_SECONDS = 60.0            # one sent from Chat the harness has not had: shown as pending at most this long
+COORDINATOR_NAME = "Gatherer agent"   # the name a gatherer agent (sessions.py's role) has, unless the reader gives one
 #: SQL: an event (`e`) that is the conversation, not a record.
 NOT_RECORD = ("e.event_type_id NOT IN (SELECT event_type_id FROM event_types WHERE name IN ("
               + ", ".join(f"'{t}'" for t in RECORDS) + "))")
@@ -284,6 +285,28 @@ def actors(gatherer: str, channels: set, started: List[dict]) -> List[dict]:
     return g[0]["agents"]
 
 
+def gatherer_actors(gatherer: str, started: List[dict]) -> List[dict]:
+    """Every agent of `gatherer`, each as home() has it, with `started`'s sessions of it (sessions.py's `list`) -- the
+    gatherer read alone; nothing is watched from it from now on (home()'s wakes stay as they were). [] for a gatherer
+    with no database yet but for its sessions started here. sqlite3.Error: its database could not be read."""
+    now = time.time()
+    conn = _connect(gatherer)
+    named: Dict[str, Dict[str, dict]] = {}
+    try:
+        agents = _agents(conn, now) if conn is not None else []
+        mine = [s for s in started if s["gatherer"] == gatherer]
+        if conn is not None and {s["session_id"] for s in mine} - {a["channel"] for a in agents}:
+            named[gatherer] = _names(conn, _tables(conn))
+    finally:
+        if conn is not None:
+            conn.close()
+    g = [{"name": gatherer, "agents": agents, "last": None}]
+    _with_started(g, mine, now, named)
+    for a in g[0]["agents"]:                     # what home() would watch: not from here
+        a.pop("wake", None)
+    return g[0]["agents"]
+
+
 def _with_started(gatherers: List[dict], started: List[dict], now: Optional[float] = None,
                   named: Optional[Dict[str, Dict[str, dict]]] = None) -> None:
     """Each session started here on its agent (`session`); one with no message yet listed all the same, as idle, with
@@ -304,6 +327,10 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
         a["session"] = s
+        if s.get("role"):                        # the gatherer agent: named so unless the reader named it otherwise
+            a["role"] = s["role"]
+            if s["role"] == sessions.COORDINATOR and (a.get("name") or {}).get("by") != "user":
+                a["name"] = {"text": COORDINATOR_NAME, "by": "dashboard"}
         offer = a.pop("offer", None)             # a codex plan: asked about where its terminal is the dashboard's, not
         if offer and s.get("terminal") and a["status"] == IDLE and (s.get("since") or 0) <= offer["at"] \
                 and not (s.get("typed") and s["typed"] >= offer["at"]):     # restarted since, nor anything typed there
