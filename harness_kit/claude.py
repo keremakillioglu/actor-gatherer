@@ -27,8 +27,8 @@ import textwrap
 import time
 from typing import Dict, List, Optional, Tuple
 
-from .base import (Action, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, ToolCall, ToolResult, output_of,
-                   seconds)
+from .base import (Action, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError, ToolCall,
+                   ToolResult, output_of, seconds)
 
 # ---------------------------------------------------------------- Claude Code's own text, in the user's name
 
@@ -662,6 +662,33 @@ class ClaudeCode(Harness):
 
     def follower(self, path: str) -> Follower:
         return Record()
+
+    def rename_command(self, name: str) -> Optional[str]:
+        """Its own `/rename` (also `/name`), which it runs at once, even mid-turn: the name in its prompt box and its
+        terminal's title, and kept in its record."""
+        name = " ".join((name or "").split())
+        return f"/rename {name}" if name else None
+
+    def rename(self, session: str, name: str, record: Optional[str] = None, env=None) -> str:
+        """A `custom-title` line added to the session's record (its JSONL file), as its own `/rename` adds one: the last
+        in a record's tail is the name its /resume list and `--resume` show, "" none. A session running elsewhere takes
+        it up on exiting -- unless it holds a name of its own already: its metadata, written again as the record grows,
+        writes back the name it holds (`rename_command` reaches it)."""
+        if not record or not os.path.isfile(record):
+            raise RenameError("Claude Code's record of the session was not found")
+        line = json.dumps({"type": "custom-title", "customTitle": " ".join((name or "").split()), "sessionId": session},
+                          ensure_ascii=False, separators=(",", ":"))      # as it writes it: it looks for '"type":"custom-title"'
+        try:
+            torn = False                                 # its last line still open: ours goes on a line of its own
+            with open(record, "rb") as fh:
+                if fh.seek(0, os.SEEK_END) > 0:
+                    fh.seek(-1, os.SEEK_END)
+                    torn = fh.read(1) != b"\n"
+            with open(record, "a", encoding="utf-8") as fh:
+                fh.write(("\n" if torn else "") + line + "\n")
+        except OSError as exc:
+            raise RenameError(f"Claude Code's record of the session could not be written: {exc}") from None
+        return "named in its record"
 
     def owns(self, payload) -> bool:
         if not isinstance(payload, dict) or "info" in payload or "api" in payload:

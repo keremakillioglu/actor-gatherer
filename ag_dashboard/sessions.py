@@ -185,6 +185,24 @@ REDRAW_WAIT = 1.0                  # a full screen made a row shorter (`redraw`)
 #: What a page's terminal sends that no one typed: focus in and out, the terminal's answers to the program's
 #: questions (device attributes, cursor position, OSC replies), mouse reports. Not typing: a dialog is as it was.
 REPORTS = re.compile(r"\x1b\[[IO]|\x1b\[[?>]?[\d;]*[cRn]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b\[<[\d;]*[Mm]")
+# A key that is no character in the input box: an escape sequence (an arrow, a function key, a paste's brackets) whole.
+NOT_TYPED = re.compile(r"\x1b(?:\[[\d;?]*[ -/]*[@-~]|O.|.)?")
+
+
+def drafted(n: int, keys: str) -> int:
+    """How many characters the reader has typed into the terminal's input box and not sent, after `keys`, of `n`
+    before: Enter sends them, Ctrl+C empties the box (Claude Code's, of any it holds), a Backspace takes one back,
+    any other character adds one. A count, never sure -- a dialog's keys count too -- so a rename waits on it
+    (`rename_due`) rather than add to what the reader wrote."""
+    for ch in NOT_TYPED.sub("", keys):
+        if ch in "\r\x03":
+            n = 0
+        elif ch in "\x7f\b":
+            n = max(0, n - 1)
+        elif ch >= " ":
+            n += 1
+    return n
+
 
 
 def _has_calls(gatherer: str, session_id: str) -> bool:
@@ -505,6 +523,7 @@ class _Term:
         self.typed = 0.0                # when anything was last typed into it (epoch seconds): keys, a message
         self.stopped = 0.0              # when the last thing typed was a key that stops a turn alone (STOP_KEYS); 0: it was not
         self.answering = False          # an answer's keys being typed into it (`answer`)
+        self.drafted = 0                # characters the reader typed into its input box and has not sent (`drafted`)
         self.kept = False               # put away (`put_away`): its end is kept
         self.drawn = -1                 # where in what it printed it last cleared its screen (CLEARED), to draw it all
         self.sizing = threading.Lock()  # its size set by one at a time: the page's (`resize`), or `redraw`'s
@@ -523,6 +542,7 @@ class Sessions:
         self.terms: Dict[str, _Term] = {}         # by session id; a shell's by its own (`shell`)
         self._shells: Dict[str, dict] = {}       # the shells open, by id: {id, gatherer, cwd, since}
         self.answered: Dict[str, dict] = {}      # each session's last answer typed from the page (`answer`)
+        self.renames: Dict[str, str] = {}        # each session's command naming it, held for its turn's end (`rename`)
         self.closing = False            # the dashboard stopping: what ends now is kept
         conn = self._db()               # a process from before is gone: what it was running stopped, and kept
         try:
@@ -1228,7 +1248,40 @@ class Sessions:
         if REPORTS.sub("", data):
             t.typed = time.time()
             t.stopped = t.typed if data in STOP_KEYS else 0.0
+            t.drafted = drafted(t.drafted, REPORTS.sub("", data))
         self._write(t, data.encode("utf-8"))
+
+    def rename(self, session_id: str, command: str) -> bool:
+        """The harness's command that names the session (harness_kit's `rename_command`: the harness's `/rename ...`),
+        held to be typed into its terminal once its turn is over (`rename_due`), in place of one held before: True,
+        or False when the dashboard runs no terminal for it (nothing is held)."""
+        with self.lock:
+            t = self.terms.get(session_id)
+            if t is None or t.exited is not None:
+                self.renames.pop(session_id, None)
+                return False
+            self.renames[session_id] = command
+            return True
+
+    def rename_due(self, idle) -> List[str]:
+        """Each command held by `rename` typed into its session's terminal, where the session is in `idle` -- its turn
+        over and nothing asked, so its terminal waits on a prompt, not in a dialog where Enter would pick an option --
+        and its input box is the harness's alone: no answer being typed, nothing the reader typed and has not sent
+        (`drafted`), no message Claude Code put back there (`took_back`). The sessions it was typed for."""
+        typed = []
+        idle = set(idle)
+        with self.lock:
+            for sid in [x for x in self.renames if x in idle]:
+                t = self.terms.get(sid)
+                if t is None or t.exited is not None:
+                    self.renames.pop(sid)
+                    continue
+                s = self._row(sid) or {}
+                if t.answering or t.drafted or (s.get("gatherer") and took_back(s["gatherer"], sid, t.stopped)):
+                    continue
+                self._paste(t, self.renames.pop(sid))
+                typed.append(sid)
+        return typed
 
     def answer(self, session_id: str, ask: dict, choice: dict) -> dict:
         """What the session's terminal asks (data.py's `asking`: a question, a plan to approve) answered with
@@ -1290,7 +1343,7 @@ class Sessions:
         """A message from a view's message box, typed into the terminal: pasted as one block (so its
         new lines stay in it), then Enter once the paste has landed. With `clear`, Claude Code's input box
         emptied first (Ctrl+C), of the message it put back there (`took_back`), so the two do not go as one."""
-        t.typed, t.stopped = time.time(), 0.0
+        t.typed, t.stopped, t.drafted = time.time(), 0.0, 0
         paste = b"\x1b[200~" + text.replace("\x1b", "").encode("utf-8") + b"\x1b[201~"
         if not clear:
             self._write(t, paste)

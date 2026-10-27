@@ -250,6 +250,8 @@ def home(started: Optional[List[dict]] = None) -> dict:
     not made yet -- is listed all the same."""
     now = time.time()
     gatherers = []
+    started = sessions.stored() if started is None else started
+    named: Dict[str, Dict[str, dict]] = {}   # the names of sessions started here with no message yet, which `_agents` lists not
     for name in gatherer_names():
         conn = _connect(name)
         if conn is None:                 # made (`ag new`), no session has run in it yet
@@ -257,6 +259,8 @@ def home(started: Optional[List[dict]] = None) -> dict:
             continue
         try:
             agents = _agents(conn, now)
+            if {s["session_id"] for s in started if s["gatherer"] == name} - {a["channel"] for a in agents}:
+                named[name] = _names(conn, _tables(conn))
         except sqlite3.Error as exc:
             gatherers.append({"name": name, "policy": _policy(name), "error": str(exc), "agents": [], "last": None})
             continue
@@ -264,7 +268,7 @@ def home(started: Optional[List[dict]] = None) -> dict:
             conn.close()
         gatherers.append({"name": name, "policy": _policy(name), "agents": agents,
                           "last": max((a["last"] or 0 for a in agents), default=0) or None})
-    _with_started(gatherers, sessions.stored() if started is None else started, now)
+    _with_started(gatherers, started, now, named)
     wakes = {}                           # the actors whose status changes at a time of their own, with nothing written
     for g in gatherers:
         for a in g["agents"]:
@@ -298,7 +302,10 @@ def actors(gatherer: str, channels: set, started: List[dict]) -> List[dict]:
     return g[0]["agents"]
 
 
-def _with_started(gatherers: List[dict], started: List[dict], now: Optional[float] = None) -> None:
+def _with_started(gatherers: List[dict], started: List[dict], now: Optional[float] = None,
+                  named: Optional[Dict[str, Dict[str, dict]]] = None) -> None:
+    """Each session started here on its agent (`session`); one with no message yet listed all the same, as idle, with
+    the name the reader gave it (`named`: {gatherer: _names}), if any."""
     by_name = {g["name"]: g for g in gatherers}
     for s in started:
         g = by_name.get(s["gatherer"])
@@ -309,7 +316,8 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
         if a is None:
             a = {"channel": s["session_id"], "events": 0, "last_event": None, "reads": 0, "last_read": None,
                  "cwd": s["cwd"], "tasks": 0, "est_tokens": None, "real_tokens": None, "limit_tokens": None,
-                 "sent_tokens": None, "harness": s["harness"], "last_user_message": None, "recap": None, "name": None,
+                 "sent_tokens": None, "harness": s["harness"], "last_user_message": None, "recap": None,
+                 "name": ((named or {}).get(s["gatherer"]) or {}).get(s["session_id"]),
                  "created": None, "last": _seconds(s["created_at"]), "building": False, "running": False,
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
@@ -428,17 +436,7 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
     for ch, made, text in found:
         if ch and (ch not in recaps or (_seconds(made) or 0) >= (recaps[ch]["at"] or 0)):
             recaps[ch] = {"text": " ".join((text or "").split())[:600], "at": _seconds(made)}
-    names = {}                                       # each agent's name: the user's, else the newest another gave
-    given = []                                       # (codex's title for its thread): `_names`, then the records
-    if "_names" in tables:
-        given += [(ch, by, text, named) for ch, by, text, named in conn.execute("SELECT session, by, text, named_at FROM _names")]
-    for ch, at, raw in conn.execute(f"SELECT e.{CHANNEL}, e.inserted_at, e.payload_json FROM events e JOIN event_types t "
-                                    f"ON t.event_type_id = e.event_type_id WHERE t.name = 'name' ORDER BY e.row_id"):
-        got = _json(raw) or {}
-        given.append((ch, got.get("by"), got.get("text"), at))
-    for ch, by, text, _named in sorted(given, key=lambda g: (g[1] == "user", _seconds(g[3]) or 0)):
-        if ch:
-            names[ch] = {"text": " ".join((text or "").split())[:120], "by": by}
+    names = _names(conn, tables)
     for ch, a in out.items():
         a["harness"] = _harness(conn, ch)
         typed, text = last_user.get(ch, (None, ""))
@@ -536,6 +534,24 @@ def since_said(a: dict, cut: Optional[float]) -> Optional[float]:
     the harness hung up to send it (codex, as a question's reply comes), not the user (Claude Code's message taken back
     on Esc is withdrawn with its read)."""
     return None if cut is None or (a.get("said_at") or 0) > cut else cut
+
+
+def _names(conn, tables: set) -> Dict[str, dict]:
+    """Each channel's name, {text, by}: the reader's newest (`by` "user", given in the dashboard: naming.py), else the
+    newest another gave (codex's title for its thread) -- from the `name` records, and the old `_names` table. A
+    reader's "" takes theirs back."""
+    given = []
+    if "_names" in tables:
+        given += [(ch, by, text, named) for ch, by, text, named in conn.execute("SELECT session, by, text, named_at FROM _names")]
+    for ch, at, raw in conn.execute(f"SELECT e.{CHANNEL}, e.inserted_at, e.payload_json FROM events e JOIN event_types t "
+                                    f"ON t.event_type_id = e.event_type_id WHERE t.name = 'name' ORDER BY e.row_id"):
+        got = _json(raw) or {}
+        given.append((ch, got.get("by"), got.get("text"), at))
+    users, others = {}, {}
+    for ch, by, text, _named in sorted(given, key=lambda g: _seconds(g[3]) or 0):
+        if ch:
+            (users if by == "user" else others)[ch] = {"text": " ".join((text or "").split())[:120], "by": by}
+    return {**others, **{ch: n for ch, n in users.items() if n["text"]}}
 
 
 def turn_over(conn, channel: str, tables: set):

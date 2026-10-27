@@ -163,6 +163,10 @@ class Part:
     detail: Dict[str, Any] = field(default_factory=dict)
 
 
+class RenameError(ValueError):
+    """A name the harness's own store could not be given (`Harness.rename`): why, in a few words."""
+
+
 class Harness(ABC):
     """One harness's rules. Subclasses implement `items`, `read` and `owns`; `call` says what a request
     is (None by default: the harness's calls not known). `name` is how ag and the dashboard name it,
@@ -208,6 +212,20 @@ class Harness(ABC):
         """(the Kind, the user's words as they typed them) of the text of a message in the user's name -- the harness's
         wrappers around them taken off. By default, the text as it is."""
         return Kind.USER, text
+
+    # ---- a session's name, as the harness keeps it
+
+    def rename_command(self, name: str) -> Optional[str]:
+        """What to submit in the harness's terminal, while the session runs there and its turn is over, to give it
+        `name` -- so the running harness holds it too, and keeps it in its own records (Claude Code's and codex's
+        `/rename`); None: it has no command that takes the name as typed (`rename` alone, then)."""
+        return None
+
+    def rename(self, session: str, name: str, record: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> str:
+        """The session given `name` in the harness's own store, where its list of sessions to resume, and its next
+        run, read it: `record`, the session's own file, for a harness that keeps the name there; `env`, the
+        environment the harness runs in. What was done, in a few words. Raises RenameError where it cannot."""
+        raise RenameError(f"{self.label or self.name or 'this harness'} keeps no name ag can set")
 
     # ---- its own record of a session
 

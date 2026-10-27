@@ -56,6 +56,11 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/shells/close {id}           the shell's terminal closed, as a window is
     POST /api/hiding {gatherer, choice}   keep "hidden" / "shown" / "" for it (hiding.py) -> every choice
     POST /api/saved {gatherer, channel, saved}  the actor saved for later, or no longer (saved.py) -> every one saved
+    POST /api/name {gatherer, channel, name, harness?, cwd?}  the reader's name for the actor ("": none), a `name`
+                                          event in its gatherer, put in by ag (naming.py), given to its harness's own
+                                          store too, and -- where the dashboard runs its terminal -- typed there as the
+                                          harness's own command once its turn is over (sessions.py's `rename`)
+                                          -> {name, store: what was done there, error: why not, terminal: held for it}
     POST /api/seen {seen: [[gatherer, channel, last], ...]}  those actors looked at, each with its `last`
                                           (seen.py) -> every one seen
     POST /api/history/export {gatherer, rows, format}   those events as a file: {name, text} (history.py)
@@ -72,10 +77,11 @@ context manager's home (data.py), read-only. Standard library only.
 
 The POSTs are the only writes, and only to the dashboard's own tables and records, the agents it
 runs (and the shells it opens), the gatherers `ag new` makes, the builds and model calls `ag home build` and `ag home complete`
-start, the files a History extract is saved as (where Claude Code reads them, once the reader has
+start, its own events `ag home insert` puts in (an actor's name), the harness's own store of a name
+(naming.py), the files a History extract is saved as (where Claude Code reads them, once the reader has
 seen them), and ag's config.toml -- besides the avatar the home gives an actor it has not seen before
 (avatars.py), kept in the dashboard's own table:
-the gatherers' databases are only read. They are taken from the dashboard's own page only
+the gatherers' databases are otherwise only read. They are taken from the dashboard's own page only
 (`own_page`), and the server listens on localhost unless told otherwise.
 
 `page(snapshot)` is the page itself, the libraries it renders markdown with (VENDOR: marked,
@@ -94,7 +100,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
-from . import avatars, data, files, hiding, history, home, live, monitor, saved, seen, sessions, settings
+import harness_kit
+
+from . import avatars, data, files, hiding, history, home, live, monitor, naming, saved, seen, sessions, settings
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -152,8 +160,13 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
     def home_view() -> dict:
         """The home as the page gets it: with the sessions' state, and what a new session starts from -- the
         harnesses it can run on here (sessions.py's `available`); the shells open, and the user's home directory,
-        which the page shows their directories under as ~."""
-        return {**avatars.assign(data.home(started.list())), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
+        which the page shows their directories under as ~. A name held for a session's terminal is typed there once
+        its turn is over (`rename_due`)."""
+        home = data.home(started.list())
+        if started.renames:
+            started.rename_due(a["channel"] for g in home["gatherers"] for a in g["agents"]
+                               if a.get("turn_over") and a.get("status") not in (data.ASKING, data.RUNNING))
+        return {**avatars.assign(home), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
                 "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "shells": started.shells(),
                 "home_dir": os.path.expanduser("~")}
 
@@ -447,6 +460,20 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions):
                     kept = saved.choose(str(body.get("gatherer") or ""), str(body.get("channel") or ""), bool(body.get("saved")))
                     hub.ring(None)
                     return self.answer(kept)
+                if url.path == "/api/name":
+                    g, c, name = str(body.get("gatherer") or ""), str(body.get("channel") or ""), naming.clean(body.get("name"))
+                    naming.record(g, c, name)
+                    harness = str(body.get("harness") or "") or None
+                    out = {"name": name, "store": None, "error": None, "terminal": False}
+                    try:
+                        out["store"] = naming.in_store(harness, c, name, str(body.get("cwd") or "") or None)
+                    except harness_kit.RenameError as exc:
+                        out["error"] = str(exc)
+                    rules = harness_kit.get(harness)
+                    command = rules.rename_command(name) if rules is not None else None
+                    out["terminal"] = bool(command) and started.rename(c, command)
+                    hub.ring(g)                          # every open page's home: one types it, once it may
+                    return self.answer(out)
                 if url.path == "/api/seen":              # not rung: a home costs every stream a read of every
                     return self.answer(seen.look(body.get("seen")))   # gatherer; the page that looked has it, the
                                                          # others with their next home (KEEPALIVE at most)
