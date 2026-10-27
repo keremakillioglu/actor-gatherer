@@ -78,7 +78,9 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 it, and finds it over `budget`, reports that
                                                 count (`measured`) and asks again. `inserted`: the
                                                 rows of the events it stored (not those already
-                                                stored), for a `withdraw`
+                                                stored), and of those the harness had taken back
+                                                and sends again: for a `withdraw`, should it take
+                                                them back once more
     {"op": "context", "gatherer", "properties", "cwd", "events", "limit"?, "preamble"?}
         -> {"context": [...] or null, "note", "tokens", "budget", "sent_tokens", "basis"}
                                                 a rewrite's context, read only: the events are
@@ -120,7 +122,7 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 parts; and what the harness left out of a
                                                 read's context before sending it, taken off the
                                                 read's sent_tokens. How many of each were found
-    {"op": "insert", "gatherer", "properties", "events"} -> {"rows": [row id or null, ...], "last"}
+    {"op": "insert", "gatherer", "properties", "events"} -> {"rows": [row id or null, ...], "last", "kept"}
     {"op": "pending", "gatherer", "properties", "events", "answer"?, "stop"?, "read_id"?} -> {"kept"}
                                                 what the model answered, as events, which no
                                                 call has carried back yet: kept (`_pending`, not
@@ -438,13 +440,16 @@ class Server:
     # ---- the manager functions
 
     def insert(self, gatherer: str, properties: Dict[str, Any], events: list, manager=None) -> dict:
+        """The events stored: each one's row (None: stored already), the one to respond to (`last`), and the rows of
+        those the harness had taken back and sends again (`kept`), in reads again."""
         manager = manager or self.manager(gatherer)
         stored = self.events_of(manager, gatherer, events, properties)
-        rows = [manager.insert(gatherer, e) for e in stored]
+        kept: List[int] = []
+        rows = [manager.insert_kept(gatherer, e, kept) for e in stored]
         last = rows[-1] if rows else None
         if stored and last is None and stored[-1].id:          # the last one was already stored
             last = manager.locate(gatherer, stored[-1].id, properties=properties)
-        return {"rows": rows, "last": last}
+        return {"rows": rows, "last": last, "kept": kept}
 
     def pending(self, gatherer: str, properties: Dict[str, Any], events: list, answer=None, stop=None,
                 read_id=None) -> dict:
@@ -575,7 +580,7 @@ class Server:
             self.log(gatherer, prefix + f"could not tell which events are counted: {exc!r}")
             uncounted = None
         return {"context": context, "note": note, "read_id": answer["read_id"], "uncounted": uncounted,
-                "inserted": [r for r in inserted["rows"] if r is not None],
+                "inserted": [r for r in inserted["rows"] if r is not None] + inserted["kept"],
                 **{k: answer.get(k) for k in ("tokens", "budget", "sent_tokens", "basis")}}
 
     def open(self, gatherer: str, properties: Dict[str, Any]) -> dict:

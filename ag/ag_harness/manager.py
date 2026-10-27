@@ -143,10 +143,20 @@ class Manager(ContextManager):
             LookupError: the gatherer has no event type with that id.
             ValueError: its properties are not what its type declares.
         """
+        return self.insert_kept(gatherer_id, event, [])
+
+    def insert_kept(self, gatherer_id: str, event: Event, kept: List[int]) -> Optional[int]:
+        """Not part of the interface: `insert`, with the rows of an event the harness took back (`withdraw`) and
+        sends again -- in reads again -- added to `kept` (`store.insert`)."""
         conn = self._conn(gatherer_id)
-        row_id = store.insert(conn, event, self.tokenizer, self._spec(gatherer_id, getattr(event, "type_id", None)))
+        back: List[int] = []
+        row_id = store.insert(conn, event, self.tokenizer, self._spec(gatherer_id, getattr(event, "type_id", None)),
+                              kept=back)
         if row_id is not None:
             notify(gatherer_id, "events", event.properties, row_id)
+        elif back:                                   # in reads again
+            notify(gatherer_id, "events", event.properties)
+        kept.extend(back)
         return row_id
 
     def locate(self, gatherer_id: str, event_id: str, *, properties: Optional[dict] = None) -> Optional[int]:
