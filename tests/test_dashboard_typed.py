@@ -124,6 +124,15 @@ class TypedTest(RecordBase):
         self.db.execute("UPDATE events SET text = 'and b.py' WHERE event_id = 'u1'")      # as ag stores it, its words
         self.assertEqual([q["text"] for q in self.got() if q.get("chat")], [])     # stored as the user's: had
 
+    def test_sent_from_chat_a_command_of_the_harness_s_is_not_pending_and_one_run_with_bang_is_had(self):
+        chat = lambda text, ago: {"type": "chat_sent", "id": f"chat_sent:{text}",                 # noqa: E731
+                                  "payload": {"at": self.now - ago, "text": text}}
+        insert(self.db, SESSION, [chat("/cost", 3), chat("!ls", 2)])       # /cost: run by Claude Code, never sent on
+        self.assertEqual([q["text"] for q in self.got() if q.get("chat")], ["!ls"])
+        insert(self.db, SESSION, [{"type": "user_message", "id": "u2", "payload": {"text": "<bash-input>ls</bash-input>"}}])
+        self.db.execute("UPDATE events SET text = '! ls' WHERE event_id = 'u2'")           # its words, as harness_kit gives them
+        self.assertEqual([q["text"] for q in self.got() if q.get("chat")], [])
+
     def test_long_sent_is_forgotten_and_claude_code_s_own_notes_are_not_the_user_s(self):
         self.op("enqueue", "old", ago=100)
         self.op("dequeue", ago=data.SENT_SECONDS + 5)

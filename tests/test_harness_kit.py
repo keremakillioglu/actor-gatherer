@@ -182,10 +182,28 @@ class DerivedTest(unittest.TestCase):
         self.assertEqual((typ, key, data["call"], data["kind"], data["async"]), ("asked", "t1", "t1", "question", False))
         self.assertEqual([o["label"] for o in data["questions"][0]["options"]], ["A", "B"])
         answered = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": 'User has answered: "Which?"="B"'}]}
+        # Esc, as Claude Code 2.1.311 sends it on (saved from a live session): the call rejected, and its note
         dismissed = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True,
-                                                  "content": "The user doesn't want to proceed with this tool use."}]}
+                                                  "content": "The user doesn't want to proceed with this tool use. The tool "
+                                                             "use was rejected (eg. if it was a file edit, the new_string was "
+                                                             "NOT written to the file). STOP what you are doing and wait for "
+                                                             "the user to tell you how to proceed."},
+                                                 {"type": "text", "text": "[Request interrupted by user for tool use]"}]}
         self.assertEqual([(t, d["how"]) for t, _, d in self.facts(ask, answered) if t == "ask_settled"], [("ask_settled", "answered")])
         self.assertEqual([(t, d["how"]) for t, _, d in self.facts(ask, dismissed) if t == "ask_settled"], [("ask_settled", "dismissed")])
+
+    def test_a_plan_sent_back_with_what_to_change_is_answered(self):
+        # "Tell Claude what to change", as Claude Code 2.1.311 sends it on (saved from a live session): rejected, no note,
+        # and its turn goes on with the reader's words
+        ask = {"role": "assistant", "content": [{"type": "tool_use", "id": "t2", "name": "ExitPlanMode", "input": {}}]}
+        change = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "is_error": True,
+                                               "content": "The user doesn't want to proceed with this tool use. The tool use "
+                                                          "was rejected (eg. if it was a file edit, the new_string was NOT "
+                                                          "written to the file). To tell you how to proceed, the user said:\n"
+                                                          "Append the word ciao instead of bye"}]}
+        [(_, _, data)] = [f for f in self.facts(ask, change) if f[0] == "ask_settled"]
+        self.assertEqual(data["how"], "answered")
+        self.assertIn("ciao", data["result"])
 
     def test_a_plan_s_text_from_the_file_it_wrote(self):
         with tempfile.TemporaryDirectory() as d:

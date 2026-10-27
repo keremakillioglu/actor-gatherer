@@ -66,8 +66,9 @@ def record(gatherer: Optional[str], channel: Optional[str], events: List[dict], 
         threading.Thread(target=put, name="dashboard-action", daemon=True).start()
 
 
-def chat_sent(gatherer: str, channel: str, text: str) -> None:
-    record(gatherer, channel, [_event(CHAT_SENT, text=text)])
+def chat_sent(gatherer: str, channel: str, text: str, at: Optional[float] = None) -> None:
+    """`at`: when it was sent, where that was before now (a new codex session's, kept until it had its thread)."""
+    record(gatherer, channel, [_event(CHAT_SENT, text=text, **({"at": at} if at is not None else {}))])
 
 
 def answer_given(gatherer: str, channel: str, sent: dict) -> None:

@@ -307,6 +307,27 @@ class BackgroundTest(unittest.TestCase):
         a = self.actor([self.session()])
         self.assertEqual((a["status"], a["background"]), (data.IDLE, []))
 
+    def test_a_task_that_writes_all_along_keeps_its_start_and_what_is_asked_in_view(self):
+        then = time.time() - 3600                # a server, writing its output for an hour, one sign of life each 5 s
+        derives = ("model_call", {"kind": "turn", "harness": "claude", "version": "2.1.311", "derives": True}, None)
+        self.add([derives, said("Starting the server."),
+                  ("task_started", {"at": then, "task": "srv", "kind": "command", "how": "started", "label": "Run the server",
+                                    "output": "/nowhere/srv.output"}, None),
+                  ("asked", {"at": then + 1, "call": "toolu_q", "kind": "question", "async": False, "turn": None,
+                             "questions": [{"question": "Which port?", "options": [{"label": "3000"}, {"label": "8080"}]}]}, None)],
+                 at=then)
+        self.add([("task_activity", {"at": then + 5 * i, "task": "srv", "event": None}, None)
+                  for i in range(1, data.FACTS_READ + 300)])
+        conn = sqlite3.connect(self.path)
+        try:
+            rec = data.record_of(conn, "s1")
+        finally:
+            conn.close()
+        self.assertEqual([t["id"] for t in rec.tasks()], ["srv"])
+        self.assertAlmostEqual(rec.tasks()[0]["written"], then + 5 * (data.FACTS_READ + 299), delta=1)   # its newest growth
+        self.assertEqual((rec.asking() or {}).get("call"), "toolu_q")
+        self.assertEqual([t["id"] for t in self.actor([self.session()])["background"]], ["srv"])
+
     def test_only_the_rows_added_since_are_read_again(self):
         self.add(command("t1", "b1", self.output("b1")))
         self.assertEqual(len(self.actor([self.session()])["background"]), 1)

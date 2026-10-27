@@ -746,11 +746,13 @@ class ClaudeCode(Harness):
 
     def derived(self, parts: List[Part], at: float, history: Optional[list] = None) -> List[Fact]:
         """What an answer asks the user (its calls of ASKS, a plan's text read from the plan file it wrote), and what a
-        call's new pieces say: an asking call's result (answered, or dismissed: Esc rejects the call), a background
+        call's new pieces say: an asking call's result (answered; dismissed: Esc rejected the call, its INTERRUPTED note
+        with the result -- a plan sent back with what to change is rejected too, and answered), a background
         task its tool's result started, resumed or stopped (task_of), a task's notice (an end, a monitor's event, an
         agent waiting on its own work), an agent's report handed back (its end). Keyed by the call's or the task's id,
         and a notice by its words."""
         calls = {p.tool.id: p.tool for p in parts if p.tool is not None and p.tool.id}
+        stopped = any(p.kind == Kind.INTERRUPT for p in parts)
         out: List[Fact] = []
         for p in parts:
             t, r = p.tool, p.result
@@ -762,8 +764,8 @@ class ClaudeCode(Harness):
             if r is not None and r.call_id:
                 asking = calls.get(r.call_id)
                 if asking is not None and asking.ask:
-                    out.append(Fact(Facts.ASK_SETTLED, r.call_id, at, {"call": r.call_id, "how": "dismissed" if r.error
-                                                                       else "answered", "result": r.output}))
+                    out.append(Fact(Facts.ASK_SETTLED, r.call_id, at, {"call": r.call_id, "how": "dismissed"
+                                                                       if r.error and stopped else "answered", "result": r.output}))
                 task = r.task
                 if task and task.get("id") and task.get("how") == "stopped":
                     out.append(Fact(Facts.TASK_ENDED, f"{task['id']}.{r.call_id}", at,

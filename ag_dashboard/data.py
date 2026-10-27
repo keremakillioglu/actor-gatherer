@@ -147,6 +147,9 @@ RECORDS = ("model_call", "reply_part", "reply_end", "call_failed", "recap", "nam
 FACTS = ("session_file", "message_queued", "message_sent", "message_withdrawn", "asked", "ask_settled", "turn_stopped",
          "task_started", "task_ended", "task_activity")
 FACTS_READ = 400               # the newest of an actor's facts read for its status
+#: A background task's signs of life, recorded every few seconds while its output grows: read apart from its other facts
+#: (the newest ACTIVITY_READ), so that a task left running never pushes its own start, or what is asked, out of FACTS_READ.
+ACTIVITY, ACTIVITY_READ = "task_activity", 200
 MESSAGES_READ = 200            # the newest of its messages' facts read for what the user wrote as it worked
 SENT_SECONDS = 30.0            # a message sent from the queue: shown as written until ag stores it, at most this long
 PROMPT_SECONDS = 120.0         # one sent between turns: the same
@@ -920,13 +923,23 @@ class Record:
 
 
 def _facts(conn, channel: str, types=FACTS, n: int = FACTS_READ) -> List[tuple]:
-    """The channel's newest `n` facts of `types`, oldest first: [(type, payload)]."""
+    """The channel's newest `n` facts of `types`, oldest first: [(type, payload)] -- its tasks' activity apart, the newest
+    ACTIVITY_READ of it, each in its place among the rest."""
     if CHANNEL not in _columns(conn, "events"):
         return []
-    rows = conn.execute(f"SELECT t.name, e.payload_json FROM events e JOIN event_types t ON {BY_CHANNEL} "
+    rows = _newest(conn, channel, [t for t in types if t != ACTIVITY], n)
+    if ACTIVITY in types:
+        rows += _newest(conn, channel, [ACTIVITY], ACTIVITY_READ)
+    return [(t, _json(raw) or {}) for _, t, raw in sorted(rows, key=lambda r: r[0])]
+
+
+def _newest(conn, channel: str, types: List[str], n: int) -> List[tuple]:
+    """The channel's newest `n` facts of `types`: [(row_id, type, payload_json)]."""
+    if not types:
+        return []
+    return conn.execute(f"SELECT e.row_id, t.name, e.payload_json FROM events e JOIN event_types t ON {BY_CHANNEL} "
                         f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name IN ({', '.join('?' * len(types))}) "
                         f"ORDER BY e.row_id DESC LIMIT ?", (channel, *types, n)).fetchall()
-    return [(t, _json(raw) or {}) for t, raw in reversed(rows)]
 
 
 def record_of(conn, channel: str) -> Record:
@@ -941,16 +954,18 @@ def typed(conn, channel: str, now: Optional[float] = None) -> List[dict]:
     written in (mid-turn, or held until it ended), not as the next turn's first; and the messages sent between turns
     in the last PROMPT_SECONDS, each the next turn's first (`sent` its `at`). Each in the user's words. And a message
     sent from Chat (the dashboard's `chat_sent`) that the harness has not had yet -- no message of its words queued,
-    sent or stored since -- in the last CHAT_SECONDS (`chat`: True, `sent` None)."""
+    sent or stored since -- in the last CHAT_SECONDS (`chat`: True, `sent` None); not a "/" command of the harness's,
+    which it runs itself and may never send on (the page shows none pending)."""
     now = time.time() if now is None else now
     queued: Dict[str, dict] = {}
     prompts, chats, heard = [], [], []
     for t, f in _facts(conn, channel, ("message_queued", "message_sent", "message_withdrawn", "chat_sent"), MESSAGES_READ):
-        if t == "chat_sent" and f.get("text") and f.get("at") is not None and now - f["at"] <= CHAT_SECONDS:
-            chats.append(f)
+        if t == "chat_sent":
+            if f.get("text") and not f["text"].startswith("/") and f.get("at") is not None and now - f["at"] <= CHAT_SECONDS:
+                chats.append(f)
             continue
         if t in ("message_queued", "message_sent"):
-            heard.append((f.get("at") or 0, " ".join((f.get("words") or f.get("text") or "").split())))
+            heard.append((f.get("at") or 0, _said(f.get("words") or f.get("text"))))
         if t == "message_queued" and f.get("queued"):
             queued[f["queued"]] = {"text": f.get("words") or f.get("text") or "", "at": f.get("at"), "sent": None, "joins": False}
         elif t == "message_withdrawn":
@@ -963,14 +978,20 @@ def typed(conn, channel: str, now: Optional[float] = None) -> List[dict]:
     got += [p for p in prompts if now - p["at"] <= PROMPT_SECONDS]
     if chats:                                        # the user's messages ag stored since: had, if not by the record
         words = "e.p_words" if "p_words" in _columns(conn, "events") else "NULL"
-        heard += [(_seconds(at) or 0, " ".join((said or text or "").split())) for at, said, text in conn.execute(
+        heard += [(_seconds(at) or 0, _said(said or text)) for at, said, text in conn.execute(
             f"SELECT e.inserted_at, {words}, e.text FROM events e JOIN event_types t ON {BY_CHANNEL} WHERE "
             f"ifnull(e.{CHANNEL}, '') = ? AND t.name = 'user_message' ORDER BY e.row_id DESC LIMIT 20", (channel,))]
     for c in chats:
-        said = " ".join(c["text"].split())
+        said = _said(c["text"])
         if not any(at >= c["at"] - 1 and (w == said or said in w) for at, w in heard):
             got.append({"text": c["text"], "at": c["at"], "sent": None, "joins": False, "chat": True})
     return sorted(got, key=lambda q: q["at"] or 0)
+
+
+def _said(text: Optional[str]) -> str:
+    """A message's words, to match what was sent with what the harness had: its spaces as one, and a command run with `!`
+    as the harness gives it ("!ls" the same as "! ls", as the page's `typedAs`)."""
+    return " ".join(re.sub(r"^!\s*", "! ", (text or "").strip()).split())
 
 
 def answer_of(conn, channel: str) -> Optional[dict]:

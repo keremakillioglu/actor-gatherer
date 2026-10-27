@@ -528,6 +528,7 @@ class Sessions:
         self._shells: Dict[str, dict] = {}       # the shells open, by id: {id, gatherer, cwd, since}
         self.answered: Dict[str, dict] = {}      # each session's last answer typed from the page (`answer`)
         self.renames: Dict[str, str] = {}        # each session's command naming it, held for its turn's end (`rename`)
+        self.unsent: Dict[str, List[tuple]] = {}  # a codex session's messages from Chat, (text, at), kept for its thread
         self.closing = False            # the dashboard stopping: what ends now is kept
         conn = self._db()               # a process from before is gone: what it was running stopped, and kept
         try:
@@ -649,9 +650,16 @@ class Sessions:
         terminal opened (`cols` x `rows`, `fullscreen` as `terminal` takes it) with the message its first
         prompt, or a turn of its agent -- now, or, while one runs, after it -- the agent started if it is not
         running. A turn of the agent's running or waiting takes it in either mode. The session as `list` has it;
-        the message kept in its gatherer as sent from Chat (actions.py's `chat_sent`)."""
+        the message kept in its gatherer as sent from Chat (actions.py's `chat_sent`) -- a new codex session's once it
+        has its thread (`_rename`), the id it is started under being no channel of the gatherer's."""
         got = self._send(session_id, text, cols, rows, fullscreen)
-        actions.chat_sent(got.get("gatherer"), got.get("session_id"), (text or "").strip())
+        text, sid = (text or "").strip(), got.get("session_id")
+        with self.lock:                          # a codex session still under the id it was started under: no channel yet
+            s = self._row(sid)
+            if s is not None and s["harness"] == "codex" and s["started_as"] == sid:
+                self.unsent.setdefault(sid, []).append((text, time.time()))
+                return got
+        actions.chat_sent(got.get("gatherer"), sid, text)
         return got
 
     def _send(self, session_id: str, text: str, cols: int, rows: int, fullscreen: bool) -> dict:
@@ -869,7 +877,8 @@ class Sessions:
 
     def _rename(self, old: str, new: str) -> str:
         """The session started as `old`, now known as its harness's `new` (codex's thread): its row, its
-        process, its log moved over, `started_as` kept. The id it has now (the lock held)."""
+        process, its log moved over, `started_as` kept, the messages sent from Chat before kept in its channel now
+        (`send`). The id it has now (the lock held)."""
         if old == new or not SESSION_ID.fullmatch(new):
             return old
         conn = self._db()
@@ -884,6 +893,8 @@ class Sessions:
         for table in (self.agents, self.terms):
             if old in table:
                 table[new] = table.pop(old)
+        for text, at in self.unsent.pop(old, []) if row is not None else []:
+            actions.chat_sent(row["gatherer"], new, text, at)
         try:
             os.replace(log_path(old), log_path(new))
         except OSError:

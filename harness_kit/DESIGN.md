@@ -221,7 +221,7 @@ each by the harness's own ids (`<type>:<key>`):
 | Type | Key | When |
 |---|---|---|
 | `asked` | the asking call's id | an answer ends with a call of ASKS (Claude Code's AskUserQuestion, ExitPlanMode); a plan's text read from the plan file the session wrote (`plan_text`) |
-| `ask_settled` | the asking call's id | a call carries its result: `dismissed` when the result is an error (Esc rejects the call), else `answered` |
+| `ask_settled` | the asking call's id | a call carries its result: `dismissed` when it is an error and the interrupt note comes with it (Esc rejects the call), else `answered` -- a plan sent back with what to change is an error too, with no note, and its turn goes on. The session-file watcher records it as well (above): this one is the sooner once a call goes out, the watcher's the one for Esc, which makes no call |
 | `task_started` | `<task>.<call>` | a tool's result says a background task started or resumed (`task_of`), labelled by its call (`label_of`) |
 | `task_ended` | `<task>.<call>`; `<task>.<crc of the notice>` | a task stopped (TaskStop); a notice that it ended; an agent's report handed back |
 | `task_activity` | `<task>.<crc of the notice>` | a monitor's event; an agent waiting on its own background work |
@@ -231,7 +231,9 @@ less the asks, which its answer recorded. Codex's asks and tasks are its rollout
 says `derives`, so the dashboard knows a channel's hook records them and reads them in place of looking through the
 answers' calls and the events' texts (`Record.asking`, `Record.tasks`); a channel whose newest call does not say so
 keeps the readers it had, until step 6. The session-file watcher looks at each running task's output file every 5 s
-(`task_activity`, by the file's time), so the dashboard reads no file to know a task lives.
+(`task_activity`, by the file's time), so the dashboard reads no file to know a task lives. The dashboard reads a
+channel's activity apart from its other facts (the newest 200, beside the newest 400 others), so a task that writes
+all along never pushes its own start, or what is asked, out of what is read.
 
 **`file_touched`.** What each call did to files (file_touches/) is recorded as `file_touched` events (`<call>:<how>:
 <path>`, property `call_id`) beside the session's reads, in place of the `touches` op and `_touches`, which stay for
@@ -243,7 +245,7 @@ in making_ag both readings agreed, but for 15 ToolSearch results, which touch no
 
 | Type | Payload | Read by |
 |---|---|---|
-| `chat_sent` | text | `data.typed`: pending (`chat`) until a message of its words is queued, sent or stored, at most 60 s |
+| `chat_sent` | text | `data.typed`: pending (`chat`) until a message of its words is queued, sent or stored, at most 60 s -- not a "/" command, which the harness runs itself; the page that sent it shows it pending until the harness has it. A new codex session's waits for its thread's id (`sessions._rename`) |
 | `answer_given` | call, summary, expect | `data._with_started`: the answer and whether it was recorded, past a restart |
 | `terminal_input` | | `sessions.answer`'s check that nothing was typed since a question was asked: one per burst of keys (2 s quiet) |
 
