@@ -49,6 +49,7 @@
   "part:local_command",
   "part:mid_turn",
   "part:reasoning",
+  "part:task_notice",
   "part:tool_call",
   "part:tool_notice",
   "part:tool_result",

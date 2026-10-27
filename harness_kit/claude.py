@@ -349,6 +349,8 @@ def kind_of(item) -> str:
             return Kind.AGENT
         text = str(blocks[0].get("text") or "")
         own = opening(text)
+        if own == Kind.ENVIRONMENT and "<task-notification>" in text:
+            return Kind.TASK_NOTICE                       # a notice Claude Code wraps in a reminder (2.1.311)
         if own is not None:
             return own
         return words_of(text)[0]
@@ -1093,9 +1095,10 @@ class Record(Follower):
 
     @staticmethod
     def _ended(m: dict, key: str, when: Optional[float]) -> List[Fact]:
-        """The background tasks a line's notifications say ended (`notices`) -- whether or not a call has carried them."""
-        if when is None:                                  # when, unknown: perhaps before an agent was resumed
-            return []
+        """The background tasks a line's notifications say ended (`notices`) -- whether or not a call has carried them;
+        not a line of what it sent the model (`api-request`, its blobs), which holds a notification again."""
+        if when is None or str(m.get("type") or "").startswith("api-request"):   # when, unknown: perhaps before an
+            return []                                                          # agent was resumed
         out, seen = [], set()
         for text in _strings(m):
             for n in notices(text):

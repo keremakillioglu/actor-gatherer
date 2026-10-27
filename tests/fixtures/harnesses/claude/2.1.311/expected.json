@@ -997,7 +997,7 @@
    }
   },
   {
-   "kind": "environment",
+   "kind": "task_notice",
    "role": "user",
    "text": "<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event, NOT a message from …[1388 244fa7ee]",
    "detail": {
@@ -1106,7 +1106,7 @@
    }
   },
   {
-   "kind": "environment",
+   "kind": "task_notice",
    "role": "user",
    "text": "<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event, NOT a message from …[688 ff9076a6]",
    "detail": {
@@ -1131,7 +1131,7 @@
    }
   },
   {
-   "kind": "environment",
+   "kind": "task_notice",
    "role": "user",
    "text": "<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event, NOT a message from …[688 b50901d2]",
    "detail": {
@@ -1156,7 +1156,7 @@
    }
   },
   {
-   "kind": "environment",
+   "kind": "task_notice",
    "role": "user",
    "text": "<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event, NOT a message from …[772 48b3b727]",
    "detail": {

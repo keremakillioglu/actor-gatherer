@@ -183,7 +183,8 @@ def picked(ask: dict, choice: dict) -> List[dict]:
     out = []
     for q, a in zip(questions, answers):
         a = a if isinstance(a, dict) else {}
-        labels = [o.get("label") or "" for o in q.get("options") or []]
+        q = {**q, "question": q.get("question") or q.get("title")}      # codex's async one: {title, options: [label]}
+        labels = [(o.get("label") or "") if isinstance(o, dict) else str(o) for o in q.get("options") or []]
         places = a.get("options") or []
         text = a.get("text") if isinstance(a.get("text"), str) and a["text"].strip() else None
         if not all(isinstance(i, int) and 0 <= i < len(labels) for i in places) or len(set(places)) != len(places):

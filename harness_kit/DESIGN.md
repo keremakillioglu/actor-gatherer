@@ -312,7 +312,19 @@ The doc planned a PR per step. Steps 1–3 went into one PR: they were built tog
    dashboard writes its own action events itself (decided 2026-10-26).
 6. **Built.** Old tables copied into records once (above); the dashboard's fallbacks, `Harness.owns` and
    `harness_of`, and the old ops gone; Pi's and OpenCode's plugins record their calls and answers.
-7. Fixtures per harness version, and a probe that triggers each feature live.
+7. **Built.** Fixtures per harness version: `tests/fixtures/harnesses/<harness>/<version>/` holds a live session's
+   model calls (one of each kind, headers and trimmed bodies), its longest conversation and the harness's own record,
+   with what harness_kit reads of them (`expected.json`: calls, parts and `words`, derived facts as the hook runs
+   `derive`, the follower's facts, answer keys). `tests/test_harness_fixtures.py` checks every version; a new version
+   is a new folder, and older ones must still read as they did (`tests/probe/rewrite.py` rewrites a reading on
+   purpose). `tests/probe/probe.py <harness>` makes a folder from a live run: the harness's command wrapped so a tap
+   records each call as sent, the session driven through the dashboard's API through every feature, the API error by
+   the tap refusing a message's calls, and what it did not trigger said. Claude Code 2.1.311 and Codex 0.164.0 are
+   captured. Their readings found two rules to fix: Claude Code 2.1.311 wraps a task's notice in a reminder, read
+   as `environment` (now `task_notice`, which opens a turn); and codex's async question, as its rollout records it
+   (`{title, options: [label]}`), was not taken by `answer_keys` (`picked` takes it now). A notification is seen
+   twice in Claude Code's record -- queued, then sent as the user's -- and recorded as two `task_ended`, which read as
+   one.
 
 ## Open questions
 
