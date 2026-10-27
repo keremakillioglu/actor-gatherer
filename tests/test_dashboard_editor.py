@@ -383,6 +383,25 @@ class RoomTest(unittest.TestCase):
         room.check()
         self.assertEqual((room.conflicts, self.disk()), ({}, str(room.text)))
 
+    def test_a_second_actor_s_change_to_a_conflict_s_lines_is_that_conflict_s(self):
+        """Two actors: the first rewrote a line edited here (a conflict); the second, reading the file, added to the
+        first's rewrite. Not merged around the line kept here: the conflict shows the file's lines as they are now."""
+        room, conn, doc, text = self.open("p1")
+        self.edit(room, "p1", doc, "return 1", "return 1  # many shapes, I suppose")
+        room.save()
+        self.write("def f():\n    return 1  # circle\n    # square\n\nx = f()\n")     # the first actor's, in its place
+        room.check()
+        [first] = room.state()["conflicts"]
+        self.write("def f():\n    return 1  # circle\n    # square\n    # kite\n\nx = f()\n")   # the second's, after it
+        room.check()
+        self.assertEqual(str(room.text), "def f():\n    return 1  # many shapes, I suppose\n\nx = f()\n")
+        [c] = room.state()["conflicts"]
+        self.assertEqual(c["theirs"], "    return 1  # circle\n    # square\n    # kite\n")
+        self.assertEqual((c["since"], c["zone"]), (first["since"], True))
+        self.assertGreater(c["at"], first["at"])
+        room.settle(c["id"], "theirs")
+        self.assertEqual(str(room.text), self.disk())
+
     def test_the_zone_goes_once_the_file_s_last_page_closed_it(self):
         room, conn, doc, text = self.open("p1")
         self.edit(room, "p1", doc, "return 1", "return 5")

@@ -176,6 +176,11 @@ def _guarded(a1: int, a2: int, guard) -> bool:
     return any(a1 < g2 and g1 < a2 if a1 < a2 else g1 < a1 < g2 for g1, g2 in guard)
 
 
+def _meets(a1: int, a2: int, held) -> bool:
+    """Whether `mine`'s lines a1..a2 meet any of `held`'s ranges (start, end) -- an empty range: at its edges too."""
+    return any(h1 <= a2 and a1 <= h2 if a1 == a2 or h1 == h2 else a1 < h2 and h1 < a2 for h1, h2 in held)
+
+
 def _theirs_guarded(was: List[str], ours: List[str], others: List[str], at: int, guard) -> bool:
     """Whether a change of `others`' to `was`'s lines is in `guard` -- `mine`'s lines, `ours` from line `at` of it: each
     of `was`'s lines where `ours` has it, after what `ours` changed before it."""
@@ -187,10 +192,13 @@ def _theirs_guarded(was: List[str], ours: List[str], others: List[str], at: int,
     return False
 
 
-def merge(base: str, mine: str, theirs: str, guard: List[Tuple[int, int]] = ()) -> Tuple[str, List[tuple], int]:
+def merge(base: str, mine: str, theirs: str, guard: List[Tuple[int, int]] = (),
+          held: List[Tuple[int, int]] = ()) -> Tuple[str, List[tuple], int]:
     """Three ways, by line, as version control merges: `base`, and what `mine` and `theirs` each made of it. The
     merged text; each conflict -- lines both changed, differently, or that `theirs` changed among `guard`'s (ranges
-    of `mine`'s lines it may not change unasked: the conflict zone) -- as (start, end) of `mine`'s lines kept in the
+    of `mine`'s lines it may not change unasked: the conflict zone), or changed again where `held`'s are (`mine`'s
+    lines of the conflicts still open: what `theirs` does there is that conflict's, not merged around it) -- as
+    (start, end) of `mine`'s lines kept in the
     merged text (characters), with `base`'s and `theirs`' lines there, and whether it is one for `guard`; and how many
     of `mine`'s changes `theirs` lacks (kept from `mine` alone)."""
     o, a, b = base.splitlines(True), mine.splitlines(True), theirs.splitlines(True)
@@ -220,8 +228,8 @@ def merge(base: str, mine: str, theirs: str, guard: List[Tuple[int, int]] = ()) 
             else:
                 put = others
         else:
-            both = _both(was, ours, others)
-            if both is None:                        # both, differently: mine kept, a conflict
+            both = None if _meets(za, sa, held) else _both(was, ours, others)
+            if both is None:                        # both, differently (or a conflict still open): mine kept, a conflict
                 conflict = _guarded(za, sa, guard)
             elif _theirs_guarded(was, ours, others, za, guard):
                 conflict = True
@@ -293,8 +301,9 @@ class Conflict:
     (`zone`): the pages' kept in the document -- from `start` to `end`, in UTF-8 bytes, moved with each edit
     (`Room._move`) -- and the file's (`theirs`, over `base`), until a page settles it."""
 
-    def __init__(self, start: int, end: int, base: str, theirs: str, zone: bool = False):
+    def __init__(self, start: int, end: int, base: str, theirs: str, zone: bool = False, since: Optional[float] = None):
         self.id, self.at, self.zone = uuid.uuid4().hex[:12], time.time(), zone
+        self.since = self.at if since is None else since      # when the file first changed these lines, unsettled
         self.start, self.end, self.base, self.theirs = start, end, base, theirs
 
 
@@ -363,8 +372,9 @@ class Room:
                     kept.append(z)
             self.zone = kept
 
-    def _zone_lines(self, text: str) -> List[Tuple[int, int]]:
-        """The conflict zone as ranges (start, end) of `text`'s lines: each line a range of it is on, or an empty
+    @staticmethod
+    def _lines(text: str, ranges) -> List[Tuple[int, int]]:
+        """Ranges of `text` (UTF-8 bytes) as ranges (start, end) of its lines: each line a range is on, or an empty
         range is at."""
         starts, at = [], 0
         for line in text.splitlines(True):
@@ -372,7 +382,7 @@ class Room:
             at += len(line.encode("utf-8"))
         if not starts:
             return []
-        return [(bisect.bisect_right(starts, a) - 1, bisect.bisect_right(starts, max(a, b - 1))) for a, b in self.zone]
+        return [(bisect.bisect_right(starts, a) - 1, bisect.bisect_right(starts, max(a, b - 1))) for a, b in ranges]
 
     def clear_zone(self) -> dict:
         """The conflict zone cleared: its lines the file's to change, as any other."""
@@ -386,7 +396,7 @@ class Room:
         return {"dirty": self.dirty, "missing": self.missing, "error": self.error, "changed": self.changed,
                 "saved": self.saved, "editors": len(self.conns), "now": time.time(),
                 "conflicts": [{"id": c.id, "from": _utf16(raw, c.start), "to": _utf16(raw, c.end), "base": c.base,
-                               "theirs": c.theirs, "at": c.at, "zone": c.zone}
+                               "theirs": c.theirs, "at": c.at, "since": c.since, "zone": c.zone}
                               for c in sorted(self.conflicts.values(), key=lambda c: c.start)],
                 "zone": [[_utf16(raw, a), _utf16(raw, b)] for a, b in self.zone]}
 
@@ -470,7 +480,8 @@ class Room:
             if text == self.disk:
                 return self._restate()
             mine = str(self.text)
-            merged, found, _ = merge(self.disk, mine, text, self._zone_lines(mine))
+            merged, found, _ = merge(self.disk, mine, text, self._lines(mine, self.zone),
+                                     self._lines(mine, [(c.start, c.end) for c in self.conflicts.values()]))
             if merged != mine:
                 before = self.doc.get_state()
                 change(self.text, merged)
@@ -479,10 +490,12 @@ class Room:
             for start, end, was, theirs, zone in found:
                 b0 = len(merged[:start].encode("utf-8"))
                 b1 = b0 + len(merged[start:end].encode("utf-8"))
+                since = time.time()
                 for old in list(self.conflicts.values()):   # the same lines' conflict before: this one in its place
                     if old.start <= b1 and b0 <= old.end:
+                        since = min(since, old.since)
                         del self.conflicts[old.id]
-                c = Conflict(b0, b1, was, theirs, zone)
+                c = Conflict(b0, b1, was, theirs, zone, since)
                 if raw[b0:b1].decode("utf-8") != theirs:
                     self.conflicts[c.id] = c
             self.disk, self.changed = text, time.time()

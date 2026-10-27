@@ -7377,10 +7377,10 @@ async function edClearZone(s) {
 let EdConflict = null;
 function edConflictWidget(A) {
   return EdConflict ||= class extends A.WidgetType {
-    constructor(s, c, name) { super(); this.s = s; this.c = c; this.name = name; }
-    eq(other) { return other.c.id === this.c.id && other.c.theirs === this.c.theirs && other.name === this.name; }
+    constructor(s, c, by) { super(); this.s = s; this.c = c; this.by = by; }
+    eq(other) { return other.c.id === this.c.id && other.c.theirs === this.c.theirs && other.by.names.join("\n") === this.by.names.join("\n"); }
     toDOM() {
-      const { s, c, name } = this;
+      const { s, c } = this, name = this.by.label, many = this.by.names.length > 1;
       const pick = (take, label, title) => el("button", { type: "button", title,
         onclick: (ev) => { ev.preventDefault(); edSettle(s, c.id, take); } }, label);
       const mine = c.to > c.from, kind = !c.theirs ? "deleted" : mine ? "rewrote" : "added";
@@ -7392,7 +7392,7 @@ function edConflictWidget(A) {
         picks = [
           pick("mine", mine ? "Restore yours" : "Leave them out", mine ? "Keep your lines; a save (or Auto-save) writes them over the file's"
             : "Leave the file's new lines out; a save (or Auto-save) writes the file without them"),
-          pick("theirs", { rewrote: "Accept its rewrite", deleted: "Accept the deletion", added: "Add them" }[kind],
+          pick("theirs", { rewrote: many ? "Accept their rewrite" : "Accept its rewrite", deleted: "Accept the deletion", added: "Add them" }[kind],
             c.theirs ? "Put the file's lines in place of yours" : "Delete your lines, as the file did"),
           kind === "rewrote" ? pick("both", "Keep both", "Keep your lines, and the file's after them") : null];
       } else {                                       // both changed, differently, outside the zone (it was cleared)
@@ -7402,7 +7402,8 @@ function edConflictWidget(A) {
           c.theirs && mine ? pick("both", "Keep both", "Keep your lines, and the file's after them") : null];
       }
       return el("div", { class: "ed-cf" },
-        el("div", { class: "ed-cf-head" }, el("span", { class: "what", text: `${what}, ${ago(c.at)}.` }), el("span", { class: "grow" }), ...picks),
+        el("div", { class: "ed-cf-head" }, el("span", { class: "what", title: many ? `Their changes, one after the other:\n${this.by.names.join("\n")}` : null,
+          text: `${what}, ${ago(c.at)}.` }), el("span", { class: "grow" }), ...picks),
         c.theirs ? el("div", { class: "ed-cf-label", text: mine ? "On disk now, in place of the lines above:" : "On disk now:" }) : null,
         c.theirs ? el("pre", { class: "ed-cf-theirs", text: c.theirs.replace(/\n$/, "") }) : null);
     }
@@ -7413,7 +7414,11 @@ function edConflictWidget(A) {
 // moment after it lands: the listing's `writers`), and whenever one's box is missing -- an edit can take it away (one
 // that deletes the line break after it) while leaving the conflict where it was. Called with each state, and with each
 // of the panel's ticks.
-const edConflictBy = (s, c) => { const w = edCredit(edWriters(edEntry(s.path)), c.at); return w ? edWriterName(w) : ""; };
+// Who made a conflict: every actor whose change landed from the first of its lines' changes (`since`) to its last.
+function edConflictBy(s, c) {
+  const ws = edWriters(edEntry(s.path)).filter((w) => w.at >= (c.since ?? c.at) - ED_CREDIT[0] && w.at <= c.at + ED_CREDIT[1]).reverse();
+  return { label: ws.length > 1 ? `${ws.length} actors` : ws.length ? edWriterName(ws[0]) : "", names: ws.map(edWriterName) };
+}
 function edConflicts(s) {
   const v = s.view, list = (s.state && s.state.conflicts) || [];
   if (!v || !s.conflicts) return;
