@@ -25,7 +25,7 @@ from typing import Callable, List, Optional, Set
 
 from harness_kit import Call, Facts, Harness, Part
 
-from .call_ag import read_of, report_measured
+from .call_ag import HUNG_UP, read_of, report_measured
 from .records import call_failed, derived, model_call, record, recap, reply_end, reply_parts, name
 from .session_files import SessionFiles
 
@@ -174,7 +174,8 @@ class ProxyHook:
         if kept is None:
             return
         gatherer, channel, _cwd = kept
-        await self.recorded(gatherer, channel, [call_failed(read_of(request), status, error)])
+        reached = getattr(request, "answer_reached", None) if status == HUNG_UP else None   # Esc: before its words, or after
+        await self.recorded(gatherer, channel, [call_failed(read_of(request), status, error, reached)])
 
     async def before_end(self, request, status: int, answer: dict) -> None:
         """The hook server's report, once the answer to one of the session's own calls is back whole and before the

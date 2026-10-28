@@ -74,10 +74,12 @@ def reply_end(answer_id: str, stop: Optional[str], read_id: Optional[int] = None
             "properties": _own(answer_id=answer_id, read_id=read_id)}
 
 
-def call_failed(read_id: Optional[int], status: Optional[int], error: str) -> dict:
-    """A model call that failed: its endpoint's status (None: no answer came), and why."""
+def call_failed(read_id: Optional[int], status: Optional[int], error: str, reached: Optional[str] = None) -> dict:
+    """A model call that failed: its endpoint's status (None: no answer came), and why. Hung up on by the harness (499),
+    `reached`: what of its answer the harness had in words (hook_server's `answer_reached`: "text", "tool", "nothing")."""
     return {"type": CALL_FAILED, "id": f"failed:{read_id}" if read_id is not None else f"failed:{uuid.uuid4().hex}",
-            "payload": {"status": status, "error": error}, "properties": _own(read_id=read_id)}
+            "payload": _own(status=status, error=error, reached=reached) | {"status": status},
+            "properties": _own(read_id=read_id)}
 
 
 def recap(text: str) -> dict:

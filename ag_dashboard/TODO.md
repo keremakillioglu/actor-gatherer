@@ -81,7 +81,12 @@ the harness would otherwise get a bare 500. The actor shows Running with a note 
 (data.py's `failing`), and Error once it gives up: Claude Code's record of the session ends with its API error
 (`stopped`), or no try comes for GIVE_UP_SECONDS -- Esc while Claude Code waits to try again stops it without a word
 in its record. The same record shows a turn the user
-interrupted (Esc) as Idle, where ag's record would go on running.
+interrupted (Esc) as Idle, where ag's record would go on running. Chat says under each turn how it stopped short, in
+its harness's own words (files.py's `stopped`, page.html's STOPPED_SAYS): Claude Code's "⎿ Interrupted · What should
+Claude do instead?", codex's "■ Conversation interrupted" (less its pointer to its /feedback; and its "■ Goal
+budget reached - the turn was stopped.", by its record's `reason`) -- from that record or from the note the harness
+sends the model with the next message ("[Request interrupted by user]", codex's `<turn_aborted>`); or the error it gave
+up on, in its words, from the record.
 
 Not covered yet:
 
@@ -111,15 +116,34 @@ Not covered yet:
   stopped while ag still reads waits for that read: seconds on a busy gatherer. The hang-up could be kept at once
   and tied to its read after.
 - [ ] **Claude Code's rewind** (Esc Esc, /rewind): the conversation goes back to an earlier message and on from
-  there. ag keeps the branch left behind in every later context. Where Claude Code's notes follow the new message
-  (a session's first turn), the Claude adaptor's Continuity can even take the new message for one stored and not
-  send it -- the shape the withdrawn calls had. It needs the fork found in the request: the stored chain's piece
-  after the last common one differs from the request's, and is a user message (Claude Code rewriting its own notes
-  on resume looks alike, but the notes are not the user's). The stored branch after the fork would then be withdrawn.
-- [ ] **Codex, stopped before the answer:** the call is kept as 499 and shows Idle, but nothing is withdrawn: what
-  codex does with the message (keeps it, or takes it back) is not checked.
-- [ ] **A message taken back is not shown in Chat at all.** It is in Claude Code's input box; Chat could show it
-  there, as "Taken back".
+  there. The Claude adaptor's Continuity finds the fork (`carry_on`'s "rewind": the user's words right after a run
+  of stored pieces where the stored history went on otherwise; the hook logs it) and goes on from there, so the new
+  message is stored and sent, even where Claude Code's notes follow it as they followed the old one. But ag keeps
+  the branch left behind in every later context: the stored branch after the fork would be withdrawn.
+- [x] **Codex, stopped before the answer:** the call is kept as 499 and shows Idle, and nothing is withdrawn -- rightly:
+  codex keeps the message, its answer begun or not, its message box left empty, and says so ("■ Conversation
+  interrupted - use /feedback if something went wrong"; its tui's `on_interrupted_turn`, 0.164; read in its source,
+  not live).
+- [x] **A message taken back goes back in Chat's message box**, as Claude Code puts it back in its input box, and out
+  of the conversation (data.py's `taken_back`: the newest user message withdrawn with the newest call, hung up on). The
+  hook withdraws a call's events on ANY Esc, and what the call sent again of the turns before with them; Claude Code
+  keeps all of it once the answer's words had begun, and records the turn interrupted. The hook server says what of the
+  answer it had relayed when the harness hung up (`call_failed`'s `reached`: "nothing" -- nothing, or only thinking --
+  "tool", "text"), so "nothing" is taken back and "text" kept at once; a tool call begun with no text (or a hook from
+  before `reached`) waits for Claude Code's record, followed, to say nothing of the turn being interrupted after the call
+  went to the model (its read) for TAKEN_SECONDS (`withdrawn_reads`). Chat hides only the message and what came after it
+  in the call. While it is untouched in Claude Code's input box (the Esc the last key typed into its terminal after the
+  call before: the session's `stopped_at`, the page's `untouched`), it is put in Chat's message box, as the actor's
+  draft, once and only where nothing is written; once it is not there untouched -- sent or changed in the terminal, its
+  process gone -- it is taken out of Chat's box again, if still as it was put. Sent from Chat, Claude Code's box is
+  emptied first. Codex takes none back (see above).
+- [x] **Esc in Chat** interrupts the turn, as in the harness's own terminal: typed into the session's terminal, from the
+  message box in any view, or anywhere in the Chat view that does not take it (a panel, the settings or the Editor
+  open, a box being typed in). Only while the actor runs or asks (its own status, not a build of its context) -- an
+  idle Claude Code takes Esc twice for its rewind, and one starting, for "No" to trusting its folder -- and while it
+  asks, from the message box only: elsewhere Esc would dismiss its question. Typed while the dashboard's own keys go
+  in (a message pasted, an answer), it waits for them (sessions.py's `type`). A session the dashboard runs no terminal
+  for (another process's, or the per-turn process of `[dashboard] chat = "headless"`) cannot be interrupted from Chat.
 - [ ] **`took_back` knows only keys typed through the dashboard's terminal**, and relies on Claude Code 2.1.310
   emptying a non-empty input box on Ctrl+C (on an empty one it only says "press again to exit": never send two).
 

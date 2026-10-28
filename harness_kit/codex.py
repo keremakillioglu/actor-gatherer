@@ -827,7 +827,8 @@ class Rollout(Follower):
                 del self.asks[call]
                 out.append(Fact(Facts.ASK_SETTLED, f"{key}.{call}", when, {"call": call, "how": "dismissed", "result": None}))
         out.append(Fact(Facts.TURN_STOPPED, key, when, {"how": how, "turn": turn, "status": _status(error),
-                                                         "error": str(error.get("message") or "") or None if error else None}))
+                                                         "error": str(error.get("message") or "") or None if error else None,
+                                                         **({"reason": p.get("reason")} if kind == "turn_aborted" else {})}))
         if how == "over" and self.turn["plan"] is not None:
             self.offered = turn
             out.append(Fact(Facts.ASKED, f"{key}.plan", when, {"call": f"plan:{turn}", "kind": "plan",
