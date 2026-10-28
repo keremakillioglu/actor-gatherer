@@ -18,6 +18,8 @@ file says so, each marked checked (what the call showed of it is on disk) or not
 at the lines the file itself says; and the files that changed while it ran, which it doesn't name.
 A change it found to a file in ag's home (the databases and logs ag writes as calls run) is left out
 unless the call says it writes the file -- as the hook server now does itself, for what it kept before.
+What git changed (a pull, a merge, a checkout, a new work tree: `_git`) is told apart from the call's own
+changes: the files changed by a call that ran git, and by any other call as one ran git, in any session.
 
 Any other call (one from before the hook checked calls) is read from what the model saw alone
 (harness_kit/shell.py): a Read's lines carry their numbers, but an edit carries only the text it
@@ -31,6 +33,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import time
 from typing import Dict, List, Optional
 
@@ -41,7 +44,7 @@ from . import data, work
 from . import home as paths
 from harness_kit.shell import (  # noqa: F401 - python_changes: tested here
     CODE_MODE, EDITS, GLOB, GREP_PATH_LINE, READ_LINE, SHELLS, _patch_files, _resolve, _shell_text, opened_script,
-    python_changes, runs_git, script_calls, script_output, shell_changes, shell_reads)
+    python_changes, runs_git, script_calls, script_output, shell_changes, shell_reads, worktrees_added)
 
 MAX_ROWS = 4000            # the most lines one file shows in a turn
 HELD_SECONDS = 30          # a message held until its turn ended: stored this close to when Claude Code sent it
@@ -49,6 +52,10 @@ LINE_CHARS = 400           # the most of one line's text sent
 COMMAND_OUTPUT = 4000      # the most of a command's output sent
 CONTEXT = 2                # the lines known around a change shown with it
 LATELY = 600.0             # seconds: a session's changes this recent count as where it works now, besides its latest turn's
+GIT_WINDOW = 600.0         # seconds: how long ag's watcher keeps a change it saw (file_touches/watch.py's KEEP_SECONDS) --
+                           # a call of another session's stored this close to one running git may have been found to
+                           # make git's changes
+SAME_ANSWER = 1.0          # seconds: calls of one session stored this close were made in one answer, run side by side
 # as the hook server's file_touches/check.py has them: Claude Code's note after a command's output, codex's header before it
 SHELL_CWD_NOTE = re.compile(r"\n?Shell cwd was reset to [^\n]*\s*$")
 CODEX_HEADER = re.compile(r"^(?:Chunk ID: [^\n]*\n)?(?:Wall time: [^\n]*\n)?(?:Process exited with code [^\n]*\n)?"
@@ -166,16 +173,31 @@ def place(known: Sheet, old: str, new: str):
 
 # ------------------------------------------------------------------ the session, turn by turn
 
-def _events(conn, channel: str):
+#: What the agent said and did: shown though a call that carried it was hung up on (`_events`).
+AGENTS_OWN = ("agent_message", "agent_reasoning", "tool_call", "tool_output")
+
+
+def _events(conn, channel: str, stops: List[dict] = ()):
     """The channel's events, oldest first, then what it has pending: (row_id, type, at, parts, said) -- parts unclipped,
     the lines of a long read all there; `said`, a user message's (kind, words) as its harness's rules read them when
-    it was stored (its `kind` and `words` properties), else None: read here, from its parts. Not those the harness
-    took back (data.kept)."""
+    it was stored (its `kind` and `words` properties), else None: read here, from its parts. Not the user's message the
+    harness took back (Esc before any of its answer came), nor what came with it (`_withdrawn`; data.py's
+    `withdrawn_reads`): a call hung up on withdraws all it stored -- the turns before it, sent with it, among them, and
+    the agent's own (AGENTS_OWN) -- but the harness keeps all that, and all of the call where the answer had begun, its
+    record saying the turn was interrupted after (`stops`)."""
     said = "e.p_kind, e.p_words" if {"p_kind", "p_words"} <= data._columns(conn, "events") else "NULL AS p_kind, NULL AS p_words"
+    tables, kept = data._tables(conn), ""
+    if "_withdrawn" in tables:
+        back = data.withdrawn_reads(conn, channel, tables, [s["at"] for s in stops if s["kind"] == "interrupted"])
+        taken = " OR ".join(f"(w.read_id = {int(r)} AND w.row_id >= {int(w['said_row'])})"
+                            for r, w in back.items() if w["said"] and not w["kept"])
+        own = ", ".join(f"'{t}'" for t in AGENTS_OWN)
+        kept = (f" AND (t.name IN ({own}) OR e.row_id NOT IN (SELECT w.row_id FROM _withdrawn w WHERE w.read_id IS NULL"
+                + (f" OR {taken}" if taken else "") + "))")
     rows = conn.execute(
         f"SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at, {said} FROM events e "
         f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{data.CHANNEL}, '') = ? "
-        f"AND {data.NOT_RECORD}{data.kept(data._tables(conn))} ORDER BY e.row_id", (channel,)).fetchall()
+        f"AND {data.NOT_RECORD}{kept} ORDER BY e.row_id", (channel,)).fetchall()
     harness = data._harness(conn, channel)
     for r in rows:
         yield (r["row_id"], r["type"] or "?", data._seconds(r["inserted_at"]),
@@ -202,7 +224,82 @@ def _touches(conn, channel: str) -> Dict[str, List[dict]]:
     return out
 
 
+_GIT: Dict[str, tuple] = {}   # a gatherer's database -> (the last row read, what git did up to it: `_git`'s)
+_GIT_LOCK = threading.Lock()
+
+
+def _git(conn) -> dict:
+    """What git did to files in any of the gatherer's sessions, as ag's hook found it: {calls: {id: (when stored,
+    session)} -- the calls that ran git so as to change a checkout's files (`runs_git`: a pull, a merge, a checkout,
+    `git worktree add` ...); changed: {path: [(when, session, call, how)]} -- the files they changed, and how (created,
+    modified, deleted); trees: [{root, call, at}] -- the work trees `git worktree add` made, each told by the `.git` file
+    it writes at the root ("gitdir: <repository>/.git/worktrees/<name>"), which the hook found a call (`call`: the one
+    that made it, or one running then, of any session) created, recorded at `at`}. Kept, and read on from the last row
+    read: a gatherer's calls and what they did to files are many, the ones that ran git a few."""
+    types = dict(conn.execute("SELECT name, event_type_id FROM event_types WHERE name IN ('tool_call', 'file_touched')"))
+    if "file_touched" not in types:
+        return {"calls": {}, "changed": {}, "trees": []}
+    path = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
+    top = conn.execute("SELECT max(row_id) FROM events").fetchone()[0] or 0
+    with _GIT_LOCK:
+        last, got = _GIT.get(path, (0, None))
+        if got is None or top < last:                # not read before, or not the database read before: made again since
+            last, got = 0, {"calls": {}, "changed": {}, "trees": []}
+        if top == last:
+            return got
+        call, touch = types.get("tool_call", -1), types["file_touched"]
+        of = lambda key: f"CASE WHEN event_type_id = {touch} THEN json_extract(payload_json, '$.{key}') END"   # noqa: E731
+        for typ, session, inserted, raw, cid, at_path, how, gitdir in conn.execute(
+                f"SELECT event_type_id, p_channel, inserted_at, CASE WHEN event_type_id = ? THEN payload_json END, {of('call')}, "
+                f"{of('path')}, {of('how')}, CASE WHEN event_type_id = ? AND payload_json LIKE '%gitdir: %' THEN payload_json END "
+                "FROM events WHERE event_type_id IN (?, ?) AND row_id > ? AND row_id <= ? "
+                "AND (event_type_id = ? OR text IS NULL OR text LIKE '%git%') ORDER BY row_id",
+                (call, touch, call, touch, last, top, touch)):
+            at, session = data._seconds(inserted), session or ""
+            if typ == call:                          # a call: whether it ran git, whatever harness wrote it
+                p = data._json(raw)
+                harness = "codex" if isinstance(p, dict) and p.get("type") else "claude"
+                for part in data.parts("tool_call", raw, None, None, harness):
+                    ran = [(part.get("name"), part.get("input"))] + [(c.get("name"), c.get("input")) for c in part.get("calls") or []]
+                    if part.get("kind") == "call" and part.get("id") and any(
+                            name in SHELLS and runs_git(_shell_text(name, inp)[0]) for name, inp in ran):
+                        got["calls"][part["id"]] = (at, session)
+                continue
+            if cid in got["calls"] and how in ("created", "modified", "deleted") and isinstance(at_path, str):
+                got["changed"].setdefault(at_path, []).append((at, session, cid, how))
+            t = data._json(gitdir) if gitdir else None
+            lines = t["detail"].get("lines") if isinstance(t, dict) and isinstance(t.get("detail"), dict) else None
+            if lines and how == "created" and cid and isinstance(at_path, str) and at_path.endswith("/.git") \
+                    and str(lines[0]).startswith("gitdir: "):
+                got["trees"].append({"root": at_path[:-len("/.git")], "call": cid, "at": at})
+        _GIT[path] = (top, got)
+        return got
+
+
 TOUCH_KINDS = {"read": "read", "hit": "hit", "created": "write", "modified": "edit", "deleted": "delete"}
+STOPS_READ = 1000          # the newest of a session's turns stopped short, as its record says, read
+
+
+def _stops(conn, channel: str) -> List[dict]:
+    """How the session's turns stopped short, as its harness's own record said as it was written (`turn_stopped`, as
+    data.Record.stopped reads the newest): [{kind: "interrupted" (Esc) or "error" (it gave up on a model call), at,
+    text: the error's words, status: its HTTP status, reason: why codex aborted it ("interrupted", "budget_limited")}],
+    oldest first. Not the turns that ended as they do."""
+    out = []
+    for _, f in data._facts(conn, channel, ("turn_stopped",), STOPS_READ):
+        if f.get("how") in ("interrupted", "error") and isinstance(f.get("at"), (int, float)):
+            out.append({"kind": f["how"], "at": f["at"], "text": data._clip(f.get("error"), data.ERROR_CHARS) or None,
+                        "status": f.get("status") if isinstance(f.get("status"), int) else None,
+                        "reason": f.get("reason") if isinstance(f.get("reason"), str) else None})
+    return out
+
+
+def _interrupted(text: str) -> bool:
+    """Whether a note of the harness's in the conversation is its note that the user stopped the turn (Esc), sent with
+    the next: Claude Code's "[Request interrupted by user]" (" for tool use]"), codex's <turn_aborted>."""
+    text = text.strip()
+    return claude_rules.opening(text) == Kind.INTERRUPT or text.startswith(
+        tuple(m for m, k in codex_rules.PREAMBLE if k == Kind.INTERRUPT))
 
 
 def _turn_starts(evs: list, held: List[dict]) -> tuple:
@@ -244,8 +341,10 @@ def _runs(numbered: List[tuple]) -> List[tuple]:
 class _Turn:
     def __init__(self, n, row_id, at, text):
         self.head = {"n": n, "row_id": row_id, "at": at, "text": text, "replies": [], "now": None, "more": [],
-                     "last": None, "end": None}       # end: its last event's time
+                     "last": None, "end": None, "stopped": None,   # end: its last event's time
+                     "calls": 0}                                   # as many as `commands` lists
         self.acts: Dict[str, dict] = {}              # its calls, by id, for what it is doing (work.summary)
+        self.skill: Optional[list] = None            # its last call counted, a Skill's: [the skill asked, loaded yet]
         self.files: Dict[str, dict] = {}
         self.commands: List[dict] = []
         self.order: List[str] = []
@@ -255,21 +354,22 @@ class _Turn:
     def file(self, path: str) -> dict:
         f = self.files.get(path)
         if f is None:
-            f = self.files[path] = {"path": path, "sources": [], "kinds": set(), "created": False}
+            f = self.files[path] = {"path": path, "sources": [], "kinds": set(), "git": set(), "created": False}
             self.order.append(path)
         return f
 
-    def source(self, f: dict, via: str, kind: str, call: dict, error: bool) -> int:
-        """A call that touched `f`: the same call again (a read and a hit, five replacements) is one."""
+    def source(self, f: dict, via: str, kind: str, call: dict, error: bool, git: bool = False) -> int:
+        """A call that touched `f`: the same call again (a read and a hit, five replacements) is one -- what git did as it
+        ran (`git`) one apart, its kinds the file's `git`, not its `kinds`."""
         last = f["sources"][-1] if f["sources"] else None
-        f["kinds"].add(kind)
+        f["git" if git else "kinds"].add(kind)
         if self.current is not None and f["path"] not in self.current["files"]:
             self.current["files"].append(f["path"])
-        if last and last["call"] is call:
+        if last and last["call"] is call and bool(last.get("git")) == git:
             last["kinds"] = sorted(set(last["kinds"]) | {kind})
             return len(f["sources"]) - 1
         f["sources"].append({"via": via, "kind": kind, "kinds": [kind], "error": error, "call": call, "blocks": [],
-                             "at": self.at_call})
+                             "at": self.at_call, **({"git": True} if git else {})})
         return len(f["sources"]) - 1
 
     def checked(self, f: dict, src: int, checked: Optional[bool], named: bool) -> None:
@@ -445,8 +545,11 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     ran with ! printed, when it is one; what it was doing
     last -- {kind: "thinking"}, {kind: "call", id, text} (a call with no result yet), or None; and its latest
     call while nothing readable was said or thought after it -- {id, text, call, running, error, output} -- or
-    None; and what its calls are doing and how they ended, work.summary's), and for turn `turn` (None:
-    the latest) the files it worked on, in the order first touched, each
+    None; and what its calls are doing and how they ended, work.summary's; `stopped`, how it stopped short -- interrupted
+    (Esc), as the note the harness sent with the next turn says or its own record (`_stops`), or on an error it gave up
+    on, as its record says: {kind, at (None: not known), text, status}, as data.py's actor's `stopped` -- or None;
+    `calls`, as many as its list of calls below has), and for turn `turn` (None: the latest) the files it worked on, in
+    the order first touched, each
         {path, kinds (read, edit, write, hit), created, changed (the lines its changes added and removed, [added,
          removed]: `_changed`; None for none counted),
          sources: [{via, kind, kinds, error, call, blocks, changed}]: the calls that touched it, in order, each
@@ -461,22 +564,27 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     Each source has `at`, when its call was made (None for what was not a call).
     A source the hook server checked on disk also has `checked` (True: what the call showed of the file
     is on disk; False: it is not; None: nothing to match), and `unnamed` when the file changed while
-    the call ran but the call doesn't name it; its kinds may be "delete" too. A file in a temporary
-    folder (`temporary`) has `temporary` true.
+    the call ran but the call doesn't name it; its kinds may be "delete" too. A change git made as the call
+    ran (`by_git`) is a source of its own with `git` true, its kinds the file's `git`, not its `kinds`, its
+    lines not in the file's nor the command's `changed`, and the command's `git` ({path: kinds}) rather than
+    its `did`. A file in a temporary folder (`temporary`) has `temporary` true.
     Relative paths in shell commands are taken from `cwd` (the session's directory). `home`: the
     user's home folder, which the page shows as ~."""
     conn = data._connect(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
-        evs = list(_events(conn, channel))
+        stops = _stops(conn, channel)
+        evs = list(_events(conn, channel, stops))
         touched = _touches(conn, channel)
+        git = _git(conn) if touched else {"calls": {}, "changed": {}, "trees": []}   # what git did, in any session
         held = data.meanwhile(conn, channel)          # sent when a turn ended, written while it ran (the record's)
         reports = data.record_of(conn, channel).reports()   # what each subagent answered, as its own record had it
     finally:
         conn.close()
     known: Dict[str, Sheet] = {}                     # each file's lines as last seen, over the whole session
     calls: Dict[str, dict] = {}                      # a call waiting for its result, by id
+    mine: set = set()                                # the work trees the session's calls make (`git worktree add`)
     turns: List[_Turn] = []
     want = None
 
@@ -517,9 +625,38 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
             rec.block(f, src, {"t": "diff", "at": at, "old": before, "new": after, "above": above, "below": below})
         k.replace(at, before, after)
 
+    def by_git(part: dict, path: str, how: str, named, says, ran: bool) -> Optional[str]:
+        """Whether git made the change (`how`: created, modified, deleted) ag's hook found call `part` made to `path`,
+        not the call itself (unless it says it writes the file: `says`): "ran" -- the call ran git so as to change a
+        checkout's files (`ran`: a pull, a merge, a checkout, `git worktree add` ...), or was found to create the `.git`
+        of a new work tree the file is in; "meanwhile" -- the call doesn't name the file, and git made that change as the
+        call ran, in another call: of this session, stored with it (SAME_ANSWER), of another, within the watcher's window
+        (GIT_WINDOW) -- or, the file created, it is in a work tree made then, by no call of this session's (a checkout
+        only creates); None: neither (`git`, `mine`)."""
+        at, cid = part.get("_at"), part.get("id")
+        near = lambda when, session: at is not None and when is not None \
+            and abs(at - when) <= (SAME_ANSWER if session == channel else GIT_WINDOW)    # noqa: E731
+        if ran or any(cid == w["call"] and _under(path, (w["root"],)) for w in git["trees"]):
+            whose = "ran"
+        elif named == 0 and (any(c != cid and h == how and near(when, s) for when, s, c, h in git["changed"].get(path, ()))
+                             or how == "created" and any(_under(path, (w["root"],)) and w["root"] not in mine
+                                                         and near(w["at"], None) for w in git["trees"])):
+            whose = "meanwhile"
+        else:
+            return None
+        return None if says(path) else whose
+
     def from_disk(rec, view, via: str, part: dict, result: dict, rows: List[dict], error: bool) -> None:
         """A call as the hook server found it on disk (`_touches`): the files it read and changed."""
-        said = None
+        said = []                                           # the files the call says it writes, once asked
+        name = part.get("name") or ""
+        ran = name in SHELLS and runs_git(_shell_text(name, part.get("input"))[0])
+
+        def says(path: str) -> bool:
+            if not said:
+                said.append(says_writes(name, part.get("input"), cwd))
+            return path in said[0]
+
         for r in rows:
             path, how, d = r["path"], r["how"], r["detail"]
             if path is None or how not in TOUCH_KINDS:
@@ -533,17 +670,19 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 known[path].rows = {i + 1: {"text": t} for i, t in enumerate(d.get("lines") or [])}
             elif how in ("modified", "deleted"):
                 known.pop(path, None)
-            if how in ("created", "modified", "deleted") and ags(path):
-                said = says_writes(part.get("name") or "", part.get("input"), cwd) if said is None else said
-                if path not in said:
-                    continue                                # ag's own write: kept before the hook server left them out
+            changing = how in ("created", "modified", "deleted")
+            if changing and ags(path) and not says(path):
+                continue                                    # ag's own write: kept before the hook server left them out
             if not rec:
                 continue
+            gits = by_git(part, path, how, r["named"], says, ran) if changing else None
             f = rec.file(path)
-            src = rec.source(f, via, TOUCH_KINDS[how], view, error)
-            unnamed = how in ("created", "modified", "deleted") and r["named"] == 0
+            src = rec.source(f, via, TOUCH_KINDS[how], view, error, bool(gits))
+            unnamed = changing and r["named"] == 0
             rec.checked(f, src, None if r["checked"] is None else bool(r["checked"]), not unnamed)
-            if unnamed:
+            if gits == "meanwhile":
+                rec.block(f, src, {"t": "note", "text": "changed by git as this ran, in another call; this call doesn't name it"})
+            elif unnamed:
                 rec.block(f, src, {"t": "note", "text": "changed while this ran; the call doesn't name it"})
             if how == "read":
                 if d.get("image") and result.get("row_id") is not None:
@@ -558,7 +697,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 if d.get("hits"):
                     rec.block(f, src, {"t": "hits", "rows": d["hits"]})
             elif how == "created":
-                f["created"] = True
+                f["created"] = f["created"] or not gits
                 rec.block(f, src, {"t": "write", "lines": d.get("lines") or [], "cut": d.get("cut", 0), "created": True})
             elif how == "modified":
                 for h in d.get("hunks") or []:
@@ -589,6 +728,13 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     def skilled(t: Optional[_Turn], n: dict) -> None:
         """A skill Claude Code loaded (`_note`), among the turn's calls: the Skill call that loaded it, its instructions
         as its output; else, the user having typed its /name, a call of its own."""
+        if t is not None:                                       # counted as `commands` lists it, in every turn
+            asked = t.skill[0] if t.skill and not t.skill[1] else ""
+            if asked and (asked == n["name"] or asked.endswith(":" + n["name"])):
+                t.skill[1] = True
+            else:
+                t.head["calls"] += 1
+                t.skill = [n["name"], True]
         rec = t if t is not None and t is want else None
         if rec is None:
             return
@@ -609,6 +755,9 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         inp = inp if isinstance(inp, dict) else {"input": inp}
         error = bool(result and result.get("error"))
         text = (result or {}).get("text") or ""
+        if t is not None and name not in ("TodoWrite", "update_plan"):   # counted as `commands` lists it, in every turn
+            t.head["calls"] += 1
+            t.skill = [str(inp.get("skill") or ""), False] if name == "Skill" else None
         rec = t if t is not None and t is want else None          # only the asked-for turn is kept in full
         view = _call_view(part) if rec else None
         if rec:                                                 # every call, in order, with the files it touched
@@ -802,7 +951,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
             elif p["kind"] == "note":                        # Claude Code's own: a report, a message, a skill loaded, a ! command's output
                 n = _note(p.get("text") or "")
                 if n is None:
-                    pass
+                    if _interrupted(p.get("text") or ""):   # stopped (Esc), as its next turn told the model
+                        head["stopped"] = {"kind": "interrupted", "at": None, "text": None, "status": None, "reason": None}
                 elif n["kind"] == "report":
                     by = n.pop("from")
                     n["name"] = agents.get(by, "")
@@ -829,6 +979,10 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
             said = reports.get(path) if not x["given"] else None
             if said:
                 x["head"]["replies"].append({"kind": "report", "name": agents.get(path, ""), "text": said})
+    for p in calls.values():                         # the work trees the session's calls make
+        command, workdir = _shell_text(p["name"], p.get("input")) if p.get("name") in SHELLS else ("", None)
+        for tree in worktrees_added(command, _resolve(workdir, cwd) if workdir else cwd) if "worktree" in command else []:
+            mine.update((tree, os.path.realpath(tree)))
     for t, p in order:
         if t is not None:
             t.at_call = p.get("_at")
@@ -839,6 +993,10 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         else:                                        # a codex script: the calls it makes
             for q, r in _opened(p, results.get(p.get("id")) if p.get("id") else None):
                 apply(t, q, r)
+    for s in stops:                                  # the record's, by when: in the turn it fell in, where the conversation doesn't say
+        h = next((h for h in reversed(heads) if (h.head["at"] or 0) <= s["at"]), None)
+        if h is not None and h.head["stopped"] is None:
+            h.head["stopped"] = s
     for h in heads:                                  # its newest call, while nothing readable was said or thought after it
         h.head["work"] = dict(work.summary(list(h.acts.values())), **({} if h.head["last"] else {"last": None}))
     out = {"turns": [h.head for h in heads], "turn": pick if heads else None, "files": [], "commands": [],
@@ -850,11 +1008,14 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         f = want.files[path]
         for src in f["sources"]:                     # the lines each change added and removed: by call, file, command
             src["changed"] = _changed(src["blocks"])
-            f["changed"] = _plus(f.get("changed"), src["changed"])
+            if not src.get("git"):                   # (git's not counted: not the agent's)
+                f["changed"] = _plus(f.get("changed"), src["changed"])
             c = by_call.get(id(src["call"])) if src["call"] is not None else None
-            if c is not None:                        # and what each command did to each of its files
-                c["changed"] = _plus(c.get("changed"), src["changed"])
-                c.setdefault("did", {})[path] = src["kinds"]
+            if c is not None:                        # and what each command did to each of its files, and git as it ran
+                if not src.get("git"):
+                    c["changed"] = _plus(c.get("changed"), src["changed"])
+                did = c.setdefault("git" if src.get("git") else "did", {})
+                did[path] = sorted(set(did.get(path, [])) | set(src["kinds"]))
         room = MAX_ROWS                              # the most lines one file shows, over all its calls
         for src in f["sources"]:
             for b in src["blocks"]:
@@ -863,8 +1024,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     b["cut"] = max(0, len(b[key]) - room)
                     b[key] = [x[:LINE_CHARS] if isinstance(x, str) else x for x in b[key][:room]]
                     room = max(0, room - len(b[key]))
-        out["files"].append({"path": path, "kinds": sorted(f["kinds"]), "created": f["created"], "changed": f.get("changed"),
-                             "temporary": temporary(path), "sources": f["sources"]})
+        out["files"].append({"path": path, "kinds": sorted(f["kinds"]), "git": sorted(f["git"]), "created": f["created"],
+                             "changed": f.get("changed"), "temporary": temporary(path), "sources": f["sources"]})
     out["commands"] = want.commands
     return out
 

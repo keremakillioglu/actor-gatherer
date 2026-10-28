@@ -944,34 +944,47 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
    with the replies under it, however wide the page */
 .files .fl-user { display: flex; gap: 8px; width: 100%; margin: 0; text-align: left;
   background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--s7) 28%, transparent);
-  border-radius: 8px; padding: 6px 12px; font: inherit; line-height: var(--lh); color: var(--ink); cursor: pointer; }
-.files .fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
+  border-radius: 8px; padding: 6px 12px; font: inherit; line-height: var(--lh); color: var(--ink); }
 .files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
-.files .fl-turn.on .fl-user .tx { -webkit-line-clamp: unset; }
+.files .fl-turn.on .fl-user .tx, .files .fl-turn.shown .fl-user .tx { -webkit-line-clamp: unset; }
+/* before the latest, the message a button: a click shows or folds the turn's replies (folded: the turn closer to the next),
+   its chevron at its end saying which. At the right of each message, clear of its band, its button for the turn's files
+   and commands at the left. */
+.files button.fl-user { cursor: pointer; }
+.files button.fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
+.files .fl-bash > button.fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, transparent); }
+.files .fl-user > .tx { flex: 1 1 auto; }   /* its words wide as the band: the count and the chevron at its end */
+.files .fl-user .fold-mark { flex: none; align-self: center; display: grid; color: var(--muted); }
+.files .fl-user .fl-count { flex: none; align-self: center; font-size: 11.5px; line-height: 1; color: var(--muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
+.files .fl-user .fold-mark svg { transition: transform .15s; }
+.files .fl-user[aria-expanded="true"] .fold-mark svg { transform: rotate(90deg); }
+.files .fl-turn.folded { padding-top: 3px; padding-bottom: 3px; }
+.files .fl-head { position: relative; }
+.files .fl-head > .fl-user, .files .fl-head > .fl-bash > .fl-user { padding-right: 40px; }
+.files .fl-btns { position: absolute; top: 3px; right: 4px; display: flex; }
+.files .fl-btns button { width: 28px; height: calc(var(--lh) + 6px); padding: 0; border: 0; border-radius: 6px; background: none;
+  color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+.files .fl-btns button:hover { color: var(--ink); background: color-mix(in srgb, var(--s7) 22%, transparent); }
+.files .fl-btns button[aria-pressed="true"] { color: var(--ink); background: color-mix(in srgb, var(--s7) 30%, transparent); }
 /* what was written while the turn ran, sent to the agent: stacked on its first message, over it a little -- one turn.
    The ring, in the page's colour, keeps the edge of each it covers. */
 .files .fl-user.joined { position: relative; margin-top: -7px; box-shadow: 0 0 0 2px var(--surface); }
 /* written while it works, not sent yet: at the turn's end, faded, until Claude Code gives it to the agent */
 .files .fl-pending { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
-.files .fl-pending .fl-user { opacity: .55; cursor: default; }
-.files .fl-pending .fl-user:hover { background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 28%, transparent); }
+.files .fl-pending .fl-user { opacity: .55; }
 .files .fl-pending .lbl { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
 .files .fl-pending .to-term { font-size: inherit; padding: 0; border: 0; background: none; color: var(--term-link); text-decoration: underline; }
 /* a turn begun, its message sent, that ag has not stored yet: in full, as the latest turn shows it, not yet one to pick */
-.files .fl-turn.opened .fl-user { cursor: default; }
-.files .fl-turn.opened .fl-user:hover { background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 28%, transparent); }
 .files .fl-turn.opened .fl-user .tx { -webkit-line-clamp: unset; }
 .files .fl-user .tx.bang { font: .92em/var(--lh) var(--mono); }   /* a command the user ran with `!`, or typed as /name */
 /* a bash band (bashBubble): a command the user ran with `!`, as a terminal shows it -- its `!` in bash mode's colour,
    the band edged in it -- and under a rule, in the same band, what it printed */
 .files .fl-user.bash { background: var(--term-code); border-color: color-mix(in srgb, var(--term-bash) 45%, transparent); }
-.files .fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, var(--term-code)); border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
 .files .fl-user .bash-mark { color: var(--term-bash); font-weight: 700; }
 .files .fl-bash { display: flex; flex-direction: column; min-width: 0; margin: 0;
   background: var(--term-code); border: 1px solid color-mix(in srgb, var(--term-bash) 45%, transparent); border-radius: 8px; overflow: hidden; }
-.files .fl-bash:hover { border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
 .files .fl-bash > .fl-user.bash { border: 0; border-radius: 0; background: none; }
-.files .fl-bash > .fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, transparent); }
 .files .fl-bash-out { margin: 0; padding: 6px 12px 8px; border-top: 1px solid var(--term-rule); max-height: 15em; overflow: auto;
   font: 12px/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; background: none; }
 .files .fl-bash-out.none { color: var(--muted); font-style: italic; }
@@ -992,12 +1005,12 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-minor .fl-reply { color: var(--ink-2); }
 .files .fl-minor .fl-reply:not([open]) > summary .first { color: var(--muted); }
 .files .fl-minor .fl-reply > summary:hover .first { color: var(--ink-2); }
-.files .fl-more, .files .fl-earlier { background: none; border: 0; border-radius: 4px; margin: 4px 0 0 2px; padding: 0 4px 0 15px;
+.files .fl-more { background: none; border: 0; border-radius: 4px; margin: 4px 0 0 2px; padding: 0 4px 0 0;
   font-size: .95em; color: var(--muted); cursor: pointer; }
-.files .fl-more { padding-left: 0; }
 .files .fl-more .sg { display: inline-block; width: 15px; text-align: left; }   /* + or −, under the messages' dots */
-.files .fl-more:hover, .files .fl-earlier:hover { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
-.files .fl-earlier { display: block; margin: 4px 6px 6px; padding: 4px 10px; font-size: 12px; }
+.files .fl-more:hover { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+/* above the turns drawn, how many are not yet: a pull up past the top draws them */
+.files .fl-earlier { margin: 2px 6px 6px; padding: 2px 10px; font-size: 12px; color: var(--muted); text-align: center; }
 /* a reply's markdown, coloured as the NumPy docs (the PyData theme) colour it, and no more: links teal, inline
    code magenta on grey, a table's header ruled in teal; headings, code and quotes in the text's own colours */
 .files .md { min-width: 0; }
@@ -1032,6 +1045,10 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .md th[align="center"], .files .md td[align="center"] { text-align: center; }
 .files .md img { max-width: 100%; }
 .files .fl-none { margin: 4px 0 0 2px; color: var(--muted); font-style: italic; }
+/* how a turn stopped short (stoppedLine): a line under it, as Claude Code draws it -- dim; an error in its colour */
+.files .fl-stopped { display: flex; gap: 8px; margin: 4px 0 0 2px; color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; }
+.files .fl-stopped .lead { flex: none; }
+.files .fl-stopped.error { color: var(--critical); }
 /* a run of thinking: a message as the others are, "Thought:" before it, dim and in italics; opened, its words under the word */
 .files .fl-reply.thought > summary .lbl { flex: none; color: var(--muted); font-style: italic; }
 .files .fl-reply.thought > .md { margin-top: 0; }
@@ -1185,7 +1202,10 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
    in place of the two lines and the avatar under them (or the avatar done). Those put away, not display: none: laying the
    Chat out again -- the message box growing as it is typed in, say -- Chrome tries the frame at no height and at its
    least on the way, the query true there for that moment; display: none would restart their animations at every key,
-   the avatar done growing in again */
+   the avatar done growing in again. Hidden, not content-visibility: hidden: flipped within every layout, that set Chrome
+   numbering each numbered list (an <ol> in a reply) again, which asked for another layout -- each read of a size laid the
+   whole Chat out anew (a redraw of 40 turns 4-5 times as long), and with some replies it never settled, the Chat laid out
+   again and again while nothing happened */
 @container talk (max-height: 420px) {
   .files .fl-working { display: flex; align-items: center; gap: 6px; }
   .files .fl-working > .fl-mini { display: inline-flex; flex: none; order: 0; color: var(--term-accent); }
@@ -1193,7 +1213,7 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
   .files .fl-working > .fl-times { order: 2; flex: 0 1 auto; }
   .files .fl-working > .fl-times::before { content: "· "; }
   .files .fl-working.fl-finished { display: flex; }
-  .files .fl-talk > .fl-status, .files .fl-talk > .fl-done { content-visibility: hidden; height: 0; margin: 0; } }
+  .files .fl-talk > .fl-status, .files .fl-talk > .fl-done { visibility: hidden; overflow: hidden; height: 0; margin: 0; } }
 .files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
 .files .fl-status .spin { font-size: 1.4em; }
 .files .fl-status > .buddy { margin: 2px 0 0 4px; }
@@ -1806,6 +1826,9 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
             <div><h4>Avatar at work</h4>
               <div class="views" id="avatar-mode" role="group" aria-label="Avatar at work">
                 <button type="button" data-avatar-pick="acting" title="Acting out what it does: a book, a magnifying glass, gears…">Acting</button><button type="button" data-avatar-pick="simple" title="Small, moving as its character does">Simple</button></div></div>
+            <div><h4>Chat's earlier turns</h4>
+              <div class="views" id="chat-earlier" role="group" aria-label="Chat's earlier turns">
+                <button type="button" data-earlier-pick="messages" title="Your messages only: a click on one shows the agent's replies">Messages only</button><button type="button" data-earlier-pick="whole" title="Each with the agent's replies: a click on your message folds them">Whole</button></div></div>
             <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
           </div>
         </div>
@@ -2273,6 +2296,7 @@ const ICONS = {
   code: "M5.25 4.75L2 8l3.25 3.25M10.75 4.75L14 8l-3.25 3.25M9.25 2.75l-2.5 10.5",   // the Editor: a file's code
   folderUp: "M1.75 4a1 1 0 0 1 1-1h3.4l1.5 1.6h5.6a1 1 0 0 1 1 1v6.65a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1zM8 11.1V7.1M6.3 8.8 8 7.1l1.7 1.7",   // the folder above
   power: "M8 1.75v5.5M4.6 3.9a5.25 5.25 0 1 0 6.8 0",                  // a shell terminated
+  chevron: "M6 3.5 10.5 8 6 12.5",                                     // more, folded: turned down once shown
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -2304,6 +2328,19 @@ const closable = (a) => !SNAPSHOT && !!a.session && !!(a.session.terminal || a.s
 async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
   catch (err) { setLive(`Not closed: ${err.message}`); }
+}
+// A session made here that never started -- no process of it now, none starting, nothing of it in its gatherer (no
+// events, no calls): its × discards it (sessions.py's `discard`), so it is listed nowhere and nothing of it is kept.
+// The panes showing it close, as a shell's do when it ends (shownGone).
+const discardable = (a) => !SNAPSHOT && !!a.session && !a.events && !a.reads && !closable(a) && a.chattable !== false
+  && !["starting", "running", "idle", "terminal"].includes(a.session.status) && !(a.session.queued || []).length && !opened(a);
+async function discardSession(g, a) {
+  try { await post("/api/discard", { session_id: a.session.session_id }); }
+  catch (err) { return setLive(`Not closed: ${err.message}`); }
+  await loadHome();
+  for (const p of [...panes.others]) if (isAt([p.g, p.c], g.name, a.channel)) closePane(p);
+  if (isAt(state.selected, g.name, a.channel)) return shownGone(a.channel);
+  renderAgents();
 }
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; asking, its
 // turn waiting on the user (a question asked, a plan to approve, in its terminal), which shows before all else; error,
@@ -2549,7 +2586,8 @@ const mainSignature = () => {
   const info = selectedInfo();
   return signature([state.selected, state.agentVersion, state.readId, state.context && state.context.read_id, info && info.session,
     info && [info.chattable, info.holder],
-    info && [statusOf(info)[0], info.failing, info.stopped, info.asking, info.answer, (info.background || []).map((t) => t.id)],
+    info && [statusOf(info)[0], info.failing, info.stopped, info.asking, info.answer, (info.background || []).map((t) => t.id),
+      info.taken_back],
     info && info.avatar_hello,
     state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
@@ -2594,6 +2632,24 @@ setAvatarMode((() => { try { return localStorage.getItem(AVATAR_KEY); } catch (e
 document.getElementById("avatar-mode").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-avatar-pick]");
   if (b) setAvatarMode(b.dataset.avatarPick, true);
+});
+// The Chat's turns before the latest, at first: the user's messages only, a click on one showing the rest ("messages",
+// filesTalk); or each whole, a click on its message folding it. Kept in this browser, messages only until one is picked; a
+// pick starts every turn over as it has them.
+const EARLIER_KEY = "ag-dashboard-chat-earlier";
+let earlierTurns = "messages";
+function setEarlierTurns(pick, keep, draw = true) {
+  earlierTurns = pick === "whole" ? "whole" : "messages";
+  if (state.files && state.files.flips) state.files.flips.clear();   // in place: the messages' clicks kept from a draw use it
+  for (const b of document.querySelectorAll("[data-earlier-pick]")) b.setAttribute("aria-pressed", b.dataset.earlierPick === earlierTurns ? "true" : "false");
+  if (keep) { try { localStorage.setItem(EARLIER_KEY, earlierTurns); } catch (e) { /* this page only */ } }
+  for (const p of panes.others) p.call("earlier", earlierTurns);
+  if (draw && chatView().id === "files") keepingPlace(renderMain);
+}
+setEarlierTurns((() => { try { return localStorage.getItem(EARLIER_KEY); } catch (e) { return null; } })(), false, false);
+document.getElementById("chat-earlier").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-earlier-pick]");
+  if (b) setEarlierTurns(b.dataset.earlierPick, true);
 });
 setTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })() || "dark", false);
 document.getElementById("theme").addEventListener("click", (ev) => {
@@ -3060,6 +3116,11 @@ function agentRow(g, a, group) {
         closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",
           "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); closeSession(a); },
           onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); closeSession(a); } } },
+          closeIcon())
+        : discardable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0",
+          title: "Close: it never started, so it goes from the list, and nothing of it is kept",
+          "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); discardSession(g, a); },
+          onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); discardSession(g, a); } } },
           closeIcon()) : null,
         !hasChat(a) ? null : a.chattable === false
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
@@ -3791,6 +3852,7 @@ function paneReady() {
     view: (id) => setChatView(id),
     theme: (pick) => setTheme(pick, false),
     avatar: (pick) => setAvatarMode(pick, false),
+    earlier: (pick) => setEarlierTurns(pick, false),
     focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
     top: (h) => setTopRow(h),
     editor: () => keepingPlace(renderMain),          // the Editor opened or closed above the panes: its head, in the bar or not
@@ -4080,7 +4142,18 @@ function dashboardCommand(text) {
   if (run) run();
   return !!run;
 }
-// Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn.
+// Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn (interrupt). So does it in
+// the Chat view, where nothing else takes it: no panel, settings or Editor open, not typed in a box -- and not while the
+// agent asks, where it would dismiss the question, as in its terminal: there, from the message box only. Before the rest
+// (capture), so it knows whether the settings were open before their own Esc closes them.
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape" || ev.defaultPrevented || ev.isComposing || !state.selected || isShell(state.selected[1])) return;
+  const n = ev.target, box = !!n && n.id === "composer-text", info = selectedInfo();
+  const typing = !!n && n.closest && !!n.closest("input, textarea, select, [contenteditable], .xterm");
+  if (!box && (typing || state.details || edShown() || chatView().id !== "files" || !document.getElementById("about").hidden
+    || !document.getElementById("cfg-file").hidden || (info && info.status === "asking"))) return;
+  if (interrupt(info)) ev.preventDefault();
+}, true);
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")
     && !(state.selected && isShell(state.selected[1]))) setDetails(false);
@@ -4220,6 +4293,7 @@ function chatCard(info) {
   const err = el("div", { class: "err", role: "alert", text: held || (s.status === "failed" && s.last_error ? s.last_error : "") });
   let sending = false;
   const draft = key(...state.selected);              // what is typed for this actor and not sent (keepDraft)
+  refill(info, draft);
   // A message box kept from an earlier draw (`patch`) still calls the send it was drawn with: each send goes to the
   // latest draw's (chatSend), which knows the session as it is now.
   ctx.send = (t) => chatSend(t);
@@ -4227,7 +4301,7 @@ function chatCard(info) {
     t = String(t ?? "").trim();
     if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) { box.value = ""; fitBox(box); } keepDraft(draft, ""); return true; }
     if (!t || sending || held) return false;
-    sending = true; err.textContent = "";
+    sending = true; err.textContent = ""; interrupting = null;
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
     // a "/" command of the harness's own (dashboardCommand took the page's): what it does (a dialog, a report) is drawn
     // in the session's terminal, and may never come back as a message -- not shown pending; the terminal shown once
@@ -5764,7 +5838,7 @@ function termListen(sid) {
   const ended = (ev) => {
     if (!mine()) return;
     es.close(); term.es = null;
-    if (isShell(sid)) { term.exited = ev.type === "exit" ? JSON.parse(ev.data).code : -1; return shellEnded(sid); }
+    if (isShell(sid)) { term.exited = ev.type === "exit" ? JSON.parse(ev.data).code : -1; return shownGone(sid); }
     if (ev.type === "exit") { term.exited = JSON.parse(ev.data).code; term.xterm.write("\r\n\x1b[2m[the session's process ended]\x1b[0m\r\n"); }
     else if (term.exited === null) term.exited = -1;  // gone before it was listened to: ended all the same
     refresh();
@@ -5820,7 +5894,7 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
 // no message box -- but, in the pane's head, its Terminate button: the shell ended, whatever runs in it, as by the list's ×.
 // Not the pane's own ×, split, which closes the pane alone, the shell running on under its gatherer. Its button opened it
 // (startShell), so here it is only listened to. Once it ends -- exited, or terminated -- its pane closes, as a terminal's
-// window does (shellEnded).
+// window does (shownGone).
 function shellCard(id) {
   const end = el("button", { type: "button", class: "terminate", "data-shell": id, "aria-label": "Terminate the terminal",
     title: "Terminate: end the shell, and whatever runs in it",
@@ -5839,9 +5913,10 @@ function shellCard(id) {
   frame.kids = [t.host];                             // put in by patch(): the same node each draw
   return el("section", { class: "chat", "aria-label": "Terminal", "data-morph": "", "data-for": signature([id]) }, frame);
 }
-// The shell this page shows ended: its pane closed -- in a frame, by the page around it; this page's own, the next pane's
-// actor moved into it, or with none, its gatherer's actor shown (firstAgent), else the first gatherer's.
-function shellEnded(sid) {
+// The shell this page shows ended, or the actor it shows discarded (discardSession): its pane closed -- in a frame, by
+// the page around it; this page's own, the next pane's actor moved into it, or with none, its gatherer's actor shown
+// (firstAgent), else the first gatherer's.
+function shownGone(sid) {
   if (!state.selected || state.selected[1] !== sid) return;
   if (PANE) return PANE.close(window);
   if (panes.others.length) return closeHere();
@@ -5860,13 +5935,14 @@ const FILE_KINDS = { read: ["read", "var(--s1)"], hit: ["search hit", "var(--s4)
   write: ["written", "var(--s3)"], delete: ["deleted", "var(--critical)"] };
 // Each kind of file by a mark, in its colour, the same wherever a file shows -- in the tree, its legend, the folded bar,
 // a call of the file, a command's files: a book read, a glass searched, a pencil edited, a page with a plus written
-// whole, a bin deleted.
+// whole, a bin deleted; and what git changed as a command ran, a branch.
 const MARKS = {
   read: "M8 4.25C6.6 3.2 4.6 2.9 2 3.1v9.2c2.6-.2 4.6.1 6 1.15 1.4-1.05 3.4-1.35 6-1.15V3.1c-2.6-.2-4.6.1-6 1.15zM8 4.25v9.2",
   hit: "M6.75 2.5a4.25 4.25 0 1 0 0 8.5 4.25 4.25 0 0 0 0-8.5zM9.9 9.9l3.6 3.6",
   edit: "M10.6 2.6l2.8 2.8-7.9 7.9-3.4.6.6-3.4zM9.1 4.1l2.8 2.8",
   write: "M4.25 1.75h5l3 3v9a.5.5 0 0 1-.5.5h-7.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5zM9 1.75v3.25h3.25M8 7.25v4.5M5.75 9.5h4.5",
   delete: "M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.65 9.1a.75.75 0 0 0 .75.65h4.7a.75.75 0 0 0 .75-.65l.65-9.1M6.75 6.75v4.5M9.25 6.75v4.5",
+  git: "M5 5v6M11 7c0 2.6-6 1.4-6 4M5 1.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zM5 11a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zM11 3.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5z",
 };
 // a kind of file's mark, `title` said on hover (its name unless given)
 function kindMark(kind, size = 12, title) {
@@ -5875,6 +5951,8 @@ function kindMark(kind, size = 12, title) {
   svg.style.color = color;
   return el("span", { class: "km", title: title === undefined ? name : title }, svg);
 }
+// what git changed of a file (files.py's `git`: its kinds) by git's mark
+const gitMark = (kinds, size = 12) => kindMark("git", size, "by git: " + kinds.map((k) => (FILE_KINDS[k] || [k])[0]).join(", "));
 // the lines a change added and removed, as a diff's +N −M (files.py's `changed`); none for none
 const changedCount = (ch) => !ch || !(ch[0] || ch[1]) ? null
   : el("span", { class: "chg", title: `${plural(ch[0], "line")} added, ${plural(ch[1], "line")} removed` },
@@ -5921,7 +5999,7 @@ let hiddenKinds = (() => {
   try { const v = JSON.parse(localStorage.getItem(KINDS_KEY)); return new Set(Array.isArray(v) ? v : ["hit"]); }
   catch (e) { return new Set(["hit"]); }
 })();
-function kindSwitches() {
+function kindSwitches(gitFiles) {
   return el("div", { class: "fl-legend fl-kinds" }, ...Object.entries(FILE_KINDS).map(([k, [name, color]]) => {
     const on = !hiddenKinds.has(k);
     return el("button", { type: "button", class: "kind" + (on ? "" : " off"), "aria-pressed": on ? "true" : "false",
@@ -5931,7 +6009,7 @@ function kindSwitches() {
         try { localStorage.setItem(KINDS_KEY, JSON.stringify([...hiddenKinds])); } catch (e) { /* this page only */ }
         keepingPlace(renderMain);
       } }, kindMark(k, 12, ""), name);
-  }));
+  }), gitFiles ? gitSwitch(gitFiles) : null);
 }
 // The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders): hidden until asked for, the choice
 // kept in this browser. The commands are all listed, whatever folders they touched.
@@ -5948,9 +6026,25 @@ function tmpSwitch(n) {
   return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders)" },
     box, `tmp (${n})`);
 }
+// What git changed as the commands ran -- a pull, a merge, a checkout, a new work tree; in this session's commands or
+// another's running then (files.py's `git`): left out until switched on in the files' legend, of the files, a file's
+// calls and a command's files; the choice kept in this browser.
+const GIT_KEY = "ag-dashboard-files-git";
+let showGit = (() => { try { return localStorage.getItem(GIT_KEY) === "1"; } catch (e) { return false; } })();
+const gitOnly = (f) => !f.kinds.length && !!(f.git || []).length;   // a file only git changed
+function gitSwitch(n) {
+  return el("button", { type: "button", class: "kind" + (showGit ? "" : " off"), "aria-pressed": showGit ? "true" : "false",
+    title: `${showGit ? "Leave out" : "Show"} what git changed as the commands ran (a pull, a merge, a checkout, a new work tree): `
+      + plural(n, "file"),
+    onclick: () => {
+      showGit = !showGit;
+      try { localStorage.setItem(GIT_KEY, showGit ? "1" : "0"); } catch (e) { /* this page only */ }
+      keepingPlace(renderMain);
+    } }, kindMark("git", 12, ""), `by git (${full(n)})`);
+}
 // The files and commands at the left, folded to a thin bar of what they hold until opened: by a click on the
-// bar or on a message, and folded again by the button in their heading or a click on the message of the turn
-// they show. The choice kept in this browser.
+// bar or on a message's button for them (or ⌘+click on it), and folded again by the button in their heading or that button
+// of the turn they show. The choice kept in this browser.
 const SIDE_KEY = "ag-dashboard-files-side-folded-2";   // -2: folded by default
 let sideFolded = (() => { try { return localStorage.getItem(SIDE_KEY) !== "0"; } catch (e) { return true; } })();
 function foldSide(fold, draw = true) {
@@ -6107,19 +6201,21 @@ function fileView(f, rel, id) {
   const box = el("div", { class: "fv" }, el("div", { class: "fv-h" }, el("div", { class: "fv-path", text: rel(f.path) }),
     el("button", { type: "button", class: "fv-close", title: "Close the file", "aria-label": "Close the file",
       onclick: () => { state.files.sel = null; keepingPlace(renderMain); } }, "×")));
-  // the last call opened when it first shows -- the file opened, or a call new to it -- and left as the reader leaves it
-  const last = `${id}-s${f.sources.length - 1}`, fresh = !document.getElementById(last);
-  f.sources.forEach((s, i) => {
+  // the last call opened when it first shows -- the file opened, or a call new to it -- and left as the reader leaves it;
+  // what git changed left out unless shown (gitSwitch)
+  const shown = f.sources.map((s, i) => [s, i]).filter(([s]) => showGit || !s.git);
+  const last = `${id}-s${shown.length ? shown[shown.length - 1][1] : -1}`, fresh = !document.getElementById(last);
+  shown.forEach(([s, i], n) => {
     const kinds = s.kinds.map((k) => k === "write" ? (s.blocks.some((b) => b.created) ? "created" : "written") : (FILE_KINDS[k] || [k])[0]);
     // folded to its header until clicked; opened, what it did to the file, and its exact call behind "command"
     const code = el("div", { class: "code" });
     for (const b of s.blocks) code.append(...fileBlock(b, langOfPath(f.path)));
     if (s.error && !s.blocks.length) code.append(el("div", { class: "fv-note", text: "The call failed." }));
     box.append(el("details", { class: "fv-call" + (s.error ? " err" : ""), id: `${id}-s${i}`, open: fresh && `${id}-s${i}` === last ? "" : null },
-      el("summary", {}, el("span", { class: "tw", text: "▸" }), el("span", { class: "k", text: `${i + 1}` }),
-        el("span", { class: "kinds" }, ...s.kinds.map((k) => kindMark(k, 12))),
+      el("summary", {}, el("span", { class: "tw", text: "▸" }), el("span", { class: "k", text: `${n + 1}` }),
+        el("span", { class: "kinds" }, s.git ? gitMark(s.kinds) : null, ...s.kinds.map((k) => kindMark(k, 12))),
         el("span", { class: "via", text: firstLine(s.via, 160) }), changedCount(s.changed),
-        el("span", { class: "what", text: kinds.join(", ") + (s.error ? " · failed" : "") },
+        el("span", { class: "what", text: (s.git ? "by git: " : "") + kinds.join(", ") + (s.error ? " · failed" : "") },
           CHECKED[s.checked] ? el("span", { class: "chk" + (s.checked ? "" : " off"), title: CHECKED[s.checked][1],
             text: " · " + CHECKED[s.checked][0] }) : null)),
       s.call ? el("details", { class: "fv-cmd", id: `${id}-s${i}-c` }, el("summary", { text: "command" }), callView(s.call)) : null,
@@ -6215,16 +6311,18 @@ function filesRender({ info, session, running, writable, held }) {
   const home = (d.home || "").replace(/\/$/, "");
   const under = (p, dir) => !!dir && p !== null && (p === dir || p.startsWith(dir + "/"));
   const rel = (p) => cwd && p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : under(p, home) ? "~" + p.slice(home.length) : p;
-  const sel = d.files.find((f) => f.path === state.files.sel) || null;   // none until one is clicked
+  const sel = d.files.find((f) => f.path === state.files.sel && (showGit || !gitOnly(f))) || null;   // none until one is clicked
   const list = el("div", { class: "fl-scroll", "data-keep": "files-list" });
   // the files as one tree of their folders, from / -- the home folder shown as ~, the session's directory
   // marked -- a folder with one child folder and no files shown as one ("ag_dashboard/vendor/"), each
   // folder folded or opened (opened unless folded by a click). A path not absolute (the session's
-  // directory not known) goes under a folder of its own. Only the files of the kinds switched on (kindSwitches).
-  const kept = d.files.filter((f) => showTmp || !f.temporary);
+  // directory not known) goes under a folder of its own. Only the files of the kinds switched on (kindSwitches), and
+  // those only git changed when shown (gitSwitch).
+  const untmp = d.files.filter((f) => showTmp || !f.temporary);
+  const kept = untmp.filter((f) => showGit || !gitOnly(f));
   const files = kept.filter((f) => !f.kinds.length || f.kinds.some((k) => !hiddenKinds.has(k)));
-  const kindHidden = kept.length - files.length;
-  const tmpFiles = d.files.filter((f) => f.temporary).length;
+  const kindHidden = kept.length - files.length, gitHidden = untmp.length - kept.length;
+  const tmpFiles = d.files.filter((f) => f.temporary).length, gitFiles = untmp.filter((f) => (f.git || []).length).length;
   const commands = d.commands;
   const UNKNOWN = "\0";
   const root = { dirs: new Map(), files: [] };
@@ -6241,7 +6339,8 @@ function filesRender({ info, session, running, writable, held }) {
     style: `padding-left: ${12 + depth * 14}px`, "aria-pressed": f === sel ? "true" : "false",
     onclick: () => { state.files.sel = f === sel ? null : f.path; keepingPlace(renderMain); } },   // again: closed
     el("span", { class: "name", text: name }), changedCount(f.changed),
-    el("span", { class: "badges" }, ...f.kinds.map((k) => kindMark(k, 12, k === "write" && f.created ? "created" : undefined))));
+    el("span", { class: "badges" }, ...f.kinds.map((k) => kindMark(k, 12, k === "write" && f.created ? "created" : undefined)),
+      showGit && (f.git || []).length ? gitMark(f.git) : null));
   const folded = state.files.folded || (state.files.folded = new Set());
   // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. Claude
   // Code's memory of a directory (~/.claude/projects/<the directory, as a name>/memory) marked, its long name cut.
@@ -6273,17 +6372,20 @@ function filesRender({ info, session, running, writable, held }) {
   };
   grow(root, list, 0, null);
   if (!files.length) list.append(el("div", { class: "fv-note", text: kindHidden ? `Only ${plural(kindHidden, "file")} of the kinds switched off below.`
+    : gitHidden ? `Only ${plural(gitHidden, "file")} git changed.`
     : tmpFiles ? `Only ${plural(tmpFiles, "file")} in temporary folders.`
     : running && d.turn === d.turns.length - 1 ? "No files yet in this turn." : "The agent touched no files in this turn." }));
-  // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one)
+  // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one) --
+  // those only git changed as it ran when shown (gitSwitch)
+  const cmdFiles = (c) => (c.files || []).filter((p) => showGit || (c.did || {})[p] || !(c.git || {})[p]);
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
   commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
     el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), callLabel(c, 140),
       changedCount(c.changed)),
-      (c.files || []).length ? el("div", { class: "fl-cmd-files" }, ...c.files.map((p) => el("button", { type: "button", title: p,
+      cmdFiles(c).length ? el("div", { class: "fl-cmd-files" }, ...cmdFiles(c).map((p) => el("button", { type: "button", title: p,
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, ...((c.did || {})[p] || []).map((k) => kindMark(k, 11)),
-        rel(p).split("/").pop()))) : null,
+        showGit && (c.git || {})[p] ? gitMark(c.git[p], 11) : null, rel(p).split("/").pop()))) : null,
       callView(c.call, c.output, c.error)))));
   if (!commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
   const shown = `${state.files.key}:${d.turn}`;
@@ -6307,7 +6409,7 @@ function filesRender({ info, session, running, writable, held }) {
           onclick: () => foldSide(true) }, strokeIcon(ICONS.sidebar, 14))),
       cwd ? el("div", { class: "fl-wd", title: cwd }, el("span", { text: "Working directory" }),
         el("span", { class: "p", text: under(cwd, home) ? "~" + cwd.slice(home.length) : cwd })) : null, list,
-      kindSwitches()),
+      kindSwitches(gitFiles)),
     el("section", { class: "fl-sec cmds-sec" },
       el("div", { class: "fl-h", text: plural(commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
       legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])),
@@ -6344,14 +6446,15 @@ function filesBackground(info) {
 }
 // The conversation, at the right: each of the user's messages a turn, at the right, and under it the agent's:
 // its last message whole (a click folds it to its first line), the ones before it -- what it said on the way,
-// its thinking -- each folded to a line, the latest few shown and the earlier behind a + (and a − folds them again). The latest turns
-// shown, the earlier behind a click too. While the turn runs, what the agent is doing at its end, as the
-// Transcript's status line. Clicking a message shows its turn's files. What the user wrote while a turn ran is
+// its thinking -- each folded to a line, the latest few shown and the earlier behind a + (and a − folds them again). The
+// latest turns shown, the earlier a few more at a time as the reader scrolls up past the top (pullEarlier). While the turn
+// runs, what the agent is doing at its end, as the
+// Transcript's status line. A button at each message, or ⌘+click on it, shows its turn's files. What the user wrote while a turn ran is
 // part of it: once sent to the agent (`more`; in the latest turn also Claude Code's queue, the agent's `typed`,
 // data.py's, from its record of the session), stacked on its first message; until then, at the latest turn's end, faded and marked pending
 // (pendingTalk) -- as is a message sent from this page's box, from the moment it is sent. A message that opened a
 // turn ag has not stored yet is that turn's, in full, the moment Claude Code has it (openedTurn).
-const MINOR_SHOWN = 2, TURNS_SHOWN = 3;
+const MINOR_SHOWN = 2, TURNS_SHOWN = 5;
 let talkShown = null;
 // What the selected actor's own records say the user wrote: ag's stored messages (each turn's first, and what was written
 // while it ran), Claude Code's queue less what ag has stored since (the agent's `typed`, data.py's), and the dashboard
@@ -6379,6 +6482,62 @@ const heardCount = (h, text) => [...h.stored, ...h.typed.filter((q) => !q.chat)]
 // One not seen for UNSEEN_MS says so.
 const sentHere = [], UNSEEN_MS = 15000;
 let chatSend = async () => false;                    // the message box's send, as the latest draw made it (chatCard)
+// Whether the message Claude Code took back is in its input box untouched, as sessions.py's `took_back` reads it: what was
+// last typed into its terminal, the dashboard's, is the key that stopped the turn, after the call before (`since`).
+const untouched = (info) => {
+  const tb = info && info.taken_back, s = info && info.session;
+  return !!tb && !!s && !!s.stopped_at && s.stopped_at > (tb.since || 0);
+};
+// Claude Code put the message it was stopped on (Esc before any of its answer came: data.py's `taken_back`) back in its
+// input box, out of the conversation -- as Chat shows it too, the message in no turn. Untouched there: in this message
+// box too, as the actor's draft -- once, and only where nothing is written for the actor. Sent from here, Claude Code's box is emptied
+// first (sessions.py's `took_back`), so the two do not go as one. Once it is no longer there untouched -- sent or changed
+// in the terminal, or its process gone -- it is taken out of this box too, if it is still as it was put. What was put,
+// by the actor's draft ({at, text}), is kept in the tab as drafts are, so a reload does not put back what was cleared.
+const REFILLED_KEY = "ag-dashboard-refilled", refilledHere = {};
+function refills() {
+  try { const v = JSON.parse(sessionStorage.getItem(REFILLED_KEY)); return v && typeof v === "object" ? v : {}; }
+  catch (e) { return refilledHere; }
+}
+function markRefill(draft, mark) {
+  const m = refills();
+  if (mark) m[draft] = mark; else delete m[draft];
+  try { sessionStorage.setItem(REFILLED_KEY, JSON.stringify(m)); } catch (e) { if (mark) refilledHere[draft] = mark; else delete refilledHere[draft]; }
+}
+function refill(info, draft) {
+  const tb = info && info.taken_back, mark = refills()[draft], box = document.getElementById("composer-text");
+  const mine = box && box.dataset.draft === draft ? box : null;
+  if (tb && untouched(info)) {
+    if (mark && mark.at === tb.at) return;
+    markRefill(draft, { at: tb.at, text: tb.text });
+    if (drafts()[draft] || (mine && mine.value)) return;
+    keepDraft(draft, tb.text);
+    if (mine) { mine.value = tb.text; fitBox(mine); }
+  } else if (mark) {
+    markRefill(draft, null);
+    if (drafts()[draft] !== mark.text) return;
+    keepDraft(draft, "");
+    if (mine && mine.value === mark.text) { mine.value = ""; fitBox(mine); }
+  }
+}
+// Esc, as in the harness's own terminal: the agent's turn interrupted -- the key typed into the session's terminal, which
+// the dashboard runs. Only while it works or asks (an idle Claude Code takes Esc twice for its rewind; one starting, for
+// "No" to trusting its folder), and once a second. `interrupting`: the actor it was sent for, and when.
+let interrupting = null;
+const canInterrupt = (info) => !!info && !!info.session && !!info.session.terminal && info.session.status !== "starting"
+  && (["running", "asking"].includes(info.status) || opened(info));   // its own state: not a build of its context, idle
+function interrupt(info) {
+  const k = state.selected && key(...state.selected);
+  if (!canInterrupt(info) || (interrupting && interrupting.key === k && Date.now() - interrupting.at < 1000)) return false;
+  interrupting = { key: k, at: Date.now() };
+  post("/api/terminal/input", { session_id: info.session.session_id, data: "\u001b" })
+    .catch((err) => { interrupting = null; setLive(`Not interrupted: ${err.message}`); });
+  keepingPlace(renderMain);
+  return true;
+}
+const INTERRUPTING_MS = 10000;                      // "Interrupting…" shown at most this long, if the turn goes on
+const isInterrupting = () => !!interrupting && !!state.selected && interrupting.key === key(...state.selected)
+  && Date.now() - interrupting.at < INTERRUPTING_MS;
 // What waits to reach the agent, at the latest turn's end, faded: sent from here and not seen yet; in Claude Code's
 // queue; in the dashboard agent's queue. Not seen for long, with its terminal open: it may be asking something there
 // first (whether to trust the folder, on a new actor's first message), and the way to it.
@@ -6416,7 +6575,8 @@ const working = (info, last, at, now, retrying = false) => el("div", { class: "f
   miniAvatar(info, el("span", { class: "spin" })),
   el("div", { class: "fl-times", "aria-hidden": "true" }, retrying ? "last try " : "last activity ",
     el("span", { "data-ago": last || "", text: ago(last) }),
-    at ? " · " : null, at ? el("span", { "data-lasting": at, text: lasting(at) }) : null, at ? " so far" : null),
+    at ? " · " : null, at ? el("span", { "data-lasting": at, text: lasting(at) }) : null, at ? " so far" : null,
+    canInterrupt(info) ? " · esc to interrupt" : null),
   el("div", { class: "now", role: "status", style: hueInk(info) }, now));
 // The latest turn over, short of height: on one line as the actor at work is -- its avatar small, "Done", and how long
 // the turn took, from its message to its last event (`end`; from a server without it, the actor's last activity) --
@@ -6435,19 +6595,61 @@ function openedTurn(info, q, latest, h) {
   return [el("div", { class: "fl-turn opened" },
     el("div", { class: "fl-user" + bubbleClass(q.text), title: "Sent to the agent: shown here until the gatherer has stored it" },
       userWords(q.text)),
-    latest ? working(info, Math.max(q.sent, (info && info.last) || 0), q.sent, "Working…") : null,
+    latest ? working(info, Math.max(q.sent, (info && info.last) || 0), q.sent, isInterrupting() ? "Interrupting…" : "Working…") : null,
     latest ? pendingTalk(info, h) : null),
     latest ? el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, { work: {} })) : null].filter(Boolean);
 }
 const talkToEnd = () => { const n = document.querySelector("#main .fl-talk"); if (n) n.scrollTop = n.scrollHeight; };
 // Show more of the conversation above where the reader is, keeping what they look at in place.
 function showMore(change) {
-  const n = document.querySelector(".fl-talk"), below = n ? n.scrollHeight - n.scrollTop : 0;
+  const n = document.querySelector("#main .fl-talk"), below = n ? n.scrollHeight - n.scrollTop : 0;
   change();
   keepingPlace(renderMain);
-  const again = document.querySelector(".fl-talk");
+  const again = document.querySelector("#main .fl-talk");
   if (n && again) again.scrollTop = again.scrollHeight - below;
 }
+// A turn's files and commands, or its replies, shown or folded from its message (filesTalk) -- that message kept where
+// it was on the screen, not the turn picked brought into view, as a new pick is (filesTalk's talkShown).
+async function keepTurn(n, change) {
+  const top = (x) => x.getBoundingClientRect().top, talk = document.querySelector("#main .fl-talk");
+  const turn = document.getElementById(`fl-turn-${n}`), y = talk && turn ? top(turn) - top(talk) : null;
+  await change();
+  if (state.files && state.files.data) talkShown = `${state.files.key}:${state.files.data.turn}`;
+  const now = document.querySelector("#main .fl-talk"), again = document.getElementById(`fl-turn-${n}`);
+  if (y !== null && now && again) now.scrollTop += top(again) - top(now) - y;
+}
+// Scrolled to its top, a pull further up -- the wheel, a finger drawn down, or ↑, Page Up or Home with the focus in it --
+// shows TURNS_MORE earlier turns above, the reader's place kept. Reaching the top is not one: what is drawn ends there,
+// and only a pull PULL_WAIT_MS after (of PULL_PX, so a jolt of the trackpad is not one) shows more. Chrome scrolls before
+// the page hears of the wheel, so the top is known by when the conversation got there (`topAt`), not by the event.
+const TURNS_MORE = 5, PULL_PX = 60, PULL_WAIT_MS = 300;
+let topAt = null, pulled = 0, touchedAt = null;
+const talkOf = (n) => n && n.closest ? n.closest("#main .fl-talk") : null;
+document.addEventListener("scroll", (ev) => {
+  const n = ev.target;
+  if (n && n.matches && n.matches("#main .fl-talk")) topAt = n.scrollTop > 0 ? null : topAt ?? Date.now();
+}, true);
+function pullEarlier(talk, by) {
+  if (!talk) return;
+  if (talk.scrollTop > 0 || !state.files || !state.files.first) { topAt = null; pulled = 0; return; }
+  if (topAt === null) { topAt = Date.now(); pulled = 0; return; }       // at the top only now: drawn up to here
+  if (Date.now() - topAt < PULL_WAIT_MS || (pulled += by) < PULL_PX) return;
+  pulled = 0; topAt = null;
+  showMore(() => { state.files.first = Math.max(0, state.files.first - TURNS_MORE); });
+}
+document.addEventListener("wheel", (ev) => {
+  if (ev.deltaY < 0) pullEarlier(talkOf(ev.target), -ev.deltaY * (ev.deltaMode ? 20 : 1));   // lines or pages: a pull each
+}, { passive: true });
+document.addEventListener("touchstart", (ev) => { touchedAt = talkOf(ev.target) ? ev.touches[0].clientY : null; }, { passive: true });
+document.addEventListener("touchmove", (ev) => {
+  if (touchedAt === null) return;
+  const by = ev.touches[0].clientY - touchedAt;
+  if (by > 0) { touchedAt = ev.touches[0].clientY; pullEarlier(talkOf(ev.target), by); }
+}, { passive: true });
+document.addEventListener("keydown", (ev) => {
+  if (["ArrowUp", "PageUp", "Home"].includes(ev.key) && !ev.defaultPrevented && !(ev.target && ev.target.closest && ev.target.closest("input, textarea, [contenteditable]")))
+    pullEarlier(talkOf(ev.target), PULL_PX);
+});
 // Drawn again (renderMain's `patch`), the conversation is patched in place, turn by turn (data-morph): only what changed
 // is replaced -- a turn's new reply, the times under it -- and the rest kept, the actor at work among it, its
 // animations running on (its data-sig, what it shows). Replaced whole, the actor restarted at every redraw, every pause
@@ -6456,15 +6658,18 @@ function filesTalk(d, info, running) {
   const box = el("div", { class: "fl-talk", "data-keep": "files-talk", "data-follow": "1", "data-morph": "" });
   const closed = state.files.closed || (state.files.closed = new Set());   // the last messages folded by a click
   const opened = state.files.opened || (state.files.opened = new Set());   // the turns whose earlier messages are all shown
+  const flips = state.files.flips || (state.files.flips = new Set());      // the turns before the latest not as the setting has them
   const fold = (ev) => { const n = ev.currentTarget; if (n.open) closed.delete(n.id); else closed.add(n.id); };
-  const first = state.files.allTurns ? 0 : Math.max(0, Math.min(d.turn, d.turns.length - TURNS_SHOWN));
-  if (first) box.append(el("button", { type: "button", class: "fl-earlier", title: "Show the conversation's earlier turns",
-    onclick: () => showMore(() => { state.files.allTurns = true; }) }, `Show ${plural(first, "earlier turn")}`));
+  // the first turn drawn: the latest few, at first; then where the reader pulled it to (pullEarlier), or the turn they
+  // picked. Kept as the conversation grows: a new turn is drawn at the end, none taken from the top.
+  const first = state.files.first = Math.max(0, Math.min(d.turn, state.files.first ?? d.turns.length - TURNS_SHOWN));
+  if (first) box.append(el("div", { class: "fl-earlier" }, `${plural(first, "earlier turn")} · scroll up for more`));
   // what was written while it worked and sent as part of its turn, not yet stored by ag: stacked on its first message
   const h = heard(info), joined = h.typed.filter((q) => q.sent !== null && q.joins), opens = openings(h);
   for (const t of d.turns.slice(first)) {
     const on = t.n === d.turn;
     const live = running && !opens.length && t.n === d.turns.length - 1;
+    if (!live && t.n === d.turns.length - 1 && isInterrupting()) interrupting = null;   // its turn over: interrupted
     // its messages, by their place in the turn (their ids keep it); thinking that is encrypted has nothing to read
     const said = (t.replies || []).map((r, i) => [r, i])
       .filter(([r]) => r.kind === "text" || NOTED[r.kind] || (r.kind === "thinking" && (r.texts || []).length));
@@ -6486,26 +6691,48 @@ function filesTalk(d, info, running) {
     };
     const toggle = () => { opened.has(t.n) ? opened.delete(t.n) : opened.add(t.n); keepingPlace(renderMain); };
     // a call under way is drawn above, as the turn's latest call: the line under it only says the agent works
-    const now = !live ? "" : info && info.failing ? "Retrying…" : t.now && t.now.kind === "thinking" ? "Thinking…" : "Working…";
+    const now = !live ? "" : isInterrupting() ? "Interrupting…" : info && info.failing ? "Retrying…"
+      : t.now && t.now.kind === "thinking" ? "Thinking…" : "Working…";
     const done = !live && t.n === d.turns.length - 1 && !opens.length && !!info && ["idle", "finished", "closed"].includes(statusOf(info)[0]);
     const starts = live ? [t.at, began(t)].filter(Boolean) : [];
     const from = starts.length ? Math.min(...starts) : null;      // when it began: sent (began), or stored
-    box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}`, "data-morph": "" },
-      // a click: this turn's files and commands shown at the left, or folded away when they already are
-      bashBubble(t, el("button", { type: "button", class: "fl-user" + bubbleClass(t.text), "aria-pressed": on ? "true" : "false",
-        title: on && !sideFolded ? "Fold this turn's files and commands" : "Show this turn's files and commands",
-        onclick: () => {
-          if (on && !sideFolded) return foldSide(true);
-          if (sideFolded) foldSide(false, on);
-          if (!on) setFilesTurn(t.n);
-        } },
-        userWords(t.text, t.kind))),
+    // apart from each other: its files and commands at the left (the turn picked; folded away when they already show), by
+    // the button at its message's right or ⌘+click; and before the latest, its replies shown or folded -- folded at first
+    // under the setting "Messages only" (earlierTurns), shown under "Whole", a click on its message the other way (flips)
+    const earlier = t.n !== d.turns.length - 1, whole = !earlier || (earlierTurns === "whole") !== flips.has(t.n);
+    const showing = on && !sideFolded;
+    const flip = () => keepTurn(t.n, () => { flips.has(t.n) ? flips.delete(t.n) : flips.add(t.n); keepingPlace(renderMain); });
+    const side = () => keepTurn(t.n, () => {
+      if (showing) return foldSide(true);
+      if (sideFolded) foldSide(false, on);
+      if (!on) return setFilesTurn(t.n);
+    });
+    const sideTip = showing ? "Fold this turn's files and commands" : "Show this turn's files and commands";
+    const foldTip = whole ? "Fold this turn to your message" : "Show this turn's replies";
+    // the user's message: a click on it before the latest shows or folds the turn's replies (the first message's chevron
+    // says which); ⌘+click (Ctrl+click) shows or folds its files and commands at the left, as its button does
+    const click = (ev) => ev.metaKey || ev.ctrlKey ? side() : earlier ? flip() : null;
+    const sideClick = `${BESIDE_KEY}+click: ${sideTip[0].toLowerCase()}${sideTip.slice(1)}`;
+    const said1 = (text, kind, cls, title, ...end) => !earlier
+      ? el("div", { class: cls, title: (title ? title + ". " : "") + sideClick, onclick: click }, userWords(text, kind), ...end)
+      : el("button", { type: "button", class: cls, "aria-expanded": String(whole), title: `${title ? title + ". " : ""}${foldTip}. ${sideClick}`,
+        onclick: click }, userWords(text, kind), ...end);
+    // at the first message's end, how much the turn holds: what the agent said and thought (as shown under it), and its
+    // calls (files.py's `calls`, as its commands at the left list them)
+    const held = said.length + (t.calls || 0);
+    const count = held ? el("span", { class: "fl-count", title: `${plural(said.length, "message")} from the agent, ${plural(t.calls || 0, "command")}` },
+      plural(held, "message")) : null;
+    box.append(el("div", { class: "fl-turn" + (on ? " on" : "") + (whole ? "" : " folded")
+      + (earlier && whole && earlierTurns === "messages" ? " shown" : ""), id: `fl-turn-${t.n}`, "data-morph": "" },
+      el("div", { class: "fl-head" },
+        bashBubble(t, said1(t.text, t.kind, "fl-user" + bubbleClass(t.text), null, count,
+          earlier ? el("span", { class: "fold-mark", "aria-hidden": "true" }, strokeIcon(ICONS.chevron, 14)) : null)),
+        el("span", { class: "fl-btns" },
+          el("button", { type: "button", class: "fl-side-btn", "aria-pressed": String(showing), title: sideTip, "aria-label": sideTip,
+            onclick: side }, strokeIcon(ICONS.sidebar, 14)))),
       ...[...(t.more || []), ...(t.n === d.turns.length - 1 ? joined : [])].map((m) =>
-        el("button", { type: "button", class: "fl-user joined" + bubbleClass(m.text), "aria-pressed": on ? "true" : "false",
-          title: "Written while it worked, and given to the agent in this turn",
-          onclick: () => { if (sideFolded) foldSide(false, false); setFilesTurn(t.n); } },
-          userWords(m.text, m.kind))),
-      before.length ? el("div", { class: "fl-minor" },
+        said1(m.text, m.kind, "fl-user joined" + bubbleClass(m.text), "Written while it worked, and given to the agent in this turn")),
+      ...(!whole ? [] : [before.length ? el("div", { class: "fl-minor" },
         extra ? el("button", { type: "button", class: "fl-more", "aria-expanded": hidden ? "false" : "true", onclick: toggle,
           title: hidden ? "Show everything the agent said and thought in this turn" : "Fold the earlier messages again" },
           el("span", { class: "sg", "aria-hidden": "true", text: hidden ? "+" : "−" }), plural(extra, "earlier message")) : null,
@@ -6514,9 +6741,9 @@ function filesTalk(d, info, running) {
       after.length ? el("div", { class: "fl-minor" }, ...after.map((x) => reply(x, false))) : null,
       t.last ? el("div", { class: "fl-minor" }, lastCall(t, live, info ? statusOf(info)[0] : "")) : null,
       live ? working(info, info.failing ? info.failing.at : Math.max(info.last || 0, from || 0) || null, from, now, !!info.failing)
-        : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null,
+        : stoppedLine(info, t, t.n === d.turns.length - 1),
       done ? finished(info, t) : null,
-      t.n === d.turns.length - 1 && !opens.length ? pendingTalk(info, h) : null));
+      t.n === d.turns.length - 1 && !opens.length ? pendingTalk(info, h) : null])));
     // under the latest turn's box: the actor at work; or, its turn over, the actor done
     if (live) box.append(el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, t)));
     else if (done) box.append(el("div", { class: "fl-done", title: `Done · ${ago(info.last)}` }, atRest(info, t.row_id)));
@@ -6524,12 +6751,33 @@ function filesTalk(d, info, running) {
   box.append(...opens.flatMap((q, i) => openedTurn(info, q, i === opens.length - 1, h)));
   const at = `${state.files && state.files.key}:${d.turn}`;
   if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick: the latest at its end
+    if (talkShown === at) return;                        // already (keepTurn: kept where the reader had it)
     const cur = document.querySelector(".fl-talk .fl-turn.on");
     if (!cur) return;
     talkShown = at;
     cur.parentElement.scrollTop = state.files.turn === null ? cur.parentElement.scrollHeight : cur.offsetTop;   // .fl-talk is its offset parent
   });
   return box;
+}
+// How a turn stopped short, under it, as its harness says it there (files.py's `stopped`), in its own words:
+// interrupted (Esc), and what it asks then -- or the error it gave up on. Claude Code: "⎿ Interrupted · What should Claude
+// do instead?", dim; its error in red. Codex (0.164's tui): "■ Conversation interrupted", dim (less its pointer to its
+// own /feedback); "■ <its error>", or "■ Goal budget reached - the turn was stopped.", in red. Not the latest turn's
+// error while the actor is stopped on it: its note says that in full. Null for a turn that ended as turns do.
+const STOPPED_SAYS = {
+  claude: { lead: "⎿", interrupted: "Interrupted · What should Claude do instead?",
+    error: (s) => s.text || (s.status ? `API Error: ${s.status}` : "API Error") },
+  codex: { lead: "■", interrupted: "Conversation interrupted",
+    budget_limited: "Goal budget reached - the turn was stopped.", error: (s) => s.text || "Error" },
+};
+function stoppedLine(info, t, latest) {
+  const s = t.stopped;
+  if (!s || (s.kind === "error" && latest && info && info.status === "error")) return null;
+  const says = STOPPED_SAYS[info && info.harness] || STOPPED_SAYS.claude;
+  const red = s.kind === "error" || (s.reason === "budget_limited" && !!says.budget_limited);
+  const said = s.kind === "error" ? says.error(s) : red ? says.budget_limited : says.interrupted;
+  return el("div", { class: "fl-stopped" + (red ? " error" : ""), role: "note" },
+    el("span", { class: "lead", "aria-hidden": "true", text: says.lead }), el("span", { text: said }));
 }
 // Claude Code's own notes in a turn (files.py's `_note`), each a line among the messages, folded to it: a subagent's
 // report handed back, by its task; another session's message, by its first line, the session named (opened: the
