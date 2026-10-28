@@ -116,18 +116,10 @@ Not covered yet:
   stopped while ag still reads waits for that read: seconds on a busy gatherer. The hang-up could be kept at once
   and tied to its read after.
 - [ ] **Claude Code's rewind** (Esc Esc, /rewind): the conversation goes back to an earlier message and on from
-  there. ag keeps the branch left behind in every later context. Where Claude Code's notes follow the new message
-  (a session's first turn), the Claude adaptor's Continuity can even take the new message for one stored and not
-  send it -- the shape the withdrawn calls had. It needs the fork found in the request: the stored chain's piece
-  after the last common one differs from the request's, and is a user message (Claude Code rewriting its own notes
-  on resume looks alike, but the notes are not the user's). The stored branch after the fork would then be withdrawn.
-- [ ] **A resumed session whose tools come and go is answered from an old context** (found live, 2026-10-28; scratch
-  home `/private/tmp/claude-501/esc/home`, gatherer `t1`, reads 8 and 11). Resumed in a new terminal, Claude Code's
-  first call said its claude.ai Docs tools were removed, the next that they were added again. ag's Claude Continuity
-  matched that call's "tool added" notes to the same notes stored earlier in the session (event 31), stored nothing
-  new -- the user's message among it -- and answered with the context up to there ("3 events in (event 31), 28 out"):
-  the model answered an earlier message. Each later resume of the session did the same (event 72). The shape of the
-  rewind case above; not Esc's.
+  there. The Claude adaptor's Continuity finds the fork (`carry_on`'s "rewind": the user's words right after a run
+  of stored pieces where the stored history went on otherwise; the hook logs it) and goes on from there, so the new
+  message is stored and sent, even where Claude Code's notes follow it as they followed the old one. But ag keeps
+  the branch left behind in every later context: the stored branch after the fork would be withdrawn.
 - [x] **Codex, stopped before the answer:** the call is kept as 499 and shows Idle, and nothing is withdrawn -- rightly:
   codex keeps the message, its answer begun or not, its message box left empty, and says so ("■ Conversation
   interrupted - use /feedback if something went wrong"; its tui's `on_interrupted_turn`, 0.164; read in its source,
