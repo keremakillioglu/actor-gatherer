@@ -992,12 +992,12 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-minor .fl-reply { color: var(--ink-2); }
 .files .fl-minor .fl-reply:not([open]) > summary .first { color: var(--muted); }
 .files .fl-minor .fl-reply > summary:hover .first { color: var(--ink-2); }
-.files .fl-more, .files .fl-earlier { background: none; border: 0; border-radius: 4px; margin: 4px 0 0 2px; padding: 0 4px 0 15px;
+.files .fl-more { background: none; border: 0; border-radius: 4px; margin: 4px 0 0 2px; padding: 0 4px 0 0;
   font-size: .95em; color: var(--muted); cursor: pointer; }
-.files .fl-more { padding-left: 0; }
 .files .fl-more .sg { display: inline-block; width: 15px; text-align: left; }   /* + or −, under the messages' dots */
-.files .fl-more:hover, .files .fl-earlier:hover { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
-.files .fl-earlier { display: block; margin: 4px 6px 6px; padding: 4px 10px; font-size: 12px; }
+.files .fl-more:hover { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+/* above the turns drawn, how many are not yet: a pull up past the top draws them */
+.files .fl-earlier { margin: 2px 6px 6px; padding: 2px 10px; font-size: 12px; color: var(--muted); text-align: center; }
 /* a reply's markdown, coloured as the NumPy docs (the PyData theme) colour it, and no more: links teal, inline
    code magenta on grey, a table's header ruled in teal; headings, code and quotes in the text's own colours */
 .files .md { min-width: 0; }
@@ -1185,7 +1185,10 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
    in place of the two lines and the avatar under them (or the avatar done). Those put away, not display: none: laying the
    Chat out again -- the message box growing as it is typed in, say -- Chrome tries the frame at no height and at its
    least on the way, the query true there for that moment; display: none would restart their animations at every key,
-   the avatar done growing in again */
+   the avatar done growing in again. Hidden, not content-visibility: hidden: flipped within every layout, that set Chrome
+   numbering each numbered list (an <ol> in a reply) again, which asked for another layout -- each read of a size laid the
+   whole Chat out anew (a redraw of 40 turns 4-5 times as long), and with some replies it never settled, the Chat laid out
+   again and again while nothing happened */
 @container talk (max-height: 420px) {
   .files .fl-working { display: flex; align-items: center; gap: 6px; }
   .files .fl-working > .fl-mini { display: inline-flex; flex: none; order: 0; color: var(--term-accent); }
@@ -1193,7 +1196,7 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
   .files .fl-working > .fl-times { order: 2; flex: 0 1 auto; }
   .files .fl-working > .fl-times::before { content: "· "; }
   .files .fl-working.fl-finished { display: flex; }
-  .files .fl-talk > .fl-status, .files .fl-talk > .fl-done { content-visibility: hidden; height: 0; margin: 0; } }
+  .files .fl-talk > .fl-status, .files .fl-talk > .fl-done { visibility: hidden; overflow: hidden; height: 0; margin: 0; } }
 .files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
 .files .fl-status .spin { font-size: 1.4em; }
 .files .fl-status > .buddy { margin: 2px 0 0 4px; }
@@ -6344,14 +6347,15 @@ function filesBackground(info) {
 }
 // The conversation, at the right: each of the user's messages a turn, at the right, and under it the agent's:
 // its last message whole (a click folds it to its first line), the ones before it -- what it said on the way,
-// its thinking -- each folded to a line, the latest few shown and the earlier behind a + (and a − folds them again). The latest turns
-// shown, the earlier behind a click too. While the turn runs, what the agent is doing at its end, as the
+// its thinking -- each folded to a line, the latest few shown and the earlier behind a + (and a − folds them again). The
+// latest turns shown, the earlier a few more at a time as the reader scrolls up past the top (pullEarlier). While the turn
+// runs, what the agent is doing at its end, as the
 // Transcript's status line. Clicking a message shows its turn's files. What the user wrote while a turn ran is
 // part of it: once sent to the agent (`more`; in the latest turn also Claude Code's queue, the agent's `typed`,
 // data.py's, from its record of the session), stacked on its first message; until then, at the latest turn's end, faded and marked pending
 // (pendingTalk) -- as is a message sent from this page's box, from the moment it is sent. A message that opened a
 // turn ag has not stored yet is that turn's, in full, the moment Claude Code has it (openedTurn).
-const MINOR_SHOWN = 2, TURNS_SHOWN = 3;
+const MINOR_SHOWN = 2, TURNS_SHOWN = 5;
 let talkShown = null;
 // What the selected actor's own records say the user wrote: ag's stored messages (each turn's first, and what was written
 // while it ran), Claude Code's queue less what ag has stored since (the agent's `typed`, data.py's), and the dashboard
@@ -6442,12 +6446,44 @@ function openedTurn(info, q, latest, h) {
 const talkToEnd = () => { const n = document.querySelector("#main .fl-talk"); if (n) n.scrollTop = n.scrollHeight; };
 // Show more of the conversation above where the reader is, keeping what they look at in place.
 function showMore(change) {
-  const n = document.querySelector(".fl-talk"), below = n ? n.scrollHeight - n.scrollTop : 0;
+  const n = document.querySelector("#main .fl-talk"), below = n ? n.scrollHeight - n.scrollTop : 0;
   change();
   keepingPlace(renderMain);
-  const again = document.querySelector(".fl-talk");
+  const again = document.querySelector("#main .fl-talk");
   if (n && again) again.scrollTop = again.scrollHeight - below;
 }
+// Scrolled to its top, a pull further up -- the wheel, a finger drawn down, or ↑, Page Up or Home with the focus in it --
+// shows TURNS_MORE earlier turns above, the reader's place kept. Reaching the top is not one: what is drawn ends there,
+// and only a pull PULL_WAIT_MS after (of PULL_PX, so a jolt of the trackpad is not one) shows more. Chrome scrolls before
+// the page hears of the wheel, so the top is known by when the conversation got there (`topAt`), not by the event.
+const TURNS_MORE = 5, PULL_PX = 60, PULL_WAIT_MS = 300;
+let topAt = null, pulled = 0, touchedAt = null;
+const talkOf = (n) => n && n.closest ? n.closest("#main .fl-talk") : null;
+document.addEventListener("scroll", (ev) => {
+  const n = ev.target;
+  if (n && n.matches && n.matches("#main .fl-talk")) topAt = n.scrollTop > 0 ? null : topAt ?? Date.now();
+}, true);
+function pullEarlier(talk, by) {
+  if (!talk) return;
+  if (talk.scrollTop > 0 || !state.files || !state.files.first) { topAt = null; pulled = 0; return; }
+  if (topAt === null) { topAt = Date.now(); pulled = 0; return; }       // at the top only now: drawn up to here
+  if (Date.now() - topAt < PULL_WAIT_MS || (pulled += by) < PULL_PX) return;
+  pulled = 0; topAt = null;
+  showMore(() => { state.files.first = Math.max(0, state.files.first - TURNS_MORE); });
+}
+document.addEventListener("wheel", (ev) => {
+  if (ev.deltaY < 0) pullEarlier(talkOf(ev.target), -ev.deltaY * (ev.deltaMode ? 20 : 1));   // lines or pages: a pull each
+}, { passive: true });
+document.addEventListener("touchstart", (ev) => { touchedAt = talkOf(ev.target) ? ev.touches[0].clientY : null; }, { passive: true });
+document.addEventListener("touchmove", (ev) => {
+  if (touchedAt === null) return;
+  const by = ev.touches[0].clientY - touchedAt;
+  if (by > 0) { touchedAt = ev.touches[0].clientY; pullEarlier(talkOf(ev.target), by); }
+}, { passive: true });
+document.addEventListener("keydown", (ev) => {
+  if (["ArrowUp", "PageUp", "Home"].includes(ev.key) && !ev.defaultPrevented && !(ev.target && ev.target.closest && ev.target.closest("input, textarea, [contenteditable]")))
+    pullEarlier(talkOf(ev.target), PULL_PX);
+});
 // Drawn again (renderMain's `patch`), the conversation is patched in place, turn by turn (data-morph): only what changed
 // is replaced -- a turn's new reply, the times under it -- and the rest kept, the actor at work among it, its
 // animations running on (its data-sig, what it shows). Replaced whole, the actor restarted at every redraw, every pause
@@ -6457,9 +6493,10 @@ function filesTalk(d, info, running) {
   const closed = state.files.closed || (state.files.closed = new Set());   // the last messages folded by a click
   const opened = state.files.opened || (state.files.opened = new Set());   // the turns whose earlier messages are all shown
   const fold = (ev) => { const n = ev.currentTarget; if (n.open) closed.delete(n.id); else closed.add(n.id); };
-  const first = state.files.allTurns ? 0 : Math.max(0, Math.min(d.turn, d.turns.length - TURNS_SHOWN));
-  if (first) box.append(el("button", { type: "button", class: "fl-earlier", title: "Show the conversation's earlier turns",
-    onclick: () => showMore(() => { state.files.allTurns = true; }) }, `Show ${plural(first, "earlier turn")}`));
+  // the first turn drawn: the latest few, at first; then where the reader pulled it to (pullEarlier), or the turn they
+  // picked. Kept as the conversation grows: a new turn is drawn at the end, none taken from the top.
+  const first = state.files.first = Math.max(0, Math.min(d.turn, state.files.first ?? d.turns.length - TURNS_SHOWN));
+  if (first) box.append(el("div", { class: "fl-earlier" }, `${plural(first, "earlier turn")} · scroll up for more`));
   // what was written while it worked and sent as part of its turn, not yet stored by ag: stacked on its first message
   const h = heard(info), joined = h.typed.filter((q) => q.sent !== null && q.joins), opens = openings(h);
   for (const t of d.turns.slice(first)) {
