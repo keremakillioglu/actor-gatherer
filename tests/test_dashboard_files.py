@@ -57,6 +57,14 @@ class ShellChangesTest(unittest.TestCase):
                         "echo git pull", "gh pr view 12", "cat > notes.md <<'EOF'\ngit pull\nEOF"):
             self.assertFalse(files.runs_git(command), command)
 
+    def test_the_work_trees_git_worktree_add_makes_are_told(self):
+        self.assertEqual(files.worktrees_added("cd /r && git worktree add -q -b x ../wt origin/main && cd ../wt && git log", "/w"),
+                         ["/wt"])
+        self.assertEqual(files.worktrees_added("git -C /r worktree add --reason 'a b' -B y wt2; WT=/tmp/x; git worktree add $WT",
+                                               "/w"), ["/r/wt2", "/tmp/x"])
+        for command in ("git worktree list", "git worktree remove ../wt", "echo git worktree add x", "git worktree add $NOT_SET"):
+            self.assertEqual(files.worktrees_added(command, "/w"), [], command)
+
     def test_a_heredoc_or_echo_into_a_file_writes_it(self):
         self.assertEqual(files.shell_changes("cat > n.txt <<'EOF'\nhello\nworld\nEOF", "/w"),
                          ([("/w/n.txt", "write", "hello\nworld")], True))
@@ -337,6 +345,80 @@ class FilesTest(unittest.TestCase):
         self.assertEqual([f["path"] for f in got["files"]], [notes])        # the query's: ag's own write
         self.assertEqual([(c["text"], c["files"]) for c in got["commands"]], [("Query", []), ("Note", [notes])])
         self.assertEqual(got["home"], os.path.expanduser("~"))
+
+    def touched(self, *rows, channel="c1", at="2026-10-24 08:00:00"):
+        """What ag's hook found calls did on disk: (call, path, how, named, detail)."""
+        self.add(*[("file_touched", {"call": c, "path": path, "how": how, "checked": None, "named": named, "detail": detail or {}})
+                   for c, path, how, named, detail in rows], channel=channel, at=at)
+
+    @staticmethod
+    def kinds(got):
+        """Each file's kinds, its own and git's."""
+        return {f["path"]: (f["kinds"], f["git"]) for f in got["files"]}
+
+    def test_what_git_changes_as_a_call_runs_it_is_told_apart_from_the_call_s_own(self):
+        self.add(asked("make two work trees, pull and undo"),
+                 call("k1", "Bash", {"command": "cd /r && git worktree add -q -b x ../wt origin/main && grep -n f ../wt/a.py",
+                                     "description": "Make the work tree"}), result("k1", "1:def f():"),
+                 call("k2", "Bash", {"command": "git worktree add ../wt2 && echo hi > ../wt2/notes.txt", "description": "Another"}),
+                 result("k2", ""), call("k3", "Bash", {"command": "git pull -q", "description": "Pull"}), result("k3", ""),
+                 call("k4", "Bash", {"command": "git checkout -- b.py", "description": "Undo"}), result("k4", ""))
+        self.touched(("k1", "/wt/a.py", "created", True, {"lines": ["def f():"]}), ("k1", "/wt/a.py", "hit", True, {"hits": [[1, "def f():"]]}),
+                     ("k1", "/wt/b.py", "created", False, None),
+                     ("k2", "/wt2/.git", "created", False, {"lines": ["gitdir: /r/.git/worktrees/wt2"]}),
+                     ("k2", "/wt2/c.py", "created", False, None), ("k2", "/wt2/notes.txt", "created", True, {"lines": ["hi"]}),
+                     ("k3", "/w/a.py", "modified", False, {"hunks": [{"at": 2, "old": ["x = 1"], "new": ["x = 2"]}]}),
+                     ("k3", "/w/new.md", "created", False, {"lines": ["# new"]}), ("k4", "/w/b.py", "modified", True, {}))
+        got = files.files("g", "c1", 2, cwd="/w")
+        self.assertEqual(self.kinds(got), {
+            "/wt/a.py": (["hit"], ["write"]), "/wt/b.py": ([], ["write"]), "/wt2/.git": ([], ["write"]), "/wt2/c.py": ([], ["write"]),
+            "/wt2/notes.txt": (["write"], []), "/w/a.py": ([], ["edit"]), "/w/new.md": ([], ["write"]), "/w/b.py": ([], ["edit"])})
+        a = next(f for f in got["files"] if f["path"] == "/wt/a.py")
+        self.assertEqual([(s["kinds"], s.get("git")) for s in a["sources"]], [(["write"], True), (["hit"], None)])   # as recorded
+        self.assertEqual([(f["path"], f["created"], f["changed"]) for f in got["files"] if f["path"] in ("/wt/b.py", "/w/a.py")],
+                         [("/wt/b.py", False, None), ("/w/a.py", False, None)])     # not the agent's: neither created nor counted
+        self.assertEqual([(c["text"], c.get("did"), sorted(c.get("git") or {}), c.get("changed")) for c in got["commands"]], [
+            ("Make the work tree", {"/wt/a.py": ["hit"]}, ["/wt/a.py", "/wt/b.py"], None),
+            ("Another", {"/wt2/notes.txt": ["write"]}, ["/wt2/.git", "/wt2/c.py"], [1, 0]),
+            ("Pull", None, ["/w/a.py", "/w/new.md"], None), ("Undo", None, ["/w/b.py"], None)])
+        self.add(asked("draw it"), call("k5", "Bash", {"command": "python3 draw.py", "description": "Draw"}), result("k5", ""),
+                 at="2026-10-24 08:02:00")                  # the session's later work, where its git wrote: its own
+        self.touched(("k5", "/wt/out.svg", "created", False, None), ("k5", "/w/a.py", "modified", False, {}), at="2026-10-24 08:02:00")
+        self.assertEqual(self.kinds(files.files("g", "c1", 3, cwd="/w")), {"/wt/out.svg": (["write"], []), "/w/a.py": (["edit"], [])})
+        self.assertEqual([(s["turn"], s.get("git")) for s in files.changes("g", "c1", "/w/a.py", 0, cwd="/w")["changes"]
+                          if s["turn"] >= 2], [(2, True), (3, None)])   # the Editor's: every change, git's too
+
+    def test_what_git_changes_as_another_session_s_calls_run_is_git_s(self):
+        self.add(asked("make a work tree and pull"), call("k1", "Bash", {"command": "git worktree add ../wt", "description": "Make it"}),
+                 result("k1", ""), call("k2", "Bash", {"command": "git pull", "description": "Pull"}), result("k2", ""))
+        self.touched(("k1", "/wt/a.py", "created", False, None),    # its `.git` found by another session's call alone
+                     ("k2", "/w/x.py", "modified", False, {}), ("k2", "/w/y.py", "modified", False, {}))
+        for ch, cid, at in (("c2", "o1", "2026-10-24 08:00:00"), ("c3", "o2", "2026-10-24 08:05:00"), ("c4", "o3", "2026-10-24 09:00:00")):
+            self.add(("model_call", {"kind": "turn", "harness": "claude"}), asked("run the tests"),
+                     call(cid, "Bash", {"command": "python3 -m unittest > out.log", "description": "Run the tests"}),
+                     result(cid, "OK"), channel=ch, at=at)
+        self.touched(("o1", "/wt/.git", "created", False, {"lines": ["gitdir: /r/.git/worktrees/wt"]}),
+                     ("o1", "/wt/a.py", "created", False, None), ("o1", "/w/out.log", "created", True, None),
+                     ("o1", "/w/x.py", "modified", False, {}), channel="c2")
+        self.touched(("o2", "/wt/a.py", "created", False, None), ("o2", "/w/x.py", "modified", False, {}),
+                     ("o2", "/w/out.log", "modified", True, None),
+                     ("o2", "/wt/b.py", "modified", False, {}),    # in the new work tree, but changed, not made: an edit's
+                     ("o2", "/w/y.py", "deleted", False, None),    # the file git changed, but not as git did
+                     channel="c3", at="2026-10-24 08:05:00")
+        self.touched(("o3", "/wt/late.py", "created", False, None), ("o3", "/w/x.py", "modified", False, {}),
+                     channel="c4", at="2026-10-24 09:00:00")
+        self.assertEqual(self.kinds(files.files("g", "c1", 2, cwd="/w")), {"/wt/a.py": ([], ["write"]), "/w/x.py": ([], ["edit"]),
+                                                                           "/w/y.py": ([], ["edit"])})
+        got = files.files("g", "c2", 0, cwd="/w")
+        self.assertEqual(self.kinds(got), {"/wt/.git": ([], ["write"]), "/wt/a.py": ([], ["write"]), "/w/out.log": (["write"], []),
+                                           "/w/x.py": ([], ["edit"])})
+        x = next(f for f in got["files"] if f["path"] == "/w/x.py")
+        self.assertEqual(x["sources"][0]["blocks"][0]["text"], "changed by git as this ran, in another call; this call doesn't name it")
+        self.assertEqual(self.kinds(files.files("g", "c3", 0, cwd="/w")), {"/wt/a.py": ([], ["write"]), "/w/x.py": ([], ["edit"]),
+                                                                           "/w/out.log": (["edit"], []), "/wt/b.py": (["edit"], []),
+                                                                           "/w/y.py": (["delete"], [])})
+        self.assertEqual(self.kinds(files.files("g", "c4", 0, cwd="/w")),   # an hour on: its own
+                         {"/wt/late.py": (["write"], []), "/w/x.py": (["edit"], [])})
 
     def test_matches_of_files_searched_one_after_another_are_not_guessed(self):
         self.add(asked("find them"), call("g1", "Bash", {"command": "grep -n f a.py; grep -n x b.py"}), result("g1", "1:def f():\n7:x = 1"))

@@ -5860,13 +5860,14 @@ const FILE_KINDS = { read: ["read", "var(--s1)"], hit: ["search hit", "var(--s4)
   write: ["written", "var(--s3)"], delete: ["deleted", "var(--critical)"] };
 // Each kind of file by a mark, in its colour, the same wherever a file shows -- in the tree, its legend, the folded bar,
 // a call of the file, a command's files: a book read, a glass searched, a pencil edited, a page with a plus written
-// whole, a bin deleted.
+// whole, a bin deleted; and what git changed as a command ran, a branch.
 const MARKS = {
   read: "M8 4.25C6.6 3.2 4.6 2.9 2 3.1v9.2c2.6-.2 4.6.1 6 1.15 1.4-1.05 3.4-1.35 6-1.15V3.1c-2.6-.2-4.6.1-6 1.15zM8 4.25v9.2",
   hit: "M6.75 2.5a4.25 4.25 0 1 0 0 8.5 4.25 4.25 0 0 0 0-8.5zM9.9 9.9l3.6 3.6",
   edit: "M10.6 2.6l2.8 2.8-7.9 7.9-3.4.6.6-3.4zM9.1 4.1l2.8 2.8",
   write: "M4.25 1.75h5l3 3v9a.5.5 0 0 1-.5.5h-7.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5zM9 1.75v3.25h3.25M8 7.25v4.5M5.75 9.5h4.5",
   delete: "M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.65 9.1a.75.75 0 0 0 .75.65h4.7a.75.75 0 0 0 .75-.65l.65-9.1M6.75 6.75v4.5M9.25 6.75v4.5",
+  git: "M5 5v6M11 7c0 2.6-6 1.4-6 4M5 1.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zM5 11a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zM11 3.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5z",
 };
 // a kind of file's mark, `title` said on hover (its name unless given)
 function kindMark(kind, size = 12, title) {
@@ -5875,6 +5876,8 @@ function kindMark(kind, size = 12, title) {
   svg.style.color = color;
   return el("span", { class: "km", title: title === undefined ? name : title }, svg);
 }
+// what git changed of a file (files.py's `git`: its kinds) by git's mark
+const gitMark = (kinds, size = 12) => kindMark("git", size, "by git: " + kinds.map((k) => (FILE_KINDS[k] || [k])[0]).join(", "));
 // the lines a change added and removed, as a diff's +N −M (files.py's `changed`); none for none
 const changedCount = (ch) => !ch || !(ch[0] || ch[1]) ? null
   : el("span", { class: "chg", title: `${plural(ch[0], "line")} added, ${plural(ch[1], "line")} removed` },
@@ -5921,7 +5924,7 @@ let hiddenKinds = (() => {
   try { const v = JSON.parse(localStorage.getItem(KINDS_KEY)); return new Set(Array.isArray(v) ? v : ["hit"]); }
   catch (e) { return new Set(["hit"]); }
 })();
-function kindSwitches() {
+function kindSwitches(gitFiles) {
   return el("div", { class: "fl-legend fl-kinds" }, ...Object.entries(FILE_KINDS).map(([k, [name, color]]) => {
     const on = !hiddenKinds.has(k);
     return el("button", { type: "button", class: "kind" + (on ? "" : " off"), "aria-pressed": on ? "true" : "false",
@@ -5931,7 +5934,7 @@ function kindSwitches() {
         try { localStorage.setItem(KINDS_KEY, JSON.stringify([...hiddenKinds])); } catch (e) { /* this page only */ }
         keepingPlace(renderMain);
       } }, kindMark(k, 12, ""), name);
-  }));
+  }), gitFiles ? gitSwitch(gitFiles) : null);
 }
 // The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders): hidden until asked for, the choice
 // kept in this browser. The commands are all listed, whatever folders they touched.
@@ -5947,6 +5950,22 @@ function tmpSwitch(n) {
   });
   return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders)" },
     box, `tmp (${n})`);
+}
+// What git changed as the commands ran -- a pull, a merge, a checkout, a new work tree; in this session's commands or
+// another's running then (files.py's `git`): left out until switched on in the files' legend, of the files, a file's
+// calls and a command's files; the choice kept in this browser.
+const GIT_KEY = "ag-dashboard-files-git";
+let showGit = (() => { try { return localStorage.getItem(GIT_KEY) === "1"; } catch (e) { return false; } })();
+const gitOnly = (f) => !f.kinds.length && !!(f.git || []).length;   // a file only git changed
+function gitSwitch(n) {
+  return el("button", { type: "button", class: "kind" + (showGit ? "" : " off"), "aria-pressed": showGit ? "true" : "false",
+    title: `${showGit ? "Leave out" : "Show"} what git changed as the commands ran (a pull, a merge, a checkout, a new work tree): `
+      + plural(n, "file"),
+    onclick: () => {
+      showGit = !showGit;
+      try { localStorage.setItem(GIT_KEY, showGit ? "1" : "0"); } catch (e) { /* this page only */ }
+      keepingPlace(renderMain);
+    } }, kindMark("git", 12, ""), `by git (${full(n)})`);
 }
 // The files and commands at the left, folded to a thin bar of what they hold until opened: by a click on the
 // bar or on a message, and folded again by the button in their heading or a click on the message of the turn
@@ -6107,19 +6126,21 @@ function fileView(f, rel, id) {
   const box = el("div", { class: "fv" }, el("div", { class: "fv-h" }, el("div", { class: "fv-path", text: rel(f.path) }),
     el("button", { type: "button", class: "fv-close", title: "Close the file", "aria-label": "Close the file",
       onclick: () => { state.files.sel = null; keepingPlace(renderMain); } }, "×")));
-  // the last call opened when it first shows -- the file opened, or a call new to it -- and left as the reader leaves it
-  const last = `${id}-s${f.sources.length - 1}`, fresh = !document.getElementById(last);
-  f.sources.forEach((s, i) => {
+  // the last call opened when it first shows -- the file opened, or a call new to it -- and left as the reader leaves it;
+  // what git changed left out unless shown (gitSwitch)
+  const shown = f.sources.map((s, i) => [s, i]).filter(([s]) => showGit || !s.git);
+  const last = `${id}-s${shown.length ? shown[shown.length - 1][1] : -1}`, fresh = !document.getElementById(last);
+  shown.forEach(([s, i], n) => {
     const kinds = s.kinds.map((k) => k === "write" ? (s.blocks.some((b) => b.created) ? "created" : "written") : (FILE_KINDS[k] || [k])[0]);
     // folded to its header until clicked; opened, what it did to the file, and its exact call behind "command"
     const code = el("div", { class: "code" });
     for (const b of s.blocks) code.append(...fileBlock(b, langOfPath(f.path)));
     if (s.error && !s.blocks.length) code.append(el("div", { class: "fv-note", text: "The call failed." }));
     box.append(el("details", { class: "fv-call" + (s.error ? " err" : ""), id: `${id}-s${i}`, open: fresh && `${id}-s${i}` === last ? "" : null },
-      el("summary", {}, el("span", { class: "tw", text: "▸" }), el("span", { class: "k", text: `${i + 1}` }),
-        el("span", { class: "kinds" }, ...s.kinds.map((k) => kindMark(k, 12))),
+      el("summary", {}, el("span", { class: "tw", text: "▸" }), el("span", { class: "k", text: `${n + 1}` }),
+        el("span", { class: "kinds" }, s.git ? gitMark(s.kinds) : null, ...s.kinds.map((k) => kindMark(k, 12))),
         el("span", { class: "via", text: firstLine(s.via, 160) }), changedCount(s.changed),
-        el("span", { class: "what", text: kinds.join(", ") + (s.error ? " · failed" : "") },
+        el("span", { class: "what", text: (s.git ? "by git: " : "") + kinds.join(", ") + (s.error ? " · failed" : "") },
           CHECKED[s.checked] ? el("span", { class: "chk" + (s.checked ? "" : " off"), title: CHECKED[s.checked][1],
             text: " · " + CHECKED[s.checked][0] }) : null)),
       s.call ? el("details", { class: "fv-cmd", id: `${id}-s${i}-c` }, el("summary", { text: "command" }), callView(s.call)) : null,
@@ -6215,16 +6236,18 @@ function filesRender({ info, session, running, writable, held }) {
   const home = (d.home || "").replace(/\/$/, "");
   const under = (p, dir) => !!dir && p !== null && (p === dir || p.startsWith(dir + "/"));
   const rel = (p) => cwd && p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : under(p, home) ? "~" + p.slice(home.length) : p;
-  const sel = d.files.find((f) => f.path === state.files.sel) || null;   // none until one is clicked
+  const sel = d.files.find((f) => f.path === state.files.sel && (showGit || !gitOnly(f))) || null;   // none until one is clicked
   const list = el("div", { class: "fl-scroll", "data-keep": "files-list" });
   // the files as one tree of their folders, from / -- the home folder shown as ~, the session's directory
   // marked -- a folder with one child folder and no files shown as one ("ag_dashboard/vendor/"), each
   // folder folded or opened (opened unless folded by a click). A path not absolute (the session's
-  // directory not known) goes under a folder of its own. Only the files of the kinds switched on (kindSwitches).
-  const kept = d.files.filter((f) => showTmp || !f.temporary);
+  // directory not known) goes under a folder of its own. Only the files of the kinds switched on (kindSwitches), and
+  // those only git changed when shown (gitSwitch).
+  const untmp = d.files.filter((f) => showTmp || !f.temporary);
+  const kept = untmp.filter((f) => showGit || !gitOnly(f));
   const files = kept.filter((f) => !f.kinds.length || f.kinds.some((k) => !hiddenKinds.has(k)));
-  const kindHidden = kept.length - files.length;
-  const tmpFiles = d.files.filter((f) => f.temporary).length;
+  const kindHidden = kept.length - files.length, gitHidden = untmp.length - kept.length;
+  const tmpFiles = d.files.filter((f) => f.temporary).length, gitFiles = untmp.filter((f) => (f.git || []).length).length;
   const commands = d.commands;
   const UNKNOWN = "\0";
   const root = { dirs: new Map(), files: [] };
@@ -6241,7 +6264,8 @@ function filesRender({ info, session, running, writable, held }) {
     style: `padding-left: ${12 + depth * 14}px`, "aria-pressed": f === sel ? "true" : "false",
     onclick: () => { state.files.sel = f === sel ? null : f.path; keepingPlace(renderMain); } },   // again: closed
     el("span", { class: "name", text: name }), changedCount(f.changed),
-    el("span", { class: "badges" }, ...f.kinds.map((k) => kindMark(k, 12, k === "write" && f.created ? "created" : undefined))));
+    el("span", { class: "badges" }, ...f.kinds.map((k) => kindMark(k, 12, k === "write" && f.created ? "created" : undefined)),
+      showGit && (f.git || []).length ? gitMark(f.git) : null));
   const folded = state.files.folded || (state.files.folded = new Set());
   // a folder's row: its path from the row above it ("" the root, /); from above the home folder into it, as ~. Claude
   // Code's memory of a directory (~/.claude/projects/<the directory, as a name>/memory) marked, its long name cut.
@@ -6273,17 +6297,20 @@ function filesRender({ info, session, running, writable, held }) {
   };
   grow(root, list, 0, null);
   if (!files.length) list.append(el("div", { class: "fv-note", text: kindHidden ? `Only ${plural(kindHidden, "file")} of the kinds switched off below.`
+    : gitHidden ? `Only ${plural(gitHidden, "file")} git changed.`
     : tmpFiles ? `Only ${plural(tmpFiles, "file")} in temporary folders.`
     : running && d.turn === d.turns.length - 1 ? "No files yet in this turn." : "The agent touched no files in this turn." }));
-  // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one)
+  // every call of the turn, in the order made: what it did, its outcome, and the files it touched (a click opens one) --
+  // those only git changed as it ran when shown (gitSwitch)
+  const cmdFiles = (c) => (c.files || []).filter((p) => showGit || (c.did || {})[p] || !(c.git || {})[p]);
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
   commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
     el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), callLabel(c, 140),
       changedCount(c.changed)),
-      (c.files || []).length ? el("div", { class: "fl-cmd-files" }, ...c.files.map((p) => el("button", { type: "button", title: p,
+      cmdFiles(c).length ? el("div", { class: "fl-cmd-files" }, ...cmdFiles(c).map((p) => el("button", { type: "button", title: p,
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, ...((c.did || {})[p] || []).map((k) => kindMark(k, 11)),
-        rel(p).split("/").pop()))) : null,
+        showGit && (c.git || {})[p] ? gitMark(c.git[p], 11) : null, rel(p).split("/").pop()))) : null,
       callView(c.call, c.output, c.error)))));
   if (!commands.length) cmds.append(el("div", { class: "fv-note", text: "No commands in this turn." }));
   const shown = `${state.files.key}:${d.turn}`;
@@ -6307,7 +6334,7 @@ function filesRender({ info, session, running, writable, held }) {
           onclick: () => foldSide(true) }, strokeIcon(ICONS.sidebar, 14))),
       cwd ? el("div", { class: "fl-wd", title: cwd }, el("span", { text: "Working directory" }),
         el("span", { class: "p", text: under(cwd, home) ? "~" + cwd.slice(home.length) : cwd })) : null, list,
-      kindSwitches()),
+      kindSwitches(gitFiles)),
     el("section", { class: "fl-sec cmds-sec" },
       el("div", { class: "fl-h", text: plural(commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
       legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])),
