@@ -440,6 +440,20 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(len(count), 3)                                     # /context and /login run: not shown
         self.assertEqual(turns[3]["ran"], ["/context"])                     # only matched with what the page sent
 
+    def test_a_turn_counts_its_calls_as_its_commands_list_them(self):
+        self.add(asked("Greet Alice, then list the files."),
+                 call("k1", "Skill", {"skill": "greet", "args": "Alice"}), result("k1", "Launching skill: greet"),
+                 note(self.SKILL.format("Alice")),                          # with its Skill call: one command
+                 call("t1", "TodoWrite", {"todos": []}), result("t1", "ok"),  # a to-do list: none
+                 call("b1", "Bash", {"command": "ls", "description": "List the files"}), result("b1", "a.py"),
+                 said("There is a.py."),
+                 asked("<command-message>greet</command-message>\n<command-name>/greet</command-name>\n<command-args>Bob</command-args>\n"),
+                 note(self.SKILL.format("Bob")), said("Ahoy, Bob!"))          # the user's /greet: a command of its own
+        turns = files.files("g", "c1", cwd="/w")["turns"]
+        self.assertEqual([t["calls"] for t in turns[2:]], [2, 1])
+        for t in turns:
+            self.assertEqual(t["calls"], len(files.files("g", "c1", t["n"], cwd="/w")["commands"]))
+
     def test_another_session_s_message_shows_among_the_messages_by_its_sender(self):
         peer = ('Another Claude session sent a message:\n<cross-session-message from="uds:/tmp/cc-socks/81007.sock" '
                 'from-name="ucbepic-actor-gatherer-6c" from-mode="prompting">\nYour branch predates #108.\n\nMerge main.\n'
