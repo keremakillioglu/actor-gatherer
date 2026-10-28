@@ -423,6 +423,7 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         a["turn_over"] = turn_over(conn, ch, tables)[0]
         a["status"] = status_of(a.get("alive"), a["turn_over"], a["last"], now)
         a["said_at"] = user_at.get(ch)
+        a["taken_back"] = None
         if a["harness"] == "codex":
             _codex_status(conn, ch, a, tables, now)
         else:
@@ -457,6 +458,9 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
         a["stopped"] = None
     if cut is not None:
         a["stopped"] = {"kind": "interrupted", "at": cut}
+        a["taken_back"], wake = taken_back(conn, ch, tables, rec, now)
+        if wake:
+            a["wake"] = min(wake, a.get("wake") or wake)
 
 
 def _codex_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
@@ -698,6 +702,73 @@ def hung_up(conn, channel: str) -> Optional[float]:
     and records nothing of it, so that is all that tells the turn is over."""
     r = (_newest_reads(conn, channel, 1) or [None])[0]
     return _seconds(r["read_at"]) if r is not None and r["error_status"] == HUNG_UP else None
+
+
+TAKEN_SECONDS = 2.0     # a call hung up on, nothing of it in Claude Code's record this long: its message taken back
+
+
+def interrupts(rec: "Record") -> List[float]:
+    """When Claude Code's record says the user interrupted a turn (Esc), of its newest facts."""
+    return [f["at"] for t, f in rec.facts if t == "turn_stopped" and f.get("how") == "interrupted"
+            and isinstance(f.get("at"), (int, float))]
+
+
+def withdrawn_reads(conn, channel: str, tables: set, stops: List[float], read_id: Optional[int] = None) -> Dict[int, dict]:
+    """The calls hung up on whose events ag withdrew (`_withdrawn`), by their read (only `read_id`'s, if given): {said:
+    the user's words of the newest user message among them that opened a turn (else None), said_row: its row, kept:
+    Claude Code's record says the turn was interrupted (`stops`: when) once the call had gone to the model (its read
+    done) and before the next call's read}. The hook withdraws a call's events on any Esc, those it stored again (the
+    turns before, sent with it) among them. Claude Code keeps them all -- and records the turn interrupted -- once some
+    of the answer had come; before, it takes the user's message back into its input box (`said`; the events after it
+    with it), recording nothing."""
+    if "_withdrawn" not in tables:
+        return {}
+    harness = _harness(conn, channel)
+    words = "e.p_kind, e.p_words" if {"p_kind", "p_words"} <= _columns(conn, "events") else "NULL, NULL"
+    out: Dict[int, dict] = {}
+    for read, row, typ, kind, said, text in conn.execute(
+            f"SELECT w.read_id, e.row_id, t.name, {words}, e.text FROM _withdrawn w JOIN events e ON e.row_id = w.row_id "
+            f"JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? AND w.read_id "
+            f"{'= ?' if read_id is not None else 'IS NOT NULL'} ORDER BY e.row_id",
+            (channel, *([read_id] if read_id is not None else []))):
+        r = out.setdefault(read, {"said": None, "said_row": None, "kept": False})
+        if typ == "user_message":
+            k, w = (kind, said) if kind and said is not None else harness_kit.words(text or "", harness)
+            if k == Kind.USER and w.strip():                 # the newest: the turns before it come first
+                r["said"], r["said_row"] = w.strip(), row
+    if out and stops and CHANNEL in _columns(conn, "_reads"):
+        reads = [(rid, _seconds(at)) for rid, at in conn.execute(
+            f"SELECT read_id, read_at FROM _reads WHERE ifnull({CHANNEL}, '') = ? AND read_id >= ? ORDER BY read_id",
+            (channel, min(out)))]
+        for read, r in out.items():
+            began = next((at for rid, at in reads if rid == read), None)
+            until = next((at for rid, at in reads if rid > read), None) or float("inf")
+            r["kept"] = began is not None and any(began <= s < until for s in stops)
+    return out
+
+
+def taken_back(conn, channel: str, tables: set, rec: "Record", now: float) -> tuple:
+    """The message Claude Code put back in its input box, stopped (Esc) before any of its answer came: ({text (the user's
+    words), at (when ag kept the hang-up), since (when ag read the call before: a key that stopped the turn typed after
+    it, and nothing since, left the message in the box untouched -- sessions.py's `took_back`)}, None) -- the user's
+    message withdrawn with the agent's newest call, hung up on
+    (`hung_up`), which opened the turn, with nothing in Claude Code's record of the turn being interrupted for
+    TAKEN_SECONDS since (`withdrawn_reads`' `kept`). Until then (None, when to look again). (None, None) for any other call
+    hung up on, or where its record is not followed (not known)."""
+    last = _newest_reads(conn, channel, 2) or []
+    r = last[0] if last else None
+    if r is None or r["error_status"] != HUNG_UP or not rec.followed:
+        return None, None
+    got = withdrawn_reads(conn, channel, tables, interrupts(rec), r["read_id"]).get(r["read_id"])
+    if not got or not got["said"] or got["kept"]:
+        return None, None
+    at = conn.execute(f"SELECT max(e.inserted_at) FROM events e JOIN event_types t ON {BY_CHANNEL} WHERE "
+                      f"ifnull(e.{CHANNEL}, '') = ? AND t.name = 'call_failed' AND e.p_read_id = ?",
+                      (channel, r["read_id"])).fetchone()[0] if "p_read_id" in _columns(conn, "events") else None
+    at = _seconds(at) or _seconds(r["read_at"]) or now
+    if now - at < TAKEN_SECONDS:
+        return None, at + TAKEN_SECONDS
+    return {"text": got["said"], "at": at, "since": _seconds(last[1]["read_at"]) if len(last) > 1 else None}, None
 
 
 def _newest_reads(conn, channel: str, n: int) -> Optional[List[dict]]:
@@ -1154,15 +1225,18 @@ def _agent(conn, gatherer: str, channel: str, llm: List[dict]) -> dict:
 def _unstored(conn, channel: str, typed: List[dict]) -> List[dict]:
     """What the user wrote to the session as it worked (`typed`), less each message that opened a turn ag has stored since. ag
     stores a call's messages before the call goes on to the model, so every turn that ended before a message was sent
-    was stored before it: a user message stored after it is its own, or a later one's. (Matched by when, not by its
-    words: ag may store them otherwise, an image's say.)"""
+    was stored before it: a user message stored after it is its own, or a later one's -- and so is a call ag read after
+    it: a message sent again, as it was taken back (Esc), is kept again where it was first stored, at its first time.
+    (Matched by when, not by its words: ag may store them otherwise, an image's say.)"""
     opening = [q["sent"] for q in typed if q["sent"] is not None and not q["joins"]]
     if not opening:
         return typed
     got = conn.execute(f"SELECT e.inserted_at FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
                        f"WHERE ifnull(e.{CHANNEL}, '') = ? AND t.name = 'user_message' ORDER BY e.row_id DESC LIMIT 1",
                        (channel,)).fetchone()
-    stored = _seconds(got[0]) if got else None
+    read = (_newest_reads(conn, channel, 1) or [None])[0]
+    stored = max([t for t in (_seconds(got[0]) if got else None, _seconds(read["read_at"]) if read else None) if t],
+                 default=None)
     return [q for q in typed if q["sent"] is None or q["joins"] or stored is None or stored < q["sent"]]
 
 
