@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -17,6 +18,7 @@ from ag.ag_harness.store import paths  # noqa: E402
 from ag.integrations.harnesses.claude.adaptor.adaptor import ClaudeAdaptor  # noqa: E402
 from ag.integrations.tools.ag_orchestrator import records  # noqa: E402
 from ag_dashboard import data, files, sessions  # noqa: E402
+from harness_kit.base import Fact, Facts  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 ADAPTOR = ClaudeAdaptor()
@@ -31,6 +33,7 @@ def said(*blocks):
 
 
 TEXT = {"type": "text", "text": "Counting."}
+INTERRUPT = {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]}
 CALL = {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "wc -l rows.csv"}}
 RESULT = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "42 rows.csv"}]}
 
@@ -104,6 +107,109 @@ class RecordsTest(unittest.TestCase):
         a = self.agent()                                                     # Esc: as the hook server reports it
         self.assertEqual((a["status"], a["stopped"]["kind"], a["failing"]), (data.IDLE, "interrupted", None))
         self.assertTrue(sessions.took_back("g", "s", time.time()))          # its message back in Claude Code's box
+
+    def hang_up(self, messages):
+        """A call stored, then hung up on (Esc): reported so by the hook server, and its events withdrawn, as the hook does
+        on any Esc. Its read."""
+        got, = self.ask({"op": "rewrite", "gatherer": "g", "properties": {"channel": "s"}, "cwd": "/w",
+                         "events": ADAPTOR.to_events(messages)})
+        self.record(records.model_call("turn", "claude", "2.1.310", got["read_id"]))
+        self.record(records.call_failed(got["read_id"], data.HUNG_UP, "the harness hung up before the answer was through"))
+        self.ask({"op": "withdraw", "gatherer": "g", "properties": {"channel": "s"}, "rows": got["inserted"],
+                  "read_id": got["read_id"]})
+        return got["read_id"]
+
+    def test_a_message_stopped_before_its_answer_is_taken_back(self):
+        """Esc before any of the answer came: Claude Code puts the user's message back in its input box, recording nothing
+        of it, and the hook has ag withdraw what the call stored. Once its record has said nothing of the turn for
+        TAKEN_SECONDS, the actor has the message as taken back, in the user's words, until it is sent again. A call hung
+        up on later in a turn takes no message back."""
+        self.record(records.session_file("claude", "/c/s.jsonl"))          # its record followed
+        first = [user("count the rows")]
+        read = self.turn(first)
+        self.reply("msg_1", [TEXT, CALL], "tool_use", read)
+        later = first + [said(TEXT, CALL), RESULT]
+        self.hang_up(later)
+        with unittest.mock.patch.object(data, "TAKEN_SECONDS", 0.0):
+            self.assertIsNone(self.agent()["taken_back"])                   # later in the turn: nothing to take back
+        nxt = later + [said({"type": "text", "text": "There are 42 rows."}), user("and the columns?")]
+        self.hang_up(nxt)
+        a = self.agent()                                                     # not yet: its record may still say
+        self.assertEqual((a["status"], a["taken_back"]), (data.IDLE, None))
+        self.assertTrue(sessions.took_back("g", "s", time.time()))          # the box emptied before a message: at once
+        with unittest.mock.patch.object(data, "TAKEN_SECONDS", 0.0):
+            a = self.agent()
+        self.assertEqual(a["taken_back"]["text"], "and the columns?")
+        turns = files.files("g", "s", cwd="/w")["turns"]
+        self.assertEqual([t["text"] for t in turns], ["count the rows"])     # in no turn; the steps before it still shown
+        self.assertEqual([r["text"] for r in turns[0]["replies"] if r["kind"] == "text"], ["Counting.", "There are 42 rows."])
+        self.turn(nxt)                                                       # sent again (Enter on it)
+        with unittest.mock.patch.object(data, "TAKEN_SECONDS", 0.0):
+            self.assertIsNone(self.agent()["taken_back"])
+
+    def test_a_message_stopped_once_its_answer_began_is_kept(self):
+        """Esc once some of the answer came: Claude Code keeps the message and records the turn interrupted. The hook
+        withdrew the call's events all the same; the message is not taken back, and Chat shows its turn, interrupted."""
+        self.record(records.session_file("claude", "/c/s.jsonl"))
+        first = [user("count the rows")]
+        read = self.turn(first)
+        self.reply("msg_1", [{"type": "text", "text": "There are 42 rows."}], "end_turn", read)
+        nxt = first + [said({"type": "text", "text": "There are 42 rows."}), user("and the columns?")]
+        self.hang_up(nxt)
+        self.record(records.fact(Fact(Facts.TURN_STOPPED, "7", time.time(), {"how": "interrupted"}), "/c/s.jsonl"))
+        with unittest.mock.patch.object(data, "TAKEN_SECONDS", 0.0):
+            self.assertIsNone(self.agent()["taken_back"])
+        self.assertFalse(sessions.took_back("g", "s", time.time()))         # nothing in its box to empty
+        turns = files.files("g", "s", cwd="/w")["turns"]
+        self.assertEqual([(t["text"], t["stopped"] and t["stopped"]["kind"]) for t in turns],
+                         [("count the rows", None), ("and the columns?", "interrupted")])
+
+    def test_a_message_stopped_after_a_turn_that_was_kept_is_taken_back(self):
+        """A turn interrupted once its answer began (kept), then the next message stopped before any of its answer came.
+        Its call sends the turn before again, and the hook withdraws that with it (re-kept, stored long before): the
+        interrupt of the turn before is not this call's, the message taken back is the newest, and the turn before stays
+        in Chat."""
+        self.record(records.session_file("claude", "/c/s.jsonl"))
+        first = [user("count the rows")]
+        self.hang_up(first)                                                  # Esc once its answer began: withdrawn too
+        time.sleep(0.05)
+        self.record(records.fact(Fact(Facts.TURN_STOPPED, "7", time.time(), {"how": "interrupted"}), "/c/s.jsonl"))
+        time.sleep(0.05)
+        self.hang_up(first + [said({"type": "text", "text": "Count"}), INTERRUPT, user("and the columns?")])
+        with unittest.mock.patch.object(data, "TAKEN_SECONDS", 0.0):
+            a = self.agent()
+        self.assertEqual(a["taken_back"]["text"], "and the columns?")
+        self.assertTrue(sessions.took_back("g", "s", time.time()))          # its box emptied before a message from Chat
+        turns = files.files("g", "s", cwd="/w")["turns"]
+        self.assertEqual([(t["text"], t["stopped"] and t["stopped"]["kind"]) for t in turns], [("count the rows", "interrupted")])
+
+    def test_a_call_carrying_a_message_written_mid_turn_takes_nothing_back(self):
+        """Claude Code sends what the user wrote as it worked with a tool's result: that call hung up on is later in a
+        turn, and takes no message back."""
+        self.record(records.session_file("claude", "/c/s.jsonl"))
+        first = [user("count the rows")]
+        read = self.turn(first)
+        self.reply("msg_1", [TEXT, CALL], "tool_use", read)
+        mid = {"role": "user", "content": [RESULT["content"][0], {"type": "text", "text": (
+            "The user sent a new message while you were working:\nalso the columns\n\nThis is how Claude Code surfaces "
+            "messages the user sends mid-turn -- within the running turn, often alongside the next tool result, rather "
+            "than as a separate conversation turn. Address the message above as you continue this turn.")}]}
+        self.hang_up(first + [said(TEXT, CALL), mid])
+        with unittest.mock.patch.object(data, "TAKEN_SECONDS", 0.0):
+            self.assertIsNone(self.agent()["taken_back"])
+
+    def test_a_message_sent_again_is_had_once_a_call_is_read_after_it(self):
+        """A message taken back and sent again is kept again where it was first stored, at its first time: a call ag read
+        after it was sent says it was had, so it is no longer shown as one the agent has not had (`_unstored`)."""
+        first = [user("count the rows")]
+        self.turn(first)
+        time.sleep(0.05)
+        sent = time.time()                                                   # Claude Code sends it again
+        q = {"text": "count the rows", "at": sent, "sent": sent, "joins": False}
+        conn = data._connect("g")
+        self.assertEqual(data._unstored(conn, "s", [q]), [q])               # not yet read: not had
+        self.turn(first)                                                     # its call: nothing new stored
+        self.assertEqual(data._unstored(data._connect("g"), "s", [q]), [])
 
     def test_one_actor_s_records_are_found_by_its_channel_not_by_their_type(self):
         """Searched by type, each actor's would go through every actor's records newer than its own last event: the

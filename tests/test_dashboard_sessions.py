@@ -19,7 +19,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import data, hiding, saved, seen, server, sessions  # noqa: E402
+from ag_dashboard import avatars, data, hiding, saved, seen, server, sessions  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 # A fake `ag`: writes its arguments, then each message it is sent, to $FAKE_AG_LOG; answers each
@@ -353,6 +353,43 @@ class TerminalTest(SessionsBase):
         self.until(lambda: "[got \r]" in self.screen(sid))
         typed = "".join(x.get("typed", "") for x in self.logged())
         self.assertEqual(typed, "\x1b[200~two\nlines\x1b[201~\r")
+
+    def chunks(self):
+        return [x["typed"] for x in self.logged() if "typed" in x]
+
+    def test_a_stop_key_typed_as_a_message_goes_in_waits_for_its_enter(self):
+        """Esc from the page (Chat's interrupt) while the dashboard pastes a message: typed after the message's Enter, not
+        between them; and the session says when a key that stops a turn was last typed (`stopped_at`)."""
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid)
+        self.assertIsNone(self.session(sid)["stopped_at"])
+        self.s.send(sid, "hello")
+        self.s.type(sid, "\x1b")
+        self.until(lambda: "[got ESC]" in self.screen(sid))
+        self.assertEqual("".join(self.chunks()), "\x1b[200~hello\x1b[201~\r\x1b")
+        self.assertIsNotNone(self.session(sid)["stopped_at"])
+        self.s.type(sid, "x")
+        self.assertIsNone(self.session(sid)["stopped_at"])
+
+    def test_a_message_pasted_just_after_an_esc_is_kept_apart_from_it(self):
+        """Not read with the paste's opening as one key (Alt+...)."""
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid)
+        self.s.type(sid, "\x1b")
+        self.s.send(sid, "hi")
+        self.until(lambda: "[got \r]" in self.screen(sid))
+        self.assertEqual(self.chunks()[0], "\x1b")
+        self.assertEqual("".join(self.chunks()), "\x1b\x1b[200~hi\x1b[201~\r")
+
+    def test_a_stop_key_typed_as_an_answer_goes_in_waits_for_it(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid)
+        self.s.terms[sid].answering = True                                  # an answer's keys going in
+        self.s.type(sid, "\x1b")
+        time.sleep(0.3)
+        self.assertEqual(self.chunks(), [])
+        self.s.terms[sid].answering = False
+        self.until(lambda: "[got ESC]" in self.screen(sid))
 
     def test_closing_it_hangs_it_up_and_the_session_shows_stopped(self):
         sid = self.s.create("g", self.work)["session_id"]
@@ -728,6 +765,64 @@ class EndedTest(SessionsBase):
         self.assertEqual(ended, {"never": 0, "kept": 0, "open": 0})
 
 
+class DiscardTest(SessionsBase):
+    """A session that never started, discarded: nothing of it kept."""
+
+    def actor_rows(self):
+        conn = sqlite3.connect(sessions.db_path())
+        try:
+            return {t: sorted(conn.execute(f"SELECT gatherer, channel FROM {t}").fetchall()) for t in sessions.ACTOR_TABLES}
+        finally:
+            conn.close()
+
+    def test_made_and_never_started_it_is_forgotten_with_every_row_kept_of_it(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        other = self.s.create("g", self.work)["session_id"]
+        for c in (sid, other):
+            saved.choose("g", c, True)
+            seen.look([["g", c, 1.0]])
+        conn = sqlite3.connect(sessions.db_path())
+        conn.execute(avatars.SCHEMA)
+        conn.executemany("INSERT INTO avatars VALUES ('g', ?, 'animals/fox', 'now', NULL)", [(sid,), (other,)])
+        conn.commit()
+        conn.close()
+        self.s.discard(sid)
+        self.assertEqual([x["session_id"] for x in self.s.list()], [other])
+        self.assertEqual(self.actor_rows(), {t: [("g", other)] for t in sessions.ACTOR_TABLES})
+        with self.assertRaises(sessions.SessionError):                      # gone
+            self.s.discard(sid)
+
+    def test_no_table_of_the_others_yet_is_nothing_to_forget(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.discard(sid)
+        self.assertEqual(self.s.list(), [])
+
+    def test_a_terminal_opened_and_closed_with_nothing_said_is_still_never_started(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s.terminal(sid)
+        with self.assertRaises(sessions.SessionError):                      # open: close it first
+            self.s.discard(sid)
+        self.s.stop(sid)
+        self.s.discard(sid)
+        self.assertEqual(self.s.list(), [])
+
+    def test_running_or_once_it_has_had_a_turn_it_is_kept(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        os.environ["FAKE_AG_DELAY"] = "5"
+        self.s.send(sid, "one")
+        with self.assertRaises(sessions.SessionError):                      # its turn runs
+            self.s.discard(sid)
+        os.environ["FAKE_AG_DELAY"] = "0"
+        done = self.s.create("g", self.work)["session_id"]
+        self.s.send(done, "hi")
+        self.until(lambda: self.session(done)["turns"] == 1)
+        self.s.stop(done)
+        self.until(lambda: self.session(done)["status"] == "stopped")
+        with self.assertRaises(sessions.SessionError):                      # it has had a turn
+            self.s.discard(done)
+        self.assertEqual(sorted(x["session_id"] for x in self.s.list()), sorted([sid, done]))
+
+
 # A fake shell: says its size, where it runs and what its environment says of it; echoes what is typed; exits on Ctrl+D.
 FAKE_SHELL = textwrap.dedent("""
     import os, signal, sys, tty
@@ -1076,6 +1171,22 @@ class EndpointTest(SessionsBase):
         self.assertEqual(self.post("/api/saved", {"gatherer": "", "channel": "c", "saved": True})[0], 400)
         self.assertEqual(self.post("/api/saved", {"gatherer": "g", "channel": "c3", "saved": True}, {"Origin": "https://evil.example"})[0], 403)
         self.post("/api/saved", {"gatherer": "g", "channel": "c2", "saved": False})
+
+    def test_a_session_that_never_started_closed_from_the_list_is_listed_no_more(self):
+        sid = self.post("/api/sessions", {"gatherer": "g", "cwd": self.work})[1]["session_id"]
+        self.post("/api/saved", {"gatherer": "g", "channel": sid, "saved": True})
+        home = json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))
+        self.assertEqual([a["channel"] for g in home["gatherers"] for a in g["agents"]], [sid])
+        self.assertEqual(self.post("/api/discard", {"session_id": sid}, {"Origin": "https://evil.example"})[0], 403)
+        self.assertEqual(self.post("/api/discard", {"session_id": sid}), (200, {}))
+        home = json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))
+        self.assertEqual(([a["channel"] for g in home["gatherers"] for a in g["agents"]], home["saved"]), ([], {}))
+        self.assertEqual(self.post("/api/discard", {"session_id": sid})[0], 400)        # gone already
+        kept = self.post("/api/sessions", {"gatherer": "g", "cwd": self.work})[1]["session_id"]
+        with unittest.mock.patch.object(data, "actors", return_value=[{"channel": kept}]):   # its gatherer has its history
+            code, said = self.post("/api/discard", {"session_id": kept})
+        self.assertEqual((code, said["error"]), (400, "it has a conversation in its gatherer: close it instead"))
+        self.assertEqual([x["session_id"] for x in sessions.stored()], [kept])
 
     def test_when_the_reader_last_looked_at_each_actor_is_the_same_for_every_dashboard_on_the_home(self):
         self.assertIsNone(json.load(urllib.request.urlopen(self.url + "/api/home", timeout=10))["seen"])   # none kept yet

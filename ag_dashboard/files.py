@@ -173,16 +173,31 @@ def place(known: Sheet, old: str, new: str):
 
 # ------------------------------------------------------------------ the session, turn by turn
 
-def _events(conn, channel: str):
+#: What the agent said and did: shown though a call that carried it was hung up on (`_events`).
+AGENTS_OWN = ("agent_message", "agent_reasoning", "tool_call", "tool_output")
+
+
+def _events(conn, channel: str, stops: List[dict] = ()):
     """The channel's events, oldest first, then what it has pending: (row_id, type, at, parts, said) -- parts unclipped,
     the lines of a long read all there; `said`, a user message's (kind, words) as its harness's rules read them when
-    it was stored (its `kind` and `words` properties), else None: read here, from its parts. Not those the harness
-    took back (data.kept)."""
+    it was stored (its `kind` and `words` properties), else None: read here, from its parts. Not the user's message the
+    harness took back (Esc before any of its answer came), nor what came with it (`_withdrawn`; data.py's
+    `withdrawn_reads`): a call hung up on withdraws all it stored -- the turns before it, sent with it, among them, and
+    the agent's own (AGENTS_OWN) -- but the harness keeps all that, and all of the call where the answer had begun, its
+    record saying the turn was interrupted after (`stops`)."""
     said = "e.p_kind, e.p_words" if {"p_kind", "p_words"} <= data._columns(conn, "events") else "NULL AS p_kind, NULL AS p_words"
+    tables, kept = data._tables(conn), ""
+    if "_withdrawn" in tables:
+        back = data.withdrawn_reads(conn, channel, tables, [s["at"] for s in stops if s["kind"] == "interrupted"])
+        taken = " OR ".join(f"(w.read_id = {int(r)} AND w.row_id >= {int(w['said_row'])})"
+                            for r, w in back.items() if w["said"] and not w["kept"])
+        own = ", ".join(f"'{t}'" for t in AGENTS_OWN)
+        kept = (f" AND (t.name IN ({own}) OR e.row_id NOT IN (SELECT w.row_id FROM _withdrawn w WHERE w.read_id IS NULL"
+                + (f" OR {taken}" if taken else "") + "))")
     rows = conn.execute(
         f"SELECT e.row_id, t.name AS type, e.text, e.payload_json, e.inserted_at, {said} FROM events e "
         f"LEFT JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{data.CHANNEL}, '') = ? "
-        f"AND {data.NOT_RECORD}{data.kept(data._tables(conn))} ORDER BY e.row_id", (channel,)).fetchall()
+        f"AND {data.NOT_RECORD}{kept} ORDER BY e.row_id", (channel,)).fetchall()
     harness = data._harness(conn, channel)
     for r in rows:
         yield (r["row_id"], r["type"] or "?", data._seconds(r["inserted_at"]),
@@ -262,6 +277,27 @@ def _git(conn) -> dict:
 
 
 TOUCH_KINDS = {"read": "read", "hit": "hit", "created": "write", "modified": "edit", "deleted": "delete"}
+STOPS_READ = 1000          # the newest of a session's turns stopped short, as its record says, read
+
+
+def _stops(conn, channel: str) -> List[dict]:
+    """How the session's turns stopped short, as its harness's own record said as it was written (`turn_stopped`, as
+    data.Record.stopped reads the newest): [{kind: "interrupted" (Esc) or "error" (it gave up on a model call), at,
+    text: the error's words, status: its HTTP status}], oldest first. Not the turns that ended as they do."""
+    out = []
+    for _, f in data._facts(conn, channel, ("turn_stopped",), STOPS_READ):
+        if f.get("how") in ("interrupted", "error") and isinstance(f.get("at"), (int, float)):
+            out.append({"kind": f["how"], "at": f["at"], "text": data._clip(f.get("error"), data.ERROR_CHARS) or None,
+                        "status": f.get("status") if isinstance(f.get("status"), int) else None})
+    return out
+
+
+def _interrupted(text: str) -> bool:
+    """Whether a note of the harness's in the conversation is its note that the user stopped the turn (Esc), sent with
+    the next: Claude Code's "[Request interrupted by user]" (" for tool use]"), codex's <turn_aborted>."""
+    text = text.strip()
+    return claude_rules.opening(text) == Kind.INTERRUPT or text.startswith(
+        tuple(m for m, k in codex_rules.PREAMBLE if k == Kind.INTERRUPT))
 
 
 def _turn_starts(evs: list, held: List[dict]) -> tuple:
@@ -303,8 +339,10 @@ def _runs(numbered: List[tuple]) -> List[tuple]:
 class _Turn:
     def __init__(self, n, row_id, at, text):
         self.head = {"n": n, "row_id": row_id, "at": at, "text": text, "replies": [], "now": None, "more": [],
-                     "last": None, "end": None}       # end: its last event's time
+                     "last": None, "end": None, "stopped": None,   # end: its last event's time
+                     "calls": 0}                                   # as many as `commands` lists
         self.acts: Dict[str, dict] = {}              # its calls, by id, for what it is doing (work.summary)
+        self.skill: Optional[list] = None            # its last call counted, a Skill's: [the skill asked, loaded yet]
         self.files: Dict[str, dict] = {}
         self.commands: List[dict] = []
         self.order: List[str] = []
@@ -505,8 +543,11 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     ran with ! printed, when it is one; what it was doing
     last -- {kind: "thinking"}, {kind: "call", id, text} (a call with no result yet), or None; and its latest
     call while nothing readable was said or thought after it -- {id, text, call, running, error, output} -- or
-    None; and what its calls are doing and how they ended, work.summary's), and for turn `turn` (None:
-    the latest) the files it worked on, in the order first touched, each
+    None; and what its calls are doing and how they ended, work.summary's; `stopped`, how it stopped short -- interrupted
+    (Esc), as the note the harness sent with the next turn says or its own record (`_stops`), or on an error it gave up
+    on, as its record says: {kind, at (None: not known), text, status}, as data.py's actor's `stopped` -- or None;
+    `calls`, as many as its list of calls below has), and for turn `turn` (None: the latest) the files it worked on, in
+    the order first touched, each
         {path, kinds (read, edit, write, hit), created, changed (the lines its changes added and removed, [added,
          removed]: `_changed`; None for none counted),
          sources: [{via, kind, kinds, error, call, blocks, changed}]: the calls that touched it, in order, each
@@ -531,7 +572,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
-        evs = list(_events(conn, channel))
+        stops = _stops(conn, channel)
+        evs = list(_events(conn, channel, stops))
         touched = _touches(conn, channel)
         git = _git(conn) if touched else {"calls": {}, "changed": {}, "trees": []}   # what git did, in any session
         held = data.meanwhile(conn, channel)          # sent when a turn ended, written while it ran (the record's)
@@ -684,6 +726,13 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     def skilled(t: Optional[_Turn], n: dict) -> None:
         """A skill Claude Code loaded (`_note`), among the turn's calls: the Skill call that loaded it, its instructions
         as its output; else, the user having typed its /name, a call of its own."""
+        if t is not None:                                       # counted as `commands` lists it, in every turn
+            asked = t.skill[0] if t.skill and not t.skill[1] else ""
+            if asked and (asked == n["name"] or asked.endswith(":" + n["name"])):
+                t.skill[1] = True
+            else:
+                t.head["calls"] += 1
+                t.skill = [n["name"], True]
         rec = t if t is not None and t is want else None
         if rec is None:
             return
@@ -704,6 +753,9 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         inp = inp if isinstance(inp, dict) else {"input": inp}
         error = bool(result and result.get("error"))
         text = (result or {}).get("text") or ""
+        if t is not None and name not in ("TodoWrite", "update_plan"):   # counted as `commands` lists it, in every turn
+            t.head["calls"] += 1
+            t.skill = [str(inp.get("skill") or ""), False] if name == "Skill" else None
         rec = t if t is not None and t is want else None          # only the asked-for turn is kept in full
         view = _call_view(part) if rec else None
         if rec:                                                 # every call, in order, with the files it touched
@@ -897,7 +949,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
             elif p["kind"] == "note":                        # Claude Code's own: a report, a message, a skill loaded, a ! command's output
                 n = _note(p.get("text") or "")
                 if n is None:
-                    pass
+                    if _interrupted(p.get("text") or ""):   # stopped (Esc), as its next turn told the model
+                        head["stopped"] = {"kind": "interrupted", "at": None, "text": None, "status": None}
                 elif n["kind"] == "report":
                     by = n.pop("from")
                     n["name"] = agents.get(by, "")
@@ -938,6 +991,10 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         else:                                        # a codex script: the calls it makes
             for q, r in _opened(p, results.get(p.get("id")) if p.get("id") else None):
                 apply(t, q, r)
+    for s in stops:                                  # the record's, by when: in the turn it fell in, where the conversation doesn't say
+        h = next((h for h in reversed(heads) if (h.head["at"] or 0) <= s["at"]), None)
+        if h is not None and h.head["stopped"] is None:
+            h.head["stopped"] = s
     for h in heads:                                  # its newest call, while nothing readable was said or thought after it
         h.head["work"] = dict(work.summary(list(h.acts.values())), **({} if h.head["last"] else {"last": None}))
     out = {"turns": [h.head for h in heads], "turn": pick if heads else None, "files": [], "commands": [],
