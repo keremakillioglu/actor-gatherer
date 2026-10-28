@@ -280,8 +280,10 @@ def _runs(numbered: List[tuple]) -> List[tuple]:
 class _Turn:
     def __init__(self, n, row_id, at, text):
         self.head = {"n": n, "row_id": row_id, "at": at, "text": text, "replies": [], "now": None, "more": [],
-                     "last": None, "end": None, "stopped": None}       # end: its last event's time
+                     "last": None, "end": None, "stopped": None,   # end: its last event's time
+                     "calls": 0}                                   # as many as `commands` lists
         self.acts: Dict[str, dict] = {}              # its calls, by id, for what it is doing (work.summary)
+        self.skill: Optional[list] = None            # its last call counted, a Skill's: [the skill asked, loaded yet]
         self.files: Dict[str, dict] = {}
         self.commands: List[dict] = []
         self.order: List[str] = []
@@ -483,8 +485,9 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     call while nothing readable was said or thought after it -- {id, text, call, running, error, output} -- or
     None; and what its calls are doing and how they ended, work.summary's; `stopped`, how it stopped short -- interrupted
     (Esc), as the note the harness sent with the next turn says or its own record (`_stops`), or on an error it gave up
-    on, as its record says: {kind, at (None: not known), text, status}, as data.py's actor's `stopped` -- or None),
-    and for turn `turn` (None: the latest) the files it worked on, in the order first touched, each
+    on, as its record says: {kind, at (None: not known), text, status}, as data.py's actor's `stopped` -- or None;
+    `calls`, as many as its list of calls below has), and for turn `turn` (None: the latest) the files it worked on, in
+    the order first touched, each
         {path, kinds (read, edit, write, hit), created, changed (the lines its changes added and removed, [added,
          removed]: `_changed`; None for none counted),
          sources: [{via, kind, kinds, error, call, blocks, changed}]: the calls that touched it, in order, each
@@ -628,6 +631,13 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     def skilled(t: Optional[_Turn], n: dict) -> None:
         """A skill Claude Code loaded (`_note`), among the turn's calls: the Skill call that loaded it, its instructions
         as its output; else, the user having typed its /name, a call of its own."""
+        if t is not None:                                       # counted as `commands` lists it, in every turn
+            asked = t.skill[0] if t.skill and not t.skill[1] else ""
+            if asked and (asked == n["name"] or asked.endswith(":" + n["name"])):
+                t.skill[1] = True
+            else:
+                t.head["calls"] += 1
+                t.skill = [n["name"], True]
         rec = t if t is not None and t is want else None
         if rec is None:
             return
@@ -648,6 +658,9 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         inp = inp if isinstance(inp, dict) else {"input": inp}
         error = bool(result and result.get("error"))
         text = (result or {}).get("text") or ""
+        if t is not None and name not in ("TodoWrite", "update_plan"):   # counted as `commands` lists it, in every turn
+            t.head["calls"] += 1
+            t.skill = [str(inp.get("skill") or ""), False] if name == "Skill" else None
         rec = t if t is not None and t is want else None          # only the asked-for turn is kept in full
         view = _call_view(part) if rec else None
         if rec:                                                 # every call, in order, with the files it touched

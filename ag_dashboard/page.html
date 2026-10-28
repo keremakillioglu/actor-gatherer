@@ -944,34 +944,47 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
    with the replies under it, however wide the page */
 .files .fl-user { display: flex; gap: 8px; width: 100%; margin: 0; text-align: left;
   background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--s7) 28%, transparent);
-  border-radius: 8px; padding: 6px 12px; font: inherit; line-height: var(--lh); color: var(--ink); cursor: pointer; }
-.files .fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
+  border-radius: 8px; padding: 6px 12px; font: inherit; line-height: var(--lh); color: var(--ink); }
 .files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
-.files .fl-turn.on .fl-user .tx { -webkit-line-clamp: unset; }
+.files .fl-turn.on .fl-user .tx, .files .fl-turn.shown .fl-user .tx { -webkit-line-clamp: unset; }
+/* before the latest, the message a button: a click shows or folds the turn's replies (folded: the turn closer to the next),
+   its chevron at its end saying which. At the right of each message, clear of its band, its button for the turn's files
+   and commands at the left. */
+.files button.fl-user { cursor: pointer; }
+.files button.fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
+.files .fl-bash > button.fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, transparent); }
+.files .fl-user > .tx { flex: 1 1 auto; }   /* its words wide as the band: the count and the chevron at its end */
+.files .fl-user .fold-mark { flex: none; align-self: center; display: grid; color: var(--muted); }
+.files .fl-user .fl-count { flex: none; align-self: center; font-size: 11.5px; line-height: 1; color: var(--muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
+.files .fl-user .fold-mark svg { transition: transform .15s; }
+.files .fl-user[aria-expanded="true"] .fold-mark svg { transform: rotate(90deg); }
+.files .fl-turn.folded { padding-top: 3px; padding-bottom: 3px; }
+.files .fl-head { position: relative; }
+.files .fl-head > .fl-user, .files .fl-head > .fl-bash > .fl-user { padding-right: 40px; }
+.files .fl-btns { position: absolute; top: 3px; right: 4px; display: flex; }
+.files .fl-btns button { width: 28px; height: calc(var(--lh) + 6px); padding: 0; border: 0; border-radius: 6px; background: none;
+  color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+.files .fl-btns button:hover { color: var(--ink); background: color-mix(in srgb, var(--s7) 22%, transparent); }
+.files .fl-btns button[aria-pressed="true"] { color: var(--ink); background: color-mix(in srgb, var(--s7) 30%, transparent); }
 /* what was written while the turn ran, sent to the agent: stacked on its first message, over it a little -- one turn.
    The ring, in the page's colour, keeps the edge of each it covers. */
 .files .fl-user.joined { position: relative; margin-top: -7px; box-shadow: 0 0 0 2px var(--surface); }
 /* written while it works, not sent yet: at the turn's end, faded, until Claude Code gives it to the agent */
 .files .fl-pending { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
-.files .fl-pending .fl-user { opacity: .55; cursor: default; }
-.files .fl-pending .fl-user:hover { background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 28%, transparent); }
+.files .fl-pending .fl-user { opacity: .55; }
 .files .fl-pending .lbl { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
 .files .fl-pending .to-term { font-size: inherit; padding: 0; border: 0; background: none; color: var(--term-link); text-decoration: underline; }
 /* a turn begun, its message sent, that ag has not stored yet: in full, as the latest turn shows it, not yet one to pick */
-.files .fl-turn.opened .fl-user { cursor: default; }
-.files .fl-turn.opened .fl-user:hover { background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 28%, transparent); }
 .files .fl-turn.opened .fl-user .tx { -webkit-line-clamp: unset; }
 .files .fl-user .tx.bang { font: .92em/var(--lh) var(--mono); }   /* a command the user ran with `!`, or typed as /name */
 /* a bash band (bashBubble): a command the user ran with `!`, as a terminal shows it -- its `!` in bash mode's colour,
    the band edged in it -- and under a rule, in the same band, what it printed */
 .files .fl-user.bash { background: var(--term-code); border-color: color-mix(in srgb, var(--term-bash) 45%, transparent); }
-.files .fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, var(--term-code)); border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
 .files .fl-user .bash-mark { color: var(--term-bash); font-weight: 700; }
 .files .fl-bash { display: flex; flex-direction: column; min-width: 0; margin: 0;
   background: var(--term-code); border: 1px solid color-mix(in srgb, var(--term-bash) 45%, transparent); border-radius: 8px; overflow: hidden; }
-.files .fl-bash:hover { border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
 .files .fl-bash > .fl-user.bash { border: 0; border-radius: 0; background: none; }
-.files .fl-bash > .fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, transparent); }
 .files .fl-bash-out { margin: 0; padding: 6px 12px 8px; border-top: 1px solid var(--term-rule); max-height: 15em; overflow: auto;
   font: 12px/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; background: none; }
 .files .fl-bash-out.none { color: var(--muted); font-style: italic; }
@@ -1813,6 +1826,9 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
             <div><h4>Avatar at work</h4>
               <div class="views" id="avatar-mode" role="group" aria-label="Avatar at work">
                 <button type="button" data-avatar-pick="acting" title="Acting out what it does: a book, a magnifying glass, gears…">Acting</button><button type="button" data-avatar-pick="simple" title="Small, moving as its character does">Simple</button></div></div>
+            <div><h4>Chat's earlier turns</h4>
+              <div class="views" id="chat-earlier" role="group" aria-label="Chat's earlier turns">
+                <button type="button" data-earlier-pick="messages" title="Your messages only: a click on one shows the agent's replies">Messages only</button><button type="button" data-earlier-pick="whole" title="Each with the agent's replies: a click on your message folds them">Whole</button></div></div>
             <div><h4>Hook servers</h4><div class="servers" id="servers"></div></div>
           </div>
         </div>
@@ -2280,6 +2296,7 @@ const ICONS = {
   code: "M5.25 4.75L2 8l3.25 3.25M10.75 4.75L14 8l-3.25 3.25M9.25 2.75l-2.5 10.5",   // the Editor: a file's code
   folderUp: "M1.75 4a1 1 0 0 1 1-1h3.4l1.5 1.6h5.6a1 1 0 0 1 1 1v6.65a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1zM8 11.1V7.1M6.3 8.8 8 7.1l1.7 1.7",   // the folder above
   power: "M8 1.75v5.5M4.6 3.9a5.25 5.25 0 1 0 6.8 0",                  // a shell terminated
+  chevron: "M6 3.5 10.5 8 6 12.5",                                     // more, folded: turned down once shown
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -2615,6 +2632,24 @@ setAvatarMode((() => { try { return localStorage.getItem(AVATAR_KEY); } catch (e
 document.getElementById("avatar-mode").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-avatar-pick]");
   if (b) setAvatarMode(b.dataset.avatarPick, true);
+});
+// The Chat's turns before the latest, at first: the user's messages only, a click on one showing the rest ("messages",
+// filesTalk); or each whole, a click on its message folding it. Kept in this browser, messages only until one is picked; a
+// pick starts every turn over as it has them.
+const EARLIER_KEY = "ag-dashboard-chat-earlier";
+let earlierTurns = "messages";
+function setEarlierTurns(pick, keep, draw = true) {
+  earlierTurns = pick === "whole" ? "whole" : "messages";
+  if (state.files && state.files.flips) state.files.flips.clear();   // in place: the messages' clicks kept from a draw use it
+  for (const b of document.querySelectorAll("[data-earlier-pick]")) b.setAttribute("aria-pressed", b.dataset.earlierPick === earlierTurns ? "true" : "false");
+  if (keep) { try { localStorage.setItem(EARLIER_KEY, earlierTurns); } catch (e) { /* this page only */ } }
+  for (const p of panes.others) p.call("earlier", earlierTurns);
+  if (draw && chatView().id === "files") keepingPlace(renderMain);
+}
+setEarlierTurns((() => { try { return localStorage.getItem(EARLIER_KEY); } catch (e) { return null; } })(), false, false);
+document.getElementById("chat-earlier").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-earlier-pick]");
+  if (b) setEarlierTurns(b.dataset.earlierPick, true);
 });
 setTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })() || "dark", false);
 document.getElementById("theme").addEventListener("click", (ev) => {
@@ -3817,6 +3852,7 @@ function paneReady() {
     view: (id) => setChatView(id),
     theme: (pick) => setTheme(pick, false),
     avatar: (pick) => setAvatarMode(pick, false),
+    earlier: (pick) => setEarlierTurns(pick, false),
     focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
     top: (h) => setTopRow(h),
     editor: () => keepingPlace(renderMain),          // the Editor opened or closed above the panes: its head, in the bar or not
@@ -5988,8 +6024,8 @@ function tmpSwitch(n) {
     box, `tmp (${n})`);
 }
 // The files and commands at the left, folded to a thin bar of what they hold until opened: by a click on the
-// bar or on a message, and folded again by the button in their heading or a click on the message of the turn
-// they show. The choice kept in this browser.
+// bar or on a message's button for them (or ⌘+click on it), and folded again by the button in their heading or that button
+// of the turn they show. The choice kept in this browser.
 const SIDE_KEY = "ag-dashboard-files-side-folded-2";   // -2: folded by default
 let sideFolded = (() => { try { return localStorage.getItem(SIDE_KEY) !== "0"; } catch (e) { return true; } })();
 function foldSide(fold, draw = true) {
@@ -6386,7 +6422,7 @@ function filesBackground(info) {
 // its thinking -- each folded to a line, the latest few shown and the earlier behind a + (and a − folds them again). The
 // latest turns shown, the earlier a few more at a time as the reader scrolls up past the top (pullEarlier). While the turn
 // runs, what the agent is doing at its end, as the
-// Transcript's status line. Clicking a message shows its turn's files. What the user wrote while a turn ran is
+// Transcript's status line. A button at each message, or ⌘+click on it, shows its turn's files. What the user wrote while a turn ran is
 // part of it: once sent to the agent (`more`; in the latest turn also Claude Code's queue, the agent's `typed`,
 // data.py's, from its record of the session), stacked on its first message; until then, at the latest turn's end, faded and marked pending
 // (pendingTalk) -- as is a message sent from this page's box, from the moment it is sent. A message that opened a
@@ -6555,6 +6591,16 @@ function showMore(change) {
   const again = document.querySelector("#main .fl-talk");
   if (n && again) again.scrollTop = again.scrollHeight - below;
 }
+// A turn's files and commands, or its replies, shown or folded from its message (filesTalk) -- that message kept where
+// it was on the screen, not the turn picked brought into view, as a new pick is (filesTalk's talkShown).
+async function keepTurn(n, change) {
+  const top = (x) => x.getBoundingClientRect().top, talk = document.querySelector("#main .fl-talk");
+  const turn = document.getElementById(`fl-turn-${n}`), y = talk && turn ? top(turn) - top(talk) : null;
+  await change();
+  if (state.files && state.files.data) talkShown = `${state.files.key}:${state.files.data.turn}`;
+  const now = document.querySelector("#main .fl-talk"), again = document.getElementById(`fl-turn-${n}`);
+  if (y !== null && now && again) now.scrollTop += top(again) - top(now) - y;
+}
 // Scrolled to its top, a pull further up -- the wheel, a finger drawn down, or ↑, Page Up or Home with the focus in it --
 // shows TURNS_MORE earlier turns above, the reader's place kept. Reaching the top is not one: what is drawn ends there,
 // and only a pull PULL_WAIT_MS after (of PULL_PX, so a jolt of the trackpad is not one) shows more. Chrome scrolls before
@@ -6595,6 +6641,7 @@ function filesTalk(d, info, running) {
   const box = el("div", { class: "fl-talk", "data-keep": "files-talk", "data-follow": "1", "data-morph": "" });
   const closed = state.files.closed || (state.files.closed = new Set());   // the last messages folded by a click
   const opened = state.files.opened || (state.files.opened = new Set());   // the turns whose earlier messages are all shown
+  const flips = state.files.flips || (state.files.flips = new Set());      // the turns before the latest not as the setting has them
   const fold = (ev) => { const n = ev.currentTarget; if (n.open) closed.delete(n.id); else closed.add(n.id); };
   // the first turn drawn: the latest few, at first; then where the reader pulled it to (pullEarlier), or the turn they
   // picked. Kept as the conversation grows: a new turn is drawn at the end, none taken from the top.
@@ -6632,22 +6679,43 @@ function filesTalk(d, info, running) {
     const done = !live && t.n === d.turns.length - 1 && !opens.length && !!info && ["idle", "finished", "closed"].includes(statusOf(info)[0]);
     const starts = live ? [t.at, began(t)].filter(Boolean) : [];
     const from = starts.length ? Math.min(...starts) : null;      // when it began: sent (began), or stored
-    box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}`, "data-morph": "" },
-      // a click: this turn's files and commands shown at the left, or folded away when they already are
-      bashBubble(t, el("button", { type: "button", class: "fl-user" + bubbleClass(t.text), "aria-pressed": on ? "true" : "false",
-        title: on && !sideFolded ? "Fold this turn's files and commands" : "Show this turn's files and commands",
-        onclick: () => {
-          if (on && !sideFolded) return foldSide(true);
-          if (sideFolded) foldSide(false, on);
-          if (!on) setFilesTurn(t.n);
-        } },
-        userWords(t.text, t.kind))),
+    // apart from each other: its files and commands at the left (the turn picked; folded away when they already show), by
+    // the button at its message's right or ⌘+click; and before the latest, its replies shown or folded -- folded at first
+    // under the setting "Messages only" (earlierTurns), shown under "Whole", a click on its message the other way (flips)
+    const earlier = t.n !== d.turns.length - 1, whole = !earlier || (earlierTurns === "whole") !== flips.has(t.n);
+    const showing = on && !sideFolded;
+    const flip = () => keepTurn(t.n, () => { flips.has(t.n) ? flips.delete(t.n) : flips.add(t.n); keepingPlace(renderMain); });
+    const side = () => keepTurn(t.n, () => {
+      if (showing) return foldSide(true);
+      if (sideFolded) foldSide(false, on);
+      if (!on) return setFilesTurn(t.n);
+    });
+    const sideTip = showing ? "Fold this turn's files and commands" : "Show this turn's files and commands";
+    const foldTip = whole ? "Fold this turn to your message" : "Show this turn's replies";
+    // the user's message: a click on it before the latest shows or folds the turn's replies (the first message's chevron
+    // says which); ⌘+click (Ctrl+click) shows or folds its files and commands at the left, as its button does
+    const click = (ev) => ev.metaKey || ev.ctrlKey ? side() : earlier ? flip() : null;
+    const sideClick = `${BESIDE_KEY}+click: ${sideTip[0].toLowerCase()}${sideTip.slice(1)}`;
+    const said1 = (text, kind, cls, title, ...end) => !earlier
+      ? el("div", { class: cls, title: (title ? title + ". " : "") + sideClick, onclick: click }, userWords(text, kind), ...end)
+      : el("button", { type: "button", class: cls, "aria-expanded": String(whole), title: `${title ? title + ". " : ""}${foldTip}. ${sideClick}`,
+        onclick: click }, userWords(text, kind), ...end);
+    // at the first message's end, how much the turn holds: what the agent said and thought (as shown under it), and its
+    // calls (files.py's `calls`, as its commands at the left list them)
+    const held = said.length + (t.calls || 0);
+    const count = held ? el("span", { class: "fl-count", title: `${plural(said.length, "message")} from the agent, ${plural(t.calls || 0, "command")}` },
+      plural(held, "message")) : null;
+    box.append(el("div", { class: "fl-turn" + (on ? " on" : "") + (whole ? "" : " folded")
+      + (earlier && whole && earlierTurns === "messages" ? " shown" : ""), id: `fl-turn-${t.n}`, "data-morph": "" },
+      el("div", { class: "fl-head" },
+        bashBubble(t, said1(t.text, t.kind, "fl-user" + bubbleClass(t.text), null, count,
+          earlier ? el("span", { class: "fold-mark", "aria-hidden": "true" }, strokeIcon(ICONS.chevron, 14)) : null)),
+        el("span", { class: "fl-btns" },
+          el("button", { type: "button", class: "fl-side-btn", "aria-pressed": String(showing), title: sideTip, "aria-label": sideTip,
+            onclick: side }, strokeIcon(ICONS.sidebar, 14)))),
       ...[...(t.more || []), ...(t.n === d.turns.length - 1 ? joined : [])].map((m) =>
-        el("button", { type: "button", class: "fl-user joined" + bubbleClass(m.text), "aria-pressed": on ? "true" : "false",
-          title: "Written while it worked, and given to the agent in this turn",
-          onclick: () => { if (sideFolded) foldSide(false, false); setFilesTurn(t.n); } },
-          userWords(m.text, m.kind))),
-      before.length ? el("div", { class: "fl-minor" },
+        said1(m.text, m.kind, "fl-user joined" + bubbleClass(m.text), "Written while it worked, and given to the agent in this turn")),
+      ...(!whole ? [] : [before.length ? el("div", { class: "fl-minor" },
         extra ? el("button", { type: "button", class: "fl-more", "aria-expanded": hidden ? "false" : "true", onclick: toggle,
           title: hidden ? "Show everything the agent said and thought in this turn" : "Fold the earlier messages again" },
           el("span", { class: "sg", "aria-hidden": "true", text: hidden ? "+" : "−" }), plural(extra, "earlier message")) : null,
@@ -6658,7 +6726,7 @@ function filesTalk(d, info, running) {
       live ? working(info, info.failing ? info.failing.at : Math.max(info.last || 0, from || 0) || null, from, now, !!info.failing)
         : stoppedLine(info, t, t.n === d.turns.length - 1),
       done ? finished(info, t) : null,
-      t.n === d.turns.length - 1 && !opens.length ? pendingTalk(info, h) : null));
+      t.n === d.turns.length - 1 && !opens.length ? pendingTalk(info, h) : null])));
     // under the latest turn's box: the actor at work; or, its turn over, the actor done
     if (live) box.append(el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, t)));
     else if (done) box.append(el("div", { class: "fl-done", title: `Done · ${ago(info.last)}` }, atRest(info, t.row_id)));
@@ -6668,6 +6736,7 @@ function filesTalk(d, info, running) {
   box.append(...opens.flatMap((q, i) => openedTurn(info, q, i === opens.length - 1, h)));
   const at = `${state.files && state.files.key}:${d.turn}`;
   if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick: the latest at its end
+    if (talkShown === at) return;                        // already (keepTurn: kept where the reader had it)
     const cur = document.querySelector(".fl-talk .fl-turn.on");
     if (!cur) return;
     talkShown = at;
