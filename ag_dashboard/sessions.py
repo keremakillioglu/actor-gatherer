@@ -65,6 +65,10 @@ up by its next message or terminal. So is one whose process the dashboard PUT AW
 actor saved for later, left unused (saved.py's `Rest`). Closing it (`stop`), or its process ending any
 other way, clears it.
 
+A session that NEVER STARTED -- made (`create`), but no process of it ever had a turn, so its gatherer has
+nothing of it -- can be DISCARDED (`discard`): its row deleted, with every row the dashboard keeps of it as an
+actor (ACTOR_TABLES), so it is listed nowhere, as if it had never been made.
+
 CODEX runs the same ways, through `ag ... codex`: in a terminal, its own interactive UI (`codex
 [resume <id>]`); headless, a process per turn, `codex exec --json
 [resume <id>] -` with the message on its stdin, ending with the turn. Codex chooses its thread's id,
@@ -141,6 +145,9 @@ COLUMNS = ("session_id", "gatherer", "harness", "cwd", "permission_mode", "creat
            "kept", "model", "started_as", "ended")
 ADDED = (("kept", "REAL NOT NULL DEFAULT 0"), ("model", "TEXT"), ("started_as", "TEXT"),
          ("ended", "REAL NOT NULL DEFAULT 0"))   # columns a table from before lacks
+# The dashboard's other tables in dashboard.db with a row per actor, by (gatherer, channel): saved.py's, seen.py's,
+# avatars.py's -- what a session discarded (`discard`) takes with it.
+ACTOR_TABLES = ("saved", "seen", "avatars")
 
 
 class SessionError(ValueError):
@@ -734,6 +741,36 @@ class Sessions:
                 except OSError:
                     pass
             return next(x for x in self.list() if x["session_id"] == session_id)
+
+    def discard(self, session_id: str) -> None:
+        """A session that never started, forgotten (module doc): its row deleted, and the dashboard's rows of it as an
+        actor (ACTOR_TABLES). Refused while a process of the dashboard's runs for it, or a message waits for one, and
+        once a turn of it has ended; that its gatherer has nothing of it is the caller's to tell (data.py's)."""
+        with self.lock:
+            s = self._row(session_id)
+            if s is None:
+                raise SessionError(f"no session {session_id} started from the dashboard")
+            a = self.agents.get(session_id)
+            if session_id in self.terms or (a is not None and (a.proc.poll() is None or a.queue)) \
+                    or s["status"] in ("starting", "running", "idle", "terminal"):
+                raise SessionError("it is running: close it first")
+            if s["turns"]:
+                raise SessionError("it has had a turn: close it instead")
+            conn = self._db()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+                for table in ACTOR_TABLES:
+                    try:
+                        conn.execute(f"DELETE FROM {table} WHERE gatherer = ? AND channel = ?", (s["gatherer"], session_id))
+                    except sqlite3.OperationalError:     # no such table yet: nothing of it there
+                        pass
+                conn.execute("COMMIT")
+            finally:
+                conn.close()                             # not committed: rolled back
+            for kept in (self.agents, self.answered, self.renames, self.unsent):
+                kept.pop(session_id, None)
+        self._changed(s["gatherer"], session_id)
 
     def put_away(self, session_id: str, before: float) -> bool:
         """The session's process ended as the dashboard's own end ends it, its end KEPT (module doc) -- shown
