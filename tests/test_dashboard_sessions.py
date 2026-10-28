@@ -354,6 +354,43 @@ class TerminalTest(SessionsBase):
         typed = "".join(x.get("typed", "") for x in self.logged())
         self.assertEqual(typed, "\x1b[200~two\nlines\x1b[201~\r")
 
+    def chunks(self):
+        return [x["typed"] for x in self.logged() if "typed" in x]
+
+    def test_a_stop_key_typed_as_a_message_goes_in_waits_for_its_enter(self):
+        """Esc from the page (Chat's interrupt) while the dashboard pastes a message: typed after the message's Enter, not
+        between them; and the session says when a key that stops a turn was last typed (`stopped_at`)."""
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid)
+        self.assertIsNone(self.session(sid)["stopped_at"])
+        self.s.send(sid, "hello")
+        self.s.type(sid, "\x1b")
+        self.until(lambda: "[got ESC]" in self.screen(sid))
+        self.assertEqual("".join(self.chunks()), "\x1b[200~hello\x1b[201~\r\x1b")
+        self.assertIsNotNone(self.session(sid)["stopped_at"])
+        self.s.type(sid, "x")
+        self.assertIsNone(self.session(sid)["stopped_at"])
+
+    def test_a_message_pasted_just_after_an_esc_is_kept_apart_from_it(self):
+        """Not read with the paste's opening as one key (Alt+...)."""
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid)
+        self.s.type(sid, "\x1b")
+        self.s.send(sid, "hi")
+        self.until(lambda: "[got \r]" in self.screen(sid))
+        self.assertEqual(self.chunks()[0], "\x1b")
+        self.assertEqual("".join(self.chunks()), "\x1b\x1b[200~hi\x1b[201~\r")
+
+    def test_a_stop_key_typed_as_an_answer_goes_in_waits_for_it(self):
+        sid = self.s.create("g", self.work)["session_id"]
+        self.started(sid)
+        self.s.terms[sid].answering = True                                  # an answer's keys going in
+        self.s.type(sid, "\x1b")
+        time.sleep(0.3)
+        self.assertEqual(self.chunks(), [])
+        self.s.terms[sid].answering = False
+        self.until(lambda: "[got ESC]" in self.screen(sid))
+
     def test_closing_it_hangs_it_up_and_the_session_shows_stopped(self):
         sid = self.s.create("g", self.work)["session_id"]
         self.started(sid)
