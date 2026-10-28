@@ -503,6 +503,46 @@ def runs_git(command: str) -> bool:
     return False
 
 
+WORKTREE_TAKES = frozenset({"-b", "-B", "--reason"})   # `git worktree add`'s options with a value
+
+
+def worktrees_added(command: str, cwd: str) -> List[str]:
+    """The work trees a shell command makes with `git worktree add <path>`: their paths, from where it runs (its `cd`s
+    and git's -C followed, the variables it sets filled in) -- the files git checks out there are the repository's,
+    not the command's own work. One not known (a variable it didn't set) is left out."""
+    out, env = [], {}
+    for words, _ in _simple_commands(command) or []:
+        words = [w.strip("()") for w in words]           # (cd x && git worktree add ...)
+        if words and all(ASSIGNMENT.fullmatch(w) for w in words):   # WT=../x
+            for w in words:
+                k, v = w.split("=", 1)
+                env[k] = _expand(v, env)
+            continue
+        while words and (ASSIGNMENT.fullmatch(words[0]) or words[0] in ("env", "command", "time", "nohup")):
+            words = words[1:]
+        words = [_expand(w, env) for w in words]
+        cmd = os.path.basename(words[0]) if words else ""
+        if cmd == "cd" and len(words) == 2:
+            cwd = _path(words[1], cwd)
+            continue
+        if cmd != "git":
+            continue
+        k, here = 1, cwd
+        while k < len(words) and words[k].startswith("-"):
+            if words[k] == "-C" and k + 1 < len(words):
+                here = _path(words[k + 1], here)
+            k += 2 if words[k] in GIT_TAKES else 1
+        if words[k:k + 2] != ["worktree", "add"]:
+            continue
+        k += 2
+        while k < len(words) and words[k].startswith("-"):
+            k += 2 if words[k] in WORKTREE_TAKES else 1
+        path = _path(words[k], here) if k < len(words) else None
+        if path:
+            out.append(path)
+    return out
+
+
 def _fold(node, env):
     """A Python expression's value when it is made of string constants: a str, or a list/tuple of them
     (nested); None otherwise."""
