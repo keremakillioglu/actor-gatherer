@@ -108,13 +108,15 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual((a["status"], a["stopped"]["kind"], a["failing"]), (data.IDLE, "interrupted", None))
         self.assertTrue(sessions.took_back("g", "s", time.time()))          # its message back in Claude Code's box
 
-    def hang_up(self, messages):
-        """A call stored, then hung up on (Esc): reported so by the hook server, and its events withdrawn, as the hook does
-        on any Esc. Its read."""
+    def hang_up(self, messages, reached=None):
+        """A call stored, then hung up on (Esc): reported so by the hook server -- with what of the answer had reached the
+        harness in words, as one that says does (`reached`) -- and its events withdrawn, as the hook does on any Esc. Its
+        read."""
         got, = self.ask({"op": "rewrite", "gatherer": "g", "properties": {"channel": "s"}, "cwd": "/w",
                          "events": ADAPTOR.to_events(messages)})
         self.record(records.model_call("turn", "claude", "2.1.310", got["read_id"]))
-        self.record(records.call_failed(got["read_id"], data.HUNG_UP, "the harness hung up before the answer was through"))
+        self.record(records.call_failed(got["read_id"], data.HUNG_UP, "the harness hung up before the answer was through",
+                                        reached))
         self.ask({"op": "withdraw", "gatherer": "g", "properties": {"channel": "s"}, "rows": got["inserted"],
                   "read_id": got["read_id"]})
         return got["read_id"]
@@ -156,7 +158,11 @@ class RecordsTest(unittest.TestCase):
         self.reply("msg_1", [{"type": "text", "text": "There are 42 rows."}], "end_turn", read)
         nxt = first + [said({"type": "text", "text": "There are 42 rows."}), user("and the columns?")]
         self.hang_up(nxt)
-        self.record(records.fact(Fact(Facts.TURN_STOPPED, "7", time.time(), {"how": "interrupted"}), "/c/s.jsonl"))
+        cut = self.agent()["stopped"]["at"]                                  # as the hang-up says
+        at = time.time() + 1
+        self.record(records.fact(Fact(Facts.TURN_STOPPED, "7", at, {"how": "interrupted"}), "/c/s.jsonl"))
+        self.assertEqual(self.agent()["stopped"]["at"], at)                  # as its record says, once it does: the
+        self.assertNotEqual(cut, at)                                         # actor changed, Chat loads its turns again
         with unittest.mock.patch.object(data, "TAKEN_SECONDS", 0.0):
             self.assertIsNone(self.agent()["taken_back"])
         self.assertFalse(sessions.took_back("g", "s", time.time()))         # nothing in its box to empty
@@ -182,6 +188,21 @@ class RecordsTest(unittest.TestCase):
         self.assertTrue(sessions.took_back("g", "s", time.time()))          # its box emptied before a message from Chat
         turns = files.files("g", "s", cwd="/w")["turns"]
         self.assertEqual([(t["text"], t["stopped"] and t["stopped"]["kind"]) for t in turns], [("count the rows", "interrupted")])
+
+    def test_what_reached_the_harness_says_at_once_whether_the_message_was_taken_back(self):
+        """The hook server saw what of the answer it relayed: none of its words -- taken back, at once, with or without
+        Claude Code's record; its text begun -- kept, at once."""
+        first = [user("count the rows")]
+        self.turn(first)
+        nxt = first + [said({"type": "text", "text": "42."}), user("and the columns?")]
+        self.hang_up(nxt, "nothing")                                         # no record followed, no wait
+        self.assertEqual(self.agent()["taken_back"]["text"], "and the columns?")
+        self.assertTrue(sessions.took_back("g", "s", time.time()))
+        self.hang_up(nxt + [said({"type": "text", "text": "The columns"}), INTERRUPT, user("and the rows?")], "text")
+        self.assertIsNone(self.agent()["taken_back"])
+        self.assertFalse(sessions.took_back("g", "s", time.time()))
+        self.assertEqual([t["text"] for t in files.files("g", "s", cwd="/w")["turns"]],
+                         ["count the rows", "and the columns?", "and the rows?"])   # kept: its turn shown
 
     def test_a_call_carrying_a_message_written_mid_turn_takes_nothing_back(self):
         """Claude Code sends what the user wrote as it worked with a tool's result: that call hung up on is later in a

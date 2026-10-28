@@ -368,6 +368,45 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hook.answers, [])
         self.assertLess(len(frames), 40)                     # the model's call given up with it
 
+    async def test_a_hang_up_says_what_of_the_answer_had_reached_the_harness_in_words(self):
+        """Claude Code, hung up on before any of its answer's words came (nothing, or only thinking), takes the user's
+        message back; once its text began, keeps it. The hook server knows which: what it relayed (`answer_reached`)."""
+        THINK = ('event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":'
+                 '"thinking","thinking":""}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","index":0,'
+                 '"delta":{"type":"thinking_delta","thinking":"Hmm, the text"}}\n\n')
+        TOOL = ('event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":'
+                '"tool_use","id":"t","name":"Bash","input":{}}}\n\n')
+        TEXT = ('event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":'
+                '"text","text":""}}\n\n')
+
+        class Kept(ToyHook):
+            async def __call__(self, request):
+                request.state["kept"] = True
+                return await super().__call__(request)
+
+            async def failed(self, request, status, error):
+                self.failures.append((status, request.answer_reached))
+
+        for frames, until, want in (([THINK], b"thinking_delta", "nothing"), ([THINK, TOOL], b"tool_use", "tool"),
+                                    ([THINK, TEXT, TOOL], b'"text"', "text")):
+            hook = Kept()
+            hook.failures = []
+
+            async def upstream(request, frames=frames):          # the model, then quiet: the harness hangs up
+                await request.read()
+                resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+                await resp.prepare(request)
+                try:
+                    for f in frames:
+                        await resp.write(f.encode())
+                        await asyncio.sleep(0.05)
+                    await asyncio.sleep(3)
+                except (ConnectionResetError, asyncio.CancelledError):
+                    pass
+                return resp
+            await self._hang_up(hook, upstream, until)
+            self.assertEqual(hook.failures, [(hook_server.HUNG_UP, want)], want)
+
     async def test_a_hang_up_while_the_model_is_quiet_is_seen_at_once(self):
         class Kept(ToyHook):
             async def __call__(self, request):
