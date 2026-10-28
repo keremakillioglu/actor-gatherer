@@ -447,7 +447,8 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
     if cut is not None:                              # stopped before its answer came: Claude Code records nothing of it
         a["status"], a["turn_over"] = IDLE, True
     a["failing"] = failing(conn, ch) if a["status"] == RUNNING else None
-    a["stopped"] = rec.stopped(newest(a)) if a["status"] == RUNNING and a["harness"] in ("claude", None) else None
+    a["stopped"] = rec.stopped(newest(a)) if (a["status"] == RUNNING or cut is not None) \
+        and a["harness"] in ("claude", None) else None
     if a["stopped"] and a["stopped"]["kind"] == "interrupted":
         a["status"], a["turn_over"], a["failing"] = IDLE, True, None
     elif (a["stopped"] and a["stopped"]["kind"] == "error") or (a["failing"] and given_up(a["failing"], rec.followed, now)):
@@ -456,8 +457,9 @@ def _claude_status(conn, ch: str, a: dict, tables: set, now: float) -> None:
         a["wake"] = a["failing"]["at"] + give_up_after(a["failing"], rec.followed) + 1   # when it would be given up
     if a["stopped"] and a["stopped"]["kind"] == "over":
         a["stopped"] = None
-    if cut is not None:
-        a["stopped"] = {"kind": "interrupted", "at": cut}
+    if cut is not None:                              # as the hang-up says -- or Claude Code's record, once it does: its
+        if not (a["stopped"] and a["stopped"]["kind"] == "interrupted"):   # coming changes the actor, and the page's
+            a["stopped"] = {"kind": "interrupted", "at": cut}               # Chat loads the turn it marks again
         a["taken_back"], wake = taken_back(conn, ch, tables, rec, now)
         if wake:
             a["wake"] = min(wake, a.get("wake") or wake)
@@ -715,12 +717,13 @@ def interrupts(rec: "Record") -> List[float]:
 
 def withdrawn_reads(conn, channel: str, tables: set, stops: List[float], read_id: Optional[int] = None) -> Dict[int, dict]:
     """The calls hung up on whose events ag withdrew (`_withdrawn`), by their read (only `read_id`'s, if given): {said:
-    the user's words of the newest user message among them that opened a turn (else None), said_row: its row, kept:
-    Claude Code's record says the turn was interrupted (`stops`: when) once the call had gone to the model (its read
-    done) and before the next call's read}. The hook withdraws a call's events on any Esc, those it stored again (the
-    turns before, sent with it) among them. Claude Code keeps them all -- and records the turn interrupted -- once some
-    of the answer had come; before, it takes the user's message back into its input box (`said`; the events after it
-    with it), recording nothing."""
+    the user's words of the newest user message among them that opened a turn (else None), said_row: its row, reached:
+    what of the answer had reached the harness in words, as the hook server saw it relayed (its `call_failed`'s: "text",
+    "tool", "nothing"; None from a hook before it said), kept: its text had, or Claude Code's record says the turn was
+    interrupted (`stops`: when) once the call had gone to the model (its read done) and before the next call's read}.
+    The hook withdraws a call's events on any Esc, those it stored again (the turns before, sent with it) among them.
+    Claude Code keeps them all -- and records the turn interrupted -- once some of the answer's words had come; before,
+    it takes the user's message back into its input box (`said`; the events after it with it), recording nothing."""
     if "_withdrawn" not in tables:
         return {}
     harness = _harness(conn, channel)
@@ -731,11 +734,19 @@ def withdrawn_reads(conn, channel: str, tables: set, stops: List[float], read_id
             f"JOIN event_types t ON t.event_type_id = e.event_type_id WHERE ifnull(e.{CHANNEL}, '') = ? AND w.read_id "
             f"{'= ?' if read_id is not None else 'IS NOT NULL'} ORDER BY e.row_id",
             (channel, *([read_id] if read_id is not None else []))):
-        r = out.setdefault(read, {"said": None, "said_row": None, "kept": False})
+        r = out.setdefault(read, {"said": None, "said_row": None, "reached": None, "kept": False})
         if typ == "user_message":
             k, w = (kind, said) if kind and said is not None else harness_kit.words(text or "", harness)
             if k == Kind.USER and w.strip():                 # the newest: the turns before it come first
                 r["said"], r["said_row"] = w.strip(), row
+    if out and "p_read_id" in _columns(conn, "events"):
+        for read, raw in conn.execute(
+                f"SELECT e.p_read_id, e.payload_json FROM events e JOIN event_types t ON {BY_CHANNEL} WHERE "
+                f"ifnull(e.{CHANNEL}, '') = ? AND t.name = 'call_failed' AND e.p_read_id >= ?", (channel, min(out))):
+            got = _json(raw) or {}
+            if read in out and got.get("status") == HUNG_UP and got.get("reached"):
+                out[read]["reached"] = got["reached"]
+                out[read]["kept"] = got["reached"] == "text"
     if out and stops and CHANNEL in _columns(conn, "_reads"):
         reads = [(rid, _seconds(at)) for rid, at in conn.execute(
             f"SELECT read_id, read_at FROM _reads WHERE ifnull({CHANNEL}, '') = ? AND read_id >= ? ORDER BY read_id",
@@ -743,7 +754,7 @@ def withdrawn_reads(conn, channel: str, tables: set, stops: List[float], read_id
         for read, r in out.items():
             began = next((at for rid, at in reads if rid == read), None)
             until = next((at for rid, at in reads if rid > read), None) or float("inf")
-            r["kept"] = began is not None and any(began <= s < until for s in stops)
+            r["kept"] = r["kept"] or (began is not None and any(began <= s < until for s in stops))
     return out
 
 
@@ -751,16 +762,22 @@ def taken_back(conn, channel: str, tables: set, rec: "Record", now: float) -> tu
     """The message Claude Code put back in its input box, stopped (Esc) before any of its answer came: ({text (the user's
     words), at (when ag kept the hang-up), since (when ag read the call before: a key that stopped the turn typed after
     it, and nothing since, left the message in the box untouched -- sessions.py's `took_back`)}, None) -- the user's
-    message withdrawn with the agent's newest call, hung up on
-    (`hung_up`), which opened the turn, with nothing in Claude Code's record of the turn being interrupted for
-    TAKEN_SECONDS since (`withdrawn_reads`' `kept`). Until then (None, when to look again). (None, None) for any other call
-    hung up on, or where its record is not followed (not known)."""
+    message withdrawn with the agent's newest call, hung up on (`hung_up`), which opened the turn: at once where the hook
+    server saw none of the answer's words reach Claude Code (`withdrawn_reads`' `reached`); else -- a tool call begun,
+    no text; a hook from before it said -- with nothing in Claude Code's record of the turn being interrupted for
+    TAKEN_SECONDS since (`kept`). Until then (None, when to look again). (None, None) for any other call hung up on, one
+    whose text had come, or where its record is not followed (not known)."""
     last = _newest_reads(conn, channel, 2) or []
     r = last[0] if last else None
-    if r is None or r["error_status"] != HUNG_UP or not rec.followed:
+    if r is None or r["error_status"] != HUNG_UP:
         return None, None
     got = withdrawn_reads(conn, channel, tables, interrupts(rec), r["read_id"]).get(r["read_id"])
     if not got or not got["said"] or got["kept"]:
+        return None, None
+    since = _seconds(last[1]["read_at"]) if len(last) > 1 else None
+    if got["reached"] == "nothing":                  # none of its answer's words came: taken back, as the hook saw
+        return {"text": got["said"], "at": _seconds(r["read_at"]) or now, "since": since}, None
+    if not rec.followed:
         return None, None
     at = conn.execute(f"SELECT max(e.inserted_at) FROM events e JOIN event_types t ON {BY_CHANNEL} WHERE "
                       f"ifnull(e.{CHANNEL}, '') = ? AND t.name = 'call_failed' AND e.p_read_id = ?",
@@ -768,7 +785,7 @@ def taken_back(conn, channel: str, tables: set, rec: "Record", now: float) -> tu
     at = _seconds(at) or _seconds(r["read_at"]) or now
     if now - at < TAKEN_SECONDS:
         return None, at + TAKEN_SECONDS
-    return {"text": got["said"], "at": at, "since": _seconds(last[1]["read_at"]) if len(last) > 1 else None}, None
+    return {"text": got["said"], "at": at, "since": since}, None
 
 
 def _newest_reads(conn, channel: str, n: int) -> Optional[List[dict]]:

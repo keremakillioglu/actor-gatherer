@@ -1,6 +1,6 @@
-"""Esc in Chat, and a message Claude Code took back (ag_dashboard/page.html, from takenBack to isInterrupting): when the
-page may type Esc into an actor's terminal, when the message taken back is still in Claude Code's box untouched, how it
-is put in Chat's message box and taken out again, and when it shows -- run in Node, without the rest of the page."""
+"""Esc in Chat, and a message Claude Code took back (ag_dashboard/page.html, from `untouched` to isInterrupting): when the
+page may type Esc into an actor's terminal, when the message taken back is still in Claude Code's box untouched, and how
+it is put in Chat's message box and taken out again -- run in Node, without the rest of the page."""
 import json
 import os
 import shutil
@@ -9,7 +9,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PAGE = os.path.join(ROOT, "ag_dashboard", "page.html")
-START = "// The message Claude Code put back in its input box, stopped (Esc) before any of its answer came (data.py's"
+START = "// Whether the message Claude Code took back is in its input box untouched"
 END = "// What waits to reach the agent, at the latest turn's end"
 # what the section uses of the page, stood in for; each case runs on a fresh page: [steps], each [name, ...arguments]
 RUN = r"""
@@ -23,9 +23,6 @@ const document = { getElementById: (id) => (id === "composer-text" ? box : null)
 const fitBox = () => {};
 const state = { selected: ["g", "s"] };
 const key = (g, c) => `${g}\u0000${c}`;
-const sentHere = [];
-const el = (tag, attrs, ...kids) => ({ tag, attrs, kids });
-const bubbleClass = () => "", userWords = (t) => t;
 let openedNow = false;
 const opened = () => openedNow;
 const posted = [];
@@ -37,10 +34,6 @@ const api = {
   untouched: (info) => untouched(info),
   refill: (info) => { refill(info, key(...state.selected)); return [box.value, drafts()[key(...state.selected)] || ""]; },
   type: (text) => { box.value = text; keepDraft(key(...state.selected), text); return text; },
-  shown: (info, typed, sent) => {
-    sentHere.splice(0, sentHere.length, ...(sent || []).map((at) => ({ key: key(...state.selected), at })));
-    return !!takenBack(info, { typed: typed || [] });
-  },
   interrupt: (info) => { const got = interrupt(info); return [got, posted.length]; },
   opened: (v) => { openedNow = v; return v; },
   reload: () => { box.value = ""; draftsNow = {}; for (const k of Object.keys(refilledHere)) delete refilledHere[k]; return null; },
@@ -109,11 +102,47 @@ class EscTest(unittest.TestCase):
         [elsewhere] = run([["refill", actor("idle", taken=TAKEN, stopped_at=None)]])  # not in Claude Code's box: not put
         self.assertEqual(elsewhere, [["", ""]])
 
-    def test_shown_until_a_message_goes_after_it(self):
-        info = actor("idle", taken=TAKEN)
-        got = run([["shown", info], ["shown", info, [{"at": 120.0}]], ["shown", info, [], [130000]],
-                   ["shown", info, [{"at": 90.0}], [90000]], ["shown", actor("idle")]])
-        self.assertEqual(got, [[True, False, False, True, False]])
+
+STOPPED = ("// How a turn stopped short, under it, as its harness says it there", "// Claude Code's own notes in a turn")
+RUN_STOPPED = r"""
+const el = (tag, attrs, ...kids) => ({ cls: attrs && attrs.class,
+  text: attrs && attrs.text !== undefined ? attrs.text : kids.map((k) => k.text).join(" ") });
+%s
+let input = "";
+process.stdin.on("data", (d) => { input += d; }).on("end", () =>
+  process.stdout.write(JSON.stringify(JSON.parse(input).map(([info, t, latest]) => stoppedLine(info, t, latest)))));
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "the page's code runs in Node")
+class StoppedTest(unittest.TestCase):
+    """A turn stopped short says so under it in its harness's own words: Claude Code's, codex's."""
+
+    def lines(self, *cases):
+        with open(PAGE, encoding="utf-8") as fh:
+            text = fh.read()
+        code = text[text.index(STOPPED[0]):text.index(STOPPED[1])]
+        got = subprocess.run(["node", "-e", RUN_STOPPED % code], input=json.dumps(cases), capture_output=True, text=True,
+                             timeout=30)
+        if got.returncode:
+            raise AssertionError(got.stderr)
+        return [x and [x["cls"], x["text"]] for x in json.loads(got.stdout)]
+
+    def test_in_each_harness_s_words(self):
+        claude, codex = {"harness": "claude", "status": "idle"}, {"harness": "codex", "status": "idle"}
+        interrupted, error = {"kind": "interrupted"}, {"kind": "error", "text": "stream disconnected", "status": None}
+        self.assertEqual(self.lines(
+            [claude, {"stopped": interrupted}, False], [codex, {"stopped": interrupted}, False],
+            [codex, {"stopped": dict(interrupted, reason="budget_limited")}, False], [codex, {"stopped": error}, False],
+            [claude, {"stopped": {"kind": "error", "text": None, "status": 529}}, False],
+            [dict(claude, status="error"), {"stopped": error}, True],          # the actor's error note says it
+            [claude, {"stopped": None}, True]), [
+            ["fl-stopped", "⎿ Interrupted · What should Claude do instead?"],
+            ["fl-stopped", "■ Conversation interrupted"],
+            ["fl-stopped error", "■ Goal budget reached - the turn was stopped."],
+            ["fl-stopped error", "■ stream disconnected"],
+            ["fl-stopped error", "⎿ API Error: 529"],
+            None, None])
 
 
 if __name__ == "__main__":

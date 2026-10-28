@@ -309,7 +309,8 @@ class StoppedTest(RecordBase):
         return [(t["text"], t["stopped"]) for t in files.files("g", SESSION, cwd="/w")["turns"]]
 
     def test_interrupted_as_the_next_turn_tells_the_model(self):
-        self.assertEqual(self.stopped(), [("look at a.py", {"kind": "interrupted", "at": None, "text": None, "status": None}),
+        self.assertEqual(self.stopped(), [("look at a.py", {"kind": "interrupted", "at": None, "text": None, "status": None,
+                                                           "reason": None}),
                                           ("look at b.py instead", None), ("now c.py", None), ("and d.py", None)])
 
     def test_stopped_as_the_record_says(self):
@@ -323,7 +324,7 @@ class StoppedTest(RecordBase):
         self.assertEqual(got["look at a.py"]["kind"], "interrupted")
         self.assertIsNone(got["look at b.py instead"])
         self.assertEqual(dict(got["now c.py"], at=None), {"kind": "error", "at": None, "text": "API Error: 529 Overloaded",
-                                                          "status": 529})
+                                                          "status": 529, "reason": None})
         self.assertAlmostEqual(got["now c.py"]["at"], self.now - 28, delta=0.01)    # when, as the record has it
         self.assertEqual(got["and d.py"]["kind"], "interrupted")
         self.assertAlmostEqual(got["and d.py"]["at"], self.now - 10, delta=0.01)

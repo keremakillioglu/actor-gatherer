@@ -1175,7 +1175,8 @@
     "how": "interrupted",
     "turn": "01a17ccf-5b2e-7a53-8300-58ade2f05082",
     "status": null,
-    "error": null
+    "error": null,
+    "reason": "interrupted"
    }
   ],
   [

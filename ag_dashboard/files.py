@@ -224,12 +224,14 @@ STOPS_READ = 1000          # the newest of a session's turns stopped short, as i
 def _stops(conn, channel: str) -> List[dict]:
     """How the session's turns stopped short, as its harness's own record said as it was written (`turn_stopped`, as
     data.Record.stopped reads the newest): [{kind: "interrupted" (Esc) or "error" (it gave up on a model call), at,
-    text: the error's words, status: its HTTP status}], oldest first. Not the turns that ended as they do."""
+    text: the error's words, status: its HTTP status, reason: why codex aborted it ("interrupted", "budget_limited")}],
+    oldest first. Not the turns that ended as they do."""
     out = []
     for _, f in data._facts(conn, channel, ("turn_stopped",), STOPS_READ):
         if f.get("how") in ("interrupted", "error") and isinstance(f.get("at"), (int, float)):
             out.append({"kind": f["how"], "at": f["at"], "text": data._clip(f.get("error"), data.ERROR_CHARS) or None,
-                        "status": f.get("status") if isinstance(f.get("status"), int) else None})
+                        "status": f.get("status") if isinstance(f.get("status"), int) else None,
+                        "reason": f.get("reason") if isinstance(f.get("reason"), str) else None})
     return out
 
 
@@ -842,7 +844,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 n = _note(p.get("text") or "")
                 if n is None:
                     if _interrupted(p.get("text") or ""):   # stopped (Esc), as its next turn told the model
-                        head["stopped"] = {"kind": "interrupted", "at": None, "text": None, "status": None}
+                        head["stopped"] = {"kind": "interrupted", "at": None, "text": None, "status": None, "reason": None}
                 elif n["kind"] == "report":
                     by = n.pop("from")
                     n["name"] = agents.get(by, "")

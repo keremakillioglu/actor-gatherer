@@ -95,6 +95,13 @@ RUN_PREFIX = re.compile(r"^/r/([A-Za-z0-9._-]+)(?=/|$)")
 CONFIG_PREFIX = re.compile(r"^/c/([A-Za-z0-9_-]+)(?=/|$)")
 LIMIT_PREFIX = re.compile(r"^/l/([0-9]+)(?=/|$)")
 PART_DONE = (b'"content_block_stop"', b'"response.output_item.done"')   # a part of an answer is complete
+#: What of an answer relayed is words (`Request.answer_reached`), by the events that carry them: its text, or a tool call.
+#: Claude Code, hung up on (Esc) before any of its answer's words came, takes the user's message back into its input box
+#: and records nothing; once its text had begun, it keeps the message and records the turn interrupted.
+REACHED = ((re.compile(rb'"type"\s*:\s*"text_delta"|"content_block"\s*:\s*\{\s*"type"\s*:\s*"text"'
+                       rb'|"response\.output_text\.delta"'), "text"),
+           (re.compile(rb'"type"\s*:\s*"input_json_delta"|"content_block"\s*:\s*\{\s*"type"\s*:\s*"(?:server_)?tool_use"'
+                       rb'|"response\.function_call_arguments\.delta"'), "tool"))
 ANSWER_DONE = (b'"message_stop"', b'"response.completed"')               # all of it: `answered` keeps it
 
 
@@ -117,6 +124,9 @@ class Request:
                                                 # (peer.py); None: not told (not Linux, not this machine)
     answer_started: Optional[float] = None      # when the answer's first bytes came back (time.time()):
                                                 # nothing it asks for can have run before
+    answer_reached: str = "nothing"             # what of the answer had been relayed to the harness, in words
+                                                # (REACHED): "text", a "tool" call (no text), or "nothing" -- nothing
+                                                # at all, or only thinking. A harness hung up on knows as much
 
 
 @dataclass
@@ -354,6 +364,7 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                     resp = web.StreamResponse(status=up.status, headers={
                         k: v for k, v in up.headers.items() if k.lower() not in HOP})
                     await resp.prepare(request)
+                    tail = b""
                     while True:
                         chunk = await next_bytes(up, request)
                         if not chunk:
@@ -363,6 +374,12 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
                         if answer is not None:
                             answer.append(chunk)
                         await resp.write(chunk)
+                        if given.answer_reached != "text":    # what of it the harness has, in words
+                            seen = tail + chunk
+                            given.answer_reached = next((what for words, what in REACHED if words.search(seen)
+                                                         and (what == "text" or given.answer_reached == "nothing")),
+                                                        given.answer_reached)
+                        tail = chunk[-64:]                    # a marker split between two chunks
                         if parts is not None:
                             parts.chunk(chunk, answer)
                     whole = b"".join(answer) if answer is not None else b""
