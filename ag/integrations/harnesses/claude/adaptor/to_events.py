@@ -38,13 +38,23 @@ It holds the channel's last TAIL events as the gatherer stored them (the server'
 started again, or another one, carries on as well), and finds where they are in the
 request by the ids themselves: an id is the hash of its piece and of the id before it,
 so two stored events whose ids link pieces next to each other in the request are
-there, in that order. The last such link, searching back from the end, is where the
-request carries on: the pieces after it are chained from there -- new, whatever they
-repeat -- and only those, and the stored ones linked before them, are sent. Order is
-told by the links, not by the rows: notes ag stored before the request they followed
-(`request_last`) still link where Claude Code sends them. Without a link (the first
-call, Claude Code rewriting the pieces at the end themselves), every piece's id is the
-chain from the request's start, which the history re-sent unchanged reproduces.
+there, in that order. The run of such links holding the channel's newest stored event,
+the stored history's end, is where the request carries on (on nearly every call it
+holds every stored event): the pieces after it are chained from there -- new, whatever
+they repeat -- and only those, and the stored ones linked before them, are sent. Not
+the last run in the request: Claude Code sends some of its notes again word for word
+(resumed, that a connector's tools were removed, then added again), and those stored
+earlier link to one another as well; taken for the end, they left the user's message
+before them unsent. Notes stored twice are each taken where the longer run goes on.
+Where the history's end is not in the request, Claude Code went back, and the case is
+told apart (`Continuity.carry_on`) and logged by the hook: a rewind (the user's words
+after a run, where the stored history went on otherwise: the fork), a compaction (its
+summary in the request; never a run of the notes it sends again with it), its own notes
+at the end rewritten, or none of these. Order is told by the links, not by the rows:
+notes ag stored before the request they followed (`request_last`) still link where
+Claude Code sends them. Without a link (the first call, Claude Code rewriting the pieces
+at the end themselves), every piece's id is the chain from the request's start, which
+the history re-sent unchanged reproduces.
 One rewrite reaches a piece itself: when Claude Code joins two user messages in a row
 into one -- a turn that got no answer and the user's next words, or the last message a
 compaction summarizes and its instruction -- it adds a newline to the end of the first
@@ -75,6 +85,11 @@ OUTPUTS = (USER_MESSAGE, AGENT_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT, AGENT_R
 EVENT_TYPES = {Kind.USER: USER_MESSAGE, Kind.USER_COMMAND: USER_MESSAGE, Kind.MID_TURN: USER_MESSAGE,
                Kind.ASK_REPLY: USER_MESSAGE, Kind.AGENT: AGENT_MESSAGE, Kind.REASONING: AGENT_REASONING,
                Kind.TOOL_CALL: TOOL_CALL, Kind.TOOL_RESULT: TOOL_OUTPUT}
+#: The Kinds of the user's own words: what EVENT_TYPES makes a user message.
+USER_KINDS = frozenset(k for k, t in EVENT_TYPES.items() if t == USER_MESSAGE)
+#: The cases a Continuity falls back to where the stored history's end is not in the request (`carry_on`), as logged.
+HOW_FELL_BACK = {"compaction": "Claude Code compacted its history", "rewind": "a rewind",
+                 "rewritten": "Claude Code rewrote its own notes at the end", "unknown": "no compaction or rewind in it"}
 
 HARNESS = rules.ClaudeCode()
 
@@ -135,39 +150,126 @@ class Continuity:
     def __init__(self, stored: Iterable[Tuple[object, str]] = ()):
         self.known: Dict[str, List[str]] = {}       # piece_key, or its merged_key -> the ids it is stored with
         self.stored: Dict[str, str] = {}            # id -> the piece_key it is the hash of
-        for payload, event_id in stored:
+        self.order: Dict[str, int] = {}             # id -> when it was stored among them: the newest highest
+        self.own: Dict[str, bool] = {}              # id -> whether it is Claude Code's own note (CONTEXT)
+        self.how: Optional[str] = None              # the case `carry_on` found for the last request
+        self.at: Optional[int] = None               # and the index of the first piece new after the run, None: all
+        for n, (payload, event_id) in enumerate(stored):
             key = piece_key(payload)
-            self.stored[event_id] = key
+            self.stored[event_id], self.order[event_id], self.own[event_id] = key, n, classify(payload) == CONTEXT
             for k in dict.fromkeys(k for k in (key, merged_key(payload)) if k is not None):
                 self.known.setdefault(k, []).append(event_id)
 
-    def ids(self, items: list) -> Tuple[List[Optional[str]], int]:
-        """(each piece's id, None for one not sent; the index of the first piece to send). The last piece
-        stored with an id that links it to the stored piece before it is where the request carries on: it
-        and the stored pieces linked before it keep their ids and are sent, and the pieces after it are
-        chained from it. Without one, every id is chained from the request's start and every piece is sent."""
+    def ids(self, items: list, parts: Optional[list] = None) -> Tuple[List[Optional[str]], int]:
+        """(each piece's id, None for one not sent; the index of the first piece to send). The run of stored
+        pieces where the request carries on (`carry_on`; `parts`, the pieces read, if the caller has them) keeps
+        its ids and is sent, and the pieces after it are chained from it -- new, whatever they repeat. Without
+        one, every id is chained from the request's start and every piece is sent."""
         keys = [piece_key(it) for it in items]
-        for end in range(len(keys) - 1, 0, -1):
+        found = self.carry_on(items, keys, parts)
+        self.at = found[0] + len(found[1]) if found else None
+        if found is None:
+            return chain_ids(items), 0
+        start, run = found
+        ids: List[Optional[str]] = [None] * start + run
+        for key in keys[start + len(run):]:
+            ids.append(key_id(key, ids[-1]))
+        return ids, start
+
+    def carry_on(self, items: list, keys: List[str], parts: Optional[list]) -> Optional[Tuple[int, List[str]]]:
+        """(the index of its first piece, its ids) of the run of stored pieces the request carries on from, case by
+        case, the case in `how`; None: from nothing stored, all of it new. First the stored history's end:
+          whole, end   the run holding the newest stored event -- of two, the longer, then the later; "whole" when it
+                       holds every stored event, as on nearly every call.
+        Without it in the request, Claude Code went back, and fell back to what it went back to:
+          rewind       the user's words the stored history goes on without come right after a run -- the fork -- or
+                       right before one stored after other words (`cut_off`): the fork with the newest stored event;
+                       without one (a rewind to the first message), all of it is new.
+          compaction   its summary is in the request, and no fork: the run with the newest stored event; without one,
+                       all after the summary is new. In a compacted history, never a run of only the notes it sends
+                       again with the summary (COMPACTION_REPEAT), whatever the case.
+          rewritten    the stored events newer than any in the request are all Claude Code's own notes: it rewrote
+                       them (rebuilding its request, its tools to be found by ToolSearch since: their notes made one),
+                       or left them out -- the run with the newest stored event.
+          unknown      none of these: the same; none of the stored in the request (a rewind further back than they
+                       reach, Claude Code rewriting it all), all of it new."""
+        self.how = "new"
+        if not self.stored:
+            return None
+        runs = self.runs(keys)
+        newest = max(self.order.values())
+        rank = lambda r: (max(self.order[i] for i in r[1]), len(r[1]))         # noqa: E731 - ties: the later (max: the first)
+        end = max((r for r in runs if rank(r)[0] == newest), key=rank, default=None)
+        if end is not None:
+            self.how = "whole" if len(end[1]) == len(self.stored) else "end"
+            return end
+        parts = parts if parts is not None else HARNESS.read(items)
+        compacted = any(p.kind == Kind.COMPACTION_SUMMARY for p in parts)
+        if compacted:
+            runs = [r for r in runs if any(parts[i].kind != Kind.COMPACTION_REPEAT for i in range(r[0], r[0] + len(r[1])))]
+        kept = [r for r in runs if not self.cut_off(parts, *r)]
+        users = [i for i, p in enumerate(parts) if p.kind in USER_KINDS]
+        starts = sorted(s for s, _ in runs) + [len(items)]
+
+        def forks(r) -> bool:                    # the user's words after the run, before the next run
+            after, upto = r[0] + len(r[1]), next(s for s in starts if s > r[0])
+            return any(after <= i < upto for i in users)
+        forks = [r for r in kept if forks(r)]
+        if forks or len(kept) < len(runs):
+            self.how = "rewind"
+            return max(forks, key=rank, default=None)
+        best = max(kept, key=rank, default=None)
+        newer = [i for i, n in self.order.items() if best is None or n > rank(best)[0]]
+        self.how = "compaction" if compacted else \
+            "rewritten" if best is not None and all(self.own[i] for i in newer) else "unknown"
+        return best
+
+    def runs(self, keys: List[str]) -> List[Tuple[int, List[str]]]:
+        """Every run of stored pieces in the request (`linked`, each as long as it goes), as (the index of its first
+        piece, its ids), from the request's end back."""
+        out, end = [], len(keys) - 1
+        while end > 0:
             run = self.linked(keys, end)
             if run:
-                start = end + 1 - len(run)
-                ids: List[Optional[str]] = [None] * start + run
-                for key in keys[end + 1:]:
-                    ids.append(key_id(key, ids[-1]))
-                return ids, start
-        return chain_ids(items), 0
+                out.append((end + 1 - len(run), run))
+            end -= len(run) or 1                 # its pieces end no other run
+        return out
+
+    def cut_off(self, parts: list, start: int, run: List[str]) -> bool:
+        """Whether the user's words come right before the stored run at `start` that its first piece was not stored
+        after: what it was stored after is known -- one of the stored, or the start of a request -- and so is not
+        there (`linked` would have found it). The user's words came in between: a rewind to them, with Claude Code's
+        notes after them as they were after the words they replace."""
+        if start == 0 or parts[start - 1].kind not in USER_KINDS:
+            return False
+        key = self.stored[run[0]]
+        return key_id(key) == run[0] or any(key_id(key, before) == run[0] for before in self.stored)
+
+    def fallback(self) -> Optional[str]:
+        """What the hook logs when the stored history's end was not in the last request (`how`), else None."""
+        if self.how not in HOW_FELL_BACK:
+            return None
+        where = f"new from piece {self.at} on" if self.at is not None else "all of it new"
+        return f"the stored history's end is not in the request: {HOW_FELL_BACK[self.how]}, {where}"
 
     def linked(self, keys: List[str], end: int) -> List[str]:
         """The stored ids of the pieces up to `end` that link to one another, back from it -- at least it
-        and the one before it -- oldest first; [] if those two do not."""
-        run: List[str] = []
+        and the one before it -- oldest first; [] if those two do not. A piece stored more than once among them
+        (Claude Code's notes, sent again word for word) is the one stored that the longest such run goes back
+        from -- of two, the newer: a run of the copies stored first stops where the request goes on as it did
+        after the second."""
+        runs = (self.back(keys, end, this) for this in self.known.get(keys[end], ()))
+        return max(runs, key=lambda run: (len(run), self.order[run[-1]]) if run else (0, 0), default=[])
+
+    def back(self, keys: List[str], end: int, this: str) -> List[str]:
+        """`linked`, with the piece at `end` taken for the stored `this`."""
+        run = [this]
         for k in range(end, 0, -1):
-            pair = next(([before, this] for this in (run[:1] or self.known.get(keys[k], ()))
-                         for before in self.known.get(keys[k - 1], ()) if key_id(self.stored[this], before) == this), None)
-            if pair is None:
+            before = next((b for b in self.known.get(keys[k - 1], ()) if key_id(self.stored[run[0]], b) == run[0]), None)
+            if before is None:
                 break
-            run[:1] = pair
-        return run
+            run.insert(0, before)
+        return run if len(run) > 1 else []
 
 
 def event(item, item_id: str, kind: Optional[str] = None, part=None) -> dict:
@@ -232,8 +334,8 @@ def to_events(messages: list, continuity: Optional[Continuity] = None,
     out (COMPACTION_REPEAT). With the channel's `continuity`, only from the previous request's last pieces on (see the
     module's doc). `event_types`: which event type each Kind becomes (HarnessAdaptor's)."""
     items = HARNESS.items(messages)
-    ids, start = continuity.ids(items) if continuity is not None else (chain_ids(items), 0)
     parts = HARNESS.read(items)
+    ids, start = continuity.ids(items, parts) if continuity is not None else (chain_ids(items), 0)
     types = [event_types.get(p.kind, CONTEXT) for p in parts]
     dropped = {i for i, p in enumerate(parts) if p.kind == Kind.COMPACTION_REPEAT or p.detail.get("opens")}
     return request_last([event(items[k], ids[k], types[k], parts[k]) for k in range(start, len(items)) if k not in dropped],

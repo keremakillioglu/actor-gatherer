@@ -192,8 +192,10 @@ class ClaudeContextManager(ProxyHook):
         mode = self.system_messages if self.system_messages != "auto" else \
             ("user" if is_gemini(body.get("model")) else "keep")
         adaptor = self.adaptors[mode]
+        continuity = None
         if isinstance(adaptor, ClaudeAdaptor):                    # its ids carry on from the channel's stored history
-            adaptor = adaptor.for_channel(await self.continuity(client, gatherer, channel))
+            continuity = await self.continuity(client, gatherer, channel)
+            adaptor = adaptor.for_channel(continuity)
         if call.kind == CallKind.RECAP and isinstance(getattr(request, "state", None), dict):
             request.state[RECAPPED] = (gatherer, channel)
         if call.kind in (CallKind.RECAP, CallKind.SUGGESTION, CallKind.COMPACTION):
@@ -224,6 +226,9 @@ class ClaudeContextManager(ProxyHook):
             return new, out
 
         new, out = await read()
+        fell_back = continuity.fallback() if continuity is not None else None
+        if fell_back:                                      # Claude Code went back: which case ag took it for (to_events.py)
+            self.log(gatherer, f"[{channel}] {fell_back}")
         stored = list(out.get("inserted") or [])           # what this call stored: withdrawn, should Claude Code take it back
         size, budget = out.get("sent_tokens"), out.get("budget")      # all of it, as the provider counts
         if "read_id" in out and budget and size is not None and size >= COUNT_FROM * budget:

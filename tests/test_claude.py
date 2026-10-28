@@ -598,11 +598,12 @@ class RepeatsTest(unittest.TestCase):
 
     def setUp(self):
         self.client = StoreClient()
+        self.lines = []                        # what the hooks log
         self.hook = self.new_hook()
 
     def new_hook(self):
         return claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda gatherer: self.client),
-                                              log=lambda h, l: None)
+                                              log=lambda h, line: self.lines.append(line))
 
     def call(self, messages, hook=None):
         body = {"model": "m", "tools": [{"name": "Bash"}], "messages": messages}
@@ -705,6 +706,115 @@ class RepeatsTest(unittest.TestCase):
                  {"role": "user", "content": [REMINDER, {"type": "text", "text": "Okay, build"}]}]
         self.call(after, hook=self.new_hook())
         self.assertEqual([e["payload"]["content"][0]["text"] for e in self.client.events[stored:]], ["Okay, build"])
+
+    def test_a_resumed_session_whose_tools_come_and_go_keeps_each_new_message(self):
+        """Found live: resumed, Claude Code said a connector's tools were removed, and on the next call that they
+        were added again, word for word as earlier in the session. Those notes are stored linked to one another,
+        so the end of the request looked like the stored history's end, and the user's message before them was
+        taken as stored: neither stored nor sent, and the model answered an earlier message. The same on the
+        next resume, with the removal notes repeated after the user's message."""
+        def note(text, kind, names):
+            tool = (lambda n: {"type": "tool_definition", "definition": {**TOOL, "name": n}}) if kind == "tool_addition" \
+                else (lambda n: {"type": "tool_reference", "name": n})
+            return {"role": "system", "content": [{"type": "text", "text": text}]
+                    + [{"type": kind, "tool": tool(n)} for n in names]}
+        added = note("Tools just became available: a, b, c, d", "tool_addition", "abcd")
+        removed = note("Tools are no longer available: a, b, c, d", "tool_removal", "abcd")
+        turns = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(12)]
+        resumed = [txt("user", "go"), added] + turns + [txt("user", "back?"), removed]
+        self.call(resumed[:-2])
+        self.call(resumed, hook=self.new_hook())
+
+        def asked(messages):
+            stored = len(self.client.events)
+            out = self.call(messages, hook=self.new_hook())
+            new = [e for e in self.client.events[stored:] if e["type"] == USER_MESSAGE]
+            last = [m for m in out if m["role"] == "user"][-1]["content"][-1]["text"]
+            return [e["payload"]["content"][0]["text"] for e in new], last
+
+        again = resumed + [txt("assistant", "back"), txt("user", "five facts"), added]
+        self.assertEqual(asked(again), (["five facts"], "five facts"))
+        once_more = again + [txt("assistant", "facts"), txt("user", "hi"), removed]
+        self.assertEqual(asked(once_more), (["hi"], "hi"))
+
+    def test_a_message_rewound_to_at_the_start_is_new_though_the_same_notes_follow(self):
+        """Claude Code's rewind back to a session's first message: the new one is followed by the notes that
+        followed the first, word for word. They are stored after the first message, which is among the stored
+        still: so they are not where the request carries on, and the new message is stored and sent."""
+        notes = {"role": "system", "content": [{"type": "text", "text": "# Environment"}, ADD]}
+        self.call([txt("user", "Write a poem."), notes, txt("assistant", "Roses."), txt("user", "Shorter.")])
+        stored = len(self.client.events)
+        out = self.call([txt("user", "Write a song."), notes], hook=self.new_hook())
+        self.assertIn("Write a song.", [e["payload"]["content"][0].get("text") for e in self.client.events[stored:]])
+        self.assertEqual([m for m in out if m["role"] == "user"][-1]["content"][-1]["text"], "Write a song.")
+
+    def test_a_rewind_carries_on_from_where_the_conversation_forks(self):
+        turns = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(10)]
+        self.call(turns + [txt("user", "a"), txt("assistant", "x"), txt("user", "b"), txt("assistant", "y")])
+        self.assertFalse([line for line in self.lines if "stored history's end" in line])
+        stored = len(self.client.events)
+        self.call(turns + [txt("user", "a"), txt("assistant", "x"), txt("user", "c")], hook=self.new_hook())
+        self.assertEqual([e["payload"]["content"][0]["text"] for e in self.client.events[stored:]], ["c"])
+        self.assertIn("[sess] the stored history's end is not in the request: a rewind, new from piece 12 on", self.lines)
+
+    def test_notes_stored_twice_carry_on_from_the_copy_stored_last(self):
+        """Claude Code's notes stored twice among the last stored, word for word (its tools added, then added again
+        after a removal): the first copy links to its own neighbours too. The request goes on from the second -- the
+        stored history's end -- and the ids after it are the chain's, not chained from the first."""
+        fetch = {"type": "tool_addition", "tool": {"type": "tool_definition", "definition": {**TOOL, "name": "mcp__demo__fetch"}}}
+        added = lambda text: {"role": "system", "content": [{"type": "text", "text": text}, ADD, fetch]}   # noqa: E731
+        messages = [txt("user", "q1"), txt("assistant", "a1"), added("Tools (1)"), txt("assistant", "a2"),
+                    added("Tools (2)"), txt("user", "q3")]
+        self.call(messages[:-1])
+        stored = len(self.client.events)
+        self.call(messages, hook=self.new_hook())
+        self.assertEqual([(e["payload"]["content"][0]["text"], e["id"]) for e in self.client.events[stored:]],
+                         [("q3", claude.chain_ids(claude.HARNESS.items(messages))[-1])])
+        self.assertFalse([line for line in self.lines if "stored history's end" in line])
+
+    def test_after_a_compaction_the_tools_announced_again_do_not_hide_the_words_before_them(self):
+        """Claude Code compacted the history and sends, after the user's words, its tools announced again -- stored
+        once among the oldest of the last stored, what they followed no longer among them. They are what it sends
+        with the summary, not the stored history going on: the words before them are stored and sent."""
+        notes = {"role": "system", "content": [{"type": "text", "text": "Tools just became available: mcp__demo__search"}, ADD]}
+        turns = [txt("assistant" if i % 2 == 0 else "user", f"turn {i}") for i in range(18)]
+        self.call([txt("user", "start"), notes] + turns)
+        stored = len(self.client.events)
+        summary = ("This session is being continued from a previous conversation that ran out of context. The summary "
+                   "below covers the earlier portion of the conversation.\n\nSummary: ...")
+        out = self.call([txt("user", summary), txt("user", "go on"), notes], hook=self.new_hook())
+        self.assertEqual([e["payload"]["content"][0].get("text") for e in self.client.events[stored:]], ["go on"])
+        self.assertEqual([m for m in out if m["role"] == "user"][-1]["content"][-1]["text"], "go on")
+        self.assertIn("[sess] the stored history's end is not in the request: Claude Code compacted its history, all of it new",
+                      self.lines)
+
+    def test_a_rewind_in_a_compacted_history_carries_on_from_the_fork(self):
+        """Every request after a compaction opens with its summary: a rewind later on is a rewind still, and goes on
+        from where the conversation forks, not from the newest run there is."""
+        summary = txt("user", "This session is being continued from a previous conversation that ran out of context. "
+                              "The summary below covers the earlier portion of the conversation.\n\nSummary: ...")
+        turns = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(8)]
+        self.call([summary] + turns + [txt("user", "a"), txt("assistant", "x"), txt("user", "b"), txt("assistant", "y")])
+        stored = len(self.client.events)
+        self.call([summary] + turns + [txt("user", "a"), txt("assistant", "x"), txt("user", "c")], hook=self.new_hook())
+        self.assertEqual([e["payload"]["content"][0]["text"] for e in self.client.events[stored:]], ["c"])
+        self.assertIn("[sess] the stored history's end is not in the request: a rewind, new from piece 11 on", self.lines)
+
+    def test_notes_claude_code_rewrote_at_the_end_are_told_apart(self):
+        """Rebuilding its request (its tools to be found by ToolSearch since), Claude Code sends one note where it sent
+        its tools' notes: the stored history's end is not in the request, and nothing but its own notes went. The
+        request goes on from the run before them."""
+        use = lambda i: {"role": "assistant", "content": [{"type": "tool_use", "id": f"toolu_{i}", "name": "Bash",   # noqa: E731
+                                                           "input": {"command": f"ls {i}"}}]}
+        result = lambda i: {"role": "user", "content": [{"type": "tool_result", "tool_use_id": f"toolu_{i}",      # noqa: E731
+                                                         "content": [{"type": "text", "text": f"out {i}"}]}]}
+        self.call([txt("user", "q"), use(1), result(1), NOTE("Tools just became available: mcp__demo__search", ADD)])
+        stored = len(self.client.events)
+        self.call([txt("user", "q"), use(1), result(1), txt("system", "Deferred tools: mcp__demo__search"), use(2), result(2)],
+                  hook=self.new_hook())
+        self.assertEqual([e["type"] for e in self.client.events[stored:]], [CONTEXT, TOOL_CALL, TOOL_OUTPUT])
+        self.assertIn("[sess] the stored history's end is not in the request: Claude Code rewrote its own notes at the end, "
+                      "new from piece 3 on", self.lines)
 
     def test_history_rewritten_further_back_stores_only_what_is_new(self):
         long = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(40)]
