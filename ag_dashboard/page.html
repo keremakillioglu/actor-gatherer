@@ -964,7 +964,7 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-turn.on .fl-user .tx { -webkit-line-clamp: unset; }
 /* what was written while the turn ran, sent to the agent: stacked on its first message, over it a little -- one turn.
    The ring, in the page's colour, keeps the edge of each it covers. */
-.files .fl-user.joined { position: relative; margin-top: -7px; box-shadow: 0 0 0 2px var(--surface); }
+.files :is(.fl-user, .fl-crew).joined { position: relative; margin-top: -7px; box-shadow: 0 0 0 2px var(--surface); }
 /* written while it works, not sent yet: at the turn's end, faded, until Claude Code gives it to the agent */
 .files .fl-pending { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
 .files .fl-pending .fl-user { opacity: .55; cursor: default; }
@@ -982,7 +982,7 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, var(--term-code)); border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
 .files .fl-user .bash-mark { color: var(--term-bash); font-weight: 700; }
 /* a message between the gatherer's actors (envelope, sentBubble): in a plain band, not the user's colour, its sender's
-   avatar beside it (the receiver's, for one sent) and its name over its words, all of them shown */
+   avatar beside it (the receiver's, for one sent) and its name over its words */
 .files .fl-user.crew, .files .fl-sent.crew { background: var(--surface); border: 1px solid var(--ring); }
 .files .fl-user.crew:hover { background: var(--wash); border-color: color-mix(in srgb, var(--ink) 16%, transparent); }
 .files .fl-user.crew .tx { -webkit-line-clamp: unset; display: flex; gap: 10px; align-items: flex-start; }
@@ -994,16 +994,33 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-sent { display: flex; gap: 10px; align-items: flex-start; margin: 6px 0 4px; padding: 6px 12px; border-radius: 8px;
   line-height: var(--lh); color: var(--ink); }
 .files .fl-sent .crew-from { font-weight: 500; color: var(--muted); }
+/* its words folded to their first three lines (crewFold; news, two), the rest under "Show all" -- shown only where
+   there is more (.long). A turn's bubble, a button, is in a band (.fl-crew) with the toggle under it. */
+.files .crew-fold:not(.open) .crew-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.files .crew-more { align-self: flex-start; margin: 0; padding: 0; background: none; border: 0; font: inherit; font-size: 12px;
+  line-height: 18px; color: var(--muted); cursor: pointer; }
+.files .crew-more:hover { color: var(--ink); text-decoration: underline; }
+.files .crew-fold:not(.long) .crew-more { display: none; }
+.files .fl-crew { display: flex; flex-direction: column; min-width: 0; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; }
+.files .fl-crew:hover { background: var(--wash); border-color: color-mix(in srgb, var(--ink) 16%, transparent); }
+.files .fl-crew > .fl-user.crew, .files .fl-crew > .fl-user.crew:hover { background: none; border: 0; border-radius: 8px; }
+.files .fl-crew.long > .fl-user.crew { padding-bottom: 1px; }
+.files .fl-crew > .crew-more { margin: 0 12px 5px 48px; }   /* under the words: the bubble's padding, the avatar, its gap */
+.files .fl-sent .crew-more { margin-top: 1px; }
+.files .fl-pending .fl-crew { opacity: .55; }
+.files .fl-pending .fl-crew > .fl-user { opacity: 1; }
 /* a watch's news: a quiet line, the actor it is about small beside it; what it was asked and said, folded to two lines
-   until its turn is the one shown */
+   (crewFold, as a message is) */
 .files .fl-user.crew.update { background: none; border-color: transparent; padding-top: 3px; padding-bottom: 3px; }
 .files .fl-user.crew.update:hover { background: var(--wash); }
 .files .fl-user.crew.update .crew-face { width: 18px; height: 18px; margin-top: 2px; }
 .files .fl-user.crew.update .crew-from { font-weight: 500; }
 .files .fl-user.crew.update .crew-how { font-weight: 400; color: var(--muted); }
-.files .fl-user.crew.update .crew-text { font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical; overflow: hidden; }
-.files .fl-turn.on .fl-user.crew.update .crew-text { -webkit-line-clamp: unset; }
+.files .fl-user.crew.update .crew-text { font-size: 12.5px; color: var(--muted); }
+.files .crew-fold.update:not(.open) .crew-text { -webkit-line-clamp: 2; }
+.files .fl-crew.update { background: none; border-color: transparent; }
+.files .fl-crew.update:hover { background: var(--wash); }
+.files .fl-crew.update > .crew-more { margin: 0 12px 3px 40px; }   /* its avatar smaller */
 .files .fl-bash { display: flex; flex-direction: column; min-width: 0; margin: 0;
   background: var(--term-code); border: 1px solid color-mix(in srgb, var(--term-bash) 45%, transparent); border-radius: 8px; overflow: hidden; }
 .files .fl-bash:hover { border-color: color-mix(in srgb, var(--term-bash) 75%, transparent); }
@@ -3084,8 +3101,8 @@ const userWords = (text, kind) => isBash(text)
 // line who it is from -- the gatherer agent, or another actor (its id, its name as JSON) -- and how to answer, then a
 // blank line, then the message (or, as the list has it, its lines made one). Or the news of a watch the actor asked for
 // (coordination.py's `update`, UPDATE): which actor is done, and how, then what it was asked and said. null: neither.
-// A message is drawn with its sender's avatar and name -- the gatherer agent's, the manager -- never folded or clipped;
-// news, as a quiet line with the avatar of the actor it is about.
+// A message is drawn with its sender's avatar and name -- the gatherer agent's, the manager -- folded to its first lines
+// (crewFold); news, as a quiet line with the avatar of the actor it is about.
 const ENVELOPE = /^Message from (the gatherer agent|actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)(?: \(answer it with: [^\n]*?\))?:\s+([\s\S]*)$/;
 const UPDATE = /^Update \(you asked with `ag actors when`, watch (\d+)\): actor ([\w-]+)(?: \(("(?:[^"\\]|\\.)*")\))? is done: ([^\n]*?)\.(?:\s+([\s\S]*))?$/;
 function envelope(text) {
@@ -3122,18 +3139,68 @@ function crewWords(env) {
   if (env.from === "update")
     return el("span", { class: "tx crew" }, crewFace(a), el("span", { class: "crew-body" },
       el("span", { class: "crew-from" }, `${crewName(false, a, env)} is done`, el("span", { class: "crew-how", text: ` · ${env.how}` })),
-      env.text ? el("span", { class: "crew-text", text: env.text }) : null));
+      env.text ? crewText(env.text) : null));
   return el("span", { class: "tx crew" }, crewFace(a, coordinator ? MANAGER : null), el("span", { class: "crew-body" },
-    el("span", { class: "crew-from", text: crewName(coordinator, a, env) }), el("span", { class: "crew-text", text: env.text })));
+    el("span", { class: "crew-from", text: crewName(coordinator, a, env) }), crewText(env.text)));
+}
+// A message between actors, long as they mostly are, folded to its first three lines (.crew-fold; news, two) with a toggle under it to
+// show the rest: opened, kept so (crewOpen) by the actor shown and the message's words -- across redraws, and once ag
+// stores a message sent from its pending bubble. Whether its words run past those lines is measured where it is drawn,
+// and again when its width changes (crewSizes): the toggle is there (.long) only then, and kept by the message
+// (crewLong) so that a redraw builds the same node.
+const crewOpen = new Set(), crewLong = new Map();
+const crewKey = (text) => `${state.selected ? key(...state.selected) : ""}\u0000${String(text).length}\u0000${String(text).slice(0, 200)}`;
+function crewText(text) {
+  const n = el("span", { class: "crew-text", text });
+  n.crewKey = crewKey(text);
+  return n;
+}
+const crewFold = (k) => " crew-fold" + (crewLong.get(k) || crewOpen.has(k) ? " long" : "") + (crewOpen.has(k) ? " open" : "");
+function crewMore(k) {
+  const open = crewOpen.has(k);
+  return el("button", { type: "button", class: "crew-more", "aria-expanded": open ? "true" : "false",
+    title: open ? "Fold the message to its first lines" : "Show the whole message",
+    onclick: (ev) => {
+      if (crewOpen.has(k)) crewOpen.delete(k); else crewOpen.add(k);
+      ev.currentTarget.closest(".crew-fold").classList.toggle("open", crewOpen.has(k));
+      ev.currentTarget.replaceWith(crewMore(k));
+    } }, open ? "Show less" : "Show all");
+}
+// A message between actors, or a watch's news, in a bubble (`bubble`, of a turn's message `text`): in a band, with its
+// toggle under the bubble, which a button (a turn's, picking it) cannot hold. Any other message: the bubble as it is.
+function crewBand(text, bubble) {
+  const env = envelope(text);
+  if (!env || !env.text) return bubble;
+  const k = crewKey(env.text), joined = bubble.classList.contains("joined");
+  bubble.classList.remove("joined");
+  return el("div", { class: "fl-crew" + (env.from === "update" ? " update" : "") + (joined ? " joined" : "") + crewFold(k) },
+    bubble, crewMore(k));
+}
+const crewSizes = typeof ResizeObserver === "undefined" ? null : new ResizeObserver((seen) => {
+  for (const { target: t } of seen) {
+    const box = t.isConnected && t.closest(".crew-fold");
+    if (!box) { crewSizes.unobserve(t); continue; }
+    if (box.classList.contains("open")) continue;
+    const long = t.scrollHeight > t.clientHeight + 1;
+    if (crewLong.size > 500) crewLong.clear();
+    crewLong.set(t.crewKey, long);
+    box.classList.toggle("long", long);
+  }
+});
+const crewWatched = new WeakSet();
+function watchCrew() {   // the messages drawn since: measured from now on
+  if (crewSizes) for (const t of document.querySelectorAll(".crew-fold .crew-text"))
+    if (!crewWatched.has(t)) { crewWatched.add(t); crewSizes.observe(t); }
 }
 // A message the actor sent another (files.py's `sent`: `ag actors send`, or a new actor started with it), in its turn:
 // with its receiver's avatar and name.
 function sentBubble(m) {
   const coordinator = m.to_name === COORDINATOR_NAME, to = crewActor(coordinator, String(m.to || "").slice(0, 8));
   const who = coordinator ? "the gatherer agent" : (to && to.name && to.name.text) || m.to_name || `actor ${String(m.to || "").slice(0, 8)}`;
-  return el("div", { class: "fl-sent crew", title: m.kind === "new" ? "A new actor, started with this message" : "Sent with `ag actors send`" },
+  const k = crewKey(m.text);
+  return el("div", { class: "fl-sent crew" + crewFold(k), title: m.kind === "new" ? "A new actor, started with this message" : "Sent with `ag actors send`" },
     crewFace(to, coordinator ? MANAGER : null), el("span", { class: "crew-body" },
-      el("span", { class: "crew-from", text: m.kind === "new" ? `Started ${who}` : `To ${who}` }), el("span", { class: "crew-text", text: m.text })));
+      el("span", { class: "crew-from", text: m.kind === "new" ? `Started ${who}` : `To ${who}` }), crewText(m.text), crewMore(k)));
 }
 const isCoordinator = (a) => !!a && a.role === "coordinator";
 function agentRow(g, a, group) {
@@ -6542,8 +6609,8 @@ function pendingTalk(info, h) {
   if (!list.length) return null;
   const unseen = mine.some((m) => Date.now() - m.at > UNSEEN_MS) || chats.some((q) => Date.now() - q.at * 1000 > UNSEEN_MS);
   const asks = unseen && info && info.session && info.session.terminal && CHAT_VIEWS.has("terminal");
-  return el("div", { class: "fl-pending" }, ...list.map((text) =>
-    el("div", { class: "fl-user" + bubbleClass(text), title: "Written while it works: given to the agent at its next step" }, userWords(text))),
+  return el("div", { class: "fl-pending" }, ...list.map((text) => crewBand(text,
+    el("div", { class: "fl-user" + bubbleClass(text), title: "Written while it works: given to the agent at its next step" }, userWords(text)))),
     el("span", { class: "lbl" }, unseen ? "Pending · not seen by the session yet" : "Pending",
       asks ? "; its terminal may be asking something first. " : null,
       asks ? el("button", { type: "button", class: "to-term", onclick: () => setChatView("terminal") }, "Open the terminal") : null));
@@ -6582,8 +6649,8 @@ function openedTurn(info, q, latest, h) {
   if (turnsBegan.size > 50) turnsBegan.clear();
   turnsBegan.set(key(...state.selected) + "\u0000" + typedAs(q.text).slice(0, 200), q.sent);
   return [el("div", { class: "fl-turn opened" },
-    el("div", { class: "fl-user" + bubbleClass(q.text), title: "Sent to the agent: shown here until the gatherer has stored it" },
-      userWords(q.text)),
+    crewBand(q.text, el("div", { class: "fl-user" + bubbleClass(q.text), title: "Sent to the agent: shown here until the gatherer has stored it" },
+      userWords(q.text))),
     latest ? working(info, Math.max(q.sent, (info && info.last) || 0), q.sent, "Working…") : null,
     latest ? pendingTalk(info, h) : null),
     latest ? el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, { work: {} })) : null].filter(Boolean);
@@ -6641,19 +6708,19 @@ function filesTalk(d, info, running) {
     const from = starts.length ? Math.min(...starts) : null;      // when it began: sent (began), or stored
     box.append(el("div", { class: "fl-turn" + (on ? " on" : ""), id: `fl-turn-${t.n}`, "data-morph": "" },
       // a click: this turn's files and commands shown at the left, or folded away when they already are
-      bashBubble(t, el("button", { type: "button", class: "fl-user" + bubbleClass(t.text), "aria-pressed": on ? "true" : "false",
+      crewBand(t.text, bashBubble(t, el("button", { type: "button", class: "fl-user" + bubbleClass(t.text), "aria-pressed": on ? "true" : "false",
         title: on && !sideFolded ? "Fold this turn's files and commands" : "Show this turn's files and commands",
         onclick: () => {
           if (on && !sideFolded) return foldSide(true);
           if (sideFolded) foldSide(false, on);
           if (!on) setFilesTurn(t.n);
         } },
-        userWords(t.text, t.kind))),
-      ...[...(t.more || []), ...(t.n === d.turns.length - 1 ? joined : [])].map((m) =>
+        userWords(t.text, t.kind)))),
+      ...[...(t.more || []), ...(t.n === d.turns.length - 1 ? joined : [])].map((m) => crewBand(m.text,
         el("button", { type: "button", class: "fl-user joined" + bubbleClass(m.text), "aria-pressed": on ? "true" : "false",
           title: "Written while it worked, and given to the agent in this turn",
           onclick: () => { if (sideFolded) foldSide(false, false); setFilesTurn(t.n); } },
-          userWords(m.text, m.kind))),
+          userWords(m.text, m.kind)))),
       before.length ? el("div", { class: "fl-minor" },
         extra ? el("button", { type: "button", class: "fl-more", "aria-expanded": hidden ? "false" : "true", onclick: toggle,
           title: hidden ? "Show everything the agent said and thought in this turn" : "Fold the earlier messages again" },
@@ -6679,6 +6746,7 @@ function filesTalk(d, info, running) {
     talkShown = at;
     cur.parentElement.scrollTop = state.files.turn === null ? cur.parentElement.scrollHeight : cur.offsetTop;   // .fl-talk is its offset parent
   });
+  requestAnimationFrame(watchCrew);
   return box;
 }
 // Claude Code's own notes in a turn (files.py's `_note`), each a line among the messages, folded to it: a subagent's
