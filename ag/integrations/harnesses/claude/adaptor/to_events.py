@@ -38,13 +38,21 @@ It holds the channel's last TAIL events as the gatherer stored them (the server'
 started again, or another one, carries on as well), and finds where they are in the
 request by the ids themselves: an id is the hash of its piece and of the id before it,
 so two stored events whose ids link pieces next to each other in the request are
-there, in that order. The last such link, searching back from the end, is where the
-request carries on: the pieces after it are chained from there -- new, whatever they
-repeat -- and only those, and the stored ones linked before them, are sent. Order is
-told by the links, not by the rows: notes ag stored before the request they followed
-(`request_last`) still link where Claude Code sends them. Without a link (the first
-call, Claude Code rewriting the pieces at the end themselves), every piece's id is the
-chain from the request's start, which the history re-sent unchanged reproduces.
+there, in that order. The run of such links holding the channel's newest stored event,
+the stored history's end, is where the request carries on: the pieces after it are
+chained from there -- new, whatever they repeat -- and only those, and the stored ones
+linked before them, are sent. Not the last run in the request: Claude Code sends some
+of its notes again word for word (resumed, that a connector's tools were removed, then
+added again), and those stored earlier link to one another as well; taken for the end,
+they left the user's message before them unsent. Where the history's end is not in the
+request (Claude Code went back: a rewind, a compaction), the run holding the newest
+event there is -- never one after a user's message its first piece was not stored after
+(a rewind to the first message, Claude Code's notes after the new one as after the
+old). Order is told by the links, not by the rows: notes ag stored before the request
+they followed (`request_last`) still link where Claude Code sends them. Without a link
+(the first call, Claude Code rewriting the pieces at the end themselves), every piece's
+id is the chain from the request's start, which the history re-sent unchanged
+reproduces.
 One rewrite reaches a piece itself: when Claude Code joins two user messages in a row
 into one -- a turn that got no answer and the user's next words, or the last message a
 compaction summarizes and its instruction -- it adds a newline to the end of the first
@@ -135,27 +143,54 @@ class Continuity:
     def __init__(self, stored: Iterable[Tuple[object, str]] = ()):
         self.known: Dict[str, List[str]] = {}       # piece_key, or its merged_key -> the ids it is stored with
         self.stored: Dict[str, str] = {}            # id -> the piece_key it is the hash of
-        for payload, event_id in stored:
+        self.order: Dict[str, int] = {}             # id -> when it was stored among them: the newest highest
+        for n, (payload, event_id) in enumerate(stored):
             key = piece_key(payload)
-            self.stored[event_id] = key
+            self.stored[event_id], self.order[event_id] = key, n
             for k in dict.fromkeys(k for k in (key, merged_key(payload)) if k is not None):
                 self.known.setdefault(k, []).append(event_id)
 
     def ids(self, items: list) -> Tuple[List[Optional[str]], int]:
-        """(each piece's id, None for one not sent; the index of the first piece to send). The last piece
-        stored with an id that links it to the stored piece before it is where the request carries on: it
-        and the stored pieces linked before it keep their ids and are sent, and the pieces after it are
-        chained from it. Without one, every id is chained from the request's start and every piece is sent."""
+        """(each piece's id, None for one not sent; the index of the first piece to send). Where the request
+        carries on is a run of pieces stored with ids that link each to the one before it (`linked`): the
+        run holding the newest stored event -- the stored history's end -- and of two, the longer, then the
+        later. Without it in the request (Claude Code went back: a rewind, a compaction), the run holding the
+        newest there is, but never one a user's message comes before that its first piece was not stored after
+        (`cut_off`). The run's pieces keep their ids and are sent, and the pieces after it are chained from it;
+        so a run of stored pieces Claude Code sends again later, word for word -- its notes that tools were
+        added, once more -- is new, and what comes before it is sent. Without a run, every id is chained from
+        the request's start and every piece is sent."""
         keys = [piece_key(it) for it in items]
-        for end in range(len(keys) - 1, 0, -1):
+        newest = max(self.order.values(), default=-1)
+        best: Optional[Tuple[Tuple[int, int], int, List[str]]] = None
+        end = len(keys) - 1
+        while end > 0:
             run = self.linked(keys, end)
-            if run:
-                start = end + 1 - len(run)
-                ids: List[Optional[str]] = [None] * start + run
-                for key in keys[end + 1:]:
-                    ids.append(key_id(key, ids[-1]))
-                return ids, start
-        return chain_ids(items), 0
+            if not run:
+                end -= 1
+                continue
+            start = end + 1 - len(run)
+            rank = (max(self.order[i] for i in run), len(run))
+            if (best is None or rank > best[0]) and (rank[0] == newest or not self.cut_off(items, start, run[0])):
+                best = (rank, start, run)
+            end = start - 1                      # its pieces end no other run
+        if best is None:
+            return chain_ids(items), 0
+        _, start, run = best
+        ids: List[Optional[str]] = [None] * start + run
+        for key in keys[start + len(run):]:
+            ids.append(key_id(key, ids[-1]))
+        return ids, start
+
+    def cut_off(self, items: list, start: int, first: str) -> bool:
+        """Whether a user's message comes right before the stored piece `first` (at `start`) that it was not
+        stored after: what it was stored after is known -- one of the stored, or the start of a request -- and
+        so is not there (`linked` would have found it). The user's words came in between: a rewind to them,
+        with Claude Code's notes after them as they were after the words they replace."""
+        if start == 0 or classify(items[start - 1]) != USER_MESSAGE:
+            return False
+        key = self.stored[first]
+        return key_id(key) == first or any(key_id(key, before) == first for before in self.stored)
 
     def linked(self, keys: List[str], end: int) -> List[str]:
         """The stored ids of the pieces up to `end` that link to one another, back from it -- at least it

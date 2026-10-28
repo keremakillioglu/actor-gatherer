@@ -706,6 +706,54 @@ class RepeatsTest(unittest.TestCase):
         self.call(after, hook=self.new_hook())
         self.assertEqual([e["payload"]["content"][0]["text"] for e in self.client.events[stored:]], ["Okay, build"])
 
+    def test_a_resumed_session_whose_tools_come_and_go_keeps_each_new_message(self):
+        """Found live: resumed, Claude Code said a connector's tools were removed, and on the next call that they
+        were added again, word for word as earlier in the session. Those notes are stored linked to one another,
+        so the end of the request looked like the stored history's end, and the user's message before them was
+        taken as stored: neither stored nor sent, and the model answered an earlier message. The same on the
+        next resume, with the removal notes repeated after the user's message."""
+        def note(text, kind, names):
+            tool = (lambda n: {"type": "tool_definition", "definition": {**TOOL, "name": n}}) if kind == "tool_addition" \
+                else (lambda n: {"type": "tool_reference", "name": n})
+            return {"role": "system", "content": [{"type": "text", "text": text}]
+                    + [{"type": kind, "tool": tool(n)} for n in names]}
+        added = note("Tools just became available: a, b, c, d", "tool_addition", "abcd")
+        removed = note("Tools are no longer available: a, b, c, d", "tool_removal", "abcd")
+        turns = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(12)]
+        resumed = [txt("user", "go"), added] + turns + [txt("user", "back?"), removed]
+        self.call(resumed[:-2])
+        self.call(resumed, hook=self.new_hook())
+
+        def asked(messages):
+            stored = len(self.client.events)
+            out = self.call(messages, hook=self.new_hook())
+            new = [e for e in self.client.events[stored:] if e["type"] == USER_MESSAGE]
+            last = [m for m in out if m["role"] == "user"][-1]["content"][-1]["text"]
+            return [e["payload"]["content"][0]["text"] for e in new], last
+
+        again = resumed + [txt("assistant", "back"), txt("user", "five facts"), added]
+        self.assertEqual(asked(again), (["five facts"], "five facts"))
+        once_more = again + [txt("assistant", "facts"), txt("user", "hi"), removed]
+        self.assertEqual(asked(once_more), (["hi"], "hi"))
+
+    def test_a_message_rewound_to_at_the_start_is_new_though_the_same_notes_follow(self):
+        """Claude Code's rewind back to a session's first message: the new one is followed by the notes that
+        followed the first, word for word. They are stored after the first message, which is among the stored
+        still: so they are not where the request carries on, and the new message is stored and sent."""
+        notes = {"role": "system", "content": [{"type": "text", "text": "# Environment"}, ADD]}
+        self.call([txt("user", "Write a poem."), notes, txt("assistant", "Roses."), txt("user", "Shorter.")])
+        stored = len(self.client.events)
+        out = self.call([txt("user", "Write a song."), notes], hook=self.new_hook())
+        self.assertIn("Write a song.", [e["payload"]["content"][0].get("text") for e in self.client.events[stored:]])
+        self.assertEqual([m for m in out if m["role"] == "user"][-1]["content"][-1]["text"], "Write a song.")
+
+    def test_a_rewind_carries_on_from_where_the_conversation_forks(self):
+        turns = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(10)]
+        self.call(turns + [txt("user", "a"), txt("assistant", "x"), txt("user", "b"), txt("assistant", "y")])
+        stored = len(self.client.events)
+        self.call(turns + [txt("user", "a"), txt("assistant", "x"), txt("user", "c")], hook=self.new_hook())
+        self.assertEqual([e["payload"]["content"][0]["text"] for e in self.client.events[stored:]], ["c"])
+
     def test_history_rewritten_further_back_stores_only_what_is_new(self):
         long = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(40)]
         self.call(long)
