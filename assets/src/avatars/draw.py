@@ -1,6 +1,6 @@
 """draw.py: writes the dashboard's actor avatars, ag_dashboard/avatars/<kind>/<name>.svg, from the
-characters drawn here -- animals.py, food.py and charms.py (most in a hue of their own, a few in every
-hue) -- and, with --preview, a page showing them all.
+characters drawn here -- animals.py, food.py, charms.py and people.py (most in a hue of their own, a few in
+every hue) -- and, with --preview, a page showing them all.
 
     python3 assets/src/avatars/draw.py [--preview PATH]
 
@@ -15,11 +15,12 @@ import re
 import animals
 import charms
 import food
+import people
 from kit import PALETTE
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "..", "..", "ag_dashboard", "avatars")
-KINDS = {"animal": animals.ICONS, "food": food.ICONS, "charm": charms.ICONS}
+KINDS = {"animal": animals.ICONS, "food": food.ICONS, "charm": charms.ICONS, "person": people.ICONS}
 
 
 def preview(names, out):

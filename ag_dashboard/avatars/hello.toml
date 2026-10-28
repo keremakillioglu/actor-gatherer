@@ -528,3 +528,221 @@ Two snowballs stacked high
 a bucket hat on my head
 let's start before spring''',
 ]
+
+# people
+al-khwarizmi = [
+  "Equations balanced, x found. What shall we solve?",
+  "Hi, I'm Al-Khwarizmi. What should I start on?",
+  "Scritch scratch! Ready when you are.",
+  '''
+Step after step done
+algorithm bears my name
+what shall we solve first?''',
+]
+basho = [
+  "An old pond, a frog, and a hat for the road. What's first?",
+  "Hi, I'm Bashō. What should I start on?",
+  "Plop! Ready when you are.",
+  '''
+An old quiet pond
+a frog leaps in with a plop
+what shall we write next?''',
+]
+carver = [
+  "Fresh from the garden with a peanut in hand. What shall we grow?",
+  "Hi, I'm George Washington Carver. What should I start on?",
+  "Crunch! Ready when you are.",
+  '''
+A peanut in hand
+so many uses inside
+what shall we grow next?''',
+]
+cleopatra = [
+  "The Nile is calm and the court awaits. What is your command?",
+  "Hi, I'm Cleopatra. What should I start on?",
+  "Jingle! Ready when you are.",
+  '''
+Gold upon my brow
+the river Nile flowing by
+what shall we rule first?''',
+]
+curie = [
+  "My flask is glowing again. What shall we discover?",
+  "Hi, I'm Marie Curie. What should I start on?",
+  "Fizz! Ready when you are.",
+  '''
+A soft green glow shines
+in the dark of my workshop
+what shall we find out?''',
+]
+darwin = [
+  "My finch and I have been watching closely. What shall we look into?",
+  "Hi, I'm Darwin. What should I start on?",
+  "Hmm, fascinating! Ready when you are.",
+  '''
+A finch on my head
+each beak shaped for its own seed
+what shall we study?''',
+]
+douglass = [
+  "Pen ready, voice ready. What shall we speak up for?",
+  "Hi, I'm Frederick Douglass. What should I start on?",
+  "Ahem! Ready when you are.",
+  '''
+I learned to read words
+and then I learned to speak out
+what shall we write now?''',
+]
+earhart = [
+  "Goggles on, propeller spinning. Where are we flying first?",
+  "Hi, I'm Amelia Earhart. What should I start on?",
+  "Vroom! Ready when you are.",
+  '''
+Wind across my wings
+the clouds are rolling below
+where shall we fly first?''',
+]
+einstein = [
+  "Hair a mess, mind on space and time. What shall we think about?",
+  "Hi, I'm Einstein. What should I start on?",
+  "Tee-hee! Ready when you are.",
+  '''
+Time bends, light runs fast
+my wild hair points all around
+what shall we think through?''',
+]
+hokusai = [
+  "A great wave is rising behind me. What shall we draw?",
+  "Hi, I'm Hokusai. What should I start on?",
+  "Splash! Ready when you are.",
+  '''
+A great wave rises
+far Mount Fuji, small and still
+what shall we draw first?''',
+]
+kahlo = [
+  "Fresh flowers in my hair, brush in hand. What shall we work on?",
+  "Hi, I'm Frida Kahlo. What should I start on?",
+  "¡Hola! Ready when you are.",
+  '''
+Flowers in my hair
+bright colors on my canvas
+what shall we paint now?''',
+]
+lovelace = [
+  "I've been writing notes for an engine that isn't built yet. What's first?",
+  "Hi, I'm Ada Lovelace. What should I start on?",
+  "Click clack! Ready when you are.",
+  '''
+Gears turn in my mind
+numbers woven like a loom
+what shall we compute?''',
+]
+mansa-musa = [
+  "Gold in my pocket and a long road behind me. What shall we build?",
+  "Hi, I'm Mansa Musa. What should I start on?",
+  "Clink! Ready when you are.",
+  '''
+Gold shines in the sun
+a caravan crossing sand
+what shall we build next?''',
+]
+mozart = [
+  "A new melody is already in my head. What shall we compose?",
+  "Hi, I'm Mozart. What should I start on?",
+  "La la la! Ready when you are.",
+  '''
+Notes dance in my head
+a little tune for the night
+what shall we play first?''',
+]
+murasaki = [
+  "I've been writing a very long story. What shall we write next?",
+  "Hi, I'm Murasaki Shikibu. What should I start on?",
+  "Rustle rustle! Ready when you are.",
+  '''
+Ink brush in my hand
+a tale of the shining prince
+what page shall we write?''',
+]
+nefertiti = [
+  "Crown on, chin up. What shall we make beautiful?",
+  "Hi, I'm Nefertiti. What should I start on?",
+  "Shimmer! Ready when you are.",
+  '''
+My tall crown stands proud
+the desert sun warms the stone
+where shall we begin?''',
+]
+newton = [
+  "An apple just fell on my head, and now I have an idea. What's first?",
+  "Hi, I'm Newton. What should I start on?",
+  "Bonk! Ready when you are.",
+  '''
+An apple drops down
+and I wonder why it falls
+what shall we work out?''',
+]
+ramanujan = [
+  "Numbers come to me in dreams, and I write them down. What's first?",
+  "Hi, I'm Ramanujan. What should I start on?",
+  "Aha! Ready when you are.",
+  '''
+Numbers in a dream
+infinite sums, endless rows
+what shall we count up?''',
+]
+rumi = [
+  "Spinning slowly, a poem on my lips. What shall we begin?",
+  "Hi, I'm Rumi. What should I start on?",
+  "Whirl! Ready when you are.",
+  '''
+Round and round I turn
+a reed flute sings by my side
+what shall we start on?''',
+]
+sejong = [
+  "I made an alphabet anyone can learn. What shall we make easy?",
+  "Hi, I'm King Sejong. What should I start on?",
+  "Ta-da! Ready when you are.",
+  '''
+Letters for us all
+a shape for each sound we make
+what shall we write down?''',
+]
+shakespeare = [
+  "Quill sharpened, ink ready. To start, or not to start? Let's start. What's first?",
+  "Hi, I'm Shakespeare. What should I start on?",
+  "Hark! Ready when you are.",
+  '''
+All the world's a stage
+my quill waits for the first act
+what scene shall we write?''',
+]
+tesla = [
+  "Coils charged and sparks flying. What shall we invent?",
+  "Hi, I'm Tesla. What should I start on?",
+  "Zap! Ready when you are.",
+  '''
+Sparks leap through the air
+a hum of current runs strong
+what shall we light up?''',
+]
+tubman = [
+  "Following the North Star, I always know the way. Where are we headed?",
+  "Hi, I'm Harriet Tubman. What should I start on?",
+  "Shh! Ready when you are.",
+  '''
+The North Star shines bright
+it shows me the way to go
+where shall we head first?''',
+]
+van-gogh = [
+  "Paint's still wet and the sunflowers are drying. What shall we work on?",
+  "Hi, I'm Van Gogh. What should I start on?",
+  "Swish swish! Ready when you are.",
+  '''
+Stars swirl in the night
+I paint them in thick yellow
+what shall we make bright?''',
+]
