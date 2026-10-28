@@ -2312,6 +2312,19 @@ async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
   catch (err) { setLive(`Not closed: ${err.message}`); }
 }
+// A session made here that never started -- no process of it now, none starting, nothing of it in its gatherer (no
+// events, no calls): its × discards it (sessions.py's `discard`), so it is listed nowhere and nothing of it is kept.
+// The panes showing it close, as a shell's do when it ends (shownGone).
+const discardable = (a) => !SNAPSHOT && !!a.session && !a.events && !a.reads && !closable(a) && a.chattable !== false
+  && !["starting", "running", "idle", "terminal"].includes(a.session.status) && !(a.session.queued || []).length && !opened(a);
+async function discardSession(g, a) {
+  try { await post("/api/discard", { session_id: a.session.session_id }); }
+  catch (err) { return setLive(`Not closed: ${err.message}`); }
+  await loadHome();
+  for (const p of [...panes.others]) if (isAt([p.g, p.c], g.name, a.channel)) closePane(p);
+  if (isAt(state.selected, g.name, a.channel)) return shownGone(a.channel);
+  renderAgents();
+}
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; asking, its
 // turn waiting on the user (a question asked, a plan to approve, in its terminal), which shows before all else; error,
 // its turn stopped on a model call that failed, given up on (data.py's `failing`, `stopped`), shown next; a build
@@ -3068,6 +3081,11 @@ function agentRow(g, a, group) {
         closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",
           "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); closeSession(a); },
           onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); closeSession(a); } } },
+          closeIcon())
+        : discardable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0",
+          title: "Close: it never started, so it goes from the list, and nothing of it is kept",
+          "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); discardSession(g, a); },
+          onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); discardSession(g, a); } } },
           closeIcon()) : null,
         !hasChat(a) ? null : a.chattable === false
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
@@ -5784,7 +5802,7 @@ function termListen(sid) {
   const ended = (ev) => {
     if (!mine()) return;
     es.close(); term.es = null;
-    if (isShell(sid)) { term.exited = ev.type === "exit" ? JSON.parse(ev.data).code : -1; return shellEnded(sid); }
+    if (isShell(sid)) { term.exited = ev.type === "exit" ? JSON.parse(ev.data).code : -1; return shownGone(sid); }
     if (ev.type === "exit") { term.exited = JSON.parse(ev.data).code; term.xterm.write("\r\n\x1b[2m[the session's process ended]\x1b[0m\r\n"); }
     else if (term.exited === null) term.exited = -1;  // gone before it was listened to: ended all the same
     refresh();
@@ -5840,7 +5858,7 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
 // no message box -- but, in the pane's head, its Terminate button: the shell ended, whatever runs in it, as by the list's ×.
 // Not the pane's own ×, split, which closes the pane alone, the shell running on under its gatherer. Its button opened it
 // (startShell), so here it is only listened to. Once it ends -- exited, or terminated -- its pane closes, as a terminal's
-// window does (shellEnded).
+// window does (shownGone).
 function shellCard(id) {
   const end = el("button", { type: "button", class: "terminate", "data-shell": id, "aria-label": "Terminate the terminal",
     title: "Terminate: end the shell, and whatever runs in it",
@@ -5859,9 +5877,10 @@ function shellCard(id) {
   frame.kids = [t.host];                             // put in by patch(): the same node each draw
   return el("section", { class: "chat", "aria-label": "Terminal", "data-morph": "", "data-for": signature([id]) }, frame);
 }
-// The shell this page shows ended: its pane closed -- in a frame, by the page around it; this page's own, the next pane's
-// actor moved into it, or with none, its gatherer's actor shown (firstAgent), else the first gatherer's.
-function shellEnded(sid) {
+// The shell this page shows ended, or the actor it shows discarded (discardSession): its pane closed -- in a frame, by
+// the page around it; this page's own, the next pane's actor moved into it, or with none, its gatherer's actor shown
+// (firstAgent), else the first gatherer's.
+function shownGone(sid) {
   if (!state.selected || state.selected[1] !== sid) return;
   if (PANE) return PANE.close(window);
   if (panes.others.length) return closeHere();

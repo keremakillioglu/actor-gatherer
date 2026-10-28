@@ -56,6 +56,9 @@ context manager's home (data.py), read-only. Standard library only.
     POST /api/send {gatherer, channel, text, ...}  the same to a Claude Code or codex session not started here,
                                           taken into the table first (sessions.py's `adopt`)
     POST /api/stop {session_id}           its agent, idle, ended -- or its terminal closed -> the session
+    POST /api/discard {session_id}        one that never started -- no process of it running, nothing of it in its
+                                          gatherer -- forgotten: listed nowhere, nothing of it kept (sessions.py's
+                                          `discard`) -> {}
     POST /api/terminal {session_id | gatherer, channel, cols, rows, fullscreen?}  the session opened in a
                                           terminal, Claude Code's own UI (sessions.py's `terminal`), in its
                                           classic screen unless `fullscreen` -> the session
@@ -505,6 +508,16 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                                                     int(body.get("rows") or 32), bool(body.get("fullscreen"))))
                 if url.path == "/api/stop":
                     return self.answer(started.stop(str(body.get("session_id") or "")))
+                if url.path == "/api/discard":
+                    sid = str(body.get("session_id") or "")
+                    row = next((x for x in started.list() if x["session_id"] == sid), None)
+                    if row is None:
+                        raise sessions.SessionError(f"no session {sid} started from the dashboard")
+                    if data.actors(row["gatherer"], {sid}, []):   # its gatherer has something of it: a history to keep
+                        raise sessions.SessionError("it has a conversation in its gatherer: close it instead")
+                    started.discard(sid)
+                    hub.ring(None)                       # every open page's list
+                    return self.answer({})
                 if url.path == "/api/terminal":
                     sid = str(body.get("session_id") or "")
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
