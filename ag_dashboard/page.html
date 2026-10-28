@@ -2707,7 +2707,8 @@ document.getElementById("avatar-mode").addEventListener("click", (ev) => {
   if (b) setAvatarMode(b.dataset.avatarPick, true);
 });
 // The Chat's turns before the latest, at first: the user's messages only, a click on one showing the rest ("messages",
-// filesTalk); or each whole, a click on its message folding it. Kept in this browser, messages only until one is picked; a
+// filesTalk) -- the one just before the latest only once the latest is over; or each whole, a click on its message
+// folding it. Kept in this browser, messages only until one is picked; a
 // pick starts every turn over as it has them.
 const EARLIER_KEY = "ag-dashboard-chat-earlier";
 let earlierTurns = "messages";
@@ -6930,6 +6931,11 @@ function filesTalk(d, info, running) {
   if (first) box.append(el("div", { class: "fl-earlier" }, `${plural(first, "earlier turn")} · scroll up for more`));
   // what was written while it worked and sent as part of its turn, not yet stored by ag: stacked on its first message
   const h = heard(info), joined = h.typed.filter((q) => q.sent !== null && q.joins), opens = openings(h);
+  // the turns before the latest, folded as the setting has them (below) -- all but the one just before it while the
+  // latest is under way (running, or waiting for the user): that one is folded once the latest is over. A message
+  // sent and not yet stored is its own turn after the latest (opens): the latest is the one before it, never folded.
+  const going = !opens.length && (running || (!!info && statusOf(info)[0] === "asking"));
+  const folds = d.turns.length - (going ? 2 : 1);   // the turns before this one fold
   for (const t of d.turns.slice(first)) {
     const on = t.n === d.turn;
     const live = running && !opens.length && t.n === d.turns.length - 1;
@@ -6963,7 +6969,7 @@ function filesTalk(d, info, running) {
     // apart from each other: its files and commands at the left (the turn picked; folded away when they already show), by
     // the button at its message's right or ⌘+click; and before the latest, its replies shown or folded -- folded at first
     // under the setting "Messages only" (earlierTurns), shown under "Whole", a click on its message the other way (flips)
-    const earlier = t.n !== d.turns.length - 1, whole = !earlier || (earlierTurns === "whole") !== flips.has(t.n);
+    const earlier = t.n < folds, whole = !earlier || (earlierTurns === "whole") !== flips.has(t.n);
     const showing = on && !sideFolded;
     const flip = () => keepTurn(t.n, () => { flips.has(t.n) ? flips.delete(t.n) : flips.add(t.n); keepingPlace(renderMain); });
     const side = () => keepTurn(t.n, () => {
