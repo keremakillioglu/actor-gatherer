@@ -1045,6 +1045,10 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .md th[align="center"], .files .md td[align="center"] { text-align: center; }
 .files .md img { max-width: 100%; }
 .files .fl-none { margin: 4px 0 0 2px; color: var(--muted); font-style: italic; }
+/* how a turn stopped short (stoppedLine): a line under it, as Claude Code draws it -- dim; an error in its colour */
+.files .fl-stopped { display: flex; gap: 8px; margin: 4px 0 0 2px; color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; }
+.files .fl-stopped .lead { flex: none; }
+.files .fl-stopped.error { color: var(--critical); }
 /* a run of thinking: a message as the others are, "Thought:" before it, dim and in italics; opened, its words under the word */
 .files .fl-reply.thought > summary .lbl { flex: none; color: var(--muted); font-style: italic; }
 .files .fl-reply.thought > .md { margin-top: 0; }
@@ -2325,6 +2329,19 @@ async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
   catch (err) { setLive(`Not closed: ${err.message}`); }
 }
+// A session made here that never started -- no process of it now, none starting, nothing of it in its gatherer (no
+// events, no calls): its × discards it (sessions.py's `discard`), so it is listed nowhere and nothing of it is kept.
+// The panes showing it close, as a shell's do when it ends (shownGone).
+const discardable = (a) => !SNAPSHOT && !!a.session && !a.events && !a.reads && !closable(a) && a.chattable !== false
+  && !["starting", "running", "idle", "terminal"].includes(a.session.status) && !(a.session.queued || []).length && !opened(a);
+async function discardSession(g, a) {
+  try { await post("/api/discard", { session_id: a.session.session_id }); }
+  catch (err) { return setLive(`Not closed: ${err.message}`); }
+  await loadHome();
+  for (const p of [...panes.others]) if (isAt([p.g, p.c], g.name, a.channel)) closePane(p);
+  if (isAt(state.selected, g.name, a.channel)) return shownGone(a.channel);
+  renderAgents();
+}
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; asking, its
 // turn waiting on the user (a question asked, a plan to approve, in its terminal), which shows before all else; error,
 // its turn stopped on a model call that failed, given up on (data.py's `failing`, `stopped`), shown next; a build
@@ -2569,7 +2586,8 @@ const mainSignature = () => {
   const info = selectedInfo();
   return signature([state.selected, state.agentVersion, state.readId, state.context && state.context.read_id, info && info.session,
     info && [info.chattable, info.holder],
-    info && [statusOf(info)[0], info.failing, info.stopped, info.asking, info.answer, (info.background || []).map((t) => t.id)],
+    info && [statusOf(info)[0], info.failing, info.stopped, info.asking, info.answer, (info.background || []).map((t) => t.id),
+      info.taken_back],
     info && info.avatar_hello,
     state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
@@ -3098,6 +3116,11 @@ function agentRow(g, a, group) {
         closable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",
           "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); closeSession(a); },
           onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); closeSession(a); } } },
+          closeIcon())
+        : discardable(a) ? el("span", { class: "close-btn", role: "button", tabindex: "0",
+          title: "Close: it never started, so it goes from the list, and nothing of it is kept",
+          "aria-label": "Close session", onclick: (ev) => { ev.stopPropagation(); discardSession(g, a); },
+          onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); discardSession(g, a); } } },
           closeIcon()) : null,
         !hasChat(a) ? null : a.chattable === false
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
@@ -4119,7 +4142,18 @@ function dashboardCommand(text) {
   if (run) run();
   return !!run;
 }
-// Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn.
+// Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn (interrupt). So does it in
+// the Chat view, where nothing else takes it: no panel, settings or Editor open, not typed in a box -- and not while the
+// agent asks, where it would dismiss the question, as in its terminal: there, from the message box only. Before the rest
+// (capture), so it knows whether the settings were open before their own Esc closes them.
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape" || ev.defaultPrevented || ev.isComposing || !state.selected || isShell(state.selected[1])) return;
+  const n = ev.target, box = !!n && n.id === "composer-text", info = selectedInfo();
+  const typing = !!n && n.closest && !!n.closest("input, textarea, select, [contenteditable], .xterm");
+  if (!box && (typing || state.details || edShown() || chatView().id !== "files" || !document.getElementById("about").hidden
+    || !document.getElementById("cfg-file").hidden || (info && info.status === "asking"))) return;
+  if (interrupt(info)) ev.preventDefault();
+}, true);
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")
     && !(state.selected && isShell(state.selected[1]))) setDetails(false);
@@ -4259,6 +4293,7 @@ function chatCard(info) {
   const err = el("div", { class: "err", role: "alert", text: held || (s.status === "failed" && s.last_error ? s.last_error : "") });
   let sending = false;
   const draft = key(...state.selected);              // what is typed for this actor and not sent (keepDraft)
+  refill(info, draft);
   // A message box kept from an earlier draw (`patch`) still calls the send it was drawn with: each send goes to the
   // latest draw's (chatSend), which knows the session as it is now.
   ctx.send = (t) => chatSend(t);
@@ -4266,7 +4301,7 @@ function chatCard(info) {
     t = String(t ?? "").trim();
     if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) { box.value = ""; fitBox(box); } keepDraft(draft, ""); return true; }
     if (!t || sending || held) return false;
-    sending = true; err.textContent = "";
+    sending = true; err.textContent = ""; interrupting = null;
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
     // a "/" command of the harness's own (dashboardCommand took the page's): what it does (a dialog, a report) is drawn
     // in the session's terminal, and may never come back as a message -- not shown pending; the terminal shown once
@@ -5803,7 +5838,7 @@ function termListen(sid) {
   const ended = (ev) => {
     if (!mine()) return;
     es.close(); term.es = null;
-    if (isShell(sid)) { term.exited = ev.type === "exit" ? JSON.parse(ev.data).code : -1; return shellEnded(sid); }
+    if (isShell(sid)) { term.exited = ev.type === "exit" ? JSON.parse(ev.data).code : -1; return shownGone(sid); }
     if (ev.type === "exit") { term.exited = JSON.parse(ev.data).code; term.xterm.write("\r\n\x1b[2m[the session's process ended]\x1b[0m\r\n"); }
     else if (term.exited === null) term.exited = -1;  // gone before it was listened to: ended all the same
     refresh();
@@ -5859,7 +5894,7 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
 // no message box -- but, in the pane's head, its Terminate button: the shell ended, whatever runs in it, as by the list's ×.
 // Not the pane's own ×, split, which closes the pane alone, the shell running on under its gatherer. Its button opened it
 // (startShell), so here it is only listened to. Once it ends -- exited, or terminated -- its pane closes, as a terminal's
-// window does (shellEnded).
+// window does (shownGone).
 function shellCard(id) {
   const end = el("button", { type: "button", class: "terminate", "data-shell": id, "aria-label": "Terminate the terminal",
     title: "Terminate: end the shell, and whatever runs in it",
@@ -5878,9 +5913,10 @@ function shellCard(id) {
   frame.kids = [t.host];                             // put in by patch(): the same node each draw
   return el("section", { class: "chat", "aria-label": "Terminal", "data-morph": "", "data-for": signature([id]) }, frame);
 }
-// The shell this page shows ended: its pane closed -- in a frame, by the page around it; this page's own, the next pane's
-// actor moved into it, or with none, its gatherer's actor shown (firstAgent), else the first gatherer's.
-function shellEnded(sid) {
+// The shell this page shows ended, or the actor it shows discarded (discardSession): its pane closed -- in a frame, by
+// the page around it; this page's own, the next pane's actor moved into it, or with none, its gatherer's actor shown
+// (firstAgent), else the first gatherer's.
+function shownGone(sid) {
   if (!state.selected || state.selected[1] !== sid) return;
   if (PANE) return PANE.close(window);
   if (panes.others.length) return closeHere();
@@ -6236,7 +6272,7 @@ function filesRender({ info, session, running, writable, held }) {
   const asking = errorNote(info) || askingNote(info) || answeredNote(info);
   if (!d) return [el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" }), asking].filter(Boolean);
   if (!d.turns.length) {                             // the first message: pending, sent from here; or sent, its turn begun
-    const h = heard(info), opens = openings(h), first = opens.length ? null : pendingTalk(info, h);
+    const h = heard(info), opens = openings(h), first = opens.length ? null : pendingTalk(info, h) || takenBack(info, h);
     if (opens.length) return [el("div", { class: "fl-talk" }, ...opens.flatMap((q, i) => openedTurn(info, q, i === opens.length - 1, h))), asking];
     // none yet: the actor waving hello, saying its line (or that there is none yet) -- under the first message while it
     // waits to reach the agent
@@ -6419,6 +6455,72 @@ const heardCount = (h, text) => [...h.stored, ...h.typed.filter((q) => !q.chat)]
 // One not seen for UNSEEN_MS says so.
 const sentHere = [], UNSEEN_MS = 15000;
 let chatSend = async () => false;                    // the message box's send, as the latest draw made it (chatCard)
+// The message Claude Code put back in its input box, stopped (Esc) before any of its answer came (data.py's
+// `taken_back`): after the conversation, faded, as it is in no turn -- the agent never had it -- until a message goes to
+// the actor after it. Still in Claude Code's box untouched (`untouched`), it is in this one's too (refill).
+function takenBack(info, h) {
+  const tb = info && info.taken_back, k = state.selected && key(...state.selected);
+  if (!tb || !k || sentHere.some((m) => m.key === k && m.at > tb.at * 1000) || h.typed.some((q) => (q.at || 0) > tb.at)) return null;
+  return el("div", { class: "fl-pending taken" },
+    el("div", { class: "fl-user" + bubbleClass(tb.text), title: "Stopped before the agent answered: it never had this message" },
+      userWords(tb.text)),
+    el("span", { class: "lbl" }, "Taken back · stopped before it answered", untouched(info) ? ", and put back in the message box" : ""));
+}
+// Whether the message Claude Code took back is in its input box untouched, as sessions.py's `took_back` reads it: what was
+// last typed into its terminal, the dashboard's, is the key that stopped the turn, after the call before (`since`).
+const untouched = (info) => {
+  const tb = info && info.taken_back, s = info && info.session;
+  return !!tb && !!s && !!s.stopped_at && s.stopped_at > (tb.since || 0);
+};
+// Claude Code put the message it was stopped on back in its input box, untouched there: in this message box too, as the
+// actor's draft -- once, and only where nothing is written for the actor. Sent from here, Claude Code's box is emptied
+// first (sessions.py's `took_back`), so the two do not go as one. Once it is no longer there untouched -- sent or changed
+// in the terminal, or its process gone -- it is taken out of this box too, if it is still as it was put. What was put,
+// by the actor's draft ({at, text}), is kept in the tab as drafts are, so a reload does not put back what was cleared.
+const REFILLED_KEY = "ag-dashboard-refilled", refilledHere = {};
+function refills() {
+  try { const v = JSON.parse(sessionStorage.getItem(REFILLED_KEY)); return v && typeof v === "object" ? v : {}; }
+  catch (e) { return refilledHere; }
+}
+function markRefill(draft, mark) {
+  const m = refills();
+  if (mark) m[draft] = mark; else delete m[draft];
+  try { sessionStorage.setItem(REFILLED_KEY, JSON.stringify(m)); } catch (e) { if (mark) refilledHere[draft] = mark; else delete refilledHere[draft]; }
+}
+function refill(info, draft) {
+  const tb = info && info.taken_back, mark = refills()[draft], box = document.getElementById("composer-text");
+  const mine = box && box.dataset.draft === draft ? box : null;
+  if (tb && untouched(info)) {
+    if (mark && mark.at === tb.at) return;
+    markRefill(draft, { at: tb.at, text: tb.text });
+    if (drafts()[draft] || (mine && mine.value)) return;
+    keepDraft(draft, tb.text);
+    if (mine) { mine.value = tb.text; fitBox(mine); }
+  } else if (mark) {
+    markRefill(draft, null);
+    if (drafts()[draft] !== mark.text) return;
+    keepDraft(draft, "");
+    if (mine && mine.value === mark.text) { mine.value = ""; fitBox(mine); }
+  }
+}
+// Esc, as in the harness's own terminal: the agent's turn interrupted -- the key typed into the session's terminal, which
+// the dashboard runs. Only while it works or asks (an idle Claude Code takes Esc twice for its rewind; one starting, for
+// "No" to trusting its folder), and once a second. `interrupting`: the actor it was sent for, and when.
+let interrupting = null;
+const canInterrupt = (info) => !!info && !!info.session && !!info.session.terminal && info.session.status !== "starting"
+  && (["running", "asking"].includes(info.status) || opened(info));   // its own state: not a build of its context, idle
+function interrupt(info) {
+  const k = state.selected && key(...state.selected);
+  if (!canInterrupt(info) || (interrupting && interrupting.key === k && Date.now() - interrupting.at < 1000)) return false;
+  interrupting = { key: k, at: Date.now() };
+  post("/api/terminal/input", { session_id: info.session.session_id, data: "\u001b" })
+    .catch((err) => { interrupting = null; setLive(`Not interrupted: ${err.message}`); });
+  keepingPlace(renderMain);
+  return true;
+}
+const INTERRUPTING_MS = 10000;                      // "Interrupting…" shown at most this long, if the turn goes on
+const isInterrupting = () => !!interrupting && !!state.selected && interrupting.key === key(...state.selected)
+  && Date.now() - interrupting.at < INTERRUPTING_MS;
 // What waits to reach the agent, at the latest turn's end, faded: sent from here and not seen yet; in Claude Code's
 // queue; in the dashboard agent's queue. Not seen for long, with its terminal open: it may be asking something there
 // first (whether to trust the folder, on a new actor's first message), and the way to it.
@@ -6456,7 +6558,8 @@ const working = (info, last, at, now, retrying = false) => el("div", { class: "f
   miniAvatar(info, el("span", { class: "spin" })),
   el("div", { class: "fl-times", "aria-hidden": "true" }, retrying ? "last try " : "last activity ",
     el("span", { "data-ago": last || "", text: ago(last) }),
-    at ? " · " : null, at ? el("span", { "data-lasting": at, text: lasting(at) }) : null, at ? " so far" : null),
+    at ? " · " : null, at ? el("span", { "data-lasting": at, text: lasting(at) }) : null, at ? " so far" : null,
+    canInterrupt(info) ? " · esc to interrupt" : null),
   el("div", { class: "now", role: "status", style: hueInk(info) }, now));
 // The latest turn over, short of height: on one line as the actor at work is -- its avatar small, "Done", and how long
 // the turn took, from its message to its last event (`end`; from a server without it, the actor's last activity) --
@@ -6475,7 +6578,7 @@ function openedTurn(info, q, latest, h) {
   return [el("div", { class: "fl-turn opened" },
     el("div", { class: "fl-user" + bubbleClass(q.text), title: "Sent to the agent: shown here until the gatherer has stored it" },
       userWords(q.text)),
-    latest ? working(info, Math.max(q.sent, (info && info.last) || 0), q.sent, "Working…") : null,
+    latest ? working(info, Math.max(q.sent, (info && info.last) || 0), q.sent, isInterrupting() ? "Interrupting…" : "Working…") : null,
     latest ? pendingTalk(info, h) : null),
     latest ? el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, { work: {} })) : null].filter(Boolean);
 }
@@ -6549,6 +6652,7 @@ function filesTalk(d, info, running) {
   for (const t of d.turns.slice(first)) {
     const on = t.n === d.turn;
     const live = running && !opens.length && t.n === d.turns.length - 1;
+    if (!live && t.n === d.turns.length - 1 && isInterrupting()) interrupting = null;   // its turn over: interrupted
     // its messages, by their place in the turn (their ids keep it); thinking that is encrypted has nothing to read
     const said = (t.replies || []).map((r, i) => [r, i])
       .filter(([r]) => r.kind === "text" || NOTED[r.kind] || (r.kind === "thinking" && (r.texts || []).length));
@@ -6570,7 +6674,8 @@ function filesTalk(d, info, running) {
     };
     const toggle = () => { opened.has(t.n) ? opened.delete(t.n) : opened.add(t.n); keepingPlace(renderMain); };
     // a call under way is drawn above, as the turn's latest call: the line under it only says the agent works
-    const now = !live ? "" : info && info.failing ? "Retrying…" : t.now && t.now.kind === "thinking" ? "Thinking…" : "Working…";
+    const now = !live ? "" : isInterrupting() ? "Interrupting…" : info && info.failing ? "Retrying…"
+      : t.now && t.now.kind === "thinking" ? "Thinking…" : "Working…";
     const done = !live && t.n === d.turns.length - 1 && !opens.length && !!info && ["idle", "finished", "closed"].includes(statusOf(info)[0]);
     const starts = live ? [t.at, began(t)].filter(Boolean) : [];
     const from = starts.length ? Math.min(...starts) : null;      // when it began: sent (began), or stored
@@ -6619,13 +6724,15 @@ function filesTalk(d, info, running) {
       after.length ? el("div", { class: "fl-minor" }, ...after.map((x) => reply(x, false))) : null,
       t.last ? el("div", { class: "fl-minor" }, lastCall(t, live, info ? statusOf(info)[0] : "")) : null,
       live ? working(info, info.failing ? info.failing.at : Math.max(info.last || 0, from || 0) || null, from, now, !!info.failing)
-        : last < 0 ? el("div", { class: "fl-none", text: "No reply in words." }) : null,
+        : stoppedLine(info, t, t.n === d.turns.length - 1),
       done ? finished(info, t) : null,
       t.n === d.turns.length - 1 && !opens.length ? pendingTalk(info, h) : null])));
     // under the latest turn's box: the actor at work; or, its turn over, the actor done
     if (live) box.append(el("div", { class: "fl-status", "aria-hidden": "true", "data-morph": "" }, atWork(info, t)));
     else if (done) box.append(el("div", { class: "fl-done", title: `Done · ${ago(info.last)}` }, atRest(info, t.row_id)));
   }
+  const back = opens.length ? null : takenBack(info, h);
+  if (back) box.append(el("div", { class: "fl-turn" }, back));     // in line with the turns' messages
   box.append(...opens.flatMap((q, i) => openedTurn(info, q, i === opens.length - 1, h)));
   const at = `${state.files && state.files.key}:${d.turn}`;
   if (talkShown !== at) requestAnimationFrame(() => {   // the turn shown brought into view, once per pick: the latest at its end
@@ -6636,6 +6743,19 @@ function filesTalk(d, info, running) {
     cur.parentElement.scrollTop = state.files.turn === null ? cur.parentElement.scrollHeight : cur.offsetTop;   // .fl-talk is its offset parent
   });
   return box;
+}
+// How a turn stopped short, under it, as its harness says it there (files.py's `stopped`): interrupted (Esc), and what it
+// asks then -- Claude Code's "⎿ Interrupted · What should Claude do instead?", dim -- or the error it gave up on, in its
+// words. Not the latest turn's error while the actor is stopped on it: its note says that in full. Null for a turn that
+// ended as turns do.
+function stoppedLine(info, t, latest) {
+  const s = t.stopped;
+  if (!s || (s.kind === "error" && latest && info && info.status === "error")) return null;
+  const said = s.kind === "interrupted"
+    ? `Interrupted · ${info && info.harness === "codex" ? "Tell the model what to do differently." : "What should Claude do instead?"}`
+    : s.text || (s.status ? `API Error: ${s.status}` : "API Error");
+  return el("div", { class: "fl-stopped" + (s.kind === "error" ? " error" : ""), role: "note" },
+    el("span", { class: "lead", "aria-hidden": "true", text: "⎿" }), el("span", { text: said }));
 }
 // Claude Code's own notes in a turn (files.py's `_note`), each a line among the messages, folded to it: a subagent's
 // report handed back, by its task; another session's message, by its first line, the session named (opened: the

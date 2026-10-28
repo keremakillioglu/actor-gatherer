@@ -17,7 +17,7 @@ from ag_dashboard import data, files  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 from followed import Followed, insert, schema  # noqa: E402
 from harness_kit import claude as claude_rules  # noqa: E402
-from test_dashboard_files import asked, call, result, said  # noqa: E402
+from test_dashboard_files import asked, call, note, result, said  # noqa: E402
 
 SESSION = "0e1d2c3b-0000-4000-8000-000000000002"
 
@@ -272,6 +272,61 @@ class TurnTest(RecordBase):
         self.op("dequeue", ago=0.5)
         self.op("dequeue", ago=0.5)
         self.assertEqual(self.turns(), [("look at a.py", ["and b.py"]), ("now c.py", ["and d.py?", "and e.py?"])])
+
+
+class StoppedTest(RecordBase):
+    """In the Chat view, a turn that stopped short says how under it, as Claude Code does: interrupted (Esc) -- as the
+    note Claude Code sends the model with the next turn says, or its record, before there is one -- or on an error it
+    gave up on, as its record says. A turn that ended as turns do says nothing."""
+
+    def setUp(self):
+        super().setUp()
+        self.saved, dashboard_home.HOME = dashboard_home.HOME, self.tmp.name
+        self.addCleanup(setattr, dashboard_home, "HOME", self.saved)
+        os.makedirs(os.path.join(self.tmp.name, "gatherers", "g"))
+        self.path = os.path.join(self.tmp.name, "gatherers", "g", "context.db")
+        conn = sqlite3.connect(self.path)
+        conn.executescript("""CREATE TABLE event_types (event_type_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
+            CREATE TABLE events (row_id INTEGER PRIMARY KEY, inserted_at TEXT NOT NULL, event_id TEXT, event_type_id INTEGER NOT NULL,
+              payload_json TEXT NOT NULL, tokens INTEGER NOT NULL, text TEXT, counted INTEGER, p_channel);""")
+        for ago, (typ, payload) in ((100, asked("look at a.py")), (95, call("r1", "Read", {"file_path": "/w/a.py"})),
+                                    (50, result("r1", "Interrupted by user")), (50, note("[Request interrupted by user for tool use]")),
+                                    (50, asked("look at b.py instead")), (45, said("Reading b.py.")),
+                                    (30, asked("now c.py")), (25, said("Read.")), (20, asked("and d.py")), (15, said("Read d.py."))):
+            got = conn.execute("SELECT event_type_id FROM event_types WHERE name = ?", (typ,)).fetchone()
+            tid = got[0] if got else conn.execute("INSERT INTO event_types (name, created_at) VALUES (?, '')", (typ,)).lastrowid
+            conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, p_channel) VALUES "
+                         "(?, ?, ?, 1, ?)", (stamp(self.now - ago), tid, json.dumps(payload), SESSION))
+        conn.commit()
+        conn.close()
+
+    def stopped(self):
+        conn = sqlite3.connect(self.path)
+        try:
+            self.follow(conn)
+        finally:
+            conn.close()
+        return [(t["text"], t["stopped"]) for t in files.files("g", SESSION, cwd="/w")["turns"]]
+
+    def test_interrupted_as_the_next_turn_tells_the_model(self):
+        self.assertEqual(self.stopped(), [("look at a.py", {"kind": "interrupted", "at": None, "text": None, "status": None}),
+                                          ("look at b.py instead", None), ("now c.py", None), ("and d.py", None)])
+
+    def test_stopped_as_the_record_says(self):
+        self.write({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]},
+                    "timestamp": stamp(self.now - 90), "sessionId": SESSION})          # the one the conversation says too
+        self.write({"type": "assistant", "isApiErrorMessage": True, "apiErrorStatus": 529, "timestamp": stamp(self.now - 28),
+                    "message": {"role": "assistant", "content": [{"type": "text", "text": "API Error: 529 Overloaded"}]}})
+        self.write({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]},
+                    "timestamp": stamp(self.now - 10), "sessionId": SESSION})          # the latest: no turn after it yet
+        got = dict(self.stopped())
+        self.assertEqual(got["look at a.py"]["kind"], "interrupted")
+        self.assertIsNone(got["look at b.py instead"])
+        self.assertEqual(dict(got["now c.py"], at=None), {"kind": "error", "at": None, "text": "API Error: 529 Overloaded",
+                                                          "status": 529})
+        self.assertAlmostEqual(got["now c.py"]["at"], self.now - 28, delta=0.01)    # when, as the record has it
+        self.assertEqual(got["and d.py"]["kind"], "interrupted")
+        self.assertAlmostEqual(got["and d.py"]["at"], self.now - 10, delta=0.01)
 
 
 if __name__ == "__main__":
