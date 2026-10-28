@@ -69,7 +69,6 @@ from . import actions, data, editor, files, naming, sessions
 COORDINATOR = sessions.COORDINATOR
 ALIASES = ("gatherer", "gatherer-agent", "coordinator")   # what `send`, `show` and `when` take for the gatherer agent
 NAME = data.COORDINATOR_NAME
-SHORT = 8                       # an id as messages and lists show it: its first characters, taken by any command
 ASKED_CHARS = 300               # the most of what an actor was asked, in a list
 SAID_CHARS = 1500               # the most of what it said last, in `show` and a watch's message
 MESSAGE_CHARS = 20000           # the longest message sent
@@ -116,23 +115,19 @@ class CoordinationError(sessions.SessionError):
     """What an actor asked that cannot be done: its command prints the text."""
 
 
-def short(channel: str) -> str:
-    return (channel or "")[:SHORT]
-
-
 def envelope(sender: dict, text: str) -> str:
     """`text` as the receiver gets it, from `sender`: {"kind": "coordinator"}, or {"kind": "actor", "id": its id, "name":
     its name or None}."""
     if sender["kind"] == "coordinator":
         head = FROM_COORDINATOR
     else:
-        head = FROM_ACTOR.format(id=short(sender["id"]), name=f", {json.dumps(sender['name'])}" if sender.get("name") else "")
+        head = FROM_ACTOR.format(id=sender["id"], name=f", {json.dumps(sender['name'])}" if sender.get("name") else "")
     return f"{head}\n\n{text.strip()}"
 
 
 def update(n: int, target: str, name: Optional[str], how: str, text: str) -> str:
     """A watch's news, watch `n`'s: the actor `target` (its `name`) is done (`how`), then `text`."""
-    head = UPDATE_HEAD.format(n=n, id=short(target), name=f" ({json.dumps(name)})" if name else "", how=how)
+    head = UPDATE_HEAD.format(n=n, id=target, name=f" ({json.dumps(name)})" if name else "", how=how)
     return f"{head}\n\n{text.strip()}" if text.strip() else head
 
 
@@ -270,9 +265,11 @@ class Coordination:
         return {"kind": "coordinator"} if self._is_coordinator(me) else {"kind": "actor", "id": me["channel"], "name": _name(me)}
 
     def _view(self, a: dict, me: Optional[dict] = None) -> dict:
-        """An actor as `ag actors` shows it."""
+        """An actor as `ag actors` shows it -- by its whole id: a codex thread's opens with the time it was made, so
+        codex actors started within a minute share their first characters (a command takes any start of an id that
+        names one actor)."""
         s = a.get("session") or {}
-        return {"id": short(a["channel"]), "channel": a["channel"], "name": NAME if self._is_coordinator(a) else _name(a),
+        return {"id": a["channel"], "channel": a["channel"], "name": NAME if self._is_coordinator(a) else _name(a),
                 "status": a.get("status"), "harness": a.get("harness") or s.get("harness"), "cwd": a.get("cwd") or s.get("cwd"),
                 "asked": _clip(_unwrapped(a.get("last_user_message")), ASKED_CHARS),
                 "recap": _clip((a.get("recap") or {}).get("text"), ASKED_CHARS),
@@ -286,7 +283,7 @@ class Coordination:
         shown = [a for a in agents if every or a.get("status") != data.CLOSED or a["channel"] == me["channel"]
                  or self._is_coordinator(a)]
         shown.sort(key=lambda a: (not self._is_coordinator(a), -(a.get("last") or 0)))
-        return {"gatherer": g, "you": short(me["channel"]), "actors": [self._view(a, me) for a in shown],
+        return {"gatherer": g, "you": me["channel"], "actors": [self._view(a, me) for a in shown],
                 "closed": len(agents) - len(shown)}
 
     def show(self, actor: str, ref: str) -> dict:
@@ -371,7 +368,7 @@ class Coordination:
         finally:
             conn.close()
         return {"watches": [{"watch": r["id"], "note": r["note"], "created": r["created"],
-                             "target": self._view(by[r["target"]], me) if r["target"] in by else {"id": short(r["target"])}}
+                             "target": self._view(by[r["target"]], me) if r["target"] in by else {"id": r["target"]}}
                             for r in rows]}
 
     def unwatch(self, actor: str, n) -> dict:
@@ -485,7 +482,7 @@ class Coordination:
         if watcher is None:
             row = next((r for r in rows if w["watcher"] in (r["session_id"], r.get("started_as"))), None)
             if row is None:
-                raise CoordinationError(f"no actor {short(w['watcher'])} to tell")
+                raise CoordinationError(f"no actor {w['watcher']} to tell")
             watcher = {"channel": row["session_id"], "session": row, "harness": row["harness"]}
         self._deliver(g, watcher, update(w["id"], target, name, how, "\n\n".join(lines)))
 

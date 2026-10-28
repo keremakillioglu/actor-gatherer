@@ -3129,11 +3129,14 @@ function crewFace(a, fallback = null) {
   return src ? el("img", { class: "crew-face", src, alt: "", draggable: "false" })
     : el("span", { class: "crew-face none", "aria-hidden": "true" }, strokeIcon(ICONS.crew, 12));
 }
+// An actor's id as a label shows it: its first characters. Messages name ids whole (coordination.py's `_view`), for
+// the actors to answer by; the page finds the actor by the whole id.
+const crewId = (id) => String(id || "").slice(0, 8);
 const crewName = (coordinator, a, env) => coordinator ? COORDINATOR_NAME : (a && a.name && a.name.text) || (env && env.name)
-  || `Actor ${env ? env.id : ""}`;
+  || `Actor ${env ? crewId(env.id) : ""}`;
 // in a line (the list's): who it is from, and its words
-const crewLine = (env) => env.from === "update" ? `${env.name || `Actor ${env.id}`} is done: ${env.how}`
-  : `${env.from === "coordinator" ? "From the gatherer agent" : `From ${env.name || `actor ${env.id}`}`}: ${env.text}`;
+const crewLine = (env) => env.from === "update" ? `${env.name || `Actor ${crewId(env.id)}`} is done: ${env.how}`
+  : `${env.from === "coordinator" ? "From the gatherer agent" : `From ${env.name || `actor ${crewId(env.id)}`}`}: ${env.text}`;
 function crewWords(env) {
   const coordinator = env.from === "coordinator", a = crewActor(coordinator, env.id);
   if (env.from === "update")
@@ -3195,8 +3198,8 @@ function watchCrew() {   // the messages drawn since: measured from now on
 // A message the actor sent another (files.py's `sent`: `ag actors send`, or a new actor started with it), in its turn:
 // with its receiver's avatar and name.
 function sentBubble(m) {
-  const coordinator = m.to_name === COORDINATOR_NAME, to = crewActor(coordinator, String(m.to || "").slice(0, 8));
-  const who = coordinator ? "the gatherer agent" : (to && to.name && to.name.text) || m.to_name || `actor ${String(m.to || "").slice(0, 8)}`;
+  const coordinator = m.to_name === COORDINATOR_NAME, to = crewActor(coordinator, String(m.to || ""));
+  const who = coordinator ? "the gatherer agent" : (to && to.name && to.name.text) || m.to_name || `actor ${crewId(m.to)}`;
   const k = crewKey(m.text);
   return el("div", { class: "fl-sent crew" + crewFold(k), title: m.kind === "new" ? "A new actor, started with this message" : "Sent with `ag actors send`" },
     crewFace(to, coordinator ? MANAGER : null), el("span", { class: "crew-body" },

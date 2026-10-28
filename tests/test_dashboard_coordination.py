@@ -31,15 +31,15 @@ class EnvelopeTest(unittest.TestCase):
     def test_a_message_is_read_back_as_its_sender_and_its_words(self):
         for sender, text, want in [
                 ({"kind": "coordinator"}, "Stop editing page.html.\nWait for B.", {"from": "coordinator", "id": None, "name": None}),
-                ({"kind": "actor", "id": "1a2b3c4d-0000", "name": 'Fix "the" editor'}, "I edit x.py", {"from": "actor", "id": "1a2b3c4d",
+                ({"kind": "actor", "id": "1a2b3c4d-0000", "name": 'Fix "the" editor'}, "I edit x.py", {"from": "actor", "id": "1a2b3c4d-0000",
                                                                                                     "name": 'Fix "the" editor'}),
-                ({"kind": "actor", "id": "1a2b3c4d-0000", "name": None}, "hi", {"from": "actor", "id": "1a2b3c4d", "name": None})]:
+                ({"kind": "actor", "id": "1a2b3c4d-0000", "name": None}, "hi", {"from": "actor", "id": "1a2b3c4d-0000", "name": None})]:
             got = coordination.opened(coordination.envelope(sender, text))
             self.assertEqual(got, {**want, "text": text.strip()})
         self.assertIsNone(coordination.opened("Message from someone:\n\nno"))
         self.assertIsNone(coordination.opened("Message from the gatherer:\n\nno"))           # no one's: a watch's is news
         news = coordination.update(3, "1a2b3c4d-0000", 'Fix "it"', "its turn is over", "It said last: done.")
-        self.assertEqual(coordination.opened(news), {"from": "update", "id": "1a2b3c4d", "name": 'Fix "it"', "watch": 3,
+        self.assertEqual(coordination.opened(news), {"from": "update", "id": "1a2b3c4d-0000", "name": 'Fix "it"', "watch": 3,
                                                      "how": "its turn is over", "text": "It said last: done."})
         self.assertEqual(coordination.opened(coordination.update(4, "x", None, "it is closed", ""))["how"], "it is closed")
         one_line = " ".join(coordination.envelope({"kind": "actor", "id": "1a2b3c4d", "name": None}, "a\n\nb").split())
@@ -62,7 +62,7 @@ class EnvelopeTest(unittest.TestCase):
 
     def test_the_answer_it_names_is_a_command_the_receiver_can_run(self):
         text = coordination.envelope({"kind": "actor", "id": "1a2b3c4d-0000", "name": "x"}, "hi")
-        self.assertIn('ag actors send 1a2b3c4d "..."', text.split("\n")[0])
+        self.assertIn('ag actors send 1a2b3c4d-0000 "..."', text.split("\n")[0])
         self.assertIn('ag actors send gatherer "..."', coordination.envelope({"kind": "coordinator"}, "hi").split("\n")[0])
 
 
@@ -102,6 +102,7 @@ class InstructionsTest(unittest.TestCase):
         self.assertIn('ag actors send gatherer', guide)
         self.assertIn(coordination.FROM_COORDINATOR.split(" (")[0], guide)      # how its messages start
         self.assertIn('"Message from actor <id>"', guide)
+        self.assertIn('sandbox_permissions "require_escalated" from the first try', guide)     # Codex's sandbox
 
 
 class CoordinationBase(SessionsBase):
@@ -159,6 +160,15 @@ class CoordinationBase(SessionsBase):
 
 
 class CoordinationTest(CoordinationBase):
+    def test_ids_are_shown_whole_as_codex_actors_started_together_share_their_first_characters(self):
+        x, y = "01a180e2-c53a-7d52-bdea-9cbb744b46b6", "01a180e2-c54d-73a3-91f6-6a7567a8d050"     # codex threads, a second apart
+        agents = [{"channel": c, "session": {}, "harness": "codex", "cwd": "/w", "status": data.IDLE} for c in (x, y)]
+        self.assertEqual([self.crew._view(a)["id"] for a in agents], [x, y])
+        self.assertEqual(coordination.opened(coordination.envelope({"kind": "actor", "id": x, "name": None}, "pong"))["id"], x)
+        with self.assertRaisesRegex(coordination.CoordinationError, "starts 2 actors' ids"):
+            self.crew._find("g", x[:8], agents)
+        self.assertEqual(self.crew._find("g", x[:13], agents)["channel"], x)     # any start that names one is taken
+
     def test_an_actor_lists_the_others_itself_marked(self):
         self.status[self.b] = data.RUNNING
         got = self.crew.list(self.a)
@@ -174,7 +184,7 @@ class CoordinationTest(CoordinationBase):
         got = self.crew.send(self.a, self.b[:6], "I am changing page.html: leave it to me.")
         self.assertTrue(got["sent"])
         sent = self.until(lambda: self.messages(self.b))
-        self.assertEqual(coordination.opened(sent[0]), {"from": "actor", "id": self.a[:8], "name": "Fix the editor",
+        self.assertEqual(coordination.opened(sent[0]), {"from": "actor", "id": self.a, "name": "Fix the editor",
                                                          "text": "I am changing page.html: leave it to me."})
         (g, channel, events), = self.kept
         self.assertEqual((g, channel, events[0]["type"]), ("g", self.a, "actor_message"))
@@ -251,7 +261,7 @@ class WatchTest(CoordinationBase):
         self.assertEqual(self.crew.check(), [n])
         got = self.until(self.told)[0]
         self.assertEqual((got["from"], got["id"], got["name"], got["how"], got["watch"]),
-                         ("update", self.b[:8], "Write the docs", "its turn is over", n))
+                         ("update", self.b, "Write the docs", "its turn is over", n))
         self.assertIn("It said last: The docs are written.", got["text"])
         self.assertIn("Your note: then tell A to rebase", got["text"])
         self.assertEqual(self.crew.check(), [])                                     # once
@@ -307,14 +317,14 @@ class CommandTest(CoordinationBase):
     def test_an_actor_lists_and_messages_the_others_from_its_shell(self):
         code, out, err = self.run_cli()
         self.assertEqual((code, err), (0, ""))
-        self.assertIn(f'{self.a[:8]} "Fix the editor" (you) -- idle, claude, in', out)
+        self.assertIn(f'{self.a} "Fix the editor" (you) -- idle, claude, in', out)
         self.assertIn("no gatherer agent yet", out)
         code, out, _ = self.run_cli("send", self.b[:8], "hello", "there")
         self.assertEqual(code, 0)
-        self.assertIn(f'Sent to actor {self.b[:8]} ("Write the docs")', out)
+        self.assertIn(f'Sent to actor {self.b} ("Write the docs")', out)
         self.assertEqual(coordination.opened(self.until(lambda: self.messages(self.b))[0])["text"], "hello there")
         code, out, _ = self.run_cli("--json", "list")
-        self.assertEqual(json.loads(out)["you"], self.a[:8])
+        self.assertEqual(json.loads(out)["you"], self.a)
 
     def test_its_errors_are_said_plainly(self):
         code, _, err = self.run_cli("send", "nobody", "hi")
