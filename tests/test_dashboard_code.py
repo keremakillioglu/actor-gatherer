@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PAGE = os.path.join(ROOT, "ag_dashboard", "page.html")
 START = "// ------------------------------------------------------------------ code, coloured"
 END = "// a code block's Copy"
-API = "hlTokens, hlLines, hlPart, hlInside, shellHtml, outputHtml, ansiHtml, hlLang, langOfPath, guessWeb"
+API = "hlTokens, hlLines, hlPart, hlInside, shellHtml, outputHtml, ansiHtml, hlLang, langOfPath, guessWeb, codeFence"
 # the section, given what it uses of the page, its functions called on each case: [name, ...arguments] -> the result
 RUN = r"""
 const escapeHtml = (t) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -97,6 +97,43 @@ class HighlightTest(unittest.TestCase):
                  ["hlLines", "@@ -1 +1 @@\n-a\n+b", "diff"], ["hlLines", "$ ls -la\ntotal 0", "console"]]
         for (_, text, lang), lines in zip(cases, run(*cases)):
             self.assertEqual(plain("\n".join(lines)), text, lang)
+
+
+@unittest.skipUnless(shutil.which("node"), "needs Node to run the page's code")
+class FenceTest(unittest.TestCase):
+    """A fenced block in a message (codeFence): each line a row Chat wraps in the box, its rest indented under where the
+    line begins, and a long block foldable to its first rows."""
+
+    def rows(self, markup):
+        """[indent, the row's HTML] of each row, less its closing tag (the highlighter's own spans kept)."""
+        code = markup[markup.index("<code>") + 6:markup.index("</code>")]
+        return [(i, t[:-len("</span>")]) for i, t in re.findall(r'<span class="cf-l" style="--in:(\d+)">(.*?)(?=<span class="cf-l"|$)', code, re.S)]
+
+    def test_each_line_is_a_row_indented_as_it_begins_and_the_text_is_kept(self):
+        text = "def f(x):\n    if x:\n\treturn x\n\n" + " " * 40 + "deep"
+        [markup] = run(["codeFence", text, "python"])
+        rows = self.rows(markup)
+        self.assertEqual([int(i) for i, _ in rows], [0, 4, 4, 0, 24])   # a tab to 4; a deep line's indent held at 24
+        # each row but the last ends in its line break, so the rows' text (a copy, a selection) is the block as written
+        self.assertEqual("".join(plain(t) for _, t in rows), text)
+        self.assertTrue(all(t.endswith("\n") for _, t in rows[:-1]))
+        self.assertFalse(rows[-1][1].endswith("\n"))
+
+    def test_only_a_long_block_can_be_folded_and_the_same_text_is_the_same_block(self):
+        short, long, again, other = run(["codeFence", "a\n" * 7 + "b", ""], ["codeFence", "a\n" * 8 + "b", ""],
+                                        ["codeFence", "a\n" * 8 + "b", "text"], ["codeFence", "a\n" * 8 + "c", ""])
+        self.assertNotIn("data-fold", short)
+        self.assertNotIn("code-fold", short)
+        self.assertIn("Show all 9 lines", long)
+        self.assertIn('class="code-fold"', long)
+        key = lambda m: re.search(r'data-fold="([^"]+)"', m).group(1)
+        self.assertEqual(key(long), key(again))
+        self.assertNotEqual(key(long), key(other))
+
+    def test_an_unnamed_block_is_shown_as_written(self):
+        [markup] = run(["codeFence", "<b>a</b> & ──▶", ""])
+        self.assertEqual(plain("".join(t for _, t in self.rows(markup))), "<b>a</b> & ──▶")
+        self.assertNotIn("<b>", markup)
 
 
 @unittest.skipUnless(shutil.which("node"), "needs Node to run the page's code")

@@ -962,14 +962,15 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .files .fl-turn.on .fl-user .tx, .files .fl-turn.shown .fl-user .tx { -webkit-line-clamp: unset; }
 /* before the latest, the message a button: a click shows or folds the turn's replies (folded: the turn closer to the next),
-   its chevron at its end saying which. At the right of each message, clear of its band, its button for the turn's files
-   and commands at the left. */
+   its chevron at the end of its first line saying which. At the right of each message, clear of its band, its button for
+   the turn's files and commands at the left. */
 .files button.fl-user { cursor: pointer; }
 .files button.fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
 .files .fl-bash > button.fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, transparent); }
 .files .fl-user > .tx { flex: 1 1 auto; }   /* its words wide as the band: the count and the chevron at its end */
-.files .fl-user .fold-mark { flex: none; align-self: center; display: grid; color: var(--muted); }
-.files .fl-user .fl-count { flex: none; align-self: center; font-size: 11.5px; line-height: 1; color: var(--muted); white-space: nowrap;
+/* the count and the chevron on its first line, however many lines it runs to: by the files button, the top row's */
+.files .fl-user .fold-mark { flex: none; align-self: flex-start; height: var(--lh); display: grid; place-items: center; color: var(--muted); }
+.files .fl-user .fl-count { flex: none; align-self: flex-start; font-size: 11.5px; line-height: var(--lh); color: var(--muted); white-space: nowrap;
   font-variant-numeric: tabular-nums; }
 .files .fl-user .fold-mark svg { transition: transform .15s; }
 .files .fl-user[aria-expanded="true"] .fold-mark svg { transform: rotate(90deg); }
@@ -1084,8 +1085,10 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .md code { font: .88em var(--mono); color: var(--md-code); background: color-mix(in srgb, var(--ink) 6%, transparent);
   border: 1px solid var(--ring); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
 .files .md pre { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); border: 1px solid var(--ring);
-  border-radius: 4px; padding: 9px 12px; overflow-x: auto; max-width: 100%; white-space: pre; }
-.files .md pre code { font: 12.5px/1.55 var(--mono); color: var(--ink); background: none; border: 0; padding: 0; border-radius: 0; overflow-wrap: normal; }
+  border-radius: 4px; padding: 9px 12px; overflow-x: hidden; max-width: 100%; white-space: pre-wrap; tab-size: 4; }
+.files .md pre code { font: 12.5px/1.55 var(--mono); color: var(--ink); background: none; border: 0; padding: 0; border-radius: 0; overflow-wrap: anywhere; }
+/* a fenced block's line wrapped in the box, never scrolled sideways: its rest two columns in from where it begins */
+.files .md .cf-l { padding-left: calc((var(--in) + 2) * 1ch); text-indent: calc((var(--in) + 2) * -1ch); }
 .files .md blockquote { padding: 7px 12px; border-left: 4px solid var(--muted); border-radius: 4px;
   background: color-mix(in srgb, var(--ink) 5%, var(--surface)); color: var(--ink-2); }
 .files .md hr { border: 0; border-top: 1px solid var(--axis); margin: 16px 0; }
@@ -1627,14 +1630,27 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 /* a command's output, in the colours its terminal showed (ansiHtml) */
 .a-red { color: var(--term-err); } .a-green { color: var(--term-ok); } .a-yellow { color: var(--term-run); } .a-blue { color: var(--hl-fn); }
 .a-magenta { color: var(--hl-kw); } .a-cyan { color: var(--hl-prop); } .a-dim { color: var(--muted); } .a-bold { font-weight: 650; }
-/* a fenced block in a message, and its Copy at the top right, shown on hover */
+/* a fenced block in a message, and its Copy (and a long one's Fold) at the top right, shown on hover; each line a row */
 .code-box { position: relative; margin: 0 0 10px; }
 .files .md .code-box > pre, .term .md .code-box > pre { margin: 0; }
-.code-copy { position: absolute; top: 5px; right: 5px; margin: 0; padding: 1px 7px; font: 11px system-ui, -apple-system, sans-serif; color: var(--muted);
+.cf-l { display: block; }
+.code-copy, .code-fold { margin: 0; padding: 1px 7px; font: 11px system-ui, -apple-system, sans-serif; color: var(--muted);
   background: var(--surface); border: 1px solid var(--ring); border-radius: 4px; cursor: pointer; opacity: 0; transition: opacity .12s; }
-.code-copy:hover { color: var(--ink); border-color: var(--axis); }
-.code-box:hover .code-copy, .cv-in:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
-@media (hover: none) { .code-copy { opacity: 1; } }
+.code-copy { position: absolute; top: 5px; right: 5px; }
+.code-tools { position: absolute; top: 5px; right: 5px; display: flex; gap: 4px; }
+.code-tools .code-copy { position: static; }
+.code-copy:hover, .code-fold:hover { color: var(--ink); border-color: var(--axis); }
+.code-box:hover .code-copy, .code-box:hover .code-fold, .cv-in:hover .code-copy, .code-copy:focus-visible, .code-fold:focus-visible { opacity: 1; }
+@media (hover: none) { .code-copy, .code-fold { opacity: 1; } }
+/* folded: its first six rows (codeFence's), the last fading out, and under them the way back to all of it */
+.code-box.folded > pre { padding-bottom: 30px; }
+.code-box.folded code { display: block; max-height: calc(6 * 1lh); overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6lh), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6lh), transparent); }
+.code-more { display: none; position: absolute; left: 6px; bottom: 5px; margin: 0; padding: 1px 6px; font: 11.5px system-ui, -apple-system, sans-serif;
+  color: var(--muted); background: none; border: 0; border-radius: 4px; cursor: pointer; }
+.code-more::before { content: "▸ "; }
+.code-more:hover, .code-more:focus-visible { color: var(--ink); background: var(--wash); }
+.code-box.folded .code-more { display: block; }
 /* a call opened (callView): its command as a terminal shows it -- "$ " in the gutter, each step on a line, the lines
    continuing one indented, a heredoc's body set apart; a script or a change coloured; other inputs one by one */
 .files .cv { margin: 4px 0 6px; font: 11.5px/1.5 var(--mono); min-width: 0; }
@@ -5559,14 +5575,42 @@ function outputHtml(text, cmd) {
   return ansiHtml(t);
 }
 // A fenced block in a message: coloured when it names a language the highlighter knows (```python), as written
-// otherwise -- most unnamed ones are diagrams and output -- with a button copying it
-const codeFence = (text, lang) => `<div class="code-box"><pre><code>${hlLines(text, hlLang(String(lang || "").split(/\s/)[0])).join("\n")}</code></pre>`
-  + `<button type="button" class="code-copy" title="Copy the code">Copy</button></div>\n`;
+// otherwise -- most unnamed ones are diagrams and output -- with a button copying it. Each line a row of its own (cf-l),
+// so Chat can wrap it in the box rather than scroll it sideways, what a line wraps onto indented under where it begins
+// (--in, its own indent). Each row but the last ends in its line break: a copy of what is selected keeps the empty lines.
+// A block of more than CODE_FOLDS lines can be folded to its first six rows (Fold; codeFolded keeps it so).
+const CODE_FOLDS = 8;
+const codeFolded = new Set();                      // the blocks folded by a click, by their texts (codeKey)
+const codeKey = (t) => { let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 0x01000193); return (h >>> 0).toString(36) + "-" + t.length; };
+const indentOf = (l) => { let n = 0; for (const c of l) { if (c === " ") n++; else if (c === "\t") n += 4 - n % 4; else break; } return Math.min(n, 24); };
+function codeFence(text, lang) {
+  text = String(text ?? "");
+  const raw = text.split("\n"), ls = hlLines(text, hlLang(String(lang || "").split(/\s/)[0]));
+  const rows = ls.map((h, i) => `<span class="cf-l" style="--in:${indentOf(raw[i] || "")}">${h}${i < ls.length - 1 ? "\n" : ""}</span>`).join("");
+  const long = ls.length > CODE_FOLDS;
+  return `<div class="code-box"${long ? ` data-fold="${codeKey(text)}"` : ""}><pre><code>${rows}</code></pre>`
+    + (long ? `<button type="button" class="code-more" title="Show all of it">Show all ${ls.length} lines</button>` : "")
+    + `<div class="code-tools">${long ? `<button type="button" class="code-fold" aria-expanded="true" title="Fold it to its first lines">Fold</button>` : ""}`
+    + `<button type="button" class="code-copy" title="Copy the code">Copy</button></div></div>\n`;
+}
+// a block folded to its first rows, or shown whole (`on` false)
+function foldCode(box, on) {
+  box.classList.toggle("folded", on);
+  const b = box.querySelector(".code-fold");
+  if (b) { b.textContent = on ? "Unfold" : "Fold"; b.title = on ? "Show all of it" : "Fold it to its first lines"; b.setAttribute("aria-expanded", String(!on)); }
+}
 // a code block's Copy (codeFence's, callView's): the command as written (data-copy), else the block's own text
 document.addEventListener("click", async (ev) => {
+  const f = ev.target.closest && ev.target.closest(".code-fold, .code-more");
+  if (f) {
+    const box = f.closest(".code-box"), on = !box.classList.contains("folded");
+    if (on) codeFolded.add(box.dataset.fold); else codeFolded.delete(box.dataset.fold);
+    foldCode(box, on);
+    return;
+  }
   const b = ev.target.closest && ev.target.closest(".code-copy");
   if (!b) return;
-  const code = b.parentElement.querySelector("code");
+  const code = (b.closest(".code-box") || b.parentElement).querySelector("code");
   try { await navigator.clipboard.writeText(b.dataset.copy ?? (code ? code.textContent : "")); b.textContent = "Copied"; } catch (e) { b.textContent = "Not copied"; }
   setTimeout(() => { b.textContent = "Copy"; }, 1500);
 });
@@ -5611,6 +5655,7 @@ function markdown(text, breaks = false) {
     mdCache.set(k, html);
   }
   box.innerHTML = html;                            // sanitized by DOMPurify, raw HTML escaped before it
+  if (codeFolded.size) for (const b of box.querySelectorAll(".code-box[data-fold]")) if (codeFolded.has(b.dataset.fold)) foldCode(b, true);
   return box;
 }
 const firstLine = (t, n = 160) => { const l = String(t ?? "").split("\n")[0]; return l.length > n ? l.slice(0, n) + "…" : l; };
