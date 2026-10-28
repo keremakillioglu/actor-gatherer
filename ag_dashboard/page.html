@@ -948,14 +948,15 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .files .fl-turn.on .fl-user .tx, .files .fl-turn.shown .fl-user .tx { -webkit-line-clamp: unset; }
 /* before the latest, the message a button: a click shows or folds the turn's replies (folded: the turn closer to the next),
-   its chevron at its end saying which. At the right of each message, clear of its band, its button for the turn's files
-   and commands at the left. */
+   its chevron at the end of its first line saying which. At the right of each message, clear of its band, its button for
+   the turn's files and commands at the left. */
 .files button.fl-user { cursor: pointer; }
 .files button.fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
 .files .fl-bash > button.fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, transparent); }
 .files .fl-user > .tx { flex: 1 1 auto; }   /* its words wide as the band: the count and the chevron at its end */
-.files .fl-user .fold-mark { flex: none; align-self: center; display: grid; color: var(--muted); }
-.files .fl-user .fl-count { flex: none; align-self: center; font-size: 11.5px; line-height: 1; color: var(--muted); white-space: nowrap;
+/* the count and the chevron on its first line, however many lines it runs to: by the files button, the top row's */
+.files .fl-user .fold-mark { flex: none; align-self: flex-start; height: var(--lh); display: grid; place-items: center; color: var(--muted); }
+.files .fl-user .fl-count { flex: none; align-self: flex-start; font-size: 11.5px; line-height: var(--lh); color: var(--muted); white-space: nowrap;
   font-variant-numeric: tabular-nums; }
 .files .fl-user .fold-mark svg { transition: transform .15s; }
 .files .fl-user[aria-expanded="true"] .fold-mark svg { transform: rotate(90deg); }
