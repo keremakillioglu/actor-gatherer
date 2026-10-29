@@ -72,11 +72,13 @@ sections' fixed overview); and `real_tokens`, the provider's count. A database w
 before a column existed reads as None there. Nothing here writes anything.
 """
 
+import copy
 import glob
 import json
 import os
 import re
 import sqlite3
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -91,6 +93,7 @@ from harness_kit.shell import CODE_MODE, script_calls
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
+FULL_SECONDS = 30.0            # a gatherer's agents kept between reads of the home (`Kept`): all read again this often
 RUNNING, IDLE, CLOSED, BACKGROUND, ASKING, ERROR = "running", "idle", "closed", "background", "asking", "error"
 ASK_CHARS = 4000               # the most of a question's words `ask_view` returns
 PLAN_CHARS = 20000             # the most of a plan it returns
@@ -222,14 +225,15 @@ def _hook_servers() -> List[dict]:
         return []
 
 
-def home(started: Optional[List[dict]] = None) -> dict:
+def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) -> dict:
     """Every gatherer and its agents, each newest created first (`created`: its first event), and
     the hook servers ag started, which gatherers the reader hid or kept (`hiding`, hiding.py), which
     actors they saved for later (`saved`, saved.py), and when they last looked at each (`seen`, seen.py:
     None, never kept).
     `started` is the sessions started from the page (sessions.py's `list`; else its table, read):
     each one's agent carries it as `session`, and one with no events yet -- its gatherer perhaps
-    not made yet -- is listed all the same."""
+    not made yet -- is listed all the same. `kept`: the agents as read before, read again only as far as
+    they changed (`Kept`); else every agent is read."""
     now = time.time()
     gatherers = []
     started = sessions.stored() if started is None else started
@@ -240,7 +244,7 @@ def home(started: Optional[List[dict]] = None) -> dict:
             gatherers.append({"name": name, "policy": _policy(name), "agents": [], "last": None})
             continue
         try:
-            agents = _agents(conn, now)
+            agents = kept.agents(conn, name, now) if kept is not None else _agents(conn, now)
             if {s["session_id"] for s in started if s["gatherer"] == name} - {a["channel"] for a in agents}:
                 named[name] = _names(conn, _tables(conn))
         except sqlite3.Error as exc:
@@ -282,6 +286,122 @@ def actors(gatherer: str, channels: set, started: List[dict]) -> List[dict]:
     for a in g[0]["agents"]:                     # what home() would watch: not from here
         a.pop("wake", None)
     return g[0]["agents"]
+
+
+class Kept:
+    """The home's agents, kept between its reads (home()'s `kept`): a gatherer's read again only for the channels it was
+    told changed since (`changed`: the hub's `on_change`, rung by ag's notifications) -- a provider's count of a read
+    (ag's "counts", which names the read, not its channel): the read's channel; a process opening a session ("open",
+    named by neither): the sessions whose row in `_open` changed. The whole of it at first, and when told of nothing
+    more (a write that named no channel; the fallback check of the files, where ag told of nothing lately) or of no
+    gatherer. And every FULL_SECONDS, for what time alone changes (a process gone with no word, a turn gone stale) and a
+    notification lost, read whole in the background (`refreshed`, told when it is done): a whole read of a big gatherer
+    is most of a second -- seconds, its file out of the cache -- which no reader waits on then; the one that changed, a
+    few ms. (What changes at a time of its own, a failed call given up, is rung then: live.py's `wake_at`.)"""
+
+    def __init__(self, refreshed: Optional[Any] = None):
+        self.lock = threading.Lock()
+        self.refreshed = refreshed                   # (gatherer) once a background read of it is kept
+        self.kept: Dict[str, Dict[str, dict]] = {}   # gatherer -> channel -> its agent, as `_agents` read it
+        self.at: Dict[str, Dict[str, float]] = {}    # gatherer -> channel -> when that was read
+        self.read: Dict[str, float] = {}             # gatherer -> when it was last read whole
+        self.told: Dict[str, Optional[set]] = {}     # gatherer -> the channels changed since (None: all of it)
+        self.reads: Dict[str, set] = {}              # gatherer -> the reads counted since, whose channels changed
+        self.opened: set = set()                     # the gatherers some session was opened in since
+        self.open: Dict[str, Dict[str, tuple]] = {}  # gatherer -> its `_open` rows by session, as last read
+        self.stale = 0.0                             # a gatherer read whole before this: read whole again
+        self.refreshing: Dict[str, threading.Thread] = {}   # gatherer -> its whole read in the background
+
+    def changed(self, gatherer: Optional[str], channel: Optional[str], what: str = "", row: Optional[int] = None) -> None:
+        """Something of `gatherer` (its directory's name; None: any) changed, for `channel` (None: not named) -- `what`
+        ag wrote, `row` its row (ag/ag_tools/notify.py's)."""
+        with self.lock:
+            if gatherer is None:
+                self.stale = time.time()
+            elif channel is None and what == "counts" and row is not None:
+                self.reads.setdefault(gatherer, set()).add(row)
+            elif channel is None and what == "open":
+                self.opened.add(gatherer)
+            elif channel is None:
+                self.told[gatherer] = None
+            elif self.told.get(gatherer, set()) is not None:
+                self.told.setdefault(gatherer, set()).add(channel)
+
+    def agents(self, conn, gatherer: str, now: float) -> List[dict]:
+        """The gatherer's agents as `_agents` reads them, newest created first -- copies, the caller's to change.
+        sqlite3.Error: its database could not be read (read whole the next time)."""
+        with self.lock:
+            told, reads = self.told.pop(gatherer, set()), self.reads.pop(gatherer, set())
+            opened = gatherer in self.opened
+            self.opened.discard(gatherer)
+            whole = told is None or gatherer not in self.kept or self.read[gatherer] < self.stale
+            due = not whole and self.read[gatherer] < now - FULL_SECONDS and gatherer not in self.refreshing
+            if due:
+                self.refreshing[gatherer] = threading.Thread(target=self._refresh, args=(gatherer,),
+                                                             name="ag-home-refresh", daemon=True)
+        if due:
+            self.refreshing[gatherer].start()
+        try:
+            if whole:
+                got, opens = _agents(conn, now), self._open(conn)
+                with self.lock:
+                    self.kept[gatherer], self.open[gatherer], self.read[gatherer] = {a["channel"]: a for a in got}, opens, now
+                    self.at[gatherer] = {a["channel"]: now for a in got}
+            else:
+                told = set(told)
+                if reads:
+                    told.update(ch for (ch,) in conn.execute(
+                        f"SELECT DISTINCT ifnull({CHANNEL}, '') FROM _reads WHERE read_id IN ({', '.join('?' * len(reads))})",
+                        tuple(reads)))
+                if opened:
+                    after = self._open(conn)
+                    with self.lock:
+                        before, self.open[gatherer] = self.open.get(gatherer, {}), after
+                    told.update(ch for ch in set(before) | set(after) if before.get(ch) != after.get(ch))
+                told.discard("")
+                got = _agents(conn, now, told) if told else []
+                with self.lock:
+                    self.kept[gatherer] = {**self.kept[gatherer], **{a["channel"]: a for a in got}}
+                    self.at[gatherer].update((a["channel"], now) for a in got)
+        except sqlite3.Error:
+            with self.lock:
+                self.told[gatherer] = None
+            raise
+        with self.lock:
+            agents = list(self.kept[gatherer].values())
+        return copy.deepcopy(sorted(agents, key=lambda a: a["created"] or 0, reverse=True))
+
+    def _refresh(self, gatherer: str) -> None:
+        """The gatherer read whole, on a connection of its own, and kept -- but where a channel was read since it began,
+        that read: it is newer."""
+        began = time.time()
+        conn = _connect(gatherer)
+        try:
+            got, opens = (_agents(conn, began), self._open(conn)) if conn is not None else (None, None)
+        except sqlite3.Error:
+            got = None
+        finally:
+            if conn is not None:
+                conn.close()
+            with self.lock:
+                self.refreshing.pop(gatherer, None)
+        if got is None:
+            return
+        with self.lock:
+            at = self.at.setdefault(gatherer, {})
+            kept = self.kept.setdefault(gatherer, {})
+            for a in got:
+                if at.get(a["channel"], 0.0) < began:
+                    kept[a["channel"]], at[a["channel"]] = a, began
+            self.open[gatherer], self.read[gatherer] = opens, max(self.read.get(gatherer, 0.0), began)
+        if self.refreshed:
+            self.refreshed(gatherer)
+
+    @staticmethod
+    def _open(conn) -> Dict[str, tuple]:
+        if "_open" not in _tables(conn):
+            return {}
+        return {r[0]: tuple(r[1:]) for r in conn.execute("SELECT session, pid, pid_started, opened_at, opened_by FROM _open")}
 
 
 def _with_started(gatherers: List[dict], started: List[dict], now: Optional[float] = None,
@@ -351,15 +471,17 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         return []
     sizes = [c for c in ("est_tokens", "real_tokens", "limit_tokens") if c in _columns(conn, "_reads")]
     out: Dict[str, dict] = {}
-    which = "" if only is None else f" AND {CHANNEL} IN ({', '.join('?' * len(only))})"
+    asked = tuple(only or ())                        # by ifnull(channel, ''), as ag's indexes have it: not every event read
+    which = lambda e: "" if only is None else f" AND ifnull({e}{CHANNEL}, '') IN ({', '.join('?' * len(asked))})"  # noqa: E731
     for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, min(inserted_at) AS first, max(inserted_at) AS last FROM events e "
-                          f"WHERE {CHANNEL} IS NOT NULL AND {NOT_RECORD}{which} GROUP BY {CHANNEL}", tuple(only or ())):
+                          f"WHERE {CHANNEL} IS NOT NULL AND {NOT_RECORD}{which('e.')} GROUP BY {CHANNEL}", asked):
         out[r["ch"]] = {"channel": r["ch"], "events": r["n"], "created": _seconds(r["first"]), "last_event": _seconds(r["last"]), "reads": 0,
                         "last_read": None, "cwd": None, "tasks": 0, "est_tokens": None, "real_tokens": None,
                         "limit_tokens": None, "sent_tokens": None, "pid": None, "alive": None}
     if CHANNEL in _columns(conn, "_reads"):
         cols = _columns(conn, "_reads")
-        for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, max(read_at) AS last FROM _reads GROUP BY {CHANNEL}"):
+        for r in conn.execute(f"SELECT {CHANNEL} AS ch, count(*) AS n, max(read_at) AS last FROM _reads WHERE 1{which('')} "
+                              f"GROUP BY {CHANNEL}", asked):
             if r["ch"] in out:
                 out[r["ch"]].update(reads=r["n"], last_read=_seconds(r["last"]))
         cwd = "p_cwd" in cols
@@ -388,8 +510,8 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
                 out[r["ch"]]["tasks"] = r["n"]
     answered = {}                                    # each agent's newest answer, recorded as it came (`reply_*`)
     for ch, t in conn.execute(f"SELECT e.{CHANNEL}, max(e.inserted_at) FROM events e JOIN event_types t ON "
-                              f"t.event_type_id = e.event_type_id WHERE t.name IN ('reply_part', 'reply_end') "
-                              f"AND e.{CHANNEL} IS NOT NULL GROUP BY e.{CHANNEL}"):
+                              f"t.event_type_id = {'e' if only is None else '+e'}.event_type_id WHERE t.name IN ('reply_part', "
+                              f"'reply_end') AND e.{CHANNEL} IS NOT NULL{which('e.')} GROUP BY e.{CHANNEL}", asked):
         answered[ch] = max(answered.get(ch) or 0, _seconds(t) or 0) or None
     building = _running_builds(conn)
     last_user, user_at = {}, {}                      # each agent's newest user message: what it was last asked --
