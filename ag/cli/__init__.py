@@ -1,6 +1,7 @@
 """`ag`: run a harness with the context manager set up in it.
 
-    ag                                     the dashboard, opened in the browser: start, talk to and watch agents
+    ag                                     the agentic development environment, opened in the browser: start, talk
+                                           to and watch agents
     ag claude                              Claude Code, with the context manager
     ag codex exec "fix the tests"          codex exec, with the context manager
     ag pi | ag opencode run "..."          pi, opencode, the same way
