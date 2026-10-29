@@ -16,7 +16,7 @@ OPTIONS = (
 
 #: (command, what it does).
 COMMANDS = (
-    ("ag", "Start the dashboard on localhost and open it in the browser."),
+    ("ag", "Start the agentic development environment on localhost and open it in the browser."),
     ("ag <harness> [args]", "Run the harness with the Gatherer."),
     ("ag model [NAME] [--api-base URL] [--key-env VAR]", "Show or set the LLM the Gatherer calls."),
     ("ag config", "Show where the settings are, and what each harness resolves to."),

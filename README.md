@@ -6,7 +6,7 @@
 [![Docs](https://img.shields.io/badge/Docs-actor--gatherer%2Fdocs-green)](https://ucbepic.github.io/actor-gatherer/docs.html)
 [![Works with Claude Code, Codex, OpenCode and Pi](https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/works-with.svg)](#quickstart)
 
-[What is the Actor-Gatherer Framework](#what-is-the-actor-gatherer-framework) · [Install](#install) · [Quickstart](#quickstart) · [Dashboard](#dashboard) · [Examples](#examples) · [How it works](#how-it-works) · [Extensions](#extensions)
+[What is the Actor-Gatherer Framework](#what-is-the-actor-gatherer-framework) · [Install](#install) · [Quickstart](#quickstart) · [Agentic Development Environment](#agentic-development-environment) · [Examples](#examples) · [How it works](#how-it-works) · [Extensions](#extensions)
 
 </div>
 
@@ -28,10 +28,10 @@ Without a Gatherer, each agent operates largely on its own history, which is typ
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/dashboard-dark.png">
-    <img src="https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/dashboard-light.png" alt="The ag dashboard: on the left, the Actors by gatherer; at the bottom, a Claude Code Actor and a Codex Actor working side by side, each adding a function to catalogue.py; above them, the Editor showing catalogue.py as they change it, with the newest change highlighted" width="900">
+    <img src="https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/dashboard-light.png" alt="ag's agentic development environment: on the left, the Actors by gatherer; at the bottom, a Claude Code Actor and a Codex Actor working side by side, each adding a function to catalogue.py; above them, the Editor showing catalogue.py as they change it, with the newest change highlighted" width="900">
   </picture>
 </p>
-<p align="center"><em>The <a href="#dashboard">dashboard</a>. Claude Code and Codex work side by side, each adding a function to <code>catalogue.py</code>, and the Editor above them shows the file as they change it.</em></p>
+<p align="center"><em>The <a href="#agentic-development-environment">agentic development environment</a>. Claude Code and Codex work side by side, each adding a function to <code>catalogue.py</code>, and the Editor above them shows the file as they change it.</em></p>
 
 ---
 
@@ -125,17 +125,17 @@ To see every gatherer:
 ag gatherers                                             # each one's policy, pollers, event count, last activity
 ```
 
-## Dashboard
+## Agentic Development Environment
 
-Run `ag` on its own to open the dashboard in your browser:
+Run `ag` on its own to open ag's agentic development environment in your browser:
 
 ```bash
 ag                                                       # http://127.0.0.1:4200
 ```
 
 From it you can create gatherers, start Claude Code and Codex Actors in them and talk to them, watch what
-every Actor is doing, edit files alongside them, and see the context the Gatherer gave each one. It listens
-only on `127.0.0.1`; `ag dashboard --help` lists its options.
+every Actor is doing, edit files alongside them, and see the context the Gatherer gave each one. It's only
+reachable from your own machine. For other options, like the port, see `ag dashboard --help`.
 
 ### Actors and the gatherer agent
 
