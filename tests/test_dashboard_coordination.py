@@ -16,6 +16,7 @@ from contextlib import redirect_stderr, redirect_stdout
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import harness_kit  # noqa: E402
+from harness_kit.base import Box  # noqa: E402
 from ag.cli import actors as cli  # noqa: E402
 from ag_dashboard import coordination, data, files, server, sessions  # noqa: E402
 from test_dashboard_sessions import FAKE_AG, SessionsBase  # noqa: E402
@@ -180,6 +181,14 @@ class CoordinationTest(CoordinationBase):
         self.assertEqual(self.crew.list(self.a)["closed"], 1)
         self.assertEqual(len(self.crew.list(self.a, every=True)["actors"]), 2)
 
+    def test_a_message_its_terminal_cannot_take_now_is_refused_and_not_kept(self):
+        busy = sessions.NotAtBox("Claude Code's terminal shows a dialog", Box.HOLDS)
+        with unittest.mock.patch.object(self.s, "send", side_effect=busy):
+            with self.assertRaisesRegex(sessions.NotAtBox, f"not delivered: actor {self.b[:8]}'s terminal .* try again") as got:
+                self.crew.send(self.a, self.b, "rebase please")
+        self.assertEqual(got.exception.box, Box.HOLDS)
+        self.assertEqual(self.kept, [])                               # not kept as sent
+
     def test_a_message_reaches_the_actor_named_in_an_envelope_and_is_kept_in_the_senders_channel(self):
         got = self.crew.send(self.a, self.b[:6], "I am changing page.html: leave it to me.")
         self.assertTrue(got["sent"])
@@ -281,6 +290,21 @@ class WatchTest(CoordinationBase):
         self.status[self.b] = data.ERROR
         self.assertEqual(self.crew.check(), [n])                                    # seen at work: no grace needed
         self.assertEqual(self.until(self.told)[0]["how"], "its turn stopped on an error")
+
+    def test_a_watcher_whose_box_cannot_take_it_is_told_later_of_the_end_it_missed(self):
+        self.status[self.b] = data.RUNNING
+        n = self.crew.when(self.coordinator, self.b)["watch"]
+        self.crew.check()
+        self.status[self.b] = data.IDLE
+        busy = sessions.NotAtBox("a dialog has the keys", Box.AWAY)       # its terminal shows a dialog: nothing typed
+        with unittest.mock.patch.object(self.s, "send", side_effect=busy):
+            self.assertEqual(self.crew.check(), [])
+        self.assertEqual([w["watch"] for w in self.crew.watches(self.coordinator)["watches"]], [n])   # still to tell
+        self.status[self.b] = data.RUNNING                                    # at work again meanwhile
+        self.assertEqual(self.crew.check(), [n])                              # the end it missed, told all the same
+        got = self.until(self.told)[0]
+        self.assertEqual((got["watch"], got["how"]), (n, "its turn is over"))
+        self.assertEqual(self.crew.check(), [])                               # once
 
     def test_a_watch_is_dropped_by_its_watcher_alone(self):
         n = self.crew.when(self.coordinator, self.b)["watch"]

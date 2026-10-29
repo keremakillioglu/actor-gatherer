@@ -46,13 +46,16 @@ WATCHES, table `watches` in the dashboard's database (<home>/dashboard.db, besid
     created       when it was asked (epoch seconds)
     seen_running  1 once the target was seen at work since
     fired         when the watcher was told (epoch seconds); 0 not yet
-    outcome       what telling it did: "told", or why it could not be told
+    outcome       what telling it did: "told", or why it could not be told; "due <status>: why" (fired still 0) while
+                  the watcher's message box could not take it
 
 `Watches` looks at them every WATCH_CHECK seconds: a target is done once it no longer works -- idle, closed, or
 stopped on an error; not while it waits on the user, nor while work it left running in the background (which wakes it
 again) goes on -- after it was seen at work, or WATCH_GRACE seconds after the watch was asked, never seen at work (idle
 already, and nothing woke it). The watcher is then sent
-what it asked to be told, with what the target was asked and said last.
+what it asked to be told, with what the target was asked and said last. A watcher whose message box cannot take it
+then -- a dialog or a question open in its terminal, something typed there and not sent (sessions.py's NotAtBox) -- is
+told at each later look until it can be, of the end it missed, whatever its target does meanwhile.
 """
 
 import json
@@ -79,6 +82,7 @@ WATCH_GRACE = 20.0              # a target never seen at work: over, this long a
 #: An actor at work: its turn not over -- waiting on the user, or on work it left running in the background, which
 #: wakes it again when done (Claude Code's background commands, agents and monitors).
 BUSY = (data.RUNNING, data.ASKING, data.BACKGROUND)
+DUE = "due "                     # a watch's outcome while its watcher's box could not take it: "due <status>: why"
 ACTOR_MESSAGE = "actor_message"
 ROLE = "role"                                       # the record that makes the gatherer agent's channel private
 CHANGES = {"edit", "write", "delete"}               # what a file in a turn's list was, when the turn changed it
@@ -399,11 +403,19 @@ class Coordination:
 
     def _deliver(self, gatherer: str, to: dict, body: str) -> dict:
         """`body` typed into the actor `to`'s terminal, as Chat sends a message (sessions.py's `send`): its session
-        taken into the dashboard's table first, if it was not started here (`adopt`)."""
+        taken into the dashboard's table first, if it was not started here (`adopt`). Refused (NotAtBox), nothing typed,
+        while its message box cannot take it -- a dialog or a question open in its terminal, or something typed there
+        and not sent: said to the sender as what it can do about it."""
         s = to.get("session")
         sid = s["session_id"] if s else self.started.adopt(gatherer, to["channel"])["session_id"]
         harness = (s or {}).get("harness") or to.get("harness")
-        return self.started.send(sid, body, fullscreen=harness != "codex")      # as the page opens a terminal
+        try:
+            return self.started.send(sid, body, fullscreen=harness != "codex")      # as the page opens a terminal
+        except sessions.NotAtBox as exc:
+            who = NAME if self._is_coordinator(to) else f"actor {to['channel'][:8]}"
+            raise sessions.NotAtBox(f"not delivered: {who}'s terminal shows a dialog or a question, or holds something "
+                                    f"typed there and not sent (the user may be at it). Nothing was typed; try again "
+                                    f"in a while.", exc.box) from None
 
     def _keep(self, gatherer: str, sender: str, kind: str, to: dict, text: str) -> None:
         actions.record(gatherer, sender, [{"type": ACTOR_MESSAGE, "id": f"{ACTOR_MESSAGE}:{uuid.uuid4().hex}",
@@ -446,23 +458,28 @@ class Coordination:
             if w["gatherer"] not in by_gatherer:
                 continue
             a = by_gatherer[w["gatherer"]].get(now_as.get(w["target"], w["target"]))
+            due = _due(w)                    # over before, its watcher's box busy then: told now, as it was then
             busy = a is not None and a.get("status") in BUSY
-            if busy and not w["seen_running"]:
+            if busy and not w["seen_running"] and not due:
                 self._mark(w["id"], seen_running=1)
-            if busy or (not w["seen_running"] and now - w["created"] < WATCH_GRACE):
+            if not due and (busy or (not w["seen_running"] and now - w["created"] < WATCH_GRACE)):
                 continue
+            status = due or (a or {}).get("status") or data.CLOSED
             self._mark(w["id"], fired=now, outcome="telling")       # once: a slow message is not sent twice
             try:
-                self._tell(w, a)
+                self._tell(w, a, status)
                 self._mark(w["id"], outcome="told")
+            except sessions.NotAtBox as exc:     # nothing typed: a dialog, a draft in its box -- told at a later look
+                self._mark(w["id"], fired=0, outcome=f"{DUE}{status}: {exc}"[:300])
+                continue
             except Exception as exc:  # noqa: BLE001 - one watcher's trouble is not the others'
                 self._mark(w["id"], outcome=f"not told: {exc}"[:300])
             told.append(w["id"])
         return told
 
-    def _tell(self, w: sqlite3.Row, a: Optional[dict]) -> None:
+    def _tell(self, w: sqlite3.Row, a: Optional[dict], status: Optional[str] = None) -> None:
         g = w["gatherer"]
-        status = (a or {}).get("status") or data.CLOSED
+        status = status or (a or {}).get("status") or data.CLOSED
         how = {data.IDLE: "its turn is over", data.CLOSED: "it is closed", data.ERROR: "its turn stopped on an error"}.get(status, status)
         name = (NAME if a and self._is_coordinator(a) else _name(a)) if a else None
         target = (a or {}).get("channel") or w["target"]
@@ -541,6 +558,12 @@ def _unwrapped(text: Optional[str]) -> Optional[str]:
         return f"(update) actor {got['id']} is done: {got['how']}"
     who = "the gatherer agent" if got["from"] == "coordinator" else f"actor {got['id']}"
     return f"(from {who}) {got['text']}"
+
+
+def _due(w: sqlite3.Row) -> Optional[str]:
+    """The status a watch's target was over with, when its watcher could not be told then (DUE); else None."""
+    outcome = w["outcome"] or ""
+    return outcome[len(DUE):].split(":", 1)[0] or None if outcome.startswith(DUE) else None
 
 
 def _name(a: Optional[dict]) -> Optional[str]:
