@@ -6,7 +6,7 @@
 [![Docs](https://img.shields.io/badge/Docs-actor--gatherer%2Fdocs-green)](https://ucbepic.github.io/actor-gatherer/docs.html)
 [![Works with Claude Code, Codex, OpenCode and Pi](https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/works-with.svg)](#quickstart)
 
-[What is the Actor-Gatherer Framework](#what-is-the-actor-gatherer-framework) · [Install](#install) · [Quickstart](#quickstart) · [Examples](#examples) · [How it works](#how-it-works) · [Extensions](#extensions)
+[What is the Actor-Gatherer Framework](#what-is-the-actor-gatherer-framework) · [Install](#install) · [Quickstart](#quickstart) · [Dashboard](#dashboard) · [Examples](#examples) · [How it works](#how-it-works) · [Extensions](#extensions)
 
 </div>
 
@@ -25,6 +25,13 @@ and before every model call decides what context the Actor gets. The Gatherer:
 
 Without a Gatherer, each agent operates largely on its own history, which is typically summarized as it grows. This can leave agents unaware of relevant past interactions, work done by other agents, or changes made by the user.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/dashboard-dark.png">
+    <img src="https://raw.githubusercontent.com/ucbepic/actor-gatherer/main/assets/dashboard-light.png" alt="The ag dashboard: on the left, the Actors by gatherer; at the bottom, a Claude Code Actor and a Codex Actor working side by side, each adding a function to catalogue.py; above them, the Editor showing catalogue.py as they change it, with the newest change highlighted" width="900">
+  </picture>
+</p>
+<p align="center"><em>The <a href="#dashboard">dashboard</a>. Claude Code and Codex work side by side, each adding a function to <code>catalogue.py</code>, and the Editor above them shows the file as they change it.</em></p>
 
 ---
 
@@ -117,6 +124,18 @@ To see every gatherer:
 ```bash
 ag gatherers                                             # each one's policy, pollers, event count, last activity
 ```
+
+## Dashboard
+
+Run `ag` on its own to open the dashboard in your browser:
+
+```bash
+ag                                                       # http://127.0.0.1:4200
+```
+
+From it you can create gatherers, start Claude Code and Codex Actors in them and talk to them, watch what
+every Actor is doing, edit files alongside them, and see the context the Gatherer gave each one. It listens
+only on `127.0.0.1`; `ag dashboard --help` lists its options.
 
 ## Examples
 
@@ -298,13 +317,3 @@ gathered from every Actor and from the environment.
 - [add a harness](https://ucbepic.github.io/actor-gatherer/docs.html#write-adaptor), so another coding agent can run with `ag`.
 
 See [Extending ag](https://ucbepic.github.io/actor-gatherer/docs.html#extending) in the docs.
-
-## Dashboard
-
-To see each agent's context over time:
-
-```bash
-ag dashboard                                             # http://127.0.0.1:4200
-ag dashboard --port 4300                                 # another port
-ag dashboard --out snapshot.html                         # one page, its data inside it
-```
