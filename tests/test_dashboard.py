@@ -458,6 +458,44 @@ class CommandTest(HomeBase):
         with unittest.mock.patch("sys.stderr"):
             self.assertEqual(main.dashboard(["--bogus"]), 2)
 
+    def test_ag_alone_starts_the_dashboard_opened_in_the_browser(self):
+        from ag.cli import main
+        with unittest.mock.patch.dict(os.environ, {"AG_HOME": paths.AG_HOME}), \
+                unittest.mock.patch("ag_dashboard.__main__.main", return_value=0) as started:
+            self.assertEqual(main.main([]), 0)
+            self.assertEqual(main.main(["dashboard", "--no-open"]), 0)
+        self.assertEqual(started.call_args_list[0].args[0], ["--home", paths.AG_HOME, "--open"])
+        self.assertEqual(started.call_args_list[1].args[0], ["--home", paths.AG_HOME, "--open", "--no-open"])
+
+    def run_dashboard(self, *args):
+        """ag_dashboard's main on this home, its server stopped at once: (its exit code, the URLs it opened)."""
+        from ag_dashboard.__main__ import main as dashboard_main
+        with unittest.mock.patch.dict(os.environ, {"DISPLAY": ":0"}), unittest.mock.patch("sys.stderr"), \
+                unittest.mock.patch.object(server.Server, "serve_forever", side_effect=KeyboardInterrupt), \
+                unittest.mock.patch("webbrowser.open", return_value=True) as opened:
+            code = dashboard_main(["--home", paths.AG_HOME, *args])
+        return code, [c.args[0] for c in opened.call_args_list]
+
+    def test_open_opens_the_page_once_it_listens_and_only_then(self):
+        code, urls = self.run_dashboard("--port", "0", "--open")
+        self.assertEqual(code, 0)
+        self.assertRegex(urls[0], r"^http://127\.0\.0\.1:\d+/$")
+        self.assertEqual(self.run_dashboard("--port", "0"), (0, []))
+
+    def test_open_on_a_port_taken_opens_the_dashboard_there_if_it_is_this_homes(self):
+        httpd = server.serve("127.0.0.1", 0, live_updates=False)          # this home's, running already
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(httpd.shutdown)
+        port = httpd.server_port
+        self.assertEqual(self.run_dashboard("--port", str(port), "--open"), (0, [f"http://127.0.0.1:{port}/"]))
+        import http.server
+        other = http.server.HTTPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)   # not a dashboard
+        threading.Thread(target=other.serve_forever, daemon=True).start()
+        self.addCleanup(other.server_close)
+        self.addCleanup(other.shutdown)
+        self.assertEqual(self.run_dashboard("--port", str(other.server_port), "--open"), (1, []))
+
 
 class SeparateTest(unittest.TestCase):
     def test_the_dashboard_imports_nothing_of_ag(self):

@@ -697,6 +697,8 @@ class Server(ThreadingHTTPServer):
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         self.editors = editor.Editors()                                # the files open in the Editor panel
         self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates)   # actors' `ag actors`
+        self.listener = self.fallback = self.rest = self.address_file = None   # for server_close, which a failed bind calls
+        self.keeps_actions = False
         super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew))
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
@@ -704,7 +706,6 @@ class Server(ThreadingHTTPServer):
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
         self.rest = saved.Rest(self.sessions, self.hub.shown)
-        self.address_file = None
         if live_updates:                     # where actors' `ag actors` reach it: its own, told; any other, by the file
             host = self.server_address[0]
             sessions.DASHBOARD = f"http://{'127.0.0.1' if host in ('', '0.0.0.0', '::') else host}:{self.server_address[1]}"
