@@ -9,7 +9,7 @@ gatherer beside the conversation's, which no policy groups, so they never reach 
     reply_end     the answer is whole: why it stopped (`stop`: end_turn, tool_use, ...); `answer_id`, `read_id`
     call_failed   a call failed: its endpoint's HTTP status (None: no answer came), and why; `read_id`
     recap         a recap of the session the harness made, in its words: what it did, and what comes next
-    name          a name for the session, as `by` gave it (codex's title for its thread)
+    name          a name for the session, as `by` gave it (codex's title for its thread; Claude Code's, from its record)
     harness       the harness a session from before `model_call` ran on, as its pieces' shapes told when its gatherer's
                   old tables were copied into records (migrate.py)
 
@@ -17,7 +17,8 @@ and, from the harness's own record of the session as it grows (session_files.py)
 
     session_file  the record followed: the harness, and the file's path
     message_queued, message_sent, message_withdrawn, asked, ask_settled, turn_stopped, task_started, task_ended,
-    task_activity each a fact the record says (harness_kit's Facts), its data the payload with `at`, when it happened
+    task_activity, name each a fact the record says (harness_kit's Facts), its data the payload with `at`, when it
+                  happened
 
 and, from a call's or an answer's pieces (harness_kit's `derived`; proxy_hook.py's `derive`): what the harness asks
 the user (asked), an asking call's result (ask_settled), the background tasks its tools' results start and stop and
@@ -43,7 +44,8 @@ from .adaptor import CHANNEL
 MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE, FILE_TOUCHED, HARNESS = (
     "model_call", "reply_part", "reply_end", "call_failed", "recap", "name", "session_file", "file_touched", "harness")
 #: Every harness event type a proxy hook records.
-RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE, FILE_TOUCHED, HARNESS) + Facts.ALL
+RECORDS = (MODEL_CALL, REPLY_PART, REPLY_END, CALL_FAILED, RECAP, NAME, SESSION_FILE, FILE_TOUCHED, HARNESS) + \
+    tuple(t for t in Facts.ALL if t != NAME)
 READ_ID, ANSWER_ID = "read_id", "answer_id"
 RECORDS_LANE = "records"    # ag's server's lane for records, beside a session's (its server's RECORDS_LANE)
 STREAMING = "streaming"     # a reply_part's stop while the answer still streams (no reply_end yet)
