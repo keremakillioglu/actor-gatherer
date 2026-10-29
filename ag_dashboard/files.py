@@ -349,6 +349,7 @@ class _Turn:
         self.commands: List[dict] = []
         self.order: List[str] = []
         self.current: Optional[dict] = None              # the call being read, as `commands` lists it
+        self.went_on: Optional[float] = None             # when a message written as it ran last joined it (ag stored it)
         self.at_call: Optional[float] = None             # when it was made (its sources' `at`)
 
     def file(self, path: str) -> dict:
@@ -547,7 +548,8 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     call while nothing readable was said or thought after it -- {id, text, call, running, error, output} -- or
     None; and what its calls are doing and how they ended, work.summary's; `stopped`, how it stopped short -- interrupted
     (Esc), as the note the harness sent with the next turn says or its own record (`_stops`), or on an error it gave up
-    on, as its record says: {kind, at (None: not known), text, status}, as data.py's actor's `stopped` -- or None;
+    on, as its record says: {kind, at (None: not known), text, status}, as data.py's actor's `stopped` -- or None, as
+    for a turn that went on after the stop with a message written as it ran (Esc with one queued sends it at once);
     `calls`, as many as its list of calls below has), and for turn `turn` (None: the latest) the files it worked on, in
     the order first touched, each
         {path, kinds (read, edit, write, hit), created, changed (the lines its changes added and removed, [added,
@@ -883,6 +885,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         h.head["kind"] = start[4]
     for n, got in more.items():
         heads[n].head["more"] = got
+    joined = {m["row_id"] for got in more.values() for m in got}
     pick = len(heads) - 1 if turn is None or not heads else max(0, min(turn, len(heads) - 1))
     want = heads[pick] if heads else None
     # then every call, in order, each with its result, keeping what is known of each file
@@ -903,6 +906,9 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     spawned: Dict[str, dict] = {}                    # a codex subagent's path: the turn that started it, its report there
     for i, (row_id, typ, at, parts, _said) in enumerate(evs):
         cur = begins.get(i, cur)
+        if row_id in joined and cur is not None:     # it went on, with a message written as it ran: not stopped short by
+            cur.head["stopped"] = None               # a stop before -- Esc sends a message queued at once, and Claude
+            cur.went_on = at                         # Code says nothing of the interrupt then
         head = cur.head if cur is not None else {"replies": [], "now": None, "last": None}   # before the first message: kept nowhere
         acts = cur.acts if cur is not None else {}
         if at and (head.get("end") or 0) < at:
@@ -995,7 +1001,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                 apply(t, q, r)
     for s in stops:                                  # the record's, by when: in the turn it fell in, where the conversation doesn't say
         h = next((h for h in reversed(heads) if (h.head["at"] or 0) <= s["at"]), None)
-        if h is not None and h.head["stopped"] is None:
+        if h is not None and h.head["stopped"] is None and not (h.went_on and s["at"] < h.went_on):
             h.head["stopped"] = s
     for h in heads:                                  # its newest call, while nothing readable was said or thought after it
         h.head["work"] = dict(work.summary(list(h.acts.values())), **({} if h.head["last"] else {"last": None}))
