@@ -309,11 +309,12 @@ def stop(settings) -> int:
 
 
 def dashboard(args: List[str]) -> int:
-    """`ag dashboard [--host H] [--port N] [--out FILE]`: the dashboard (its own package,
-    ag_dashboard, which reads the home's files and imports nothing of ag), on this home."""
+    """`ag` alone, or `ag dashboard [--host H] [--port N] [--no-open] [--out FILE]`: the dashboard (its own
+    package, ag_dashboard, which reads the home's files and imports nothing of ag), on this home, opened
+    in the browser -- unless --no-open."""
     from ag_dashboard.__main__ import main as dashboard_main
     try:
-        return dashboard_main(["--home", config.home(), *args])
+        return dashboard_main(["--home", config.home(), "--open", *args])
     except SystemExit as exc:                 # its argument errors: the usage is printed
         return exc.code if isinstance(exc.code, int) else 2
 
@@ -321,6 +322,8 @@ def dashboard(args: List[str]) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     try:
+        if not argv:                                                    # `ag` alone: the dashboard
+            return dashboard([])
         opts, cmd, rest = parse(argv)
         if cmd == "help":
             print(usage.help_text(USAGE))

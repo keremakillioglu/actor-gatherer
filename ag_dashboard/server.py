@@ -660,6 +660,8 @@ class Server(ThreadingHTTPServer):
         self.hub.on_llm = self.calls.changed
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         self.editors = editor.Editors()                                # the files open in the Editor panel
+        self.listener = self.fallback = self.rest = None               # for server_close, which a failed bind calls
+        self.keeps_actions = False
         super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors))
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
