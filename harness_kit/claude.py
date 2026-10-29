@@ -28,8 +28,8 @@ import zlib
 import time
 from typing import Dict, List, Optional, Tuple
 
-from .base import (Action, AnswerError, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
-                   ToolCall, ToolResult, one_line, output_of, picked, seconds)
+from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
+                   ToolCall, ToolResult, one_line, output_of, picked, seconds, typed_in)
 
 # ---------------------------------------------------------------- Claude Code's own text, in the user's name
 
@@ -629,6 +629,12 @@ def cwd_of(messages: list) -> Optional[str]:
     return found
 
 
+def _rule(line: str) -> bool:
+    """A row of its screen that is one of its message box's rules: "─" across it, a label in it or not."""
+    line = line.strip()
+    return len(line) >= 20 and line.count("─") >= 0.8 * len(line)
+
+
 class ClaudeCode(Harness):
     name = "claude"
     label = "Claude Code"
@@ -720,6 +726,25 @@ class ClaudeCode(Harness):
     def instruction_args(self, text: str) -> List[str]:
         """`--append-system-prompt`: after its own system prompt, on every call of the run (headless or not)."""
         return ["--append-system-prompt", text]
+
+    def box(self, screen) -> Optional[str]:
+        """Its message box: a prompt row ("❯", or "!" in its shell mode) and the rows of what is typed, between two
+        full-width rules (the upper one may carry a label: "─── History 9/9 ───"), the cursor shown in it while it has
+        the keys. A dialog (/mcp, /model), a menu, a question, a permission it asks, takes the box's place and hides the
+        cursor; so does its folder-trust prompt."""
+        if not screen.cursor_shown:
+            return Box.AWAY
+        lines = screen.lines()
+        top = next((r for r in range(screen.y - 1, -1, -1) if _rule(lines[r])), None)
+        bottom = next((r for r in range(screen.y + 1, len(lines)) if _rule(lines[r])), None)
+        if top is None or bottom is None or _rule(lines[screen.y]):
+            return Box.AWAY
+        first = lines[top + 1]
+        if first.startswith("!"):                        # its shell mode: the message would run as a command
+            return Box.HOLDS
+        if not first.startswith("❯"):
+            return Box.AWAY
+        return Box.HOLDS if typed_in(screen, top + 1, bottom - 1, 1).strip() else Box.EMPTY
 
     def answer_keys(self, ask: dict, choice: dict) -> List[str]:
         """Its dialogs' keys (PLAN_KEYS' notes)."""

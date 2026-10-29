@@ -214,6 +214,24 @@ def one_line(text) -> str:
     return text.strip()
 
 
+class Box:
+    """What a message typed into the harness's terminal now would go into, as its screen shows (`Harness.box`)."""
+    EMPTY = "empty"      # its message box, empty and with the keys: the message goes in, and Enter sends it
+    HOLDS = "holds"      # its message box has the keys but holds something not sent: the message would join it
+    AWAY = "away"        # something else has the keys -- a dialog, a menu, a question, a permission asked: Enter
+                         # would pick in it, and the message be lost
+
+
+def typed_in(screen, first: int, last: int, start: int = 0) -> str:
+    """What is typed in rows `first`..`last` of `screen` (harness_kit.screen's), from column `start` of the first: a
+    box's placeholder, drawn faint, left out."""
+    out = []
+    for r in range(max(0, first), min(last, screen.rows - 1) + 1):
+        out += [ch for ch, st in screen.cells(r)[start if r == first else 0:] if not st.faint]
+        out.append("\n")
+    return "".join(out).replace("\xa0", " ")
+
+
 class Harness(ABC):
     """One harness's rules. Subclasses implement `items` and `read`; `call` says what a request
     is (None by default: the harness's calls not known). `name` is how ag and the dashboard name it,
@@ -301,6 +319,11 @@ class Harness(ABC):
     def answer_expected(self, ask: dict, choice: dict) -> List[str]:
         """What the harness records as the answer once it has `choice`: each of these strings, somewhere in it."""
         return []
+
+    def box(self, screen) -> Optional[str]:
+        """Where a message typed into its terminal now would go, as `screen` -- harness_kit.screen's Screen, fed what
+        the terminal printed -- shows it: a Box. None by default: the harness does not say (typed in, as it is)."""
+        return None
 
     def answer_summary(self, ask: dict, choice: dict) -> str:
         """The answer in a line: "Which color? → Blue · Which pets? → Cat, Fish"."""

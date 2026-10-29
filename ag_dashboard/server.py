@@ -52,7 +52,10 @@ context manager's home (data.py), read-only. Standard library only.
                                           its agent (sessions.py's `send`); while the codex in the dashboard's
                                           terminal asks whether to implement its plan, what to change instead
                                           ("No, stay in Plan mode", then the message); refused while it waits on
-                                          a question there (`codex_dialog`)
+                                          a question there (`codex_dialog`), and while its terminal's message box
+                                          is not there, empty, to take it -- a dialog, a menu, a question, a
+                                          permission asked, or something typed there and not sent: the error then
+                                          has `box` (sessions.py's NotAtBox)
     POST /api/send {gatherer, channel, text, ...}  the same to a Claude Code or codex session not started here,
                                           taken into the table first (sessions.py's `adopt`)
     POST /api/coordinator {gatherer, cwd?, harness?}  the gatherer's gatherer agent, started (with no message yet) if it
@@ -622,8 +625,9 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 if url.path == "/api/settings/file":
                     return self.answer(settings.save_text(str(body.get("text") or ""), str(body.get("version") or "")))
                 return self.send(404, b"not found", "text/plain")
-            except (sessions.SessionError, ValueError) as exc:
-                return self.send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
+            except (sessions.SessionError, ValueError) as exc:     # `box`: a message its terminal's box cannot take now
+                return self.send(400, json.dumps({"error": str(exc), **({"box": exc.box} if isinstance(exc, sessions.NotAtBox)
+                                                                         else {})}).encode(), "application/json")
             except Exception as exc:  # noqa: BLE001
                 return self.send(500, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
 
