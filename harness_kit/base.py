@@ -358,6 +358,8 @@ class Facts:
                            (what an agent answered, once known)
         task_activity      task, event (a monitor's, or an agent waiting on its own background work; None: its output
                            grew): a sign that a background task lives
+        name               text, by (the harness's name): the harness's own name for the session, as it made it --
+                           the same event a proxy hook records of a title the harness asked for (records.py's `name`)
     """
     MESSAGE_QUEUED = "message_queued"
     MESSAGE_SENT = "message_sent"
@@ -368,8 +370,9 @@ class Facts:
     TASK_STARTED = "task_started"
     TASK_ENDED = "task_ended"
     TASK_ACTIVITY = "task_activity"
+    NAMED = "name"
     ALL = (MESSAGE_QUEUED, MESSAGE_SENT, MESSAGE_WITHDRAWN, ASKED, ASK_SETTLED, TURN_STOPPED, TASK_STARTED, TASK_ENDED,
-           TASK_ACTIVITY)
+           TASK_ACTIVITY, NAMED)
 
 
 @dataclass

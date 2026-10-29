@@ -539,7 +539,8 @@ def since_said(a: dict, cut: Optional[float]) -> Optional[float]:
 
 def _names(conn, tables: set) -> Dict[str, dict]:
     """Each channel's name, {text, by}: the reader's newest (`by` "user", given in the dashboard: naming.py), else the
-    newest another gave (codex's title for its thread) -- from the `name` records. A reader's "" takes theirs back."""
+    newest another gave (codex's title for its thread, Claude Code's for its session) -- from the `name` records. A
+    reader's "" takes theirs back."""
     given = []
     for ch, at, raw in conn.execute(f"SELECT e.{CHANNEL}, e.inserted_at, e.payload_json FROM events e JOIN event_types t "
                                     f"ON t.event_type_id = e.event_type_id WHERE t.name = 'name' ORDER BY e.row_id"):

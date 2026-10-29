@@ -111,6 +111,22 @@ class FollowTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.1)
         self.assertEqual([e["id"] for _, e in again.inserted], before)                  # the server stores none twice
 
+    async def test_claude_code_s_name_for_it_recorded_once_however_often_written_or_read(self):
+        title = {"type": "ai-title", "aiTitle": "Lighthouse keeper story", "sessionId": SESSION}
+        self.write(self.op("enqueue", "one"), title, title)
+        self.follow()
+        await self.until(lambda: self.server.types() == ["session_file", "message_queued", "name"])
+        self.assertEqual(self.server.inserted[-1][1]["payload"], {"at": None, "text": "Lighthouse keeper story", "by": "claude"})
+        self.write(title)                                                  # it rewrites its metadata: the same name
+        await asyncio.sleep(0.1)
+        self.assertEqual(self.server.types().count("name"), 1)
+        again = Server()
+        files = SessionFiles(again, lambda g, line: None, poll=0.01)                   # a hook server started again
+        self.addAsyncCleanup(files.close)
+        files.follow("g", SESSION, ClaudeCode(), SESSION, self.cwd, self.config)
+        await asyncio.sleep(0.1)
+        self.assertEqual([e["id"] for _, e in again.inserted], [e["id"] for _, e in self.server.inserted])
+
     async def test_quiet_it_is_followed_no_more_until_the_next_call(self):
         self.files.quiet = 0.05
         self.write(self.op("enqueue", "one"))
@@ -215,6 +231,19 @@ class FollowerTest(unittest.TestCase):
         self.assertEqual(record.due(time.time()), [])                                   # Esc's note could still come
         [settled] = record.due(time.time() + claude_rules.SETTLE_SECONDS)
         self.assertEqual((settled.type, settled.data["how"], settled.data["result"]), (Facts.ASK_SETTLED, "answered", "Large"))
+
+    def test_claude_code_s_name_for_the_session_each_time_it_changes(self):
+        record = ClaudeCode().follower(os.path.join("projects", "-work", f"{SESSION}.jsonl"))
+        title = lambda text, session=SESSION: json.dumps(  # noqa: E731 - as Claude Code writes it, with no spaces
+            {"type": "ai-title", "aiTitle": text, "sessionId": session}, separators=(",", ":")).encode()
+        lines = [title("Lighthouse  keeper story"), title("Lighthouse keeper story"),        # written again, unchanged
+                 title("Some other session", "another"), title(""), title("Night watch")]
+        self.assertTrue(all(record.wanted(line) for line in lines))
+        facts = [f for i, line in enumerate(lines) for f in record.take(line, str(i * 100))]
+        self.assertEqual([(f.type, f.key, f.at, f.data) for f in facts],
+                         [(Facts.NAMED, "0", None, {"text": "Lighthouse keeper story", "by": "claude"}),
+                          (Facts.NAMED, "400", None, {"text": "Night watch", "by": "claude"})])
+        self.assertFalse(record.wanted(json.dumps({"type": "custom-title", "customTitle": "Mine"}).encode()))
 
     def test_codex_s_subagent_report_once_its_own_rollout_has_it(self):
         tmp = tempfile.TemporaryDirectory()

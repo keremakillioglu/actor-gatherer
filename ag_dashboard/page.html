@@ -3364,7 +3364,7 @@ const nameAnswers = new Map();                       // what came of each name g
 const nameKey = (gname, c) => `${gname}\u0000${c}`;
 function nameNote(g, a) {
   if (!a.name || !a.name.text) return "";
-  if (a.name.by !== "user") return `${a.name.by === "codex" ? "Codex's" : "Its harness's"} name for it\n`;
+  if (a.name.by !== "user") return `${HARNESS[a.name.by] ? `${HARNESS[a.name.by]}'s` : "Its harness's"} name for it\n`;
   const how = nameAnswers.get(nameKey(g.name, a.channel));
   return "Named by you" + (!how ? "" : how.error ? ` · not in ${harnessName(a.harness)}: ${how.error}`
     : how.store || how.terminal ? ` · in ${harnessName(a.harness)} too` : "") + "\n";

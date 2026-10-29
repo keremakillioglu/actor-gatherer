@@ -679,7 +679,7 @@ class ClaudeCode(Harness):
         return record_path(session, cwd, config)
 
     def follower(self, path: str) -> Follower:
-        return Record()
+        return Record(os.path.splitext(os.path.basename(path))[0])
 
     def rename_command(self, name: str) -> Optional[str]:
         """Its own `/rename` (also `/name`), which it runs at once, even mid-turn: the name in its prompt box and its
@@ -941,6 +941,8 @@ def plan_path(payload) -> Optional[Tuple[str, Optional[str]]]:
 #:         dismissed -- dismissed (Esc), INTERRUPTED follows it at once
 #:     a user line opening with INTERRUPTED   the user stopped the turn (Esc), which makes no model call
 #:     any line with a <task-notification>   a background task ended, written the moment it is made (`notices`)
+#:     {"type": "ai-title", "aiTitle", "sessionId"}   its own name for the session, which a small model gave it from the
+#:         user's first message (2.1.312); written again, unchanged, each time it rewrites the session's metadata
 #:
 #: "isSidechain" lines are a subagent's, not the session's.
 INTERRUPTED = "[Request interrupted by user"
@@ -989,9 +991,12 @@ def _strings(value):
 
 class Record(Follower):
     """Claude Code's record of a session, followed (record_path's module notes): the user's messages as it queues and
-    sends them, what its asking calls came to, its turn interrupted or given up on, its background tasks' ends."""
+    sends them, what its asking calls came to, its turn interrupted or given up on, its background tasks' ends, and
+    its own name for the session. `session`: the session's id (None: any), whose name lines alone are its."""
 
-    def __init__(self):
+    def __init__(self, session: Optional[str] = None):
+        self.session = session
+        self.title: Optional[str] = None          # its name for the session, as last read
         self.queue: List[dict] = []               # [{key, text, at, note}]: not sent yet, in the order queued
         self.sent: List[Tuple[str, float]] = []   # (text, when) of the newest sent as a turn's first
         self.asks: Dict[str, str] = {}            # an asking call's id -> its tool, until its result
@@ -999,7 +1004,7 @@ class Record(Follower):
 
     def wanted(self, line: bytes) -> bool:
         if any(k in line for k in (b'"queue-operation"', b'"human"', b"<task-notification>", b"isApiErrorMessage",
-                                   INTERRUPTED.encode(), b"AskUserQuestion", b"ExitPlanMode")):
+                                   INTERRUPTED.encode(), b"AskUserQuestion", b"ExitPlanMode", b'"ai-title"')):
             return True
         if self.results and b'"assistant"' in line:
             return True
@@ -1016,6 +1021,8 @@ class Record(Follower):
         out = self._ended(m, key, when) if b"<task-notification>" in line else []
         if m.get("type") == "queue-operation":
             return out + self._queued(m, key, when)
+        if m.get("type") == "ai-title":
+            return out + self._titled(m, key)
         if m.get("isSidechain") or m.get("type") not in ("user", "assistant"):
             return out
         message = m.get("message") if isinstance(m.get("message"), dict) else {}
@@ -1099,6 +1106,14 @@ class Record(Follower):
             return []
         return [Fact(Facts.MESSAGE_SENT, key, when, {"queued": None, "text": text, "words": words_of(text)[1],
                                                       "how": "prompt", "joins": False, "written": when})]
+
+    def _titled(self, m: dict, key: str) -> List[Fact]:
+        """Its name for the session, when it is not the one it last gave: it writes the same name again and again."""
+        title = " ".join(str(m.get("aiTitle") or "").split())
+        if not title or title == self.title or (self.session and m.get("sessionId") not in (None, self.session)):
+            return []
+        self.title = title
+        return [Fact(Facts.NAMED, key, None, {"text": title, "by": "claude"})]
 
     @staticmethod
     def _ended(m: dict, key: str, when: Optional[float]) -> List[Fact]:
