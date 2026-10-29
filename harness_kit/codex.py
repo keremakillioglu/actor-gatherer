@@ -27,8 +27,8 @@ import threading
 import time
 from typing import Dict, List, Optional, Tuple
 
-from .base import (Action, AnswerError, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
-                   ToolCall, ToolResult, one_line, output_of, picked, seconds)
+from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
+                   ToolCall, ToolResult, one_line, output_of, picked, seconds, typed_in)
 
 # Codex item type -> Kind. None = a message: its role decides (ROLES). An item type not listed here is OTHER.
 ITEM_KINDS = {
@@ -119,6 +119,8 @@ DOWN, OPEN_ASYNC = "\x1b[B", "\x1b[1;2D"            # Down; Shift+Left, which op
 #: What it may do unasked, by Claude Code's names for it: auto is --approve-for-me (its reviewer approves), bypass
 #: its bypass; any other, nothing (it asks).
 PERMISSIONS = {"auto": ["--approve-for-me"], "bypassPermissions": ["--dangerously-bypass-approvals-and-sandbox"]}
+COMPOSER_ROWS = 12                  # its composer's rows at most
+FOOT_ROWS = 3                       # the rows under it at most: its status line, its hints
 #: The item types the dashboard reads as codex's, by shape.
 SHAPES = {"message", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output",
           "reasoning", "local_shell_call", "web_search_call", "compaction", "compaction_summary"}
@@ -479,6 +481,28 @@ class Codex(Harness):
         return "named in its state"
 
     asks_recorded = True          # its asks, and their answers, are in its rollout (Rollout)
+
+    def box(self, screen) -> Optional[str]:
+        """Its composer: a "›" row and the rows of what is typed under it (each two columns in), the cursor shown in it
+        while it has the keys; under it a blank row, then only its status line and its hints, at the foot of the screen.
+        A popup (/model), an approval it asks, takes the keys and hides the cursor."""
+        if not screen.cursor_shown:
+            return Box.AWAY
+        lines = screen.lines()
+        first = screen.y
+        while first >= 0 and not lines[first].startswith("›"):
+            if lines[first].strip() and not lines[first].startswith("  "):
+                return Box.AWAY
+            first -= 1
+        if first < 0 or screen.y - first > COMPOSER_ROWS:
+            return Box.AWAY
+        end = screen.y                                   # what is typed may go on below the cursor, up to a blank row
+        while end + 1 < len(lines) and lines[end + 1].startswith("  ") and lines[end + 1].strip():
+            end += 1
+        below = [r for r in range(end + 1, len(lines)) if lines[r].strip()]
+        if below and (below != list(range(end + 2, end + 2 + len(below))) or len(below) > FOOT_ROWS):
+            return Box.AWAY
+        return Box.HOLDS if typed_in(screen, first, end, 1).strip() else Box.EMPTY
 
     def command(self, session: str, resume: bool = False, model: Optional[str] = None,
                 permission_mode: Optional[str] = None, fullscreen: bool = True) -> List[str]:

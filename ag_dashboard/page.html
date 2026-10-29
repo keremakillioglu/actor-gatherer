@@ -784,6 +784,7 @@ button:disabled { opacity: .5; cursor: default; }
 .composer textarea { width: 100%; min-height: 0; max-height: calc(3lh + 12px); resize: none; overflow-y: auto; }   /* a line, growing to three as they are typed, then scrolling (fitBox) */
 .queued { color: var(--muted); font-size: 12px; padding: 6px 4px 6px 17px; border-bottom: 1px solid var(--grid); }
 .chat .err:empty { display: none; }
+.chat .err .to-term { font: inherit; padding: 0; border: 0; background: none; color: var(--term-link); text-decoration: underline; cursor: pointer; }
 /* The Terminal view: Claude Code's own UI, drawn by xterm.js on the page's terminal colors, so it follows
    the theme (Claude Code's own colors follow its /theme) */
 .chat .chat-frame.xterm-frame { position: relative; overflow: hidden; background: var(--term-bg); padding: 8px 4px 8px 10px; }
@@ -2393,7 +2394,7 @@ async function get(path) {
 async function post(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const got = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(got.error || `${path}: ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error(got.error || `${path}: ${r.status}`), { box: got.box });   // box: /api/send's
   return got;
 }
 const selectedInfo = () => {
@@ -4307,9 +4308,14 @@ function chatCard(info) {
   }
   // Sending, for every view's message box: the box is the view's (`composer`), what it sends and the
   // error it gets are the tab's.
-  const err = el("div", { class: "err", role: "alert", text: held || (s.status === "failed" && s.last_error ? s.last_error : "") });
-  let sending = false;
   const draft = key(...state.selected);              // what is typed for this actor and not sent (keepDraft)
+  // why its last message was not sent, kept for the draws after (sendFailed); for one its terminal's box could not take
+  // (sessions.py's NotAtBox), the way to the terminal
+  const failed = !held && sendFailed.get(draft);
+  const err = el("div", { class: "err", role: "alert" }, ...(held ? [held] : failed ? [failed.text, ...(failed.box && CHAT_VIEWS.has("terminal")
+    ? [" ", el("button", { type: "button", class: "to-term", onclick: () => setChatView("terminal") }, "Open the terminal")] : [])]
+    : s.status === "failed" && s.last_error ? [s.last_error] : []));
+  let sending = false;
   refill(info, draft);
   // A message box kept from an earlier draw (`patch`) still calls the send it was drawn with: each send goes to the
   // latest draw's (chatSend), which knows the session as it is now.
@@ -4318,7 +4324,7 @@ function chatCard(info) {
     t = String(t ?? "").trim();
     if (dashboardCommand(t)) { const box = document.getElementById("composer-text"); if (box) { box.value = ""; fitBox(box); } keepDraft(draft, ""); return true; }
     if (!t || sending || held) return false;
-    sending = true; err.textContent = ""; interrupting = null;
+    sending = true; err.textContent = ""; sendFailed.delete(draft); interrupting = null;
     for (const n of document.querySelectorAll("[data-send]")) n.disabled = true;
     // a "/" command of the harness's own (dashboardCommand took the page's): what it does (a dialog, a report) is drawn
     // in the session's terminal, and may never come back as a message -- not shown pending; the terminal shown once
@@ -4351,8 +4357,9 @@ function chatCard(info) {
         const again = document.getElementById("composer-text");
         if (again && again.dataset.draft === draft) { again.value = was; fitBox(again); }
       }
+      sendFailed.set(draft, { text: e.message, box: e.box });
       keepingPlace(renderMain);
-      err.textContent = e.message; return false;
+      return false;
     }
     finally { sending = false; for (const n of document.querySelectorAll("[data-send]")) n.disabled = !!held; }
   };
@@ -6528,6 +6535,7 @@ const heardCount = (h, text) => [...h.stored, ...h.typed.filter((q) => !q.chat)]
 // One not seen for UNSEEN_MS says so.
 const sentHere = [], UNSEEN_MS = 15000;
 let chatSend = async () => false;                    // the message box's send, as the latest draw made it (chatCard)
+const sendFailed = new Map();                         // per actor (its draft's key): why its last message was not sent
 // Whether the message Claude Code took back is in its input box untouched, as sessions.py's `took_back` reads it: what was
 // last typed into its terminal, the dashboard's, is the key that stopped the turn, after the call before (`since`).
 const untouched = (info) => {
