@@ -20,12 +20,14 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag_dashboard import avatars, data, hiding, saved, seen, server, sessions  # noqa: E402
+from harness_kit.base import Box  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 # A fake `ag`: writes its arguments, then each message it is sent, to $FAKE_AG_LOG; answers each
 # after $FAKE_AG_DELAY seconds with a result line; exits when its stdin closes. `new G` makes G's
 # config in $AG_HOME, as ag's does. In a terminal, resized, it clears its screen and says its size, as a
-# full screen draws all of it again.
+# full screen draws all of it again; under all it prints, its harness's message box, empty, the cursor in it (as
+# harness_kit's `box` reads Claude Code's and codex's).
 FAKE_AG = textwrap.dedent("""
     import json, os, sys, time
     if sys.argv[1:2] == ["home"]:                       # `ag home hold ...`: it has the session
@@ -43,9 +45,11 @@ FAKE_AG = textwrap.dedent("""
         import signal, tty
         tty.setraw(0)
         size = lambda: "%dx%d" % tuple(os.get_terminal_size(0))
-        signal.signal(signal.SIGWINCH, lambda *_: os.write(1, ("\\x1b[2J[resized %s]\\r\\n" % size()).encode()))
+        box = (("\\x1b[2K" + "\\u2500" * 30 + "\\r\\n\\x1b[2K\\u276f \\r\\n\\x1b[2K" + "\\u2500" * 30 + "\\x1b[1A\\x1b[3G")
+               if "codex" not in sys.argv else "\\x1b[2K\\u203a \\r\\n\\x1b[2K\\r\\n\\x1b[2K  status\\x1b[2A\\x1b[3G").encode()
+        signal.signal(signal.SIGWINCH, lambda *_: os.write(1, ("\\x1b[2J[resized %s]\\r\\n" % size()).encode() + box))
         os.write(1, ("fake terminal %s tty=%s term=%s alt=%s\\r\\n" % (size(), os.isatty(0), os.environ.get("TERM"),
-                                                                     os.environ.get("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"))).encode())
+                                                                     os.environ.get("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"))).encode() + box)
         while True:
             try:
                 got = os.read(0, 1024)
@@ -54,7 +58,7 @@ FAKE_AG = textwrap.dedent("""
             if not got or got == b"\\x04":
                 sys.exit(0)
             log.write(json.dumps({"typed": got.decode()}) + "\\n"); log.flush()
-            os.write(1, b"[got " + got.replace(b"\\x1b", b"ESC") + b"]\\r\\n")
+            os.write(1, b"[got " + got.replace(b"\\x1b", b"ESC") + b"]\\r\\n" + box)
     for line in sys.stdin:
         message = json.loads(line)["message"]["content"]
         log.write(json.dumps({"message": message}) + "\\n"); log.flush()
@@ -294,7 +298,7 @@ class TerminalTest(SessionsBase):
         self.until(lambda: "[got ESC]" in self.screen(sid))
         out, end, reset, code = self.s.output(sid, at)
         self.assertFalse(reset)
-        self.assertEqual(out.decode(), "[got ESC]\r\n")
+        self.assertTrue(out.decode().startswith("[got ESC]\r\n"), out)       # then its box drawn again
         self.assertIsNone(code)
         self.s.resize(sid, 90, 20)
         self.until(lambda: "[resized 90x20]" in self.screen(sid))
@@ -311,9 +315,9 @@ class TerminalTest(SessionsBase):
         self.s.redraw(sid)                                        # all it printed is kept: nothing to draw again
         time.sleep(0.3)
         self.assertNotIn("[resized", self.screen(sid))
-        with unittest.mock.patch.object(sessions, "TERM_KEEP", 200):
-            self.s.type(sid, "x" * 300)                           # echoed: its start no longer kept
-            self.until(lambda: self.s.output(sid, -1)[1] > 300)
+        with unittest.mock.patch.object(sessions, "TERM_KEEP", 600):     # two redraws, each with its box, kept
+            self.s.type(sid, "x" * 900)                           # echoed: its start no longer kept
+            self.until(lambda: self.s.output(sid, -1)[1] > 900)
             self.s.redraw(sid)
             self.until(lambda: "[resized 100x30]" in self.screen(sid))
         out = self.screen(sid)
@@ -516,6 +520,78 @@ class ChatTerminalTest(SessionsBase):
         self.assertEqual([x["message"] for x in self.logged() if "message" in x], ["one", "two"])
         self.assertFalse(self.session(sid)["terminal"])
 
+
+
+@unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
+class ChatBoxTest(SessionsBase):
+    """A message for an open terminal is typed only into its harness's message box, empty (sessions.py's `_at_box`):
+    refused, and nothing typed, while something else has the keys -- a dialog, a question -- or something typed in the
+    box is not sent. The fake draws its harness's box, empty; what the screen shows instead is fed to it, as printed."""
+
+    def setUp(self):
+        super().setUp()
+        self.chat(None)
+
+    def opened(self, harness="claude"):
+        sid = self.s.create("g", self.work, harness=harness)["session_id"]
+        self.s.terminal(sid, 100, 30)
+        self.until(lambda: self.s._box(self.s.terms[sid], harness) == Box.EMPTY)
+        return sid
+
+    def shows(self, sid, data):
+        t = self.s.terms[sid]
+        with t.screen_lock:
+            t.screen.feed(data)
+
+    def typed(self):
+        return "".join(x.get("typed", "") for x in self.logged())
+
+    def test_not_into_a_dialog_where_its_enter_would_pick(self):
+        for harness in ("claude", "codex"):
+            sid = self.opened(harness)
+            self.shows(sid, b"\x1b[?25l")                 # a dialog has the keys: the cursor hidden, as both hide it
+            with self.assertRaises(sessions.NotAtBox) as got:
+                self.s.send(sid, f"hello {harness}")
+            self.assertEqual(got.exception.box, Box.AWAY)
+            self.assertIn("dialog", str(got.exception))
+            time.sleep(0.3)
+            self.assertNotIn(f"hello {harness}", self.typed())
+            self.shows(sid, b"\x1b[?25h")                 # closed: the box has the keys again
+            self.s.send(sid, f"hello {harness}")
+            self.until(lambda: f"\x1b[200~hello {harness}\x1b[201~\r" in self.typed())
+
+    def test_not_onto_what_is_typed_there_and_not_sent(self):
+        sid = self.opened()
+        self.shows(sid, b"half a thought")                # in its box, after its prompt
+        with self.assertRaises(sessions.NotAtBox) as got:
+            self.s.send(sid, "hello")
+        self.assertEqual(got.exception.box, Box.HOLDS)
+        self.assertIn("typed", str(got.exception))
+        self.assertNotIn("hello", self.typed())
+
+    def test_a_message_claude_code_put_back_is_cleared_first(self):
+        sid = self.opened()
+        self.shows(sid, b"the message taken back")
+        with unittest.mock.patch.object(sessions, "took_back", return_value=True):
+            self.s.send(sid, "hello")
+        self.until(lambda: "hello" in self.typed())
+        self.assertLess(self.typed().index("\x03"), self.typed().index("hello"))    # Ctrl+C, then the message
+
+    def test_a_screen_caught_mid_draw_is_given_time_to_settle(self):
+        sid = self.opened()
+        self.shows(sid, b"\x1b[?25l")                     # hidden while it draws, then shown again
+        threading.Timer(0.15, self.shows, (sid, b"\x1b[?25h")).start()
+        self.s.send(sid, "hello")
+        self.until(lambda: "\x1b[200~hello\x1b[201~" in self.typed())
+
+    def test_a_rename_waits_for_the_box(self):
+        sid = self.opened()
+        self.assertTrue(self.s.rename(sid, "/rename named"))
+        self.shows(sid, b"\x1b[?25l")
+        self.assertEqual(self.s.rename_due([sid]), [])    # held, for the next time it is idle
+        self.shows(sid, b"\x1b[?25h")
+        self.assertEqual(self.s.rename_due([sid]), [sid])
+        self.until(lambda: "/rename named" in self.typed())
 
 class KeptTest(SessionsBase):
     """What the dashboard's own end takes is kept -- shown Idle after a restart -- and what is closed is not."""
@@ -1037,6 +1113,19 @@ class EndpointTest(SessionsBase):
         self.assertEqual((code, sent["terminal"], sent["fullscreen"]), (200, True, True))
         self.until(lambda: b"fake terminal 88x22" in (self.httpd.sessions.output(sid, -1) or (b"",))[0])
         self.assertEqual([x["argv"] for x in self.logged() if "argv" in x][0][-2:], ["--", "hello"])
+
+    @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
+    def test_a_message_its_terminal_cannot_take_says_why_and_where(self):
+        self.chat(None)
+        sid = self.post("/api/sessions", {"gatherer": "g", "cwd": self.work})[1]["session_id"]
+        self.post("/api/terminal", {"session_id": sid, "cols": 80, "rows": 24})
+        t = self.until(lambda: self.httpd.sessions.terms.get(sid))
+        self.until(lambda: self.httpd.sessions._box(t, "claude") == Box.EMPTY)
+        with t.screen_lock:
+            t.screen.feed(b"\x1b[?25l")                  # a dialog has the keys
+        code, got = self.post("/api/send", {"session_id": sid, "text": "hello"})
+        self.assertEqual((code, got["box"]), (400, Box.AWAY))
+        self.assertIn("dialog", got["error"])
 
     @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
     def test_a_terminal_opened_typed_into_and_streamed_from_the_page(self):

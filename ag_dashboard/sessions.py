@@ -103,7 +103,9 @@ from typing import Callable, Dict, List, Optional
 from urllib.parse import urlsplit
 
 import harness_kit
+from harness_kit.base import Box
 from harness_kit.codex import PERMISSIONS as CODEX_PERMISSIONS
+from harness_kit.screen import Screen
 
 from . import actions, answers, home
 
@@ -154,6 +156,15 @@ class SessionError(ValueError):
     """A request the sessions cannot take: the page shows its text."""
 
 
+class NotAtBox(SessionError):
+    """A message the session's terminal cannot take now: something other than its message box, empty, has the keys --
+    `box`, what (harness_kit's Box: HOLDS, AWAY). The page points to the terminal."""
+
+    def __init__(self, text: str, box: str):
+        super().__init__(text)
+        self.box = box
+
+
 def db_path() -> str:
     return os.path.join(home.HOME, "dashboard.db")
 
@@ -192,6 +203,8 @@ HOLD_MAX = 10.0                    # a stop key held while the dashboard's own k
 ANSWER_GAP = 0.3                   # between the keys of an answer typed into a dialog: several at once are one input to it
 CLEARED = b"\x1b[2J"               # a full screen clearing it, to draw it all again (Claude Code's, at its start and each resize)
 REDRAW_WAIT = 1.0                  # a full screen made a row shorter (`redraw`): how long it is given to draw, before it is put back
+BOX_SETTLE = 0.5                   # a terminal's message box not shown empty: how long its screen is watched for it to be (a
+                                   # program hides its cursor while it draws), before a message for it is refused (`_at_box`)
 #: What a page's terminal sends that no one typed: focus in and out, the terminal's answers to the program's
 #: questions (device attributes, cursor position, OSC replies), mouse reports. Not typing: a dialog is as it was.
 REPORTS = re.compile(r"\x1b\[[IO]|\x1b\[[?>]?[\d;]*[cRn]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b\[<[\d;]*[Mm]")
@@ -498,7 +511,7 @@ def took_back(gatherer: str, channel: str, stopped: float) -> bool:
 class _Term:
     """One session's terminal: the process in its pseudo-terminal, and what it printed."""
 
-    def __init__(self, pid: int, fd: int, log, fullscreen: bool = False):
+    def __init__(self, pid: int, fd: int, log, fullscreen: bool = False, cols: int = 0, rows: int = 0):
         self.pid, self.fd, self.log, self.fullscreen = pid, fd, log, fullscreen
         self.since = time.time()        # when it started
         self.out = bytearray()          # the last TERM_KEEP bytes it printed
@@ -515,6 +528,8 @@ class _Term:
         self.drawn = -1                 # where in what it printed it last cleared its screen (CLEARED), to draw it all
         self.sizing = threading.Lock()  # its size set by one at a time: the page's (`resize`), or `redraw`'s
         self.redrawing = False          # `redraw` at it
+        self.screen = Screen(cols, rows) if cols and rows else None   # its screen as what it printed draws it (`_box`):
+        self.screen_lock = threading.Lock()                           # a harness's terminal's, fed by its reader
 
 
 class Sessions:
@@ -651,7 +666,9 @@ class Sessions:
             return self._row(session_id)
 
     def send(self, session_id: str, text: str, cols: int = 120, rows: int = 32, fullscreen: bool = False) -> dict:
-        """The message to the session: typed into its terminal, if one is open; else, as `chat_mode` says, its
+        """The message to the session: typed into its terminal, if one is open -- only into its message box, empty: refused
+        (NotAtBox) while a dialog, a menu, a question or a permission it asks has the keys, or while something typed
+        there is not sent (`_at_box`); else, as `chat_mode` says, its
         terminal opened (`cols` x `rows`, `fullscreen` as `terminal` takes it) with the message its first
         prompt, or a turn of its agent -- now, or, while one runs, after it -- the agent started if it is not
         running. A turn of the agent's running or waiting takes it in either mode. The session as `list` has it;
@@ -680,13 +697,18 @@ class Sessions:
                 and not (a is not None and a.proc.poll() is None and (a.busy or a.queue))
         if opens:                                    # outside the lock: an idle agent's end is recorded by its reader
             return self.terminal(session_id, cols, rows, fullscreen, prompt=text)
+        t, s = self.terms.get(session_id), self._row(session_id)    # its terminal, open: typed only into its message box
+        clear = self._at_box(s, t) if t is not None and t.exited is None and s is not None else None   # (outside the lock:
+                                                                                                # it may wait on its screen)
         with self.lock:
             s = self._row(session_id)
             if s is None:
                 raise SessionError(f"no session {session_id} started from the dashboard")
             if session_id in self.terms:             # its terminal has it: typed there
                 t = self.terms[session_id]
-                self._paste(t, text, clear=s["harness"] == "claude" and took_back(s["gatherer"], session_id, t.stopped))
+                if clear is None:
+                    clear = s["harness"] == "claude" and took_back(s["gatherer"], session_id, t.stopped)
+                self._paste(t, text, clear=clear)
                 return next(x for x in self.list() if x["session_id"] == session_id)
             a = self.agents.get(session_id)
             if s["harness"] == "codex":                  # a process per turn: this one now, or after the one running
@@ -1102,7 +1124,7 @@ class Sessions:
                 os.execvpe(argv[0], argv, env)
             finally:
                 os._exit(127)
-        t = _Term(pid, fd, log, fullscreen)
+        t = _Term(pid, fd, log, fullscreen, cols, rows)
         self.terms[sid] = t
         if resume and not s["turns"]:
             self._set(sid, turns=1)
@@ -1200,6 +1222,12 @@ class Sessions:
                 if len(t.out) > TERM_KEEP:
                     del t.out[:len(t.out) - TERM_KEEP]
                 t.changed.notify_all()
+            with t.screen_lock:                      # its screen kept as it draws it (`_box`)
+                if t.screen is not None:
+                    try:
+                        t.screen.feed(chunk)
+                    except Exception:  # noqa: BLE001 - a screen that cannot be read is not looked at again
+                        t.screen = None
         try:
             _, status = os.waitpid(t.pid, 0)
             code = os.waitstatus_to_exitcode(status)
@@ -1265,11 +1293,13 @@ class Sessions:
                 short = struct.pack("HHHH", rows - 1 if rows > 5 else rows + 1, cols, 0, 0)
                 drawn = t.drawn
                 fcntl.ioctl(t.fd, termios.TIOCSWINSZ, short)
+                self._sized(t, cols, rows - 1 if rows > 5 else rows + 1)
             with t.changed:
                 t.changed.wait_for(lambda: t.drawn > drawn or t.exited is not None, REDRAW_WAIT)
             with t.sizing:                           # unless the page has sized it meanwhile
                 if fcntl.ioctl(t.fd, termios.TIOCGWINSZ, b"\0" * 8) == short:
                     fcntl.ioctl(t.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+                    self._sized(t, cols, rows)
         except OSError:                              # its terminal gone meanwhile
             pass
         finally:
@@ -1322,7 +1352,8 @@ class Sessions:
         """Each command held by `rename` typed into its session's terminal, where the session is in `idle` -- its turn
         over and nothing asked, so its terminal waits on a prompt, not in a dialog where Enter would pick an option --
         and its input box is the harness's alone: no answer being typed, nothing the reader typed and has not sent
-        (`drafted`), no message Claude Code put back there (`took_back`). The sessions it was typed for."""
+        (`drafted`), no message Claude Code put back there (`took_back`), and its screen shows the box empty, with the
+        keys (`_box`). The sessions it was typed for."""
         typed = []
         idle = set(idle)
         with self.lock:
@@ -1332,7 +1363,8 @@ class Sessions:
                     self.renames.pop(sid)
                     continue
                 s = self._row(sid) or {}
-                if t.answering or t.drafted or (s.get("gatherer") and took_back(s["gatherer"], sid, t.stopped)):
+                if t.answering or t.drafted or (s.get("gatherer") and took_back(s["gatherer"], sid, t.stopped)) \
+                        or self._box(t, s.get("harness") or "") not in (None, Box.EMPTY):
                     continue
                 self._paste(t, self.renames.pop(sid))
                 typed.append(sid)
@@ -1387,8 +1419,57 @@ class Sessions:
         try:
             with t.sizing:
                 fcntl.ioctl(t.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+                self._sized(t, cols, rows)
         except OSError:
             pass
+
+    def _sized(self, t: _Term, cols: int, rows: int) -> None:
+        """Its screen (`_box`) made `cols` x `rows`, as its terminal is: what it prints from now on is drawn at that size."""
+        with t.screen_lock:
+            if t.screen is not None:
+                t.screen.resize(cols, rows)
+
+    def _box(self, t: _Term, harness: str) -> Optional[str]:
+        """What a message typed into the terminal now would go into, as its screen shows (harness_kit's `box`): a Box;
+        None where that is not known -- a harness with no rule for it, a screen not drawn yet, or one not read."""
+        h = harness_kit.get(harness)
+        with t.screen_lock:
+            if h is None or t.screen is None or not any(line.strip() for line in t.screen.lines()):
+                return None
+            try:
+                return h.box(t.screen)
+            except Exception:  # noqa: BLE001 - a rule that fails on a screen says nothing of it
+                return None
+
+    def _at_box(self, s: dict, t: _Term) -> Optional[bool]:
+        """Whether a message typed into the session's terminal now goes into its message box, as `_paste` types it in --
+        so not into a dialog, a menu, a question or a permission the harness asks, where its Enter would pick and the
+        message be lost, nor onto what the reader typed in the box and has not sent. The box may hold a message Claude
+        Code put back there (`took_back`): True, the box to be emptied first (`_paste`'s `clear`); False, it is empty; None,
+        its screen does not say. Raises NotAtBox where it does not. The dashboard's own keys going in (a message, an answer) are waited for first; a screen caught
+        mid-draw (a program hides its cursor while it draws) is watched for up to BOX_SETTLE."""
+        end = time.time() + HOLD_MAX
+        while (t.answering or t.keying > time.time()) and time.time() < end:
+            time.sleep(0.05)
+        end = time.time() + BOX_SETTLE
+        while True:
+            box = self._box(t, s["harness"])
+            if box is None:
+                return None
+            if box == Box.EMPTY:
+                return False
+            if box == Box.HOLDS and s["harness"] == "claude" and took_back(s["gatherer"], s["session_id"], t.stopped):
+                return True
+            if time.time() >= end:
+                break
+            time.sleep(0.05)
+        h = harness_kit.get(s["harness"])
+        name = h.label if h is not None and h.label else s["harness"]
+        if box == Box.HOLDS:
+            raise NotAtBox(f"Something is typed in {name}'s message box in its terminal and not sent: "
+                           f"send or clear it there, then send this.", box)
+        raise NotAtBox(f"{name}'s terminal shows a dialog, a menu or a question, not its message box: "
+                       f"finish it or close it there (Esc), then send this.", box)
 
     def _write(self, t: _Term, data: bytes) -> None:
         try:

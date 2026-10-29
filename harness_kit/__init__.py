@@ -11,12 +11,14 @@ harnesses through it.
     claude.py    Claude Code (ClaudeCode); its record of a session (Record)
     codex.py     Codex (Codex); its rollout of a thread (Rollout)
     shell.py     what a shell command reads and writes, read from its words: shared by every harness
+    screen.py    a terminal's screen read back from what was printed to it (Screen): what each harness's `box` reads
+                 to tell whether its message box, empty, has the keys
 """
 
 from typing import Dict, Optional
 
-from .base import (MODELS, USERS, Action, AnswerError, Call, CallKind, Fact, Facts, Follower, Harness,  # noqa: F401 - the
-                   Kind, Part, RenameError, ToolCall, ToolResult, follow)                             # package's API
+from .base import (MODELS, USERS, Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower,  # noqa: F401 - the
+                   Harness, Kind, Part, RenameError, ToolCall, ToolResult, follow)                    # package's API
 from . import codex  # noqa: F401 - harness_kit.codex, as before
 from .claude import ClaudeCode
 from .codex import Codex
