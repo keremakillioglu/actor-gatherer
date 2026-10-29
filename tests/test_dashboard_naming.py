@@ -20,7 +20,9 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import harness_kit  # noqa: E402
+from harness_kit.base import follow  # noqa: E402
 from harness_kit.claude import ClaudeCode  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.records import fact  # noqa: E402
 from ag.ag_harness.home.__main__ import main as home_main  # noqa: E402
 from ag_dashboard import data, naming, server, sessions  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
@@ -168,6 +170,22 @@ class InsertTest(HomeBase):
         self.assertEqual(self.names()["c1"], {"text": "Mine", "by": "user"})
         self.name_event("")
         self.assertEqual(self.names()["c1"], {"text": "codex's new title", "by": "codex"})
+
+    def test_claude_code_s_own_name_from_its_record_shows_and_the_reader_s_wins(self):
+        path = os.path.join(self.tmp.name, "claude", "projects", "-work", "c1.jsonl")
+        os.makedirs(os.path.dirname(path))
+        title = {"type": "ai-title", "aiTitle": "Lighthouse keeper story", "sessionId": "c1"}
+        with open(path, "w") as fh:
+            fh.write("".join(json.dumps(line) + "\n" for line in (title, title)))
+        facts, _ = follow(path, ClaudeCode().follower(path))                          # as ag's hook records them:
+        self.insert("g", "--properties", json.dumps({"channel": "c1"}),               # through the server's insert
+                    "--events", json.dumps([fact(f, path) for f in facts]))
+        self.assertEqual(self.names()["c1"], {"text": "Lighthouse keeper story", "by": "claude"})
+        time.sleep(0.01)
+        self.name_event("Mine")
+        self.assertEqual(self.names()["c1"], {"text": "Mine", "by": "user"})
+        self.name_event("")
+        self.assertEqual(self.names()["c1"]["by"], "claude")
 
     def test_a_session_started_here_with_no_message_yet_shows_its_name(self):
         self.name_event("Before it began", channel="fresh")
