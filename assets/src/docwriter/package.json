@@ -1,0 +1,38 @@
+{
+  "name": "ag-dashboard-docwriter",
+  "private": true,
+  "description": "DocWriter's interface (github.com/docwriter-org/docwriter, MIT) for the dashboard's DocWriter panel: its Svelte page, built against ag's backend into ag_dashboard/vendor/docwriter/ by build.mjs",
+  "type": "module",
+  "scripts": {
+    "fetch": "node fetch.mjs",
+    "build": "node fetch.mjs && node build.mjs"
+  },
+  "dependencies": {
+    "@fontsource/commit-mono": "5.3.0",
+    "@fontsource/inter": "5.2.8",
+    "@fontsource/lora": "5.2.8",
+    "@tiptap/core": "3.22.4",
+    "@tiptap/extension-collaboration": "3.22.3",
+    "@tiptap/extension-document": "3.22.4",
+    "@tiptap/extension-hard-break": "3.22.4",
+    "@tiptap/extension-paragraph": "3.22.4",
+    "@tiptap/extension-placeholder": "3.22.3",
+    "@tiptap/extension-text": "3.22.4",
+    "@tiptap/extensions": "3.22.3",
+    "@tiptap/pm": "3.22.4",
+    "@tiptap/y-tiptap": "3.0.5",
+    "diff": "8.0.4",
+    "diff-match-patch": "1.0.5",
+    "lucide-svelte": "1.0.1",
+    "marked": "18.0.3",
+    "y-protocols": "1.0.7",
+    "yjs": "13.6.30",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "6.2.4",
+    "svelte": "5.55.1",
+    "typescript": "5.9.3",
+    "vite": "7.3.2"
+  }
+}

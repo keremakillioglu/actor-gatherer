@@ -25,7 +25,8 @@ ones it started:
                      whether a process runs (no /proc: macOS); 0 when none has
     role             what the session is for, besides its messages: "coordinator", its gatherer's gatherer agent
                      (coordination.py), run with that role's instructions added to its harness's own on every run
-                     (`instructions`); NULL, an actor like any other
+                     (`instructions`); or, as JSON, {"docwriter": key}: the agent of a DocWriter (docwriter.py),
+                     started with its tools and instructions (`extra_args`); NULL, an actor like any other
 
 The agent is one long-running process, `ag --gatherer G claude -p --input-format stream-json
 --output-format stream-json ...`: each message is a line on its stdin, a turn, and each turn
@@ -391,6 +392,26 @@ def instructions(s: dict) -> Optional[str]:
     return coordination.instructions(s["gatherer"])
 
 
+def extra_args(s: dict) -> List[str]:
+    """What a session's harness is started with besides its own options, as its `role` says -- a DocWriter's agent:
+    its tools and instructions (docwriter.py's `launch_args`); [] for any other."""
+    if not str(s.get("role") or "").startswith("{"):
+        return []
+    from . import docwriter                     # here: it uses this module
+    return docwriter.launch_args(s)
+
+
+def known_role(role: str) -> bool:
+    """Whether `role` is one a session may have: one of ROLES, or a DocWriter's ({"docwriter": key}, docwriter.py)."""
+    if role in ROLES:
+        return True
+    try:
+        got = json.loads(role)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(got, dict) and isinstance(got.get("docwriter"), str)
+
+
 def login_shell() -> str:
     """The user's shell: $SHELL, else the one their account names, else /bin/sh -- the first that can be run."""
     try:
@@ -650,7 +671,7 @@ class Sessions:
     def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = "claude",
                model: Optional[str] = None, role: Optional[str] = None) -> dict:
         """A new session of `harness` in `gatherer` (a new gatherer if none has the name), to run in `cwd`
-        on `model` (None: the harness's default), for `role` (ROLES; None: an actor like any other). Its agent starts
+        on `model` (None: the harness's default), for `role` (`known_role`; None: an actor like any other). Its agent starts
         with its first message."""
         gatherer = (gatherer or "").strip()
         if not GATHERER.fullmatch(gatherer):
@@ -665,8 +686,8 @@ class Sessions:
         model = (model or "").strip() or None
         if model and not re.fullmatch(r"[A-Za-z0-9._:/@-]+", model):
             raise SessionError(f"model {model!r}: not a model's name")
-        if role is not None and role not in ROLES:
-            raise SessionError(f"role {role!r}: one of {', '.join(ROLES)}")
+        if role is not None and not known_role(role):
+            raise SessionError(f"role {role!r}: one of {', '.join(ROLES)}, or a DocWriter's")
         session_id = str(uuid.uuid4())
         conn = self._db()
         try:
@@ -875,7 +896,7 @@ class Sessions:
         told = instructions(s)
         argv = [*ag_command(), "--gatherer", s["gatherer"], s["harness"], "-p",
                 "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-                "--permission-mode", s["permission_mode"], "--permission-prompts", "none",
+                "--permission-mode", s["permission_mode"], "--permission-prompts", "none", *extra_args(s),
                 *(harness_kit.get(s["harness"]).instruction_args(told) if told else []),
                 *(["--resume", sid] if s["turns"] else ["--session-id", sid])]
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
@@ -900,7 +921,7 @@ class Sessions:
         sid = s["session_id"]
         told = instructions(s)
         argv = [*ag_command(), "--gatherer", s["gatherer"], "codex", "exec", "--json", "--skip-git-repo-check",
-                *(["-m", s["model"]] if s.get("model") else []), *CODEX_PERMISSIONS.get(s["permission_mode"], []),
+                *extra_args(s), *(["-m", s["model"]] if s.get("model") else []), *CODEX_PERMISSIONS.get(s["permission_mode"], []),
                 *(harness_kit.get("codex").instruction_args(told) if told else []),
                 *(["resume", sid] if s["turns"] else []), "-"]
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
@@ -1143,7 +1164,7 @@ class Sessions:
             raise SessionError(f"no rules for {s['harness']} to start it with")
         told = instructions(s)
         argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"],     # quiet: ag's notes not on its screen
-                *h.command(sid, resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
+                *extra_args(s), *h.command(sid, resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
                            fullscreen=fullscreen, instructions=told), *first]
         env = {**{k: v for k, v in actor_env(s, agent_env()).items() if k not in OUTER_TERMINAL and not (fullscreen and k in CLASSIC)},
                "TERM": "xterm-256color", "COLORTERM": "truecolor", **({} if fullscreen else CLASSIC)}   # full screen even if the dashboard's own is classic

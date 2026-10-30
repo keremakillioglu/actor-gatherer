@@ -386,3 +386,41 @@ is closed.
   policy may not show them. Nothing else of the project's reaches the actor: it is not told of the reader's own edits.
 - **Codex.** Branches work for Codex sessions too (its thread's id is followed through `started_as`), but have only
   been tried live with Claude Code.
+
+## DocWriter
+
+DocWriter (github.com/docwriter-org/docwriter, MIT; docwriter.py, assets/src/docwriter) is an actor of its own: a
+gatherer's DocWriter button (+ quill, its menu picking Claude Code or Codex) starts one in the folder a new session there
+would use, and selecting it shows DocWriter's page as its view, filling the pane (its Terminal, Chat and History one
+click away; no message box: DocWriter has its own). Its page is built from a pinned copy of DocWriter's source, the parts
+that talked to its server swapped for ones that talk to the dashboard. Its actor is started with DocWriter's system
+prompt and its six document tools (an MCP server of the dashboard's, whose calls a DocWriter page runs on its
+own copy of the document, with DocWriter's code). A request in DocWriter -- a chat message, feedback on a passage, a
+reply on a thread, an accepted edit -- is DocWriter's per-turn prompt sent to the actor as a message, and its turn is
+followed in the gatherer and shown in DocWriter's history. What the reader decides (a proposal accepted, rejected,
+dismissed; a comment; a reply; the agent's settings) is an event of the dashboard's in the actor's channel.
+LaTeX: files open as source, the PDF beside them (pdf.js's viewer), SyncTeX both ways, and DocWriter's hooks (its
+pdflatex template) run in the folder at the end of each turn.
+
+Not done yet:
+
+- **The tools need a page open.** The actor's edit_doc and the rest run in a DocWriter page; with none open, a call
+  says so and the actor stops. Running them on the dashboard would need DocWriter's proposals code in Python, kept in
+  step with upstream's (and pycrdt's byte positions).
+- **Codex is only told.** Claude Code's own Edit/Write on a file open in DocWriter is refused by a PreToolUse hook
+  (docwriter_guard.py), pointing it to edit_doc. Codex has no such hook: its instructions say to use the tools, and a
+  direct write is folded in as a change from outside (seen, not offered to accept or reject). A read-only sandbox
+  would stop it, but also its own scratch files.
+- **Not sent, or not offered.** Images in a message (only its words are typed), a plan-first turn's ExitPlanMode
+  (the plan comes as the actor's last words, shown as DocWriter's plan card), the retry round upstream runs when a
+  feedback turn proposed nothing, the agent's cost. Hidden from DocWriter's page: the model picker (the actor's own),
+  style references and calibration, Word comments import, its own agent sessions, API keys, skills.
+- **Its prompt in the actor's Chat.** The actor's Chat shows each message whole: DocWriter's <workspace_state> and the
+  rest before the author's words. Chat could show the <user_message> alone for a DocWriter actor.
+- **Turns are followed, not streamed.** DocWriter shows the actor's words and tool calls as ag stores them (per message
+  and per call), not as they are written; a turn's end is the actor's status (turn over, idle).
+- **Wake-ups are off.** DocWriter wakes its agent after each pause in typing; here each would be a message in the
+  actor's Chat and Terminal, so only `[dashboard] docwriter_wake = true` in config.toml turns them on.
+- **The folder-trust question.** A new folder's first message opens Claude Code's (or codex's) terminal, which asks
+  whether to trust it before anything is sent; DocWriter says, after 20 s with no word from the actor, to look there.
+- **The bundle is 8.5 MB** in ag_dashboard/vendor/docwriter/: DocWriter's page 2.2 MB, pdf.js's viewer 6.3 MB.
