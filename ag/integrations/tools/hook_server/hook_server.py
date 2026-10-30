@@ -148,13 +148,13 @@ def hung_up(request) -> bool:
     return transport is None or transport.is_closing()
 
 
-WATCH_SECONDS = 0.25     # while the answer's next bytes are awaited, how often the harness is looked at (`next_bytes`)
+WATCH_SECONDS = 0.25     # while upstream is awaited, how often the harness is looked at (`watched`)
 
 
-async def next_bytes(up, request) -> bytes:
-    """The answer's next bytes from upstream (`up`), b"" at its end -- the harness looked at meanwhile: one that hung
-    up raises ConnectionResetError then, not when the next bytes come, which while the model thinks can be seconds."""
-    got = asyncio.ensure_future(up.content.readany())
+async def watched(awaitable, request):
+    """What `awaitable` (upstream's) gives -- the harness looked at meanwhile: one that hung up raises
+    ConnectionResetError then, `awaitable` cancelled, not when upstream answers, which can be seconds on."""
+    got = asyncio.ensure_future(awaitable)
     while True:
         done, _ = await asyncio.wait({got}, timeout=WATCH_SECONDS)
         if done:
@@ -162,6 +162,12 @@ async def next_bytes(up, request) -> bytes:
         if hung_up(request):
             got.cancel()
             raise ConnectionResetError("the harness hung up")
+
+
+async def next_bytes(up, request) -> bytes:
+    """The answer's next bytes from upstream (`up`), b"" at its end, the harness looked at meanwhile (`watched`): while
+    the model thinks they can be seconds away."""
+    return await watched(up.content.readany(), request)
 
 
 def route_of(path: str):
@@ -359,7 +365,9 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         status, error, resp = None, None, None
         try:
             async with ClientSession(timeout=timeout, auto_decompress=True) as client:
-                async with client.request(request.method, upstream + path_qs, data=raw, headers=headers) as up:
+                up = await watched(client.request(request.method, upstream + path_qs, data=raw, headers=headers),
+                                   request)               # its head: a big context's can be seconds away, Esc meanwhile
+                async with up:
                     status = up.status
                     resp = web.StreamResponse(status=up.status, headers={
                         k: v for k, v in up.headers.items() if k.lower() not in HOP})

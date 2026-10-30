@@ -282,9 +282,10 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
             await runner.cleanup()
         self.assertEqual(hook.answers, [200])
 
-    async def _hang_up(self, hook, upstream, until: bytes) -> None:
+    async def _hang_up(self, hook, upstream, until: bytes, ready=None) -> None:
         """A request to a hook server served as run_app serves it (a hang-up cancels no handler) in front of `upstream`
-        (an aiohttp handler), the harness hanging up once it has read `until` (b"": at once): until the hook reported."""
+        (an aiohttp handler), the harness hanging up once it has read `until` (b"": at once), and `ready` is set (upstream
+        has the call): until the hook reported."""
         app = web.Application()
         app.router.add_route("*", "/{tail:.*}", upstream)
         up = TestServer(app)
@@ -302,6 +303,8 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
             got = b""
             while until and until not in got:
                 got += await asyncio.wait_for(reader.read(4096), 5)
+            if ready is not None:
+                await asyncio.wait_for(ready.wait(), 5)
             writer.close()                                   # Esc: Claude Code drops the call
             for _ in range(60):
                 if hook.failures:
@@ -435,6 +438,31 @@ class HookServerTest(unittest.IsolatedAsyncioTestCase):
         (status, at), = hook.failures
         self.assertEqual(status, hook_server.HUNG_UP)
         self.assertLess(at - began, 2)                       # not at the model's next bytes, 5 s on
+
+    async def test_a_hang_up_before_the_answer_began_is_seen_at_once(self):
+        class Kept(ToyHook):
+            async def __call__(self, request):
+                request.state["kept"] = True
+                return await super().__call__(request)
+
+            async def failed(self, request, status, error):
+                self.failures.append((status, time.monotonic(), request.answer_reached))
+
+        hook, got, answered = Kept(), asyncio.Event(), []
+        hook.failures = []
+
+        async def upstream(request):                         # the model: its answer's head 5 s away (a big context)
+            await request.read()
+            got.set()
+            await asyncio.sleep(5)                           # cancelled, if the hook gives the call up
+            answered.append(1)
+            return web.Response(text="{}")
+        began = time.monotonic()
+        await self._hang_up(hook, upstream, b"", got)
+        (status, at, reached), = hook.failures
+        self.assertEqual((status, reached), (hook_server.HUNG_UP, "nothing"))   # taken back, as nothing came
+        self.assertLess(at - began, 2)                       # not when the model's answer began, 5 s on
+        self.assertEqual(answered, [])                       # the model's call given up with it
 
     async def test_streamed_gets_each_part_as_it_ends_while_the_answer_streams(self):
         """The upstream holds the rest of its answer until the hook has been given the text that came
