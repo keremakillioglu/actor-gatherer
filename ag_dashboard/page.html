@@ -4379,17 +4379,14 @@ function dashboardCommand(text) {
   if (run) run();
   return !!run;
 }
-// Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn (interrupt). So does it in
-// the Chat view, where nothing else takes it: no panel, settings or Editor open, not typed in a box -- and not while the
-// agent asks, where it would dismiss the question, as in its terminal: there, from the message box only. Before the rest
-// (capture), so it knows whether the settings were open before their own Esc closes them.
+// Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn (interrupt), as in its
+// terminal (and dismisses what the agent asks, as there). From the message box only: an Esc elsewhere on the page is the
+// reader's for something else -- closing what is open, clearing a selection -- and a turn stopped by it was not meant to
+// be (with a message queued, Claude Code sends that at once, the turn cut short). Before the rest (capture).
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape" || ev.defaultPrevented || ev.isComposing || !state.selected || isShell(state.selected[1])) return;
-  const n = ev.target, box = !!n && n.id === "composer-text", info = selectedInfo();
-  const typing = !!n && n.closest && !!n.closest("input, textarea, select, [contenteditable], .xterm");
-  if (!box && (typing || state.details || edShown() || chatView().id !== "files" || !document.getElementById("about").hidden
-    || !document.getElementById("cfg-file").hidden || (info && info.status === "asking"))) return;
-  if (interrupt(info)) ev.preventDefault();
+  if (!ev.target || ev.target.id !== "composer-text") return;
+  if (interrupt(selectedInfo())) ev.preventDefault();
 }, true);
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")

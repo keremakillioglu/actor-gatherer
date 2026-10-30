@@ -330,5 +330,69 @@ class StoppedTest(RecordBase):
         self.assertAlmostEqual(got["and d.py"]["at"], self.now - 10, delta=0.01)
 
 
+class StoppedWithOneQueuedTest(RecordBase):
+    """In the Chat view, a turn stopped by Esc with a message queued, which Claude Code then sends at once: the message is
+    part of the turn, as one held until the turn ended is, and the turn, which went on with it, is not said to have
+    stopped short -- Claude Code says nothing of the interrupt then. A stop after that, at its end, is said."""
+
+    def setUp(self):
+        super().setUp()
+        self.saved, dashboard_home.HOME = dashboard_home.HOME, self.tmp.name
+        self.addCleanup(setattr, dashboard_home, "HOME", self.saved)
+        os.makedirs(os.path.join(self.tmp.name, "gatherers", "g"))
+        self.path = os.path.join(self.tmp.name, "gatherers", "g", "context.db")
+        conn = sqlite3.connect(self.path)
+        conn.executescript("""CREATE TABLE event_types (event_type_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
+            CREATE TABLE events (row_id INTEGER PRIMARY KEY, inserted_at TEXT NOT NULL, event_id TEXT, event_type_id INTEGER NOT NULL,
+              payload_json TEXT NOT NULL, tokens INTEGER NOT NULL, text TEXT, counted INTEGER, p_channel);""")
+        rejected = ("The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file "
+                    "edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to "
+                    "tell you how to proceed.")
+        for ago, (typ, payload) in ((30, asked("Did you find background agents?")), (20, said("Checking Warp's code first.")),
+                                    (20, call("r1", "Bash", {"command": "grep -rn background_task_count app"})),
+                                    (20, call("r2", "WebFetch", {"url": "https://example.com", "prompt": "how?"})),
+                                    (0.9, result("r1", "app/mod.rs:254: background")), (0.9, result("r2", rejected, error=True)),
+                                    (0.9, note("[Request interrupted by user for tool use]")),
+                                    (0.9, asked("The open-source project?")), (0.5, said("Looking it up.")),
+                                    (0.4, call("r3", "WebSearch", {"query": "background agents"})), (0.3, result("r3", "found")),
+                                    (0.2, said("It is Open-Inspect."))):
+            got = conn.execute("SELECT event_type_id FROM event_types WHERE name = ?", (typ,)).fetchone()
+            tid = got[0] if got else conn.execute("INSERT INTO event_types (name, created_at) VALUES (?, '')", (typ,)).lastrowid
+            conn.execute("INSERT INTO events (inserted_at, event_type_id, payload_json, tokens, p_channel) VALUES "
+                         "(?, ?, ?, 1, ?)", (stamp(self.now - ago), tid, json.dumps(payload), SESSION))
+        conn.commit()
+        conn.close()
+        self.prompt("Did you find background agents?", ago=30)
+        self.op("enqueue", "The open-source project?", ago=18)
+        self.op("dequeue", ago=1)                          # as Claude Code wrote it: the dequeue, then the stop just before
+        self.interrupted(ago=1.008)
+        self.prompt("The open-source project?", ago=0.99)
+
+    def interrupted(self, ago):
+        self.write({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user for tool use]"}]},
+                    "timestamp": stamp(self.now - ago), "sessionId": SESSION})
+
+    def turns(self):
+        conn = sqlite3.connect(self.path)
+        try:
+            self.follow(conn)
+        finally:
+            conn.close()
+        return files.files("g", SESSION, cwd="/w")["turns"]
+
+    def test_one_turn_the_message_in_it_not_stopped(self):
+        [turn] = self.turns()
+        self.assertEqual((turn["text"], [m["text"] for m in turn["more"]], turn["stopped"], turn["calls"]),
+                         ("Did you find background agents?", ["The open-source project?"], None, 3))
+        self.assertEqual([r["text"] for r in turn["replies"]],
+                         ["Checking Warp's code first.", "Looking it up.", "It is Open-Inspect."])
+
+    def test_stopped_again_at_its_end_it_says_so(self):
+        self.interrupted(ago=0.1)                          # Esc as the answer came: no turn after it yet
+        [turn] = self.turns()
+        self.assertEqual(turn["stopped"]["kind"], "interrupted")
+        self.assertAlmostEqual(turn["stopped"]["at"], self.now - 0.1, delta=0.01)
+
+
 if __name__ == "__main__":
     unittest.main()
