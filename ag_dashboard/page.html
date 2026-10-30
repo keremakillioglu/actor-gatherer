@@ -2651,8 +2651,8 @@ document.getElementById("avatar-mode").addEventListener("click", (ev) => {
   if (b) setAvatarMode(b.dataset.avatarPick, true);
 });
 // The Chat's turns before the latest, at first: the user's messages only, a click on one showing the rest ("messages",
-// filesTalk) -- the one just before the latest only once the latest is over; or each whole, a click on its message
-// folding it. Kept in this browser, messages only until one is picked; a
+// filesTalk) -- all but the latest two the agent answered, the one before them folded once a newer turn has its first
+// answer; or each whole, a click on its message folding it. Kept in this browser, messages only until one is picked; a
 // pick starts every turn over as it has them.
 const EARLIER_KEY = "ag-dashboard-chat-earlier";
 let earlierTurns = "messages";
@@ -6718,7 +6718,7 @@ function filesTalk(d, info, running) {
   const box = el("div", { class: "fl-talk", "data-keep": "files-talk", "data-follow": "1", "data-morph": "" });
   const closed = state.files.closed || (state.files.closed = new Set());   // the last messages folded by a click
   const opened = state.files.opened || (state.files.opened = new Set());   // the turns whose earlier messages are all shown
-  const flips = state.files.flips || (state.files.flips = new Set());      // the turns before the latest not as the setting has them
+  const flips = state.files.flips || (state.files.flips = new Map());      // the turns before the latest a click showed (true) or folded
   const fold = (ev) => { const n = ev.currentTarget; if (n.open) closed.delete(n.id); else closed.add(n.id); };
   // the first turn drawn: the latest few, at first; then where the reader pulled it to (pullEarlier), or the turn they
   // picked. Kept as the conversation grows: a new turn is drawn at the end, none taken from the top.
@@ -6726,11 +6726,12 @@ function filesTalk(d, info, running) {
   if (first) box.append(el("div", { class: "fl-earlier" }, `${plural(first, "earlier turn")} · scroll up for more`));
   // what was written while it worked and sent as part of its turn, not yet stored by ag: stacked on its first message
   const h = heard(info), joined = h.typed.filter((q) => q.sent !== null && q.joins), opens = openings(h);
-  // the turns before the latest, folded as the setting has them (below) -- all but the one just before it while the
-  // latest is under way (running, or waiting for the user): that one is folded once the latest is over. A message
-  // sent and not yet stored is its own turn after the latest (opens): the latest is the one before it, never folded.
-  const going = !opens.length && (running || (!!info && statusOf(info)[0] === "asking"));
-  const folds = d.turns.length - (going ? 2 : 1);   // the turns before this one fold
+  // the turns before the latest, folded as the setting has them (below) -- all but the latest two the agent answered in
+  // (a message, a thought or a call), and any after them it has yet to answer: the one before those two folds once a
+  // newer turn has its first answer. Never by the actor's status, nor by a message sent and not yet stored (opens), so a
+  // turn is not folded and shown again as the next starts.
+  const answered = d.turns.filter((t) => (t.replies || []).length || t.calls).map((t) => t.n);
+  const folds = answered.length < 2 ? 0 : answered[answered.length - 2];   // the turns before this one fold
   for (const t of d.turns.slice(first)) {
     const on = t.n === d.turn;
     const live = running && !opens.length && t.n === d.turns.length - 1;
@@ -6763,10 +6764,12 @@ function filesTalk(d, info, running) {
     const from = starts.length ? Math.min(...starts) : null;      // when it began: sent (began), or stored
     // apart from each other: its files and commands at the left (the turn picked; folded away when they already show), by
     // the button at its message's right or ⌘+click; and before the latest, its replies shown or folded -- folded at first
-    // under the setting "Messages only" (earlierTurns), shown under "Whole", a click on its message the other way (flips)
-    const earlier = t.n < folds, whole = !earlier || (earlierTurns === "whole") !== flips.has(t.n);
+    // under the setting "Messages only" (earlierTurns) those before `folds`, shown under "Whole"; a click on its message
+    // the other way, kept so as the turns move on (flips), until a click puts it back
+    const earlier = t.n < d.turns.length - 1, atFirst = !earlier || t.n >= folds || earlierTurns === "whole";
+    const whole = flips.has(t.n) ? flips.get(t.n) : atFirst;
     const showing = on && !sideFolded;
-    const flip = () => keepTurn(t.n, () => { flips.has(t.n) ? flips.delete(t.n) : flips.add(t.n); keepingPlace(renderMain); });
+    const flip = () => keepTurn(t.n, () => { !whole === atFirst ? flips.delete(t.n) : flips.set(t.n, !whole); keepingPlace(renderMain); });
     const side = () => keepTurn(t.n, () => {
       if (showing) return foldSide(true);
       if (sideFolded) foldSide(false, on);
@@ -6788,7 +6791,7 @@ function filesTalk(d, info, running) {
     const count = held ? el("span", { class: "fl-count", title: `${plural(said.length, "message")} from the agent, ${plural(t.calls || 0, "command")}` },
       plural(held, "message")) : null;
     box.append(el("div", { class: "fl-turn" + (on ? " on" : "") + (whole ? "" : " folded")
-      + (earlier && whole && earlierTurns === "messages" ? " shown" : ""), id: `fl-turn-${t.n}`, "data-morph": "" },
+      + (whole && !atFirst ? " shown" : ""), id: `fl-turn-${t.n}`, "data-morph": "" },
       el("div", { class: "fl-head" },
         bashBubble(t, said1(t.text, t.kind, "fl-user" + bubbleClass(t.text), null, count,
           earlier ? el("span", { class: "fold-mark", "aria-hidden": "true" }, strokeIcon(ICONS.chevron, 14)) : null)),
