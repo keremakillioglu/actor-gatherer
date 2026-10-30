@@ -172,6 +172,12 @@ button.agent-group:hover { color: var(--ink-2); }
   -webkit-mask-image: radial-gradient(circle at 24.5px 24.5px, transparent 8px, #000 8.5px);
   mask-image: radial-gradient(circle at 24.5px 24.5px, transparent 8px, #000 8.5px); }
 .agent .avatar .badge { position: absolute; right: -3px; bottom: -3px; width: 13px; height: 13px; display: block; }
+/* a DocWriter's actor: DocWriter's quill at the other corner, the avatar cut away around both */
+.agent .avatar.dw img {
+  -webkit-mask-image: radial-gradient(circle at 24.5px 24.5px, transparent 8px, #000 8.5px), radial-gradient(circle at 3.5px 24.5px, transparent 8px, #000 8.5px);
+  mask-image: radial-gradient(circle at 24.5px 24.5px, transparent 8px, #000 8.5px), radial-gradient(circle at 3.5px 24.5px, transparent 8px, #000 8.5px);
+  -webkit-mask-composite: source-in; mask-composite: intersect; }
+.agent .avatar .dw-badge { position: absolute; left: -3px; bottom: -3px; width: 13px; height: 13px; display: block; }
 .agent .asked { font-size: 13px; line-height: 1.4; font-weight: 500; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere; }
 /* Claude Code's recap of the session, under what it was last asked: smaller, quieter, newer than the message */
@@ -247,7 +253,7 @@ header .brand .list-btns { display: none; margin-left: -6px; }
 .rail .r-actor[aria-current="true"] { background: var(--selected); }
 .rail .r-actor[data-open="true"] { background: color-mix(in srgb, var(--selected) 45%, transparent); }
 .rail .r-actor .logo, .rail .r-actor .avatar img { width: 32px; height: 32px; display: block; -webkit-mask-image: none; mask-image: none; }
-.rail .r-actor .badge { display: none; }
+.rail .r-actor .badge, .rail .r-actor .dw-badge { display: none; }
 .rail .r-actor .rd { position: absolute; right: 2px; bottom: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--axis);
   box-shadow: 0 0 0 2px var(--side); display: flex; align-items: center; justify-content: center; }
 .rail .r-actor .rd.running { background: var(--side); color: var(--good); font-size: 11px; line-height: 1; }
@@ -299,6 +305,11 @@ header .brand .list-btns { display: none; margin-left: -6px; }
   mask-image: radial-gradient(circle at 35px 35px, transparent 10px, #000 10.5px); }
 .m-card .c-pic .avatar { position: relative; }
 .m-card .c-pic .avatar .badge { position: absolute; right: -3px; bottom: -3px; width: 16px; height: 16px; display: block; }
+.m-card .c-pic .avatar.dw img {
+  -webkit-mask-image: radial-gradient(circle at 35px 35px, transparent 10px, #000 10.5px), radial-gradient(circle at 5px 35px, transparent 10px, #000 10.5px);
+  mask-image: radial-gradient(circle at 35px 35px, transparent 10px, #000 10.5px), radial-gradient(circle at 5px 35px, transparent 10px, #000 10.5px);
+  -webkit-mask-composite: source-in; mask-composite: intersect; }
+.m-card .c-pic .avatar .dw-badge { position: absolute; left: -3px; bottom: -3px; width: 16px; height: 16px; display: block; }
 .m-card .c-pic.acting { width: 72px; color: var(--term-accent); }
 .m-card .c-pic svg.stage { height: 58px; margin: -6px -6px -4px -8px; }
 .m-card .c-pic .buddy { width: 36px; height: 36px; margin-top: 2px; }
@@ -405,7 +416,7 @@ main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relativ
   line-height: 1.35; color: var(--ink-2); }
 .pane.focused .pane-who, :root.pane-focused .pane-who { color: var(--ink); font-weight: 500; }
 .pane-who .logo, .pane-who .avatar img { width: 20px; height: 20px; display: block; flex: none; }
-.pane-who .badge { display: none; }
+.pane-who .badge, .pane-who .dw-badge { display: none; }
 .pane-who .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :is(.panes.split, :root.pane-mode .panes) .views button { padding: 3px 8px; }
 .pane-close { flex: none; border: 0; background: none; font-size: 18px; line-height: 1; padding: 5px 7px; color: var(--muted); }
@@ -854,6 +865,32 @@ button:disabled { opacity: .5; cursor: default; }
 .ed-grip:hover, .ed-grip.on { background: color-mix(in srgb, var(--s1) 35%, transparent); }
 .ed-close { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 6px; color: var(--muted); }
 .ed-close:hover { color: var(--ink); background: var(--wash); }
+/* DocWriter: a gatherer's button for a new one, its menu of the harnesses its agent may run on; and the view of a
+   DocWriter's actor, its page in a frame filling the pane */
+.gatherer-row .dw-start { position: relative; display: inline-flex; }
+.dw-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; width: 270px; display: grid; gap: 6px; padding: 8px;
+  background: var(--surface); border: 1px solid var(--grid); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+  font-size: 12px; color: var(--ink-2); text-align: left; cursor: default; }
+.dw-menu .head { font-size: 12px; font-weight: 600; color: var(--ink); }
+.dw-menu label { display: grid; gap: 3px; }
+.dw-menu input { font: 12px/1.4 var(--mono, ui-monospace, monospace); padding: 4px 6px; color: var(--ink); background: var(--page);
+  border: 1px solid var(--grid); border-radius: 5px; width: 100%; box-sizing: border-box; }
+.dw-menu .folders { display: flex; flex-wrap: wrap; gap: 4px; }
+.dw-menu .folders button { border: 1px solid var(--grid); background: none; border-radius: 9px; padding: 1px 7px; font: 11px var(--mono, monospace);
+  color: var(--ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dw-menu .folders button:hover { color: var(--ink); background: var(--wash); }
+.dw-menu .on { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.dw-menu .on button { display: flex; align-items: center; gap: 6px; border: 1px solid var(--grid); background: none; padding: 4px 9px;
+  border-radius: 6px; font-size: 12.5px; color: var(--ink); white-space: nowrap; }
+.dw-menu .on button:hover, .dw-menu .on button:focus-visible { background: var(--wash); }
+.dw-menu .on button[disabled] { opacity: .5; }
+.dw-menu .badge { width: 16px; height: 16px; display: block; }
+.dw-menu .err { color: var(--critical); }
+.chat .chat-frame.dw-frame { position: relative; overflow: hidden; padding: 0; }
+.dw-slot { position: absolute; inset: 0; }
+/* its frames, never moved (a frame moved loads again): laid over the slot of the view shown, else hidden -- running */
+.dw-page { position: fixed; border: 0; display: block; background: var(--page); z-index: 5; }
+.dw-page.off { visibility: hidden; pointer-events: none; left: 0; top: 0; width: 1px; height: 1px; }
 .side-btns { display: flex; gap: 6px; }
 .ed { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .ed-tree { width: 250px; flex: none; overflow: auto; border-right: 1px solid var(--grid); padding: 6px 0 12px; font-size: 12.5px; }
@@ -2040,7 +2077,18 @@ function actorLogo(a) {
   const svg = SNAPSHOT && a.avatar && (SNAPSHOT.avatars || {})[a.avatar];
   const src = !a.avatar ? null : SNAPSHOT ? svg && "data:image/svg+xml," + encodeURIComponent(svg) : `/avatars/${a.avatar}.svg`;
   if (!src) return harnessLogo(a.harness);
-  return el("span", { class: "logo avatar" }, el("img", { src, alt: "", draggable: "false" }), harnessBadge(a.harness));
+  const dw = !!dwKey(a);
+  return el("span", { class: "logo avatar" + (dw ? " dw" : "") }, el("img", { src, alt: "", draggable: "false" }),
+    dw ? docwriterBadge() : null, harnessBadge(a.harness));
+}
+// A DocWriter's actor's mark on its avatar: DocWriter's quill, on its violet.
+function docwriterBadge() {
+  const svg = svgEl("svg", { viewBox: "0 0 24 24", class: "dw-badge", role: "img", "aria-label": "DocWriter" });
+  const title = svgEl("title"); title.textContent = "DocWriter";
+  svg.append(title, svgEl("circle", { cx: 12, cy: 12, r: 12, fill: "#7C3AED" }),
+    svgEl("path", { d: ICONS.quill, transform: "translate(4 4)", fill: "none", stroke: "#fff", "stroke-width": 1.7,
+      "stroke-linecap": "round", "stroke-linejoin": "round" }));
+  return svg;
 }
 // The words an actor at work says, in its avatar's hue (avatars/README.md's hues, assets/src/avatars/kit.py's
 // shades): its dark shade on a light page, halfway from its main shade to its light one on a dark page.
@@ -2311,6 +2359,7 @@ const ICONS = {
   sidebar: "M3.25 2.75h9.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5zM6.25 2.75v10.5",
   pulse: "M1.5 8.5h2.75l1.75-4.25 2.5 7.5 2-5.5 1.25 2.25h2.75",   // what runs in the background: alive
   code: "M5.25 4.75L2 8l3.25 3.25M10.75 4.75L14 8l-3.25 3.25M9.25 2.75l-2.5 10.5",   // the Editor: a file's code
+  quill: "M13.5 2.5c-4.75.25-8 3.5-9 8.75L2.75 13.5M4.6 10.4h3.15c2.4-1.1 4.25-3.6 5.75-7.9M6.2 7.4h3.3",   // DocWriter: writing
   folderUp: "M1.75 4a1 1 0 0 1 1-1h3.4l1.5 1.6h5.6a1 1 0 0 1 1 1v6.65a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1zM8 11.1V7.1M6.3 8.8 8 7.1l1.7 1.7",   // the folder above
   power: "M8 1.75v5.5M4.6 3.9a5.25 5.25 0 1 0 6.8 0",                  // a shell terminated
   chevron: "M6 3.5 10.5 8 6 12.5",                                     // more, folded: turned down once shown
@@ -2893,7 +2942,10 @@ async function tellSeen(looked) {
 // Each actor's key, and what the reader has seen of a new home: what the server kept (everything, before
 // it kept any); the selected actor, while the page is visible.
 function takeHome(home) {
-  for (const g of home.gatherers) for (const a of g.agents) a.key = key(g.name, a.channel);
+  for (const g of home.gatherers) for (const a of g.agents) {
+    a.key = key(g.name, a.channel);
+    if (dwKey(a)) a.last_user_message = dwAsked(a.last_user_message);
+  }
   if (state.selected) {                              // a codex session renamed to its thread: followed there
     const g = home.gatherers.find((x) => x.name === state.selected[0]);
     const moved = g && !g.agents.some((a) => a.channel === state.selected[1])
@@ -2907,6 +2959,7 @@ function takeHome(home) {
   takeSeen(home);
   state.home = home;
   markSeen();
+  dwTell();
 }
 function markSeen() {
   if (SNAPSHOT || PANE || !state.home || document.visibilityState !== "visible") return;
@@ -3599,6 +3652,7 @@ function slideList(root, was) {
 // Selecting an actor draws its chat as soon as it is loaded; its calls and context (the details) follow
 // on the stream, which starts with them. The actor list is the stream's already.
 async function select(g, c) {
+  if (!isAt(state.selected, g, c)) dwViewId = "docwriter";   // a DocWriter's actor opens in DocWriter (dwViewId)
   state.selected = [g, c]; state.readId = null; state.followLatest = true; state.context = null; state.agent = null;
   state.agentVersion = (state.agentVersion || 0) + 1;
   markSeen();
@@ -3916,6 +3970,10 @@ const startable = () => (state.home.harnesses || []).filter((h) => CHAT_HARNESSE
 const NO_HARNESS = "Neither Claude Code nor Codex is set up here: install one, or set its command in config.toml ([cli.harnesses])";
 // Last, its terminal button: a shell (isShell), in that same directory -- or, with none, the form asks for it too.
 const SHELL_START = "shell";                       // the terminal button's, where a harness's name goes
+const DW_START = "docwriter:";                     // a DocWriter's, where a harness's name goes: its actor's harness after it
+const startAny = (gatherer, cwd, harness) => harness === SHELL_START ? startShell(gatherer, cwd)
+  : harness.startsWith(DW_START) ? startDocWriter(gatherer, cwd, harness.slice(DW_START.length))
+  : startSession(gatherer, cwd, harness);
 const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a session started here: its own, before any call names one
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
 function startButtons(g) {
@@ -3929,12 +3987,72 @@ function startButtons(g) {
   return [...hs.map((h) => el("button", { class: "act start" + busy(h),
     type: "button", ...(state.starting ? { disabled: "" } : {}), title: `New ${harnessName(h)} session in ${g.name}`,
     "aria-label": `New ${harnessName(h)} session in ${g.name}`, onclick: () => addSession(g, h) },
-    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), harnessBadge(h))), ...shell];
+    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), harnessBadge(h))),
+    ...(state.home.docwriter ? [dwStart(g, hs, cwd)] : []), ...shell];
 }
+// A gatherer's DocWriter button: a new DocWriter -- its own actor -- in a folder of the reader's choice. Its menu asks
+// which (the gatherer's current one to start with, the folders its actors work in a click away) and the harness its
+// actor runs on: a click on one starts it. What is typed there is kept while the list is drawn again (`state.dwMenu`).
+function dwStart(g, hs, cwd) {
+  const m = state.dwMenu && state.dwMenu.gatherer === g.name ? state.dwMenu : null;
+  const where = cwd ? tildePath(cwd, state.home.home_dir) : "a folder you choose";
+  const busy = state.starting && state.starting.gatherer === g.name && String(state.starting.harness).startsWith(DW_START) ? " busy" : "";
+  const button = el("button", { class: "act start dw" + busy, type: "button", ...(state.starting ? { disabled: "" } : {}),
+    title: `New DocWriter (in ${where}, or another folder): write with an agent that proposes its edits beside your text`,
+    "aria-label": `New DocWriter in ${g.name}`, "aria-haspopup": "dialog", "aria-expanded": m ? "true" : "false",
+    onclick: (ev) => {
+      ev.stopPropagation();
+      const dir = cwd ? tildePath(cwd, state.home.home_dir) : "";
+      state.dwMenu = m ? null : { gatherer: g.name, cwd: dir, error: "", focus: true, sel: [dir.length, dir.length] };
+      renderAgents();
+    } }, el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.quill, 15));
+  return el("span", { class: "dw-start" }, button, m ? dwMenu(g, hs, m) : null);
+}
+function dwMenu(g, hs, m) {
+  const keep = () => { m.cwd = input.value; m.sel = [input.selectionStart, input.selectionEnd]; };
+  const input = el("input", { type: "text", value: m.cwd, spellcheck: "false", "aria-label": "Folder", placeholder: "~/writing/my-paper",
+    oninput: () => { keep(); if (m.error) { m.error = ""; err.textContent = ""; } }, onkeyup: keep, onmouseup: keep,
+    onfocus: () => { m.focus = true; }, onblur: () => { if (!nameMoving) m.focus = false; },   // not the list drawn again
+    onkeydown: (ev) => { if (ev.key === "Enter") { ev.preventDefault(); keep(); dwGo(g, hs[0]); } } });
+  const err = el("div", { class: "err", role: "alert", text: m.error || "" });
+  // the folders the gatherer's actors work in, newest first: another a click away
+  const seen = new Set(), folders = [];
+  for (const a of [...g.agents].sort((x, y) => (y.last || 0) - (x.last || 0))) {
+    const d = cwdOf(a);
+    if (d && !seen.has(d)) { seen.add(d); folders.push(tildePath(d, state.home.home_dir)); }
+  }
+  const picks = folders.length > 1 || (folders.length === 1 && folders[0] !== m.cwd) ? el("div", { class: "folders" },
+    ...folders.slice(0, 5).map((d) => el("button", { type: "button", title: d,
+      onclick: () => { m.cwd = d; m.sel = [d.length, d.length]; m.focus = true; m.error = ""; renderAgents(); } }, d))) : null;
+  if (m.focus) requestAnimationFrame(() => {        // drawn again: the box as the reader left it
+    if (!input.isConnected || document.activeElement === input) return;
+    input.focus({ preventScroll: true });
+    try { input.setSelectionRange(...m.sel); } catch (e) { /* not a text box now */ }
+  });
+  return el("div", { class: "dw-menu", role: "dialog", "aria-label": "New DocWriter", onclick: (ev) => ev.stopPropagation() },
+    el("div", { class: "head", text: "New DocWriter" }),
+    el("label", {}, "Folder", input),
+    picks,
+    el("div", { text: "Its agent on" }),
+    el("div", { class: "on" }, ...hs.map((h) => el("button", { type: "button", ...(state.starting ? { disabled: "" } : {}),
+      onclick: () => { keep(); dwGo(g, h); } }, harnessBadge(h), harnessName(h)))),
+    err);
+}
+// A DocWriter started from the menu, in the folder typed there: why not, if it cannot be, said in the menu.
+async function dwGo(g, harness) {
+  const m = state.dwMenu, cwd = (m && m.cwd || "").trim();
+  if (!m) return;
+  if (!cwd) { m.error = "Which folder?"; renderAgents(); return; }
+  try { await startDocWriter(g.name, cwd, harness); }
+  catch (e) { state.dwMenu = { ...m, error: e.message, focus: true }; renderAgents(); }
+}
+// The DocWriter button's menu closed by a click anywhere else, or Esc.
+document.addEventListener("click", () => { if (state.dwMenu) { state.dwMenu = null; renderAgents(); } });
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && state.dwMenu) { state.dwMenu = null; renderAgents(); } });
 async function addSession(g, harness) {
   const cwd = startCwd(g);
   if (harness && cwd) {
-    try { return await (harness === SHELL_START ? startShell(g.name, cwd) : startSession(g.name, cwd, harness)); }
+    try { return await startAny(g.name, cwd, harness); }
     catch (e) { state.adding = { gatherer: g.name, cwd, harness, error: e.message }; }
   } else state.adding = { gatherer: g.name, cwd, harness };
   renderAgents();
@@ -3956,6 +4074,20 @@ async function startSession(gatherer, cwd, harness) {
   const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
   if (box) box.focus();
 }
+// A DocWriter started (docwriter.py's `create`): its actor listed, then shown in DocWriter's view.
+async function startDocWriter(gatherer, cwd, harness) {
+  state.starting = { gatherer, harness: DW_START + harness };
+  state.dwMenu = null;
+  renderAgents();
+  try {
+    const cfg = await post("/api/docwriter", { gatherer, cwd, harness });
+    state.adding = null;
+    collapsed.delete(gatherer);
+    await loadHome();
+    dwViewId = "docwriter";                          // shown in DocWriter, whichever view its actors were last shown in
+    await show(gatherer, cfg.channel);
+  } finally { state.starting = null; renderAgents(); }
+}
 // A shell started: shown in the pane in focus, its terminal opened at once (sessions.py's `shell`), at the size of the
 // terminal this page draws now, if it draws one (fitted to its pane once drawn there).
 async function startShell(gatherer, cwd) {
@@ -3976,10 +4108,14 @@ function newForm() {
   const err = el("div", { class: "err", role: "alert", text: adding.error || (hs.length || shell ? "" : NO_HARNESS) });
   const starts = hs.map((h) => el("button", { type: "submit", value: h, class: h === (adding.harness || hs[0]) ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, harnessBadge(h), harnessName(h)));
+  if (state.home.docwriter) for (const h of hs) starts.push(el("button", { type: "submit", value: DW_START + h,
+    class: adding.harness === DW_START + h ? "primary" : "", title: `DocWriter, its agent on ${harnessName(h)}`,
+    ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.quill, 14), "DocWriter", harnessBadge(h)));
   if (state.home.terminals !== false) starts.push(el("button", { type: "submit", value: SHELL_START, class: shell ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.terminal, 14), "Terminal"));
+  const dwing = String(adding.harness || "").startsWith(DW_START);
   const form = el("form", { class: "newform", "aria-label": "New session" },
-    el("div", { class: "desc", text: shell ? `A new terminal, listed under ${fixed}` : `A new session in ${fixed}` }),
+    el("div", { class: "desc", text: shell ? `A new terminal, listed under ${fixed}` : dwing ? `A new DocWriter in ${fixed}` : `A new session in ${fixed}` }),
     el("label", {}, "Working directory", cwd),
     err,
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), ...starts));
@@ -3993,7 +4129,7 @@ function newForm() {
     ev.preventDefault();
     const harness = ev.submitter ? ev.submitter.value : adding.harness;
     Object.assign(adding, { cwd: cwd.value.trim(), harness, error: "" });
-    try { await (harness === SHELL_START ? startShell(fixed, adding.cwd) : startSession(fixed, adding.cwd, harness)); }
+    try { await startAny(fixed, adding.cwd, harness); }
     catch (e) { adding.error = e.message; renderAgents(); }
   });
   return form;
@@ -4595,7 +4731,7 @@ function defaultComposer(ctx) {
 }
 // The switch in the page's header: the views on the bar, and the one shown, if it is one of the others (in Details).
 function viewSwitcher(current) {
-  const views = [...CHAT_VIEWS.values()].filter((v) => !v.more || v.id === current.id);
+  const views = offeredViews().filter((v) => !v.more || v.id === current.id);
   if (views.length < 2) return null;
   return el("div", { class: "views", role: "group", "aria-label": "How the history is shown" },
     ...views.map((v) => el("button", { type: "button", "aria-pressed": v.id === current.id ? "true" : "false", title: v.description || v.name,
@@ -5715,13 +5851,28 @@ function notesSwitch() {
 const CHAT_VIEWS = new Map();
 const CHAT_VIEW_KEY = "ag-dashboard-chat-view";
 let chatViewId = (PANE && PANE_URL.get("view")) || (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "files"; } catch (e) { return "files"; } })();
-const chatView = () => CHAT_VIEWS.get(chatViewId) || CHAT_VIEWS.get("files");
+// A DocWriter's actor (dwKey) opens in DocWriter's view each time it is selected; another picked for it (its Terminal,
+// say) lasts while it stays selected, apart from the other actors' choice. A view with `when(info)` is offered only to
+// the actors it says (DocWriter's, to theirs).
+let dwViewId = "docwriter";
+const offeredTo = (v, info) => !!v && (!v.when || !!v.when(info));
+// The views offered to the selected actor, those for it alone (`when`) first.
+const offeredViews = () => [...CHAT_VIEWS.values()].filter((v) => offeredTo(v, selectedInfo()))
+  .sort((a, b) => (b.when ? 1 : 0) - (a.when ? 1 : 0));
+const chatView = () => {
+  const info = selectedInfo(), doc = !!dwKey(info);
+  const v = CHAT_VIEWS.get(doc ? dwViewId : chatViewId);
+  return offeredTo(v, info) ? v : CHAT_VIEWS.get(doc && CHAT_VIEWS.has("docwriter") ? "docwriter" : "files");
+};
 async function setChatView(id) {
-  if (id === "history" && chatViewId !== "history") hist.askedFor = hist.group = hist.stay = null;   // opened again: built again
+  if (id === "history" && chatView().id !== "history") hist.askedFor = hist.group = hist.stay = null;   // opened again: built again
                                                      // if due, and at its tasks if it has them
-  chatViewId = id;
-  if (PANE) { paneUrl(); PANE.viewed(window, id); }  // a frame's: kept with its pane, not as every page's
-  else try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
+  if (dwKey(selectedInfo())) dwViewId = id;          // a DocWriter's actor: while it stays selected
+  else {
+    chatViewId = id;
+    if (PANE) { paneUrl(); PANE.viewed(window, id); }  // a frame's: kept with its pane, not as every page's
+    else try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
+  }
   await loadChat();
   keepingPlace(renderMain);
   chatToEnd();
@@ -6153,7 +6304,7 @@ function barActs() {
   const act = (label, title, icon, onclick, pressed = null, cls = "") => el("button", { type: "button", class: `fl-act ${cls}`.trim(),
     title, "aria-label": label, "aria-pressed": pressed === null ? null : pressed ? "true" : "false", onclick }, icon);
   return el("div", { class: "fl-acts", role: "group", "aria-label": "This pane" },
-    ...[...CHAT_VIEWS.values()].filter((v) => !v.more || v.id === now).map((v) =>
+    ...offeredViews().filter((v) => !v.more || v.id === now).map((v) =>
       act(v.name, v.description || v.name, v.icon ? strokeIcon(v.icon, 14) : v.name.slice(0, 1), () => setChatView(v.id), v.id === now)),
     act("Editor", "Editor: this actor's work in it -- the folder holding the files it changed lately, else its working directory",
       strokeIcon(ICONS.code, 14), edAtActor),
@@ -8364,23 +8515,7 @@ function edMount() {
     ed.side = el("aside", { class: "ed-changes files", hidden: "", "aria-label": "An actor's changes to the file" });
     ed.host = el("div", { class: "ed" }, el("nav", { class: "ed-tree", "aria-label": "Files" }, ed.bar, ed.tree),
       el("div", { class: "ed-main" }, ed.head, el("div", { class: "ed-work" }, ed.body, ed.side)));
-    const grip = el("div", { class: "ed-grip", title: "Drag to resize", "aria-hidden": "true" });
-    top.replaceChildren(ed.host, grip);
-    try { const h = Number(localStorage.getItem(ED_HEIGHT_KEY)); if (h > 0) top.style.setProperty("--ed-h", `${h}px`); } catch (e) { /* this page only */ }
-    grip.addEventListener("pointerdown", (ev) => {
-      ev.preventDefault();
-      grip.setPointerCapture(ev.pointerId);
-      grip.classList.add("on");
-      const at = top.getBoundingClientRect().top, room = top.parentElement.getBoundingClientRect().height;
-      let h = null;                                  // the panes below keep room for a view and its message box
-      const move = (e) => { h = Math.round(Math.max(140, Math.min(e.clientY - at, room - 220))); top.style.setProperty("--ed-h", `${h}px`); };
-      const up = () => {
-        grip.classList.remove("on");
-        grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); grip.removeEventListener("pointercancel", up);
-        if (h !== null) try { localStorage.setItem(ED_HEIGHT_KEY, String(h)); } catch (e) { /* this page only */ }
-      };
-      grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up); grip.addEventListener("pointercancel", up);
-    });
+    top.replaceChildren(ed.host, topGrip(top));
   }
   const opening = top.hidden;
   top.hidden = false;
@@ -8395,6 +8530,126 @@ function edMount() {
   }
   edTick();
 }
+// The edge under the panel above the panes (the Editor's, DocWriter's), dragged to resize it: its height kept in this
+// browser, the same for both.
+function topGrip(top) {
+  const grip = el("div", { class: "ed-grip", title: "Drag to resize", "aria-hidden": "true" });
+  try { const h = Number(localStorage.getItem(ED_HEIGHT_KEY)); if (h > 0) top.style.setProperty("--ed-h", `${h}px`); } catch (e) { /* this page only */ }
+  grip.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    grip.setPointerCapture(ev.pointerId);
+    grip.classList.add("on");
+    const at = top.getBoundingClientRect().top, room = top.parentElement.getBoundingClientRect().height;
+    let h = null;                                  // the panes below keep room for a view and its message box
+    const move = (e) => { h = Math.round(Math.max(140, Math.min(e.clientY - at, room - 220))); top.style.setProperty("--ed-h", `${h}px`); };
+    const up = () => {
+      grip.classList.remove("on");
+      grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); grip.removeEventListener("pointercancel", up);
+      if (h !== null) try { localStorage.setItem(ED_HEIGHT_KEY, String(h)); } catch (e) { /* this page only */ }
+    };
+    grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up); grip.addEventListener("pointercancel", up);
+  });
+  return grip;
+}
+
+// ------------------------------------------------------------------ DocWriter
+// DocWriter (docwriter.py): the view of a DocWriter's actor -- one started from a gatherer's DocWriter button
+// (startDocWriter), its session's `role` naming its DocWriter (dwKey) -- its page, filling the pane as Terminal, Chat
+// and History fill it; selecting another actor shows that one, whole. DocWriter's page is what runs its actor's
+// document tools (edit_doc, ...), so it must not go when another view is shown: each DocWriter's frame is made once
+// (`dwFrame`), in a holder outside the views, never moved -- a frame moved loads again -- and laid over the view's
+// slot while DocWriter's view is shown, hidden, still running, while it is not (`dwPlace`). One is made for a DocWriter
+// whose actor is at work, shown or not (`dwTell`). Each is told its actor's state, as this page has it, on each change:
+// DocWriter follows its agent's turns by it. No message box under it: DocWriter has its own.
+const dwFrames = new Map();                          // a DocWriter's key -> its page's frame
+let dwHost = null;
+function dwFrame(k) {
+  let f = dwFrames.get(k);
+  if (f) return f;
+  if (!dwHost) { dwHost = el("div", { class: "dw-host" }); document.body.append(dwHost); }
+  f = el("iframe", { class: "dw-page off", src: `/docwriter/w/${k}/?theme=${dwTheme()}`, title: "DocWriter" });
+  f.addEventListener("load", () => dwTell(k));
+  dwFrames.set(k, f);
+  dwHost.append(f);
+  return f;
+}
+// Each frame over its view's slot, if shown now, else hidden: after each draw, and as the pane changes size.
+let dwPlacing = false;
+function dwPlace() {
+  dwPlacing = false;
+  const slot = document.querySelector(".dw-slot");
+  const k = slot && slot.isConnected ? slot.dataset.dw : null, r = k ? slot.getBoundingClientRect() : null;
+  for (const [fk, f] of dwFrames) {
+    const on = fk === k && r.width > 0 && r.height > 0;
+    f.classList.toggle("off", !on);
+    if (on) Object.assign(f.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+    else f.removeAttribute("style");
+  }
+}
+function dwPlaceSoon() {
+  if (dwPlacing || !dwFrames.size) return;
+  dwPlacing = true;
+  requestAnimationFrame(dwPlace);
+}
+if (!SNAPSHOT) {
+  new MutationObserver(dwPlaceSoon).observe(document.getElementById("main"), { childList: true, subtree: true });
+  const sized = new ResizeObserver(dwPlaceSoon);
+  sized.observe(document.getElementById("main"));
+  window.addEventListener("resize", dwPlaceSoon);
+}
+function dwKey(info) {
+  const raw = info && info.session && info.session.role;
+  if (!raw) return null;
+  try { const r = JSON.parse(raw); return (r && typeof r.docwriter === "string" && r.docwriter) || null; } catch (e) { return null; }
+}
+// What a DocWriter's actor was last asked, as the list shows it: the author's words in DocWriter's prompt (its
+// <user_message> or <user_feedback>), not the workspace's state before them.
+function dwAsked(text) {
+  if (!text || !text.includes("<workspace_state>")) return text;
+  const m = text.match(/<user_(?:message|feedback)[^>]*>\s*([\s\S]*?)(?:\s*<\/user_|$)/);
+  return m && m[1] ? m[1] : "A DocWriter request";
+}
+function dwActorOf(k) {
+  for (const g of (state.home && state.home.gatherers) || []) for (const a of g.agents) if (dwKey(a) === k) return a;
+  return null;
+}
+function dwTell(only = null) {
+  if (!only && !PANE && !SNAPSHOT && state.home && state.home.docwriter) {   // an actor at work: its DocWriter running
+    for (const g of state.home.gatherers) for (const a of g.agents) {
+      const k = dwKey(a);
+      if (k && ["running", "asking"].includes(statusOf(a)[0])) dwFrame(k);
+    }
+  }
+  for (const [k, f] of dwFrames) {
+    if ((only && k !== only) || !f.isConnected || !f.contentWindow) continue;
+    const a = dwActorOf(k);
+    const actor = a && { channel: a.channel, status: statusOf(a)[0], turn_over: a.turn_over, asking: a.asking || null,
+      failing: a.failing || null, stopped: a.stopped || null, name: a.name || null,
+      session: a.session ? { session_id: a.session.session_id, terminal: !!a.session.terminal } : null };
+    try { f.contentWindow.postMessage({ kind: "ag-actor", actor, theme: dwTheme() }, location.origin); } catch (e) { /* not up yet */ }
+  }
+}
+// The page's theme as shown, light or dark: DocWriter's page takes it on, at its start and each time it changes.
+const dwTheme = () => document.documentElement.dataset.theme
+  || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+window.addEventListener("ag-theme", () => dwTell());
+window.addEventListener("message", (ev) => {
+  if (ev.origin !== location.origin || !ev.data || ev.data.kind !== "ag-actor?") return;
+  for (const [k, f] of dwFrames) if (f.contentWindow === ev.source) dwTell(k);
+});
+if (!SNAPSHOT) addChatView({
+  id: "docwriter", name: "DocWriter", feed: "none", frame: "dw-frame", chat: false, icon: ICONS.quill,
+  description: "DocWriter: write with this actor, its edits proposed beside your text for you to accept or reject.",
+  when: (info) => !!dwKey(info),
+  render: ({ info }) => {
+    const k = dwKey(info);
+    if (!state.home || !state.home.docwriter)
+      return el("div", { class: "desc", text: "DocWriter needs pycrdt where the dashboard runs, and its page built: pip install pycrdt, then restart the dashboard." });
+    dwFrame(k);
+    dwPlaceSoon();
+    return el("div", { class: "dw-slot", "data-dw": k });
+  },
+});
 
 // What a view gets to draw with -- and, for one in a file of its own, how it adds itself.
 const agDashboard = window.agDashboard = Object.freeze({

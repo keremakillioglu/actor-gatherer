@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="text-scale" content="scale" />
+		<title>DocWriter preview</title>
+		<script>
+			// Where this DocWriter is served, /docwriter/w/<key>: every request of the page goes under it (vite.config.mjs)
+			globalThis.__dwBase = (location.pathname.match(/^.*?\/docwriter\/w\/[^/]+/) || [""])[0];
+		</script>
+	</head>
+	<style>
+		html, body { margin: 0; padding: 0; height: 100%; }
+		body { overflow: hidden; }
+		/* the model is the actor's; style references are not offered here */
+		.model-picker, .reference-pill { display: none !important; }
+	</style>
+	<body>
+		<div id="app" style="display: contents"></div>
+		<script type="module" src="./src/preview.ts"></script>
+	</body>
+</html>
