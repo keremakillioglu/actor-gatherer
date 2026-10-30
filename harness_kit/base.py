@@ -144,7 +144,7 @@ class Part:
     result has `tool` or `result`; a piece that states the agent's working directory, `cwd`; `opaque`, an
     opaque blob (encrypted reasoning). `detail` holds what a kind says besides:
 
-        SKILL            name, args, instructions
+        SKILL            name, args, instructions; call, the id of the tool call that loaded it (Claude Code's Skill)
         AGENT_REPORT     from (the subagent's id or path), text (its report)
         PEER_MESSAGE     name (who sent it), text
         LOCAL_COMMAND    name: the command as typed ("/context")

@@ -184,8 +184,11 @@ def _events(conn, channel: str, stops: List[dict] = ()):
     harness took back (Esc before any of its answer came), nor what came with it (`_withdrawn`; data.py's
     `withdrawn_reads`): a call hung up on withdraws all it stored -- the turns before it, sent with it, among them, and
     the agent's own (AGENTS_OWN) -- but the harness keeps all that, and all of the call where the answer had begun, its
-    record saying the turn was interrupted after (`stops`)."""
-    said = "e.p_kind, e.p_words" if {"p_kind", "p_words"} <= data._columns(conn, "events") else "NULL AS p_kind, NULL AS p_words"
+    record saying the turn was interrupted after (`stops`). A skill's instructions (its `kind` SKILL) carry in their note
+    part the call that loaded them (`loaded_by`: its `call_id` property), which names the skill where they don't."""
+    columns = data._columns(conn, "events")
+    said = "e.p_kind, e.p_words" if {"p_kind", "p_words"} <= columns else "NULL AS p_kind, NULL AS p_words"
+    said += ", e.p_call_id" if "p_call_id" in columns else ", NULL AS p_call_id"
     tables, kept = data._tables(conn), ""
     if "_withdrawn" in tables:
         back = data.withdrawn_reads(conn, channel, tables, [s["at"] for s in stops if s["kind"] == "interrupted"])
@@ -200,8 +203,12 @@ def _events(conn, channel: str, stops: List[dict] = ()):
         f"AND {data.NOT_RECORD}{kept} ORDER BY e.row_id", (channel,)).fetchall()
     harness = data._harness(conn, channel)
     for r in rows:
-        yield (r["row_id"], r["type"] or "?", data._seconds(r["inserted_at"]),
-               data.parts(r["type"] or "?", r["payload_json"], r["text"], None, harness),
+        parts = data.parts(r["type"] or "?", r["payload_json"], r["text"], None, harness)
+        if r["p_kind"] == Kind.SKILL and r["p_call_id"]:
+            for p in parts:
+                if p["kind"] == "note":
+                    p["loaded_by"] = r["p_call_id"]
+        yield (r["row_id"], r["type"] or "?", data._seconds(r["inserted_at"]), parts,
                (r["p_kind"], r["p_words"]) if r["p_kind"] and r["p_words"] is not None else None)
     for r in data.replies(conn, channel):
         yield None, r["type"], data._seconds(r["received_at"]), data.parts(r["type"], r["payload_json"], r["text"], None, harness), None
@@ -501,22 +508,26 @@ NOTES = {Kind.SKILL: "skill", Kind.AGENT_REPORT: "report", Kind.PEER_MESSAGE: "p
          Kind.COMMAND_OUTPUT: "printed"}
 
 
-def _note(text: str) -> Optional[dict]:
+def _note(text: str, loaded_by: Optional[dict] = None) -> Optional[dict]:
     """What a note of the harness's in the conversation is, as the Chat view shows it (its harness's rules read it:
     harness_kit.claude's `note_detail`, harness_kit.codex's `report_of`); None for one it doesn't:
-        {kind: "skill", name, args, text}   a skill's instructions, loaded by the Skill tool or the user's /name
+        {kind: "skill", name, args, text}   a skill's instructions, loaded by the Skill tool or the user's /name -- or,
+                                            stored as a skill's (`_events`), loaded by `loaded_by`, the Skill call
+                                            ({} where it is not known), named by it where its instructions don't
         {kind: "report", from, text}        another session's message: a subagent's report as it hands back (codex's
                                             FINAL_ANSWER from another of its agents, `from` its agent path)
         {kind: "peer", name, text}          another session's message: one another Claude session sent this one
         {kind: "command", name}             a command the user ran that Claude Code runs itself (/context, /mcp): not
                                             shown, only matched with what was sent from the page
         {kind: "printed", text}             what a command the user ran with ! printed"""
-    said = claude_rules.note_detail(text) or codex_rules.report_of(text)
+    said = claude_rules.note_detail(text, Kind.SKILL if loaded_by is not None else None) or codex_rules.report_of(text)
     if said is None:
         return None
     kind = NOTES[said.pop("kind")]
     if kind == "skill":
-        return {"kind": kind, "name": said["name"], "args": said["args"], "text": said["instructions"]}
+        inp = (loaded_by or {}).get("input") if isinstance((loaded_by or {}).get("input"), dict) else {}
+        return {"kind": kind, "name": said["name"] or str(inp.get("skill") or ""),
+                "args": said["args"] or str(inp.get("args") or ""), "text": said["instructions"]}
     if kind == "printed":
         return {"kind": kind, "text": said["text"][:COMMAND_OUTPUT]}
     return {"kind": kind, **said}
@@ -974,7 +985,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
                     head["last"] = None                      # shown after the call: the call is no longer the last
                 head["now"] = {"kind": "thinking"}
             elif p["kind"] == "note":                        # Claude Code's own: a report, a message, a skill loaded, a ! command's output
-                n = _note(p.get("text") or "")
+                n = _note(p.get("text") or "", calls.get(p["loaded_by"]) or {} if p.get("loaded_by") else None)
                 if n is None:
                     if _interrupted(p.get("text") or ""):   # stopped (Esc), as its next turn told the model
                         head["stopped"] = {"kind": "interrupted", "at": None, "text": None, "status": None, "reason": None}

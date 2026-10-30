@@ -149,6 +149,24 @@ class EventsTest(unittest.TestCase):
         self.assertEqual([e["type"] for e in events], [USER_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT])   # the user spoke once
         self.assertEqual(back.to_messages(events, sent)[-1]["content"], sent[-1]["content"])
 
+    def test_a_bundled_skill_s_instructions_are_claude_code_s_with_no_base_directory(self):
+        # as Claude Code 2.1.314 sent them (a live session): a bundled skill of instructions alone opens with no base
+        # directory, after the results of the message's calls
+        sent = [{"role": "user", "content": "Draw the pipeline."},
+                {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_4", "name": "Artifact",
+                                                   "input": {"action": "quickstart", "intent": "other"}},
+                                                  {"type": "tool_use", "id": "toolu_5", "name": "Skill",
+                                                   "input": {"skill": "artifact-diagramming"}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_4", "content": "Quickstart. ..."},
+                                             {"type": "tool_result", "tool_use_id": "toolu_5",
+                                              "content": "Launching skill: artifact-diagramming"},
+                                             {"type": "text", "text": "Draw as the engineer who has to live with the "
+                                                                      "decision, not as a decorator: ..."}]}]
+        events = claude.to_events(sent)
+        self.assertEqual([e["type"] for e in events], [USER_MESSAGE, TOOL_CALL, TOOL_CALL, TOOL_OUTPUT, TOOL_OUTPUT, CONTEXT])
+        self.assertEqual(events[-1]["properties"], {"kind": "skill", "call_id": "toolu_5"})   # the call that loaded it
+        self.assertEqual(back.to_messages(events, sent)[-1]["content"], sent[-1]["content"])
+
     def test_a_command_the_user_typed_is_theirs_and_its_prompt_claude_code_s(self):
         earlier = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": [{"type": "text", "text": "hello"}]}]
         skill = {"role": "user", "content": [{"type": "text", "text": self.TYPED}, {"type": "text", "text": self.SKILL_TEXT.format("Bob")}]}

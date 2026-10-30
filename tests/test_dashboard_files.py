@@ -522,6 +522,24 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(len(count), 3)                                     # /context and /login run: not shown
         self.assertEqual(turns[3]["ran"], ["/context"])                     # only matched with what the page sent
 
+    def test_a_bundled_skill_loaded_bare_shows_with_its_skill_call(self):
+        conn = sqlite3.connect(self.db)              # a gatherer whose events carry what the rules read of them
+        conn.executescript("ALTER TABLE events ADD COLUMN p_kind; ALTER TABLE events ADD COLUMN p_words; "
+                           "ALTER TABLE events ADD COLUMN p_call_id;")
+        conn.close()
+        self.add(asked("Draw the pipeline."), call("k1", "Skill", {"skill": "artifact-diagramming"}),
+                 result("k1", "Launching skill: artifact-diagramming"),
+                 note("Draw as the engineer who has to live with the decision.\n\nARGUMENTS: a map"), said("Drawn."))
+        conn = sqlite3.connect(self.db)              # as ag's Claude adaptor stores it: a skill's, loaded by k1
+        conn.execute("UPDATE events SET p_kind = 'skill', p_call_id = 'k1' WHERE row_id = (SELECT max(row_id) - 1 FROM events)")
+        conn.commit()
+        conn.close()
+        got = files.files("g", "c1", cwd="/w")
+        self.assertEqual(got["turns"][-1]["text"], "Draw the pipeline.")         # not a turn of the user's own
+        self.assertEqual(got["turns"][-1]["replies"], [{"kind": "text", "text": "Drawn."}])
+        self.assertEqual([(c["text"], c["output"]) for c in got["commands"]],
+                         [("Load skill artifact-diagramming", "Draw as the engineer who has to live with the decision.")])
+
     def test_a_turn_counts_its_calls_as_its_commands_list_them(self):
         self.add(asked("Greet Alice, then list the files."),
                  call("k1", "Skill", {"skill": "greet", "args": "Alice"}), result("k1", "Launching skill: greet"),
