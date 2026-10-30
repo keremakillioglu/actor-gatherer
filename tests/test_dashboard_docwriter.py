@@ -409,6 +409,22 @@ class VendorTest(unittest.TestCase):
                                "."], capture_output=True, text=True, check=True).stdout.split()
         self.assertEqual(left, [])
 
+    def test_it_is_built_from_the_docwriter_its_submodule_pins(self):
+        """The commit of DocWriter the page was built from (its LICENSE, build.mjs) is the one git records for the
+        submodule (assets/src/docwriter/upstream): a pin moved without a build, or a build from another commit, fails."""
+        if shutil.which("git") is None or subprocess.run(["git", "-C", docwriter.VENDOR, "rev-parse"],
+                                                         capture_output=True).returncode:
+            self.skipTest("not a git checkout")
+        top = subprocess.run(["git", "-C", docwriter.VENDOR, "rev-parse", "--show-toplevel"], capture_output=True,
+                             text=True, check=True).stdout.strip()
+        staged = subprocess.run(["git", "-C", top, "ls-files", "--stage", "--", "assets/src/docwriter/upstream"],
+                                capture_output=True, text=True, check=True).stdout.split()
+        self.assertEqual(staged[:1], ["160000"])                  # a submodule's entry: mode, commit, stage, path
+        with open(os.path.join(docwriter.VENDOR, "LICENSE"), encoding="utf-8") as fh:
+            built = re.match(r"DocWriter \(github\.com/docwriter-org/docwriter at ([0-9a-f]{40})\)", fh.readline())
+        self.assertIsNotNone(built)
+        self.assertEqual(built.group(1), staged[1])
+
 
 class ServerTest(Home):
     """The page's side, through the dashboard's server: its one stream, a document shared, the actor's MCP server."""
