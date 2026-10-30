@@ -1012,7 +1012,9 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .ed-body .ed-cf-head .ed-avs img { width: 16px; height: 16px; margin: 0; }
 .ed-body.wrap .ed-cf-theirs { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
 /* within a box's change: the words it adds (in its lines), and those it takes out (in the lines here) */
-.ed-body .ed-cf-theirs .ed-add { background: color-mix(in srgb, var(--good) 30%, transparent); border-radius: 2px; }
+.ed-body .ed-add { background: color-mix(in srgb, var(--good) 30%, transparent); border-radius: 2px; }
+.ed-body .ed-cf-label .ed-add, .ed-body .ed-cf-label .ed-del { padding: 0 3px; }
+.ed-body .ed-chg .ed-del + .ed-add { margin-left: 2px; }
 .ed-body .ed-del { background: color-mix(in srgb, var(--critical) 24%, transparent); border-radius: 2px;
   text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--critical) 75%, transparent); }
 .ed-body .ed-cf-mine.from-branch { background: color-mix(in srgb, var(--who, var(--s1)) 12%, transparent); box-shadow: inset 3px 0 0 var(--who, var(--s1)); }
@@ -8658,6 +8660,27 @@ function edWordDiff(mine, theirs) {
   if (post) put("same", a.slice(a.length - post).join(""));
   return out;
 }
+// A word diff's parts as a box shows them: each change whole -- what it takes out, then what it puts in -- its runs of
+// changed words, and the punctuation or spaces between them (ED_GLUE, on one line), one ["change", out, in]; the rest
+// ["same", text]. So "3.14" made "math.pi" reads as the one, struck, then the other, not word by word in turn.
+const ED_GLUE = /^[^\S\n]*[^\s\p{L}\p{N}_]{0,2}[^\S\n]*$/u;
+function edGroups(parts) {
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    const [kind, text] = parts[i];
+    if (kind === "same") { out.push(["same", text]); continue; }
+    let gone = "", put = "";
+    for (; i < parts.length; i++) {
+      const [k, t] = parts[i];
+      if (k === "del") gone += t;
+      else if (k === "add") put += t;
+      else if (ED_GLUE.test(t) && i + 1 < parts.length && parts[i + 1][0] !== "same") { gone += t; put += t; }
+      else { i--; break; }
+    }
+    out.push(["change", gone, put]);
+  }
+  return out;
+}
 // The conflicts, drawn: the lines kept here marked, and under them the file's lines, with what to do about them.
 let EdConflict = null;
 function edConflictWidget(A) {
@@ -8705,12 +8728,18 @@ function edConflictWidget(A) {
         el("div", { class: "ed-cf-head" }, branch && who && who.avatar ? el("span", { class: "ed-avs" }, el("img", { src: `/avatars/${who.avatar}.svg`, alt: "", draggable: "false" })) : null,
           el("span", { class: "what", title: branch ? `Its branch: ${branch.branch}` : many ? `Their changes, one after the other:\n${this.by.names.join("\n")}` : null,
           text: `${what}, ${ago(c.at)}.` }), el("span", { class: "grow" }), ...picks),
-        c.theirs ? el("div", { class: "ed-cf-label", text: branch ? (mine ? "On its branch, in place of the lines above:" : "On its branch:")
-          : mine ? "On disk now, in place of the lines above:" : "On disk now:" }) : null,
+        // its lines -- with the words changed, both those it takes out of the lines above (red) and those it puts in
+        // (green), in place, where they are told (edWordDiff)
+        c.theirs ? el("div", { class: "ed-cf-label" }, branch ? (this.parts ? "Its change to the lines above: " : mine ? "On its branch, in place of the lines above:" : "On its branch:")
+          : this.parts ? "The change on disk to the lines above: " : mine ? "On disk now, in place of the lines above:" : "On disk now:",
+          ...(this.parts ? [el("span", { class: "ed-del", text: "taken out" }), ", ", el("span", { class: "ed-add", text: "put in" })] : [])) : null,
         c.theirs ? el("pre", { class: "ed-cf-theirs" }, ...(this.parts
-          ? this.parts.filter(([kind]) => kind !== "del").map(([kind, text], k, all) => {
-            if (k === all.length - 1) text = text.replace(/\n$/, "");
-            return kind === "add" && text.trim() ? el("span", { class: "ed-add", text }) : text;
+          ? edGroups(this.parts).map((g, k, all) => {
+            const end = (t) => k === all.length - 1 ? t.replace(/\n$/, "") : t;
+            if (g[0] === "same") return end(g[1]);
+            const out = [g[1].trim() ? el("span", { class: "ed-del", text: g[2] ? g[1] : end(g[1]) }) : g[1],
+              g[2].trim() ? el("span", { class: "ed-add", text: end(g[2]) }) : end(g[2])];
+            return el("span", { class: "ed-chg" }, ...out);
           })
           : [c.theirs.replace(/\n$/, "")])) : null);
     }
