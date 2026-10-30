@@ -588,7 +588,7 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .gatherer-row .act.start .badge { width: 16px; height: 16px; display: block; pointer-events: none; }
 .gatherer-row .act.start.busy { opacity: 1; }
 .gatherer-row .act.start.busy .badge { animation: term-blink 1s ease-in-out infinite; }
-.gatherer-row .act.start.shell svg { display: block; pointer-events: none; }
+.gatherer-row .act.start.shell svg, .gatherer-row .act.start.branch svg { display: block; pointer-events: none; }
 /* the gatherer agent's button: its face, the manager's (crewFace); hidden from the list, its status at its corner */
 .gatherer-row .act.start.crew { position: relative; }
 .gatherer-row .act.start.crew .crew-face { width: 18px; height: 18px; display: block; pointer-events: none; }
@@ -613,6 +613,27 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .newform .row button[value] { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 4px 8px; }
 .newform .row .badge { width: 14px; height: 14px; display: block; }
 .newform .err, .composer .err { color: var(--critical); font-size: 12px; }
+/* a new actor on a branch of its own: the gatherer's projects, which one, and whether each change is asked about */
+.newform .desc { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.newform .projects { display: grid; gap: 4px; }
+.newform .proj { display: flex; align-items: center; gap: 6px; font-size: 12.5px; min-width: 0; }
+.newform .proj .nm { font-weight: 600; white-space: nowrap; }
+.newform .proj .at { color: var(--muted); font: 11.5px var(--mono, ui-monospace, monospace); min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.newform .proj button { flex: none; font-size: 11.5px; padding: 1px 8px; }
+.newform button.suggest { display: flex; align-items: center; gap: 6px; text-align: left; width: 100%; font-size: 12.5px; padding: 4px 8px; }
+.newform button.suggest .at { color: var(--muted); font: 11.5px ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.newform .addrow { display: flex; gap: 6px; } .newform .addrow input { flex: 1; }
+.newform label.check { display: flex; align-items: flex-start; gap: 7px; color: var(--ink-2); line-height: 1.4; }
+.newform label.check input { margin: 2px 0 0; padding: 0; width: 14px; height: 14px; flex: none; }
+.newform .desc.route code { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); }
+.newform .link { border: 0; background: none; padding: 0; color: var(--s1); font: inherit; font-size: 12px; cursor: pointer; justify-self: start; }
+/* an actor on a branch of its own, in the list: its branch, and what of it waits for the reader */
+.agent .branchline { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 11px; color: var(--muted); min-width: 0; }
+.agent .branchline svg { flex: none; }
+.agent .branchline .rt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.agent .branchline .wait { flex: none; color: var(--warning); font-weight: 600; white-space: nowrap; }
 button.primary { background: var(--s1); border-color: var(--s1); color: #fff; }
 button.primary:hover { filter: brightness(1.06); background: var(--s1); }
 button:disabled { opacity: .5; cursor: default; }
@@ -940,6 +961,36 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .ed-unmark:hover { color: var(--ink); background: var(--wash); }
 .ed-row .mk.cf { font-size: 10.5px; font-weight: 700; color: #fff; background: var(--critical); border-radius: 7px; padding: 0 5px; line-height: 14px; }
 .ed-body .ed-disk-line { box-shadow: inset 3px 0 0 var(--who, var(--s2)); }
+/* an actor's lines from its branch, as long as it is not closed: tinted in its hue */
+.ed-body .ed-agent { background: color-mix(in srgb, var(--who, var(--s2)) 9%, transparent); box-shadow: inset 2px 0 0 color-mix(in srgb, var(--who, var(--s2)) 70%, transparent); }
+/* an actor's change from its branch, waiting for the reader: the box in its hue, not the conflict's red */
+.ed-body .ed-cf.from-branch { border-color: color-mix(in srgb, var(--who, var(--s1)) 55%, var(--ring)); }
+.ed-body .ed-cf.from-branch .ed-cf-head { background: color-mix(in srgb, var(--who, var(--s1)) 9%, var(--surface)); }
+.ed-body .ed-cf.from-branch .ed-cf-label, .ed-body .ed-cf.from-branch .ed-cf-theirs {
+  background: color-mix(in srgb, var(--who, var(--s1)) 7%, transparent); box-shadow: inset 3px 0 0 var(--who, var(--s1)); }
+.ed-body .ed-cf-head .ed-avs img { width: 16px; height: 16px; margin: 0; }
+.ed-body .ed-cf-mine.from-branch { background: color-mix(in srgb, var(--who, var(--s1)) 12%, transparent); box-shadow: inset 3px 0 0 var(--who, var(--s1)); }
+.ed-brs:not(:empty) { padding: 0 8px 6px; }
+.ed-row .mk.br { font-size: 10.5px; font-weight: 700; color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 60%, transparent);
+  border-radius: 7px; padding: 0 5px; line-height: 13px; }
+/* above the tree: the actors on branches of the project shown, each with its changes waiting */
+.ed-brs { display: grid; gap: 4px; }
+.ed-br { border: 1px solid color-mix(in srgb, var(--who, var(--s1)) 40%, var(--ring)); border-radius: 6px; padding: 4px 6px;
+  background: color-mix(in srgb, var(--who, var(--s1)) 5%, var(--page)); display: grid; gap: 3px; font-size: 12px; }
+.ed-br .hd { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.ed-br .hd img, .ed-br .hd .ed-noav { width: 15px; height: 15px; border-radius: 50%; flex: none; }
+.ed-br .hd .nm { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.ed-br .rt { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-br .rt code { font: 10.5px var(--mono); color: var(--ink-2); }
+.ed-br .ap { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; cursor: pointer; }
+.ed-br .ap input { margin: 0; }
+.ed-br .f { display: flex; align-items: center; gap: 2px 4px; min-width: 0; flex-wrap: wrap; }
+.ed-br .f > button.go { flex: 1 1 110px; min-width: 0; border: 0; background: none; padding: 1px 2px; text-align: left; font: 11.5px var(--mono);
+  color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; border-radius: 4px; }
+.ed-br .f > button.go:hover { background: var(--wash); }
+.ed-br .f .k { color: var(--warning); font-size: 11px; white-space: nowrap; }
+.ed-br .f .pick { flex: none; font-size: 11px; padding: 0 6px; }
+.ed-br .none { color: var(--muted); font-size: 11.5px; }
 @media (max-width: 760px) { .ed-tree { width: 140px; } }
 /* the Files view: a turn's files, each as the agent saw it (files.py) */
 .chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2371,6 +2422,8 @@ const ICONS = {
   folderUp: "M1.75 4a1 1 0 0 1 1-1h3.4l1.5 1.6h5.6a1 1 0 0 1 1 1v6.65a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1zM8 11.1V7.1M6.3 8.8 8 7.1l1.7 1.7",   // the folder above
   power: "M8 1.75v5.5M4.6 3.9a5.25 5.25 0 1 0 6.8 0",                  // a shell terminated
   chevron: "M6 3.5 10.5 8 6 12.5",                                     // more, folded: turned down once shown
+  branch: "M4.5 2.5v8.5M3 12.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M10 4.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0"
+    + "M11.5 6c0 3.25-7 2.25-7 5",                                       // an actor on a branch of its own
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -2642,7 +2695,7 @@ function render(userAction = false) {
     return;
   }
   const agents = signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.saved, state.home.seen, state.home.harnesses,
-    state.home.shells, paneSig(),
+    state.home.shells, state.home.branches, paneSig(),
     opened(selectedInfo()),
     Math.floor(Date.now() / AGO_MS)]);
   // "ago" texts: every 30 s; not while a form in the list is open, which a redraw would empty
@@ -3108,7 +3161,7 @@ function renderAgents() {
           live ? el("span", { class: "count", title: `${live} of ${plural(g.agents.length, "actor")} running` },
             el("i", { "aria-hidden": "true" }), String(live)) : null),
         ...(SNAPSHOT ? [] : startButtons(g))));
-    if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
+    if (state.adding && state.adding.gatherer === g.name) box.append(state.adding.branch ? branchForm() : newForm());
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
     for (const [name, list] of groups) if (name === "Closed") list.sort((x, y) => (y.last || 0) - (x.last || 0));
     keepOrder(g.name, groups);   // so drawn first; from then on, each group in the order its actors were last in
@@ -3334,6 +3387,7 @@ function agentRow(g, a, group) {
         !hasChat(a) ? null : a.chattable === false
           ? el("span", { class: "chat-icon held", title: "Open in another process: close it there to chat here" }, chatIcon(true))
           : el("span", { class: "chat-icon", title: a.session ? "Chat: started from the dashboard" : "Chat: can be messaged from the dashboard" }, chatIcon(false))),
+      branchChip(g, a),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
         `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null));
 }
@@ -4145,10 +4199,14 @@ function startButtons(g) {
     "aria-label": `New terminal, listed under ${g.name}`, onclick: () => addSession(g, SHELL_START) },
     el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.terminal, 16))];
   if (!hs.length) return [...coordinator, el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+"), ...shell];
+  const branch = el("button", { class: "act start branch" + busy(BRANCH_START), type: "button", ...(state.starting ? { disabled: "" } : {}),
+    title: `New actor on a branch of its own, in ${g.name}: it works in a worktree of the gatherer's project, and what it changes is merged into the project`,
+    "aria-label": `New actor on a branch of its own, in ${g.name}`, onclick: () => openBranchForm(g) },
+    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.branch, 16));
   return [...coordinator, ...hs.map((h) => el("button", { class: "act start" + busy(h),
     type: "button", ...(state.starting ? { disabled: "" } : {}), title: `New ${harnessName(h)} session in ${g.name}`,
     "aria-label": `New ${harnessName(h)} session in ${g.name}`, onclick: () => addSession(g, h) },
-    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), harnessBadge(h))), ...shell];
+    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), harnessBadge(h))), branch, ...shell];
 }
 async function addSession(g, harness) {
   const cwd = startCwd(g);
@@ -4188,6 +4246,142 @@ async function startShell(gatherer, cwd) {
     await loadHome();                                // listed before it is shown: its pane's head says where it is
     await show(gatherer, s.id);
   } finally { state.starting = null; renderAgents(); }
+}
+// An actor on a branch of its own (branches.py): made from one of the gatherer's PROJECTS -- the git repositories set for
+// it, each a clone here -- in a worktree beside it, on a new branch from its last commit; what it changes there merged
+// into the project's folder (the one the Editor shows) as it changes it, but for the lines being edited in the Editor
+// (its conflict zone) and those the project changed too, which wait for the reader -- and, with "auto-merge with
+// approval", every change waits (kept in this browser, as the last choice). The form asks for the gatherer's projects
+// when it has none, and which one when it has several.
+const BRANCH_START = "branch", BRANCH_APPROVE_KEY = "ag-branch-approve";
+const branchOf = (g, a) => ((state.home && state.home.branches) || []).find((b) => b.gatherer === g && b.channel === a.channel) || null;
+const branchWaiting = (b) => Object.values(b.held || {}).reduce((n, v) => n + v.n, 0);
+// What a folder has checked out (branches.py's `checked_out`): its branch, or its commit alone.
+const checkedOut = (o) => !o || !o.head ? "?" : o.branch || `${o.head} (no branch)`;
+// Where an actor's branch came from, and where its changes go: said whole, for a title.
+const branchRoute = (b) => `From: its own branch, ${b.branch}, in ${tildePath(b.worktree, state.home.home_dir)}, `
+  + `started from ${b.started_on || "a commit"} at ${(b.start || "").slice(0, 7)}.\n`
+  + `Into: ${tildePath(b.project, state.home.home_dir)}, on ${checkedOut(b.onto)} now: its changes merged there`
+  + `${b.approve ? " once you approve each" : ", but for lines you are editing, and lines you changed too"}.`;
+function branchChip(g, a) {
+  const b = branchOf(g.name, a);
+  if (!b) return null;
+  const n = branchWaiting(b);
+  return el("div", { class: "branchline", title: branchRoute(b) + (n ? `\n${plural(n, "change")} wait for you in the Editor` : "") },
+    strokeIcon(ICONS.branch, 11), el("span", { class: "rt", text: `${b.branch} → ${checkedOut(b.onto)}` }),
+    n ? el("span", { class: "wait", text: `${n} to approve` }) : null);
+}
+// The directories the gatherer's actors work in, the latest first: where its projects are suggested from.
+const actorDirs = (g) => [...new Set([...g.agents].sort((x, y) => (y.last || 0) - (x.last || 0)).map(cwdOf).filter(Boolean)
+  .concat(state.home.cwd ? [state.home.cwd] : []))];
+async function openBranchForm(g) {
+  if (state.adding && state.adding.gatherer === g.name && state.adding.branch) { state.adding = null; return renderAgents(); }
+  let approve = false;
+  try { approve = localStorage.getItem(BRANCH_APPROVE_KEY) === "1"; } catch (e) { /* this page only */ }
+  const adding = state.adding = { gatherer: g.name, branch: true, loading: true, projects: [], suggestions: [], project: "",
+    approve, where: "", error: "", manage: false, dirs: actorDirs(g) };
+  renderAgents();
+  try {
+    const got = await get(`/api/projects?${new URLSearchParams({ gatherer: g.name, dirs: JSON.stringify(adding.dirs) })}`);
+    Object.assign(adding, got, { loading: false });
+    if (got.projects.length === 1) adding.project = got.projects[0].path;
+  } catch (e) { Object.assign(adding, { loading: false, error: e.message }); }
+  if (state.adding === adding) renderAgents();
+}
+async function changeProjects(adding, body) {
+  adding.busy = true; adding.error = ""; renderAgents();
+  try {
+    const got = await post("/api/projects", { gatherer: adding.gatherer, dirs: adding.dirs, ...body });
+    const had = new Set(adding.projects.map((p) => p.path));
+    Object.assign(adding, got);
+    const added = got.projects.find((p) => !had.has(p.path));
+    if (added) { adding.project = added.path; adding.where = ""; }
+    if (!got.projects.some((p) => p.path === adding.project)) adding.project = got.projects.length === 1 ? got.projects[0].path : "";
+    if (got.projects.length && added) adding.manage = false;
+  } catch (e) { adding.error = e.message; }
+  adding.busy = false;
+  if (state.adding === adding) renderAgents();
+}
+const projectName = (p) => p.github || p.name;
+function branchForm() {
+  const adding = state.adding, g = adding.gatherer, hs = startable();
+  const err = el("div", { class: "err", role: "alert", text: adding.error || "" });
+  const cancel = el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel");
+  const form = el("form", { class: "newform", "aria-label": "New actor on a branch" });
+  if (adding.loading) {
+    form.append(el("div", { class: "desc", text: `Reading ${g}'s projects…` }), el("div", { class: "row" }, cancel));
+    return form;
+  }
+  if (!adding.projects.length || adding.manage) {               // the gatherer's projects: set first
+    const where = el("input", { value: adding.where, placeholder: "a folder in a git repository, or owner/repo", spellcheck: "false",
+      "aria-label": "A folder in a git repository, or a GitHub repository", oninput: (ev) => { adding.where = ev.target.value; } });
+    const add = el("button", { type: "submit", class: "primary", ...(adding.busy ? { disabled: "" } : {}) }, adding.busy ? "Adding…" : "Add");
+    form.append(...[
+      el("div", { class: "desc", text: adding.projects.length ? `${g}'s projects: an actor on a branch works in a worktree of one.`
+        : `${g} has no GitHub project yet. Set the repositories its actors' branches are made from: each actor works in a worktree of one, and what it changes is merged into the project's folder.` }),
+      adding.projects.length ? el("div", { class: "projects" }, ...adding.projects.map((p) => el("div", { class: "proj" },
+        el("span", { class: "nm", text: projectName(p) }), el("span", { class: "at", title: p.path, text: tildePath(p.path, state.home.home_dir) }),
+        el("button", { type: "button", title: `No longer one of ${g}'s projects (its actors' branches are left as they are)`,
+          onclick: () => changeProjects(adding, { remove: p.path }) }, "Remove")))) : null,
+      adding.suggestions.length ? el("div", { class: "projects" }, el("div", { class: "desc", text: "Where its actors work:" }),
+        ...adding.suggestions.map((p) => el("button", { type: "button", class: "suggest", title: `${p.path}${p.remote ? "\n" + p.remote : ""}`,
+          ...(adding.busy ? { disabled: "" } : {}), onclick: () => changeProjects(adding, { add: p.path }) },
+          el("span", { text: `+ ${projectName(p)}` }), el("span", { class: "at", text: tildePath(p.path, state.home.home_dir) })))) : null,
+      el("div", { class: "addrow" }, where, add),
+      el("div", { class: "desc", text: "A GitHub repository with no clone here is cloned under ag's home." }),
+      err,
+      el("div", { class: "row" }, adding.projects.length ? el("button", { type: "button", onclick: () => { adding.manage = false; renderAgents(); } }, "Done") : null, cancel),
+    ].filter(Boolean));
+    form.addEventListener("submit", (ev) => { ev.preventDefault(); if (adding.where.trim()) changeProjects(adding, { add: adding.where.trim() }); });
+    return form;
+  }
+  const many = adding.projects.length > 1;
+  const pick = many ? el("select", { required: "", "aria-label": "The project",
+    onchange: (ev) => { adding.project = ev.target.value; adding.error = ""; renderAgents(); } },
+    el("option", { value: "", disabled: "", selected: adding.project ? null : "", text: "Which project?" }),
+    ...adding.projects.map((p) => el("option", { value: p.path, selected: p.path === adding.project ? "" : null,
+      title: p.path, text: `${projectName(p)} — ${tildePath(p.path, state.home.home_dir)}` }))) : null;
+  const one = adding.projects[0], chosen = adding.projects.find((p) => p.path === adding.project);
+  const route = chosen ? el("div", { class: "desc route" },
+    "From: a new branch, off ", el("code", { text: checkedOut(chosen) }), ` at ${chosen.head || "?"}. Into: `,
+    el("code", { text: tildePath(chosen.path, state.home.home_dir) }), ", on ", el("code", { text: checkedOut(chosen) }), ".") : null;
+  const approve = el("input", { type: "checkbox", checked: adding.approve ? "" : null, onchange: (ev) => {
+    adding.approve = ev.target.checked;
+    try { localStorage.setItem(BRANCH_APPROVE_KEY, adding.approve ? "1" : "0"); } catch (e) { /* this page only */ }
+  } });
+  const starts = hs.map((h) => el("button", { type: "submit", value: h, class: h === hs[0] ? "primary" : "",
+    ...(state.starting ? { disabled: "" } : {}) }, harnessBadge(h), harnessName(h)));
+  form.append(
+    el("div", { class: "desc", text: `A new actor in ${g}, on a branch of its own: a worktree beside the project, from its last commit. What it changes is merged into the project's folder as it changes it.` }),
+    ...[many ? el("label", {}, "Project", pick) : el("div", { class: "proj" }, el("span", { class: "nm", text: projectName(one) }),
+      el("span", { class: "at", title: one.path, text: tildePath(one.path, state.home.home_dir) })),
+    route].filter(Boolean),
+    el("button", { type: "button", class: "link", onclick: () => { adding.manage = true; renderAgents(); } }, many ? "Change the projects" : "Add or change projects"),
+    el("label", { class: "check", title: "Without it, its changes are merged in as they come, but for lines you are editing in the Editor, and lines you changed too, which wait for you" },
+      approve, el("span", {}, el("b", { text: "Auto-merge with approval" }), ": each change waits in the Editor for you to accept or reject it")),
+    err,
+    el("div", { class: "row" }, cancel, ...starts));
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    if (!adding.project) { err.textContent = "Pick the project it works on."; return; }
+    const harness = ev.submitter ? ev.submitter.value : hs[0];
+    try { await startBranch(g, adding.project, harness, adding.approve); }
+    catch (e) { adding.error = e.message; renderAgents(); }
+  });
+  return form;
+}
+async function startBranch(gatherer, project, harness, approve) {
+  state.starting = { gatherer, harness: BRANCH_START };
+  renderAgents();
+  try {
+    const s = await post("/api/branches", { gatherer, project, harness, approve });
+    state.adding = null;
+    collapsed.delete(s.gatherer);
+    await loadHome();
+    await show(s.gatherer, s.session_id, "files");
+  } finally { state.starting = null; renderAgents(); }
+  const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
+  if (box) box.focus();
 }
 function newForm() {
   const adding = state.adding, fixed = adding.gatherer, hs = startable(), shell = adding.harness === SHELL_START;
@@ -7855,6 +8049,7 @@ const ED_NAME_KEY = "ag-editor-name", ED_COLOR_KEY = "ag-editor-color", ED_ROOT_
 const ED_SHOWN_KEY = "ag-dashboard-editor", ED_HEIGHT_KEY = "ag-dashboard-editor-height";
 const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, s: null, lib: null, me: null, user: "", err: "",
   timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null, side: null, changes: null,
+  branches: [], brSig: "", brs: null,
   auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })() };   // on unless turned off
 const edB64 = (u8) => { let t = ""; for (let i = 0; i < u8.length; i += 0x8000) t += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(t); };
 const edBytes = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
@@ -8037,14 +8232,15 @@ function edTree() {
       if (e.dir) {
         const open = ed.open.has(p);
         sig.push(p, open, writers.map((w) => w.channel));
+        sig.push(e.pending);
         rows.push(el("button", { type: "button", class: "ed-row dir", style: pad, title: edTilde(p), "aria-expanded": open ? "true" : "false",
           onclick: () => edToggle(p) }, el("span", { class: "chev", text: open ? "▾" : "▸" }), el("span", { class: "n", text: e.name }),
-          open ? null : edAvatars(writers, "files in it")));
+          open ? null : edAvatars(writers, "files in it"), open ? null : edWaiting(e.pending, "in it")));
         if (open) walk(p, depth + 1);
         continue;
       }
       const fresh = got.now - e.mtime < 60 && !writers.some((w) => got.now - w.at < 60), on = p === ed.file;
-      sig.push(p, fresh, e.editors, e.dirty, e.conflicts, writers.map((w) => w.channel));
+      sig.push(p, fresh, e.editors, e.dirty, e.conflicts, e.pending, writers.map((w) => w.channel));
       rows.push(el("button", { type: "button", class: "ed-row" + (on ? " on" : ""), style: pad, "aria-current": on ? "true" : null,
         title: [edTilde(p), fresh ? `Changed ${ago(e.mtime)}` : "", e.editors ? `Open in ${plural(e.editors, "editor")}` : "",
           e.dirty ? "Unsaved changes" : ""].filter(Boolean).join("\n"), onclick: () => edOpen(p) },
@@ -8052,6 +8248,7 @@ function edTree() {
         edAvatars(writers, "it"),
         fresh ? el("span", { class: "mk fresh", title: "Changed in the last minute" }) : null,
         e.conflicts ? el("span", { class: "mk cf", title: `${plural(e.conflicts, "conflict")} with the file on disk`, text: "!" }) : null,
+        edWaiting(e.pending, "to it"),
         e.dirty && !e.conflicts ? el("span", { class: "mk dirty", title: "Unsaved changes" }) : null,
         e.editors ? el("span", { class: "mk eds", title: `Open in ${plural(e.editors, "editor")}`, text: String(e.editors) }) : null));
     }
@@ -8063,6 +8260,61 @@ function edTree() {
   ed.treeSig = now;
   ed.tree.replaceChildren(...rows);
 }
+const edWaiting = (n, what) => n ? el("span", { class: "mk br", title: `${plural(n, "change")} from an actor's branch ${what}, waiting for you`, text: String(n) }) : null;
+// Above the tree, under the folder: the actors on branches of the project shown (branches.py), each with its changes
+// waiting for the reader -- a file's changed lines, asked about in the file (opened by its name); a file it made, or deleted,
+// or the project no longer has, asked about here -- and its "auto-merge with approval".
+async function edFetchBranches() {
+  if (!ed.root) return;
+  let got = [];
+  try { got = await get(`/api/branches?${new URLSearchParams({ root: ed.root })}`); } catch (e) { return; }
+  ed.branches = got;
+  edBranches();
+}
+const ED_KIND = { created: "new file", deleted: "deleted on its branch", missing: "not in the project" };
+function edBranches() {
+  if (!ed.brs) return;
+  const list = ed.branches || [];
+  const sig = JSON.stringify([list, list.map((b) => { const a = edActor(b.gatherer, b.channel); return a ? [edWhoName(a), a.avatar] : null; })]);
+  if (sig === ed.brSig) return;
+  ed.brSig = sig;
+  ed.brs.replaceChildren(...list.map((b) => {
+    const a = edActor(b.gatherer, b.channel), color = edWhoColor(a), name = a ? edWhoName(a) : b.branch;
+    const files = Object.entries(b.held || {}).sort(([x], [y]) => x.localeCompare(y));
+    const decide = (path, take) => edDecide(b, path, take);
+    return el("div", { class: "ed-br", style: color ? `--who: ${color}` : null },
+      el("div", { class: "hd", title: `${name}\n${branchRoute(b)}` },
+        a && a.avatar ? el("img", { src: `/avatars/${a.avatar}.svg`, alt: "", draggable: "false" }) : el("span", { class: "ed-noav" }),
+        el("span", { class: "nm", text: name })),
+      el("div", { class: "rt", title: branchRoute(b) }, el("code", { text: b.branch }), " → ",
+        el("code", { text: edBase(b.project) }), " on ", el("code", { text: checkedOut(b.onto) })),
+      el("label", { class: "ap", title: "On: each of its changes waits for you to accept or reject it. Off: its changes are merged in as they come, but for lines you are editing here (the conflict zone), and lines you changed too." },
+        el("input", { type: "checkbox", checked: b.approve ? "" : null, onchange: (ev) => edApprove(b, ev.target.checked) }), "Auto-merge with approval"),
+      ...(files.length ? files.map(([path, v]) => {
+        const whole = v.kind !== "lines", there = v.kind === "created" || v.kind === "missing";
+        const open = there ? b.worktree + path.slice(b.project.length) : path;
+        return el("div", { class: "f" },
+          el("button", { type: "button", class: "go", title: there ? `Open its file on its branch: ${edTilde(open)}` : `Open ${edTilde(path)}`,
+            onclick: () => edOpen(open) }, edRel(path)),
+          el("span", { class: "k", text: whole ? ED_KIND[v.kind] || v.kind : plural(v.n, "change") }),
+          whole || v.n > 1 ? el("button", { type: "button", class: "pick", title: { created: "Add the file to the project", deleted: "Delete the file from the project",
+            missing: "Add the file to the project again" }[v.kind] || "Take every change of its into the file", onclick: () => decide(path, "theirs") }, whole ? "Accept" : "Accept all") : null,
+          whole || v.n > 1 ? el("button", { type: "button", class: "pick", title: whole ? "Leave the project's as it is: not asked about again, until it changes the file again"
+            : "Leave every change of its out of the file", onclick: () => decide(path, "mine") }, whole ? "Reject" : "Reject all") : null);
+      }) : [el("div", { class: "none", text: b.approve ? "Nothing waiting for you" : "Merged as it goes: nothing waiting" })]));
+  }));
+}
+async function edApprove(b, on) {
+  try { await post("/api/branches/approve", { session_id: b.session_id, approve: on }); } catch (e) { ed.err = e.message; edHead(); }
+  edFetchBranches();
+}
+async function edDecide(b, path, take) {
+  try { await post("/api/branches/decide", { session_id: b.session_id, path, take }); } catch (e) { ed.err = e.message; edHead(); }
+  edFetchBranches();
+  const dirs = new Set([ed.root, ...ed.open]);
+  Promise.all([...dirs].map((d) => edList(d, false))).then(() => edTree());
+}
+
 // Above the tree: the folder shown -- typed, or the one above it, or an actor's working directory.
 function edFolders() {
   const by = new Map();
@@ -8107,7 +8359,8 @@ function edGo(dir) {
   ed.lists = new Map([...ed.lists].filter(([d]) => ed.file && d === edDir(ed.file)));
   ed.open.clear(); ed.treeSig = ""; ed.barSig = "";
   try { localStorage.setItem(ED_ROOT_KEY, dir); } catch (e) { /* this page only */ }
-  edBar(); edTree(); edList(dir);
+  ed.branches = []; edBranches();
+  edBar(); edTree(); edList(dir); edFetchBranches();
 }
 function edTick() {
   if (ed.timer) return;
@@ -8116,8 +8369,8 @@ function edTick() {
     if (document.hidden || !ed.root) return;
     const dirs = new Set([ed.root, ...ed.open, ...(ed.file ? [edDir(ed.file)] : [])]);
     Promise.all([...dirs].map((d) => edList(d, false))).then(() => { edTree(); edHead(); if (ed.s) edConflicts(ed.s); });
-    edBar();
-    if (ed.s) edConflicts(ed.s);
+    edBar(); edFetchBranches();
+    if (ed.s) { edConflicts(ed.s); edAgentMarks(ed.s); }
   }, ED_TICK);
 }
 
@@ -8162,7 +8415,7 @@ async function edOpen(path) {
   on("update", (v) => A.Y.applyUpdate(doc, edBytes(v.update), v.disk ? "disk" : "remote"));
   on("aware", (v) => A.applyAwarenessUpdate(awareness, edBytes(v.update), "remote"));
   on("left", (v) => A.removeAwarenessStates(awareness, [v.client], "remote"));
-  on("state", (v) => { s.state = v; edZone(s); edConflicts(s); edAutoLater(s); edHead(); });   // after each edit, any page's, and the disk's
+  on("state", (v) => { s.state = v; edZone(s); edAgentMarks(s); edConflicts(s); edAutoLater(s); edHead(); });   // after each edit, any page's, and the disk's
   on("failed", (v) => { s.err = v.error; es.close(); edHead(); });
   es.onerror = es.onopen = () => { if (ed.s === s) edHead(); };   // the header says while it reconnects
 }
@@ -8204,6 +8457,17 @@ function edView(s) {
     provide: (f) => A.EditorView.decorations.from(f),
   });
   s.zone = { set: setZone, sig: "" };
+  const setAgents = A.StateEffect.define();
+  const agents = A.StateField.define({               // the lines of actors' branches, merged in: in each one's hue
+    create: () => A.Decoration.none,
+    update(deco, tr) {
+      deco = deco.map(tr.changes);
+      for (const e of tr.effects) if (e.is(setAgents)) deco = e.value;
+      return deco;
+    },
+    provide: (f) => A.EditorView.decorations.from(f),
+  });
+  s.agents = { set: setAgents, sig: "" };
   ed.body.replaceChildren();
   s.view = new A.EditorView({
     parent: ed.body,
@@ -8212,12 +8476,35 @@ function edView(s) {
       extensions: [
         A.keymap.of([...A.yUndoManagerKeymap, { key: "Mod-s", preventDefault: true, run: () => { edSave(s); return true; } }, A.indentWithTab]),
         A.basicSetup, A.EditorState.lineSeparator.of("\n"), A.highlight, A.language(s.path), A.yCollab(s.ytext, s.awareness), marks,
-        zone, conflicts,
+        zone, agents, conflicts,
       ],
     }),
   });
   edZone(s);
+  edAgentMarks(s);
   edConflicts(s);
+}
+// The lines actors' branches put in the file (the state's `marks`), tinted in each one's hue -- as long as the actor is
+// not closed.
+function edAgentMarks(s) {
+  const v = s.view;
+  if (!v || !s.agents) return;
+  const list = ((s.state && s.state.marks) || []).map((m) => ({ ...m, a: edActor(m.gatherer, m.channel) }))
+    .filter((m) => !m.a || statusOf(m.a)[0] !== "closed");
+  const sig = JSON.stringify(list.map((m) => [m.from, m.to, m.channel, edWhoColor(m.a)]));
+  if (sig === s.agents.sig) return;
+  s.agents.sig = sig;
+  const A = s.A, doc = v.state.doc, out = new Map();
+  for (const m of list) {
+    const from = Math.min(m.from, doc.length), to = Math.min(Math.max(m.to, from), doc.length), color = edWhoColor(m.a);
+    const attributes = { title: `From ${m.a ? edWhoName(m.a) : "an actor"}'s branch`, ...(color ? { style: `--who: ${color}` } : {}) };
+    const last = doc.lineAt(Math.max(from, to - 1)).number;
+    for (let n = doc.lineAt(from).number; n <= last && out.size < 20000; n++) {
+      const at = doc.line(n).from;
+      if (!out.has(at)) out.set(at, A.Decoration.line({ class: "ed-agent", attributes }).range(at));
+    }
+  }
+  v.dispatch({ effects: s.agents.set.of(A.Decoration.set([...out.values()], true)) });
 }
 // The conflict zone (the state's `zone`: ranges of the document), drawn: each line a range is on, or an empty one is at.
 function edZone(s) {
@@ -8251,7 +8538,20 @@ function edConflictWidget(A) {
         onclick: (ev) => { ev.preventDefault(); edSettle(s, c.id, take); } }, label);
       const mine = c.to > c.from, kind = !c.theirs ? "deleted" : mine ? "rewrote" : "added";
       let what, picks;
-      if (c.zone) {                                  // in the conflict zone: the reader's lines, rewritten on disk
+      const branch = c.agent, who = branch ? edActor(branch.gatherer, branch.channel) : null;
+      if (branch && !c.zone) {                       // an actor's branch's change: taken in, or left out, as the reader says
+        const nm = who ? edWhoName(who) : branch.branch;
+        what = branch.why === "approve"
+          ? { rewrote: `${nm} changed these lines on its branch`, deleted: `${nm} deleted these lines on its branch`, added: `${nm} added lines here on its branch` }[kind]
+          : `${nm} changed these lines on its branch, and they were changed here too`;
+        picks = branch.why === "approve" ? [
+          pick("theirs", "Accept", c.theirs ? "Put its lines in the file, in place of these" : "Delete these lines, as its branch did"),
+          pick("mine", "Reject", "Leave its change out: the file keeps these lines, and it is not asked about again"),
+          kind === "rewrote" ? pick("both", "Keep both", "Keep these lines, and its after them") : null]
+          : [pick("mine", "Keep yours", "Leave its change out: the file keeps these lines"),
+            pick("theirs", c.theirs ? "Take its" : "Delete them", c.theirs ? "Put its lines in place of these" : "Delete these lines, as its branch did"),
+            c.theirs && mine ? pick("both", "Keep both", "Keep these lines, and its after them") : null];
+      } else if (c.zone) {                                  // in the conflict zone: the reader's lines, rewritten on disk
         what = { rewrote: name ? `${name} rewrote lines you edited` : "Lines you edited were rewritten on disk",
           deleted: name ? `${name} deleted lines you edited` : "Lines you edited were deleted on disk",
           added: name ? `${name} added lines among those you edited` : "Lines were added on disk among those you edited" }[kind];
@@ -8267,10 +8567,13 @@ function edConflictWidget(A) {
           pick("theirs", c.theirs ? "Take theirs" : "Delete them", c.theirs ? "Put the file's lines in place of yours" : "Delete your lines, as the file did"),
           c.theirs && mine ? pick("both", "Keep both", "Keep your lines, and the file's after them") : null];
       }
-      return el("div", { class: "ed-cf" },
-        el("div", { class: "ed-cf-head" }, el("span", { class: "what", title: many ? `Their changes, one after the other:\n${this.by.names.join("\n")}` : null,
+      const color = branch ? edWhoColor(who) : null;
+      return el("div", { class: "ed-cf" + (branch ? " from-branch" : ""), style: color ? `--who: ${color}` : null },
+        el("div", { class: "ed-cf-head" }, branch && who && who.avatar ? el("span", { class: "ed-avs" }, el("img", { src: `/avatars/${who.avatar}.svg`, alt: "", draggable: "false" })) : null,
+          el("span", { class: "what", title: branch ? `Its branch: ${branch.branch}` : many ? `Their changes, one after the other:\n${this.by.names.join("\n")}` : null,
           text: `${what}, ${ago(c.at)}.` }), el("span", { class: "grow" }), ...picks),
-        c.theirs ? el("div", { class: "ed-cf-label", text: mine ? "On disk now, in place of the lines above:" : "On disk now:" }) : null,
+        c.theirs ? el("div", { class: "ed-cf-label", text: branch ? (mine ? "On its branch, in place of the lines above:" : "On its branch:")
+          : mine ? "On disk now, in place of the lines above:" : "On disk now:" }) : null,
         c.theirs ? el("pre", { class: "ed-cf-theirs", text: c.theirs.replace(/\n$/, "") }) : null);
     }
     ignoreEvent() { return true; }
@@ -8282,6 +8585,10 @@ function edConflictWidget(A) {
 // of the panel's ticks.
 // Who made a conflict: every actor whose change landed from the first of its lines' changes (`since`) to its last.
 function edConflictBy(s, c) {
+  if (c.agent) {                                     // an actor's branch's: that actor
+    const a = edActor(c.agent.gatherer, c.agent.channel), name = a ? edWhoName(a) : c.agent.branch;
+    return { label: name, names: [name] };
+  }
   const ws = edWriters(edEntry(s.path)).filter((w) => w.at >= (c.since ?? c.at) - ED_CREDIT[0] && w.at <= c.at + ED_CREDIT[1]).reverse();
   return { label: ws.length > 1 ? `${ws.length} actors` : ws.length ? edWriterName(ws[0]) : "", names: ws.map(edWriterName) };
 }
@@ -8300,7 +8607,9 @@ function edDrawConflicts(s, list) {
   for (const c of list) {
     const from = Math.min(c.from, doc.length), to = Math.min(Math.max(c.to, from), doc.length);
     if (to > from) {
-      for (let p = from; p < to; ) { const line = doc.lineAt(p); out.push(A.Decoration.line({ class: "ed-cf-mine" }).range(line.from)); p = line.to + 1; }
+      const color = c.agent ? edWhoColor(edActor(c.agent.gatherer, c.agent.channel)) : null;
+      const deco = A.Decoration.line({ class: "ed-cf-mine" + (c.agent ? " from-branch" : ""), ...(color ? { attributes: { style: `--who: ${color}` } } : {}) });
+      for (let p = from; p < to; ) { const line = doc.lineAt(p); out.push(deco.range(line.from)); p = line.to + 1; }
       const last = doc.lineAt(Math.max(from, to - 1));
       out.push(A.Decoration.widget({ widget: new Widget(s, c, edConflictBy(s, c)), block: true, side: 1, cf: c.id }).range(last.to));
     } else {
@@ -8425,10 +8734,12 @@ async function edSave(s) {
   if (ed.s === s) edHead();
 }
 // Auto-save: the file saved ED_AUTO_MS after the last edit to it, this page's or another's -- not a file deleted on disk,
-// which only Save writes again, nor one with a conflict with the file on disk, which waits for the reader.
+// which only Save writes again, nor one with a conflict with the file on disk, which waits for the reader (an actor's
+// branch's change waiting does not hold it back: the file has none of it).
+const edDiskConflicts = (s) => ((s && s.state && s.state.conflicts) || []).filter((c) => !c.agent);
 function edAutoLater(s) {
   clearTimeout(s.autoT);
-  const due = () => ed.auto && ed.s === s && s.state && s.state.dirty && !s.state.missing && !(s.state.conflicts || []).length;
+  const due = () => ed.auto && ed.s === s && s.state && s.state.dirty && !s.state.missing && !edDiskConflicts(s).length;
   if (due()) s.autoT = setTimeout(() => { if (due()) edSave(s); }, ED_AUTO_MS);
 }
 function edSetAuto(on) {
@@ -8448,7 +8759,7 @@ function edClose() {
     sent = post("/api/edit/update", { path: s.path, root: s.root, conn: s.conn, update: edB64(u) });
   }
   if (ed.auto && s.epoch && (s.out.length || (s.state && s.state.dirty && !s.state.missing))
-      && !((s.state && s.state.conflicts) || []).length)   // and, auto-saved, saved -- not over a conflict
+      && !edDiskConflicts(s).length)                      // and, auto-saved, saved -- not over a conflict
     sent = sent.then(() => post("/api/edit/save", { path: s.path, root: s.root }));
   sent.catch(() => {});
   s.awareness.setLocalState(null);                   // its cursor gone from the others' at once
@@ -8475,9 +8786,10 @@ function edHead() {
     return;
   }
   const st = s && s.state;
-  const nc = ((st && st.conflicts) || []).length;
+  const nc = edDiskConflicts(s).length, na = ((st && st.conflicts) || []).length - nc;
   const [cls, said] = ed.err || (s && s.err) ? ["bad", ed.err || s.err]
     : nc ? ["bad", `${plural(nc, "conflict")} with the file on disk`]
+    : na ? ["warn", `${plural(na, "change")} from a branch to approve`]
     : !s || !s.epoch ? ["", "Opening…"]
     : s.es.readyState !== 1 ? ["warn", "Reconnecting…"]
     : st && st.missing ? ["bad", "Deleted on disk: Save writes it again"]
@@ -8516,7 +8828,8 @@ function edHead() {
     many ? el("span", { class: "lbl", text: `${writers.length} actors changing it` }) : null) : null;
   ed.head.replaceChildren(...[
     el("span", { class: "ed-path", title: ed.file, text: edRel(ed.file) }),
-    nc && !(ed.err || (s && s.err)) ? el("button", { type: "button", class: `ed-status ${cls}`, role: "status", title: "Show the first: keep yours, take the file's, or both",
+    (nc || na) && !(ed.err || (s && s.err)) ? el("button", { type: "button", class: `ed-status ${cls}`, role: "status",
+      title: nc ? "Show the first: keep yours, take the file's, or both" : "Show the first: accept it, or reject it",
       onclick: () => edToConflict(s) }, said) : el("span", { class: `ed-status ${cls}`, role: "status", text: said }),
     zoned, by, changed,
     s && s.note ? el("span", { class: "ed-status bad", text: s.note }) : null,
@@ -8560,6 +8873,11 @@ async function edAtActor() {
     const [gatherer, channel] = state.selected;
     try { dir = (await get(`/api/edit/place?${new URLSearchParams({ gatherer, channel, cwd: cwd || "" })}`)).dir; }
     catch (e) { /* its working directory */ }
+    const b = branchOf(gatherer, { channel });
+    if (b) {                                         // on a branch of its own: the project, where its changes are merged
+      const at = [b.worktree, cwd].find((w) => w && dir && edUnder(dir, w.replace(/\/+$/, "")));
+      return setEditor(true, b.project + (at ? dir.slice(at.replace(/\/+$/, "").length) : ""));
+    }
   }
   setEditor(true, dir || cwd);
 }
@@ -8583,7 +8901,8 @@ function edMount() {
     ed.head = el("div", { class: "ed-head" });
     ed.body = el("div", { class: "ed-body" });
     ed.side = el("aside", { class: "ed-changes files", hidden: "", "aria-label": "An actor's changes to the file" });
-    ed.host = el("div", { class: "ed" }, el("nav", { class: "ed-tree", "aria-label": "Files" }, ed.bar, ed.tree),
+    ed.brs = el("div", { class: "ed-brs" });
+    ed.host = el("div", { class: "ed" }, el("nav", { class: "ed-tree", "aria-label": "Files" }, ed.bar, ed.brs, ed.tree),
       el("div", { class: "ed-main" }, ed.head, el("div", { class: "ed-work" }, ed.body, ed.side)));
     const grip = el("div", { class: "ed-grip", title: "Drag to resize", "aria-hidden": "true" });
     top.replaceChildren(ed.host, grip);

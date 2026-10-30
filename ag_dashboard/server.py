@@ -36,6 +36,11 @@ context manager's home (data.py), read-only. Standard library only.
                                           first time the page shows the view
     GET /api/edit/list?dir=D&root=R       editor.listing(D, R): a directory under R, each entry with who edits it
     GET /api/edit/place?gatherer=G&channel=C&cwd=D   {dir}: where the actor's work is, the Editor opened from its pane
+    GET /api/projects?gatherer=G[&dirs=[D, ...]]   {projects, suggestions}: the gatherer's projects, the repositories
+                                          its actors' branches are made from, and those the directories D are in
+                                          (branches.py)
+    GET /api/branches?root=R              the actors' branches of the projects R is in or holds, each with its changes
+                                          held for the reader (branches.py's `under`)
         shows (editor.place: the folder holding what it changed lately; null, none)
     GET /api/edit/stream?path=P&root=R&conn=C&client=N   server-sent events, until the page goes: the file P (under
         R) opened for editing (editor.py), shared with every other page editing it: `init` {epoch, update (the
@@ -45,6 +50,13 @@ context manager's home (data.py), read-only. Standard library only.
         zone: [[from, to], ...] (the conflict zone)} as they come; `failed` {error} when it cannot be opened
     GET /views/<name>.js                  one of them, which the page loads (page.html: chat views)
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
+    POST /api/projects {gatherer, add | remove, dirs?}   a project set for the gatherer (a folder in a repository, or a
+                                          GitHub repository: cloned), or no longer -> as GET /api/projects
+    POST /api/branches {gatherer, project, harness?, approve?, model?}   a new session on a new branch of the project,
+                                          in a worktree of its own (branches.py's `create`) -> the session
+    POST /api/branches/approve {session_id, approve}   whether every change of its branch's is asked about
+    POST /api/branches/decide {session_id, path, take}   each change of its branch's to the file held for the reader,
+                                          taken in ("theirs") or left out ("mine") -> the branch
     POST /api/sessions {gatherer, cwd?, permission_mode?, harness?, model?}  a new one (harness claude, the
                                           default, or codex) -> the session
     POST /api/send {session_id, text, cols?, rows?, fullscreen?}  a message to it -> the session: typed into
@@ -133,13 +145,13 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import parse_qs, urlsplit
 
 import harness_kit
 
-from . import (actions, avatars, coordination, data, editor, files, hiding, history, home, live, migrating, monitor, naming,
-               saved, seen, sessions, settings)
+from . import (actions, avatars, branches, coordination, data, editor, files, hiding, history, home, live, migrating, monitor,
+               naming, saved, seen, sessions, settings)
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -196,7 +208,8 @@ def _signature(value) -> str:
 
 
 def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: editor.Editors,
-            crew: coordination.Coordination, known: Optional[data.Kept] = None):
+            crew: coordination.Coordination, known: Optional[data.Kept] = None,
+            branched: Optional[branches.Branches] = None):
     shared, sharing = {"version": None, "at": 0.0, "value": None}, threading.Lock()
 
     def home_view(woken: bool = False) -> dict:
@@ -225,7 +238,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                                if a.get("turn_over") and a.get("status") not in (data.ASKING, data.RUNNING))
         return {**avatars.assign(home), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
                 "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "shells": started.shells(),
-                "home_dir": os.path.expanduser("~"), "editor": editor.AVAILABLE}
+                "home_dir": os.path.expanduser("~"), "editor": editor.AVAILABLE,
+                "branches": branched.listed() if branched is not None else []}
 
     def codex_dialog(sid: str) -> Optional[dict]:
         """What a codex session's terminal -- the dashboard's -- shows asking the user now, where a message typed
@@ -285,10 +299,17 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 if url.path == "/vendor/editor.js":
                     with open(EDITOR, "rb") as fh:
                         return self.send(200, fh.read(), "text/javascript; charset=utf-8")
-                if url.path in ("/api/edit/list", "/api/edit/stream", "/api/edit/place") and not self.local_host():
+                if url.path in ("/api/edit/list", "/api/edit/stream", "/api/edit/place", "/api/projects",
+                                "/api/branches") and not self.local_host():
                     return self.send(403, b"only the dashboard's own page may do that", "text/plain")
                 if url.path == "/api/edit/list":
                     return self.answer(editors.listing(q.get("dir", ""), q.get("root", "")))
+                if url.path == "/api/projects" and q.get("gatherer"):
+                    g = q["gatherer"]
+                    return self.answer({"projects": branches.projects(g),
+                                        "suggestions": branches.suggestions(g, _strings(q.get("dirs")))})
+                if url.path == "/api/branches" and branched is not None:
+                    return self.answer(branched.under(q.get("root", "")))
                 if url.path == "/api/edit/place" and q.get("gatherer") and "channel" in q:
                     return self.answer({"dir": editor.place(q["gatherer"], q["channel"], q.get("cwd", ""))})
                 if url.path == "/api/edit/stream":
@@ -520,6 +541,24 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer(started.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
                                                       str(body.get("permission_mode") or "auto"),
                                                       str(body.get("harness") or "claude"), str(body.get("model") or "") or None))
+                if url.path == "/api/projects":
+                    g = str(body.get("gatherer") or "")
+                    got = branches.remove_project(g, str(body["remove"])) if body.get("remove") \
+                        else branches.add_project(g, str(body.get("add") or ""))
+                    return self.answer({"projects": got, "suggestions": branches.suggestions(g, _strings(body.get("dirs")))})
+                if url.path == "/api/branches" and branched is not None:
+                    s = branched.create(str(body.get("gatherer") or ""), str(body.get("project") or ""),
+                                        str(body.get("harness") or "claude"), bool(body.get("approve")),
+                                        str(body.get("model") or "") or None)
+                    hub.ring(s["gatherer"], what="list")
+                    return self.answer(s)
+                if url.path == "/api/branches/approve" and branched is not None:
+                    got = branched.set_approve(str(body.get("session_id") or ""), bool(body.get("approve")))
+                    hub.ring(got["gatherer"], what="list")
+                    return self.answer(got)
+                if url.path == "/api/branches/decide" and branched is not None:
+                    return self.answer(branched.decide(str(body.get("session_id") or ""), str(body.get("path") or ""),
+                                                       str(body.get("take") or "")))
                 if url.path == "/api/send":
                     sid = str(body.get("session_id") or "")
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
@@ -549,6 +588,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     if data.actors(row["gatherer"], {sid}, []):   # its gatherer has something of it: a history to keep
                         raise sessions.SessionError("it has a conversation in its gatherer: close it instead")
                     started.discard(sid)
+                    if branched is not None:             # its branch, if it had one: gone too
+                        branched.discarded(sid)
                     hub.ring(None, what="list")          # every open page's list
                     return self.answer({})
                 if url.path == "/api/terminal":
@@ -691,6 +732,16 @@ def _pairs(raw: Optional[str]) -> list:
     return [tuple(p) for p in got if isinstance(p, list) and len(p) == 2 and all(isinstance(x, str) for x in p) and p[0]][:MAX_ALSO]
 
 
+def _strings(raw) -> List[str]:
+    """A list of strings, as JSON (a query's) or as is (a body's); what is not one is left out."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return []
+    return [x for x in raw if isinstance(x, str)][:64] if isinstance(raw, list) else []
+
+
 def _actors(raw: Optional[str]) -> list:
     """The monitor's `actors`: [[gatherer, channel, cwd], ...] as JSON (cwd may be left out, or null); what is not
     one is left out."""
@@ -721,9 +772,10 @@ class Server(ThreadingHTTPServer):
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         self.editors = editor.Editors()                                # the files open in the Editor panel
         self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates)   # actors' `ag actors`
+        self.branches = branches.Branches(self.editors, self.sessions, self.hub.ring)   # the actors' own branches
         self.listener = self.fallback = self.rest = self.address_file = None   # for server_close, which a failed bind calls
         self.keeps_actions = False
-        super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew, known))
+        super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew, known, self.branches))
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
         self.migrating = migrating.start(self.hub.ring) if live_updates else None   # an older gatherer's tables, once
@@ -738,7 +790,7 @@ class Server(ThreadingHTTPServer):
             threading.Thread(target=lambda: data.home([], known), name="ag-home-first", daemon=True).start()   # first
 
     def server_close(self) -> None:
-        for part in (self.listener, self.fallback, self.rest, self.editors, self.crew):
+        for part in (self.listener, self.fallback, self.rest, self.editors, self.crew, self.branches):
             if part is not None:
                 part.close()
         if self.keeps_actions:
