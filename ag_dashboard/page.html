@@ -628,6 +628,44 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .newform label.check input { margin: 2px 0 0; padding: 0; width: 14px; height: 14px; flex: none; }
 .newform .desc.route code { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); }
 .newform .link { border: 0; background: none; padding: 0; color: var(--s1); font: inherit; font-size: 12px; cursor: pointer; justify-self: start; }
+/* the branch button's drop-down: the gatherer's sources, and adding one */
+.br-menu { position: fixed; z-index: 60; min-width: 250px; max-width: min(380px, calc(100vw - 16px)); padding: 5px; display: grid; gap: 1px;
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 12.5px; }
+.br-menu .hd { color: var(--muted); font-size: 11px; padding: 3px 8px 4px; }
+.br-menu button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; text-align: left; border: 0; background: none;
+  padding: 5px 8px; border-radius: 5px; color: var(--ink); font: inherit; cursor: pointer; }
+.br-menu button:hover, .br-menu button:focus-visible { background: var(--wash); outline: none; }
+.br-menu button .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-menu button .on { color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.br-menu button .at { grid-column: 1 / -1; color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-menu button.add { display: block; color: var(--s1); }
+.br-menu .sep { height: 1px; background: var(--grid); margin: 3px 2px; }
+/* the popup a new actor on a branch starts from */
+dialog.br-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); padding: 0; border: 1px solid var(--ring);
+  border-radius: 10px; background: var(--page); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+dialog.br-dialog::backdrop { background: rgba(0,0,0,.35); }
+.br-dialog .newform { margin: 0; border: 0; border-radius: 0; padding: 14px 18px 16px; gap: 10px; background: none; }
+.br-dialog .br-title { display: flex; align-items: center; gap: 8px; }
+.br-dialog h3 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 7px; flex: 1; }
+.br-dialog .x { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 6px; color: var(--muted); cursor: pointer; }
+.br-dialog .x:hover { color: var(--ink); background: var(--wash); }
+.br-dialog .lbl { font-size: 11.5px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .03em; }
+.br-dialog .projects .lbl { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted); }
+.br-dialog .br-src { border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; display: grid; gap: 4px; background: var(--surface); }
+.br-dialog .br-src .top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.br-dialog .br-src .nm { font-weight: 600; white-space: nowrap; }
+.br-dialog .br-src .at, .br-dialog .br-row .at { color: var(--muted); font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.br-dialog .br-row { display: flex; align-items: center; gap: 4px; border: 1px solid var(--ring); border-radius: 6px; }
+.br-dialog .br-row.on { border-color: var(--s1); }
+.br-dialog .br-row .use { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; border: 0; background: none; padding: 5px 8px;
+  text-align: left; font: inherit; font-size: 12.5px; color: var(--ink); cursor: pointer; border-radius: 6px; }
+.br-dialog .br-row .use:hover { background: var(--wash); }
+.br-dialog .br-row .nm { font-weight: 600; white-space: nowrap; }
+.br-dialog .br-row .on { color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.br-dialog .br-row .rm { border: 0; background: none; color: var(--muted); font-size: 15px; padding: 2px 8px; cursor: pointer; border-radius: 5px; }
+.br-dialog .br-row .rm:hover { color: var(--critical); background: var(--wash); }
 /* an actor on a branch of its own, in the list: its branch, and what of it waits for the reader */
 .agent .branchline { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 11px; color: var(--muted); min-width: 0; }
 .agent .branchline svg { flex: none; }
@@ -3161,7 +3199,7 @@ function renderAgents() {
           live ? el("span", { class: "count", title: `${live} of ${plural(g.agents.length, "actor")} running` },
             el("i", { "aria-hidden": "true" }), String(live)) : null),
         ...(SNAPSHOT ? [] : startButtons(g))));
-    if (state.adding && state.adding.gatherer === g.name) box.append(state.adding.branch ? branchForm() : newForm());
+    if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
     if (g.error) box.append(el("div", { class: "servers", text: `Database unreadable: ${g.error}` }));
     for (const [name, list] of groups) if (name === "Closed") list.sort((x, y) => (y.last || 0) - (x.last || 0));
     keepOrder(g.name, groups);   // so drawn first; from then on, each group in the order its actors were last in
@@ -4201,7 +4239,8 @@ function startButtons(g) {
   if (!hs.length) return [...coordinator, el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+"), ...shell];
   const branch = el("button", { class: "act start branch" + busy(BRANCH_START), type: "button", ...(state.starting ? { disabled: "" } : {}),
     title: `New actor on a branch of its own, in ${g.name}: it works in a worktree of the gatherer's project, and what it changes is merged into the project`,
-    "aria-label": `New actor on a branch of its own, in ${g.name}`, onclick: () => openBranchForm(g) },
+    "aria-label": `New actor on a branch of its own, in ${g.name}`, "aria-haspopup": "menu", "aria-expanded": "false",
+    onclick: (ev) => openBranchMenu(g, ev.currentTarget) },
     el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.branch, 16));
   return [...coordinator, ...hs.map((h) => el("button", { class: "act start" + busy(h),
     type: "button", ...(state.starting ? { disabled: "" } : {}), title: `New ${harnessName(h)} session in ${g.name}`,
@@ -4251,8 +4290,8 @@ async function startShell(gatherer, cwd) {
 // it, each a clone here -- in a worktree beside it, on a new branch from its last commit; what it changes there merged
 // into the project's folder (the one the Editor shows) as it changes it, but for the lines being edited in the Editor
 // (its conflict zone) and those the project changed too, which wait for the reader -- and, with "auto-merge with
-// approval", every change waits (kept in this browser, as the last choice). The form asks for the gatherer's projects
-// when it has none, and which one when it has several.
+// approval", every change waits (kept in this browser, as the last choice). Its button opens a drop-down of the gatherer's
+// sources (its projects) and "Add a source…"; either opens a popup to start it from.
 const BRANCH_START = "branch", BRANCH_APPROVE_KEY = "ag-branch-approve";
 const branchOf = (g, a) => ((state.home && state.home.branches) || []).find((b) => b.gatherer === g && b.channel === a.channel) || null;
 const branchWaiting = (b) => Object.values(b.held || {}).reduce((n, v) => n + v.n, 0);
@@ -4271,104 +4310,159 @@ function branchChip(g, a) {
     strokeIcon(ICONS.branch, 11), el("span", { class: "rt", text: `${b.branch} → ${checkedOut(b.onto)}` }),
     n ? el("span", { class: "wait", text: `${n} to approve` }) : null);
 }
-// The directories the gatherer's actors work in, the latest first: where its projects are suggested from.
+// The directories the gatherer's actors work in, the latest first: where its sources are suggested from.
 const actorDirs = (g) => [...new Set([...g.agents].sort((x, y) => (y.last || 0) - (x.last || 0)).map(cwdOf).filter(Boolean)
   .concat(state.home.cwd ? [state.home.cwd] : []))];
-async function openBranchForm(g) {
-  if (state.adding && state.adding.gatherer === g.name && state.adding.branch) { state.adding = null; return renderAgents(); }
-  let approve = false;
-  try { approve = localStorage.getItem(BRANCH_APPROVE_KEY) === "1"; } catch (e) { /* this page only */ }
-  const adding = state.adding = { gatherer: g.name, branch: true, loading: true, projects: [], suggestions: [], project: "",
-    approve, where: "", error: "", manage: false, dirs: actorDirs(g) };
-  renderAgents();
-  try {
-    const got = await get(`/api/projects?${new URLSearchParams({ gatherer: g.name, dirs: JSON.stringify(adding.dirs) })}`);
-    Object.assign(adding, got, { loading: false });
-    if (got.projects.length === 1) adding.project = got.projects[0].path;
-  } catch (e) { Object.assign(adding, { loading: false, error: e.message }); }
-  if (state.adding === adding) renderAgents();
-}
-async function changeProjects(adding, body) {
-  adding.busy = true; adding.error = ""; renderAgents();
-  try {
-    const got = await post("/api/projects", { gatherer: adding.gatherer, dirs: adding.dirs, ...body });
-    const had = new Set(adding.projects.map((p) => p.path));
-    Object.assign(adding, got);
-    const added = got.projects.find((p) => !had.has(p.path));
-    if (added) { adding.project = added.path; adding.where = ""; }
-    if (!got.projects.some((p) => p.path === adding.project)) adding.project = got.projects.length === 1 ? got.projects[0].path : "";
-    if (got.projects.length && added) adding.manage = false;
-  } catch (e) { adding.error = e.message; }
-  adding.busy = false;
-  if (state.adding === adding) renderAgents();
-}
 const projectName = (p) => p.github || p.name;
-function branchForm() {
-  const adding = state.adding, g = adding.gatherer, hs = startable();
-  const err = el("div", { class: "err", role: "alert", text: adding.error || "" });
-  const cancel = el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel");
-  const form = el("form", { class: "newform", "aria-label": "New actor on a branch" });
-  if (adding.loading) {
-    form.append(el("div", { class: "desc", text: `Reading ${g}'s projects…` }), el("div", { class: "row" }, cancel));
-    return form;
+// The branch button's drop-down: the gatherer's sources so far (its projects), each opening the popup with it chosen, and
+// "Add a source…", opening it at the choice of one. Closed by a press elsewhere, Esc, or the page scrolling or resizing.
+// Outside the list, so the list's redraws leave it be.
+const brPick = { g: "", menu: null, dialog: null, projects: [], suggestions: [], dirs: [], project: "", choosing: false,
+  where: "", error: "", busy: false, approve: false };
+async function brLoad(g) {
+  brPick.dirs = actorDirs(g);
+  const got = await get(`/api/projects?${new URLSearchParams({ gatherer: g.name, dirs: JSON.stringify(brPick.dirs) })}`);
+  Object.assign(brPick, { projects: got.projects, suggestions: got.suggestions });
+}
+function brMenuClose() {
+  const m = brPick.menu;
+  if (!m) return;
+  brPick.menu = null;
+  m.el.remove();
+  document.removeEventListener("pointerdown", m.away, true);
+  document.removeEventListener("keydown", m.esc, true);
+  window.removeEventListener("resize", brMenuClose);
+  window.removeEventListener("scroll", brMenuClose, true);
+  m.button.setAttribute("aria-expanded", "false");
+}
+async function openBranchMenu(g, button) {
+  if (brPick.menu && brPick.menu.g === g.name) return brMenuClose();
+  brMenuClose();
+  const box = el("div", { class: "br-menu", role: "menu", "aria-label": `New actor on a branch, in ${g.name}` },
+    el("div", { class: "hd", text: "Reading its sources…" }));
+  const m = brPick.menu = { g: g.name, el: box, button,
+    away: (ev) => { if (!box.contains(ev.target) && !button.contains(ev.target)) brMenuClose(); },
+    esc: (ev) => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); brMenuClose(); button.focus(); } } };
+  document.body.append(box);
+  const r = button.getBoundingClientRect();
+  box.style.top = `${Math.round(r.bottom + 4)}px`;
+  box.style.left = `${Math.round(Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)))}px`;
+  button.setAttribute("aria-expanded", "true");
+  document.addEventListener("pointerdown", m.away, true);
+  document.addEventListener("keydown", m.esc, true);
+  window.addEventListener("resize", brMenuClose);
+  window.addEventListener("scroll", brMenuClose, true);
+  let error = "";
+  try { await brLoad(g); } catch (e) { error = e.message; }
+  if (brPick.menu !== m) return;
+  const pick = (p) => () => { brMenuClose(); openBranchDialog(g, p ? p.path : null); };
+  box.replaceChildren(
+    el("div", { class: "hd", text: error || (brPick.projects.length ? "New actor on a branch of" : "No source yet") }),
+    ...brPick.projects.map((p) => el("button", { type: "button", role: "menuitem", title: `${p.path}${p.remote ? "\n" + p.remote : ""}`,
+      onclick: pick(p) },
+      el("span", { class: "nm", text: projectName(p) }), el("span", { class: "on", text: checkedOut(p) }),
+      el("span", { class: "at", text: tildePath(p.path, state.home.home_dir) }))),
+    brPick.projects.length ? el("div", { class: "sep" }) : null,
+    el("button", { type: "button", role: "menuitem", class: "add", onclick: pick(null) }, "+ Add a source…"));
+  box.style.left = `${Math.round(Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)))}px`;
+  const first = box.querySelector("button");
+  if (first) first.focus();
+}
+// The popup: the source (chosen in the drop-down, or here -- among the gatherer's, the repositories its actors work in,
+// or a folder or GitHub repository typed), where the branch comes from and where its changes go, whether each change
+// waits for approval (the last choice, kept in this browser), and the harness that starts it.
+async function openBranchDialog(g, project) {
+  try { brPick.approve = localStorage.getItem(BRANCH_APPROVE_KEY) === "1"; } catch (e) { brPick.approve = false; }
+  Object.assign(brPick, { g: g.name, project: project || "", choosing: !project, where: "", error: "", busy: false });
+  if (!brPick.dialog) {
+    brPick.dialog = el("dialog", { class: "br-dialog", "aria-label": "New actor on a branch" });
+    brPick.dialog.addEventListener("close", () => { brPick.g = ""; });
+    brPick.dialog.addEventListener("click", (ev) => { if (ev.target === brPick.dialog) brPick.dialog.close(); });   // the backdrop
+    document.body.append(brPick.dialog);
   }
-  if (!adding.projects.length || adding.manage) {               // the gatherer's projects: set first
-    const where = el("input", { value: adding.where, placeholder: "a folder in a git repository, or owner/repo", spellcheck: "false",
-      "aria-label": "A folder in a git repository, or a GitHub repository", oninput: (ev) => { adding.where = ev.target.value; } });
-    const add = el("button", { type: "submit", class: "primary", ...(adding.busy ? { disabled: "" } : {}) }, adding.busy ? "Adding…" : "Add");
-    form.append(...[
-      el("div", { class: "desc", text: adding.projects.length ? `${g}'s projects: an actor on a branch works in a worktree of one.`
-        : `${g} has no GitHub project yet. Set the repositories its actors' branches are made from: each actor works in a worktree of one, and what it changes is merged into the project's folder.` }),
-      adding.projects.length ? el("div", { class: "projects" }, ...adding.projects.map((p) => el("div", { class: "proj" },
-        el("span", { class: "nm", text: projectName(p) }), el("span", { class: "at", title: p.path, text: tildePath(p.path, state.home.home_dir) }),
-        el("button", { type: "button", title: `No longer one of ${g}'s projects (its actors' branches are left as they are)`,
-          onclick: () => changeProjects(adding, { remove: p.path }) }, "Remove")))) : null,
-      adding.suggestions.length ? el("div", { class: "projects" }, el("div", { class: "desc", text: "Where its actors work:" }),
-        ...adding.suggestions.map((p) => el("button", { type: "button", class: "suggest", title: `${p.path}${p.remote ? "\n" + p.remote : ""}`,
-          ...(adding.busy ? { disabled: "" } : {}), onclick: () => changeProjects(adding, { add: p.path }) },
-          el("span", { text: `+ ${projectName(p)}` }), el("span", { class: "at", text: tildePath(p.path, state.home.home_dir) })))) : null,
-      el("div", { class: "addrow" }, where, add),
-      el("div", { class: "desc", text: "A GitHub repository with no clone here is cloned under ag's home." }),
-      err,
-      el("div", { class: "row" }, adding.projects.length ? el("button", { type: "button", onclick: () => { adding.manage = false; renderAgents(); } }, "Done") : null, cancel),
-    ].filter(Boolean));
-    form.addEventListener("submit", (ev) => { ev.preventDefault(); if (adding.where.trim()) changeProjects(adding, { add: adding.where.trim() }); });
-    return form;
+  brRender();
+  if (!brPick.dialog.open) brPick.dialog.showModal();
+  const first = brPick.dialog.querySelector(brPick.choosing ? ".br-add input" : "button.primary");
+  if (first) first.focus();
+}
+async function brSources(body) {
+  brPick.busy = true; brPick.error = ""; brRender();
+  try {
+    const had = new Set(brPick.projects.map((p) => p.path));
+    const got = await post("/api/projects", { gatherer: brPick.g, dirs: brPick.dirs, ...body });
+    Object.assign(brPick, { projects: got.projects, suggestions: got.suggestions });
+    const added = got.projects.find((p) => !had.has(p.path));
+    if (added) Object.assign(brPick, { project: added.path, where: "", choosing: false });
+    if (!got.projects.some((p) => p.path === brPick.project)) Object.assign(brPick, { project: "", choosing: true });
+  } catch (e) { brPick.error = e.message; }
+  brPick.busy = false;
+  brRender();
+}
+function brRender() {
+  const d = brPick.dialog, g = brPick.g, hs = startable(), home = state.home.home_dir;
+  if (!d) return;
+  const chosen = brPick.projects.find((p) => p.path === brPick.project);
+  const busy = brPick.busy ? { disabled: "" } : {};
+  const form = el("form", { class: "newform", method: "dialog" });
+  let source;
+  if (brPick.choosing || !chosen) {
+    const where = el("input", { value: brPick.where, placeholder: "a folder in a git repository, or owner/repo", spellcheck: "false",
+      "aria-label": "A folder in a git repository, or a GitHub repository", oninput: (ev) => { brPick.where = ev.target.value; },
+      onkeydown: (ev) => { if (ev.key === "Enter") { ev.preventDefault(); if (brPick.where.trim()) brSources({ add: brPick.where.trim() }); } } });
+    source = [
+      brPick.projects.length ? el("div", { class: "projects" }, el("div", { class: "lbl", text: `${g}'s sources` }),
+        ...brPick.projects.map((p) => el("div", { class: "br-row" + (p.path === brPick.project ? " on" : "") },
+          el("button", { type: "button", class: "use", title: p.path, ...busy,
+            onclick: () => { Object.assign(brPick, { project: p.path, choosing: false, error: "" }); brRender(); } },
+            el("span", { class: "nm", text: projectName(p) }), el("span", { class: "at", text: tildePath(p.path, home) }),
+            el("span", { class: "on", text: checkedOut(p) })),
+          el("button", { type: "button", class: "rm", title: `No longer one of ${g}'s sources (its actors' branches are left as they are)`,
+            "aria-label": `Remove ${projectName(p)}`, ...busy, onclick: () => brSources({ remove: p.path }) }, "×")))) : null,
+      brPick.suggestions.length ? el("div", { class: "projects" }, el("div", { class: "lbl", text: "Where its actors work" }),
+        ...brPick.suggestions.map((p) => el("button", { type: "button", class: "suggest", title: `${p.path}${p.remote ? "\n" + p.remote : ""}`,
+          ...busy, onclick: () => brSources({ add: p.path }) },
+          el("span", { text: `+ ${projectName(p)}` }), el("span", { class: "at", text: tildePath(p.path, home) })))) : null,
+      el("div", { class: "projects br-add" }, el("div", { class: "lbl", text: "Another source" }),
+        el("div", { class: "addrow" }, where, el("button", { type: "button", ...busy,
+          onclick: () => { if (brPick.where.trim()) brSources({ add: brPick.where.trim() }); } }, brPick.busy ? "Adding…" : "Add")),
+        el("div", { class: "desc", text: "A GitHub repository with no clone here is cloned under ag's home." })),
+    ];
+  } else {
+    source = [el("div", { class: "br-src" },
+      el("div", { class: "top" }, el("span", { class: "nm", text: projectName(chosen) }),
+        el("span", { class: "at", title: chosen.path, text: tildePath(chosen.path, home) }),
+        el("button", { type: "button", class: "link", onclick: () => { brPick.choosing = true; brRender(); } }, "Change")),
+      el("div", { class: "desc route" }, "From: a new branch, off ", el("code", { text: checkedOut(chosen) }),
+        ` at ${chosen.head || "?"}. Into: `, el("code", { text: tildePath(chosen.path, home) }), ", on ",
+        el("code", { text: checkedOut(chosen) }), "."))];
   }
-  const many = adding.projects.length > 1;
-  const pick = many ? el("select", { required: "", "aria-label": "The project",
-    onchange: (ev) => { adding.project = ev.target.value; adding.error = ""; renderAgents(); } },
-    el("option", { value: "", disabled: "", selected: adding.project ? null : "", text: "Which project?" }),
-    ...adding.projects.map((p) => el("option", { value: p.path, selected: p.path === adding.project ? "" : null,
-      title: p.path, text: `${projectName(p)} — ${tildePath(p.path, state.home.home_dir)}` }))) : null;
-  const one = adding.projects[0], chosen = adding.projects.find((p) => p.path === adding.project);
-  const route = chosen ? el("div", { class: "desc route" },
-    "From: a new branch, off ", el("code", { text: checkedOut(chosen) }), ` at ${chosen.head || "?"}. Into: `,
-    el("code", { text: tildePath(chosen.path, state.home.home_dir) }), ", on ", el("code", { text: checkedOut(chosen) }), ".") : null;
-  const approve = el("input", { type: "checkbox", checked: adding.approve ? "" : null, onchange: (ev) => {
-    adding.approve = ev.target.checked;
-    try { localStorage.setItem(BRANCH_APPROVE_KEY, adding.approve ? "1" : "0"); } catch (e) { /* this page only */ }
+  const approve = el("input", { type: "checkbox", checked: brPick.approve ? "" : null, onchange: (ev) => {
+    brPick.approve = ev.target.checked;
+    try { localStorage.setItem(BRANCH_APPROVE_KEY, brPick.approve ? "1" : "0"); } catch (e) { /* this page only */ }
   } });
-  const starts = hs.map((h) => el("button", { type: "submit", value: h, class: h === hs[0] ? "primary" : "",
-    ...(state.starting ? { disabled: "" } : {}) }, harnessBadge(h), harnessName(h)));
-  form.append(
-    el("div", { class: "desc", text: `A new actor in ${g}, on a branch of its own: a worktree beside the project, from its last commit. What it changes is merged into the project's folder as it changes it.` }),
-    ...[many ? el("label", {}, "Project", pick) : el("div", { class: "proj" }, el("span", { class: "nm", text: projectName(one) }),
-      el("span", { class: "at", title: one.path, text: tildePath(one.path, state.home.home_dir) })),
-    route].filter(Boolean),
-    el("button", { type: "button", class: "link", onclick: () => { adding.manage = true; renderAgents(); } }, many ? "Change the projects" : "Add or change projects"),
+  const ready = chosen && !brPick.choosing && !brPick.busy && !state.starting;
+  const starts = hs.map((h, i) => el("button", { type: "submit", value: h, class: i === 0 ? "primary" : "", ...(ready ? {} : { disabled: "" }) },
+    harnessBadge(h), harnessName(h)));
+  form.append(...[
+    el("div", { class: "br-title" }, el("h3", {}, strokeIcon(ICONS.branch, 15), "New actor on a branch"),
+      el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => d.close() }, "×")),
+    el("div", { class: "desc", text: `In ${g}. It works in a worktree of its source, on a new branch from the source's last commit; what it changes is merged into the source's folder as it changes it.` }),
+    el("div", { class: "lbl", text: "Source" }),
+    ...source,
     el("label", { class: "check", title: "Without it, its changes are merged in as they come, but for lines you are editing in the Editor, and lines you changed too, which wait for you" },
       approve, el("span", {}, el("b", { text: "Auto-merge with approval" }), ": each change waits in the Editor for you to accept or reject it")),
-    err,
-    el("div", { class: "row" }, cancel, ...starts));
+    el("div", { class: "err", role: "alert", text: brPick.error || (hs.length ? "" : NO_HARNESS) }),
+    el("div", { class: "row" }, el("button", { type: "button", onclick: () => d.close() }, "Cancel"), ...starts),
+  ].filter(Boolean));
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    if (!adding.project) { err.textContent = "Pick the project it works on."; return; }
+    if (!chosen || brPick.choosing) return;
     const harness = ev.submitter ? ev.submitter.value : hs[0];
-    try { await startBranch(g, adding.project, harness, adding.approve); }
-    catch (e) { adding.error = e.message; renderAgents(); }
+    brPick.busy = true; brRender();
+    try { await startBranch(g, chosen.path, harness, brPick.approve); d.close(); }
+    catch (e) { brPick.error = e.message; brPick.busy = false; brRender(); }
   });
-  return form;
+  d.replaceChildren(form);
 }
 async function startBranch(gatherer, project, harness, approve) {
   state.starting = { gatherer, harness: BRANCH_START };
