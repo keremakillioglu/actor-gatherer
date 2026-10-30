@@ -265,7 +265,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 if url.path == "/api/stream":
                     return self.stream(q.get("gatherer"), q.get("channel"), _pairs(q.get("also")))
                 if url.path == "/api/home":
-                    return self.answer(read_home())    # all read: no ring need have come for a change yet
+                    return self.answer(home_view())    # read now: a page's first, its stream's after it shared
                 if url.path == "/api/sessions":
                     return self.answer(started.list())
                 if url.path == "/api/models":
@@ -694,6 +694,8 @@ class Server(ThreadingHTTPServer):
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
         self.rest = saved.Rest(self.sessions, self.hub.shown)
+        if known is not None:                                          # its agents all read once, now: a page's
+            threading.Thread(target=lambda: data.home([], known), name="ag-home-first", daemon=True).start()   # first
 
     def server_close(self) -> None:
         for part in (self.listener, self.fallback, self.rest, self.editors):

@@ -301,6 +301,7 @@ class Kept:
 
     def __init__(self, refreshed: Optional[Any] = None):
         self.lock = threading.Lock()
+        self.reading = threading.Lock()              # one read at a time: none given what another is reading again
         self.refreshed = refreshed                   # (gatherer) once a background read of it is kept
         self.kept: Dict[str, Dict[str, dict]] = {}   # gatherer -> channel -> its agent, as `_agents` read it
         self.at: Dict[str, Dict[str, float]] = {}    # gatherer -> channel -> when that was read
@@ -329,7 +330,13 @@ class Kept:
 
     def agents(self, conn, gatherer: str, now: float) -> List[dict]:
         """The gatherer's agents as `_agents` reads them, newest created first -- copies, the caller's to change.
-        sqlite3.Error: its database could not be read (read whole the next time)."""
+        sqlite3.Error: its database could not be read (read whole the next time). One caller at a time: another
+        given the agents kept while this one reads a channel told of again would have that channel as it was, and
+        be told of it no more."""
+        with self.reading:
+            return self._agents(conn, gatherer, now)
+
+    def _agents(self, conn, gatherer: str, now: float) -> List[dict]:
         with self.lock:
             told, reads = self.told.pop(gatherer, set()), self.reads.pop(gatherer, set())
             opened = gatherer in self.opened

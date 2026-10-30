@@ -10,6 +10,7 @@ import time
 import unittest
 import unittest.mock
 import urllib.parse
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -250,6 +251,34 @@ class KeptTest(HomeBase):
         self.home()
         self.assertEqual(self.asked(), [None])
 
+    def test_a_reader_waits_for_a_channel_being_read_again(self):
+        data.home([], self.kept)
+        codex_items.CodexItems(self.m).insert("g", user("being read", 97), channel_id="c2")
+        self.kept.changed("g", "c2")
+        reading, go = threading.Event(), threading.Event()
+        read = data._agents
+
+        def slow(conn, now, only=None):
+            if only:
+                reading.set()
+                go.wait(5)
+            return read(conn, now, only)
+        self.read.stop()
+        with unittest.mock.patch.object(data, "_agents", slow):
+            first = threading.Thread(target=data.home, args=([], self.kept))
+            first.start()
+            self.assertTrue(reading.wait(5))                    # the first reads c2 again: the second waits for it
+            got = []
+            second = threading.Thread(target=lambda: got.append(data.home([], self.kept)))
+            second.start()
+            time.sleep(0.2)
+            self.assertEqual(got, [])
+            go.set()
+            first.join(5), second.join(5)
+        self.read.start()
+        self.assertEqual(next(a for a in got[0]["gatherers"][0]["agents"] if a["channel"] == "c2")["last_user_message"],
+                         "being read")
+
     def test_the_copies_are_the_caller_s(self):
         got = data.home([], self.kept)
         got["gatherers"][0]["agents"][0]["status"] = "changed"
@@ -321,6 +350,15 @@ class StreamTest(HomeBase):
             for s in streams:
                 self.assertIsNotNone(s.until(lambda name, v: name == "home", 3))
             self.assertEqual(home.call_count, 1)
+
+    def test_a_page_s_home_from_what_is_kept(self):
+        httpd = self.start()
+        get = lambda: json.loads(urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_port}/api/home").read())   # noqa: E731
+        self.assertEqual(get()["gatherers"][0]["name"], "g")
+        with unittest.mock.patch.object(data, "_agents", wraps=data._agents) as read:
+            got = get()
+        self.assertEqual([c.args[2:] for c in read.call_args_list], [])   # nothing read again: nothing changed
+        self.assertEqual({a["channel"] for a in got["gatherers"][0]["agents"]}, {"c1", "c2"})
 
     def test_a_page_opened_later_reads_the_home_again(self):
         httpd = self.start()
