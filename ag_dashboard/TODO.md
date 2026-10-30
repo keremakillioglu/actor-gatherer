@@ -358,3 +358,31 @@ Not done yet:
 - **Large pastes.** A single edit over the server's 1 MB request limit (MAX_BODY) is refused; the page should split
   it, or the edit endpoint take more.
 - **Codex.** Nothing in the panel is Claude Code's, but it has only been tried with Claude Code actors.
+
+## Actors on branches of their own
+
+An actor started from a gatherer's branch button (branches.py) works in a worktree of one of the gatherer's projects,
+`<project>-worktrees/ag-<id>` on branch `ag/<id>`, from the project's last commit; what it changes there is merged into
+the project's folder as it changes it -- all of it, but the conflict zone's lines and those the project changed too,
+which wait in the Editor; with "auto-merge with approval", every change waits. Its lines are tinted in its hue until it
+is closed.
+
+- **The project's uncommitted work is not on the branch.** The worktree starts from the project's last commit, so the
+  actor does not see what was not committed (the merge into the project keeps it). Copying it over would put it in the
+  actor's commits.
+- **The same change, twice.** Once the actor's branch is merged on GitHub, pulling it into the project finds the same
+  lines already there, uncommitted: git refuses the pull until they are committed or put away.
+- **Not text, not merged.** A file that is not UTF-8 text, or is over the Editor's MAX_BYTES, is left out silently;
+  the branch card could list it.
+- **Renames.** A file the actor moves is a file deleted and a file made, each asked about (with approval) or merged.
+- **A held change after a restart.** What waits is worked out again from the branch's files at the dashboard's first
+  look; a place held because of the zone stays held (kept in `branch_files.held`), though the zone itself is gone.
+- **One Editor, the project's.** The Editor opened from such an actor shows its project; its own worktree is one more
+  folder to pick.
+- **The branch is the actor's.** Nothing removes a worktree or branch once its actor has worked in it (one never used
+  goes with its session); nor is a pull request opened for it.
+- **The note needs ag's policy.** An actor is told its change was left out through ag's stream messages
+  (`context_stream`), which the proactive_context_manager policy shows at its next model call; a gatherer on another
+  policy may not show them. Nothing else of the project's reaches the actor: it is not told of the reader's own edits.
+- **Codex.** Branches work for Codex sessions too (its thread's id is followed through `started_as`), but have only
+  been tried live with Claude Code.
