@@ -2,9 +2,13 @@
 unread), the file on disk folded in by one page, DocWriter's own routes, the actor's tools relayed to a page through the
 MCP server, what a DocWriter actor is started with, and the server's /docwriter/w/<key>/ routes."""
 import base64
+import glob
 import json
 import os
 import queue
+import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -340,6 +344,46 @@ class LaunchTest(Home):
 
 
 @unittest.skipIf(Doc is None, "pycrdt is not installed")
+class VendorTest(unittest.TestCase):
+    """The built page (vendor/docwriter/): every file its pages and pdf.js's viewer load is there, and git keeps all of
+    it -- the repo's .gitignore leaves out folders named build/, and pdf.js's scripts are in one."""
+
+    PAGES = ("index.html", "preview.html", "pdfjs/web/viewer.html")
+    SCRIPTS = ("assets/*.js", "pdfjs/web/viewer.mjs")
+    OPTIONAL = {"pdfjs/web/debugger.mjs"}          # pdf.js's debugger, loaded only with its pdfBug option: not kept
+    ATTR = re.compile(r'''(?:src|href)="(?![a-z]+:|#|/)([^"?#]+)"''')
+    STRING = re.compile(r'''["'`](\.\.?/[\w./-]+\.(?:mjs|js|css|json|wasm))["'`]''')
+
+    def setUp(self):
+        if not os.path.isfile(os.path.join(docwriter.VENDOR, "index.html")):
+            self.skipTest("DocWriter's page is not built")
+
+    def loaded(self) -> set:
+        """What the pages and scripts load, by path in vendor/docwriter/."""
+        out = set()
+        files = [(f, self.ATTR) for f in self.PAGES] + \
+            [(os.path.relpath(f, docwriter.VENDOR), self.STRING)
+             for g in self.SCRIPTS for f in glob.glob(os.path.join(docwriter.VENDOR, g))]
+        for f, pattern in files:
+            with open(os.path.join(docwriter.VENDOR, f), encoding="utf-8") as fh:
+                text = fh.read()
+            out |= {os.path.normpath(os.path.join(os.path.dirname(f), r)) for r in pattern.findall(text)}
+        return out - self.OPTIONAL
+
+    def test_every_file_the_pages_load_is_there(self):
+        loaded = self.loaded()
+        self.assertIn(os.path.normpath("pdfjs/build/pdf.worker.mjs"), loaded)    # the viewer's own, found
+        self.assertEqual(sorted(f for f in loaded if not os.path.isfile(os.path.join(docwriter.VENDOR, f))), [])
+
+    def test_git_keeps_all_of_it(self):
+        if shutil.which("git") is None or subprocess.run(["git", "-C", docwriter.VENDOR, "rev-parse"],
+                                                         capture_output=True).returncode:
+            self.skipTest("not a git checkout")
+        left = subprocess.run(["git", "-C", docwriter.VENDOR, "ls-files", "--others", "--ignored", "--exclude-standard",
+                               "."], capture_output=True, text=True, check=True).stdout.split()
+        self.assertEqual(left, [])
+
+
 class ServerTest(Home):
     """The page's side, through the dashboard's server: its one stream, a document shared, the actor's MCP server."""
 

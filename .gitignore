@@ -10,5 +10,7 @@ traces/
 codex_home/
 node_modules/
 build/
+# pdf.js's own build/, part of DocWriter's built page (assets/src/docwriter): kept
+!ag_dashboard/vendor/docwriter/pdfjs/build/
 dist/
 site/
