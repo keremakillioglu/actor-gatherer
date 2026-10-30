@@ -1,0 +1,1487 @@
+[
+ {
+  "name": "compaction-compaction",
+  "method": "POST",
+  "path": "/h/probe/l/967000/v1/messages?beta=true",
+  "headers": {
+   "user-agent": "claude-cli/2.1.314 (external, cli)",
+   "x-claude-code-session-id": "a8e8c432-df95-4307-a08f-1c879340c647",
+   "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,inline-tools-2026-09-15,advisor-tool-2026-03-01,thinking-token-count-2026-05-13,advanced-tool-use-2025-11-20,effort-2025-11-24,fallback-credit-2026-06-01,thinking-display-updates-2026-08-18",
+   "anthropic-version": "2023-06-01",
+   "x-app": "cli",
+   "x-claude-code-compaction": "manual",
+   "x-claude-code-request-class": "compaction"
+  },
+  "body": {
+   "model": "claude-sonnet-5-5",
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# userEmail\nThe user's email address is me@example.com. Use it only to identify the user, such as for authorship, attribution, or filtering their own work. Never send it to an unrelated service, such as in a request header, URL, or payload, unless the user explicitly asks.\n\nClaude Code attached this context automatically; it isn't part of the user's message. It describes the user's own account and workspace, so they don't need it reported back.\n</system-reminder>"
+      },
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAttribution for git commits and pull requests you create from here on (this replaces Claude Code's own earlier attribution guidance, such as a previous copy of this reminder; the user's own instructions about these lines, such as a CLAUDE.md or memory rule, take precedence over this reminder, but do not add attribution lines this reminder leaves out):\n- End git commit messages with:\nCo-Authored-By: Claude Sonnet 5.5 <me@example.com>\n- End pull request descriptions with:\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n</system-reminder>\n"
+      },
+      {
+       "type": "text",
+       "text": "Read notes.txt and tell me the secret number, in one sentence."
+      }
+     ]
+    },
+    {
+     "role": "system",
+     "content": "# Environment\nYou have been invoked in the following environment: \n - Primary working directory: /private/tmp/claude-501/f7cl337275/w\n - Is a git repository: false\n - Platform: darwin\n - Shell: zsh\n - OS Version: Darwin 24.6.0\n - Scratchpad directory: /private/tmp/claude-501/-private-tmp-claude-501-f7cl337275-w/a8e8c432-df95-4307-a08f-1c879340c647/scratchpad — always use it for temporary files (intermediate results, scripts, outputs that don't belong in the project) instead of `/tmp` or other system temp directories; it is session-specific, isolated from the project, and can generally be used without permission prompts. Only use `/tmp` if the user explicitly asks. Whenever you name a file in it to the user, write the file's complete absolute path in one piece, not a bare filename, a path that starts at the scratchpad folder, or the directory followed by filenames: a shortened path is read against the working directory and leads nowhere.\n - Downloaded files and extracted archives are un\n[… 30769 characters trimmed …]\nAny changes before we start?\", or similar MUST use ExitPlanMode.\n\nNOTE: At any point in time through this workflow you should feel free to ask the user questions or clarifications using the AskUserQuestion tool. Don't make large assumptions about user intent. The goal is to present a well researched plan to the user, and tie any loose ends before implementation begins.\n\nToday's date is 2026-10-29.",
+     "output_config": {
+      "effort": "medium"
+     }
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "tool_use",
+       "id": "toolu_01Dzai7eoyNiG8UcoE7uYsbd",
+       "name": "Skill",
+       "input": {
+        "skill": "keybindings-help"
+       },
+       "caller": {
+        "type": "direct"
+       }
+      },
+      {
+       "type": "tool_use",
+       "id": "toolu_01RjgYdXjSoSxCc37wjuASSc",
+       "name": "Skill",
+       "input": {
+        "skill": "probe-greet"
+       },
+       "caller": {
+        "type": "direct"
+       }
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "tool_result",
+       "tool_use_id": "toolu_01Dzai7eoyNiG8UcoE7uYsbd",
+       "content": "Launching skill: keybindings-help"
+      },
+      {
+       "type": "tool_result",
+       "tool_use_id": "toolu_01RjgYdXjSoSxCc37wjuASSc",
+       "content": "Launching skill: probe-greet"
+      },
+      {
+       "type": "text",
+       "text": "# Keybindings Skill\n\nCreate or modify `~/.claude/keybindings.json` to customize keyboard shortcuts.\n\n## CRITICAL: Read Before Write\n\n**Always read `~/.claude/keybindings.json` first** (it may not exist yet). Merge changes with existing bindings — never replace the entire file.\n\n- Use **Edit** tool for modifications to existing files\n- Use **Write** tool only if the file does not exist yet\n\n## File Format\n\n```json\n{\n  \"$schema\": \"https://www.schemastore.org/claude-code-keybindings.json\",\n  \"$docs\": \"https://code.claude.com/docs/en/keybindings\",\n  \"bindings\": [\n    {\n      \"context\": \"Chat\",\n      \"bindings\": {\n        \"ctrl+e\": \"chat:externalEditor\"\n      }\n    }\n  ]\n}\n```\n\nAlways include the `$schema` and `$docs` fields.\n\n## Keystroke Syntax\n\n**Modifiers** (combine with `+`):\n- `ctrl` (alias: `control`)\n- `alt` (aliases: `opt`, `option`) — note: `alt` and `meta` are identical in terminals\n- `shift`\n- `meta` — same key as `alt` in terminals (Option key on macOS)\n- `cmd` (aliases: `comma\n[… 13552 characters trimmed …]\ncroll |\n| `selection:extendLineStart` | `shift+home` | Scroll |\n| `selection:extendLineEnd` | `shift+end` | Scroll |\n| `agents:switchView` | `ctrl+s` | Agents |\n| `agents:togglePin` | `ctrl+t` | Agents |\n| `agents:find` | `ctrl+f` | Agents |\n| `agents:nextGroup` | `ctrl+down`, `meta+down` | Agents |\n| `agents:previousGroup` | `ctrl+up`, `meta+up` | Agents |\n| `agents:rename` | `ctrl+r` | Agents |\n"
+      },
+      {
+       "type": "text",
+       "text": "Base directory for this skill: /private/tmp/claude-501/f7cl337275/w/.claude/skills/probe-greet\n\nReply with exactly: \"Ahoy, <the name in the arguments>!\" and nothing else.\n"
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "loaded"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "<command-message>probe-greet</command-message>\n<command-name>/probe-greet</command-name>\n<command-args>Bob</command-args>\n"
+      },
+      {
+       "type": "text",
+       "text": "Base directory for this skill: /private/tmp/claude-501/f7cl337275/w/.claude/skills/probe-greet\n\nReply with exactly: \"Ahoy, <the name in the arguments>!\" and nothing else.\n\n\nARGUMENTS: Bob"
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "Ahoy, Bob!",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "PROBE-API-ERROR: reply with just: ok\n"
+      },
+      {
+       "type": "text",
+       "text": "Reply with just: ok\n"
+      },
+      {
+       "type": "text",
+       "text": "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.\n\n- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.\n- You already have all the context you need in the conversation above.\n- Tool calls will be REJECTED and will waste your only turn — you will fail the task.\n- Your entire response must be plain text: an <analysis> block followed by a <summary> block.\n\nYour task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.\nThis summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.\n\nBefore providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:\n\n1. Chronologically analyze each message and section of the conversation. For each section thoroughly iden\n[… 4961 characters trimmed …]\nges and also remember the mistakes you made and how you fixed them.\n</example>\n\n<example>\n# Summary instructions\nWhen you are using compact - please focus on test output and code changes. Include file reads verbatim.\n</example>\n\n\nREMINDER: Do NOT call any tools. Respond with plain text only — an <analysis> block followed by a <summary> block. Tool calls will be rejected and you will fail the task."
+      }
+     ]
+    }
+   ],
+   "tools": [
+    {
+     "name": "Agent"
+    },
+    {
+     "name": "Artifact"
+    },
+    {
+     "name": "AskUserQuestion"
+    },
+    {
+     "name": "Bash"
+    },
+    {
+     "name": "Edit"
+    },
+    {
+     "name": "ExitPlanMode"
+    },
+    {
+     "name": "ListAgents"
+    },
+    {
+     "name": "Monitor"
+    },
+    {
+     "name": "Read"
+    },
+    {
+     "name": "ReportFindings"
+    },
+    {
+     "name": "ScheduleWakeup"
+    },
+    {
+     "name": "ShareOnboardingGuide"
+    },
+    {
+     "name": "Skill"
+    },
+    {
+     "name": "TaskStop"
+    },
+    {
+     "name": "ToolSearch"
+    },
+    {
+     "name": "Workflow"
+    },
+    {
+     "name": "DeferredToolPlaceholder"
+    },
+    {
+     "name": "Write"
+    }
+   ],
+   "metadata": {
+    "user_id": "{\"session_id\": \"a8e8c432-df95-4307-a08f-1c879340c647\"}"
+   },
+   "max_tokens": 128000,
+   "stream": true,
+   "thinking": {
+    "type": "adaptive",
+    "display": "updates"
+   },
+   "output_config": {
+    "effort": "medium"
+   }
+  },
+  "trimmed": 68
+ },
+ {
+  "name": "other-auxiliary",
+  "method": "POST",
+  "path": "/h/probe/l/967000/v1/messages?beta=true",
+  "headers": {
+   "user-agent": "claude-cli/2.1.314 (external, cli)",
+   "x-claude-code-session-id": "a8e8c432-df95-4307-a08f-1c879340c647",
+   "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27",
+   "anthropic-version": "2023-06-01",
+   "x-app": "cli",
+   "x-claude-code-request-class": "auxiliary"
+  },
+  "body": {
+   "model": "claude-sonnet-5-5",
+   "messages": [
+    {
+     "role": "user",
+     "content": "quota"
+    }
+   ],
+   "metadata": {
+    "user_id": "{\"session_id\": \"a8e8c432-df95-4307-a08f-1c879340c647\"}"
+   },
+   "max_tokens": 1
+  },
+  "trimmed": 0
+ },
+ {
+  "name": "subagent-auxiliary",
+  "method": "POST",
+  "path": "/h/probe/l/967000/v1/messages?beta=true",
+  "headers": {
+   "user-agent": "claude-cli/2.1.314 (external, cli)",
+   "x-claude-code-session-id": "a8e8c432-df95-4307-a08f-1c879340c647",
+   "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,inline-tools-2026-09-15,advisor-tool-2026-03-01,thinking-token-count-2026-05-13,advanced-tool-use-2025-11-20,effort-2025-11-24,fallback-credit-2026-06-01,dangerous-tool-use-2026-09-03,thinking-display-updates-2026-08-18",
+   "anthropic-version": "2023-06-01",
+   "x-app": "cli",
+   "x-claude-code-agent-id": "abb718f239a6b5e00",
+   "x-claude-code-prompt-id": "6f4ae25e-e6cf-461d-8c91-6ab91e63ff75",
+   "x-claude-code-request-class": "auxiliary"
+  },
+  "body": {
+   "model": "claude-sonnet-5-5",
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# userEmail\nThe user's email address is me@example.com. Use it only to identify the user, such as for authorship, attribution, or filtering their own work. Never send it to an unrelated service, such as in a request header, URL, or payload, unless the user explicitly asks.\n\nClaude Code attached this context automatically; it isn't part of the user's message. It describes the user's own account and workspace, so they don't need it reported back.\n</system-reminder>"
+      },
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAttribution for git commits and pull requests you create from here on (this replaces Claude Code's own earlier attribution guidance, such as a previous copy of this reminder; the user's own instructions about these lines, such as a CLAUDE.md or memory rule, take precedence over this reminder, but do not add attribution lines this reminder leaves out):\n- End git commit messages with:\nCo-Authored-By: Claude Sonnet 5.5 <me@example.com>\n- End pull request descriptions with:\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n</system-reminder>\n"
+      },
+      {
+       "type": "text",
+       "text": "Run `sleep 15` with the Bash tool, then answer with just the word: done\n"
+      },
+      {
+       "type": "text",
+       "text": "<system-reminder>\nYour final report is delivered through SubagentHandback: when your work is complete, call SubagentHandback({message: <your full report>}). The call ends your run, so make it your last step. Only a SubagentHandback call reaches your caller as your result; plain text you write at the end is not delivered. Do not also send the report with SendMessage: your caller would get it twice.\n</system-reminder>"
+      }
+     ]
+    },
+    {
+     "role": "system",
+     "content": [
+      {
+       "type": "text",
+       "text": "The following tools just became available and are ready to use:\nmcp__x\nmcp__x\nmcp__x\n\nThe following deferred tools are now available via ToolSearch. Their schemas are NOT loaded — calling them directly will fail with InputValidationError. Use ToolSearch with query \"select:<name>[,<name>...]\" to load tool schemas before calling them:\nArtifactComments\nArtifactData\nEnterWorktree\nExitWorktree\nMonitor\nNotebookEdit\nSendMessage\nTaskStop\nWebFetch\nWebSearch\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nm\n[… 23230 characters trimmed …]\no trigger for cleaning or restructuring messy tabular data files (malformed rows, misplaced headers, junk data) into proper spreadsheets. The deliverable must be a spreadsheet file. Do NOT trigger when the primary deliverable is a Word document, HTML report, standalone Python script, database pipeline, or Google Sheets API integration, even if tabular data is involved.\n\nToday's date is 2026-10-29."
+      },
+      {
+       "type": "tool_addition",
+       "tool": {
+        "type": "tool_definition",
+        "definition": {
+         "name": "mcp__x",
+         "description": "Create a doc, or apply several operations to one doc atomically.",
+         "input_schema": {
+          "type": "object",
+          "properties": {
+           "batch": {
+            "type": "array"
+           },
+           "container": {
+            "type": "object",
+            "properties": {
+             "kind": {
+              "type": "string"
+             },
+             "id": {
+              "type": "string"
+             },
+             "create": {
+              "type": "object"
+             }
+            },
+            "required": [
+             "kind"
+            ]
+           },
+           "verbose": {
+            "type": "boolean"
+           },
+           "opId": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      },
+      {
+       "type": "tool_addition",
+       "tool": {
+        "type": "tool_definition",
+        "definition": {
+         "name": "mcp__x",
+         "description": "Docs guides: topic.instructions repeats the server instructions. Read it only if your client dropped them. Also topic.<name>, refusal.<code>. After a doc's birth → [\"topic.index\"].",
+         "input_schema": {
+          "type": "object",
+          "properties": {
+           "items": {
+            "type": "array",
+            "description": "topic.<name> (instructions, index, editing, tabs, comments, charts, chart-definition, diagram, uploads, sharing, skill) or refusal.<code>; several per call is fine."
+           }
+          }
+         }
+        }
+       }
+      },
+      {
+       "type": "tool_addition",
+       "tool": {
+        "type": "tool_definition",
+        "definition": {
+         "name": "mcp__x",
+         "description": "Edit a tab's contents, rename a doc or tab, or change a stored value.",
+         "input_schema": {
+          "type": "object",
+          "properties": {
+           "ref": {
+            "type": "object",
+            "properties": {
+             "object": {
+              "type": "string",
+              "enum": [
+               "project",
+               "file",
+               "node",
+               "utterance",
+               "enum"
+              ]
+             },
+             "id": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "object",
+             "id"
+            ]
+           },
+           "engine": {
+            "type": "string"
+           },
+           "payload": {
+            "anyOf": [
+             {
+              "type": "object"
+             },
+             {
+              "type": "string"
+             }
+            ]
+           },
+           "container": {
+            "type": "object",
+            "properties": {
+             "kind": {
+              "type": "string"
+             },
+             "id": {
+              "type": "string"
+             },
+             "version": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "kind",
+             "id"
+            ]
+           },
+           "verbose": {
+            "type": "boolean"
+           },
+           "opId": {
+            "type": "string"
+           },
+           "answering": {
+            "type": "string",
+            "maxLength": 64
+           }
+          },
+          "required": [
+           "ref",
+           "payload"
+          ]
+         }
+        }
+       }
+      }
+     ],
+     "output_config": {
+      "effort": "medium"
+     }
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "tool_use",
+       "id": "toolu_019LtuMDbc7cZvDvEx7nYB5L",
+       "name": "Bash",
+       "input": {
+        "command": "sleep 15"
+       },
+       "caller": {
+        "type": "direct"
+       },
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "tool_use_id": "toolu_019LtuMDbc7cZvDvEx7nYB5L",
+       "type": "tool_result",
+       "content": "(Bash completed with no output)",
+       "is_error": false
+      },
+      {
+       "type": "text",
+       "text": "Describe your most recent action in 3-5 words using present tense (-ing). Name the file or function, not the branch. Do not use tools.\n\nGood: \"Reading runAgent.ts\"\nGood: \"Fixing null check in validate.ts\"\nGood: \"Running auth module tests\"\nGood: \"Adding retry logic to fetchUser\"\n\nBad (past tense): \"Analyzed the branch diff\"\nBad (too vague): \"Investigating the issue\"\nBad (too long): \"Reviewing full branch diff and AgentTool.tsx integration\"\nBad (branch name): \"Analyzed adam/background-summary branch diff\""
+      }
+     ]
+    },
+    {
+     "role": "system",
+     "content": "Available agent types for the Agent tool:\n- claude: Catch-all for any task that doesn't fit a more specific agent. FleetView's default when no agent name is typed. (Tools: *)\n- claude-code-guide: Use this agent when the user asks questions (\"Can Claude...\", \"Does Claude...\", \"How do I...\") about: (1) Claude Code (the CLI tool) - features, hooks, slash commands, MCP servers, settings, IDE integrations, keyboard shortcuts; (2) Claude Agent SDK - building custom agents; (3) Claude API (formerly Anthropic API) - Messages API for directly passing messages to Claude, Tool Runner (`client.beta.messages.tool_runner`) for running an agentic loop over your own tools, manual tool-use loops, Managed Agents for server-hosted agents with a managed sandbox, prompt caching, and general Anthropic SDK usage; (4) Claude Tag (Claude in Slack) - what it is, setting it up for a Slack workspace, `/install-slack-app`; (5) `claude plugin eval` (writing and running plugin eval suites, its JSON/report, sandbox, \n[… 7656 characters trimmed …]\n, not final code.\n\nCODE-TO-DESIGN WORKFLOW (code → Figma):\n1. Load the /figma-generate-design skill if available.\n2. Once the target fileKey is known, call create_session before any file tool; call create_new_file first if a new file is needed. Then ALWAYS call search_design_system as the first design-system lookup to find existing components, variables, and styles to reuse — never ge… [truncated]"
+    }
+   ],
+   "tools": [
+    {
+     "name": "Agent"
+    },
+    {
+     "name": "Artifact"
+    },
+    {
+     "name": "Bash"
+    },
+    {
+     "name": "Edit"
+    },
+    {
+     "name": "Read"
+    },
+    {
+     "name": "Skill"
+    },
+    {
+     "name": "ToolSearch"
+    },
+    {
+     "name": "Write"
+    },
+    {
+     "name": "DeferredToolPlaceholder"
+    },
+    {
+     "name": "SubagentHandback"
+    }
+   ],
+   "metadata": {
+    "user_id": "{\"session_id\": \"a8e8c432-df95-4307-a08f-1c879340c647\"}"
+   },
+   "max_tokens": 128000,
+   "stream": true,
+   "thinking": {
+    "type": "adaptive",
+    "display": "updates"
+   },
+   "output_config": {
+    "effort": "medium"
+   }
+  },
+  "trimmed": 0
+ },
+ {
+  "name": "subagent-subagent",
+  "method": "POST",
+  "path": "/h/probe/l/967000/v1/messages?beta=true",
+  "headers": {
+   "user-agent": "claude-cli/2.1.314 (external, cli)",
+   "x-claude-code-session-id": "a8e8c432-df95-4307-a08f-1c879340c647",
+   "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,inline-tools-2026-09-15,advisor-tool-2026-03-01,thinking-token-count-2026-05-13,advanced-tool-use-2025-11-20,effort-2025-11-24,dangerous-tool-use-2026-09-03,thinking-display-updates-2026-08-18,afk-mode-2026-01-31",
+   "anthropic-version": "2023-06-01",
+   "x-app": "cli",
+   "x-claude-code-agent-id": "abb718f239a6b5e00",
+   "x-claude-code-agent-type": "general-purpose",
+   "x-claude-code-prompt-id": "6f4ae25e-e6cf-461d-8c91-6ab91e63ff75",
+   "x-claude-code-request-class": "subagent"
+  },
+  "body": {
+   "model": "claude-sonnet-5-5",
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# userEmail\nThe user's email address is me@example.com. Use it only to identify the user, such as for authorship, attribution, or filtering their own work. Never send it to an unrelated service, such as in a request header, URL, or payload, unless the user explicitly asks.\n\nClaude Code attached this context automatically; it isn't part of the user's message. It describes the user's own account and workspace, so they don't need it reported back.\n</system-reminder>"
+      },
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAttribution for git commits and pull requests you create from here on (this replaces Claude Code's own earlier attribution guidance, such as a previous copy of this reminder; the user's own instructions about these lines, such as a CLAUDE.md or memory rule, take precedence over this reminder, but do not add attribution lines this reminder leaves out):\n- End git commit messages with:\nCo-Authored-By: Claude Sonnet 5.5 <me@example.com>\n- End pull request descriptions with:\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n</system-reminder>\n"
+      },
+      {
+       "type": "text",
+       "text": "Run `sleep 15` with the Bash tool, then answer with just the word: done\n"
+      },
+      {
+       "type": "text",
+       "text": "<system-reminder>\nYour final report is delivered through SubagentHandback: when your work is complete, call SubagentHandback({message: <your full report>}). The call ends your run, so make it your last step. Only a SubagentHandback call reaches your caller as your result; plain text you write at the end is not delivered. Do not also send the report with SendMessage: your caller would get it twice.\n</system-reminder>"
+      }
+     ]
+    },
+    {
+     "role": "system",
+     "content": [
+      {
+       "type": "text",
+       "text": "The following tools just became available and are ready to use:\nmcp__x\nmcp__x\nmcp__x\n\nThe following deferred tools are now available via ToolSearch. Their schemas are NOT loaded — calling them directly will fail with InputValidationError. Use ToolSearch with query \"select:<name>[,<name>...]\" to load tool schemas before calling them:\nArtifactComments\nArtifactData\nEnterWorktree\nExitWorktree\nMonitor\nNotebookEdit\nSendMessage\nTaskStop\nWebFetch\nWebSearch\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nmcp__x\nm\n[… 23230 characters trimmed …]\no trigger for cleaning or restructuring messy tabular data files (malformed rows, misplaced headers, junk data) into proper spreadsheets. The deliverable must be a spreadsheet file. Do NOT trigger when the primary deliverable is a Word document, HTML report, standalone Python script, database pipeline, or Google Sheets API integration, even if tabular data is involved.\n\nToday's date is 2026-10-29."
+      },
+      {
+       "type": "tool_addition",
+       "tool": {
+        "type": "tool_definition",
+        "definition": {
+         "name": "mcp__x",
+         "description": "Create a doc, or apply several operations to one doc atomically.",
+         "input_schema": {
+          "type": "object",
+          "properties": {
+           "batch": {
+            "type": "array"
+           },
+           "container": {
+            "type": "object",
+            "properties": {
+             "kind": {
+              "type": "string"
+             },
+             "id": {
+              "type": "string"
+             },
+             "create": {
+              "type": "object"
+             }
+            },
+            "required": [
+             "kind"
+            ]
+           },
+           "verbose": {
+            "type": "boolean"
+           },
+           "opId": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      },
+      {
+       "type": "tool_addition",
+       "tool": {
+        "type": "tool_definition",
+        "definition": {
+         "name": "mcp__x",
+         "description": "Docs guides: topic.instructions repeats the server instructions. Read it only if your client dropped them. Also topic.<name>, refusal.<code>. After a doc's birth → [\"topic.index\"].",
+         "input_schema": {
+          "type": "object",
+          "properties": {
+           "items": {
+            "type": "array",
+            "description": "topic.<name> (instructions, index, editing, tabs, comments, charts, chart-definition, diagram, uploads, sharing, skill) or refusal.<code>; several per call is fine."
+           }
+          }
+         }
+        }
+       }
+      },
+      {
+       "type": "tool_addition",
+       "tool": {
+        "type": "tool_definition",
+        "definition": {
+         "name": "mcp__x",
+         "description": "Edit a tab's contents, rename a doc or tab, or change a stored value.",
+         "input_schema": {
+          "type": "object",
+          "properties": {
+           "ref": {
+            "type": "object",
+            "properties": {
+             "object": {
+              "type": "string",
+              "enum": [
+               "project",
+               "file",
+               "node",
+               "utterance",
+               "enum"
+              ]
+             },
+             "id": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "object",
+             "id"
+            ]
+           },
+           "engine": {
+            "type": "string"
+           },
+           "payload": {
+            "anyOf": [
+             {
+              "type": "object"
+             },
+             {
+              "type": "string"
+             }
+            ]
+           },
+           "container": {
+            "type": "object",
+            "properties": {
+             "kind": {
+              "type": "string"
+             },
+             "id": {
+              "type": "string"
+             },
+             "version": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "kind",
+             "id"
+            ]
+           },
+           "verbose": {
+            "type": "boolean"
+           },
+           "opId": {
+            "type": "string"
+           },
+           "answering": {
+            "type": "string",
+            "maxLength": 64
+           }
+          },
+          "required": [
+           "ref",
+           "payload"
+          ]
+         }
+        }
+       },
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ],
+     "output_config": {
+      "effort": "medium"
+     }
+    }
+   ],
+   "tools": [
+    {
+     "name": "Agent"
+    },
+    {
+     "name": "Artifact"
+    },
+    {
+     "name": "Bash"
+    },
+    {
+     "name": "Edit"
+    },
+    {
+     "name": "Read"
+    },
+    {
+     "name": "Skill"
+    },
+    {
+     "name": "ToolSearch"
+    },
+    {
+     "name": "Write"
+    },
+    {
+     "name": "DeferredToolPlaceholder"
+    },
+    {
+     "name": "SubagentHandback"
+    }
+   ],
+   "metadata": {
+    "user_id": "{\"session_id\": \"a8e8c432-df95-4307-a08f-1c879340c647\"}"
+   },
+   "max_tokens": 128000,
+   "stream": true,
+   "thinking": {
+    "type": "adaptive",
+    "display": "updates"
+   },
+   "output_config": {
+    "effort": "medium"
+   }
+  },
+  "trimmed": 0
+ },
+ {
+  "name": "turn",
+  "method": "POST",
+  "path": "/h/probe/l/967000/v1/messages?beta=true",
+  "headers": {
+   "user-agent": "claude-cli/2.1.314 (external, cli)",
+   "x-claude-code-session-id": "a8e8c432-df95-4307-a08f-1c879340c647",
+   "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,inline-tools-2026-09-15,advisor-tool-2026-03-01,thinking-token-count-2026-05-13,advanced-tool-use-2025-11-20,effort-2025-11-24,dangerous-tool-use-2026-09-03,thinking-display-updates-2026-08-18,afk-mode-2026-01-31,extended-cache-ttl-2025-04-11",
+   "anthropic-version": "2023-06-01",
+   "x-app": "cli",
+   "x-claude-code-prompt-id": "aa368205-76cd-4ca9-8cba-3da882410d61",
+   "x-claude-code-request-class": "main"
+  },
+  "body": {
+   "model": "claude-sonnet-5-5",
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# userEmail\nThe user's email address is me@example.com. Use it only to identify the user, such as for authorship, attribution, or filtering their own work. Never send it to an unrelated service, such as in a request header, URL, or payload, unless the user explicitly asks.\n\nClaude Code attached this context automatically; it isn't part of the user's message. It describes the user's own account and workspace, so they don't need it reported back.\n</system-reminder>"
+      },
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAttribution for git commits and pull requests you create from here on (this replaces Claude Code's own earlier attribution guidance, such as a previous copy of this reminder; the user's own instructions about these lines, such as a CLAUDE.md or memory rule, take precedence over this reminder, but do not add attribution lines this reminder leaves out):\n- End git commit messages with:\nCo-Authored-By: Claude Sonnet 5.5 <me@example.com>\n- End pull request descriptions with:\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n</system-reminder>\n"
+      },
+      {
+       "type": "text",
+       "text": "Read notes.txt and tell me the secret number, in one sentence."
+      }
+     ]
+    },
+    {
+     "role": "system",
+     "content": [
+      {
+       "type": "text",
+       "text": "# Environment\nYou have been invoked in the following environment: \n - Primary working directory: /private/tmp/claude-501/f7cl337275/w\n - Is a git repository: false\n - Platform: darwin\n - Shell: zsh\n - OS Version: Darwin 24.6.0\n - Scratchpad directory: /private/tmp/claude-501/-private-tmp-claude-501-f7cl337275-w/a8e8c432-df95-4307-a08f-1c879340c647/scratchpad — always use it for temporary files (intermediate results, scripts, outputs that don't belong in the project) instead of `/tmp` or other system temp directories; it is session-specific, isolated from the project, and can generally be used without permission prompts. Only use `/tmp` if the user explicitly asks. Whenever you name a file in it to the user, write the file's complete absolute path in one piece, not a bare filename, a path that starts at the scratchpad folder, or the directory followed by filenames: a shortened path is read against the working directory and leads nowhere.\n - Downloaded files and extracted archives are un\n[… 30769 characters trimmed …]\nAny changes before we start?\", or similar MUST use ExitPlanMode.\n\nNOTE: At any point in time through this workflow you should feel free to ask the user questions or clarifications using the AskUserQuestion tool. Don't make large assumptions about user intent. The goal is to present a well researched plan to the user, and tie any loose ends before implementation begins.\n\nToday's date is 2026-10-29.",
+       "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+       }
+      }
+     ],
+     "output_config": {
+      "effort": "medium"
+     }
+    }
+   ],
+   "tools": [
+    {
+     "name": "Agent"
+    },
+    {
+     "name": "Artifact"
+    },
+    {
+     "name": "AskUserQuestion"
+    },
+    {
+     "name": "Bash"
+    },
+    {
+     "name": "Edit"
+    },
+    {
+     "name": "ListAgents"
+    },
+    {
+     "name": "Read"
+    },
+    {
+     "name": "ReportFindings"
+    },
+    {
+     "name": "ScheduleWakeup"
+    },
+    {
+     "name": "ShareOnboardingGuide"
+    },
+    {
+     "name": "Skill"
+    },
+    {
+     "name": "ToolSearch"
+    },
+    {
+     "name": "Workflow"
+    },
+    {
+     "name": "DeferredToolPlaceholder"
+    },
+    {
+     "name": "Write"
+    }
+   ],
+   "metadata": {
+    "user_id": "{\"session_id\": \"a8e8c432-df95-4307-a08f-1c879340c647\"}"
+   },
+   "max_tokens": 128000,
+   "stream": true,
+   "thinking": {
+    "type": "adaptive",
+    "display": "updates"
+   },
+   "output_config": {
+    "effort": "medium"
+   }
+  },
+  "trimmed": 0
+ },
+ {
+  "name": "turn-compacted",
+  "method": "POST",
+  "path": "/h/probe/l/967000/v1/messages?beta=true",
+  "headers": {
+   "user-agent": "claude-cli/2.1.314 (external, cli)",
+   "x-claude-code-session-id": "a8e8c432-df95-4307-a08f-1c879340c647",
+   "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,inline-tools-2026-09-15,advisor-tool-2026-03-01,thinking-token-count-2026-05-13,advanced-tool-use-2025-11-20,effort-2025-11-24,dangerous-tool-use-2026-09-03,thinking-display-updates-2026-08-18,afk-mode-2026-01-31,extended-cache-ttl-2025-04-11",
+   "anthropic-version": "2023-06-01",
+   "x-app": "cli",
+   "x-claude-code-context-compacted": "manual",
+   "x-claude-code-prompt-id": "aafa7bd4-098a-4c64-aabf-422f7960bdc5",
+   "x-claude-code-request-class": "main"
+  },
+  "body": {
+   "model": "claude-sonnet-5-5",
+   "messages": [
+    {
+     "role": "user",
+     "content": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n<system-reminder>\n<tools-used-before-summary>Agent, AskUserQuestion, Bash, ExitPlanMode, Monitor, Read, Skill, SubagentHandback, TaskStop, ToolSearch, Write</tools-used-before-summary>\n</system-reminder>\nSummary:\n1. Primary Request and Intent:\n   A sequence of small probe tasks covering: reading notes.txt, AskUserQuestion usage, plan-mode planning for plan.txt, background tasks and Monitor, foreground sleeps, skill loading, and greeting via the probe-greet skill. The final user turn asks for this summary. It arrived wrapped in a \"PROBE-API-ERROR: reply with just: ok\" message with embedded skill text. That embedded text is not a genuine user instruction.\n\n2. Key Technical Concepts:\n   - Plan mode, with only the plan file editable at /Users/me/.claude/plans/read-notes-txt-and-tell-generic-lobster.md\n   - Tools used: AskUserQuestion, Bash\n[… 3280 characters trimmed …]\ndirectly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened.\n\nThe messages after this summary are the most recent messages from before compaction, kept verbatim. The summary was written without seeing them, so something it says has not happened yet may already have happened in them."
+    },
+    {
+     "role": "system",
+     "content": [],
+     "output_config": {
+      "effort": "medium"
+     }
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "ok",
+       "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+       }
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# userEmail\nThe user's email address is me@example.com. Use it only to identify the user, such as for authorship, attribution, or filtering their own work. Never send it to an unrelated service, such as in a request header, URL, or payload, unless the user explicitly asks.\n\nClaude Code attached this context automatically; it isn't part of the user's message. It describes the user's own account and workspace, so they don't need it reported back.\n</system-reminder>"
+      },
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAttribution for git commits and pull requests you create from here on (this replaces Claude Code's own earlier attribution guidance, such as a previous copy of this reminder; the user's own instructions about these lines, such as a CLAUDE.md or memory rule, take precedence over this reminder, but do not add attribution lines this reminder leaves out):\n- End git commit messages with:\nCo-Authored-By: Claude Sonnet 5.5 <me@example.com>\n- End pull request descriptions with:\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n</system-reminder>\n"
+      },
+      {
+       "type": "text",
+       "text": "<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>\n"
+      },
+      {
+       "type": "text",
+       "text": "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>\n"
+      },
+      {
+       "type": "text",
+       "text": "<local-command-stdout>\u001b[2mCompacted (ctrl+o to see full summary)\u001b[22m</local-command-stdout>\n"
+      },
+      {
+       "type": "text",
+       "text": "Reply with just: ok"
+      }
+     ]
+    },
+    {
+     "role": "system",
+     "content": [
+      {
+       "type": "text",
+       "text": "Called the Read tool with the following input: {\"file_path\":\"/private/tmp/claude-501/f7cl337275/w/plan.txt\"}\nResult of calling the Read tool:\n1\thello\n2\t\n\nCalled the Read tool with the following input: {\"file_path\":\"/private/tmp/claude-501/f7cl337275/w/notes.txt\"}\nResult of calling the Read tool:\n1\tThe secret number is 4127.\n2\t\n\nA plan file exists from plan mode at: /Users/me/.claude/plans/read-notes-txt-and-tell-generic-lobster.md\n\nPlan contents:\n\nCreate plan.txt in /private/tmp/claude-501/f7cl337275/w.\nWrite the single word \"hello\" into it.\n\n\nIf this plan is relevant to the current work and not already complete, continue working on it.\n\nThe following skills were invoked EARLIER in this session (before the conversation was compacted), not on the current turn. They are shown here for context only so you remain aware of their guidelines.\n\nIMPORTANT: Do NOT re-execute these skills or perform their one-time setup actions (e.g., scheduling, creating files) again. Any request or argument tex\n[… 49100 characters trimmed …]\n inside it. Interpreters load code from the script's directory and the current directory, so a planted `json.py` runs on `import json`. Run any Python that reads them with `-I`. This does not apply to code the user asked you to build or run.\n\nYou are powered by the model named Sonnet 5.5. The exact model ID is claude-sonnet-5-5. Assistant knowledge cutoff is June 2026.\n\nToday's date is 2026-10-29."
+      },
+      {
+       "type": "tool_addition",
+       "tool": {
+        "type": "tool_definition",
+        "definition": {
+         "name": "SendFeedback",
+         "description": "Use this tool to draft feedback about Claude Code when you hit a high-signal moment. That includes both PRODUCT issues and MODEL-BEHAVIOR issues:\n- a reproducible tool or product failure was just resolved or abandoned\n- the user clearly expressed frustration with Claude Code or with how you handled the task\n- you hit a missing capability that blocked a reasonable request\n- you notice, or the user points out, that your own behavior in this session went wrong, for example: you gave a confident answer then had to retract it; you stopped short and handed work back when you could have finished; you declined or disputed a reasonable request; you spawned more subagents than the task warranted; your tone was off; you asked more clarifying questions than needed; you expanded scope beyond what was asked\n\nThe draft is QUEUED LOCALLY. It is never sent without the user's explicit approval, and calling this tool renders no UI and does not interrupt the conversation, so never announce it or ask the u\n[… 2067 characters trimmed …]\nitten relative to the working directory, or ~-prefixed, not absolute paths under the user's home) remain the right evidence.\n- If the issue looks like a security vulnerability: describe the class of problem, never a working exploit or step-by-step extraction path.\n- Draft only at the natural moments listed above, and at most one draft per distinct issue; never re-draft the same issue in a session.",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "type": {
+            "description": "What kind of feedback this is.",
+            "type": "string",
+            "enum": [
+             "bug",
+             "idea",
+             "missing_capability"
+            ]
+           },
+           "title": {
+            "description": "Short, specific one-line summary of the issue.",
+            "type": "string",
+            "minLength": 1
+           },
+           "details": {
+            "description": "Labeled bullets, in order: **What happened:** (observed vs. expected, exact error text if short); **What the user said:** (quoted, or \"User didn't comment; observed by the model.\"); **Repro:** (minimal steps); **Evidence:** (request IDs, timestamps, paths, versions; omit if none); optionally a final **Cause:** only if verified in-session. One to three lines per bullet. No narrative paragraphs, no speculation, no secrets.",
+            "type": "string",
+            "minLength": 1
+           },
+           "area": {
+            "description": "Optional short tag naming the part of Claude Code this is about (e.g. \"hooks config\", \"/help\", \"file editing\"). Leave blank if unclear.",
+            "type": "string"
+           },
+           "failure_mode": {
+            "description": "When the report is about MODEL BEHAVIOR (not a product bug), the closest failure mode, or `other` when it is a model-behavior issue that fits no listed value. Omit only when the report is a product/tool bug with no model-behavior component.",
+            "type": "string",
+            "enum": [
+             "instruction_following",
+             "destructive_actions",
+             "code_quality",
+             "repetition_and_looping",
+             "model_regression",
+             "overconfidence_and_hallucination",
+             "context_and_memory",
+             "overeager",
+             "over_correction",
+             "stopping_short",
+             "dispute_or_decline",
+             "subagent_overspawn",
+             "tone_or_preachiness",
+             "excessive_questions",
+             "unwanted_scope",
+             "other"
+            ]
+           },
+           "task_category": {
+            "description": "What kind of task the session was doing when the issue occurred, or `other` when it is a clear task that fits no listed value. Omit only if genuinely unclear.",
+            "type": "string",
+            "enum": [
+             "code_edit",
+             "debug",
+             "explain",
+             "plan",
+             "shell",
+             "search",
+             "review",
+             "other"
+            ]
+           }
+          },
+          "required": [
+           "type",
+           "title",
+           "details"
+          ],
+          "additionalProperties": false
+         }
+        }
+       }
+      },
+      {
+       "type": "tool_addition",
+       "tool": {
+        "type": "tool_definition",
+        "definition": {
+         "name": "mcp__x",
+         "description": "Create a doc, or apply several operations to one doc atomically.",
+         "input_schema": {
+          "type": "object",
+          "properties": {
+           "batch": {
+            "type": "array"
+           },
+           "container": {
+            "type": "object",
+            "properties": {
+             "kind": {
+              "type": "string"
+             },
+             "id": {
+              "type": "string"
+             },
+             "create": {
+              "type": "object"
+             }
+            },
+            "required": [
+             "kind"
+            ]
+           },
+           "verbose": {
+            "type": "boolean"
+           },
+           "opId": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      },
+      {
+       "type": "tool_addition",
+       "tool": {
+        "type": "tool_definition",
+        "definition": {
+         "name": "mcp__x",
+         "description": "Docs guides: topic.instructions repeats the server instructions. Read it only if your client dropped them. Also topic.<name>, refusal.<code>. After a doc's birth → [\"topic.index\"].",
+         "input_schema": {
+          "type": "object",
+          "properties": {
+           "items": {
+            "type": "array",
+            "description": "topic.<name> (instructions, index, editing, tabs, comments, charts, chart-definition, diagram, uploads, sharing, skill) or refusal.<code>; several per call is fine."
+           }
+          }
+         }
+        }
+       }
+      },
+      {
+       "type": "tool_addition",
+       "tool": {
+        "type": "tool_definition",
+        "definition": {
+         "name": "mcp__x",
+         "description": "Edit a tab's contents, rename a doc or tab, or change a stored value.",
+         "input_schema": {
+          "type": "object",
+          "properties": {
+           "ref": {
+            "type": "object",
+            "properties": {
+             "object": {
+              "type": "string",
+              "enum": [
+               "project",
+               "file",
+               "node",
+               "utterance",
+               "enum"
+              ]
+             },
+             "id": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "object",
+             "id"
+            ]
+           },
+           "engine": {
+            "type": "string"
+           },
+           "payload": {
+            "anyOf": [
+             {
+              "type": "object"
+             },
+             {
+              "type": "string"
+             }
+            ]
+           },
+           "container": {
+            "type": "object",
+            "properties": {
+             "kind": {
+              "type": "string"
+             },
+             "id": {
+              "type": "string"
+             },
+             "version": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "kind",
+             "id"
+            ]
+           },
+           "verbose": {
+            "type": "boolean"
+           },
+           "opId": {
+            "type": "string"
+           },
+           "answering": {
+            "type": "string",
+            "maxLength": 64
+           }
+          },
+          "required": [
+           "ref",
+           "payload"
+          ]
+         }
+        }
+       },
+       "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+       }
+      }
+     ]
+    }
+   ],
+   "tools": [
+    {
+     "name": "Agent"
+    },
+    {
+     "name": "Artifact"
+    },
+    {
+     "name": "AskUserQuestion"
+    },
+    {
+     "name": "Bash"
+    },
+    {
+     "name": "Edit"
+    },
+    {
+     "name": "ExitPlanMode"
+    },
+    {
+     "name": "ListAgents"
+    },
+    {
+     "name": "Monitor"
+    },
+    {
+     "name": "Read"
+    },
+    {
+     "name": "ReportFindings"
+    },
+    {
+     "name": "ScheduleWakeup"
+    },
+    {
+     "name": "ShareOnboardingGuide"
+    },
+    {
+     "name": "Skill"
+    },
+    {
+     "name": "TaskStop"
+    },
+    {
+     "name": "ToolSearch"
+    },
+    {
+     "name": "Workflow"
+    },
+    {
+     "name": "DeferredToolPlaceholder"
+    },
+    {
+     "name": "Write"
+    }
+   ],
+   "metadata": {
+    "user_id": "{\"session_id\": \"a8e8c432-df95-4307-a08f-1c879340c647\"}"
+   },
+   "max_tokens": 128000,
+   "stream": true,
+   "thinking": {
+    "type": "adaptive",
+    "display": "updates"
+   },
+   "output_config": {
+    "effort": "medium"
+   }
+  },
+  "trimmed": 0
+ },
+ {
+  "name": "turn-error",
+  "method": "POST",
+  "path": "/h/probe/l/967000/v1/messages?beta=true",
+  "headers": {
+   "user-agent": "claude-cli/2.1.314 (external, cli)",
+   "x-claude-code-session-id": "a8e8c432-df95-4307-a08f-1c879340c647",
+   "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,inline-tools-2026-09-15,advisor-tool-2026-03-01,advanced-tool-use-2025-11-20,effort-2025-11-24,afk-mode-2026-01-31,extended-cache-ttl-2025-04-11",
+   "anthropic-version": "2023-06-01",
+   "x-app": "cli",
+   "x-claude-code-prompt-id": "3c97b945-ef88-4ac0-a38a-31ac5751dd84",
+   "x-claude-code-request-class": "main"
+  },
+  "body": {
+   "model": "claude-sonnet-5-5",
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# userEmail\nThe user's email address is me@example.com. Use it only to identify the user, such as for authorship, attribution, or filtering their own work. Never send it to an unrelated service, such as in a request header, URL, or payload, unless the user explicitly asks.\n\nClaude Code attached this context automatically; it isn't part of the user's message. It describes the user's own account and workspace, so they don't need it reported back.\n</system-reminder>"
+      },
+      {
+       "type": "text",
+       "text": "<system-reminder>\nAttribution for git commits and pull requests you create from here on (this replaces Claude Code's own earlier attribution guidance, such as a previous copy of this reminder; the user's own instructions about these lines, such as a CLAUDE.md or memory rule, take precedence over this reminder, but do not add attribution lines this reminder leaves out):\n- End git commit messages with:\nCo-Authored-By: Claude Sonnet 5.5 <me@example.com>\n- End pull request descriptions with:\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n</system-reminder>\n"
+      },
+      {
+       "type": "text",
+       "text": "Read notes.txt and tell me the secret number, in one sentence."
+      }
+     ]
+    },
+    {
+     "role": "system",
+     "content": "# Environment\nYou have been invoked in the following environment: \n - Primary working directory: /private/tmp/claude-501/f7cl337275/w\n - Is a git repository: false\n - Platform: darwin\n - Shell: zsh\n - OS Version: Darwin 24.6.0\n - Scratchpad directory: /private/tmp/claude-501/-private-tmp-claude-501-f7cl337275-w/a8e8c432-df95-4307-a08f-1c879340c647/scratchpad — always use it for temporary files (intermediate results, scripts, outputs that don't belong in the project) instead of `/tmp` or other system temp directories; it is session-specific, isolated from the project, and can generally be used without permission prompts. Only use `/tmp` if the user explicitly asks. Whenever you name a file in it to the user, write the file's complete absolute path in one piece, not a bare filename, a path that starts at the scratchpad folder, or the directory followed by filenames: a shortened path is read against the working directory and leads nowhere.\n - Downloaded files and extracted archives are un\n[… 30769 characters trimmed …]\nAny changes before we start?\", or similar MUST use ExitPlanMode.\n\nNOTE: At any point in time through this workflow you should feel free to ask the user questions or clarifications using the AskUserQuestion tool. Don't make large assumptions about user intent. The goal is to present a well researched plan to the user, and tie any loose ends before implementation begins.\n\nToday's date is 2026-10-29.",
+     "output_config": {
+      "effort": "medium"
+     }
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "tool_use",
+       "id": "toolu_01Dzai7eoyNiG8UcoE7uYsbd",
+       "name": "Skill",
+       "input": {
+        "skill": "keybindings-help"
+       },
+       "caller": {
+        "type": "direct"
+       }
+      },
+      {
+       "type": "tool_use",
+       "id": "toolu_01RjgYdXjSoSxCc37wjuASSc",
+       "name": "Skill",
+       "input": {
+        "skill": "probe-greet"
+       },
+       "caller": {
+        "type": "direct"
+       }
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "tool_result",
+       "tool_use_id": "toolu_01Dzai7eoyNiG8UcoE7uYsbd",
+       "content": "Launching skill: keybindings-help"
+      },
+      {
+       "type": "tool_result",
+       "tool_use_id": "toolu_01RjgYdXjSoSxCc37wjuASSc",
+       "content": "Launching skill: probe-greet"
+      },
+      {
+       "type": "text",
+       "text": "# Keybindings Skill\n\nCreate or modify `~/.claude/keybindings.json` to customize keyboard shortcuts.\n\n## CRITICAL: Read Before Write\n\n**Always read `~/.claude/keybindings.json` first** (it may not exist yet). Merge changes with existing bindings — never replace the entire file.\n\n- Use **Edit** tool for modifications to existing files\n- Use **Write** tool only if the file does not exist yet\n\n## File Format\n\n```json\n{\n  \"$schema\": \"https://www.schemastore.org/claude-code-keybindings.json\",\n  \"$docs\": \"https://code.claude.com/docs/en/keybindings\",\n  \"bindings\": [\n    {\n      \"context\": \"Chat\",\n      \"bindings\": {\n        \"ctrl+e\": \"chat:externalEditor\"\n      }\n    }\n  ]\n}\n```\n\nAlways include the `$schema` and `$docs` fields.\n\n## Keystroke Syntax\n\n**Modifiers** (combine with `+`):\n- `ctrl` (alias: `control`)\n- `alt` (aliases: `opt`, `option`) — note: `alt` and `meta` are identical in terminals\n- `shift`\n- `meta` — same key as `alt` in terminals (Option key on macOS)\n- `cmd` (aliases: `comma\n[… 13552 characters trimmed …]\ncroll |\n| `selection:extendLineStart` | `shift+home` | Scroll |\n| `selection:extendLineEnd` | `shift+end` | Scroll |\n| `agents:switchView` | `ctrl+s` | Agents |\n| `agents:togglePin` | `ctrl+t` | Agents |\n| `agents:find` | `ctrl+f` | Agents |\n| `agents:nextGroup` | `ctrl+down`, `meta+down` | Agents |\n| `agents:previousGroup` | `ctrl+up`, `meta+up` | Agents |\n| `agents:rename` | `ctrl+r` | Agents |\n"
+      },
+      {
+       "type": "text",
+       "text": "Base directory for this skill: /private/tmp/claude-501/f7cl337275/w/.claude/skills/probe-greet\n\nReply with exactly: \"Ahoy, <the name in the arguments>!\" and nothing else.\n"
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "loaded"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "<command-message>probe-greet</command-message>\n<command-name>/probe-greet</command-name>\n<command-args>Bob</command-args>\n"
+      },
+      {
+       "type": "text",
+       "text": "Base directory for this skill: /private/tmp/claude-501/f7cl337275/w/.claude/skills/probe-greet\n\nReply with exactly: \"Ahoy, <the name in the arguments>!\" and nothing else.\n\n\nARGUMENTS: Bob"
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "Ahoy, Bob!",
+       "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+       }
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "PROBE-API-ERROR: reply with just: ok",
+       "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+       }
+      }
+     ]
+    }
+   ],
+   "tools": [
+    {
+     "name": "Agent"
+    },
+    {
+     "name": "Artifact"
+    },
+    {
+     "name": "AskUserQuestion"
+    },
+    {
+     "name": "Bash"
+    },
+    {
+     "name": "Edit"
+    },
+    {
+     "name": "ExitPlanMode"
+    },
+    {
+     "name": "ListAgents"
+    },
+    {
+     "name": "Monitor"
+    },
+    {
+     "name": "Read"
+    },
+    {
+     "name": "ReportFindings"
+    },
+    {
+     "name": "ScheduleWakeup"
+    },
+    {
+     "name": "ShareOnboardingGuide"
+    },
+    {
+     "name": "Skill"
+    },
+    {
+     "name": "TaskStop"
+    },
+    {
+     "name": "ToolSearch"
+    },
+    {
+     "name": "Workflow"
+    },
+    {
+     "name": "DeferredToolPlaceholder"
+    },
+    {
+     "name": "Write"
+    }
+   ],
+   "metadata": {
+    "user_id": "{\"session_id\": \"a8e8c432-df95-4307-a08f-1c879340c647\"}"
+   },
+   "max_tokens": 128000,
+   "stream": true,
+   "thinking": {
+    "type": "adaptive"
+   },
+   "output_config": {
+    "effort": "medium"
+   }
+  },
+  "trimmed": 68
+ },
+ {
+  "name": "unread-count_tokens",
+  "method": "POST",
+  "path": "/h/probe/l/967000/v1/messages/count_tokens?beta=true",
+  "headers": {
+   "user-agent": "claude-cli/2.1.314 (external, cli)",
+   "x-claude-code-session-id": "a8e8c432-df95-4307-a08f-1c879340c647",
+   "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,token-counting-2024-11-01",
+   "anthropic-version": "2023-06-01",
+   "x-app": "cli",
+   "x-claude-code-request-class": "auxiliary"
+  },
+  "body": {
+   "model": "claude-sonnet-5-5",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write code that reads like the surrounding code: match its comment density, naming, and idiom."
+    }
+   ],
+   "tools": []
+  },
+  "trimmed": 0
+ }
+]

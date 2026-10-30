@@ -87,6 +87,64 @@ class ClaudeCodeTest(unittest.TestCase):
         self.assertEqual((system.kind, system.detail["notices"][0]["id"], system.detail["notices"][0]["ended"]),
                          (Kind.TASK_NOTICE, "t1", True))
 
+    # as Claude Code 2.1.314 sends them: the Skill tool's results, then each skill's instructions after them all, bare
+    # for a bundled skill with no files of its own (artifact-diagramming), opened by the base directory for one on disk
+    @staticmethod
+    def skills(*loads):
+        return {"role": "assistant", "content": [
+            {"type": "tool_use", "id": f"t{i}", "name": "Skill", "input": {"skill": name}} for i, name in enumerate(loads)]}
+
+    @staticmethod
+    def results(*texts):
+        return {"role": "user", "content": [{"type": "tool_result", "tool_use_id": f"t{i}", "content": text}
+                                            for i, text in enumerate(texts)]}
+
+    def test_a_skill_the_skill_tool_loads_bare_is_claude_code_s(self):
+        message = self.results("Quickstart: 3 types.", "Launching skill: artifact-diagramming")
+        message["content"].append({"type": "text", "text": "Draw as the engineer ...\n\n## What to draw\n\nARGUMENTS: a map"})
+        got = CLAUDE.read(CLAUDE.items([user("Draw it."), self.skills("Artifact", "artifact-diagramming"), message]))
+        self.assertEqual([(p.kind, p.words) for p in got], [(Kind.USER, "Draw it."), (Kind.TOOL_CALL, None),
+                                                            (Kind.TOOL_CALL, None), (Kind.TOOL_RESULT, None),
+                                                            (Kind.TOOL_RESULT, None), (Kind.SKILL, None)])
+        self.assertEqual({k: got[-1].detail[k] for k in ("name", "args", "instructions", "call")},
+                         {"name": "artifact-diagramming", "args": "a map",
+                          "instructions": "Draw as the engineer ...\n\n## What to draw", "call": "t1"})
+        self.assertEqual(harness_kit.claude.note_detail(got[-1].text, Kind.SKILL),       # read again, stored as a skill's
+                         {"kind": Kind.SKILL, "name": "", "args": "a map", "instructions": "Draw as the engineer ...\n\n## What to draw"})
+        self.assertIsNone(harness_kit.claude.note_detail(got[-1].text))                  # its words alone don't say so
+
+    def test_skills_loaded_together_each_in_the_order_of_their_results(self):
+        message = self.results("Launching skill: keybindings-help", "Launching skill: greet", "Launching skill: draw")
+        message["content"] += [{"type": "text", "text": "# Keybindings\n\nEdit ~/.claude/keybindings.json."},
+                               {"type": "text", "text": "<system-reminder>a note</system-reminder>"},
+                               {"type": "text", "text": "Base directory for this skill: /w/.claude/skills/greet\n\nSay hi."},
+                               {"type": "text", "text": "(Re-invocation of /draw — the skill instructions were previously "
+                                                        "loaded; the arguments or dynamic output below are new.)"},
+                               {"type": "text", "text": "Skill /draw is already loaded above; instructions unchanged."}]
+        got = CLAUDE.read(CLAUDE.items([self.skills("keybindings-help", "greet", "draw"), message]))[6:]
+        self.assertEqual([(p.kind, p.detail.get("name"), p.detail.get("call")) for p in got],
+                         [(Kind.SKILL, "keybindings-help", "t0"), (Kind.ENVIRONMENT, None, None),
+                          (Kind.SKILL, "greet", "t1"), (Kind.OTHER, None, None), (Kind.SKILL, "draw", "t2")])
+
+    def test_the_user_s_words_after_a_skill_loads_are_theirs(self):
+        wrapped = ("The user sent a new message while you were working:\nalso b\n\nThis is how Claude Code surfaces "
+                   "messages the user sends mid-turn — within the running turn.")
+        for after, kinds in (([user(wrapped)], [(Kind.MID_TURN, "also b")]),          # written while it loaded
+                             ([user("[Request interrupted by user]"), user("stop that")],  # stopped, then asked anew
+                              [(Kind.INTERRUPT, None), (Kind.USER, "stop that")]),
+                             ([user("hi again")], [(Kind.USER, "hi again")])):     # a turn with no answer, joined to the next
+            message = self.results("Launching skill: draw")
+            message["content"] += [{"type": "text", "text": "Draw it well."}] + [b for m in after for b in m["content"]]
+            got = CLAUDE.read(CLAUDE.items([self.skills("draw"), message]))
+            self.assertEqual([(p.kind, p.words) for p in got[2:]], [(Kind.SKILL, None)] + kinds)
+        got = CLAUDE.read(CLAUDE.items([self.skills("draw"), self.results("Launching skill: draw"), said("Drawn."),
+                                        user("Draw it well.")]))             # a message of its own, after the agent's: theirs
+        self.assertEqual((got[-1].kind, got[-1].words), (Kind.USER, "Draw it well."))
+        message = self.results("error: Unknown skill: draw")                 # no skill loaded: what follows is theirs
+        message["content"][0]["is_error"] = True
+        message["content"].append({"type": "text", "text": "Draw it well."})
+        self.assertEqual(CLAUDE.read(CLAUDE.items([self.skills("draw"), message]))[-1].kind, Kind.USER)
+
     def test_a_compacted_history_s_summary_and_what_it_sends_again(self):
         summary = user("This session is being continued from a previous conversation that ran out of context. ...")
         got = CLAUDE.read(CLAUDE.items([summary, user("<system-reminder>env</system-reminder>"), user("go on"),
