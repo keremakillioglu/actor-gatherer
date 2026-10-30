@@ -3676,7 +3676,7 @@ function addPane(g, c, view, at, size = 1) {
   p.call = (what, ...args) => {                      // what the frame's page does when asked (agPane, its paneReady)
     let api = null;
     try { api = p.ready && p.frame.contentWindow && p.frame.contentWindow.agPane; } catch (e) { /* gone */ }
-    if (api && api[what]) api[what](...args);
+    return api && api[what] ? api[what](...args) : undefined;
   };
   const before = panes.others[at] ? panes.others[at].gutter : null;
   document.getElementById("panes").insertBefore(p.gutter, before);
@@ -3874,6 +3874,7 @@ function paneReady() {
     focused: (on) => document.documentElement.classList.toggle("pane-focused", !!on),
     top: (h) => setTopRow(h),
     editor: () => keepingPlace(renderMain),          // the Editor opened or closed above the panes: its head, in the bar or not
+    escape: () => escapeShown(),                     // an Esc on the page outside the frame, this pane in focus
   });
   PANE.ready(window, state.selected);
   watchTop(document.getElementById("pane-head"), "here");
@@ -4163,14 +4164,30 @@ function dashboardCommand(text) {
   return !!run;
 }
 // Esc closes the panel -- unless it is the message box's: there it interrupts the agent's turn (interrupt), as in its
-// terminal (and dismisses what the agent asks, as there). From the message box only: an Esc elsewhere on the page is the
-// reader's for something else -- closing what is open, clearing a selection -- and a turn stopped by it was not meant to
-// be (with a message queued, Claude Code sends that at once, the turn cut short). Before the rest (capture).
+// terminal (and dismisses what the agent asks, as there). So does it from anywhere else on the page that nothing else
+// takes it (escapeShown), for the actor of the pane in focus (another pane's: its agPane.escape) -- else an Esc after a
+// click on the actor in the list, a turn or a button did nothing at all, the focus out of the box. Not typed in another
+// box, the Editor or a terminal, and nothing open that the Esc is for: a menu, a dialog, the settings. Before the rest
+// (capture), so it knows whether the settings were open before their own Esc closes them.
 document.addEventListener("keydown", (ev) => {
-  if (ev.key !== "Escape" || ev.defaultPrevented || ev.isComposing || !state.selected || isShell(state.selected[1])) return;
-  if (!ev.target || ev.target.id !== "composer-text") return;
-  if (interrupt(selectedInfo())) ev.preventDefault();
+  if (ev.key !== "Escape" || ev.defaultPrevented || ev.isComposing) return;
+  const n = ev.target;
+  if (n && n.id === "composer-text") {
+    if (state.selected && !isShell(state.selected[1]) && interrupt(selectedInfo())) ev.preventDefault();
+    return;
+  }
+  if ((n && n.closest && n.closest("input, textarea, select, [contenteditable], .xterm, #ed-top"))
+    || document.querySelector("[role=menu]:not([hidden]), dialog[open]")
+    || !document.getElementById("about").hidden || !document.getElementById("cfg-file").hidden) return;
+  if (!PANE && panes.focus !== panes.here ? panes.focus.call("escape") : escapeShown()) ev.preventDefault();
 }, true);
+// An Esc from outside the message box, for the actor this pane shows: in Chat, its panel closed (the Esc closes that),
+// and not while the agent asks -- the question, there to answer in Chat, would be dismissed unseen.
+function escapeShown() {
+  const info = selectedInfo();
+  return !!state.selected && !isShell(state.selected[1]) && !state.details && chatView().id === "files"
+    && !!info && info.status !== "asking" && interrupt(info);
+}
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")
     && !(state.selected && isShell(state.selected[1]))) setDetails(false);
