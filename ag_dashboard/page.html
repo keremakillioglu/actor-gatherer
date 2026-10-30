@@ -599,7 +599,9 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .gatherer-row .act.start .badge { width: 16px; height: 16px; display: block; pointer-events: none; }
 .gatherer-row .act.start.busy { opacity: 1; }
 .gatherer-row .act.start.busy .badge { animation: term-blink 1s ease-in-out infinite; }
-.gatherer-row .act.start.shell svg, .gatherer-row .act.start.branch svg { display: block; pointer-events: none; }
+.gatherer-row .act.start:is(.new-actor, .new-more) svg { display: block; pointer-events: none; }
+.gatherer-row .act.start.new-more svg { stroke-width: 2.4; }
+.gatherer-row .act.start:is(.new-actor, .new-more).busy svg { animation: term-blink 1s ease-in-out infinite; }
 /* the gatherer agent's button: its face, the manager's (crewFace); hidden from the list, its status at its corner */
 .gatherer-row .act.start.crew { position: relative; }
 .gatherer-row .act.start.crew .crew-face { width: 18px; height: 18px; display: block; pointer-events: none; }
@@ -614,7 +616,6 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .gatherer-row .act.start.crew:not(.on) .crew-face { filter: grayscale(.75); opacity: .8; }
 .gatherer-row .act.start.crew:hover .crew-face { filter: none; opacity: 1; }
 .gatherer-row .act.start.crew.busy .crew-face { animation: term-blink 1s ease-in-out infinite; }
-.gatherer-row .act.start.shell.busy svg { animation: term-blink 1s ease-in-out infinite; }
 .newform { margin: 4px 16px 12px; padding: 10px 12px; border: 1px solid var(--ring); border-radius: 8px; background: var(--page); display: grid; gap: 8px; }
 .newform label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); }
 .newform input, .newform select, .composer textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
@@ -639,7 +640,8 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
 .newform label.check input { margin: 2px 0 0; padding: 0; width: 14px; height: 14px; flex: none; }
 .newform .desc.route code { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); }
 .newform .link { border: 0; background: none; padding: 0; color: var(--s1); font: inherit; font-size: 12px; cursor: pointer; justify-self: start; }
-/* the branch button's drop-down: the gatherer's sources, and adding one */
+/* the branch button's drop-down: the gatherer's sources, and adding one; and, in its style, a gatherer row's other
+   drop-downs (popMenu), each item's mark beside it */
 .br-menu { position: fixed; z-index: 60; min-width: 250px; max-width: min(380px, calc(100vw - 16px)); padding: 5px; display: grid; gap: 1px;
   background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 12.5px; }
 .br-menu .hd { color: var(--muted); font-size: 11px; padding: 3px 8px 4px; }
@@ -652,6 +654,9 @@ details summary { cursor: pointer; color: var(--ink-2); font-size: 12px; margin-
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .br-menu button.add { display: block; color: var(--s1); }
 .br-menu .sep { height: 1px; background: var(--grid); margin: 3px 2px; }
+.row-menu button { grid-template-columns: 16px minmax(0, 1fr); align-items: center; }
+.row-menu button > :is(svg, .badge) { width: 16px; height: 16px; display: block; color: var(--muted); }
+.row-menu button .at { grid-column: 2; font-family: inherit; font-size: 11.5px; line-height: 1.35; white-space: normal; }
 /* the popup a new actor on a branch starts from */
 dialog.br-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); padding: 0; border: 1px solid var(--ring);
   border-radius: 10px; background: var(--page); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
@@ -940,25 +945,30 @@ button:disabled { opacity: .5; cursor: default; }
 .ed-close:hover { color: var(--ink); background: var(--wash); }
 /* DocWriter: a gatherer's button for a new one, its menu of the harnesses its agent may run on; and the view of a
    DocWriter's actor, its page in a frame filling the pane */
-.gatherer-row .dw-start { position: relative; display: inline-flex; }
-.dw-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; width: 270px; display: grid; gap: 6px; padding: 8px;
-  background: var(--surface); border: 1px solid var(--grid); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+.dw-menu { position: fixed; z-index: 60; width: min(440px, calc(100vw - 16px)); box-sizing: border-box; display: grid;
+  grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px; background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
   font-size: 12px; color: var(--ink-2); text-align: left; cursor: default; }
 .dw-menu .head { font-size: 12px; font-weight: 600; color: var(--ink); }
 .dw-menu label { display: grid; gap: 3px; }
 .dw-menu input { font: 12px/1.4 var(--mono, ui-monospace, monospace); padding: 4px 6px; color: var(--ink); background: var(--page);
   border: 1px solid var(--grid); border-radius: 5px; width: 100%; box-sizing: border-box; }
-.dw-menu .folders { display: flex; flex-wrap: wrap; gap: 4px; }
-.dw-menu .folders button { border: 1px solid var(--grid); background: none; border-radius: 9px; padding: 1px 7px; font: 11px var(--mono, monospace);
-  color: var(--ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dw-menu .folders button:hover { color: var(--ink); background: var(--wash); }
+.dw-menu .folders { display: grid; gap: 1px; min-width: 0; }
+.dw-menu .folders .lbl { color: var(--muted); font-size: 11px; margin-bottom: 2px; }
+.dw-menu .folders button { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 10px; text-align: left;
+  border: 0; background: none; border-radius: 5px; padding: 4px 6px; color: var(--ink); font: inherit; cursor: pointer; min-width: 0; }
+.dw-menu .folders button .nm { font-weight: 600; white-space: nowrap; }
+.dw-menu .folders button .at { color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dw-menu .folders button:hover, .dw-menu .folders button:focus-visible { background: var(--wash); outline: none; }
 .dw-menu .on { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .dw-menu .on button { display: flex; align-items: center; gap: 6px; border: 1px solid var(--grid); background: none; padding: 4px 9px;
   border-radius: 6px; font-size: 12.5px; color: var(--ink); white-space: nowrap; }
 .dw-menu .on button:hover, .dw-menu .on button:focus-visible { background: var(--wash); }
 .dw-menu .on button[disabled] { opacity: .5; }
 .dw-menu .badge { width: 16px; height: 16px; display: block; }
-.dw-menu .err { color: var(--critical); }
+.dw-menu .err { color: var(--critical); overflow-wrap: anywhere; }
+.dw-menu .err:empty { display: none; }
 .chat .chat-frame.dw-frame { position: relative; overflow: hidden; padding: 0; }
 .dw-slot { position: absolute; inset: 0; }
 /* its frames, never moved (a frame moved loads again): laid over the slot of the view shown, else hidden -- running */
@@ -2522,6 +2532,9 @@ const ICONS = {
   wrap: "M2 3.5h12M2 7.5h9.25a2.25 2.25 0 0 1 0 4.5H8.5M10 10.5 8.5 12 10 13.5M2 11.5h3.5",   // long lines wrapped
   branch: "M4.5 2.5v8.5M3 12.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M10 4.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0"
     + "M11.5 6c0 3.25-7 2.25-7 5",                                       // an actor on a branch of its own
+  agent: "M4.75 5.25h6.5A1.75 1.75 0 0 1 13 7v4.5a1.75 1.75 0 0 1-1.75 1.75h-6.5A1.75 1.75 0 0 1 3 11.5V7a1.75 1.75 0 0 1 1.75-1.75z"
+    + "M8 2.5v2.75M6.25 8.25v1.5M9.75 8.25v1.5M1.25 8.5v2.5M14.75 8.5v2.5",   // a new actor: an agent's head
+  more: "M3.5 8h.01M8 8h.01M12.5 8h.01",                              // more of them, in a drop-down
 };
 // A speech bubble: the actor can be messaged from the page; struck through, it could be but another
 // process has it open.
@@ -4290,93 +4303,174 @@ async function openCoordinator(g) {
   const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
   if (box) box.focus();
 }
+// A gatherer row's start buttons: its gatherer agent (its face), "+ actor" -- a drop-down of the harnesses a new actor
+// may run on, or, with one, that one at once -- and "+ more", a drop-down of the other things started there: an actor on
+// a branch of its own, a DocWriter, a terminal.
 function startButtons(g) {
-  const hs = startable(), cwd = startCwd(g);
-  const busy = (h) => state.starting && state.starting.gatherer === g.name && state.starting.harness === h ? " busy" : "";
+  const hs = startable(), cwd = startCwd(g), where = cwd ? tildePath(cwd, state.home.home_dir) : null;
+  const starting = state.starting && state.starting.gatherer === g.name ? String(state.starting.harness) : "";
+  const off = state.starting ? { disabled: "" } : {};
   const crew = g.agents.find(isCoordinator), hidden = !!crew && crewHidden.has(g.name);
   const [cls, label] = hidden ? statusOf(crew) : [null, null];      // hidden from the list: its status here
-  const coordinator = hs.length || crew ? [el("button", { class: "act start crew" + busy(CREW_START) + (crew ? " on" : ""), type: "button",
-    ...(state.starting ? { disabled: "" } : {}),
+  const coordinator = hs.length || crew ? el("button", { class: "act start crew" + (starting === CREW_START ? " busy" : "") + (crew ? " on" : ""),
+    type: "button", ...off,
     title: hidden ? `The gatherer agent (${label.toLowerCase()}), hidden from the list: click to show it and open it`
       : crew ? "The gatherer agent: it coordinates this gatherer's actors -- tell it what to arrange"
       : "Start the gatherer agent: it coordinates this gatherer's actors, settles their conflicts, and arranges their work for you",
     "aria-label": crew ? `The gatherer agent of ${g.name}` : `Start the gatherer agent of ${g.name}`, onclick: () => openCoordinator(g) },
-    crewFace(crew, MANAGER), hidden ? el("i", { class: `crew-dot ${cls}`, "aria-hidden": "true" }) : null)] : [];
-  const shell = state.home.terminals === false ? [] : [el("button", { class: "act start shell" + busy(SHELL_START), type: "button",
-    ...(state.starting ? { disabled: "" } : {}), title: `New terminal in ${cwd ? tildePath(cwd, state.home.home_dir) : "a directory you choose"}`,
-    "aria-label": `New terminal, listed under ${g.name}`, onclick: () => addSession(g, SHELL_START) },
-    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.terminal, 16))];
-  if (!hs.length) return [...coordinator, el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+"), ...shell];
-  const branch = el("button", { class: "act start branch" + busy(BRANCH_START), type: "button", ...(state.starting ? { disabled: "" } : {}),
-    title: `New actor on a branch of its own, in ${g.name}: it works in a worktree of the gatherer's project, and what it changes is merged into the project`,
-    "aria-label": `New actor on a branch of its own, in ${g.name}`, "aria-haspopup": "menu", "aria-expanded": "false",
-    onclick: (ev) => openBranchMenu(g, ev.currentTarget) },
-    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.branch, 16));
-  return [...coordinator, ...hs.map((h) => el("button", { class: "act start" + busy(h),
-    type: "button", ...(state.starting ? { disabled: "" } : {}), title: `New ${harnessName(h)} session in ${g.name}`,
-    "aria-label": `New ${harnessName(h)} session in ${g.name}`, onclick: () => addSession(g, h) },
-    el("span", { class: "plus", "aria-hidden": "true", text: "+" }), harnessBadge(h))), branch,
-    ...(state.home.docwriter ? [dwStart(g, hs, cwd)] : []), ...shell];
+    crewFace(crew, MANAGER), hidden ? el("i", { class: `crew-dot ${cls}`, "aria-hidden": "true" }) : null) : null;
+  const plus = () => el("span", { class: "plus", "aria-hidden": "true", text: "+" });
+  const actorKey = `actor:${g.name}`, moreKey = `more:${g.name}`;
+  const actor = !hs.length ? el("button", { class: "act add", type: "button", disabled: "", title: NO_HARNESS, "aria-label": NO_HARNESS }, "+")
+    : el("button", { class: "act start new-actor" + (hs.includes(starting) ? " busy" : ""), type: "button", ...off, "data-pop": actorKey,
+      title: `New actor in ${g.name}${where ? `, in ${where}` : ""}: ${hs.map(harnessName).join(" or ")}`,
+      "aria-label": `New actor in ${g.name}`, ...(hs.length > 1 ? { "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === actorKey) } : {}),
+      onclick: (ev) => hs.length > 1 ? openActorMenu(g, hs, ev.currentTarget) : addSession(g, hs[0]) },
+      plus(), strokeIcon(ICONS.agent, 16));
+  const others = moreStarts(g, hs, where);
+  const more = others.length ? el("button", { class: "act start new-more" + (starting === SHELL_START || starting === BRANCH_START
+      || starting.startsWith(DW_START) ? " busy" : ""), type: "button", ...off, "data-pop": moreKey,
+    title: `More to start in ${g.name}: ${others.map((o) => o.text.replace("…", "").toLowerCase()).join(", ")}`,
+    "aria-label": `More to start in ${g.name}`, "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === moreKey),
+    onclick: (ev) => openMoreMenu(g, hs, ev.currentTarget) }, plus(), strokeIcon(ICONS.more, 16)) : null;
+  return [coordinator, actor, more].filter(Boolean);
 }
-// A gatherer's DocWriter button: a new DocWriter -- its own actor -- in a folder of the reader's choice. Its menu asks
-// which (the gatherer's current one to start with, the folders its actors work in a click away) and the harness its
-// actor runs on: a click on one starts it. What is typed there is kept while the list is drawn again (`state.dwMenu`).
-function dwStart(g, hs, cwd) {
-  const m = state.dwMenu && state.dwMenu.gatherer === g.name ? state.dwMenu : null;
-  const where = cwd ? tildePath(cwd, state.home.home_dir) : "a folder you choose";
-  const busy = state.starting && state.starting.gatherer === g.name && String(state.starting.harness).startsWith(DW_START) ? " busy" : "";
-  const button = el("button", { class: "act start dw" + busy, type: "button", ...(state.starting ? { disabled: "" } : {}),
-    title: `New DocWriter (in ${where}, or another folder): write with an agent that proposes its edits beside your text`,
-    "aria-label": `New DocWriter in ${g.name}`, "aria-haspopup": "dialog", "aria-expanded": m ? "true" : "false",
-    onclick: (ev) => {
+// The "+ more" drop-down's starts: what each is, said under it, and what choosing it does.
+function moreStarts(g, hs, where) {
+  const there = where ? `in ${where}` : "in a directory you choose";
+  return [
+    hs.length ? { icon: ICONS.branch, text: "Actor on a branch…", note: "in a worktree of a project: its changes merged into the project",
+      run: (button) => openBranchMenu(g, button) } : null,
+    hs.length && state.home.docwriter ? { icon: ICONS.quill, text: "DocWriter…", note: "write with an agent that proposes its edits beside your text",
+      run: (button) => openPop(`more:${g.name}`, button, dwBox(g, hs)) } : null,
+    state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: there, run: () => addSession(g, SHELL_START) } : null,
+  ].filter(Boolean);
+}
+function openActorMenu(g, hs, button) {
+  const cwd = startCwd(g);
+  const where = cwd ? tildePath(cwd, state.home.home_dir) : "";
+  openPop(`actor:${g.name}`, button, popMenu(where ? `New actor in ${where.replace(/\/+$/, "").split("/").pop() || where}` : `New actor in ${g.name}`,
+    hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => addSession(g, h) })), where));
+}
+function openMoreMenu(g, hs, button) {
+  if (brPick.menu && brPick.menu.g === g.name) return brMenuClose();     // the branch drop-down it opened: pressed again
+  openPop(`more:${g.name}`, button, popMenu(`New in ${g.name}`, moreStarts(g, hs, startCwd(g) && tildePath(startCwd(g), state.home.home_dir))));
+}
+// A drop-down's box: its heading, then an item for each choice -- its mark, what it is, and a note under it.
+function popMenu(head, items, title) {
+  return el("div", { class: "br-menu row-menu", role: "menu", "aria-label": head }, el("div", { class: "hd", text: head, ...(title ? { title } : {}) }),
+    ...items.map((it) => el("button", { type: "button", role: "menuitem", onclick: (ev) => {
       ev.stopPropagation();
-      const dir = cwd ? tildePath(cwd, state.home.home_dir) : "";
-      state.dwMenu = m ? null : { gatherer: g.name, cwd: dir, error: "", focus: true, sel: [dir.length, dir.length] };
-      renderAgents();
-    } }, el("span", { class: "plus", "aria-hidden": "true", text: "+" }), strokeIcon(ICONS.quill, 15));
-  return el("span", { class: "dw-start" }, button, m ? dwMenu(g, hs, m) : null);
+      const button = popButton();
+      closePop();
+      it.run(button);
+    } }, it.mark || strokeIcon(it.icon, 16), el("span", { class: "nm", text: it.text }), it.note ? el("span", { class: "at", text: it.note }) : null)));
 }
-function dwMenu(g, hs, m) {
-  const keep = () => { m.cwd = input.value; m.sel = [input.selectionStart, input.selectionEnd]; };
-  const input = el("input", { type: "text", value: m.cwd, spellcheck: "false", "aria-label": "Folder", placeholder: "~/writing/my-paper",
-    oninput: () => { keep(); if (m.error) { m.error = ""; err.textContent = ""; } }, onkeyup: keep, onmouseup: keep,
-    onfocus: () => { m.focus = true; }, onblur: () => { if (!nameMoving) m.focus = false; },   // not the list drawn again
-    onkeydown: (ev) => { if (ev.key === "Enter") { ev.preventDefault(); keep(); dwGo(g, hs[0]); } } });
-  const err = el("div", { class: "err", role: "alert", text: m.error || "" });
+// A gatherer row's pop-up ("+ actor"'s drop-down, "+ more"'s, the DocWriter box one of those opens): outside the list,
+// fixed under the button it hangs from -- `key`, that button's data-pop, so found again after the list is drawn again --
+// so it may reach past the list's edge without the list scrolling, and the list's redraws leave it be. Closed by its
+// button pressed again, a press elsewhere, Esc, or the page scrolling (but in it) or resizing.
+const rowPop = { key: "", el: null, off: null };
+const popButton = () => rowPop.key && document.querySelector(`[data-pop="${CSS.escape(rowPop.key)}"]`) || null;
+function closePop() {
+  if (!rowPop.el) return;
+  const button = popButton();
+  rowPop.el.remove();
+  rowPop.off();
+  Object.assign(rowPop, { key: "", el: null, off: null });
+  if (button) button.setAttribute("aria-expanded", "false");
+}
+function placePop() {
+  const box = rowPop.el, button = popButton();
+  if (!box || !button) return;
+  const r = button.getBoundingClientRect(), h = box.offsetHeight;
+  const below = r.bottom + 4 + h <= window.innerHeight - 8 || r.top - 4 - h < 8;   // above it only where there is room above
+  box.style.top = `${Math.round(below ? r.bottom + 4 : r.top - 4 - h)}px`;
+  box.style.left = `${Math.round(Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)))}px`;
+}
+function openPop(key, button, box) {
+  const again = rowPop.key === key && box.getAttribute("role") === "menu";
+  closePop();
+  brMenuClose();
+  if (again) return;
+  const away = (ev) => {
+    const b = ev.target.closest && ev.target.closest("[data-pop]");
+    if (!box.contains(ev.target) && !(b && b.dataset.pop === key)) closePop();
+  };
+  const keys = (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault(); ev.stopPropagation();
+      const b = popButton();
+      closePop();
+      if (b) b.focus();
+    } else if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && box.contains(document.activeElement) && box.getAttribute("role") === "menu") {
+      ev.preventDefault();
+      const items = [...box.querySelectorAll("[role=menuitem]")], at = items.indexOf(document.activeElement);
+      items[(at + (ev.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+    }
+  };
+  const scrolled = (ev) => { if (!box.contains(ev.target)) closePop(); };
+  document.addEventListener("pointerdown", away, true);
+  document.addEventListener("keydown", keys, true);
+  window.addEventListener("resize", closePop);
+  window.addEventListener("scroll", scrolled, true);
+  Object.assign(rowPop, { key, el: box, off: () => {
+    document.removeEventListener("pointerdown", away, true);
+    document.removeEventListener("keydown", keys, true);
+    window.removeEventListener("resize", closePop);
+    window.removeEventListener("scroll", scrolled, true);
+  } });
+  document.body.append(box);
+  button.setAttribute("aria-expanded", "true");
+  placePop();
+  const first = box.querySelector("input, [role=menuitem]");
+  if (!first) return;
+  first.focus({ preventScroll: true });
+  if (first.select) { first.setSelectionRange(first.value.length, first.value.length); first.scrollLeft = first.scrollWidth; }   // a folder's end
+}
+// A new DocWriter -- its own actor -- in a folder of the reader's choice: its box asks which (the gatherer's current one
+// to start with, the folders its actors work in a click away) and the harness its actor runs on: a click on one starts it.
+function dwBox(g, hs) {
+  const cwd = startCwd(g), dir = cwd ? tildePath(cwd, state.home.home_dir) : "";
+  const err = el("div", { class: "err", role: "alert" });
+  const input = el("input", { type: "text", value: dir, spellcheck: "false", "aria-label": "Folder", placeholder: "~/writing/my-paper",
+    oninput: () => { err.textContent = ""; },
+    onkeydown: (ev) => { if (ev.key === "Enter") { ev.preventDefault(); dwGo(g, hs[0], box); } } });
   // the folders the gatherer's actors work in, newest first: another a click away
   const seen = new Set(), folders = [];
   for (const a of [...g.agents].sort((x, y) => (y.last || 0) - (x.last || 0))) {
     const d = cwdOf(a);
     if (d && !seen.has(d)) { seen.add(d); folders.push(tildePath(d, state.home.home_dir)); }
   }
-  const picks = folders.length > 1 || (folders.length === 1 && folders[0] !== m.cwd) ? el("div", { class: "folders" },
+  const picks = folders.length > 1 || (folders.length === 1 && folders[0] !== dir) ? el("div", { class: "folders" },
+    el("div", { class: "lbl", text: "Where its actors work" }),
     ...folders.slice(0, 5).map((d) => el("button", { type: "button", title: d,
-      onclick: () => { m.cwd = d; m.sel = [d.length, d.length]; m.focus = true; m.error = ""; renderAgents(); } }, d))) : null;
-  if (m.focus) requestAnimationFrame(() => {        // drawn again: the box as the reader left it
-    if (!input.isConnected || document.activeElement === input) return;
-    input.focus({ preventScroll: true });
-    try { input.setSelectionRange(...m.sel); } catch (e) { /* not a text box now */ }
-  });
-  return el("div", { class: "dw-menu", role: "dialog", "aria-label": "New DocWriter", onclick: (ev) => ev.stopPropagation() },
+      onclick: () => { input.value = d; err.textContent = ""; input.focus(); input.setSelectionRange(d.length, d.length); } },
+      el("span", { class: "nm", text: d.replace(/\/+$/, "").split("/").pop() || d }), el("span", { class: "at", text: d })))) : null;
+  const box = el("div", { class: "dw-menu", role: "dialog", "aria-label": "New DocWriter" },
     el("div", { class: "head", text: "New DocWriter" }),
     el("label", {}, "Folder", input),
     picks,
     el("div", { text: "Its agent on" }),
-    el("div", { class: "on" }, ...hs.map((h) => el("button", { type: "button", ...(state.starting ? { disabled: "" } : {}),
-      onclick: () => { keep(); dwGo(g, h); } }, harnessBadge(h), harnessName(h)))),
+    el("div", { class: "on" }, ...hs.map((h) => el("button", { type: "button", class: "go", onclick: () => dwGo(g, h, box) },
+      harnessBadge(h), harnessName(h)))),
     err);
+  return box;
 }
-// A DocWriter started from the menu, in the folder typed there: why not, if it cannot be, said in the menu.
-async function dwGo(g, harness) {
-  const m = state.dwMenu, cwd = (m && m.cwd || "").trim();
-  if (!m) return;
-  if (!cwd) { m.error = "Which folder?"; renderAgents(); return; }
-  try { await startDocWriter(g.name, cwd, harness); }
-  catch (e) { state.dwMenu = { ...m, error: e.message, focus: true }; renderAgents(); }
+// A DocWriter started from its box, in the folder typed there: the box closed once it is, and why not, if it cannot be,
+// said in it.
+async function dwGo(g, harness, box) {
+  const input = box.querySelector("input"), err = box.querySelector(".err"), cwd = input.value.trim();
+  if (!cwd) { err.textContent = "Which folder?"; input.focus(); return; }
+  const go = [...box.querySelectorAll("button.go")];
+  for (const b of go) b.disabled = true;
+  try {
+    await startDocWriter(g.name, cwd, harness);
+    if (rowPop.el === box) closePop();
+  } catch (e) {
+    if (box.isConnected) { err.textContent = e.message; placePop(); } else setLive(`Not started: ${e.message}`);
+  } finally { for (const b of go) b.disabled = false; }
 }
-// The DocWriter button's menu closed by a click anywhere else, or Esc.
-document.addEventListener("click", () => { if (state.dwMenu) { state.dwMenu = null; renderAgents(); } });
-document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && state.dwMenu) { state.dwMenu = null; renderAgents(); } });
 async function addSession(g, harness) {
   const cwd = startCwd(g);
   if (harness && cwd) {
@@ -4405,7 +4499,6 @@ async function startSession(gatherer, cwd, harness) {
 // A DocWriter started (docwriter.py's `create`): its actor listed, then shown in DocWriter's view.
 async function startDocWriter(gatherer, cwd, harness) {
   state.starting = { gatherer, harness: DW_START + harness };
-  state.dwMenu = null;
   renderAgents();
   try {
     const cfg = await post("/api/docwriter", { gatherer, cwd, harness });

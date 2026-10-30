@@ -363,7 +363,7 @@ Not done yet:
 
 ## Actors on branches of their own
 
-An actor started from a gatherer's branch button (branches.py) works in a worktree of one of the gatherer's projects,
+An actor started from a gatherer's "+ more" drop-down, "Actor on a branch…" (branches.py) works in a worktree of one of the gatherer's projects,
 `<project>-worktrees/ag-<id>` on branch `ag/<id>`, from the project's last commit; what it changes there is merged into
 the project's folder as it changes it -- all of it, but the conflict zone's lines and those the project changed too,
 which wait in the Editor; with "auto-merge with approval", every change waits. Its lines are tinted in its hue until it
@@ -392,8 +392,8 @@ is closed.
 ## DocWriter
 
 DocWriter (github.com/docwriter-org/docwriter, MIT; docwriter.py, assets/src/docwriter) is an actor of its own: a
-gatherer's DocWriter button (+ quill, its menu picking Claude Code or Codex) starts one in the folder a new session there
-would use, and selecting it shows DocWriter's page as its view, filling the pane (its Terminal, Chat and History one
+gatherer's "+ more" drop-down, "DocWriter…" (its box asking the folder and Claude Code or Codex), starts one in the folder a new
+session there would use by default, and selecting it shows DocWriter's page as its view, filling the pane (its Terminal, Chat and History one
 click away; no message box: DocWriter has its own). Its page is built from a pinned copy of DocWriter's source, the parts
 that talked to its server swapped for ones that talk to the dashboard. Its actor is started with DocWriter's system
 prompt and its six document tools (an MCP server of the dashboard's, whose calls a DocWriter page runs on its
