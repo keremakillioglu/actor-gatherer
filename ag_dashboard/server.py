@@ -149,6 +149,7 @@ EDITOR = os.path.join(_VENDOR_DIR, "editor.js")
 LLM_SECONDS = 10.0          # how long the Gatherer's call log is reused before it is read again
 KEEPALIVE = 15.0            # the most a stream stays silent
 COALESCE = 0.03             # after a wake, how long to wait for the rest of a burst (a call stores many events)
+SHARED_SECONDS = 2.0        # a home read for one stream given to another woken by the same change: at most this old
 
 
 def page(snapshot: Optional[dict] = None) -> str:
@@ -195,13 +196,30 @@ def _signature(value) -> str:
 
 
 def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: editor.Editors,
-            crew: coordination.Coordination):
-    def home_view() -> dict:
+            crew: coordination.Coordination, known: Optional[data.Kept] = None):
+    shared, sharing = {"version": None, "at": 0.0, "value": None}, threading.Lock()
+
+    def home_view(woken: bool = False) -> dict:
+        """The home as the page gets it (`read_home`). One read serves every stream woken by the same change
+        (`woken`): read again only once another is rung (the hub's `version`), so a read begun after the ring
+        that woke a stream has what it rang for -- not once for each stream open, which a change woke all of
+        at once, each reading the whole home over the others'. Not one older than SHARED_SECONDS (a page
+        opened long after the last change: what time changed since, the sessions' state). One at a time: a
+        stream woken during a read waits for it, then has it, or reads again for a ring that came during it."""
+        with sharing:
+            if woken and shared["value"] is not None and shared["version"] == hub.version \
+                    and time.time() - shared["at"] < SHARED_SECONDS:
+                return shared["value"]
+            version, at = hub.version, time.time()
+            shared.update(version=version, at=at, value=read_home(known))
+            return shared["value"]
+
+    def read_home(known: Optional[data.Kept] = None) -> dict:
         """The home as the page gets it: with the sessions' state, and what a new session starts from -- the
         harnesses it can run on here (sessions.py's `available`); the shells open, and the user's home directory,
         which the page shows their directories under as ~. A name held for a session's terminal is typed there once
-        its turn is over (`rename_due`)."""
-        home = data.home(started.list())
+        its turn is over (`rename_due`). `known`: its agents as read before (data.py's `Kept`)."""
+        home = data.home(started.list(), known)
         if started.renames:
             started.rename_due(a["channel"] for g in home["gatherers"] for a in g["agents"]
                                if a.get("turn_over") and a.get("status") not in (data.ASKING, data.RUNNING))
@@ -253,7 +271,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 if url.path == "/api/stream":
                     return self.stream(q.get("gatherer"), q.get("channel"), _pairs(q.get("also")))
                 if url.path == "/api/home":
-                    return self.answer(home_view())
+                    return self.answer(home_view())    # read now: a page's first, its stream's after it shared
                 if url.path == "/api/sessions":
                     return self.answer(started.list())
                 if url.path == "/api/models":
@@ -379,7 +397,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     home, agent, others = watch.take()
                     out = []                             # (event, what it is kept as, value)
                     if home or not woken:                # unwoken: the time alone may have changed it
-                        out.append(("home", "home", home_view()))
+                        out.append(("home", "home", home_view(woken)))
                     if agent and gatherer and channel is not None:
                         out.append(("agent", "agent", agent_of(gatherer, channel)))
                     for i in sorted(others):
@@ -531,7 +549,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     if data.actors(row["gatherer"], {sid}, []):   # its gatherer has something of it: a history to keep
                         raise sessions.SessionError("it has a conversation in its gatherer: close it instead")
                     started.discard(sid)
-                    hub.ring(None)                       # every open page's list
+                    hub.ring(None, what="list")          # every open page's list
                     return self.answer({})
                 if url.path == "/api/terminal":
                     sid = str(body.get("session_id") or "")
@@ -563,11 +581,11 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer({})
                 if url.path == "/api/hiding":
                     kept = hiding.choose(str(body.get("gatherer") or ""), str(body.get("choice") or ""))
-                    hub.ring(None)                       # every open page's list
+                    hub.ring(None, what="list")          # every open page's list
                     return self.answer(kept)
                 if url.path == "/api/saved":
                     kept = saved.choose(str(body.get("gatherer") or ""), str(body.get("channel") or ""), bool(body.get("saved")))
-                    hub.ring(None)
+                    hub.ring(None, what="list")
                     return self.answer(kept)
                 if url.path == "/api/name":
                     g, c, name = str(body.get("gatherer") or ""), str(body.get("channel") or ""), naming.clean(body.get("name"))
@@ -581,7 +599,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     rules = harness_kit.get(harness)
                     command = rules.rename_command(name) if rules is not None else None
                     out["terminal"] = bool(command) and started.rename(c, command)
-                    hub.ring(g)                          # every open page's home: one types it, once it may
+                    hub.ring(g, c)                       # every open page's home: one types it, once it may
                     return self.answer(out)
                 if url.path == "/api/seen":              # not rung: a home costs every stream a read of every
                     return self.answer(seen.look(body.get("seen")))   # gatherer; the page that looked has it, the
@@ -698,12 +716,14 @@ class Server(ThreadingHTTPServer):
     def __init__(self, address, live_updates: bool = True):
         self.calls, self.hub = _Calls(), live.Hub()
         self.hub.on_llm = self.calls.changed
+        known = data.Kept(lambda g: self.hub.ring(g, what="list")) if live_updates else None   # told what changed by
+        self.hub.on_change = known.changed if known else None                                  # ag's notifications
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         self.editors = editor.Editors()                                # the files open in the Editor panel
         self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates)   # actors' `ag actors`
         self.listener = self.fallback = self.rest = self.address_file = None   # for server_close, which a failed bind calls
         self.keeps_actions = False
-        super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew))
+        super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew, known))
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
         self.migrating = migrating.start(self.hub.ring) if live_updates else None   # an older gatherer's tables, once
@@ -714,6 +734,8 @@ class Server(ThreadingHTTPServer):
             host = self.server_address[0]
             sessions.DASHBOARD = f"http://{'127.0.0.1' if host in ('', '0.0.0.0', '::') else host}:{self.server_address[1]}"
             self.address_file = home.write_address(sessions.DASHBOARD)
+        if known is not None:                                          # its agents all read once, now: a page's
+            threading.Thread(target=lambda: data.home([], known), name="ag-home-first", daemon=True).start()   # first
 
     def server_close(self) -> None:
         for part in (self.listener, self.fallback, self.rest, self.editors, self.crew):

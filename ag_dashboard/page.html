@@ -4549,8 +4549,10 @@ function chatCard(info) {
     // in the session's terminal, and may never come back as a message -- not shown pending; the terminal shown once
     // the session has one (its own, or one the message opened)
     const slash = t.startsWith("/");
-    // else shown at once, pending, until the session's own record of it shows (sentHere)
-    const mine = slash ? null : { key: key(...state.selected), text: t, base: heardCount(heard(info), t), at: Date.now() };
+    // else shown at once, pending, until the session's own record of it shows (sentHere); `ran`: typed into a terminal
+    // open already, at its message box (sessions.py's `send`) -- not one it opens, which may ask first (canInterrupt)
+    const mine = slash ? null : { key: key(...state.selected), text: t, base: heardCount(heard(info), t), at: Date.now(),
+      ran: !!(info.session && info.session.terminal) };
     const box = document.getElementById("composer-text"), was = box ? box.value : "";
     if (mine) sentHere.push(mine);
     if (box) { box.value = ""; fitBox(box); }
@@ -6797,8 +6799,13 @@ function refill(info, draft) {
 // the dashboard runs. Only while it works or asks (an idle Claude Code takes Esc twice for its rewind; one starting, for
 // "No" to trusting its folder), and once a second. `interrupting`: the actor it was sent for, and when.
 let interrupting = null;
+// Or a message sent from here into its terminal, pending: its turn under way before the dashboard has heard of it (the
+// key waits for the message's Enter: sessions.py's `type`) -- not into a terminal the message opened, which may ask
+// first whether to trust the folder, where Esc is "No".
 const canInterrupt = (info) => !!info && !!info.session && !!info.session.terminal && info.session.status !== "starting"
-  && (["running", "asking"].includes(info.status) || opened(info));   // its own state: not a build of its context, idle
+  && (["running", "asking"].includes(info.status) || opened(info) || sentPending(info));   // not a build of its context, idle
+const sentPending = (info) => !!state.selected && state.selected[1] === info.channel
+  && sentHere.some((m) => m.ran && m.key === key(...state.selected) && Date.now() - m.at < UNSEEN_MS);
 function interrupt(info) {
   const k = state.selected && key(...state.selected);
   if (!canInterrupt(info) || (interrupting && interrupting.key === k && Date.now() - interrupting.at < 1000)) return false;
