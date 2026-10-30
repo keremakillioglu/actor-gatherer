@@ -8,12 +8,14 @@ import sys
 import threading
 import time
 import unittest
+import unittest.mock
 import urllib.parse
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag.ag_harness.store import operations as store  # noqa: E402
-from ag_dashboard import live, server  # noqa: E402
+from ag_dashboard import data, live, server  # noqa: E402
 from channels import ch  # noqa: E402
 from test_core import user  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
@@ -109,6 +111,22 @@ class HubTest(unittest.TestCase):
         self.assertEqual(told, [1])
 
 
+    def test_a_change_is_counted_and_told_of_its_actor(self):
+        hub, told = live.Hub(), []
+        hub.on_change = lambda g, c, what, row: told.append((g, c))
+        hub.ring("my gatherer", "c1", "events")
+        self.assertEqual((hub.version, told), (1, [("my_gatherer", "c1")]))
+        hub.ring(None, what="list")                            # the list's own: no actor to read again
+        hub.ring(None, None, "llm")                            # the call log: not the home's, not counted
+        self.assertEqual((hub.version, told), (2, [("my_gatherer", "c1")]))
+        hub.ring("my_gatherer", what="file")                   # its files: what ag told of just now
+        self.assertEqual((hub.version, told), (3, [("my_gatherer", "c1")]))
+        hub.heard["my_gatherer"] -= live.HEARD_SECONDS         # ag told of nothing lately: a change it did not tell of
+        hub.ring("my_gatherer", what="file")
+        hub.ring("h", what="file")
+        self.assertEqual(told[1:], [("my_gatherer", None), ("h", None)])
+
+
 class ListenerTest(HomeBase):
     def test_ag_s_notifications_ring_the_hub_and_its_socket_goes_with_it(self):
         hub = live.Hub()
@@ -141,6 +159,130 @@ class FallbackTest(HomeBase):
         os.makedirs(os.path.join(self.tmp.name, "ag", "logs", "llm"), exist_ok=True)   # the call log
         fallback.check()
         self.assertEqual(w.take()[:2], (True, True))
+
+
+class KeptTest(HomeBase):
+    """The home's agents kept between its reads (data.py's `Kept`): read again only for the channels told of."""
+
+    def setUp(self):
+        super().setUp()
+        self.kept, self.done = data.Kept(), []
+        self.read = unittest.mock.patch.object(data, "_agents", wraps=data._agents)
+        self.agents = self.read.start()
+        self.addCleanup(self.read.stop)
+
+    def home(self):
+        got = data.home([], self.kept)
+        self.done += [c.args[2] if len(c.args) > 2 else None for c in self.agents.call_args_list]
+        whole = data.home([])                                  # the same as all read again
+        self.agents.reset_mock()
+        self.assertEqual([g["agents"] for g in got["gatherers"]], [g["agents"] for g in whole["gatherers"]])
+        return got
+
+    def asked(self):
+        """What `Kept` read since: [None (every channel) or the channels]."""
+        got, self.done = self.done, []
+        return got
+
+    def test_read_whole_then_only_the_channels_told_of(self):
+        self.home()
+        self.assertEqual(self.asked(), [None])
+        self.home()
+        self.assertEqual(self.asked(), [])                     # nothing changed: all as kept
+        codex_items.CodexItems(self.m).insert("g", user("one more", 94), channel_id="c2")
+        self.kept.changed("g", "c2")
+        got = self.home()
+        self.assertEqual(self.asked(), [{"c2"}])
+        self.assertEqual(next(a for a in got["gatherers"][0]["agents"] if a["channel"] == "c2")["last_user_message"],
+                         "one more")
+        codex_items.CodexItems(self.m).insert("g", user("for a new one", 95), channel_id="c3")
+        self.kept.changed("g", "c3")                           # one not read before
+        got = self.home()
+        self.assertEqual(self.asked(), [{"c3"}])
+        self.assertEqual({a["channel"] for a in got["gatherers"][0]["agents"]}, {"c1", "c2", "c3"})
+
+    def test_read_whole_when_told_of_no_channel_or_of_no_gatherer(self):
+        self.home()
+        self.asked()
+        self.kept.changed("g", None)
+        self.home()
+        self.kept.changed(None, None)
+        self.home()
+        self.assertEqual(self.asked(), [None, None])
+
+    def test_read_whole_in_the_background_after_a_while(self):
+        done = threading.Event()
+        self.kept.refreshed = lambda g: done.set()
+        data.home([], self.kept)
+        codex_items.CodexItems(self.m).insert("g", user("not told of", 96), channel_id="c2")   # a notification lost
+        self.kept.read["g"] -= data.FULL_SECONDS
+        said = lambda: next(a for a in data.home([], self.kept)["gatherers"][0]["agents"]   # noqa: E731
+                            if a["channel"] == "c2")["last_user_message"]
+        self.assertNotEqual(said(), "not told of")               # at once, as kept: the whole read in the background
+        self.assertTrue(done.wait(5))
+        self.assertEqual(said(), "not told of")
+        self.home()                                              # the same as all read again
+
+    def test_a_channel_read_since_the_background_read_began_is_kept(self):
+        data.home([], self.kept)
+        mine, other = self.kept.kept["g"]["c1"], self.kept.kept["g"]["c2"]
+        self.kept.at["g"]["c1"] = time.time() + 60               # read after it began
+        self.kept._refresh("g")
+        self.assertIs(self.kept.kept["g"]["c1"], mine)
+        self.assertIsNot(self.kept.kept["g"]["c2"], other)        # the others: as it read them
+
+    def test_a_count_read_again_for_the_read_s_channel_a_session_opened_for_its_own(self):
+        self.home()
+        self.asked()
+        self.m.record_real_tokens("g", self.reads[0], 12345)    # ag's "counts": the read named, not its channel
+        self.kept.changed("g", None, "counts", self.reads[0])
+        self.home()
+        self.assertEqual(self.asked(), [{"c1"}])
+        conn = self.m._conn("g")
+        conn.execute("INSERT INTO _open (session, pid, pid_started, opened_at, opened_by, yields) "
+                     "VALUES ('c2', 1, 1, '2026-10-29T00:00:00+00:00', 'call', 0)")
+        conn.commit()
+        self.kept.changed("g", None, "open")                   # ag's "open": no session named
+        self.home()
+        self.kept.changed("g", None, "open")                   # nothing changed in it since
+        self.home()
+        self.assertEqual(self.asked(), [{"c2"}])
+        self.kept.changed("g", None, "events")                 # a write that named no channel: all of it
+        self.home()
+        self.assertEqual(self.asked(), [None])
+
+    def test_a_reader_waits_for_a_channel_being_read_again(self):
+        data.home([], self.kept)
+        codex_items.CodexItems(self.m).insert("g", user("being read", 97), channel_id="c2")
+        self.kept.changed("g", "c2")
+        reading, go = threading.Event(), threading.Event()
+        read = data._agents
+
+        def slow(conn, now, only=None):
+            if only:
+                reading.set()
+                go.wait(5)
+            return read(conn, now, only)
+        self.read.stop()
+        with unittest.mock.patch.object(data, "_agents", slow):
+            first = threading.Thread(target=data.home, args=([], self.kept))
+            first.start()
+            self.assertTrue(reading.wait(5))                    # the first reads c2 again: the second waits for it
+            got = []
+            second = threading.Thread(target=lambda: got.append(data.home([], self.kept)))
+            second.start()
+            time.sleep(0.2)
+            self.assertEqual(got, [])
+            go.set()
+            first.join(5), second.join(5)
+        self.read.start()
+        self.assertEqual(next(a for a in got[0]["gatherers"][0]["agents"] if a["channel"] == "c2")["last_user_message"],
+                         "being read")
+
+    def test_the_copies_are_the_caller_s(self):
+        got = data.home([], self.kept)
+        got["gatherers"][0]["agents"][0]["status"] = "changed"
+        self.assertNotEqual(data.home([], self.kept)["gatherers"][0]["agents"][0]["status"], "changed")
 
 
 class StreamTest(HomeBase):
@@ -194,6 +336,38 @@ class StreamTest(HomeBase):
         self.assertEqual((got[0], got[1]["channel"]), ("actor", "c2"))   # c2's change: c2's, not c1's
         self.assertEqual(len(got[1]["agent"]["reads"]), 1)
         self.assertIsNone(s.until(lambda name, v: name == "agent", 0.5))
+
+    def test_one_read_of_the_home_for_every_stream_a_change_wakes(self):
+        httpd = self.start()
+        streams = [self.open(httpd, "") for _ in range(3)]
+        for s in streams:
+            self.assertEqual(s.next()[0], "home")
+        with unittest.mock.patch.object(data, "home", wraps=data.home) as home:
+            self.m._conn("g").execute("UPDATE events SET inserted_at = '2030-01-01T00:00:00+00:00' "   # nothing told of it:
+                                      "WHERE row_id = (SELECT max(row_id) FROM events)")
+            self.m._conn("g").commit()
+            httpd.hub.ring("g", None, "events")                # rung by hand
+            for s in streams:
+                self.assertIsNotNone(s.until(lambda name, v: name == "home", 3))
+            self.assertEqual(home.call_count, 1)
+
+    def test_a_page_s_home_from_what_is_kept(self):
+        httpd = self.start()
+        get = lambda: json.loads(urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_port}/api/home").read())   # noqa: E731
+        self.assertEqual(get()["gatherers"][0]["name"], "g")
+        with unittest.mock.patch.object(data, "_agents", wraps=data._agents) as read:
+            got = get()
+        self.assertEqual([c.args[2:] for c in read.call_args_list], [])   # nothing read again: nothing changed
+        self.assertEqual({a["channel"] for a in got["gatherers"][0]["agents"]}, {"c1", "c2"})
+
+    def test_a_page_opened_later_reads_the_home_again(self):
+        httpd = self.start()
+        self.assertEqual(self.open(httpd, "").next()[0], "home")
+        with unittest.mock.patch.object(server, "SHARED_SECONDS", 0.2), \
+                unittest.mock.patch.object(data, "home", wraps=data.home) as home:
+            time.sleep(0.3)                                    # nothing rung since: too old all the same
+            self.assertEqual(self.open(httpd, "").next()[0], "home")
+            self.assertEqual(home.call_count, 1)
 
     def test_a_stream_with_no_agent_sends_the_home(self):
         httpd = self.start()
