@@ -138,8 +138,10 @@ Not covered yet:
   process gone -- it is taken out of Chat's box again, if still as it was put. Sent from Chat, Claude Code's box is
   emptied first. Codex takes none back (see above).
 - [x] **Esc in Chat** interrupts the turn, as in the harness's own terminal: typed into the session's terminal, from the
-  message box in any view, or anywhere in the Chat view that does not take it (a panel, the settings or the Editor
-  open, a box being typed in). Only while the actor runs or asks (its own status, not a build of its context) -- an
+  message box in any view, or from anywhere else on the page that does not take it, for the actor of the pane in focus,
+  in Chat -- the list, a turn or a button clicked included (#176 took it from the box only, and an Esc after such a
+  click did nothing at all); not with a panel, a menu, a dialog or the settings open, nor typed in another box, the
+  Editor or a terminal. Only while the actor runs or asks (its own status, not a build of its context) -- an
   idle Claude Code takes Esc twice for its rewind, and one starting, for "No" to trusting its folder -- and while it
   asks, from the message box only: elsewhere Esc would dismiss its question. Typed while the dashboard's own keys go
   in (a message pasted, an answer), it waits for them (sessions.py's `type`). A session the dashboard runs no terminal
