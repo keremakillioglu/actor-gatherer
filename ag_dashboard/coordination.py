@@ -10,7 +10,9 @@ reach them: `ag actors` (ag/cli/actors.py), run in its shell, asks this dashboar
               its terminal as a message of its conversation, as Chat sends one (sessions.py's `send`: its terminal opened
               for it, if it has none open), in an envelope saying who it is from and how to answer (`envelope`)
     new       a new actor in the gatherer, started with a message: in a directory, on a harness and model, as given, else
-              as the actor it is `like` has them, else as the asker's
+              as the actor it is `like` has them, else as the asker's -- or a DocWriter's actor (`docwriter`): a new
+              DocWriter on the directory (docwriter.py's `create`), its actor writing with the user there, its edits
+              proposals the user accepts or rejects in its DocWriter view
     when      the asker told, by an update in its conversation, once an actor's turn is over (WATCHES)
     watches   what the asker asked to be told and has not been yet; `unwatch`, one of them dropped
 
@@ -67,7 +69,7 @@ import time
 import uuid
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import actions, data, editor, files, naming, sessions
+from . import actions, data, docwriter as dw, editor, files, naming, sessions
 
 COORDINATOR = sessions.COORDINATOR
 ALIASES = ("gatherer", "gatherer-agent", "coordinator")   # what `send`, `show` and `when` take for the gatherer agent
@@ -174,12 +176,13 @@ def instructions(gatherer: str) -> str:
 
 class Coordination:
     """What actors ask the dashboard (module doc), and the watches: `started`, the dashboard's sessions, which run the
-    actors; `ring(gatherer)`, told when a gatherer's actors changed. Thread-safe: the server's handlers share one,
-    and its watches are looked at on a thread of its own, until `close`."""
+    actors; `ring(gatherer)`, told when a gatherer's actors changed; `docwriters`, its DocWriters (docwriter.py), which
+    a new actor may be one of. Thread-safe: the server's handlers share one, and its watches are looked at on a thread
+    of its own, until `close`."""
 
     def __init__(self, started: "sessions.Sessions", ring: Optional[Callable[[Optional[str]], None]] = None,
-                 watch: bool = True):
-        self.started, self.ring = started, ring
+                 watch: bool = True, docwriters: Optional["dw.DocWriters"] = None):
+        self.started, self.ring, self.docwriters = started, ring, docwriters
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.marked: set = set()                 # the gatherer agents' channels marked private by this dashboard
@@ -278,7 +281,7 @@ class Coordination:
                 "asked": _clip(_unwrapped(a.get("last_user_message")), ASKED_CHARS),
                 "recap": _clip((a.get("recap") or {}).get("text"), ASKED_CHARS),
                 "last": a.get("last"), "you": bool(me) and a["channel"] == me["channel"],
-                "gatherer_agent": self._is_coordinator(a)}
+                "gatherer_agent": self._is_coordinator(a), "docwriter": _docwriter_of(s) is not None}
 
     # ---- what an actor asks
 
@@ -322,7 +325,8 @@ class Coordination:
         return {"sent": True, "to": self._view(to, me), "session": {k: got.get(k) for k in ("status", "terminal")}}
 
     def new(self, actor: str, text: str, cwd: Optional[str] = None, harness: Optional[str] = None,
-            model: Optional[str] = None, like: Optional[str] = None, name: Optional[str] = None) -> dict:
+            model: Optional[str] = None, like: Optional[str] = None, name: Optional[str] = None,
+            docwriter: bool = False) -> dict:
         g, me, agents = self._asker(actor)
         text = _message(text)
         base = self._find(g, like, agents) if like else None
@@ -333,18 +337,36 @@ class Coordination:
             raise CoordinationError(f"harness {harness!r}: one of {', '.join(sessions.HARNESSES)}")
         cwd = os.path.abspath(os.path.expanduser(cwd)) if cwd else base.get("cwd") or bs.get("cwd") or me.get("cwd")
         same = harness == (base.get("harness") or bs.get("harness"))
-        row = self.started.create(g, cwd or "", bs.get("permission_mode") or "auto", harness,
-                                  model or (bs.get("model") if same else None))
+        model = model or (bs.get("model") if same else None)
         name = naming.clean(name)
-        if name and harness == "claude":         # codex's id is its thread's, once it has one: not named here
-            threading.Thread(target=_name_it, args=(g, row["session_id"], name), daemon=True).start()
+        made = None
+        if docwriter:
+            row, made = self._new_docwriter(g, cwd or "", harness, model, name)
+        else:
+            row = self.started.create(g, cwd or "", bs.get("permission_mode") or "auto", harness, model)
+            if name and harness == "claude":     # codex's id is its thread's, once it has one: not named here
+                threading.Thread(target=_name_it, args=(g, row["session_id"], name), daemon=True).start()
         to = {"channel": row["session_id"], "session": row, "harness": harness, "cwd": row["cwd"], "status": data.IDLE,
               "name": {"text": name} if name else None}
         self._deliver(g, to, envelope(self._sender(me), text))
         self._keep(g, me["channel"], "new", to, text)
         if self.ring is not None:
             self.ring(g)
-        return {"started": True, "actor": self._view(to, me)}
+        return {"started": True, "actor": self._view(to, me), **({"docwriter": made} if made else {})}
+
+    def _new_docwriter(self, gatherer: str, cwd: str, harness: str, model: Optional[str],
+                       name: Optional[str]) -> Tuple[dict, dict]:
+        """A new DocWriter on `cwd` (docwriter.py's `create`), its actor named `name`, else as DocWriter names it, once
+        its first message is sent: (its actor's session, as the dashboard's table has it; {key, root})."""
+        if self.docwriters is None:
+            raise CoordinationError("this dashboard runs no DocWriter")
+        try:
+            got = self.docwriters.create(gatherer, cwd, harness, model)
+        except dw.DocWriterError as exc:
+            raise CoordinationError(f"no DocWriter started: {exc}") from None
+        self.docwriters.name_actor(got["key"], name)
+        row = next(r for r in self.started.list() if r["session_id"] == got["channel"])
+        return row, {"key": got["key"], "root": got["root"]}
 
     def when(self, actor: str, ref: str, note: str = "") -> dict:
         g, me, agents = self._asker(actor)
@@ -564,6 +586,16 @@ def _due(w: sqlite3.Row) -> Optional[str]:
     """The status a watch's target was over with, when its watcher could not be told then (DUE); else None."""
     outcome = w["outcome"] or ""
     return outcome[len(DUE):].split(":", 1)[0] or None if outcome.startswith(DUE) else None
+
+
+def _docwriter_of(session: dict) -> Optional[str]:
+    """The key of the DocWriter whose actor the session is (its `role`, docwriter.py's `create`), or None."""
+    try:
+        role = json.loads(session.get("role") or "null")
+    except ValueError:
+        return None
+    key = role.get("docwriter") if isinstance(role, dict) else None
+    return key if isinstance(key, str) and key else None
 
 
 def _name(a: Optional[dict]) -> Optional[str]:

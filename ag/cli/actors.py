@@ -8,9 +8,11 @@ the dashboard that runs them (ag_dashboard/coordination.py), over its local API 
     ag actors send <actor> <message>    a message to the actor (`gatherer`: the gatherer agent; - for the message: read
                                         from stdin), which it gets in its conversation now -- as a new turn, or in the
                                         one it is running -- saying who it is from
-    ag actors new [--like A] [--cwd D] [--harness H] [--model M] [--name N] <message>
+    ag actors new [--like A] [--cwd D] [--harness H] [--model M] [--name N] [--docwriter] <message>
                                         a new actor in the gatherer, started with the message: in D, on H and M, as given,
-                                        else as actor A has them, else as this one
+                                        else as actor A has them, else as this one. --docwriter: a DocWriter's actor,
+                                        writing with the user on D's documents in DocWriter, in the dashboard, where its
+                                        edits are proposals the user accepts or rejects
     ag actors when <actor> [--note T]   an update in this actor's conversation once the actor is done (with T, said back)
     ag actors watches | unwatch <n>     what this actor asked to be told and has not been; one of them dropped
 
@@ -101,6 +103,9 @@ def parser() -> argparse.ArgumentParser:
     new.add_argument("--harness", choices=("claude", "codex"))
     new.add_argument("--model")
     new.add_argument("--name", help="its name in the dashboard")
+    new.add_argument("--docwriter", action="store_true",
+                     help="a DocWriter's actor: it writes with the user on the directory's documents in DocWriter, in "
+                          "the dashboard, where its edits are proposals the user accepts or rejects")
     new.add_argument("message", nargs="+", help="its first message (- reads it from stdin)")
     when = sub.add_parser("when", help="an update in your conversation once an actor is done")
     when.add_argument("actor")
@@ -139,6 +144,8 @@ def main(argv: List[str]) -> int:
             body.update({k: getattr(opts, k) for k in ("like", "cwd", "harness", "model", "name") if getattr(opts, k)})
             if body.get("cwd"):
                 body["cwd"] = os.path.abspath(os.path.expanduser(body["cwd"]))
+            if opts.docwriter:
+                body["docwriter"] = True
         if op == "when":
             body["note"] = opts.note
         if op == "unwatch":
@@ -162,7 +169,8 @@ def _place(cwd: Optional[str]) -> str:
 
 def _who(a: dict) -> str:
     """An actor in a line: its id, its name, whether it is the gatherer agent or the asker, its status, harness, place."""
-    marks = [m for m in ("the gatherer agent" if a.get("gatherer_agent") else None, "you" if a.get("you") else None) if m]
+    marks = [m for m in ("the gatherer agent" if a.get("gatherer_agent") else None, "a DocWriter" if a.get("docwriter") else None,
+                         "you" if a.get("you") else None) if m]
     name = ' "%s"' % a["name"] if a.get("name") and not a.get("gatherer_agent") else ""
     what = ", ".join(x for x in (a.get("status"), a.get("harness")) if x)
     return str(a.get("id")) + name + (" (%s)" % ", ".join(marks) if marks else "") + (" -- " + what if what else "") \
@@ -212,6 +220,10 @@ def shown(op: str, got: dict) -> str:
         return f"Sent to {who}: it gets your message now, as a new turn or during the one it is running."
     if op == "new":
         a = got["actor"]
+        if got.get("docwriter"):
+            return (f"Started actor {a['id']} ({a.get('harness')},{_place(a.get('cwd'))}), a DocWriter, with your message. "
+                    f"Its edits to the documents are proposals: they reach the files once the user accepts them in its "
+                    f"DocWriter view (the dashboard, its actor selected).")
         return f"Started actor {a['id']} ({a.get('harness')},{_place(a.get('cwd'))}) with your message."
     if op == "when":
         t = got["target"]

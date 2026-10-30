@@ -275,8 +275,10 @@ class DocWritersTest(Started):
         self.assertIsNone(self.dws.guard(self.key, "/etc/hosts"))
 
     def test_a_tool_call_goes_to_the_page_last_open_and_back(self):
-        none = self.dws.tools.call(self.key, "read_doc", {})
-        self.assertTrue(none["isError"])                     # no page: told to open DocWriter
+        with mock.patch.object(docwriter, "PAGE_WAIT", 0.05):
+            none = self.dws.tools.call(self.key, "read_doc", {})
+        self.assertTrue(none["isError"])                     # no page, none came: told to open DocWriter
+        self.assertIn("not open in the dashboard", none["content"][0]["text"])
         old, leave_old = self.dws.join_page(self.key, "p1")
         page, leave = self.dws.join_page(self.key, "p2")
         self.addCleanup(leave)
@@ -290,6 +292,30 @@ class DocWritersTest(Started):
         self.assertEqual(drain(old.queue), [])
         with mock.patch.object(docwriter, "TOOL_WAIT", 0.05):
             self.assertTrue(self.dws.tools.call(self.key, "read_doc", {})["isError"])   # no answer in time
+
+    def test_a_call_made_before_any_page_has_it_open_waits_for_one(self):
+        leaves = []
+        self.addCleanup(lambda: [leave() for leave in leaves])
+
+        def open_page():                                     # as the dashboard's page opens it, the actor at work
+            page, leave = self.dws.join_page(self.key, "p1")
+            leaves.append(leave)
+            kind, call = page.queue.get(timeout=5)
+            self.dws.tools.answered(call["id"], mcp.result(f"read {call['arguments']['file_path']}"))
+        threading.Timer(0.3, open_page).start()
+        self.assertEqual(self.dws.tools.call(self.key, "read_doc", {"file_path": "draft.md"}), mcp.result("read draft.md"))
+
+    def test_its_actor_is_named_once_by_the_name_given_else_by_its_folder(self):
+        named = queue.Queue()
+        with mock.patch.object(docwriter, "NAME_WAIT", 0), \
+                mock.patch.object(docwriter.naming, "record", lambda g, channel, name: named.put((g, channel, name))):
+            self.dws.name_actor(self.key, "The paper")
+            self.assertEqual(named.get(timeout=5), ("g", self.cfg["channel"], "The paper"))
+            self.dws.name_actor(self.key)                    # named already: not again
+            other = self.dws.create("g", self.root, "claude")
+            self.dws.name_actor(other["key"])
+            self.assertEqual(named.get(timeout=5), ("g", other["channel"], "DocWriter · work"))
+            self.assertTrue(named.empty())
 
     def test_a_call_whose_page_goes_before_answering_fails_at_once(self):
         page, leave = self.dws.join_page(self.key, "p1")

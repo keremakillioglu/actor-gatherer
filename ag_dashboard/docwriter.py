@@ -9,8 +9,10 @@ is done here, or in the page:
                           /docwriter/w/<key>/ (every request of the page under it), its actor a session (sessions.py's
                           `create`, its `role` {"docwriter": key}) started with DocWriter's instructions and its document
                           tools (`launch_args`); its folder is the workspace. Its open tabs, and what its actor last saw,
-                          are its own (`kv`, scoped by its key); rules, settings and hooks are the folder's
-    its documents         `Docs`: each open file one Yjs document (an XmlFragment of paragraphs, DocWriter's comment
+                          are its own (`kv`, scoped by its key); rules, settings and hooks are the folder's. Made from a
+                          gatherer's DocWriter button, or by the gatherer agent (coordination.py's `new`), which sends
+                          its actor a task as it does any actor's
+    its documents        `Docs`: each open file one Yjs document (an XmlFragment of paragraphs, DocWriter's comment
                           threads beside it), kept by pycrdt unread and passed between the pages that have it open; its
                           state kept in dashboard.db (`docwriter_docs`), so proposals and threads outlive the page. The
                           page seeds a new document from its file, writes it back as the author has it (no proposed
@@ -22,7 +24,9 @@ is done here, or in the page:
                           terminal or starting it (sessions.py's `send`), and follows the turn in the gatherer
     the agent's tools     `Tools` + mcp.py: edit_doc, read_doc, write_doc, comment_doc, reply_to_comment, list_threads,
                           an MCP server the actor reaches at /docwriter/w/<key>/mcp, each call passed to a page with
-                          the DocWriter open, which runs DocWriter's own code on its document and answers. Claude Code
+                          the DocWriter open, which runs DocWriter's own code on its document and answers -- a call
+                          made while none has, waiting PAGE_WAIT for one: the dashboard's page opens the DocWriter of
+                          an actor at work (page.html's `dwTell`), a moment after its turn starts. Claude Code
                           is kept from editing an open document with its own tools by a PreToolUse hook
                           (docwriter_guard.py, asking `guard`); codex is told to
     what the author does  `record`: an event of the dashboard's in the actor's channel (`ag home insert`), as naming.py's
@@ -67,7 +71,8 @@ POLL = 0.5                  # seconds between looks at each open file, and each 
 LINGER = 30.0               # seconds a document stays open after its last page goes
 PERSIST = 2.0               # seconds between writes of the documents changed to dashboard.db
 TOOL_WAIT = 120.0           # the most a tool call waits for a page to answer it
-TOOL_CHECK = 0.5            # how often a waiting tool call looks whether its page is still there
+PAGE_WAIT = 30.0            # the most a tool call waits for a page to open its DocWriter, none having it open
+TOOL_CHECK = 0.5            # how often a waiting tool call looks whether its page is there, and still there
 NAME_WAIT = 600.0           # how long a new actor's first call is waited for, to name it (its gatherer has it then)
 PREVIEW_KEEP = 3600.0       # seconds a previewed file is watched after it was last asked for
 HOOK_TIMEOUT = 300          # seconds a hook's command may run
@@ -490,12 +495,16 @@ class Tools:
         return _kv_json("*", "tools", [])
 
     def call(self, key: str, name: str, arguments: dict) -> dict:
-        with self.lock:
-            open_ = self.streams.get(key) or []
-            target = open_[-1] if open_ else None
-            cid = secrets.token_hex(8)
-            if target is not None:
-                self.waiting[cid] = [threading.Event(), None]
+        cid, start = secrets.token_hex(8), time.time()
+        while True:                                  # none open yet: the dashboard's page opens it as the turn starts
+            with self.lock:
+                open_ = self.streams.get(key) or []
+                target = open_[-1] if open_ else None
+                if target is not None:
+                    self.waiting[cid] = [threading.Event(), None]
+            if target is not None or time.time() - start >= PAGE_WAIT:
+                break
+            time.sleep(TOOL_CHECK)
         if target is None:
             return mcp.result("DocWriter is not open in the dashboard, so the documents are not there to change: ask "
                               "me to show this DocWriter (select its actor in the dashboard), then try again.", error=True)
@@ -716,21 +725,28 @@ class DocWriters:
             sent = self.started.send(s["session_id"], text)
         except sessions.SessionError as exc:
             raise DocWriterError(str(exc), 409) from None
-        if not kv_get(key, ["named"])["named"]:
-            kv_set(key, {"named": "1"})
-            threading.Thread(target=self._name, args=(r["gatherer"], s["session_id"], r["root"]),
-                             name="ag-docwriter-name", daemon=True).start()
+        self.name_actor(key)
         return sent
 
-    def _name(self, gatherer: str, sid: str, root: str) -> None:
-        """Its actor named "DocWriter · <folder>" -- else the list shows it by its first message, DocWriter's prompt
-        -- once its gatherer has it (its first call): a name is an event there (naming.py)."""
-        end, now = time.time() + NAME_WAIT, sid
+    def name_actor(self, key: str, name: Optional[str] = None) -> None:
+        """Its actor named, once -- `name`, else "DocWriter · <folder>" -- as its first message is sent (`_name`)."""
+        if kv_get(key, ["named"])["named"]:
+            return
+        kv_set(key, {"named": "1"})
+        r = self.row(key)
+        threading.Thread(target=self._name, args=(r["gatherer"], r["session_id"], r["root"], name),
+                         name="ag-docwriter-name", daemon=True).start()
+
+    def _name(self, gatherer: str, sid: str, root: str, name: Optional[str] = None) -> None:
+        """Its actor named `name`, else "DocWriter · <folder>" -- else the list shows it by its first message,
+        DocWriter's prompt -- once its gatherer has it (its first call): a name is an event there (naming.py)."""
+        end = time.time() + NAME_WAIT
+        now = (self._session(sid) or {}).get("session_id") or sid
         while time.time() < end and not sessions._has_calls(gatherer, now):
             time.sleep(2)
             now = (self._session(sid) or {}).get("session_id") or sid      # codex's: renamed to its thread
         try:
-            naming.record(gatherer, now, f"DocWriter · {os.path.basename(root) or root}")
+            naming.record(gatherer, now, name or f"DocWriter · {os.path.basename(root) or root}")
         except naming.NamingError:
             pass
 

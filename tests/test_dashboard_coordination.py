@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import harness_kit  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
 from ag.cli import actors as cli  # noqa: E402
-from ag_dashboard import coordination, data, files, server, sessions  # noqa: E402
+from ag_dashboard import coordination, data, docwriter, files, server, sessions  # noqa: E402
 from test_dashboard_sessions import FAKE_AG, SessionsBase  # noqa: E402
 
 # the fake ag, also saying who the dashboard told it it is, and where the dashboard is
@@ -248,6 +248,32 @@ class CoordinationTest(CoordinationBase):
                          "Take over the docs: README.md is half done.")
         self.assertEqual(self.kept[-1][2][0]["payload"]["kind"], "new")
 
+    def test_a_new_docwriter_is_a_docwriters_actor_on_the_folder_started_with_the_message(self):
+        if not docwriter.AVAILABLE:
+            self.skipTest("pycrdt is not installed")
+        dws = docwriter.DocWriters(self.s)
+        self.addCleanup(dws.close)
+        crew = coordination.Coordination(self.s, watch=False, docwriters=dws)
+        paper = os.path.join(self.tmp.name, "paper")
+        os.makedirs(paper)
+        with unittest.mock.patch.object(dws, "name_actor") as name_actor:
+            got = crew.new(self.a, "Tighten the introduction.", cwd=paper, name="Paper", docwriter=True)
+        new = got["actor"]["channel"]
+        row = next(r for r in self.s.list() if r["session_id"] == new)
+        key = json.loads(row["role"])["docwriter"]
+        self.assertEqual((row["cwd"], row["harness"], row["gatherer"]), (os.path.realpath(paper), "claude", "g"))
+        self.assertEqual(got["docwriter"], {"key": key, "root": os.path.realpath(paper)})
+        self.assertEqual(dws.config(key)["channel"], new)
+        self.assertTrue(got["actor"]["docwriter"])
+        name_actor.assert_called_once_with(key, "Paper")
+        self.assertEqual(coordination.opened(self.until(lambda: self.messages(new))[0])["text"], "Tighten the introduction.")
+        self.assertEqual(self.kept[-1][2][0]["payload"]["kind"], "new")
+        with self.assertRaisesRegex(coordination.CoordinationError, "no DocWriter started: no directory"):
+            crew.new(self.a, "Write.", cwd=os.path.join(self.tmp.name, "nope"), docwriter=True)
+        with self.assertRaisesRegex(coordination.CoordinationError, "runs no DocWriter"):
+            self.crew.new(self.a, "Write.", cwd=paper, docwriter=True)
+        self.assertEqual(len(self.s.list()), 3)                 # neither started an actor
+
     def test_show_says_what_an_actor_was_asked_said_and_changed(self):
         got = self.crew.show(self.a, self.b)
         self.assertEqual((got["asked"], got["said"], got["changed"]), ("write the docs", "The docs are written.", ["/w/README.md"]))
@@ -349,6 +375,22 @@ class CommandTest(CoordinationBase):
         self.assertEqual(coordination.opened(self.until(lambda: self.messages(self.b))[0])["text"], "hello there")
         code, out, _ = self.run_cli("--json", "list")
         self.assertEqual(json.loads(out)["you"], self.a)
+
+    def test_the_gatherer_agent_starts_a_docwriter_from_its_shell(self):
+        if not docwriter.AVAILABLE:
+            self.skipTest("pycrdt is not installed")
+        paper = os.path.join(self.tmp.name, "paper")
+        os.makedirs(paper)
+        with unittest.mock.patch.object(docwriter.DocWriters, "_name", lambda *args: None):   # no ag to name it in
+            code, out, err = self.run_cli("new", "--docwriter", "--cwd", paper, "Tighten", "the", "introduction.")
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("a DocWriter, with your message", out)
+        new = re.match(r"Started actor (\S+) ", out).group(1)
+        row = next(r for r in self.s.list() if r["session_id"] == new)
+        self.assertEqual((json.loads(row["role"]).keys(), row["cwd"]), ({"docwriter"}, os.path.realpath(paper)))
+        self.assertEqual(coordination.opened(self.until(lambda: self.messages(new))[0])["text"], "Tighten the introduction.")
+        code, out, _ = self.run_cli()
+        self.assertIn(f"{new} (a DocWriter) -- idle, claude, in", out)
 
     def test_its_errors_are_said_plainly(self):
         code, _, err = self.run_cli("send", "nobody", "hi")
