@@ -3974,7 +3974,7 @@ function newForm() {
   const adding = state.adding, fixed = adding.gatherer, hs = startable(), shell = adding.harness === SHELL_START;
   const cwd = el("input", { name: "cwd", value: adding.cwd || state.home.cwd || "", spellcheck: "false" });
   const err = el("div", { class: "err", role: "alert", text: adding.error || (hs.length || shell ? "" : NO_HARNESS) });
-  const starts = hs.map((h) => el("button", { type: "submit", value: h, class: h === (adding.harness || hs[0]) ? "primary" : "",
+  const starts = hs.map((h) => el("button", { type: "submit", value: h, class: h === adding.harness ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, harnessBadge(h), harnessName(h)));
   if (state.home.terminals !== false) starts.push(el("button", { type: "submit", value: SHELL_START, class: shell ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.terminal, 14), "Terminal"));
@@ -3983,11 +3983,13 @@ function newForm() {
     el("label", {}, "Working directory", cwd),
     err,
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), ...starts));
-  // Enter starts the harness last chosen (the primary), not the first of the buttons
+  // Enter starts the harness last chosen (the primary), not the first of the buttons; with none chosen (a new
+  // gatherer's first session), no harness is marked, and Enter waits for a click
   cwd.addEventListener("keydown", (ev) => {
     if (ev.key !== "Enter") return;
     ev.preventDefault();
-    if (starts.length) form.requestSubmit(starts.find((b) => b.classList.contains("primary")));
+    const chosen = starts.find((b) => b.classList.contains("primary"));
+    if (chosen) form.requestSubmit(chosen);
   });
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
