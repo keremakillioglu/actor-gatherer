@@ -148,6 +148,19 @@ PASTED = re.compile(r"\s*</?pasted_content\b[^>]*>\s*")
 QUEUED_NOTES = ("<task-notification>", "<agent-message ", "Another Claude session sent a message:")
 
 SKILL_TEXT = re.compile(r"^\s*Base directory for this skill: ([^\n]*)\n+([\s\S]*?)(?:\n+ARGUMENTS: ([\s\S]*?))?\s*$")
+# A skill the Skill tool loads (2.1.310 to 2.1.314): its call's result says so ("Launching skill: <name>"; "Loaded skill
+# instructions (read-only): <name>. ..." where the session may only read it), and the skill's instructions follow as a
+# message of Claude Code's own, in the message of the calls' results, after them all: one for each skill loaded, in
+# their order. Only a skill with a directory -- one on disk, a plugin's, a bundled one that ships files -- has its
+# instructions open with it (SKILL); a bundled skill of instructions alone (artifact-diagramming, keybindings-help)
+# sends them bare, told from the user's words only by where they are (`ClaudeCode.read`), its arguments after them
+# ("ARGUMENTS: ...") as a skill's on disk has them. A skill the model loads again comes with Claude Code's note before
+# its instructions ("(Re-invocation of /<name> — ..."), or one in their place ("Skill /<name> is already loaded above;
+# instructions unchanged.", "Skill /<name> was loaded earlier ..."). A forked skill's result is its answer: nothing
+# follows it.
+LAUNCHED = re.compile(r"^(?:Launching skill: (.+)|Loaded skill instructions \(read-only\): (.+?)\. Nothing was executed\b.*)$")
+REINVOKED = re.compile(r"^\s*\(Re-invocation of /")
+BARE_SKILL = re.compile(r"^\s*([\s\S]*?)(?:\n+ARGUMENTS: ([\s\S]*?))?\s*$")
 AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]*)"[^>]*>\n?([\s\S]*?)\n?</agent-message>')
 # another session's message, sent to this one (Claude Code's SendMessage across sessions), as it hands it on: the
 # sender's name in `from-name` (its socket in `from`), and after the tag Claude Code's own caution about it
@@ -463,10 +476,12 @@ def loaded(text: str) -> List[tuple]:
     return out
 
 
-def note_detail(text: str) -> Optional[dict]:
+def note_detail(text: str, kind: Optional[str] = None) -> Optional[dict]:
     """What a note of Claude Code's says, as Part.detail has it, with its Kind: None for a note that says nothing
     more than its words.
         SKILL          name, args, instructions: a skill's instructions, loaded by the Skill tool or the user's /name
+                       -- by its base directory; or bare, `kind` being SKILL (as `read` had it, by where it was:
+                       BARE_SKILL), its name then "" (the Skill call that loaded it names it)
         AGENT_REPORT   from, text: another session's message, a subagent's report as it hands back
         PEER_MESSAGE   name, text: a message another Claude session sent this one
         LOCAL_COMMAND  name: a command the user ran that Claude Code runs itself (/context, /mcp)
@@ -475,6 +490,9 @@ def note_detail(text: str) -> Optional[dict]:
     if m:
         return {"kind": Kind.SKILL, "name": os.path.basename(m.group(1).strip().rstrip("/")),
                 "args": (m.group(3) or "").strip(), "instructions": m.group(2).strip()}
+    if kind == Kind.SKILL:
+        m = BARE_SKILL.match(text)
+        return {"kind": Kind.SKILL, "name": "", "args": (m.group(2) or "").strip(), "instructions": m.group(1).strip()}
     m = AGENT_MESSAGE.search(text) if text.lstrip().startswith(("Another Claude session sent a message:", "<agent-message ")) else None
     if m:
         body = m.group(2)
@@ -494,6 +512,39 @@ def note_detail(text: str) -> Optional[dict]:
         return {"kind": Kind.COMMAND_OUTPUT,
                 "text": "\n".join(x for x in (m.group(1).rstrip("\n"), (m.group(2) or "").rstrip("\n")) if x)}
     return None
+
+
+def launched(items: list, out: List[Part]) -> None:
+    """The skills the Skill tool loaded (LAUNCHED), read in `out` (each piece as `ClaudeCode.read` has it so far): in the
+    user's message of the calls' results, after them, the instructions of each skill, in the order of the results --
+    the first text after them of the user's words, or one opening with its base directory -- are Claude Code's
+    (SKILL: the skill's name, and in `call` the call that loaded it, as Part.detail has them); its note before them on
+    loading the skill again, its own (OTHER). What the user says in that message ends them: a message sent mid-turn,
+    an interrupt and the words after it are theirs."""
+    due: List[Tuple[str, Optional[str]]] = []          # each skill loaded, its instructions not seen yet: (name, call)
+    for k, it in enumerate(items):
+        role, p = (it.get("role") if isinstance(it, dict) else None), out[k]
+        if role == "assistant":
+            due = []
+        elif role != "user":
+            continue
+        elif p.result is not None:
+            m = LAUNCHED.match((p.text or "").strip())
+            if m:
+                due.append(((m.group(1) or m.group(2)).strip(), p.result.call_id))
+        elif not due or p.detail.get("block") != "text":
+            continue
+        elif p.kind == Kind.SKILL:                      # opened by its base directory, named by it
+            p.detail["call"] = due.pop(0)[1]
+        elif p.kind == Kind.USER and REINVOKED.match(p.text or ""):
+            p.kind, p.words = Kind.OTHER, None
+        elif p.kind == Kind.USER:
+            name, call = due.pop(0)
+            m = BARE_SKILL.match(p.text or "")
+            p.kind, p.words = Kind.SKILL, None
+            p.detail.update(name=name, args=(m.group(2) or "").strip(), instructions=m.group(1).strip(), call=call)
+        elif p.kind in SAID or p.kind == Kind.INTERRUPT:
+            due = []
 
 
 def task_of(text: str) -> Optional[dict]:
@@ -816,9 +867,10 @@ class ClaudeCode(Harness):
         return out
 
     def read(self, items: list) -> List[Part]:
-        """Each piece read (module doc). Its neighbours tell two things a piece alone does not: the prompt a command the
-        user typed expands to -- the first of the user's words after it, before the agent says anything (a skill's
-        instructions are Claude Code's already) -- is Claude Code's (COMMAND_PROMPT); and when the history opens
+        """Each piece read (module doc). Its neighbours tell three things a piece alone does not: the prompt a command
+        the user typed expands to -- the first of the user's words after it, before the agent says anything (a skill's
+        instructions are Claude Code's already) -- is Claude Code's (COMMAND_PROMPT); a skill's instructions the Skill
+        tool loaded, bare, are Claude Code's (SKILL: `launched`); and when the history opens
         with Claude Code's summary of a compacted conversation, its notes up to the first reply to what first opens a
         turn after it -- the user's words, or a note queued in their name (OPENS: another session's message waking a
         session compacted while idle) -- are what it sends again with the summary (COMPACTION_REPEAT)."""
@@ -835,6 +887,7 @@ class ClaudeCode(Harness):
                         out[j].kind, out[j].words = Kind.COMMAND_PROMPT, None
                     out[j].detail["expands"] = True
                     break
+        launched(items, out)
         if items and is_compacted_summary(items[0]):
             out[0].detail["opens"] = True
             asked = next((i for i, p in enumerate(out) if i and p.kind in OPENS), len(items))
@@ -1150,5 +1203,5 @@ class Record(Follower):
 
 
 __all__ = ["ClaudeCode", "Kind", "blocks_of", "pieces", "without_cache_control", "text_of", "kind_of", "typed_command",
-           "words_of", "mid_turn", "notices", "loaded", "note_detail", "task_of", "is_compacted_summary", "Record",
+           "words_of", "mid_turn", "notices", "loaded", "note_detail", "launched", "task_of", "is_compacted_summary", "Record",
            "record_path"]

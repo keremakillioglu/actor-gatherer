@@ -324,7 +324,9 @@ The doc planned a PR per step. Steps 1–3 went into one PR: they were built tog
    as `environment` (now `task_notice`, which opens a turn); and codex's async question, as its rollout records it
    (`{title, options: [label]}`), was not taken by `answer_keys` (`picked` takes it now). A notification is seen
    twice in Claude Code's record -- queued, then sent as the user's -- and recorded as two `task_ended`, which read as
-   one.
+   one. Claude Code 2.1.314 is captured too, with skills loaded (a bundled one, one on disk, a /name typed): a bundled
+   skill with no files of its own (artifact-diagramming, keybindings-help) has its instructions sent bare after the
+   Skill tool's result, with no base directory, read as the user's words (now `skill`, by where they are: `launched`).
 
 ## Open questions
 

@@ -25,7 +25,7 @@ same in TypeScript.
 from abc import ABC, abstractmethod
 from typing import ClassVar, Dict, List, Tuple
 
-from harness_kit import Harness, Part
+from harness_kit import Harness, Kind, Part
 
 #: The type of the context manager's own messages in a context.
 AG = "ag"
@@ -137,8 +137,10 @@ class HarnessAdaptor(Adaptor):
 
 def part_properties(part: Part) -> Dict[str, str]:
     """What an event carries of what its harness's rules read (EVENT_PROPERTIES): its Kind, the user's words, a tool
-    call's Action, the call's id (a result's: the call it answers) -- each that is set."""
-    call = part.tool.id if part.tool is not None else part.result.call_id if part.result is not None else None
+    call's Action, the call's id (a result's: the call it answers; a skill's instructions: the call that loaded them)
+    -- each that is set."""
+    call = part.tool.id if part.tool is not None else part.result.call_id if part.result is not None else \
+        part.detail.get("call") if part.kind == Kind.SKILL else None
     found = {KIND: part.kind, WORDS: part.words, ACTION: part.tool.action if part.tool is not None else None,
              CALL_ID: call}
     return {k: v for k, v in found.items() if isinstance(v, str) and v}

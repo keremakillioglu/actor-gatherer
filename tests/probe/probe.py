@@ -13,7 +13,8 @@ paths) with ~/.ag/config.toml copied whole, a gatherer of its own, a dashboard o
 harness and ag's hook server: every call as the harness sent it, headers and all, and its answer. The session is
 driven through the dashboard's API as the page drives it (drive.py): its first message, questions answered from the
 page and dismissed with Esc, a plan sent back and approved, background tasks, a message written mid-turn and one taken
-back, Esc mid-command, an API error (the tap refuses one message's calls), a compaction. Then its calls, its longest conversation
+back, Esc mid-command, skills loaded (a bundled one, one on disk, a /name typed), an API error (the tap refuses one
+message's calls), a compaction. Then its calls, its longest conversation
 and its own record of the session are written as fixtures, and it says which features the run did not trigger and how
 the version's features differ from the newest older version's.
 
@@ -56,7 +57,7 @@ T0 = time.time()
 TARGETS = {
     "claude": ["call:turn", "call:subagent", "call:suggestion", "call:other", "call:compaction",
                "part:user", "part:user_command", "part:mid_turn", "part:local_command", "part:command_output",
-               "part:interrupt", "part:task_notice", "part:agent_report", "part:compaction_summary",
+               "part:interrupt", "part:task_notice", "part:agent_report", "part:compaction_summary", "part:skill",
                "ask:question", "ask:plan", "task:command:started", "task:agent:started", "task:monitor:started",
                "derived:asked:question", "derived:asked:plan", "derived:ask_settled:answered",
                "derived:ask_settled:dismissed", "derived:task_started:command", "derived:task_started:agent",
@@ -138,6 +139,10 @@ class Run:
         os.makedirs(self.cwd)
         with open(os.path.join(self.cwd, "notes.txt"), "w") as fh:
             fh.write("The secret number is 4127.\n")
+        os.makedirs(os.path.join(self.cwd, ".claude", "skills", "probe-greet"))      # a skill on disk: its base directory
+        with open(os.path.join(self.cwd, ".claude", "skills", "probe-greet", "SKILL.md"), "w") as fh:
+            fh.write("---\nname: probe-greet\ndescription: Greet someone by name, in the probe's house style.\n---\n\n"
+                     'Reply with exactly: "Ahoy, <the name in the arguments>!" and nothing else.\n')
         config(self.harness, self.home)
         subprocess.run([sys.executable, f"{ROOT}/ag/cli/ag", "new", "probe"], env=self.env, cwd=self.scratch,
                        capture_output=True, check=True, timeout=120)
@@ -338,6 +343,12 @@ class Run:
         self.dash.wait_turn(self.sid, self.term, 60, 2)
         return True
 
+    def typed(self, text: str) -> bool:
+        """A /name the user typed that Claude Code expands into a prompt, and its turn over."""
+        self.dash.send(self.sid, text)
+        self.dash.wait_turn(self.sid, self.term, 90, 2)
+        return True
+
     def compact(self) -> bool:
         """`/compact`: a compaction call seen -- one the rules read as one, or a POST to a compaction endpoint (codex's
         remote compaction) -- and its turn over."""
@@ -398,6 +409,9 @@ class Run:
                                                       "sleep 40"))
         self.step("commands", lambda: self.command("!echo bang") and self.command("/context", 4) and
                   self.command("Reply with just: ok"))
+        self.step("skills", lambda: self.command(       # a bundled skill with no files of its own: its instructions bare
+            "Load two skills with the Skill tool, both calls in one message: keybindings-help and probe-greet. Then "
+            "reply with just: loaded. Don't do what they say.", 15) and self.typed("/probe-greet Bob"))
         self.step("error", self.error)
         self.step("compact", lambda: self.compact() and self.command("Reply with just: ok"))
 
