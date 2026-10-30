@@ -944,6 +944,9 @@ button.ed-person { cursor: pointer; }
 .ed-hint { color: var(--muted); }
 .ed-auto { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); white-space: nowrap; cursor: pointer; }
 .ed-auto input { margin: 0; }
+.ed-wrap { border: 0; background: none; padding: 3px 5px; border-radius: 5px; color: var(--muted); cursor: pointer; display: inline-flex; }
+.ed-wrap:hover { background: var(--wash); color: var(--ink); }
+.ed-wrap.on { color: var(--s1); background: color-mix(in srgb, var(--s1) 14%, transparent); }
 .ed-body { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--hl-bg); }
 .ed-body .cm-editor { flex: 1; min-height: 0; background: var(--hl-bg); color: var(--ink); font-size: 12.5px; }
 .ed-body .cm-editor.cm-focused { outline: none; }
@@ -993,6 +996,11 @@ button.ed-status { border: 0; cursor: pointer; font: inherit; font-size: 11.5px;
 .ed-body .ed-cf.from-branch .ed-cf-label, .ed-body .ed-cf.from-branch .ed-cf-theirs {
   background: color-mix(in srgb, var(--who, var(--s1)) 7%, transparent); box-shadow: inset 3px 0 0 var(--who, var(--s1)); }
 .ed-body .ed-cf-head .ed-avs img { width: 16px; height: 16px; margin: 0; }
+.ed-body.wrap .ed-cf-theirs { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
+/* within a box's change: the words it adds (in its lines), and those it takes out (in the lines here) */
+.ed-body .ed-cf-theirs .ed-add { background: color-mix(in srgb, var(--good) 30%, transparent); border-radius: 2px; }
+.ed-body .ed-del { background: color-mix(in srgb, var(--critical) 24%, transparent); border-radius: 2px;
+  text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--critical) 75%, transparent); }
 .ed-body .ed-cf-mine.from-branch { background: color-mix(in srgb, var(--who, var(--s1)) 12%, transparent); box-shadow: inset 3px 0 0 var(--who, var(--s1)); }
 .ed-brs:not(:empty) { padding: 0 8px 6px; }
 .ed-row .mk.br { font-size: 10.5px; font-weight: 700; color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 60%, transparent);
@@ -2403,6 +2411,7 @@ const ICONS = {
   folderUp: "M1.75 4a1 1 0 0 1 1-1h3.4l1.5 1.6h5.6a1 1 0 0 1 1 1v6.65a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1zM8 11.1V7.1M6.3 8.8 8 7.1l1.7 1.7",   // the folder above
   power: "M8 1.75v5.5M4.6 3.9a5.25 5.25 0 1 0 6.8 0",                  // a shell terminated
   chevron: "M6 3.5 10.5 8 6 12.5",                                     // more, folded: turned down once shown
+  wrap: "M2 3.5h12M2 7.5h9.25a2.25 2.25 0 0 1 0 4.5H8.5M10 10.5 8.5 12 10 13.5M2 11.5h3.5",   // long lines wrapped
   branch: "M4.5 2.5v8.5M3 12.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M10 4.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0"
     + "M11.5 6c0 3.25-7 2.25-7 5",                                       // an actor on a branch of its own
 };
@@ -4163,7 +4172,7 @@ async function openBranchDialog(g, project) {
   }
   brRender();
   if (!brPick.dialog.open) brPick.dialog.showModal();
-  const first = brPick.dialog.querySelector(brPick.choosing ? ".br-add input" : "button.primary");
+  const first = brPick.dialog.querySelector(brPick.choosing ? ".br-add input" : "button[type=submit]");
   if (first) first.focus();
 }
 async function brSources(body) {
@@ -4222,7 +4231,7 @@ function brRender() {
     try { localStorage.setItem(BRANCH_APPROVE_KEY, brPick.approve ? "1" : "0"); } catch (e) { /* this page only */ }
   } });
   const ready = chosen && !brPick.choosing && !brPick.busy && !state.starting;
-  const starts = hs.map((h, i) => el("button", { type: "submit", value: h, class: i === 0 ? "primary" : "", ...(ready ? {} : { disabled: "" }) },
+  const starts = hs.map((h) => el("button", { type: "submit", value: h, ...(ready ? {} : { disabled: "" }) },
     harnessBadge(h), harnessName(h)));
   form.append(...[
     el("div", { class: "br-title" }, el("h3", {}, strokeIcon(ICONS.branch, 15), "New actor on a branch"),
@@ -7919,11 +7928,13 @@ const ED_SEND = 40;              // ms the edits of a burst of keys are gathered
 const ED_CREDIT = [3, 20];       // s an actor's recorded change may come before, and after, a change seen on disk, to be its
 const ED_AUTO_MS = 1000;         // ms after the last edit to a file that Auto-save saves it
 const ED_NAME_KEY = "ag-editor-name", ED_COLOR_KEY = "ag-editor-color", ED_ROOT_KEY = "ag-editor-folder", ED_AUTO_KEY = "ag-editor-autosave";
+const ED_WRAP_KEY = "ag-editor-wrap";
 const ED_SHOWN_KEY = "ag-dashboard-editor", ED_HEIGHT_KEY = "ag-dashboard-editor-height";
 const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, s: null, lib: null, me: null, user: "", err: "",
   timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null, side: null, changes: null,
   branches: [], brSig: "", brs: null,
-  auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })() };   // on unless turned off
+  auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })(),   // on unless turned off
+  wrap: (() => { try { return localStorage.getItem(ED_WRAP_KEY) !== "0"; } catch (e) { return true; } })() };  // long lines wrapped: likewise
 const edB64 = (u8) => { let t = ""; for (let i = 0; i < u8.length; i += 0x8000) t += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(t); };
 const edBytes = (t) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
 const edJoin = (dir, name) => (dir === "/" ? "/" : dir + "/") + name;
@@ -8341,6 +8352,7 @@ function edView(s) {
     provide: (f) => A.EditorView.decorations.from(f),
   });
   s.agents = { set: setAgents, sig: "" };
+  s.wrapping = new A.Compartment();                  // long lines wrapped, or not (the header's Wrap)
   ed.body.replaceChildren();
   s.view = new A.EditorView({
     parent: ed.body,
@@ -8349,7 +8361,7 @@ function edView(s) {
       extensions: [
         A.keymap.of([...A.yUndoManagerKeymap, { key: "Mod-s", preventDefault: true, run: () => { edSave(s); return true; } }, A.indentWithTab]),
         A.basicSetup, A.EditorState.lineSeparator.of("\n"), A.highlight, A.language(s.path), A.yCollab(s.ytext, s.awareness), marks,
-        zone, agents, conflicts,
+        zone, agents, conflicts, s.wrapping.of(ed.wrap ? A.EditorView.lineWrapping : []),
       ],
     }),
   });
@@ -8399,12 +8411,39 @@ async function edClearZone(s) {
   catch (e) { s.err = e.message; }
   if (ed.s === s) { edZone(s); edHead(); }
 }
+// What a box's change does within its lines, by word: (the lines here, the lines it would put in their place) as
+// [kind, text] parts -- "same", "del" (in the lines here only), "add" (in its lines only) -- from the longest run of
+// words the two share (their common start and end first left out); null where one side is empty, or too long to work
+// out at once (the whole lines are marked anyway).
+const ED_WORDS = /\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]+/gu, ED_DIFF_MAX = 250000;
+function edWordDiff(mine, theirs) {
+  if (!mine || !theirs || mine === theirs) return null;
+  const a = mine.match(ED_WORDS) || [], b = theirs.match(ED_WORDS) || [];
+  let pre = 0, post = 0;
+  while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
+  while (post < a.length - pre && post < b.length - pre && a[a.length - 1 - post] === b[b.length - 1 - post]) post++;
+  const x = a.slice(pre, a.length - post), y = b.slice(pre, b.length - post);
+  if (x.length * y.length > ED_DIFF_MAX) return null;
+  const n = x.length, m = y.length, L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = x[i] === y[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = [], put = (kind, text) => { const last = out[out.length - 1]; if (last && last[0] === kind) last[1] += text; else out.push([kind, text]); };
+  if (pre) put("same", a.slice(0, pre).join(""));
+  let i = 0, j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && x[i] === y[j]) { put("same", x[i]); i++; j++; }
+    else if (j < m && (i === n || L[i][j + 1] >= L[i + 1][j])) put("add", y[j++]);
+    else put("del", x[i++]);
+  }
+  if (post) put("same", a.slice(a.length - post).join(""));
+  return out;
+}
 // The conflicts, drawn: the lines kept here marked, and under them the file's lines, with what to do about them.
 let EdConflict = null;
 function edConflictWidget(A) {
   return EdConflict ||= class extends A.WidgetType {
-    constructor(s, c, by) { super(); this.s = s; this.c = c; this.by = by; }
-    eq(other) { return other.c.id === this.c.id && other.c.theirs === this.c.theirs && other.by.names.join("\n") === this.by.names.join("\n"); }
+    constructor(s, c, by, parts) { super(); this.s = s; this.c = c; this.by = by; this.parts = parts; }
+    eq(other) { return other.c.id === this.c.id && other.c.theirs === this.c.theirs && other.by.names.join("\n") === this.by.names.join("\n")
+      && JSON.stringify(other.parts) === JSON.stringify(this.parts); }
     toDOM() {
       const { s, c } = this, name = this.by.label, many = this.by.names.length > 1;
       const pick = (take, label, title) => el("button", { type: "button", title,
@@ -8447,7 +8486,12 @@ function edConflictWidget(A) {
           text: `${what}, ${ago(c.at)}.` }), el("span", { class: "grow" }), ...picks),
         c.theirs ? el("div", { class: "ed-cf-label", text: branch ? (mine ? "On its branch, in place of the lines above:" : "On its branch:")
           : mine ? "On disk now, in place of the lines above:" : "On disk now:" }) : null,
-        c.theirs ? el("pre", { class: "ed-cf-theirs", text: c.theirs.replace(/\n$/, "") }) : null);
+        c.theirs ? el("pre", { class: "ed-cf-theirs" }, ...(this.parts
+          ? this.parts.filter(([kind]) => kind !== "del").map(([kind, text], k, all) => {
+            if (k === all.length - 1) text = text.replace(/\n$/, "");
+            return kind === "add" && text.trim() ? el("span", { class: "ed-add", text }) : text;
+          })
+          : [c.theirs.replace(/\n$/, "")])) : null);
     }
     ignoreEvent() { return true; }
   };
@@ -8479,14 +8523,20 @@ function edDrawConflicts(s, list) {
   const v = s.view, A = s.A, doc = v.state.doc, Widget = edConflictWidget(A), out = [];
   for (const c of list) {
     const from = Math.min(c.from, doc.length), to = Math.min(Math.max(c.to, from), doc.length);
+    const parts = edWordDiff(doc.sliceString(from, to), c.theirs);
+    let at = from;                                   // what the change takes out of the lines here, marked in them
+    for (const [kind, text] of parts || []) {
+      if (kind === "del" && text.trim()) out.push(A.Decoration.mark({ class: "ed-del" }).range(at, at + text.length));
+      if (kind !== "add") at += text.length;
+    }
     if (to > from) {
       const color = c.agent ? edWhoColor(edActor(c.agent.gatherer, c.agent.channel)) : null;
       const deco = A.Decoration.line({ class: "ed-cf-mine" + (c.agent ? " from-branch" : ""), ...(color ? { attributes: { style: `--who: ${color}` } } : {}) });
       for (let p = from; p < to; ) { const line = doc.lineAt(p); out.push(deco.range(line.from)); p = line.to + 1; }
       const last = doc.lineAt(Math.max(from, to - 1));
-      out.push(A.Decoration.widget({ widget: new Widget(s, c, edConflictBy(s, c)), block: true, side: 1, cf: c.id }).range(last.to));
+      out.push(A.Decoration.widget({ widget: new Widget(s, c, edConflictBy(s, c), parts), block: true, side: 1, cf: c.id }).range(last.to));
     } else {
-      out.push(A.Decoration.widget({ widget: new Widget(s, c, edConflictBy(s, c)), block: true, side: -1, cf: c.id }).range(doc.lineAt(from).from));
+      out.push(A.Decoration.widget({ widget: new Widget(s, c, edConflictBy(s, c), parts), block: true, side: -1, cf: c.id }).range(doc.lineAt(from).from));
     }
   }
   v.dispatch({ effects: s.conflicts.set.of(A.Decoration.set(out, true)) });
@@ -8615,6 +8665,14 @@ function edAutoLater(s) {
   const due = () => ed.auto && ed.s === s && s.state && s.state.dirty && !s.state.missing && !edDiskConflicts(s).length;
   if (due()) s.autoT = setTimeout(() => { if (due()) edSave(s); }, ED_AUTO_MS);
 }
+function edSetWrap(on) {
+  ed.wrap = on;
+  try { localStorage.setItem(ED_WRAP_KEY, on ? "1" : "0"); } catch (e) { /* this page only */ }
+  if (ed.body) ed.body.classList.toggle("wrap", on);
+  const s = ed.s;
+  if (s && s.view && s.wrapping) s.view.dispatch({ effects: s.wrapping.reconfigure(on ? s.A.EditorView.lineWrapping : []) });
+  edHead();
+}
 function edSetAuto(on) {
   ed.auto = on;
   try { localStorage.setItem(ED_AUTO_KEY, on ? "1" : "0"); } catch (e) { /* this page only */ }
@@ -8710,6 +8768,10 @@ function edHead() {
       ...others.map(([, v]) => el("span", { class: "ed-person", style: `--who: ${v.user.color}`, title: `${v.user.name} has it open`, text: v.user.name })),
       s ? el("button", { type: "button", class: "ed-person", style: `--who: ${edMe().color}`, title: "You, as the others see you: click to change your name",
         onclick: edRename, text: `${edMe().name} (you)` }) : null),
+    el("button", { type: "button", class: "ed-wrap" + (ed.wrap ? " on" : ""), "aria-pressed": ed.wrap ? "true" : "false",
+      title: ed.wrap ? "Long lines wrapped, here and in the boxes of changes to merge: click to scroll them instead"
+        : "Wrap long lines, here and in the boxes of changes to merge, so they read whole without scrolling",
+      "aria-label": "Wrap long lines", onclick: () => edSetWrap(!ed.wrap) }, strokeIcon(ICONS.wrap, 15)),
     el("label", { class: "ed-auto", title: "Save the file a moment after each edit to it, yours or another's: the actors read it as it is typed. Not while a conflict with the file waits." },
       el("input", { type: "checkbox", checked: ed.auto ? "" : null, onchange: (ev) => edSetAuto(ev.target.checked) }), "Auto-save"),
     el("button", { type: "button", class: "primary", title: nc ? "Write it to the file on disk, your lines kept where they conflict (⌘S / Ctrl+S)" : "Write it to the file on disk (⌘S / Ctrl+S)",
@@ -8772,7 +8834,7 @@ function edMount() {
     ed.bar = el("div", { class: "ed-bar" });
     ed.tree = el("div", { class: "ed-rows" });
     ed.head = el("div", { class: "ed-head" });
-    ed.body = el("div", { class: "ed-body" });
+    ed.body = el("div", { class: "ed-body" + (ed.wrap ? " wrap" : "") });
     ed.side = el("aside", { class: "ed-changes files", hidden: "", "aria-label": "An actor's changes to the file" });
     ed.brs = el("div", { class: "ed-brs" });
     ed.host = el("div", { class: "ed" }, el("nav", { class: "ed-tree", "aria-label": "Files" }, ed.bar, ed.brs, ed.tree),
