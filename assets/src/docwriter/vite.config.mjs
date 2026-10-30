@@ -1,4 +1,4 @@
-// Builds DocWriter's page (upstream/, fetched by fetch.mjs) into ag_dashboard/vendor/docwriter/, the parts of it
+// Builds DocWriter's page (upstream/, its git submodule) into ag_dashboard/vendor/docwriter/, the parts of it
 // that talk to DocWriter's own server swapped for src/'s, which talk to the dashboard's: the aliases below. The
 // page is served at /docwriter/ (server.py), so it is built with relative paths.
 import fs from "node:fs";

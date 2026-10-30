@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { build } from "vite";
 import config, { OUT } from "./vite.config.mjs";
-import { PIN } from "./fetch.mjs";
+import { UPSTREAM } from "./fetch.mjs";
 
 const here = import.meta.dirname;
 const bundled = new Set();
@@ -60,7 +60,7 @@ const licenseOf = (dir, fallback) => {
   const file = fs.readdirSync(dir).find((n) => /^(licen[cs]e|copying)/i.test(n));
   return file ? fs.readFileSync(path.join(dir, file), "utf8").trim() : `License: ${fallback}`;
 };
-const notices = [`DocWriter (github.com/docwriter-org/docwriter at ${PIN}) (MIT)\n\n${licenseOf(path.join(here, "upstream"), "MIT")}\n`];
+const notices = [`DocWriter (github.com/docwriter-org/docwriter at ${UPSTREAM}) (MIT)\n\n${licenseOf(path.join(here, "upstream"), "MIT")}\n`];
 for (const dir of [...bundled].sort()) {
   if (!fs.existsSync(path.join(dir, "package.json"))) continue;
   const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));

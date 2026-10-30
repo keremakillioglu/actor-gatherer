@@ -1,17 +1,21 @@
-// Fetches what build.mjs builds from, into this folder (both ignored by git):
-//   upstream/  DocWriter's source (github.com/docwriter-org/docwriter, MIT) at PIN: its Svelte page is built from it
+// Readies what build.mjs builds from, in this folder:
+//   upstream/  DocWriter's source (github.com/docwriter-org/docwriter, MIT), a git submodule (.gitmodules, shallow):
+//              the commit the repo records for it -- its pin -- is what its Svelte page is built from. Checked out
+//              here if it is not yet (a new clone or worktree); one checked out at another commit is built as it
+//              is, and said so, as when the pin is being moved
 //   pdfjs/     pdf.js's prebuilt viewer at PDFJS (Apache-2.0), the files DocWriter's own setup takes from it
-//              (scripts/setup-pdfjs.mjs there), its zip checked against PDFJS_SHA256
-// Run: npm run fetch (npm run build runs it first). Moving PIN is how DocWriter is updated: build, and check
-// the files src/ stands in for (vite.config.mjs) still have the shape src/ expects.
+//              (scripts/setup-pdfjs.mjs there), its zip checked against PDFJS_SHA256 (ignored by git)
+// Run: npm run fetch (npm run build runs it first). DocWriter is updated by moving the submodule, here:
+//   git -C upstream fetch --depth 1 origin main && git -C upstream checkout FETCH_HEAD
+// then npm run build; check the files src/ stands in for (vite.config.mjs) still have the shape src/ expects
+// (git -C upstream diff <old pin> HEAD -- src/routes/api src/lib/server src/lib/yjs-doc.ts, say); and commit
+// upstream -- the new pin -- with ag_dashboard/vendor/docwriter/.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 const here = import.meta.dirname;
-const REPO = "https://github.com/docwriter-org/docwriter.git";
-export const PIN = "449f41cbe74d2bf5fd89f478b7e67951ce77746f";
 const PDFJS = "4.0.379";
 const PDFJS_SHA256 = "11e5e00cf620e73f4b0b832d662b37d6a0cd25b3d0c817acfffec8516bc922dc";
 const VIEWER_PATCH = 2;     // what is changed in its viewer.html, below: a new one, extracted again
@@ -26,16 +30,18 @@ function git(...args) {
 }
 
 const upstream = path.join(here, "upstream");
-let have = null;
-try {
-  have = execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-} catch { /* none yet */ }
-if (have !== PIN) {
-  fs.rmSync(upstream, { recursive: true, force: true });
-  git("init", "-q", upstream);
-  git("-C", upstream, "fetch", "-q", "--depth", "1", REPO, PIN);
-  git("-C", upstream, "-c", "advice.detachedHead=false", "checkout", "-q", "FETCH_HEAD");
-  console.log(`upstream: DocWriter at ${PIN.slice(0, 7)}`);
+const top = git("-C", here, "rev-parse", "--show-toplevel");
+const pin = git("-C", top, "ls-files", "--stage", "--", path.relative(top, upstream)).split(/\s+/)[1];   // as staged
+if (!pin) throw new Error("upstream: no DocWriter submodule recorded here (.gitmodules)");
+if (!fs.existsSync(path.join(upstream, "package.json"))) {
+  git("-C", top, "submodule", "update", "--init", "--", path.relative(top, upstream));
+  console.log(`upstream: DocWriter checked out at its pin, ${pin.slice(0, 7)}`);
+}
+/** The commit of DocWriter the page is built from: its pin, unless another is checked out. */
+export const UPSTREAM = git("-C", upstream, "rev-parse", "HEAD");
+if (UPSTREAM !== pin) {
+  console.log(`upstream: building DocWriter at ${UPSTREAM.slice(0, 7)}, not its pin ${pin.slice(0, 7)}: `
+    + `commit upstream with the build to move the pin`);
 }
 // What SvelteKit's sync would write, which upstream's tsconfig.json extends: the compiler options the page is
 // built with (TypeScript stripped by esbuild, its imports kept as written)
