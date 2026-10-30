@@ -4821,7 +4821,7 @@ function dashboardCommand(text) {
 // terminal (and dismisses what the agent asks, as there). So does it from anywhere else on the page that nothing else
 // takes it (escapeShown), for the actor of the pane in focus (another pane's: its agPane.escape) -- else an Esc after a
 // click on the actor in the list, a turn or a button did nothing at all, the focus out of the box. Not typed in another
-// box, the Editor or a terminal, and nothing open that the Esc is for: a menu, a dialog, the settings. Before the rest
+// box, the Editor or a terminal, and nothing open that the Esc is for: a menu, a dialog (DocWriter's pop-up among them), the settings. Before the rest
 // (capture), so it knows whether the settings were open before their own Esc closes them.
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape" || ev.defaultPrevented || ev.isComposing) return;
@@ -4831,7 +4831,7 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
   if ((n && n.closest && n.closest("input, textarea, select, [contenteditable], .xterm, #ed-top"))
-    || document.querySelector("[role=menu]:not([hidden]), dialog[open]")
+    || document.querySelector("[role=menu]:not([hidden]), [role=dialog]:not([hidden]), dialog[open]")
     || !document.getElementById("about").hidden || !document.getElementById("cfg-file").hidden) return;
   if (!PANE && panes.focus !== panes.here ? panes.focus.call("escape") : escapeShown()) ev.preventDefault();
 }, true);
