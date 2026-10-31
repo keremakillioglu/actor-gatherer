@@ -13,8 +13,11 @@
     ag --gatherer demo --policy <policy> pi    ... made with this policy (and --poller X ... or --no-pollers)
     ag --dry-run codex exec "..."          print what would run, and run nothing
 
-ag's own commands -- help, home, config, status, stop, gatherers, show, new, model --
-are not harness names: a [cli.harnesses.<name>] named after one is refused.
+ag's own commands -- help, home, config, status, stop, dashboard, actors, gatherers, show,
+new, model -- are not harness names: a [cli.harnesses.<name>] named after one is refused.
+
+    ag actors                              from an actor's shell: the other actors of its gatherer, and
+                                           how to message them and the gatherer agent (ag/cli/actors.py)
 
 Everything after the harness's name goes to the harness as it is. Nothing the
 harness reads is changed: no config file of the harness is written, and

@@ -56,6 +56,10 @@ ENVIRONMENT = (
                                     "`\"path.ts:Export\"`."),
     ("AG_JOB", "", "set by the worker", "The job a worker runs (gatherer, job, id, properties), as JSON: each "
                                         "of its model calls' logs names it, for `ag dashboard`."),
+    ("AG_ACTOR", "", "set by the dashboard", "The actor `ag actors` asks as, where its harness does not say "
+                                             "(CLAUDE_CODE_SESSION_ID, CODEX_THREAD_ID)."),
+    ("AG_DASHBOARD", "", "set by the dashboard", "The dashboard `ag actors` asks: the one that runs the actor, else "
+                                                 "the one <home>/dashboard/address.json names."),
 )
 
 
@@ -110,7 +114,7 @@ def ensure() -> str:
 #: ag's own commands: no harness may be named one. `gatherers`, `show` and `new`
 #: are the home's (`ag home <them>`), given at the top for short.
 HOME_SHORTCUTS = ("gatherers", "show", "new", "model")
-RESERVED = ("help", "home", "config", "status", "stop", "dashboard") + HOME_SHORTCUTS
+RESERVED = ("help", "home", "config", "status", "stop", "dashboard", "actors") + HOME_SHORTCUTS
 
 
 def load() -> Dict[str, Any]:

@@ -19,7 +19,11 @@ then the least recently given -- never given first, in a fixed shuffled order (`
 hues mix. An actor whose picture is no longer in the folder is given another in the same way; with no
 pictures at all, none is given, and the page draws the actor's harness's mark. Each actor carries its
 picture's hue and motion too (`avatar_hue`, `avatar_motion`), for the page to draw it at work, and the line it
-says before its first message (`avatar_hello`)."""
+says before its first message (`avatar_hello`).
+
+An actor with a role (sessions.py's ROLES) has its role's picture instead, always the same, never kept nor given to any
+other actor (ROLES here): a gatherer agent, the manager. Those pictures are in DIR's ROLE_KIND folder, which the pool
+leaves out."""
 
 import hashlib
 import os
@@ -40,6 +44,7 @@ NAME = re.compile(r"^[a-z0-9_-]+/[a-z0-9_-]+$")
 HUE = re.compile(rb'data-hue="([^"]+)"')
 MOTION = re.compile(rb'data-motion="([^"]*)"')
 CIRCLE = re.compile(rb'<circle cx="32" cy="32" r="32"[^>]*/>')   # the circle of its hue a picture is drawn on (the README)
+FRAME = re.compile(rb'<g data-frame="1">[\s\S]*?</g>')           # a role's picture's badge, in its circle's place
 SCHEMA = """CREATE TABLE IF NOT EXISTS avatars (
     gatherer TEXT NOT NULL,
     channel  TEXT NOT NULL,
@@ -50,6 +55,8 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS avatars (
 )"""
 STYLES = 4                               # the lines a drawn picture says, one of each style (LINES)
 LINES = "hello.toml"                     # in DIR: what each says before its actor's first message, by its name
+ROLE_KIND = "roles"                      # DIR's folder of the pictures of actors with a role: not in the pool
+ROLES = {sessions.COORDINATOR: f"{ROLE_KIND}/manager"}   # a role -> its actors' picture
 
 _lock = threading.Lock()
 _read: Dict[str, Tuple[float, str, str]] = {}     # path -> (its mtime, its hue, its motion): a picture is read once
@@ -61,7 +68,7 @@ def pictures() -> Dict[str, str]:
     found = {}
     for kind in sorted(os.listdir(DIR)) if os.path.isdir(DIR) else []:
         folder = os.path.join(DIR, kind)
-        if not os.path.isdir(folder):
+        if not os.path.isdir(folder) or kind == ROLE_KIND:
             continue
         for entry in sorted(os.scandir(folder), key=lambda e: e.name):
             name = f"{kind}/{entry.name[:-4]}"
@@ -75,6 +82,22 @@ def pictures() -> Dict[str, str]:
                 _read[entry.path] = (mtime, hue.group(1).decode() if hue else name, motion.group(1).decode() if motion else "")
             found[name] = _read[entry.path][1]
     return found
+
+
+def role_picture(a: dict) -> Optional[Tuple[str, str]]:
+    """(the picture, its hue) of the actor `a` (data.home()'s) by its role: None for an actor with none, or a role
+    whose picture is not there."""
+    name = ROLES.get(a.get("role"))
+    p = path(name) if name else None
+    if p is None:
+        return None
+    mtime = os.stat(p).st_mtime
+    if _read.get(p, (None,))[0] != mtime:
+        with open(p, "rb") as fh:
+            head = fh.read(4096)
+        hue, how = HUE.search(head), MOTION.search(head)
+        _read[p] = (mtime, hue.group(1).decode() if hue else name, how.group(1).decode() if how else "")
+    return name, _read[p][1]
 
 
 def motion(name: str) -> str:
@@ -114,8 +137,9 @@ def hello(name: str) -> List[str]:
 
 
 def bare(svg: bytes) -> bytes:
-    """The picture `svg` without the circle it is drawn on: its character alone, to move on the page."""
-    return CIRCLE.sub(b"", svg, count=1)
+    """The picture `svg` without the circle it is drawn on -- or a role's picture without its badge (FRAME) -- its
+    character alone, to move on the page."""
+    return CIRCLE.sub(b"", FRAME.sub(b"", svg, count=1), count=1)
 
 
 def path(name: str) -> Optional[str]:
@@ -181,6 +205,11 @@ def attach(home: dict, kept: Dict[Tuple[str, str], str], pool: Dict[str, str],
     of its picture's lines each says): None where it has none in `pool` (pictures())."""
     for g in home["gatherers"]:
         for a in g["agents"]:
+            role = role_picture(a)
+            if role is not None:                 # its role's, whatever was kept for it
+                a["avatar"], a["avatar_hue"] = role
+                a["avatar_motion"], a["avatar_hello"] = motion(role[0]), says(a["channel"], hello(role[0]), None)
+                continue
             got = kept.get((g["name"], a["channel"]))
             a["avatar"] = got if got in pool else None
             a["avatar_hue"] = pool[got] if a["avatar"] else None
@@ -194,9 +223,10 @@ def assign(home: dict) -> dict:
     actor's `avatar`."""
     pool = pictures()
     has, said = kept()
-    if not pool or all(has.get((g["name"], a["channel"])) in pool for g in home["gatherers"] for a in g["agents"]):
+    if not pool or all(has.get((g["name"], a["channel"])) in pool or role_picture(a)
+                       for g in home["gatherers"] for a in g["agents"]):
         return attach(home, has, pool, said)         # each has its own: nothing to write
-    actors = sorted(((g, a) for g in home["gatherers"] for a in g["agents"]),
+    actors = sorted(((g, a) for g in home["gatherers"] for a in g["agents"] if not role_picture(a)),
                     key=lambda ga: ga[1].get("created") or ga[1].get("last") or 0, reverse=True)
     with _lock:
         os.makedirs(os.path.dirname(sessions.db_path()), exist_ok=True)

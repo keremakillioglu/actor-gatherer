@@ -23,6 +23,10 @@ ones it started:
     ended            when (epoch seconds) the dashboard's last process for it ended -- closed from the list,
                      exited, hung up; not a codex turn's own end -- what tells it Closed where ag cannot tell
                      whether a process runs (no /proc: macOS); 0 when none has
+    role             what the session is for, besides its messages: "coordinator", its gatherer's gatherer agent
+                     (coordination.py), run with that role's instructions added to its harness's own on every run
+                     (`instructions`); or, as JSON, {"docwriter": key}: the agent of a DocWriter (docwriter.py),
+                     started with its tools and instructions (`extra_args`); NULL, an actor like any other
 
 The agent is one long-running process, `ag --gatherer G claude -p --input-format stream-json
 --output-format stream-json ...`: each message is a line on its stdin, a turn, and each turn
@@ -121,6 +125,13 @@ except ImportError:
 HARNESSES = ("claude", "codex")
 PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "manual")
 CHAT_MODES = ("terminal", "headless")          # what a message opens for a session with no terminal (`chat_mode`)
+COORDINATOR = "coordinator"                    # the role of a gatherer's gatherer agent (coordination.py)
+ROLES = (COORDINATOR,)
+#: What tells a command an actor runs which actor runs it, and which dashboard delivers its messages (coordination.py,
+#: `ag actors`): set in every session the dashboard starts (`actor_env`), as each harness also says (its own session's
+#: variable: Claude Code's CLAUDE_CODE_SESSION_ID, codex's CODEX_THREAD_ID).
+ACTOR_VAR, DASHBOARD_VAR = "AG_ACTOR", "AG_DASHBOARD"
+DASHBOARD: Optional[str] = None                # this dashboard's address, as its server set it (server.py's `serve`)
 SHELL_ID = re.compile(r"shell:[0-9a-f]{12}")   # a shell's id (`shell`): never a channel's
 GATHERER = re.compile(r"[A-Za-z0-9._-]+")      # the names ag takes
 # What says the dashboard itself runs inside a Claude Code session; its agents are sessions of their own.
@@ -141,12 +152,13 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS sessions (
     kept            REAL NOT NULL DEFAULT 0,
     model           TEXT,
     started_as      TEXT,
-    ended           REAL NOT NULL DEFAULT 0
+    ended           REAL NOT NULL DEFAULT 0,
+    role            TEXT
 )"""
 COLUMNS = ("session_id", "gatherer", "harness", "cwd", "permission_mode", "created_at", "turns", "status", "last_error",
-           "kept", "model", "started_as", "ended")
+           "kept", "model", "started_as", "ended", "role")
 ADDED = (("kept", "REAL NOT NULL DEFAULT 0"), ("model", "TEXT"), ("started_as", "TEXT"),
-         ("ended", "REAL NOT NULL DEFAULT 0"))   # columns a table from before lacks
+         ("ended", "REAL NOT NULL DEFAULT 0"), ("role", "TEXT"))   # columns a table from before lacks
 # The dashboard's other tables in dashboard.db with a row per actor, by (gatherer, channel): saved.py's, seen.py's,
 # avatars.py's -- what a session discarded (`discard`) takes with it.
 ACTOR_TABLES = ("saved", "seen", "avatars")
@@ -179,8 +191,8 @@ def stored() -> List[dict]:
         return []
     conn = sqlite3.connect(f"file:{db_path()}?mode=ro", uri=True, timeout=8)
     conn.row_factory = sqlite3.Row
-    try:                                # a table from before `kept`, `model`, `started_as`, `ended`: none
-        return [{"kept": 0, "model": None, "started_as": None, "ended": 0, **dict(r)}
+    try:                                # a table from before `kept`, `model`, `started_as`, `ended`, `role`: none
+        return [{"kept": 0, "model": None, "started_as": None, "ended": 0, "role": None, **dict(r)}
                 for r in conn.execute("SELECT * FROM sessions ORDER BY created_at DESC")]
     except sqlite3.Error:
         return []
@@ -365,6 +377,41 @@ def agent_env(environ: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     return env
 
 
+def actor_env(s: dict, env: Dict[str, str]) -> Dict[str, str]:
+    """`env` for the session `s` (a row of the table) to run in: who it is (ACTOR_VAR: the id it was started under --
+    a codex session's before its thread had one, which coordination.py knows it by) and the dashboard that runs it."""
+    return {**env, ACTOR_VAR: s.get("started_as") or s["session_id"], **({DASHBOARD_VAR: DASHBOARD} if DASHBOARD else {})}
+
+
+def instructions(s: dict) -> Optional[str]:
+    """What the session `s` (a row of the table) is told besides its harness's own instructions, on every run: its
+    role's (coordination.py); None for an actor like any other."""
+    if s.get("role") != COORDINATOR:
+        return None
+    from . import coordination                  # it runs sessions: asked here, once both are loaded
+    return coordination.instructions(s["gatherer"])
+
+
+def extra_args(s: dict) -> List[str]:
+    """What a session's harness is started with besides its own options, as its `role` says -- a DocWriter's agent:
+    its tools and instructions (docwriter.py's `launch_args`); [] for any other."""
+    if not str(s.get("role") or "").startswith("{"):
+        return []
+    from . import docwriter                     # here: it uses this module
+    return docwriter.launch_args(s)
+
+
+def known_role(role: str) -> bool:
+    """Whether `role` is one a session may have: one of ROLES, or a DocWriter's ({"docwriter": key}, docwriter.py)."""
+    if role in ROLES:
+        return True
+    try:
+        got = json.loads(role)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(got, dict) and isinstance(got.get("docwriter"), str)
+
+
 def login_shell() -> str:
     """The user's shell: $SHELL, else the one their account names, else /bin/sh -- the first that can be run."""
     try:
@@ -458,6 +505,12 @@ def models(harness: str) -> dict:
     if value.get("models"):
         _models[harness] = {"at": time.time(), "value": value}
     return value
+
+
+def _unsaid(argv: List[str], told: Optional[str]) -> List[str]:
+    """`argv` as its log line has it: a role's instructions (`told`) named, not written out."""
+    hidden = (told, json.dumps(told)) if told else ()                  # as given, or as codex's `-c` value has it
+    return [a if not any(h in a for h in hidden) else "<the instructions of its role>" for a in argv]
 
 
 def _now() -> str:
@@ -616,9 +669,10 @@ class Sessions:
             return out
 
     def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = "claude",
-               model: Optional[str] = None) -> dict:
+               model: Optional[str] = None, role: Optional[str] = None) -> dict:
         """A new session of `harness` in `gatherer` (a new gatherer if none has the name), to run in `cwd`
-        on `model` (None: the harness's default). Its agent starts with its first message."""
+        on `model` (None: the harness's default), for `role` (`known_role`; None: an actor like any other). Its agent starts
+        with its first message."""
         gatherer = (gatherer or "").strip()
         if not GATHERER.fullmatch(gatherer):
             raise SessionError("a gatherer's name may hold letters, digits, '.', '_' and '-' only")
@@ -632,12 +686,14 @@ class Sessions:
         model = (model or "").strip() or None
         if model and not re.fullmatch(r"[A-Za-z0-9._:/@-]+", model):
             raise SessionError(f"model {model!r}: not a model's name")
+        if role is not None and not known_role(role):
+            raise SessionError(f"role {role!r}: one of {', '.join(ROLES)}, or a DocWriter's")
         session_id = str(uuid.uuid4())
         conn = self._db()
         try:
-            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?, 0)",
+            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?, 0, ?)",
                          (session_id, gatherer, harness, cwd, permission_mode, _now(), model,
-                          session_id if harness == "codex" else None))
+                          session_id if harness == "codex" else None, role))
         finally:
             conn.close()
         self._changed(gatherer, session_id)
@@ -658,7 +714,7 @@ class Sessions:
                                    + (f" ({cwd})" if cwd else ""))
             conn = self._db()
             try:
-                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, 'auto', ?, 1, 'stopped', NULL, 0, NULL, NULL, 0)",
+                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, 'auto', ?, 1, 'stopped', NULL, 0, NULL, NULL, 0, NULL)",
                              (session_id, gatherer, _session_harness(gatherer, session_id), cwd, _now()))
             finally:
                 conn.close()
@@ -837,16 +893,18 @@ class Sessions:
 
     def _start(self, s: dict) -> _Agent:
         sid = s["session_id"]
+        told = instructions(s)
         argv = [*ag_command(), "--gatherer", s["gatherer"], s["harness"], "-p",
                 "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-                "--permission-mode", s["permission_mode"], "--permission-prompts", "none",
+                "--permission-mode", s["permission_mode"], "--permission-prompts", "none", *extra_args(s),
+                *(harness_kit.get(s["harness"]).instruction_args(told) if told else []),
                 *(["--resume", sid] if s["turns"] else ["--session-id", sid])]
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
         log = open(log_path(sid), "a", encoding="utf-8", buffering=1)
-        log.write(f"--- {_now()} {shlex.join(argv)}\n")
+        log.write(f"--- {_now()} {shlex.join(_unsaid(argv, told))}\n")
         try:
-            proc = subprocess.Popen(argv, cwd=s["cwd"], env=agent_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=log, text=True, bufsize=1, start_new_session=True)
+            proc = subprocess.Popen(argv, cwd=s["cwd"], env=actor_env(s, agent_env()), stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=log, text=True, bufsize=1, start_new_session=True)
         except OSError as exc:
             log.close()
             self._set(sid, status="failed", last_error=f"could not run ag: {exc}")
@@ -861,15 +919,17 @@ class Sessions:
     def _exec(self, s: dict, text: str) -> _Agent:
         """A codex turn: `ag ... codex exec --json [resume <id>] -`, the message on its stdin (the lock held)."""
         sid = s["session_id"]
+        told = instructions(s)
         argv = [*ag_command(), "--gatherer", s["gatherer"], "codex", "exec", "--json", "--skip-git-repo-check",
-                *(["-m", s["model"]] if s.get("model") else []), *CODEX_PERMISSIONS.get(s["permission_mode"], []),
+                *extra_args(s), *(["-m", s["model"]] if s.get("model") else []), *CODEX_PERMISSIONS.get(s["permission_mode"], []),
+                *(harness_kit.get("codex").instruction_args(told) if told else []),
                 *(["resume", sid] if s["turns"] else []), "-"]
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
         log = open(log_path(sid), "a", encoding="utf-8", buffering=1)
-        log.write(f"--- {_now()} {shlex.join(argv)}\n")
+        log.write(f"--- {_now()} {shlex.join(_unsaid(argv, told))}\n")
         try:
-            proc = subprocess.Popen(argv, cwd=s["cwd"], env=agent_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=log, text=True, bufsize=1, start_new_session=True)
+            proc = subprocess.Popen(argv, cwd=s["cwd"], env=actor_env(s, agent_env()), stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=log, text=True, bufsize=1, start_new_session=True)
         except OSError as exc:
             log.close()
             self._set(sid, status="failed", last_error=f"could not run ag: {exc}")
@@ -1102,14 +1162,15 @@ class Sessions:
         h = harness_kit.get(s["harness"])               # its own options: the harness's (harness_kit's `command`)
         if h is None:
             raise SessionError(f"no rules for {s['harness']} to start it with")
+        told = instructions(s)
         argv = [*ag_command(), "--quiet", "--gatherer", s["gatherer"], s["harness"],     # quiet: ag's notes not on its screen
-                *h.command(sid, resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
-                           fullscreen=fullscreen), *first]
-        env = {**{k: v for k, v in agent_env().items() if k not in OUTER_TERMINAL and not (fullscreen and k in CLASSIC)},
+                *extra_args(s), *h.command(sid, resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
+                           fullscreen=fullscreen, instructions=told), *first]
+        env = {**{k: v for k, v in actor_env(s, agent_env()).items() if k not in OUTER_TERMINAL and not (fullscreen and k in CLASSIC)},
                "TERM": "xterm-256color", "COLORTERM": "truecolor", **({} if fullscreen else CLASSIC)}   # full screen even if the dashboard's own is classic
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
         log = open(log_path(sid), "a", encoding="utf-8", buffering=1)
-        log.write(f"--- {_now()} terminal{' (full screen)' if fullscreen else ''} {shlex.join(argv[:len(argv) - len(first)])}"
+        log.write(f"--- {_now()} terminal{' (full screen)' if fullscreen else ''} {shlex.join(_unsaid(argv[:len(argv) - len(first)], told))}"
                   f"{' -- <the message sent>' if first else ''}\n")       # the message not logged: a line of it is no line of ag's
         try:
             pid, fd = pty.fork()

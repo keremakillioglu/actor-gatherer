@@ -179,8 +179,9 @@ def merge(*row_lists) -> list:
 
 
 def other_requests(conn, types: TypeIds, groups: Groups, tok: Tokenizer, channel_id: Optional[str],
-                   after_row: int = 0) -> List[Tuple[Optional[str], Entry]]:
+                   after_row: int = 0, keep=None) -> List[Tuple[Optional[str], Entry]]:
     """(channel, entry) for every user message stored in another channel
-    after `after_row`, oldest first."""
+    after `after_row`, oldest first -- those `keep(row)` keeps, given one."""
     return [(channel_of(r), entry(r, types, groups, tok))
-            for r in conn.rows(after_row, types.of(*groups.user), differ=channel.of(channel_id))]
+            for r in conn.rows(after_row, types.of(*groups.user), differ=channel.of(channel_id))
+            if keep is None or keep(r)]

@@ -36,6 +36,11 @@ context manager's home (data.py), read-only. Standard library only.
                                           first time the page shows the view
     GET /api/edit/list?dir=D&root=R       editor.listing(D, R): a directory under R, each entry with who edits it
     GET /api/edit/place?gatherer=G&channel=C&cwd=D   {dir}: where the actor's work is, the Editor opened from its pane
+    GET /api/projects?gatherer=G[&dirs=[D, ...]]   {projects, suggestions}: the gatherer's projects, the repositories
+                                          its actors' branches are made from, and those the directories D are in
+                                          (branches.py)
+    GET /api/branches?root=R              the actors' branches of the projects R is in or holds, each with its changes
+                                          held for the reader (branches.py's `under`)
         shows (editor.place: the folder holding what it changed lately; null, none)
     GET /api/edit/stream?path=P&root=R&conn=C&client=N   server-sent events, until the page goes: the file P (under
         R) opened for editing (editor.py), shared with every other page editing it: `init` {epoch, update (the
@@ -45,6 +50,13 @@ context manager's home (data.py), read-only. Standard library only.
         zone: [[from, to], ...] (the conflict zone)} as they come; `failed` {error} when it cannot be opened
     GET /views/<name>.js                  one of them, which the page loads (page.html: chat views)
     POST /api/gatherers {name}            a new gatherer (`ag new`), no session yet -> {name}
+    POST /api/projects {gatherer, add | remove, dirs?}   a project set for the gatherer (a folder in a repository, or a
+                                          GitHub repository: cloned), or no longer -> as GET /api/projects
+    POST /api/branches {gatherer, project, harness?, approve?, model?}   a new session on a new branch of the project,
+                                          in a worktree of its own (branches.py's `create`) -> the session
+    POST /api/branches/approve {session_id, approve}   whether every change of its branch's is asked about
+    POST /api/branches/decide {session_id, path, take}   each change of its branch's to the file held for the reader,
+                                          taken in ("theirs") or left out ("mine") -> the branch
     POST /api/sessions {gatherer, cwd?, permission_mode?, harness?, model?}  a new one (harness claude, the
                                           default, or codex) -> the session
     POST /api/send {session_id, text, cols?, rows?, fullscreen?}  a message to it -> the session: typed into
@@ -58,6 +70,12 @@ context manager's home (data.py), read-only. Standard library only.
                                           has `box` (sessions.py's NotAtBox)
     POST /api/send {gatherer, channel, text, ...}  the same to a Claude Code or codex session not started here,
                                           taken into the table first (sessions.py's `adopt`)
+    POST /api/coordinator {gatherer, cwd?, harness?}  the gatherer's gatherer agent, started (with no message yet) if it
+                                          has none (coordination.py) -> the session
+    POST /api/actors/<op> {actor, ...}    what an actor's `ag actors` asks (coordination.py; `actor`, its id): list {all?},
+                                          show {ref}, who {path}, send {ref, text}, new {text, cwd?, harness?, model?, like?,
+                                          name?, docwriter?}, when {ref, note?}, watches, unwatch {watch} -> what it answers; an
+                                          error's text for the command to print (400)
     POST /api/stop {session_id}           its agent, idle, ended -- or its terminal closed -> the session
     POST /api/discard {session_id}        one that never started -- no process of it running, nothing of it in its
                                           gatherer -- forgotten: listed nowhere, nothing of it kept (sessions.py's
@@ -96,6 +114,17 @@ context manager's home (data.py), read-only. Standard library only.
                                           (take "mine"), the file's in their place ("theirs"), or both -> its state
     POST /api/edit/zone/clear {path, root}   the conflict zone cleared: the lines edited here the file's to change,
                                           as any other -> its state
+    GET /docwriter/w/<key>/...            a DocWriter (docwriter.py): its page and pdf.js viewer (vendor/docwriter/), its
+                                          settings (dw), what it keeps (kv), the page's one stream (stream: its
+                                          documents' changes, the actor's tool calls for it to run, the live notices),
+                                          DocWriter's own /api routes (preview, a file's bytes; the rest JSON)
+    POST, PUT, PATCH, DELETE /docwriter/w/<key>/...   the rest of them: a document opened, left, edited and saved
+                                          (doc/join, doc/leave, doc/update, doc/save), the message to its actor (send), what the author decided
+                                          (record), the page's file calls (fs), a tool's answer (tools/result, and
+                                          tools/list), the MCP server its actor calls (mcp), its edit guard (guard),
+                                          DocWriter's own /api routes
+    POST /api/docwriter {gatherer, cwd, harness?, model?}   a new DocWriter on `cwd`, its actor a new session of
+                                          `harness` in the gatherer (docwriter.py's `create`) -> its settings: {key, ...}
     GET /api/settings                     ag's settings, its config.toml (settings.py)
     POST /api/settings/model {model, api_base?, key_env?}   the Gatherer's model, by `ag model` -> the settings
     POST /api/settings/defaults {version, policy?, pollers?, gatherer?}   a new gatherer's defaults -> the settings
@@ -122,18 +151,19 @@ import base64
 import json
 import os
 import queue
+import re
 import select
 import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import parse_qs, urlsplit
 
 import harness_kit
 
-from . import (actions, avatars, data, editor, files, hiding, history, home, live, migrating, monitor, naming, saved, seen,
-               sessions, settings)
+from . import (actions, avatars, branches, coordination, data, docwriter, editor, files, hiding, history, home, live, mcp,
+               migrating, monitor, naming, saved, seen, sessions, settings)
 
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 _VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
@@ -190,7 +220,8 @@ def _signature(value) -> str:
 
 
 def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: editor.Editors,
-            known: Optional[data.Kept] = None):
+            crew: coordination.Coordination, known: Optional[data.Kept] = None,
+            branched: Optional[branches.Branches] = None, docwriters: Optional[docwriter.DocWriters] = None):
     shared, sharing = {"version": None, "at": 0.0, "value": None}, threading.Lock()
 
     def home_view(woken: bool = False) -> dict:
@@ -219,7 +250,9 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                                if a.get("turn_over") and a.get("status") not in (data.ASKING, data.RUNNING))
         return {**avatars.assign(home), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
                 "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "shells": started.shells(),
-                "home_dir": os.path.expanduser("~"), "editor": editor.AVAILABLE}
+                "home_dir": os.path.expanduser("~"), "editor": editor.AVAILABLE,
+                "branches": branched.listed() if branched is not None else [],
+                "docwriter": docwriter.AVAILABLE and os.path.isfile(os.path.join(docwriter.VENDOR, "index.html"))}
 
     def codex_dialog(sid: str) -> Optional[dict]:
         """What a codex session's terminal -- the dashboard's -- shows asking the user now, where a message typed
@@ -279,10 +312,17 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                 if url.path == "/vendor/editor.js":
                     with open(EDITOR, "rb") as fh:
                         return self.send(200, fh.read(), "text/javascript; charset=utf-8")
-                if url.path in ("/api/edit/list", "/api/edit/stream", "/api/edit/place") and not self.local_host():
+                if url.path in ("/api/edit/list", "/api/edit/stream", "/api/edit/place", "/api/projects",
+                                "/api/branches") and not self.local_host():
                     return self.send(403, b"only the dashboard's own page may do that", "text/plain")
                 if url.path == "/api/edit/list":
                     return self.answer(editors.listing(q.get("dir", ""), q.get("root", "")))
+                if url.path == "/api/projects" and q.get("gatherer"):
+                    g = q["gatherer"]
+                    return self.answer({"projects": branches.projects(g),
+                                        "suggestions": branches.suggestions(g, _strings(q.get("dirs")))})
+                if url.path == "/api/branches" and branched is not None:
+                    return self.answer(branched.under(q.get("root", "")))
                 if url.path == "/api/edit/place" and q.get("gatherer") and "channel" in q:
                     return self.answer({"dir": editor.place(q["gatherer"], q["channel"], q.get("cwd", ""))})
                 if url.path == "/api/edit/stream":
@@ -329,6 +369,11 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer(history.search(q["gatherer"], q.get("channel"), q.get("q", "")))
                 if url.path == "/api/extracts" and q.get("gatherer"):
                     return self.answer(history.extracts(q["gatherer"]))
+                if url.path.startswith("/docwriter/w/"):
+                    return self.docwriter("GET", url, b"")
+                if url.path == "/docwriter-mark.svg":         # DocWriter's mark, which its page asks for at the root
+                    got = docwriter.asset("docwriter-mark.svg")
+                    return self.send(200, *got) if got else self.send(404, b"not found", "text/plain")
                 return self.send(404, b"not found", "text/plain")
             except editor.EditorError as exc:
                 return self.send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
@@ -477,6 +522,151 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
             finally:
                 room.leave(conn)
 
+        def docwriter(self, method: str, url, raw: bytes) -> None:
+            """A request of a DocWriter's page, or of its actor (its MCP server, its edit guard): docwriter.py's."""
+            m = re.fullmatch(r"/docwriter/w/([0-9a-f]{16})(?:/(.*))?", url.path)
+            if m is None or docwriters is None:
+                return self.send(404, b"not found", "text/plain")
+            key, rest = m.group(1), m.group(2) or ""
+            q = {k: v[0] for k, v in parse_qs(url.query).items()}
+            dws = docwriters
+            try:
+                if method == "GET":
+                    if rest in ("", "preview") or rest.startswith(("assets/", "pdfjs/")):
+                        got = docwriter.asset(rest)
+                        return self.send(200, *got) if got else self.send(404, b"not found", "text/plain")
+                    if rest == "dw":
+                        return self.answer(dws.config(key))
+                    if rest == "kv":
+                        names = [str(n) for n in json.loads(q.get("names") or "[]")]
+                        return self.answer(dws.kv(key, names))
+                    if rest == "stream":
+                        return self.queue_stream(*dws.join_page(key, q.get("conn", "")))
+                    if rest == "api/preview":
+                        body, kind = dws.preview(key, q.get("path", ""))
+                        self.send_response(200)
+                        self.send_header("Content-Type", kind)
+                        self.send_header("Content-Length", str(len(body)))
+                        self.send_header("Cache-Control", "no-store")
+                        self.send_header("X-Content-Type-Options", "nosniff")
+                        self.end_headers()
+                        return self.wfile.write(body)
+                    if rest == "mcp":                   # no stream of the server's own (mcp.py)
+                        return self.send(405, b"POST only", "text/plain")
+                    if rest.startswith("api/"):
+                        return self.answer_status(*dws.api(key, "GET", rest[4:], q, None))
+                    return self.send(404, b"not found", "text/plain")
+                if rest == "mcp" and method == "POST":
+                    status, value = mcp.handle(raw, dws.tools.tools(), lambda name, args: dws.tools.call(key, name, args))
+                    return self.answer_status(status, value) if value is not None else self.send(202, b"", "text/plain")
+                try:
+                    body = json.loads(raw or b"{}")
+                except ValueError:
+                    return self.send(400, json.dumps({"error": "a JSON body, please"}).encode(), "application/json")
+                if method == "POST" and rest == "doc/join":
+                    return self.answer(dws.join_doc(key, str(body.get("conn") or ""), str(body.get("tab") or "")))
+                if method == "POST" and rest == "doc/leave":
+                    dws.leave_doc(key, str(body.get("conn") or ""), str(body.get("tab") or ""))
+                    return self.answer({})
+                if method == "POST" and rest == "doc/update":
+                    dws.edit_doc(key, str(body.get("tab") or ""), str(body.get("conn") or ""),
+                                 base64.b64decode(str(body.get("update") or ""), validate=True))
+                    return self.answer({})
+                if method == "POST" and rest == "doc/save":
+                    return self.answer(dws.save_doc(key, str(body.get("tab") or ""), str(body.get("conn") or ""),
+                                                    str(body.get("text") or "")))
+                if method == "POST" and rest == "kv":
+                    dws.kv_set(key, body.get("set") if isinstance(body.get("set"), dict) else {})
+                    return self.answer({})
+                if method == "POST" and rest == "send":
+                    return self.answer(dws.send(key, str(body.get("text") or "")))
+                if method == "POST" and rest == "record":
+                    dws.record(key, str(body.get("type") or ""), body.get("payload"))
+                    return self.answer({})
+                if method == "POST" and rest == "fs":
+                    return self.answer(dws.fs(key, body))
+                if method == "POST" and rest == "tools/list":
+                    dws.tools.listed(body.get("tools"))
+                    return self.answer({})
+                if method == "POST" and rest == "tools/result":
+                    dws.tools.answered(str(body.get("id") or ""), body.get("result"))
+                    return self.answer({})
+                if method == "POST" and rest == "guard":
+                    return self.answer({"deny": dws.guard(key, str(body.get("path") or ""))})
+                if rest.startswith("api/"):
+                    return self.answer_status(*dws.api(key, method, rest[4:], q, body))
+                return self.send(404, b"not found", "text/plain")
+            except docwriter.DocWriterError as exc:
+                return self.send(exc.status, json.dumps({"error": str(exc)}).encode(), "application/json")
+            except (sessions.SessionError, ValueError, OSError) as exc:
+                return self.send(400, json.dumps({"error": f"{type(exc).__name__}: {exc}"}).encode(), "application/json")
+
+        def answer_status(self, status: int, value) -> None:
+            self.send(status, json.dumps(value).encode("utf-8"), "application/json")
+
+        def queue_stream(self, conn, leave) -> None:
+            """Server-sent events, each a (name, value) its queue gets, until the page goes or None comes; `leave`
+            called then."""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")      # it has no length: it ends when the connection does
+            self.close_connection = True
+            self.end_headers()
+            try:
+                while True:
+                    try:
+                        item = conn.queue.get(timeout=editor.GONE_CHECK)
+                    except queue.Empty:
+                        if self.gone():
+                            return
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                        continue
+                    if item is None:
+                        return
+                    self.event(*item)
+                    if conn.queue.empty():
+                        self.wfile.flush()
+                        if self.gone():                  # what was just sent went to a page that has gone
+                            return
+            except OSError:                              # the page went away
+                pass
+            finally:
+                leave()
+
+        def body_of(self, limit: int) -> Optional[bytes]:
+            """The request's body, or None: none to take (too large: its connection not used again)."""
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if not 0 <= length <= limit:
+                self.close_connection = True
+                return None
+            return self.rfile.read(length) if length else b""
+
+        def do_PUT(self):  # noqa: N802 - http.server's name; DocWriter's routes only
+            self.other("PUT")
+
+        def do_PATCH(self):  # noqa: N802
+            self.other("PATCH")
+
+        def do_DELETE(self):  # noqa: N802
+            self.other("DELETE")
+
+        def other(self, method: str) -> None:
+            """A PUT, PATCH or DELETE of a DocWriter's page: a method no page elsewhere sends without a preflight
+            this server never answers -- from no other origin, to this host as named."""
+            url = urlsplit(self.path)
+            raw = self.body_of(DOCWRITER_BODY)
+            origin = self.headers.get("Origin")
+            if raw is None or not url.path.startswith("/docwriter/w/") or not self.local_host() \
+                    or (origin is not None and urlsplit(origin).netloc != (self.headers.get("Host") or "")):
+                return self.send(403, json.dumps({"error": "only the dashboard's own page may do that"}).encode(),
+                                 "application/json")
+            return self.docwriter(method, url, raw)
+
         def local_host(self) -> bool:
             """Whether the request is to this host as named (not a name rebound to it): what reads files' text."""
             host = self.headers.get("Host") or ""
@@ -494,6 +684,12 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
 
         def do_POST(self):  # noqa: N802 - http.server's name
             url = urlsplit(self.path)
+            if url.path.startswith("/docwriter/w/"):          # a document's state may be larger than a message
+                raw = self.body_of(DOCWRITER_BODY)
+                if raw is None or not self.own_page():
+                    return self.send(403, json.dumps({"error": "only the dashboard's own page may do that"}).encode(),
+                                     "application/json")
+                return self.docwriter("POST", url, raw)
             try:
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
@@ -514,6 +710,29 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     return self.answer(started.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
                                                       str(body.get("permission_mode") or "auto"),
                                                       str(body.get("harness") or "claude"), str(body.get("model") or "") or None))
+                if url.path == "/api/projects":
+                    g = str(body.get("gatherer") or "")
+                    got = branches.remove_project(g, str(body["remove"])) if body.get("remove") \
+                        else branches.add_project(g, str(body.get("add") or ""))
+                    return self.answer({"projects": got, "suggestions": branches.suggestions(g, _strings(body.get("dirs")))})
+                if url.path == "/api/branches" and branched is not None:
+                    s = branched.create(str(body.get("gatherer") or ""), str(body.get("project") or ""),
+                                        str(body.get("harness") or "claude"), bool(body.get("approve")),
+                                        str(body.get("model") or "") or None)
+                    hub.ring(s["gatherer"], what="list")
+                    return self.answer(s)
+                if url.path == "/api/branches/approve" and branched is not None:
+                    got = branched.set_approve(str(body.get("session_id") or ""), bool(body.get("approve")))
+                    hub.ring(got["gatherer"], what="list")
+                    return self.answer(got)
+                if url.path == "/api/branches/decide" and branched is not None:
+                    return self.answer(branched.decide(str(body.get("session_id") or ""), str(body.get("path") or ""),
+                                                       str(body.get("take") or "")))
+                if url.path == "/api/docwriter":
+                    if docwriters is None:
+                        return self.send(404, b"not found", "text/plain")
+                    return self.answer(docwriters.create(str(body.get("gatherer") or ""), str(body.get("cwd") or ""),
+                                                       str(body.get("harness") or "claude"), str(body.get("model") or "") or None))
                 if url.path == "/api/send":
                     sid = str(body.get("session_id") or "")
                     if not sid and body.get("gatherer") and body.get("channel"):     # a session not started here
@@ -528,8 +747,15 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                                                     "or press Esc there to stop the turn, first")
                     return self.answer(started.send(sid, text, int(body.get("cols") or 120),
                                                     int(body.get("rows") or 32), bool(body.get("fullscreen"))))
+                if url.path == "/api/upload":
+                    return self.answer(home.save_upload(str(body.get("type") or ""), str(body.get("data") or "")))
                 if url.path == "/api/stop":
                     return self.answer(started.stop(str(body.get("session_id") or "")))
+                if url.path == "/api/coordinator":
+                    return self.answer(crew.page_coordinator(str(body.get("gatherer") or ""), str(body.get("cwd") or "") or None,
+                                                             str(body.get("harness") or "") or None))
+                if url.path.startswith("/api/actors/"):
+                    return self.answer(actors_op(crew, url.path[len("/api/actors/"):], body))
                 if url.path == "/api/discard":
                     sid = str(body.get("session_id") or "")
                     row = next((x for x in started.list() if x["session_id"] == sid), None)
@@ -538,6 +764,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                     if data.actors(row["gatherer"], {sid}, []):   # its gatherer has something of it: a history to keep
                         raise sessions.SessionError("it has a conversation in its gatherer: close it instead")
                     started.discard(sid)
+                    if branched is not None:             # its branch, if it had one: gone too
+                        branched.discarded(sid)
                     hub.ring(None, what="list")          # every open page's list
                     return self.answer({})
                 if url.path == "/api/terminal":
@@ -641,7 +869,33 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
     return Handler
 
 
-MAX_BODY = 1_000_000        # the largest request body taken: a message, not a file
+def actors_op(crew: coordination.Coordination, op: str, body: dict):
+    """What an actor's `ag actors <op>` asked (server.py's doc): the coordination's answer."""
+    s = lambda k: str(body.get(k) or "")              # noqa: E731
+    opt = lambda k: s(k) or None                      # noqa: E731
+    me = s("actor")
+    if op == "list":
+        return crew.list(me, bool(body.get("all")))
+    if op == "show":
+        return crew.show(me, s("ref"))
+    if op == "who":
+        return crew.who(me, s("path"))
+    if op == "send":
+        return crew.send(me, s("ref"), s("text"))
+    if op == "new":
+        return crew.new(me, s("text"), opt("cwd"), opt("harness"), opt("model"), opt("like"), opt("name"),
+                        bool(body.get("docwriter")))
+    if op == "when":
+        return crew.when(me, s("ref"), s("note"))
+    if op == "watches":
+        return crew.watches(me)
+    if op == "unwatch":
+        return crew.unwatch(me, body.get("watch"))
+    raise coordination.CoordinationError(f"no `ag actors {op}`: one of list, show, who, send, new, when, watches, unwatch")
+
+
+MAX_BODY = 30_000_000       # the largest request body taken: a message, or an image pasted into one
+DOCWRITER_BODY = 32_000_000  # the largest a DocWriter's: a document's state, a file dropped into its folder
 MAX_ALSO = 8                # the most other actors one stream follows (the page shows at most 4 panes)
 
 
@@ -654,6 +908,16 @@ def _pairs(raw: Optional[str]) -> list:
     if not isinstance(got, list):
         return []
     return [tuple(p) for p in got if isinstance(p, list) and len(p) == 2 and all(isinstance(x, str) for x in p) and p[0]][:MAX_ALSO]
+
+
+def _strings(raw) -> List[str]:
+    """A list of strings, as JSON (a query's) or as is (a body's); what is not one is left out."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return []
+    return [x for x in raw if isinstance(x, str)][:64] if isinstance(raw, list) else []
 
 
 def _actors(raw: Optional[str]) -> list:
@@ -685,24 +949,36 @@ class Server(ThreadingHTTPServer):
         self.hub.on_change = known.changed if known else None                                  # ag's notifications
         self.sessions = sessions.Sessions(on_change=self.hub.ring)     # a session's state: its gatherer's streams
         self.editors = editor.Editors()                                # the files open in the Editor panel
-        self.listener = self.fallback = self.rest = None               # for server_close, which a failed bind calls
+        self.listener = self.fallback = self.rest = self.address_file = self.docwriters = None   # for server_close, which a failed bind calls
+        self.docwriters = docwriter.DocWriters(self.sessions)          # the DocWriters' documents, tools and notices
+        self.crew = coordination.Coordination(self.sessions, self.hub.ring, watch=live_updates,   # actors' `ag actors`
+                                              docwriters=self.docwriters)
+        self.branches = branches.Branches(self.editors, self.sessions, self.hub.ring)   # the actors' own branches
         self.keeps_actions = False
-        super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, known))
+        super().__init__(address, handler(self.calls, self.hub, self.sessions, self.editors, self.crew, known, self.branches,
+                                          self.docwriters))
+        docwriter.ORIGIN = f"http://127.0.0.1:{self.server_address[1]}"   # where its actors reach the dashboard
         self.keeps_actions = live_updates and not actions.ENABLED     # the reader's actions kept in the gatherers
         actions.ENABLED = actions.ENABLED or live_updates             # (actions.py), while it serves
         self.migrating = migrating.start(self.hub.ring) if live_updates else None   # an older gatherer's tables, once
         self.listener = live.Listener(self.hub) if live_updates else None
         self.fallback = live.Fallback(self.hub) if live_updates else None
         self.rest = saved.Rest(self.sessions, self.hub.shown)
+        if live_updates:                     # where actors' `ag actors` reach it: its own, told; any other, by the file
+            host = self.server_address[0]
+            sessions.DASHBOARD = f"http://{'127.0.0.1' if host in ('', '0.0.0.0', '::') else host}:{self.server_address[1]}"
+            self.address_file = home.write_address(sessions.DASHBOARD)
         if known is not None:                                          # its agents all read once, now: a page's
             threading.Thread(target=lambda: data.home([], known), name="ag-home-first", daemon=True).start()   # first
 
     def server_close(self) -> None:
-        for part in (self.listener, self.fallback, self.rest, self.editors):
+        for part in (self.listener, self.fallback, self.rest, self.editors, self.crew, self.branches, self.docwriters):
             if part is not None:
                 part.close()
         if self.keeps_actions:
             actions.ENABLED = False
+        if self.address_file:
+            home.forget_address(self.address_file, sessions.DASHBOARD)
         super().server_close()
         self.sessions.close()
 
