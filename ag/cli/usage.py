@@ -22,6 +22,8 @@ COMMANDS = (
     ("ag config", "Show where the settings are, and what each harness resolves to."),
     ("ag status / ag stop", "List / stop the proxies `ag` started."),
     ("ag dashboard [--port N] [--no-open] [--out FILE]", "The same, on another port, without opening the browser, or written to one file."),
+    ("ag actors [show|who|send|new|when ...]", "From an actor's shell: the other actors of its gatherer, a message to one "
+                                               "or to the gatherer agent (`ag actors --help`)."),
     ("ag gatherers", "List every gatherer: its policy, pollers, events and last activity."),
     ("ag show <gatherer>", "Show a gatherer's resolved settings."),
     ("ag new <gatherer> [--policy P] [--poller X ... | --no-pollers]", "Create a gatherer ahead of use."),

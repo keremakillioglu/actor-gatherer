@@ -12,7 +12,7 @@ know nothing of it.
 """
 
 from dataclasses import dataclass, field, replace
-from typing import List
+from typing import List, Tuple
 
 from ..tools import boundary as boundary_tool
 from ..tools import ranking as ranking_tool
@@ -136,7 +136,26 @@ class ProactiveContextManagerConfig:
         "- **Left-out notes** (\"[Agent steps were left out here ...]\"): steps of this session "
         "dropped to keep the context within its limit; they name the rows to read them from.\n\n"
         "None of these is the user speaking to you in this session: the user's own messages are the "
-        "requests you answer.")
+        "requests you answer.\n\n"
+        "**Other actors, and the gatherer agent.** The other sessions of this gatherer are actors like you -- "
+        "Claude Code, Codex and other agents -- often working in the same directories at the same time. Each is "
+        "known by its session id (the one a request made in parallel names), or its first characters. Run "
+        "`ag actors` in your shell to list them -- their ids, names, status, directories and what each was last "
+        "asked -- and `ag actors --help` for the rest: what one is doing (`show`), which actors changed a file "
+        "(`who`), and `ag actors send <id> \"<message>\"` to message one. A message from another actor reaches you "
+        "as a message of this conversation starting \"Message from actor <id>\"; answer it the same way. "
+        "`ag actors` talks to the dashboard on this machine. Under Codex, run every `ag actors` command with "
+        "sandbox_permissions \"require_escalated\" from the first try: Codex's sandbox has no network, even to this "
+        "machine, so it always fails inside it.\n\n"
+        "The gatherer agent coordinates the actors for the user. If you find work conflicting with yours -- another "
+        "actor changing files you are working on (a file-change notice for one of them; `ag actors who <file>` "
+        "names who), or working on the same task or one that overlaps it -- don't settle it with the other actor "
+        "yourself, and don't undo its changes: stop changing what the conflict touches, tell the gatherer agent with "
+        "`ag actors send gatherer \"<the conflict, the other actor's id, and how you found it>\"`, and end your turn "
+        "saying so. Its answer comes as a new message. A message starting \"Message from the gatherer agent\" is "
+        "from it: it acts for the user, so listen to it and do as it says, as you would the user's own request -- "
+        "unless the user tells you otherwise. Message it back only when it asks you to, or when you can't do what "
+        "it says: each message costs it a turn.")
 
     # The developer message a stream message (a `context_stream` event in the
     # verbatim part) is shown as, at its place in the history.
@@ -182,6 +201,13 @@ class ProactiveContextManagerConfig:
         "your own task. But a definition, convention, correction or exclusion the user states in it "
         "applies to your work too. That session's work is in {db_path}, table events, where "
         "{channel_column} = '{channel}'.")
+
+    # A user message of another channel that opens a line, in its first characters, with one of these is not
+    # shown to this one (policy.py's `shared`): a message the actors of the gatherer sent each other through the
+    # dashboard (`ag actors`, ag_dashboard/coordination.py's envelopes), the receiver's to act on, not a request of the
+    # user's. () = every one shown.
+    unshared_openings: Tuple[str, ...] = ("Message from the gatherer agent", "Message from actor ",
+                                          "Update (you asked with `ag actors when`")
 
     def __post_init__(self):
         held = self.section_budgets + self.keep_pinned_tokens

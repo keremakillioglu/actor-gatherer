@@ -10,6 +10,17 @@
 # The drawn ones have four each, one of each style: playful, in its own voice about itself; plain, its name and
 # the ask; its sound, then "Ready when you are."; and a haiku, 5-7-5.
 
+# roles (ag_dashboard/avatars/roles/): the gatherer agent's
+manager = [
+  "Clipboard ready. Who's doing what, and in what order?",
+  "Hi, I'm the gatherer agent. What should your actors do?",
+  "Hoo-hoo! Ready when you are.",
+  '''
+Many hands at work
+I keep each one in its lane
+tell me what comes next''',
+]
+
 # animals
 axolotl = [
   "Gills fluffed, smile on. What are we working on?",

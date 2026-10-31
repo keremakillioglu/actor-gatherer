@@ -343,6 +343,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             return stop(settings)
         if cmd == "dashboard":
             return dashboard(rest)
+        if cmd == "actors":
+            from . import actors
+            return actors.main(rest)
         raise AgError(f"no command {cmd!r}: one of {', '.join(settings['harnesses'])} (the harnesses in "
                       f"{config.path()}), or {', '.join(c for c in config.RESERVED if c != 'help')}")
     except (AgError, config.ConfigError) as exc:

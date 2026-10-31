@@ -9,6 +9,8 @@ lays it out -- the dashboard's only knowledge of ag, which it never imports:
 and the dashboard's own, beside them:
 
     dashboard/views/*.js                 the reader's own chat views, which the page loads
+    dashboard/address.json               where the dashboard that last started on this home listens: {url, pid} --
+                                         how an actor it did not start reaches it (`ag actors`, coordination.py)
     dashboard/uploads/*                  images pasted or dropped into a message box, named in the message by path
 
 and, of each read, the harness's process that made the call (`_reads.pid`, `pid_started`: the
@@ -67,6 +69,35 @@ VIEW_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.js")
 
 def views_dir() -> str:
     return os.path.join(HOME, "dashboard", "views")
+
+
+def address_path() -> str:
+    return os.path.join(HOME, "dashboard", "address.json")
+
+
+def write_address(url: str) -> Optional[str]:
+    """`url` kept as where this dashboard listens (address_path), for actors it did not start: the file, or None where
+    it could not be written."""
+    path = address_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump({"url": url, "pid": os.getpid()}, fh)
+        os.replace(path + ".tmp", path)
+        return path
+    except OSError:
+        return None
+
+
+def forget_address(path: str, url: Optional[str]) -> None:
+    """The address file taken away, if it still names this dashboard (`url`, this process): not another's since."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            kept = json.load(fh)
+        if kept.get("url") == url and kept.get("pid") == os.getpid():
+            os.remove(path)
+    except (OSError, ValueError, AttributeError):
+        pass
 
 
 def view_names() -> List[str]:

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="text-scale" content="scale" />
+		<title>DocWriter preview</title>
+		<script>
+			(function () {
+				var bg = {"light":"#ffffff","dark":"#0f0f0f","solarized-light":"#fdf6e3","solarized-dark":"#002b36","monokai":"#272822"}, t = new URLSearchParams(location.search).get("theme");
+				if (!bg[t]) return;
+				document.documentElement.style.background = bg[t];
+				document.documentElement.style.colorScheme = /dark|monokai/.test(t) ? "dark" : "light";
+			})();
+		</script>
+		<script>
+			// Where this DocWriter is served, /docwriter/w/<key>: every request of the page goes under it (vite.config.mjs)
+			globalThis.__dwBase = (location.pathname.match(/^.*?\/docwriter\/w\/[^/]+/) || [""])[0];
+		</script>
+		<script type="module" crossorigin src="./assets/preview-CyVPdvW5.js"></script>
+		<link rel="modulepreload" crossorigin href="./assets/themes-DEsTdALw.js">
+		<link rel="stylesheet" crossorigin href="./assets/themes-Od4WgLo9.css">
+		<link rel="stylesheet" crossorigin href="./assets/preview-DU_9leKq.css">
+	</head>
+	<style>
+		html, body { margin: 0; padding: 0; height: 100%; }
+		body { overflow: hidden; }
+		/* the model is the actor's; style references are not offered here */
+		.model-picker, .reference-pill { display: none !important; }
+	</style>
+	<body>
+		<div id="app" style="display: contents"></div>
+	</body>
+</html>

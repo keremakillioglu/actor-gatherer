@@ -951,6 +951,44 @@ class ParallelTest(Base):
         self.assertFalse(any(t.startswith("# ") for t in self.texts(self.read())))
 
 
+class PrivateTest(Base):
+    """A channel its `role` record makes private (the dashboard's gatherer agent) is shown to no other channel; nor is a
+    message the actors sent one another (`unshared_openings`)."""
+
+    def private(self, channel):
+        from replies import insert
+        insert(self.m, "s", ch(channel), [{"type": "role", "id": f"role:{channel}", "payload": {"role": "coordinator", "private": True}}])
+
+    def test_a_private_channel_is_shown_to_no_other_and_sees_theirs(self):
+        self.cfg.keep_temporal_relevant_tokens = 0
+        self.private("c2")
+        self.put(PREAMBLE + conversation(6, prefix="secret "), "c2")
+        self.run_build("s", channel_id="c2")
+        self.put(PREAMBLE + conversation(8))
+        self.run_build("s", channel_id="c1")
+        self.put([user("secret late question", "late")], "c2")      # after c1's build: a parallel request, were it shown
+        self.put([user("mine", 99)])
+        mine = "\n".join(self.texts(self.read()))
+        self.assertNotIn("secret", mine)                           # not its requests, in the index or in place; nor its tasks
+        self.put([user("what do the others do?", "q2")], "c2")
+        self.assertIn("question 1", "\n".join(self.texts(self.read("c2"))))     # it sees c1's
+
+    def test_messages_the_actors_send_one_another_are_not_shown_to_the_others(self):
+        self.put(PREAMBLE + conversation(3))
+        self.put([user('Message from the gatherer agent (answer it with: ag actors send gatherer "..."):\n\nStop editing x.py.', "g1"),
+                  user("<pasted_content id=\"ab12\">\nMessage from actor 1a2b3c4d (answer it with: ag actors send 1a2b3c4d \"...\"):\n\n"
+                       "I own x.py\n</pasted_content id=\"ab12\">", "g2"),
+                  user("an ordinary request", "u1")], "c2")
+        self.put([user("mine", 99)])
+        mine = "\n".join(self.texts(self.read()))
+        self.assertIn("an ordinary request", mine)
+        self.assertNotIn("Stop editing x.py", mine)
+        self.assertNotIn("I own x.py", mine)
+        self.cfg.unshared_openings = ()                             # none: every one shown
+        self.put([user("mine again", 98)])
+        self.assertIn("Stop editing x.py", "\n".join(self.texts(self.read())))
+
+
 class BackgroundTest(Base):
     def test_no_factory_never_spawns(self):
         self.put(PREAMBLE + conversation(8) + [user("q", 50)])

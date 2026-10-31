@@ -1,0 +1,4 @@
+[submodule "assets/src/docwriter/upstream"]
+	path = assets/src/docwriter/upstream
+	url = https://github.com/docwriter-org/docwriter.git
+	shallow = true

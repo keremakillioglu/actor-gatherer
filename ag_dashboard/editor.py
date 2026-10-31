@@ -192,6 +192,25 @@ def _theirs_guarded(was: List[str], ours: List[str], others: List[str], at: int,
     return False
 
 
+def syncs(o: List[str], a: List[str], b: List[str]) -> List[Tuple[int, int, int, int]]:
+    """Where `a` and `b`, each a change of `o`'s lines, both have `o`'s lines as they were: (start, end) of `o`'s,
+    and where they start in `a` and in `b` -- in order, the last (the end of all three) empty. What lies between two
+    is a place one or both changed."""
+    ma = difflib.SequenceMatcher(None, o, a, autojunk=False).get_matching_blocks()
+    mb = difflib.SequenceMatcher(None, o, b, autojunk=False).get_matching_blocks()
+    out, i, j = [], 0, 0
+    while i < len(ma) and j < len(mb):
+        (oa, aa, na), (ob, bb, nb) = ma[i], mb[j]
+        lo, hi = max(oa, ob), min(oa + na, ob + nb)
+        if lo < hi:
+            out.append((lo, hi, aa + lo - oa, bb + lo - ob))
+        if oa + na < ob + nb:
+            i += 1
+        else:
+            j += 1
+    return out + [(len(o), len(o), len(a), len(b))]
+
+
 def merge(base: str, mine: str, theirs: str, guard: List[Tuple[int, int]] = (),
           held: List[Tuple[int, int]] = ()) -> Tuple[str, List[tuple], int]:
     """Three ways, by line, as version control merges: `base`, and what `mine` and `theirs` each made of it. The
@@ -202,22 +221,9 @@ def merge(base: str, mine: str, theirs: str, guard: List[Tuple[int, int]] = (),
     merged text (characters), with `base`'s and `theirs`' lines there, and whether it is one for `guard`; and how many
     of `mine`'s changes `theirs` lacks (kept from `mine` alone)."""
     o, a, b = base.splitlines(True), mine.splitlines(True), theirs.splitlines(True)
-    ma = difflib.SequenceMatcher(None, o, a, autojunk=False).get_matching_blocks()
-    mb = difflib.SequenceMatcher(None, o, b, autojunk=False).get_matching_blocks()
-    syncs, i, j = [], 0, 0                          # base's lines the same in all three: (start, end, in mine, in theirs)
-    while i < len(ma) and j < len(mb):
-        (oa, aa, na), (ob, bb, nb) = ma[i], mb[j]
-        lo, hi = max(oa, ob), min(oa + na, ob + nb)
-        if lo < hi:
-            syncs.append((lo, hi, aa + lo - oa, bb + lo - ob))
-        if oa + na < ob + nb:
-            i += 1
-        else:
-            j += 1
-    syncs.append((len(o), len(o), len(a), len(b)))
     out, conflicts, kept, size = [], [], 0, 0
     zo = za = zb = 0
-    for lo, hi, sa, sb in syncs:
+    for lo, hi, sa, sb in syncs(o, a, b):
         was, ours, others = o[zo:lo], a[za:sa], b[zb:sb]
         put, conflict = ours, None
         if others == was or ours == others:         # only mine changed it, or both alike (or neither)
@@ -320,10 +326,13 @@ class Conn:
 class Conflict:
     """Lines the pages and the file on disk both changed, differently, or that the file changed in the conflict zone
     (`zone`): the pages' kept in the document -- from `start` to `end`, in UTF-8 bytes, moved with each edit
-    (`Room._move`) -- and the file's (`theirs`, over `base`), until a page settles it."""
+    (`Room._move`) -- and the file's (`theirs`, over `base`), until a page settles it. Or an actor's change on a branch
+    of its own (`agent`, branches.py's: {gatherer, channel, branch, path, key, approve}), not taken in until a page
+    says: its branch's lines (`theirs`) in place of these."""
 
-    def __init__(self, start: int, end: int, base: str, theirs: str, zone: bool = False, since: Optional[float] = None):
-        self.id, self.at, self.zone = uuid.uuid4().hex[:12], time.time(), zone
+    def __init__(self, start: int, end: int, base: str, theirs: str, zone: bool = False, since: Optional[float] = None,
+                 agent: Optional[dict] = None, cid: Optional[str] = None):
+        self.id, self.at, self.zone, self.agent = cid or uuid.uuid4().hex[:12], time.time(), zone, agent
         self.since = self.at if since is None else since      # when the file first changed these lines, unsettled
         self.start, self.end, self.base, self.theirs = start, end, base, theirs
 
@@ -344,16 +353,17 @@ class Room:
         self.zone: List[List[int]] = []            # the conflict zone: [start, end] of the document, in UTF-8 bytes
         self._from_page = False                     # an edit being applied is a page's: put in the zone
         self.conflicts: Dict[str, Conflict] = {}
+        self.marks: List[list] = []                 # the lines actors on branches changed: [start, end, gatherer, channel]
         self.conns: Dict[str, Conn] = {}
         self.idle_since: Optional[float] = None     # when its last page went
         self._moves = self.text.observe(self._move)
 
     def _move(self, event) -> None:
-        """Each conflict's lines, and the conflict zone, moved with an edit to the document, any page's or this one's
-        (pycrdt's delta, which counts UTF-8 bytes): what is put in a conflict's lines, or at their edges, theirs; what
-        is put inside the zone's ranges, not at their edges, theirs. A page's edit is put in the zone: what it put in,
-        and where it took something out (an empty range)."""
-        if not self.conflicts and not self.zone and not self._from_page:
+        """Each conflict's lines, the conflict zone and the actors' marks, moved with an edit to the document, any page's
+        or this one's (pycrdt's delta, which counts UTF-8 bytes): what is put in a conflict's lines, or at their edges,
+        theirs; what is put inside the zone's ranges, or a mark's, not at their edges, theirs. A page's edit is put in
+        the zone: what it put in, and where it took something out (an empty range)."""
+        if not self.conflicts and not self.zone and not self.marks and not self._from_page:
             return
         at = 0
         for op in event.delta:
@@ -366,7 +376,7 @@ class Room:
                         c.start, c.end = c.start + n, c.end + n
                     elif at <= c.end:
                         c.end += n
-                for z in self.zone:
+                for z in (*self.zone, *self.marks):
                     if at <= z[0]:
                         z[0], z[1] = z[0] + n, z[1] + n
                     elif at < z[1]:
@@ -379,7 +389,7 @@ class Room:
                 for c in self.conflicts.values():
                     c.start = c.start if c.start <= at else max(at, c.start - n)
                     c.end = c.end if c.end <= at else max(at, c.end - n)
-                for z in self.zone:
+                for z in (*self.zone, *self.marks):
                     z[0] = z[0] if z[0] <= at else max(at, z[0] - n)
                     z[1] = z[1] if z[1] <= at else max(at, z[1] - n)
                 if self._from_page:
@@ -417,9 +427,11 @@ class Room:
         return {"dirty": self.dirty, "missing": self.missing, "error": self.error, "changed": self.changed,
                 "saved": self.saved, "editors": len(self.conns), "now": time.time(),
                 "conflicts": [{"id": c.id, "from": _utf16(raw, c.start), "to": _utf16(raw, c.end), "base": c.base,
-                               "theirs": c.theirs, "at": c.at, "since": c.since, "zone": c.zone}
+                               "theirs": c.theirs, "at": c.at, "since": c.since, "zone": c.zone, "agent": c.agent}
                               for c in sorted(self.conflicts.values(), key=lambda c: c.start)],
-                "zone": [[_utf16(raw, a), _utf16(raw, b)] for a, b in self.zone]}
+                "zone": [[_utf16(raw, a), _utf16(raw, b)] for a, b in self.zone],
+                "marks": [{"from": _utf16(raw, a), "to": _utf16(raw, b), "gatherer": g, "channel": c}
+                          for a, b, g, c in self.marks if b > a]}
 
     def _send(self, name: str, value, but: Optional[str] = None) -> None:
         for conn in list(self.conns.values()):
@@ -501,8 +513,9 @@ class Room:
             if text == self.disk:
                 return self._restate()
             mine = str(self.text)
+            ours = [c for c in self.conflicts.values() if c.agent is None]     # the disk's (a branch's are branches.py's)
             merged, found, _ = merge(self.disk, mine, text, self._lines(mine, self.zone),
-                                     self._lines(mine, [(c.start, c.end) for c in self.conflicts.values()]))
+                                     self._lines(mine, [(c.start, c.end) for c in ours]))
             if merged != mine:
                 before = self.doc.get_state()
                 change(self.text, merged)
@@ -512,8 +525,8 @@ class Room:
                 b0 = len(merged[:start].encode("utf-8"))
                 b1 = b0 + len(merged[start:end].encode("utf-8"))
                 since = time.time()
-                for old in list(self.conflicts.values()):   # the same lines' conflict before: this one in its place
-                    if old.start <= b1 and b0 <= old.end:
+                for old in [c for c in self.conflicts.values() if c.agent is None]:   # the same lines' conflict
+                    if old.start <= b1 and b0 <= old.end:                           # before: this one in its place
                         since = min(since, old.since)
                         del self.conflicts[old.id]
                 c = Conflict(b0, b1, was, theirs, zone, since)
@@ -531,19 +544,25 @@ class Room:
             c = self.conflicts.pop(conflict, None)
             if c is None:
                 raise EditorError("that conflict is settled already")
-            if take != "mine":
-                before = self.doc.get_state()
-                if take == "theirs":
-                    if c.end > c.start:
-                        del self.text[c.start:c.end]
-                    if c.theirs:
-                        self.text.insert(c.start, c.theirs)
-                elif c.theirs:
-                    mine = str(self.text).encode("utf-8")[c.start:c.end]
-                    self.text.insert(c.end, ("\n" if mine and not mine.endswith(b"\n") else "") + c.theirs)
-                self._send("update", {"update": b64(self.doc.get_update(before))})
+            self.take(c, take)
             self._restate()
             return self.state()
+
+    def take(self, c: Conflict, take: str) -> None:
+        """What settling `c` puts in the document: nothing (`mine`), its lines in place of the pages' (`theirs`), or
+        after them (`both`) -- sent to every page."""
+        if take == "mine":
+            return
+        before = self.doc.get_state()
+        if take == "theirs":
+            if c.end > c.start:
+                del self.text[c.start:c.end]
+            if c.theirs:
+                self.text.insert(c.start, c.theirs)
+        elif c.theirs:
+            mine = str(self.text).encode("utf-8")[c.start:c.end]
+            self.text.insert(c.end, ("\n" if mine and not mine.endswith(b"\n") else "") + c.theirs)
+        self._send("update", {"update": b64(self.doc.get_update(before))})
 
     def save(self) -> dict:
         with self.lock:
@@ -559,7 +578,8 @@ class Room:
             else:
                 raise EditorError("the file keeps changing on disk: save again in a moment")
             self.disk, self.sig = text, sig
-            self.conflicts.clear()                  # those shown: settled as the lines kept here
+            for c in [c for c in self.conflicts.values() if c.agent is None]:
+                del self.conflicts[c.id]            # those shown: settled as the lines kept here (a branch's wait)
             self.missing, self.error, self.saved = False, "", time.time()
             self._restate()
             return self.state()
@@ -597,6 +617,7 @@ class Editors:
 
     def __init__(self, poll: Optional[float] = None):
         self.rooms: Dict[str, Room] = {}
+        self.branches = None                        # the actors' branches (branches.py's Branches), when the server has them
         self.lock = threading.Lock()
         self.stop = threading.Event()
         self.poll = POLL if poll is None else poll
@@ -620,6 +641,8 @@ class Editors:
                         time.sleep(0.05)
                 else:
                     raise EditorError(f"{path} keeps changing on disk: open it again in a moment")
+                if self.branches is not None:       # its branches' changes to it, shown in it
+                    self.branches.opened(real)
             return room
 
     def join(self, path: str, root: str, cid: str, client: int) -> Tuple[Room, Conn]:
@@ -638,7 +661,11 @@ class Editors:
         return self._room(path, root).save()
 
     def settle(self, path: str, root: str, conflict: str, take: str) -> dict:
-        return self._room(path, root).settle(conflict, take)
+        room = self._room(path, root)
+        c = room.conflicts.get(conflict)
+        if c is not None and c.agent is not None and self.branches is not None:
+            return self.branches.settle(room, c, take)          # its branch's base moved on too
+        return room.settle(conflict, take)
 
     def clear_zone(self, path: str, root: str) -> dict:
         return self._room(path, root).clear_zone()
@@ -664,7 +691,9 @@ class Editors:
                     room = self.rooms.get(os.path.realpath(entry.path) if entry.is_symlink() else entry.path)
                     entries.append({"name": entry.name, "dir": is_dir, "size": st.st_size, "mtime": st.st_mtime,
                                     "editors": len(room.conns) if room else 0, "dirty": bool(room and room.dirty),
-                                    "conflicts": len(room.conflicts) if room else 0})
+                                    "conflicts": sum(c.agent is None for c in room.conflicts.values()) if room else 0,
+                                    "pending": self.branches.pending(os.path.join(real, entry.name), is_dir)
+                                    if self.branches is not None else 0})
         except (FileNotFoundError, NotADirectoryError):
             raise EditorError(f"{directory} is not a directory") from None
         except PermissionError:

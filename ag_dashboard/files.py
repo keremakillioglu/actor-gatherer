@@ -231,6 +231,19 @@ def _touches(conn, channel: str) -> Dict[str, List[dict]]:
     return out
 
 
+def _sent(conn, channel: str) -> List[tuple]:
+    """The messages the session sent other actors of its gatherer (`ag actors send`, `new`), as the dashboard kept them
+    (coordination.py's `actor_message`), oldest first: [(row_id, {kind, to, to_name, text, at})]."""
+    out = []
+    for row_id, raw in conn.execute(f"SELECT e.row_id, e.payload_json FROM events e JOIN event_types t ON {data.BY_CHANNEL} "
+                                    f"WHERE ifnull(e.{data.CHANNEL}, '') = ? AND t.name = 'actor_message' ORDER BY e.row_id",
+                                    (channel,)):
+        m = data._json(raw) or {}
+        if isinstance(m.get("text"), str):
+            out.append((row_id, {k: m.get(k) for k in ("kind", "to", "to_name", "text", "at")}))
+    return out
+
+
 _GIT: Dict[str, tuple] = {}   # a gatherer's database -> (the last row read, what git did up to it: `_git`'s)
 _GIT_LOCK = threading.Lock()
 
@@ -571,6 +584,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
          ([[n, text]]: known lines around it)}, {t: "write", lines, created}, {t: "append", lines},
          {t: "image", row_id, id} (fetched by `image`), {t: "note", text}}; `call` None for a file Claude Code
          gave the agent the lines of itself (`_loaded`: one the user @-mentioned, a CLAUDE.md, its memory)
+    `sent`, when it messaged other actors in it (`_sent`): [{kind, to, to_name, text, at}];
     and every call it made, in order: {text, error, running, call, output, files (the paths it touched), did (each
     one's kinds, by path), changed (the lines its changes added and removed, as above)} -- a skill
     loaded with them, as its Skill call, its instructions its output, or as a call of its own when the user typed its /name.
@@ -590,6 +604,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         stops = _stops(conn, channel)
         evs = list(_events(conn, channel, stops))
         touched = _touches(conn, channel)
+        sent = _sent(conn, channel)
         git = _git(conn) if touched else {"calls": {}, "changed": {}, "trees": []}   # what git did, in any session
         held = data.meanwhile(conn, channel)          # sent when a turn ended, written while it ran (the record's)
         reports = data.record_of(conn, channel).reports()   # what each subagent answered, as its own record had it
@@ -896,6 +911,10 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
         h.head["kind"] = start[4]
     for n, got in more.items():
         heads[n].head["more"] = got
+    for row_id, m in sent:                           # what it sent other actors: in the turn it was sent in
+        n = next((n for n in range(len(starts) - 1, -1, -1) if starts[n][1] is not None and starts[n][1] <= row_id), None)
+        if n is not None:
+            heads[n].head.setdefault("sent", []).append(m)
     joined = {m["row_id"] for got in more.values() for m in got}
     pick = len(heads) - 1 if turn is None or not heads else max(0, min(turn, len(heads) - 1))
     want = heads[pick] if heads else None
