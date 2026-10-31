@@ -528,6 +528,8 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
                                                     "or press Esc there to stop the turn, first")
                     return self.answer(started.send(sid, text, int(body.get("cols") or 120),
                                                     int(body.get("rows") or 32), bool(body.get("fullscreen"))))
+                if url.path == "/api/upload":
+                    return self.answer(home.save_upload(str(body.get("type") or ""), str(body.get("data") or "")))
                 if url.path == "/api/stop":
                     return self.answer(started.stop(str(body.get("session_id") or "")))
                 if url.path == "/api/discard":
@@ -641,7 +643,7 @@ def handler(calls: _Calls, hub: live.Hub, started: sessions.Sessions, editors: e
     return Handler
 
 
-MAX_BODY = 1_000_000        # the largest request body taken: a message, not a file
+MAX_BODY = 30_000_000       # the largest request body taken: a message, or an image pasted into one
 MAX_ALSO = 8                # the most other actors one stream follows (the page shows at most 4 panes)
 
 

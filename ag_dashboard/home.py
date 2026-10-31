@@ -9,15 +9,18 @@ lays it out -- the dashboard's only knowledge of ag, which it never imports:
 and the dashboard's own, beside them:
 
     dashboard/views/*.js                 the reader's own chat views, which the page loads
+    dashboard/uploads/*                  images pasted or dropped into a message box, named in the message by path
 
 and, of each read, the harness's process that made the call (`_reads.pid`, `pid_started`: the
 boot's id and the process's start in clock ticks, as /proc gives them), to tell whether it runs.
 
 HOME is a module attribute, so a test (or `--home`) can point it elsewhere."""
 
+import base64
 import json
 import os
 import re
+import uuid
 from typing import List, Optional
 
 HOME = os.path.abspath(os.path.expanduser(os.environ.get("AG_HOME") or "~/.ag"))
@@ -41,6 +44,22 @@ def db_path(gatherer: str) -> str:
 
 def llm_log_dir() -> str:
     return os.path.join(HOME, "logs", "llm")
+
+
+IMAGE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+
+
+def save_upload(mime: str, data: str) -> dict:
+    """An image pasted or dropped into a message box (`data`, base64), saved where the agent can read it: {path}."""
+    ext = IMAGE_TYPES.get(mime)
+    if ext is None:
+        raise ValueError(f"not an image the agents read: {mime or 'no type'}")
+    folder = os.path.join(HOME, "dashboard", "uploads")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, uuid.uuid4().hex + ext)
+    with open(path, "wb") as fh:
+        fh.write(base64.b64decode(data, validate=True))
+    return {"path": path}
 
 
 VIEW_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.js")
