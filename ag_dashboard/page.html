@@ -226,7 +226,7 @@ button.agent-group:hover { color: var(--ink-2); }
 /* The list's two other shapes (listMode): folded to a rail at the left -- the actors that want the reader or are at
    work, as their avatars, each with its status's dot -- or over the whole page, the monitor: a column for each
    status, a card for each actor, saying what it is doing. The panes stay where they are, under it, at their size */
-/* the list's buttons: in its own head ("Actors"); in the page's header, where the list is folded or over the page */
+/* the list's buttons: in its own head ("Agents"); in the page's header, where the list is folded or over the page */
 .list-btns { display: flex; gap: 2px; flex: none; }
 header .brand .list-btns { display: none; margin-left: -6px; }
 :root:is(.list-folded, .list-full) header .brand .list-btns { display: flex; }
@@ -3009,7 +3009,7 @@ function renderAgents() {
   nameMoving = true;                                 // taken out and put back: not a blur that names it
   document.getElementById("home").textContent = document.getElementById("home").title = state.home.home;
   const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
-  aside.replaceChildren(el("div", { class: "aside-head" }, el("h2", { text: "Actors" }),
+  aside.replaceChildren(el("div", { class: "aside-head" }, el("h2", { text: "Agents" }),
     SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new gatherer" }, "+ New gatherer"),
     el("span", { class: "list-btns" }, ...listButtons())));
   if (state.adding && state.adding.gatherer === "") aside.append(gathererForm());
