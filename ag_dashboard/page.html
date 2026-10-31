@@ -4391,6 +4391,28 @@ function chatCard(info) {
     box.value = drafts()[draft] || "";
     if (box.value) requestAnimationFrame(() => { if (box.isConnected) fitBox(box); });   // fitted once drawn into the page
     box.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ctx.send(box.value); } });
+    // an image pasted or dropped in: saved in the home (/api/upload), and its path typed in the message, for the agent to read
+    const attach = (ev, list) => {
+      const images = [...(list || [])].filter((f) => f.type && f.type.startsWith("image/"));
+      if (!images.length) return;
+      ev.preventDefault();
+      for (const f of images) {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const { path } = await post("/api/upload", { type: f.type, data: String(reader.result).split(",")[1] });
+            const at = box.selectionStart ?? box.value.length, tag = `[Image: ${path}] `;
+            box.value = box.value.slice(0, at) + tag + box.value.slice(at);
+            box.selectionStart = box.selectionEnd = at + tag.length;
+            fitBox(box); keepDraft(draft, box.value);
+          } catch (e) { setLive(`Image not attached: ${e.message}`); }
+        };
+        reader.readAsDataURL(f);
+      }
+    };
+    box.addEventListener("paste", (ev) => attach(ev, ev.clipboardData && ev.clipboardData.files));
+    box.addEventListener("dragover", (ev) => { if (ev.dataTransfer && [...ev.dataTransfer.types].includes("Files")) ev.preventDefault(); });
+    box.addEventListener("drop", (ev) => attach(ev, ev.dataTransfer && ev.dataTransfer.files));
     return box;
   };
   // the composer kept across redraws while what it shows is unchanged: no redraw under the reader's typing. The text box
