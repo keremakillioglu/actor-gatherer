@@ -9,11 +9,14 @@ The rest of the file -- [policies], [pollers] -- is the context manager's,
 which ignores [cli]. When the file is new, the context manager's home makes it
 (`python -m ag.ag_harness.home path`: ag imports nothing of it); when it has
 no [cli], ag adds one with every default written out -- and the harnesses
-this clone ships (ag/cli/harnesses.toml). A missing key (or a missing file, when
-the home cannot be written) is the default.
+this clone ships (ag/cli/harnesses.toml). A harness shipped later is added to a
+[cli] that has it not, once: ag keeps the ones it has offered in the home's
+`harnesses_offered`, so an entry deleted stays deleted. A missing key (or a
+missing file, when the home cannot be written) is the default.
 """
 
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -101,14 +104,39 @@ def ensure() -> str:
                "PYTHONPATH": os.pathsep.join(x for x in (REPO, os.environ.get("PYTHONPATH")) if x)}
         subprocess.run([os.environ.get("AG_PYTHON") or sys.executable, "-m", "ag.ag_harness.home", "path"],
                        cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)   # this clone's
-    if "cli" not in _read(p):
-        try:
+    cli, entries = _read(p).get("cli"), shipped()
+    have = cli.get("harnesses") if isinstance(cli, dict) else None
+    offered_path = os.path.join(home(), "harnesses_offered")
+    try:
+        with open(offered_path, encoding="utf-8") as fh:
+            offered = set(fh.read().split())
+    except OSError:
+        # shortcut: with no record yet, what the config has counts as offered, so an entry deleted before ag kept
+        # one comes back once; upgrade if that bites: ship the record with the template
+        offered = set(have) if isinstance(have, dict) else set()
+    if cli is None:
+        added = template()
+    else:
+        new = [n for n in entries if n not in offered and isinstance(have, dict) and n not in have]
+        added = "".join("\n" + entries[n] for n in new)
+    try:
+        if added:
             os.makedirs(os.path.dirname(p), exist_ok=True)
             with open(p, "a", encoding="utf-8") as fh:
-                fh.write(template())
-        except OSError:
-            pass
+                fh.write(added)
+        if not offered >= set(entries):
+            with open(offered_path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(sorted(offered | set(entries))) + "\n")
+    except OSError:
+        pass
     return p
+
+
+def shipped() -> Dict[str, str]:
+    """Each harness this clone ships, {name: its entry as harnesses.toml writes it}."""
+    with open(HARNESSES_TOML, encoding="utf-8") as fh:
+        blocks = re.split(r"(?m)^(?=\[cli\.harnesses\.)", fh.read())[1:]
+    return {re.match(r"\[cli\.harnesses\.([\w-]+)\]", b).group(1): b.rstrip("\n") + "\n" for b in blocks}
 
 
 #: ag's own commands: no harness may be named one. `gatherers`, `show` and `new`

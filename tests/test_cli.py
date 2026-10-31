@@ -120,6 +120,20 @@ class Harnesses(WithPlugins):
             self.assertEqual(entry["launcher"].split(":")[0], f"ag.integrations.harnesses.{name}.setup.launch")
             self.assertIn("adaptor", entry)
 
+    def test_a_harness_shipped_later_is_added_to_a_config_once(self):
+        config.ensure()                                            # a config written before it shipped
+        later = os.path.join(self.mods, "harnesses.toml")
+        with open(config.HARNESSES_TOML) as fh, open(later, "w") as out:
+            out.write(fh.read() + '\n[cli.harnesses.newone]\nlauncher = "echo_launch:EchoLauncher"\n')
+        with unittest.mock.patch.object(config, "HARNESSES_TOML", later):
+            self.assertIn("newone", config.load()["harnesses"])
+            with open(config.path()) as fh:
+                text = fh.read()
+            self.assertEqual(text.count("[cli.harnesses.newone]"), 1)
+            with open(config.path(), "w") as fh:
+                fh.write(text.replace("[cli.harnesses.newone]", "[cli.harnesses.newone_deleted]"))
+            self.assertNotIn("newone", config.load()["harnesses"])
+
     def test_any_harness_in_the_config_runs(self):
         self.add_harness("echo")
         code, out, err = self.run_ag("--dry-run", "echo", "hi")
