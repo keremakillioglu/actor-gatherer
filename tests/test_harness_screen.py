@@ -100,9 +100,11 @@ class ClaudeBoxTest(unittest.TestCase):
         self.assertEqual(self.box("❯ " + FAINT.format('Try "fix lint errors"'), (9, 2)), Box.EMPTY)
         self.assertEqual(self.box("❯", (9, 2)), Box.EMPTY)
         self.assertEqual(self.box("❯ ", (9, 2), top="─── History 9/9 " + "─" * 60), Box.EMPTY)   # a labelled rule
+        self.assertEqual(self.box("❯\xa0\x1b[38;2;71;130;200m[⧉ In README.md]\x1b[39m", (9, 2)), Box.EMPTY)   # its IDE's note
 
     def test_its_box_holding_what_was_typed(self):
         self.assertEqual(self.box("❯ hello there", (9, 13)), Box.HOLDS)
+        self.assertEqual(self.box("❯\xa0hi \x1b[38;2;71;130;200m[⧉ 3 lines selected]\x1b[39m", (9, 5)), Box.HOLDS)
         self.assertEqual(self.box("❯ /mc", (9, 5), extra={6: "  ❯ /mcp      Manage MCP servers"}), Box.HOLDS)
         self.assertEqual(self.box("\x1b[38;2;253;93;177m!\x1b[39m", (9, 2)), Box.HOLDS)     # its shell mode
         two = {8: RULE, 9: "❯ first", 10: "  second", 11: RULE, 12: "  ⏸ manual mode on"}

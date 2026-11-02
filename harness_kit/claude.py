@@ -778,6 +778,11 @@ def _rule(line: str) -> bool:
     return len(line) >= 20 and line.count("─") >= 0.8 * len(line)
 
 
+# What its IDE integration says of the editor in the message box ("[⧉ In README.md]", "[⧉ 3 lines selected]"): drawn
+# in a colour, not faint, and never typed
+IDE_NOTE = re.compile(r"\[⧉[^\]]*\]")
+
+
 class ClaudeCode(Harness):
     name = "claude"
     label = "Claude Code"
@@ -925,7 +930,7 @@ class ClaudeCode(Harness):
             return Box.HOLDS
         if not first.startswith("❯"):
             return Box.AWAY
-        return Box.HOLDS if typed_in(screen, top + 1, bottom - 1, 1).strip() else Box.EMPTY
+        return Box.HOLDS if IDE_NOTE.sub("", typed_in(screen, top + 1, bottom - 1, 1)).strip() else Box.EMPTY
 
     def answer_keys(self, ask: dict, choice: dict) -> List[str]:
         """Its dialogs' keys (PLAN_KEYS' notes)."""
