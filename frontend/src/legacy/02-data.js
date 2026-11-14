@@ -219,7 +219,7 @@ const mainSignature = () => {
 const setLive = (text) => {
   document.getElementById("live").textContent = text;
   const st = /^Live/.test(text) ? "live" : text === "Paused" ? "paused" : /^Not /.test(text) ? "error" : "";
-  for (const n of document.querySelectorAll(".state-dot")) n.dataset.state = st;   // the header's, the panel's, the rail's
+  for (const n of document.querySelectorAll(".state-dot")) n.dataset.state = st;   // the logo's, the panel's
   document.getElementById("about-btn").title = `${text}. Settings: ag's, and this page's`;
 };
 // The dashboard's panel: opened by its button, closed by it again, by a click elsewhere, by Esc, or once a

@@ -326,9 +326,10 @@ test("the rail shows only a folder on a double-click, Up and Root go out again, 
     await expect(ideasName).toBeVisible();
     await rail.locator(".r-navb.root").click();
     await expect(rail.locator(".r-gname")).toHaveCount(1);
-    // over it, what every actor does: a dot and a number each, the open ones all counted
+    // in the top bar, what every actor does: a dot and a number each, the open ones all counted; none over the rail
     const open = await rail.locator(".r-actor").count();
-    const totals = await rail.locator(".r-totals .count").allInnerTexts();
+    const totals = await page.locator("#top-totals .count").allInnerTexts();
+    await expect(rail.locator(".r-totals")).toHaveCount(0);
     expect(totals.reduce((n, k) => n + Number(k), 0)).toBeGreaterThanOrEqual(open - 1); // its gatherer agent left out
     // an idle actor has no dot
     await expect(rail.locator(".r-actor .rd.idle").first()).toBeHidden();

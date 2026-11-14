@@ -112,7 +112,7 @@ test("an app's backend notifies, its panel closed meanwhile; clicked on, the pan
   await expect(panel.locator("#intent")).toHaveText('notice {"note":"water the plants"}');
 });
 
-test("in the folded rail: its tile's corner, the rail's totals", async ({ page }) => {
+test("in the folded rail: its tile's corner; the top bar's totals", async ({ page }) => {
   await openActor(page, CLAUDE);
   const { pane, instance } = await openNotepad(page);
   await closePanel(page, pane);
@@ -121,7 +121,7 @@ test("in the folded rail: its tile's corner, the rail's totals", async ({ page }
   await page.locator("#agents .lb-fold").click();
   const rail = page.locator("#rail");
   await expect(rail.locator(".r-app .rd.notified")).toHaveCount(1);
-  await expect(rail.locator(".r-totals .count.notified")).toHaveText("1");
+  await expect(page.locator("#top-totals .count.notified")).toHaveText("1");
   await rail.locator(".r-app").hover(); // its card, from the rail too
   await expect(page.locator("#actor-card .c-notice")).toContainText("Seen in the rail");
 });

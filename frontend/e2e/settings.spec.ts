@@ -2,7 +2,7 @@
 import { expect, test } from "./test";
 import { masks, open } from "./home";
 
-test("opens from the gear, showing the model the home has set", async ({ page }) => {
+test("opens from the logo, showing the model the home has set", async ({ page }) => {
   await open(page);
   await page.locator("#about-btn").click();
   await expect(page.locator("#about")).toBeVisible();

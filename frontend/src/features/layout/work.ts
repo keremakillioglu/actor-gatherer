@@ -13,7 +13,7 @@ import { APP, build, TOP_BAND, type Built, type Old, type Shown } from "./build"
 import { Cards, withBlocks } from "./cards";
 import { Mover } from "./move";
 import { Placer } from "./place";
-import { TABS_H, Tabs, type State } from "./tabs";
+import { Tabs, type State } from "./tabs";
 import { drawStrip, Tasks } from "./tasks";
 import type { Node, Rect, Size } from "./tree";
 
@@ -182,7 +182,12 @@ export class Work {
       tree: (box) => this.tree(box),
       node: (id) => this.last?.nodes.get(id) ?? null,
       resized: (key, sizes, done) => this.resized(key, sizes, done),
-      inset: () => ({ top: TABS_H + PAD, right: WELL + PAD, bottom: WELL + PAD, left: WELL + PAD }),
+      inset: () => ({
+        top: (this.tabs.height() || WELL) + PAD,
+        right: WELL + PAD,
+        bottom: WELL + PAD,
+        left: WELL + PAD,
+      }),
       fitted: (id) => !!this.last?.minimized.has(id),
       placed: () => {
         const rects = this.last ? this.rects() : new Map<string, Rect>();
