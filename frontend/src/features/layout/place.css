@@ -344,7 +344,6 @@
   flex: 1 1 auto;
   height: 100%;
   background: none;
-  border-left: 1px solid var(--ring);
 }
 .lay-tab-list {
   min-width: 0;

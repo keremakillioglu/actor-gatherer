@@ -6,7 +6,7 @@
   --t-call: #1f8a3b; --t-output: #74c487; --t-gatherer: #e8b600;
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --selected: rgba(42,120,214,0.10);
   --well: #e7e6e0;                   /* the well the work area's tasks sit in, under the tabs' bar */
-  --halo: #cbbdae;                   /* the logo's G (assets/src/logo.py) */
+  --halo: #1ea4e4;                   /* the logo's G (assets/src/logo.py): the sky of its robots and its bulb */
   --pick: var(--s7);                 /* actors selected to move together: violet, not the blue of the one shown */
   /* the Transcript view's terminal: the page's own surface, so the history is part of the page in either theme */
   --term-bg: var(--surface); --term-ink: #2b2a27; --term-dim: #6f6c65; --term-faint: #a09d95; --term-user: #efeee9; --term-ok: #2f9a4c;
@@ -24,7 +24,7 @@
     color-scheme: dark;
     --page: #111110; --surface: #1f1f1d; --side: #121211; --side-rule: rgba(255,255,255,0.14); --ink: #ecebe7; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16); --well: #0a0a09; --halo: #6b6157;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16); --well: #0a0a09; --halo: #38bdf8;
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-bash: #fd5db1;
@@ -40,7 +40,7 @@
   color-scheme: dark;
   --page: #111110; --surface: #1f1f1d; --side: #121211; --side-rule: rgba(255,255,255,0.14); --ink: #ecebe7; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16); --well: #0a0a09; --halo: #6b6157;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --selected: rgba(57,135,229,0.16); --well: #0a0a09; --halo: #38bdf8;
   --t-call: #2ea043; --t-output: #8fd19e; --t-gatherer: #f2cc3a;
   --term-bg: var(--surface); --term-ink: #e8e6e0; --term-dim: #8f8c84; --term-faint: #66635d; --term-user: #262522; --term-ok: #4eba65;
   --term-err: #ff6b80; --term-run: #e8b600; --term-accent: #d97757; --term-code: #222220; --term-rule: #2e2d2a; --term-bash: #fd5db1;
@@ -54,22 +54,20 @@
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   height: 100vh; display: flex; flex-direction: column; }
-/* THE TOP BAR, across the page over the list and the panes: the logo and the page's name -- a button, the settings --
+/* THE TOP BAR, across the page over the list and the panes: the logo -- a button, the settings --
    how many actors do what (top-totals), then the screen's tabs (tabs.ts's bar, in #tab-slot) */
 .topbar { flex: none; height: var(--bar-h); display: flex; align-items: center; gap: 4px; padding: 0 0 0 8px; background: var(--side);
   border-bottom: 1px solid var(--ring); position: relative; z-index: 30; }   /* above the page (the terminal's own layers reach 11), so its Settings panel is too */
 :root.pane-mode .topbar { display: none; }
 .topbar .about-wrap { flex: none; display: flex; }
-.topbar .brand-btn { border: 0; background: none; padding: 4px 8px 4px 4px; border-radius: 8px; display: inline-flex; align-items: center; gap: 7px;
+.topbar .brand-btn { border: 0; background: none; padding: 3px; border-radius: 8px; display: inline-flex; align-items: center; gap: 7px;
   color: var(--ink); font: inherit; cursor: pointer; flex: none; }
 .topbar .brand-btn:hover, .topbar .brand-btn[aria-expanded="true"] { background: var(--wash); }
 .topbar .brand-btn:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
-.topbar .brand-mark { position: relative; display: block; width: 26px; height: 26px; flex: none; }
+.topbar .brand-mark { position: relative; display: block; width: 30px; height: 30px; flex: none; }
 .topbar .ag-logo { display: block; width: 100%; height: 100%; }
 .ag-logo .halo * { fill: var(--side) !important; stroke: var(--side) !important; stroke-width: 5px !important; opacity: 1 !important; }
-.topbar .brand-name { font-size: 15px; font-weight: 650; letter-spacing: .02em; white-space: nowrap; }
 .topbar .cfg-flag { font-size: 11px; color: var(--muted); }
-.topbar .brand-mark .state-dot { position: absolute; right: -1px; bottom: 0; box-shadow: 0 0 0 1.5px var(--side); }
 /* how many of the shown groups' actors wait for the reader, stopped on an error, run, finished unseen, are idle: a dot in
    the list's colour for each, and the number; nothing while none is */
 .top-totals { flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 6px; font-size: 12px; color: var(--ink-2);

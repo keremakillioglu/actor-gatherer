@@ -70,7 +70,7 @@ def placed(body, cx, cy, scale):
 
 
 def mark():
-    """The mark, on a 64x64 canvas: the G (--halo), the three robots in it, the G's end turned in to its bulb."""
+    """The mark, on a 64x64 canvas: the G (--halo: the page's sky blue), the three robots in it, its end turned in to its bulb."""
     r, top, low = 27.4, math.radians(48), math.radians(-4)
     x0, y0 = 32 + r * math.cos(top), 32 - r * math.sin(top)
     x1, y1 = 32 + r * math.cos(low), 32 - r * math.sin(low)
@@ -92,7 +92,7 @@ def page_mark():
 
 def icon():
     """The mark as a file: its colours fixed, the G's and the cut round the robots as a browser's light or dark tab is."""
-    style = (":root{--halo:#b9aa9a;--side:#fff}@media (prefers-color-scheme:dark){:root{--halo:#8a7d70;--side:#202124}}"
+    style = (":root{--halo:#1ea4e4;--side:#fff}@media (prefers-color-scheme:dark){:root{--halo:#38bdf8;--side:#202124}}"
              + HALO)
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><style>{style}</style>{mark()}</svg>\n'
 

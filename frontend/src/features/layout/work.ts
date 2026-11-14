@@ -91,7 +91,8 @@ const SCREEN_KEY = "ag-dashboard-screen";
 // the well under the tabs' bar, this far from the work area's sides and bottom; the cards this far in it, and apart
 export const WELL = 6,
   PAD = 6,
-  GAP = 6;
+  GAP = 6,
+  IN = WELL + PAD; // a panel's least distance from the work area's sides and bottom
 const EMPTY = "\u0007empty"; // a tab showing nothing: its note, placed as a panel
 // a block dragged, by its strip or its row in the list; a task not shown, dropped from the list
 const BLOCK = "\u0004",
@@ -182,12 +183,7 @@ export class Work {
       tree: (box) => this.tree(box),
       node: (id) => this.last?.nodes.get(id) ?? null,
       resized: (key, sizes, done) => this.resized(key, sizes, done),
-      inset: () => ({
-        top: (this.tabs.height() || WELL) + PAD,
-        right: WELL + PAD,
-        bottom: WELL + PAD,
-        left: WELL + PAD,
-      }),
+      inset: () => ({ top: (this.tabs.height() || WELL) + PAD, right: IN, bottom: IN, left: IN }),
       fitted: (id) => !!this.last?.minimized.has(id),
       placed: () => {
         const rects = this.last ? this.rects() : new Map<string, Rect>();
