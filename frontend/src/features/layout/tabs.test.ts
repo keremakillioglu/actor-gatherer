@@ -2,8 +2,9 @@
 // task open nowhere (the tab shown, if empty); ⌥ takes a task out of the other tabs; a tab shown again given back its
 // tasks, their arrangement and the one in focus; a tab left kept so (each task remembered).
 import { beforeEach, describe, expect, it } from "vitest";
+import type { CellLook } from "./tab-map";
 import { MARKS, pressing, Tabs, type State, type TabsHooks } from "./tabs";
-import type { Node } from "./tree";
+import type { Node, Rect } from "./tree";
 
 let shown: string[],
   screen: Node | null,
@@ -12,7 +13,7 @@ let shown: string[],
   remembered: string[][],
   now: Record<string, string>, // a key's key now (a lone item put in a task since)
   states: Record<string, State[]>, // each task's items' states
-  faced: Set<string>, // the tasks with a face
+  looks: Record<string, CellLook>, // what each item's box in a map shows (none: grey)
   dragging: string | null, // the task being dragged by its card head, if one can go to another tab
   carried: [string, string | null][]; // each let go on the bar: the task, the tab it goes in (null: a new one)
 function tabs(): Tabs {
@@ -30,7 +31,8 @@ function tabs(): Tabs {
     canon: (k) => now[k] ?? k,
     name: (k) => k.toUpperCase(),
     status: (k) => states[k] || [],
-    faces: (k) => (faced.has(k) ? [Object.assign(document.createElement("img"), { alt: k })] : []),
+    look: (_k, item) => looks[item] ?? null,
+    lead: (k) => `${k}1`,
     screen: () => screen,
     setScreen: (s) => (screen = s),
     hold: () => {},
@@ -58,7 +60,7 @@ beforeEach(() => {
   remembered = [];
   now = {};
   states = {};
-  faced = new Set();
+  looks = {};
   dragging = null;
   carried = [];
 });
@@ -223,38 +225,67 @@ describe("screen tabs", () => {
     expect(again.shownTab().draft).toBe("next");
   });
 
-  it("each task's state marked on its face, its most pressing item's; past three faces, or with none, after its name", () => {
+  it("each task's state marked on its lead's box in the map: its first actor's, top left first", () => {
     const t = tabs();
     const st = (mark: string, said: string): State => ({ mark, said });
-    shown = ["a", "b", "c", "d", "e"];
-    faced = new Set(["a", "b", "c", "d"]);
+    shown = ["a", "b", "c"];
+    looks = { a1: { hue: "#f97316", src: "/avatars/a.svg" }, b1: { app: true } };
     states = {
       a: [st("", "Idle"), st("working", "Running"), st("finished", "Finished")], // done since looked: before at work
       b: [st("", "Idle")], // idle: no mark
-      c: [st("background", "Background"), st("notified", "Notification")],
-      d: [st("asking", "Waiting for you")], // past three faces: after the name
-      e: [st("error", "Error")], // no face: after the name too
+      c: [st("asking", "Waiting for you")],
     };
     t.draw();
     const tab = work.querySelector<HTMLElement>(".lay-tab")!;
-    const marks = [...tab.querySelectorAll<HTMLElement>(".lay-fmark")].map(
-      (f) => `${f.querySelector("img")!.alt}:${f.querySelector<HTMLElement>(".lay-dot")?.dataset.status || ""}`,
-    );
-    expect(marks).toEqual(["a:finished", "b:", "c:notified"]);
-    expect(tab.querySelector(".lay-more")!.textContent).toBe("+1");
-    expect(tab.querySelector<HTMLElement>(":scope > .lay-dot")!.dataset.status).toBe("asking"); // d before e
-    expect(tab.querySelector<HTMLElement>(".lay-fmark")!.title).toBe("A · Finished");
+    const boxes = [...tab.querySelectorAll<HTMLElement>(".lay-map > .lay-mcell")];
+    // no map kept: a box for each task, side by side, its lead's
+    expect(boxes.map((b) => `${b.title}:${b.querySelector<HTMLElement>(".lay-dot")?.dataset.status || ""}`)).toEqual([
+      "A · Finished:finished",
+      "B · Idle:",
+      "C · Waiting for you:asking",
+    ]);
+    expect(boxes[0].style.getPropertyValue("--hue")).toBe("#f97316");
+    expect(boxes[0].querySelector("img")!.getAttribute("src")).toBe("/avatars/a.svg");
+    expect(boxes[1].className).toBe("lay-mcell app");
+    expect(boxes[2].className).toBe("lay-mcell"); // nothing known of it: grey
     expect(tab.title.split("\n")).toEqual([
-      "A, B +3 · double-click to name it",
+      "A, B +1 · double-click to name it",
       "A · Finished",
       "B · Idle",
-      "C · Notification",
-      "D · Waiting for you",
-      "E · Error",
+      "C · Waiting for you",
     ]);
-    states = {}; // nothing to mark: no mark after the name
+  });
+
+  it("the tab shown's map taken as its panels are placed, kept with it when left, drawn so till its tasks change", async () => {
+    const t = tabs();
+    shown = ["a"];
+    const rect = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });
+    const items = new Map([
+      ["p1", { key: "a", item: "app:n" }],
+      ["p2", { key: "a", item: "a1" }],
+    ]);
+    // a Notepad above its actor
+    t.mapped(
+      new Map([
+        ["p1", rect(10, 10, 400, 100)],
+        ["p2", rect(10, 110, 400, 300)],
+      ]),
+      items,
+    );
+    const map = (n: number): string[] =>
+      [...work.querySelectorAll(".lay-tab")[n].querySelectorAll<HTMLElement>(".lay-mcell")].map(
+        (b) => `${b.style.left},${b.style.top},${b.style.width},${b.style.height}`,
+      );
+    expect(map(0)).toEqual(["1px,1px,35px,4px", "1px,6px,35px,14px"]);
+    t.fresh(); // left: kept as it was
+    shown = ["b"];
     t.draw();
-    expect(work.querySelector(".lay-tab > .lay-dot")).toBe(null);
+    expect(map(0)).toEqual(["1px,1px,35px,4px", "1px,6px,35px,14px"]);
+    expect(map(1)).toEqual(["1px,1px,35px,19px"]); // b: no map yet, one box
+    now = { a: "t1" }; // a put in a task since: its key now, the same map
+    t.draw();
+    expect(map(0)).toHaveLength(2);
+    expect(JSON.parse(localStorage.getItem("ag-dashboard-screen-tabs")!).tabs[0].map).toHaveLength(2); // kept on reload
   });
 
   it("marks ranked: what waits on the reader before what is at work", () => {

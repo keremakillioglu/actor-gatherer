@@ -195,6 +195,53 @@ class OverThePageTest(AppHome):
         self.b._publish()
         self.assertTrue(until(lambda: self.told("App.esc")[-1] == {"targetId": self.tab.target, "on": False}))
 
+    def test_its_marks_follow_the_agent_while_no_panel_shows_it(self):
+        # the user goes to another task as the agent acts: its panel gone, the action's end still clears the page
+        self.b.acting, self.b.acting_until, self.b.doing = {"label": "x", "box": [10, 20, 30, 40]}, 0, 'clicking "Pay"'
+        self.b.doing_tool = "click"
+        self.b._publish()
+        self.assertTrue(until(lambda: any(d["acting"] for d in self.drawn())))
+        self.b.leave(self.viewer)
+        self.b.doing = ""
+        self.b.acted()
+        self.assertTrue(until(lambda: self.drawn()[-1]["acting"] is None))
+
+    def test_a_tab_left_while_the_agent_acted_in_it_is_cleared(self):
+        # its click opened a tab, shown at once: the marks on the tab it clicked in are not left there
+        self.b.acting, self.b.acting_until, self.b.doing = {"label": "x", "box": [10, 20, 30, 40]}, 0, 'clicking "Pay"'
+        self.b.doing_tool = "click"
+        self.b._publish()
+        self.assertTrue(until(lambda: any(d["acting"] for d in self.drawn())))
+        with self.b.lock:
+            self.b.tabs.append(browser.Tab("T9", "S-T9"))
+            self.b.active = 1
+        self.b.doing = ""
+        self.b.acted()
+        self.assertTrue(until(lambda: self.drawn()[-1]["acting"] is None))
+
+    def test_a_state_read_before_another_is_never_given_after_it(self):
+        # Chrome's thread and the agent's both publish: what the page and its panel keep is the state read last
+        real, reading, go = self.b.state, threading.Event(), threading.Event()
+
+        def slow():
+            s = real()
+            if s["acting"] and not go.is_set():          # read as the agent acts, then held up
+                reading.set()
+                go.wait(5)
+            return s
+        self.b.acting, self.b.acting_until, self.b.doing = {"label": "x", "box": [10, 20, 30, 40]}, 0, 'clicking "Pay"'
+        self.b.doing_tool = "click"
+        with mock.patch.object(self.b, "state", slow):
+            first = threading.Thread(target=self.b._publish)
+            first.start()
+            self.assertTrue(reading.wait(5))
+            self.b.doing = ""
+            self.b.acted()                               # its action over, published meanwhile
+            go.set()
+            first.join(5)
+        self.assertTrue(until(lambda: self.drawn() and self.drawn()[-1]["acting"] is None))
+        self.assertIsNone(next(p for k, p in self.viewer.take(0) if k == "state")["acting"])
+
     def test_pick_runs_in_chromes_inspector_and_ends_on_a_pick_or_esc(self):
         self.b.set_mode("pick")
         self.assertEqual(self.b.state()["picking"], "pick")

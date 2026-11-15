@@ -195,27 +195,29 @@ function taskOrder(g, key) {
   return gg && id.startsWith("t") ? taskActors(gg, Number(id.slice(1))).map((a) => a.channel) : [];
 }
 // The apps' panels of a task -- its apps (05-agent-list.js's taskApps), as the host has them now; an app alone, it -- up
-// to TASK_APPS, not open already; `only`, the task's layout as it was left (rememberTask): those of them it had open alone
+// to TASK_APPS, not open already; `only`, the task's layout as it was left (rememberTask): those of them it had open alone.
+// Those whose instance the page knows open at once, in the same frame as the rest of the task entered (its actor shown,
+// the task left's panels closed): waited for the server's apps, the work area was drawn a frame without them at each
+// switch between tasks with apps -- the Chat its whole height, its actor done large, then short again: a flicker. The
+// server's apps read then, the rest opened, as the host has them now; one opened at once, its app closed since, closed.
 async function openTaskApps(g, c, to, only = null, beside = false) {
   const gg = state.home && state.home.gatherers.find((x) => x.name === g);
   if (!gg || !window.agNext) return;
-  await readApps(g, true);
-  const item = c || (to.split("\u0000")[1] || ""), now = taskKey(g, item);
-  if (now && now !== to && !to.split("\u0000")[1].startsWith("t")) {   // made one task with others since: that one's
-    if (taskNow === to) taskNow = now;
-    if (appsOnly === to) appsOnly = now;
-    tasksLaidOut.add(now);
-    to = now;
+  let found;
+  ({ to, found } = taskAppsFound(g, gg, c, to, only));
+  const early = [];
+  for (const k of found) {
+    if (!k.inst || panes.apps.some((p) => p.instance.id === k.id)) continue;
+    if (!beside && taskNow !== to) return;
+    early.push(addAppPane(window.agNext.apps.named(k.app), k.inst, +k.size > 0 ? +k.size : 1));   // as wide as it was left
   }
-  const found = [];                                  // {app, id, inst?}, in that order, each instance once
-  const add = (k) => { if (window.agNext.apps.named(k.app) && !found.some((f) => f.id === k.id)) found.push(k); };
-  const id = to.split("\u0000")[1] || "";
-  const mine = id.startsWith("t") ? taskApps(gg, Number(id.slice(1)))
-    : isAppItem(id) ? [appInfo(g, id.slice(APP_ITEM.length))].filter(Boolean) : [];
-  if (only) for (const o of only) add({ ...o, inst: (mine.find((m) => m.id === o.id) || {}).inst });   // as it was left
-  else for (const o of mine) add({ app: o.app.name, id: o.id, inst: o.inst });
+  if (early.length) { saveAppPanes(); renderAgents(); }
+  await readApps(g, true);
+  const open = new Set(((appsKnown.get(g) || {}).instances || []).map((i) => i.id));
+  for (const p of early) if (panes.apps.includes(p) && !open.has(p.instance.id)) closeAppPane(p);   // closed since
+  ({ to, found } = taskAppsFound(g, gg, c, to, only));
   let opened = false;
-  for (const k of found.slice(0, TASK_APPS)) {
+  for (const k of found) {
     if (!beside && taskNow !== to) return;           // another task entered meanwhile
     if (panes.apps.some((p) => p.instance.id === k.id)) continue;
     const inst = k.inst || await window.agNext.apps.instanceOf(k.app, g, k.id).catch(() => null);
@@ -224,6 +226,27 @@ async function openTaskApps(g, c, to, only = null, beside = false) {
     opened = true;
   }
   if (opened) { saveAppPanes(); renderAgents(); }
+}
+// A task's apps to open (openTaskApps), as the page has them now: {to, the task `to` is now (an actor or app alone, made one
+// task with others since: that one's), found, its apps -- `only`, those of them -- up to TASK_APPS, in that order, each
+// once: {app, id, size?, inst (its instance; one the page does not know open: none)}}
+function taskAppsFound(g, gg, c, to, only) {
+  const item = c || (to.split("\u0000")[1] || ""), now = taskKey(g, item);
+  if (now && now !== to && !to.split("\u0000")[1].startsWith("t")) {   // made one task with others since: that one's
+    if (taskNow === to) taskNow = now;
+    if (appsOnly === to) appsOnly = now;
+    tasksLaidOut.add(now);
+    to = now;
+  }
+  const found = [];
+  const add = (k) => { if (window.agNext.apps.named(k.app) && !found.some((f) => f.id === k.id)) found.push(k); };
+  const id = to.split("\u0000")[1] || "";
+  const mine = id.startsWith("t") ? taskApps(gg, Number(id.slice(1)))
+    : isAppItem(id) ? [appInfo(g, id.slice(APP_ITEM.length))].filter(Boolean) : [];
+  const known = (o) => (mine.find((m) => m.id === o.id) || [appInfo(g, o.id)].find((m) => m && m.app.name === o.app) || {}).inst;
+  if (only) for (const o of only) add({ ...o, inst: known(o) });   // as it was left
+  else for (const o of mine) add({ app: o.app.name, id: o.id, inst: o.inst });
+  return { to, found: found.slice(0, TASK_APPS) };
 }
 // The actor in the pane in focus -- in `view`, if given; one open already, its pane focused instead. Of another task than
 // the one shown: the panels changed for it first (enterTask), and the rest of its task laid out beside it, its pane in
@@ -434,7 +457,7 @@ function startPlacing() {
     old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped, minChanged: paneMinimized,
     focus: selectedTask, enter: enterTasks, status: taskStates, showItems: showTaskItems, lead: taskLeadOf, canon: keyNow,
     clear: clearWork, remember: (keys) => { for (const k of keys) if (tasksLaidOut.has(k)) rememberTask(k); },
-    faces: blockFaces, about: blockAbout, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { if (state.home) renderAgents(); },
+    faces: blockFaces, about: blockAbout, look: cellLook, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { if (state.home) renderAgents(); },
     blank: drawNewTab });                            // a tab showing nothing: its new-tab page (07-new-tab.js)
   NARROW.addEventListener("change", placeWork);
   // a task's row dragged from the list over the work area (05-agent-list.js's listDrag): one open in no tab, opened beside
@@ -668,7 +691,7 @@ function blockName(k) {
   const a = gg.agents.find((x) => x.channel === id);
   return a ? actorTitle(a) : id;
 }
-// A block's faces, on its card's head and its screen tab: its task's actors' (not closed; three at most) and its apps'
+// A block's faces, on its card's head: its task's actors' (not closed; three at most) and its apps'
 // marks -- an actor's, an app's, alone
 function blockFaces(k) {
   const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
@@ -685,6 +708,22 @@ function blockFaces(k) {
   if (isAppItem(id)) { const o = appInfo(g, id.slice(APP_ITEM.length)); return o ? [mark(o)] : []; }
   const a = gg.agents.find((x) => x.channel === id);
   return a ? [face(a)] : [];
+}
+// What a panel's box shows in its screen tab's map (tab-map.ts): an actor's, its avatar's hue and face; an app's, its
+// mark on grey. A task's key for its item (a tab with no map kept of it): its lead's, else its first app's.
+function cellLook(k, item) {
+  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  if (!gg || id === undefined) return null;
+  if (item === k && /^t\d+$/.test(id)) {
+    const o = taskApps(gg, Number(id.slice(1)))[0];
+    item = o ? APP_ITEM + o.id : "";
+  } else if (item === k) item = id;
+  if (isAppItem(item)) {
+    const o = appInfo(g, item.slice(APP_ITEM.length));
+    return { app: true, src: o && o.app.mark && !SNAPSHOT ? `/apps/mark/${encodeURIComponent(o.app.name)}.svg` : null };
+  }
+  const a = gg.agents.find((x) => x.channel === item);
+  return a ? { hue: HUE_MAIN[a.avatar_hue] || null, src: a.avatar && !SNAPSHOT ? `/avatars/${a.avatar}.svg` : null } : null;
 }
 // What is in a block, in words, on its card's head: its actors, how many; its apps, by name
 function blockAbout(k) {

@@ -13,7 +13,7 @@ import { APP, build, TOP_BAND, type Built, type Old, type Shown } from "./build"
 import { Cards, withBlocks } from "./cards";
 import { Mover } from "./move";
 import { Placer } from "./place";
-import { Tabs, type State } from "./tabs";
+import { Tabs, type State, type TabsHooks } from "./tabs";
 import { drawStrip, Tasks } from "./tasks";
 import type { Node, Rect, Size } from "./tree";
 
@@ -66,9 +66,11 @@ export interface WorkHooks {
   /** A task closed by its card head's ×, or moved to another tab: its panels out of the tab shown, kept as they are (its
    * agents go on). */
   closeTask?: (key: string) => void | Promise<void>;
-  /** A block's faces (its task's actors', its apps' marks) and what is in it, in words: on its card's head, its tab. */
+  /** A block's faces (its task's actors', its apps' marks) and what is in it, in words: on its card's head. */
   faces?: (block: string) => HTMLElement[];
   about?: (block: string) => string;
+  /** What a panel's box shows in its screen tab's map (tab-map.ts): an actor's hue and face, an app's mark. */
+  look?: TabsHooks["look"];
   /** Where the tasks are open changed (a tab shown, made, closed; a task opened or closed): the list marked again. */
   listed?: () => void;
   /** The tab shown, showing nothing: its new-tab page drawn in `box` (placed in the whole well) -- each time it comes in
@@ -160,7 +162,8 @@ export class Work {
       clear: hooks.clear,
       remember: hooks.remember,
       name: hooks.label,
-      faces: (k) => (hooks.faces ? hooks.faces(k).slice(0, 1) : []),
+      look: hooks.look,
+      lead: (k) => hooks.lead(k) ?? k,
       status: hooks.status,
       screen: () => this.screen,
       setScreen: (screen) => {
@@ -188,6 +191,7 @@ export class Work {
       placed: () => {
         const rects = this.last ? this.rects() : new Map<string, Rect>();
         this.cards.draw(this.last?.blocks || [], (b) => rects.get(BLOCK + b));
+        this.tabs.mapped(this.placer.rects(), this.last?.items); // (the tab shown's map)
       },
     });
     this.mover = new Mover(work, {
