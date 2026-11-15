@@ -14,6 +14,9 @@ first). Add with notes_add -- markdown lines to a page, or `title` for a new pag
 rewrite or delete it), or a page's title, with notes_change. Change the notebook only when the user asks you to; they
 see your changes at once. A line can link to another page, as `[its title](page:<its id>)` (the id from notes_read):
 the user clicks it to open that page, and it follows the page's renames. When a line names one of the pages, link it.
+A page can hold tables: notes_read shows each as a markdown table (`| a | b |` rows, the row of `| --- |` under its
+first), its id on its first row, and you add one the same way. To change a table, give notes_change its block and the
+whole table as it should be: only the cells that differ change, so the user's typing in other cells is kept.
 
 A page can hold pictures: notes_read shows each as `![caption](image:<file>)` -- or, for a frame of Figma the page
 shows live, `[Figma: its name](its link) -- caption` -- and gives you the pictures themselves after the page's words
@@ -68,12 +71,12 @@ input_schema = { type = "object", properties = { page = { type = "string", descr
 
 [[tools]]
 name = "add"
-description = "Add markdown to a page (each line a block: `- [ ] ` to-do, `- ` or `1. ` list, `# ` heading, `> ` quote, ``` code, `---`; two spaces in, a level in; a link to another page: `[its title](page:<its id>)`; a picture: `![caption](<a file's path>)`; a Figma frame, shown live: its link alone on a line), or make a new page with `title`."
+description = "Add markdown to a page (each line a block: `- [ ] ` to-do, `- ` or `1. ` list, `# ` heading, `> ` quote, ``` code, `---`; two spaces in, a level in; a link to another page: `[its title](page:<its id>)`; a table: markdown table rows, `| --- |` under the first; a picture: `![caption](<a file's path>)`; a Figma frame, shown live: its link alone on a line), or make a new page with `title`."
 input_schema = { type = "object", properties = { markdown = { type = "string", description = "the blocks to add, as markdown lines" }, page = { type = "string", description = "the page to add to: its id or title" }, title = { type = "string", description = "instead of `page`: a new page with this title" }, parent = { type = "string", description = "for a new page: the page it goes under (id or title)" }, icon = { type = "string", description = "for a new page: an emoji" }, after = { type = "string", description = "the block's id to add after, or \"start\"; default the end" }, from_conversation = { type = "boolean", description = "true when the lines sum up what came out of your own conversation with the user (not words they told you to put down): they then name you as their source" } }, required = ["markdown"] }
 
 [[tools]]
 name = "change"
-description = "Change one block of a page -- what it says (`markdown`, which may be several lines), a to-do ticked (`checked`), or `delete` -- or, with no `block`, the page's title, icon, parent, or the page itself into the trash (`delete`)."
+description = "Change one block of a page -- what it says (`markdown`, which may be several lines; a table: the whole table as it should be, only the cells that differ changed), a to-do ticked (`checked`), or `delete` -- or, with no `block`, the page's title, icon, parent, or the page itself into the trash (`delete`)."
 input_schema = { type = "object", properties = { page = { type = "string", description = "the page: its id or title" }, block = { type = "string", description = "the block's id, from notes_read" }, markdown = { type = "string", description = "what the block becomes (\"\" deletes it)" }, checked = { type = "boolean", description = "a to-do ticked, or not" }, delete = { type = "boolean" }, title = { type = "string" }, icon = { type = "string" }, parent = { type = "string", description = "the page it goes under (id or title), or \"top\"" }, from_conversation = { type = "boolean", description = "with `markdown`: true when what the block becomes sums up what came out of your own conversation with the user (not words they told you to put down): it then names you as its source" } }, required = ["page"] }
 
 [[tools]]

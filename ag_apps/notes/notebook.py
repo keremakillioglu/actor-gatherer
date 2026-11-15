@@ -3,6 +3,14 @@ headings, to-dos, lists, quotes, code, dividers -- kept in one JSON file in the 
 ops, applied one batch at a time, whether they come from the panel (the user typing) or from an agent's tools; agents
 read and write it as markdown.
 
+A TABLE (a `table` block) holds its own rows and columns: `cols` ({id, w?: its width in pixels}), `rows` ({id, cells:
+{a column's id: the cell's text, a line's inline markup}}), and whether its first row (`head`) and first column
+(`head_col`) are drawn as headers. Typing in a cell changes only that cell (cell.put), so two windows, or the user and
+an agent, change different cells of one table without either undoing the other; rows and columns are added, moved and
+deleted with ops of their own, and have ids, so one added or moved never shifts a cell another is changing. Agents read
+a table as a markdown table, a row a line, its first row the header, and write one the same way; one written over a
+table there changes only what differs (table_ops). A table is sent to no one, as a picture isn't.
+
     Notebook(path)              the notebook kept in that file (written when first changed)
       .state()                  everything, as the panel draws it: {version, pages}
       .apply(ops)               a batch of ops applied in order: (version, the ops as applied); NotebookError for an
@@ -10,7 +18,10 @@ read and write it as markdown.
       .page(name)               a page that is not in the trash, by its id or its title
       .outline()                its pages as an agent reads them
       .markdown(page)           a page's blocks as markdown, each line its block's id first
-    blocks_from_markdown(text)  blocks ({type, text, checked, indent}, no id) from markdown
+    blocks_from_markdown(text)  blocks ({type, text, checked, indent}, no id) from markdown (a table: rows and columns
+                                with ids)
+    table_ops(page, old, new, read?)  the row and column ops that make the table `old` say what an agent's `new`
+                                does (`read`: the table as it read it, table_seen's)
     inline_html(md)             a line's markdown (bold, italic, code, links) as a block's text
     inline_markdown(html, title?)   the reverse (`title`: a page's title now, for a link to that page)
     clean_html(text)            a block's text kept to the inline tags it may hold
@@ -31,6 +42,15 @@ The ops (each a dict, `op` its kind):
     block.delete  {page, block}      (its thread with it)
     thread.add    {page, block, line: {id, by, to?, text, at?, done?, results?}}   a line of the block's thread, at
                                     its end
+    cell.put      {page, block, row, col, text}               a table's cell typed in (its row or column gone:
+                                    skipped)
+    row.put       {page, block, row: {id, cells?}, after?}     a table's new row (after the row `after`; "": first;
+                                    none: last), or what of a row there `cells` gives changed ({a column's id: text},
+                                    "" emptying a cell)
+    col.put       {page, block, col: {id, w?}, cells?, after?}  a new column (`cells`: {a row's id: text}), or a column
+                                    there changed: its width (`w` null: none) and its cells
+    row.move, col.move      {page, block, row | col, after}
+    row.delete, col.delete  {page, block, row | col}       (a column with its cells; a table keeps one of each)
 
 A block sent to agents (the panel sends it, as the user's message: to actors of the gatherer, or its gatherer agent)
 says so: its `calls`, one for each agent it went to, in the order sent -- `to`, the actor's channel, `sent`, when,
@@ -82,7 +102,7 @@ from html.parser import HTMLParser
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 TYPES = ("text", "h1", "h2", "h3", "todo", "bullet", "number", "quote", "code", "divider", "agents", "work", "image",
-         "figma")
+         "figma", "table")
 #: the blocks that show a picture, their words its caption
 MEDIA = ("image", "figma")
 #: a picture kept in the app's files (media.py): its contents' hash, and its kind
@@ -103,7 +123,9 @@ CHANNEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")
 #: who wrote a thread's line: the user, or an agent (its channel)
 BY = re.compile(r"^(user|agent:[A-Za-z0-9][A-Za-z0-9._:-]{0,99})$")
 #: the blocks that are sent to no one (nothing in them to send; a picture's caption is not a line of work)
-UNSENT = ("divider", "agents", "work", "image", "figma")
+UNSENT = ("divider", "agents", "work", "image", "figma", "table")
+#: the blocks sent to no one that an agent may still have written from its conversation (their `source`)
+SOURCED = ("image", "figma", "table")
 #: how the user ended a work item
 ENDED = ("done", "canceled")
 MAX_RESULTS = 8                   # what a report names it made
@@ -111,6 +133,12 @@ MAX_RESULT = 300
 MAX_THREAD = 200                  # a block's thread keeps its last lines
 MAX_CALLS = 20                    # the agents a block went to
 MAX_LINE = 4_000
+MAX_ROWS = 500                    # a table's
+MAX_COLS = 30
+MAX_CELL = 4_000                  # a cell's text
+COL_W = (48, 1600)                # a column's width, in pixels (none: the columns share what the page leaves)
+#: the ops that change a table's rows and columns (the rest of it, as any block: block.put)
+TABLE_OPS = ("cell.put", "row.put", "row.move", "row.delete", "col.put", "col.move", "col.delete")
 _ID_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
 
 
@@ -354,6 +382,11 @@ def blocks_from_markdown(text: str) -> List[dict]:
             i += 1                                           # the closing fence
             out.append({"type": "code", "text": "\n".join(body)[:MAX_TEXT], "checked": False, "indent": 0})
             continue
+        table = _table_at(lines, i)
+        if table:
+            block, i = table
+            out.append(block)
+            continue
         i += 1
         if not line.strip():
             continue
@@ -373,6 +406,38 @@ def blocks_from_markdown(text: str) -> List[dict]:
         out.append({"type": kind, "text": "" if kind == "divider" else inline_html(words), "checked": checked,
                     "indent": indent})
     return out
+
+
+_TABLE_SEP = re.compile(r"^\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?$")
+
+
+def _table_row(line: str) -> List[str]:
+    """A markdown table's row: its cells' words (`\\|` a `|` in one)."""
+    body = line.strip()
+    body = body[1:] if body.startswith("|") else body
+    body = body[:-1] if body.endswith("|") and not body.endswith("\\|") else body
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", body)]
+
+
+def _table_at(lines: List[str], i: int) -> Optional[Tuple[dict, int]]:
+    """A markdown table starting at line i -- a row with a `|`, then the row of dashes under its header -- as a block,
+    and the line after it; None if none starts there. Its rows end at a line with no `|`; a row short of cells is
+    filled out with empty ones."""
+    def bare(k: int) -> str:
+        return _ID_PREFIX.sub("", lines[k].strip(), count=1) if k < len(lines) else ""
+    head, sep = bare(i), bare(i + 1)
+    if "|" not in head or "|" not in sep or not _TABLE_SEP.match(sep):
+        return None
+    rows, k = [_table_row(head)], i + 2
+    while k < len(lines) and "|" in bare(k) and len(rows) < MAX_ROWS:
+        rows.append(_table_row(bare(k)))
+        k += 1
+    width = min(MAX_COLS, max(len(r) for r in rows))
+    cols = [{"id": new_id()} for _ in range(width)]
+    made = [{"id": new_id(), "cells": {c["id"]: html for c, words in zip(cols, r) if (html := inline_html(words))}}
+            for r in rows]
+    return {"type": "table", "text": "", "checked": False, "indent": 0, "cols": cols, "rows": made, "head": True,
+            "head_col": False}, k
 
 
 def _numbers(blocks: List[dict]) -> List[Optional[int]]:
@@ -416,6 +481,10 @@ def markdown_lines(blocks: List[dict], ids: bool = True,
         if t == "figma":
             name = b.get("title") or "a frame"
             lines.append(f"{tag}[Figma: {name}]({b.get('url', '')})" + (f" -- {words}" if words else ""))
+            continue
+        if t == "table":
+            first, *rest = table_lines(b, title)
+            lines += [f"{tag}{first}", *rest]
             continue
         head = {"text": "", "h1": "# ", "h2": "## ", "h3": "### ", "bullet": "- ", "quote": "> ", "divider": "---",
                 "todo": "- [x] " if b.get("checked") else "- [ ] ", "number": f"{n}. "}[t]
@@ -630,7 +699,7 @@ class Notebook:
             return self._page_new(op)
         page = self._get(op.get("page"))
         if kind in ("page.set", "page.delete", "page.restore", "page.purge", "block.put", "block.move",
-                    "block.delete", "thread.add"):
+                    "block.delete", "thread.add", *TABLE_OPS):
             if not isinstance(op.get("page"), str):
                 raise NotebookError(f"{kind}: which page (`page`, its id)")
             if page is None:
@@ -669,6 +738,8 @@ class Notebook:
             return self._block_put(page, op)
         if kind == "thread.add":
             return self._thread_add(page, op)
+        if kind in TABLE_OPS:
+            return self._table_op(page, op)
         blocks = page.setdefault("blocks", [])
         bid = op.get("block")
         i = next((n for n, b in enumerate(blocks) if b["id"] == bid), None)
@@ -684,14 +755,15 @@ class Notebook:
         page["updated"] = _now()
         return {"op": kind, "page": page["id"], "block": bid, "after": blocks[at - 1]["id"] if at else ""}
 
-    def _place(self, blocks: List[dict], after: Any, kind: str) -> int:
-        """Where a block goes in `blocks`: after the block `after` ("": first); none, or one not there: last."""
+    def _place(self, blocks: List[dict], after: Any, kind: str, what: str = "block") -> int:
+        """Where a block goes in `blocks` (or a table's row or column in its own): after the one `after` ("": first);
+        none, or one not there: last."""
         if after == "":
             return 0
         if after is None:
             return len(blocks)
         if not isinstance(after, str):
-            raise NotebookError(f"{kind}: `after` is a block's id, or \"\" for the first")
+            raise NotebookError(f"{kind}: `after` is a {what}'s id, or \"\" for the first")
         i = next((n for n, b in enumerate(blocks) if b["id"] == after), None)
         return len(blocks) if i is None else i + 1
 
@@ -747,6 +819,96 @@ class Notebook:
         page["updated"] = _now()
         return {"op": "thread.add", "page": page["id"], "block": b["id"], "line": line}
 
+    def _table_op(self, page: dict, op: dict) -> Optional[dict]:
+        """A table's row or column: put (a new one, placed `after` another; or one there, what is given of it changed
+        -- `cells`, its text in each, "" emptied), moved, or deleted (with its cells)."""
+        kind = op["op"]
+        if not isinstance(op.get("block"), str):
+            raise NotebookError(f"{kind}: which table (`block`, its id)")
+        b = next((x for x in page.get("blocks", []) if x["id"] == op["block"]), None)
+        if b is None:
+            return None
+        if b["type"] != "table":
+            raise NotebookError(f"{kind}: block {b['id']} is not a table")
+        what, act = kind.split(".")
+        out: Dict[str, Any] = {"op": kind, "page": page["id"], "block": b["id"]}
+        if what == "cell":                                  # typed in: that cell alone, never a row or column made
+            row = next((r for r in b["rows"] if r["id"] == op.get("row")), None)
+            col = next((c for c in b["cols"] if c["id"] == op.get("col")), None)
+            if row is None or col is None:
+                return None
+            text = _cell(op.get("text", ""), kind)
+            if row["cells"].get(col["id"], "") == text:
+                return None
+            _set_cells(row["cells"], {col["id"]: text})
+            page["updated"] = _now()
+            return {**out, "row": row["id"], "col": col["id"], "text": text}
+        items, word = (b["rows"], "row") if what == "row" else (b["cols"], "column")
+        if act == "put":
+            given = op.get(what)
+            if not isinstance(given, dict) or not ID.match(str(given.get("id") or "")):
+                raise NotebookError(f"{kind}: `{what}` is {{id, ...}}, its id 6-24 of a-z and 0-9")
+            there = next((x for x in items if x["id"] == given["id"]), None)
+            if what == "row":
+                cells = _cells(given.get("cells"), {c["id"] for c in b["cols"]}, kind)
+                if there is None:
+                    if len(items) >= MAX_ROWS:
+                        raise NotebookError(f"{kind}: a table has {MAX_ROWS} rows at most")
+                    row = {"id": given["id"], "cells": {k: v for k, v in cells.items() if v}}
+                    at = self._place(items, op.get("after", None), kind, word)
+                    items.insert(at, row)
+                    out.update(row=json.loads(json.dumps(row)), after=items[at - 1]["id"] if at else "")
+                else:
+                    changed = {k: v for k, v in cells.items() if there["cells"].get(k, "") != v}
+                    if not changed:
+                        return None
+                    _set_cells(there["cells"], changed)
+                    out["row"] = {"id": there["id"], "cells": changed}
+            else:
+                cells = _cells(op.get("cells"), {r["id"] for r in b["rows"]}, kind)
+                if there is None:
+                    if len(items) >= MAX_COLS:
+                        raise NotebookError(f"{kind}: a table has {MAX_COLS} columns at most")
+                    col = _col(given, kind)
+                    at = self._place(items, op.get("after", None), kind, word)
+                    items.insert(at, col)
+                    for r in b["rows"]:
+                        if cells.get(r["id"]):
+                            r["cells"][col["id"]] = cells[r["id"]]
+                    out.update(col=dict(col), cells={k: v for k, v in cells.items() if v},
+                               after=items[at - 1]["id"] if at else "")
+                else:
+                    col = _col({**there, **given}, kind) if "w" in given else there
+                    rows = {r["id"]: r for r in b["rows"]}
+                    changed = {k: v for k, v in cells.items() if rows[k]["cells"].get(there["id"], "") != v}
+                    if col == there and not changed:
+                        return None
+                    there.clear()
+                    there.update(col)
+                    for k, v in changed.items():
+                        _set_cells(rows[k]["cells"], {there["id"]: v})
+                    out.update(col=dict(there), cells=changed)
+        else:
+            wanted = op.get(what)
+            i = next((n for n, x in enumerate(items) if x["id"] == wanted), None)
+            if i is None:
+                return None
+            if act == "move":
+                x = items.pop(i)
+                at = self._place(items, op.get("after", None), kind, word)
+                items.insert(at, x)
+                out.update({what: x["id"], "after": items[at - 1]["id"] if at else ""})
+            else:
+                if len(items) == 1:
+                    raise NotebookError(f"{kind}: a table keeps a {word} at least (delete the table itself instead)")
+                items.pop(i)
+                if what == "col":
+                    for r in b["rows"]:
+                        r["cells"].pop(wanted, None)
+                out[what] = wanted
+        page["updated"] = _now()
+        return out
+
     def _block_put(self, page: dict, op: dict) -> Optional[dict]:
         given = op.get("block")
         if not isinstance(given, dict) or not ID.match(str(given.get("id") or "")):
@@ -800,6 +962,9 @@ def _block(b: Any, was: Optional[dict], kind: str) -> dict:
     out = {"id": b["id"], "type": t, "text": text, "checked": bool(b.get("checked")) and t == "todo", "indent": indent}
     if t in MEDIA:
         out.update(_media(b, t, kind))
+    if t == "table":
+        out["text"] = ""
+        out.update(_table(b, kind))
     if "to" in b:                                         # (the line's one agent, as a notebook said it before)
         b = _as_calls(dict(b))
     calls = b.get("calls") or []
@@ -825,7 +990,7 @@ def _block(b: Any, was: Optional[dict], kind: str) -> dict:
             raise NotebookError(f"{kind}: a block's `thread` is a list of lines")
         out["thread"] = [_line(x, kind) for x in thread][-MAX_THREAD:]
     source = b.get("source") or ""
-    if source and (t not in UNSENT or t in MEDIA):
+    if source and (t not in UNSENT or t in SOURCED):
         if not isinstance(source, str) or not CHANNEL.match(source):
             raise NotebookError(f"{kind}: a block's `source` is the channel of the agent that wrote it")
         out["source"], out["source_at"] = source, _when(b.get("source_at"), kind)
@@ -902,6 +1067,143 @@ def _media(b: dict, t: str, kind: str) -> dict:
             raise NotebookError(f"{kind}: a picture's `width` is a percent of the page's width")
         out["width"] = max(10, min(100, int(round(width))))
     return out
+
+
+def _cell(text: Any, kind: str) -> str:
+    if not isinstance(text, str):
+        raise NotebookError(f"{kind}: a cell's text is a string")
+    out = clean_html(text)
+    return clean_html(out[:MAX_CELL]) if len(out) > MAX_CELL else out
+
+
+def _cells(given: Any, keys: set, kind: str) -> Dict[str, str]:
+    """Cells given ({a row's or a column's id: text}), clean; those of a row or column no longer there left out."""
+    if given is None:
+        return {}
+    if not isinstance(given, dict):
+        raise NotebookError(f"{kind}: `cells` is {{id: text}}")
+    return {k: _cell(v, kind) for k, v in given.items() if k in keys}
+
+
+def _set_cells(cells: Dict[str, str], changed: Dict[str, str]) -> None:
+    for k, v in changed.items():
+        if v:
+            cells[k] = v
+        else:
+            cells.pop(k, None)                                     # (an empty cell is not kept)
+
+
+def _col(c: Any, kind: str) -> dict:
+    if not isinstance(c, dict) or not ID.match(str(c.get("id") or "")):
+        raise NotebookError(f"{kind}: a table's column is {{id, w?}}, its id 6-24 of a-z and 0-9")
+    out = {"id": c["id"]}
+    w = c.get("w")
+    if w is not None:
+        if isinstance(w, bool) or not isinstance(w, (int, float)):
+            raise NotebookError(f"{kind}: a column's `w` is its width in pixels (none: an equal share)")
+        out["w"] = int(max(COL_W[0], min(COL_W[1], w)))
+    return out
+
+
+def _table(b: dict, kind: str) -> dict:
+    """A table as kept: `cols` ({id, w?}, in order), `rows` ({id, cells: {a column's id: its text, a line's
+    inline markup}}, in order; an empty cell left out), `head` (its first row a header: so unless said not) and
+    `head_col` (its first column one). Made without columns or rows: three of each."""
+    cols_in, rows_in = b.get("cols"), b.get("rows")
+    if cols_in is None and rows_in is None:
+        cols_in = [{"id": new_id()} for _ in range(3)]
+        rows_in = [{"id": new_id()} for _ in range(3)]
+    if not isinstance(cols_in, list) or not isinstance(rows_in, list):
+        raise NotebookError(f"{kind}: a table's `cols` and `rows` are lists")
+    cols: List[dict] = []
+    for c in cols_in:
+        c = _col(c, kind)
+        if not any(x["id"] == c["id"] for x in cols):
+            cols.append(c)
+    if not cols or not rows_in:
+        raise NotebookError(f"{kind}: a table has a row and a column at least")
+    if len(cols) > MAX_COLS or len(rows_in) > MAX_ROWS:
+        raise NotebookError(f"{kind}: a table has {MAX_COLS} columns and {MAX_ROWS} rows at most")
+    keys = {c["id"] for c in cols}
+    rows: List[dict] = []
+    for r in rows_in:
+        if not isinstance(r, dict) or not ID.match(str(r.get("id") or "")):
+            raise NotebookError(f"{kind}: a table's row is {{id, cells?}}, its id 6-24 of a-z and 0-9")
+        if any(x["id"] == r["id"] for x in rows):
+            continue
+        rows.append({"id": r["id"], "cells": {k: v for k, v in _cells(r.get("cells"), keys, kind).items() if v}})
+    return {"cols": cols, "rows": rows, "head": bool(b.get("head", True)), "head_col": bool(b.get("head_col"))}
+
+
+def table_lines(b: dict, title: Optional[Callable[[str], Optional[str]]] = None) -> List[str]:
+    """A table as markdown: a row a line, its first row as the header (whether it is drawn as one or not), a `|` in a
+    cell `\\|`, a line break in one `<br>`."""
+    cols = b.get("cols") or []
+
+    def line(r: dict) -> str:
+        cells = [inline_markdown(r["cells"].get(c["id"], ""), title).replace("|", "\\|").replace("\n", "<br>")
+                 for c in cols]
+        return "| " + " | ".join(cells) + " |"
+    rows = b.get("rows") or []
+    return [line(rows[0]) if rows else "|" + " |" * len(cols), "|" + " --- |" * len(cols),
+            *[line(r) for r in rows[1:]]]
+
+
+def table_seen(b: dict) -> dict:
+    """A table as an agent read it, for table_ops to tell what it changed: its rows' and columns' ids, in order, and
+    each cell's text by (row, column)."""
+    return {"rows": [r["id"] for r in b["rows"]], "cols": [c["id"] for c in b["cols"]],
+            "cells": {(r["id"], c["id"]): r["cells"].get(c["id"], "") for r in b["rows"] for c in b["cols"]}}
+
+
+def table_ops(pid: str, old: dict, new: dict, read: Optional[dict] = None) -> List[dict]:
+    """A table an agent wrote over the one there (notes_change): the ops that make it say what the agent's says,
+    taken row by row and column by column, in order, against the table as the agent read it (`read`, table_seen's;
+    none: as it is now) -- the agent's row i is the i-th row it read, and so for columns; those past the ones it read
+    added at the end, those it read past its own deleted. A cell changes only where the agent's differs from what it
+    read, so what the user typed, added or deleted since stays as the user has it."""
+    ops: List[dict] = []
+    tid, ncols, nrows = old["id"], new["cols"], new["rows"]
+    now = table_seen(old)
+    read = read or now
+    live_rows, live_cols = set(now["rows"]), set(now["cols"])
+    cols = list(read["cols"][:len(ncols)])            # the agent's column j: the one it read there
+    for _ in range(len(cols), len(ncols)):
+        cid = new_id()
+        ops.append({"op": "col.put", "page": pid, "block": tid, "col": {"id": cid}})
+        cols.append(cid)
+    fresh = set(cols[len(read["cols"]):])
+    ok = [c in live_cols or c in fresh for c in cols]        # (one the user deleted since: kept deleted)
+
+    def said(r: dict) -> List[str]:
+        return [r["cells"].get(c["id"], "") for c in ncols]
+    rows = list(read["rows"][:len(nrows)])
+    for rid, r in zip(rows, nrows):
+        if rid not in live_rows:
+            continue
+        changed = {}
+        for j, v in enumerate(said(r)):
+            here = now["cells"].get((rid, cols[j]), "")
+            if ok[j] and v != read["cells"].get((rid, cols[j]), here) and v != here:
+                changed[cols[j]] = v
+        if changed:
+            ops.append({"op": "row.put", "page": pid, "block": tid, "row": {"id": rid, "cells": changed}})
+    after = next((x for x in reversed(rows) if x in live_rows), None)
+    added = nrows[len(rows):]
+    for r in added:
+        rid = new_id()
+        ops.append({"op": "row.put", "page": pid, "block": tid, **({"after": after} if after else {}),
+                    "row": {"id": rid, "cells": {cols[j]: v for j, v in enumerate(said(r)) if v and ok[j]}}})
+        after = rid
+    gone_rows = [x for x in read["rows"][len(nrows):] if x in live_rows]
+    gone_cols = [x for x in read["cols"][len(ncols):] if x in live_cols]
+    if not added and gone_rows and len(gone_rows) == len(live_rows):
+        gone_rows.pop()                                            # (a table keeps a row, and a column)
+    if not fresh and gone_cols and len(gone_cols) == len(live_cols):
+        gone_cols.pop()
+    ops += [{"op": "row.delete", "page": pid, "block": tid, "row": x} for x in gone_rows]
+    ops += [{"op": "col.delete", "page": pid, "block": tid, "col": x} for x in gone_cols]
+    return ops
 
 
 def written_with(blocks: List[dict], b: dict) -> List[dict]:

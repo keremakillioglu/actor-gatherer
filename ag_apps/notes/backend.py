@@ -29,7 +29,8 @@ import os
 import threading
 import time
 import urllib.parse
-from typing import Dict, List, Optional
+from collections import OrderedDict
+from typing import Dict, List, Optional, Tuple
 
 from app_kit import App, AppError, Caller, Instance, Response, ToolResult
 
@@ -38,6 +39,7 @@ from . import notebook as nb
 
 #: the pictures notes_read gives with a page, and how large each may be (what a model takes)
 MAX_SHOWN = 6
+TABLES_READ = 200
 MAX_SHOWN_BYTES = 3_700_000
 #: how a picture is served: as itself, never a page that runs (an SVG opened on its own)
 PICTURE_HEADERS = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"}
@@ -50,6 +52,9 @@ class NotesApp(App):
         self.files: Optional[media.Files] = None
         self.figma: Optional[media.Figma] = None
         self._snapping: set = set()
+        #: the tables each agent last read, (gatherer, channel, block) -> nb.table_seen: what an agent changed, when it
+        #: writes one over, told apart from what the user changed since (the latest TABLES_READ kept)
+        self.tables_read: "OrderedDict[Tuple[str, str, str], dict]" = OrderedDict()
 
     def start(self, host) -> None:
         super().start(host)
@@ -131,6 +136,7 @@ class NotesApp(App):
                 if not args.get("page"):
                     return ToolResult.text(book.outline())
                 page = self._page(book, args.get("page"))
+                self._read_tables(instance, caller, page)
                 return ToolResult([{"type": "text", "text": book.markdown(page, caller.channel)},
                                    *self._shown(page)])
             if tool == "add":
@@ -142,6 +148,22 @@ class NotesApp(App):
         except (nb.NotebookError, media.MediaError) as exc:
             return ToolResult.error(str(exc))
         raise AppError(f"{tool}: not a tool of Notes")
+
+    def _read(self, instance: Instance, caller: Caller, book: nb.Notebook, pid: str) -> ToolResult:
+        """The page as the agent reads it after its change (its tables as it now has them)."""
+        page = book.page(pid)
+        self._read_tables(instance, caller, page)
+        return ToolResult.text(book.markdown(page))
+
+    def _read_tables(self, instance: Instance, caller: Caller, page: dict) -> None:
+        with self.book(instance.gatherer).lock:
+            for b in page.get("blocks", []):
+                if b["type"] == "table":
+                    key = (instance.gatherer, caller.channel, b["id"])
+                    self.tables_read[key] = nb.table_seen(b)
+                    self.tables_read.move_to_end(key)
+            while len(self.tables_read) > TABLES_READ:
+                self.tables_read.popitem(last=False)
 
     # -- pictures
 
@@ -305,7 +327,7 @@ class NotesApp(App):
                 prev = b["id"]
             self.change(instance, ops, self._by(caller), caller.channel)
             self._snap_soon(instance, [b["id"] for b in blocks if b["type"] == "figma"])
-            return ToolResult.text(book.markdown(book.page(page["id"])))
+            return self._read(instance, caller, book, page["id"])
         if not isinstance(title, str) or not title.strip():
             raise nb.NotebookError("notes_add: which page -- `page`, one there (its id or title), or `title` for a "
                                    "new one")
@@ -318,7 +340,7 @@ class NotesApp(App):
                                 "blocks": blocks or [{"id": nb.new_id(), "type": "text", "text": ""}]}],
                     self._by(caller), caller.channel)
         self._snap_soon(instance, [b["id"] for b in blocks if b["type"] == "figma"])
-        return ToolResult.text(book.markdown(book.page(pid)))
+        return self._read(instance, caller, book, pid)
 
     def _change(self, instance, book, args, caller) -> ToolResult:
         page = self._page(book, args.get("page"))
@@ -338,7 +360,7 @@ class NotesApp(App):
                 raise nb.NotebookError("notes_change: a `block` to change, or the page's `title`, `icon` or "
                                        "`parent`, or `delete`")
             self.change(instance, [op], by, caller.channel)
-            return ToolResult.text(book.markdown(book.page(page["id"])))
+            return self._read(instance, caller, book, page["id"])
         block = next((b for b in page.get("blocks", []) if b["id"] == bid), None)
         if block is None:
             raise nb.NotebookError(f"no block {bid!r} on {page.get('title') or 'that page'}:\n{book.markdown(page)}")
@@ -353,7 +375,13 @@ class NotesApp(App):
             else:
                 if nb.is_work(block):                         # its tick is the user's: kept as it is
                     made[0]["checked"] = bool(block.get("checked"))
-                ops = [{"op": "block.put", "page": page["id"], "block": {**made[0], "id": bid}}]
+                if block["type"] == made[0]["type"] == "table":   # a table over one: what the agent changed in it
+                    ops = nb.table_ops(page["id"], block, made[0],
+                                      self.tables_read.get((instance.gatherer, caller.channel, bid)))
+                    if src:
+                        ops.append({"op": "block.put", "page": page["id"], "block": {"id": bid, **src}})
+                else:
+                    ops = [{"op": "block.put", "page": page["id"], "block": {**made[0], "id": bid}}]
                 prev = bid
                 for b in made[1:]:
                     b = {**b, "id": nb.new_id()}
@@ -373,7 +401,7 @@ class NotesApp(App):
         self.change(instance, ops, by, caller.channel)
         self._snap_soon(instance, [op["block"]["id"] for op in ops if op["op"] == "block.put"
                                    and op["block"].get("type") == "figma" and not op["block"].get("snap")])
-        return ToolResult.text(book.markdown(book.page(page["id"])))
+        return self._read(instance, caller, book, page["id"])
 
     def _report(self, instance, book, args, caller) -> ToolResult:
         """An agent's report on a block the user sent it: a line of the block's thread, by the agent, saying whether
