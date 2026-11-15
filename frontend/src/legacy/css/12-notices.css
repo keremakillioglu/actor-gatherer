@@ -3,7 +3,7 @@
    pop-ups in the page's corner, for those and for actors that come to wait for the reader or stop on an error. */
 :root { --notice: var(--s5); }
 .agent .dot.notified, .status.notified i { background: var(--notice); box-shadow: 0 0 0 2px color-mix(in srgb, var(--notice) 30%, transparent); }
-:is(.gatherer-row, .folder-line) .count.notified i, .rail :is(.r-totals, .r-counts) .count.notified i { background: var(--notice); }
+:is(.gatherer-row, .folder-line) .count.notified i, :is(.rail .r-counts, .top-totals) .count.notified i { background: var(--notice); }
 .rail .r-actor .rd.notified { background: var(--notice); }
 .rail .r-app .r-pic { position: relative; }
 

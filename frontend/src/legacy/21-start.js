@@ -19,7 +19,6 @@ $("pane-close").addEventListener("click", () => {
 if (PANE) document.addEventListener("pointerdown", () => PANE.focus(window), true);
 else {
   $("pane-here").addEventListener("pointerdown", () => focusPane(panes.here), true);
-  watchTop(document.querySelector("header .brand"), "brand");
   watchTop(document.getElementById("pane-head"), "here");
 }
 refresh(true).then(connect).then(() => { if (PANE) paneReady(); }).then(loadOwnViews);

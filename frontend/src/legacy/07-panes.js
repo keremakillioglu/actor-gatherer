@@ -761,9 +761,9 @@ function panelName(node) {
   const a = appActor(at[0], at[1]);
   return short(a ? (a.name && a.name.text) || firstLine(a.last_user_message || "", 60) || at[1] : at[1]);
 }
-// The page's top row -- the page's name at the left, each pane's head -- as tall as the tallest of them, so the
-// rule under it runs straight across the page: each says how tall it is by itself (`tops`: the name's, this
-// page's head's, each frame's), and all are given the tallest (--top-h). Not where the page is a phone's, its
+// The panes' top row -- each pane's head -- as tall as the tallest of them, so the rule under it runs straight
+// across: each says how tall it is by itself (`tops`: this page's head's, each frame's), and all are given the
+// tallest (--top-h). Not where the page is a phone's, its
 // panes one under the other. A frame tells the page around it, and is told. A head put in its Chat view's bar (the
 // Editor open: barActs) is hidden, of no height.
 const tops = new Map(), NARROW = matchMedia("(max-width: 760px)");
@@ -780,7 +780,7 @@ const setTopRow = (h) => document.documentElement.style.setProperty("--top-h", `
 function watchTop(node, who) {
   new ResizeObserver(() => topRow(who, node.getBoundingClientRect().height)).observe(node);
 }
-if (!PANE) NARROW.addEventListener("change", () => { panes.top = null; topRow("brand", tops.get("brand") || 0); });
+if (!PANE) NARROW.addEventListener("change", () => { panes.top = null; topRow("here", tops.get("here") || 0); });
 // The pane's head: whose it is, as the list has the actor -- its avatar, its name or what it was last asked.
 function drawWho() {
   if (!PANE && !panes.others.length) return;

@@ -410,6 +410,7 @@ function renderAgents() {
   tasksDrawn.clear();                                // each task's row drawn once, where its first actor is (rowsOf)
   for (const g of state.home.gatherers) if (!isHidden(g)) readApps(g.name);   // the apps its actors are attached to
   renderFolded();
+  drawTotals(state.home.gatherers.filter((g) => !isHidden(g)));   // in the top bar, whatever shape the list is in
   const aside = document.getElementById("agents");
   const was = listPlaces(aside);
   const typing = nameInput && document.activeElement === nameInput && [nameInput.selectionStart, nameInput.selectionEnd];
