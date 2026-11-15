@@ -29,7 +29,7 @@ const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, 
   branches: [], brSig: "", brs: null, brOpen: null,
   nav: null, fold: null, cursor: null, revealing: null, newItem: null, pick: null, menu: null, find: null,   // 18-editor-tree.js's
   choose: null, choosing: null, go: null,                                                                     // 18-editor-open.js's
-  mode: "live",                                                                     // how an agent's change lands (edModePick)
+  mode: "live", modePick: null,                                                    // how an agent's change lands, its menu (edModePick)
   problems: new Map(), problemsAt: 0,                                               // a LaTeX build's, by file (edProblems)
   auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })(),   // on unless turned off
   wrap: (() => { try { return localStorage.getItem(ED_WRAP_KEY) !== "0"; } catch (e) { return true; } })() };  // long lines wrapped: likewise
@@ -870,12 +870,17 @@ const ED_MODES = [
   ["live", "Live", "Agents' changes land as they come, in their colour, and are written to the file. Only a change to lines you are editing is asked about."],
   ["review", "Review", "Each change an agent makes is a proposal here, to accept or reject; the file on disk changes only when you accept. A write that does not come through the Editor (a shell command's) is asked about too."],
   ["handsoff", "Hands off", "Agents may not change the files you have open here: they are told to ask you first. A write that does not come through the Editor is asked about."]];
+// Its menu: one, made once and kept from one header to the next (edHeadPut) -- the header is drawn again every ED_TICK
+// and at each edit, and a menu taken out of the page then closes under the reader as they pick.
 function edModePick() {
   const now = ED_MODES.find((m) => m[0] === ed.mode) || ED_MODES[0];
-  return el("label", { class: "ed-mode-pick", title: `How the agents' changes land in the files open here:\n${ED_MODES.map((m) => `${m[1]}: ${m[2]}`).join("\n")}` },
+  ed.modePick ||= el("label", { class: "ed-mode-pick", title: `How the agents' changes land in the files open here:\n${ED_MODES.map((m) => `${m[1]}: ${m[2]}`).join("\n")}` },
     el("span", { class: "lbl", text: "Agents:" }),
     el("select", { "aria-label": "How the agents' changes land", onchange: (ev) => edSetMode(ev.target.value) },
-      ...ED_MODES.map(([v, label]) => el("option", { value: v, selected: v === now[0] ? "" : null }, label))));
+      ...ED_MODES.map(([v, label]) => el("option", { value: v }, label))));
+  const select = ed.modePick.querySelector("select");
+  if (select.value !== now[0]) select.value = now[0];
+  return ed.modePick;
 }
 async function edSetMode(mode) {
   const was = ed.mode;
@@ -1296,13 +1301,37 @@ function edReopen(s) {
 }
 window.addEventListener("pagehide", edClose);
 
+// The header's parts in place of what it showed, in order: a part it shows already (the mode's menu) stays where it is,
+// never taken out of the page -- open, it would close; focused, it would lose the keys -- and so does one that reads the
+// same as one shown (the file's path, its status unchanged), so text selected in it stays selected through the redraws
+// (every ED_TICK, and at each edit). A part with a control in it is the new one: its clicks are for what is shown now.
+const ED_CONTROLS = "button, input, select, textarea, a";
+function edHeadPut(parts) {
+  const old = [...ed.head.childNodes];
+  let from = 0;
+  parts = parts.map((n) => {
+    let i = old.indexOf(n, from);
+    if (i < 0 && n.nodeType === 1 && !n.matches(ED_CONTROLS) && !n.querySelector(ED_CONTROLS))
+      i = old.findIndex((o, k) => k >= from && o.isEqualNode(n));
+    if (i < 0) return n;
+    from = i + 1;
+    return old[i];
+  });
+  const keep = new Set(parts);
+  for (const n of [...ed.head.childNodes]) if (!keep.has(n)) n.remove();
+  let at = ed.head.firstChild;
+  for (const n of parts) {
+    if (n === at) at = n.nextSibling;
+    else ed.head.insertBefore(n, at);
+  }
+}
 function edHead() {
   if (!ed.head) return;
   const s = ed.s;
   if (ed.v && ed.v.path === ed.file) return edViewHead(ed.v);
   if (!ed.file) {
-    ed.head.replaceChildren(el("span", { class: "ed-hint", text: "Pick a file to open it. Text opens to edit: everyone with it open sees the others' edits as they type, and what an actor writes to it shows here as it lands. Images, PDFs, sound and video open to look at." }),
-      el("span", { class: "grow", style: "flex: 1" }), edModePick(), edExecBtn());
+    edHeadPut([el("span", { class: "ed-hint", text: "Pick a file to open it. Text opens to edit: everyone with it open sees the others' edits as they type, and what an actor writes to it shows here as it lands. Images, PDFs, sound and video open to look at." }),
+      el("span", { class: "grow", style: "flex: 1" }), edModePick(), edExecBtn()]);
     return;
   }
   const st = s && s.state;
@@ -1344,7 +1373,7 @@ function edHead() {
     "Conflict zone", el("button", { type: "button", title: "Clear the conflict zone: the actors' changes to its lines merge in, as anywhere else",
       onclick: () => edClearZone(s) }, "Clear")) : null;
   const by = edByChip(writers);
-  ed.head.replaceChildren(...[
+  edHeadPut([
     el("span", { class: "ed-path", title: ed.file, text: edRel(ed.file) }),
     (nc || na || np) && !(ed.err || (s && s.err)) ? el("button", { type: "button", class: `ed-status ${cls}`, role: "status",
       title: nc && nasked !== nc ? "Show the first: keep yours, take the file's, or both" : "Show the first: accept it, or reject it",
