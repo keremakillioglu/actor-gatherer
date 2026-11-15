@@ -54,9 +54,10 @@
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   height: 100vh; display: flex; flex-direction: column; }
 /* THE TOP BAR, across the page over the list and the panes: the logo -- a button, the settings --
-   how many actors do what (top-totals), then the screen's tabs (tabs.ts's bar, in #tab-slot) */
+   how many actors do what (top-totals), then the screen's tabs (tabs.ts's bar, in #tab-slot); under it, the list's own
+   edge (.side's), so the tabs read as apart from the panels under them (inside its height: nothing under it moves) */
 .topbar { flex: none; height: var(--bar-h); display: flex; align-items: center; gap: 4px; padding: 0 0 0 8px; background: var(--side);
-  border-bottom: 1px solid var(--ring); position: relative; z-index: 30; }   /* above the page (the terminal's own layers reach 11), so its Settings panel is too */
+  border-bottom: 2px solid var(--side-rule); position: relative; z-index: 30; }   /* above the page (the terminal's own layers reach 11), so its Settings panel is too */
 :root.pane-mode .topbar { display: none; }
 .topbar .about-wrap { flex: none; display: flex; }
 .topbar .brand-btn { border: 0; background: none; padding: 3px; border-radius: 8px; display: inline-flex; align-items: center; gap: 7px;
