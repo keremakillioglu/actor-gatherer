@@ -450,7 +450,8 @@ async function closeSession(a) {
 }
 // A session made here that never started -- no process of it now, none starting, nothing of it in its gatherer (no
 // events, no calls): its × discards it (sessions.py's `discard`), so it is listed nowhere and nothing of it is kept.
-// The panes showing it close, as a shell's do when it ends (shownGone).
+// The panes showing it close, as a shell's do when it ends (shownGone) -- this page's own out of sight already (its tab
+// closed with it: 05-agent-list.js's closeActor), left so, no other actor brought into the tab in its place.
 const discardable = (a) => !SNAPSHOT && !!a.session && !a.events && !a.reads && !closable(a) && a.chattable !== false
   && !["starting", "running", "idle", "terminal"].includes(a.session.status) && !(a.session.queued || []).length && !opened(a);
 async function discardSession(g, a) {
@@ -458,7 +459,7 @@ async function discardSession(g, a) {
   catch (err) { return setLive(`Not closed: ${err.message}`); }
   await loadHome();
   for (const p of [...panes.others]) if (isAt([p.g, p.c], g.name, a.channel)) closePane(p);
-  if (isAt(state.selected, g.name, a.channel)) return shownGone(a.channel);
+  if (isAt(state.selected, g.name, a.channel) && !isAway()) return shownGone(a.channel);
   renderAgents();
 }
 // what data.py decided (status_of): running, idle -- its turn over -- or closed, its process gone; asking, its

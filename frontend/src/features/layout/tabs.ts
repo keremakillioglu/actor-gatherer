@@ -18,6 +18,8 @@
 // actor, its apps. What is typed there is the tab's DRAFT, kept with it: a tab with one is kept when left, as one with
 // tasks is, and a task clicked in the list goes in a tab of its own, as from a tab with tasks -- but what its page opens
 // (filling) goes in it. The close key closes the tab shown (closeShown) -- the only one, emptied: a new tab again.
+// A task closed in the list (its ×) is closed in the tabs too (closed): its tab closed, as that tab's × does, if it held
+// nothing else; else the task out of it.
 import { BarDrag } from "./bar-drag";
 import { cellsFor, drawMap, drawnCells, sameMap, snapshot, type Cell, type CellLook, type Drawn } from "./tab-map";
 import type { Node, Rect } from "./tree";
@@ -347,6 +349,21 @@ export class Tabs {
     this.hooks.setScreen(null);
     this.save();
     await this.switch(() => this.hooks.clear?.() ?? Promise.resolve());
+  }
+  /** Task `task` closed in the list (its ×): out of the tab holding it, as that tab's × would close it -- the tab closed
+   * if it held nothing else (the tab shown: the next shown; the only one, emptied: a new tab again), else the task out of
+   * it: the tab shown's, its panels closed here (`here`, as its card head's × does); another's, not opened when shown. */
+  async closed(task: string, here: () => Promise<void>): Promise<void> {
+    if (this.switching) await this.settling;
+    const tab = this.tabs.find((t) => this.tasksOf(t).includes(task));
+    if (!tab) return;
+    const rest = this.tasksOf(tab).filter((k) => k !== task);
+    if (tab.id === this.current) return rest.length ? here() : this.closeShown();
+    if (!rest.length) return this.close(tab.id);
+    const focus = tab.focus && this.hooks.canon ? this.hooks.canon(tab.focus) : tab.focus;
+    Object.assign(tab, { tasks: rest, focus: focus === task ? rest[0] : tab.focus });
+    this.save();
+    this.hooks.changed();
   }
 
   /** The tab shown: its id, and its new-tab page's draft. */

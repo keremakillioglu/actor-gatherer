@@ -37,11 +37,12 @@ function pickBeside(g, c, ev) {
   openBeside(g, c);
 }
 // TASKS: the panels follow the task shown: one of several items (05-agent-list.js's TASKS: actors and apps), else an
-// item alone, an actor or an app -- a terminal and a gatherer agent are in none (`taskKey` null). An actor shown in the
-// pane in focus (show) of another task than the one shown before: the panes beside of the task left are closed (terminals
-// kept), and so are the apps' panels of other tasks (one whose agent is at work held out of sight, as closing it does);
-// the new task's actor taken into this page's pane, and its apps' panels opened above (openTaskApps). A task of apps only
-// entered (enterAppTask): its apps' panels alone, the actors' panes out of sight (`appsOnly`).
+// item alone, an actor or an app -- the coordinator agent too, as an actor on its own -- a terminal is in none
+// (`taskKey` null). An actor shown in the pane in focus (show) of another task than the one shown before: the panes
+// beside of the task left are closed (terminals kept), and so are the apps' panels of other tasks (one whose agent is at
+// work held out of sight, as closing it does); the new task's actor taken into this page's pane, and its apps' panels
+// opened above (openTaskApps). A task of apps only entered (enterAppTask): its apps' panels alone, the actors' panes out
+// of sight (`appsOnly`).
 const TASK_APPS = 3;                                 // the apps' panels a task opens at most
 function taskKey(g, c) {
   if (!g || !c || isShell(c)) return null;
@@ -51,7 +52,7 @@ function taskKey(g, c) {
   }
   const gg = state.home && state.home.gatherers.find((x) => x.name === g);
   const a = gg && gg.agents.find((x) => x.channel === c);
-  if (!a || isCoordinator(a)) return null;
+  if (!a) return null;
   const t = taskOf(g, a);                              // in a task with others (05-agent-list.js's TASKS): the task's
   return t === null ? `${g}\u0000${c}` : `${g}\u0000t${t}`;
 }
@@ -93,6 +94,14 @@ function rememberTask(key) {
   try { localStorage.setItem(TASK_LAYOUTS_KEY, JSON.stringify(taskLayouts)); } catch (e) { /* this page only */ }
 }
 const taskLayout = (key) => taskLayouts[key] || null;
+// Actor `c` closed from the list (closedInTabs): out of task `key` as it was left -- not opened with it again
+function forgetActor(key, c) {
+  const was = taskLayouts[key];
+  if (!was || (!(was.actors || []).includes(c) && was.focus !== c)) return;
+  was.actors = (was.actors || []).filter((x) => x !== c);
+  if (was.focus === c) was.focus = was.actors[0] || null;
+  try { localStorage.setItem(TASK_LAYOUTS_KEY, JSON.stringify(taskLayouts)); } catch (e) { /* this page only */ }
+}
 // The actor `c` of `g` about to be shown in the pane in focus (show): of another task than the one shown, the one left
 // remembered (rememberTask: only one laid out in this page -- one shown by chance as the page opened, its apps never
 // opened, would be remembered as having none), its panes closed (terminals kept) and its apps' panels (one attached to
@@ -571,6 +580,22 @@ async function closeTaskHere(k) {
   if (next && (!selectedTask() || selectedTask() === k)) focusTask(next);
   placeWork(); renderAgents();
 }
+// An item CLOSED FROM THE LIST -- an actor, an app: its row's ×, its rail tile's, its task's card's -- or a whole task (its
+// row's ×: no `item`), task `k`'s: closed in the screen tabs too, before it is closed itself, as there a tab's × or a
+// panel's would. A task of its own (a lone actor, a lone app), or the whole task, out of the tab holding it (tabs.ts's
+// `closed`): that tab closed if it held nothing else (the tab shown: the next shown; the only one, emptied), else the task
+// out of it -- the tab shown's, its panels closed here, as its card head's × does (closeTaskHere). An actor of a task with
+// others: its pane closed, as its pane's × does (closeHerePane: this page's own), and left out of its task as kept for
+// another tab (forgetActor); an app of one: its panel closed with it (05-agent-list.js's closeApp).
+async function closedInTabs(k, item = null) {
+  if (!workPlacer || !k || PANE || SNAPSHOT) return;
+  const [g, id] = k.split("\u0000");
+  if (item === null || id === item) return workPlacer.tabs.closed(k, () => closeTaskHere(k));
+  if (isAppItem(item)) return;
+  for (const p of [...actorPanes()]) if (isAt([p.g, p.c], g, item)) { workClosed(p.node); closePane(p); }
+  if (isAt(state.selected, g, item) && !isAway()) await closeHerePane();
+  forgetActor(k, item);
+}
 // A new tab, empty ("+" on the tabs' bar): the tasks shown kept as they are (the tab left keeps them: hooks.remember),
 // their panes and panels closed (terminals kept), this page's own pane out of sight till a task is opened in it
 async function clearWork() {
@@ -680,8 +705,8 @@ if (!SNAPSHOT) document.addEventListener("keydown", (ev) => {
   ev.preventDefault();
   if (PANE) PANE.tab(window, ev.shiftKey ? -1 : 1); else if (workPlacer) workPlacer.tabs.step(ev.shiftKey ? -1 : 1);
 }, true);
-// What a block of the work area is called on its strip (shown while there are others): its task's name, an actor's, an
-// app's; a terminal's, the coordinator agent's (no task)
+// What a block of the work area is called on its strip (shown while there are others): its task's name, an actor's (the
+// coordinator agent's, unnamed: what it is), an app's; a terminal's (no task)
 function blockName(k) {
   const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
   if (k.startsWith("\u0002")) return isShell(k.slice(1)) ? "Terminal" : "";
@@ -689,7 +714,7 @@ function blockName(k) {
   if (/^t\d+$/.test(id)) { const t = taskById(g, Number(id.slice(1))); return t ? taskName(gg, t) : "A task"; }
   if (isAppItem(id)) { const o = appInfo(g, id.slice(APP_ITEM.length)); return o ? appShown(o) : "An app"; }
   const a = gg.agents.find((x) => x.channel === id);
-  return a ? actorTitle(a) : id;
+  return !a ? id : isCoordinator(a) && !(a.name && a.name.text) ? CREW_GROUP : actorTitle(a);
 }
 // A block's faces, on its card's head: its task's actors' (not closed; three at most) and its apps'
 // marks -- an actor's, an app's, alone
@@ -1381,17 +1406,21 @@ const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a sessio
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
 // Its gatherer agent's button, first (CREW_START): the agent shown, started for the gatherer if it has none -- on the
 // first harness a session can run on here, in the directory a new session would start in (coordination.py's `ensure`).
+// Shown as a click on its row shows an actor on its own: where it is open in a screen tab, else in a tab of its own
+// (viaTabs) -- started, once listed, as any actor started.
 const CREW_START = "crew", CREW_GROUP = "Coordinator agent";
 async function openCoordinator(g) {
   if (crewHidden.has(g.name)) setCrewHidden(g.name, false);
   const there = g.agents.find(isCoordinator);
   const view = CHAT_VIEWS.has("files") ? "files" : null;
-  if (there) return show(g.name, there.channel, view);
+  if (there) { await viaTabs(taskKey(g.name, there.channel), {}, there.channel); return show(g.name, there.channel, view); }
   state.starting = { gatherer: g.name, harness: CREW_START };
   renderAgents();
   try {
     const s = await post("/api/coordinator", { gatherer: g.name, cwd: startCwd(g), harness: startable()[0] || "" });
     collapsed.delete(s.gatherer);
+    await loadHome();
+    await viaTabs(taskKey(s.gatherer, s.session_id), {});   // a tab of its own
     await show(s.gatherer, s.session_id, view);
   } catch (e) { state.adding = { gatherer: g.name, cwd: startCwd(g), harness: null, error: e.message }; }
   finally { state.starting = null; renderAgents(); }
