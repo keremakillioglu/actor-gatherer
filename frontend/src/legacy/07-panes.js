@@ -93,6 +93,14 @@ function rememberTask(key) {
   try { localStorage.setItem(TASK_LAYOUTS_KEY, JSON.stringify(taskLayouts)); } catch (e) { /* this page only */ }
 }
 const taskLayout = (key) => taskLayouts[key] || null;
+// Actor `c` closed from the list (closedInTabs): out of task `key` as it was left -- not opened with it again
+function forgetActor(key, c) {
+  const was = taskLayouts[key];
+  if (!was || (!(was.actors || []).includes(c) && was.focus !== c)) return;
+  was.actors = (was.actors || []).filter((x) => x !== c);
+  if (was.focus === c) was.focus = was.actors[0] || null;
+  try { localStorage.setItem(TASK_LAYOUTS_KEY, JSON.stringify(taskLayouts)); } catch (e) { /* this page only */ }
+}
 // The actor `c` of `g` about to be shown in the pane in focus (show): of another task than the one shown, the one left
 // remembered (rememberTask: only one laid out in this page -- one shown by chance as the page opened, its apps never
 // opened, would be remembered as having none), its panes closed (terminals kept) and its apps' panels (one attached to
@@ -547,6 +555,22 @@ async function closeTaskHere(k) {
   const next = shownPanels().map((s) => s.key).find((x) => x && x !== k);
   if (next && (!selectedTask() || selectedTask() === k)) focusTask(next);
   placeWork(); renderAgents();
+}
+// An item CLOSED FROM THE LIST -- an actor, an app: its row's ×, its rail tile's, its task's card's -- or a whole task (its
+// row's ×: no `item`), task `k`'s: closed in the screen tabs too, before it is closed itself, as there a tab's × or a
+// panel's would. A task of its own (a lone actor, a lone app), or the whole task, out of the tab holding it (tabs.ts's
+// `closed`): that tab closed if it held nothing else (the tab shown: the next shown; the only one, emptied), else the task
+// out of it -- the tab shown's, its panels closed here, as its card head's × does (closeTaskHere). An actor of a task with
+// others: its pane closed, as its pane's × does (closeHerePane: this page's own), and left out of its task as kept for
+// another tab (forgetActor); an app of one: its panel closed with it (05-agent-list.js's closeApp).
+async function closedInTabs(k, item = null) {
+  if (!workPlacer || !k || PANE || SNAPSHOT) return;
+  const [g, id] = k.split("\u0000");
+  if (item === null || id === item) return workPlacer.tabs.closed(k, () => closeTaskHere(k));
+  if (isAppItem(item)) return;
+  for (const p of [...actorPanes()]) if (isAt([p.g, p.c], g, item)) { workClosed(p.node); closePane(p); }
+  if (isAt(state.selected, g, item) && !isAway()) await closeHerePane();
+  forgetActor(k, item);
 }
 // A new tab, empty ("+" on the tabs' bar): the tasks shown kept as they are (the tab left keeps them: hooks.remember),
 // their panes and panels closed (terminals kept), this page's own pane out of sight till a task is opened in it

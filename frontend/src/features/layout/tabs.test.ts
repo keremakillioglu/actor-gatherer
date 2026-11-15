@@ -192,6 +192,37 @@ describe("screen tabs", () => {
     expect(strip(t)).toEqual(["A *"]);
   });
 
+  it("a task closed in the list: its tab closed if it held nothing else, else the task out of it", async () => {
+    const t = tabs(),
+      here: string[] = [];
+    const closeHere = (k: string) => async () => {
+      here.push(k);
+      shown = shown.filter((x) => x !== k);
+    };
+    shown = ["a", "b"];
+    t.fresh(); // tab 1: a and b, a in focus
+    shown = ["c"];
+    t.fresh(); // tab 2: c
+    shown = ["d", "e"]; // tab 3, shown: d and e
+    expect(strip(t)).toEqual(["A, B", "C", "D, E *"]);
+    await t.closed("a", closeHere("a")); // in tab 1 with b: out of it, b in focus there now
+    expect(strip(t)).toEqual(["B", "C", "D, E *"]);
+    await t.closed("c", closeHere("c")); // all tab 2 held: the tab closed
+    expect(strip(t)).toEqual(["B", "D, E *"]);
+    await t.closed("e", closeHere("e")); // in the tab shown with d: its panels closed here, the tab kept
+    expect(here).toEqual(["e"]);
+    expect(strip(t)).toEqual(["B", "D *"]);
+    await t.closed("d", closeHere("d")); // all the tab shown held: closed, the next shown, b in focus
+    expect(entered).toEqual([[["b"], "b"]]);
+    expect(strip(t)).toEqual(["B *"]);
+    await t.closed("b", closeHere("b")); // the only tab: emptied, a new tab again
+    expect(shown).toEqual([]);
+    expect(strip(t)).toEqual(["New tab *"]);
+    await t.closed("z", closeHere("z")); // open nowhere: nothing
+    expect(here).toEqual(["e"]);
+    expect(strip(t)).toEqual(["New tab *"]);
+  });
+
   it("a new tab's draft is kept with it: left with one, it stays (and has it shown again); left with none, it goes", async () => {
     const t = tabs();
     await t.blank(); // tab 2, empty
