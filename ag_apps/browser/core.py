@@ -1185,6 +1185,9 @@ class Browser:
         self.picking: Optional[str] = None               # in the ag app, the user's Pick or Area under way (`set_mode`)
         self.held: Optional[str] = None                  # in the ag app, the page their input is held off (`_hold`)
         self.esc_sent: Tuple[str, bool] = ("", False)    # in the ag app, whose Esc is ag's, as last told it
+        self.cues_on = ""                                # in the ag app, the tab whose page its marks were drawn in
+        self.publish_lock = threading.Lock()             # (`_publish`: one thread at a time gives the latest state)
+        self.publish_due = self.publishing = False
         self.user_at = 0.0                               # when the user last pressed, typed or chose in it
         self.clicked = 0.0                               # when the user or the agent last clicked in it
         self.behind = False                              # whether that click opens a link behind: Cmd/Ctrl, middle
@@ -1438,7 +1441,7 @@ class Browser:
                 tab.ui_ctx = c.get("id")
             if c.get("name") == CUES_WORLD and (c.get("auxData") or {}).get("frameId") == tab.target:
                 tab.cue_ctx, tab.cues_sent = c.get("id"), ""
-                self.chrome.later(self._draw_cues)       # a new page: its marks as they are now
+                self.chrome.later(self._publish)         # a new page: its marks as they are now (`_draw_cues`)
         elif method == "Runtime.executionContextsCleared":
             tab.ui_ctx = tab.cue_ctx = None
         elif method == "Overlay.inspectNodeRequested":   # the user's Pick, clicked (`set_mode`)
@@ -1764,13 +1767,34 @@ class Browser:
                     "downloads": [{"i": d["i"], "name": d["name"]} for d in self.downloads]}
 
     def _publish(self) -> None:
-        with self.lock:
-            viewers = list(self.viewers)
-        if viewers:
-            s = self.state()
-            for v in viewers:
-                v.give(state=s)
-            self._draw_cues(s)
+        """Its state given each page showing it, and drawn in the ag app's page (`_draw_cues`) whether one does or not:
+        the user may come back to it after the agent's action is over. By one thread at a time, each time from the
+        state as it is then -- the agent's thread and Chrome's both publish, and a state read earlier, given after a
+        later one, would stay: the agent's marks over a page it is done with."""
+        with self.publish_lock:
+            self.publish_due = True
+            if self.publishing:
+                return                                   # (the thread publishing reads it again, after)
+            self.publishing = True
+        while True:
+            with self.publish_lock:
+                if not self.publish_due:
+                    self.publishing = False
+                    return
+                self.publish_due = False
+            try:
+                with self.lock:
+                    viewers = list(self.viewers)
+                cdp = self.chrome.conn
+                if viewers or (cdp is not None and cdp.mode == "app"):
+                    s = self.state()
+                    for v in viewers:
+                        v.give(state=s)
+                    self._draw_cues(s)
+            except BaseException:
+                with self.publish_lock:
+                    self.publishing = False
+                raise
 
     def _save(self) -> None:
         """Its tabs' pages kept, for after the Chrome stopped: at most every second."""
@@ -2628,18 +2652,21 @@ class Browser:
     # -- the ag app's native page (desktop/DESIGN.md, "What the dashboard draws over the page", "Your input"): the
     # dashboard can't draw over it, and the user's input goes to it, not through `input`
 
-    def _draw_cues(self, s: Optional[dict] = None) -> None:
+    def _draw_cues(self, s: dict) -> None:
         """What the dashboard draws over the screen elsewhere -- what the agent is about to do, does, and did last; the
         user's Pick or Area -- told to the page's CUES_JS to draw, when it changed; and the app told whether the
-        user's Esc on the page is ag's (`_escape`): while the agent acts or is about to, and during a Pick or Area."""
+        user's Esc on the page is ag's (`_escape`): while the agent acts or is about to, and during a Pick or Area.
+        Drawn in the active tab's page; the one drawn in before, left, has its marks taken away. The agent's last
+        action flashes in the page it was done in, not in one shown since (it was done elsewhere). From `_publish`."""
         cdp = self.chrome.conn
         if cdp is None or cdp.mode != "app" or not cdp.alive:
             return
         with self.lock:
             tab = self.tabs[self.active] if self.tabs else None
+            left = next((t for t in self.tabs if t.target == self.cues_on), None) \
+                if tab is not None and self.cues_on != tab.target else None
         if tab is None:
             return
-        s = s if s is not None else self.state()
         nx, a = s.get("next"), s.get("acting")
         c = nx or a or {}
         cue = c.get("cue") or {}
@@ -2651,14 +2678,22 @@ class Browser:
             if sent[1] and sent[0] != tab.target:
                 cdp.notify("App.esc", {"targetId": sent[0], "on": False})
             cdp.notify("App.esc", {"targetId": tab.target, "on": esc})
-        if tab.cue_ctx is None:
+        said = {"i": last["i"], "ok": last["ok"], "box": None} if last else None   # (CUES_JS flashes none without a box)
+        if left is not None:
+            self._cues_to(cdp, left, {"next": None, "acting": None, "last": said, "key": None, "scroll": None, "mode": None})
+        shown, self.cues_on = self.cues_on == tab.target, tab.target
+        self._cues_to(cdp, tab, {"next": {"box": nx["box"], "tool": nx.get("tool")} if nx and nx.get("box") else None,
+                                 "acting": {"box": a["box"], "tool": a.get("tool")} if a and a.get("box") else None,
+                                 "last": {**said, "box": last.get("box")} if last and shown else said,
+                                 "key": cue.get("key") if c.get("tool") == "press" else None,
+                                 "scroll": cue.get("direction") if c.get("tool") == "scroll" else None,
+                                 "mode": s.get("picking")})
+
+    @staticmethod
+    def _cues_to(cdp: Cdp, tab: Tab, cues: dict) -> None:
+        if tab.cue_ctx is None:                          # (no page yet: drawn as its page's world is made)
             return
-        js = json.dumps({"next": {"box": nx["box"], "tool": nx.get("tool")} if nx and nx.get("box") else None,
-                         "acting": {"box": a["box"], "tool": a.get("tool")} if a and a.get("box") else None,
-                         "last": {"i": last["i"], "ok": last["ok"], "box": last.get("box")} if last else None,
-                         "key": cue.get("key") if c.get("tool") == "press" else None,
-                         "scroll": cue.get("direction") if c.get("tool") == "scroll" else None,
-                         "mode": s.get("picking")})
+        js = json.dumps(cues)
         if js == tab.cues_sent:
             return
         tab.cues_sent = js
