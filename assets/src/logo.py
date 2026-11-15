@@ -3,7 +3,7 @@ and ends in an antenna bulb like theirs -- with the avatars' own kit (avatars/ki
 writes it where it is used:
 
 - frontend/index.html, between <!--LOGO--> and <!--/LOGO-->: the mark in the page's top bar, in the page's colours
-  (--halo, the G's; --side, the bar's, cut round each robot so the three stay apart);
+  (--side, the bar's, cut round each robot so the three stay apart);
 - frontend/index.html, between <!--FAVICON--> and <!--/FAVICON-->: the same as the page's icon, its colours fixed,
   light or dark as the browser is;
 - assets/agui.svg: that icon, as a file.
@@ -69,18 +69,26 @@ def placed(body, cx, cy, scale):
     return f'<g class="halo">{g}</g>{g}'
 
 
+# the G's colour, top to bottom: the robots' own -- pink at its top, by the pink one; sky down its side; teal at its foot,
+# by the teal one -- over the canvas (userSpaceOnUse), so the G, its arm and its bulb share it
+GRAD = ('<defs><linearGradient id="agui-g" gradientUnits="userSpaceOnUse" x1="0" y1="4.6" x2="0" y2="59.4">'
+        f'<stop offset="0" stop-color="{P("pink").main}"/><stop offset=".5" stop-color="{P("sky").main}"/>'
+        f'<stop offset="1" stop-color="{P("teal").main}"/></linearGradient></defs>')
+G = "url(#agui-g)"
+
+
 def mark():
-    """The mark, on a 64x64 canvas: the G (--halo: the page's sky blue), the three robots in it, its end turned in to its bulb."""
+    """The mark, on a 64x64 canvas: the G (the robots' colours, GRAD), the three robots in it, its end turned in to its bulb."""
     r, top, low = 27.4, math.radians(48), math.radians(-4)
     x0, y0 = 32 + r * math.cos(top), 32 - r * math.sin(top)
     x1, y1 = 32 + r * math.cos(low), 32 - r * math.sin(low)
-    g = (f'<path d="M{f(x0)} {f(y0)} A{r} {r} 0 1 0 {f(x1)} {f(y1)}" fill="none" stroke="var(--halo)" stroke-width="5.2" '
+    g = (f'<path d="M{f(x0)} {f(y0)} A{r} {r} 0 1 0 {f(x1)} {f(y1)}" fill="none" stroke="{G}" stroke-width="5.2" '
          f'stroke-linecap="round"/>')
     bots = (placed(robot("sky", "dome"), 21.4, 23.6, .40) + placed(robot("pink", "box"), 40, 22.2, .40)
             + placed(robot("teal", "tv"), 30.4, 42.2, .44))
-    bulb = (f'<path d="M{f(x1)} {f(y1)} H{f(x1 - 7.6)}" stroke="var(--halo)" stroke-width="3" stroke-linecap="round"/>'
-            f'<circle cx="{f(x1 - 9.6)}" cy="{f(y1)}" r="3.3" fill="{P("sky").light}" stroke="var(--halo)" stroke-width="2"/>')
-    return g + bots + bulb
+    bulb = (f'<path d="M{f(x1)} {f(y1)} H{f(x1 - 7.6)}" stroke="{G}" stroke-width="3" stroke-linecap="round"/>'
+            f'<circle cx="{f(x1 - 9.6)}" cy="{f(y1)}" r="3.3" fill="{P("sky").light}" stroke="{G}" stroke-width="2"/>')
+    return GRAD + g + bots + bulb
 
 
 HALO = ".halo *{fill:var(--side)!important;stroke:var(--side)!important;stroke-width:5px!important;opacity:1!important}"
@@ -91,8 +99,8 @@ def page_mark():
 
 
 def icon():
-    """The mark as a file: its colours fixed, the G's and the cut round the robots as a browser's light or dark tab is."""
-    style = (":root{--halo:#1ea4e4;--side:#fff}@media (prefers-color-scheme:dark){:root{--halo:#38bdf8;--side:#202124}}"
+    """The mark as a file: the cut round the robots in a browser's light or dark tab's colour."""
+    style = (":root{--side:#fff}@media (prefers-color-scheme:dark){:root{--side:#202124}}"
              + HALO)
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><style>{style}</style>{mark()}</svg>\n'
 
