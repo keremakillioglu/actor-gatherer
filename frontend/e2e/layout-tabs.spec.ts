@@ -434,3 +434,78 @@ test("an actor left in another tab is not looked at there: done since, its face 
   await tabs(page).nth(0).click(); // shown again: looked at
   await expect(tabs(page).nth(0).locator(".lay-fmark .lay-dot")).toHaveCount(0);
 });
+
+// Two tabs, each a task of an actor and a Notepad of its own above its Chat (each in a folder of its own: one instance
+// each): Claude's in tab 1, Codex's in tab 2, shown
+const CODEX_CHANNEL = "019a1f2b-3c4d-7e5f-8a9b-0c1d2e3f4a5b";
+async function twoAppTabs(page: Page): Promise<string[]> {
+  const made: string[] = [];
+  for (const [channel, folder] of [
+    [CLAUDE_CHANNEL, "/w/a"],
+    [CODEX_CHANNEL, "/w/b"],
+  ]) {
+    const r = await page.request.post("/api/apps/open", {
+      data: { app: "notepad", gatherer: GATHERER, folder, channel },
+    });
+    expect(r.ok()).toBe(true);
+    made.push(((await r.json()) as { id: string }).id);
+  }
+  await open(page);
+  await row(page, CLAUDE).click();
+  await expect(notes(page)).toHaveCount(1);
+  await row(page, CODEX).click();
+  await expect(tabs(page)).toHaveCount(2);
+  await expect(notes(page)).toHaveCount(1);
+  return made;
+}
+
+test("a tab shown has its task's apps above its Chat from its first frame: the Chat never drawn its whole height between", async ({
+  page,
+}) => {
+  await twoAppTabs(page);
+  await page.route("**/api/apps?*", async (route) => {
+    await new Promise((r) => setTimeout(r, 400)); // the server's apps slow to read: those the page knows not waiting on it
+    await route.continue();
+  });
+  await page.evaluate(() => {
+    // each frame from here on: the app panels shown, and the actor done drawn large under the Chat's last turn (only
+    // where the Chat is its whole height: under an app, its one line "Done" instead)
+    const w = window as unknown as { frames_: string[] };
+    w.frames_ = [];
+    const tick = () => {
+      const apps = [...document.querySelectorAll("#top-row > .app-pane")].filter((e) => e.checkVisibility()).length;
+      const done = [...document.querySelectorAll(".files .fl-done .done")].some((e) =>
+        e.checkVisibility({ visibilityProperty: true }),
+      );
+      w.frames_.push(`${apps}${done ? " done" : ""}`);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+  for (const n of [0, 1, 0]) {
+    await tabs(page).nth(n).click();
+    await expect(tabs(page).nth(n)).toHaveAttribute("aria-selected", "true");
+    await expect(notes(page)).toHaveCount(1);
+    await page.waitForTimeout(700); // the server's apps read: nothing more opened or closed
+    await expect(notes(page)).toHaveCount(1);
+  }
+  const frames = await page.evaluate(() => (window as unknown as { frames_: string[] }).frames_);
+  expect(frames.length).toBeGreaterThan(30);
+  expect([...new Set(frames)]).toEqual(["1"]); // every frame: the Notepad above, the Chat short
+});
+
+test("a tab shown whose app was closed since the page last read its apps: its panel, opened at once, goes again", async ({
+  page,
+}) => {
+  const [claudeNotes] = await twoAppTabs(page);
+  const known = await (await page.request.get(`/api/apps?gatherer=${GATHERER}`)).json();
+  let stale = true; // the page's reads answered as before, as if read before the Notepad was closed
+  await page.route("**/api/apps?*", (route) => (stale ? route.fulfill({ json: known }) : route.continue()));
+  const closed = await page.request.post("/api/apps/close", { data: { gatherer: GATHERER, instance: claudeNotes } });
+  expect(closed.ok()).toBe(true); // closed elsewhere (another window)
+  stale = false;
+  await tabs(page).nth(0).click(); // Claude's tab: the server's apps read again
+  await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true");
+  await expect(notes(page)).toHaveCount(0);
+  await expect(page.locator("#pane-here")).toBeVisible();
+});
