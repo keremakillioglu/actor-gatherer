@@ -157,9 +157,9 @@ const miniCard = (() => {
       host().body.append(card);
       for (const d of docs()) d.addEventListener("keydown", onKey, true);
     }
-    fill(false);
-    place();
-    if (grow) { card.classList.remove("grow"); void card.offsetWidth; card.classList.add("grow"); }
+    fill(again);                                     // open for this line already (the pointer back on it, the line drawn
+    place();                                         // again under it): its scroll kept, not grown in again
+    if (grow && !again) { card.classList.remove("grow"); void card.offsetWidth; card.classList.add("grow"); }
     if (!again) aim();
   }
   // the pane drawn again: the card, if open, with it -- anchored to the new line, its scroll kept (at its end: kept there)
