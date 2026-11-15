@@ -876,8 +876,11 @@ async function closeApp(gname, o) {
 // A task opened: shown as it was left (07-panes.js's enterTask and rememberTask) -- `focus`, else the one in focus then,
 // else its lead, in the pane in focus -- or, never left, its actors not closed side by side, its apps above. The task
 // shown already: as it is (an actor's pane closed in it stays closed) -- but one shown by chance, never laid out in this
-// page (as the page opened on one of its actors), laid out as at first. One of apps only: its apps alone (enterAppTask).
-// ⌘/Ctrl: the whole task beside the one shown (07-panes.js's openTaskBeside).
+// page (as the page opened on one of its actors), laid out as at first; one whose actor is out of sight in this page's pane
+// with nothing else of it shown (its pane and panels closed), laid out again as it was left. One of apps only: its apps
+// alone (enterAppTask); one left with its actor's pane closed by the reader (07-panes.js's closeHerePane), its apps alone,
+// that actor out of sight in this page's pane (`shut`) till it is asked for. ⌘/Ctrl: the whole task beside the one shown
+// (07-panes.js's openTaskBeside).
 async function openTask(gname, id, focus = null, ev = null) {
   if (!state.home.gatherers.some((x) => x.name === gname)) return;
   const there = await viaTabs(`${gname}\u0000t${id}`, ev);   // where it is open (07-panes.js)
@@ -886,8 +889,13 @@ async function openTask(gname, id, focus = null, ev = null) {
   const k = `${gname}\u0000t${id}`, sel = focusedActor(), was = taskLayout(k);
   const wait = !(ev && ev.inTabs);                   // a tab being shown (07-panes.js's enterTasks): its actor's Chat not waited on
   const ok = (c) => !!c && taskActors(g, id).some((a) => a.channel === c);
+  const mine = !appsOnly && !!sel && taskKey(sel[0], sel[1]) === k;   // its actor in the pane in focus
+  const blank = mine && isAway() && !shownPanels().some((s) => s.key === k);   // ... out of sight, nothing else of it shown
+  if (blank) tasksLaidOut.delete(k);                       // laid out again, as it was left (enterTask)
+  const laid = mine && !blank && tasksLaidOut.has(k);      // shown already, laid out: as it is
+  const shut = !focus && !blank && !laid && was && ok(was.shut) && !was.actors.some(ok) && (was.apps || []).length ? was.shut : null;
   // as it was left: its panes in their order (the first in this page's own), the one in focus then in focus again
-  const first = focus || (was && ok(was.actors[0]) ? was.actors[0] : null) || (was && ok(was.focus) ? was.focus : null)
+  const first = shut || focus || (was && ok(was.actors[0]) ? was.actors[0] : null) || (was && ok(was.focus) ? was.focus : null)
     || (taskLead(g, id) || {}).channel;
   if (!first) {                                            // apps only
     if (selectedTask() === k) return;
@@ -898,17 +906,17 @@ async function openTask(gname, id, focus = null, ev = null) {
     return;
   }
   if (!there && ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT) return openTaskBeside(gname, k, first);   // the whole task, beside
-  if (!appsOnly && sel && taskKey(sel[0], sel[1]) === k) {   // shown already: as it is, once laid out
+  if (mine && !blank) {                                    // shown already: as it is, once laid out
     if (focus) await show(gname, focus, null, wait);
-    else if (!tasksLaidOut.has(k)) await show(gname, sel[1], null, wait);   // shown by chance (as the page opened): laid out now (enterTask)
-    return;
-  }
-  await show(gname, first, null, wait);
+    else if (!laid) await show(gname, shut || sel[1], null, wait, !!shut);   // shown by chance (as the page opened): laid out now (enterTask)
+    if (!shut) return;
+  } else await show(gname, first, null, wait, !!shut);
   const back = !focus && was && ok(was.focus) && was.focus !== first && actorPanes().find((p) => isAt([p.g, p.c], gname, was.focus));
   if (back) focusPane(back);
-  if (!focus && was && was.focusApp) {                     // an app selected in it when it was left: selected again
-    await taskAppsOpening;
-    const p = panes.apps.find((q) => q.instance.id === was.focusApp && !q.held);
+  if (!focus && was && (was.focusApp || shut)) {           // an app selected in it when it was left: selected again (its
+    await taskAppsOpening;                                 // actor's pane closed: one of its apps)
+    const p = panes.apps.find((q) => q.instance.id === was.focusApp && !q.held)
+      || (shut ? panes.apps.find((q) => !q.held && appPaneTask(q) === k) : null);
     if (p) selectAppPane(p);
   }
 }
