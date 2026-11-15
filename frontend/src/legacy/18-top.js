@@ -63,16 +63,18 @@ const miniClose = () => {
 };
 // right of the box, the conversation's last two lines (18-mini-history.js), hovered: the whole of it -- pressed, the chat
 // shown again; none shown (no turn yet, or a pane too narrow for them: 07-top.css), the actor's avatar alone does that
-const miniFoot = (ctx) => [miniHistory(ctx), miniMe(ctx.info), miniClose()];
-// The actor's avatar, small and still -- a mark at its corner while it asks the reader or stopped on an error -- on its line
-// of the history (18-mini-history.js's meIcon), or alone right of the box (miniFoot); no avatar, the way back's icon.
+const miniFoot = (ctx) => [miniHistory(ctx), miniMe(ctx.info, miniRest(ctx)), miniClose()];
+// The actor's avatar, small and still -- a mark at its corner while it asks the reader or stopped on an error, its turn over
+// (`rest`: 18-mini-history.js's miniRest) a green check, as Chat's done avatar -- on its line of the history
+// (18-mini-history.js's meIcon, meDone), or alone right of the box (miniFoot); no avatar, the way back's icon.
 const ME_MARKS = { asking: ["ask", "?"], error: ["err", "!"], failed: ["err", "!"] };
 const meMark = (m) => m ? el("span", { class: "mk " + m[0], text: m[1] }) : null;
-function miniMe(info) {
-  const src = bareAvatar(info), [st, word] = statusOf(info);
-  return el("button", { type: "button", class: "mini-me", title: `${word}. Show the chat`, "aria-label": `${word}. Show the chat`,
-    onclick: () => setChatMin(false) },
-    src ? el("img", { src, alt: "", draggable: "false" }) : strokeIcon(ICONS.restore, 14), meMark(ME_MARKS[st]));
+function miniMe(info, rest) {
+  const src = bareAvatar(info), [st, word] = statusOf(info), says = `${rest ? "Done" : word}. Show the chat`;
+  return el("button", { type: "button", class: "mini-me" + (rest ? " at-rest" : ""), title: says, "aria-label": says,
+    style: rest ? restDelay(info, rest.row_id) : null, onclick: () => setChatMin(false) },
+    src ? el("img", { src, alt: "", draggable: "false" }) : strokeIcon(ICONS.restore, 14),
+    rest ? el("span", { class: "mk ok" }, doneCheck()) : meMark(ME_MARKS[st]));
 }
 // A shell's pane, minimized: what it is, and the way back.
 function shellMini(id) {
