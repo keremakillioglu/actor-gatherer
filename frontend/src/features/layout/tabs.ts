@@ -7,14 +7,17 @@
 // shows nothing). ⌥+click makes the tab shown the task's alone (take: out of any other tab; the page closes the rest).
 // The tabs' bar, over the work area always: each tab its tasks' faces, its name (its tasks', or one given it by a
 // double-click), each task's state marked on its face (MARKS: waiting on the reader, failed, an app's notification,
-// done since they looked, at work, in the background -- idle, none), its × (none, the only one); pressed, shown; dragged,
-// put elsewhere; and a "+" for a new tab, empty. A task of the tab shown, the tab showing others too, moved to another
-// tab (put): dragged by its card head onto another tab's name, into that tab -- anywhere else on the bar ("New tab" shown
-// there meanwhile), into a new tab -- or from its menu; the tab shown stays shown.
+// done since they looked, at work, in the background -- idle, none), its × (none, the only one); pressed, shown; dragged
+// along the bar, the others slid aside where it would go (bar-drag.ts), and let go anywhere on it, put there (dragged off
+// it, onto the work area, a tab not shown opens its tasks there: work.ts); and a "+" for a new tab, empty. A task of the
+// tab shown, the tab showing others too, moved to another tab (put): dragged by its card head onto another tab's name,
+// into that tab -- anywhere else on the bar ("New tab" shown there meanwhile), into a new tab -- or from its menu; the
+// tab shown stays shown.
 // A new tab ("+", or the new-tab key) shows the page's new-tab page (work.ts's `blank` hook): a message box for a new
 // actor, its apps. What is typed there is the tab's DRAFT, kept with it: a tab with one is kept when left, as one with
 // tasks is, and a task clicked in the list goes in a tab of its own, as from a tab with tasks -- but what its page opens
 // (filling) goes in it. The close key closes the tab shown (closeShown) -- the only one, emptied: a new tab again.
+import { BarDrag } from "./bar-drag";
 import type { Node } from "./tree";
 
 export interface Tab {
@@ -100,8 +103,9 @@ export class Tabs {
   private readonly strip: HTMLElement;
   private readonly list: HTMLElement;
   private readonly add: HTMLButtonElement;
-  private readonly ghost: HTMLElement; // "New tab", while a task that can go to another tab is dragged
+  private readonly drag: BarDrag; // what is dragged over the bar: a tab along it, or a task onto it
   private readonly slot: HTMLElement | null; // the top bar's place for it, if the page has one
+  private later = false; // the bar to be drawn again once a tab dragged along it is let go (not till then)
 
   constructor(
     work: HTMLElement,
@@ -128,29 +132,46 @@ export class Tabs {
     this.add.textContent = "+";
     this.add.title = this.add.ariaLabel = "New tab, empty: what you open next goes in it";
     this.add.addEventListener("click", () => void this.blank());
-    this.ghost = document.createElement("div");
-    this.ghost.className = "lay-tab-ghost";
-    this.ghost.textContent = "New tab";
-    this.ghost.hidden = true;
-    this.strip.append(this.list, this.ghost, this.add);
+    this.drag = new BarDrag(this.list);
+    this.strip.append(this.list, this.drag.ghost, this.add);
     // in the page's top bar, beside its logo (its #tab-slot); with none (a test's bare page), over the work area
     this.slot = document.getElementById("tab-slot");
     (this.slot ?? work).append(this.strip);
-    // a task dragged over the bar: where it would go marked; let go, it goes there
-    this.strip.addEventListener("dragover", (ev) => {
+    // a tab dragged along the bar: the others slid aside where it would go; let go, it goes there. A task dragged over
+    // it: where it would go marked; let go, it goes there. Taken on entering each part of the bar too: the browser lets
+    // go there by what the drag's last event over it said, and it is that one when the pointer has just come onto it
+    const over = (ev: DragEvent): void => {
+      if (this.drag.lifted) {
+        ev.preventDefault();
+        if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+        this.drag.slide(this.drag.slotAt(ev.clientX));
+        return;
+      }
       if (!this.hooks.carried?.()) return;
-      const to = this.carriedTo(ev);
-      this.markCarry(to);
+      const to = this.drag.into(ev, this.current);
+      this.drag.mark(to);
       if (ev.dataTransfer) ev.dataTransfer.dropEffect = to ? "move" : "none";
       if (to) ev.preventDefault();
-    });
+    };
+    this.strip.addEventListener("dragenter", over);
+    this.strip.addEventListener("dragover", over);
     this.strip.addEventListener("dragleave", (ev) => {
-      if (!this.strip.contains(ev.relatedTarget as globalThis.Node | null)) this.markCarry(null);
+      if (this.strip.contains(ev.relatedTarget as globalThis.Node | null)) return;
+      this.drag.mark(null);
+      this.drag.slide(null); // (off the bar: onto the work area, or nowhere)
     });
     this.strip.addEventListener("drop", (ev) => {
+      if (this.drag.lifted) {
+        ev.preventDefault();
+        const id = this.drag.lifted,
+          at = this.drag.slotAt(ev.clientX);
+        this.letGo();
+        this.move(id, at);
+        return;
+      }
       const task = this.hooks.carried?.(),
-        to = task ? this.carriedTo(ev) : null;
-      this.markCarry(null);
+        to = task ? this.drag.into(ev, this.current) : null;
+      this.drag.mark(null);
       if (!task || !to) return;
       ev.preventDefault();
       this.hooks.carry?.(task, to === "new" ? null : to.dataset.id!);
@@ -373,20 +394,29 @@ export class Tabs {
   }
   /** A task that can go to another tab picked up (work.ts), or put down: "New tab" shown in the bar meanwhile. */
   carrying(on: boolean): void {
-    this.ghost.hidden = !on;
-    if (!on) this.markCarry(null);
+    this.drag.carrying(on);
   }
-  // where a task dragged over the bar would go: on another tab's name, that tab; on the tab shown's, nowhere; anywhere
-  // else, a new tab
-  private carriedTo(ev: DragEvent): HTMLElement | "new" | null {
-    const chip = ev.target instanceof Element ? ev.target.closest<HTMLElement>(".lay-tab[data-id]") : null;
-    if (!chip) return "new";
-    return chip.dataset.id === this.current ? null : chip;
+
+  /** Tab `id` put at place `at` (from 0) among the others: the bar's order, and so the list's numbers, changed. */
+  move(id: string, at: number): void {
+    const tab = this.tabs.find((t) => t.id === id);
+    if (!tab) return;
+    const order = this.tabs.filter((t) => t !== tab);
+    order.splice(Math.max(0, Math.min(at, order.length)), 0, tab);
+    if (order.every((t, i) => t === this.tabs[i])) return;
+    this.tabs = order;
+    this.save();
+    this.list.dataset.sig = "";
+    this.draw();
+    this.hooks.changed(); // (the list's numbers)
   }
-  private markCarry(to: HTMLElement | "new" | null): void {
-    for (const e of this.list.querySelectorAll(".lay-into")) if (e !== to) e.classList.remove("lay-into");
-    if (to instanceof HTMLElement) to.classList.add("lay-into");
-    this.ghost.classList.toggle("lay-into", to === "new");
+  // the tab dragged along the bar let go (dropped, or the drag given up): the bar drawn if it was held meanwhile
+  private letGo(): void {
+    if (!this.drag.drop()) return;
+    this.hooks.dragged?.(null);
+    if (!this.later) return;
+    this.later = false;
+    this.draw();
   }
 
   rename(id: string, name: string): void {
@@ -401,6 +431,10 @@ export class Tabs {
   draw(): void {
     this.note();
     if (this.list.querySelector("input")) return; // a name being typed: left as it is
+    if (this.drag.lifted) {
+      this.later = true; // a tab dragged: its name, the drag's own, kept till it is let go
+      return;
+    }
     const want = this.tabs.map((t) => this.look(t));
     const sig = JSON.stringify([want, this.tabs.length > 1]);
     if (this.list.dataset.sig === sig) return;
@@ -532,26 +566,10 @@ export class Tabs {
     e.addEventListener("dragstart", (ev) => {
       ev.dataTransfer?.setData("application/x-ag-tab", t.id);
       if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
+      this.drag.lift(t.id, e);
       this.hooks.dragged?.(t.id); // (onto the work area: its tasks there)
     });
-    e.addEventListener("dragend", () => this.hooks.dragged?.(null));
-    e.addEventListener("dragover", (ev) => {
-      if (ev.dataTransfer?.types.includes("application/x-ag-tab")) ev.preventDefault();
-    });
-    e.addEventListener("drop", (ev) => {
-      const from = ev.dataTransfer?.getData("application/x-ag-tab");
-      if (!from || from === t.id) return;
-      ev.preventDefault();
-      const r = e.getBoundingClientRect(),
-        after = ev.clientX > r.left + r.width / 2;
-      const moved = this.tabs.find((x) => x.id === from)!;
-      this.tabs = this.tabs.filter((x) => x.id !== from);
-      this.tabs.splice(this.tabs.findIndex((x) => x.id === t.id) + (after ? 1 : 0), 0, moved);
-      this.save();
-      this.list.dataset.sig = "";
-      this.draw();
-      this.hooks.changed(); // (the list's numbers)
-    });
+    e.addEventListener("dragend", () => this.letGo());
     return e;
   }
 

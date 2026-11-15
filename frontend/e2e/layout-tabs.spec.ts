@@ -3,8 +3,8 @@
 // another tab, that tab brought forward; open nowhere, a tab of its own (the tab shown, if it shows nothing -- or only the
 // actor the page opened on by itself). ⌥+click: the tab shown made the task's alone. ⌘+click: a task of another tab, that
 // tab brought forward; else beside. The tabs' bar, over the work area always: each tab shown by a press, named by a
-// double-click, closed by its × (its actors go on); "+", a new tab, empty; each task's state marked on its face. The
-// list numbers each row open by its tab.
+// double-click, closed by its × (its actors go on), dragged along the bar to another place in it; "+", a new tab, empty;
+// each task's state marked on its face. The list numbers each row open by its tab.
 // Kept in this browser.
 import type { Locator, Page } from "@playwright/test";
 import { expect, homeAs, test } from "./test";
@@ -249,6 +249,46 @@ test("a tab dragged onto the work area opens its tasks there, on the side it is 
   await expect
     .poll(async () => (await box(frame(page))).x < (await box(page.locator("#pane-here"))).x) // Claude's, left of Codex's
     .toBe(true);
+});
+
+test("a tab dragged along the bar: the others slide aside where it would go; let go anywhere on it, it goes there", async ({
+  page,
+}) => {
+  await open(page);
+  await row(page, CLAUDE).click();
+  await row(page, CODEX).click();
+  await expect(tabs(page)).toHaveCount(2); // Claude's, then Codex's (shown)
+  const names = () => tabs(page).locator(".lay-name");
+  // Codex's tab picked up, carried to the front: Claude's slid aside, Codex's place dimmed
+  const codex = await box(tabs(page).nth(1)),
+    claude = await box(tabs(page).nth(0));
+  await page.mouse.move(codex.x + codex.width / 2, codex.y + codex.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(codex.x + codex.width / 2 - 10, codex.y + codex.height / 2, { steps: 3 });
+  await page.mouse.move(claude.x + 8, claude.y + claude.height / 2, { steps: 8 });
+  await expect(tabs(page).nth(1)).toHaveClass(/lay-lifted/);
+  await expect.poll(async () => (await box(tabs(page).nth(0))).x).toBeGreaterThan(claude.x + 20);
+  await page.mouse.up();
+  await expect(names().nth(0)).toContainText(CODEX);
+  await expect(names().nth(1)).toHaveText(CLAUDE);
+  await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true"); // still shown
+  await expect(tabs(page).nth(1)).not.toHaveClass(/lay-lifted/);
+  await expect(mark(page, CODEX)).toHaveText("1"); // the list numbers them so
+  await expect(mark(page, CLAUDE)).toHaveText("2");
+  // and let go past the tabs, on the bar's empty end: last
+  const first = await box(tabs(page).nth(0)),
+    bar = await box(page.locator(".lay-tabs:visible"));
+  await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(first.x + first.width / 2 + 10, first.y + first.height / 2, { steps: 3 });
+  await page.mouse.move(bar.x + bar.width - 40, bar.y + bar.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(names().nth(0)).toHaveText(CLAUDE);
+  await expect(mark(page, CODEX)).toHaveText("2");
+  await page.reload(); // kept
+  await expect(tabs(page)).toHaveCount(2);
+  await expect(names().nth(0)).toHaveText(CLAUDE);
+  await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
 });
 
 // Claude and a Notepad, one task (under its card head), and Codex beside it (⌘+click), both in the one tab

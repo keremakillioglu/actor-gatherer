@@ -346,10 +346,23 @@
   background: none;
 }
 .lay-tab-list {
+  position: relative; /* its tabs' offsets its own: where a tab dragged along it would go (bar-drag.ts's slotAt) */
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 2px;
+}
+/* a tab dragged along the bar (bar-drag.ts): the others slid aside where it would go, its place there dimmed */
+.lay-tab-list.lay-sorting > .lay-tab {
+  transition: transform 140ms ease;
+}
+.lay-tab.lay-lifted {
+  opacity: 0.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lay-tab-list.lay-sorting > .lay-tab {
+    transition: none;
+  }
 }
 .lay-tab {
   display: flex;
