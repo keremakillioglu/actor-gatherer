@@ -705,8 +705,11 @@ def _agents(conn, now: float, only: Optional[set] = None) -> List[dict]:
         a["last_user_message"] = " ".join(said.split())[:600] or None
         a["recap"] = recaps.get(ch)
         a["name"] = names.get(ch)
-        a["last"] = max(a["last_read"] or 0, answered.get(ch) or 0,                             # its latest activity:
-                        0 if a["reads"] else a["last_event"] or 0) or None                     # not a side call's events
+        # its latest activity: its newest call or answer, not a side call's events; its newest event only where it has
+        # neither (a harness whose calls ag does not see). One with an answer and no call -- its read log left behind by
+        # `ag home merge`, which copies a gatherer's events alone -- is active as of that answer, not of what was stored
+        # after it (the answer's own events, an app's note), so a reader who looked at it since sees it not Finished
+        a["last"] = max(a["last_read"] or 0, answered.get(ch) or 0) or (None if a["reads"] else a["last_event"])
         a["building"] = ch in building
         a["turn_over"] = turn_over(conn, ch, tables)[0]
         a["said_at"] = user_at.get(ch)

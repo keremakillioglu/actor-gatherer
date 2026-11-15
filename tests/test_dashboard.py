@@ -266,6 +266,26 @@ class DataTest(HomeBase):
         self.assertEqual((after["last"], after["status"], after["turn_over"]),     # when the reply came
                          (before["last"], before["status"], before["turn_over"]))
 
+    def test_an_agent_whose_read_log_stayed_behind_is_active_as_of_its_answer(self):
+        """`ag home merge` copies a gatherer's events into the home's database, not its read log: an agent of it has
+        its answer there but no read. Its latest activity stays when the answer came -- not its newest event, stored
+        after it -- so a reader who looked at it since does not see it Finished again."""
+        c1 = lambda: next(a for a in data.home()["gatherers"][0]["agents"] if a["channel"] == "c1")   # noqa: E731
+        reply = agent("Done.", 91)
+        answered(self.m, "g", {"channel": "c1"}, [{"type": "message", "payload": reply, "text": "Done."}],
+                 "msg_1", "end_turn", read_id=self.reads[-1])
+        before = c1()
+        time.sleep(0.01)
+        codex_items.CodexItems(self.m).insert("g", reply, channel_id="c1")      # the answer's events, stored after it
+        conn = sqlite3.connect(paths.db_path("g"))
+        conn.execute(f"DELETE FROM _reads WHERE {data.CHANNEL} = 'c1'")         # the read log left behind
+        conn.commit()
+        conn.close()
+        after = c1()
+        self.assertEqual(after["reads"], 0)
+        self.assertGreater(after["last_event"], before["last"])
+        self.assertEqual(after["last"], before["last"])                          # when the answer came
+
     def test_the_pending_answer_follows_the_latest_context(self):
         self.assertEqual(data.agent("g", "c1", [])["pending"], [])                 # the last call carried all of it
         reply = {"role": "assistant", "content": [{"type": "text", "text": "There are 42 rows."}]}
