@@ -2,7 +2,8 @@
 // the actor said last; hovered, the whole conversation in a card over what is above the pane -- each turn's message, its
 // commands with its messages among them in the order they came (files.py's reply `after`), its reply; an earlier turn
 // folded to its count of commands, fetched when opened. A pane in a frame, only as tall as its strip, has its card drawn
-// in the page around it. A message in the card clicked: the chat shown again at that turn.
+// in the page around it. A message in the card clicked: the chat shown again at that turn. Its turn over, the actor's
+// avatar on its line, and under the card's last turn, is Chat's done avatar: a green check at its corner.
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./test";
 import { CODEX, open } from "./home";
@@ -35,6 +36,8 @@ test("a minimized pane shows its last message and reply; hovered, the whole conv
   await expect(lines).toHaveCount(2);
   await expect(lines.nth(0)).toContainText("Spawn one subagent"); // the user's last message
   await expect(lines.nth(1)).toContainText("done"); // the first line of the agent's last
+  await expect(lines.nth(1).locator(".ic.me.at-rest > img + .mk.ok > svg")).toHaveCount(1); // its turn over: done, a check
+  await expect(lines.nth(1).locator(".mk:not(.ok)")).toHaveCount(0);
   await page.mouse.move(700, 300);
   await lines.nth(1).hover();
   const card = page.locator(".mh-card");
@@ -49,7 +52,9 @@ test("a minimized pane shows its last message and reply; hovered, the whole conv
     "mh-cmd wait_agent",
     "mh-said ●Subagent's re",
     "mh-reply done",
+    "mh-now ", // the actor done under it, as in Chat
   ]);
+  await expect(card.locator(".mh-body > .mh-now.rested > .mh-me.me.at-rest > .mk.ok")).toHaveCount(1);
   const body = card.locator(".mh-body");
   await expect.poll(() => body.evaluate((b) => b.scrollHeight - b.scrollTop - b.clientHeight)).toBeLessThan(8); // at its end
   const c = await box(card),
@@ -91,7 +96,8 @@ test("a pane in a frame, minimized: its card over the page around it; an earlier
   await expect(card).toBeVisible();
   await expect(frame.locator(".mh-card")).toHaveCount(0); // not in its frame, no taller than its strip
   await expect(card.locator(".mh-sep")).toHaveCount(15);
-  expect(await afterLast(card)).toEqual(["mh-cmd Load skill pro", "mh-reply Ahoy, Bob!"]);
+  expect(await afterLast(card)).toEqual(["mh-cmd Load skill pro", "mh-reply Ahoy, Bob!", "mh-now "]);
+  await expect(lines.nth(1).locator(".ic.at-rest > .mk.ok")).toHaveCount(1);
   const c = await box(card),
     f = await box(other(page));
   expect(c.y + c.height).toBeLessThanOrEqual(f.y + 1); // above the pane, over the Notepad

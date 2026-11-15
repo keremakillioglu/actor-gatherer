@@ -133,11 +133,18 @@ function bareAvatar(a) {
 function atRest(a, turn) {
   const src = bareAvatar(a);
   if (a) stage.rest(a.channel);
-  const gone = a ? reaction(`${a.channel} done`, turn, a.last) : null;
+  return el("span", { class: "done", style: restDelay(a, turn), "data-sig": signature([src, turn]) },
+    src ? el("img", { src, alt: "", draggable: "false" }) : null, el("span", { class: "ok" }, doneCheck()));
+}
+// The done avatar's grow-in, as far along as it is (--r, a negative delay): only if the page saw turn `turn` end -- one
+// reaction per actor, whichever view draws it (Chat, a minimized pane: 18-mini-history.js), so it grows once.
+const restDelay = (a, turn) => { const gone = a ? reaction(`${a.channel} done`, turn, a.last) : null;
+  return `--r: -${Math.round(gone === null ? 60000 : gone)}ms`; };
+// The white check at a done avatar's corner.
+function doneCheck() {
   const ok = svgEl("svg", { viewBox: "0 0 10 10", "aria-hidden": "true" });
   ok.append(svgEl("path", { d: "M2.2 5.2L4.2 7.1L7.9 3.1", fill: "none", stroke: "#fff", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }));
-  return el("span", { class: "done", style: `--r: -${Math.round(gone === null ? 60000 : gone)}ms`, "data-sig": signature([src, turn]) },
-    src ? el("img", { src, alt: "", draggable: "false" }) : null, el("span", { class: "ok" }, ok));
+  return ok;
 }
 // The actor at work in the Chat view: its avatar acting out its turn -- `t`, the turn, its `work` (work.py's summary) --
 // on the stage; or, the setting "Simple" (avatarMode), buddy()'s one motion. An actor with no avatar has the turning glyph.
