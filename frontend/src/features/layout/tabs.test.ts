@@ -329,4 +329,53 @@ describe("screen tabs", () => {
     t.carrying(false);
     expect(work.querySelector<HTMLElement>(".lay-tab-ghost")!.hidden).toBe(true);
   });
+
+  it("a tab dragged along the bar: the others slid aside where it would go; let go anywhere on it, it goes there", () => {
+    const t = tabs();
+    t.fresh();
+    shown = ["b"];
+    t.fresh();
+    shown = ["c"];
+    expect(strip(t)).toEqual(["A", "B", "C *"]);
+    // each tab 98px wide, 100px apart (the bar itself at 0)
+    const chips = () => [...work.querySelectorAll<HTMLElement>(".lay-tab")];
+    const lay = () =>
+      chips().forEach((e, i) => {
+        Object.defineProperty(e, "offsetLeft", { value: i * 100, configurable: true });
+        Object.defineProperty(e, "offsetWidth", { value: 98, configurable: true });
+      });
+    lay();
+    const fire = (on: Element, type: string, x = 0): boolean =>
+      on.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x }));
+    const bar = work.querySelector(".lay-tabs")!;
+    const [a, b, c] = ids();
+    fire(chips()[0], "dragstart"); // A picked up
+    expect(fire(bar, "dragenter", 160)).toBe(false); // taken, as the pointer comes onto a part of the bar ...
+    expect(fire(bar, "dragover", 160)).toBe(false); // ... and over it: past B's middle, before C's
+    expect(chips().map((e) => e.style.transform)).toEqual(["translateX(98px)", "translateX(-98px)", ""]);
+    fire(bar, "dragover", 20); // back at its own place: nothing slid
+    expect(chips().map((e) => e.style.transform)).toEqual(["", "", ""]);
+    states.b = [{ mark: "working", said: "Working" }];
+    t.draw(); // meanwhile: the bar held as it is, A's name the drag's own
+    expect(chips()[1].querySelector(".lay-dot")).toBe(null);
+    expect(fire(bar, "drop", 290)).toBe(false); // past every tab: last
+    expect(ids()).toEqual([b, c, a]);
+    expect(chips()[0].querySelector(".lay-dot")).not.toBe(null); // drawn again, as it is now
+    expect(chips().map((e) => e.style.transform)).toEqual(["", "", ""]);
+    // kept: the tab shown still C, and so after a reload
+    expect(strip(t)).toEqual(["B", "C *", "A"]);
+    work = document.createElement("div");
+    const again = tabs();
+    expect(strip(again)).toEqual(["B", "C *", "A"]);
+    // C dragged to the front, then given up: nothing moved
+    lay();
+    fire(chips()[1], "dragstart");
+    fire(work.querySelector(".lay-tabs")!, "dragover", 30);
+    expect(chips().map((e) => e.style.transform)).toEqual(["translateX(98px)", "translateX(-98px)", ""]);
+    fire(chips()[1], "dragend");
+    expect(chips().map((e) => e.style.transform)).toEqual(["", "", ""]);
+    expect(ids()).toEqual([b, c, a]);
+    again.move(c, 0);
+    expect(strip(again)).toEqual(["C *", "B", "A"]);
+  });
 });
