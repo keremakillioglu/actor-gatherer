@@ -37,11 +37,12 @@ function pickBeside(g, c, ev) {
   openBeside(g, c);
 }
 // TASKS: the panels follow the task shown: one of several items (05-agent-list.js's TASKS: actors and apps), else an
-// item alone, an actor or an app -- a terminal and a gatherer agent are in none (`taskKey` null). An actor shown in the
-// pane in focus (show) of another task than the one shown before: the panes beside of the task left are closed (terminals
-// kept), and so are the apps' panels of other tasks (one whose agent is at work held out of sight, as closing it does);
-// the new task's actor taken into this page's pane, and its apps' panels opened above (openTaskApps). A task of apps only
-// entered (enterAppTask): its apps' panels alone, the actors' panes out of sight (`appsOnly`).
+// item alone, an actor or an app -- the coordinator agent too, as an actor on its own -- a terminal is in none
+// (`taskKey` null). An actor shown in the pane in focus (show) of another task than the one shown before: the panes
+// beside of the task left are closed (terminals kept), and so are the apps' panels of other tasks (one whose agent is at
+// work held out of sight, as closing it does); the new task's actor taken into this page's pane, and its apps' panels
+// opened above (openTaskApps). A task of apps only entered (enterAppTask): its apps' panels alone, the actors' panes out
+// of sight (`appsOnly`).
 const TASK_APPS = 3;                                 // the apps' panels a task opens at most
 function taskKey(g, c) {
   if (!g || !c || isShell(c)) return null;
@@ -51,7 +52,7 @@ function taskKey(g, c) {
   }
   const gg = state.home && state.home.gatherers.find((x) => x.name === g);
   const a = gg && gg.agents.find((x) => x.channel === c);
-  if (!a || isCoordinator(a)) return null;
+  if (!a) return null;
   const t = taskOf(g, a);                              // in a task with others (05-agent-list.js's TASKS): the task's
   return t === null ? `${g}\u0000${c}` : `${g}\u0000t${t}`;
 }
@@ -704,8 +705,8 @@ if (!SNAPSHOT) document.addEventListener("keydown", (ev) => {
   ev.preventDefault();
   if (PANE) PANE.tab(window, ev.shiftKey ? -1 : 1); else if (workPlacer) workPlacer.tabs.step(ev.shiftKey ? -1 : 1);
 }, true);
-// What a block of the work area is called on its strip (shown while there are others): its task's name, an actor's, an
-// app's; a terminal's, the coordinator agent's (no task)
+// What a block of the work area is called on its strip (shown while there are others): its task's name, an actor's (the
+// coordinator agent's, unnamed: what it is), an app's; a terminal's (no task)
 function blockName(k) {
   const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
   if (k.startsWith("\u0002")) return isShell(k.slice(1)) ? "Terminal" : "";
@@ -713,7 +714,7 @@ function blockName(k) {
   if (/^t\d+$/.test(id)) { const t = taskById(g, Number(id.slice(1))); return t ? taskName(gg, t) : "A task"; }
   if (isAppItem(id)) { const o = appInfo(g, id.slice(APP_ITEM.length)); return o ? appShown(o) : "An app"; }
   const a = gg.agents.find((x) => x.channel === id);
-  return a ? actorTitle(a) : id;
+  return !a ? id : isCoordinator(a) && !(a.name && a.name.text) ? CREW_GROUP : actorTitle(a);
 }
 // A block's faces, on its card's head: its task's actors' (not closed; three at most) and its apps'
 // marks -- an actor's, an app's, alone
@@ -1405,17 +1406,21 @@ const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a sessio
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
 // Its gatherer agent's button, first (CREW_START): the agent shown, started for the gatherer if it has none -- on the
 // first harness a session can run on here, in the directory a new session would start in (coordination.py's `ensure`).
+// Shown as a click on its row shows an actor on its own: where it is open in a screen tab, else in a tab of its own
+// (viaTabs) -- started, once listed, as any actor started.
 const CREW_START = "crew", CREW_GROUP = "Coordinator agent";
 async function openCoordinator(g) {
   if (crewHidden.has(g.name)) setCrewHidden(g.name, false);
   const there = g.agents.find(isCoordinator);
   const view = CHAT_VIEWS.has("files") ? "files" : null;
-  if (there) return show(g.name, there.channel, view);
+  if (there) { await viaTabs(taskKey(g.name, there.channel), {}, there.channel); return show(g.name, there.channel, view); }
   state.starting = { gatherer: g.name, harness: CREW_START };
   renderAgents();
   try {
     const s = await post("/api/coordinator", { gatherer: g.name, cwd: startCwd(g), harness: startable()[0] || "" });
     collapsed.delete(s.gatherer);
+    await loadHome();
+    await viaTabs(taskKey(s.gatherer, s.session_id), {});   // a tab of its own
     await show(s.gatherer, s.session_id, view);
   } catch (e) { state.adding = { gatherer: g.name, cwd: startCwd(g), harness: null, error: e.message }; }
   finally { state.starting = null; renderAgents(); }
