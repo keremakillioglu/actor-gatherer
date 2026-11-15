@@ -5,20 +5,22 @@
 // hooks.enter), the tab left kept so first. A plain click in the list on a task (route) shows it where it is open -- the
 // tab shown, or another, brought forward -- and a task open nowhere in a tab of its own, new (the tab shown, if it
 // shows nothing). ⌥+click makes the tab shown the task's alone (take: out of any other tab; the page closes the rest).
-// The tabs' bar, over the work area always: each tab its tasks' faces, its name (its tasks', or one given it by a
-// double-click), each task's state marked on its face (MARKS: waiting on the reader, failed, an app's notification,
-// done since they looked, at work, in the background -- idle, none), its × (none, the only one); pressed, shown; dragged
-// along the bar, the others slid aside where it would go (bar-drag.ts), and let go anywhere on it, put there (dragged off
-// it, onto the work area, a tab not shown opens its tasks there: work.ts); and a "+" for a new tab, empty. A task of the
-// tab shown, the tab showing others too, moved to another tab (put): dragged by its card head onto another tab's name,
-// into that tab -- anywhere else on the bar ("New tab" shown there meanwhile), into a new tab -- or from its menu; the
-// tab shown stays shown.
+// The tabs' bar, over the work area always: each tab a map of its panels as they are laid out (tab-map.ts: a tab reads
+// as a screen of panels, never as a Browser's tab), its name (its tasks', or one given it by a double-click), each
+// task's state marked on its lead's box in the map (MARKS: waiting on the reader, failed, an app's notification, done
+// since they looked, at work, in the background -- idle, none), its × (none, the only one; shown while pointed at);
+// pressed, shown; dragged along the bar, the others slid aside where it would go (bar-drag.ts), and let go anywhere on
+// it, put there (dragged off it, onto the work area, a tab not shown opens its tasks there: work.ts); and a "+" for a new
+// tab, empty. A task of the tab shown, the tab showing others too, moved to another tab (put): dragged by its card head
+// onto another tab's name, into that tab -- anywhere else on the bar ("New tab" shown there meanwhile), into a new tab --
+// or from its menu; the tab shown stays shown.
 // A new tab ("+", or the new-tab key) shows the page's new-tab page (work.ts's `blank` hook): a message box for a new
 // actor, its apps. What is typed there is the tab's DRAFT, kept with it: a tab with one is kept when left, as one with
 // tasks is, and a task clicked in the list goes in a tab of its own, as from a tab with tasks -- but what its page opens
 // (filling) goes in it. The close key closes the tab shown (closeShown) -- the only one, emptied: a new tab again.
 import { BarDrag } from "./bar-drag";
-import type { Node } from "./tree";
+import { cellsFor, drawMap, drawnCells, sameMap, snapshot, type Cell, type CellLook, type Drawn } from "./tab-map";
+import type { Node, Rect } from "./tree";
 
 export interface Tab {
   id: string;
@@ -29,6 +31,8 @@ export interface Tab {
   focus: string | null;
   /** what its new-tab page's message box holds (a tab showing nothing): kept as it is */
   draft?: string;
+  /** its panels as they were last laid out, for its map (tab-map.ts) */
+  map?: Cell[];
 }
 export interface TabsHooks {
   /** The tasks the work area shows, in order. */
@@ -46,8 +50,10 @@ export interface TabsHooks {
   /** These tasks, shown, about to be left: each kept as it is now (its actors, apps, views), to be opened so again. */
   remember?: (tasks: string[]) => void;
   name: (task: string) => string;
-  /** A task's faces: its lead's (or its app's mark). */
-  faces?: (task: string) => HTMLElement[];
+  /** What a panel's box shows in a tab's map: an actor's hue and face, an app's mark (tab-map.ts). */
+  look?: (task: string, item: string) => CellLook | null;
+  /** A task's lead's item (an actor's channel, its app's): its box in a tab's map when none is kept of it. */
+  lead?: (task: string) => string;
   /** The states of a task's items (its actors', its apps'), its lead's first: each its mark (MARKS', or "": idle,
    * closed) and its word (as the list says it). */
   status?: (task: string) => State[];
@@ -81,15 +87,8 @@ export function pressing(states: State[]): State {
   const best = states.reduce<State | null>((b, s) => (!b || rank(s.mark) < rank(b.mark) ? s : b), null);
   return best || { mark: "", said: "" };
 }
-interface Face {
-  html: string;
-  mark: string;
-  title: string;
-}
-
 const TABS_KEY = "ag-dashboard-screen-tabs";
 export const TABS_H = 40;
-const FACES = 3; // a tab's faces at most, then how many more
 let made = 0;
 const newId = (): string => `s${Date.now().toString(36)}${(made++).toString(36)}`;
 
@@ -218,6 +217,16 @@ export class Tabs {
     if (JSON.stringify(now) === JSON.stringify({ tasks: tab.tasks, screen: tab.screen, focus: tab.focus })) return;
     Object.assign(tab, now);
     this.save();
+  }
+  /** The tab shown's panels placed (work.ts): its map, kept with it -- drawn again only if it looks different (a bar
+   * dragged moves its boxes a pixel now and then); none taken while a tab is being shown. */
+  mapped(rects: Map<string, Rect>, items: Map<string, { key: string | null; item: string }> | undefined): void {
+    const tab = this.tab(),
+      cells = snapshot(rects, items);
+    if (this.switching || sameMap(cells, tab.map || [])) return;
+    tab.map = cells;
+    this.save();
+    this.draw();
   }
 
   /** Where a task is open: the tab holding it (its number, from 1), and whether that is the tab shown; null: nowhere. */
@@ -427,7 +436,7 @@ export class Tabs {
     this.draw();
   }
 
-  /** The bar drawn again: each tab's faces, name and what its actors do (the tab shown kept as it is now). */
+  /** The bar drawn again: each tab's map, name and what its actors do (the tab shown kept as it is now). */
   draw(): void {
     this.note();
     if (this.list.querySelector("input")) return; // a name being typed: left as it is
@@ -457,8 +466,7 @@ export class Tabs {
     name: string;
     given: boolean;
     on: boolean;
-    faces: Face[];
-    rest: string;
+    map: Drawn[];
     says: string[];
   } {
     const tasks = this.tasksOf(t),
@@ -466,29 +474,24 @@ export class Tabs {
     const said = names.length
       ? names.slice(0, 2).join(", ") + (names.length > 2 ? ` +${names.length - 2}` : "")
       : "New tab";
-    // each task: its face (its lead's), its state marked on it; the tasks past FACES, or with no face, marked as one
-    const faces: Face[] = [],
-      rest: State[] = [],
-      says: string[] = [];
-    for (const k of tasks) {
-      const st = pressing(this.hooks.status?.(k) || []),
-        name = this.hooks.name(k),
-        title = st.said ? `${name} · ${st.said}` : name;
-      if (st.said) says.push(title);
-      const face = this.hooks.faces?.(k)[0];
-      if (face && faces.length < FACES) faces.push({ html: face.outerHTML, mark: st.mark, title });
-      else if (face) faces.push({ html: "", mark: st.mark, title });
-      else rest.push(st);
-    }
-    for (const f of faces.slice(FACES)) rest.push({ mark: f.mark, said: "" });
+    // each task: its state, marked on its lead's box in the map (cellsFor gives every task a box)
+    const states = new Map(tasks.map((k) => [k, pressing(this.hooks.status?.(k) || [])]));
+    const title = (k: string): string => {
+      const st = states.get(k);
+      return st?.said ? `${this.hooks.name(k)} · ${st.said}` : this.hooks.name(k);
+    };
+    const map = drawnCells(
+      cellsFor(t.map, tasks, (k) => (this.hooks.canon ? this.hooks.canon(k) : k), this.hooks.lead || ((k) => k)),
+      (k, item) => this.hooks.look?.(k, item) ?? null,
+      (k) => ({ mark: states.get(k)?.mark || "", title: title(k) }),
+    );
     return {
       id: t.id,
       name: t.name || said,
       given: !!t.name,
       on: t.id === this.current,
-      faces,
-      rest: pressing(rest).mark,
-      says,
+      map,
+      says: tasks.filter((k) => states.get(k)?.said).map(title),
     };
   }
 
@@ -524,28 +527,10 @@ export class Tabs {
     e.draggable = true;
     e.dataset.id = t.id;
     e.title = [`${look.name}${look.given ? "" : " · double-click to name it"}`, ...look.says].join("\n");
-    const faces = document.createElement("span");
-    faces.className = "lay-faces";
-    faces.setAttribute("aria-hidden", "true");
-    for (const f of look.faces.slice(0, FACES)) {
-      const one = document.createElement("span");
-      one.className = "lay-fmark";
-      one.title = f.title;
-      one.innerHTML = f.html;
-      if (f.mark) one.append(mark(f.mark));
-      faces.append(one);
-    }
-    if (look.faces.length > FACES) {
-      const more = document.createElement("span");
-      more.className = "lay-more";
-      more.textContent = `+${look.faces.length - FACES}`;
-      faces.append(more);
-    }
     const name = document.createElement("span");
     name.className = "lay-name";
     name.textContent = look.name;
-    // the tasks past its faces' (or with none), marked as one, after its name
-    e.append(...(look.faces.length ? [faces] : []), name, ...(look.rest ? [mark(look.rest)] : []));
+    e.append(drawMap(look.map, mark), name);
     if (this.tabs.length > 1) {
       const close = document.createElement("button");
       close.type = "button";
