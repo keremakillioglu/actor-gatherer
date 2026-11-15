@@ -27,12 +27,11 @@ if (!PANE && !SNAPSHOT) window.agTop = Object.freeze({ shown: () => topShown(),
   min: (win) => !!workPlacer && !!paneNode(win) && workPlacer.isMin(paneNode(win)),
   canMin: (win) => !!workPlacer && !!paneNode(win) && workPlacer.canMin(paneNode(win)),
   setMin: (on, win) => { if (workPlacer && paneNode(win)) workPlacer.setMin(paneNode(win), on); } });
-// A PANE MINIMIZED, each on its own (features/layout/work.ts): only its message box, the actor's status at its right -- its
-// avatar, moving while it works, done with a check, a mark while it waits on the reader or stopped on an error -- and under
-// it the latest turn's commands and the lines its changes added and removed; what is above or below it the rest. Offered
-// where something of its task is above or below it; kept in its task's arrangement (the tab shown), so it is minimized
-// again there; moved where nothing is, shown whole.
-const MIN_TIP = "Minimize the chat: only its message box and the actor's status, under what is above it";
+// A PANE MINIMIZED, each on its own (features/layout/work.ts): only its message box, right of it the conversation's last two
+// lines -- the actor's avatar, small and still, on its own (18-mini-history.js) -- and its ×; what is above or below it the
+// rest. Offered where something of its task is above or below it; kept in its task's arrangement (the tab shown), so it is
+// minimized again there; moved where nothing is, shown whole.
+const MIN_TIP = "Minimize the chat: only its message box and its last lines, under what is above it";
 const chatMin = () => !SNAPSHOT && (PANE ? !!(window.parent.agTop && window.parent.agTop.min(window))
   : !!workPlacer && workPlacer.isMin(panes.here.node));
 const canMinimize = () => !SNAPSHOT && !chatMin() && (PANE ? !!(window.parent.agTop && window.parent.agTop.canMin(window))
@@ -54,49 +53,33 @@ async function minRedraw() {
 // The view a minimized pane draws in place of its own (chatCard): no conversation, the message box, and miniFoot.
 const MINI_VIEW = { id: "mini", name: "Chat", feed: "files", mini: true, background: false, queued: false, greets: true,
   render: () => [], footer: (ctx) => miniFoot(ctx) };
-const miniBack = () => el("button", { type: "button", class: "mini-back", title: "Show the chat again", "aria-label": "Show the chat again",
+// the way back, at a minimized terminal's left (an actor's has none: its lines, or its avatar, pressed, are)
+const miniBack = () => el("button", { type: "button", class: "mini-back", title: "Show the terminal again", "aria-label": "Show the terminal again",
   onclick: () => setChatMin(false) }, strokeIcon(ICONS.restore, 14));
-// right of the box, the conversation's last two lines (18-mini-history.js), hovered: the whole of it
-const miniFoot = (ctx) => [miniBack(), miniHistory(ctx), actorStatus(ctx, () => setChatMin(false))];
-// The actor's status, small, at the right of a message box with no conversation over it -- a minimized pane's (miniFoot), a
-// Browser's: its avatar moving while it works, or while a message sent from here waits to open its turn, ✓ when the turn is
-// done, ?/! when it asks or failed; under it the latest turn's commands and lines changed (from the files' feed). Pressed:
-// `show`, the chat.
-function actorStatus({ info, running }, show) {
-  const d = state.files && state.selected && state.files.key === key(...state.selected) ? state.files.data : null;
-  const [st0, word0] = statusOf(info);
-  // working: its turn, or a message sent from here that has yet to open one -- for a while: not seen for long, its terminal
-  // may be asking something first (pendingTalk), and the status says so
-  const v = chatViewOf(info), mine = mySends(), unseen = !running && !!(v && v.opening && v.opening.unseen);
-  if (v && v.opening && !mine.length) mine.push(v.opening);   // a message on its way to open the next turn
-  // the latest turn, as loaded -- none while a message sent from here waits to open the next: its numbers are not that one's
-  const t = d && d.turns.length && d.turn === d.turns.length - 1 && !(mine.length && !running) ? d.turns[d.turn] : null;
-  const live = running || (mine.length > 0 && !unseen);
-  const [st, word] = unseen ? ["asking", "Pending · not seen by the session yet; its terminal may be asking something first"] : [st0, word0];
-  const cmds = t ? d.commands : [], failed = cmds.filter((c) => c.error).length;
-  const lines = t ? addChanged(d.files.filter((f) => (showTmp || !f.temporary) && (showGit || !gitOnly(f))).map((f) => f.changed)) : null;
-  const src = bareAvatar(info);
-  const mark = { asking: ["ask", "?"], error: ["err", "!"], failed: ["err", "!"], background: ["bg", ""] }[st];
-  const pic = live ? (src ? buddy(info, !!info.failing) : el("span", { class: "spin", "aria-hidden": "true" }))
-    : t && ["idle", "finished", "closed"].includes(st) ? atRest(info, t.row_id)
-    : src ? el("span", { class: "still", "data-sig": signature([src, st]) }, el("img", { src, alt: "", draggable: "false" }),
-      mark ? el("span", { class: "mk " + mark[0], text: mark[1] }) : null)
-    : null;
-  const said = [live ? (info.failing ? "Retrying" : "Working") : word,
-    t ? plural(cmds.length, "command") + (failed ? `, ${full(failed)} failed` : "") : null,
-    lines ? `${plural(lines[0], "line")} added, ${full(lines[1])} removed` : null].filter(Boolean).join(" · ");
-  return el("button", { type: "button", class: "mini-st" + (live ? " live" : ""), "data-morph": "",
-    title: `${said}. Show the chat`, "aria-label": `${said}. Show the chat`, onclick: show },
-    el("span", { class: "pic", "data-morph": "" }, pic),
-    el("span", { class: "n" }, t ? el("span", { class: "c" + (failed ? " err" : "") }, strokeIcon(ICONS.terminal, 11), full(cmds.length)) : null,
-      lines && lines[0] ? el("span", { class: "chg-a", text: `+${full(lines[0])}` }) : null,
-      lines && lines[1] ? el("span", { class: "chg-r", text: `−${full(lines[1])}` }) : null));
+// its pane's × (its head, hidden while minimized, has it: 21-start.js), at its far right
+const miniClose = () => {
+  const x = document.getElementById("pane-close");
+  return el("button", { type: "button", class: "mini-x", title: x.title, "aria-label": x.title, onclick: () => x.click() }, "×");
+};
+// right of the box, the conversation's last two lines (18-mini-history.js), hovered: the whole of it -- pressed, the chat
+// shown again; none shown (no turn yet, or a pane too narrow for them: 07-top.css), the actor's avatar alone does that
+const miniFoot = (ctx) => [miniHistory(ctx), miniMe(ctx.info), miniClose()];
+// The actor's avatar, small and still -- a mark at its corner while it asks the reader or stopped on an error -- on its line
+// of the history (18-mini-history.js's meIcon), or alone right of the box (miniFoot); no avatar, the way back's icon.
+const ME_MARKS = { asking: ["ask", "?"], error: ["err", "!"], failed: ["err", "!"] };
+const meMark = (m) => m ? el("span", { class: "mk " + m[0], text: m[1] }) : null;
+function miniMe(info) {
+  const src = bareAvatar(info), [st, word] = statusOf(info);
+  return el("button", { type: "button", class: "mini-me", title: `${word}. Show the chat`, "aria-label": `${word}. Show the chat`,
+    onclick: () => setChatMin(false) },
+    src ? el("img", { src, alt: "", draggable: "false" }) : strokeIcon(ICONS.restore, 14), meMark(ME_MARKS[st]));
 }
 // A shell's pane, minimized: what it is, and the way back.
 function shellMini(id) {
   const sh = shellOf(id);
   return el("section", { class: "chat mini shell", "aria-label": "Terminal", "data-for": signature([id, "mini"]) }, miniBack(),
-    el("span", { class: "mini-sh" }, strokeIcon(ICONS.terminal, 13), el("span", { text: sh ? `Terminal · ${shellPath(sh)}` : "Terminal" })));
+    el("span", { class: "mini-sh" }, strokeIcon(ICONS.terminal, 13), el("span", { text: sh ? `Terminal · ${shellPath(sh)}` : "Terminal" })),
+    miniClose());
 }
 // In a frame: as tall as its minimized pane -- the row under the top row as tall as its tallest -- else as its pane is laid out.
 let miniFit = null;

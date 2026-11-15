@@ -1,6 +1,7 @@
 // ------------------------------------------------------------------ a minimized pane's history
 // A pane minimized (18-top.js's MINI_VIEW) shows, right of its message box, two lines of its conversation: the user's
-// last message, and what the actor does now -- or, its turn over, the first line of what it said last. Hovering either
+// last message, and what the actor does now -- or, its turn over, the first line of what it said last -- by its avatar,
+// small and still, at work in its own ink (as Chat's "Working…": 01-helpers.js's hueInk). Hovering either
 // shows the whole conversation in a card over what is above the pane (miniCard): each turn, the user's message, then
 // what the agent did, in order -- its messages among its commands (each reply's `after`: how many of the turn's calls came
 // before it, files.py's) -- an earlier turn folded to a line, its commands fetched when opened; the latest its last few
@@ -36,8 +37,8 @@ function miniHistory({ info, running }) {
     agoOf(more ? more.at : t.at)));
   // the agent's: what it does now, else how its turn ended
   const state_ = opening ? "opening" : cur ? cur.state : running ? "working" : "done";
-  if (opening) rows.push(miniRow("now quiet", el("span", { class: "ic" }, strokeIcon(ICONS.history, 12)), "Sent · waiting for the actor to take it", null));
-  else if (state_ === "asking") rows.push(miniRow("now ask", el("span", { class: "ic mk ask", text: "?" }), "Waiting for you", null));
+  if (opening) rows.push(miniRow("now quiet", meIcon(info, null, strokeIcon(ICONS.history, 12)), "Sent · waiting for the actor to take it", null));
+  else if (state_ === "asking") rows.push(miniRow("now ask", meIcon(info, ME_MARKS.asking, el("span", { class: "mk ask", text: "?" })), "Waiting for you", null));
   else if (atWork || state_ === "working") {
     // a call under way; else thinking; else its latest call, if nothing was said since (files.py's `last`); else what it
     // said last
@@ -48,20 +49,25 @@ function miniHistory({ info, running }) {
     const text = words || (call ? callLabel(call, 160) : said_ ? plainLine(said_) : "Working…");
     const dot = call && !words ? el("i", { class: "dotc " + (call.running ? "run" : call.error ? "err" : "ok") }) : null;
     const began = t.began || t.at;
-    rows.push(miniRow("now live", el("span", { class: "ic" }, dot || (said_ ? el("img", { src: bareAvatar(info) || "", alt: "", draggable: "false" })
-      : el("span", { class: "spin", "aria-hidden": "true" }))), text,
+    rows.push(miniRow("now live", meIcon(info, null, el("span", { class: "spin", "aria-hidden": "true" })), [dot, text],
       began ? el("span", { class: "dur", "data-since": began, text: lasting(began) }) : null, said_ ? " said" : ""));
   } else {
     const reply = lastSaid(t), stopped = t.stopped || (cur && cur.state === "stopped" ? cur.stopped : null);
-    const src = bareAvatar(info);
-    if (reply && !stopped) rows.push(miniRow("now reply", el("span", { class: "ic" }, src ? el("img", { src, alt: "", draggable: "false" }) : null),
-      plainLine(reply), agoOf(t.end || t.at)));
-    else rows.push(miniRow("now quiet", el("span", { class: "ic", text: "■" }),
+    const mark = ME_MARKS[statusOf(info)[0]] || null;   // stopped on an error: its mark
+    if (reply && !stopped) rows.push(miniRow("now reply", meIcon(info, mark, null), plainLine(reply), agoOf(t.end || t.at)));
+    else rows.push(miniRow("now quiet", meIcon(info, mark, "■"),
       stopped ? stoppedWords(stopped) : t.calls ? `Done · ${plural(t.calls, "command")}` : "Done", agoOf(t.end || t.at)));
   }
   miniCard.drawn(info, rows);
-  return el("div", { class: "mini-hist", role: "group", "aria-label": "The conversation, last lines" }, ...rows);
+  const ink = HUE_INK[info.avatar_hue];
+  return el("div", { class: "mini-hist", role: "group", "aria-label": "The conversation, last lines",
+    style: ink ? `--mh-ink: light-dark(${ink[0]}, ${ink[1]})` : null }, ...rows);
 }
+// The actor's line's icon: its avatar, small and still (18-top.js's miniMe), `mark` at its corner; no avatar, `alt`.
+const meIcon = (info, mark, alt) => {
+  const src = bareAvatar(info);
+  return el("span", { class: "ic" + (src ? " me" : "") }, src ? el("img", { src, alt: "", draggable: "false" }) : alt, src ? meMark(mark) : null);
+};
 const agoOf = (t) => t ? el("span", { "data-ago": t, text: ago(t) }) : null;
 const stoppedWords = (s) => s.kind === "interrupted" ? "Interrupted" : s.text ? `Stopped: ${firstLine(s.text, 120)}` : "Stopped";
 function miniRow(kind, icon, text, meta, extra = "") {
