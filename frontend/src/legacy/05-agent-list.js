@@ -359,8 +359,8 @@ async function savePicks(g, list, save) {
 async function closePicks(g, list) {
   clearPicks();
   for (const a of list) {
-    if (closable(a)) await closeSession(a);
-    else if (discardable(a)) await discardSession(g, a);
+    if (closable(a)) await closeActor(g, a, closeSession);
+    else if (discardable(a)) await closeActor(g, a, () => discardSession(g, a));
   }
 }
 document.addEventListener("keydown", (ev) => {
@@ -788,9 +788,10 @@ async function saveTask(gname, id, save) {
   const g = state.home.gatherers.find((x) => x.name === gname);
   for (const a of g ? taskMembers(g, id) : []) if (!!savedAs(gname, a) !== save) await setSaved(gname, a, save);
 }
-// A task CLOSED (its ×, while an actor of it runs): its actors' processes closed, as an actor's × does, and its apps put
-// to sleep -- kept, in the task, with nothing running for them (a Browser's tabs closed, their pages kept: app_host.py's
-// `sleep_instance`) -- their panels here closed first, the task's layout remembered. Clicked again later, it opens as
+// A task CLOSED (its ×, while an actor of it runs): closed in the screen tabs first, as its tab's × would (07-panes.js's
+// closedInTabs: kept as it is now, its tab closed if it held nothing else), its actors' processes closed, as an actor's ×
+// does, and its apps put to sleep -- kept, in the task, with nothing running for them (a Browser's tabs closed, their pages
+// kept: app_host.py's `sleep_instance`) -- their panels here closed first. Clicked again later, it opens as
 // it was: its apps above (a Browser's tabs opened again), its actors as closed ones are, started again by a message.
 function taskCloseButton(g, t) {
   if (SNAPSHOT || !taskMembers(g, t.id).some(closable)) return null;
@@ -801,6 +802,7 @@ async function closeTask(gname, id) {
   const g = state.home.gatherers.find((x) => x.name === gname);
   if (!g) return;
   const k = `${gname}\u0000t${id}`, apps = taskApps(g, id);
+  await closedInTabs(k);
   if (tasksLaidOut.has(k) && selectedTask() === k) rememberTask(k);   // shown: opened again as it is now
   tasksLaidOut.delete(k);                            // its row clicked next, even while shown: laid out again, its apps back
   for (const p of [...panes.apps]) if (apps.some((o) => o.id === p.instance.id)) closeAppPane(p);
@@ -858,8 +860,10 @@ async function selectApp(gname, o, ev = null) {
   }
   selectAppPane(p);
 }
-// an app closed: its instance closed (its agents detached, out of its task), its panel gone
+// an app closed: closed in the screen tabs first (07-panes.js's closedInTabs: one in no task, its tab closed if it held
+// nothing else), its instance closed (its agents detached, out of its task), its panel gone
 async function closeApp(gname, o) {
+  await closedInTabs(taskKey(gname, appItem(o.id)), appItem(o.id));
   try { await post("/api/apps/close", { gatherer: gname, instance: o.id }); }
   catch (e) { paneNote(`Close ${o.app.label}: ${e.message}`); return; }
   unselectApp(o.id);
@@ -1057,9 +1061,15 @@ function saveButton(g, a) {
 // Its ×: its process closed (closable), or, one that never started, it discarded (discardable); null: neither.
 function closeButton(g, a) {
   return closable(a) ? rowButton("close-btn", { title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",
-      "aria-label": "Close session" }, () => closeSession(a), closeIcon())
+      "aria-label": "Close session" }, () => closeActor(g, a, closeSession), closeIcon())
     : discardable(a) ? rowButton("close-btn", { title: "Close: it never started, so it goes from the list, and nothing of it is kept",
-      "aria-label": "Close session" }, () => discardSession(g, a), closeIcon()) : null;
+      "aria-label": "Close session" }, () => closeActor(g, a, () => discardSession(g, a)), closeIcon()) : null;
+}
+// An actor closed from the list (`how`: its process closed, or it discarded): closed in the screen tabs first, as its tab's
+// × or its pane's would (07-panes.js's closedInTabs: alone, its tab closed if it held nothing else)
+async function closeActor(g, a, how) {
+  await closedInTabs(taskKey(g.name, a.channel), a.channel);
+  await how(a);
 }
 // Naming an actor: its top line in the list, clicked once it is the one shown, becomes a box with its name in it;
 // Enter (or a press anywhere else in the page, or Tab away) keeps what is typed, Esc leaves it as it was, and nothing
