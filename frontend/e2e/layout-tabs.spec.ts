@@ -437,34 +437,40 @@ test("an actor left in another tab is not looked at there: done since, its box i
   await expect(tabs(page).nth(0).locator(".lay-mcell .lay-dot")).toHaveCount(0);
 });
 
-// Two tabs, each a task of an actor and a Notepad of its own above its Chat (each in a folder of its own: one instance
-// each): Claude's in tab 1, Codex's in tab 2, shown
+// Two tabs, each a task of an actor and the Notepads of its own above its Chat (each in a folder of its own: one instance
+// each) -- Claude's in folders `claude` (its panels named so: "Notepad · a"), Codex's in /w/b -- whichever order they
+// are in (the page opens on an actor by itself: the first click, made while that actor's apps open, can take a tab of
+// its own) -> the instances, by folder
 const CODEX_CHANNEL = "019a1f2b-3c4d-7e5f-8a9b-0c1d2e3f4a5b";
-async function twoAppTabs(page: Page): Promise<string[]> {
-  const made: string[] = [];
-  for (const [channel, folder] of [
-    [CLAUDE_CHANNEL, "/w/a"],
-    [CODEX_CHANNEL, "/w/b"],
-  ]) {
+async function twoAppTabs(page: Page, claude = ["a"]): Promise<Record<string, string>> {
+  const made: Record<string, string> = {};
+  for (const [channel, folder] of [...claude.map((f) => [CLAUDE_CHANNEL, f]), [CODEX_CHANNEL, "b"]]) {
     const r = await page.request.post("/api/apps/open", {
-      data: { app: "notepad", gatherer: GATHERER, folder, channel },
+      data: { app: "notepad", gatherer: GATHERER, folder: `/w/${folder}`, channel },
     });
     expect(r.ok()).toBe(true);
-    made.push(((await r.json()) as { id: string }).id);
+    made[folder] = ((await r.json()) as { id: string }).id;
   }
   await open(page);
   await row(page, CLAUDE).click();
-  await expect(notes(page)).toHaveCount(1);
+  await expect(notes(page)).toHaveCount(claude.length);
   await row(page, CODEX).click();
   await expect(tabs(page)).toHaveCount(2);
+  await expect(panel(page, "b")).toHaveCount(1);
   await expect(notes(page)).toHaveCount(1);
   return made;
 }
+// a Notepad's panel, by its folder's name
+const panel = (page: Page, folder: string) => page.getByRole("region", { name: `Notepad · ${folder}` });
+// the tab a task is open in, by its row's text (its mark in the list: the tab's number)
+const tabOf = async (page: Page, text: string) => tabs(page).nth(Number(await mark(page, text).textContent()) - 1);
 
 test("a tab shown has its task's apps above its Chat from its first frame: the Chat never drawn its whole height between", async ({
   page,
 }) => {
-  await twoAppTabs(page);
+  await twoAppTabs(page); // Codex's tab shown
+  const claude = await tabOf(page, CLAUDE),
+    codex = await tabOf(page, CODEX);
   await page.route("**/api/apps?*", async (route) => {
     await new Promise((r) => setTimeout(r, 400)); // the server's apps slow to read: those the page knows not waiting on it
     await route.continue();
@@ -484,30 +490,37 @@ test("a tab shown has its task's apps above its Chat from its first frame: the C
     };
     tick();
   });
-  for (const n of [0, 1, 0]) {
-    await tabs(page).nth(n).click();
-    await expect(tabs(page).nth(n)).toHaveAttribute("aria-selected", "true");
-    await expect(notes(page)).toHaveCount(1);
+  for (const [tab, folder] of [
+    [claude, "a"],
+    [codex, "b"],
+    [claude, "a"],
+  ] as const) {
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(panel(page, folder)).toHaveCount(1);
     await page.waitForTimeout(700); // the server's apps read: nothing more opened or closed
     await expect(notes(page)).toHaveCount(1);
   }
   const frames = await page.evaluate(() => (window as unknown as { frames_: string[] }).frames_);
   expect(frames.length).toBeGreaterThan(30);
-  expect([...new Set(frames)]).toEqual(["1"]); // every frame: the Notepad above, the Chat short
+  expect([...new Set(frames)]).toEqual(["1"]); // every frame: a Notepad above, the Chat short
 });
 
 test("a tab shown whose app was closed since the page last read its apps: its panel, opened at once, goes again", async ({
   page,
 }) => {
-  const [claudeNotes] = await twoAppTabs(page);
+  const made = await twoAppTabs(page, ["a", "c"]); // Claude's task: two Notepads (one closed, the task stays)
+  const claude = await tabOf(page, CLAUDE);
   const known = await (await page.request.get(`/api/apps?gatherer=${GATHERER}`)).json();
   let stale = true; // the page's reads answered as before, as if read before the Notepad was closed
   await page.route("**/api/apps?*", (route) => (stale ? route.fulfill({ json: known }) : route.continue()));
-  const closed = await page.request.post("/api/apps/close", { data: { gatherer: GATHERER, instance: claudeNotes } });
+  const closed = await page.request.post("/api/apps/close", { data: { gatherer: GATHERER, instance: made.c } });
   expect(closed.ok()).toBe(true); // closed elsewhere (another window)
   stale = false;
-  await tabs(page).nth(0).click(); // Claude's tab: the server's apps read again
-  await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true");
-  await expect(notes(page)).toHaveCount(0);
-  await expect(page.locator("#pane-here")).toBeVisible();
+  await claude.click(); // its panels as it was left -- both known to the page -- then the server's apps read again
+  await expect(claude).toHaveAttribute("aria-selected", "true");
+  await expect(panel(page, "a")).toHaveCount(1);
+  await expect(panel(page, "c")).toHaveCount(0);
+  await page.waitForTimeout(500);
+  await expect(panel(page, "c")).toHaveCount(0);
 });
