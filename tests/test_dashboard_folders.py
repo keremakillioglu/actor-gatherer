@@ -188,7 +188,7 @@ class FoldersTest(unittest.TestCase):
         a = folders.make("g", "A")
         b = folders.make("g", "B", a)
         elsewhere = folders.make("g", "Elsewhere")
-        folders.file("g", ["running", "kept", "never", "outside", "done", "gone"], a)
+        folders.file("g", ["running", "kept", "never", "outside", "done", "gone", "ran"], a)
         folders.file("g", ["codex-sid", "term"], b)
         folders.file("g", ["away"], elsewhere)
         for c in ("done", "gone", "running", "away"):
@@ -224,6 +224,7 @@ class FoldersTest(unittest.TestCase):
             actor("kept", "idle", kept=1.0),
             {"channel": "never", "status": "idle", "events": 0, "reads": 0, "session": {"session_id": "never"}},
             {"channel": "outside", "status": "idle", "session": None},
+            actor("ran", "idle", turns=1, ended=1.0),                            # its process gone, listed Idle
             actor("done", "closed"),
             actor("thread-1", "running", terminal=True, started_as="codex-sid"),
             actor("away", "running", pid=12),
@@ -231,8 +232,8 @@ class FoldersTest(unittest.TestCase):
         ]}]}
         started = Started()
         left = folders.close("g", a, started, home)
-        self.assertEqual(started.did, [("stop", "running"), ("stop", "kept"), ("discard", "never"), ("stop", "thread-1"),
-                                       ("shell", "sh1")])
+        self.assertEqual(started.did, [("stop", "running"), ("stop", "kept"), ("discard", "never"), ("stop", "ran"),
+                                       ("stop", "thread-1"), ("shell", "sh1")])
         self.assertEqual(left, [{"channel": "kept", "why": "the dashboard has no process open for this session"},
                                 {"channel": "outside", "why": "no process of the dashboard's runs for it"}])
         self.assertEqual(sorted(saved.stored()["g"]), ["away"])                   # in it -- "gone" too, not in the home

@@ -218,7 +218,20 @@ class AgentTest(SessionsBase):
         self.assertEqual(len(runs), 2)
         self.assertEqual(runs[1][runs[1].index("--resume") + 1], sid)
 
-    def test_an_agent_closed_mid_turn_is_cut_off_and_the_next_message_starts_it_again(self):
+    def test_one_that_ran_listed_idle_with_no_process_is_closed_now_unless_a_process_outside_has_it(self):
+        """Its process ended long since, but an app's note to it after that lists it Idle (data.py): its × closes it,
+        its end recorded now -- not refused for want of a process."""
+        sid = self.s.create("g", self.work)["session_id"]
+        self.s._set(sid, turns=1, ended=1000.0)
+        with unittest.mock.patch.object(sessions, "holder", return_value={"pid": 4242, "by": "call"}):
+            with self.assertRaisesRegex(sessions.SessionError, "another process"):
+                self.s.stop(sid)
+        self.assertEqual(self.session(sid)["ended"], 1000.0)
+        before = time.time()
+        with unittest.mock.patch.object(sessions, "holder", return_value=None):
+            self.s.stop(sid)
+        self.assertGreaterEqual(self.session(sid)["ended"], before)
+        self.assertNotIn(sid, self.s.agents)                                # nothing started for it
         sid = self.s.create("g", self.work)["session_id"]
         os.environ["FAKE_AG_DELAY"] = "5"
         self.s.send(sid, "one")

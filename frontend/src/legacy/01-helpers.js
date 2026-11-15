@@ -433,9 +433,10 @@ function saveIcon(on) {
   return svg;
 }
 // Whether the dashboard runs a process for the session -- its agent, mid-turn or not, or its terminal -- or kept
-// it, idle, from a restart, and no process outside has it: it can be closed from the list.
-const closable = (a) => !SNAPSHOT && !!a.session && !!(a.session.terminal || a.session.pid || a.session.kept)
-  && a.chattable !== false;
+// it, idle, from a restart, or it ran and is listed open with no process now (used since it ended: an app's note to
+// it, say), and no process outside has it: it can be closed from the list.
+const closable = (a) => !SNAPSHOT && !!a.session && !!(a.session.terminal || a.session.pid || a.session.kept
+  || (a.session.turns && a.status !== "closed")) && a.chattable !== false;
 async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
   catch (err) { setLive(`Not closed: ${err.message}`); }

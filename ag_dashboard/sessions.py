@@ -973,7 +973,8 @@ class Sessions:
 
     def stop(self, session_id: str) -> dict:
         """The session's agent ended: its stdin closed, so it exits and the session shows Closed until
-        the next message resumes it; a kept session with no process is closed so at once. In the middle
+        the next message resumes it; a kept session with no process is closed so at once, and so is one that ran
+        and has no process now (its end recorded now: `ended`), unless a process outside has it open. In the middle
         of a turn, the turn is cut off (its process group terminated) and what waits is dropped. A terminal is closed as a terminal window is: hung up,
         whatever it was doing, and its end recorded before this returns, so the session can be opened
         again straight away. The session as `list` has it."""
@@ -987,6 +988,14 @@ class Sessions:
             a = self.agents.get(session_id)
             if t is None and s["kept"] and (a is None or a.proc.poll() is not None):
                 self._set(session_id, kept=0, ended=s["kept"])   # kept, with no process: closed now, as asked
+                return next(x for x in self.list() if x["session_id"] == session_id)
+            if t is None and s["turns"] and (a is None or a.proc.poll() is not None):
+                # one that ran, with no process of the dashboard's now -- listed Idle all the same, used since it
+                # ended (an app's note to it, say): closed now, as asked, unless a process outside has it open
+                held = holder(s["gatherer"], session_id)
+                if held is not None:
+                    raise SessionError(f"the session is open in another process ({held['pid']}): close it there")
+                self._set(session_id, ended=time.time())
                 return next(x for x in self.list() if x["session_id"] == session_id)
         if t is not None:                            # its end recorded by its reader, which takes the lock
             self._gone(t)
