@@ -101,6 +101,7 @@ export class Tabs {
   private readonly list: HTMLElement;
   private readonly add: HTMLButtonElement;
   private readonly ghost: HTMLElement; // "New tab", while a task that can go to another tab is dragged
+  private readonly slot: HTMLElement | null; // the top bar's place for it, if the page has one
 
   constructor(
     work: HTMLElement,
@@ -132,7 +133,9 @@ export class Tabs {
     this.ghost.textContent = "New tab";
     this.ghost.hidden = true;
     this.strip.append(this.list, this.ghost, this.add);
-    work.append(this.strip);
+    // in the page's top bar, beside its logo (its #tab-slot); with none (a test's bare page), over the work area
+    this.slot = document.getElementById("tab-slot");
+    (this.slot ?? work).append(this.strip);
     // a task dragged over the bar: where it would go marked; let go, it goes there
     this.strip.addEventListener("dragover", (ev) => {
       if (!this.hooks.carried?.()) return;
@@ -154,9 +157,9 @@ export class Tabs {
     });
   }
 
-  /** How tall the tabs' bar is. */
+  /** How much of the work area's top the tabs' bar takes: none, in the page's top bar. */
   height(): number {
-    return TABS_H;
+    return this.slot ? 0 : TABS_H;
   }
   /** Whether a tab is being shown (its tasks' panes opened one by one): a click waits (settled) before it goes anywhere --
    * a moment, the panes not waiting on what they load. */

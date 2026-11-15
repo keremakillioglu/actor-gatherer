@@ -224,11 +224,11 @@ function railBoxOr(g, id, view) {
   const kids = railBox(g, id, view);
   return kids.length ? kids : [el("div", { class: "r-none", text: "Nothing open here" })];
 }
-// Over the rail, every gatherer's actors open (its gatherer agent left out, as a folder's counts leave it), counted by
-// what they do -- waiting for the reader, stopped on an error, running (in the background too), finished and not yet
-// seen, idle -- each a dot of its colour and a number, none for a state no actor is in. The whole home's, wherever the
-// rail is drilled to, so what needs the reader elsewhere still shows.
-function railTotals(shown) {
+// In the page's top bar, beside its logo, whatever shape the list is in: every shown group's actors open (its coordinator
+// agent left out, as a folder's counts leave it), counted by what they do -- waiting for the reader, stopped on an error,
+// running (in the background too), finished and not yet seen, idle -- each a dot of its colour and a number, none for a
+// state no actor is in. The whole home's, wherever the list or the rail is, so what needs the reader elsewhere still shows.
+function drawTotals(shown) {
   const t = { asking: 0, error: 0, running: 0, background: 0, finished: 0, idle: 0 };
   for (const g of shown) for (const a of g.agents) {
     if (isCoordinator(a)) continue;
@@ -242,8 +242,10 @@ function railTotals(shown) {
     chip(told, "notified", told === 1 ? "app with a notification you haven't seen" : "apps with a notification you haven't seen"),
     chip(t.running + t.background, "running", t.background ? `running (${t.background} in the background)` : "running"),
     chip(t.finished, "finished", "finished, not yet seen"), chip(t.idle, "idle", "idle")].filter(Boolean);
-  return chips.length ? el("div", { class: "r-totals", role: "group", "aria-label": `Every group's actors: ${chips.map((c) => c.title).join(", ")}` },
-    ...chips) : null;
+  const box = document.getElementById("top-totals");
+  box.replaceChildren(...chips);
+  if (chips.length) box.setAttribute("aria-label", `Every group's actors: ${chips.map((c) => c.title).join(", ")}`);
+  else box.removeAttribute("aria-label");
 }
 // The rail shows only what the reader checks at its foot (RAIL_FOOT), over every gatherer and drilled in alike, kept in
 // this browser, each unchecked at first: "folders" -- unchecked, only the folders with an actor not closed in them, at
@@ -332,12 +334,12 @@ function renderRail() {
   else list.append(...railGfLevel(shown.filter((g) => !aloneShut(g)), null, (g) => railGatherer(g, view(g))),
     ...railAloneShut(shown.filter(aloneShut)));          // the actors on their own closed: in their lines (05-group-moves.js)
   if (!shown.length) list.append(el("div", { class: "r-none", text: state.home.gatherers.length ? "Every group is hidden" : "No groups" }));
-  // its buttons -- open the list, settings, full screen -- the header's, in one row over it (01-layout.css); then the
-  // totals of what every actor does (railTotals), then the tree, drawn again; then its foot, as it was (RAIL_FOOT)
+  // the tree, drawn again (its buttons -- open the list, full screen, hide -- in a row over it, .list-top; what every
+  // actor does counted in the top bar, drawTotals); then its foot, as it was (RAIL_FOOT)
   const rail = document.getElementById("rail"), was = rail.querySelector(".r-actors");
   const top = was ? was.scrollTop : 0, across = was ? was.scrollLeft : 0;
   for (const n of [...rail.children]) if (n !== RAIL_FOOT) n.remove();
-  rail.prepend(...[railTotals(shown), list].filter(Boolean));
+  rail.prepend(list);
   if (!shown.length) RAIL_FOOT.remove();
   else { drawRailFoot(); if (RAIL_FOOT.parentNode !== rail) rail.append(RAIL_FOOT); }
   list.scrollTop = railMoved ? 0 : top; list.scrollLeft = railMoved ? 0 : across;   // drawn again where the reader had scrolled it

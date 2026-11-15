@@ -544,7 +544,7 @@ class PageTest(HomeBase):
         self.addCleanup(httpd.shutdown)
         url = f"http://127.0.0.1:{httpd.server_port}"
         get = lambda path: urllib.request.urlopen(url + path, timeout=10)  # noqa: E731
-        self.assertIn("<title>ag</title>", get("/").read().decode())       # the page, built or saying how to build it
+        self.assertIn("<title>AGUI</title>", get("/").read().decode())     # the page, built or saying how to build it
         self.assertIn(b"marked v15", get("/vendor/marked.min.js").read(300))   # a vendored script, on its own
         self.assertEqual(json.load(get("/api/home"))["gatherers"][0]["name"], "g")
         self.assertEqual(len(json.load(get("/api/agent?gatherer=g&channel=c1"))["reads"]), 3)

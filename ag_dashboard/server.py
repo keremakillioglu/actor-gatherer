@@ -89,7 +89,7 @@ def _inlined(text: str) -> str:
 def page(snapshot: Optional[dict] = None) -> str:
     """The page; with `snapshot`, its data inside it, and all it needs in it. Not built: a page saying how."""
     if not os.path.exists(INDEX):
-        return ("<!doctype html><meta charset=utf-8><title>ag</title><p style=\"font: 14px system-ui; margin: 40px\">"
+        return ("<!doctype html><meta charset=utf-8><title>AGUI</title><p style=\"font: 14px system-ui; margin: 40px\">"
                 f"The ag dashboard's page is not built here. In the repository, run <code>{BUILD}</code>, then reload. "
                 "(ag from PyPI comes with it built.)</p>")
     with open(INDEX, encoding="utf-8") as fh:

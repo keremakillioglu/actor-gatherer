@@ -120,7 +120,8 @@ test("a task opened again has its apps' row as tall as it was left", async ({ pa
   await claude.click();
   await addNotepad(page, claude); // Claude's task: Notepad above
   await expect(row.locator("> .app-pane")).toHaveCount(1);
-  await expect.poll(tall).toBe(450); // no row dragged yet: half the column
+  const column = (await page.locator(".work").boundingBox())!.height; // the work area, under the page's top bar
+  await expect.poll(tall).toBe(Math.round(column / 2)); // no row dragged yet: half the column
   await drag(520);
   await expect.poll(tall).toBeGreaterThan(505);
   const claudes = await tall();
