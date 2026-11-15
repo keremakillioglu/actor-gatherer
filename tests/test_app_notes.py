@@ -105,7 +105,7 @@ class NotebookTest(BookBase):
         self.assertEqual((v, done), (1, []))                 # nothing changed: no new version
         with self.assertRaises(nb.NotebookError):
             self.book.apply([{"op": "block.put", "page": "pagepage", "block": block("aaaaaa02", text="kept?")},
-                             {"op": "block.put", "page": "pagepage", "block": block("aaaaaa03", "table")}])
+                             {"op": "block.put", "page": "pagepage", "block": block("aaaaaa03", "chart")}])
         self.assertEqual([b["id"] for b in self.book.page("pagepage")["blocks"]], ["aaaaaa01"])
         for bad in ({"op": "page.new", "page": {"id": "Not An Id"}}, {"op": "page.fly", "page": "pagepage"},
                     {"op": "block.put", "page": "pagepage", "block": {"id": "x"}}, "nope"):
