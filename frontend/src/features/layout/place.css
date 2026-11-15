@@ -281,7 +281,7 @@
   color: var(--ink);
   background: var(--wash);
 }
-/* faces (a card's head, a tab): each a disc -- an app's mark, a rounded square -- over the next, ringed */
+/* faces (a card's head): each a disc -- an app's mark, a rounded square -- over the next, ringed */
 .lay-faces {
   flex: none;
   display: inline-flex;
@@ -312,12 +312,7 @@
 .lay-strip .lay-faces {
   --face-ring: color-mix(in srgb, var(--ink) 6%, var(--surface));
 }
-.lay-more {
-  margin-left: 4px;
-  font-size: 11px;
-  color: var(--muted);
-}
-/* the TABS' BAR (tabs.ts), over the work area always: each tab its faces, name, dot and ×; then "+", a new tab */
+/* the TABS' BAR (tabs.ts), over the work area always: each tab its map, name, dot and ×; then "+", a new tab */
 .lay-tabs {
   position: absolute;
   top: 0;
@@ -367,35 +362,70 @@
 .lay-tab {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
-  max-width: 260px;
+  max-width: 280px;
   flex: 0 1 auto;
-  height: 30px;
+  height: 32px;
   box-sizing: border-box;
-  padding: 0 4px 0 8px;
+  padding: 0 4px;
   font-size: 12.5px;
   color: var(--ink-2);
   cursor: pointer;
   user-select: none;
-  border-radius: 8px;
+  border-radius: 9px;
   --face-ring: var(--side);
 }
 .lay-tab:hover {
   background: var(--wash);
   color: var(--ink);
 }
+/* the tab shown: a tint, its map ringed -- never a raised tab joined to what is under it, as a browser's */
 .lay-tab[aria-selected="true"] {
-  background: var(--surface);
+  background: color-mix(in srgb, var(--s1) 18%, transparent);
   color: var(--ink);
   font-weight: 600;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--ink) 16%, transparent),
-    inset 0 -2px 0 var(--s1);
-  --face-ring: var(--surface);
 }
-.lay-tab:not([aria-selected="true"]) .lay-faces {
+.lay-tab:not([aria-selected="true"]) .lay-map {
   opacity: 0.85;
+}
+/* its × only while pointed at (its room kept, so nothing moves) */
+.lay-tab:not(:hover, :focus-within) > .lay-close {
+  visibility: hidden;
+}
+/* its MAP (tab-map.ts): its panels as laid out, each a box -- an actor's in its avatar's hue, an app's grey */
+.lay-map {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  border-radius: 6px;
+  background: var(--well);
+  --face-ring: var(--well);
+}
+.lay-tab[aria-selected="true"] .lay-map {
+  border-color: var(--s1);
+  box-shadow: 0 0 0 0.5px var(--s1);
+}
+.lay-mcell {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--hue, var(--muted)) 52%, transparent);
+}
+.lay-mcell.app {
+  background: color-mix(in srgb, var(--ink) 20%, var(--surface));
+}
+.lay-mcell > img {
+  display: block;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.lay-mcell.app > img {
+  border-radius: 2px;
 }
 .lay-name {
   min-width: 0;
@@ -403,15 +433,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* a state's mark (tabs.ts's MARKS), as the list marks it: on a task's face at its lower right, or after the tab's name */
-.lay-fmark {
-  position: relative;
-  flex: none;
-  display: grid;
-}
-.lay-faces > .lay-fmark + .lay-fmark {
-  margin-left: 3px;
-}
+/* a state's mark (tabs.ts's MARKS), as the list marks it: on a task's lead's box in the map, at its lower right */
 .lay-dot {
   flex: none;
   width: 8px;
@@ -420,13 +442,13 @@
   border-radius: 50%;
   box-shadow: 0 0 0 2px var(--face-ring, var(--side));
 }
-.lay-fmark > .lay-dot {
+.lay-mcell > .lay-dot {
   position: absolute;
   right: -3px;
   bottom: -3px;
-}
-.lay-tab > .lay-dot {
-  box-shadow: none;
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 0 1.5px var(--face-ring);
 }
 .lay-dot[data-status="asking"] {
   background: var(--warning);
@@ -459,7 +481,7 @@
   animation: term-spin 1.2s steps(1) infinite;
   animation-delay: var(--spin-at, 0s);
 }
-.lay-fmark > .lay-dot[data-status="working"] {
+.lay-mcell > .lay-dot[data-status="working"] {
   right: -4px;
   bottom: -4px;
 }
@@ -500,13 +522,13 @@
   flex: none;
   display: flex;
   align-items: center;
-  height: 30px;
+  height: 32px;
   box-sizing: border-box;
   padding: 0 12px;
   font-size: 12.5px;
   color: var(--muted);
   border: 1px dashed var(--muted);
-  border-radius: 8px;
+  border-radius: 9px;
   pointer-events: none;
 }
 .lay-tab-ghost[hidden] {

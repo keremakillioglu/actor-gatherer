@@ -434,7 +434,7 @@ function startPlacing() {
     old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped, minChanged: paneMinimized,
     focus: selectedTask, enter: enterTasks, status: taskStates, showItems: showTaskItems, lead: taskLeadOf, canon: keyNow,
     clear: clearWork, remember: (keys) => { for (const k of keys) if (tasksLaidOut.has(k)) rememberTask(k); },
-    faces: blockFaces, about: blockAbout, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { if (state.home) renderAgents(); },
+    faces: blockFaces, about: blockAbout, look: cellLook, closeTask: closeTaskHere, openBeside: openTaskHereBeside, listed: () => { if (state.home) renderAgents(); },
     blank: drawNewTab });                            // a tab showing nothing: its new-tab page (07-new-tab.js)
   NARROW.addEventListener("change", placeWork);
   // a task's row dragged from the list over the work area (05-agent-list.js's listDrag): one open in no tab, opened beside
@@ -668,7 +668,7 @@ function blockName(k) {
   const a = gg.agents.find((x) => x.channel === id);
   return a ? actorTitle(a) : id;
 }
-// A block's faces, on its card's head and its screen tab: its task's actors' (not closed; three at most) and its apps'
+// A block's faces, on its card's head: its task's actors' (not closed; three at most) and its apps'
 // marks -- an actor's, an app's, alone
 function blockFaces(k) {
   const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
@@ -685,6 +685,22 @@ function blockFaces(k) {
   if (isAppItem(id)) { const o = appInfo(g, id.slice(APP_ITEM.length)); return o ? [mark(o)] : []; }
   const a = gg.agents.find((x) => x.channel === id);
   return a ? [face(a)] : [];
+}
+// What a panel's box shows in its screen tab's map (tab-map.ts): an actor's, its avatar's hue and face; an app's, its
+// mark on grey. A task's key for its item (a tab with no map kept of it): its lead's, else its first app's.
+function cellLook(k, item) {
+  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  if (!gg || id === undefined) return null;
+  if (item === k && /^t\d+$/.test(id)) {
+    const o = taskApps(gg, Number(id.slice(1)))[0];
+    item = o ? APP_ITEM + o.id : "";
+  } else if (item === k) item = id;
+  if (isAppItem(item)) {
+    const o = appInfo(g, item.slice(APP_ITEM.length));
+    return { app: true, src: o && o.app.mark && !SNAPSHOT ? `/apps/mark/${encodeURIComponent(o.app.name)}.svg` : null };
+  }
+  const a = gg.agents.find((x) => x.channel === item);
+  return a ? { hue: HUE_MAIN[a.avatar_hue] || null, src: a.avatar && !SNAPSHOT ? `/avatars/${a.avatar}.svg` : null } : null;
 }
 // What is in a block, in words, on its card's head: its actors, how many; its apps, by name
 function blockAbout(k) {
