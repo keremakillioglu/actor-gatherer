@@ -234,6 +234,52 @@ a.pg.gone:hover { background: none; }
 .page.ro .below { cursor: default; }
 .drop { position: fixed; height: 3px; border-radius: 2px; background: var(--accent); opacity: .7; pointer-events: none; z-index: 30; }
 
+/* -- tables: cells in a grid, the header row (and column) shaded; around it, room for its handles (above it and to its
+   left), its + bars (right, below) and its scrollbar when wider than the page */
+.blk[data-type="table"] { margin: 2px 0; }
+.blk[data-type="table"] > .gut { z-index: 4; top: -3px; }                /* (above its header row: its handles beside the rows) */
+.tbl { flex: 1; min-width: 0; position: relative; }
+.tbl-scroll { overflow-x: auto; overflow-y: hidden; margin: 0 -32px 0 -22px; padding: 18px 32px 26px 22px; }
+.tbl-in { position: relative; width: max-content; }
+.tbl table { border-collapse: collapse; table-layout: fixed; font-size: 14px; line-height: 1.5; }
+.tbl td, .tbl th { border: 1px solid var(--grid); padding: 0; vertical-align: top; text-align: left; font-weight: 400; color: var(--ink); }
+.tbl th { background: var(--wash); font-weight: 600; }
+.tbl .cell { padding: 6px 9px; min-height: calc(1.5em + 12px); outline: none; white-space: pre-wrap; overflow-wrap: anywhere; caret-color: var(--ink); cursor: text; }
+.tbl.ro .cell { cursor: default; }
+.tbl td:focus-within, .tbl th:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
+.tbl .cell a { color: var(--accent); }
+.tbl td.flash, .tbl th.flash { animation: nt-flash 1.8s ease-out; }
+/* cells picked */
+.tbl .cp, .tbl th.cp { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.tbl.cell-picking, .tbl.cell-picking .cell { user-select: none; -webkit-user-select: none; caret-color: transparent; }
+/* a row's and a column's handle, where the pointer is; the + bars */
+.tbl-h { position: absolute; z-index: 3; display: grid; place-items: center; padding: 0; border-radius: 4px; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--grid); opacity: 0; pointer-events: none; transition: opacity .1s; cursor: grab; }
+.tbl.hover .tbl-h, .tbl-h.held { opacity: 1; pointer-events: auto; }
+.tbl-h:hover, .tbl-h.held { color: var(--ink); background: var(--wash); border-color: var(--axis, var(--grid)); }
+.tbl-h.held { cursor: grabbing; }
+.tbl-ch { top: -16px; width: 28px; height: 13px; transform: translateX(-50%); }
+.tbl-ch svg { width: 13px; height: 13px; }
+.tbl-rh { left: -17px; width: 13px; height: 22px; transform: translateY(-50%); }
+.tbl-rh svg { width: 8px; height: 12px; }
+.tbl-add { position: absolute; display: grid; place-items: center; padding: 0; border-radius: 4px; color: var(--muted); background: var(--wash);
+  opacity: 0; transition: opacity .1s, background .1s; }
+.tbl.hover .tbl-add, .tbl-add.held { opacity: 1; }
+.tbl-add:hover, .tbl-add.held { background: var(--ring); color: var(--ink); }
+.tbl-add-col { top: 0; bottom: 0; left: calc(100% + 5px); width: 18px; }
+.tbl-add-row { left: 0; right: 0; top: calc(100% + 5px); height: 18px; }
+.tbl-add[data-n]::after { content: attr(data-n); position: absolute; left: 50%; top: calc(100% + 4px); transform: translateX(-50%); z-index: 5;
+  white-space: nowrap; font-size: 11.5px; line-height: 1.4; padding: 1px 7px; border-radius: 4px; background: var(--ink); color: var(--surface); }
+.tbl-add-col[data-n]::after { left: calc(100% + 6px); top: 50%; transform: translateY(-50%); }
+/* a column's right edge, dragged to change its width */
+.tbl-edges { position: absolute; inset: 0; pointer-events: none; }
+.tbl-rs { position: absolute; top: 0; bottom: 0; width: 7px; z-index: 2; cursor: col-resize; pointer-events: auto; }
+.tbl-rs::after { content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 3px; border-radius: 2px; background: transparent; transition: background .12s; }
+.tbl-rs:hover::after, .tbl-rs.held::after { background: var(--accent); transition-delay: .08s; }
+.tbl-drop { position: absolute; z-index: 4; background: var(--accent); border-radius: 1px; pointer-events: none; }
+.tbl.ro .tbl-h, .tbl.ro .tbl-add, .tbl.ro .tbl-rs, .tbl.cell-picking .tbl-h, body.tsizing .tbl-h { display: none; }
+body.tsizing, body.tsizing * { cursor: col-resize !important; user-select: none !important; }
+
 /* -- lines picked: marked, the bar over a run of several, the box dragged to pick them */
 .blocks { outline: none; }
 .blk.picked, .blk.picked.convo-on { background: color-mix(in srgb, var(--accent) 15%, transparent); }

@@ -57,6 +57,7 @@ and what agents see of it. The words under either are its caption. */
   const LINK_KIND = { type: "page-link", label: "Link to a page", note: "Or type [[", glyph: '<svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 1.8h5.2L12.5 5v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2v3.3h3.3M6 8.2h4.5M6 10.8h4.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', words: "link page mention reference subpage" };   // in the / menu, not a block's type
   const IMAGE_KIND = { type: "image-new", label: "Image", note: "Upload, paste or drop a picture", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.6"/><path d="M2.3 11l3.4-3.4 2.8 2.8 1.8-1.8 3.4 3.4" stroke-linecap="round"/><circle cx="10.6" cy="6" r="1.1"/></svg>', words: "image picture photo png jpg screenshot figure upload" };   // in the / menu, not a block's type
   const FIGMA_KIND = { type: "figma-new", label: "Figma", note: "A frame or board, kept live", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M5.5 2v12M10.5 2v12M2 5.5h12M2 10.5h12"/></svg>', words: "figma figjam design frame board embed diagram drawing" };
+  const TABLE_KIND = { type: "table-new", label: "Table", note: "Rows and columns", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6.5h12M2 9.8h12M6.5 3v10"/></svg>', words: "table grid rows columns spreadsheet cells" };   // in the / menu, not a block's type
   const ICONS = ["📄", "📝", "✅", "📌", "📚", "💡", "🎯", "🚀", "🛒", "🏠", "💼", "🧪", "🐛", "🔧", "📅", "⭐", "❤️", "🔥", "🌱", "🎨",
     "🎵", "✈️", "🍳", "💰", "📈", "🧠", "☕", "🗂️", "🔖", "🧩", "🏃", "📖", "🎓", "🧾", "📦", "⚙️", "🗒️", "🌟", "🍀", "🐣"];
   const SVG = {
@@ -113,7 +114,7 @@ and what agents see of it. The words under either are its caption. */
   const AGENTS = "@agents";                              // the Agents page (no page of the notebook: never an id)
   const WORK = "@work", LOG = "@logbook";                // the Work page, the Logbook (nor these)
   const SPECIAL = [WORK, LOG, AGENTS];
-  const UNSENT = ["divider", "agents", "work", "image", "figma"];   // blocks with nothing in them to send (a caption is no line of work)
+  const UNSENT = ["divider", "agents", "work", "image", "figma", "table"];   // blocks with nothing in them to send (a caption is no line of work)
   const short = (ch) => String(ch || "").slice(0, 8);
   const since = (t) => { const d = Math.max(0, now() - (t || now())); return d < 60 ? "just now" : d < 3600 ? `${Math.round(d / 60)}m`
     : d < 86400 ? `${Math.round(d / 3600)}h` : `${Math.round(d / 86400)}d`; };
@@ -220,6 +221,13 @@ and what agents see of it. The words under either are its caption. */
         if (b) Object.assign(b, op.block);
         else p.blocks.splice(placeAt(p.blocks, op.after), 0, { type: "text", text: "", checked: false, indent: 0, ...op.block });
         if (!b || "text" in op.block) known.set(op.block.id, op.block.text || "");
+        const t = b || p.blocks.find((x) => x.id === op.block.id);
+        if (t.type === "table") keepTyped(t);
+        return;
+      }
+      case "cell.put": case "row.put": case "row.move": case "row.delete": case "col.put": case "col.move": case "col.delete": {
+        const b = p && p.blocks.find((x) => x.id === op.block);
+        if (b && b.type === "table") { tableApply(b, op); keepTyped(b); }
         return;
       }
       case "block.move": {
@@ -267,7 +275,7 @@ and what agents see of it. The words under either are its caption. */
     if (!d) return;
     clearTimeout(d.timer);
     dirty.delete(id);
-    queue.push({ op: "block.put", page: d.page, block: { id, text: d.text } });
+    queue.push(d.cell ? cellOp(d.page, d.cell.block, d.cell.row, d.cell.col, d.text) : { op: "block.put", page: d.page, block: { id, text: d.text } });
     pump();
   }
   function forget(id) { const d = dirty.get(id); if (d) { clearTimeout(d.timer); dirty.delete(id); } }
@@ -298,7 +306,13 @@ and what agents see of it. The words under either are its caption. */
     const m = new Map();
     for (const id of ids) {
       if (id === "@page") { m.set(id, JSON.stringify([p.title || "", p.icon || ""])); continue; }
+      if (id.includes(":")) {                            // a table's cell: its words
+        const [bid, row, col] = id.split(":"), t = p.blocks.find((x) => x.id === bid), r = t && t.type === "table" && t.rows.find((x) => x.id === row);
+        m.set(id, r && t.cols.some((c) => c.id === col) ? JSON.stringify(known.get(id) ?? (r.cells[col] || "")) : "gone");
+        continue;
+      }
       const b = p.blocks.find((x) => x.id === id);
+      if (b && b.type === "table") { m.set(id, JSON.stringify([b.head, b.head_col, b.cols, b.rows])); continue; }
       m.set(id, b ? JSON.stringify(LINE.map((k) => (k === "text" ? known.get(id) ?? b.text : b[k] ?? BLANK[k]))) : "gone");
     }
     return m;
@@ -316,9 +330,9 @@ and what agents see of it. The words under either are its caption. */
   }
   // -- a change(): its step begun, each op's way back worked out before it is applied, and the step kept
   function stepOf(ops) {
-    const p = page(), mine = (op) => op.page === current && (op.op.startsWith("block.") || op.op === "page.set");
+    const p = page(), mine = (op) => op.page === current && (op.op.startsWith("block.") || op.op === "page.set" || TABLE_OPS.includes(op.op));
     if (!p || p.deleted || !ops.some(mine)) return null;
-    const ids = [...new Set(ops.filter(mine).map((op) => (op.op === "page.set" ? "@page" : blockId(op))))];
+    const ids = [...new Set(ops.filter(mine).map((op) => (op.op === "page.set" ? "@page" : op.op === "cell.put" ? cellKey(op.block, op.row, op.col) : blockId(op))))];
     return { page: p.id, ids, fwd: [], back: [], before: standing(p, ids), pick: picked.size ? [...picked] : null, caret: caretNow() };
   }
   function takeBackOf(step, op) {
@@ -341,6 +355,10 @@ and what agents see of it. The words under either are its caption. */
       } else if (op.op === "block.delete") back = { op: "block.put", page: p.id, block: copied({ ...b, text: known.get(b.id) ?? b.text }), after: prev };
       else if (op.after === prev) return;
       else back = { op: "block.move", page: p.id, block: b.id, after: prev };
+    } else if (TABLE_OPS.includes(op.op)) {
+      const b = p.blocks.find((x) => x.id === op.block);
+      back = b && b.type === "table" ? tableBack(p.id, b, op) : null;
+      if (!back) return;
     } else return;
     step.fwd.push(copied(op));
     step.back.unshift(back);
@@ -410,6 +428,13 @@ and what agents see of it. The words under either are its caption. */
     if (ids.length) { pickRange(ids[0], ids[ids.length - 1]); return holdKeys(); }
     if (step.words) {                                     // where the words changed, at the end of what is there now
       const op = again ? step.fwd[0] : step.back[0], other = again ? step.back[0] : step.fwd[0];
+      if (op.op === "cell.put") {                           // a cell's words: the caret where they changed
+        const s = plainOf(op.text), t = plainOf(other.text), c = cellEl(op.block, op.row, op.col);
+        let same = 0;
+        while (same < s.length && same < t.length && s[s.length - 1 - same] === t[t.length - 1 - same]) same++;
+        if (c) { c.focus(); setCaret(c, Math.max(0, Math.min(s.length - same, c.textContent.length))); }
+        return;
+      }
       const plain = (o) => (o.op === "page.set" ? o.title || "" : (blockOf(o.block.id) || {}).type === "code" ? o.block.text : plainOf(o.block.text || ""));
       const s = plain(op), t = plain(other);
       let same = 0;
@@ -473,17 +498,23 @@ and what agents see of it. The words under either are its caption. */
     const gap = m.version !== book.version + 1;          // a batch missed: everything read again, after these
     book.version = m.version;
     if (m.by !== ME) {
-      const touched = new Set(), blocks = new Set(), retitled = new Set();
+      const touched = new Set(), blocks = new Set(), retitled = new Set(), cells = [];
       for (const op of m.ops) {
         apply(op);
         touched.add(typeof op.page === "string" ? op.page : op.page && op.page.id);
         if (op.op === "block.put") blocks.add(op.block.id);
+        if (op.op === "cell.put") cells.push([op.block, op.row, op.col]);                    // (a cell changed: that cell flashes)
+        else if (op.op === "row.put") cells.push(...Object.keys(op.row.cells || {}).map((c) => [op.block, op.row.id, c]));
+        else if (TABLE_OPS.includes(op.op)) blocks.add(op.block);
         if (op.op === "block.move" || op.op === "thread.add") blocks.add(op.block);
         if (op.op.startsWith("page.")) for (const id of op.pages || [typeof op.page === "string" ? op.page : op.page.id]) retitled.add(id);
       }
       if (current && !pages.has(current)) current = null;
       drawSide(m.agent ? touched : null);
-      if (current && touched.has(current)) drawPage(m.quiet ? null : blocks);   // (a snapshot fetched again: no flash)
+      if (current && touched.has(current)) {
+        drawPage(m.quiet ? null : blocks);                // (a snapshot fetched again: no flash)
+        for (const [bid, row, col] of cells) { const c = cellEl(bid, row, col), td = c && c.parentElement; if (td) { td.classList.remove("flash"); void td.offsetWidth; td.classList.add("flash"); } }
+      }
       else if (!current || SPECIAL.includes(current) || linksTo(pages.get(current), retitled)) drawPage();
       if (m.agent) told(m.agent, [...touched].map((id) => pages.get(id)).filter(Boolean));
     }
@@ -507,7 +538,11 @@ and what agents see of it. The words under either are its caption. */
     book = got;
     reindex();
     for (const op of queue) apply(op);                   // what this window has not sent yet stays as it has it
-    for (const [id, d] of dirty) { const p = pages.get(d.page); const b = p && p.blocks.find((x) => x.id === id); if (b) { b.text = d.text; known.set(id, d.text); } }
+    for (const [id, d] of dirty) {
+      const p = pages.get(d.page), b = p && p.blocks.find((x) => x.id === (d.cell ? d.cell.block : id));
+      if (b && d.cell) { if (b.type === "table") { setCell(b, d.cell.row, d.cell.col, d.text); known.set(id, d.text); } }
+      else if (b) { b.text = d.text; known.set(id, d.text); }
+    }
     if (titleDirty && pages.get(titleDirty.page)) pages.get(titleDirty.page).title = titleDirty.title;
     if (current && !pages.has(current)) current = null;
     drawSide();
@@ -747,6 +782,13 @@ and what agents see of it. The words under either are its caption. */
     else if (b.type === "agents") n.append(el("div", { class: "agt", tabindex: "0", role: "group", "aria-label": "The gatherer's actors" }));
     else if (b.type === "work") n.append(el("div", { class: "agt wkb", tabindex: "0", role: "group", "aria-label": "Your open work items" }));
     else if (MEDIA.includes(b.type)) n.append(el("div", { class: "fig", tabindex: "0", role: "figure" }), el("div", { class: "tx cap", spellcheck: "true" }));
+    else if (b.type === "table") n.append(el("div", { class: "tbl" }, el("div", { class: "tbl-scroll" }, el("div", { class: "tbl-in" },
+      el("table", { class: "grid" }, el("colgroup"), el("tbody")),
+      el("div", { class: "tbl-edges" }),
+      el("button", { class: "tbl-h tbl-ch", type: "button", tabindex: "-1", title: "Drag to move the column, click for more", "aria-label": "The column: move it, or more", html: SVG.more }),
+      el("button", { class: "tbl-h tbl-rh", type: "button", tabindex: "-1", title: "Drag to move the row, click for more", "aria-label": "The row: move it, or more", html: SVG.grip }),
+      el("button", { class: "tbl-add tbl-add-col", type: "button", tabindex: "-1", title: "Add a column (drag for more)", "aria-label": "Add a column", html: SVG.plus }),
+      el("button", { class: "tbl-add tbl-add-row", type: "button", tabindex: "-1", title: "Add a row (drag for more)", "aria-label": "Add a row", html: SVG.plus })))));
     else n.append(el("div", { class: "mk" }), el("div", { class: "tx", spellcheck: "true" }),
       el("button", { class: "to-btn", type: "button", tabindex: "-1", title: "Send it to an agent (or type @)", html: SVG.at }));
     return n;
@@ -760,6 +802,7 @@ and what agents see of it. The words under either are its caption. */
     n.classList.toggle("ro", !!ro);
     if (b.type === "agents") return drawAgentsBlock(n);
     if (b.type === "work") return drawWorkBlock(n);
+    if (b.type === "table") return drawTable(n, b, ro);
     const tx = n.querySelector(".tx");
     if (!tx) return;
     const to = n.querySelector(".to-btn");                 // its words drawn by the style: not the block's text
@@ -794,7 +837,7 @@ and what agents see of it. The words under either are its caption. */
     const at = focus && focus.classList.contains("tx") ? caretIn(focus) : null;
     for (const [id, n] of have) if (!want.has(id)) n.remove();
     let prev = null;
-    const shape = (t) => (["divider", "agents", "work", ...MEDIA].includes(t) ? t : "tx");
+    const shape = (t) => (["divider", "agents", "work", "table", ...MEDIA].includes(t) ? t : "tx");
     for (const b of p.blocks) {
       if (foldedNow.has(b.id)) continue;
       let n = have.get(b.id);
@@ -954,8 +997,9 @@ and what agents see of it. The words under either are its caption. */
     return last ? t.bottom - at.bottom < lh * 0.9 : at.top - t.top < lh * 0.9;
   }
   function focusBlock(id, where = "end") {
-    const n = rowOf(id);
+    const n = rowOf(id), t = n && blockOf(id);
     if (!n) return;
+    if (t && t.type === "table") return focusCell(t, where === "start" ? 0 : t.rows.length - 1, 0, where === "start" ? "start" : "end");
     const tx = n.querySelector(".tx");
     if (!tx) return n.querySelector(".hr, .agt, .fig").focus();
     tx.focus();
@@ -968,6 +1012,8 @@ and what agents see of it. The words under either are its caption. */
 
   // ---------------------------------------------------------------- typing
   box.addEventListener("input", (ev) => {
+    const cell = ev.target.closest && ev.target.closest(".tbl .cell");
+    if (cell) return cellInput(cell, ev);
     const tx = ev.target.closest && ev.target.closest(".tx");
     if (!tx) return;
     const n = tx.closest(".blk"), b = blockOf(n.dataset.id);
@@ -982,7 +1028,8 @@ and what agents see of it. The words under either are its caption. */
     pageInput(n, tx, b, ev);
   });
   box.addEventListener("focusout", (ev) => {
-    const n = ev.target.closest && ev.target.closest(".blk");
+    const n = ev.target.closest && ev.target.closest(".blk"), at = ev.target.classList && ev.target.classList.contains("cell") && cellOf(ev.target);
+    if (at && dirty.has(cellKey(at.b.id, at.row, at.col))) sendTyped(cellKey(at.b.id, at.row, at.col));
     if (n && dirty.has(n.dataset.id)) sendTyped(n.dataset.id);
     if (menu && (menu.kind === "slash" || menu.kind === "at" || menu.kind === "page") && ev.target === menu.tx
       && !(ev.relatedTarget && menu.el.contains(ev.relatedTarget))) closePop();   // (into the picker's box: kept)
@@ -1043,6 +1090,8 @@ and what agents see of it. The words under either are its caption. */
 
   box.addEventListener("keydown", (ev) => {
     if (ev.isComposing) return;
+    const cell = ev.target.closest && ev.target.closest(".tbl .cell");
+    if (cell) return cellKeys(ev, cell);
     const hr = ev.target.closest && ev.target.closest(".hr, .agt, .fig");
     if (hr && ev.target === hr) return dividerKey(ev, hr.closest(".blk"));
     const tx = ev.target.closest && ev.target.closest(".tx");
@@ -1110,14 +1159,14 @@ and what agents see of it. The words under either are its caption. */
       return;
     }
     if ((k === "ArrowUp" && onLine(tx, false)) || (k === "ArrowLeft" && edge(tx, false))) {
-      const prev = p.blocks.slice(0, i).reverse().find(editable);
+      const prev = p.blocks.slice(0, i).reverse().find(canType);
       ev.preventDefault();
       if (prev) focusBlock(prev.id, "end");
       else { $("title").focus(); setCaret($("title"), $("title").textContent.length); }
       return;
     }
     if ((k === "ArrowDown" && onLine(tx, true)) || (k === "ArrowRight" && edge(tx, true))) {
-      const next = p.blocks.slice(i + 1).find(editable);
+      const next = p.blocks.slice(i + 1).find(canType);
       if (next) { ev.preventDefault(); focusBlock(next.id, "start"); }
     }
   });
@@ -1264,9 +1313,7 @@ and what agents see of it. The words under either are its caption. */
       s.removeAllRanges();
       s.addRange(pick);
     }
-    const b = blockOf(n.dataset.id);
-    b.text = textOf(n, b);
-    typed(current, b.id, b.text);
+    retyped(n, tx, blockOf(n.dataset.id));
   }
   function linkBox(n, tx) {
     const s = getSelection();
@@ -1429,7 +1476,9 @@ and what agents see of it. The words under either are its caption. */
   }
   function drawSlash(q) {
     const words = q.trim().toLowerCase();
-    const items = [...KINDS, PAGE_KIND, LINK_KIND, IMAGE_KIND, FIGMA_KIND].filter((k) => !words || k.label.toLowerCase().includes(words) || k.words.includes(words));
+    const rank = (k) => { const l = k.label.toLowerCase(); return l.startsWith(words) ? 0 : l.includes(words) ? 1 : 2; };   // (its name, then its other words)
+    const items = [...KINDS, TABLE_KIND, PAGE_KIND, LINK_KIND, IMAGE_KIND, FIGMA_KIND].filter((k) => !words || k.label.toLowerCase().includes(words) || k.words.includes(words))
+      .sort((x, y) => (words ? rank(x) - rank(y) : 0));
     menu.items = items;
     menu.on = Math.min(menu.on || 0, Math.max(0, items.length - 1));
     const pop = menu.el;
@@ -1475,6 +1524,7 @@ and what agents see of it. The words under either are its caption. */
     setCaret(tx, m.from);
     if (type === LINK_KIND.type) return void document.execCommand("insertText", false, "[[");   // the pages, as "[[" opens them
     if (type === IMAGE_KIND.type) return pickPictures(b);
+    if (type === TABLE_KIND.type) return putTable(b, tx);
     if (type === FIGMA_KIND.type) return figmaBox(b, tx);
     if (type === PAGE_KIND.type) {                         // a page made inside this one, linked here, and opened
       const id = subpage("");
@@ -1603,8 +1653,7 @@ and what agents see of it. The words under either are its caption. */
     at.collapse(true);
     sel.removeAllRanges();
     sel.addRange(at);
-    b.text = textOf(n, b);
-    typed(current, b.id, b.text);
+    retyped(n, tx, b);
   }
   // Backspace (Delete: forward) with only the zero-width space put beside a link between the caret and it: the link taken
   // out whole, with the space -- not the space alone, which would leave the key seeming to do nothing.
@@ -1618,8 +1667,7 @@ and what agents see of it. The words under either are its caption. */
     node.deleteData(fwd ? off : off - 1, 1);
     link.remove();
     if (!node.length && !tx.textContent) tx.replaceChildren();
-    b.text = textOf(n, b);
-    typed(current, b.id, b.text);
+    retyped(n, tx, b);
     return true;
   }
   // A link to a page clicked: that page opened (one in the trash too; one gone, nothing).
@@ -1715,9 +1763,13 @@ and what agents see of it. The words under either are its caption. */
     if (picked.size > 1 && picked.has(b.id)) return linesMenu(n.querySelector(".grip").getBoundingClientRect(), n);
     n.classList.add("menu-open");
     popUp(n.querySelector(".grip").getBoundingClientRect(), (pop) => {
-      pop.append(el("div", { class: "hd", text: "Turn into" }));
-      for (const k of KINDS) if (!UNSENT.includes(k.type) || b.type === k.type)
+      const kinds = KINDS.filter((k) => !UNSENT.includes(k.type) || b.type === k.type);
+      if (kinds.length) pop.append(el("div", { class: "hd", text: "Turn into" }));
+      for (const k of kinds)
         pop.append(item({ ...k, note: "", sm: true, cur: k.type === b.type }, () => { if (k.type !== b.type) { retype(b, k.type); focusBlock(b.id); } }));
+      if (b.type === "table") pop.append(el("div", { class: "hd", text: "Table" }),
+        item({ glyph: b.head ? SVG.check : "", sm: true, label: "Header row", note: b.head ? "On" : "Off" }, () => tableSet(b, { head: !b.head })),
+        item({ glyph: b.head_col ? SVG.check : "", sm: true, label: "Header column", note: b.head_col ? "On" : "Off" }, () => tableSet(b, { head_col: !b.head_col })));
       pop.append(el("div", { class: "sep" }),
         ...(UNSENT.includes(b.type) ? [] : onIt(b).length ? [
           item({ glyph: SVG.at, sm: true, label: "Send to another agent…" }, () => openPicker(b.id, n.getBoundingClientRect())),
@@ -1759,6 +1811,7 @@ and what agents see of it. The words under either are its caption. */
   const order = () => { const p = shown(); return p ? p.blocks.map((b) => b.id) : []; };   // (the lines shown: none folded away)
   const pickedBlocks = () => { const p = page(); return p ? p.blocks.filter((b) => picked.has(b.id)) : []; };
   function pickRange(a, z) {
+    unpickCells();
     const ids = order(), i = ids.indexOf(a), j = ids.indexOf(z);
     if (i < 0 || j < 0) return unpick();
     picked.clear();
@@ -1816,7 +1869,7 @@ and what agents see of it. The words under either are its caption. */
   }
   // a line as its copy has it: a new id, and nothing of whom it was sent to or how it was ended
   const copyOf = ({ calls: _calls, to: _to, sent: _sent, thread: _thread, extra: _extra, group: _group, work: _work, ended: _ended, ended_at: _at,
-    source: _source, source_at: _sourceAt, ...rest }) => ({ ...rest, id: rid() });
+    source: _source, source_at: _sourceAt, ...rest }) => ({ ...(rest.type === "table" ? freshTable(rest) : rest), id: rid() });
   // lines with words to send (no divider, no agents table)
   const sendable = (bs) => bs.filter((b) => !UNSENT.includes(b.type) && plainOf(b.type === "code" ? esc(b.text) : b.text).trim());
 
@@ -1920,14 +1973,19 @@ and what agents see of it. The words under either are its caption. */
   function clip(dt) {
     const bs = pickedBlocks();
     dt.setData("text/plain", mdLines(bs).join("\n"));
-    dt.setData(CLIP, JSON.stringify(bs.map((b) => ({ type: b.type, text: b.text, checked: !!b.checked, indent: b.indent || 0 }))));
+    dt.setData(CLIP, JSON.stringify(bs.map(clipped)));
   }
+  const clipped = (b) => (b.type === "table" ? { type: "table", text: "", checked: false, indent: 0, cols: b.cols, rows: b.rows, head: !!b.head, head_col: !!b.head_col }
+    : { type: b.type, text: b.text, checked: !!b.checked, indent: b.indent || 0 });
   function clipBlocks(dt) {
     let got;
     try { got = JSON.parse(dt.getData(CLIP) || "null"); } catch { return null; }
     if (!Array.isArray(got) || !got.length) return null;
-    const ok = got.filter((b) => b && TYPES.includes(b.type) && typeof b.text === "string");
-    return ok.length ? ok.map((b) => ({ id: rid(), type: b.type, text: b.text, checked: !!b.checked && b.type === "todo",
+    const isTable = (b) => b.type === "table" && Array.isArray(b.cols) && Array.isArray(b.rows) && b.cols.length && b.rows.length
+      && b.cols.every((c) => c && typeof c.id === "string") && b.rows.every((r) => r && typeof r.id === "string" && r.cells && typeof r.cells === "object");
+    const ok = got.filter((b) => b && ((TYPES.includes(b.type) && typeof b.text === "string") || isTable(b)));
+    return ok.length ? ok.map((b) => (b.type === "table" ? { ...freshTable({ cols: b.cols.map((c) => ({ id: c.id, ...(Number.isFinite(c.w) ? { w: c.w } : {}) })), rows: b.rows }),
+      id: rid(), type: "table", text: "", checked: false, indent: 0, head: b.head !== false, head_col: !!b.head_col } : { id: rid(), type: b.type, text: b.text, checked: !!b.checked && b.type === "todo",
       indent: INDENTED.includes(b.type) ? Math.max(0, Math.min(MAX_INDENT, Number(b.indent) || 0)) : 0 })) : null;
   }
   // a block's text (clean HTML) as markdown: notebook.py's inline_markdown, a line break a new line
@@ -1956,6 +2014,7 @@ and what agents see of it. The words under either are its caption. */
       if (b.type === "code") { out.push("```", ...String(b.text).split("\n"), "```"); continue; }
       if (b.type === "divider") { out.push("---"); continue; }
       if (b.type === "agents" || b.type === "work") continue;
+      if (b.type === "table") { out.push(...tableMd(b)); continue; }
       if (b.type === "image") { out.push(`![${mdInline(b.text)}](image:${b.file})`); continue; }
       if (b.type === "figma") { out.push(`[Figma: ${b.title || figmaTitle(b.url) || "a frame"}](${b.url})${b.text ? ` -- ${mdInline(b.text)}` : ""}`); continue; }
       const pad = "  ".repeat(k), mark = { text: "", h1: "# ", h2: "## ", h3: "### ", bullet: "- ", quote: "> ",
@@ -2005,6 +2064,7 @@ and what agents see of it. The words under either are its caption. */
     const ids = order().filter((id) => picked.has(id)), last = ids[ids.length - 1];
     const text = (ev.clipboardData.getData("text/plain") || "").replace(/\r\n?/g, "\n");
     let got = clipBlocks(ev.clipboardData);
+    if (!got && tsv(text)) got = [tableOf(tsv(text))];
     if (!got) { try { got = text.trim() ? await parsed(text) : []; } catch { got = []; } }
     if (!got.length || !blockOf(last)) return;
     putBlocks(got, last);
@@ -2022,7 +2082,7 @@ and what agents see of it. The words under either are its caption. */
 
   // -- the drags that pick: a sweep from a line's words, a box from beside the lines
   let sweep = null, band = null, eatMouse = false;
-  const BAND_NOT = ".tx, button, input, textarea, a, .pg-title, .pg-icon, .pg-tools, .agt, .hr, .fig, .sent, .fold, .fold-all, .gut, .chk, .banner, .empty, .pk-bar";
+  const BAND_NOT = ".tx, .tbl, button, input, textarea, a, .pg-title, .pg-icon, .pg-tools, .agt, .hr, .fig, .sent, .fold, .fold-all, .gut, .chk, .banner, .empty, .pk-bar";
   function rowAt(y) {                                     // the line at a height (above the first: it; below the last: it)
     const rows = [...box.children];
     return rows.find((r) => y < r.getBoundingClientRect().bottom) || rows[rows.length - 1] || null;
@@ -2148,7 +2208,7 @@ and what agents see of it. The words under either are its caption. */
     ev.preventDefault();
     const p = page();
     if (!p || p.deleted) return;
-    const first = shown().blocks.find(editable);
+    const first = shown().blocks.find(canType);
     if (first && ev.key === "ArrowDown") return focusBlock(first.id, "start");
     if (first && first.type === "text" && !plainOf(first.text)) return focusBlock(first.id, "start");
     const b = { id: rid(), type: "text", text: "", checked: false, indent: 0 };
@@ -2184,6 +2244,8 @@ and what agents see of it. The words under either are its caption. */
   // Lines copied from these notes come back as they were (their own clipboard type: types, ticks, indents); other text
   // of several lines is read as markdown, a line each.
   box.addEventListener("paste", async (ev) => {
+    const cell = ev.target.closest && ev.target.closest(".tbl .cell");
+    if (cell) return cellPaste(ev, cell);
     const tx = ev.target.closest && ev.target.closest(".tx");
     if (!tx) return;
     ev.preventDefault();
@@ -2193,6 +2255,8 @@ and what agents see of it. The words under either are its caption. */
     const pics = [...(ev.clipboardData.files || [])].filter((f) => f.type.startsWith("image/"));
     if (b && pics.length && !ours && b.type !== "code" && !page().deleted) return void putPictures(pics, b);
     if (!b || (!text && !ours)) return;
+    const grid = !ours && b.type !== "code" && !page().deleted ? tsv(text) : null;   // cells of a spreadsheet: a table
+    if (grid) return void focusBlock(putBlocks([tableOf(grid)], b.id, empty(tx) && b.type === "text" ? tx : null), "end");
     if (b.type === "code" || (!ours && !text.trim().includes("\n"))) {
       const alone = b.type === "text" && empty(tx) && FIGMA_URL.test(text.trim());
       document.execCommand("insertText", false, b.type === "code" ? text : text.replace(/\n+/g, " "));
@@ -2224,6 +2288,554 @@ and what agents see of it. The words under either are its caption. */
     change(ops);
     drawPage();
     return after;
+  }
+
+  // ---------------------------------------------------------------- tables
+  // A table block (notebook.py's TABLE) holds its own rows and columns, each with an id. A cell is typed in as a line is:
+  // its words kept with cell.put (a run of typing one step of undo), [[ links a page, ⌘B ⌘I ⌘E ⌘K mark it up. Rows and
+  // columns are added (the + bars at its bottom and right edge, clicked or dragged for several; Tab past its last cell;
+  // Enter in its last row), moved (their handles dragged), deleted, sorted, and made headers (their handles' menus, or
+  // the table's own); a column's right edge is dragged to change its width (double-click: back to an equal share).
+  // Keys: Tab ⇧Tab the next and the last cell, Enter the cell below, ⇧Enter a new line in the cell, the arrows on to the
+  // next cell at a cell's edge and out of the table at its own, Esc the table picked as a line. Cells dragged across (or
+  // Shift+clicked, or ⇧+arrows past a cell's edge) are picked: copied as rows of tab-separated cells, as a spreadsheet
+  // has them, cut or emptied together. Cells copied from a spreadsheet, or a table from a web page, pasted into a line
+  // make a table, and pasted into a cell fill the cells from there, rows and columns added as needed.
+  const TABLE_OPS = ["cell.put", "row.put", "row.move", "row.delete", "col.put", "col.move", "col.delete"];
+  const AUTO_MIN = 96;                                     // px: a column with no width of its own, at the least
+  const COL_W = [48, 1600], MAX_ROWS = 500, MAX_COLS = 30;
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  const cellKey = (bid, row, col) => `${bid}:${row}:${col}`;
+  const cellText = (b, row, col) => { const r = b.rows.find((x) => x.id === row); return (r && r.cells[col]) || ""; };
+  const cellEl = (bid, row, col) => { const n = rowOf(bid); return n && n.querySelector(`tr[data-row="${CSS.escape(row)}"] .cell[data-col="${CSS.escape(col)}"]`); };
+  const cellOp = (pid, bid, row, col, text) => ({ op: "cell.put", page: pid, block: bid, row, col, text });
+  const canType = (b) => editable(b) || b.type === "table";
+  // where a cell is: its line's row, the table, its row's and column's ids and places
+  function cellOf(cell) {
+    const n = cell && cell.closest(".blk"), tr = cell && cell.closest("tr"), b = n && blockOf(n.dataset.id);
+    if (!b || b.type !== "table" || !tr) return null;
+    const row = tr.dataset.row, col = cell.dataset.col, ri = b.rows.findIndex((r) => r.id === row), ci = b.cols.findIndex((c) => c.id === col);
+    return ri < 0 || ci < 0 ? null : { n, b, row, col, ri, ci };
+  }
+  function newTable(rows = 3, cols = 3) {
+    return { id: rid(), type: "table", text: "", checked: false, indent: 0, head: true, head_col: false,
+      cols: Array.from({ length: cols }, () => ({ id: rid() })), rows: Array.from({ length: rows }, () => ({ id: rid(), cells: {} })) };
+  }
+  function tableOf(grid) {                                 // rows of cells' text (clean HTML): a table, its first row a header
+    const t = newTable(Math.min(MAX_ROWS, grid.length), Math.min(MAX_COLS, Math.max(...grid.map((r) => r.length))));
+    t.rows.forEach((r, i) => t.cols.forEach((c, j) => { const h = clean(grid[i][j] || ""); if (h) r.cells[c.id] = h; }));
+    return t;
+  }
+  function freshTable(b) {                                 // a copy's rows and columns: new ids, the cells moved over
+    const cols = b.cols.map((c) => ({ ...c, id: rid() })), to = new Map(b.cols.map((c, j) => [c.id, cols[j].id]));
+    return { ...b, cols, rows: b.rows.map((r) => ({ id: rid(), cells: Object.fromEntries(Object.entries(r.cells || {})
+      .filter(([k, v]) => to.has(k) && typeof v === "string").map(([k, v]) => [to.get(k), clean(v)])) })) };
+  }
+  const gridOf = (b, rows = b.rows, cols = b.cols) => rows.map((r) => cols.map((c) => r.cells[c.id] || ""));
+  // text copied from a spreadsheet, or a web page's table: several lines, each with as many tabs (not all set in by one:
+  // code) -- its rows of cells' text; else null
+  function tsv(text) {
+    const lines = text.replace(/\n+$/, "").split("\n");
+    if (lines.length < 2 || lines.some((l) => !l.includes("\t"))) return null;
+    const grid = lines.map((l) => l.split("\t"));
+    if (grid.some((r) => r.length !== grid[0].length) || grid.every((r) => !r[0].trim())) return null;
+    return grid.map((r) => r.map((c) => esc(c.trim())));
+  }
+  // a table as markdown (notebook.py's table_lines): a row a line, its first the header
+  function tableMd(b) {
+    const line = (r) => `| ${b.cols.map((c) => mdInline(r.cells[c.id] || "").replace(/\|/g, "\\|").replace(/\n/g, "<br>")).join(" | ")} |`;
+    return [line(b.rows[0]), `|${" --- |".repeat(b.cols.length)}`, ...b.rows.slice(1).map(line)];
+  }
+  // an op on a table's rows or columns applied here, as notebook.py applies it
+  function tableApply(b, op) {
+    const [what, act] = op.op.split(".");
+    if (what === "cell") {
+      const r = b.rows.find((x) => x.id === op.row);
+      if (!r || !b.cols.some((c) => c.id === op.col)) return;
+      if (op.text) r.cells[op.col] = op.text; else delete r.cells[op.col];
+      known.set(cellKey(b.id, op.row, op.col), op.text || "");
+      return;
+    }
+    const list = what === "row" ? b.rows : b.cols;
+    if (act === "put") {
+      const given = op[what];
+      let x = list.find((y) => y.id === given.id);
+      if (!x) { x = what === "row" ? { id: given.id, cells: {} } : { id: given.id }; list.splice(placeAt(list, op.after), 0, x); }
+      if (what === "col" && "w" in given) { if (given.w == null) delete x.w; else x.w = given.w; }
+      const cells = what === "row" ? given.cells || {} : op.cells || {};
+      for (const [k, v] of Object.entries(cells)) {
+        const r = what === "row" ? x : b.rows.find((y) => y.id === k), col = what === "row" ? k : x.id;
+        if (!r || !b.cols.some((c) => c.id === col)) continue;
+        if (v) r.cells[col] = v; else delete r.cells[col];
+        known.set(cellKey(b.id, r.id, col), v || "");
+      }
+      return;
+    }
+    const i = list.findIndex((y) => y.id === op[what]);
+    if (i < 0) return;
+    const [x] = list.splice(i, 1);
+    if (act === "move") list.splice(placeAt(list, op.after), 0, x);
+    else if (what === "col") for (const r of b.rows) delete r.cells[x.id];
+  }
+  function keepTyped(b) {                                  // cells typed here, not yet sent: as the reader has them
+    for (const d of dirty.values()) if (d.cell && d.cell.block === b.id) setCell(b, d.cell.row, d.cell.col, d.text);
+  }
+  function setCell(b, row, col, text) {
+    const r = b.rows.find((x) => x.id === row);
+    if (r) { if (text) r.cells[col] = text; else delete r.cells[col]; }
+  }
+  // an op's way back (undo), from the table as it is just before it
+  function tableBack(pid, b, op) {
+    const [what, act] = op.op.split("."), base = { page: pid, block: b.id };
+    if (what === "cell") return cellOp(pid, b.id, op.row, op.col, known.get(cellKey(b.id, op.row, op.col)) ?? cellText(b, op.row, op.col));
+    const list = what === "row" ? b.rows : b.cols;
+    if (act === "put") {
+      const given = op[what], x = list.find((y) => y.id === given.id);
+      if (!x) return { ...base, op: `${what}.delete`, [what]: given.id };
+      if (what === "row") return { ...base, op: "row.put", row: { id: x.id, cells: Object.fromEntries(Object.keys(given.cells || {}).map((k) => [k, x.cells[k] || ""])) } };
+      const col = { id: x.id, ...("w" in given ? { w: x.w ?? null } : {}) };
+      return { ...base, op: "col.put", col, cells: Object.fromEntries(Object.keys(op.cells || {}).map((k) => [k, cellText(b, k, x.id)])) };
+    }
+    const i = list.findIndex((y) => y.id === op[what]);
+    if (i < 0) return null;
+    const prev = i > 0 ? list[i - 1].id : "";
+    if (act === "move") return op.after === prev ? null : { ...base, op: `${what}.move`, [what]: op[what], after: prev };
+    if (what === "row") return { ...base, op: "row.put", row: copied(list[i]), after: prev };
+    return { ...base, op: "col.put", col: copied(list[i]), cells: Object.fromEntries(b.rows.filter((r) => r.cells[op.col]).map((r) => [r.id, r.cells[op.col]])), after: prev };
+  }
+
+  // -- drawn: rows and cells kept, moved, made or removed; a cell typed in (or not yet sent) left as the reader has it
+  function drawTable(n, b, ro) {
+    const wrap = n.querySelector(".tbl"), body = wrap.querySelector("tbody");
+    wrap.classList.toggle("ro", !!ro);
+    const have = new Map([...body.rows].map((tr) => [tr.dataset.row, tr])), want = new Set(b.rows.map((r) => r.id));
+    for (const [id, tr] of have) if (!want.has(id)) tr.remove();
+    let prev = null;
+    b.rows.forEach((r, i) => {
+      const tr = have.get(r.id) || el("tr", { "data-row": r.id });
+      const there = prev ? prev.nextSibling : body.firstChild;
+      if (tr !== there) body.insertBefore(tr, there);
+      prev = tr;
+      tr.classList.toggle("hd", !!b.head && i === 0);
+      drawCells(tr, b, r, i, ro);
+    });
+    layoutTable(n, b);
+    drawCellPick();
+  }
+  function drawCells(tr, b, r, i, ro) {
+    const have = new Map([...tr.cells].map((td) => [td.firstChild.dataset.col, td])), want = new Set(b.cols.map((c) => c.id));
+    for (const [id, td] of have) if (!want.has(id)) td.remove();
+    let prev = null;
+    b.cols.forEach((c, j) => {
+      const tag = (b.head && i === 0) || (b.head_col && j === 0) ? "TH" : "TD";
+      let td = have.get(c.id);
+      if (td && td.tagName !== tag) { const made = el(tag.toLowerCase()); made.append(td.firstChild); td.replaceWith(made); td = made; }
+      if (!td) td = el(tag.toLowerCase(), {}, el("div", { class: "cell", "data-col": c.id, spellcheck: "true" }));
+      if (tag === "TH") td.setAttribute("scope", b.head && i === 0 ? "col" : "row"); else td.removeAttribute("scope");
+      const there = prev ? prev.nextSibling : tr.firstChild;
+      if (td !== there) tr.insertBefore(td, there);
+      prev = td;
+      const cell = td.firstChild;
+      cell.setAttribute("contenteditable", ro ? "false" : "true");
+      if (cell !== document.activeElement && !dirty.has(cellKey(b.id, r.id, c.id))) {
+        const h = withLinks(clean(r.cells[c.id] || ""));
+        if (cell.innerHTML !== h) cell.innerHTML = h;
+      } else drawLinks(cell);
+    });
+  }
+  // each column's width: its own, or an equal share of what the page leaves (at least AUTO_MIN); wider than the page,
+  // the table scrolls sideways. Its edges, to drag, at the columns' right sides.
+  function layoutTable(n, b, cols = b.cols) {
+    const wrap = n.querySelector(".tbl"), table = wrap.querySelector("table"), cg = table.querySelector("colgroup");
+    const room = wrap.clientWidth || 640, fixed = cols.reduce((s, c) => s + (c.w || 0), 0), free = cols.filter((c) => !c.w).length;
+    const share = free ? Math.max(AUTO_MIN, Math.floor((room - fixed - 1) / free)) : 0, ws = cols.map((c) => c.w || share);
+    while (cg.children.length < ws.length) cg.append(el("col"));
+    while (cg.children.length > ws.length) cg.lastChild.remove();
+    ws.forEach((w, j) => { if (cg.children[j].style.width !== `${w}px`) cg.children[j].style.width = `${w}px`; });
+    table.style.width = `${ws.reduce((s, w) => s + w, 0)}px`;
+    const edges = wrap.querySelector(".tbl-edges");
+    while (edges.children.length < ws.length) edges.append(el("div", { class: "tbl-rs", title: "Drag to change the width (double-click: an equal share)" }));
+    while (edges.children.length > ws.length) edges.lastChild.remove();
+    let x = 0;
+    ws.forEach((w, j) => { x += w; edges.children[j].dataset.col = cols[j].id; edges.children[j].style.left = `${x - 3}px`; });
+  }
+  new ResizeObserver(() => { for (const n of box.querySelectorAll('.blk[data-type="table"]')) { const b = blockOf(n.dataset.id); if (b && b.type === "table") layoutTable(n, b); } }).observe(box);
+
+  // -- typing in a cell
+  function cellInput(cell, ev) {
+    const at = cellOf(cell);
+    if (!at) return;
+    if (cell.innerHTML === "<br>") cell.innerHTML = "";
+    const was = cellText(at.b, at.row, at.col), text = clean(cell.innerHTML);
+    setCell(at.b, at.row, at.col, text);
+    cellTyped(current, at.b.id, at.row, at.col, text, was);
+    pageInput(at.n, cell, at.b, ev);
+  }
+  function cellTyped(pid, bid, row, col, text, was) {
+    const key = cellKey(bid, row, col), p = pages.get(pid);
+    if (!known.has(key)) known.set(key, was);
+    if (!replaying && p && !p.deleted && pid === current && known.get(key) !== text) {
+      const step = inRun(p, key, cellOp(pid, bid, row, col, known.get(key)));
+      known.set(key, text);
+      step.fwd = [cellOp(pid, bid, row, col, text)];
+      step.after = standing(p, [key]);
+    } else known.set(key, text);
+    const d = dirty.get(key);
+    if (d) clearTimeout(d.timer);
+    dirty.set(key, { page: pid, text, cell: { block: bid, row, col }, timer: setTimeout(() => sendTyped(key), 450) });
+    saved("saving");
+  }
+  // the words in a cell or a line changed other than by typing (a link put in or taken out, code marked): kept
+  function retyped(n, tx, b) {
+    if (tx.classList.contains("cell")) return cellInput(tx, { inputType: "" });
+    b.text = textOf(n, b);
+    typed(current, b.id, b.text);
+  }
+  function focusCell(b, ri, ci, where = "end") {
+    const r = b.rows[ri], c = b.cols[ci], cell = r && c && cellEl(b.id, r.id, c.id);
+    if (!cell) return;
+    cell.focus({ preventScroll: true });
+    setCaret(cell, where === "start" ? 0 : cell.textContent.length);
+    cell.closest("td, th").scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  function outOf(b, by) {                                  // the arrows past the table's edge: the line there (none below: one made)
+    const p = shown(), i = p.blocks.findIndex((x) => x.id === b.id);
+    const to = by < 0 ? p.blocks.slice(0, i).reverse().find(canType) : p.blocks.slice(i + 1).find(canType);
+    if (to) return focusBlock(to.id, by < 0 ? "end" : "start");
+    if (by > 0) return addAfter(b, "text");
+    $("title").focus();
+    setCaret($("title"), $("title").textContent.length);
+  }
+  function tabCell(b, ri, ci, back) {
+    const C = b.cols.length, at = ri * C + ci + (back ? -1 : 1);
+    if (at < 0) return;
+    if (at >= b.rows.length * C) return addRows(b, 1, b.rows[b.rows.length - 1].id, 0);
+    focusCell(b, Math.floor(at / C), at % C);
+  }
+  const DIRS = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+  function cellKeys(ev, cell) {
+    const at = cellOf(cell);
+    if (!at) return;
+    const { n, b, ri, ci } = at, R = b.rows.length, C = b.cols.length, mod = ev.metaKey || ev.ctrlKey, k = ev.key;
+    if (menu && menu.kind === "page" && pageKey(ev)) return;
+    if (mod && !ev.altKey) {
+      const low = k.toLowerCase();
+      if (low === "z") { ev.preventDefault(); return undoStep(ev.shiftKey); }
+      if (!ev.shiftKey && low === "a") {                   // ⌘A: the cell's words, then (all of them selected) every cell
+        const c = caretIn(cell);
+        ev.preventDefault();
+        if (c && c.start === 0 && c.end === cell.textContent.length) { pickCells(b, 0, 0, R - 1, C - 1); return holdKeys(); }
+        return setCaret(cell, 0, cell.textContent.length);
+      }
+      if (!ev.shiftKey && low === "b") return format(ev, n, "bold");
+      if (!ev.shiftKey && low === "i") return format(ev, n, "italic");
+      if (!ev.shiftKey && low === "u") return format(ev, n, "underline");
+      if (ev.shiftKey && (low === "s" || low === "x")) return format(ev, n, "strikeThrough");
+      if (!ev.shiftKey && low === "e") { ev.preventDefault(); return codeMark(n, cell); }
+      if (!ev.shiftKey && low === "k") { ev.preventDefault(); return linkBox(n, cell); }
+      if (k === "Enter") { ev.preventDefault(); return addAfter(b, "text"); }     // ⌘↵: a line after the table
+      return;
+    }
+    if (k === "Escape" && !ev.shiftKey) { ev.preventDefault(); pickRange(b.id, b.id); return holdKeys(); }
+    if (k === "Tab") { ev.preventDefault(); return tabCell(b, ri, ci, ev.shiftKey); }
+    if (k === "Enter" && !ev.shiftKey) { ev.preventDefault(); return ri + 1 < R ? focusCell(b, ri + 1, ci) : addRows(b, 1, b.rows[R - 1].id, ci); }
+    if (k === "Enter") { ev.preventDefault(); return void document.execCommand("insertLineBreak"); }   // ⇧↵: a new line in the cell
+    if ((k === "Backspace" || k === "Delete") && !ev.altKey && overLink(n, cell, b, k === "Delete")) return ev.preventDefault();
+    if ((k === "Backspace" && edge(cell, false)) || (k === "Delete" && edge(cell, true))) return ev.preventDefault();   // no cell to join it to
+    const dir = DIRS[k];
+    if (!dir || ev.altKey) return;
+    const [dr, dc] = dir, past = dr ? onLine(cell, dr > 0) : edge(cell, dc > 0);
+    if (!past) return;
+    ev.preventDefault();
+    if (ev.shiftKey) { pickCells(b, ri, ci, ri + dr, ci + dc); return holdKeys(); }   // ⇧ past its edge: the cells picked
+    if (dr) return ri + dr >= 0 && ri + dr < R ? focusCell(b, ri + dr, ci, dr > 0 ? "start" : "end") : outOf(b, dr);
+    const to = ri * C + ci + dc;
+    return to >= 0 && to < R * C ? focusCell(b, Math.floor(to / C), to % C, dc > 0 ? "start" : "end") : outOf(b, dc);
+  }
+
+  // -- rows and columns: added, moved, deleted, sorted
+  function addRows(b, count = 1, after = undefined, focusCol = null) {
+    count = Math.min(count, MAX_ROWS - b.rows.length);
+    if (count <= 0) return say(`A table has ${MAX_ROWS} rows at most`, true);
+    const ops = [];
+    for (let k = 0; k < count; k++) {
+      const id = rid();
+      ops.push({ op: "row.put", page: current, block: b.id, row: { id, cells: {} }, ...(after !== undefined ? { after } : {}) });
+      after = id;
+    }
+    change(ops);
+    drawPage();
+    if (focusCol !== null) focusCell(b, b.rows.findIndex((r) => r.id === ops[0].row.id), focusCol, "start");
+  }
+  function addCols(b, count = 1, after = undefined) {
+    count = Math.min(count, MAX_COLS - b.cols.length);
+    if (count <= 0) return say(`A table has ${MAX_COLS} columns at most`, true);
+    const ops = [];
+    for (let k = 0; k < count; k++) {
+      const id = rid();
+      ops.push({ op: "col.put", page: current, block: b.id, col: { id }, ...(after !== undefined ? { after } : {}) });
+      after = id;
+    }
+    change(ops);
+    drawPage();
+  }
+  function tableDo(ops) { if (ops.length) { change(ops); drawPage(); } }
+  const tableSet = (b, fields) => tableDo([{ op: "block.put", page: current, block: { id: b.id, ...fields } }]);
+  function sortBy(b, col, down) {                         // the rows under the header, by the column's words (the empty last)
+    const top = b.head ? b.rows.slice(0, 1) : [], body = b.rows.slice(top.length), words = (r) => plainOf(r.cells[col] || "").trim();
+    const sorted = [...body].sort((x, y) => (!words(x) - !words(y)) || collator.compare(words(x), words(y)) * (down ? -1 : 1));
+    if (sorted.every((r, i) => r === body[i])) return;
+    let after = top.length ? top[0].id : "";
+    tableDo(sorted.map((r) => { const op = { op: "row.move", page: current, block: b.id, row: r.id, after }; after = r.id; return op; }));
+  }
+  function rowMenu(b, id, rect) {
+    const i = b.rows.findIndex((r) => r.id === id);
+    if (i < 0) return;
+    popUp(rect, (pop) => {
+      pop.append(item({ glyph: "↑", sm: true, label: "Insert above" }, () => addRows(b, 1, i ? b.rows[i - 1].id : "")),
+        item({ glyph: "↓", sm: true, label: "Insert below" }, () => addRows(b, 1, id)),
+        ...(i === 0 ? [item({ glyph: b.head ? SVG.check : "", sm: true, label: "Header row", note: b.head ? "On" : "Off" }, () => tableSet(b, { head: !b.head }))] : []),
+        ...(b.rows.length > 1 ? [el("div", { class: "sep" }), item({ glyph: SVG.trash, sm: true, label: "Delete row", bad: true },
+          () => tableDo([{ op: "row.delete", page: current, block: b.id, row: id }]))] : []));
+    });
+  }
+  function colMenu(b, id, rect) {
+    const j = b.cols.findIndex((c) => c.id === id);
+    if (j < 0) return;
+    popUp(rect, (pop) => {
+      pop.append(item({ glyph: "←", sm: true, label: "Insert left" }, () => addCols(b, 1, j ? b.cols[j - 1].id : "")),
+        item({ glyph: "→", sm: true, label: "Insert right" }, () => addCols(b, 1, id)),
+        item({ glyph: "A↓", sm: true, label: "Sort A → Z" }, () => sortBy(b, id, false)),
+        item({ glyph: "Z↓", sm: true, label: "Sort Z → A" }, () => sortBy(b, id, true)),
+        ...(j === 0 ? [item({ glyph: b.head_col ? SVG.check : "", sm: true, label: "Header column", note: b.head_col ? "On" : "Off" }, () => tableSet(b, { head_col: !b.head_col }))] : []),
+        ...(b.cols.length > 1 ? [el("div", { class: "sep" }), item({ glyph: SVG.trash, sm: true, label: "Delete column", bad: true },
+          () => tableDo([{ op: "col.delete", page: current, block: b.id, col: id }]))] : []));
+    });
+  }
+  // a line made a table from the / menu: in its place if it is empty, else after it; a line to type in after it
+  function putTable(b, tx) {
+    forget(b.id);
+    const p = page(), t = newTable(), into = empty(tx), at = into ? b.id : t.id;
+    const ops = into ? [{ op: "block.put", page: current, block: { ...t, id: b.id } }]
+      : [{ op: "block.put", page: current, block: { id: b.id, text: b.text } }, { op: "block.put", page: current, block: t, after: b.id }];
+    const next = p.blocks[p.blocks.indexOf(b) + 1];
+    if (!next || next.type !== "text" || plainOf(next.text)) ops.push({ op: "block.put", page: current, block: { id: rid(), type: "text", text: "", checked: false, indent: 0 }, after: at });
+    change(ops);
+    drawPage();
+    focusCell(blockOf(at), 0, 0, "start");
+  }
+
+  // -- the handles: shown at the cell the pointer is over; dragged (a row, a column, an edge, a + bar), or clicked
+  box.addEventListener("pointerover", (ev) => {
+    if (tdrag) return;
+    const td = ev.target.closest && ev.target.closest(".tbl td, .tbl th");
+    if (!td) return;
+    const wrap = td.closest(".tbl"), tr = td.parentElement, ch = wrap.querySelector(".tbl-ch"), rh = wrap.querySelector(".tbl-rh");
+    ch.style.left = `${td.offsetLeft + td.offsetWidth / 2}px`;
+    ch.dataset.col = td.firstChild.dataset.col;
+    rh.style.top = `${tr.offsetTop + tr.offsetHeight / 2}px`;
+    rh.dataset.row = tr.dataset.row;
+    wrap.classList.add("hover");
+  });
+  box.addEventListener("pointerout", (ev) => {
+    const wrap = ev.target.closest && ev.target.closest(".tbl");
+    if (wrap && !tdrag && !(ev.relatedTarget && wrap.contains(ev.relatedTarget))) wrap.classList.remove("hover");
+  });
+  let tdrag = null;                                        // {kind: row|col|size|addrow|addcol, n, b, id, h, x, y, moved, ...}
+  box.addEventListener("pointerdown", (ev) => {
+    const h = ev.target.closest && ev.target.closest(".tbl-h, .tbl-add, .tbl-rs");
+    if (!h || ev.button !== 0 || !page() || page().deleted) return;
+    ev.preventDefault();
+    const n = h.closest(".blk"), b = blockOf(n.dataset.id);
+    if (!b || b.type !== "table") return;
+    const kind = h.classList.contains("tbl-rs") ? "size" : h.classList.contains("tbl-ch") ? "col" : h.classList.contains("tbl-rh") ? "row"
+      : h.classList.contains("tbl-add-col") ? "addcol" : "addrow";
+    const id = kind === "row" ? h.dataset.row : h.dataset.col;
+    tdrag = { kind, n, b, id, h, x: ev.clientX, y: ev.clientY, moved: false, count: 1 };
+    if (kind === "size") {
+      const j = b.cols.findIndex((c) => c.id === id);
+      tdrag.w0 = parseFloat(n.querySelector("colgroup").children[j].style.width) || AUTO_MIN;
+      document.body.classList.add("tsizing");
+    }
+    h.classList.add("held");
+    h.setPointerCapture(ev.pointerId);
+  });
+  box.addEventListener("pointermove", (ev) => {
+    const d = tdrag;
+    if (!d) return;
+    const dx = ev.clientX - d.x, dy = ev.clientY - d.y;
+    if (!d.moved && Math.hypot(dx, dy) < 4) return;
+    d.moved = true;
+    if (d.kind === "size") {
+      d.w = Math.round(Math.max(COL_W[0], Math.min(COL_W[1], d.w0 + dx)));
+      return layoutTable(d.n, d.b, d.b.cols.map((c) => (c.id === d.id ? { ...c, w: d.w } : c)));
+    }
+    if (d.kind === "addrow" || d.kind === "addcol") {
+      d.count = Math.max(1, 1 + Math.floor(Math.max(0, d.kind === "addrow" ? dy : dx) / (d.kind === "addrow" ? 34 : 110)));
+      d.h.dataset.n = `+${d.count} ${d.kind === "addrow" ? (d.count === 1 ? "row" : "rows") : d.count === 1 ? "column" : "columns"}`;
+      return;
+    }
+    // a row or a column moved: where it would go, a line there
+    const body = d.n.querySelector("tbody"), inner = d.n.querySelector(".tbl-in");
+    const spots = d.kind === "row" ? [...body.rows].map((tr) => [tr.dataset.row, tr.getBoundingClientRect()])
+      : [...body.rows[0].cells].map((td) => [td.firstChild.dataset.col, td.getBoundingClientRect()]);
+    const rest = spots.filter(([id]) => id !== d.id), at = d.kind === "row" ? ev.clientY : ev.clientX;
+    let i = rest.findIndex(([, r]) => at < (d.kind === "row" ? r.top + r.height / 2 : r.left + r.width / 2));
+    if (i < 0) i = rest.length;
+    d.at = i;
+    const line = inner.querySelector(".tbl-drop") || inner.appendChild(el("div", { class: "tbl-drop" })), o = inner.getBoundingClientRect();
+    const edge = i < rest.length ? (d.kind === "row" ? rest[i][1].top : rest[i][1].left) : (d.kind === "row" ? rest[rest.length - 1][1].bottom : rest[rest.length - 1][1].right);
+    Object.assign(line.style, d.kind === "row" ? { left: "0", right: "0", width: "", height: "2px", top: `${edge - o.top - 1}px`, bottom: "" }
+      : { top: "0", bottom: "0", height: "", width: "2px", left: `${edge - o.left - 1}px`, right: "" });
+  });
+  const tdragEnd = (ev) => {
+    const d = tdrag;
+    if (!d) return;
+    tdrag = null;
+    d.h.classList.remove("held");
+    delete d.h.dataset.n;
+    document.body.classList.remove("tsizing");
+    const line = d.n.querySelector(".tbl-drop");
+    if (line) line.remove();
+    if (ev.type === "pointercancel") return drawPage();
+    const b = blockOf(d.b.id);
+    if (!b) return;
+    if (d.kind === "size") return d.moved ? tableDo([{ op: "col.put", page: current, block: b.id, col: { id: d.id, w: d.w } }]) : undefined;
+    if (d.kind === "addrow") return addRows(b, d.moved ? d.count : 1, b.rows[b.rows.length - 1].id, d.moved ? null : 0);
+    if (d.kind === "addcol") return addCols(b, d.moved ? d.count : 1, b.cols[b.cols.length - 1].id);
+    if (!d.moved) return (d.kind === "row" ? rowMenu : colMenu)(b, d.id, d.h.getBoundingClientRect());
+    const list = (d.kind === "row" ? b.rows : b.cols).filter((x) => x.id !== d.id), after = d.at > 0 ? list[d.at - 1].id : "";
+    const all = d.kind === "row" ? b.rows : b.cols, i = all.findIndex((x) => x.id === d.id);
+    if (after === (i > 0 ? all[i - 1].id : "")) return;
+    tableDo([{ op: `${d.kind}.move`, page: current, block: b.id, [d.kind]: d.id, after }]);
+  };
+  box.addEventListener("pointerup", tdragEnd);
+  box.addEventListener("pointercancel", tdragEnd);
+  box.addEventListener("dblclick", (ev) => {
+    const e = ev.target.closest && ev.target.closest(".tbl-rs"), b = e && blockOf(e.closest(".blk").dataset.id);
+    if (b && !page().deleted && b.cols.some((c) => c.id === e.dataset.col && c.w)) tableDo([{ op: "col.put", page: current, block: b.id, col: { id: e.dataset.col, w: null } }]);
+  });
+
+  // -- cells picked: dragged across, Shift+clicked, ⇧+arrows past a cell's edge
+  let cpick = null, csweep = null;                         // cpick: {id (the table's), r0, c0 (where it began), r1, c1}
+  const inCellPick = (id, i, j) => !!cpick && cpick.id === id && i >= Math.min(cpick.r0, cpick.r1) && i <= Math.max(cpick.r0, cpick.r1)
+    && j >= Math.min(cpick.c0, cpick.c1) && j <= Math.max(cpick.c0, cpick.c1);
+  function pickCells(b, r0, c0, r1, c1) {
+    const keep = (v, top) => Math.max(0, Math.min(top, v));
+    cpick = { id: b.id, r0: keep(r0, b.rows.length - 1), c0: keep(c0, b.cols.length - 1), r1: keep(r1, b.rows.length - 1), c1: keep(c1, b.cols.length - 1) };
+    drawCellPick();
+  }
+  function unpickCells() { if (cpick) { cpick = null; drawCellPick(); } }
+  function drawCellPick() {
+    for (const c of box.querySelectorAll(".tbl .cp")) c.classList.remove("cp");
+    for (const w of box.querySelectorAll(".tbl.cell-picking")) w.classList.remove("cell-picking");
+    const b = cpick && blockOf(cpick.id), n = cpick && rowOf(cpick.id);
+    if (!cpick) return;
+    if (!b || b.type !== "table" || !n) { cpick = null; return; }
+    if (cpick.r0 >= b.rows.length || cpick.r1 >= b.rows.length || cpick.c0 >= b.cols.length || cpick.c1 >= b.cols.length) return pickCells(b, cpick.r0, cpick.c0, cpick.r1, cpick.c1);
+    n.querySelector(".tbl").classList.add("cell-picking");
+    b.rows.forEach((r, i) => b.cols.forEach((c, j) => { if (inCellPick(b.id, i, j)) { const e = cellEl(b.id, r.id, c.id); if (e) e.parentElement.classList.add("cp"); } }));
+  }
+  function pickedCells() {
+    const b = cpick && blockOf(cpick.id);
+    if (!b) return null;
+    const rows = b.rows.slice(Math.min(cpick.r0, cpick.r1), Math.max(cpick.r0, cpick.r1) + 1);
+    const cols = b.cols.slice(Math.min(cpick.c0, cpick.c1), Math.max(cpick.c0, cpick.c1) + 1);
+    return { b, rows, cols };
+  }
+  box.addEventListener("pointerdown", (ev) => {
+    const cell = ev.target.closest && ev.target.closest(".tbl .cell");
+    if (!cell || ev.button !== 0) return;
+    const at = cellOf(cell);
+    if (!at) return;
+    if (ev.shiftKey) {                                     // from the cell typed in (or those picked) to this one
+      const f = document.activeElement, from = cpick && cpick.id === at.b.id ? { ri: cpick.r0, ci: cpick.c0 }
+        : f && f.classList && f.classList.contains("cell") ? cellOf(f) : null;
+      if (from && (!from.b || from.b.id === at.b.id) && (from.ri !== at.ri || from.ci !== at.ci)) {
+        eatMouse = true;
+        pickCells(at.b, from.ri, from.ci, at.ri, at.ci);
+        return holdKeys();
+      }
+    }
+    unpickCells();
+    csweep = { id: at.b.id, ri: at.ri, ci: at.ci, on: false };
+  });
+  document.addEventListener("pointermove", (ev) => {
+    if (!csweep) return;
+    const e = document.elementFromPoint(ev.clientX, ev.clientY), td = e && e.closest && e.closest(".tbl td, .tbl th");
+    const at = td && cellOf(td.firstChild);
+    if (!at || at.b.id !== csweep.id || (!csweep.on && at.ri === csweep.ri && at.ci === csweep.ci)) return;
+    if (!csweep.on) { csweep.on = true; if (document.activeElement && document.activeElement.classList.contains("cell")) document.activeElement.blur(); }
+    getSelection().removeAllRanges();
+    pickCells(at.b, csweep.ri, csweep.ci, at.ri, at.ci);
+  });
+  document.addEventListener("pointerup", () => { const s = csweep; csweep = null; if (s && s.on && cpick) holdKeys(); });
+  document.addEventListener("pointerdown", (ev) => {        // a click anywhere else puts the cells down
+    if (cpick && !(ev.target.closest && ev.target.closest(".pop, .tbl.cell-picking td, .tbl.cell-picking th"))) unpickCells();
+  }, true);
+  document.addEventListener("keydown", (ev) => {
+    if (!cpick || ev.defaultPrevented || ev.isComposing || inField(ev.target) || menu) return;
+    const b = blockOf(cpick.id), mod = ev.metaKey || ev.ctrlKey, k = ev.key;
+    if (!b) return unpickCells();
+    if (k === "Escape") { ev.preventDefault(); return unpickCells(); }
+    if (mod && !ev.shiftKey && k.toLowerCase() === "a") { ev.preventDefault(); return pickCells(b, 0, 0, b.rows.length - 1, b.cols.length - 1); }
+    const dir = DIRS[k];
+    if (dir && ev.shiftKey && !mod) { ev.preventDefault(); return pickCells(b, cpick.r0, cpick.c0, cpick.r1 + dir[0], cpick.c1 + dir[1]); }
+    if ((dir || k === "Enter" || k === "Tab") && !mod) {
+      ev.preventDefault();
+      const r = cpick.r1, c = cpick.c1;
+      unpickCells();
+      return focusCell(b, r, c);
+    }
+    if ((k === "Backspace" || k === "Delete") && !page().deleted) { ev.preventDefault(); return emptyCells(); }
+  });
+  function emptyCells() {
+    const got = pickedCells();
+    if (!got) return;
+    tableDo(got.rows.flatMap((r) => got.cols.filter((c) => r.cells[c.id]).map((c) => cellOp(current, got.b.id, r.id, c.id, ""))));
+    drawCellPick();
+  }
+  function clipCells(dt) {
+    const got = pickedCells();
+    if (!got) return;
+    const grid = gridOf(got.b, got.rows, got.cols);
+    dt.setData("text/plain", grid.map((r) => r.map((h) => plainOf(h).replace(/\s*\n\s*/g, " ")).join("\t")).join("\n"));
+    const t = tableOf(grid);
+    t.head = !!got.b.head && got.rows[0] === got.b.rows[0];
+    dt.setData(CLIP, JSON.stringify([clipped(t)]));
+  }
+  const pickedHere = () => !!cpick && !inField(document.activeElement);
+  document.addEventListener("copy", (ev) => { if (pickedHere()) { ev.preventDefault(); clipCells(ev.clipboardData); } });
+  document.addEventListener("cut", (ev) => { if (pickedHere()) { ev.preventDefault(); clipCells(ev.clipboardData); if (!page().deleted) emptyCells(); } });
+  document.addEventListener("paste", (ev) => {
+    if (!pickedHere() || page().deleted) return;
+    ev.preventDefault();
+    const got = pickedCells(), grid = gridIn(ev.clipboardData);
+    if (got && grid) fillCells(got.b, got.b.rows.indexOf(got.rows[0]), got.b.cols.indexOf(got.cols[0]), grid);
+  });
+  // cells on the clipboard: a table copied from these notes, else a spreadsheet's (tab-separated); else null
+  function gridIn(dt) {
+    const ours = clipBlocks(dt), t = ours && ours.length === 1 && ours[0].type === "table" ? ours[0] : null;
+    return t ? gridOf(t) : tsv((dt.getData("text/plain") || "").replace(/\r\n?/g, "\n"));
+  }
+  // cells put in from one (ri, ci), down and to the right: rows and columns added as they need, the cells picked after
+  function fillCells(b, ri, ci, grid) {
+    const width = Math.max(...grid.map((r) => r.length)), needR = Math.max(0, ri + grid.length - b.rows.length), needC = Math.max(0, ci + width - b.cols.length);
+    if (b.rows.length + needR > MAX_ROWS || b.cols.length + needC > MAX_COLS) return say(`A table has ${MAX_ROWS} rows and ${MAX_COLS} columns at most`, true);
+    const ops = [], rows = b.rows.map((r) => r.id), cols = b.cols.map((c) => c.id);
+    holdKeys();                                            // (out of the cell typed in: drawn with what is pasted)
+    for (let k = 0; k < needC; k++) { const id = rid(); ops.push({ op: "col.put", page: current, block: b.id, col: { id }, after: cols[cols.length - 1] }); cols.push(id); }
+    for (let k = 0; k < needR; k++) { const id = rid(); ops.push({ op: "row.put", page: current, block: b.id, row: { id, cells: {} }, after: rows[rows.length - 1] }); rows.push(id); }
+    grid.forEach((r, i) => r.forEach((h, j) => { const row = rows[ri + i], col = cols[ci + j]; if (cellText(b, row, col) !== h) ops.push(cellOp(current, b.id, row, col, h)); }));
+    tableDo(ops);
+    pickCells(blockOf(b.id), ri, ci, ri + grid.length - 1, ci + width - 1);
+  }
+  async function cellPaste(ev, cell) {
+    ev.preventDefault();
+    const at = cellOf(cell), grid = gridIn(ev.clipboardData), text = (ev.clipboardData.getData("text/plain") || "").replace(/\r\n?/g, "\n");
+    if (!at || page().deleted) return;
+    if (grid) return fillCells(at.b, at.ri, at.ci, grid);
+    if (text) document.execCommand("insertHTML", false, esc(text.replace(/\n+$/, "")).replace(/\n/g, "<br>"));
   }
 
   // ---------------------------------------------------------------- pictures
@@ -2898,13 +3510,16 @@ and what agents see of it. The words under either are its caption. */
     pump();
     const p = page();
     if (!p) return;
-    const bs = sendable(p.blocks.filter((b) => ids.includes(b.id)));
-    if (bs.length < 2) return bs.length ? sendBlock(bs[0].id, who, extra) : say("Write what to ask first, then send it.", true);
+    const all = p.blocks.filter((b) => ids.includes(b.id)), bs = sendable(all), tables = all.filter((b) => b.type === "table");
+    if (bs.length < 2) {                                   // (a table picked with one line: it goes along, with what the user added)
+      const more = [...tables.map((t) => tableMd(t).join("\n")), extra.trim()].filter(Boolean).join("\n\n");
+      return bs.length ? sendBlock(bs[0].id, who, more) : say("Write what to ask first, then send it.", true);
+    }
     const report = store.get("report", true);
     extra = extra.trim();
-    const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, blocks ${bs.map((b) => b.id).join(", ")}: the lines below, in that order.${alsoWith(bs, who)}`
+    const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, blocks ${bs.map((b) => b.id).join(", ")}: the lines below, in that order${tables.length ? ", the tables among them there to read" : ""}.${alsoWith(bs, who)}`
       + `${report ? " When you're done, report back on each with notes_report, in one to three lines." : ""})`
-      + `\n\n${mdLines(bs).join("\n")}${extra ? `\n\n${extra}` : ""}`;
+      + `\n\n${mdLines(all.filter((b) => bs.includes(b) || b.type === "table")).join("\n")}${extra ? `\n\n${extra}` : ""}`;
     for (const b of bs) { outgoing.add(b.id); if (b !== bs[bs.length - 1]) quiet.add(b.id); }
     drawPage();
     try {
