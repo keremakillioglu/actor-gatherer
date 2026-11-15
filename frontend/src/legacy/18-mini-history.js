@@ -54,8 +54,10 @@ function miniHistory({ info, running }) {
   } else {
     const reply = lastSaid(t), stopped = t.stopped || (cur && cur.state === "stopped" ? cur.stopped : null);
     const mark = ME_MARKS[statusOf(info)[0]] || null;   // stopped on an error: its mark
-    if (reply && !stopped) rows.push(miniRow("now reply", meIcon(info, mark, null), plainLine(reply), agoOf(t.end || t.at)));
-    else rows.push(miniRow("now quiet", meIcon(info, mark, "■"),
+    const rest = miniRest({ info, running });           // else, done as Chat shows it: its check
+    const icon = (alt) => rest ? meDone(info, rest) : meIcon(info, mark, alt);
+    if (reply && !stopped) rows.push(miniRow("now reply", icon(null), plainLine(reply), agoOf(t.end || t.at)));
+    else rows.push(miniRow("now quiet", icon("■"),
       stopped ? stoppedWords(stopped) : t.calls ? `Done · ${plural(t.calls, "command")}` : "Done", agoOf(t.end || t.at)));
   }
   miniCard.drawn(info, rows);
@@ -67,6 +69,20 @@ function miniHistory({ info, running }) {
 const meIcon = (info, mark, alt) => {
   const src = bareAvatar(info);
   return el("span", { class: "ic" + (src ? " me" : "") }, src ? el("img", { src, alt: "", draggable: "false" }) : alt, src ? meMark(mark) : null);
+};
+// The latest turn, if it is over as Chat shows it -- its actor done under it (features/chat/Turns.tsx's `done`) -- and the
+// actor not stopped on an error nor asking the reader (their marks instead); else null.
+function miniRest({ info, running }) {
+  const turns = miniTurns(info), v = chatViewOf(info), cur = v ? v.current : null, t = turns.length ? turns[turns.length - 1] : null;
+  if (!t || running || viewAtWork(info) || (v && v.opening) || mySends().length || ME_MARKS[statusOf(info)[0]]) return null;
+  return !cur || cur.state === "done" || cur.state === "stopped" ? t : null;
+}
+// The actor's icon, turn `t` over: Chat's done avatar (01-helpers.js's atRest), small and still, a green check at its
+// corner -- grown in if the page saw the turn end; no avatar, the check alone.
+const meDone = (info, t, cls = "ic") => {
+  const src = bareAvatar(info);
+  return el("span", { class: `${cls}${src ? " me" : ""} at-rest`, style: restDelay(info, t.row_id) },
+    src ? el("img", { src, alt: "", draggable: "false" }) : null, el("span", { class: "mk ok" }, doneCheck()));
 };
 const agoOf = (t) => t ? el("span", { "data-ago": t, text: ago(t) }) : null;
 const stoppedWords = (s) => s.kind === "interrupted" ? "Interrupted" : s.text ? `Stopped: ${firstLine(s.text, 120)}` : "Stopped";
@@ -200,6 +216,8 @@ const miniCard = (() => {
     if (cur && cur.state === "asking") body.append(el("div", { class: "mh-now ask" }, el("span", { class: "mk ask", text: "?" }), "Waiting for you: its question is over the message box"));
     else if (live) body.append(el("div", { class: "mh-now" }, src ? buddy(a, !!a.failing) : el("span", { class: "spin" }),
       cur && cur.failing ? "Retrying…" : ((cur && cur.doing) || (t && t.now) || {}).kind === "thinking" ? "Thinking…" : "Working…"));
+    else { const rest = miniRest({ info: a, running: false });   // its turn over: the actor done under it, as in Chat
+      if (rest) body.append(el("div", { class: "mh-now rested", title: `Done · ${ago(rest.end || rest.at)}` }, meDone(a, rest, "mh-me"))); }
     const foot = el("div", { class: "mh-foot" }, el("span", {}, el("kbd", { text: "Click" }), " a message: the chat there"),
       el("span", {}, el("kbd", { text: "⌘" }), " with its commands"), el("span", {}, el("kbd", { text: "Esc" }), " close"));
     const ink = HUE_INK[a.avatar_hue];
