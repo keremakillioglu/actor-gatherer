@@ -75,6 +75,32 @@ test("a minimized pane shows its last message and reply; hovered, the whole conv
   await expect(page.locator("#main .fl-turn.on")).toContainText("Implement the plan.");
 });
 
+test("a minimized pane's card, opened again for the same line, keeps its place: the pointer back on the line from the card", async ({
+  page,
+}) => {
+  await open(page);
+  const codex = page.locator("#agents button.agent", { hasText: CODEX });
+  await codex.click();
+  await addNotepad(page, codex);
+  await expect(notes(page)).toHaveCount(1);
+  await minimize(page).click();
+  const line = page.locator("#main > .chat.mini .mini-hist .mh-row").nth(1);
+  await expect(line).toContainText("done");
+  await page.mouse.move(700, 300);
+  await line.hover();
+  const card = page.locator(".mh-card");
+  await expect(card).toBeVisible();
+  const body = card.locator(".mh-body");
+  const left = () => body.evaluate((b) => b.scrollHeight - b.scrollTop - b.clientHeight);
+  await expect.poll(left).toBeLessThan(8); // opened at its end
+  const c = await box(card);
+  await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2, { steps: 4 }); // into the card...
+  await line.hover(); // ...and back onto its line: the card opened again for it
+  await page.waitForTimeout(400);
+  await expect(card).toBeVisible();
+  expect(await left()).toBeLessThan(8); // still at its end, not at its top
+});
+
 test("a pane in a frame, minimized: its card over the page around it; an earlier turn opened, its commands fetched", async ({
   page,
 }) => {
