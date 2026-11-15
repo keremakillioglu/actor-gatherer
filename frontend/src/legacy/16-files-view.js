@@ -210,7 +210,7 @@ function barActs() {
     act("Details", "Details: what ag saw and did for this actor, and the history's other views", strokeIcon(ICONS.panel, 14),
       () => setDetails(!state.details), !!state.details),
     canMinimize() ? act("Minimize the chat", MIN_TIP, strokeIcon(ICONS.minimize, 14), () => setChatMin(true)) : null,
-    act("Close this pane", "Close this pane", "×", () => $("pane-close").click(), null, "close"));
+    act("Close this pane", $("pane-close").title, "×", () => $("pane-close").click(), null, "close"));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {

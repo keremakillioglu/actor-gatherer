@@ -15,13 +15,14 @@
 .pane > iframe { flex: 1 1 auto; display: block; width: 100%; min-height: 0; border: 0; background: var(--surface); }
 /* A pane's top: its head, in the page's top row, as tall as the row (--top-h: the tallest of the page's name and
    the heads), so the rule under the row runs straight across. Alone, the head is one line: the actor's controls,
-   at the right, as a header's; split, each pane's says whose it is and has its ×: who, the view's switch and Details,
+   at the right, as a header's, and its × (07-panes.js's closeHerePane: the pane out of sight, what else is shown taking
+   its room); split, each pane's says whose it is too: who, the view's switch and Details,
    the ×, and the view's own tools (filters, switches) on a line under them -- a narrow pane's, who and the × on a
    line, the switch and Details under them, then the tools */
 .pane-top { flex: none; display: flex; flex-direction: column; justify-content: center; min-height: var(--top-h, 0px); background: var(--surface);
   border-bottom: 1px solid var(--ring); }
 .pane-head { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 6px 12px 6px 16px; }
-.pane-who, .pane-close { display: none; }
+.pane-who { display: none; }
 :is(.panes.split, :root.pane-mode .panes) .pane-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto;
   grid-template-areas: "who views details close" "tools tools tools tools"; column-gap: 8px; padding: 6px 6px 6px 12px; }
 :is(.panes.split, :root.pane-mode .panes) :is(.pane-who, .pane-close) { display: flex; }
@@ -44,6 +45,10 @@
 :is(.panes.split, :root.pane-mode .panes) .views button { padding: 3px 8px; }
 .pane-close { flex: none; border: 0; background: none; font-size: 18px; line-height: 1; padding: 5px 7px; color: var(--muted); }
 .pane-close:hover { color: var(--ink); background: var(--wash); }
+.pane-close[hidden] { display: none; }
+/* a phone's width, the pane alone: nothing else placed to show in its place -- its × (the head's, its Chat bar's, its
+   minimized box's) not offered */
+@media (max-width: 760px) { :root:not(.pane-mode) .panes:not(.split) :is(.pane-close, .fl-act.close, .mini-x) { display: none; } }
 /* in a frame, the page is one pane: no header or list of its own, and never the phone's page-long layout, however narrow */
 :root.pane-mode .side { display: none; }
 :root.pane-mode body { height: 100vh; display: flex; }

@@ -71,21 +71,23 @@ let taskNow = null;                                  // the task last entered: w
 // it was, an actor's pane or an app's panel closed in it staying closed; where each goes, and how wide or tall, its
 // arrangement (features/layout/work.ts; made, the first time, from the widths and height an older page kept here). A
 // task never left yet opens as a task does at first: its actors not closed side by side, its apps above, the chat not
-// minimized.
+// minimized. This page's own pane closed by its × (closeHerePane) is not among its actors' panes: its actor, `shut`, is
+// the one it opens with out of sight if none of the others was open (openTask).
 const TASK_LAYOUTS_KEY = "ag-dashboard-task-layouts-2", TASK_LAYOUTS_KEPT = 200;   // -2: none kept of a task never laid out
 const taskLayouts = (() => { try { return JSON.parse(localStorage.getItem(TASK_LAYOUTS_KEY)) || {}; } catch (e) { return {}; } })();
 function rememberTask(key) {
   if (!key) return;
   const sel = focusedActor(), [g] = key.split("\u0000"), its = (pg, c) => pg === g && taskKey(pg, c) === key;
-  const actors = openActors().filter(([pg, c]) => its(pg, c)).map(([, c]) => c);
+  const shut = isShut() && its(...state.selected) ? state.selected[1] : null;
+  const actors = openActors().filter(([pg, c]) => its(pg, c) && c !== shut).map(([, c]) => c);
   const views = {};                                  // each of its actors' panes: the view it shows
   if (state.selected && its(...state.selected)) views[state.selected[1]] = chatView().id;
   for (const p of actorPanes()) if (its(p.g, p.c) && p.view) views[p.c] = p.view;
   const apps = panes.apps.filter((p) => !p.held && p.g === g && appPaneTask(p) === key).map((p) => ({ app: p.app.name, id: p.instance.id }));
   const chosen = appSelected(), focusApp = chosen && apps.some((a) => a.id === chosen) ? chosen : null;   // an app selected in it
-  const mine = !appsOnly && sel && taskKey(sel[0], sel[1]) === key;
+  const mine = !appsOnly && sel && sel[1] !== shut && taskKey(sel[0], sel[1]) === key;
   taskLayouts[key] = { actors: appsOnly ? [] : actors, focus: mine ? sel[1] : appsOnly ? null : actors[0] || null, focusApp, apps,
-    views: appsOnly ? {} : views, at: Date.now() };
+    views: appsOnly ? {} : views, shut: appsOnly ? null : shut, at: Date.now() };
   const keys = Object.keys(taskLayouts).sort((x, y) => taskLayouts[y].at - taskLayouts[x].at);
   for (const k of keys.slice(TASK_LAYOUTS_KEPT)) delete taskLayouts[k];
   try { localStorage.setItem(TASK_LAYOUTS_KEY, JSON.stringify(taskLayouts)); } catch (e) { /* this page only */ }
@@ -112,8 +114,8 @@ function enterTask(g, c) {
     // shown by chance (the page opened on it), never laid out in this page: laid out now, adding to what is open
   } else {
     // one never laid out here (its apps never opened) is not remembered, nor one out of sight (an empty tab's, kept as it
-    // was when that tab was left)
-    if (tasksLaidOut.has(from) && !isAway()) rememberTask(from);
+    // was when that tab was left) -- but one whose actor's pane the reader closed is (its apps shown still, or not)
+    if (tasksLaidOut.has(from) && (!isAway() || isShut())) rememberTask(from);
     setAppsOnly(null);
     for (const p of [...actorPanes()]) if (!isShell(p.c) && taskKey(p.g, p.c) !== to) closePane(p);
     if (state.selected && taskKey(...state.selected) !== to) focusPane(panes.here);   // the new task's actor: in this page's pane
@@ -132,7 +134,7 @@ function enterAppTask(g, k) {
   if (PANE || SNAPSHOT) return;
   const sel = focusedActor(), from = appsOnly || (sel && taskKey(sel[0], sel[1]));
   if (from === k) return;
-  if (from && tasksLaidOut.has(from) && !isAway()) rememberTask(from);
+  if (from && tasksLaidOut.has(from) && (!isAway() || isShut())) rememberTask(from);
   taskNow = k;
   for (const p of [...actorPanes()]) if (!isShell(p.c)) closePane(p);
   for (const p of [...panes.apps]) if (!p.held && appPaneTask(p) !== k) closeAppPane(p);
@@ -181,6 +183,7 @@ async function openTaskBeside(g, key, first) {
 // actor not shown, though selected), in sight again with `c` in it -- the apps kept, beside
 async function outOfAppsOnly(g, c) {
   if (!appsOnly || !c || PANE) return;
+  if (isAt(hereAway, g, c)) backInSight();
   setAppsOnly(null);
   focusPane(panes.here);
   if (!isAt(state.selected, g, c)) await showIn(g, c, null);
@@ -225,9 +228,11 @@ async function openTaskApps(g, c, to, only = null, beside = false) {
 // The actor in the pane in focus -- in `view`, if given; one open already, its pane focused instead. Of another task than
 // the one shown: the panels changed for it first (enterTask), and the rest of its task laid out beside it, its pane in
 // focus, as soon as it is in its pane -- not once what it shows (its Chat) has loaded: a click meanwhile (an app
-// selected, another pane) would lose its focus to it. `wait` false: done then, its Chat loading still.
-async function show(g, c, view = null, wait = true) {
-  if (isAt(hereAway, g, c)) backInSight();          // asked for: in sight again (and in its task's tab shown)
+// selected, another pane) would lose its focus to it. `wait` false: done then, its Chat loading still. `shut`: its pane
+// closed by the reader when its task was left (rememberTask), shown out of sight, as it was, the task's apps beside.
+async function show(g, c, view = null, wait = true, shut = false) {
+  if (shut) putAway([g, c], true);                   // (out of sight once it is the one in this page's pane)
+  else if (isAt(hereAway, g, c)) backInSight();     // asked for: in sight again (and in its task's tab shown)
   const entered = enterTask(g, c);
   const shown = await showIn(g, c, view || (entered && entered.view) || null, false);
   if (entered) entered.after();
@@ -305,6 +310,23 @@ async function closeHere(next = actorPanes()[0]) {
   layout();
   await select(next.g, next.c);
 }
+// This page's own pane closed by its × -- its head's, its Chat bar's, its minimized box's -- as an app's panel's × closes
+// it: out of its task's tab shown (workClosed); the next pane's actor moved into it, or, none, it out of sight (away) and
+// what else is shown taking its room (nothing: the tab's new-tab page) -- an app of its task selected. Its actor, or
+// terminal, goes on; a click on it in the list shows it again. Its task remembered so (rememberTask's `shut`): left and
+// opened again, its apps alone. At a phone's width, none placed, there is nothing to show instead: it stays.
+async function closeHerePane() {
+  if (!state.selected || isAway()) return;
+  if (actorPanes().length) { workClosed(panes.here.node); return closeHere(); }
+  if (NARROW.matches) return;
+  workClosed(panes.here.node);
+  const k = taskKey(...state.selected);
+  putAway(state.selected, true);
+  const app = panes.apps.find((q) => !q.held && appPaneTask(q) === k) || panes.apps.find((q) => !q.held);
+  if (app) selectAppPane(app);
+  if (k && tasksLaidOut.has(k)) rememberTask(k);
+  placeWork(); renderAgents();
+}
 // An actor's pane focused: the app selected, if one was, no longer (selectAppPane)
 function focusPane(p) {
   if (!p) return;
@@ -372,10 +394,14 @@ let workPlacer = null;
 // there are: a block of its own, kept nowhere) and its item there.
 // This page's own pane AWAY: its actor not in its task's tab shown (none of the tab's to show in it instead: TASK TABS),
 // out of sight till it shows another, or the reader asks for that one (show).
-let hereAway = null;
+// CLOSED by the reader (its ×: closeHerePane), and not by a tab that leaves it out: its task, left and opened again, shows
+// what else of it was shown, without it (rememberTask's `shut`)
+let hereAway = null, hereClosed = false;
+function putAway(sel, closed = false) { hereAway = sel; hereClosed = closed; }
 // this page's own pane in sight again: its actor looked at now (04-seen.js), the list and the tabs' marks drawn so
-function backInSight() { hereAway = null; markSeen(); if (state.home) renderAgents(); }
+function backInSight() { hereAway = null; hereClosed = false; markSeen(); if (state.home) renderAgents(); }
 const isAway = () => !!hereAway && isAt(state.selected, hereAway[0], hereAway[1]);
+const isShut = () => hereClosed && isAway();
 // No actor to show in it at all (none yet), the home come: out of sight too -- the tab, showing nothing, shows its
 // new-tab page (07-new-tab.js), not this pane's "No actors yet".
 function shownPanels() {
@@ -511,11 +537,11 @@ async function closeTaskHere(k) {
   for (const p of [...panes.apps]) if (!p.held && appPaneTask(p) === k) closeAppPane(p);
   for (const p of [...actorPanes()]) if (mine(p.g, p.c)) closePane(p);
   if (appsOnly === k) {                              // apps alone: the actors' panes out of sight still
-    if (state.selected) hereAway = state.selected;
+    if (state.selected) putAway(state.selected);
     setAppsOnly(null);
   } else if (state.selected && !isAway() && mine(...state.selected)) {
     if (actorPanes().length) await closeHere();
-    else hereAway = state.selected;
+    else putAway(state.selected);
   }
   if (taskNow === k) taskNow = null;
   const next = shownPanels().map((s) => s.key).find((x) => x && x !== k);
@@ -528,7 +554,7 @@ async function clearWork() {
   for (const p of [...panes.apps]) if (!p.held) closeAppPane(p);
   for (const p of [...actorPanes()]) if (!isShell(p.c)) closePane(p);
   setAppsOnly(null);
-  if (state.selected && !isShell(state.selected[1])) hereAway = state.selected;
+  if (state.selected && !isShell(state.selected[1])) putAway(state.selected);
   taskNow = null;
   placeWork(); renderAgents();
 }
@@ -599,7 +625,7 @@ async function showTaskItems(k, items) {
     const next = actors.find((c) => !open(c));
     if (next) { focusPane(panes.here); await showIn(g, next, views[next] || null); }
     else if (actorPanes().length) await closeHere();
-    else hereAway = state.selected;                  // none to show in it: away while this tab shows
+    else putAway(state.selected);                    // none to show in it: away while this tab shows
   } else if (isAway() && want.has(state.selected[1])) backInSight();
   for (const c of actors) if (!open(c) && allPanes().length < MAX_PANES) openBeside(g, c, views[c] || null);
   const apps = items.filter(isAppItem).map((it) => appInfo(g, it.slice(APP_ITEM.length))).filter(Boolean)

@@ -22,7 +22,7 @@ test("a task opened again has its chat minimized under its apps as it was left, 
   await claude.click(); // back: as it was left, its chat minimized under Notepad
   await expect(notes).toHaveCount(1);
   await expect(mini).toHaveCount(1);
-  await page.locator("#main .mini-back").click(); // its chat shown again
+  await page.locator("#main .chat.mini .mh-row.now").click(); // its agent's line pressed: its chat shown again
   await expect(mini).toHaveCount(0);
   await codex.click();
   await claude.click(); // back: as it was left, its chat whole

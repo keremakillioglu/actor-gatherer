@@ -12,7 +12,8 @@ function renderMain() {
     return;
   }
   const x = document.getElementById("pane-close"), shell = isShell(state.selected[1]);
-  x.title = shell ? "Close this pane: the terminal runs on, under its gatherer (Terminate ends it)" : "Close this pane";
+  x.title = shell ? "Close this pane: the terminal runs on, under its gatherer (Terminate ends it)"
+    : "Close this pane (the actor stays open: click it in the list to show it again)";
   x.setAttribute("aria-label", x.title);
   if (shell) { patch(main, [chatMin() ? shellMini(state.selected[1]) : shellCard(state.selected[1])]); fitMini(); return; }
   const info = selectedInfo() || {};

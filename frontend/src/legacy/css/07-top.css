@@ -10,48 +10,49 @@
    (features/layout/) -- and no head of its own */
 .pane:has(> main > .chat.mini) > .pane-top { display: none; }
 main:has(> .chat.mini) { align-items: flex-end; }
-/* a pane minimized: what the agent asks the reader, if it does, over the message box; the way back at its left, the actor's
-   status at its right */
-.chat.mini { flex: 1 1 auto; min-height: 48px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
-  grid-template-areas: "note note note" "back box st" ". err st"; }
+/* a pane minimized: what the agent asks the reader, if it does, over the message box; a terminal's way back at its left, its
+   pane's × at the far right (18-top.js's miniClose) -- and between, an actor's last lines, its avatar on its own, or (none
+   shown) its avatar alone, the way back (miniMe) */
+.chat.mini { flex: 1 1 auto; min-height: 48px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center;
+  grid-template-areas: "note note note note" "back box me x" ". err me x"; }
 .chat.mini > * { grid-area: note; }
 .chat.mini > .mini-back { grid-area: back; }
 .chat.mini > :is(.composer, .readonly, .mini-sh) { grid-area: box; }
 .chat.mini > .err { grid-area: err; padding: 0 8px 6px 0; }
-.chat.mini > .mini-st { grid-area: st; }
-/* with the conversation's last lines right of the box (18-mini-history.js): the box two parts, the lines three; a pane too
-   narrow for them, none */
-.chat.mini:has(> .mini-hist) { grid-template-columns: auto minmax(150px, 2fr) minmax(0, 3fr) auto;
-  grid-template-areas: "note note note note" "back box hist st" ". err err st"; }
+.chat.mini > .mini-me { grid-area: me; }
+.chat.mini > .mini-x { grid-area: x; align-self: start; }   /* in the box's top right corner, as an app's × in its panel's */
+/* with the conversation's last lines right of the box (18-mini-history.js): the box two parts, the lines three, the avatar
+   alone not shown; a pane too narrow for them, none, and the avatar alone again */
+.chat.mini:has(> .mini-hist) { grid-template-columns: auto minmax(150px, 2fr) minmax(0, 3fr) auto auto;
+  grid-template-areas: "note note note note note" "back box hist me x" ". err err me x"; }
 .chat.mini > .mini-hist { grid-area: hist; }
+.chat.mini:has(> .mini-hist) > .mini-me { display: none; }
 @container pane (max-width: 420px) {
   .chat.mini > .mini-hist { display: none; }
-  .chat.mini:has(> .mini-hist) { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "note note note" "back box st" ". err st"; }
+  .chat.mini:has(> .mini-hist) { grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "note note note note" "back box me x" ". err me x"; }
+  .chat.mini:has(> .mini-hist) > .mini-me { display: inline-flex; }
 }
 .chat.mini .composer, .chat.mini .readonly { border-top: 0; padding: 8px 8px 8px 0; }
+.chat.mini:not(:has(> .mini-back)) > :is(.composer, .readonly) { padding-left: 10px; }   /* no way back before it: off the edge */
 .chat.mini .asking-note { max-height: 360px; }      /* not in vh: a frame is as tall as its pane (fitMini) */
 .mini-back { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin: 0 4px 0 8px; padding: 0;
   border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
 .mini-back:hover, .mini-back:focus-visible { background: var(--wash); color: var(--ink); }
-.mini-st { align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 56px;
-  margin: 0; padding: 4px 10px 5px; border: 0; border-left: 1px solid var(--grid); border-radius: 0; background: none; cursor: pointer;
-  font: 10.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
-.mini-st:hover, .mini-st:focus-visible { background: var(--wash); }
-.mini-st .pic { display: flex; align-items: center; justify-content: center; height: 26px; }
-.mini-st .spin::before { content: "✻"; display: inline-block; color: var(--term-accent); font-size: 16px; animation: term-spin 1.2s steps(1) infinite; }
-.mini-st .still { position: relative; display: inline-flex; }
-.mini-st .still img { width: 24px; height: 24px; display: block; filter: drop-shadow(0 0 .6px var(--buddy-edge, rgba(0, 0, 0, .45))); }
-.mini-st .mk { position: absolute; right: -4px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; display: grid; place-items: center;
-  box-shadow: 0 0 0 1.5px var(--surface); color: #fff; font: 700 9px/1 system-ui, sans-serif; }
-.mini-st .mk.ask { background: var(--warning); }
-.mini-st .mk.err { background: var(--critical); }
-.mini-st .mk.bg { right: -2px; bottom: 0; width: 8px; height: 8px; background: var(--good); }
-.mini-st .n { display: flex; align-items: center; gap: 5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.mini-st .n:empty { display: none; }
-.mini-st .c { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2); }
-.mini-st .c.err { color: var(--critical); }
-.mini-st .chg-a { color: var(--term-ok); }
-.mini-st .chg-r { color: var(--term-err); }
+.mini-x { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin: 4px 4px 0 0; padding: 0;
+  border: 0; border-radius: 5px; background: none; color: var(--muted); font: inherit; font-size: 17px; line-height: 1; cursor: pointer; }
+.mini-x:hover, .mini-x:focus-visible { background: var(--wash); color: var(--ink); }
+/* the actor's avatar, still, alone (18-top.js's miniMe): pressed, the chat shown again */
+.mini-me { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin: 0 2px 0 0;
+  padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+.mini-me:hover, .mini-me:focus-visible { background: var(--wash); color: var(--ink); }
+.mini-me > img { width: 20px; height: 20px; display: block; }
+/* a mark at the corner of the avatar (18-top.js's meMark): asking the reader, stopped on an error */
+:is(.mini-me, .mh-row .ic.me) > .mk { position: absolute; right: -3px; bottom: -2px; width: 10px; height: 10px; border-radius: 50%;
+  display: grid; place-items: center; box-shadow: 0 0 0 1.5px var(--surface); color: #fff; font: 700 7.5px/1 system-ui, sans-serif; }
+.mini-me > .mk { right: 1px; bottom: 2px; }
+:is(.mini-me, .mh-row .ic.me) > .mk.ask { background: var(--warning); }
+:is(.mini-me, .mh-row .ic.me) > .mk.err { background: var(--critical); }
 .mini-sh { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 10px 8px 10px 0; color: var(--ink-2); font-size: 12.5px; }
 .mini-sh > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A task of apps only shown (07-panes.js's appsOnly): its apps' panels take the room, the actors' panes out of sight */
@@ -68,20 +69,22 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .mh-row:hover, .mh-row.hot { background: var(--wash); color: var(--ink); }
 .mh-row:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
 .mh-row .ic { width: 16px; height: 16px; display: grid; place-items: center; color: var(--muted); font-size: 13px; font-weight: 700; }
+.mh-row .ic.me { position: relative; }
 .mh-row .ic img { width: 15px; height: 15px; display: block; }
 .mh-row .ic .spin::before { content: "✻"; display: inline-block; color: var(--term-accent); font-size: 12px; animation: term-spin 1.2s steps(1) infinite; }
 .mh-row .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mh-row .tx .cmdline { font-size: 12px; }
+.mh-row .tx > .dotc { margin-right: 6px; vertical-align: 1px; }   /* a call's: before it, the avatar at the line's start */
 .mh-row .meta { font-size: 11px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mh-row .sub { color: var(--muted); font-size: 11px; margin-right: 4px; }
 .mh-row.you { color: var(--ink); }
 .mh-row.you::before { content: ""; position: absolute; inset: 1px 0; border-radius: 6px; background: var(--term-user); z-index: -1; }
 .mini-hist { isolation: isolate; }
 .mh-row.pending .tx { opacity: .6; }
-.mh-row.live .tx { color: var(--term-accent); }
+.mh-row.live .tx { color: var(--mh-ink, var(--term-accent)); }   /* at work: in the actor's ink, as Chat's "Working…" */
 .mh-row.live.said .tx { font-style: italic; }
 .mh-row.quiet .tx { color: var(--muted); font-style: italic; }
-.mh-row .mk.ask { width: 13px; height: 13px; border-radius: 50%; background: var(--warning); color: #fff; font-size: 9px; }
+.mh-row .mk.ask { width: 13px; height: 13px; border-radius: 50%; display: grid; place-items: center; background: var(--warning); color: #fff; font-size: 9px; }
 .dotc { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--term-ok); flex: none; }
 .dotc.err { background: var(--term-err); } .dotc.stop { background: var(--axis); }
 .dotc.run { background: var(--term-run); animation: mh-pulse 1s ease-in-out infinite; }
