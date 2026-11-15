@@ -4,7 +4,7 @@
 // actor the page opened on by itself). ⌥+click: the tab shown made the task's alone. ⌘+click: a task of another tab, that
 // tab brought forward; else beside. The tabs' bar, over the work area always: each tab shown by a press, named by a
 // double-click, closed by its × (its actors go on), dragged along the bar to another place in it; "+", a new tab, empty;
-// each task's state marked on its face. The list numbers each row open by its tab.
+// each task's state marked on its lead's box in the tab's map. The list numbers each row open by its tab.
 // Kept in this browser.
 import type { Locator, Page } from "@playwright/test";
 import { expect, homeAs, test } from "./test";
@@ -372,6 +372,8 @@ test("a tab named by a double-click keeps its name; × closes a tab, its actors 
   await page.reload();
   await expect(tabs(page)).toHaveCount(2);
   await expect(tabs(page).nth(1)).toContainText("Review");
+  await expect(tabs(page).nth(0).locator(".lay-close")).toBeHidden(); // its × only while pointed at
+  await tabs(page).nth(0).hover();
   await tabs(page).nth(0).locator(".lay-close").click(); // Claude's tab closed: Codex's shown, alone, no ×
   await expect(tabs(page)).toHaveCount(1);
   await expect(tabs(page).locator(".lay-close")).toHaveCount(0);
@@ -380,7 +382,7 @@ test("a tab named by a double-click keeps its name; × closes a tab, its actors 
   await expect(mark(page, CLAUDE)).toHaveCount(0);
 });
 
-test("each task's state marked on its face in its tab: waiting, failed, done since looked, at work; idle, none", async ({
+test("each task's state marked on its lead's box in its tab's map: waiting, failed, done since looked, at work; idle, none", async ({
   page,
 }) => {
   let claude: Record<string, unknown> = {};
@@ -392,8 +394,8 @@ test("each task's state marked on its face in its tab: waiting, failed, done sin
   await twoTabs(page); // Claude's task in tab 1, Codex shown in tab 2
   await expect.poll(homes.sent).toBe(true);
   await expect(row(page, CODEX)).toHaveAttribute("aria-current", "true"); // Claude out of sight: not looked at
-  const face = tabs(page).nth(0).locator(".lay-fmark");
-  await expect(face).toHaveCount(1); // one face for its task
+  const face = tabs(page).nth(0).locator(".lay-mcell[title]");
+  await expect(face).toHaveCount(1); // one lead's box for its task
   await expect(face.locator(".lay-dot")).toHaveCount(0); // idle: no mark
   for (const [change, mark, said] of [
     [{ status: "asking" }, "asking", "Waiting for you"],
@@ -411,7 +413,7 @@ test("each task's state marked on its face in its tab: waiting, failed, done sin
   await expect(face.locator(".lay-dot")).toHaveCount(0);
 });
 
-test("an actor left in another tab is not looked at there: done since, its face is marked finished", async ({
+test("an actor left in another tab is not looked at there: done since, its box is marked finished", async ({
   page,
 }) => {
   let claude: Record<string, unknown> = {};
@@ -429,10 +431,10 @@ test("an actor left in another tab is not looked at there: done since, its face 
   await expect(page.locator("#pane-here")).toHaveClass(/lay-away/); // out of sight: not looked at from now on
   claude = { status: "idle", last: later() };
   homes.again();
-  await expect(tabs(page).nth(0).locator(".lay-fmark .lay-dot")).toHaveAttribute("data-status", "finished");
+  await expect(tabs(page).nth(0).locator(".lay-mcell .lay-dot")).toHaveAttribute("data-status", "finished");
   await expect(row(page, CLAUDE).locator(".dot")).toHaveClass(/finished/);
   await tabs(page).nth(0).click(); // shown again: looked at
-  await expect(tabs(page).nth(0).locator(".lay-fmark .lay-dot")).toHaveCount(0);
+  await expect(tabs(page).nth(0).locator(".lay-mcell .lay-dot")).toHaveCount(0);
 });
 
 // Two tabs, each a task of an actor and a Notepad of its own above its Chat (each in a folder of its own: one instance
