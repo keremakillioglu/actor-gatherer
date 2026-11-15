@@ -592,7 +592,8 @@ def close(gatherer: str, fid: int, started: "sessions.Sessions", home: dict) -> 
             continue
         sid = s.get("session_id")
         try:
-            if sid and (s.get("terminal") or s.get("pid") or s.get("kept")):
+            if sid and (s.get("terminal") or s.get("pid") or s.get("kept") or s.get("turns")):   # turns: one that
+                #                                       ran, its process gone -- sessions.py's `stop` records its end
                 started.stop(sid)
             elif sid and not a.get("events") and not a.get("reads"):
                 started.discard(sid)                    # never started: nothing of it kept, as the list's x does
