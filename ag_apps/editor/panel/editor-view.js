@@ -119,7 +119,7 @@ function edViewHead(v) {
         onclick: () => edViewAgain(v, true) }, `Changed on disk ${ago(v.changed)} · Show it`)
       : el("span", { class: "ed-changed", style: color ? `--who: ${color}` : null, title: tip }, `Changed on disk ${ago(v.changed)}`);
   }
-  ed.head.replaceChildren(...[
+  edHeadPut([
     el("span", { class: "ed-path", title: v.path, text: edRel(v.path) }),
     el("span", { class: `ed-status ${cls}`, role: "status", text: status }),
     edByChip(writers), changed,

@@ -112,6 +112,53 @@ test("in Review its actor's edit is a proposal in place, the file unchanged on d
   await endEditor(page, request, sid, src);
 });
 
+test("the Editor's header drawn again keeps its mode's menu in the page, with the keys, and text selected in it", async ({
+  page,
+  request,
+}) => {
+  // the header is drawn again every ED_TICK and at each edit: a native menu taken out of the page closes, and text
+  // taken out loses its selection, so the menu and what reads the same stay in place. (Headless Chrome closes an open
+  // menu on its own, so what is checked is that it is never taken out.)
+  const { repo } = project();
+  const { sid, src } = await startEditor(page, repo);
+  const panel = editorPanel(page);
+  await panel.locator(".ed-row", { hasText: "plot.py" }).first().click();
+  await expect(panel.locator(".cm-content")).toContainText("print('drawing')");
+  const frame = page.frames().find((f) => f.url().startsWith(src.origin))!;
+  // the header's redraws counted, and each time the menu was taken out of it
+  await frame.evaluate(`(() => {
+    const head = document.querySelector(".ed-head"), pick = head.querySelector(".ed-mode-pick");
+    window.redrawn = 0; window.out = 0;
+    new MutationObserver((ms) => {
+      window.redrawn++;
+      for (const m of ms) if ([...m.removedNodes].includes(pick)) window.out++;
+    }).observe(head, { childList: true });
+    pick.querySelector("select").dataset.first = "1";
+  })()`);
+  const menu = panel.locator(".ed-mode-pick select");
+  await menu.focus();
+  const shown = () =>
+    frame.evaluate(`(() => {
+      const menu = document.querySelector(".ed-mode-pick select");
+      return { out: window.out, first: menu.dataset.first === "1", keys: document.activeElement === menu };
+    })()`);
+  await expect.poll(() => frame.evaluate("window.redrawn"), { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+  expect(await shown()).toEqual({ out: 0, first: true, keys: true });
+  await menu.selectOption("handsoff");
+  await expect(menu).toHaveValue("handsoff");
+  expect(await shown()).toEqual({ out: 0, first: true, keys: true });
+  // the file's path selected, as to copy it: still selected after the header is drawn again
+  await frame.evaluate(`(() => {
+    const r = document.createRange();
+    r.selectNodeContents(document.querySelector(".ed-head .ed-path"));
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    window.redrawn = 0;
+  })()`);
+  await expect.poll(() => frame.evaluate("window.redrawn"), { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+  expect(await frame.evaluate("getSelection().toString()")).toBe("plot.py");
+  await endEditor(page, request, sid, src);
+});
+
 test("the file open in an Editor stays open, at its place, when the reader goes to another task and back", async ({
   page,
   request,
