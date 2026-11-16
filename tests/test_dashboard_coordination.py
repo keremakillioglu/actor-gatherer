@@ -111,10 +111,16 @@ class InstructionsTest(unittest.TestCase):
         import tomllib
         self.assertEqual(tomllib.loads(got[1])["developer_instructions"], 'Say "hi"\nthen go.')   # `-c` reads TOML
 
-    def test_the_gatherer_agent_is_told_its_gatherer_and_the_commands(self):
-        text = coordination.instructions("making_ag")
-        self.assertIn('coordinator agent of the group "making_ag"', text)
-        for command in ("ag actors send", "ag actors new", "ag actors when", "ag actors who", "ag actors show"):
+    def test_a_coordinator_agent_is_told_its_folder_and_the_commands(self):
+        with unittest.mock.patch.object(data, "gatherer_names", return_value=["making_ag"]):
+            text = coordination.instructions("making_ag", None, "c0ffee00-1")
+        self.assertIn('# You are a coordinator agent, over "making_ag"', text)
+        self.assertIn("The user started you over the group making_ag", text)
+        self.assertIn("requests the user made to the actors of the group making_ag", text)
+        self.assertIn("answers you with `ag actors send c0ffee00-1`", text)
+        self.assertNotIn("{", text.replace("{gatherer}", ""))                      # every place filled
+        for command in ("ag actors send", "ag actors new", "ag actors when", "ag actors who", "ag actors show",
+                        "ag actors coordinators"):
             self.assertIn(command, text)
 
     def test_its_instructions_are_a_file_the_homes_own_copy_first(self):
@@ -122,7 +128,8 @@ class InstructionsTest(unittest.TestCase):
         from ag_dashboard import home
         with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(home, "HOME", tmp):
             with open(coordination.INSTRUCTIONS) as fh:
-                self.assertEqual(coordination.instructions("g"), fh.read().replace("{gatherer}", "g"))
+                self.assertIn("{over}", fh.read())
+            self.assertIn('You are a coordinator agent, over "g"', coordination.instructions("g"))
             os.makedirs(os.path.join(tmp, "dashboard"))
             with open(os.path.join(tmp, "dashboard", "gatherer_agent.md"), "w") as fh:
                 fh.write("Coordinate {gatherer}.")
@@ -132,7 +139,8 @@ class InstructionsTest(unittest.TestCase):
         from ag.ag_policies.proactive_context_manager.config import ProactiveContextManagerConfig
         guide = ProactiveContextManagerConfig().gatherer_guide
         self.assertIn("`ag actors`", guide)
-        self.assertIn('ag actors send coordinator', guide)
+        self.assertIn('ag actors send coordinator --with <the other actor\'s id>', guide)
+        self.assertIn("nothing is sent and the command says so: end your turn telling the user about the conflict", guide)
         self.assertIn('"Message from the coordinator agent"', guide)            # how its messages start
         self.assertIn('"Message from actor <id>"', guide)
         self.assertIn('sandbox_permissions "require_escalated" from the first try', guide)     # Codex's sandbox
