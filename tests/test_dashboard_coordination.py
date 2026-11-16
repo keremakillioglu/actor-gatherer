@@ -769,6 +769,23 @@ class CommandTest(CoordinationBase):
         code, out, _ = self.run_cli("--json", "list")
         self.assertEqual(json.loads(out)["you"], self.a)
 
+    def test_a_conflict_goes_to_the_coordinator_over_both_from_the_shell(self):
+        code, _, err = self.run_cli("send", "coordinator", "--with", self.b[:8], "We both edit x.py")
+        self.assertEqual(code, 1)
+        self.assertIn(f'ag actors: No coordinator agent is over you and actor {self.b}: the nearest folder holding you all '
+                      'is "g"', err)
+        crew = self.s.create("g", self.work, role=sessions.COORDINATOR)["session_id"]     # the user's, over the group
+        code, out, err = self.run_cli("send", "coordinator", "--with", self.b[:8], "We both edit x.py")
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn(f'Sent to the coordinator agent over "g" ({crew})', out)
+        got = coordination.opened(self.until(lambda: self.messages(crew))[0])
+        self.assertEqual((got["id"], got["text"]), (self.a, "We both edit x.py"))
+        code, out, _ = self.run_cli("coordinators")
+        self.assertIn(f'Coordinator agents over you, the nearest first: "g" ({crew}).', out)
+        code, out, _ = self.run_cli()
+        self.assertEqual(out.splitlines()[0], f'Coordinator agents over you, the nearest first: "g" ({crew}).')
+        self.assertIn(f'{crew} (the coordinator agent over "g") -- idle', out)
+
     def test_moves_between_groups_from_the_shell_are_groups_py_s(self):
         from ag_dashboard import groups
         alone = {"group": f"self:{self.b}", "actors": [self.b], "from": "g"}

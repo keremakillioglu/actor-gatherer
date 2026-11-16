@@ -280,6 +280,23 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual(listed["self:" + sid], (True, [sid]))
         self.assertEqual(listed["b"], (False, ["c2"]))
 
+    def test_a_coordinator_agent_over_everything_is_a_group_of_one_reading_every_group(self):
+        from ag_dashboard import coordination
+        started = self.sessions_here()
+        crew = coordination.Coordination(started, watch=False)
+        sid = crew.ensure("all", self.tmp.name, "claude")["session_id"]
+        self.assertEqual((self.members("self:" + sid), self.members("a")), ([sid], ["c1", "c3"]))
+        role = coordination._role_in("self:" + sid, sid)                   # in ag's database, before its first call
+        self.assertEqual(role, {"role": "coordinator", "private": True, "over": "all", "reads": ["a", "b"]})
+        self.recorded.clear()
+        with unittest.mock.patch.object(actions, "record") as wrote:
+            coordination.Coordination(started, watch=False)._mark_roles()     # a new dashboard: read, not written again
+        wrote.assert_not_called()
+        listed = {g["name"]: g for g in data.home(started.list())["gatherers"]}
+        [a] = listed["self:" + sid]["agents"]
+        self.assertEqual((a["role"], a["over"], listed["self:" + sid].get("alone")), ("coordinator", "all", True))
+        self.assertEqual(crew.ensure("all")["session_id"], sid)                # one a node
+
     def test_listed_on_its_own_while_its_record_is_still_being_written(self):
         started = self.sessions_here()
         sid = started.create("a", self.tmp.name, harness="claude", alone=True)["session_id"]
