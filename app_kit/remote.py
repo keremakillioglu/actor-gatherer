@@ -162,6 +162,9 @@ class RemoteApp(App):
     def sleep(self, instance: Instance) -> None:
         self._op("sleep", {"instance": instance.to_dict()})
 
+    def folded(self, instance: Instance, was: str, title: str) -> None:
+        self._op("folded", {"instance": instance.to_dict(), "was": was, "title": title})
+
     def scheduled(self, schedule: str, due: float) -> Optional[float]:
         got = self._op("scheduled", {"schedule": schedule, "due": due}, timeout=SCHEDULED_WAIT) or {}
         retry = got.get("retry")
@@ -314,6 +317,7 @@ def app_ops(app: App) -> Dict[str, Callable[[dict], Optional[dict]]]:
         "open": lambda b: {"instance": app.open(inst(b["instance"]), dict(b.get("args") or {})).to_dict()},
         "close": lambda b: app.close(inst(b["instance"])),
         "sleep": lambda b: app.sleep(inst(b["instance"])),
+        "folded": lambda b: app.folded(inst(b["instance"]), str(b["was"]), str(b.get("title") or b["was"])),
         "scheduled": lambda b: {"retry": app.scheduled(str(b["schedule"]), float(b["due"]))},
         "call": lambda b: app.call(inst(b["instance"]), b["tool"], dict(b.get("args") or {}),
                                    Caller.from_dict(b.get("caller"))).to_dict(),

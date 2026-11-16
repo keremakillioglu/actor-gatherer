@@ -519,6 +519,32 @@ class BackendTest(unittest.TestCase):
         # kept in the app's data folder, the gatherer's name made a file's
         self.assertEqual(os.listdir(self.dir), ["my%20gatherer%2F1.json"])
 
+    def test_a_group_merged_in_brings_its_pages_under_one_named_after_it(self):
+        side = Instance(id="fedcba9876543210", app="notes", gatherer="side")
+        self.app.change(side, [
+            {"op": "page.new", "page": {"id": "plans1", "title": "Plans", "icon": "🗺"},
+             "blocks": [{"id": "link01", "type": "text", "text": '<a href="page:steps1">Steps</a>'}]},
+            {"op": "page.new", "page": {"id": "steps1", "title": "Steps", "parent": "plans1"}},
+            {"op": "page.new", "page": {"id": "gone01", "title": "Gone"}},
+            {"op": "page.delete", "page": "gone01"}], "user")
+        self.app.change(self.inst, [{"op": "page.new", "page": {"id": "mine01", "title": "Mine"}},
+                                    {"op": "page.new", "page": {"id": "steps1", "title": "Mine too"}}], "user")
+        self.host.told.clear()
+        self.app.folded(self.inst, "side", "Side work")
+        pages = {p["title"]: p for p in self.app.book("my gatherer/1").state()["pages"]}
+        self.assertEqual(sorted(pages), ["Mine", "Mine too", "Plans", "Side work", "Steps"])     # not the trash's
+        top = pages["Side work"]["id"]
+        self.assertEqual((pages["Side work"]["parent"], pages["Plans"]["parent"]), (None, top))
+        self.assertEqual((pages["Plans"]["id"], pages["Plans"]["icon"]), ("plans1", "🗺"))      # its id kept
+        self.assertNotEqual(pages["Steps"]["id"], "steps1")       # taken here already: a new one
+        self.assertEqual(pages["Steps"]["parent"], "plans1")
+        self.assertEqual(pages["Plans"]["blocks"][0]["id"], "link01")
+        self.assertEqual([m["by"] for m in self.host.told], ["group"])          # told to the panels, once
+        self.assertEqual(len(self.app.book("side").state()["pages"]), 3)        # its own file as it was
+        self.app.folded(self.inst, "my gatherer/1", "Itself")                   # (its own: nothing)
+        self.app.folded(self.inst, "empty", "Nothing")                          # (no pages: nothing)
+        self.assertEqual(len(self.host.told), 1)
+
     def test_an_agent_links_a_line_to_another_page(self):
         err, text = self.call("add", title="Chat", markdown="x")
         chat = text.split("(page ", 1)[1].split(")", 1)[0]
