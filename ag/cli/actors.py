@@ -268,7 +268,7 @@ def _who(a: dict) -> str:
                          "saved" if a.get("saved") else None, 'in "%s"' % a["folder"] if a.get("folder") else None,
                          "of the group %s" % a["group"] if a.get("group") and a.get("show_group") else None,
                          "you" if a.get("you") else None) if m]
-    name = ' "%s"' % a["name"] if a.get("name") and not a.get("gatherer_agent") else ""
+    name = ' "%s"' % a["name"] if a.get("name") else ""
     what = ", ".join(x for x in (a.get("status"), a.get("harness")) if x)
     return str(a.get("id")) + name + (" (%s)" % ", ".join(marks) if marks else "") + (" -- " + what if what else "") \
         + ("," if what and a.get("cwd") else "") + _place(a.get("cwd"))

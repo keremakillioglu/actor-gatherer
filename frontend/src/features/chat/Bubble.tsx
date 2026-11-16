@@ -68,11 +68,12 @@ function crewActor(feed: ChatFeed, coordinator: boolean, id: string | null): Act
 }
 /** An actor's id as a label shows it: its first characters (messages name ids whole, for the actors to answer by). */
 const crewId = (id: string | null | undefined) => String(id || "").slice(0, 8);
-/** a coordinator agent's node, as a bubble names it: " over everything", " over Editor" (a folder's own name) */
-const crewOver = (over: string | null | undefined) =>
-  !over ? "" : over === "everything" ? " over everything" : ` over ${over.split("/").pop()}`;
+/** a coordinator agent's name, after the node its message says it is over (data.py's): "Figures coordinator" (a
+ * folder's own name), "Everything coordinator"; one from before nodes, "Coordinator agent" */
+const crewOverName = (over: string | null | undefined) =>
+  !over ? COORDINATOR_NAME : `${over === "everything" ? "Everything" : over.split("/").pop()} coordinator`;
 const crewName = (coordinator: boolean, a: Actor | null, env: Envelope) =>
-  coordinator ? COORDINATOR_NAME + crewOver(env.over) : a?.name?.text || env.name || `Actor ${crewId(env.id)}`;
+  coordinator ? a?.name?.text || crewOverName(env.over) : a?.name?.text || env.name || `Actor ${crewId(env.id)}`;
 
 function CrewWords({ env }: { env: Envelope }) {
   const { feed, host } = useChat();
@@ -283,9 +284,12 @@ export function bashOutput(t: Turn) {
  * turn: with its receiver's avatar and name. */
 export function SentBubble({ m }: { m: SentMessage }) {
   const { feed, host } = useChat();
-  const coordinator = m.to_name === COORDINATOR_NAME,
-    to = crewActor(feed, coordinator, String(m.to || ""));
-  const who = coordinator ? "the coordinator agent" : to?.name?.text || m.to_name || `actor ${crewId(m.to)}`;
+  const crew = crewActor(feed, true, String(m.to || "")),
+    coordinator = (!!crew && crew.channel.startsWith(String(m.to || "-"))) || m.to_name === COORDINATOR_NAME,
+    to = coordinator ? crew : crewActor(feed, false, String(m.to || ""));
+  const who = coordinator
+    ? to?.name?.text || (m.to_name && m.to_name !== COORDINATOR_NAME ? m.to_name : "the coordinator agent")
+    : to?.name?.text || m.to_name || `actor ${crewId(m.to)}`;
   const fold = useCrewFold(crewKey(feed, m.text));
   return (
     <div

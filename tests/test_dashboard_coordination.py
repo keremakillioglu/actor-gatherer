@@ -563,6 +563,14 @@ class NodesTest(CoordinationBase):
         mine = self.crew.coordinators_of(on_all)
         self.assertEqual(({a["id"] for a in mine["under"]}, mine["over"]), ({on_editor, self.crew.coordinators()[f"folder:{self.chat}"]["session_id"]}, []))
 
+    def test_each_is_named_after_the_folder_it_is_over(self):
+        crews = {node: self.over(node) for node in ("all", f"groups:{self.research}", "group:g", f"folder:{self.latex}")}
+        with unittest.mock.patch.object(coordinators.titles, "stored", return_value={"g": "Paper"}):
+            names = coordinators.names(self.s.list())
+        self.assertEqual({node: names[sid] for node, sid in crews.items()},
+                         {"all": "Everything coordinator", f"groups:{self.research}": "Research coordinator",
+                          "group:g": "Paper coordinator", f"folder:{self.latex}": "LaTeX coordinator"})   # a group: its title
+
     def test_who_names_an_actor_of_another_group_by_its_id_and_group_alone(self):
         writers = {"x.py": [{"channel": self.c, "gatherer": "h", "how": "edit", "at": time.time()},
                             {"channel": self.b, "gatherer": "g", "how": "write", "at": time.time()}]}
@@ -784,7 +792,7 @@ class CommandTest(CoordinationBase):
         self.assertIn(f'Coordinator agents over you, the nearest first: "g" ({crew}).', out)
         code, out, _ = self.run_cli()
         self.assertEqual(out.splitlines()[0], f'Coordinator agents over you, the nearest first: "g" ({crew}).')
-        self.assertIn(f'{crew} (the coordinator agent over "g") -- idle', out)
+        self.assertIn(f'{crew} "Coordinator agent" (the coordinator agent over "g") -- idle', out)   # as the test lists it
 
     def test_moves_between_groups_from_the_shell_are_groups_py_s(self):
         from ag_dashboard import groups
@@ -973,10 +981,10 @@ class RealGathererTest(unittest.TestCase):
                 "model": None, "started_as": None, "ended": 0, "role": role, "queued": [], "terminal": False,
                 "answer": None, "typed": None, "fullscreen": False, "pid": None, "since": None}
 
-    def test_the_gatherer_agent_is_named_by_its_role_and_the_others_as_they_were(self):
+    def test_a_coordinator_agent_is_named_after_its_group_and_the_others_as_they_were(self):
         got = {a["channel"]: a for a in data.gatherer_actors("g", [self.row("c1", sessions.COORDINATOR), self.row("new")])}
         self.assertEqual(set(got), {"c1", "c2", "new"})                           # one with no message yet too
-        self.assertEqual((got["c1"]["role"], got["c1"]["name"]), (sessions.COORDINATOR, {"text": "Coordinator agent", "by": "dashboard"}))
+        self.assertEqual((got["c1"]["role"], got["c1"]["name"]), (sessions.COORDINATOR, {"text": "g coordinator", "by": "dashboard"}))
         self.assertNotIn("role", got["c2"])
 
     def test_chat_shows_what_an_actor_sent_in_the_turn_it_sent_it(self):

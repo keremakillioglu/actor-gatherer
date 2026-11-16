@@ -532,10 +532,11 @@ function crewFace(a, fallback = null) {
 const crewId = (id) => String(id || "").slice(0, 8);
 // in a line (the list's): who it is from, and its words
 const crewLine = (env) => env.from === "update" ? `${env.name || `Actor ${crewId(env.id)}`} is done: ${env.how}`
-  : `${env.from === "coordinator" ? `From the coordinator agent${crewOverSaid(env.over)}` : `From ${env.name || `actor ${crewId(env.id)}`}`}: ${env.text}`;
-// a coordinator agent's node, as its messages name it: " over everything", " over Editor" -- a folder's own name, its
-// path's last part; "" for none
-const crewOverSaid = (over) => !over ? "" : over === "everything" ? " over everything" : ` over ${String(over).split("/").pop()}`;
+  : `${env.from === "coordinator" ? `From ${crewOverName(env.over)}` : `From ${env.name || `actor ${crewId(env.id)}`}`}: ${env.text}`;
+// a coordinator agent's name (data.py's), after the node its messages say it is over: "the Figures coordinator" -- a
+// folder's own name, its path's last part; "the Everything coordinator"; one from before nodes, "the coordinator agent"
+const crewOverName = (over) => !over ? "the coordinator agent"
+  : `the ${over === "everything" ? "Everything" : String(over).split("/").pop()} coordinator`;
 const isCoordinator = (a) => !!a && a.role === "coordinator";
 // A COORDINATOR AGENT is over a NODE of the list (coordinators.py): "all" (everything), "groups:<id>" (a folder of
 // groups), "group:<name>" (a group) or "folder:<id>" (a folder in a group) -- its `over` (data.py's), else its group's.

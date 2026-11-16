@@ -139,7 +139,7 @@ MESSAGES_READ = 200            # the newest of its messages' facts read for what
 SENT_SECONDS = 30.0            # a message sent from the queue: shown as written until ag stores it, at most this long
 PROMPT_SECONDS = 120.0         # one sent between turns: the same
 CHAT_SECONDS = 60.0            # one sent from Chat the harness has not had: shown as pending at most this long
-COORDINATOR_NAME = "Coordinator agent"   # the name a coordinator agent (sessions.py's role) has, unless the reader gives one
+COORDINATOR_NAME = "Coordinator agent"   # a coordinator agent's name where its node's is not known (coordinators.py's `names`)
 #: The apps' records (app_kit's): the host's own of their instances and agents, and each app's own types, named
 #: `<app>.<what>` -- records like the harness's, never the conversation.
 APP_RECORDS = app_kit.HOST_RECORDS
@@ -562,6 +562,8 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
     """Each session started here on its agent (`session`); one with no message yet listed all the same, as idle, with
     the name the reader gave it (`named`: {gatherer: _names}), if any."""
     by_name = {g["name"]: g for g in gatherers}
+    from . import coordinators                    # here: it reads this module's
+    crews = coordinators.names(started)           # each coordinator agent named after its node: "Figures coordinator"
     for s in started:
         g = by_name.get(s["gatherer"])
         if g is None:                    # a new gatherer: ag makes it on the session's first call -- or an actor's
@@ -579,12 +581,12 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
         a["session"] = s
-        if s.get("role"):                        # a coordinator agent: named so unless the reader named it otherwise
+        if s.get("role"):                        # a coordinator agent: named after its node unless the reader named it
             a["role"] = s["role"]
             if s.get("over"):                    # the node it is over (coordinators.py); none: its group
                 a["over"] = s["over"]
             if s["role"] == sessions.COORDINATOR and (a.get("name") or {}).get("by") != "user":
-                a["name"] = {"text": COORDINATOR_NAME, "by": "dashboard"}
+                a["name"] = {"text": crews.get(s["session_id"], COORDINATOR_NAME), "by": "dashboard"}
         offer = a.pop("offer", None)             # a plan offered: asked about where its terminal is the dashboard's, not
         if offer and s.get("terminal") and a["status"] == IDLE and (s.get("since") or 0) <= offer["at"] \
                 and not (s.get("typed") and s["typed"] >= offer["at"]):     # restarted since, nor anything typed there

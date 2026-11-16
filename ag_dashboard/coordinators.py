@@ -213,6 +213,28 @@ class Tree:
         return "a folder that is no longer there"
 
 
+def crew_name(tree: Tree, node: str) -> str:
+    """A coordinator agent's name, after the node it is over: "Figures coordinator" (a folder's own name), "paper
+    coordinator" (a group's title), "Research coordinator" (a folder of groups'), "Everything coordinator"."""
+    k = kind(node)
+    if k == ALL:
+        base = "Everything"
+    elif k == "group":
+        base = tree.title(str(node)[len(GROUP):])
+    else:
+        base = tree.label(node).split("/")[-1]
+    return f"{base or 'Folder'} coordinator"
+
+
+def names(rows: Iterable[dict]) -> Dict[str, str]:
+    """{session id: its name (`crew_name`)} of the coordinator agents among `rows` (sessions.py's)."""
+    crews = [r for r in rows if r.get("role") == "coordinator"]
+    if not crews:
+        return {}
+    tree = Tree()
+    return {r["session_id"]: crew_name(tree, node_of(r)) for r in crews}
+
+
 def _and(names: Iterable[str]) -> str:
     names = list(names)
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1] if names else ""

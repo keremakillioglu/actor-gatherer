@@ -490,7 +490,7 @@ class Coordination:
         if kept is not None:
             filed = _kept_as(a, kept[1])
             mark = {"saved": _kept_as(a, kept[0]) is not None, "folder": kept[1][filed] if filed else None}
-        return {**mark, "id": a["channel"], "channel": a["channel"], "name": NAME if self._is_coordinator(a) else _name(a),
+        return {**mark, "id": a["channel"], "channel": a["channel"], "name": _name(a) or (NAME if self._is_coordinator(a) else None),
                 "status": a.get("status"), "harness": a.get("harness") or s.get("harness"), "cwd": a.get("cwd") or s.get("cwd"),
                 "asked": _clip(_unwrapped(a.get("last_user_message")), ASKED_CHARS),
                 "recap": _clip((a.get("recap") or {}).get("text"), ASKED_CHARS),
@@ -1047,7 +1047,7 @@ class Coordination:
     def _keep(self, gatherer: str, sender: str, kind: str, to: dict, text: str) -> None:
         actions.record(gatherer, sender, [{"type": ACTOR_MESSAGE, "id": f"{ACTOR_MESSAGE}:{uuid.uuid4().hex}",
                                            "payload": {"at": time.time(), "kind": kind, "to": to["channel"],
-                                                       "to_name": NAME if self._is_coordinator(to) else _name(to),
+                                                       "to_name": _name(to) or (NAME if self._is_coordinator(to) else None),
                                                        "text": text}}])
 
     # ---- the watches
@@ -1168,7 +1168,7 @@ class Coordination:
         g = w["gatherer"]
         status = status or (a or {}).get("status") or data.CLOSED
         how = {data.IDLE: "its turn is over", data.CLOSED: "it is closed", data.ERROR: "its turn stopped on an error"}.get(status, status)
-        name = (NAME if a and self._is_coordinator(a) else _name(a)) if a else None
+        name = (_name(a) or (NAME if self._is_coordinator(a) else None)) if a else None
         target = (a or {}).get("channel") or w["target"]
         lines = []
         try:

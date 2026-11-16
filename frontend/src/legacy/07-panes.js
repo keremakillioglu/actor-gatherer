@@ -714,7 +714,7 @@ function blockName(k) {
   if (/^t\d+$/.test(id)) { const t = taskById(g, Number(id.slice(1))); return t ? taskName(gg, t) : "A task"; }
   if (isAppItem(id)) { const o = appInfo(g, id.slice(APP_ITEM.length)); return o ? appShown(o) : "An app"; }
   const a = gg.agents.find((x) => x.channel === id);
-  return !a ? id : isCoordinator(a) && !(a.name && a.name.text) ? (a.over ? `${CREW_GROUP}: ${crewPlace(a.over, gg)}` : CREW_GROUP)
+  return !a ? id : isCoordinator(a) && !(a.name && a.name.text) ? (a.over ? `${crewPlace(a.over, gg)} coordinator` : CREW_GROUP)
     : actorTitle(a);
 }
 // A block's faces, on its card's head: its task's actors' (not closed; three at most) and its apps'
