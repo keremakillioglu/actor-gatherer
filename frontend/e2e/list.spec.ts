@@ -254,12 +254,19 @@ test("a rail bookmark under a resting pointer stays shown, every frame, while th
 
 test("shows every actor over the whole page", async ({ page }) => {
   await open(page);
-  await page.locator("#agents .lb-full").click();
+  await expect(page.locator(".side .lb-full")).toHaveCount(0); // not the list's: the top bar's, by the logo
+  const full = page.locator("#top-full .lb-full");
+  await full.click();
   const monitor = page.locator("#monitor");
   await expect(monitor).toBeVisible();
   await expect(monitor).toContainText("Parser fixes");
   await expect(monitor).toContainText("Spawn one subagent");
+  await expect(full).toHaveAttribute("aria-pressed", "true");
   await expect(page).toHaveScreenshot("list-over-page.png", { mask: masks(page) });
+  await full.click(); // pressed again: the list as it was
+  await expect(monitor).toBeHidden();
+  await expect(page.locator("#agents")).toBeVisible();
+  await expect(full).toHaveAttribute("aria-pressed", "false");
 });
 
 test("lists a saved actor with the open ones while open, and in its saved line once closed", async ({ page }) => {
