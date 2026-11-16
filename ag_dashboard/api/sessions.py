@@ -113,10 +113,11 @@ def answer_ask(srv: Parts, body: Body) -> Response:
 
 @router.post("/api/coordinator")
 def coordinator(srv: Parts, body: Body) -> Response:
-    """{gatherer, cwd?, harness?}: the gatherer's gatherer agent, started (with no message yet) if it has none
-    (coordination.py) -> the session."""
-    return answer(srv.crew.page_coordinator(str(body.get("gatherer") or ""), str(body.get("cwd") or "") or None,
-                                            str(body.get("harness") or "") or None))
+    """{over | gatherer, cwd?, harness?}: the coordinator agent over the node `over` (coordinators.py: "all",
+    "groups:<id>", "group:<name>", "folder:<id>"; `gatherer`, a group's name: that group), started (with no message
+    yet) if it has none (coordination.py) -> the session."""
+    return answer(srv.crew.page_coordinator(str(body.get("over") or body.get("gatherer") or ""),
+                                            str(body.get("cwd") or "") or None, str(body.get("harness") or "") or None))
 
 
 def actors_op(crew: coordination.Coordination, op: str, body: dict):
@@ -131,11 +132,14 @@ def actors_op(crew: coordination.Coordination, op: str, body: dict):
     if op == "who":
         return crew.who(me, s("path"))
     if op == "send":
-        return crew.send(me, s("ref"), s("text"))
+        given = body.get("with")
+        return crew.send(me, s("ref"), s("text"), [str(w) for w in given] if isinstance(given, list) else [])
+    if op == "coordinators":
+        return crew.coordinators_of(me)
     if op == "new":
         return crew.new(me, s("text"), opt("cwd"), opt("harness"), opt("model"), opt("like"), opt("name"),
                         branch=bool(body.get("branch")), approve=bool(body.get("approve")), folder=opt("folder"),
-                        **{n: True for n in coordination._starters() if body.get(n) is True})
+                        group=opt("group"), **{n: True for n in coordination._starters() if body.get(n) is True})
     if op == "when":
         return crew.when(me, s("ref"), s("note"))
     if op == "watches":
@@ -155,8 +159,8 @@ def actors_op(crew: coordination.Coordination, op: str, body: dict):
         return crew.move(me, [str(r) for r in refs] if isinstance(refs, list) else [], s("folder"), opt("group"))
     if op == "alone":
         return crew.alone(me, s("ref"))
-    raise coordination.CoordinationError(f"no `ag actors {op}`: one of list, show, who, send, new, when, watches, unwatch, "
-                                         "save, unsave, folders, folder, move, alone")
+    raise coordination.CoordinationError(f"no `ag actors {op}`: one of list, coordinators, show, who, send, new, when, "
+                                         "watches, unwatch, save, unsave, folders, folder, move, alone")
 
 
 @router.post("/api/actors/{op:path}")
@@ -164,7 +168,8 @@ def actors(srv: Parts, op: str, body: Body) -> Response:
     """{actor, ...}: what an actor's `ag actors <op>` asks (coordination.py; `actor`, its id) -> what it answers; an
     error's text for the command to print (400).
 
-    list {all?}, show {ref}, who {path}, send {ref, text}, new {text, cwd?, harness?, model?, like?, name?, folder?,
+    list {all?}, coordinators, show {ref}, who {path}, send {ref, text, with?} (with: the actors of a conflict, for
+    `coordinator`), new {text, cwd?, harness?, model?, like?, name?, folder?, group?,
     <app>? (an app that starts an agent of its own: docwriter?, browser?), branch?, approve?}, when {ref, note?}, watches, unwatch {watch},
     save {ref, folder?, unfiled?}, unsave {ref}, folders, folder {do: new | rename | move | split | delete, name, to?,
     group?}, move {refs, folder, group?} (folders: by path, "top" or none for the gatherer's top; group: another one,

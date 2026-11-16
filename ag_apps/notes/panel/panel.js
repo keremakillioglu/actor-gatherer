@@ -3247,7 +3247,8 @@ and what agents see of it. The words under either are its caption. */
     if (current === AGENTS) drawAgentsPage(); else drawSent();
     if (menu && menu.kind === "at") drawAt(menu.q || "");
   }
-  const isLead = (a) => !!a && a.role === "coordinator";
+  // the group's coordinator agent (one over a folder in it, `over`, is listed with the actors)
+  const isLead = (a) => !!a && a.role === "coordinator" && !a.over;
   // the actor a block went to (a codex actor's thread, the channel it became), or a thread's line is by
   const actorOf = (ch) => (ch === "gatherer" ? crew.agents.find(isLead)
     : crew.agents.find((a) => a.channel === ch || a.started_as === ch)) || null;

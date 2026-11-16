@@ -25,7 +25,8 @@ Saving an actor (saved.py's bookmark) is apart from this: saved or not, an actor
 closed, is listed in its folder's "saved" line, not with the closed ones. A folder deleted, what was in it -- actors
 and folders -- moves up into the one it was in.
 
-A folder CLOSED (`close`): every actor in it, at any depth, closed as the list's x closes one (sessions.py's `stop`; one
+A folder CLOSED (`close`): every actor in it, at any depth -- and the coordinator agent over it or a folder in it --
+closed as the list's x closes one (sessions.py's `stop`; one
 that never started, discarded), its bookmark taken off (saved.py), every terminal opened in it ended -- then it, and every
 folder in it, marked closed. The list shows a closed folder in its parent's "closed" line, with its actors, for as long as
 nothing in it is open again (an actor in it used since, a terminal opened in it). Reopened (`reopen`), it and the folders
@@ -582,8 +583,9 @@ def close(gatherer: str, fid: int, started: "sessions.Sessions", home: dict) -> 
         ids |= more
     g = next((x for x in home.get("gatherers") or [] if x.get("name") == gatherer), {"agents": []})
     kept, left = saved.stored().get(gatherer) or {}, []
+    over = {f"folder:{i}" for i in ids}                # a coordinator agent over it, or a folder in it: closed with it
     for a in g.get("agents") or []:
-        if a.get("role") == "coordinator" or _within(tree, ids, a) is None:
+        if (a.get("over") not in over) if a.get("role") == "coordinator" else _within(tree, ids, a) is None:
             continue
         s = a.get("session") or {}
         for key in {a["channel"], s.get("started_as")} & set(kept):

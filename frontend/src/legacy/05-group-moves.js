@@ -68,6 +68,12 @@ function appsLine(apps, many, to = null) {
   return out.join(" ");
 }
 const mvCount = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+// the coordinator agents of `from` over folder `fid` or a folder in it: they go where it goes (groups.py's `_crews`)
+const crewsWithin = (from, fid) => from.agents.filter((a) => isCoordinator(a) && String(a.over || "").startsWith("folder:")
+  && within(from.name, +a.over.slice("folder:".length), fid));
+const crewsSaid = (crews, made) => !crews.length ? null : crews.length === 1
+  ? `Its coordinator agent ${made ? "becomes the new group's" : "goes with it"}.`
+  : `The ${crews.length} coordinator agents over it and its folders go with it${made ? ", the one over it the new group's" : ""}.`;
 
 // What is dragged (`d`, listDrag's), dropped into folder `id` of group `g` (null: its top): the dialog, then the move
 async function askMove(d, g, id) {
@@ -79,7 +85,10 @@ async function askMove(d, g, id) {
   mvDraw({ title, note: "Working out who moves…" });
   let plan;
   try { plan = await post("/api/groups", { ...body, do: "plan" }); } catch (err) { mvDraw({ title, note: `Can't move: ${err.message}` }); return; }
-  const shown = { title, lines: moveLines(from, g, plan), names: moveNames(from, plan.actors), goLabel: "Move" };
+  const crews = d.folder !== null ? crewsWithin(from, d.folder) : [];
+  const said = crewsSaid(crews, false);
+  const shown = { title, lines: [...moveLines(from, g, plan), ...(said ? [said] : [])],
+    names: moveNames(from, plan.actors.filter((c) => !crews.some((a) => a.channel === c))), goLabel: "Move" };
   const go = mvGo(shown, "Moving…", "Not moved", async () => {
     const got = await post("/api/groups", { ...body, do: "move", into: id });
     return { to: g.name, actors: plan.actors, apps: (got.moved && got.moved.apps) || [], joined: (got.moved && got.moved.joined) || {},
@@ -103,8 +112,9 @@ function askSplit(d) {
       : ` It leaves the ${titleOf(from)} group.`)];
   if (n) lines.push(`${n === 1 ? "It" : "They"} will no longer share context with the actors of ${titleOf(from)}`
     + `${n === 1 ? "" : ", only with each other"}.`, rebuildLine(from, actors));
-  const appsSaid = appsLine(going, n > 1);
+  const appsSaid = appsLine(going, n > 1), crewSaid = crewsSaid(crewsWithin(from, d.folder), true);
   if (appsSaid) lines.push(appsSaid);
+  if (crewSaid) lines.push(crewSaid);
   const shown = { title: `Make ${f.name} a group of its own?`, lines, names: moveNames(from, inside), goLabel: "Make a group" };
   mvOpen("A folder made a group of its own");
   const go = mvGo(shown, "Making the group…", "Not made", async () => {

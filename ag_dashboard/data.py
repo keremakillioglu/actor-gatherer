@@ -579,8 +579,10 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
                  "turn_over": True, "status": IDLE}
             g["agents"].append(a)
         a["session"] = s
-        if s.get("role"):                        # the gatherer agent: named so unless the reader named it otherwise
+        if s.get("role"):                        # a coordinator agent: named so unless the reader named it otherwise
             a["role"] = s["role"]
+            if s.get("over"):                    # the node it is over (coordinators.py); none: its group
+                a["over"] = s["over"]
             if s["role"] == sessions.COORDINATOR and (a.get("name") or {}).get("by") != "user":
                 a["name"] = {"text": COORDINATOR_NAME, "by": "dashboard"}
         offer = a.pop("offer", None)             # a plan offered: asked about where its terminal is the dashboard's, not

@@ -4,7 +4,7 @@
 // `!` command's bubble is a bash bubble: its `!` in bash mode's colour, and under it, once run, what it printed.
 //
 // A message between the actors of a gatherer (coordination.py's `envelope`, read by the host), drawn with its sender's
-// avatar and name -- the gatherer agent's, the manager -- or the news of a watch, as a quiet line with the avatar of the
+// avatar and name -- a coordinator agent's, the manager, with the folder it is over -- or the news of a watch, as a quiet line with the avatar of the
 // actor it is about; long as they mostly are, folded to their first lines (.crew-fold; news, two) with a toggle to show
 // the rest. A message an app wrote with its own block (a Browser's), as the app draws it (the host's appWords).
 import { createContext, useContext, useLayoutEffect, useReducer, useRef, type MouseEvent, type ReactNode } from "react";
@@ -49,18 +49,30 @@ export function UserWords({ text, kind }: { text: string; kind?: string }) {
 const COORDINATOR_NAME = "Coordinator agent";
 const isCoordinator = (a: Actor) => a.role === "coordinator";
 
-/** The actor of the gatherer shown that a message names: the gatherer agent, or the one whose id starts with `id`. */
+/** The actor a message names: the one whose id starts with `id` -- of the group shown, or, a coordinator agent's, of any
+ * (one above groups is in a group of its own) -- or, a coordinator agent's from before they named theirs, its group's. */
 function crewActor(feed: ChatFeed, coordinator: boolean, id: string | null): Actor | null {
   const g = feed.home?.gatherers.find((x) => x.name === feed.gatherer);
   const agents = (g?.agents ?? []) as Actor[];
+  const named = (a: Actor) => !!id && (a.channel.startsWith(id) || (a.session?.started_as ?? "").startsWith(id));
+  if (coordinator) {
+    const every = (feed.home?.gatherers ?? []).flatMap((x) => x.agents as Actor[]);
+    return (
+      (id ? every.find((a) => isCoordinator(a) && named(a)) : null) ??
+      agents.find((a) => isCoordinator(a) && !a.over) ??
+      null
+    );
+  }
   if (!g) return null;
-  if (coordinator) return agents.find(isCoordinator) ?? null;
-  return agents.find((a) => id && (a.channel.startsWith(id) || (a.session?.started_as ?? "").startsWith(id))) ?? null;
+  return agents.find(named) ?? null;
 }
 /** An actor's id as a label shows it: its first characters (messages name ids whole, for the actors to answer by). */
 const crewId = (id: string | null | undefined) => String(id || "").slice(0, 8);
+/** a coordinator agent's node, as a bubble names it: " over everything", " over Editor" (a folder's own name) */
+const crewOver = (over: string | null | undefined) =>
+  !over ? "" : over === "everything" ? " over everything" : ` over ${over.split("/").pop()}`;
 const crewName = (coordinator: boolean, a: Actor | null, env: Envelope) =>
-  coordinator ? COORDINATOR_NAME : a?.name?.text || env.name || `Actor ${crewId(env.id)}`;
+  coordinator ? COORDINATOR_NAME + crewOver(env.over) : a?.name?.text || env.name || `Actor ${crewId(env.id)}`;
 
 function CrewWords({ env }: { env: Envelope }) {
   const { feed, host } = useChat();
