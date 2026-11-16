@@ -37,6 +37,8 @@ async function withEditor(page: Page, crews: { folder?: boolean; all?: boolean }
         agents: [crewOf({ ...codex, channel: OVER_ALL, session: null }, "all")],
       });
     home.merged = true;
+    home.harnesses = ["claude", "codex"]; // harnesses a coordinator agent can start on, as on a machine that has them
+    for (const h of home.harnesses) home.harness_info[h] = { ...home.harness_info[h], runs: true };
     await route.fulfill({ json: home });
   });
   await streamsAsRequests(page);
