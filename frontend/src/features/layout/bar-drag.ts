@@ -37,18 +37,28 @@ export class BarDrag {
     return i < 0 ? others.length : i;
   }
   /** The tabs slid aside as they would lie with the one dragged at place `slot` among the others: the ones it passes a
-   * place toward where it was, it past them -- none, as they lie. */
+   * place toward where it was, it past them -- none, as they lie. Each tab's slide set only where it changes: the drag's
+   * events come many times a second, the pointer still or not, and a slide set again (or undone and set, a measure
+   * between) starts its tab's move over -- tabs jerking back and forth as they go. */
   slide(slot: number | null): void {
     const chips = this.chips(),
-      from = chips.findIndex((e) => e.dataset.id === this.lifted);
-    for (const e of chips) e.style.transform = "";
-    if (slot === null || from < 0 || slot === from) return;
-    const gap = parseFloat(getComputedStyle(this.list).columnGap) || 0,
-      step = (e: HTMLElement): number => e.offsetWidth + gap,
-      passed = slot > from ? chips.slice(from + 1, slot + 1) : chips.slice(slot, from),
-      way = slot > from ? -1 : 1;
-    for (const e of passed) e.style.transform = `translateX(${way * step(chips[from])}px)`;
-    chips[from].style.transform = `translateX(${-way * passed.reduce((n, e) => n + step(e), 0)}px)`;
+      from = chips.findIndex((e) => e.dataset.id === this.lifted),
+      to = new Map<HTMLElement, string>();
+    if (slot !== null && from >= 0 && slot !== from) {
+      // measured first, then set: no measure between two sets (offsets as they lie: a slide doesn't change them)
+      const gap = parseFloat(getComputedStyle(this.list).columnGap) || 0,
+        step = (e: HTMLElement): number => e.offsetWidth + gap,
+        passed = slot > from ? chips.slice(from + 1, slot + 1) : chips.slice(slot, from),
+        way = slot > from ? -1 : 1,
+        by = step(chips[from]);
+      // (whole pixels: as the browser keeps them, so the one set reads back the same)
+      to.set(chips[from], `translateX(${Math.round(-way * passed.reduce((n, e) => n + step(e), 0))}px)`);
+      for (const e of passed) to.set(e, `translateX(${Math.round(way * by)}px)`);
+    }
+    for (const e of chips) {
+      const t = to.get(e) ?? "";
+      if (e.style.transform !== t) e.style.transform = t;
+    }
   }
   /** The tab dragged let go (dropped, or the drag given up): the others back where they lie. False if none was. */
   drop(): boolean {
