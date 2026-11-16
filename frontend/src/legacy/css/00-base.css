@@ -53,8 +53,9 @@
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   height: 100vh; display: flex; flex-direction: column; }
-/* THE TOP BAR, across the page over the list and the panes: the logo -- a button, the settings --
-   how many actors do what (top-totals), then the screen's tabs (tabs.ts's bar, in #tab-slot); under it, the list's own
+/* THE TOP BAR, across the page over the list and the panes: the logo -- a button, the settings -- every actor over the
+   whole page (top-full: a button, pressed while it is), how many actors do what (top-totals), then the screen's tabs
+   (tabs.ts's bar, in #tab-slot); under it, the list's own
    edge (.side's), so the tabs read as apart from the panels under them (inside its height: nothing under it moves) */
 .topbar { flex: none; height: var(--bar-h); display: flex; align-items: center; gap: 4px; padding: 0 0 0 8px; background: var(--side);
   border-bottom: 2px solid var(--side-rule); position: relative; z-index: 30; }   /* above the page (the terminal's own layers reach 11), so its Settings panel is too */
@@ -68,6 +69,9 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 sy
 .topbar .ag-logo { display: block; width: 100%; height: 100%; }
 .ag-logo .halo * { fill: var(--side) !important; stroke: var(--side) !important; stroke-width: 5px !important; opacity: 1 !important; }
 .topbar .cfg-flag { font-size: 11px; color: var(--muted); }
+.topbar .top-full { flex: none; display: flex; }
+.topbar .lb-full[aria-pressed="true"] { color: var(--ink); background: var(--wash); }
+.topbar .lb-full:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
 /* how many of the shown groups' actors wait for the reader, stopped on an error, run, finished unseen, are idle: a dot in
    the list's colour for each, and the number; nothing while none is */
 .top-totals { flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 6px; font-size: 12px; color: var(--ink-2);

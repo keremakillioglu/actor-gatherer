@@ -131,12 +131,11 @@ button.agent-group:hover { color: var(--ink-2); }
    actors, each its avatar with its status's dot and its name in small under it; hovered, a card saying who it is -- or
    over the whole page, the monitor: a column for each status, a card for each actor, saying what it is doing. The panes
    stay where they are, under it, at their size */
-/* the list's buttons: in its own head ("Agents"); folded or over the page, in a row over the rail or the monitor
-   (.list-top) -- the settings are the top bar's logo */
+/* the list's buttons: in its own head ("Agents"); folded, in a row over the rail (.list-top) -- the settings are the top
+   bar's logo, and full screen is beside it (#top-full) */
 .list-btns { display: flex; gap: 2px; flex: none; }
 .list-top { display: none; }
-:root:is(.list-folded, .list-full) .list-top { display: flex; flex: none; justify-content: center; padding: 6px 0 0; }
-:root.list-full .list-top { justify-content: flex-start; padding: 10px 14px 0; background: var(--page); }
+:root.list-folded .list-top { display: flex; flex: none; justify-content: center; padding: 6px 0 0; }
 .list-btn { border: 0; background: none; padding: 5px; border-radius: 6px; color: var(--muted); display: inline-flex; align-items: center; flex: none; }
 .list-btn:hover { color: var(--ink); background: var(--wash); }
 .list-btn svg { display: block; }
@@ -144,7 +143,7 @@ button.agent-group:hover { color: var(--ink-2); }
 :root:is(.list-folded, .list-was-folded) .layout { grid-template-columns: min(var(--rail-w, 76px), calc(100% - 260px)) minmax(0, 1fr); }
 .rail-grip { display: none; position: absolute; top: 0; bottom: 0; right: -4px; width: 7px; cursor: col-resize; z-index: 5; touch-action: none; }
 :root.list-folded .rail-grip { display: block; }
-/* folded: over the rail, its buttons in one row -- open the list, full screen, hide -- small enough for 76px */
+/* folded: over the rail, its buttons in one row -- open the list, hide -- small enough for 76px */
 :root.list-folded .list-top .list-btns { gap: 0; flex-wrap: wrap; justify-content: center; }
 :root.list-folded .list-top .lb-fold { order: -1; }
 :root.list-folded .list-top .list-btn { padding: 4px; }

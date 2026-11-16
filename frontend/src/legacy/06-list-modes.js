@@ -57,15 +57,11 @@ const RAIL_GRIP = el("div", { class: "rail-grip", "aria-hidden": "true", title: 
 document.querySelector(".side").append(RAIL_GRIP);
 widthGrip(RAIL_GRIP, "ag-dashboard-rail-width", document.documentElement, "--rail-w", 76,
   (x) => Math.min(360, x - document.querySelector(".side").getBoundingClientRect().left));
-// its two buttons, as the list is: over the whole page (or back), and folded (or open again; none over the page)
+// its buttons, as the list is: folded (or open again), and hidden (or kept open); none over the whole page
 function listButtons() {
   const full = listMode === "full", folded = listMode === "folded";
   const fold = folded ? "Open the list" : "Fold the list";
-  return [el("button", { class: "list-btn lb-full", type: "button", "aria-pressed": full ? "true" : "false",
-      title: full ? "Back to the list (Esc)" : "Every actor over the whole page: what each is doing",
-      "aria-label": full ? "Leave full screen" : "Full screen", onclick: () => full ? leaveFull() : setListMode("full") },
-      strokeIcon(full ? LIST_ICONS.unfull : LIST_ICONS.full)),
-    full ? null : el("button", { class: "list-btn lb-fold", type: "button", "aria-expanded": folded ? "false" : "true", title: fold,
+  return [full ? null : el("button", { class: "list-btn lb-fold", type: "button", "aria-expanded": folded ? "false" : "true", title: fold,
       "aria-label": fold, onclick: () => setListMode(folded ? "list" : "folded") },
       strokeIcon(ICONS.sidebar + (folded ? LIST_ICONS.unfold : LIST_ICONS.fold))),
     full || PANE ? null : el("button", { class: "list-btn lb-hide", type: "button", "aria-pressed": listHidden ? "true" : "false",
@@ -124,7 +120,18 @@ if (!PANE && !SNAPSHOT) {
   root.classList.toggle("list-hidden", listHidden);
   requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("list-still")));
 }
-function drawListButtons() { document.getElementById("list-btns").replaceChildren(...listButtons().filter(Boolean)); }
+// every actor over the whole page (or back): in the top bar, by the logo and the counts it shows in full
+function fullButton() {
+  const full = listMode === "full";
+  return el("button", { class: "list-btn lb-full", type: "button", "aria-pressed": full ? "true" : "false",
+    title: full ? "Back to the list (Esc)" : "Every actor over the whole page: what each is doing",
+    "aria-label": full ? "Leave full screen" : "Full screen", onclick: () => full ? leaveFull() : setListMode("full") },
+    strokeIcon(full ? LIST_ICONS.unfull : LIST_ICONS.full));
+}
+function drawListButtons() {
+  document.getElementById("list-btns").replaceChildren(...listButtons().filter(Boolean));
+  document.getElementById("top-full").replaceChildren(fullButton());
+}
 const leaveFull = () => setListMode(listFrom === "full" ? "list" : listFrom);
 document.addEventListener("keydown", (ev) => {        // first: Esc closes the settings first, if they are open
   if (ev.key !== "Escape" || listMode !== "full" || !document.getElementById("about").hidden || window.agNext.settings.fileOpen()) return;
