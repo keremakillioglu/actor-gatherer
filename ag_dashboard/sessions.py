@@ -23,12 +23,14 @@ ones it started:
     ended            when (epoch seconds) the dashboard's last process for it ended -- closed from the list,
                      exited, hung up; not a codex turn's own end -- what tells it Closed where ag cannot tell
                      whether a process runs (no /proc: macOS); 0 when none has
-    role             what the session is for, besides its messages: "coordinator", its gatherer's gatherer agent
+    role             what the session is for, besides its messages: "coordinator", a coordinator agent
                      (coordination.py), run with that role's instructions added to its harness's own on every run
                      (`instructions`); or, as JSON, {"app": name, "key": instance}: the actor an app started with
                      it (app_agents.py), attached to it -- its tools and instructions given by the tool gateway
                      (`extra_args`) -- or {"<name>": key}, one from before the app was one (adopted: app_agents.py's
                      `adopt_all`); NULL, an actor like any other
+    over             a coordinator agent's NODE, the part of the list it is over (coordinators.py): "all", "groups:<id>",
+                     "group:<name>" or "folder:<id>"; NULL, its group's
 
 The agent is one long-running process, `ag --gatherer G claude -p --input-format stream-json
 --output-format stream-json ...`: each message is a line on its stdin, a turn, and each turn
@@ -131,7 +133,7 @@ except ImportError:
 HARNESSES = tuple(harness_kit.runnable())     # the harnesses a session can be started on here (harness_kit's)
 PERMISSION_MODES = ("auto", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "manual")
 CHAT_MODES = ("terminal", "headless")          # what a message opens for a session with no terminal (`chat_mode`)
-COORDINATOR = "coordinator"                    # the role of a gatherer's gatherer agent (coordination.py)
+COORDINATOR = "coordinator"                    # the role of a coordinator agent (coordination.py)
 ROLES = (COORDINATOR,)
 ALONE = "self:"                                 # an actor on its own's group of one, `self:<channel>` (groups.py)
 SENT_KEPT = 20                                  # a session's latest messages from Chat kept in memory (`send`)
@@ -160,12 +162,13 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS sessions (
     model           TEXT,
     started_as      TEXT,
     ended           REAL NOT NULL DEFAULT 0,
-    role            TEXT
+    role            TEXT,
+    over            TEXT
 )"""
 COLUMNS = ("session_id", "gatherer", "harness", "cwd", "permission_mode", "created_at", "turns", "status", "last_error",
-           "kept", "model", "started_as", "ended", "role")
+           "kept", "model", "started_as", "ended", "role", "over")
 ADDED = (("kept", "REAL NOT NULL DEFAULT 0"), ("model", "TEXT"), ("started_as", "TEXT"),
-         ("ended", "REAL NOT NULL DEFAULT 0"), ("role", "TEXT"))   # columns a table from before lacks
+         ("ended", "REAL NOT NULL DEFAULT 0"), ("role", "TEXT"), ("over", "TEXT"))   # columns a table from before lacks
 # The dashboard's other tables in dashboard.db with a row per actor, by (gatherer, channel): saved.py's, seen.py's,
 # avatars.py's -- what a session discarded (`discard`) takes with it.
 ACTOR_TABLES = ("saved", "seen", "avatars")
@@ -198,8 +201,8 @@ def stored() -> List[dict]:
         return []
     conn = sqlite3.connect(f"file:{db_path()}?mode=ro", uri=True, timeout=8)
     conn.row_factory = sqlite3.Row
-    try:                                # a table from before `kept`, `model`, `started_as`, `ended`, `role`: none
-        return [{"kept": 0, "model": None, "started_as": None, "ended": 0, "role": None, **dict(r)}
+    try:                                # a table from before `kept`, `model`, `started_as`, `ended`, `role`, `over`: none
+        return [{"kept": 0, "model": None, "started_as": None, "ended": 0, "role": None, "over": None, **dict(r)}
                 for r in conn.execute("SELECT * FROM sessions ORDER BY created_at DESC")]
     except sqlite3.Error:
         return []
@@ -468,7 +471,7 @@ def instructions(s: dict) -> Optional[str]:
     if s.get("role") != COORDINATOR:
         return None
     from . import coordination                  # it runs sessions: asked here, once both are loaded
-    return coordination.instructions(s["gatherer"])
+    return coordination.instructions(s["gatherer"], s.get("over"), s["session_id"])
 
 
 def extra_args(s: dict) -> List[str]:
@@ -764,6 +767,10 @@ class Sessions:
         finally:
             conn.close()
 
+    def set_over(self, session_id: str, over: Optional[str]) -> None:
+        """A coordinator agent's node changed (coordinators.py): `over`, None for its group's."""
+        self._set(session_id, over=over)
+
     def _set(self, session_id: str, **values) -> None:
         conn = self._db()
         try:
@@ -820,11 +827,13 @@ class Sessions:
             return out
 
     def create(self, gatherer: str, cwd: str, permission_mode: str = "auto", harness: str = harness_kit.DEFAULT,
-               model: Optional[str] = None, role: Optional[str] = None, alone: bool = False) -> dict:
+               model: Optional[str] = None, role: Optional[str] = None, alone: bool = False,
+               over: Optional[str] = None) -> dict:
         """A new session of `harness` in `gatherer` (a new gatherer if none has the name), to run in `cwd`
         on `model` (None: the harness's default), for `role` (`known_role`; None: an actor like any other). Its agent starts
         with its first message. `alone`: listed on its own, its row's group its group of one (`self:<its id>`), run under
-        `gatherer` -- its `group` record is the caller's to write (groups.py's `start_alone`)."""
+        `gatherer` -- its `group` record is the caller's to write (groups.py's `start_alone`). `over`: a coordinator
+        agent's node (coordinators.py)."""
         gatherer = (gatherer or "").strip()
         if not GATHERER.fullmatch(gatherer):
             raise SessionError("a gatherer's name may hold letters, digits, '.', '_' and '-' only")
@@ -843,9 +852,9 @@ class Sessions:
         session_id = str(uuid.uuid4())
         conn = self._db()
         try:
-            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?, 0, ?)",
+            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?, 0, ?, ?)",
                          (session_id, ALONE + session_id if alone else gatherer, harness, cwd, permission_mode, _now(),
-                          model, session_id if picks_id(harness) else None, role))
+                          model, session_id if picks_id(harness) else None, role, over))
         finally:
             conn.close()
         self._changed(ALONE + session_id if alone else gatherer, session_id)
@@ -866,7 +875,7 @@ class Sessions:
                                    + (f" ({cwd})" if cwd else ""))
             conn = self._db()
             try:
-                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, 'auto', ?, 1, 'stopped', NULL, 0, NULL, NULL, 0, NULL)",
+                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, 'auto', ?, 1, 'stopped', NULL, 0, NULL, NULL, 0, NULL, NULL)",
                              (session_id, gatherer, _session_harness(gatherer, session_id), cwd, _now()))
             finally:
                 conn.close()

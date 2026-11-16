@@ -19,20 +19,20 @@
 .gatherer-row .act.start:is(.new-actor, .new-more) svg { display: block; pointer-events: none; }
 .gatherer-row .act.start.new-more svg { stroke-width: 2.4; }
 .gatherer-row .act.start:is(.new-actor, .new-more).busy svg { animation: term-blink 1s ease-in-out infinite; }
-/* the gatherer agent's button: its face, the manager's (crewFace); hidden from the list, its status at its corner */
-.gatherer-row .act.start.crew { position: relative; }
-.gatherer-row .act.start.crew .crew-face { width: 18px; height: 18px; display: block; pointer-events: none; }
-.gatherer-row .act.start.crew .crew-dot { position: absolute; right: 0; top: 2px; width: 6px; height: 6px; border-radius: 50%;
+/* a coordinator agent's button, on its group's or folder's row or the list's head: its face, the manager's (crewFace); hidden from the list, its status at its corner */
+:is(.gatherer-row, .folder-line, .aside-head) .act.start.crew { position: relative; }
+:is(.gatherer-row, .folder-line, .aside-head) .act.start.crew .crew-face { width: 18px; height: 18px; display: block; pointer-events: none; }
+:is(.gatherer-row, .folder-line, .aside-head) .act.start.crew .crew-dot { position: absolute; right: 0; top: 2px; width: 6px; height: 6px; border-radius: 50%;
   background: var(--axis); box-shadow: 0 0 0 1.5px var(--side); pointer-events: none; }
-.gatherer-row .act.start.crew .crew-dot:is(.running, .background) { background: var(--good); }
-.gatherer-row .act.start.crew .crew-dot.asking { background: var(--warning); }
-.gatherer-row .act.start.crew .crew-dot.error { background: var(--critical); }
-.gatherer-row .act.start.crew .crew-dot.finished { background: var(--s1); }
+:is(.gatherer-row, .folder-line, .aside-head) .act.start.crew .crew-dot:is(.running, .background) { background: var(--good); }
+:is(.gatherer-row, .folder-line, .aside-head) .act.start.crew .crew-dot.asking { background: var(--warning); }
+:is(.gatherer-row, .folder-line, .aside-head) .act.start.crew .crew-dot.error { background: var(--critical); }
+:is(.gatherer-row, .folder-line, .aside-head) .act.start.crew .crew-dot.finished { background: var(--s1); }
 /* the gatherer agent's row, at the top of its gatherer: a gold line at its side, as its badge is edged */
 .agent.coordinator { box-shadow: inset 2px 0 0 var(--t-gatherer); }
-.gatherer-row .act.start.crew:not(.on) .crew-face { filter: grayscale(.75); opacity: .8; }
-.gatherer-row .act.start.crew:hover .crew-face { filter: none; opacity: 1; }
-.gatherer-row .act.start.crew.busy .crew-face { animation: term-blink 1s ease-in-out infinite; }
+:is(.gatherer-row, .folder-line, .aside-head) .act.start.crew:not(.on) .crew-face { filter: grayscale(.75); opacity: .8; }
+:is(.gatherer-row, .folder-line, .aside-head) .act.start.crew:hover .crew-face { filter: none; opacity: 1; }
+:is(.gatherer-row, .folder-line, .aside-head) .act.start.crew.busy .crew-face { animation: term-blink 1s ease-in-out infinite; }
 .newform { margin: 4px 16px 12px; padding: 10px 12px; border: 1px solid var(--ring); border-radius: 8px; background: var(--page); display: grid; gap: 8px; }
 .newform label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); }
 .newform input, .newform select, .composer textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);

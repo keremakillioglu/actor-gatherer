@@ -93,6 +93,29 @@ describe("Bubble", () => {
     expect(words.outerHTML).toBe('<span class="tx">Click the button</span>');
   });
 
+  it("names a coordinator agent after its folder: its own name, else the folder its message says it is over", () => {
+    const text =
+      'Message from the coordinator agent over "paper/Figures" (answer it with: ag actors send ff-1 "..."):\n\nWait.';
+    const named: Actor = {
+      channel: "ff-1",
+      role: "coordinator",
+      over: "folder:3",
+      avatar: null,
+      name: { text: "Figures coordinator" },
+    };
+    const env = { from: "coordinator" as const, id: "ff-1", name: null, over: "paper/Figures", text: "Wait." };
+    const said = (agents: Actor[]) => {
+      const t = page(text, {}, agents);
+      t.host.envelopes[text] = env;
+      return t.page.draw().querySelector(".fl-user .crew-from")!.textContent;
+    };
+    expect(said([ACTOR, named])).toBe("Figures coordinator");
+    expect(said([ACTOR])).toBe("Figures coordinator"); // not listed here: by its folder
+    const sent = [{ text: "Please settle it.", kind: "send", to: "ff-1", to_name: "Figures coordinator" }];
+    const node = drawn("Ask", { sent }, [ACTOR, named]).node;
+    expect(node.querySelector("#fl-turn-0 > .fl-sent .crew-from")!.textContent).toBe("To Figures coordinator");
+  });
+
   it("draws what the actor sent another, with its receiver's face and name", () => {
     const sent = [
       { text: "Please review.", kind: "send", to: "abc12345-6789", to_name: null },

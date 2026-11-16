@@ -193,15 +193,16 @@ test("a folder starts actors in it: its + and + ⋯ on its line, shown while hov
     await expect(line.locator(".f-acts")).toHaveCSS("opacity", "0"); // at rest: its name and counts alone
     await line.hover();
     await expect(line.locator(".f-acts")).toHaveCSS("opacity", "1");
-    await expect(line.locator(".act.start")).toHaveCount(2); // "+ actor" and "+ ⋯", no gatherer agent's face
+    await expect(line.locator(".act.start:not(.crew)")).toHaveCount(2); // "+ actor" and "+ ⋯"
+    await expect(line.locator(".f-acts .act.crew:not(.on)")).toHaveCount(1); // and a coordinator agent started over it
     // the gatherer's row has the same, in the same order -- hide where a folder has delete -- shown while hovered too; its
-    // gatherer agent's face apart, just after its name, always shown
+    // coordinator agent's face apart, just after its name, always shown
     const order = (box: string) =>
       page
         .locator(box)
         .first()
         .evaluate((n) =>
-          [...n.querySelectorAll("button")].map((b) =>
+          [...n.querySelectorAll("button:not(.crew)")].map((b) =>
             [...b.classList].find((c) =>
               ["new-actor", "new-more", "new", "newfolder", "rename", "hide", "delete"].includes(c),
             ),

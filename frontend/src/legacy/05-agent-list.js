@@ -18,8 +18,8 @@ function toggleFold(group, name) {
   try { localStorage.setItem(FOLD_KEYS[group], JSON.stringify([...open])); } catch (e) { /* kept for this page only */ }
   renderAgents();
 }
-// The gatherer agents the reader hid from the list, by their gatherer, kept in this browser: its face on the gatherer's row
-// (startButtons) shows it again, and opens it.
+// The coordinator agents the reader hid from the list, kept in this browser: a group's by the group's name, any other's by
+// its node (crewHideKey) -- its face on its group's or folder's row (crewButton) shows it again, and opens it.
 const CREW_HIDDEN_KEY = "ag-dashboard-crew-hidden";
 const crewHidden = (() => {
   try { const v = JSON.parse(localStorage.getItem(CREW_HIDDEN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
@@ -417,18 +417,22 @@ function renderAgents() {
   const folderTyping = folderInput && document.activeElement === folderInput && [folderInput.selectionStart, folderInput.selectionEnd];
   nameMoving = true;                                 // taken out and put back: not a blur that names it
   document.getElementById("home").textContent = document.getElementById("home").title = state.home.home;
-  const shown = state.home.gatherers.filter((g) => !isHidden(g)), hidden = state.home.gatherers.filter(isHidden);
+  const shown = state.home.gatherers.filter((g) => !isHidden(g) && !isCrewHome(g)), hidden = state.home.gatherers.filter(isHidden);
   // its head: a gatherer or a folder of gatherers dropped on it, at the list's top (05-gatherer-folders.js)
   aside.replaceChildren(dropOn(el("div", { class: "aside-head" }, el("h2", { text: "Agents" }), outsideDrop(),
     SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new group" }, "+ New group"),
     aloneNew(),                                      // an actor on its own (05-group-moves.js)
+    SNAPSHOT || !state.home.merged ? null : crewButton(null, "all"),   // the coordinator agent over everything
     SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: "New folder, to keep groups in",
       "aria-label": "New folder, to keep groups in", onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),
     el("span", { class: "list-btns" }, ...listButtons())), GFS, null, () => {}));
   if (state.adding && state.adding.gatherer === "") aside.append(gathererForm());
   if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No groups in this home yet." }));
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every group is hidden." }));
-  // its gatherers, in the folders the reader keeps them in, if any; then the actors on their own closed, in their lines
+  // the coordinator agent over everything; its gatherers, in the folders the reader keeps them in, if any; then the
+  // actors on their own closed, in their lines
+  const overAll = crewRow("all");
+  if (overAll) aside.append(el("div", { class: "g-kids crew-top" }, overAll));
   aside.append(...gfLevel(shown.filter((g) => !aloneShut(g)), null, gathererBox), ...aloneShutRows(shown.filter(aloneShut)));
   if (hidden.length) {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
@@ -463,7 +467,7 @@ function renderAgents() {
 function gathererBox(g) {
   if (g.alone) return aloneBox(g);                   // an actor on its own: its row alone (05-group-moves.js)
   const open = !collapsed.has(g.name);
-  const crew = g.agents.find(isCoordinator);
+  const crew = groupCrew(g);
   const box = el("div", { class: "gatherer" + (picks.g === g.name && picks.cs.size > 1 ? " picking" : "") },
     dropOn(dragGatherer(el("div", { class: "gatherer-row", "data-key": g.name },
       el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name),
@@ -472,7 +476,7 @@ function gathererBox(g) {
         state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, null) ? null
           : el("span", { class: "gname", text: titleOf(g) })),
       state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, null) ? nameBox() : null,
-      SNAPSHOT ? null : crewButton(g),                 // its gatherer agent, just after its name
+      SNAPSHOT ? null : crewButton(g),                 // its coordinator agent, just after its name
       // how many of its actors wait on the user, how many stopped on an error, and how many run now; nothing while none does
       // -- and over them while it is hovered (or in focus), in a folder's line's order: "+ actor", "+ ⋯", a new folder,
       // rename, and hide (a folder's: delete)
@@ -497,7 +501,7 @@ function gathererBox(g) {
 // blank line, then the message (or, as the list has it, its lines made one). Or the news of a watch the actor asked for
 // (coordination.py's `update`, UPDATE): which actor is done, and how, then what it was asked and said. null: neither.
 // Chat draws a message with its sender's avatar and name (src/features/chat/Bubble.tsx); the list, as a line (crewLine).
-const ENVELOPE = /^Message from (the (?:gatherer|coordinator) agent|actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)(?: \(answer it with: [^\n]*?\))?:\s+([\s\S]*)$/;
+const ENVELOPE = /^Message from (the (?:gatherer|coordinator) agent(?: over (everything|"(?:[^"\\]|\\.)*"))?|actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)(?: \(answer it with: (?:ag actors send ([\w-]+) )?[^\n]*?\))?:\s+([\s\S]*)$/;
 const UPDATE = /^Update \(you asked with `ag actors when`, watch (\d+)\): actor ([\w-]+)(?: \(("(?:[^"\\]|\\.)*")\))? is done: ([^\n]*?)\.(?:\s+([\s\S]*))?$/;
 function envelope(text) {
   const s = String(text ?? "");
@@ -505,8 +509,15 @@ function envelope(text) {
   let m = UPDATE.exec(s);
   if (m) return { from: "update", id: m[2], name: named(m[3]), how: m[4], watch: +m[1], text: m[5] || "" };
   m = ENVELOPE.exec(s);
-  return m && { from: m[1].startsWith("the ") ? "coordinator" : "actor", id: m[2] || null, name: named(m[3]), text: m[4] };
+  if (!m) return null;
+  if (m[1].startsWith("the ")) {             // a coordinator agent's: the node it is over, and its id to answer to
+    const over = m[2] && m[2] !== "everything" ? named(m[2]) : m[2] || null;
+    const reply = m[5] && !CREW_ALIASES.includes(m[5].toLowerCase()) ? m[5] : null;
+    return { from: "coordinator", id: reply, name: null, over, text: m[6] };
+  }
+  return { from: "actor", id: m[3] || null, name: named(m[4]), text: m[6] };
 }
+const CREW_ALIASES = ["gatherer", "gatherer-agent", "coordinator"];    // coordination.py's ALIASES: no id
 const MANAGER = "roles/manager";             // the gatherer agent's picture (avatars.py's ROLES), before it has one
 // An actor's avatar, small, as the list draws it (actorLogo) less its harness's mark: `fallback`, the picture with none.
 function crewFace(a, fallback = null) {
@@ -521,8 +532,46 @@ function crewFace(a, fallback = null) {
 const crewId = (id) => String(id || "").slice(0, 8);
 // in a line (the list's): who it is from, and its words
 const crewLine = (env) => env.from === "update" ? `${env.name || `Actor ${crewId(env.id)}`} is done: ${env.how}`
-  : `${env.from === "coordinator" ? "From the coordinator agent" : `From ${env.name || `actor ${crewId(env.id)}`}`}: ${env.text}`;
+  : `${env.from === "coordinator" ? `From ${crewOverName(env.over)}` : `From ${env.name || `actor ${crewId(env.id)}`}`}: ${env.text}`;
+// a coordinator agent's name (data.py's), after the node its messages say it is over: "the Figures coordinator" -- a
+// folder's own name, its path's last part; "the Everything coordinator"; one from before nodes, "the coordinator agent"
+const crewOverName = (over) => !over ? "the coordinator agent"
+  : `the ${over === "everything" ? "Everything" : String(over).split("/").pop()} coordinator`;
 const isCoordinator = (a) => !!a && a.role === "coordinator";
+// A COORDINATOR AGENT is over a NODE of the list (coordinators.py): "all" (everything), "groups:<id>" (a folder of
+// groups), "group:<name>" (a group) or "folder:<id>" (a folder in a group) -- its `over` (data.py's), else its group's.
+// One over a group, or a folder in one, is one of that group's actors; one above groups is in a group of one of its own,
+// as an actor on its own is (`alone`: isCrewHome), drawn at its node, not as such a group.
+const crewNode = (g, a) => a.over || `group:${g.name}`;
+const isCrewHome = (g) => !!g.alone && g.agents.some(isCoordinator);
+// the coordinator agent over a group itself (none: the group has none)
+const groupCrew = (g) => g.agents.find((a) => isCoordinator(a) && !a.over) || null;
+// [its group, the coordinator agent over `node`], or [null, null]: looked for in `g` first, then every group
+function crewAt(node, g = null) {
+  const gs = [g, ...state.home.gatherers.filter((x) => x !== g)].filter(Boolean);
+  for (const x of gs) {
+    const a = x.agents.find((y) => isCoordinator(y) && crewNode(x, y) === node);
+    if (a) return [x, a];
+  }
+  return [null, null];
+}
+// what the reader's hiding is kept by: a group's coordinator agent's, the group's name (as before nodes); any other's, its node
+const crewHideKey = (node) => node.startsWith("group:") ? node.slice("group:".length) : node;
+// a node as the list names it: "everything", a folder of groups' or a folder's name, a group's title
+function crewPlace(node, g = null) {
+  if (node === "all") return "everything";
+  const [kind, id] = [node.slice(0, node.indexOf(":")), node.slice(node.indexOf(":") + 1)];
+  if (kind === "group") { const x = state.home.gatherers.find((y) => y.name === id); return x ? titleOf(x) : id; }
+  if (kind === "groups") { const f = folderById(GF, +id); return f ? f.name : "a folder of groups"; }
+  const f = g ? folderById(g.name, +id) : null;
+  return f ? f.name : "a folder";
+}
+// A coordinator agent's row, at the top of its node (the list's top, a folder of groups', a group's, a folder's): none
+// while it has none, or the reader hid it
+function crewRow(node, g = null) {
+  const [cg, a] = crewAt(node, g);
+  return a && !crewHidden.has(crewHideKey(node)) ? agentRow(cg, a, CREW_GROUP) : null;
+}
 // An actor is a TASK too (07-panes.js's taskKey): its row says how it stands at its left, its state in a word on its
 // meta line (none, idle), and shows its face at its right.
 function agentRow(g, a, group) {
@@ -559,7 +608,7 @@ function agentRow(g, a, group) {
       // just its name, else what it was last asked, on one line: what it was asked and its recap, in its title (and over
       // the whole page, the monitor's card)
       naming ? nameBox() : el("div", { class: "name" + (named ? "" : asked ? " unnamed" : " none"), ...nameIt,
-        text: named || (asked ? firstLine(asked, 200) : isCoordinator(a) ? "Coordinates this gatherer's actors" : "No message yet") }),
+        text: named || (asked ? firstLine(asked, 200) : isCoordinator(a) ? `Coordinates ${crewPlace(crewNode(g, a), g)}` : "No message yet") }),
       rowActs(addButton(g, a.channel), saveButton(g, a), closeButton(g, a)),
       branchChip(g, a),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
@@ -1049,8 +1098,8 @@ const rowButton = (cls, attrs, run, icon) => el("span", { class: cls, role: "but
 // Its bookmark: saved for later (filled), or to be, a press either way -- in a snapshot, filled if saved, and nothing to
 // press. The gatherer agent's, in its place: hidden from the list (its face on the gatherer's row shows it again).
 function saveButton(g, a) {
-  if (isCoordinator(a)) return SNAPSHOT ? null : rowButton("save-btn", { title: "Hide the coordinator agent from the list: its face on the group's row shows it again, and opens it",
-    "aria-label": "Hide the coordinator agent" }, () => setCrewHidden(g.name, true), hideIcon());
+  if (isCoordinator(a)) return SNAPSHOT ? null : rowButton("save-btn", { title: "Hide the coordinator agent from the list: its face on its folder's row shows it again, and opens it",
+    "aria-label": "Hide the coordinator agent" }, () => setCrewHidden(crewHideKey(crewNode(g, a)), true), hideIcon());
   const saved = !!savedAs(g.name, a);
   if (SNAPSHOT) return saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null;
   return rowButton("save-btn" + (saved ? " on" : ""), { "aria-pressed": saved ? "true" : "false",
@@ -1227,7 +1276,7 @@ function folderRows(g, f) {
   const out = [folderLine(g, f)], closed = shownClosed(g, f);
   if (folderClosing && folderClosing.from === "list" && folderClosing.g === g.name && folderClosing.id === f.id) out.push(closeAsk(g, f));
   if (isOpenFolder(g.name, f.id)) {
-    const rows = closed ? closedRows(g, f.id) : boxRows(g, f.id);
+    const rows = closed ? closedRows(g, f.id) : [crewRow(`folder:${f.id}`, g), ...boxRows(g, f.id)].filter(Boolean);
     out.push(el("div", { class: "f-kids" }, ...(rows.length ? rows
       : [el("div", { class: "f-empty", text: SNAPSHOT || closed ? "Empty" : "Empty: drag actors here, or start one with its +" })])));
   } else {
@@ -1291,16 +1340,18 @@ function folderLine(g, f) {
     folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
     folderAct("delete", `Delete ${f.name}: what is in it moves up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
     folderAct("reopen", `Reopen ${f.name}: back with the open folders, its actors still closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id)),
-  ] : [...startButtons(g, f),
+  ] : [...startButtons(g, f), crewAt(`folder:${f.id}`, g)[1] ? null : crewButton(g, `folder:${f.id}`),
     folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(g.name, null, f.id)),
     folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
-    folderAct("delete", `Delete ${f.name}: what is in it moves up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
+    folderAct("delete", `Delete ${f.name}: what is in it moves up a level${crewAt(`folder:${f.id}`, g)[1] ? ", and its coordinator agent is closed" : ""}`,
+      strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
     folderAct("close", `Close ${f.name}: every actor in it closed, and it put in the closed line`, closeIcon(), () => pressClose(g, f, "list"))];
   const line = el("div", { class: "folder-line" + (closed ? " closed" : ""), "data-key": `${g.name}/folder:${f.id}`, "data-card": key(g.name, `folder:${f.id}`) },
     el("button", { class: "fbtn", type: "button", "aria-expanded": open ? "true" : "false",
       ...(HOVERS.matches ? {} : { title: closed ? `${f.name}: closed, ${plural(held, "actor")} in it` : folderSays(f, t) }), onclick: toggle,
       onkeydown: (ev) => { if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startFolderEdit(g.name, f.id); } } },
       el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "fname", text: f.name })),
+    SNAPSHOT || closed || !crewAt(`folder:${f.id}`, g)[1] ? null : crewButton(g, `folder:${f.id}`),   // its coordinator agent's
     el("span", { class: "fill", onclick: toggle },
       ...(closed ? [held ? el("span", { class: "count closed", title: `${plural(held, "actor")} in it, closed` }, el("i", { "aria-hidden": "true" }), String(held)) : null]
         : tallyChips(t, plural(t.open, "actor"), true)),

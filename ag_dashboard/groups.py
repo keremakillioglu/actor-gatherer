@@ -40,7 +40,10 @@ across groups is refused.
                                             group it left (`launch_group`) -- ag keeps a config for the home's groups,
                                             and would make one for a name it does not know
 
-A watch of the coordinator agent's on a moved actor goes as coordination.py's `check` says."""
+A watch of the coordinator agent's on a moved actor goes as coordination.py's `check` says. A coordinator agent over a
+folder (sessions.py's `over`) goes where its folder goes (`_crews`): moved with it into another group, its session's
+group that one from then on -- in no folder there, as it is in none; made the new group's own when its folder is made a
+group (`split`). One over a group stays with its group."""
 
 import os
 import re
@@ -81,16 +84,24 @@ def _under(tree: dict, fid: int) -> List[int]:
     return out
 
 
+def _crews(gatherer: str, fids: Iterable[int]) -> List[str]:
+    """The coordinator agents of `gatherer` over the folders `fids` (sessions.py's `over`), by their sessions' ids."""
+    want = {f"folder:{int(f)}" for f in fids}
+    return sorted(r["session_id"] for r in sessions.stored()
+                  if r.get("role") == sessions.COORDINATOR and r.get("gatherer") == gatherer and r.get("over") in want)
+
+
 def actors(gatherer: str, channels: Iterable[str] = (), folder: Optional[int] = None) -> List[str]:
-    """The items a move takes: the actors named, those filed in `folder` or a folder in it, and every other item of a
-    task one of them is in (a task moves whole) -- apps among them, as APP + its id, each one that can move (`apps`)."""
+    """The items a move takes: the actors named, those filed in `folder` or a folder in it, the coordinator agents over
+    those folders (`_crews`), and every other item of a task one of them is in (a task moves whole) -- apps among them,
+    as APP + its id, each one that can move (`apps`)."""
     out = {str(c) for c in channels}
     if folder is not None:
         tree = _tree(gatherer)
         if not any(f["id"] == int(folder) for f in tree["folders"]):
             raise GroupError(f"{gatherer} has no folder {folder}")
         inside = set(_under(tree, int(folder)))
-        out |= {c for c, f in tree["filed"].items() if f in inside}
+        out |= {c for c, f in tree["filed"].items() if f in inside} | set(_crews(gatherer, inside))
     mine = (tasks.stored() or {}).get(gatherer) or {"tasks": [], "tasked": {}}
     agents = _app_agents(gatherer)
     while True:                                       # each one's task, and an app's own agent with its instance
@@ -286,8 +297,9 @@ def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
     tree = _tree(gatherer)
     under = _under(tree, int(folder)) if folder is not None else []
     gone = int(folder) if dissolve and folder is not None else None
-    there = {c: tree["filed"][c] if tree["filed"].get(c) in under and tree["filed"][c] != gone else into
-             for c in items}                          # in a folder moved: still in it
+    crews = set(_crews(gatherer, under)) if under else set()
+    there = {c: None if c in crews else tree["filed"][c] if tree["filed"].get(c) in under and tree["filed"][c] != gone
+             else into for c in items}                # in a folder moved: still in it; a coordinator agent in none
     events = [{"type": GROUP, "id": f"{GROUP}:{c}:{secrets.token_hex(6)}", "properties": {"channel": c},
                "payload": {**said, "folder": there[c]}} for c in moving]
     events += [folders._filed_event(to, c, there[c]) for c in items if c.startswith(folders.APP)]   # an app's place
@@ -312,6 +324,8 @@ def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
         _host().regroup(gatherer, i, to)
     closed = {inst.id: _close(gatherer, inst, moving) for inst in moved if inst.id in folds}
     _rows(gatherer, to, items)
+    if gone is not None:                              # its folder made a group: the coordinator agent over it, the group's
+        _over([c for c in _crews(to, [gone])], None)
     for i, (users, own) in closed.items():
         _join(to, folds[i], users, own)
     return {"actors": moving, "apps": moved_apps, "joined": {i: there.id for i, there in folds.items()},
@@ -342,6 +356,18 @@ def _rows(gatherer: str, to: str, moving: List[str]) -> None:
         if conn.in_transaction:
             conn.execute("ROLLBACK")
         raise
+    finally:
+        conn.close()
+
+
+def _over(channels: List[str], over: Optional[str]) -> None:
+    """The coordinator agents `channels` over `over` (sessions.py's; None: their group's) from now on."""
+    if not channels:
+        return
+    conn = folders._write()
+    try:
+        conn.execute(f"UPDATE sessions SET over = ? WHERE session_id IN ({', '.join('?' * len(channels))})",
+                     (over, *channels))
     finally:
         conn.close()
 

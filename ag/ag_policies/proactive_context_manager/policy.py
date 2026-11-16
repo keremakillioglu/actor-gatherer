@@ -48,7 +48,8 @@ in it (GROUP: the dashboard's, from the folder the actor is in) names it, and a 
 own group, "" -- so in a gatherer where no channel has one, every channel shares with every other, as before groups.
 One in another group is seen neither by its requests, as parallel messages or in the index, nor by its tasks, ranked
 into the sections, nor counts for a join (`unseen`). One whose latest `role` record (ROLE: the dashboard's, for a
-gatherer's gatherer agent) says `private` is seen by no other channel, though it sees theirs. Nor is a message the
+coordinator agent) says `private` is seen by no other channel, though it sees theirs -- and one whose record lists
+groups it `reads` (a coordinator agent over several groups, in a group of its own) sees theirs too, as its own. Nor is a message the
 actors send one another (`ag actors`, typed into the receiver's conversation as its user's), known by its opening
 (`unshared_openings`): it is the receiver's to act on, not a request of the user's (`shared`).
 
@@ -173,6 +174,12 @@ def writes(call_text: str, subject: str, cwd=None) -> bool:
     return False
 
 
+def read_groups(payload: dict) -> frozenset:
+    """The groups a `role` record says its channel reads (`reads`: a coordinator agent's over several groups)."""
+    got = payload.get("reads") if isinstance(payload, dict) else None
+    return frozenset(str(g) for g in got if g) if isinstance(got, list) else frozenset()
+
+
 def shown(timestamp) -> str:
     """A timestamp as it is shown: seconds since the epoch become a UTC date
     and time; anything else is shown as it is."""
@@ -249,14 +256,19 @@ def mentions(text: str, subject: str, cwd=None) -> bool:
 
 class Unseen:
     """The channels one channel is not shown (`in`): the private ones (`private`, a set), and those of another group
-    than its own (`own`): a channel's group is `groups`' for it, "" (its gatherer's own) when it has none."""
+    than its own (`own`) and those it `reads` (a set of groups, its role record's): a channel's group is `groups'` for
+    it, "" (its gatherer's own) when it has none."""
 
-    def __init__(self, private: set, groups: Dict[str, str], own: str):
-        self.private, self.groups, self.own = private, groups, own
+    def __init__(self, private: set, groups: Dict[str, str], own: str, reads: frozenset = frozenset()):
+        self.private, self.groups, self.own, self.reads = private, groups, own, frozenset(reads)
+
+    def shows(self, group) -> bool:
+        """Whether the channels of `group` are shown: its own group, or one it reads."""
+        return group == self.own or group in self.reads
 
     def grouped(self, channel_id) -> bool:
-        """Whether `channel_id` is in the same group, private or not."""
-        return self.groups.get(channel_id, "") == self.own
+        """Whether `channel_id` is in a group shown, private or not."""
+        return self.shows(self.groups.get(channel_id, ""))
 
     def __contains__(self, channel_id) -> bool:
         return channel_id in self.private or not self.grouped(channel_id)
@@ -498,7 +510,8 @@ class ProactiveContextManager(Policy):
         if it is that text, else a new one. A database whose channels have groups (`group` records:
         the home's one) has its hint say how to keep to the channel's own."""
         seen = self.unseen(conn, types, channel_id) if types is not None and types.of(GROUP) else None
-        text = layout.guide(self.config, conn.path, seen.own if seen is not None and seen.groups else None)
+        text = layout.guide(self.config, conn.path, seen.own if seen is not None and seen.groups else None,
+                            sorted(seen.reads) if seen is not None else ())
         if not text:
             return []
         item = self.format.make_section(text, GUIDE)
@@ -704,6 +717,7 @@ class ProactiveContextManager(Policy):
         """The channels `channel_id` is not shown (`in`): those whose latest ROLE record says `private`, and those of
         another group than its own -- a channel's group the latest GROUP record in it names, "" without one."""
         private: Dict[str, bool] = {}
+        reads: Dict[str, frozenset] = {}
         group: Dict[str, str] = {}
         role_ids = types.of(ROLE)
         for r in conn.rows(0, types.of(ROLE, GROUP)):
@@ -712,24 +726,39 @@ class ProactiveContextManager(Policy):
                 continue
             if r.type.id in role_ids:
                 private[ch] = bool(r.payload.get("private"))
+                reads[ch] = read_groups(r.payload)
             else:
                 group[ch] = str(r.payload.get("group") or "")
-        return Unseen({ch for ch, hidden in private.items() if hidden}, group, group.get(channel_id, ""))
+        return Unseen({ch for ch, hidden in private.items() if hidden}, group, group.get(channel_id, ""),
+                      reads.get(channel_id, frozenset()))
 
     def regrouped(self, conn, types: TypeIds, channel_id, since_row: int) -> bool:
         """Whether what the channel is shown changed groups after `since_row`: a GROUP record stored since moved a
         channel from one group to another (its `was` given, and not its `group`) -- this one, or another into or out
         of this one's group. A first record (no `was`: an actor starting) changes nothing of the others': its
         requests come to them as any new session's do."""
-        moves = []
-        for r in conn.rows(since_row, types.of(GROUP)):
+        moves, role_ids = [], types.of(ROLE)
+        for r in conn.rows(since_row, types.of(GROUP, ROLE)):
             p = r.payload if isinstance(r.payload, dict) else {}
-            if "was" in p and str(p.get("group") or "") != str(p.get("was") or ""):
+            if r.type.id in role_ids:
+                if channel_of(r) == channel_id and "reads" in p:
+                    return True                       # the groups it reads changed (the dashboard writes them so)
+            elif "was" in p and str(p.get("group") or "") != str(p.get("was") or ""):
                 moves.append((channel_of(r), str(p.get("group") or ""), str(p.get("was") or "")))
         if not moves:
             return False
-        own = self.unseen(conn, types, channel_id).own
-        return any(moved == channel_id or own in (group, was) for moved, group, was in moves)
+        seen = self.unseen(conn, types, channel_id)
+        return any(moved == channel_id or seen.shows(group) or seen.shows(was) for moved, group, was in moves)
+
+    def reads_at(self, conn, types: TypeIds, channel_id, row_id: int) -> frozenset:
+        """The groups the channel read before the row `row_id`: its latest `role` record before it's."""
+        got = frozenset()
+        for r in conn.rows(0, types.of(ROLE)):
+            if r.row_id >= row_id:
+                break
+            if channel_of(r) == channel_id and isinstance(r.payload, dict):
+                got = read_groups(r.payload)
+        return got
 
     def regroup(self, conn, types: TypeIds, read: Read, rows, latest, in_use) -> bool:
         """After a change of the channel's group (`regrouped`): its sections built again from its group's work, and
@@ -781,9 +810,9 @@ class ProactiveContextManager(Policy):
         rows = conn.rows(after_row=max(cut - 1, 0), match=channel.of(channel_id), type_ids=types.of(name))
         if not any(channel_of(r) is None and isinstance(r.payload, dict) and "group" in r.payload for r in rows):
             return rows
-        own = self.unseen(conn, types, channel_id).own       # a record with no channel, for one group: its channels'
+        seen = self.unseen(conn, types, channel_id)        # a record with no channel, for one group: its channels'
         return [r for r in rows if channel_of(r) is not None or not isinstance(r.payload, dict)
-                or str(r.payload.get("group", own) or "") == own]
+                or seen.shows(str(r.payload.get("group", seen.own) or ""))]
 
     def shown_messages(self, conn, types: TypeIds, channel_id, cut: int) -> List[tuple]:
         """("made", row_id, item, (made_id, tokens)) for each stream message
@@ -806,19 +835,35 @@ class ProactiveContextManager(Policy):
         the channel is shown (`regrouped`): its own move (`group_moved`), or a run of other channels' moves into or out
         of its group -- records stored one after another, as a folder's move writes them -- as one message
         (`group_joined`, `group_left`), at its first record's place."""
-        ids = types.of(GROUP)
-        rows = conn.rows(after_row=max(cut - 1, 0), type_ids=ids) if ids else []
-        moves = [(r, r.payload) for r in rows if isinstance(r.payload, dict) and "was" in r.payload
-                 and str(r.payload.get("group") or "") != str(r.payload.get("was") or "")]
+        ids, role_ids = types.of(GROUP), types.of(ROLE)
+        rows = conn.rows(after_row=max(cut - 1, 0), type_ids=ids | role_ids) if ids else []
+        moves = [(r, r.payload) for r in rows if isinstance(r.payload, dict) and (
+            (r.type.id in role_ids and channel_of(r) == channel_id and "reads" in r.payload)
+            or (r.type.id not in role_ids and "was" in r.payload
+                and str(r.payload.get("group") or "") != str(r.payload.get("was") or "")))]
         if not moves:
             return []
-        cfg, own = self.config, self.unseen(conn, types, channel_id).own
+        cfg = self.config
+        seen = self.unseen(conn, types, channel_id)
+        reads_before: Optional[frozenset] = None             # what it read before each role record: the note says the change
 
         def named(name, group_id: str) -> str:
             return str(name) if name else (f"group {group_id}" if group_id else cfg.group_own)
 
         said, run, last_row = [], None, None                 # said: [row_id, kind, text or [channels]]
         for r, p in moves:
+            if r.type.id in role_ids:                        # the groups it reads, changed
+                now = read_groups(p)
+                if reads_before is None:
+                    reads_before = self.reads_at(conn, types, channel_id, r.row_id)
+                came, left = sorted(now - reads_before), sorted(reads_before - now)
+                reads_before = now
+                names = p.get("names") if isinstance(p.get("names"), dict) else {}
+                said += [[r.row_id, "moved", text.format(groups=", ".join(str(names.get(g) or g) for g in which))]
+                         for text, which in ((cfg.reads_added, came), (cfg.reads_removed, left)) if which]
+                run = None
+                last_row = r.row_id
+                continue
             group, was, moved = str(p.get("group") or ""), str(p.get("was") or ""), channel_of(r)
             if moved == channel_id:
                 to, fro = named(p.get("name"), group), named(p.get("was_name"), was)
@@ -826,8 +871,8 @@ class ProactiveContextManager(Policy):
                              else cfg.group_back.format(group=to) if was.startswith(ALONE)
                              else cfg.group_moved.format(group=to, was=fro)])
                 run = None
-            elif own in (group, was):
-                kind = "joined" if group == own else "left"
+            elif seen.shows(group) != seen.shows(was):
+                kind = "joined" if seen.shows(group) else "left"
                 if run is not None and run[1] == kind and r.row_id == last_row + 1:
                     run[2].append(moved)
                 else:

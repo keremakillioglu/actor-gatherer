@@ -21,7 +21,7 @@ import harness_kit  # noqa: E402
 import page_source  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
 from ag.cli import actors as cli  # noqa: E402
-from ag_dashboard import branches, coordination, data, files, folders, livedocs, saved, server, sessions  # noqa: E402
+from ag_dashboard import branches, coordination, coordinators, data, files, folders, gatherer_folders, groups, livedocs, saved, server, sessions  # noqa: E402
 from test_dashboard_sessions import FAKE_AG, SessionsBase  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -52,12 +52,21 @@ def make_repo(path):
 class EnvelopeTest(unittest.TestCase):
     def test_a_message_is_read_back_as_its_sender_and_its_words(self):
         for sender, text, want in [
-                ({"kind": "coordinator"}, "Stop editing page.html.\nWait for B.", {"from": "coordinator", "id": None, "name": None}),
+                ({"kind": "coordinator", "id": "c0ffee00-1", "over": "making_ag/Editor"}, "Stop editing page.html.\nWait for B.",
+                 {"from": "coordinator", "id": "c0ffee00-1", "name": None, "over": "making_ag/Editor"}),
+                ({"kind": "coordinator", "id": "c0ffee00-2", "over": "everything"}, "Wait.",
+                 {"from": "coordinator", "id": "c0ffee00-2", "name": None, "over": "everything"}),
+                ({"kind": "coordinator", "id": "c0ffee00-3", "over": 'a "quoted"/b'}, "Wait.",
+                 {"from": "coordinator", "id": "c0ffee00-3", "name": None, "over": 'a "quoted"/b'}),
                 ({"kind": "actor", "id": "1a2b3c4d-0000", "name": 'Fix "the" editor'}, "I edit x.py", {"from": "actor", "id": "1a2b3c4d-0000",
                                                                                                     "name": 'Fix "the" editor'}),
                 ({"kind": "actor", "id": "1a2b3c4d-0000", "name": None}, "hi", {"from": "actor", "id": "1a2b3c4d-0000", "name": None})]:
             got = coordination.opened(coordination.envelope(sender, text))
             self.assertEqual(got, {**want, "text": text.strip()})
+        for old in ('Message from the coordinator agent (answer it with: ag actors send coordinator "..."):\n\nWait.',
+                    'Message from the gatherer agent (answer it with: ag actors send gatherer "..."):\n\nWait.'):
+            self.assertEqual(coordination.opened(old), {"from": "coordinator", "id": None, "name": None, "over": None,
+                                                        "text": "Wait."})              # from before nodes: still its
         self.assertIsNone(coordination.opened("Message from someone:\n\nno"))
         self.assertIsNone(coordination.opened("Message from the gatherer:\n\nno"))           # no one's: a watch's is news
         news = coordination.update(3, "1a2b3c4d-0000", 'Fix "it"', "its turn is over", "It said last: done.")
@@ -77,14 +86,17 @@ class EnvelopeTest(unittest.TestCase):
     def test_the_policy_shows_no_envelope_to_the_other_actors(self):
         from ag.ag_policies.proactive_context_manager.config import ProactiveContextManagerConfig
         openings = ProactiveContextManagerConfig().unshared_openings
-        for text in (coordination.envelope({"kind": "coordinator"}, "x"), coordination.envelope({"kind": "actor", "id": "a", "name": None}, "x"),
+        for text in (coordination.envelope({"kind": "coordinator", "id": "c", "over": "g/F"}, "x"),
+                     coordination.envelope({"kind": "actor", "id": "a", "name": None}, "x"),
                      coordination.update(1, "a", None, "its turn is over", "")):
             self.assertTrue(text.startswith(openings), text)
 
     def test_the_answer_it_names_is_a_command_the_receiver_can_run(self):
         text = coordination.envelope({"kind": "actor", "id": "1a2b3c4d-0000", "name": "x"}, "hi")
         self.assertIn('ag actors send 1a2b3c4d-0000 "..."', text.split("\n")[0])
-        self.assertIn('ag actors send coordinator "..."', coordination.envelope({"kind": "coordinator"}, "hi").split("\n")[0])
+        head = coordination.envelope({"kind": "coordinator", "id": "c0ffee00-1", "over": "g/Editor"}, "hi").split("\n")[0]
+        self.assertEqual(head, 'Message from the coordinator agent over "g/Editor" (answer it with: ag actors send '
+                               'c0ffee00-1 "..."):')                                 # its own id: not the nearest's
 
 
 class InstructionsTest(unittest.TestCase):
@@ -99,10 +111,16 @@ class InstructionsTest(unittest.TestCase):
         import tomllib
         self.assertEqual(tomllib.loads(got[1])["developer_instructions"], 'Say "hi"\nthen go.')   # `-c` reads TOML
 
-    def test_the_gatherer_agent_is_told_its_gatherer_and_the_commands(self):
-        text = coordination.instructions("making_ag")
-        self.assertIn('coordinator agent of the group "making_ag"', text)
-        for command in ("ag actors send", "ag actors new", "ag actors when", "ag actors who", "ag actors show"):
+    def test_a_coordinator_agent_is_told_its_folder_and_the_commands(self):
+        with unittest.mock.patch.object(data, "gatherer_names", return_value=["making_ag"]):
+            text = coordination.instructions("making_ag", None, "c0ffee00-1")
+        self.assertIn('# You are a coordinator agent, over "making_ag"', text)
+        self.assertIn("The user started you over the group making_ag", text)
+        self.assertIn("requests the user made to the actors of the group making_ag", text)
+        self.assertIn("answers you with `ag actors send c0ffee00-1`", text)
+        self.assertNotIn("{", text.replace("{gatherer}", ""))                      # every place filled
+        for command in ("ag actors send", "ag actors new", "ag actors when", "ag actors who", "ag actors show",
+                        "ag actors coordinators"):
             self.assertIn(command, text)
 
     def test_its_instructions_are_a_file_the_homes_own_copy_first(self):
@@ -110,7 +128,8 @@ class InstructionsTest(unittest.TestCase):
         from ag_dashboard import home
         with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(home, "HOME", tmp):
             with open(coordination.INSTRUCTIONS) as fh:
-                self.assertEqual(coordination.instructions("g"), fh.read().replace("{gatherer}", "g"))
+                self.assertIn("{over}", fh.read())
+            self.assertIn('You are a coordinator agent, over "g"', coordination.instructions("g"))
             os.makedirs(os.path.join(tmp, "dashboard"))
             with open(os.path.join(tmp, "dashboard", "gatherer_agent.md"), "w") as fh:
                 fh.write("Coordinate {gatherer}.")
@@ -120,8 +139,9 @@ class InstructionsTest(unittest.TestCase):
         from ag.ag_policies.proactive_context_manager.config import ProactiveContextManagerConfig
         guide = ProactiveContextManagerConfig().gatherer_guide
         self.assertIn("`ag actors`", guide)
-        self.assertIn('ag actors send coordinator', guide)
-        self.assertIn(coordination.FROM_COORDINATOR.split(" (")[0], guide)      # how its messages start
+        self.assertIn('ag actors send coordinator --with <the other actor\'s id>', guide)
+        self.assertIn("nothing is sent and the command says so: end your turn telling the user about the conflict", guide)
+        self.assertIn('"Message from the coordinator agent"', guide)            # how its messages start
         self.assertIn('"Message from actor <id>"', guide)
         self.assertIn('sandbox_permissions "require_escalated" from the first try', guide)     # Codex's sandbox
 
@@ -231,17 +251,21 @@ class CoordinationTest(CoordinationBase):
         with self.assertRaisesRegex(coordination.CoordinationError, "no actor nobody-at-all"):
             self.crew.list("nobody-at-all")
 
-    def test_a_message_to_the_gatherer_starts_its_gatherer_agent_with_its_instructions(self):
-        self.crew.send(self.a, "gatherer", "B and I both edit page.html (a file-change notice); B is " + self.b[:8])
-        row = self.crew.coordinator("g")
-        self.assertEqual((row["role"], row["cwd"], row["harness"]), (sessions.COORDINATOR, self.work, "claude"))
+    def test_none_is_started_by_a_message_and_one_the_user_started_gets_it(self):
+        with self.assertRaisesRegex(coordination.CoordinationError, "No coordinator agent is over you: nothing was sent"):
+            self.crew.send(self.a, "coordinator", "B and I both edit page.html; B is " + self.b[:8])
+        self.assertEqual([r for r in self.s.list() if r.get("role")], [])             # none started for it
+        row = self.crew.ensure("g", self.work)                                        # the user's, from the page
+        self.assertEqual((row["role"], row["cwd"], row["harness"], row["over"]), (sessions.COORDINATOR, self.work, "claude", None))
+        got = self.crew.send(self.a, "coordinator", "B and I both edit page.html; B is " + self.b[:8])
+        self.assertEqual(got["to"]["id"], row["session_id"])
         log = self.until(lambda: [x for x in self.agent_log(row["session_id"]) if "argv" in x])[0]
         i = log["argv"].index("--append-system-prompt")
-        self.assertEqual(log["argv"][i + 1], coordination.instructions("g"))
+        self.assertEqual(log["argv"][i + 1], coordination.instructions("g", None, row["session_id"]))
         self.assertEqual(log["actor"], row["session_id"])                          # who it is, for its own `ag actors`
         sent = self.until(lambda: self.messages(row["session_id"]))
         self.assertEqual(coordination.opened(sent[0])["from"], "actor")
-        self.crew.send(self.a, "coordinator", "again")                              # the same one, not another
+        self.assertEqual(self.crew.ensure("g", self.work)["session_id"], row["session_id"])   # one a node
         self.assertEqual([r["session_id"] for r in self.s.list() if r.get("role")], [row["session_id"]])
         with open(sessions.log_path(row["session_id"])) as fh:                       # its log names them, not writes them
             self.assertIn("'<the instructions of its role>'", fh.read())
@@ -254,7 +278,10 @@ class CoordinationTest(CoordinationBase):
     def test_the_gatherer_agents_messages_say_they_are_its(self):
         coordinator = self.crew.ensure("g", self.work)["session_id"]
         self.crew.send(coordinator, self.b, "Stop: A owns page.html until its PR is merged.")
-        self.assertEqual(coordination.opened(self.until(lambda: self.messages(self.b))[0])["from"], "coordinator")
+        got = coordination.opened(self.until(lambda: self.messages(self.b))[0])
+        self.assertEqual((got["from"], got["id"], got["over"]), ("coordinator", coordinator, "g"))
+        self.crew.send(self.b, coordinator[:8], "done")                             # answered by its id
+        self.assertEqual(coordination.opened(self.until(lambda: self.messages(coordinator))[0])["id"], self.b)
         self.assertEqual(self.crew.list(self.a)["actors"][0]["gatherer_agent"], True)    # first in the list
         an_actor = self.until(lambda: [x for x in self.agent_log(self.b) if "argv" in x])[0]
         self.assertNotIn("--append-system-prompt", an_actor["argv"])                # an actor like any other: none
@@ -427,6 +454,212 @@ class BranchTest(CoordinationBase):
         self.assertEqual((len(self.s.list()), self.branched.rows(), branches.projects("g")), (before, [], []))
 
 
+class NodesTest(CoordinationBase):
+    """Coordinator agents over folders (coordinators.py): two groups, g and h, in a folder of groups Research; in g the
+    folders Editor (Editor/LaTeX in it) and Chat. A in Editor/LaTeX, B in Editor, D in Chat, E at g's top, C in h."""
+
+    def setUp(self):
+        super().setUp()
+        self.c = self.s.create("h", self.work)["session_id"]
+        self.d = self.s.create("g", self.work)["session_id"]
+        self.e = self.s.create("g", self.work)["session_id"]
+        self.names.update({self.c: "Lab work", self.d: "Chat fixes", self.e: "Top work"})
+        self.editor = folders.find_or_make("g", "Editor")
+        self.latex = folders.find_or_make("g", "Editor/LaTeX")
+        self.chat = folders.find_or_make("g", "Chat")
+        folders.file("g", [self.a], self.latex)
+        folders.file("g", [self.b], self.editor)
+        folders.file("g", [self.d], self.chat)
+        self.research = gatherer_folders.make("Research")
+        gatherer_folders.file(["g", "h"], self.research)
+
+    def _gatherer_names(self):
+        return ["g", "h"]
+
+    def over(self, node, gatherer="g"):
+        """A coordinator agent's session over `node`, as `ensure` would make it (one above groups: on its own)."""
+        above = coordinators.above_groups(node)
+        return self.s.create(gatherer, self.work, role=sessions.COORDINATOR, alone=above,
+                             over=None if node.startswith("group:") else node)["session_id"]
+
+    def test_the_tree_places_actors_and_nodes(self):
+        tree = coordinators.Tree()
+        research = f"groups:{self.research}"
+        self.assertEqual(tree.place("g", self.a), ["all", research, "group:g", f"folder:{self.editor}", f"folder:{self.latex}"])
+        self.assertEqual(tree.place("g", self.e), ["all", research, "group:g"])
+        self.assertEqual(tree.place("h", self.c), ["all", research, "group:h"])
+        self.assertEqual(tree.place("self:x", "x"), [])                               # on its own: under no node
+        self.assertEqual([tree.label(n) for n in ("all", research, "group:g", f"folder:{self.latex}")],
+                         ["everything", "Research", "g", "g/Editor/LaTeX"])
+        self.assertEqual(tree.reads(research), ["g", "h"])
+        self.assertEqual(tree.reads("group:g"), [])
+        self.assertIsNone(tree.path("folder:99999"))                                  # deleted: no node
+
+    def test_a_conflict_goes_to_the_coordinator_of_the_nearest_folder_holding_both(self):
+        """The design's table: coordinator agents over Editor and over everything."""
+        on_editor, on_all = self.over(f"folder:{self.editor}"), self.over("all")
+        for asker, other, want in ((self.a, self.b, on_editor),         # both in Editor: Editor's
+                                   (self.b, self.d, on_all),            # Editor and Chat: g has none, nor Research
+                                   (self.c, self.a, on_all)):           # g and h: Research has none
+            got = self.crew.send(asker, "coordinator", "We both edit x.py", [other])
+            self.assertEqual(got["to"]["id"], want, (asker, other))
+        self.assertEqual(self.crew.send(self.d, "coordinator", "Is anyone on y.py?")["to"]["id"], on_all)   # no --with
+        sent = self.until(lambda: self.messages(on_editor))
+        self.assertEqual(coordination.opened(sent[0])["id"], self.a)
+
+    def test_with_none_over_both_nothing_is_sent_and_the_actor_is_told_to_tell_the_user(self):
+        self.over(f"folder:{self.editor}")
+        with self.assertRaises(coordination.CoordinationError) as got:
+            self.crew.send(self.b, "coordinator", "We both edit x.py", [self.d])
+        self.assertEqual(str(got.exception),
+                         f'No coordinator agent is over you and actor {self.d}: the nearest folder holding you all is "g", '
+                         "and no folder from there up has one. Nothing was sent. Stop changing what the conflict "
+                         "touches, and end your turn telling the user about it -- what it touches, the other actor's "
+                         "id, and how you found it: they can settle it, or start a coordinator agent over a folder "
+                         "that holds you both.")
+        with self.assertRaisesRegex(coordination.CoordinationError, "--with goes with `coordinator`"):
+            self.crew.send(self.b, self.d, "hi", [self.a])
+
+    def test_a_coordinator_passes_a_conflict_up_to_the_one_over_its_folder(self):
+        on_editor = self.over(f"folder:{self.editor}")
+        with self.assertRaisesRegex(coordination.CoordinationError, 'No coordinator agent is over your folder "g/Editor": '
+                                                                     "nothing was sent. Tell the user about it here."):
+            self.crew.send(on_editor, "coordinator", "A and D both edit x.py")
+        on_g = self.over("group:g")
+        self.assertEqual(self.crew.send(on_editor, "coordinator", "A and D both edit x.py")["to"]["id"], on_g)
+        self.assertEqual(self.crew.send(self.a, "coordinator", "x")["to"]["id"], on_editor)    # the nearest, for A
+
+    def test_a_folder_s_coordinator_reaches_only_what_is_under_its_folder(self):
+        on_editor = self.over(f"folder:{self.editor}")
+        got = self.crew.list(on_editor)
+        self.assertEqual(got["node"], "g/Editor")
+        self.assertEqual({a["id"] for a in got["actors"]}, {on_editor, self.a, self.b})
+        for outside in (self.d, self.e, self.c):
+            with self.assertRaisesRegex(coordination.CoordinationError, "under your folder"):
+                self.crew.send(on_editor, outside, "stop")
+        tree = self.crew.folders(on_editor)                                         # paths from its folder down
+        self.assertEqual([f["path"] for f in tree["folders"]], ["LaTeX"])
+        self.assertEqual([a["id"] for a in tree["folders"][0]["actors"]], [self.a])
+        self.assertEqual([a["id"] for a in tree["actors"]], [self.b])
+        started = self.crew.new(on_editor, "Draw the figures", folder="LaTeX/Figures")
+        self.assertEqual(started["actor"]["folder"], "LaTeX/Figures")
+        self.assertEqual(folders.path(folders.of("g"), folders.of("g")["filed"][started["actor"]["id"]]), "Editor/LaTeX/Figures")
+        top = self.crew.new(on_editor, "Another")                                   # none: in its folder
+        self.assertEqual(folders.of("g")["filed"][top["actor"]["id"]], self.editor)
+        moved = self.crew.move(on_editor, [self.a], "top")
+        self.assertEqual((moved["folder"], folders.of("g")["filed"][self.a]), (None, self.editor))
+        with self.assertRaisesRegex(coordination.CoordinationError, "your own folder"):
+            self.crew.folder(on_editor, "rename", "top", "Other")
+
+    def test_an_actor_s_list_names_the_coordinators_over_it_the_nearest_first(self):
+        on_all, on_editor = self.over("all"), self.over(f"folder:{self.editor}")
+        self.over(f"folder:{self.chat}")                                            # over Chat: not over A
+        got = self.crew.list(self.a)
+        self.assertEqual([(a["id"], a["over"]) for a in got["over"]], [(on_editor, "g/Editor"), (on_all, "everything")])
+        self.assertEqual([a["id"] for a in got["actors"][:2]], [on_editor, on_all])
+        self.assertEqual({a["id"] for a in got["actors"] if a["gatherer_agent"]}, {on_editor, on_all})
+        self.assertEqual(cli._over_line(got["over"], None),
+                         f'Coordinator agents over you, the nearest first: "g/Editor" ({on_editor}), everything ({on_all}).')
+        mine = self.crew.coordinators_of(on_all)
+        self.assertEqual(({a["id"] for a in mine["under"]}, mine["over"]), ({on_editor, self.crew.coordinators()[f"folder:{self.chat}"]["session_id"]}, []))
+
+    def test_each_is_named_after_the_folder_it_is_over(self):
+        crews = {node: self.over(node) for node in ("all", f"groups:{self.research}", "group:g", f"folder:{self.latex}")}
+        with unittest.mock.patch.object(coordinators.titles, "stored", return_value={"g": "Paper"}):
+            names = coordinators.names(self.s.list())
+        self.assertEqual({node: names[sid] for node, sid in crews.items()},
+                         {"all": "Everything coordinator", f"groups:{self.research}": "Research coordinator",
+                          "group:g": "Paper coordinator", f"folder:{self.latex}": "LaTeX coordinator"})   # a group: its title
+
+    def test_who_names_an_actor_of_another_group_by_its_id_and_group_alone(self):
+        writers = {"x.py": [{"channel": self.c, "gatherer": "h", "how": "edit", "at": time.time()},
+                            {"channel": self.b, "gatherer": "g", "how": "write", "at": time.time()}]}
+        with unittest.mock.patch.object(livedocs, "writers", return_value=writers):
+            got = self.crew.who(self.a, os.path.join(self.work, "x.py"))
+        self.assertEqual([(w["id"], w.get("other"), w.get("group")) for w in got["actors"]],
+                         [(self.c, True, "h"), (self.b, None, "g")])
+        self.assertNotIn("asked", got["actors"][0])                                 # nothing of its work
+
+    def test_one_over_several_groups_starts_on_its_own_reading_them(self):
+        put = []
+        with unittest.mock.patch.object(coordination.home, "merged", return_value=True), \
+                unittest.mock.patch.object(coordination.actions, "insert", side_effect=lambda g, ev: put.append((g, ev))):
+            row = self.crew.ensure(f"groups:{self.research}", self.work)
+        self.assertEqual((row["gatherer"], row["over"], row["role"]),
+                         (f"self:{row['session_id']}", f"groups:{self.research}", sessions.COORDINATOR))
+        (under, events), = put
+        self.assertIn(under, ("g", "h"))                                              # run under a group it reads
+        self.assertEqual([e["type"] for e in events], ["group", "role"])
+        self.assertEqual(events[0]["payload"], {"group": f"self:{row['session_id']}", "under": under, "name": "", "folder": None})
+        self.assertEqual(events[1]["payload"], {"role": "coordinator", "private": True, "over": f"groups:{self.research}",
+                                                "reads": ["g", "h"]})
+        with self.assertRaisesRegex(coordination.CoordinationError, "needs the home's one database"):
+            self.crew.ensure("all", self.work)
+
+    def test_its_role_record_follows_the_groups_under_its_node_once_each_change(self):
+        node = f"groups:{self.research}"
+        sid = self.over(node)
+        put = []
+        record = lambda g, ch, ev, wait=False: put.append((ch, ev[0]["payload"]))  # noqa: E731
+        with unittest.mock.patch.object(coordination.actions, "record", side_effect=record), \
+                unittest.mock.patch.object(coordination.groups, "runs_under", return_value="g"), \
+                unittest.mock.patch.object(sessions.home, "db_path", return_value=__file__), \
+                unittest.mock.patch.object(coordination, "_role_in", return_value=None):
+            self.crew._mark_roles()
+            self.crew._mark_roles()                                                  # the same: nothing new
+            gatherer_folders.file(["h"], None)                                        # h taken out of Research
+            self.crew._mark_roles()
+        self.assertEqual(put, [(sid, {"role": "coordinator", "private": True, "over": node, "reads": ["g", "h"]}),
+                               (sid, {"role": "coordinator", "private": True, "over": node, "reads": ["g"]})])
+
+    def test_a_watch_of_a_folder_s_coordinator_ends_when_the_actor_leaves_its_folder(self):
+        on_editor = self.over(f"folder:{self.editor}")
+        n = self.crew.when(on_editor, self.b, "then tell A")["watch"]
+        self.status[self.b] = data.RUNNING
+        self.assertEqual(self.crew.check(), [])
+        folders.file("g", [self.b], self.latex)                                     # deeper: still under it
+        self.assertEqual(self.crew.check(), [])
+        folders.file("g", [self.b], self.chat)                                      # out of its folder
+        self.assertEqual(self.crew.check(), [n])
+        got = coordination.opened(self.until(lambda: self.messages(on_editor))[0])
+        self.assertEqual((got["from"], got["how"], got["text"]), ("update", "it left your folder, so this watch has ended", ""))
+
+    def test_one_over_a_folder_deleted_is_closed_and_over_nothing(self):
+        on_chat = self.over(f"folder:{self.chat}")
+        folders.delete("g", self.chat)
+        with unittest.mock.patch.object(self.s, "stop") as stopped, \
+                unittest.mock.patch.object(coordination.groups, "runs_under", return_value="g"), \
+                unittest.mock.patch.object(sessions.home, "db_path", return_value=__file__):
+            with unittest.mock.patch.object(self.s, "list", return_value=[{**r, "pid": 1} if r["session_id"] == on_chat else r
+                                                                         for r in self.s.list()]):
+                self.crew._mark_roles()
+                self.crew._mark_roles()                                               # once
+        stopped.assert_called_once_with(on_chat)
+        with self.assertRaisesRegex(coordination.CoordinationError, "No coordinator agent is over you"):
+            self.crew.send(self.d, "coordinator", "x")                                # D: under no node with one now
+
+    def test_closing_a_folder_closes_the_coordinator_agent_over_it(self):
+        on_editor, on_g = self.over(f"folder:{self.editor}"), self.over("group:g")
+        home = {"gatherers": [{"name": "g", "agents": [
+            {"channel": c, "role": "coordinator", "over": o, "session": {"session_id": c, "turns": 1}, "status": data.IDLE}
+            for c, o in ((on_editor, f"folder:{self.editor}"), (on_g, None))]}]}
+        with unittest.mock.patch.object(self.s, "stop") as stopped:
+            folders.close("g", self.editor, self.s, home)
+        stopped.assert_called_once_with(on_editor)                                  # not the group's
+
+    def test_its_instructions_name_its_folder(self):
+        on_editor = self.over(f"folder:{self.editor}")
+        with unittest.mock.patch.object(coordination, "INSTRUCTIONS", os.path.join(self.tmp.name, "i.md")):
+            with open(coordination.INSTRUCTIONS, "w") as fh:
+                fh.write("over {over}: {over_long}; shown {reads}{across}; paths {paths}; you {id}")
+            self.assertEqual(coordination.instructions("g", f"folder:{self.editor}", on_editor),
+                             'over "g/Editor": the folder Editor, in the group g; shown the group g; paths from your '
+                             f"folder down (`Plots`, a folder in it); you {on_editor}")
+            self.assertEqual(coordination.instructions("g", f"groups:{self.research}", "x"),
+                             'over "Research": the folder of groups Research, which holds the groups g and h; shown the '
+                             "groups g and h, across the groups in it; paths with the group's name (`paper/Figures`); you x")
+
+
 class WatchTest(CoordinationBase):
     def setUp(self):
         super().setUp()
@@ -456,7 +689,7 @@ class WatchTest(CoordinationBase):
             self.assertEqual(self.crew.check(), [n])
         got = self.until(self.told)[0]
         self.assertEqual((got["from"], got["id"], got["how"], got["watch"]),
-                         ("update", self.b, "it left your group, so this watch has ended", n))
+                         ("update", self.b, "it left your folder, so this watch has ended", n))
         self.assertEqual(got["text"], "")                                           # nothing of its work
         self.assertEqual(self.crew.watches(self.coordinator)["watches"], [])
 
@@ -536,13 +769,30 @@ class CommandTest(CoordinationBase):
         code, out, err = self.run_cli()
         self.assertEqual((code, err), (0, ""))
         self.assertIn(f'{self.a} "Fix the editor" (you) -- idle, claude, in', out)
-        self.assertIn("no coordinator agent yet", out)
+        self.assertIn("No coordinator agent is over you: the user can start one over any folder of the list.", out)
         code, out, _ = self.run_cli("send", self.b[:8], "hello", "there")
         self.assertEqual(code, 0)
         self.assertIn(f'Sent to actor {self.b} ("Write the docs")', out)
         self.assertEqual(coordination.opened(self.until(lambda: self.messages(self.b))[0])["text"], "hello there")
         code, out, _ = self.run_cli("--json", "list")
         self.assertEqual(json.loads(out)["you"], self.a)
+
+    def test_a_conflict_goes_to_the_coordinator_over_both_from_the_shell(self):
+        code, _, err = self.run_cli("send", "coordinator", "--with", self.b[:8], "We both edit x.py")
+        self.assertEqual(code, 1)
+        self.assertIn(f'ag actors: No coordinator agent is over you and actor {self.b}: the nearest folder holding you all '
+                      'is "g"', err)
+        crew = self.s.create("g", self.work, role=sessions.COORDINATOR)["session_id"]     # the user's, over the group
+        code, out, err = self.run_cli("send", "coordinator", "--with", self.b[:8], "We both edit x.py")
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn(f'Sent to the coordinator agent over "g" ({crew})', out)
+        got = coordination.opened(self.until(lambda: self.messages(crew))[0])
+        self.assertEqual((got["id"], got["text"]), (self.a, "We both edit x.py"))
+        code, out, _ = self.run_cli("coordinators")
+        self.assertIn(f'Coordinator agents over you, the nearest first: "g" ({crew}).', out)
+        code, out, _ = self.run_cli()
+        self.assertEqual(out.splitlines()[0], f'Coordinator agents over you, the nearest first: "g" ({crew}).')
+        self.assertIn(f'{crew} "Coordinator agent" (the coordinator agent over "g") -- idle', out)   # as the test lists it
 
     def test_moves_between_groups_from_the_shell_are_groups_py_s(self):
         from ag_dashboard import groups
@@ -661,7 +911,8 @@ class CommandTest(CoordinationBase):
         code, _, err = self.run_cli("move", self.b)
         self.assertEqual((code, err.strip()), (1, "ag actors: move which actors where? `ag actors move <actor>... <folder|top>`"))
         code, _, err = self.run_cli("save", "gatherer")
-        self.assertEqual((code, err.strip()), (1, "ag actors: the group has no coordinator agent yet"))
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith("ag actors: No coordinator agent is over you: nothing was sent."), err)
 
     def test_its_errors_are_said_plainly(self):
         code, _, err = self.run_cli("send", "nobody", "hi")
@@ -730,10 +981,10 @@ class RealGathererTest(unittest.TestCase):
                 "model": None, "started_as": None, "ended": 0, "role": role, "queued": [], "terminal": False,
                 "answer": None, "typed": None, "fullscreen": False, "pid": None, "since": None}
 
-    def test_the_gatherer_agent_is_named_by_its_role_and_the_others_as_they_were(self):
+    def test_a_coordinator_agent_is_named_after_its_group_and_the_others_as_they_were(self):
         got = {a["channel"]: a for a in data.gatherer_actors("g", [self.row("c1", sessions.COORDINATOR), self.row("new")])}
         self.assertEqual(set(got), {"c1", "c2", "new"})                           # one with no message yet too
-        self.assertEqual((got["c1"]["role"], got["c1"]["name"]), (sessions.COORDINATOR, {"text": "Coordinator agent", "by": "dashboard"}))
+        self.assertEqual((got["c1"]["role"], got["c1"]["name"]), (sessions.COORDINATOR, {"text": "g coordinator", "by": "dashboard"}))
         self.assertNotIn("role", got["c2"])
 
     def test_chat_shows_what_an_actor_sent_in_the_turn_it_sent_it(self):
