@@ -53,6 +53,18 @@
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   height: 100vh; display: flex; flex-direction: column; }
+/* AN ACTOR AT WORK, wherever the page shows one (the list's, the rail's, a tab's and the monitor's state dot; a status
+   line's .spin): three dots in the colours of the logo's robots (pink, sky, teal) going round, as the robots sit in its
+   G -- ag's own mark, not Claude Code's turning star. A box of its own size (1em: each place sets its font-size), so
+   nothing beside it moves; on one clock (--spin-at: -(Date.now() % 1200) ms, where it is drawn), so all go round in step */
+:root { --orbit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='2.1' r='2' fill='%23f472b6'/%3E%3Ccircle cx='9.38' cy='7.95' r='2' fill='%2338bdf8'/%3E%3Ccircle cx='2.62' cy='7.95' r='2' fill='%2314b8a6'/%3E%3C/svg%3E"); }
+.spin::before, .agent .dot.running::before, .rail .r-actor .rd.running::before, .monitor .status.running i::before,
+.lay-dot[data-status="working"]::before { content: ""; display: inline-block; width: 1em; height: 1em; vertical-align: -0.125em;
+  background: var(--orbit) center / contain no-repeat; animation: ag-orbit 1.2s linear infinite; animation-delay: var(--spin-at, 0s); }
+@keyframes ag-orbit { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) {
+  .spin::before, .agent .dot.running::before, .rail .r-actor .rd.running::before, .monitor .status.running i::before,
+  .lay-dot[data-status="working"]::before { animation: none; } }
 /* THE TOP BAR, across the page over the list and the panes: the logo -- a button, the settings -- every actor over the
    whole page (top-full: a button, pressed while it is), how many actors do what (top-totals), then the screen's tabs
    (tabs.ts's bar, in #tab-slot); under it, the list's own

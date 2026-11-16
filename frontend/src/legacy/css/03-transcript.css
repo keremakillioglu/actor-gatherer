@@ -49,9 +49,8 @@
 .term .md hr { border: 0; border-top: 1px solid var(--term-rule); }
 .term .earlier { display: block; margin: 0 auto 14px; color: var(--term-dim); background: var(--term-user); border-color: var(--term-rule); }
 .term .status-line { color: var(--term-accent); margin-top: 6px; }
-/* while the agent works, the status line's glyph turns, as Claude Code's does */
-.term .status-line .spin::before, .files .fl-status .spin::before { content: "✻"; display: inline-block; width: 1.2em; animation: term-spin 1.2s steps(1) infinite; }
-@keyframes term-spin { 0% { content: "·"; } 16% { content: "✢"; } 33% { content: "✳"; } 50% { content: "✶"; } 66% { content: "✻"; } 83% { content: "✽"; } }
+/* while the agent works, the status line starts with the dots going round (00-base.css) */
+.term .status-line .spin::before { margin-right: .45em; }
 /* a stretch of tool calls: one line each, what it is for; the call and its output behind a click */
 .term .call-line, .term .more { margin-bottom: 4px; }
 .term .call-line > details > summary, .term .more > details > summary { color: var(--term-dim); }

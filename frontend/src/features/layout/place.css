@@ -465,21 +465,14 @@
 .lay-dot[data-status="background"] {
   background: var(--good);
 }
+/* at work: the logo's dots going round, drawn by legacy/css/00-base.css (AN ACTOR AT WORK) */
 .lay-dot[data-status="working"] {
   width: 10px;
   height: 10px;
   display: grid;
   place-items: center;
   background: var(--face-ring, var(--side));
-  color: var(--good);
-  font-size: 10px;
-  font-style: normal;
-  line-height: 1;
-}
-.lay-dot[data-status="working"]::before {
-  content: "✻";
-  animation: term-spin 1.2s steps(1) infinite;
-  animation-delay: var(--spin-at, 0s);
+  font-size: 9px;
 }
 .lay-mcell > .lay-dot[data-status="working"] {
   right: -4px;
