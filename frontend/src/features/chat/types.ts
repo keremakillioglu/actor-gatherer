@@ -96,6 +96,8 @@ export interface Actor {
   harness?: string | null;
   status?: string;
   role?: string;
+  /** a coordinator agent's node (coordinators.py): "all", "groups:<id>", "folder:<id>"; none, its group's */
+  over?: string | null;
   /** its last activity */
   last?: number | null;
   /** its calls failing, retried: since when */
@@ -238,6 +240,8 @@ export interface Envelope {
   from: "coordinator" | "actor" | "update";
   id: string | null;
   name: string | null;
+  /** a coordinator agent's: the node it is over, as its messages name it ("everything", "making_ag/Editor") */
+  over?: string | null;
   text: string;
   how?: string;
   watch?: number;

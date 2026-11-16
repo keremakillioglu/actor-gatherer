@@ -97,6 +97,50 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual(moved, {"Work": None, "Inner": top})
         self.assertEqual(folders.of("b")["filed"], {"c1": top, "c3": inner})
 
+    def crew(self, channel, gatherer, over):
+        """A coordinator agent's session over `over` (sessions.py's table), as coordination.py's `ensure` makes one."""
+        conn = sqlite3.connect(sessions.db_path())
+        try:
+            conn.execute(sessions.SCHEMA)
+            have = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
+            for name, kind in sessions.ADDED:
+                if name not in have:
+                    conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {kind}")
+            conn.execute(f"INSERT INTO sessions ({', '.join(sessions.COLUMNS)}) VALUES (?, ?, 'claude', '/', 'auto', "
+                         "'2026-01-01T00:00:00Z', 0, 'stopped', NULL, 0, NULL, NULL, 0, 'coordinator', ?)",
+                         (channel, gatherer, over))
+            conn.commit()
+        finally:
+            conn.close()
+        insert(self.m, gatherer, {}, [{"type": "group", "id": f"group:{channel}:first", "properties": {"channel": channel},
+                                       "payload": {"group": gatherer}}])
+
+    def over(self, channel):
+        return next((r["gatherer"], r["over"]) for r in sessions.stored() if r["session_id"] == channel)
+
+    def test_a_folder_s_coordinator_agent_goes_with_it_and_one_over_the_group_stays(self):
+        top = folders.make("a", "Work")
+        inner = folders.make("a", "Inner", top)
+        folders.file("a", ["c1"], inner)
+        self.crew("k1", "a", f"folder:{inner}")                   # over a folder that moves
+        self.crew("k2", "a", None)                                 # over the group: stays
+        got = groups.move("a", "b", folder=top)
+        self.assertEqual(got["actors"], ["c1", "k1"])
+        self.assertEqual((self.members("a"), self.members("b")), (["c3", "k2"], ["c1", "c2", "k1"]))
+        self.assertEqual((self.over("k1"), self.over("k2")), (("b", f"folder:{inner}"), ("a", None)))
+        [record] = [e for e in self.events("group") if e["properties"]["channel"] == "k1" and "was" in e["payload"]]
+        self.assertIsNone(record["payload"]["folder"])            # in no folder there, as it is in none
+        self.assertNotIn("k1", folders.of("b")["filed"])
+
+    def test_a_folder_made_a_group_makes_its_coordinator_agent_the_group_s(self):
+        work = folders.make("a", "Work")
+        folders.file("a", ["c1"], work)
+        self.crew("k1", "a", f"folder:{work}")
+        with unittest.mock.patch.object(groups.sessions, "new_gatherer", side_effect=self.made):
+            got = groups.split("a", work)
+        self.assertEqual(self.over("k1"), (got["group"], None))
+        self.assertIn("k1", self.members(got["group"]))
+
     def test_a_task_moves_whole(self):
         task = tasks.add("a", "c1", ["c3"])
         got = groups.move("a", "b", ["c1"])
@@ -235,6 +279,23 @@ class GroupsTest(unittest.TestCase):
                   for g in data.home(started.list())["gatherers"]}
         self.assertEqual(listed["self:" + sid], (True, [sid]))
         self.assertEqual(listed["b"], (False, ["c2"]))
+
+    def test_a_coordinator_agent_over_everything_is_a_group_of_one_reading_every_group(self):
+        from ag_dashboard import coordination
+        started = self.sessions_here()
+        crew = coordination.Coordination(started, watch=False)
+        sid = crew.ensure("all", self.tmp.name, "claude")["session_id"]
+        self.assertEqual((self.members("self:" + sid), self.members("a")), ([sid], ["c1", "c3"]))
+        role = coordination._role_in("self:" + sid, sid)                   # in ag's database, before its first call
+        self.assertEqual(role, {"role": "coordinator", "private": True, "over": "all", "reads": ["a", "b"]})
+        self.recorded.clear()
+        with unittest.mock.patch.object(actions, "record") as wrote:
+            coordination.Coordination(started, watch=False)._mark_roles()     # a new dashboard: read, not written again
+        wrote.assert_not_called()
+        listed = {g["name"]: g for g in data.home(started.list())["gatherers"]}
+        [a] = listed["self:" + sid]["agents"]
+        self.assertEqual((a["role"], a["over"], listed["self:" + sid].get("alone")), ("coordinator", "all", True))
+        self.assertEqual(crew.ensure("all")["session_id"], sid)                # one a node
 
     def test_listed_on_its_own_while_its_record_is_still_being_written(self):
         started = self.sessions_here()

@@ -62,7 +62,7 @@ function gfLevel(shown, id, draw) {
   for (const f of kidFolders(GF, id)) {
     out.push(gfLine(f));
     if (isOpenFolder(GF, f.id)) {
-      const rows = gfLevel(shown, f.id, draw);
+      const rows = [crewRow(`groups:${f.id}`), ...gfLevel(shown, f.id, draw)].filter(Boolean);   // its coordinator agent first
       out.push(el("div", { class: "gf-kids" }, ...(rows.length ? rows : [el("div", { class: "f-empty", text: gfEmpty(f) })])));
     }
   }
@@ -74,8 +74,9 @@ function gfEmpty(f) {
   const hid = Object.entries(treeOf(GF).filed).some(([name, at]) => within(GF, at, f.id) && state.home.gatherers.some((g) => g.name === name));
   return hid ? "Its gatherers are hidden" : SNAPSHOT ? "Empty" : "Empty: drag gatherers here";
 }
-// A folder of gatherers' line: a button opening or folding it -- its caret, its name -- and, hovered or in focus, its
-// buttons: a folder made in it, it renamed (F2), it deleted. No counts, no start buttons. Dragged: into another, or onto
+// A folder of gatherers' line: a button opening or folding it -- its caret, its name, its coordinator agent's face if it
+// has one -- and, hovered or in focus, its buttons: a coordinator agent started over it (none yet), a folder made in it,
+// it renamed (F2), it deleted. No counts, no start buttons. Dragged: into another, or onto
 // the list's head (its top); a gatherer or a folder dropped on it put in it, and it opened when one is held over it.
 function gfLine(f) {
   const open = isOpenFolder(GF, f.id), edit = state.folderEdit, k = `${GF}/folder:${f.id}`;
@@ -85,8 +86,10 @@ function gfLine(f) {
     el("button", { class: "fbtn", type: "button", "aria-expanded": open ? "true" : "false", title: `${f.name}: a folder of groups`,
       onclick: toggle, onkeydown: (ev) => { if (ev.key === "F2" && !SNAPSHOT) { ev.preventDefault(); startFolderEdit(GF, f.id); } } },
       el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "fname", text: f.name })),
+    SNAPSHOT || !crewAt(`groups:${f.id}`)[1] ? null : crewButton(null, `groups:${f.id}`),   // its coordinator agent's face
     el("span", { class: "fill", onclick: toggle },
       SNAPSHOT ? null : el("span", { class: "f-acts", onclick: (ev) => ev.stopPropagation() },
+        state.home.merged && !crewAt(`groups:${f.id}`)[1] ? crewButton(null, `groups:${f.id}`) : null,
         folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(GF, null, f.id)),
         folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(GF, f.id)),
         folderAct("delete", `Delete ${f.name}: what is in it moves up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(GF, f.id)))));

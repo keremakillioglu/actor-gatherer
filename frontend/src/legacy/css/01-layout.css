@@ -44,6 +44,12 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
 .gatherer-row .g-acts .act { margin: 0; height: 22px; }
 .gatherer-row .g-acts .act.start + .act:not(.start) { margin-left: 4px; }   /* the starts apart from the rest, as a folder's */
 .gatherer-row .name + .act.crew, .gatherer-row .name-box + .act.crew { align-self: center; margin: 0 0 0 2px; padding: 0 3px; }
+.folder-line .fbtn + .act.crew { align-self: center; flex: none; margin: 0 2px; padding: 0 3px; }   /* a folder's coordinator agent */
+/* its face just after the folder's name, as a group's is, clear of the buttons shown over the counts when hovered */
+.folder-line:has(.fbtn + .act.crew) .fbtn { flex: 0 1 auto; }
+.folder-line:has(.fbtn + .act.crew) .fill { flex: 1 1 auto; align-self: stretch; }
+.aside-head .act.crew { border: 0; background: none; padding: 0 3px; height: 24px; display: inline-flex; align-items: center; cursor: pointer; }
+.g-kids.crew-top { margin-bottom: 2px; }   /* the coordinator agent over everything, at the list's top */
 @media (hover: none) { .gatherer-row .g-acts { position: static; transform: none; opacity: 1; pointer-events: auto; background: none; } }
 .agent-group { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 6px 18px 2px 40px; }
 button.agent-group { display: block; width: 100%; text-align: left; background: none; border: 0; cursor: pointer; font-family: inherit; }

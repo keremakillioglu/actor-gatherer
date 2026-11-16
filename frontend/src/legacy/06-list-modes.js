@@ -193,7 +193,8 @@ const railNameClick = (fold, at) => (ev) => { cardHide(); fold(); if (ev.detail 
 // a button folding or opening what is in it, as a folder's or gatherer's name does in the tree), then what is in it as
 // the list has it -- a gatherer's top, its gatherer agent first; folded, its counts, and those of its actors open in a pane
 function railHere(here, view) {
-  const { g, f } = here, up = f ? parentOf(g.name, f) : null, crew = g.agents.find(isCoordinator);
+  const { g, f } = here, up = f ? parentOf(g.name, f) : null, node = f ? `folder:${f.id}` : `group:${g.name}`;
+  const crew = crewAt(node, g)[1];
   const open = f ? railOpen(g, f, view.busy) : !collapsed.has(g.name), name = f ? f.name : titleOf(g);
   const fold = f ? () => railFold(g, f, view.busy) : () => toggleGatherer(g.name);
   // the places above it, the gatherer first: a step each, a click showing only it
@@ -219,7 +220,7 @@ function railHere(here, view) {
         title: `${name}: ${open ? "fold it" : "open it"}`, onclick: () => { cardHide(); fold(); } },
         el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "nm" }, ...breakable(name))),
         g, f ? f.id : null, () => { if (!(f ? railOpen(g, f, view.busy) : !collapsed.has(g.name))) fold(); })),
-    ...(open ? [!f && crew && !crewHidden.has(g.name) ? railActor(g, crew) : null, ...railBoxOr(g, f ? f.id : null, view)] : railHereFolded(g, f)));
+    ...(open ? [crew && !crewHidden.has(crewHideKey(node)) ? railActor(g, crew) : null, ...railBoxOr(g, f ? f.id : null, view)] : railHereFolded(g, f)));
 }
 function railHereFolded(g, f) {
   const counts = f ? tallyChips(folderTally(g, f.id), plural(folderTally(g, f.id).open, "actor")) : gathererCounts(g);
@@ -327,7 +328,7 @@ function railBusyNow(shown) {
 }
 function renderRail() {
   railTasksDrawn.clear();                            // each task's tile drawn once, where its first actor is (railRowsOf)
-  const shown = state.home.gatherers.filter((g) => !isHidden(g));
+  const shown = state.home.gatherers.filter((g) => !isHidden(g) && !isCrewHome(g));   // one above groups: at its node
   const list = el("div", { class: "r-actors" });
   const busy = railBusyNow(shown);
   // drilled in: there, or, it gone, its gatherer's top, or every gatherer
@@ -337,8 +338,9 @@ function renderRail() {
   const view = (g) => ({ ...busy.get(g.name), only: !railShow.folders && !(listDrag && listDrag.g === g.name),
     saved: railShow.saved, closed: railShow.closed });
   // drilled in: where it is; else every gatherer, in the folders the reader keeps them in, if any (05-gatherer-folders.js)
+  const [allG, overAll] = here ? [null, null] : crewAt("all");               // the coordinator agent over everything
   if (here) list.append(railHere(here, view(here.g)));
-  else list.append(...railGfLevel(shown.filter((g) => !aloneShut(g)), null, (g) => railGatherer(g, view(g))),
+  else list.append(...(overAll && !crewHidden.has("all") ? [railActor(allG, overAll)] : []), ...railGfLevel(shown.filter((g) => !aloneShut(g)), null, (g) => railGatherer(g, view(g))),
     ...railAloneShut(shown.filter(aloneShut)));          // the actors on their own closed: in their lines (05-group-moves.js)
   if (!shown.length) list.append(el("div", { class: "r-none", text: state.home.gatherers.length ? "Every group is hidden" : "No groups" }));
   // the tree, drawn again (its buttons -- open the list, full screen, hide -- in a row over it, .list-top; what every
@@ -358,7 +360,7 @@ function renderRail() {
 // the list shows for it, and its actors open in a pane; open, what is in it, under its name. `view`: as railBox's.
 function railGatherer(g, view) {
   if (g.alone) return railAlone(g);                  // an actor on its own: its face alone (05-group-moves.js)
-  const open = !collapsed.has(g.name), crew = g.agents.find(isCoordinator);
+  const open = !collapsed.has(g.name), crew = groupCrew(g);
   const sec = el("section", { class: "r-gatherer" + (open ? " open" : ""), "aria-label": titleOf(g) },
     dropOn(el("button", { class: "r-gname", type: "button", "aria-expanded": open ? "true" : "false", "data-card": key(g.name, "gatherer:"),
       ...(HOVERS.matches ? {} : { title: `${titleOf(g)}${titleOf(g) !== g.name ? ` (${g.name})` : ""}: ${open ? "fold it" : "show its actors"} · double-click: only it` }),

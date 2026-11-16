@@ -714,7 +714,8 @@ function blockName(k) {
   if (/^t\d+$/.test(id)) { const t = taskById(g, Number(id.slice(1))); return t ? taskName(gg, t) : "A task"; }
   if (isAppItem(id)) { const o = appInfo(g, id.slice(APP_ITEM.length)); return o ? appShown(o) : "An app"; }
   const a = gg.agents.find((x) => x.channel === id);
-  return !a ? id : isCoordinator(a) && !(a.name && a.name.text) ? CREW_GROUP : actorTitle(a);
+  return !a ? id : isCoordinator(a) && !(a.name && a.name.text) ? (a.over ? `${crewPlace(a.over, gg)} coordinator` : CREW_GROUP)
+    : actorTitle(a);
 }
 // A block's faces, on its card's head: its task's actors' (not closed; three at most) and its apps'
 // marks -- an actor's, an app's, alone
@@ -975,7 +976,7 @@ function appActorSaid(g, a) {
   return { channel: a.channel, started_as: (a.session && a.session.started_as) || null, name: a.name || null,
     last_user_message: firstLine(appAsked(a, a.last_user_message || ""), 200), avatar: a.avatar || null,
     avatar_hue: a.avatar_hue || null, cwd: cwdOf(a) || null, last: a.last || 0, status: statusOf(a),
-    harness: a.harness || null, role: a.role || null, saved: !!savedAs(g.name, a), turn_over: !!a.turn_over,
+    harness: a.harness || null, role: a.role || null, over: a.over || null, saved: !!savedAs(g.name, a), turn_over: !!a.turn_over,
     asked_of: a.asked_of || appAskedOf(a.last_user_message || ""),        // (read before the apps were: from it now)
     recap: a.recap && a.recap.text ? { text: a.recap.text, at: a.recap.at } : null,
     asking: ask ? { ...said, id: askKey(ask) } : null, answerable: !!ask && askWhere(a, ask).here };
@@ -1005,7 +1006,7 @@ function appInterrupt(g, c) {
 async function appSendActor(g, c, text) {
   const gg = state.home && state.home.gatherers.find((x) => x.name === g);
   if (!gg) throw new Error(`no gatherer ${g}`);
-  const a = c === "gatherer" ? gg.agents.find(isCoordinator) : appActor(g, c);
+  const a = c === "gatherer" ? groupCrew(gg) : appActor(g, c);
   if (a) { await appSend(g, a.channel, text); return { channel: a.channel }; }
   if (c !== "gatherer") throw new Error(`${c}: not an actor of ${g}`);
   const s = await post("/api/coordinator", { gatherer: g, cwd: startCwd(gg), harness: startable()[0] || "" });
@@ -1404,42 +1405,58 @@ const startingApps = () => (PANE || SNAPSHOT || !window.agNext ? [] : window.agN
   .filter((a) => a.agent && a.agent.start && !a.failed);
 const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a session started here: its own, before any call names one
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
-// Its gatherer agent's button, first (CREW_START): the agent shown, started for the gatherer if it has none -- on the
-// first harness a session can run on here, in the directory a new session would start in (coordination.py's `ensure`).
-// Shown as a click on its row shows an actor on its own: where it is open in a screen tab, else in a tab of its own
-// (viaTabs) -- started, once listed, as any actor started.
+// A coordinator agent's button (CREW_START), on its node's row -- a group's, a folder's, a folder of groups', the list's
+// head for everything: the agent shown, started over the node if it has none -- on the first harness a session can run
+// on here, in the directory of the actor latest at work under the node (coordination.py's `ensure`). Shown as a click on
+// its row shows an actor on its own: where it is open in a screen tab, else in a tab of its own (viaTabs) -- started,
+// once listed, as any actor started.
 const CREW_START = "crew", CREW_GROUP = "Coordinator agent";
-async function openCoordinator(g) {
-  if (crewHidden.has(g.name)) setCrewHidden(g.name, false);
-  const there = g.agents.find(isCoordinator);
+// the directory a coordinator agent over `node` starts in: that of the actor latest at work under it
+function crewCwd(node, g) {
+  const kind = node.slice(0, Math.max(0, node.indexOf(":")));
+  const under = kind === "folder" && g ? actorsWithin(g, +node.slice(node.indexOf(":") + 1))
+    : kind === "group" && g ? g.agents
+    : state.home.gatherers.filter((x) => !x.alone && (node === "all" || within(GF, gfOf(x.name), +node.slice(node.indexOf(":") + 1))))
+      .flatMap((x) => x.agents);
+  return cwdOf(under.filter((a) => cwdOf(a) && !isCoordinator(a)).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
+}
+async function openCoordinator(g, node = g ? `group:${g.name}` : "all") {
+  const hk = crewHideKey(node);
+  if (crewHidden.has(hk)) setCrewHidden(hk, false);
+  const [cg, there] = crewAt(node, g);
   const view = CHAT_VIEWS.has("files") ? "files" : null;
-  if (there) { await viaTabs(taskKey(g.name, there.channel), {}, there.channel); return show(g.name, there.channel, view); }
-  state.starting = { gatherer: g.name, harness: CREW_START };
+  if (there) { await viaTabs(taskKey(cg.name, there.channel), {}, there.channel); return show(cg.name, there.channel, view); }
+  state.starting = { gatherer: g ? g.name : "", harness: CREW_START, node };
   renderAgents();
   try {
-    const s = await post("/api/coordinator", { gatherer: g.name, cwd: startCwd(g), harness: startable()[0] || "" });
+    const s = await post("/api/coordinator", { over: node, cwd: crewCwd(node, g), harness: startable()[0] || "" });
     collapsed.delete(s.gatherer);
     await loadHome();
     await viaTabs(taskKey(s.gatherer, s.session_id), {});   // a tab of its own
     await show(s.gatherer, s.session_id, view);
-  } catch (e) { state.adding = { gatherer: g.name, cwd: startCwd(g), harness: null, error: e.message }; }
-  finally { state.starting = null; renderAgents(); }
+  } catch (e) {
+    if (g) state.adding = { gatherer: g.name, cwd: startCwd(g), harness: null, error: e.message };
+    else alert(e.message);
+  } finally { state.starting = null; renderAgents(); }
   const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
   if (box) box.focus();
 }
-// A gatherer's gatherer agent, its face just after the gatherer's name in its row: a click shows it (started if it has
-// none), and, hidden from the list, its status at the face's corner.
-function crewButton(g) {
-  const hs = startable(), crew = g.agents.find(isCoordinator), hidden = !!crew && crewHidden.has(g.name);
+// A node's coordinator agent, its face on the node's row (a group's just after its name): a click shows it (started if
+// it has none), and, hidden from the list, its status at the face's corner.
+function crewButton(g, node = g ? `group:${g.name}` : "all") {
+  const hs = startable(), [, crew] = crewAt(node, g), hidden = !!crew && crewHidden.has(crewHideKey(node));
   if (!hs.length && !crew) return null;
   const [cls, label] = hidden ? statusOf(crew) : [null, null];      // hidden from the list: its status here
-  const busy = state.starting && state.starting.gatherer === g.name && state.starting.harness === CREW_START;
+  const busy = state.starting && state.starting.harness === CREW_START && state.starting.node === node;
+  const place = crewPlace(node, g), what = node === "all" ? "every group's actors" : node.startsWith("groups:")
+    ? `the actors of the groups in ${place}` : node.startsWith("group:") ? "this group's actors" : `the actors in ${place}`;
   return el("button", { class: "act start crew" + (busy ? " busy" : "") + (crew ? " on" : ""), type: "button",
     ...(state.starting ? { disabled: "" } : {}),
-    title: hidden ? `The coordinator agent (${label.toLowerCase()}), hidden from the list: click to show it and open it`
-      : crew ? "The coordinator agent: it coordinates this group's actors -- tell it what to arrange"
-      : "Start the coordinator agent: it coordinates this group's actors, settles their conflicts, and arranges their work for you",
-    "aria-label": crew ? `The coordinator agent of ${g.name}` : `Start the coordinator agent of ${g.name}`, onclick: () => openCoordinator(g) },
+    title: hidden ? `The coordinator agent over ${place} (${label.toLowerCase()}), hidden from the list: click to show it and open it`
+      : crew ? `The coordinator agent over ${place}: it coordinates ${what} -- tell it what to arrange`
+      : `Start a coordinator agent over ${place}: it coordinates ${what}, settles their conflicts, and arranges their work for you`,
+    "aria-label": crew ? `The coordinator agent over ${place}` : `Start a coordinator agent over ${place}`,
+    onclick: (ev) => { ev.stopPropagation(); openCoordinator(g, node); } },
     crewFace(crew, MANAGER), hidden ? el("i", { class: `crew-dot ${cls}`, "aria-hidden": "true" }) : null);
 }
 // A gatherer row's start buttons -- and a folder's line's (`folder`: what they start goes in it, folders.py), shown, on

@@ -1,14 +1,18 @@
-"""Actors talking to one another, and the GATHERER AGENT that coordinates them for the user -- through the dashboard,
-which runs them. Every actor of a gatherer is told (the gatherer's guide, ag's policy) that the others exist and how to
+"""Actors talking to one another, and the COORDINATOR AGENTS that coordinate them for the user -- through the
+dashboard, which runs them. Every actor of a group is told (the guide, ag's policy) that the others exist and how to
 reach them: `ag actors` (ag/cli/actors.py), run in its shell, asks this dashboard (api/sessions.py's /api/actors/<op>):
 
-    list      the actors of its gatherer, those not closed (`all`: every one): each one's id, name, status, harness,
-              directory, what it was last asked and its recap
+    list      the actors of its group, those not closed (`all`: every one): each one's id, name, status, harness,
+              directory, what it was last asked and its recap -- and the coordinator agents over it, the nearest first;
+              a coordinator agent's: those under its node
+    coordinators   the coordinator agents over the asker, the nearest first -- and, a coordinator agent's, those under it
     show      one actor: that, what it said last, and the files its latest turn changed (files.py's `files`)
-    who       the actors of its gatherer that changed a file lately, the latest first (livedocs.py's `writers`)
-    send      a message to an actor -- `gatherer` names the gatherer agent, started for it if it has none -- typed into
-              its terminal as a message of its conversation, as Chat sends one (sessions.py's `send`: its terminal opened
-              for it, if it has none open), in an envelope saying who it is from and how to answer (`envelope`)
+    who       the actors that changed a file lately, the latest first (livedocs.py's `writers`): those the asker reaches
+              in full, any other by its id and group alone -- so an actor in a conflict across groups can name it
+    send      a message to an actor, typed into its terminal as a message of its conversation, as Chat sends one
+              (sessions.py's `send`: its terminal opened for it, if it has none open), in an envelope saying who it is
+              from and how to answer (`envelope`) -- `coordinator` names the coordinator agent of the nearest node over
+              the asker and the actors given `with` (coordinators.py's `nearest`), none started for it
     new       a new actor in the gatherer, started with a message: in a directory, on a harness and model, as given, else
               as the actor it is `like` has them, else as the asker's -- or an app's actor (`--<name>`, an app that
               starts an agent of its own: app_agents.py's `start`): a new one of the app on the directory, its actor
@@ -34,17 +38,23 @@ The asker is the actor whose command it is, by the id the command found (its har
 sessions.py's ACTOR_VAR, set in every session the dashboard starts): a session started here, by its id or the one it
 was started under, else any channel of the home's gatherers. Its gatherer is that channel's.
 
-The GATHERER AGENT is a session of its gatherer like any other -- so its context holds what the user asked each actor,
-as the gatherer's policy shows every session the others' requests -- kept in the dashboard's table with the role
-COORDINATOR (sessions.py), and run with `instructions` added to its harness's own on every run: the file
+A COORDINATOR AGENT is over a NODE of the list (coordinators.py: a folder in a group, a group, a folder of groups, or
+everything), and over every actor under it. There is none until the user starts one from the page (`ensure`), one a
+node at most. It is a session like any other -- one over a group, or a folder in one, is of that group, so its
+context holds what the user asked the group's actors; one above groups is in a group of its own (`self:<channel>`, as
+an actor on its own) and READS the groups under its node -- kept in the dashboard's table with the role COORDINATOR
+and its node `over` (sessions.py), and run with `instructions` added to its harness's own on every run: the file
 gatherer_agent.md beside this module, or the home's own copy of it (<home>/dashboard/gatherer_agent.md), read anew for
-each run -- a change to it is what the agent is told next. One per gatherer:
-started from the page (`coordinator`), or by the first message an actor sends it, in the directory asked for, else the
-asker's, on Claude Code where it can run, else codex.
+each run, its node filled in -- a change to it is what the agent is told next.
+
+What it can name is what is under its node (`_scope`): it messages, shows, watches, moves and starts actors there
+alone, and a folder is named by its path from its node down. An actor names the actors of its group, and the
+coordinator agents over it.
 
 Its channel is PRIVATE: no other actor's context shows what is said in it. The policy reads that from a `role` record
-in it ({role: "coordinator", private: true}; ag's proactive_context_manager, `unseen`), which the dashboard puts there
-once the channel is in its gatherer (`_mark_private`): the agent sees every actor's requests, they see none of its.
+in it ({role: "coordinator", private: true, over, reads}; ag's proactive_context_manager, `unseen`), which the
+dashboard puts there, and again whenever its node or the groups under it change (`_mark_roles`): the agent sees the
+requests of the actors it is shown, they see none of its.
 The messages it and the actors send one another are not shown to the others either (the policy's
 `unshared_openings`, which these envelopes open with).
 
@@ -81,15 +91,15 @@ import sqlite3
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Tuple
 
 import harness_kit
 from app_kit import AppError
 
-from . import actions, branches, data, files, folders, groups, livedocs, naming, saved, sessions
+from . import actions, branches, coordinators, data, files, folders, groups, home, livedocs, naming, saved, sessions
 
 COORDINATOR = sessions.COORDINATOR
-ALIASES = ("gatherer", "gatherer-agent", "coordinator")   # what `send`, `show` and `when` take for the gatherer agent
+ALIASES = ("gatherer", "gatherer-agent", "coordinator")   # what `send`, `show` and `when` take for a coordinator agent
 NAME = data.COORDINATOR_NAME
 ASKED_CHARS = 300               # the most of what an actor was asked, in a list
 SAID_CHARS = 1500               # the most of what it said last, in `show` and a watch's message
@@ -110,14 +120,17 @@ INSTRUCTIONS_FILE = "gatherer_agent.md"             # what the gatherer agent is
 INSTRUCTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), INSTRUCTIONS_FILE)
 
 # The envelope a message goes in, its first line saying who it is from and how to answer, then a blank line, then the
-# message: from the gatherer agent, or from another actor (its id, and its name as JSON). ENVELOPE reads it back (as
-# the page's `envelope` does, the same pattern) -- also with its lines made one, as data.py's `last_user_message` has
-# a message. A watch's news (`update`) is no one's message: its first line says which watch and what became of the
-# actor watched, then what it was asked and said last, and the watcher's note (UPDATE reads it back).
-FROM_COORDINATOR = 'Message from the coordinator agent (answer it with: ag actors send coordinator "..."):'
+# message: from a coordinator agent (the node it is over, `everything` or its label as JSON, and its id to answer to),
+# or from another actor (its id, and its name as JSON). ENVELOPE reads it back (as the page's `envelope` does, the same
+# pattern) -- also with its lines made one, as data.py's `last_user_message` has a message, and as those from before
+# coordinator agents had nodes said it ("the gatherer agent", "the coordinator agent", answered to `coordinator`). A
+# watch's news (`update`) is no one's message: its first line says which watch and what became of the actor watched,
+# then what it was asked and said last, and the watcher's note (UPDATE reads it back).
+FROM_COORDINATOR = 'Message from the coordinator agent{over} (answer it with: ag actors send {id} "..."):'
 FROM_ACTOR = 'Message from actor {id}{name} (answer it with: ag actors send {id} "..."):'
-ENVELOPE = re.compile(r'^Message from (the (?:gatherer|coordinator) agent|actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)'
-                      r'(?: \(answer it with: [^\n]*?\))?:\s+([\s\S]*)$')
+ENVELOPE = re.compile(r'^Message from (the (?:gatherer|coordinator) agent(?: over (everything|"(?:[^"\\]|\\.)*"))?|'
+                      r'actor ([\w-]+)(?:, ("(?:[^"\\]|\\.)*"))?)'
+                      r'(?: \(answer it with: (?:ag actors send ([\w-]+) )?[^\n]*?\))?:\s+([\s\S]*)$')
 UPDATE_HEAD = "Update (you asked with `ag actors when`, watch {n}): actor {id}{name} is done: {how}."
 UPDATE = re.compile(r'^Update \(you asked with `ag actors when`, watch (\d+)\): actor ([\w-]+)(?: \(("(?:[^"\\]|\\.)*")\))?'
                     r' is done: ([^\n]*?)\.(?:\s+([\s\S]*))?$')
@@ -140,10 +153,12 @@ class CoordinationError(sessions.SessionError):
 
 
 def envelope(sender: dict, text: str) -> str:
-    """`text` as the receiver gets it, from `sender`: {"kind": "coordinator"}, or {"kind": "actor", "id": its id, "name":
-    its name or None}."""
+    """`text` as the receiver gets it, from `sender`: {"kind": "coordinator", "id": its id, "over": the label of its node
+    (coordinators.py's; "everything" for all)}, or {"kind": "actor", "id": its id, "name": its name or None}."""
     if sender["kind"] == "coordinator":
-        head = FROM_COORDINATOR
+        over = sender.get("over")
+        head = FROM_COORDINATOR.format(over="" if not over else " over everything" if over == "everything"
+                                       else f" over {json.dumps(over)}", id=sender.get("id") or "coordinator")
     else:
         head = FROM_ACTOR.format(id=sender["id"], name=f", {json.dumps(sender['name'])}" if sender.get("name") else "")
     return f"{head}\n\n{text.strip()}"
@@ -156,8 +171,10 @@ def update(n: int, target: str, name: Optional[str], how: str, text: str) -> str
 
 
 def opened(text: str) -> Optional[dict]:
-    """A message's envelope read back: {"from": "coordinator" | "actor", "id", "name", "text"} -- or a watch's news,
-    {"from": "update", "id" (the actor watched), "name", "how", "watch", "text"}; None for a message in neither."""
+    """A message's envelope read back: {"from": "actor", "id", "name", "text"}, or {"from": "coordinator", "id" (its, to
+    answer to: None in one from before), "name": None, "over" (its node's label; None in one from before), "text"} --
+    or a watch's news, {"from": "update", "id" (the actor watched), "name", "how", "watch", "text"}; None for a message
+    in neither."""
     m = UPDATE.match(text or "")
     if m is not None:
         try:
@@ -169,24 +186,50 @@ def opened(text: str) -> Optional[dict]:
     m = ENVELOPE.match(text or "")
     if m is None:
         return None
-    who = "coordinator" if m.group(1).startswith("the ") else "actor"      # its old name, or the one it is told by
+    if m.group(1).startswith("the "):                  # a coordinator agent's: its old names too
+        over = m.group(2)
+        try:
+            over = json.loads(over) if over and over != "everything" else over
+        except ValueError:
+            over = None
+        reply = m.group(5)
+        return {"from": "coordinator", "id": None if not reply or reply.lower() in ALIASES else reply, "name": None,
+                "over": over, "text": m.group(6)}
     try:
-        name = json.loads(m.group(3)) if m.group(3) else None
+        name = json.loads(m.group(4)) if m.group(4) else None
     except ValueError:
         name = None
-    return {"from": who, "id": m.group(2), "name": name, "text": m.group(4)}
+    return {"from": "actor", "id": m.group(3), "name": name, "text": m.group(6)}
 
 
-def instructions(gatherer: str) -> str:
-    """What the gatherer agent of `gatherer` is told, on every run, besides its harness's own instructions: the
-    INSTRUCTIONS file -- the home's own (<home>/dashboard/gatherer_agent.md), else the dashboard's -- read anew for each
-    run, so a change to it is what the next run is told; `{gatherer}` in it, the gatherer's name."""
+def instructions(gatherer: str, over: Optional[str] = None, channel: Optional[str] = None) -> str:
+    """What the coordinator agent of the session in `gatherer` over the node `over` (none: the group's) is told, on
+    every run, besides its harness's own instructions: the INSTRUCTIONS file -- the home's own
+    (<home>/dashboard/gatherer_agent.md), else the dashboard's -- read anew for each run, so a change to it is what the
+    next run is told. In it, its node: `{over}` (as its messages name it), `{over_long}`, `{reads}` (whose requests it
+    is shown), `{across}` (", across the groups in it" above groups), `{paths}` (how a folder's path starts there),
+    `{id}` (its own, `channel`), and `{gatherer}` (the group it runs in)."""
+    node = over or coordinators.group_node(gatherer)
+    tree = coordinators.Tree()
+    label = tree.label(node) or gatherer
+    shown = tree.reads(node) if coordinators.above_groups(node) else [tree.group_of(node) or gatherer]
+    paths = {"all": "with the group's name (`paper/Figures`)",
+             "groups": "with the group's name (`paper/Figures`)",
+             "group": "from the group's top (`Figures/Plots`)",
+             "folder": "from your folder down (`Plots`, a folder in it)"}[coordinators.kind(node) or "group"]
+    fill = {"{over}": "everything" if label == "everything" else json.dumps(label), "{over_long}": tree.described(node),
+            "{reads}": ("the group " if len(shown) == 1 else "the groups ") + coordinators._and(shown) if shown else "no group",
+            "{across}": ", across the groups in it" if coordinators.above_groups(node) else "",
+            "{paths}": paths, "{id}": channel or "", "{gatherer}": gatherer}
     for path in (os.path.join(sessions.home.HOME, "dashboard", INSTRUCTIONS_FILE), INSTRUCTIONS):
         try:
             with open(path, encoding="utf-8") as fh:
-                return fh.read().replace("{gatherer}", gatherer)
+                text = fh.read()
         except OSError:
             continue
+        for k, v in fill.items():
+            text = text.replace(k, v)
+        return text
     raise CoordinationError(f"no instructions for the coordinator agent: {INSTRUCTIONS} is missing")
 
 
@@ -221,7 +264,7 @@ class Coordination:
         self.started, self.ring, self.branched = started, ring, branched
         self.lock = threading.RLock()
         self.stop = threading.Event()
-        self.marked: set = set()                 # the gatherer agents' channels marked private by this dashboard
+        self.marked: Dict[str, dict] = {}        # each coordinator agent's role record, as last put in (`_mark_roles`)
         self.unnamed: Dict[str, Tuple[str, str]] = {}   # a new actor's id, its harness's still to come -> (gatherer, name)
         if watch:
             threading.Thread(target=self._run, name="ag-watches", daemon=True).start()
@@ -250,47 +293,99 @@ class Coordination:
                 return g, mine[0], agents
         raise CoordinationError(f"no actor {actor} in this dashboard's home ({sessions.home.HOME})")
 
-    def coordinator(self, gatherer: str) -> Optional[dict]:
-        """The gatherer agent of `gatherer`, as the dashboard's table has it; None while it has none."""
-        return next((r for r in self.started.list() if r["gatherer"] == gatherer and r.get("role") == COORDINATOR), None)
+    def coordinators(self, rows: Optional[List[dict]] = None) -> Dict[str, dict]:
+        """{node: its coordinator agent's session}, as the dashboard's table has them (coordinators.py): one a node, the
+        first made."""
+        rows = self.started.list() if rows is None else rows
+        out: Dict[str, dict] = {}
+        for r in sorted((r for r in rows if r.get("role") == COORDINATOR), key=lambda r: r.get("created_at") or ""):
+            out.setdefault(coordinators.node_of(r), r)
+        return out
 
-    def ensure(self, gatherer: str, cwd: Optional[str] = None, harness: Optional[str] = None,
+    def coordinator(self, gatherer: str) -> Optional[dict]:
+        """The coordinator agent over the group `gatherer`, as the dashboard's table has it; None while it has none."""
+        return self.coordinators().get(coordinators.group_node(gatherer))
+
+    def ensure(self, node: str, cwd: Optional[str] = None, harness: Optional[str] = None,
                model: Optional[str] = None) -> dict:
-        """The gatherer agent of `gatherer`, started if it has none: in `cwd` (else the user's home), on `harness` (else
-        the first harness that can run here, in harness_kit's order) and `model`. As the dashboard's table has it."""
-        if gatherer.startswith(ALONE):
+        """The coordinator agent over `node` (coordinators.py's; a group's name: that group), started if it has none: in
+        `cwd` (else the user's home), on `harness` (else the first harness that can run here, in harness_kit's order)
+        and `model`. One over a group, or a folder in one, is a session of that group; one above groups, a session in a
+        group of its own run under a group under its node, its `group` record and its role record in before its first
+        call, as an actor started on its own (groups.py's `start_alone`). As the dashboard's table has it."""
+        node = str(node or "").strip()
+        if node.startswith(ALONE):
             raise CoordinationError("an actor on its own has no coordinator agent")
+        node = node if coordinators.kind(node) else coordinators.group_node(node)
+        tree = coordinators.Tree()
+        if tree.path(node) is None:
+            raise CoordinationError(f"no folder {node} in this home to put a coordinator agent over")
+        above = coordinators.above_groups(node)
+        if above and not home.merged():
+            raise CoordinationError("a coordinator agent over several groups needs the home's one database: run "
+                                    "`ag home merge` first")
         with self.lock:
-            row = self.coordinator(gatherer)
+            row = self.coordinators().get(node)
             if row is not None:
                 return row
             can = sessions.available() or list(sessions.HARNESSES)
-            harness = harness if harness in sessions.HARNESSES else next((h for h in sessions.HARNESSES if h in can), harness_kit.DEFAULT)
+            fits = [h for h in sessions.HARNESSES if h in can and not (above and sessions.picks_id(h))]
+            harness = harness if harness in fits else fits[0] if fits else \
+                harness if harness in sessions.HARNESSES else harness_kit.DEFAULT
             cwd = cwd if cwd and os.path.isdir(cwd) else os.path.expanduser("~")
-            row = self.started.create(gatherer, cwd, "auto", harness, model, role=COORDINATOR)
+            if not above:
+                g = tree.group_of(node)
+                row = self.started.create(g, cwd, "auto", harness, model, role=COORDINATOR,
+                                          over=None if coordinators.kind(node) == "group" else node)
+            else:
+                row = self._above(tree, node, cwd, harness, model)
         if self.ring is not None:
-            self.ring(gatherer)
-        threading.Thread(target=self._mark_private, name="ag-private", daemon=True).start()   # before its first call
+            self.ring(row["gatherer"])
+        threading.Thread(target=self._mark_roles, name="ag-private", daemon=True).start()   # before its first call
+        return row
+
+    def _above(self, tree: "coordinators.Tree", node: str, cwd: str, harness: str, model: Optional[str]) -> dict:
+        """A new coordinator agent over a node above groups: started on its own, run under the group under its node of
+        the actor started here last (else the first it reads; else the home's first), its `group` and `role` records
+        put in before its first call."""
+        if sessions.picks_id(harness):
+            rules = harness_kit.get(harness)
+            raise CoordinationError(f"{rules.label if rules else harness} names its session only at its first call: a "
+                                    "coordinator agent over several groups runs on a harness whose session is named here")
+        reads = tree.reads(node)
+        latest = sorted((r for r in self.started.list() if r["gatherer"] in reads and r.get("role") != COORDINATOR),
+                        key=lambda r: r.get("created_at") or "", reverse=True)
+        under = latest[0]["gatherer"] if latest else (reads or tree.groups or [""])[0]   # the group latest at work under it
+        if not under:
+            raise CoordinationError("no group in this home to run a coordinator agent under")
+        row = self.started.create(under, cwd, "auto", harness, model, role=COORDINATOR, alone=True, over=node)
+        ch = row["session_id"]
+        role = self._role_payload(row, tree)
+        events = [{"type": groups.GROUP, "id": f"{groups.GROUP}:{ch}:{uuid.uuid4().hex[:12]}", "properties": {"channel": ch},
+                   "payload": {"group": ALONE + ch, "under": under, "name": "", "folder": None}},
+                  {"type": ROLE, "id": f"{ROLE}:{ch}:{uuid.uuid4().hex[:12]}", "properties": {"channel": ch}, "payload": role}]
+        try:
+            actions.insert(under, events)
+        except (RuntimeError, OSError, ValueError) as exc:
+            self.started.discard(ch)
+            raise CoordinationError(f"ag did not take it: {exc}; nothing was started") from None
+        with self.lock:
+            self.marked[ch] = role
         return row
 
     @staticmethod
     def _is_coordinator(a: dict) -> bool:
         return (a.get("session") or {}).get("role") == COORDINATOR
 
-    def _find(self, gatherer: str, ref: str, agents: List[dict], start: Optional[dict] = None) -> Optional[dict]:
-        """The agent `ref` names among `agents`: an alias of the gatherer agent (None while there is none, unless `start`
-        -- {cwd, harness} -- says to start it), an id or its start, the id it was started under, or a name."""
+    def _find(self, gatherer: str, ref: str, agents: List[dict]) -> Optional[dict]:
+        """The agent `ref` names among `agents`: an alias of a coordinator agent (the first among them; None for none),
+        an id or its start, the id it was started under, or a name."""
         ref = (ref or "").strip()
         if not ref:
-            raise CoordinationError("which actor? Give its id (`ag actors` lists them), or `coordinator` for the coordinator agent")
+            raise CoordinationError("which actor? Give its id (`ag actors` lists them), or `coordinator` for the "
+                                    "coordinator agent over you")
         if ref.lower() in ALIASES:
-            found = next((a for a in agents if self._is_coordinator(a)), None)
-            if found is not None or start is None:
-                return found
-            row = self.ensure(gatherer, start.get("cwd"), start.get("harness"))
-            return next((a for a in data.gatherer_actors(gatherer, self.started.list()) if a["channel"] == row["session_id"]),
-                        None) or {"channel": row["session_id"], "session": row, "harness": row["harness"], "cwd": row["cwd"],
-                                  "status": data.IDLE}
+            return next((a for a in agents if self._is_coordinator(a)), None)
 
         def ids(a: dict) -> List[str]:
             return [x for x in (a["channel"], (a.get("session") or {}).get("started_as")) if x]
@@ -305,10 +400,86 @@ class Coordination:
         named = [a for a in agents if _name(a) and _name(a).lower() == ref.lower()]
         if len(named) == 1:
             return named[0]
-        raise CoordinationError(f"no actor {ref} in the group" + (f" ({len(named)} have that name)" if named else ""))
+        raise CoordinationError(f"no actor {ref} " + ("under your folder" if any(self._is_coordinator(a) and a.get("you")
+                                                                                  for a in agents) else "in the group")
+                                + (f" ({len(named)} have that name)" if named else ""))
 
-    def _sender(self, me: dict) -> dict:
-        return {"kind": "coordinator"} if self._is_coordinator(me) else {"kind": "actor", "id": me["channel"], "name": _name(me)}
+    def _scope(self, actor: str) -> "Scope":
+        """Who asks (`_asker`), and what it reaches (module doc): its group's actors, and the coordinator agents over it;
+        a coordinator agent's, the actors under its node -- across groups above them -- and the coordinator agents under
+        it and over it. Each agent with its `group`, and a coordinator agent's with the label of its node (`over`)."""
+        g, me, agents = self._asker(actor)
+        rows = self.started.list()
+        tree, by_node = coordinators.Tree(), self.coordinators(rows)
+        for a in agents:
+            a.setdefault("group", g)
+        s = me.get("session") or {}
+        if s.get("role") == COORDINATOR:
+            node = coordinators.node_of(s)
+            path = tree.path(node)
+            if path is None:
+                reach = []
+            elif coordinators.above_groups(node):
+                reach = []
+                for x in tree.reads(node):
+                    try:
+                        reach += [{**a, "group": x} for a in data.gatherer_actors(x, rows)]
+                    except sqlite3.Error:
+                        continue
+            elif coordinators.kind(node) == "folder":
+                reach = [a for a in agents if node in self._place(tree, a)]
+            else:
+                reach = list(agents)
+            place = path or []
+            under = [r for n, r in by_node.items() if r["session_id"] != me["channel"] and node in (tree.path(n) or [])]
+            over = [by_node[n] for n in reversed(place) if n in by_node and by_node[n]["session_id"] != me["channel"]]
+            reach = [a for a in reach if not self._is_coordinator(a)
+                     or a["channel"] in {r["session_id"] for r in under}]
+        else:
+            node, place = None, self._place(tree, {**me, "group": g})
+            over = [by_node[n] for n in reversed(place) if n in by_node]
+            reach = [a for a in agents if not self._is_coordinator(a)]
+            under = []
+        mine = {a["channel"] for a in reach}
+        extra = [self._agent_of(r, rows, agents) for r in over + under if r["session_id"] not in mine]
+        reach = [a for a in reach if a["channel"] != me["channel"]] + [a for a in extra if a is not None]
+        for a in reach + [me]:
+            if self._is_coordinator(a):
+                a["over"] = tree.label(coordinators.node_of(a.get("session") or {}))
+        me["you"] = True
+        return Scope(g, me, [me] + reach, node, place, tree, rows, by_node,
+                     [x for x in (self._agent_of(r, rows, reach) for r in over) if x is not None],
+                     [x for x in (self._agent_of(r, rows, reach) for r in under) if x is not None])
+
+    @staticmethod
+    def _place(tree: "coordinators.Tree", a: dict) -> List[str]:
+        return tree.place(a.get("group") or "", a["channel"], (a.get("session") or {}).get("started_as"))
+
+    def _agent_of(self, row: dict, rows: List[dict], among: Optional[List[dict]] = None) -> Optional[dict]:
+        """The session `row` as an agent, with its group: one of `among`, else read from its group."""
+        found = next((a for a in among or [] if a["channel"] == row["session_id"]), None)
+        if found is not None:
+            return found
+        try:
+            got = next((a for a in data.gatherer_actors(row["gatherer"], rows) if a["channel"] == row["session_id"]), None)
+        except sqlite3.Error:
+            got = None
+        got = got or {"channel": row["session_id"], "session": row, "harness": row["harness"], "cwd": row["cwd"],
+                      "status": data.IDLE, "role": row.get("role")}
+        return {**got, "group": row["gatherer"]}
+
+    def _target(self, sc: "Scope", ref: str) -> dict:
+        """The agent `ref` names in the scope: a coordinator agent's alias, the nearest over the asker."""
+        if (ref or "").strip().lower() in ALIASES:
+            if not sc.over:
+                raise CoordinationError(_none_over(sc, []))
+            return sc.over[0]
+        return self._find(sc.g, ref, sc.agents)
+
+    def _sender(self, sc: "Scope") -> dict:
+        if self._is_coordinator(sc.me):
+            return {"kind": "coordinator", "id": sc.me["channel"], "over": sc.tree.label(sc.node)}
+        return {"kind": "actor", "id": sc.me["channel"], "name": _name(sc.me)}
 
     def _view(self, a: dict, me: Optional[dict] = None, kept: Optional[Tuple[dict, dict]] = None) -> dict:
         """An actor as `ag actors` shows it -- by its whole id: a codex thread's opens with the time it was made, so
@@ -319,63 +490,138 @@ class Coordination:
         if kept is not None:
             filed = _kept_as(a, kept[1])
             mark = {"saved": _kept_as(a, kept[0]) is not None, "folder": kept[1][filed] if filed else None}
-        return {**mark, "id": a["channel"], "channel": a["channel"], "name": NAME if self._is_coordinator(a) else _name(a),
+        return {**mark, "id": a["channel"], "channel": a["channel"], "name": _name(a) or (NAME if self._is_coordinator(a) else None),
                 "status": a.get("status"), "harness": a.get("harness") or s.get("harness"), "cwd": a.get("cwd") or s.get("cwd"),
                 "asked": _clip(_unwrapped(a.get("last_user_message")), ASKED_CHARS),
                 "recap": _clip((a.get("recap") or {}).get("text"), ASKED_CHARS),
                 "last": a.get("last"), "you": bool(me) and a["channel"] == me["channel"],
-                "gatherer_agent": self._is_coordinator(a), **({_app_of(s): True} if _app_of(s) else {})}
+                "gatherer_agent": self._is_coordinator(a), **({_app_of(s): True} if _app_of(s) else {}),
+                **({"over": a["over"]} if self._is_coordinator(a) and a.get("over") is not None else {}),
+                **({"group": a["group"]} if a.get("group") else {})}
 
     # ---- what an actor asks
 
     def list(self, actor: str, every: bool = False) -> dict:
-        g, me, agents = self._asker(actor)
-        shown = [a for a in agents if every or a.get("status") != data.CLOSED or a["channel"] == me["channel"]
+        sc = self._scope(actor)
+        me, over = sc.me, [a["channel"] for a in sc.over]
+        shown = [a for a in sc.agents if every or a.get("status") != data.CLOSED or a["channel"] == me["channel"]
                  or self._is_coordinator(a)]
-        shown.sort(key=lambda a: (not self._is_coordinator(a), -(a.get("last") or 0)))
-        kept = _kept(g)
-        return {"gatherer": g, "you": me["channel"], "actors": [self._view(a, me, kept) for a in shown],
-                "closed": len(agents) - len(shown)}
+        shown.sort(key=lambda a: (a["channel"] not in over, over.index(a["channel"]) if a["channel"] in over else 0,
+                                  -(a.get("last") or 0)))
+        kept = {g: _kept(g) for g in {a.get("group") or sc.g for a in shown}}
+        return {"gatherer": sc.g, "you": me["channel"], "node": sc.tree.label(sc.node) if sc.node else None,
+                "actors": [self._view(a, me, kept[a.get("group") or sc.g]) for a in shown],
+                "over": [self._view(a, me) for a in sc.over], "closed": len(sc.agents) - len(shown)}
+
+    def coordinators_of(self, actor: str) -> dict:
+        """The coordinator agents over the asker, the nearest first, and -- a coordinator agent's -- those under it."""
+        sc = self._scope(actor)
+        return {"you": sc.me["channel"], "node": sc.tree.label(sc.node) if sc.node else None,
+                "over": [self._view(a, sc.me) for a in sc.over], "under": [self._view(a, sc.me) for a in sc.inside]}
 
     def show(self, actor: str, ref: str) -> dict:
-        g, me, agents = self._asker(actor)
-        a = self._find(g, ref, agents)
-        if a is None:
-            raise CoordinationError("the group has no coordinator agent yet")
+        sc = self._scope(actor)
+        a = self._target(sc, ref)
+        g = a.get("group") or sc.g
         got = _latest(g, a["channel"], a.get("cwd"))
-        return {**self._view(a, me, _kept(g)), "said": _clip(got.get("said"), SAID_CHARS),
-                "asked": _clip(_unwrapped(got.get("asked")), SAID_CHARS) or self._view(a, me)["asked"], "turns": got.get("turns", 0),
-                "now": got.get("now"), "changed": got.get("changed") or []}
+        return {**self._view(a, sc.me, _kept(g)), "said": _clip(got.get("said"), SAID_CHARS),
+                "asked": _clip(_unwrapped(got.get("asked")), SAID_CHARS) or self._view(a, sc.me)["asked"],
+                "turns": got.get("turns", 0), "now": got.get("now"), "changed": got.get("changed") or []}
 
     def who(self, actor: str, path: str) -> dict:
-        g, me, agents = self._asker(actor)
+        """The actors that changed the file lately: those the asker reaches, in full; any other, by its id and its group
+        alone (`other`), nothing of its work -- so an actor in a conflict across groups can name it."""
+        sc = self._scope(actor)
         path = (path or "").strip()
         if not path:
             raise CoordinationError("which file?")
-        full = os.path.normpath(os.path.join(me.get("cwd") or os.getcwd(), os.path.expanduser(path)))
+        full = os.path.normpath(os.path.join(sc.me.get("cwd") or os.getcwd(), os.path.expanduser(path)))
         found = livedocs.writers([os.path.dirname(full)], time.time() - WHO_SECONDS).get(os.path.basename(full), [])
-        by = {a["channel"]: a for a in agents}
-        return {"path": full, "actors": [{**self._view(by[w["channel"]], me), "how": w["how"], "at": w["at"]}
-                                         for w in found if w["gatherer"] == g and w["channel"] in by]}
+        by = {a["channel"]: a for a in sc.agents}
+        out = []
+        for w in found:
+            if w["channel"] in by:
+                out.append({**self._view(by[w["channel"]], sc.me), "how": w["how"], "at": w["at"]})
+            elif not str(w.get("gatherer") or "").startswith(ALONE):
+                out.append({"id": w["channel"], "channel": w["channel"], "group": w.get("gatherer"), "other": True,
+                            "how": w["how"], "at": w["at"]})
+        return {"path": full, "actors": out}
 
-    def send(self, actor: str, ref: str, text: str) -> dict:
-        g, me, agents = self._asker(actor)
+    def send(self, actor: str, ref: str, text: str, with_: Iterable[str] = ()) -> dict:
+        """A message to the actor `ref` names -- `coordinator`: the coordinator agent of the nearest node over the asker
+        and the actors `with_` names, of any group (coordinators.py's `nearest`); CoordinationError, nothing sent, for
+        none (`_none_over`)."""
+        sc = self._scope(actor)
         text = _message(text)
-        to = self._find(g, ref, agents, start={"cwd": me.get("cwd"), "harness": me.get("harness")})
-        if to["channel"] == me["channel"]:
+        with_ = [str(w).strip() for w in with_ if str(w or "").strip()]
+        if (ref or "").strip().lower() in ALIASES:
+            to = self._nearest(sc, with_)
+        elif with_:
+            raise CoordinationError("--with goes with `coordinator`: the actors in the conflict, for the coordinator agent "
+                                    "over you all")
+        else:
+            to = self._find(sc.g, ref, sc.agents)
+        if to["channel"] == sc.me["channel"]:
             raise CoordinationError("that is you")
-        got = self._deliver(g, to, envelope(self._sender(me), text))
-        self._keep(g, me["channel"], "send", to, text)
-        return {"sent": True, "to": self._view(to, me), "session": {k: got.get(k) for k in ("status", "terminal")}}
+        got = self._deliver(to.get("group") or sc.g, to, envelope(self._sender(sc), text))
+        self._keep(sc.g, sc.me["channel"], "send", to, text)
+        return {"sent": True, "to": self._view(to, sc.me), "session": {k: got.get(k) for k in ("status", "terminal")}}
+
+    def _nearest(self, sc: "Scope", with_: List[str]) -> dict:
+        """The coordinator agent of the nearest node over the asker and the actors `with_` names (module doc)."""
+        places, named = [sc.place], []
+        for ref in with_:
+            ch, g, started_as = self._locate(sc, ref)
+            if ch == sc.me["channel"]:
+                raise CoordinationError("--with names you: give the other actor's id")
+            named.append(ch)
+            places.append(sc.tree.place(g, ch, started_as) if g else [])
+        row, lca = coordinators.nearest(places, sc.by_node, but=[sc.me["channel"]])
+        if row is None:
+            raise CoordinationError(_none_over(sc, named, lca))
+        found = next((a for a in sc.over if a["channel"] == row["session_id"]), None)
+        if found is None:
+            found = self._agent_of(row, sc.rows)
+            found["over"] = sc.tree.label(coordinators.node_of(row))
+        return found
+
+    def _locate(self, sc: "Scope", ref: str) -> Tuple[str, Optional[str], Optional[str]]:
+        """(its channel, its group, the id it was started under) of the actor `ref` names, in any group of the home:
+        one the asker reaches, else by its id or its start (data.py's `groups_now`, the sessions started here)."""
+        try:
+            a = self._find(sc.g, ref, sc.agents)
+        except CoordinationError:
+            a = None
+        if a is not None and not self._is_coordinator(a):
+            return a["channel"], a.get("group") or sc.g, (a.get("session") or {}).get("started_as")
+        where = dict(data.groups_now())
+        started = {r["session_id"]: r for r in sc.rows}
+        for r in sc.rows:
+            where.setdefault(r["session_id"], r["gatherer"])
+        as_of = {r["started_as"]: r["session_id"] for r in sc.rows if r.get("started_as")}
+        ch = as_of.get(ref) or (ref if ref in where else None)
+        if ch is None:
+            some = sorted({c for c in where if c.startswith(ref)} | {as_of[k] for k in as_of if k.startswith(ref)})
+            if len(some) > 1:
+                raise CoordinationError(f"{ref} starts {len(some)} actors' ids: give more of it")
+            ch = some[0] if some else None
+        if ch is None:
+            raise CoordinationError(f"no actor {ref} in this home: give the other actor's id, as a file-change notice "
+                                    "or `ag actors who <file>` names it")
+        group = where.get(ch)
+        return ch, None if str(group or "").startswith(ALONE) else group, (started.get(ch) or {}).get("started_as")
 
     def new(self, actor: str, text: str, cwd: Optional[str] = None, harness: Optional[str] = None,
             model: Optional[str] = None, like: Optional[str] = None, name: Optional[str] = None,
-            branch: bool = False, approve: bool = False, folder: Optional[str] = None, **app: bool) -> dict:
-        """A new actor (module doc), in the folder at the path `folder` if given (made if new). `app`, {<name>: True}:
-        the actor of a new one of that app (an app that starts an agent of its own: app_agents.py), as
-        `ag actors new --<name>` asks."""
+            branch: bool = False, approve: bool = False, folder: Optional[str] = None, group: Optional[str] = None,
+            **app: bool) -> dict:
+        """A new actor (module doc), in the folder at the path `folder` if given (made if new; from the asker's node down,
+        a coordinator agent's), in the asker's group -- a coordinator agent's above groups: `group`, or the one its
+        path starts with. `app`, {<name>: True}: the actor of a new one of that app (an app that starts an agent of its
+        own: app_agents.py), as `ag actors new --<name>` asks."""
         starters = _starters()                            # apps on the host that start an agent of their own
-        g, me, agents = self._asker(actor)
+        sc = self._scope(actor)
+        me = sc.me
         text = _message(text)
         asked = [n for n in sorted(app) if app[n]]          # the apps asked for, found here or not
         found = starters
@@ -391,11 +637,12 @@ class Coordination:
         if approve and not branch:
             raise CoordinationError("--approve is for an actor on a branch of its own (--branch): each change it makes "
                                     "there waits for the user to accept or reject it")
+        g, where = self._where(sc, folder or "", group)
         try:
-            target = folders.find_or_make(g, folder) if folder else None
+            target = folders.find_or_make(g, where) if where else None
         except folders.FolderError as exc:
             raise CoordinationError(str(exc)) from None
-        base = self._find(g, like, agents) if like else None
+        base = self._find(sc.g, like, sc.agents) if like else None
         base = base or me
         bs = base.get("session") or {}
         harness = harness or base.get("harness") or bs.get("harness") or harness_kit.DEFAULT
@@ -422,14 +669,15 @@ class Coordination:
         if target is not None:                            # filed by the id it is started under
             folders.file(g, [row["session_id"]], target)
         to = {"channel": row["session_id"], "session": row, "harness": harness, "cwd": row["cwd"], "status": data.IDLE,
-              "name": {"text": name} if name else None}
-        self._deliver(g, to, envelope(self._sender(me), text))
-        self._keep(g, me["channel"], "new", to, text)
+              "name": {"text": name} if name else None, "group": g}
+        self._deliver(g, to, envelope(self._sender(sc), text))
+        self._keep(sc.g, me["channel"], "new", to, text)
         if self.ring is not None:
             self.ring(g)
-        return {"started": True, "actor": self._view(to, me, _kept(g) if target is not None else None),
-                **({chosen[0].name: made} if made else {}),
-                **({"branch": on} if on else {})}
+        view = self._view(to, me, _kept(g) if target is not None else None)
+        if view.get("folder") and sc.node:
+            view["folder"] = self._shown_path(sc, g, view["folder"])
+        return {"started": True, "actor": view, **({chosen[0].name: made} if made else {}), **({"branch": on} if on else {})}
 
     def _new_on_branch(self, gatherer: str, cwd: str, harness: str, model: Optional[str], mode: str,
                        approve: bool) -> Tuple[dict, dict]:
@@ -466,144 +714,238 @@ class Coordination:
         return row, {"key": inst.id, "root": inst.folder}
 
     def when(self, actor: str, ref: str, note: str = "") -> dict:
-        g, me, agents = self._asker(actor)
-        to = self._find(g, ref, agents)
-        if to is None:
-            raise CoordinationError("the group has no coordinator agent yet")
-        if to["channel"] == me["channel"]:
+        sc = self._scope(actor)
+        to = self._target(sc, ref)
+        if to["channel"] == sc.me["channel"]:
             raise CoordinationError("that is you: your turn is over when you end it")
         note = (note or "").strip()[:NOTE_CHARS]
         conn = self._db()
         try:
             n = conn.execute("INSERT INTO watches (gatherer, watcher, target, note, created, seen_running) VALUES (?, ?, ?, ?, ?, ?)",
-                             (g, me["channel"], to["channel"], note, time.time(), int(to.get("status") in BUSY))).lastrowid
+                             (to.get("group") or sc.g, sc.me["channel"], to["channel"], note, time.time(),
+                              int(to.get("status") in BUSY))).lastrowid
         finally:
             conn.close()
-        return {"watch": n, "target": self._view(to, me), "note": note}
+        return {"watch": n, "target": self._view(to, sc.me), "note": note}
 
     def watches(self, actor: str) -> dict:
-        g, me, agents = self._asker(actor)
-        by = {a["channel"]: a for a in agents}
+        sc = self._scope(actor)
+        by = {a["channel"]: a for a in sc.agents}
         conn = self._db()
         try:
-            rows = conn.execute("SELECT * FROM watches WHERE gatherer = ? AND watcher = ? AND fired = 0 ORDER BY id",
-                                (g, me["channel"])).fetchall()
+            rows = conn.execute("SELECT * FROM watches WHERE watcher = ? AND fired = 0 ORDER BY id",
+                                (sc.me["channel"],)).fetchall()
         finally:
             conn.close()
         return {"watches": [{"watch": r["id"], "note": r["note"], "created": r["created"],
-                             "target": self._view(by[r["target"]], me) if r["target"] in by else {"id": r["target"]}}
+                             "target": self._view(by[r["target"]], sc.me) if r["target"] in by else {"id": r["target"]}}
                             for r in rows]}
 
     def unwatch(self, actor: str, n) -> dict:
-        g, me, _ = self._asker(actor)
+        _, me, _ = self._asker(actor)
         try:
             n = int(n)
         except (TypeError, ValueError):
             raise CoordinationError("which watch? Its number, as `ag actors watches` lists it") from None
         conn = self._db()
         try:
-            gone = conn.execute("DELETE FROM watches WHERE id = ? AND gatherer = ? AND watcher = ? AND fired = 0",
-                                (n, g, me["channel"])).rowcount
+            gone = conn.execute("DELETE FROM watches WHERE id = ? AND watcher = ? AND fired = 0",
+                                (n, me["channel"])).rowcount
         finally:
             conn.close()
         if not gone:
             raise CoordinationError(f"you have no watch {n} waiting")
         return {"dropped": n}
 
-    # ---- the page's
+    # ---- folders, as a coordinator agent names them: from its node down
+
+    def _where(self, sc: "Scope", path: str, group: Optional[str] = None) -> Tuple[str, str]:
+        """(the group, the folder's path in it from its top; "" its top) that `path` names: an actor's, and a group's
+        coordinator agent's, from the group's top; a folder's coordinator agent's, from its folder down ("" or `top`:
+        its folder); one above groups', starting with the group's name (or in `group`)."""
+        path = str(path or "").strip().strip("/")
+        top = path.lower() in folders.TOP
+        k = coordinators.kind(sc.node)
+        if sc.node is None or k == "group":
+            g = (sc.tree.group_of(sc.node) if sc.node else None) or sc.g
+            if group and group != g:
+                raise CoordinationError(f"{group} is not your group: name a folder of {g}")
+            return g, "" if top else path
+        if k == "folder":
+            g = sc.tree.group_of(sc.node)
+            if g is None:
+                raise CoordinationError("your folder is no longer there")
+            if group and group != g:
+                raise CoordinationError(f"{group} is not the group of your folder: name a folder inside yours")
+            base = folders.path(sc.tree.folders_of(g), sc.tree.folder_id(sc.node)) or ""
+            return g, base if top else f"{base}/{path}"
+        reads = sc.tree.reads(sc.node)
+        if group:
+            g, rest = group, path
+        else:
+            g, _, rest = path.partition("/")
+        if g not in reads:
+            raise CoordinationError("which group? Above groups a folder's path starts with its group's name: one of "
+                                    + (", ".join(reads) or "none"))
+        return g, "" if rest.strip("/").lower() in folders.TOP else rest
+
+    def _shown_path(self, sc: "Scope", g: str, path: Optional[str]) -> Optional[str]:
+        """A folder's path in `g` as the asker names it (`_where`'s reverse); None for its top."""
+        if not path:
+            return g if coordinators.above_groups(sc.node) else None
+        k = coordinators.kind(sc.node)
+        if k == "folder":
+            base = folders.path(sc.tree.folders_of(g), sc.tree.folder_id(sc.node)) or ""
+            return path[len(base) + 1:] or None if path.lower().startswith(base.lower() + "/") else None if path == base else path
+        if coordinators.above_groups(sc.node):
+            return f"{g}/{path}"
+        return path
+
+    def _folder_at_scope(self, sc: "Scope", where: str) -> Tuple[str, int]:
+        """(its group, the folder's id) of the folder at the path `where`, as the asker names it -- never its own
+        folder, nor a group's top, which no change names."""
+        g, path = self._where(sc, where)
+        if coordinators.kind(sc.node) == "folder" and path == self._where(sc, "")[1]:
+            raise CoordinationError("that is your own folder: only the user changes it")
+        return g, self._folder_at(g, path)
 
     # ---- the user's saved actors (saved.py), and the folders they keep actors in (folders.py), as the list has them
 
-    def _own(self, actor: str, ref: str) -> Tuple[str, dict, dict]:
-        """(its gatherer, the asker, the actor `ref` names): never the gatherer agent, always at its gatherer's top."""
-        g, me, agents = self._asker(actor)
-        return g, me, self._ownable(g, ref, agents)
+    def _own(self, actor: str, ref: str) -> Tuple["Scope", dict]:
+        """(the asker's scope, the actor `ref` names): never a coordinator agent."""
+        sc = self._scope(actor)
+        return sc, self._ownable(sc, ref)
 
-    def _ownable(self, g: str, ref: str, agents: List[dict]) -> dict:
-        a = self._find(g, ref, agents)
-        if a is None:
-            raise CoordinationError("the group has no coordinator agent yet")
+    def _ownable(self, sc: "Scope", ref: str) -> dict:
+        a = self._target(sc, ref)
         if self._is_coordinator(a):
-            raise CoordinationError("the coordinator agent is not saved or put in a folder: it is always at the top of its group")
+            raise CoordinationError("a coordinator agent is not saved or put in a folder: it stays over its folder")
         return a
 
     def save(self, actor: str, ref: str, folder: Optional[str] = None, unfiled: bool = False) -> dict:
-        """The actor `ref` saved for later -- put in `folder` too if one is named (made if new), at the gatherer's top if
-        `unfiled`, else left where it is."""
-        g, me, a = self._own(actor, ref)
+        """The actor `ref` saved for later -- put in `folder` too if one is named (made if new), at the top of the
+        asker's node if `unfiled`, else left where it is."""
+        sc, a = self._own(actor, ref)
+        g = a.get("group") or sc.g
         try:
-            target = folders.find_or_make(g, folder) if folder else None
+            if folder or unfiled:
+                fg, where = self._where(sc, folder or "", g if coordinators.above_groups(sc.node) and not folder else None)
+                if fg != g:
+                    raise CoordinationError(f"{folder} is a folder of {fg}, not of {g}: move it there first")
+                target = folders.find_or_make(g, where) if where else None
             saved.choose(g, _kept_as(a, saved.stored().get(g, {})) or a["channel"], True)
             if folder or unfiled:
                 folders.file(g, [_kept_as(a, _filed(g)) or a["channel"]], target)
         except folders.FolderError as exc:
             raise CoordinationError(str(exc)) from None
         self._rang(g)
-        return {"actor": self._view(a, me, _kept(g))}
+        return {"actor": self._shown(sc, a, g)}
 
     def unsave(self, actor: str, ref: str) -> dict:
-        g, me, a = self._own(actor, ref)
+        sc, a = self._own(actor, ref)
+        g = a.get("group") or sc.g
         saved.choose(g, _kept_as(a, saved.stored().get(g, {})) or a["channel"], False)
         self._rang(g)
-        return {"actor": self._view(a, me, _kept(g))}
+        return {"actor": self._shown(sc, a, g)}
+
+    def _shown(self, sc: "Scope", a: dict, g: str) -> dict:
+        v = self._view(a, sc.me, _kept(g))
+        if sc.node and v.get("folder"):
+            v["folder"] = self._shown_path(sc, g, v["folder"])
+        return v
 
     def move(self, actor: str, refs: List[str], folder: Optional[str], group: Optional[str] = None) -> dict:
-        """The actors `refs` put in the folder at the path `folder` (made if new), or at the gatherer's top (none, or
-        folders.TOP) -> {actors, folder (its path; None: the top)}. `group`, another group: into its folder, the actors
-        then sharing with it (groups.py's `move`, each one's task with it) -> {..., group}."""
+        """The actors `refs` put in the folder at the path `folder` (made if new), or at the top (none, or folders.TOP)
+        -> {actors, folder (its path; None: the top)}. `group`, another group: into its folder, the actors then sharing
+        with it (groups.py's `move`, each one's task with it) -> {..., group}. A coordinator agent names the folder from
+        its node down, and moves actors under it alone, to a folder under it."""
         if not refs:
             raise CoordinationError("which actors? Name one or more")
-        g, me, agents = self._asker(actor)
-        found = list({a["channel"]: a for a in (self._ownable(g, ref, agents) for ref in refs)}.values())
-        if group and group != g:
+        sc = self._scope(actor)
+        found = list({a["channel"]: a for a in (self._ownable(sc, ref) for ref in refs)}.values())
+        froms = {a.get("group") or sc.g for a in found}
+        if len(froms) > 1:
+            raise CoordinationError("those actors are in different groups: move each group's apart")
+        g = froms.pop()
+        if group and group != g and not coordinators.above_groups(sc.node):
+            to, where = group, folder or ""                 # into another group: only when the user asks
+        else:
+            to, where = self._where(sc, folder or "", group if coordinators.above_groups(sc.node) else None)
+        if to != g:
             try:
-                target = folders.find_or_make(group, folder or "") if group in data.gatherer_names() else None
-                moved = groups.move(g, group, [a["channel"] for a in found], into=target)
+                target = folders.find_or_make(to, where) if to in data.gatherer_names() and where else None
+                moved = groups.move(g, to, [a["channel"] for a in found], into=target)
             except (folders.FolderError, groups.GroupError) as exc:
                 raise CoordinationError(str(exc)) from None
             self._rang(g)
-            kept = _kept(group)
-            views = [self._view(a, me, kept) for a in found if a["channel"] in moved["actors"]]
-            return {"actors": views, "folder": folders.path(folders.of(group), target), "group": group}
+            kept = _kept(to)
+            views = [self._view(a, sc.me, kept) for a in found if a["channel"] in moved["actors"]]
+            return {"actors": views, "folder": self._shown_path(sc, to, folders.path(folders.of(to), target)), "group": to}
         try:
-            target = folders.find_or_make(g, folder or "")
+            target = folders.find_or_make(g, where) if where else None
             filed = _filed(g)
             folders.file(g, [_kept_as(a, filed) or a["channel"] for a in found], target)
         except folders.FolderError as exc:
             raise CoordinationError(str(exc)) from None
         self._rang(g)
         kept = _kept(g)
-        return {"actors": [self._view(a, me, kept) for a in found], "folder": folders.path(folders.of(g), target)}
+        return {"actors": [self._view(a, sc.me, kept) for a in found],
+                "folder": self._shown_path(sc, g, folders.path(folders.of(g), target))}
 
     def alone(self, actor: str, ref: str) -> dict:
         """The actor `ref` taken out of every group (groups.py's `alone`): it works on its own, sharing context with no
         one, and no one with it -> {actor, group}."""
-        g, me, agents = self._asker(actor)
-        a = self._ownable(g, ref, agents)
+        sc, a = self._own(actor, ref)
+        g = a.get("group") or sc.g
         try:
             made = groups.alone(g, a["channel"])
         except groups.GroupError as exc:
             raise CoordinationError(str(exc)) from None
         self._rang(g)
-        return {"actor": self._view(a, me, _kept(g)), "group": made["group"]}
+        return {"actor": self._view(a, sc.me, _kept(g)), "group": made["group"]}
 
     def folders(self, actor: str) -> dict:
-        """The gatherer's folders as a tree: {gatherer, folders: [{name, path, actors, closed, folders, shut}], actors,
-        closed} -- at each level the folders in it (by name), the actors in it that are open or saved (the latest
-        first), and how many closed ones; `shut`, whether the folder was closed (folders.py's `close`)."""
-        g, me, agents = self._asker(actor)
+        """The folders under the asker's node as a tree: {gatherer, folders: [{name, path, actors, closed, folders,
+        shut}], actors, closed} -- at each level the folders in it (by name), the actors in it that are open or saved
+        (the latest first), and how many closed ones; `shut`, whether the folder was closed (folders.py's `close`). An
+        actor's, and a group's coordinator agent's: its group's; a folder's coordinator agent's: its folder's; one
+        above groups': each group a node of it (`group`)."""
+        sc = self._scope(actor)
+        if coordinators.above_groups(sc.node):
+            top = {"gatherer": sc.g, "node": sc.tree.label(sc.node), "folders": [], "actors": [], "closed": 0}
+            for g in sc.tree.reads(sc.node):
+                part = self._folder_tree(sc, g, None)
+                top["folders"].append({**part, "name": g, "path": g, "shut": False, "group": True})
+            return top
+        g, path = self._where(sc, "")
+        root = folders.find(g, path) if path else None
+        return {**self._folder_tree(sc, g, root), "gatherer": g, **({"node": sc.tree.label(sc.node)} if sc.node else {})}
+
+    def _folder_tree(self, sc: "Scope", g: str, root: Optional[int]) -> dict:
+        """The folders of `g` under the folder `root` (None: its top), and the actors in each, as `folders` gives them."""
         tree, kept = folders.of(g), _kept(g)
-        nodes = {f["id"]: {"name": f["name"], "path": folders.path(tree, f["id"]), "actors": [], "closed": 0, "folders": [],
-                           "shut": bool(f.get("closed"))}
-                 for f in tree["folders"]}
-        top = {"gatherer": g, "folders": [], "actors": [], "closed": 0}
+        inside = {root} if root is not None else set()
+        while True:
+            more = {f["id"] for f in tree["folders"] if f["parent"] in inside or (root is None and f["parent"] is None)} - inside
+            if not more:
+                break
+            inside |= more
+        nodes = {f["id"]: {"name": f["name"], "path": self._shown_path(sc, g, folders.path(tree, f["id"])), "actors": [],
+                           "closed": 0, "folders": [], "shut": bool(f.get("closed"))}
+                 for f in tree["folders"] if f["id"] in inside and f["id"] != root}
+        top = {"folders": [], "actors": [], "closed": 0}
         for f in tree["folders"]:                        # by name already
-            (nodes.get(f["parent"]) or top)["folders"].append(nodes[f["id"]])
-        for a in sorted(agents, key=lambda a: -(a.get("last") or 0)):
+            if f["id"] in nodes:
+                (nodes.get(f["parent"]) or top)["folders"].append(nodes[f["id"]])
+        for a in sorted((a for a in sc.agents if (a.get("group") or sc.g) == g), key=lambda a: -(a.get("last") or 0)):
             if self._is_coordinator(a):
                 continue
-            v = self._view(a, me, kept)
-            node = nodes.get(tree["filed"].get(_kept_as(a, tree["filed"]) or ""), top)
+            v = self._view(a, sc.me, kept)
+            fid = tree["filed"].get(_kept_as(a, tree["filed"]) or "")
+            node = nodes.get(fid) if fid in nodes else top if fid == root or root is None else None
+            if node is None:
+                continue
+            v["folder"] = self._shown_path(sc, g, v.get("folder")) if sc.node else v.get("folder")
             if a.get("status") == data.CLOSED and not v["saved"]:
                 node["closed"] += 1
             else:
@@ -611,42 +953,51 @@ class Coordination:
         return top
 
     def folder(self, actor: str, do: str, name: str, to: str = "", group: Optional[str] = None) -> dict:
-        """A folder, by its path, made (`new`: the folders of its path not there made too), renamed (`rename`: `to` its
-        new name), put in another (`move`: `to` the other's path; none, or folders.TOP: the top -- of `group`, another
-        group, the folder's actors then sharing with it), made a group of its own (`split`) or deleted (`delete`) ->
-        what `folders` says, after, and what was done."""
-        g, _, _ = self._asker(actor)
-        if do in ("split", "move") and (do == "split" or (group and group != g)):
+        """A folder, by its path (from the asker's node down), made (`new`: the folders of its path not there made too),
+        renamed (`rename`: `to` its new name), put in another (`move`: `to` the other's path; none, or folders.TOP: the
+        top -- of `group`, another group, the folder's actors then sharing with it), made a group of its own (`split`)
+        or deleted (`delete`) -> what `folders` says, after, and what was done."""
+        sc = self._scope(actor)
+        if do not in ("new", "rename", "move", "split", "delete"):
+            raise CoordinationError("`ag actors folder` new, rename, move, split or delete?")
+        shown_name = "/".join(folders._parts(name))
+        if do == "new":
+            g, where = self._where(sc, name)
             try:
-                fid = self._folder_at(g, name)
+                folders.find_or_make(g, where)
+            except folders.FolderError as exc:
+                raise CoordinationError(str(exc)) from None
+            self._rang(g)
+            return {**self.folders(actor), "done": do, "name": shown_name}
+        g, fid = self._folder_at_scope(sc, name)
+        across = do == "split" or (do == "move" and group and group != g)
+        if across:
+            try:
                 if do == "split":
                     made = groups.split(g, fid)
-                    done = {"done": do, "name": "/".join(folders._parts(name)), "group": made["group"]}
+                    done = {"done": do, "name": shown_name, "group": made["group"]}
                 else:
-                    target = folders.find_or_make(group, to or "") if group in data.gatherer_names() else None
+                    target = folders.find_or_make(group, to or "") if group in data.gatherer_names() and (to or "").strip().lower() not in folders.TOP else None
                     groups.move(g, group, folder=fid, into=target)
-                    done = {"done": do, "name": "/".join(folders._parts(name)), "group": group,
-                            "to": folders.path(folders.of(group), target)}
+                    done = {"done": do, "name": shown_name, "group": group, "to": folders.path(folders.of(group), target)}
             except (folders.FolderError, groups.GroupError) as exc:
                 raise CoordinationError(str(exc)) from None
             self._rang(g)
             return {**self.folders(actor), **done}
         try:
-            if do == "new":
-                folders.find_or_make(g, name)
-            elif do == "rename":
-                folders.rename(g, self._folder_at(g, name), to)
-            elif do == "move":
-                folders.move(g, self._folder_at(g, name), folders.find(g, to or ""))
-            elif do == "delete":
-                folders.delete(g, self._folder_at(g, name))
-            else:
-                raise CoordinationError("`ag actors folder` new, rename, move, split or delete?")
-            done = {"done": do, "name": "/".join(folders._parts(name))}
+            done = {"done": do, "name": shown_name}
             if do == "rename":
+                folders.rename(g, fid, to)
                 done["to"] = folders.folder_name(to)
-            if do == "move":
-                done["to"] = folders.path(folders.of(g), folders.find(g, to or ""))
+            elif do == "move":
+                tg, where = self._where(sc, to or "")
+                if tg != g:
+                    raise CoordinationError(f"{to} is in {tg}: --group {tg} moves a folder into another group")
+                dest = folders.find(g, where) if where else None
+                folders.move(g, fid, dest)
+                done["to"] = self._shown_path(sc, g, folders.path(folders.of(g), dest))
+            else:
+                folders.delete(g, fid)
         except folders.FolderError as exc:
             raise CoordinationError(str(exc)) from None
         self._rang(g)
@@ -665,11 +1016,13 @@ class Coordination:
         if self.ring is not None:
             self.ring(gatherer, what="list")
 
-    def page_coordinator(self, gatherer: str, cwd: Optional[str] = None, harness: Optional[str] = None) -> dict:
-        """The gatherer agent of `gatherer`, for the page to show: started (with no message yet) if it has none."""
-        if not sessions.GATHERER.fullmatch(gatherer or ""):
-            raise CoordinationError("which gatherer?")
-        return self.ensure(gatherer, cwd, harness)
+    def page_coordinator(self, node: str, cwd: Optional[str] = None, harness: Optional[str] = None) -> dict:
+        """The coordinator agent over `node` (coordinators.py's; a group's name: that group), for the page to show:
+        started (with no message yet) if it has none."""
+        node = str(node or "").strip()
+        if not coordinators.kind(node) and not sessions.GATHERER.fullmatch(node):
+            raise CoordinationError("which folder?")
+        return self.ensure(node, cwd, harness)
 
     # ---- delivering, and keeping what was sent
 
@@ -685,7 +1038,8 @@ class Coordination:
             rules = harness_kit.get(harness)          # its screen, as the page opens a terminal
             return self.started.send(sid, body, fullscreen=bool(rules is None or rules.fullscreen))
         except sessions.NotAtBox as exc:
-            who = NAME if self._is_coordinator(to) else f"actor {to['channel'][:8]}"
+            who = ("the coordinator agent" + (f" over {to['over']}" if to.get("over") else "")) if self._is_coordinator(to) \
+                else f"actor {to['channel'][:8]}"
             raise sessions.NotAtBox(f"not delivered: {who}'s terminal shows a dialog or a question, or holds something "
                                     f"typed there and not sent (the user may be at it). Nothing was typed; try again "
                                     f"in a while.", exc.box) from None
@@ -693,7 +1047,7 @@ class Coordination:
     def _keep(self, gatherer: str, sender: str, kind: str, to: dict, text: str) -> None:
         actions.record(gatherer, sender, [{"type": ACTOR_MESSAGE, "id": f"{ACTOR_MESSAGE}:{uuid.uuid4().hex}",
                                            "payload": {"at": time.time(), "kind": kind, "to": to["channel"],
-                                                       "to_name": NAME if self._is_coordinator(to) else _name(to),
+                                                       "to_name": _name(to) or (NAME if self._is_coordinator(to) else None),
                                                        "text": text}}])
 
     # ---- the watches
@@ -728,8 +1082,15 @@ class Coordination:
                 continue
         told = []
         now_in = data.groups_now()           # the home's one database: where each actor is now (a move between groups)
+        watching = {r["session_id"]: r for r in started if r.get("role") == COORDINATOR}
+        tree = coordinators.Tree() if any(w["watcher"] in watching for w in waiting) else None
         for w in waiting:
-            if self._regrouped(w, now_in.get(now_as.get(w["target"], w["target"])), now_in.get(w["watcher"]), now):
+            target = now_as.get(w["target"], w["target"])
+            if w["watcher"] in watching:             # a coordinator agent's: while the actor stays under its node
+                if self._left(w, watching[w["watcher"]], tree, now_in.get(target), now):
+                    told.append(w["id"])
+                    continue
+            elif self._regrouped(w, now_in.get(target), now_in.get(w["watcher"]), now):
                 told.append(w["id"])
                 continue
             if w["gatherer"] not in by_gatherer:
@@ -774,6 +1135,24 @@ class Coordination:
             self._mark(w["id"], outcome=f"moved, not told: {exc}"[:300])
         return True
 
+    def _left(self, w: sqlite3.Row, row: dict, tree: "coordinators.Tree", target_in: Optional[str], now: float) -> bool:
+        """A coordinator agent's watch: the actor still under its node, the watch goes on (looked at in the actor's
+        group, should it have moved); left it, the watch ends -- the coordinator agent told only that. -> whether it was
+        told."""
+        g = target_in or w["gatherer"]
+        started_as = next((r.get("started_as") for r in self.started.list() if r["session_id"] == w["target"]), None)
+        if coordinators.node_of(row) in tree.place(g, w["target"], started_as):
+            if g != w["gatherer"]:
+                self._mark(w["id"], gatherer=g)
+            return False
+        self._mark(w["id"], fired=now, outcome="moved")
+        try:
+            self._deliver(row["gatherer"], self._watcher(w, row["gatherer"]),
+                          update(w["id"], w["target"], None, "it left your folder, so this watch has ended", ""))
+        except Exception as exc:  # noqa: BLE001 - one watcher's trouble is not the others'
+            self._mark(w["id"], outcome=f"moved, not told: {exc}"[:300])
+        return True
+
     def _watcher(self, w: sqlite3.Row, g: str) -> dict:
         """The watch's watcher, as an actor of `g`, else as the dashboard's table has it."""
         rows = self.started.list()
@@ -789,7 +1168,7 @@ class Coordination:
         g = w["gatherer"]
         status = status or (a or {}).get("status") or data.CLOSED
         how = {data.IDLE: "its turn is over", data.CLOSED: "it is closed", data.ERROR: "its turn stopped on an error"}.get(status, status)
-        name = (NAME if a and self._is_coordinator(a) else _name(a)) if a else None
+        name = (_name(a) or (NAME if self._is_coordinator(a) else None)) if a else None
         target = (a or {}).get("channel") or w["target"]
         lines = []
         try:
@@ -811,19 +1190,69 @@ class Coordination:
         finally:
             conn.close()
 
-    def _mark_private(self) -> None:
-        """Each gatherer agent's channel marked private, once in this dashboard's run: a `role` record in it, put in by
-        ag (actions.py's `record`) once its gatherer has a database and the channel is the session's own -- a codex
-        session's, once it has its thread's id. Its id is the channel's, so marking it again stores nothing new."""
-        for r in self.started.list():
-            key = (r["gatherer"], r["session_id"])
-            if r.get("role") != COORDINATOR or key in self.marked or not os.path.exists(sessions.home.db_path(r["gatherer"])):
+    def _role_payload(self, row: dict, tree: Optional["coordinators.Tree"] = None) -> dict:
+        """The role record a coordinator agent's channel should hold now: private; its node (`over`) unless its group's;
+        above groups, the groups under its node it reads, and their names where the user gave them others."""
+        node = coordinators.node_of(row)
+        payload: Dict[str, Any] = {"role": COORDINATOR, "private": True}
+        if row.get("over"):
+            payload["over"] = node
+        if coordinators.above_groups(node):
+            tree = tree or coordinators.Tree()
+            reads = tree.reads(node)
+            payload["reads"] = reads
+            names = {g: tree.title(g) for g in reads if tree.title(g) != g}
+            if names:
+                payload["names"] = names
+        return payload
+
+    def _mark_roles(self) -> None:
+        """Each coordinator agent's channel marked private, with its node and, above groups, the groups it reads: a
+        `role` record in it, put in by ag (actions.py's `record`) once its gatherer has a database and the channel is the
+        session's own -- a codex session's, once it has its thread's id -- and again whenever what it should say changed
+        (a folder moved, a group put into or out of a folder of groups), never twice the same: what the channel holds is
+        read once a dashboard's run, then kept (`marked`). A coordinator agent over a node no longer there (its folder
+        deleted) is closed, once."""
+        rows = [r for r in self.started.list() if r.get("role") == COORDINATOR]
+        if not rows:
+            return
+        tree = coordinators.Tree()
+        for r in rows:
+            ch, group = r["session_id"], r["gatherer"]
+            if not os.path.exists(sessions.home.db_path(groups.runs_under(group))):
                 continue
-            if sessions.picks_id(r["harness"]) and r.get("started_as") == r["session_id"]:
+            if sessions.picks_id(r["harness"]) and r.get("started_as") == ch:
                 continue                             # not yet under its thread's id: no channel of the gatherer's
-            self.marked.add(key)
-            actions.record(r["gatherer"], r["session_id"], [{"type": ROLE, "id": f"{ROLE}:{r['session_id']}:{COORDINATOR}",
-                                                             "payload": {"role": COORDINATOR, "private": True}}], wait=True)
+            if r.get("over") and tree.path(r["over"]) is None:
+                self._orphaned(r)
+                continue
+            want = self._role_payload(r, tree)
+            with self.lock:
+                had = self.marked.get(ch)
+            if had is None:
+                had = _role_in(group, ch)
+            if had == want:
+                with self.lock:
+                    self.marked[ch] = want
+                continue
+            actions.record(group, ch, [{"type": ROLE, "id": f"{ROLE}:{ch}:{uuid.uuid4().hex[:12]}", "payload": want}],
+                           wait=True)
+            with self.lock:
+                self.marked[ch] = want
+
+    def _orphaned(self, row: dict) -> None:
+        """A coordinator agent whose node is gone (its folder deleted): closed, once a dashboard's run -- it is over
+        nothing now, and no message goes to it."""
+        ch = row["session_id"]
+        with self.lock:
+            if self.marked.get(ch) == {"gone": True}:
+                return
+            self.marked[ch] = {"gone": True}
+        try:
+            if row.get("pid") or row.get("terminal"):
+                self.started.stop(ch)
+        except sessions.SessionError:
+            pass
 
     def _name_later(self) -> None:
         """The names given to new actors whose harness picks the session's id (`new`), each recorded in the channel of
@@ -843,7 +1272,7 @@ class Coordination:
 
     def _run(self) -> None:
         while not self.stop.wait(WATCH_CHECK):
-            for step in (self._mark_private, self._name_later, self.check):
+            for step in (self._mark_roles, self._name_later, self.check):
                 try:
                     step()
                 except Exception:  # noqa: BLE001 - never stop looking
@@ -851,6 +1280,59 @@ class Coordination:
 
     def close(self) -> None:
         self.stop.set()
+
+
+class Scope(NamedTuple):
+    """Who asks, and what it reaches (Coordination's `_scope`)."""
+    g: str                          # the asker's group (a coordinator agent's above groups: its own, `self:<channel>`)
+    me: dict                        # the asker, as an agent
+    agents: List[dict]              # what it can name: it first, then the others (module doc), each with its `group`
+    node: Optional[str]             # a coordinator agent's node (coordinators.py); None for an actor
+    place: List[str]                # the path of nodes down to it: its folder's; a coordinator agent's, its node's
+    tree: "coordinators.Tree"
+    rows: List[dict]                # the dashboard's sessions
+    by_node: Dict[str, dict]        # {node: its coordinator agent's session}
+    over: List[dict]                # the coordinator agents over it, the nearest first
+    inside: List[dict]              # a coordinator agent's: those under its node
+
+
+def _said(label: str) -> str:
+    return label if label == "everything" else json.dumps(label)
+
+
+def _none_over(sc: Scope, named: List[str], lca: Optional[List[str]] = None) -> str:
+    """Why no coordinator agent got a message (Coordination's `send`), and what to do then."""
+    tell = "Tell the user about it here." if sc.node else (
+        "Stop changing what the conflict touches, and end your turn telling the user about it -- what it touches, the "
+        "other actor's id, and how you found it: they can settle it, or start a coordinator agent over a folder that "
+        "holds you both.")
+    you = f"your folder {_said(sc.tree.label(sc.node))}" if sc.node else "you"
+    if not named:
+        return f"No coordinator agent is over {you}: nothing was sent. " + (tell if sc.node else (
+            "If your work conflicts with another actor's, give its id (`--with <id>`) all the same, then: " + tell[0].lower() + tell[1:]))
+    who = ("actor " + named[0]) if len(named) == 1 else "actors " + coordinators._and(named)
+    if not lca:
+        where = "no folder holds you all (one of you works on its own)"
+    else:
+        where = f"the nearest folder holding you all is {_said(sc.tree.label(lca[-1]))}, and no folder from there up has one"
+    return f"No coordinator agent is over {you} and {who}: {where}. Nothing was sent. {tell}"
+
+
+def _role_in(group: str, channel: str) -> Optional[dict]:
+    """The latest `role` record's payload in the channel, as ag keeps it; None for none (or not read)."""
+    conn = data._connect(groups.runs_under(group))
+    if conn is None:
+        return None
+    try:
+        row = conn.execute(f"SELECT e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+                           f"WHERE t.name = ? AND ifnull(e.{data.CHANNEL}, '') = ? ORDER BY e.row_id DESC LIMIT 1",
+                           (ROLE, channel)).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    got = data._json(row[0]) if row else None
+    return got if isinstance(got, dict) else None
 
 
 def _filed(gatherer: str) -> dict:
@@ -891,7 +1373,8 @@ def _unwrapped(text: Optional[str]) -> Optional[str]:
         return text
     if got["from"] == "update":
         return f"(update) actor {got['id']} is done: {got['how']}"
-    who = "the gatherer agent" if got["from"] == "coordinator" else f"actor {got['id']}"
+    who = ("the coordinator agent" + (f" over {got['over']}" if got.get("over") else "")) \
+        if got["from"] == "coordinator" else f"actor {got['id']}"
     return f"(from {who}) {got['text']}"
 
 

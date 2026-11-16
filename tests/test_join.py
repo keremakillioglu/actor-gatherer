@@ -426,6 +426,85 @@ class RegroupTest(JoinBase):
             conn.close()
         self.assertEqual(got - {None}, {"c1"})                            # c2, of group b, left out
 
+    roles = 0
+
+    def role(self, channel, reads=None, **names):
+        """A `role` record in `channel`, as the dashboard writes one for a coordinator agent: private, and over several
+        groups, the groups it `reads`."""
+        from replies import insert
+        RegroupTest.roles += 1
+        payload = {"role": "coordinator", "private": True, **({"reads": reads} if reads is not None else {}),
+                   **({"names": names} if names else {})}
+        insert(self.m, "w", ch(channel), [{"type": "role", "id": f"role:{channel}:{RegroupTest.roles}", "payload": payload}])
+
+    def test_a_coordinator_over_several_groups_is_shown_theirs_and_none_its(self):
+        """A coordinator agent over a folder of groups, or everything: in a group of its own, its role record's `reads`
+        the groups it is shown, as if they were its own -- and private, so none of them is shown its work."""
+        self.moved("c2", "a")
+        self.moved("c3", "b")
+        self.moved("c4", "x")
+        self.moved("c1", "self:c1", under="a")
+        self.role("c1", ["a", "b"])
+        self.put(PREAMBLE + conversation(4, prefix="in a "), channel="c2")
+        self.put(PREAMBLE + conversation(4, prefix="in b "), channel="c3")
+        self.put(PREAMBLE + conversation(4, prefix="in x "), channel="c4")
+        self.put(PREAMBLE + [user("what do they do?", 100)])
+        mine = "\n".join(self.texts(self.read()))
+        self.assertIn("in a question", mine)
+        self.assertIn("in b question", mine)
+        self.assertNotIn("in x question", mine)
+        self.put([agent("ok", 1), user("their work?", 101)], channel="c2")
+        self.assertNotIn("what do they do?", "\n".join(self.texts(self.read("c2"))))    # it is private
+
+    def test_the_groups_it_reads_changing_rebuild_it_and_say_so(self):
+        self.moved("c2", "a")
+        self.moved("c3", "b")
+        self.moved("c1", "self:c1", under="a")
+        self.role("c1", ["a"])
+        self.put(PREAMBLE + conversation(12, prefix="in b "), channel="c3")
+        self.put(PREAMBLE + conversation(12, prefix="c1 "))
+        self.built("c1")
+        self.put([user("mine", 200)])
+        self.read()
+        self.role("c1", ["b"], b="Paper")                              # a moved out of its folder, b in
+        self.put([agent("working on it", 200)])
+        context = self.read()
+        self.assertEqual(self.jobs.started, [("c1", "build")])
+        self.assertEqual(tables.latest_build(self.m._conn("w"), "c1")["reason"], tables.REGROUPED)
+        said = self.shown_more(context)
+        self.assertEqual(len(said), 2)
+        self.assertIn("also shown the work of the sessions of these groups: Paper", said[0])
+        self.assertIn("no longer shown the work of the sessions of these groups, and what you were shown of it before "
+                      "is no longer part of yours: a", said[1])
+        self.role("c1", ["b"])                                        # the same groups again: nothing new to say
+        self.put([agent("still working", 201)])
+        self.assertEqual(self.shown_more(self.read()), said)
+
+    def shown_more(self, context):
+        return [t for t in self.texts(context) if "shown the work of the sessions of these groups" in t]
+
+    def test_its_guide_says_how_to_keep_to_the_groups_it_reads(self):
+        import re
+        import sqlite3
+        self.moved("c2", "a")
+        self.moved("c3", "b")
+        self.moved("c4", "x")
+        self.moved("c1", "self:c1", under="a")
+        self.role("c1", ["a", "b"])
+        for c in ("c2", "c3", "c4"):
+            self.put(PREAMBLE + [user(f"work of {c}", 2)], channel=c)
+        self.put(PREAMBLE + [user("mine", 3)])
+        guide = next(t for t in self.texts(self.read()) if t.startswith(GUIDE_START))
+        self.assertIn("you are shown those of the groups `a`, `b`, besides your\nown", guide)
+        mine = re.search(r"\n\n( +WITH mine AS .*?)\n\nand `(AND .*?)` in its\nWHERE", guide, re.S)
+        sql = f"{mine.group(1)} SELECT DISTINCT e.p_channel FROM events e WHERE 1 {mine.group(2)}"   # as it would
+        conn = sqlite3.connect(db_path("w"))
+        try:
+            got = {r[0] for r in conn.execute(sql)}
+        finally:
+            conn.close()
+        self.assertEqual(got - {None}, {"c1", "c2", "c3"})                 # c4, of group x, left out
+
     def test_a_move_between_two_other_groups_says_nothing(self):
         self.adopted()
         self.moved("c3", "b")

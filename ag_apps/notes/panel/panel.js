@@ -3247,13 +3247,14 @@ and what agents see of it. The words under either are its caption. */
     if (current === AGENTS) drawAgentsPage(); else drawSent();
     if (menu && menu.kind === "at") drawAt(menu.q || "");
   }
-  const isLead = (a) => !!a && a.role === "coordinator";
+  // the group's coordinator agent (one over a folder in it, `over`, is listed with the actors)
+  const isLead = (a) => !!a && a.role === "coordinator" && !a.over;
   // the actor a block went to (a codex actor's thread, the channel it became), or a thread's line is by
   const actorOf = (ch) => (ch === "gatherer" ? crew.agents.find(isLead)
     : crew.agents.find((a) => a.channel === ch || a.started_as === ch)) || null;
   const byOf = (a, by) => !!a && (by === `agent:${a.channel}` || (!!a.started_as && by === `agent:${a.started_as}`));
-  const nameOf = (a, ch) => isLead(a) || ch === "gatherer" ? "Coordinator agent"
-    : (a && a.name && a.name.text) || `Actor ${short(ch || (a && a.channel))}`;
+  const nameOf = (a, ch) => (a && a.name && a.name.text)        // a coordinator agent's after its folder: "paper coordinator"
+    || (isLead(a) || ch === "gatherer" ? "Coordinator agent" : `Actor ${short(ch || (a && a.channel))}`);
   const tilde = (path) => (crew.home && path && path.startsWith(crew.home) ? `~${path.slice(crew.home.length)}` : path || "");
   function face(a, size = 18, lead = false) {
     const name = (a && a.avatar) || (lead || isLead(a) ? "roles/manager" : null);
@@ -3974,7 +3975,7 @@ and what agents see of it. The words under either are its caption. */
     const line = menu && !menu.blocks ? (findLine(menu.block) || {}).b : null;
     const taken = (ch) => !!line && onIt(line).some((c) => callTo(c, ch));
     if (!taken(lead ? lead.channel : "gatherer") && hit("coordinator agent", "gatherer agent", "manager"))
-      out.push({ kind: "lead", group: "Coordinator", channel: lead ? lead.channel : "gatherer", a: lead, label: "Coordinator agent",
+      out.push({ kind: "lead", group: "Coordinator", channel: lead ? lead.channel : "gatherer", a: lead, label: nameOf(lead, "gatherer"),
         note: "hands it to an actor, now or once another is done" });
     const shown = crew.agents.filter((a) => !isLead(a) && ((a.status || [])[0] !== "closed" || a.saved))
       .sort((x, y) => (y.last || 0) - (x.last || 0));
