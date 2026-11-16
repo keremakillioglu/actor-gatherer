@@ -22,7 +22,7 @@ each section within its budget:
     # This task so far                 Tn before the cut, when there is one"""
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from ag.ag_interface import Tokenizer, property_column
 from ag.ag_policies.tools.channel import CHANNEL
@@ -144,22 +144,42 @@ and `AND (e.{channel_column} IS NULL OR e.{channel_column} IN (SELECT ch FROM mi
 a session's group is the one its latest `group` event names."""
 
 
+# The same, for a session shown several groups (a coordinator agent's over a folder of groups, or everything).
+DB_GROUPS_HINT = """
+
+That database holds the sessions of every group: you are shown those of the groups {groups}, besides your
+own. Keep to them by putting this before a query
+
+    WITH mine AS (SELECT {channel_column} AS ch, json_extract(payload_json, '$.group') AS grp, max(row_id)
+                  FROM events JOIN event_types USING (event_type_id) WHERE name = 'group' GROUP BY {channel_column})
+
+and `AND (e.{channel_column} IS NULL OR e.{channel_column} IN (SELECT ch FROM mine WHERE grp IN ({listed})))` in its
+WHERE: a session's group is the one its latest `group` event names."""
+
+
 def overview(cfg: ProactiveContextManagerConfig, joined: bool = False) -> str:
     """The sections' fixed preamble: how they are organised. `joined`: for a session that started
     from the gatherer's other sessions (a `join` build), which has no earlier history of its own."""
     return f"{OVERVIEW_HEADER}\n\n{JOINED_OPENING if joined else OPENING}\n\n{OVERVIEW}"
 
 
-def guide(cfg: ProactiveContextManagerConfig, db_path: Optional[str], group: Optional[str] = None) -> str:
+def guide(cfg: ProactiveContextManagerConfig, db_path: Optional[str], group: Optional[str] = None,
+          reads: Sequence[str] = ()) -> str:
     """The gatherer guide that opens every context (`config.gatherer_guide`), with where the full
     history is when db_hint is set -- and, `group` given (a database every group's sessions share), how
-    to keep to the session's own group there; "" for none."""
+    to keep to the session's own group there, or to the groups it is shown (`reads`: a coordinator agent's
+    over several); "" for none."""
     if not cfg.gatherer_guide:
         return ""
     text = cfg.gatherer_guide.format(db_path=db_path or "", channel_column=property_column(CHANNEL))
     if cfg.db_hint and db_path:
         text += DB_HINT.format(db_path=db_path, channel_column=property_column(CHANNEL))
-        if group is not None:
+        if group is not None and reads:
+            shown = [group, *[g for g in reads if g != group]]
+            text += DB_GROUPS_HINT.format(groups=", ".join(f"`{g}`" for g in shown[1:]),
+                                          listed=", ".join("'" + g.replace("'", "''") + "'" for g in shown),
+                                          channel_column=property_column(CHANNEL))
+        elif group is not None:
             text += DB_GROUP_HINT.format(group=group.replace("'", "''"), channel_column=property_column(CHANNEL))
     return text
 

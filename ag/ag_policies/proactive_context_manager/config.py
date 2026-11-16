@@ -227,6 +227,12 @@ class ProactiveContextManagerConfig:
     group_back: str = ("Your group changed: from now on you share work with the sessions of {group}. Until now you "
                        "worked on your own.")
     group_own: str = "this gatherer's own group"
+    # The same, for a change of the groups a session reads besides its own (a coordinator agent's over several: its
+    # `role` record's `reads`): groups it is shown from now on (`reads_added`), and those it no longer is
+    # (`reads_removed`). `{groups}` names them (the record's `names`, else their ids).
+    reads_added: str = "From now on you are also shown the work of the sessions of these groups: {groups}."
+    reads_removed: str = ("You are no longer shown the work of the sessions of these groups, and what you were shown of "
+                          "it before is no longer part of yours: {groups}.")
 
     # A user message of another channel that opens a line, in its first characters, with one of these is not
     # shown to this one (policy.py's `shared`): a message the actors of the gatherer sent each other through the
