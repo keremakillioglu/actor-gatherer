@@ -420,14 +420,12 @@ function renderAgents() {
   const shown = state.home.gatherers.filter((g) => !isHidden(g) && !isCrewHome(g)), hidden = state.home.gatherers.filter(isHidden);
   // its head: a gatherer or a folder of gatherers dropped on it, at the list's top (05-gatherer-folders.js)
   aside.replaceChildren(dropOn(el("div", { class: "aside-head" }, el("h2", { text: "Agents" }), outsideDrop(),
-    SNAPSHOT ? null : el("button", { type: "button", onclick: () => openForm(""), title: "Make a new group" }, "+ New group"),
+    SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: GF_NEW, "aria-label": GF_NEW,
+      onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),   // a group (05-gatherer-folders.js)
     aloneNew(),                                      // an actor on its own (05-group-moves.js)
     SNAPSHOT || !state.home.merged ? null : crewButton(null, "all"),   // the coordinator agent over everything
-    SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: "New folder, to keep groups in",
-      "aria-label": "New folder, to keep groups in", onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),
     el("span", { class: "list-btns" }, ...listButtons())), GFS, null, () => {}));
-  if (state.adding && state.adding.gatherer === "") aside.append(gathererForm());
-  if (!state.home.gatherers.length) aside.append(el("div", { class: "servers", text: "No groups in this home yet." }));
+  if (!state.home.gatherers.length && !state.folderEdit) aside.append(el("div", { class: "servers", text: "No groups in this home yet: make one with the folder button above." }));
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every group is hidden." }));
   // the coordinator agent over everything; its gatherers, in the folders the reader keeps them in, if any; then the
   // actors on their own closed, in their lines
@@ -1439,7 +1437,7 @@ function reopenFolder(gname, id) {
 let folderInput = null;
 function startFolderEdit(gname, id = null, parent = null) {
   const f = id === null ? null : folderById(gname, id);
-  state.folderEdit = { g: gname, id, parent: f ? parentOf(gname, f) : parent, value: f ? f.name : "" };
+  state.folderEdit = { g: gname, id, parent: f ? parentOf(gname, f) : parent, value: f ? f.name : "", group: gname === GF && id === null };
   folderInput = null;
   if (collapsed.has(gname)) {
     collapsed.delete(gname);
@@ -1453,7 +1451,8 @@ function folderBox() {
   if (folderInput) return folderInput;
   const f = state.folderEdit;
   folderInput = el("input", { class: "name-box folder-box", type: "text", maxlength: String(FOLDER_CHARS), spellcheck: "false",
-    autocomplete: "off", placeholder: "Folder name", "aria-label": f.id === null ? "The new folder's name" : "The folder's name" });
+    autocomplete: "off", placeholder: f.group ? "Group name" : "Folder name",
+    "aria-label": f.group ? "The new group's name" : f.id === null ? "The new folder's name" : "The folder's name" });
   folderInput.value = f.value;
   folderInput.addEventListener("input", () => { f.value = folderInput.value; });
   folderInput.addEventListener("keydown", (ev) => {
@@ -1468,7 +1467,7 @@ function endFolderEdit(keep) {
   const f = state.folderEdit;
   if (!f) return;
   state.folderEdit = null; folderInput = null;
-  if (!keep || !nameFolder(f.g, f.id, f.parent, f.value)) renderAgents();
+  if (!keep || !(f.group ? nameGroup(f.parent, f.value) : nameFolder(f.g, f.id, f.parent, f.value))) renderAgents();
 }
 // The folder `id` named `text` (`id` null: one made in `parent`), as typed in the list's box or a card's: none typed,
 // or the name it has, is nothing done; a name another folder beside it has (whatever its case), or one with "/", is
@@ -1604,6 +1603,7 @@ document.addEventListener("drop", () => { if (listDrag) setTimeout(endDrag, 0); 
 function canDrop(g, id) {
   const d = listDrag;
   if (!d) return false;
+  if (d.gs && g.name !== GF) return canMerge(g);   // a group into another: a folder of it (05-group-moves.js)
   if (d.g !== g.name) return canCross(g);
   if (d.folder !== null) {
     const f = folderById(g.name, d.folder);
@@ -1639,6 +1639,7 @@ function dropOn(n, g, id, open) {
     const d = listDrag, now = state.home.gatherers.find((x) => x.name === g.name) || g;
     d.later = false;                                 // drawn by the move, next
     endDrag();
+    if (d.gs && g.name !== GF) { gPicks.clear(); askMerge(d.gs[0], now, id); return; }
     if (d.g !== g.name) { askMove(d, g, id); return; }
     if (d.folder !== null) { moveFolder(g.name, d.folder, id); return; }
     if (d.gs) { gPicks.clear(); fileGatherers(d.gs.filter((name) => gfOf(name) !== id), id); return; }

@@ -247,7 +247,7 @@ test("in the home's one database, an actor dragged outside every group asks firs
   });
 });
 
-// An actor on its own from its start (05-group-moves.js's aloneNew): the list head's "+" beside "+ New group" opens a
+// An actor on its own from its start (05-group-moves.js's aloneNew): the list head's "+" beside its folder button opens a
 // box -- the directory the latest active actor works in, the harnesses that can start on their own (Codex names its
 // session only at the first call: said, not offered) -- and starts one on its own, run under the shown actor's group,
 // listed as its own row; with a database per gatherer there is none
@@ -305,7 +305,7 @@ test("in the home's one database, the list head's + starts an actor on its own",
 test("with a database per gatherer, the list head has no + for an actor on its own", async ({ page }) => {
   await startingAlone(page, false, "a1012e00-0000-4000-8000-0000000000f2");
   await open(page);
-  await expect(page.locator(".aside-head").getByRole("button", { name: "+ New group" })).toBeVisible();
+  await expect(page.locator(".aside-head button.gf-new")).toBeVisible();
   await expect(page.locator(".aside-head button.alone-new")).toHaveCount(0);
 });
 

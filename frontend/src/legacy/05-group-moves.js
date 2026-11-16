@@ -123,6 +123,50 @@ function askSplit(d) {
   }, d.g);
   mvDraw({ ...shown, go });
 }
+// ---- a group dropped into another (groups.py's `merge`): made a folder of it, named after it, everything in it
+// Whether the group dragged (listDrag's `gs`: one) may go into group `g`: in the home's one database, neither on its own,
+// and not into itself
+function canMerge(g) {
+  const d = listDrag;
+  if (!d || !d.gs || d.gs.length !== 1 || !state.home.merged || g.name === GF || g.alone || d.gs[0] === g.name) return false;
+  const from = state.home.gatherers.find((x) => x.name === d.gs[0]);
+  return !!from && !from.alone && state.home.gatherers.some((x) => x.name === g.name);
+}
+// The group `name` dropped into folder `id` of group `g` (null: its top): the dialog, then the merge
+async function askMerge(name, g, id) {
+  const from = state.home.gatherers.find((x) => x.name === name);
+  if (!from) return;
+  const title = `Merge ${titleOf(from)} into ${titleOf(g)}?`;
+  mvOpen("A group merged into another");
+  mvDraw({ title, note: "Working out what moves…" });
+  let plan;
+  try { plan = await post("/api/groups", { gatherer: name, to: g.name, into: id, do: "merge_plan" }); } catch (err) {
+    mvDraw({ title, note: `Can't merge: ${err.message}` });
+    return;
+  }
+  const actors = from.agents.filter((a) => !isCoordinator(a)), n = actors.length;
+  const others = g.agents.filter((a) => !isCoordinator(a)).length, inside = id === null ? null : folderById(g.name, id);
+  const lines = [`${titleOf(from)} becomes a folder of ${titleOf(g)}, named ${plan.folder}${inside ? `, in ${inside.name}` : ""}, `
+    + "with everything in it. The group itself is then gone from the list."];
+  if (n) lines.push(`Its ${mvCount(n, "actor")} and the ${mvCount(others, "actor")} of ${titleOf(g)} will share context with each other.`,
+    rebuildLine(from, actors));
+  const apps = appsLine(plan.apps.filter((x) => x.app !== "notes"), true, g);
+  if (apps) lines.push(apps);
+  if (plan.apps.some((x) => x.app === "notes")) lines.push(`Its notes go under a page named ${titleOf(from)} in the notes of ${titleOf(g)}.`);
+  if (groupCrew(from)) lines.push("Its coordinator agent becomes the one over the new folder.");
+  const shown = { title, lines, names: moveNames(from, actors.map((a) => a.channel)), goLabel: "Merge" };
+  const go = mvGo(shown, "Merging…", "Not merged", async () => {
+    const got = await post("/api/groups", { gatherer: name, to: g.name, into: id, do: "merge" });
+    const m = got.merged;
+    if (collapsed.delete(g.name)) {                  // the group it went into open, and the folder it became
+      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
+    }
+    showFolder(g.name, id, true);
+    showFolder(g.name, m.folder, true);
+    return { to: g.name, actors: m.actors, apps: m.apps || [], joined: m.joined || {}, said: `${titleOf(from)} is a folder of ${titleOf(g)} now` };
+  }, name);
+  mvDraw({ ...shown, go });
+}
 // The dialog, made once, opened
 function mvOpen(label) {
   if (!moveAsk.dialog) {
@@ -260,7 +304,7 @@ function outsideDrop() {
   return n;
 }
 
-// ---- an actor on its own from its start (groups.py's `start_alone`): the list head's "+" beside "+ New group". Its box
+// ---- an actor on its own from its start (groups.py's `start_alone`): the list head's "+" beside its folder button. Its box
 // (07-panes.js's railNewBox, `alone`) asks the directory it works in -- the latest active actor's to start with -- and the
 // harness: one that names its session only at its first call (codex's thread) is not offered, as its record could not be
 // in before that call. It runs under a group of the home's (ag runs every session in one): the shown actor's, else the

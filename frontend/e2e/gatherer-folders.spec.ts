@@ -1,5 +1,5 @@
 // Folders of gatherers (gatherer_folders.py; 05-gatherer-folders.js): none at first, the list as without them; one made
-// from the list's head, a gatherer dragged into it and out onto the head, folders in folders, folded (nothing of it in
+// from the list's head with its "Folder only" switch (else a group: groups-merge.spec.ts), a gatherer dragged into it and out onto the head, folders in folders, folded (nothing of it in
 // view), renamed and deleted -- no counts, no start buttons on their lines, no actor dropped in one; and
 // in the rail, the same folders, folded and opened there.
 import type { Page } from "@playwright/test";
@@ -30,6 +30,8 @@ test("keeps gatherers in folders of their own: made from the list's head, filled
     await expect(page.locator("#agents .gf-line")).toHaveCount(0); // none: as without them
     await expect(gRow).not.toHaveAttribute("draggable", "true"); // nothing to drag it into
     await head.locator(".gf-new").click();
+    await page.locator("#agents .gf-kind").click(); // a folder of groups, not a group
+    await expect(box).toHaveAttribute("placeholder", "Folder name");
     await box.fill("  Work   projects ");
     await box.press("Enter");
     await expect(line("Work projects")).toBeVisible();
@@ -60,6 +62,7 @@ test("keeps gatherers in folders of their own: made from the list's head, filled
 
     await line("Work projects").hover(); // a folder in it; the gatherer dragged into that
     await line("Work projects").locator(".folder-act.new").click();
+    await page.locator("#agents .gf-kind").click();
     await box.fill("Archive");
     await box.press("Enter");
     await expect(page.locator("#agents .gf-kids .gf-line", { hasText: "Archive" })).toBeVisible();
