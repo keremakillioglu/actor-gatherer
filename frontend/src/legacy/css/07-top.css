@@ -77,7 +77,7 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .mh-row .ic { width: 16px; height: 16px; display: grid; place-items: center; color: var(--muted); font-size: 13px; font-weight: 700; }
 .mh-row .ic.me { position: relative; }
 .mh-row .ic img { width: 15px; height: 15px; display: block; }
-.mh-row .ic .spin::before { content: "✻"; display: inline-block; color: var(--term-accent); font-size: 12px; animation: term-spin 1.2s steps(1) infinite; }
+.mh-row .ic .spin { display: flex; font-size: 12px; }   /* the dots going round (00-base.css) */
 .mh-row .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mh-row .tx .cmdline { font-size: 12px; }
 .mh-row .tx > .dotc { margin-right: 6px; vertical-align: 1px; }   /* a call's: before it, the avatar at the line's start */

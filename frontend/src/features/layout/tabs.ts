@@ -603,7 +603,7 @@ export class Tabs {
   }
 }
 
-// a state's mark: a dot in its colour -- at work, the list's turning star, in step with the list's (one clock for all)
+// a state's mark: a dot in its colour -- at work, the list's dots going round, in step with the list's (one clock for all)
 function mark(m: string): HTMLElement {
   const i = document.createElement("i");
   i.className = "lay-dot";
