@@ -283,7 +283,8 @@ async function followMoved(from, to, moved, apps = [], joined = {}) {
 // task moves whole) -- with the apps of its task, and its window if it is an app's own agent, that may go (withOwn)
 function canOutside() {
   const d = listDrag;
-  if (!d || !state.home.merged || d.gs) return false;
+  if (!d || !state.home.merged) return false;
+  if (d.gs) return d.gs.length === 1 && !!placeOf(d.gs[0]);   // a group inside a folder: back at the top, its own group kept
   const from = state.home.gatherers.find((x) => x.name === d.g);
   if (!from) return false;
   if (from.alone) return d.folder === null && !!placeOf(from.name);   // on its own in a folder: back at the top
@@ -294,14 +295,16 @@ function canOutside() {
 }
 // The place shown, while what is dragged may go there (startDrag's), saying what it does
 function showOutside() {
-  const can = canOutside(), n = document.querySelector(".outside-drop");
+  const can = canOutside();
   document.body.classList.toggle("drag-out", can);
-  if (n && can) n.textContent = listDrag.folder !== null ? "Outside every group: a group of its own" : "Outside every group: on its own";
+  if (can) for (const n of document.querySelectorAll(".outside-drop")) {   // the list's, and Manage groups' when it is open
+    n.textContent = listDrag.folder !== null || listDrag.gs ? "Outside every group: a group of its own" : "Outside every group: on its own";
+  }
 }
 // The place to drop it, over the list's head: shown while such a drag goes on (body.drag-out)
 function outsideDrop() {
   if (SNAPSHOT || !state.home.merged) return null;
-  const n = el("div", { class: "outside-drop", text: "Outside every group: a group of its own" });
+  const n = el("div", { class: "outside-drop", text: "Outside every group: a group of its own" });   // (Manage groups has one too)
   n.addEventListener("dragenter", (ev) => { if (canOutside()) { ev.preventDefault(); n.classList.add("drop-on"); } });
   n.addEventListener("dragover", (ev) => { if (canOutside()) { ev.preventDefault(); ev.dataTransfer.dropEffect = "move"; } });
   n.addEventListener("dragleave", (ev) => { if (!n.contains(ev.relatedTarget)) n.classList.remove("drop-on"); });
@@ -312,7 +315,8 @@ function outsideDrop() {
     const d = listDrag;
     d.later = false;
     endDrag();
-    if (d.folder !== null) askSplit(d);
+    if (d.gs) placeGroup(d.gs[0], "", null);        // nothing anyone shares changes: no question
+    else if (d.folder !== null) askSplit(d);
     else if (isAloneName(d.g)) placeGroup(d.g, "", null);
     else askAlone(d);
   });
@@ -510,7 +514,10 @@ const askAloneHere = (g, a) => askAlone({ g: g.name, cs: [a.channel] }, true);
 // ones counted), a folder's switch "<the group it is in> | Own group", an actor's "<the group it is in> | On its own" -- the
 // group by its name, the folder that starts it (mgIn). A switch asks
 // first, as in the list (askOwn, askAbove, askAloneHere, askJoin), then the dialog is drawn again from the new home
-// (renderAgents calls drawManage while it is open). The CLI's `ag groups` has the same.
+// (renderAgents calls drawManage while it is open). The CLI's `ag groups` has the same. A group's or folder's row folds
+// what is under it (mgFolded, kept in this browser). Rows are dragged and dropped as the list's are, by its own
+// dragRow, dragFolder and dropOn -- the same rules, the same questions -- and its "Outside every group" area is over the
+// panel's top line while one is dragged.
 const manage = { dialog: null };
 const MANAGE_LABEL = "Manage groups: who shares context with whom";
 function manageButton() {
@@ -538,25 +545,48 @@ function mgSwitch(label, options, now, ask, why = "") {
 }
 // the option of taking group `g`, the one a row sits in: by its name, the folder that starts it
 const mgIn = (g) => [titleOf(g), `${titleOf(g)}'s group: shares context with its actors`];
+// What the panel has folded: "g:<group>", "f:<group>:<folder id>", "alone" (those on their own at the top)
+const MG_FOLDED_KEY = "ag-dashboard-manage-groups-folded";
+const mgFolded = new Set((() => { try { return JSON.parse(localStorage.getItem(MG_FOLDED_KEY) || "[]"); } catch (e) { return []; } })());
+// `key` folded or opened (`open`; flipped, left out), and the panel drawn so
+function mgToggle(key, open) {
+  const fold = open === undefined ? !mgFolded.has(key) : !open;
+  if (fold === mgFolded.has(key)) return;
+  if (fold) mgFolded.add(key); else mgFolded.delete(key);
+  try { localStorage.setItem(MG_FOLDED_KEY, JSON.stringify([...mgFolded])); } catch (e) { /* kept for this page only */ }
+  drawManage();
+}
+// a row's name, its caret first -- turned down while open, folding what is under it, and its name so too -- or, nothing
+// under it, the caret's room, so names line up
+function mgName(key, name, has, ...rest) {
+  const open = !mgFolded.has(key);
+  const caret = has ? el("button", { type: "button", class: "mg-fold", "aria-expanded": open ? "true" : "false",
+    "aria-label": `${open ? "Fold" : "Open"} ${name}`, onclick: (ev) => { ev.stopPropagation(); mgToggle(key); } },
+    el("span", { class: "caret", "aria-hidden": "true", text: "▶" })) : el("span", { class: "mg-fold", "aria-hidden": "true" });
+  return el("span", { class: "mg-name" + (has ? " foldable" : ""), ...(has ? { onclick: () => mgToggle(key) } : {}) }, caret, ...rest);
+}
 function mgActor(g, a, depth) {
   const lone = g.alone, inTask = !lone && withOwn(g, [a.channel]).filter((c) => !isAppItem(c)).length > 1;
   const around = lone ? nestedIn(g) : g;   // the group it sits in: none for one on its own at the list's top
   const why = isCoordinator(a) ? "The coordinator agent stays with its group" : inTask ? "It works in a task with others: a task moves whole" : "";
-  return el("div", { class: "mg-row actor" + (lone ? " defines" : ""), style: `--depth: ${depth}`,   // on its own: a group of one
+  return dragRow(el("div", { class: "mg-row actor" + (lone ? " defines" : ""), "data-key": `${g.name}/${a.channel}`,
+    style: `--depth: ${depth}`,   // on its own: a group of one
     ...(lone ? { title: `On its own: a group of one, sharing context with no other actor${around ? "" : ". Drag it into a folder to join that folder's group"}` } : {}) },
-    el("span", { class: "mg-name" }, plainFace(a), el("span", { text: actorTitle(a) || a.channel.slice(0, 8) })),
+    mgName("", "", false, plainFace(a), el("span", { text: actorTitle(a) || a.channel.slice(0, 8) })),
     mgSwitch(`${actorTitle(a)}: its group`, around ? [mgIn(around), "On its own"] : ["On its own"], lone && around ? 1 : 0,
-      () => (lone ? askJoin(g) : askAloneHere(g, a)), why));
+      () => (lone ? askJoin(g) : askAloneHere(g, a)), why)), g, a);
 }
 // group `g`'s folder `id` (null: its top), at `depth`: its folders, each with its switch and what is in it; the groups and
 // actors on their own put there; its open actors (the closed counted)
 function mgBox(g, id, depth) {
   const out = [];
   for (const f of kidFolders(g.name, id)) {
-    out.push(el("div", { class: "mg-row folder", style: `--depth: ${depth}` },
-      el("span", { class: "mg-name" }, strokeIcon(ICONS.folder, 14), el("span", { text: f.name })),
-      mgSwitch(`${f.name}: its group`, [mgIn(g), "Own group"], 0, () => askOwn(g, f))));
-    out.push(...mgBox(g, f.id, depth + 1));
+    const key = `f:${g.name}:${f.id}`, kids = mgBox(g, f.id, depth + 1);
+    const row = el("div", { class: "mg-row folder", "data-key": `${g.name}/folder:${f.id}`, style: `--depth: ${depth}` },
+      mgName(key, f.name, kids.length > 0, strokeIcon(ICONS.folder, 14), el("span", { text: f.name })),
+      mgSwitch(`${f.name}: its group`, [mgIn(g), "Own group"], 0, () => askOwn(g, f)));
+    out.push(dropOn(dragFolder(row, g, f), g, f.id, () => mgToggle(key, true)));   // held over: opened
+    if (!mgFolded.has(key)) out.push(...kids);
   }
   for (const x of placedIn(g.name, id)) out.push(...(x.alone ? x.agents.map((a) => mgActor(x, a, depth)) : mgGroup(x, depth)));
   const mine = g.agents.filter((a) => folderOf(g.name, a) === id && !isCoordinator(a));
@@ -568,24 +598,34 @@ function mgBox(g, id, depth) {
 // a group: its line, a folder's as the list has it -- placed in a folder, its switch; at the top, its own group, the only
 // option -- then what is in it
 function mgGroup(g, depth) {
-  const outer = nestedIn(g), n = g.agents.filter((a) => !isCoordinator(a)).length;
-  return [el("div", { class: "mg-row group defines", style: `--depth: ${depth}`,   // a group starts here
+  const outer = nestedIn(g), n = g.agents.filter((a) => !isCoordinator(a)).length, key = `g:${g.name}`, kids = mgBox(g, null, depth + 1);
+  const row = el("div", { class: "mg-row group defines", "data-key": g.name, style: `--depth: ${depth}`,   // a group starts here
     title: `${titleOf(g)} starts a group: its actors share context with each other${outer ? `, not with ${titleOf(outer)}'s` : ""}` },
-    el("span", { class: "mg-name" }, strokeIcon(ICONS.folder, 14), el("b", { text: titleOf(g) }), el("span", { class: "mg-n", text: plural(n, "actor") })),
+    mgName(key, titleOf(g), kids.length > 0, strokeIcon(ICONS.folder, 14), el("b", { text: titleOf(g) }), el("span", { class: "mg-n", text: plural(n, "actor") })),
     outer ? mgSwitch(`${titleOf(g)}: its group`, [mgIn(outer), "Own group"], 1, () => askAbove(g))
-      : mgSwitch(`${titleOf(g)}: its group (at the top, its own)`, ["Own group"], 0, () => {})), ...mgBox(g, null, depth + 1)];
+      : mgSwitch(`${titleOf(g)}: its group (at the top, its own)`, ["Own group"], 0, () => {}));
+  if (!SNAPSHOT) {                                   // dragged as the list's group row is: into a folder of another group
+    row.draggable = true;
+    row.addEventListener("dragstart", (ev) => startDrag(ev, GFS, { gs: [g.name] }));
+    row.addEventListener("dragend", endDrag);
+  }
+  return [dropOn(row, g, null, () => mgToggle(key, true)), ...(mgFolded.has(key) ? [] : kids)];
 }
 function drawManage() {
   if (!manage.dialog) return;
   const shown = state.home.gatherers.filter((g) => !isHidden(g) && !isCrewHome(g) && !placeOf(g.name));
-  const lone = shown.filter((g) => g.alone);
+  const lone = shown.filter((g) => g.alone), scrolled = (manage.dialog.querySelector(".mg-tree") || {}).scrollTop || 0;
+  const loneRows = lone.flatMap((x) => x.agents.map((a) => mgActor(x, a, 1)));
   manage.dialog.replaceChildren(el("div", { class: "newform mg-form" },
     el("div", { class: "br-title" }, el("h3", { text: "Manage groups" }),
       el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => manage.dialog.close() }, "×")),
-    el("p", { class: "mg-say", text: "Actors share context within their group only. Each switch names the group a folder or actor "
-      + "sits in: it takes that group, or has its own. Each change asks first." }),
+    el("div", { class: "mg-top" },
+      el("p", { class: "mg-say", text: "Actors share context within their group only. Each switch names the group a folder or actor "
+        + "sits in: it takes that group, or has its own. Drag rows as in the list. Each change asks first." }), outsideDrop()),
     el("div", { class: "mg-tree" }, ...shown.filter((g) => !g.alone).sort((x, y) => byName(titleOf(x), titleOf(y))).flatMap((g) => mgGroup(g, 0)),
-      ...(lone.length ? [el("div", { class: "mg-row group", style: "--depth: 0" }, el("span", { class: "mg-name" }, strokeIcon(ICONS.alone, 14),
+      ...(lone.length ? [el("div", { class: "mg-row group", style: "--depth: 0" }, mgName("alone", "those on their own", true, strokeIcon(ICONS.alone, 14),
         el("b", { text: "On their own, at the list's top" })))] : []),
-      ...lone.flatMap((x) => x.agents.map((a) => mgActor(x, a, 1))))));
+      ...(mgFolded.has("alone") ? [] : loneRows))));
+  const tree = manage.dialog.querySelector(".mg-tree");
+  if (tree) tree.scrollTop = scrolled;               // where it was, drawn again
 }

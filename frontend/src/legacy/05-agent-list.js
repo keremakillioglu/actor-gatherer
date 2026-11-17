@@ -1519,7 +1519,7 @@ function markDragged() {
   if (!listDrag) return;
   const keys = listDrag.cs ? listDrag.cs.map((c) => `${listDrag.g}/${c}`) : listDrag.gs ? listDrag.gs   // a gatherer: its row's
     : [`${listDrag.g}/folder:${listDrag.folder}`];
-  for (const k of keys) for (const n of document.querySelectorAll(`#agents [data-key="${CSS.escape(k)}"]`)) n.classList.add("dragging");
+  for (const k of keys) for (const n of document.querySelectorAll(`:is(#agents, .mg-dialog) [data-key="${CSS.escape(k)}"]`)) n.classList.add("dragging");
   const cards = new Set(listDrag.cs ? listDrag.cs.map((c) => key(listDrag.g, c)) : []);
   for (const n of document.querySelectorAll("#rail .r-actor[data-card]")) if (cards.has(n.dataset.card)) n.classList.add("dragging");
 }
@@ -1595,7 +1595,7 @@ function endDrag() {
   listDrag = null;
   clearTimeout(d.spring); clearInterval(d.watch);
   document.body.classList.remove("drag-out");
-  for (const n of document.querySelectorAll(":is(#agents, #rail) :is(.dragging, .drop-on)")) n.classList.remove("dragging", "drop-on", "drop-across");
+  for (const n of document.querySelectorAll(":is(#agents, #rail, .mg-dialog) :is(.dragging, .drop-on)")) n.classList.remove("dragging", "drop-on", "drop-across");
   if (d.later || d.revealed) renderAgents();         // the rail, its folders shown for the drag: as it was again
   if (d.offered) moveEnd();                          // over the work area too: its cover put away (07-panes.js)
 }

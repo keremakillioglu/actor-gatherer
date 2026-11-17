@@ -227,3 +227,57 @@ test("Manage groups: an actor on its own, staying in its folder, and back in its
   await expect(dialog).toBeHidden();
   expect(asked.at(-1)).toEqual({ gatherer: ALONE, to: GATHERER, channels: [ALONE.slice(5)], do: "move", into: WORK });
 });
+
+test("Manage groups folds what is under a group or a folder, and keeps it folded", async ({ page }) => {
+  await home(page, { [LAB]: { in: GATHERER, folder: WORK } });
+  await open(page);
+  await manage(page);
+  await expect(mgRow(page, CLAUDE)).toBeVisible();
+  await mgRow(page, "Work").locator("button.mg-fold").click();
+  await expect(mgRow(page, "Work")).toBeVisible();
+  await expect(mgRow(page, CLAUDE)).toHaveCount(0);
+  await expect(mgRow(page, LAB)).toHaveCount(0); // a group inside it, folded with it
+  await panel(page).getByRole("button", { name: "Close", exact: true }).click();
+  await manage(page);
+  await expect(mgRow(page, LAB)).toHaveCount(0); // still folded, opened again
+  await mgRow(page, "Work").locator(".mg-name").click(); // its name opens it too
+  await expect(mgRow(page, LAB)).toBeVisible();
+  await expect(mgRow(page, "Work").locator("button.mg-fold")).toHaveAttribute("aria-expanded", "true");
+  await mgRow(page, GATHERER).locator("button.mg-fold").click(); // a group: all of it
+  await expect(mgRow(page, "Work")).toHaveCount(0);
+  await expect(mgRow(page, GATHERER)).toBeVisible();
+});
+
+test("Manage groups: rows dragged and dropped as in the list, asking the same questions", async ({ page }) => {
+  await home(page, { [LAB]: { in: GATHERER, folder: WORK } });
+  const asked = await answering(page, (body) =>
+    body.do === "plan"
+      ? { actors: body.channels, from: GATHERER, to: LAB, folder: null, before: {}, after: {} }
+      : { placed: true },
+  );
+  await open(page);
+  await manage(page);
+  // an actor onto another group's row: the list's question
+  await mgRow(page, CLAUDE).dragTo(mgRow(page, LAB));
+  const dialog = page.locator("dialog.mv-dialog");
+  await expect(dialog.locator("h3")).toHaveText(`Move to the ${LAB} group?`);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  // a group inside a folder onto its group's row: moved to its top, its own group kept, nothing asked
+  await mgRow(page, LAB).dragTo(mgRow(page, GATHERER));
+  await expect.poll(() => asked.at(-1)).toEqual({ gatherer: LAB, to: GATHERER, into: null, do: "place" });
+  await expect(dialog).toBeHidden();
+  // onto the outside area, over the panel's top line while it is dragged: at the list's top
+  const outside = panel(page).locator(".mg-top .outside-drop");
+  await expect(outside).toBeHidden();
+  const lab = mgRow(page, LAB);
+  await lab.hover(); // by hand: the area shows once a drag starts
+  await page.mouse.down();
+  const at = (await lab.boundingBox())!;
+  await page.mouse.move(at.x + 20, at.y + at.height + 12, { steps: 4 });
+  await expect(outside).toHaveText("Outside every group: a group of its own");
+  await outside.hover();
+  await page.mouse.up();
+  await expect.poll(() => asked.at(-1)).toEqual({ gatherer: LAB, to: "", into: null, do: "place" });
+  await expect(outside).toBeHidden();
+});
