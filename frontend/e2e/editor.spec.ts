@@ -8,54 +8,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { APIRequestContext, Page } from "@playwright/test";
 import { closePanel, expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, NOW, openActor } from "./home";
-import { editorPane, editorPanel, openFile, project, raise } from "./editor-home";
-
-/** An Editor started from the menu on `repo`, with its actor (as DocWriter's test: Claude Code set up here, the page's
- * stream held back; the actor's session is only made, never run): the actor's row, and how to put the home back. */
-async function startEditor(page: Page, repo: string) {
-  await page.route("**/api/home", async (route) => {
-    const home = await (await route.fetch()).json();
-    home.harnesses = ["claude"];
-    home.harness_info.claude = { ...home.harness_info.claude, runs: true };
-    await route.fulfill({ json: home });
-  });
-  await streamsAsRequests(page);
-  await page.route("**/api/stream*", (route) => route.abort());
-  await openActor(page, CLAUDE);
-  const row = page.locator("#agents .gatherer-row").first();
-  await row.hover();
-  await row.locator("button.new-more").click();
-  await page.locator(".row-menu[role=menu]").getByText("Editor…", { exact: true }).click();
-  const box = page.locator(".dw-menu[role=dialog]", { hasText: "New Editor" });
-  await box.locator("input").fill(repo);
-  await box.locator("button.go").first().click();
-  await expect(editorPane(page)).toHaveCount(1);
-  // the Editor and its actor, one task (the dashboard's task_links.py): the task's row shown, the Editor's mark among its
-  // faces; its actor, the one attached to the Editor's instance
-  const actor = page.locator("#agents button.agent.task[aria-current=true]");
-  await expect(actor.locator(".t-faces img.t-app")).toHaveAttribute("src", "/apps/mark/editor.svg");
-  await expect(actor.locator(".t-faces .t-face")).toHaveCount(1);
-  const src = new URL((await editorPane(page).locator("iframe").getAttribute("src")) || "");
-  const listed = await (await page.request.get(`/api/apps?gatherer=${src.searchParams.get("gatherer")}`)).json();
-  const sid: string = (listed.attached[src.searchParams.get("instance") || ""] || [])[0] || "";
-  expect(sid).toMatch(/^[0-9a-f-]{36}$/);
-  return { actor, sid, src };
-}
-
-/** The home as it was, for the tests after: the Editor closed, its actor (never started) forgotten. */
-async function endEditor(page: Page, request: APIRequestContext, sid: string, src: URL) {
-  await closePanel(page, editorPane(page));
-  await expect(editorPane(page)).toHaveCount(0);
-  const closed = await request.post("/api/apps/close", {
-    data: { gatherer: src.searchParams.get("gatherer"), instance: src.searchParams.get("instance") },
-  });
-  expect(closed.ok()).toBe(true);
-  const discarded = await request.post("/api/discard", { data: { session_id: sid } });
-  expect(discarded.ok(), await discarded.text()).toBe(true);
-}
+import { editorPane, editorPanel, endEditor, openFile, project, raise, startEditor } from "./editor-home";
 
 test("an Editor started from the menu: its panel above on the folder, its actor below with its mark", async ({
   page,

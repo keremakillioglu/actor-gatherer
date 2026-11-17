@@ -85,8 +85,9 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 sy
 .topbar .lb-full[aria-pressed="true"] { color: var(--ink); background: var(--wash); }
 .topbar .lb-full:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
 /* how many of the shown groups' actors wait for the reader, stopped on an error, run, finished unseen, are idle: a dot in
-   the list's colour for each, and the number; nothing while none is */
-.top-totals { flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 6px; font-size: 12px; color: var(--ink-2);
+   the list's colour for each, and the number; nothing while none is. The list hidden, the pointer on them slides it out
+   (06-list-modes.js): the bar's whole height, so going straight down from them is onto the list */
+.top-totals { flex: none; align-self: stretch; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 6px; font-size: 12px; color: var(--ink-2);
   font-variant-numeric: tabular-nums; }
 .top-totals:empty { display: none; }
 .top-totals .count { display: inline-flex; align-items: center; gap: 4px; }

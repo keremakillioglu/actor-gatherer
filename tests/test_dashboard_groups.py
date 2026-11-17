@@ -280,6 +280,24 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual(listed["self:" + sid], (True, [sid]))
         self.assertEqual(listed["b"], (False, ["c2"]))
 
+    def test_started_on_its_own_from_the_page_with_its_harness_and_permission_mode(self):
+        """POST /api/sessions {alone: true}: the harness and permission mode the page names, each where it belongs."""
+        import json
+        import types
+        from ag_dashboard.api import sessions as routes
+        started = self.sessions_here()
+        srv = types.SimpleNamespace(sessions=started)
+        got = routes.start(srv, {"gatherer": "b", "cwd": self.tmp.name, "harness": "claude",
+                                 "permission_mode": "acceptEdits", "model": "sonnet", "alone": True})
+        self.assertEqual(got.status_code, 200)
+        sid = json.loads(got.body)["session_id"]
+        [row] = started.list()
+        self.assertEqual((row["gatherer"], row["harness"], row["permission_mode"], row["model"]),
+                         ("self:" + sid, "claude", "acceptEdits", "sonnet"))
+        got = routes.start(srv, {"gatherer": "b", "cwd": self.tmp.name, "harness": "claude", "permission_mode": "plan"})
+        row = next(r for r in started.list() if r["session_id"] == json.loads(got.body)["session_id"])
+        self.assertEqual((row["gatherer"], row["harness"], row["permission_mode"]), ("b", "claude", "plan"))   # in a group too
+
     def test_a_coordinator_agent_over_everything_is_a_group_of_one_reading_every_group(self):
         from ag_dashboard import coordination
         started = self.sessions_here()
