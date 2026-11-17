@@ -65,14 +65,16 @@ function listButtons() {
       "aria-label": fold, onclick: () => setListMode(folded ? "list" : "folded") },
       strokeIcon(ICONS.sidebar + (folded ? LIST_ICONS.unfold : LIST_ICONS.fold))),
     full || PANE ? null : el("button", { class: "list-btn lb-hide", type: "button", "aria-pressed": listHidden ? "true" : "false",
-      title: listHidden ? "Keep the list open" : "Hide the list: it slides out when the pointer reaches the page's left edge",
+      title: listHidden ? "Keep the list open" : "Hide the list: it slides out when the pointer reaches the page's left edge, or the counts at the top",
       "aria-label": listHidden ? "Keep the list open" : "Hide the list", onclick: () => setListHidden(!listHidden) },
       strokeIcon(listHidden ? LIST_ICONS.keep : LIST_ICONS.hide))];
 }
 // THE LIST HIDDEN (its button; kept in this browser), whatever its shape (the list, the rail): out of the way at once,
-// the panes the page's whole width, a thin edge at the page's left. The pointer on that edge (or the keys in the list),
-// it slides out over the panes, and stays while the pointer is on it -- still or moving -- or on a menu or card of it,
-// a name is typed in it or a row dragged from it; it slides back a moment after the pointer has left. Where the pointer
+// the panes the page's whole width, a thin edge at the page's left. The pointer on that edge, or on the top bar's counts
+// (#top-totals, drawTotals: what the list is for; or the keys in the list), it slides out over the panes, and stays
+// while the pointer is on it -- still or moving -- or on those counts, a menu or card of it, a name is typed in it or a
+// row dragged from it; it slides back a moment after the pointer has left (the counts too: a moment to get from them
+// down to the list, though the rail is narrower than where they sit). Where the pointer
 // is, is asked of the page at its last place (elementFromPoint): a list slid in under a still pointer is under it,
 // though the browser's own hover may not say so till it moves -- and a pointer over a pane's frame moves unseen.
 const HIDE_KEY = "ag-dashboard-list-hidden", UNPEEK_MS = 300;
@@ -98,7 +100,7 @@ function peekList(on) {
 function listInUse() {
   if (listDrag || document.querySelector(".row-menu, .side :is(input, textarea, [contenteditable]):focus")) return true;
   const at = pointerAt.x < 0 ? null : document.elementFromPoint(pointerAt.x, pointerAt.y);
-  return !!(at && at.closest(".side, .list-edge, .row-menu, #actor-card"));
+  return !!(at && at.closest(".side, .list-edge, #top-totals, .row-menu, #actor-card"));
 }
 function unpeekSoon() {
   clearTimeout(peekTimer);
@@ -114,6 +116,12 @@ if (!PANE && !SNAPSHOT) {
   side.addEventListener("pointerleave", (ev) => { at(ev); if (listHidden) unpeekSoon(); });   // (onto a frame: its last place)
   side.addEventListener("focusin", () => peekList(true));
   side.addEventListener("focusout", () => { if (listHidden) unpeekSoon(); });
+  // the counts at the top: out as at the edge (over the whole page, there is nothing to slide out)
+  const totals = document.getElementById("top-totals");
+  const peekHere = (ev) => { at(ev); if (listHidden && listMode !== "full" && !document.documentElement.classList.contains("list-peek")) peekList(true); };
+  totals.addEventListener("pointerenter", peekHere);
+  totals.addEventListener("pointermove", peekHere);
+  totals.addEventListener("pointerleave", (ev) => { at(ev); if (listHidden) unpeekSoon(); });
   try { listHidden = localStorage.getItem(HIDE_KEY) === "1"; } catch (e) { /* none kept */ }
   const root = document.documentElement;
   root.classList.add("list-still");                  // the page opened with it hidden: hidden, not sliding away

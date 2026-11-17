@@ -77,6 +77,7 @@ test("a folder made at the list's top is a group of its own, named as typed", as
   await button.click();
   const box = page.locator("#agents .folder-box");
   await expect(box).toHaveAttribute("placeholder", "Folder name");
+  await expect(page.locator("#agents .gf-kind")).toHaveCount(0); // no "Folder only" switch: the list says nothing of groups
   await box.fill(GATHERER.toUpperCase()); // a group beside it has that name: refused, nothing asked
   await box.press("Enter");
   await expect(box).toHaveCount(0);
