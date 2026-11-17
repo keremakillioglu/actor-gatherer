@@ -221,6 +221,29 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual(listed["self:c1"], (True, ["c1"]))
         self.assertEqual(listed["a"], (False, ["c3"]))
 
+    def test_a_change_to_what_a_group_holds_counts_as_its_latest_change(self):
+        old = "2026-01-01T00:00:00+00:00"
+        conn = sqlite3.connect(paths.home_db())
+        conn.execute("UPDATE events SET inserted_at = ?", (old,))             # every record so far: long ago
+        conn.commit()
+        conn.close()
+        since = data._seconds(old)
+        self.assertEqual({k: v for k, v in data.changed().items() if k in ("a", "b")}, {"a": since, "b": since})
+        groups.move("a", "b", ["c1"])                                         # an actor moved from a to b: both changed
+        now = data.changed()
+        self.assertGreater(now["a"], since)
+        self.assertGreater(now["b"], since)
+        listed = {g["name"]: g for g in data.home([])["gatherers"]}
+        self.assertEqual((listed["a"]["changed"], listed["b"]["changed"]), (now["a"], now["b"]))
+        conn = sqlite3.connect(paths.home_db())
+        conn.execute("UPDATE events SET inserted_at = ?", (old,))
+        conn.commit()
+        conn.close()
+        folders.make("b", "Work")                                             # a folder made in b: b changed, not a
+        now = data.changed()
+        self.assertEqual(now["a"], since)
+        self.assertGreater(now["b"], since)
+
     def test_an_actor_on_its_own_runs_under_the_group_it_left_and_comes_back(self):
         groups.alone("a", "c1")
         self.assertEqual(groups.launch_group("c1", "self:c1"), "a")         # ag runs it in a group of the home

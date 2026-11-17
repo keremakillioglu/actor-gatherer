@@ -159,7 +159,7 @@ async function askMerge(name, g, id, back = false) {
   const actors = from.agents.filter((a) => !isCoordinator(a)), n = actors.length;
   const others = g.agents.filter((a) => !isCoordinator(a)).length, inside = id === null ? null : folderById(g.name, id);
   const lines = [`${titleOf(from)} becomes a folder of ${titleOf(g)}, named ${plan.folder}${inside ? `, in ${inside.name}` : ""}, `
-    + "with everything in it. The group itself is then gone from the list."];
+    + "with everything in it."];
   if (n) lines.push(`Its ${mvCount(n, "actor")} and the ${mvCount(others, "actor")} of ${titleOf(g)} will share context with each other.`,
     rebuildLine(from, actors));
   const apps = appsLine(plan.apps.filter((x) => x.app !== "notes"), true, g);

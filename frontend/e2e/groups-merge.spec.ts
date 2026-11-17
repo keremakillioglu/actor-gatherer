@@ -125,7 +125,7 @@ test("a group dragged onto another asks first, then is a folder of it with all i
   await groupRow(page, GATHERER).dragTo(groupRow(page, LAB));
   await expect(dialog.locator("h3")).toHaveText(`Merge ${GATHERER} into ${LAB}?`);
   await expect(dialog.locator(".mv-line").first()).toHaveText(
-    `${GATHERER} becomes a folder of ${LAB}, named ${GATHERER}, with everything in it. The group itself is then gone from the list.`,
+    `${GATHERER} becomes a folder of ${LAB}, named ${GATHERER}, with everything in it.`,
   );
   await expect(dialog.locator(".mv-line").nth(1)).toHaveText(
     `Its 2 actors and the 1 actor of ${LAB} will share context with each other.`,

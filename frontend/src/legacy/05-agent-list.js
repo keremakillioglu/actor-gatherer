@@ -39,11 +39,13 @@ function toggleGatherer(name) {
 }
 // Hidden gatherers, kept by the server (hiding.py, `home.hiding`) so every dashboard on this home
 // hides the same ones: those the reader hid ("hidden"), and those with nothing for a week
-// (STALE_SECONDS) unless the reader kept them in view ("shown").
+// (STALE_SECONDS) unless the reader kept them in view ("shown") -- nothing: no actor's work (`last`), and no change
+// made to what it holds (`changed`, data.py's: an actor or a folder moved in or out), so one just changed stays in view.
 const HIDDEN_KEY = "ag-dashboard-hidden-gatherers";   // where this browser kept them before
 const STALE_SECONDS = 7 * 86400;
 const choiceOf = (g) => (state.home.hiding || {})[g.name] || "";
-const stale = (g) => !!g.last && (state.home.now || Date.now() / 1000) - g.last > STALE_SECONDS;
+const lastOf = (g) => g.last ? Math.max(g.last, g.changed || 0) : null;   // none: no actor yet, never stale
+const stale = (g) => !!lastOf(g) && (state.home.now || Date.now() / 1000) - lastOf(g) > STALE_SECONDS;
 // An actor on its own never: closed, it is in its line at the list's end (05-group-moves.js's aloneShut).
 const isHidden = (g) => !g.alone
   && (choiceOf(g) === "hidden" || (stale(g) && choiceOf(g) !== "shown" && !g.agents.some((a) => savedAs(g.name, a))));
@@ -439,7 +441,7 @@ function renderAgents() {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
       el("summary", { text: `${hidden.length} hidden group${hidden.length === 1 ? "" : "s"}` }));
     for (const g of hidden) list.append(el("div", { class: "hidden-row" }, el("span", { class: "gname", text: titleOf(g) }),
-      el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `nothing for ${ago(g.last).replace(" ago", "")}` }),
+      el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `nothing for ${ago(lastOf(g)).replace(" ago", "")}` }),
       el("button", { type: "button", onclick: () => setHidden(g, false) }, "Show")));
     const wasOpen = document.getElementById("hidden-gatherers");
     if (wasOpen && wasOpen.open) list.open = true;

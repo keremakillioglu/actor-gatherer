@@ -281,3 +281,28 @@ test("Manage groups: rows dragged and dropped as in the list, asking the same qu
   await expect.poll(() => asked.at(-1)).toEqual({ gatherer: LAB, to: "", into: null, do: "place" });
   await expect(outside).toBeHidden();
 });
+
+test("a group whose actors are long idle stays in view once something is moved into it", async ({ page }) => {
+  let moved = false;
+  await page.route("**/api/home", async (route) => {
+    const home = await (await route.fetch()).json();
+    const demo = home.gatherers.find((x: Group) => x.name === GATHERER) as Group;
+    const codex = demo.agents.find((a) => a.harness === "codex")!;
+    const idle = home.now - 30 * 86400; // its actors' last work: a month ago
+    home.gatherers.push({
+      ...demo,
+      name: LAB,
+      last: idle,
+      ...(moved ? { changed: home.now - 60 } : {}), // an actor, or a folder, moved in a minute ago (data.py's `changed`)
+      agents: [{ ...codex, channel: "1ab00000-0000-4000-8000-0000000000a1", last: idle, status: "idle" }],
+    });
+    home.merged = true;
+    await route.fulfill({ json: home });
+  });
+  await open(page);
+  await expect(groupRow(page, LAB)).toHaveCount(0); // nothing for a month: hidden
+  await expect(page.locator("#agents")).toContainText("1 hidden group");
+  moved = true;
+  await page.reload();
+  await expect(groupRow(page, LAB)).toBeVisible(); // just changed: in view
+});
