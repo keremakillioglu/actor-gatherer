@@ -550,7 +550,8 @@ class GroupAdminTest(unittest.TestCase):
         folders.file("a", ["c3"], work)
         got = self.ask(op="folder", path="a/work", to="own", dry_run=True)        # names: whatever their case
         self.assertFalse(got["done"])
-        self.assertIn("Its 1 actor stop sharing context with the 1 other of a", got["said"][1])
+        self.assertEqual(got["said"][1], "Its actor stops sharing context with the 1 other actor of a; it rebuilds its "
+                                         "context at its next call.")
         self.assertEqual(self.members("a"), ["c1", "c3"])                         # nothing done
         with unittest.mock.patch.object(groups.sessions, "new_gatherer", side_effect=self.made):
             got = self.ask(op="folder", path="a/Work", to="own")

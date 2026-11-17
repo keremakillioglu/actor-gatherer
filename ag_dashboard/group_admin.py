@@ -176,6 +176,15 @@ def show(h: _Home, ref: str) -> dict:
     return {"said": lines, "done": False, "group": g}
 
 
+def _leaving(n: int, others: int, group: str) -> str:
+    """What `n` actors leaving `group` (`others` staying) are told, in words."""
+    one = n == 1
+    return (("Its actor stops" if one else f"Its {n} actors stop") + " sharing context with "
+            + (f"the {_plural(others, 'other actor')} of {_title(group)}" if others else f"anyone else in {_title(group)}")
+            + ("" if one else ", and share with each other only")
+            + ("; it rebuilds its context at its next call." if one else "; they rebuild their context at their next call."))
+
+
 def folder(h: _Home, ref: str, to: str, dry_run: bool) -> dict:
     group, fid, is_group = h.path(ref)
     if to == OWN:
@@ -185,9 +194,8 @@ def folder(h: _Home, ref: str, to: str, dry_run: bool) -> dict:
         others = len([a for a in h.actors(group) if a["channel"] not in moving])
         said = [f"{h.folder_path(group, fid)} becomes a group of its own where it is, named after it, with "
                 f"{_title(group)}'s settings.",
-                f"Its {_plural(len(moving), 'actor')} stop sharing context with the {_plural(others, 'other')} of "
-                f"{_title(group)}, and share with each other only; they rebuild their context at their next call."
-                if moving else f"No actor is in it: those started there later share with each other only."]
+                _leaving(len(moving), others, group) if moving
+                else "No actor is in it: those started there later share with each other only."]
         if dry_run:
             return {"said": said, "done": False}
         made = groups.own(group, fid)
