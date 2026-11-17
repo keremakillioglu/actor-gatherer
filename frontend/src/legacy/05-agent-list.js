@@ -39,11 +39,13 @@ function toggleGatherer(name) {
 }
 // Hidden gatherers, kept by the server (hiding.py, `home.hiding`) so every dashboard on this home
 // hides the same ones: those the reader hid ("hidden"), and those with nothing for a week
-// (STALE_SECONDS) unless the reader kept them in view ("shown").
+// (STALE_SECONDS) unless the reader kept them in view ("shown") -- nothing: no actor's work (`last`), and no change
+// made to what it holds (`changed`, data.py's: an actor or a folder moved in or out), so one just changed stays in view.
 const HIDDEN_KEY = "ag-dashboard-hidden-gatherers";   // where this browser kept them before
 const STALE_SECONDS = 7 * 86400;
 const choiceOf = (g) => (state.home.hiding || {})[g.name] || "";
-const stale = (g) => !!g.last && (state.home.now || Date.now() / 1000) - g.last > STALE_SECONDS;
+const lastOf = (g) => g.last ? Math.max(g.last, g.changed || 0) : null;   // none: no actor yet, never stale
+const stale = (g) => !!lastOf(g) && (state.home.now || Date.now() / 1000) - lastOf(g) > STALE_SECONDS;
 // An actor on its own never: closed, it is in its line at the list's end (05-group-moves.js's aloneShut).
 const isHidden = (g) => !g.alone
   && (choiceOf(g) === "hidden" || (stale(g) && choiceOf(g) !== "shown" && !g.agents.some((a) => savedAs(g.name, a))));
@@ -417,6 +419,7 @@ function renderAgents() {
   const folderTyping = folderInput && document.activeElement === folderInput && [folderInput.selectionStart, folderInput.selectionEnd];
   nameMoving = true;                                 // taken out and put back: not a blur that names it
   document.getElementById("home").textContent = document.getElementById("home").title = state.home.home;
+  manageEntry();                                     // Manage groups, in the settings panel (05-group-moves.js)
   const shown = state.home.gatherers.filter((g) => !isHidden(g) && !isCrewHome(g)), hidden = state.home.gatherers.filter(isHidden);
   // its head: a gatherer or a folder of gatherers dropped on it, at the list's top (05-gatherer-folders.js)
   aside.replaceChildren(dropOn(el("div", { class: "aside-head" }, el("h2", { text: "Agents" }), outsideDrop(),
@@ -431,18 +434,21 @@ function renderAgents() {
   // actors on their own closed, in their lines
   const overAll = crewRow("all");
   if (overAll) aside.append(el("div", { class: "g-kids crew-top" }, overAll));
-  aside.append(...gfLevel(shown.filter((g) => !aloneShut(g)), null, gathererBox), ...aloneShutRows(shown.filter(aloneShut)));
+  // (a group inside another group's folder: drawn there, placedRows)
+  const top = shown.filter((g) => !placeOf(g.name));
+  aside.append(...gfLevel(top.filter((g) => !aloneShut(g)), null, gathererBox), ...aloneShutRows(top.filter(aloneShut)));
   if (hidden.length) {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
       el("summary", { text: `${hidden.length} hidden group${hidden.length === 1 ? "" : "s"}` }));
     for (const g of hidden) list.append(el("div", { class: "hidden-row" }, el("span", { class: "gname", text: titleOf(g) }),
-      el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `nothing for ${ago(g.last).replace(" ago", "")}` }),
+      el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `nothing for ${ago(lastOf(g)).replace(" ago", "")}` }),
       el("button", { type: "button", onclick: () => setHidden(g, false) }, "Show")));
     const wasOpen = document.getElementById("hidden-gatherers");
     if (wasOpen && wasOpen.open) list.open = true;
     aside.append(list);
   }
   slideList(aside, was);
+  if (manage.dialog && manage.dialog.open) drawManage();   // the groups as they are now (05-group-moves.js)
   if (hover.from === "agents") cardDraw();           // its card, said again from the new data
   nameMoving = false;
   if (state.renaming && !(nameInput && nameInput.isConnected)) { state.renaming = null; nameInput = null; }   // its row folded away
@@ -465,8 +471,8 @@ function renderAgents() {
 function gathererBox(g) {
   if (g.alone) return aloneBox(g);                   // an actor on its own: its row alone (05-group-moves.js)
   const open = !collapsed.has(g.name);
-  const crew = groupCrew(g);
-  const box = el("div", { class: "gatherer" + (picks.g === g.name && picks.cs.size > 1 ? " picking" : "") },
+  const crew = groupCrew(g), outer = nestedIn(g);    // inside another group's folder: drawn there (05-group-moves.js)
+  const box = el("div", { class: "gatherer" + (outer ? " nested" : "") + (picks.g === g.name && picks.cs.size > 1 ? " picking" : "") },
     dropOn(dragGatherer(el("div", { class: "gatherer-row", "data-key": g.name },
       el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name),
         title: g.policy ? `${g.name} · policy ${g.policy}` : g.name },
@@ -605,8 +611,8 @@ function agentRow(g, a, group) {
     el("div", {},
       // just its name, else what it was last asked, on one line: what it was asked and its recap, in its title (and over
       // the whole page, the monitor's card)
-      naming ? nameBox() : el("div", { class: "name" + (named ? "" : asked ? " unnamed" : " none"), ...nameIt,
-        text: named || (asked ? firstLine(asked, 200) : isCoordinator(a) ? `Coordinates ${crewPlace(crewNode(g, a), g)}` : "No message yet") }),
+      naming ? nameBox() : el("div", { class: "name" + (named ? "" : asked ? " unnamed" : " none"), ...nameIt },
+        named || (asked ? firstLine(asked, 200) : isCoordinator(a) ? `Coordinates ${crewPlace(crewNode(g, a), g)}` : "No message yet")),
       rowActs(addButton(g, a.channel), saveButton(g, a), closeButton(g, a)),
       branchChip(g, a),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
@@ -1258,6 +1264,7 @@ function boxRows(g, id) {
   if (edit && edit.g === g.name && edit.id === null && edit.parent === id)
     out.push(el("div", { class: "folder-line editing", "data-key": `${g.name}/folder:new` }, folderBox()));
   for (const f of kidFolders(g.name, id)) if (!shownClosed(g, f)) out.push(...folderRows(g, f));   // the closed: in its closed line
+  out.push(...placedRows(g, id));                    // groups and actors on their own put in it (05-group-moves.js)
   let apps = false;
   for (const [name, list] of boxGroups(g, id)) {
     if (!apps && name !== OPEN) { out.push(...appRowsIn(g, id)); apps = true; }   // the apps: after the open actors
@@ -1286,7 +1293,7 @@ function folderRows(g, f) {
 // What a closed folder holds, all closed: its folders, then its actors, the latest first -- under no line of their own
 function closedRows(g, id) {
   const mine = g.agents.filter((a) => !isCoordinator(a) && folderOf(g.name, a) === id).sort((x, y) => (y.last || 0) - (x.last || 0));
-  return [...kidFolders(g.name, id).flatMap((f) => folderRows(g, f)), ...mine.flatMap((a) => rowsOf(g, a, groupOf(g, a)))];
+  return [...kidFolders(g.name, id).flatMap((f) => folderRows(g, f)), ...placedRows(g, id), ...mine.flatMap((a) => rowsOf(g, a, groupOf(g, a)))];
 }
 // A box's fold: its line ("▸ N closed"), and under it, once opened, its actors (or shells) -- folded, those open in a
 // pane (no shell) -- open or not kept in this browser, for each box (boxKey). Its closed line holds its closed folders
@@ -1494,6 +1501,7 @@ const DROP_OPEN_MS = 700, DRAG_LOST_MS = 3000;
 function startDrag(ev, g, what) {
   if (listDrag) endDrag();
   listDrag = { g: g.name, cs: what.cs || null, gs: what.gs || null, folder: what.folder ?? null, later: false, force: false, revealed: false, seen: Date.now(), spring: null,
+    ask: ev.target instanceof Element && !!ev.target.closest(".mg-dialog"),   // from Manage groups: a change of group asked first
     watch: setInterval(() => { if (listDrag && Date.now() - listDrag.seen > DRAG_LOST_MS) endDrag(); }, 500) };
   ev.dataTransfer.effectAllowed = "move";
   ev.dataTransfer.setData("text/plain", what.cs ? what.cs.join(",") : what.gs ? what.gs.join(",") : `folder:${what.folder}`);
@@ -1514,7 +1522,7 @@ function markDragged() {
   if (!listDrag) return;
   const keys = listDrag.cs ? listDrag.cs.map((c) => `${listDrag.g}/${c}`) : listDrag.gs ? listDrag.gs   // a gatherer: its row's
     : [`${listDrag.g}/folder:${listDrag.folder}`];
-  for (const k of keys) for (const n of document.querySelectorAll(`#agents [data-key="${CSS.escape(k)}"]`)) n.classList.add("dragging");
+  for (const k of keys) for (const n of document.querySelectorAll(`:is(#agents, .mg-dialog) [data-key="${CSS.escape(k)}"]`)) n.classList.add("dragging");
   const cards = new Set(listDrag.cs ? listDrag.cs.map((c) => key(listDrag.g, c)) : []);
   for (const n of document.querySelectorAll("#rail .r-actor[data-card]")) if (cards.has(n.dataset.card)) n.classList.add("dragging");
 }
@@ -1590,7 +1598,7 @@ function endDrag() {
   listDrag = null;
   clearTimeout(d.spring); clearInterval(d.watch);
   document.body.classList.remove("drag-out");
-  for (const n of document.querySelectorAll(":is(#agents, #rail) :is(.dragging, .drop-on)")) n.classList.remove("dragging", "drop-on", "drop-across");
+  for (const n of document.querySelectorAll(":is(#agents, #rail, .mg-dialog) :is(.dragging, .drop-on)")) n.classList.remove("dragging", "drop-on", "drop-across");
   if (d.later || d.revealed) renderAgents();         // the rail, its folders shown for the drag: as it was again
   if (d.offered) moveEnd();                          // over the work area too: its cover put away (07-panes.js)
 }
@@ -1598,17 +1606,18 @@ document.addEventListener("dragover", () => { if (listDrag) listDrag.seen = Date
 document.addEventListener("drop", () => { if (listDrag) setTimeout(endDrag, 0); }, true);   // anywhere: after the line's own
 // Whether what is dragged may go into folder `id` (null: the gatherer's top): of that gatherer; a folder, not into
 // itself nor one of its own, nor where it is; actors, one of them at least not there yet. A gatherer (`gs`) only into a
-// folder of gatherers (`g` GFS), or the list's top: not where it is. From another group: as canCross says (asked first).
+// folder of gatherers (`g` GFS), or the list's top: not where it is. From another group: as canCross says -- done at
+// once by the default rule, dropped in the list; asked first, dragged in Manage groups (listDrag's `ask`).
 function canDrop(g, id) {
   const d = listDrag;
   if (!d) return false;
-  if (d.gs && g.name !== GF) return canMerge(g);   // a group into another: a folder of it (05-group-moves.js)
+  if (d.gs && g.name !== GF) return canMerge(g, id);   // a group into another: a folder of it, or a group inside it (05-group-moves.js)
   if (d.g !== g.name) return canCross(g);
   if (d.folder !== null) {
     const f = folderById(g.name, d.folder);
     return !!f && parentOf(g.name, f) !== id && !(id !== null && within(g.name, id, d.folder));
   }
-  if (d.gs) return d.gs.some((name) => gfOf(name) !== id);
+  if (d.gs) return d.gs.some((name) => gfOf(name) !== id || !!placeOf(name));   // (inside a group's folder: out of it)
   return withTasks(g, d.cs).some((c) => (isAppItem(c) || !!actorOf(g, c)) && itemFolder(g, c) !== id);
 }
 // `id`: the folder what is dropped on `n` goes into (null: the gatherer's top); `open`, what opens when one is held over it
@@ -1618,7 +1627,7 @@ function dropOn(n, g, id, open) {
     if (!canDrop(g, id)) return;
     ev.preventDefault();
     n.classList.add("drop-on");
-    n.classList.toggle("drop-across", listDrag.g !== g.name);      // into another group: asked first
+    n.classList.toggle("drop-across", listDrag.ask && listDrag.g !== g.name);   // into another group, in Manage groups: asked first
     clearTimeout(listDrag.spring);
     listDrag.spring = setTimeout(() => {
       if (!listDrag || !canDrop(g, id)) return;
@@ -1638,8 +1647,9 @@ function dropOn(n, g, id, open) {
     const d = listDrag, now = state.home.gatherers.find((x) => x.name === g.name) || g;
     d.later = false;                                 // drawn by the move, next
     endDrag();
-    if (d.gs && g.name !== GF) { gPicks.clear(); askMerge(d.gs[0], now, id); return; }
-    if (d.g !== g.name) { askMove(d, g, id); return; }
+    const was = placeOf(d.gs ? d.gs[0] : d.g);       // a group, or an actor on its own, already inside `g`: just moved
+    if (d.gs && g.name !== GF) { gPicks.clear(); if (was && was.in === g.name) placeGroup(d.gs[0], g.name, id); else askMerge(d.gs[0], now, id, false, d.ask); return; }
+    if (d.g !== g.name) { if (isAloneName(d.g) && was && was.in === g.name) placeGroup(d.g, g.name, id); else askMove(d, g, id); return; }
     if (d.folder !== null) { moveFolder(g.name, d.folder, id); return; }
     if (d.gs) { gPicks.clear(); fileGatherers(d.gs.filter((name) => gfOf(name) !== id), id); return; }
     const items = withTasks(now, d.cs).filter((c) => (isAppItem(c) || !!actorOf(now, c)) && itemFolder(now, c) !== id);

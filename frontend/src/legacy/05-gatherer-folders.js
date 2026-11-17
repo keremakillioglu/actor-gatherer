@@ -4,8 +4,8 @@
 // and nothing else: no actor is started in one, none is counted on its line -- its buttons, on hover: a folder in it,
 // rename (F2), delete (what is in it moves up a level). A folder made outside every group -- from the list's head (its
 // folder button), or in one of these -- is a GROUP of its own (groups.py's `make`, nameGroup), as the default rule has
-// it: the list shows folders, and says nothing of groups. These are made no more from the list; those kept still hold
-// groups. A gatherer put in one by dragging its row onto its line
+// it: the list shows folders, and says nothing of groups (who shares with whom is set in Manage groups,
+// 05-group-moves.js). These are made no more from the list; those kept still hold groups. A gatherer put in one by dragging its row onto its line
 // (dragGatherer), or onto the list's head for the top; a folder of them dragged so too. A gatherer dragged onto another
 // is merged into it, as a folder of it (05-group-moves.js's askMerge). The list's folder code draws and changes them, as a gatherer's folders: their gatherer GF, a name no gatherer
 // has (each a directory's name: no "/") -- treeOf, folderPost, makeFolder, startFolderEdit, ... -- and GFS where a

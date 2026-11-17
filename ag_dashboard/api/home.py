@@ -7,7 +7,7 @@ import harness_kit
 from fastapi import APIRouter
 from starlette.responses import Response
 
-from .. import folders, gatherer_folders, groups, hiding, naming, saved, seen, sessions, task_links, tasks, titles
+from .. import folders, gatherer_folders, group_admin, groups, hiding, naming, saved, seen, sessions, task_links, tasks, titles
 from ..models import Home
 from .common import Body, Errors, Parts, answer
 
@@ -95,7 +95,10 @@ def group(srv: Parts, body: Body) -> Response:
     alone {gatherer, channel}: the actor taken out of every group, on its own -> {alone, ...}. new {name, folder?}: a
     folder made outside every group, made a group (in that folder of groups) -> {made, titles, gatherer_folders}.
     merge_plan / merge {gatherer, to, into?}: the group `gatherer` made a folder of `to` (in its folder `into`) -> what
-    it would do; {merged, ...}."""
+    it would do; {merged, ...}. place {gatherer, to, into?}: the group (an actor on its own's too) put in `to`'s folder
+    `into`, keeping its own group (`to` "": at the list's top) -> {placed, places, gatherer_folders}. own {gatherer,
+    folder}: the folder given a group of its own where it is -> {own, ...}. above {gatherer}: a group placed in another's
+    folder merged into that group -> {merged, ...}. alone's `here`: the actor stays in its folder, on its own there."""
     g, to, do = str(body.get("gatherer") or ""), str(body.get("to") or ""), str(body.get("do") or "")
     channels = body.get("channels") or []
     if not isinstance(channels, list):
@@ -115,9 +118,24 @@ def group(srv: Parts, body: Body) -> Response:
         srv.hub.ring(None, what="list")
         return answer({"merged": merged, "folders": folders.stored(), "tasks": tasks.stored()})
     if do == "alone":
-        alone = groups.alone(g, str(body.get("channel") or ""))
+        alone = groups.alone(g, str(body.get("channel") or ""), bool(body.get("here")))
         srv.hub.ring(None, what="list")
-        return answer({"alone": alone, "folders": folders.stored(), "tasks": tasks.stored()})
+        return answer({"alone": alone, "folders": folders.stored(), "tasks": tasks.stored(), "places": groups.places()})
+    if do == "place":
+        placed = groups.place(g, to, into)
+        srv.hub.ring(None, what="list")
+        return answer({"placed": placed, "places": groups.places(), "gatherer_folders": gatherer_folders.stored()})
+    if do == "own":
+        if folder is None:
+            raise ValueError("which folder?")
+        made = groups.own(g, folder)
+        srv.hub.ring(None, what="list")
+        return answer({"own": made, "folders": folders.stored(), "tasks": tasks.stored(), "titles": titles.stored(),
+                       "places": groups.places()})
+    if do == "above":
+        merged = groups.above(g)
+        srv.hub.ring(None, what="list")
+        return answer({"merged": merged, "folders": folders.stored(), "tasks": tasks.stored(), "places": groups.places()})
     if do == "split":
         if folder is None:
             raise ValueError("which folder?")
@@ -125,10 +143,20 @@ def group(srv: Parts, body: Body) -> Response:
         srv.hub.ring(None, what="list")
         return answer({"split": split, "folders": folders.stored(), "tasks": tasks.stored(), "titles": titles.stored()})
     if do != "move":
-        raise ValueError("do what? plan, move, split, alone, new, merge_plan or merge")
+        raise ValueError("do what? plan, move, split, alone, new, merge_plan, merge, place, own or above")
     moved = groups.move(g, to, [str(c) for c in channels], folder, into)
     srv.hub.ring(None, what="list")
     return answer({"moved": moved, "folders": folders.stored(), "tasks": tasks.stored()})
+
+
+@router.post("/api/groups/manage")
+def manage_groups(srv: Parts, body: Body) -> Response:
+    """`ag groups` (ag/cli/groups.py): the home's groups read, or changed by name, each change said first -- and only
+    said, `dry_run` (group_admin.py) -> {said: [lines], done, ...}."""
+    got = group_admin.manage(body)
+    if got.get("done"):
+        srv.hub.ring(None, what="list")
+    return answer(got)
 
 
 @router.post("/api/tasks")
@@ -186,6 +214,9 @@ def gatherer_folder(srv: Parts, body: Body) -> Response:
             raise ValueError("which gatherers? `gatherers`, a list")
         target = body.get("folder")
         gatherer_folders.file([str(g) for g in names], None if target in (None, "") else target)
+        for name in names:                       # out of a group's folder too: at the list's top level, or in that folder
+            if str(name) in groups.places():
+                groups.place(str(name), None)
     else:
         raise ValueError("do what? One of new, rename, move, delete, file")
     srv.hub.ring(None, what="list")

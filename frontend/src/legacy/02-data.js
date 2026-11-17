@@ -110,7 +110,7 @@ const signature = (value) => JSON.stringify(value);
 // action, which draws at once -- so a home that only confirms that action draws nothing anew (a row drawn again under
 // the pointer as the reader presses it to drag starts no drag). "ago" texts: every 30 s.
 const listSignature = () => signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.titles,
-  state.home.saved, state.home.folders, state.home.gatherer_folders, state.home.tasks, state.home.seen, state.home.harnesses, state.home.shells, state.home.branches,
+  state.home.saved, state.home.folders, state.home.gatherer_folders, state.home.places, state.home.tasks, state.home.seen, state.home.harnesses, state.home.shells, state.home.branches,
   paneSig(), opened(selectedInfo()), Math.floor(Date.now() / AGO_MS)]);
 // The list drawn again only if what it draws from changed since: after an action's answer, which mostly says what the
 // page guessed and drew already -- a list drawn anew for nothing, as a drag begins, loses its row.
