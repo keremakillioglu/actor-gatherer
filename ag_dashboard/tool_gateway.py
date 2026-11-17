@@ -2,7 +2,7 @@
 /mcp/<actor>, given to every session at launch whose harness takes one (harness_kit's `mcp_args`: Claude Code, codex)
 -- and the same calls through `ag apps` in the agent's shell, for any harness (ag/cli/apps.py).
 
-    on(gatherer)                 the apps turned on for a gatherer: its gatherer.toml's `apps`, else every app found
+    on(gatherer)                 the apps on for a gatherer: every app installed (found), in every group alike
     offered(gatherer, channels)  those an agent is given: each on whose manifest's `offer` is "always", and each
                                  "attached" one it is attached to an instance of
     tools(gatherer, channels)    their tools, as MCP lists them: `<app>_<tool>`, each with the host's `instance` argument
@@ -22,7 +22,6 @@
 import os
 import shlex
 import sys
-import tomllib
 import urllib.parse
 from typing import List, Optional, Tuple
 
@@ -30,7 +29,7 @@ import app_kit
 import harness_kit
 from app_kit import AppError, Caller, Instance
 
-from . import home, mcp
+from . import mcp
 
 GUARD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_guard.py")   # the edit guard's script
 NAME = "ag-apps"                # the MCP server's name: harnesses show its tools as mcp__ag-apps__<app>_<tool>
@@ -51,19 +50,11 @@ def actor_of(s: dict) -> str:
 
 
 def on(gatherer: str) -> List["app_kit.Manifest"]:
-    """The apps on for `gatherer`: those its gatherer.toml names in `apps`, found; without the key, every app found."""
+    """The apps on for `gatherer`: every app installed (found), the same for every group -- there is no turning one off
+    in a group (app_kit's finding.py)."""
     if HOST is None:
         return []
-    named: Optional[list] = None
-    try:
-        with open(os.path.join(home.gatherer_dir(gatherer), "gatherer.toml"), "rb") as fh:
-            named = tomllib.load(fh).get("apps")
-    except (OSError, tomllib.TOMLDecodeError):
-        named = None
-    found = {n: h.manifest for n, h in HOST.apps.items()}
-    if not isinstance(named, list):
-        return [found[n] for n in sorted(found)]
-    return [found[n] for n in named if isinstance(n, str) and n in found]
+    return [h.manifest for _, h in sorted(HOST.apps.items())]
 
 
 def channels_of(s: dict) -> Tuple[str, ...]:

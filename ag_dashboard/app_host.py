@@ -135,14 +135,34 @@ class AppHost:
 
     # -- the apps
 
-    def find(self) -> None:
+    def find(self) -> Dict[str, List[str]]:
         """The apps found (app_kit's `finding`: where ag finds their pollers too), read again: an app already running
-        from the same folder is kept as it is."""
+        from the same folder, whose manifest is the same, is kept as it is. One no longer found (uninstalled) or
+        changed (updated) has its backend stopped, and its instances put aside -- their records stay, so an app
+        installed again finds its instances as they were: each gatherer's records are read again for it. -> the
+        names {"added": [...], "gone": [...], "changed": [...]}."""
         manifests, broken = app_kit.finding.find(home.HOME)
-        found = {n: self.apps[n] if n in self.apps and self.apps[n].manifest.folder == m.folder else Hosted(m)
-                 for n, m in manifests.items()}
         with self.lock:
+            was = self.apps
+            same = {n for n, m in manifests.items() if n in was and was[n].manifest == m}
+            found = {n: was[n] if n in same else Hosted(m) for n, m in manifests.items()}
+            stopped = [h for n, h in was.items() if n not in same]
+            gone = sorted(n for n in was if n not in manifests)
+            changed = sorted(n for n in was if n in manifests and n not in same)
+            added = sorted(n for n in manifests if n not in was)
+            for i in [i for i, inst in self.instances.items() if inst.app in gone]:
+                self.instances.pop(i, None)
+                self.attached.pop(i, None)
             self.apps, self.broken = found, broken
+            if added:
+                self.loaded.clear()                            # their instances, if any, read again as each is asked
+        for h in stopped:
+            if h.app is not None:
+                try:
+                    h.app.stop()
+                except Exception:  # noqa: BLE001 - one app's stop failing stops none of the rest
+                    pass
+        return {"added": added, "gone": gone, "changed": changed}
 
     def hosted(self, name: str) -> Hosted:
         h = self.apps.get(name)
