@@ -6,7 +6,7 @@
 // dashboard's Chat colours them.
 // Bundled by build.mjs into ag_apps/editor/panel/vendor/editor.js, which the panel loads the first time it opens a file.
 import { basicSetup } from "codemirror";
-import { EditorState, StateEffect, StateField, Compartment, RangeSet } from "@codemirror/state";
+import { EditorState, EditorSelection, StateEffect, StateField, Compartment, RangeSet } from "@codemirror/state";
 import { EditorView, Decoration, WidgetType, keymap } from "@codemirror/view";
 import { indentWithTab } from "@codemirror/commands";
 import { syntaxHighlighting, StreamLanguage } from "@codemirror/language";
@@ -72,7 +72,8 @@ function language(name) {
 }
 
 window.agEditor = {
-  basicSetup, EditorState, StateEffect, StateField, Compartment, RangeSet, EditorView, Decoration, WidgetType, keymap, indentWithTab,
+  basicSetup, EditorState, EditorSelection, StateEffect, StateField, Compartment, RangeSet, EditorView, Decoration, WidgetType,
+  keymap, indentWithTab,
   highlight, language, setDiagnostics, lintGutter, Y, yCollab, yUndoManagerKeymap,
   Awareness, encodeAwarenessUpdate, applyAwarenessUpdate, removeAwarenessStates,
   ui: { ansiHtml, guessWeb, hlLines, hlPart, langOfPath, tildePath },

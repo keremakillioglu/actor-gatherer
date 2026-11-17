@@ -493,6 +493,97 @@ async function edOpen(path, how = null, kept = null) {
   });
   es.onerror = es.onopen = () => { if (ed.s === s) edHead(); };   // the header says while it reconnects
 }
+// ⌘B and ⌘I (Ctrl+B, Ctrl+I off a Mac) in a file's text: bold and italic, in the file's own markup -- Markdown's **…**
+// and *…*, LaTeX's \textbf{…} and \textit{…} -- each selection wrapped in it (the spaces at its ends left outside), and
+// left selected; pressed again, the markup taken off: around the selection, or the selection's own ends (`_` read as
+// Markdown's `*`, \emph as \textit). Nothing selected, the empty markup goes in with the cursor in it (again, taken out).
+// Each change made as typing is, through the file's view: shared live, undone with ⌘Z, in the conflict zone, autosaved.
+// Any other file: the keys are left as they were -- ⌘I CodeMirror's own (the syntax around the selection, selected).
+const ED_MARKUP = {
+  md: { md: true, bold: { open: ["**"], close: "**" }, italic: { open: ["*"], close: "*" } },
+  tex: { md: false, bold: { open: ["\\textbf{"], close: "}" }, italic: { open: ["\\textit{", "\\emph{"], close: "}" } },
+};
+function edMarkupOf(path) {
+  const base = String(path || "").split("/").pop().toLowerCase(), ext = base.includes(".") ? base.split(".").pop() : "";
+  if (/^(md|markdown|mdx)$/.test(ext)) return ED_MARKUP.md;
+  if (/^(tex|latex|ltx|sty|cls|dtx|tikz)$/.test(ext)) return ED_MARKUP.tex;
+  return null;
+}
+// The keys, for a view of the file at `path` (the file's own, a conflict box's).
+function edMarkupKeys(A, path) {
+  const run = (style) => (view) => {
+    const m = edMarkupOf(path);
+    if (!m) return false;                            // not ours: the next binding's, or the browser's
+    const st = view.state;
+    view.dispatch(st.update(st.changeByRange((r) => edMarkupRange(A, st.doc, r, m.md, m[style])),
+      { scrollIntoView: true, userEvent: "input.format" }));
+    return true;
+  };
+  return [{ key: "Mod-b", run: run("bold") }, { key: "Mod-i", run: run("italic") }];
+}
+// One selection's change: the markup `k` taken off where it is already on, else put on.
+function edMarkupRange(A, doc, r, md, k) {
+  const keep = (a, b) => (r.head < r.anchor ? A.EditorSelection.range(b, a) : A.EditorSelection.range(a, b));
+  let from = r.from, to = r.to;
+  const text = doc.sliceString(from, to);
+  if (text.trim()) { from += text.length - text.trimStart().length; to -= text.length - text.trimEnd().length; }
+  const off = md ? edMarkdownOff(doc, from, to, k.close.length) : edLatexOff(doc, from, to, k.open);
+  if (off) {
+    const [ob, cb] = off;                            // the markup's lengths, before and after
+    if (off.inside) return { changes: [{ from, to: from + ob }, { from: to - cb, to }], range: keep(from, to - ob - cb) };
+    return { changes: [{ from: from - ob, to: from }, { from: to, to: to + cb }], range: keep(from - ob, to - ob) };
+  }
+  const open = k.open[0];
+  return { changes: [{ from, insert: open }, { from: to, insert: k.close }], range: keep(from + open.length, to + open.length) };
+}
+// Markdown's `n` asterisks (bold 2, italic 1) on [from, to]: [n, n] if they are, as the markers just around it, or as its
+// own ends (`.inside`); else null. A run of 3 is both (***…***): the one taken off leaves the other. `_` counts only at a
+// word's edges, so snake_case's underscores are never taken for markup.
+function edMarkdownOff(doc, from, to, n) {
+  const at = (i) => (i >= 0 && i < doc.length ? doc.sliceString(i, i + 1) : "");
+  const word = (c) => /[\p{L}\p{N}]/u.test(c);
+  const has = (run) => run === n || run >= 3;
+  const runAt = (i, step, c) => { let k = 0; while (at(i + step * k) === c) k++; return k; };
+  const c = at(from - 1);
+  if (c === "*" || c === "_") {
+    const b = runAt(from - 1, -1, c), a = runAt(to, 1, c), run = Math.min(b, a);
+    if (has(run) && !(c === "_" && (word(at(from - b - 1)) || word(at(to + a))))) return [n, n];
+  }
+  if (to - from > 2 * n) {
+    const s = at(from);
+    if (s === "*" || s === "_") {
+      const b = runAt(from, 1, s), a = runAt(to - 1, -1, s), run = Math.min(b, a);
+      const core = doc.sliceString(from + run, to - run);
+      if (has(run) && core.trim() && !core.includes(s) && !(s === "_" && (word(at(from - 1)) || word(at(to))))) {
+        return Object.assign([n, n], { inside: true });
+      }
+    }
+  }
+  return null;
+}
+// LaTeX's markup (`opens`, closed by `}`) on [from, to]: [open's length, 1] if one of them is just around it, or its own
+// ends (`.inside`) -- the brace it opens closed by that `}`, not one before; else null.
+function edLatexOff(doc, from, to, opens) {
+  const balanced = (a, b) => {                       // [a, b) of the text: its braces balanced (escaped ones not counted)
+    let d = 0;
+    const t = doc.sliceString(a, b);
+    for (let i = 0; i < t.length; i++) {
+      if (t[i] === "\\") { i++; continue; }
+      if (t[i] === "{") d++;
+      else if (t[i] === "}" && --d < 0) return false;
+    }
+    return d === 0;
+  };
+  for (const o of opens) {
+    if (from >= o.length && doc.sliceString(from - o.length, from) === o && doc.sliceString(to, to + 1) === "}"
+      && balanced(from, to)) return [o.length, 1];
+  }
+  for (const o of opens) {
+    if (to - from > o.length && doc.sliceString(from, from + o.length) === o && doc.sliceString(to - 1, to) === "}"
+      && balanced(from + o.length, to - 1)) return Object.assign([o.length, 1], { inside: true });
+  }
+  return null;
+}
 function edView(s) {
   const A = s.A;
   const add = A.StateEffect.define(), clear = A.StateEffect.define();
@@ -560,7 +651,8 @@ function edView(s) {
     state: A.EditorState.create({
       doc: s.ytext.toString(),
       extensions: [
-        A.keymap.of([...A.yUndoManagerKeymap, { key: "Mod-s", preventDefault: true, run: () => { edSave(s); return true; } }, A.indentWithTab]),
+        A.keymap.of([...A.yUndoManagerKeymap, { key: "Mod-s", preventDefault: true, run: () => { edSave(s); return true; } }, A.indentWithTab,
+          ...edMarkupKeys(A, s.path)]),
         A.basicSetup, A.EditorState.lineSeparator.of("\n"), A.highlight, A.language(s.path), A.yCollab(s.ytext, s.awareness), marks,
         zone, agents, conflicts, probs, s.probs.gutter.of([]), s.wrapping.of(ed.wrap ? A.EditorView.lineWrapping : []),
         A.EditorView.updateListener.of((u) => {
@@ -1080,7 +1172,7 @@ function edBoxOpen(s, c) {
         A.keymap.of([{ key: "Mod-z", preventDefault: true, run: () => back(box.undo, box.redo) },
           { key: "Mod-Shift-z", preventDefault: true, run: () => back(box.redo, box.undo) },
           { key: "Mod-y", preventDefault: true, run: () => back(box.redo, box.undo) },
-          { key: "Mod-s", preventDefault: true, run: () => true }]),
+          { key: "Mod-s", preventDefault: true, run: () => true }, ...edMarkupKeys(A, s.path)]),
         A.basicSetup, A.EditorState.lineSeparator.of("\n"), A.highlight, A.language(s.path), box.field, kept,
         ed.wrap ? A.EditorView.lineWrapping : [],
       ],
