@@ -383,8 +383,9 @@ body.drag-out .outside-drop { display: flex; }
 dialog.mg-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(78vh, 760px); }
 .mg-form { display: flex; flex-direction: column; gap: 10px; max-height: calc(min(78vh, 760px) - 32px); }
 .mg-say { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
-.mg-tree { overflow: auto; display: grid; gap: 1px; min-height: 0; }
-.mg-row { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 2px 6px 2px calc(6px + var(--depth) * 16px); border-radius: 6px; }
+/* one column as wide as the panel, not as its longest name: a long name ends in "…", its switch in view at the right */
+.mg-tree { overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; min-height: 0; }
+.mg-row { display: flex; align-items: center; gap: 10px; min-height: 30px; min-width: 0; padding: 2px 6px 2px calc(6px + var(--depth) * 16px); border-radius: 6px; }
 .mg-row:hover { background: var(--wash); }
 .mg-row.group { margin-top: 6px; }
 .mg-row.shut { color: var(--muted); font-size: 12px; min-height: 22px; }

@@ -9,7 +9,7 @@ import { expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, GATHERER, open } from "./home";
 
 const LAB = "lab";
-const LAB_ACTOR = "Lab notes";
+const LAB_ACTOR = "Lab notes: read every paper on the reading list, sum each one up, and file the summaries by topic";
 const ALONE_ACTOR = "Reads alone";
 const WORK = 51; // demo's folder
 const ALONE = "self:a1000000-0000-4000-8000-0000000000a2";
@@ -134,6 +134,12 @@ test("Manage groups shows each group's folders and actors with their switches", 
   await expect(mgRow(page, ALONE_ACTOR).locator(".mg-opt.on")).toHaveText("On its own");
   await expect(mgRow(page, CLAUDE).locator(".mg-opt.on")).toHaveText("Folder's group");
   await expect(mgRow(page, LAB_ACTOR).locator(".mg-opt.on")).toHaveText("Folder's group");
+  // every switch inside the panel, whatever the length of the names beside it: none pushed past its edge
+  const edge = (await panel(page).boundingBox())!;
+  for (const b of await panel(page).locator(".mg-switch").all()) {
+    const box = (await b.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(edge.x + edge.width);
+  }
 });
 
 test("Manage groups: a folder given a group of its own where it is, asked first", async ({ page }) => {
