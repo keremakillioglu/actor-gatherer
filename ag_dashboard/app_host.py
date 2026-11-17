@@ -383,6 +383,19 @@ class AppHost:
         self._ring(i)
         return i
 
+    def folded(self, was: str, instance: Instance, title: str) -> None:
+        """The group `was` (its title `title`) merged into `instance`'s (groups.py's `merge`): what the app keeps for
+        `was` apart from its instances carried into `instance`'s group (App.folded). An app that fails at it, or knows
+        no such call (one in its own process, older than it), is left as it was: the merge is done all the same."""
+        m = self.hosted(instance.app).manifest
+        if not (m.backend.python or m.backend.command):
+            return
+        try:
+            self.backend(instance.app).folded(instance, was, title)
+        except Exception as exc:  # noqa: BLE001 - one app's trouble is not the merge's
+            print(f"dashboard: {instance.app} kept nothing of {was} for {instance.gatherer}: {exc}",
+                  file=sys.stderr, flush=True)
+
     def sleep_instance(self, gatherer: str, instance_id: str) -> None:
         """The instance put to sleep (its task closed: task_links.py): its backend lets go of what runs for it, the
         instance kept open, its agents attached -- used again, it comes back as it was (App.sleep)."""

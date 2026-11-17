@@ -1,5 +1,5 @@
 // Folders of gatherers (gatherer_folders.py; 05-gatherer-folders.js): none at first, the list as without them; one made
-// from the list's head, a gatherer dragged into it and out onto the head, folders in folders, folded (nothing of it in
+// as the server makes them (the list makes none: its folder button makes a group, groups-merge.spec.ts), a gatherer dragged into it and out onto the head, folders in folders, folded (nothing of it in
 // view), renamed and deleted -- no counts, no start buttons on their lines, no actor dropped in one; and
 // in the rail, the same folders, folded and opened there.
 import type { Page } from "@playwright/test";
@@ -18,9 +18,7 @@ async function noGathererFolders(page: Page) {
   if (filed.length) await gfPost(page, { do: "file", gatherers: filed });
 }
 
-test("keeps gatherers in folders of their own: made from the list's head, filled by dragging, nested, folded and deleted", async ({
-  page,
-}) => {
+test("keeps gatherers in folders of their own: filled by dragging, nested, folded and deleted", async ({ page }) => {
   await open(page);
   const line = (name: string) => page.locator("#agents .gf-line", { hasText: name });
   const gRow = page.locator("#agents .gatherer-row", { hasText: GATHERER });
@@ -29,9 +27,8 @@ test("keeps gatherers in folders of their own: made from the list's head, filled
   try {
     await expect(page.locator("#agents .gf-line")).toHaveCount(0); // none: as without them
     await expect(gRow).not.toHaveAttribute("draggable", "true"); // nothing to drag it into
-    await head.locator(".gf-new").click();
-    await box.fill("  Work   projects ");
-    await box.press("Enter");
+    await gfPost(page, { do: "new", name: "Work projects" }); // kept from before: the list makes none now
+    await page.reload();
     await expect(line("Work projects")).toBeVisible();
     await expect(page.locator("#agents .gf-kids .f-empty")).toHaveText("Empty: drag gatherers here"); // made open
     await expect.poll(async () => (await gfTree(page)).folders.map((f) => f.name)).toEqual(["Work projects"]);
@@ -58,10 +55,8 @@ test("keeps gatherers in folders of their own: made from the list's head, filled
     await line("Work projects").locator(".fbtn").click();
     await expect(gRow).toBeVisible();
 
-    await line("Work projects").hover(); // a folder in it; the gatherer dragged into that
-    await line("Work projects").locator(".folder-act.new").click();
-    await box.fill("Archive");
-    await box.press("Enter");
+    await gfPost(page, { do: "new", name: "Archive", parent: work }); // a folder in it; the gatherer dragged into that
+    await page.reload();
     await expect(page.locator("#agents .gf-kids .gf-line", { hasText: "Archive" })).toBeVisible();
     const archive = (await gfTree(page)).folders.find((f) => f.name === "Archive")!.id;
     await gRow.dragTo(line("Archive"));

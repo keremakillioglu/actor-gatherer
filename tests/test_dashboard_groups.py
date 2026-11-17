@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ag.ag_harness.store import paths  # noqa: E402
 import app_kit  # noqa: E402
-from ag_dashboard import actions, app_agents, app_host, data, folders, groups, naming, saved, sessions, tasks, titles, tool_gateway  # noqa: E402
+from ag_dashboard import actions, app_agents, app_host, data, folders, gatherer_folders, groups, merges, naming, saved, sessions, tasks, titles, tool_gateway  # noqa: E402
 from replies import insert  # noqa: E402
 from test_dashboard_app_host import NOTES, insert_here, write_app  # noqa: E402
 import test_home_db  # noqa: E402
@@ -360,6 +360,93 @@ class GroupsTest(unittest.TestCase):
         with self.assertRaises(groups.GroupError):
             groups.start_alone(started, "a", self.tmp.name, "claude")
         self.assertEqual(started.list(), [])
+        with self.assertRaises(groups.GroupError):
+            groups.merge("a", "b")
+
+    # -- a folder made outside every group, and a group dropped into another
+
+    def test_a_folder_made_outside_every_group_is_a_group_named_as_typed(self):
+        shelf = gatherer_folders.make("Shelf")
+        with unittest.mock.patch.object(groups.sessions, "new_gatherer", side_effect=self.made):
+            self.assertEqual(groups.make("  Paper   figures "), {"group": "Paper_figures", "title": "Paper figures"})
+            self.assertEqual(groups.make("b", shelf), {"group": "b_2", "title": "b"})    # in a folder of groups
+            for bad, under in (("a/b", None), ("", None), ("x", 999)):
+                with self.assertRaises(groups.GroupError):
+                    groups.make(bad, under)
+        self.assertEqual(titles.stored(), {"Paper_figures": "Paper figures", "b_2": "b"})
+        self.assertEqual(gatherer_folders.stored()["filed"], {"b_2": shelf})
+        self.assertEqual(data.gatherer_names(), ["Paper_figures", "a", "b", "b_2"])
+
+    def test_a_group_dropped_into_another_is_a_folder_of_it_with_everything_in_it(self):
+        work = folders.make("a", "Work")
+        inner = folders.make("a", "Inner", work)
+        folders.file("a", ["c3"], work)
+        self.crew("k1", "a", f"folder:{work}")                    # over a folder of it: still over that folder
+        self.crew("k2", "a", None)                                 # over the group: over the folder it becomes
+        saved.choose("a", "c1", True)
+        titles.give("a", "Group A")
+        self.recorded.clear()
+        got = groups.merge("a", "b")
+        self.assertEqual(len(self.recorded), 1)                    # one call to ag
+        fid = got["folder"]
+        self.assertEqual((got["group"], got["name"], got["actors"]), ("b", "Group A", ["c1", "c3", "k1", "k2"]))
+        self.assertEqual((self.members("a"), self.members("b")), ([], ["c1", "c2", "c3", "k1", "k2"]))
+        tree = folders.of("b")
+        self.assertEqual({f["name"]: f["parent"] for f in tree["folders"]}, {"Group A": None, "Work": fid, "Inner": work})
+        self.assertIn(inner, {f["id"] for f in tree["folders"]})  # its folders keep their ids
+        self.assertEqual(tree["filed"], {"c1": fid, "c3": work})   # at its top: in the new folder; else where it was
+        self.assertEqual((self.over("k1"), self.over("k2")), (("b", f"folder:{work}"), ("b", f"folder:{fid}")))
+        self.assertEqual(self.rows("saved"), [("b", "c1")])
+        said = {e["properties"]["channel"]: e["payload"] for e in self.events("group") if e["payload"].get("was") == "a"}
+        self.assertEqual((said["c1"]["group"], said["c1"]["was_name"]), ("b", "Group A"))
+        self.assertIsNone(said["k2"]["folder"])                    # a coordinator agent is in no folder
+        self.assertEqual(merges.stored(), {"a": "b"})
+        self.assertEqual(data.gatherer_names(), ["b"])             # gone from the list, its directory kept
+        self.assertEqual(data.gatherer_names(every=True), ["a", "b"])
+        self.assertEqual(folders.of("a"), {"folders": [], "filed": {}})
+
+    def test_a_merge_plan_changes_nothing_and_its_folder_takes_a_name_free_there(self):
+        inbox = folders.make("b", "Inbox")
+        folders.make("b", "A", inbox)
+        folders.make("b", "a")
+        got = groups.merge_plan("a", "b")
+        self.assertEqual((got["folder"], got["actors"], got["before"]), ("a 2", 2, {"a": 2, "b": 1}))
+        self.assertEqual(groups.merge_plan("a", "b", inbox)["folder"], "a 2")
+        self.assertEqual(groups.merge_plan("a", "b", folders.make("b", "Other"))["folder"], "a")
+        self.assertEqual((self.events("group"), self.members("a")), ([], ["c1", "c3"]))
+
+    def test_an_actor_never_called_goes_too(self):
+        conn = sqlite3.connect(sessions.db_path())
+        try:
+            with conn:
+                conn.execute(sessions.SCHEMA)
+                conn.execute("INSERT INTO sessions (session_id, gatherer, harness, cwd, permission_mode, created_at, "
+                             "status) VALUES ('c9', 'a', 'claude', '/', 'auto', 'now', 'idle')")
+        finally:
+            conn.close()
+        groups.merge("a", "b")
+        self.assertIn("c9", self.members("b"))                     # its record in before its first call
+        self.assertEqual(next(r["gatherer"] for r in sessions.stored() if r["session_id"] == "c9"), "b")
+
+    def test_an_actor_on_its_own_that_left_a_merged_group_runs_under_the_group_it_went_into(self):
+        groups.alone("a", "c1")
+        groups.merge("a", "b")
+        self.assertEqual(groups.launch_group("c1", "self:c1"), "b")
+
+    def test_a_merge_refused_changes_nothing(self):
+        saved.choose("a", "c1", True)
+        for gatherer, to, into in (("a", "a", None), ("a", "nope", None), ("a", "b", 999)):
+            with self.assertRaises(groups.GroupError):
+                groups.merge(gatherer, to, into)
+        groups.alone("a", "c3")
+        for gatherer, to in (("self:c3", "b"), ("b", "self:c3")):
+            with self.assertRaises(groups.GroupError):
+                groups.merge(gatherer, to)
+        with unittest.mock.patch.object(actions, "insert", side_effect=RuntimeError("no")):     # ag kept nothing
+            with self.assertRaises(groups.GroupError):
+                groups.merge("a", "b")
+        self.assertEqual((self.members("a"), self.rows("saved"), merges.stored()), (["c1"], [("a", "c1")], {}))
+        self.assertEqual(data.gatherer_names(), ["a", "b"])
 
 
 
@@ -461,10 +548,6 @@ class FoldersInHomeTest(GroupsTest):
         folders._copied.clear()
         folders.stored()
         self.assertEqual(len(self.recorded), copied)                                # once
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class GroupAppsTest(GroupsTest):
@@ -644,3 +727,31 @@ class GroupAppsTest(GroupsTest):
             groups.alone("a", "c1")
         self.assertEqual((self.members("a"), [i.id for i in self.host.instances_of("a")]), (["c1", "c3"], [board.id]))
 
+
+    def test_a_group_merged_brings_every_app_and_what_each_keeps_for_it(self):
+        """A many-instance app goes, into the folder its group becomes; a group's only one of its app goes into a group
+        that has none, and closes for the one of a group that has, its agents working with that one; each told to carry
+        over what it keeps for the group (`folded`)."""
+        page, board, news = (self.host.open(app, "a", self.folder) for app in ("pages", "board", "news"))
+        theirs = self.host.open("news", "b", self.folder)
+        self.started("c1", "a", news)
+        work = folders.make("a", "Work")
+        folders.file("a", ["app:" + page.id], work)
+        plan = groups.merge_plan("a", "b")
+        self.assertEqual({x["id"]: x.get("joins", {}).get("id") for x in plan["apps"]},
+                         {page.id: None, board.id: None, news.id: theirs.id})
+        with unittest.mock.patch.object(self.host, "folded") as folded:
+            got = groups.merge("a", "b")
+        self.assertEqual((sorted(got["apps"]), got["joined"]), (sorted([page.id, board.id]), {news.id: theirs.id}))
+        self.assertEqual(sorted(i.id for i in self.host.instances_of("b")), sorted([page.id, board.id, theirs.id]))
+        self.assertEqual(self.host.instances_of("a"), [])
+        self.assertEqual(self.host.agents_of(theirs), ["c1"])
+        self.assertEqual(self.role("c1"), ("news", theirs.id))
+        filed = folders.of("b")["filed"]
+        self.assertEqual((filed.get("app:" + page.id), filed.get("app:" + board.id)), (work, got["folder"]))
+        self.assertEqual(sorted((c.args[0], c.args[1].id, c.args[2]) for c in folded.call_args_list),
+                         sorted([("a", page.id, "a"), ("a", board.id, "a"), ("a", theirs.id, "a")]))
+
+
+if __name__ == "__main__":
+    unittest.main()

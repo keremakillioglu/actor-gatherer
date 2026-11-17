@@ -140,6 +140,8 @@ class App:
     def open(self, instance: Instance, args: dict) -> Instance: ...   # the host made its id, gatherer, folder;
     def close(self, instance: Instance) -> None: ...                  # the app sets its title and data
     def sleep(self, instance: Instance) -> None: ...                  # its task closed: kept, nothing run for it
+    def folded(self, instance, was: str, title: str) -> None: ...     # group `was` merged into the instance's:
+                                                                      # what it keeps per group carried over
     def call(self, instance, tool: str, args: dict, caller: Caller) -> ToolResult: ...
     def request(self, instance, method, path, query, body: bytes) -> Response: ...   # its panel's own routes
     def attached(self, instance, channel: str) -> None: ...     # an agent attached: tell it what it needs to know

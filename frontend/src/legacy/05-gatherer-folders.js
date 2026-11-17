@@ -2,13 +2,17 @@
 // folder id}}), kept by the server so every dashboard on this home shows the same: above the gatherers, only to organise
 // the list. None kept: the list as without them, every gatherer at its top. One holds gatherers and folders of gatherers
 // and nothing else: no actor is started in one, none is counted on its line -- its buttons, on hover: a folder in it,
-// rename (F2), delete (what is in it moves up a level). Made from the list's head (its folder button); a gatherer put in
-// one by dragging its row onto its line (dragGatherer), or onto the list's head for the top; a folder of them dragged
-// so too. The list's folder code draws and changes them, as a gatherer's folders: their gatherer GF, a name no gatherer
+// rename (F2), delete (what is in it moves up a level). A folder made outside every group -- from the list's head (its
+// folder button), or in one of these -- is a GROUP of its own (groups.py's `make`, nameGroup), as the default rule has
+// it: the list shows folders, and says nothing of groups. These are made no more from the list; those kept still hold
+// groups. A gatherer put in one by dragging its row onto its line
+// (dragGatherer), or onto the list's head for the top; a folder of them dragged so too. A gatherer dragged onto another
+// is merged into it, as a folder of it (05-group-moves.js's askMerge). The list's folder code draws and changes them, as a gatherer's folders: their gatherer GF, a name no gatherer
 // has (each a directory's name: no "/") -- treeOf, folderPost, makeFolder, startFolderEdit, ... -- and GFS where a
 // gatherer is asked for. Each open till the reader folds it (gfFolded, kept in this browser); folded, nothing of it is in
 // view, not even an actor open in a pane. The rail shows them so too (railGfLevel), to fold and open only.
 const GF = "/";
+const GF_NEW = "New folder";
 const GFS = { name: GF, agents: [] };
 const GF_FOLDED_KEY = "ag-dashboard-gatherer-folders-folded";
 const gfFolded = (() => {
@@ -37,9 +41,10 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape" || !gPicks.size || ev.defaultPrevented || (ev.target.closest && ev.target.closest("input, textarea, [contenteditable], .xterm"))) return;
   clearGPicks();
 });
-// A gatherer's row, made to drag into a folder of gatherers: once there is one, and not while its name is typed
+// A gatherer's row, made to drag into a folder of gatherers, once there is one, or into another gatherer, in the home's
+// one database -- not while its name is typed
 function dragGatherer(row, g) {
-  if (SNAPSHOT || !treeOf(GF).folders.length || (state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, null))) return row;
+  if (SNAPSHOT || (!treeOf(GF).folders.length && !state.home.merged) || (state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, null))) return row;
   row.classList.toggle("picked", gPicks.has(g.name));
   row.addEventListener("click", (ev) => {           // captured: before its name's button folds it
     if (!(ev.metaKey || ev.ctrlKey) || ev.target.closest(".g-acts")) return;
@@ -59,6 +64,9 @@ function gfLevel(shown, id, draw) {
   const out = [], edit = state.folderEdit;
   if (edit && edit.g === GF && edit.id === null && edit.parent === id)
     out.push(el("div", { class: "folder-line gf-line editing", "data-key": `${GF}/folder:new` }, folderBox()));
+  if (gfMaking && gfMaking.parent === id)              // a group being made (makeGroup): its name, till it is listed
+    out.push(el("div", { class: "folder-line gf-line making", "data-key": `${GF}/group:new`, role: "status" },
+      el("span", { class: "fname", text: gfMaking.text }), el("span", { class: "fill", text: "Making the group…" })));
   for (const f of kidFolders(GF, id)) {
     out.push(gfLine(f));
     if (isOpenFolder(GF, f.id)) {
@@ -68,6 +76,34 @@ function gfLevel(shown, id, draw) {
   }
   for (const g of shown) if (gfOf(g.name) === id) out.push(draw(g));
   return out;
+}
+// The new folder outside every group named `text`, in folder of groups `parent` (null: the list's top): a group of its
+// own (groups.py's `make`). None typed is nothing done; a name a group beside it has (whatever its case), or one with
+// "/", refused, and said why. -> whether something was done.
+function nameGroup(parent, text) {
+  text = String(text || "").replace(/\s+/g, " ").trim().slice(0, FOLDER_CHARS);
+  if (!text) return false;
+  const other = state.home.gatherers.find((g) => !g.alone && gfOf(g.name) === parent && titleOf(g).toLowerCase() === text.toLowerCase());
+  if (text.includes("/") || other) {
+    setLive(other ? `There is a group "${titleOf(other)}" there already` : 'A group\'s name can\'t hold "/"');
+    return false;
+  }
+  makeGroup(text, parent);
+  return true;
+}
+let gfMaking = null;
+async function makeGroup(text, parent) {
+  if (parent !== null) showFolder(GF, parent, true);
+  gfMaking = { text, parent };
+  renderAgents();
+  try {
+    const got = await post("/api/groups", { do: "new", name: text, folder: parent });
+    await loadHome();
+    setLive(`Made the group ${got.made.title}`);
+  } catch (err) { setLive(`Not made: ${err.message}`); } finally {
+    gfMaking = null;
+    renderAgents();
+  }
 }
 // what an open folder with nothing shown in it says: that its gatherers are hidden, or that it has none
 function gfEmpty(f) {

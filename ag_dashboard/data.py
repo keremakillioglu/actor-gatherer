@@ -88,7 +88,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
-from . import answers, avatars, folders, gatherer_folders, hiding, live, saved, sessions, tasks, titles
+from . import answers, avatars, folders, gatherer_folders, hiding, live, merges, saved, sessions, tasks, titles
 import app_kit
 import harness_kit
 from harness_kit import USERS, Kind
@@ -242,12 +242,15 @@ def _seconds(value) -> Optional[float]:
     return stamp.timestamp()
 
 
-def gatherer_names() -> List[str]:
+def gatherer_names(every: bool = False) -> List[str]:
+    """The home's groups, by name: each a directory of ag's holding a database or a config -- but those merged into
+    another (merges.py), unless `every`."""
     root = paths.gatherers_dir()
     if not os.path.isdir(root):
         return []
+    gone = set() if every else set(merges.stored())
     return sorted(n for n in os.listdir(root)                 # a database, or a config: made, no session yet
-                  if any(os.path.exists(os.path.join(root, n, f)) for f in ("context.db", "gatherer.toml")))
+                  if n not in gone and any(os.path.exists(os.path.join(root, n, f)) for f in ("context.db", "gatherer.toml")))
 
 
 def _made(gatherer: str) -> Optional[float]:

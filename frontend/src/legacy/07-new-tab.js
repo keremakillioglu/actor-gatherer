@@ -119,7 +119,7 @@ function ntLine(p) {
     el("span", { class: "lbl", text: label }), ...value, open ? el("span", { class: "caret", "aria-hidden": "true", text: "▾" }) : null);
   return [
     chip("nt:in", "In", [el("span", { class: "val", text: placeName(p) })],
-      p ? `Where the new actor goes: ${placeName(p)}${p.alone ? " (it shares context with no group)" : ""}` : "Make a group first: + New group in the list",
+      p ? `Where the new actor goes: ${placeName(p)}${p.alone ? " (it shares context with no group)" : ""}` : "Make a group first: the folder button at the top of the list",
       realGroups().length ? (b) => openPop("nt:in", b, ntMenu("Start it in", ntPlaces(p))) : null),
     chip("nt:dir", "Directory", [el("span", { class: "val dir", text: shortDir(ntCwd(p)) || "Choose one" })], `It works in ${ntCwd(p) || "a directory you choose"}`,
       off ? null : (b) => openPop("nt:dir", b, ntDirBox(p))),
@@ -221,7 +221,7 @@ async function ntSend() {
   const input = newTab.input, text = input ? input.value.trim() : "";
   if (!text || newTab.busy) return;
   const p = ntPlace(), g = ntGroup(p), h = ntHarness(p), cwd = ntCwd(p).trim();
-  if (!p || !g) return ntSay("Make a group first: + New group in the list.");
+  if (!p || !g) return ntSay("Make a group first: the folder button at the top of the list.");
   if (!h) return ntSay(p.alone ? "No harness here starts an actor on its own: pick a group under In." : noHarness());
   if (!cwd) return ntSay("Which directory? Choose one under Directory.");
   newTab.busy = "Starting…"; newTab.error = "";
