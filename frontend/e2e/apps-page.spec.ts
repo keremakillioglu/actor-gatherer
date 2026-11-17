@@ -133,7 +133,7 @@ const tabNames = (page: Page) => page.locator(".lay-tabs:visible .lay-tab .lay-n
 
 async function fromSettings(page: Page) {
   await page.locator("#about-btn").click();
-  await page.locator("#cfg-apps").click();
+  await page.locator("#manage-apps").click();
   await expect(appsPage(page)).toBeVisible();
 }
 

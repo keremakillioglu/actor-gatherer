@@ -30,8 +30,6 @@ import { useSettings } from "./features/settings/store";
 export interface AgLegacy {
   /** The dashboard's panel opened or closed. */
   setAbout: (open: boolean) => void;
-  /** The Apps page shown, in a tab of its own (src/legacy/07-apps-page.js), the panel closed. */
-  openApps?: () => void;
   /** The page is a snapshot (its data inside it), or a pane's frame inside the page: neither has ag's settings. */
   snapshot: boolean;
   pane: boolean;

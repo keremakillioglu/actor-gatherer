@@ -1,12 +1,16 @@
 // THE APPS PAGE (features/apps/catalog.ts): what a tab showing nothing shows in place of its new-tab page when it is the
-// Apps page's (layout/tabs.ts's `page`) -- opened from the settings panel's Apps (openAppsPage) and from a new tab's
-// "Apps…". What that page asks of this one: an app opened where things start (07-new-tab.js's start place: in its group,
+// Apps page's (layout/tabs.ts's `page`) -- opened from the settings panel's "Manage apps", under Groups (openAppsPage),
+// and from a new tab's "Apps…". What that page asks of this one: an app opened where things start (07-new-tab.js's start place: in its group,
 // in a tab of its own, as from a group's menu), and -- the apps installed having changed -- them read again: the panels
 // of those gone closed, the list drawn again (an uninstalled app's rows go with it: appOf finds no app for them).
 function openAppsPage() {
   if (PANE || SNAPSHOT || !workPlacer) return;
   setAbout(false);
   void workPlacer.tabs.openPage("apps");
+}
+if (!SNAPSHOT && !PANE) {
+  document.getElementById("apps-cfg").hidden = false;
+  document.getElementById("manage-apps").addEventListener("click", openAppsPage);
 }
 function drawAppsPage(box) {
   box.classList.remove("nt");

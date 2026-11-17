@@ -2,7 +2,7 @@
 // ag's config.toml (settings.py): drawn by the new code now (src/features/settings/), at the top of the panel. What it
 // calls of this page, handed to it (src/bridge.ts's AgLegacy).
 const $ = (id) => document.getElementById(id);
-window.agLegacy = Object.freeze({ setAbout, openApps: () => openAppsPage(), snapshot: !!SNAPSHOT, pane: !!PANE });
+window.agLegacy = Object.freeze({ setAbout, snapshot: !!SNAPSHOT, pane: !!PANE });
 // Redraw the main view where the reader left it: the same tables open, the same lists scrolled.
 const atEnd = (n) => n.scrollHeight - n.scrollTop - n.clientHeight < 40;
 function keepingPlace(draw) {

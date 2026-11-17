@@ -550,12 +550,3 @@
     white-space: normal;
   }
 }
-/* the settings panel's Apps row (features/settings/AgSettings.tsx) */
-.about .cfg-apps h4 {
-  margin: 0;
-}
-.about .cfg-apps .cfg-note {
-  flex: 1;
-  color: var(--muted);
-  font-size: 12px;
-}
