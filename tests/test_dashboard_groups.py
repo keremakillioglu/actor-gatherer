@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ag.ag_harness.store import paths  # noqa: E402
 import app_kit  # noqa: E402
-from ag_dashboard import actions, app_agents, app_host, data, folders, gatherer_folders, group_admin, groups, merges, naming, saved, sessions, tasks, titles, tool_gateway  # noqa: E402
+from ag_dashboard import actions, app_agents, app_host, coordinators, data, folders, gatherer_folders, group_admin, groups, merges, naming, saved, sessions, tasks, titles, tool_gateway  # noqa: E402
 from replies import insert  # noqa: E402
 from test_dashboard_app_host import NOTES, insert_here, write_app  # noqa: E402
 import test_home_db  # noqa: E402
@@ -494,6 +494,17 @@ class GroupsTest(unittest.TestCase):
         groups.move("self:c1", "a", ["c1"], into=work)                                       # its folder's group again
         self.assertEqual((self.members("a"), folders.of("a")["filed"]), (["c1", "c3"], {"c1": work}))
         self.assertEqual(groups.places(), {})
+
+    def test_a_group_inside_another_s_folder_is_under_that_folder_for_its_coordinator_agents(self):
+        work = folders.make("a", "Work")
+        groups.place("b", "a", work)
+        groups.alone("a", "c3")
+        tree = coordinators.Tree()
+        self.assertEqual(tree.place("b", "c2"), ["all", "group:a", f"folder:{work}", "group:b"])
+        self.assertEqual(coordinators.common([tree.place("a", "c1"), tree.place("b", "c2")]), ["all", "group:a"])
+        self.assertEqual(tree.place("self:c3", "c3"), [])                     # on its own: under no coordinator agent
+        actions.insert("a", [groups._placed("a", "b", None)])                 # a ring (`place` refuses one): each at its own place
+        self.assertEqual(coordinators.Tree().place("b", "c2")[-1], "group:b")
 
     def test_a_group_placed_in_a_folder_goes_where_the_folder_goes(self):
         work = folders.make("a", "Work")

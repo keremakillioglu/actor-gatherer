@@ -1,7 +1,9 @@
 """Where the COORDINATOR AGENTS are, and which one is over whom (the design "Coordinator agents over folders").
 
 The list is one tree: everything (ALL) -> the folders of groups (gatherer_folders.py) -> the groups -> the folders in a
-group (folders.py) -> the actors. A coordinator agent is over one NODE of it, and so over every actor under that node:
+group (folders.py) -> the actors. A group placed in another group's folder (groups.py's `place`) is in the tree there,
+under that folder: a coordinator agent over the folder, or above it, is over its actors too -- it reaches them by
+messages, and reads only its own group's work, as before. A coordinator agent is over one NODE of it, and so over every actor under that node:
 
     "all"              everything: every group of the home
     "groups:<id>"      a folder of groups (gatherer_folders.py's id), and the groups in it, at any depth
@@ -81,6 +83,7 @@ class Tree:
         self.gf = gatherer_folders.stored()
         self.trees: Dict[str, dict] = {}
         self.titles = titles.stored() or {}
+        self.places = folders.places()                  # groups inside another group's folder
         self._folder_group: Optional[Dict[int, str]] = None
 
     def folders_of(self, group: str) -> dict:
@@ -116,10 +119,16 @@ class Tree:
             fid = by[fid]["parent"]
         return list(reversed(out))
 
-    def group_path(self, group: str) -> Optional[List[str]]:
-        """The path to the group `group`: everything, its folders of groups, it; None for no group of the home's."""
+    def group_path(self, group: str, _seen: frozenset = frozenset()) -> Optional[List[str]]:
+        """The path to the group `group`: everything, its folders of groups, it -- or, placed in another group's folder,
+        the path to that folder, then it; None for no group of the home's."""
         if group not in self.groups:
             return None
+        p = self.places.get(group)
+        if p and p["in"] in self.groups and p["in"] != group and p["in"] not in _seen:   # (never inside itself)
+            outer = self.group_path(p["in"], _seen | {group})
+            if outer is not None:
+                return outer + self._folder_chain(p["in"], p["folder"]) + [group_node(group)]
         return [ALL, *self._gf_chain((self.gf.get("filed") or {}).get(group)), group_node(group)]
 
     def path(self, node: Optional[str]) -> Optional[List[str]]:
