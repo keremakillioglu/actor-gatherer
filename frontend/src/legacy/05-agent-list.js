@@ -423,6 +423,7 @@ function renderAgents() {
     SNAPSHOT ? null : el("button", { class: "gf-new", type: "button", title: GF_NEW, "aria-label": GF_NEW,
       onclick: () => startFolderEdit(GF, null, null) }, strokeIcon(ICONS.folderNew, 15)),   // a group (05-gatherer-folders.js)
     aloneNew(),                                      // an actor on its own (05-group-moves.js)
+    manageButton(),                                  // who shares context with whom, and the switches (05-group-moves.js)
     SNAPSHOT || !state.home.merged ? null : crewButton(null, "all"),   // the coordinator agent over everything
     el("span", { class: "list-btns" }, ...listButtons())), GFS, null, () => {}));
   if (!state.home.gatherers.length && !state.folderEdit) aside.append(el("div", { class: "servers", text: "No groups in this home yet: make one with the folder button above." }));
@@ -431,7 +432,9 @@ function renderAgents() {
   // actors on their own closed, in their lines
   const overAll = crewRow("all");
   if (overAll) aside.append(el("div", { class: "g-kids crew-top" }, overAll));
-  aside.append(...gfLevel(shown.filter((g) => !aloneShut(g)), null, gathererBox), ...aloneShutRows(shown.filter(aloneShut)));
+  // (a group inside another group's folder: drawn there, placedRows)
+  const top = shown.filter((g) => !placeOf(g.name));
+  aside.append(...gfLevel(top.filter((g) => !aloneShut(g)), null, gathererBox), ...aloneShutRows(top.filter(aloneShut)));
   if (hidden.length) {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
       el("summary", { text: `${hidden.length} hidden group${hidden.length === 1 ? "" : "s"}` }));
@@ -443,6 +446,7 @@ function renderAgents() {
     aside.append(list);
   }
   slideList(aside, was);
+  if (manage.dialog && manage.dialog.open) drawManage();   // the groups as they are now (05-group-moves.js)
   if (hover.from === "agents") cardDraw();           // its card, said again from the new data
   nameMoving = false;
   if (state.renaming && !(nameInput && nameInput.isConnected)) { state.renaming = null; nameInput = null; }   // its row folded away
@@ -465,12 +469,12 @@ function renderAgents() {
 function gathererBox(g) {
   if (g.alone) return aloneBox(g);                   // an actor on its own: its row alone (05-group-moves.js)
   const open = !collapsed.has(g.name);
-  const crew = groupCrew(g);
-  const box = el("div", { class: "gatherer" + (picks.g === g.name && picks.cs.size > 1 ? " picking" : "") },
+  const crew = groupCrew(g), outer = nestedIn(g);    // inside another group's folder: marked so (05-group-moves.js)
+  const box = el("div", { class: "gatherer" + (outer ? " nested" : "") + (picks.g === g.name && picks.cs.size > 1 ? " picking" : "") },
     dropOn(dragGatherer(el("div", { class: "gatherer-row", "data-key": g.name },
       el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name),
         title: g.policy ? `${g.name} · policy ${g.policy}` : g.name },
-        el("span", { class: "caret", text: "▶" }),
+        el("span", { class: "caret", text: "▶" }), outer ? nestMark(outer) : null,
         state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, null) ? null
           : el("span", { class: "gname", text: titleOf(g) })),
       state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, null) ? nameBox() : null,
@@ -484,6 +488,9 @@ function gathererBox(g) {
             "aria-label": `New folder in ${titleOf(g)}`, onclick: () => startFolderEdit(g.name, null, null) }, strokeIcon(ICONS.folderNew, 14)),
           SNAPSHOT ? null : el("button", { class: "act rename", type: "button", title: `Rename ${titleOf(g)}`, "aria-label": `Rename ${titleOf(g)}`,
             onclick: () => retitle(g) }, strokeIcon("M10.6 2.6l2.8 2.8-7.9 7.9-3.4.6.6-3.4zM9.1 4.1l2.8 2.8", 14)),
+          SNAPSHOT || !outer ? null : el("button", { class: "act above", type: "button", "aria-label": `Join ${titleOf(outer)} again`,
+            title: `Join ${titleOf(outer)} again: a folder of it where it is, its actors sharing context with ${titleOf(outer)}'s`,
+            onclick: () => askAbove(g) }, strokeIcon(ICONS.folderUp, 14)),
           el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
             hideIcon())))), g), g, null, () => { if (collapsed.has(g.name)) toggleGatherer(g.name); }));
   if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
@@ -605,9 +612,9 @@ function agentRow(g, a, group) {
     el("div", {},
       // just its name, else what it was last asked, on one line: what it was asked and its recap, in its title (and over
       // the whole page, the monitor's card)
-      naming ? nameBox() : el("div", { class: "name" + (named ? "" : asked ? " unnamed" : " none"), ...nameIt,
-        text: named || (asked ? firstLine(asked, 200) : isCoordinator(a) ? `Coordinates ${crewPlace(crewNode(g, a), g)}` : "No message yet") }),
-      rowActs(addButton(g, a.channel), saveButton(g, a), closeButton(g, a)),
+      naming ? nameBox() : el("div", { class: "name" + (named ? "" : asked ? " unnamed" : " none"), ...nameIt }, aloneMark(g),
+        named || (asked ? firstLine(asked, 200) : isCoordinator(a) ? `Coordinates ${crewPlace(crewNode(g, a), g)}` : "No message yet")),
+      rowActs(addButton(g, a.channel), groupButton(g, a), saveButton(g, a), closeButton(g, a)),
       branchChip(g, a),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
         `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null),
@@ -1258,6 +1265,7 @@ function boxRows(g, id) {
   if (edit && edit.g === g.name && edit.id === null && edit.parent === id)
     out.push(el("div", { class: "folder-line editing", "data-key": `${g.name}/folder:new` }, folderBox()));
   for (const f of kidFolders(g.name, id)) if (!shownClosed(g, f)) out.push(...folderRows(g, f));   // the closed: in its closed line
+  out.push(...placedRows(g, id));                    // groups and actors on their own put in it (05-group-moves.js)
   let apps = false;
   for (const [name, list] of boxGroups(g, id)) {
     if (!apps && name !== OPEN) { out.push(...appRowsIn(g, id)); apps = true; }   // the apps: after the open actors
@@ -1286,7 +1294,7 @@ function folderRows(g, f) {
 // What a closed folder holds, all closed: its folders, then its actors, the latest first -- under no line of their own
 function closedRows(g, id) {
   const mine = g.agents.filter((a) => !isCoordinator(a) && folderOf(g.name, a) === id).sort((x, y) => (y.last || 0) - (x.last || 0));
-  return [...kidFolders(g.name, id).flatMap((f) => folderRows(g, f)), ...mine.flatMap((a) => rowsOf(g, a, groupOf(g, a)))];
+  return [...kidFolders(g.name, id).flatMap((f) => folderRows(g, f)), ...placedRows(g, id), ...mine.flatMap((a) => rowsOf(g, a, groupOf(g, a)))];
 }
 // A box's fold: its line ("▸ N closed"), and under it, once opened, its actors (or shells) -- folded, those open in a
 // pane (no shell) -- open or not kept in this browser, for each box (boxKey). Its closed line holds its closed folders
@@ -1340,6 +1348,8 @@ function folderLine(g, f) {
     folderAct("reopen", `Reopen ${f.name}: back with the open folders, its actors still closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id)),
   ] : [...startButtons(g, f), crewAt(`folder:${f.id}`, g)[1] ? null : crewButton(g, `folder:${f.id}`),
     folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(g.name, null, f.id)),
+    state.home.merged ? folderAct("own", `Give ${f.name} a group of its own, where it is: its actors share context with each other, not with ${titleOf(g)}'s`,
+      strokeIcon(ICONS.group, 14), () => askOwn(g, f)) : null,
     folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
     folderAct("delete", `Delete ${f.name}: what is in it moves up a level${crewAt(`folder:${f.id}`, g)[1] ? ", and its coordinator agent is closed" : ""}`,
       strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
@@ -1603,13 +1613,13 @@ document.addEventListener("drop", () => { if (listDrag) setTimeout(endDrag, 0); 
 function canDrop(g, id) {
   const d = listDrag;
   if (!d) return false;
-  if (d.gs && g.name !== GF) return canMerge(g);   // a group into another: a folder of it (05-group-moves.js)
+  if (d.gs && g.name !== GF) return canMerge(g, id);   // a group into another: a folder of it, or a group inside it (05-group-moves.js)
   if (d.g !== g.name) return canCross(g);
   if (d.folder !== null) {
     const f = folderById(g.name, d.folder);
     return !!f && parentOf(g.name, f) !== id && !(id !== null && within(g.name, id, d.folder));
   }
-  if (d.gs) return d.gs.some((name) => gfOf(name) !== id);
+  if (d.gs) return d.gs.some((name) => gfOf(name) !== id || !!placeOf(name));   // (inside a group's folder: out of it)
   return withTasks(g, d.cs).some((c) => (isAppItem(c) || !!actorOf(g, c)) && itemFolder(g, c) !== id);
 }
 // `id`: the folder what is dropped on `n` goes into (null: the gatherer's top); `open`, what opens when one is held over it
@@ -1639,8 +1649,9 @@ function dropOn(n, g, id, open) {
     const d = listDrag, now = state.home.gatherers.find((x) => x.name === g.name) || g;
     d.later = false;                                 // drawn by the move, next
     endDrag();
-    if (d.gs && g.name !== GF) { gPicks.clear(); askMerge(d.gs[0], now, id); return; }
-    if (d.g !== g.name) { askMove(d, g, id); return; }
+    const was = placeOf(d.gs ? d.gs[0] : d.g);       // a group, or an actor on its own, already inside `g`: just moved
+    if (d.gs && g.name !== GF) { gPicks.clear(); if (was && was.in === g.name) placeGroup(d.gs[0], g.name, id); else askMerge(d.gs[0], now, id); return; }
+    if (d.g !== g.name) { if (isAloneName(d.g) && was && was.in === g.name) placeGroup(d.g, g.name, id); else askMove(d, g, id); return; }
     if (d.folder !== null) { moveFolder(g.name, d.folder, id); return; }
     if (d.gs) { gPicks.clear(); fileGatherers(d.gs.filter((name) => gfOf(name) !== id), id); return; }
     const items = withTasks(now, d.cs).filter((c) => (isAppItem(c) || !!actorOf(now, c)) && itemFolder(now, c) !== id);

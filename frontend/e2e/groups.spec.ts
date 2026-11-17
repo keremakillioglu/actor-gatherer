@@ -238,7 +238,9 @@ test("in the home's one database, an actor dragged outside every group asks firs
   await expect(inGroup(page, GATHERER, CLAUDE)).toHaveCount(0);
 
   await lone.locator("button.agent", { hasText: CLAUDE }).dragTo(groupRow(page, GATHERER)); // back into a group: asked first
-  await expect(dialog.locator("h3")).toHaveText(`Move to the ${GATHERER} group?`);
+  await expect(dialog.locator("h3")).toHaveText(`Join the ${GATHERER} group?`);
+  await expect(dialog.getByRole("button", { name: "Join" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Stay on its own" })).toBeVisible(); // or kept on its own there
   expect(asked.at(-1)).toEqual({
     gatherer: `self:${state.claude}`,
     to: GATHERER,

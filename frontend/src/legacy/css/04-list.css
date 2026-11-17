@@ -371,3 +371,40 @@ body.drag-out .outside-drop { display: flex; }
 .agent .tab-no.here { color: var(--ink); background: color-mix(in srgb, var(--ink) 16%, transparent); box-shadow: none; }
 .agent .t-faces .tab-no { margin-right: 4px; }
 .agent:not(.task):has(.a-face > .tab-no) { grid-template-columns: 10px minmax(0, 1fr) auto; }   /* (the face still at its right) */
+/* GROUPS INSIDE ANOTHER GROUP'S FOLDER (05-group-moves.js): its row set in where it is, as a folder's line, its name led
+   by the mark of a group of its own; an actor on its own in a folder, its name led by the mark of one. Marks, not colours:
+   the list stays as quiet as it is, and only where sharing differs from the group around it is anything said. */
+.gatherer.nested { margin: 0; }
+.gatherer.nested > .gatherer-row .gname { font-size: 13px; font-weight: 600; }
+.gatherer-row .g-mark { flex: none; display: inline-flex; color: var(--s1); }
+.agent .name .alone-mark { display: inline-flex; vertical-align: -1px; margin-right: 4px; color: var(--muted); }
+.agent .a-acts .group-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; min-width: 22px;
+  height: 22px; border-radius: 6px; color: var(--muted); cursor: pointer; }
+.agent .a-acts .group-btn:is(:hover, :focus-visible) { color: var(--s1); background: var(--surface); }
+.rail .r-actor .group-btn { display: none; }
+.mv-dialog .row .mv-alt { margin-right: auto; }
+/* MANAGE GROUPS (05-group-moves.js): the list head's button, and its dialog -- each group, its folders and actors set in
+   by depth, each with its switch of two at the right */
+.aside-head .manage-groups { display: inline-flex; align-items: center; padding: 4px 6px; margin-left: -6px; color: var(--ink-2); }
+.aside-head .manage-groups:hover { color: var(--ink); }
+.aside-head .manage-groups svg { display: block; }
+dialog.mg-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(78vh, 760px); }
+.mg-form { display: flex; flex-direction: column; gap: 10px; max-height: calc(min(78vh, 760px) - 32px); }
+.mg-say { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.mg-tree { overflow: auto; display: grid; gap: 1px; min-height: 0; }
+.mg-row { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 2px 6px 2px calc(6px + var(--depth) * 16px); border-radius: 6px; }
+.mg-row:hover { background: var(--wash); }
+.mg-row.group { margin-top: 6px; }
+.mg-row.shut { color: var(--muted); font-size: 12px; min-height: 22px; }
+.mg-name { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.mg-name > span:last-child, .mg-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mg-name svg { flex: none; color: var(--muted); }
+.mg-row.group .mg-name svg { color: var(--s1); }
+.mg-name .logo { width: 18px; height: 18px; flex: none; }
+.mg-n, .mg-note { font-size: 12px; color: var(--muted); font-weight: 400; white-space: nowrap; }
+.mg-switch { flex: none; display: inline-flex; border-radius: 7px; box-shadow: 0 0 0 1px var(--ring); overflow: hidden; }
+.mg-switch .mg-opt { border: 0; border-radius: 0; padding: 3px 9px; font-size: 12px; background: none; color: var(--muted); cursor: pointer; }
+.mg-switch .mg-opt + .mg-opt { box-shadow: -1px 0 0 var(--ring); }
+.mg-switch .mg-opt.on { background: color-mix(in srgb, var(--s1) 16%, transparent); color: var(--ink); opacity: 1; cursor: default; }
+.mg-switch .mg-opt:disabled:not(.on) { opacity: .45; cursor: default; }
+.mg-switch .mg-opt:not(:disabled):hover { color: var(--ink); background: var(--wash); }

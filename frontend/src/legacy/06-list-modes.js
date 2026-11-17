@@ -337,11 +337,13 @@ function renderRail() {
   // -- every folder of the gatherer whose actors are dragged, to drop them in (railDragged)
   const view = (g) => ({ ...busy.get(g.name), only: !railShow.folders && !(listDrag && listDrag.g === g.name),
     saved: railShow.saved, closed: railShow.closed });
+  railViewOf = view;                                 // a group inside another's folder: drawn there, its own view (railBox)
+  const atTop = shown.filter((g) => !placeOf(g.name));
   // drilled in: where it is; else every gatherer, in the folders the reader keeps them in, if any (05-gatherer-folders.js)
   const [allG, overAll] = here ? [null, null] : crewAt("all");               // the coordinator agent over everything
   if (here) list.append(railHere(here, view(here.g)));
-  else list.append(...(overAll && !crewHidden.has("all") ? [railActor(allG, overAll)] : []), ...railGfLevel(shown.filter((g) => !aloneShut(g)), null, (g) => railGatherer(g, view(g))),
-    ...railAloneShut(shown.filter(aloneShut)));          // the actors on their own closed: in their lines (05-group-moves.js)
+  else list.append(...(overAll && !crewHidden.has("all") ? [railActor(allG, overAll)] : []), ...railGfLevel(atTop.filter((g) => !aloneShut(g)), null, (g) => railGatherer(g, view(g))),
+    ...railAloneShut(atTop.filter(aloneShut)));          // the actors on their own closed: in their lines (05-group-moves.js)
   if (!shown.length) list.append(el("div", { class: "r-none", text: state.home.gatherers.length ? "Every group is hidden" : "No groups" }));
   // the tree, drawn again (its buttons -- open the list, full screen, hide -- in a row over it, .list-top; what every
   // actor does counted in the top bar, drawTotals); then its foot, as it was (RAIL_FOOT)
@@ -394,6 +396,7 @@ function railDragged() {
 // folded them, railOpen), those kept in view (kept: busy, or one in a pane), whether only those are shown (only), whether
 // its saved and closed lines are (saved, closed). Its closed folders (shownClosed) are in its closed line, first, as the
 // list has them (railClosed).
+let railViewOf = () => ({ busy: new Set(), kept: new Set() });
 function railBox(g, id, view) {
   const lines = [], folders = [], open = [];
   for (const f of kidFolders(g.name, id)) {
@@ -428,6 +431,8 @@ function railBox(g, id, view) {
     }
     for (const a of items) open.push(...railRowsOf(g, a));
   }
+  // groups and actors on their own put in it, after its folders (05-group-moves.js's placedIn)
+  for (const x of placedIn(g.name, id)) folders.push(x.alone ? railAlone(x) : railGatherer(x, railViewOf(x)));
   return [...lines, ...folders, ...open, ...railAppsIn(g, id)];
 }
 // A closed folder in the rail's closed line (shownClosed): its name, greyed, opening it in place to show all it holds --

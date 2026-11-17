@@ -75,8 +75,9 @@ const crewsSaid = (crews, made) => !crews.length ? null : crews.length === 1
   ? `Its coordinator agent ${made ? "becomes the new group's" : "goes with it"}.`
   : `The ${crews.length} coordinator agents over it and its folders go with it${made ? ", the one over it the new group's" : ""}.`;
 
-// What is dragged (`d`, listDrag's), dropped into folder `id` of group `g` (null: its top): the dialog, then the move
-async function askMove(d, g, id) {
+// What is dragged (`d`, listDrag's), dropped into folder `id` of group `g` (null: its top): the dialog, then the move --
+// an actor on its own (`stay`): or kept on its own there, a second button (placeGroup)
+async function askMove(d, g, id, stay = true) {
   const from = state.home.gatherers.find((x) => x.name === d.g);
   if (!from) return;
   const body = { gatherer: d.g, to: g.name, ...(d.folder !== null ? { folder: d.folder } : { channels: withOwn(from, d.cs) }) };
@@ -87,56 +88,72 @@ async function askMove(d, g, id) {
   try { plan = await post("/api/groups", { ...body, do: "plan" }); } catch (err) { mvDraw({ title, note: `Can't move: ${err.message}` }); return; }
   const crews = d.folder !== null ? crewsWithin(from, d.folder) : [];
   const said = crewsSaid(crews, false);
-  const shown = { title, lines: [...moveLines(from, g, plan), ...(said ? [said] : [])],
-    names: moveNames(from, plan.actors.filter((c) => !crews.some((a) => a.channel === c))), goLabel: "Move" };
+  const lone = from.alone && stay, there = id === null ? titleOf(g) : (folderById(g.name, id) || { name: titleOf(g) }).name;
+  const shown = { title: from.alone ? `Join the ${titleOf(g)} group?` : title, lines: [...moveLines(from, g, plan), ...(said ? [said] : []),
+    ...(lone ? [`Or keep it on its own in ${there}: in that folder, sharing context with no other actor.`] : [])],
+    names: moveNames(from, plan.actors.filter((c) => !crews.some((a) => a.channel === c))), goLabel: from.alone ? "Join" : "Move" };
   const go = mvGo(shown, "Moving…", "Not moved", async () => {
     const got = await post("/api/groups", { ...body, do: "move", into: id });
     return { to: g.name, actors: plan.actors, apps: (got.moved && got.moved.apps) || [], joined: (got.moved && got.moved.joined) || {},
       said: `Moved to the ${titleOf(g)} group` };
   }, d.g);
-  mvDraw({ ...shown, go });
+  const alt = lone ? { label: "Stay on its own", go: mvGo(shown, "Moving…", "Not moved", async () => {
+    await post("/api/groups", { gatherer: from.name, to: g.name, into: id, do: "place" });
+    showFolder(g.name, id, true);
+    return { to: from.name, actors: [], said: `On its own, in ${there}` };
+  }, from.name) } : null;
+  mvDraw({ ...shown, go, alt });
 }
 // A folder dropped outside every group (`d`, listDrag's): the dialog, then the folder made a group of its own (groups.py's
 // `split`) -- the server's, named after it
 function askSplit(d) {
   const from = state.home.gatherers.find((x) => x.name === d.g), f = from && folderById(d.g, d.folder);
-  if (!f) return;
-  const inside = withTasks(from, actorsWithin(from, d.folder).map((a) => a.channel)).filter((c) => !isAppItem(c));
-  const going = [...new Set([...withTasks(from, actorsWithin(from, d.folder).map((a) => a.channel)).filter(isAppItem)
-    .map((c) => c.slice(APP_ITEM.length)), ...gathererApps(d.g).filter((o) => ((x) => x !== null && within(d.g, x, d.folder))(appFolder(d.g, o.id))).map((o) => o.id)])]
-    .map((i) => appInfo(d.g, i)).filter(Boolean).map((o) => ({ id: o.id, app: o.app.name, title: o.name || o.title }));
-  const actors = from.agents.filter((a) => inside.includes(a.channel)), n = actors.length;
-  const others = from.agents.filter((a) => !isCoordinator(a) && !inside.includes(a.channel)).length;
-  const lines = [`The folder ${f.name} becomes a group of its own, ${f.name}, and what is in it goes to the new group's top.`
-    + (n ? ` ${n === 1 ? "Its actor leaves" : `Its ${n} actors leave`} the ${titleOf(from)} group (${mvCount(others, "other")}) for it.`
-      : ` It leaves the ${titleOf(from)} group.`)];
-  if (n) lines.push(`${n === 1 ? "It" : "They"} will no longer share context with the actors of ${titleOf(from)}`
-    + `${n === 1 ? "" : ", only with each other"}.`, rebuildLine(from, actors));
-  const appsSaid = appsLine(going, n > 1), crewSaid = crewsSaid(crewsWithin(from, d.folder), true);
+  if (f) askOwn(from, f, false);
+}
+// Folder `f` of group `g` given a group of its own (groups.py's `own`), where it is (`here`: its line's button) -- or,
+// dropped outside every group, at the list's top (`split`): the dialog, then the group, named after it
+function askOwn(g, f, here = true) {
+  const inside = withTasks(g, actorsWithin(g, f.id).map((a) => a.channel)).filter((c) => !isAppItem(c));
+  const going = [...new Set([...withTasks(g, actorsWithin(g, f.id).map((a) => a.channel)).filter(isAppItem)
+    .map((c) => c.slice(APP_ITEM.length)), ...gathererApps(g.name).filter((o) => ((x) => x !== null && within(g.name, x, f.id))(appFolder(g.name, o.id))).map((o) => o.id)])]
+    .map((i) => appInfo(g.name, i)).filter(Boolean).map((o) => ({ id: o.id, app: o.app.name, title: o.name || o.title }));
+  const actors = g.agents.filter((a) => inside.includes(a.channel)), n = actors.length;
+  const others = g.agents.filter((a) => !isCoordinator(a) && !inside.includes(a.channel)).length;
+  const lines = [(here ? `${f.name} becomes a group of its own where it is, named after it, with the settings of ${titleOf(g)}.`
+    : `The folder ${f.name} becomes a group of its own, ${f.name}, and what is in it goes to the new group's top.`)
+    + (n ? ` ${n === 1 ? "Its actor leaves" : `Its ${n} actors leave`} the ${titleOf(g)} group (${mvCount(others, "other")}) for it.`
+      : here ? " No actor is in it yet: those started there will share context with each other only." : ` It leaves the ${titleOf(g)} group.`)];
+  if (n) lines.push(`${n === 1 ? "It" : "They"} will no longer share context with the actors of ${titleOf(g)}`
+    + `${n === 1 ? "" : ", only with each other"}.`, rebuildLine(g, actors));
+  const appsSaid = appsLine(going, n > 1), crewSaid = crewsSaid(crewsWithin(g, f.id), true);
   if (appsSaid) lines.push(appsSaid);
   if (crewSaid) lines.push(crewSaid);
-  const shown = { title: `Make ${f.name} a group of its own?`, lines, names: moveNames(from, inside), goLabel: "Make a group" };
+  const shown = { title: here ? `Give ${f.name} a group of its own?` : `Make ${f.name} a group of its own?`, lines,
+    names: moveNames(g, inside), goLabel: "Make a group" };
   mvOpen("A folder made a group of its own");
   const go = mvGo(shown, "Making the group…", "Not made", async () => {
-    const got = await post("/api/groups", { gatherer: d.g, do: "split", folder: d.folder });
-    return { to: got.split.group, actors: got.split.actors, apps: got.split.apps || [], said: `${f.name} is a group of its own` };
-  }, d.g);
+    const got = await post("/api/groups", { gatherer: g.name, do: here ? "own" : "split", folder: f.id });
+    const made = here ? got.own : got.split;
+    return { to: made.group, actors: made.actors, apps: made.apps || [], said: `${f.name} is a group of its own` };
+  }, g.name);
   mvDraw({ ...shown, go });
 }
 // ---- a group dropped into another (groups.py's `merge`): made a folder of it, named after it, everything in it
 // Whether the group dragged (listDrag's `gs`: one) may go into group `g`: in the home's one database, neither on its own,
 // and not into itself
-function canMerge(g) {
+function canMerge(g, id = null) {
   const d = listDrag;
   if (!d || !d.gs || d.gs.length !== 1 || !state.home.merged || g.name === GF || g.alone || d.gs[0] === g.name) return false;
-  const from = state.home.gatherers.find((x) => x.name === d.gs[0]);
-  return !!from && !from.alone && state.home.gatherers.some((x) => x.name === g.name);
+  const from = state.home.gatherers.find((x) => x.name === d.gs[0]), p = from && placeOf(from.name);
+  return !!from && !from.alone && state.home.gatherers.some((x) => x.name === g.name) && !insideOf(g.name, from.name)
+    && !(p && p.in === g.name && p.folder === id);
 }
-// The group `name` dropped into folder `id` of group `g` (null: its top): the dialog, then the merge
-async function askMerge(name, g, id) {
+// The group `name` dropped into folder `id` of group `g` (null: its top): the dialog, then the merge -- or (`keep`) kept
+// a group of its own inside that folder, a second button (placeGroup)
+async function askMerge(name, g, id, keep = true) {
   const from = state.home.gatherers.find((x) => x.name === name);
   if (!from) return;
-  const title = `Merge ${titleOf(from)} into ${titleOf(g)}?`;
+  const title = keep ? `Merge ${titleOf(from)} into ${titleOf(g)}?` : `Make ${titleOf(from)} part of ${titleOf(g)} again?`;
   mvOpen("A group merged into another");
   mvDraw({ title, note: "Working out what moves…" });
   let plan;
@@ -154,6 +171,8 @@ async function askMerge(name, g, id) {
   if (apps) lines.push(apps);
   if (plan.apps.some((x) => x.app === "notes")) lines.push(`Its notes go under a page named ${titleOf(from)} in the notes of ${titleOf(g)}.`);
   if (groupCrew(from)) lines.push("Its coordinator agent becomes the one over the new folder.");
+  const there = id === null ? titleOf(g) : (folderById(g.name, id) || { name: titleOf(g) }).name;
+  if (keep) lines.push(`Or keep it a group of its own, inside ${there}: no actor starts or stops sharing context.`);
   const shown = { title, lines, names: moveNames(from, actors.map((a) => a.channel)), goLabel: "Merge" };
   const go = mvGo(shown, "Merging…", "Not merged", async () => {
     const got = await post("/api/groups", { gatherer: name, to: g.name, into: id, do: "merge" });
@@ -165,7 +184,12 @@ async function askMerge(name, g, id) {
     showFolder(g.name, m.folder, true);
     return { to: g.name, actors: m.actors, apps: m.apps || [], joined: m.joined || {}, said: `${titleOf(from)} is a folder of ${titleOf(g)} now` };
   }, name);
-  mvDraw({ ...shown, go });
+  const alt = keep ? { label: "Keep its own group", go: mvGo(shown, "Moving…", "Not moved", async () => {
+    await post("/api/groups", { gatherer: name, to: g.name, into: id, do: "place" });
+    openWhere(g.name, id);
+    return { to: name, actors: [], said: `${titleOf(from)} is a group of its own inside ${there}` };
+  }, name) } : null;
+  mvDraw({ ...shown, go, alt });
 }
 // The dialog, made once, opened
 function mvOpen(label) {
@@ -201,7 +225,7 @@ function mvGo(shown, doing, failed, act, from) {
   return go;
 }
 // The dialog drawn: its title, `lines`, the actors `names`, `note`, then Cancel and `goLabel` (`go`; none: not yet)
-function mvDraw({ title, lines = [], names = null, note = "", go = null, goLabel = "" }) {
+function mvDraw({ title, lines = [], names = null, note = "", go = null, goLabel = "", alt = null }) {
   const box = moveAsk.dialog, busy = moveAsk.busy ? { disabled: "" } : {};
   const form = el("form", { class: "newform", method: "dialog" },
     el("div", { class: "br-title" }, el("h3", { text: title }),
@@ -210,6 +234,7 @@ function mvDraw({ title, lines = [], names = null, note = "", go = null, goLabel
     names,
     note ? el("p", { class: "mv-note", role: "status", text: note }) : null,
     el("div", { class: "row" }, el("button", { type: "button", ...busy, onclick: () => box.close() }, "Cancel"),
+      go && alt ? el("button", { type: "button", class: "mv-alt", ...busy, onclick: () => { if (!moveAsk.busy) alt.go(); } }, alt.label) : null,
       go ? el("button", { type: "submit", class: "primary", ...busy }, goLabel) : null));
   form.addEventListener("submit", (ev) => { ev.preventDefault(); if (go && !moveAsk.busy) go(); });
   box.replaceChildren(form);
@@ -273,7 +298,8 @@ function canOutside() {
   const d = listDrag;
   if (!d || !state.home.merged || d.gs) return false;
   const from = state.home.gatherers.find((x) => x.name === d.g);
-  if (!from || from.alone) return false;
+  if (!from) return false;
+  if (from.alone) return d.folder === null && !!placeOf(from.name);   // on its own in a folder: back at the top
   if (d.folder !== null) return folderCanMove(from, d.folder);
   const items = withOwn(from, d.cs || []), actors = items.filter((c) => !isAppItem(c));
   const a = actors.length === 1 ? actorOf(from, actors[0]) : null;
@@ -299,7 +325,9 @@ function outsideDrop() {
     const d = listDrag;
     d.later = false;
     endDrag();
-    if (d.folder !== null) askSplit(d); else askAlone(d);
+    if (d.folder !== null) askSplit(d);
+    else if (isAloneName(d.g)) placeGroup(d.g, "", null);
+    else askAlone(d);
   });
   return n;
 }
@@ -404,21 +432,181 @@ function railAloneShut(gs) {
 }
 // One actor (`d`, listDrag's) dropped outside every group: the dialog, then it on its own, with its task's apps and
 // its own window if it is an app's agent (withOwn)
-function askAlone(d) {
+function askAlone(d, here = false) {
   const from = state.home.gatherers.find((x) => x.name === d.g), items = from ? withOwn(from, d.cs || []) : [];
   const c = items.find((k) => !isAppItem(k)), a = c && actorOf(from, c);
   if (!a) return;
   const name = actorTitle(a), others = from.agents.filter((x) => !isCoordinator(x) && x.channel !== c).length;
   const going = items.filter(isAppItem).map((k) => appInfo(d.g, k.slice(APP_ITEM.length))).filter(Boolean)
     .map((o) => ({ id: o.id, app: o.app.name, title: o.name || o.title }));
-  const lines = [`${name} leaves the ${titleOf(from)} group (${mvCount(others, "other")}) and works on its own: it will share context `
-    + "with no other actor, and no other actor with it.", appsLine(going, false), "It has no coordinator agent. Drag it into a group to bring it back.",
+  const f = here ? folderById(d.g, folderOf(d.g, a)) : null, where = f ? f.name : `the top of ${titleOf(from)}`;
+  const lines = [`${name} leaves the ${titleOf(from)} group (${mvCount(others, "other")}) and works on its own`
+    + (here ? `, staying in ${where}` : "") + ": it will share context with no other actor, and no other actor with it.",
+  appsLine(going, false), here ? `It has no coordinator agent. Its button there brings it back into ${titleOf(from)}.`
+    : "It has no coordinator agent. Drag it into a group to bring it back.",
   rebuildLine(from, [a])].filter(Boolean);
-  const shown = { title: "Take it out of every group?", lines, goLabel: "Take it out" };
+  const shown = { title: here ? "Put it on its own?" : "Take it out of every group?", lines, goLabel: here ? "On its own" : "Take it out" };
   mvOpen("An actor on its own");
   const go = mvGo(shown, "Taking it out…", "Not taken out", async () => {
-    const got = await post("/api/groups", { gatherer: d.g, do: "alone", channel: c });
+    const got = await post("/api/groups", { gatherer: d.g, do: "alone", channel: c, ...(here ? { here: true } : {}) });
     return { to: got.alone.group, actors: got.alone.actors, apps: got.alone.apps || [], said: `${name} is on its own` };
   }, d.g);
   mvDraw({ ...shown, go });
+}
+
+// ---- groups inside another group's folder (groups.py's `place`, `own`, `above`; home.places: {group: {in, folder}}),
+// the Notes design "Groups: folders, defaults and Manage groups": a folder takes its parent's group or has its own, an
+// actor has its folder's group or is on its own. A group of its own inside another's folder is drawn there (boxRows'
+// placedRows), its row set in as a folder's line is, with the mark of a group (nestMark); an actor on its own there,
+// with the mark of one (aloneMark). Its own group: the folder's button (askOwn); back in the group around it: the
+// nested group's button (askAbove), the actor's (askJoin); on its own where it is: the actor's (askAloneHere). Dropped
+// into another group's folder, a group asks Merge or Keep its own group (askMerge), an actor on its own Join or Stay on
+// its own (askMove); moved within the group it is in, either just goes (placeGroup), as a folder does.
+const placesOf = () => (state.home && state.home.places) || {};
+const isAloneName = (name) => String(name || "").startsWith("self:");
+// where the group `name` is drawn: {in, folder} -- a folder of a group drawn (null: its top), that folder gone: its top --
+// or null, at the list's top: placed nowhere, in a group hidden or gone, or in a ring of groups each inside the next
+function placeOf(name) {
+  const p = placesOf()[name];
+  if (!p || !p.in || !state.home.merged) return null;
+  const seen = new Set([name]);
+  for (let at = p.in; at; at = (placesOf()[at] || {}).in) {
+    if (seen.has(at)) return null;
+    seen.add(at);
+  }
+  const outer = state.home.gatherers.find((x) => x.name === p.in);
+  if (!outer || outer.alone || isHidden(outer) || isCrewHome(outer)) return null;
+  return { in: p.in, folder: p.folder !== null && p.folder !== undefined && folderById(p.in, p.folder) ? p.folder : null };
+}
+// whether group `name` is `outer`, or drawn inside it, at any depth
+function insideOf(name, outer) {
+  for (let at = name, n = 0; at && n < 64; at = (placeOf(at) || {}).in, n++) if (at === outer) return true;
+  return false;
+}
+const nestedIn = (g) => ((p) => p ? state.home.gatherers.find((x) => x.name === p.in) || null : null)(placeOf(g.name));
+// the groups drawn in folder `id` of group `gname` (null: its top): groups, by their titles, then actors on their own
+const placedIn = (gname, id) => state.home.gatherers.filter((x) => !isHidden(x) && !isCrewHome(x)
+  && ((p) => !!p && p.in === gname && p.folder === id)(placeOf(x.name)))
+  .sort((x, y) => (x.alone ? 1 : 0) - (y.alone ? 1 : 0) || byName(titleOf(x), titleOf(y)));
+const placedRows = (g, id) => placedIn(g.name, id).map((x) => x.alone ? aloneBox(x) : gathererBox(x));
+const nestMark = (outer) => el("span", { class: "g-mark", "aria-label": "A group of its own",
+  title: `A group of its own inside ${titleOf(outer)}: its actors share context with each other, not with ${titleOf(outer)}'s` },
+strokeIcon(ICONS.group, 13));
+const aloneMark = (g) => ((outer) => outer ? el("span", { class: "alone-mark", "aria-label": "On its own",
+  title: `On its own, in a folder of ${titleOf(outer)}: it shares context with no other actor` }, strokeIcon(ICONS.alone, 12)) : null)(g.alone ? nestedIn(g) : null);
+// the group `gname` open, and its folder `id` with the folders it is in
+function openWhere(gname, id) {
+  if (collapsed.delete(gname)) {
+    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
+  }
+  for (let f = id; f !== null && f !== undefined; f = (folderById(gname, f) || {}).parent ?? null) showFolder(gname, f, true);
+}
+// The group `name` put in folder `id` of group `to` ("": at the list's top), keeping its own group: nothing anyone shares
+// changes, so no question -- moved within the group it is in, or an actor on its own taken back to the top
+async function placeGroup(name, to, id) {
+  try { await post("/api/groups", { gatherer: name, to, into: id, do: "place" }); } catch (err) { setLive(`Not moved: ${err.message}`); return; }
+  if (to) openWhere(to, id);
+  await loadHome();
+  renderAgents();
+}
+// A nested group's way back: made part of the group it is in again, a folder of it where it is (the merge's dialog)
+function askAbove(g) {
+  const p = placeOf(g.name), outer = nestedIn(g);
+  if (outer) askMerge(g.name, outer, p.folder, false);
+}
+// An actor on its own in a folder, back in that folder's group (the move's dialog, without "Stay on its own")
+function askJoin(x) {
+  const p = placeOf(x.name), g = nestedIn(x), a = aloneActor(x);
+  if (g && a) askMove({ g: x.name, cs: [a.channel], folder: null }, g, p.folder, false);
+}
+// An actor of group `g` on its own, staying in its folder
+const askAloneHere = (g, a) => askAlone({ g: g.name, cs: [a.channel] }, true);
+// Its switch, among its row's buttons: on its own where it is -- or, on its own in a folder, back in that folder's group.
+// None for the coordinator agent, one working in a task with others (a task moves whole), with a database per gatherer.
+function groupButton(g, a) {
+  if (SNAPSHOT || !state.home.merged || isCoordinator(a)) return null;
+  if (g.alone) {
+    const outer = nestedIn(g);
+    return outer ? rowButton("group-btn", { title: `Join ${titleOf(outer)}, its folder's group: share context with its actors`,
+      "aria-label": `Join ${titleOf(outer)}` }, () => askJoin(g), strokeIcon(ICONS.group, 13)) : null;
+  }
+  if (withOwn(g, [a.channel]).filter((c) => !isAppItem(c)).length > 1) return null;
+  return rowButton("group-btn", { title: "On its own: it stays in its folder, sharing context with no other actor",
+    "aria-label": "Put it on its own" }, () => askAloneHere(g, a), strokeIcon(ICONS.alone, 13));
+}
+
+// ---- MANAGE GROUPS: who shares context with whom, at a glance, and the switches (the Notes design's section 4): a
+// dialog from the list's head (manageButton) -- each group, at its place, its folders and open actors under it (closed
+// ones counted), a folder's switch "Parent's group | Own group", an actor's "Folder's group | On its own". A switch asks
+// first, as in the list (askOwn, askAbove, askAloneHere, askJoin), then the dialog is drawn again from the new home
+// (renderAgents calls drawManage while it is open). The CLI's `ag groups` has the same.
+const manage = { dialog: null };
+const MANAGE_LABEL = "Manage groups: who shares context with whom";
+function manageButton() {
+  if (SNAPSHOT || !state.home.merged) return null;
+  return el("button", { class: "manage-groups", type: "button", title: MANAGE_LABEL, "aria-label": MANAGE_LABEL, onclick: openManage },
+    strokeIcon(ICONS.group, 15));
+}
+function openManage() {
+  if (!manage.dialog) {
+    manage.dialog = el("dialog", { class: "br-dialog mg-dialog", "aria-label": "Manage groups" });
+    manage.dialog.addEventListener("click", (ev) => { if (ev.target === manage.dialog) manage.dialog.close(); });
+    document.body.append(manage.dialog);
+  }
+  drawManage();
+  if (!manage.dialog.open) manage.dialog.showModal();
+}
+// a switch of two: `now` the one pressed; the other asks (`ask`), or, `why`, it can't be had and says why
+function mgSwitch(label, [one, two], now, ask, why = "") {
+  const pick = (text, on) => el("button", { type: "button", class: "mg-opt" + (on ? " on" : ""), "aria-pressed": on ? "true" : "false",
+    ...(on || why ? { disabled: "" } : {}), ...(why && !on ? { title: why } : {}), onclick: () => { if (!on) ask(); } }, text);
+  return el("span", { class: "mg-switch", role: "group", "aria-label": label }, pick(one, now === 0), pick(two, now === 1));
+}
+function mgActor(g, a, depth) {
+  const lone = g.alone, inTask = !lone && withOwn(g, [a.channel]).filter((c) => !isAppItem(c)).length > 1;
+  const why = isCoordinator(a) ? "The coordinator agent stays with its group" : inTask ? "It works in a task with others: a task moves whole"
+    : lone && !nestedIn(g) ? "At the list's top, in no folder: drag it into one" : "";
+  return el("div", { class: "mg-row actor", style: `--depth: ${depth}` },
+    el("span", { class: "mg-name" }, plainFace(a), el("span", { text: actorTitle(a) || a.channel.slice(0, 8) })),
+    mgSwitch(`${actorTitle(a)}: its group`, ["Folder's group", "On its own"], lone ? 1 : 0,
+      () => (lone ? askJoin(g) : askAloneHere(g, a)), why));
+}
+// group `g`'s folder `id` (null: its top), at `depth`: its folders, each with its switch and what is in it; the groups and
+// actors on their own put there; its open actors (the closed counted)
+function mgBox(g, id, depth) {
+  const out = [];
+  for (const f of kidFolders(g.name, id)) {
+    out.push(el("div", { class: "mg-row folder", style: `--depth: ${depth}` },
+      el("span", { class: "mg-name" }, strokeIcon(ICONS.folder, 14), el("span", { text: f.name })),
+      mgSwitch(`${f.name}: its group`, ["Parent's group", "Own group"], 0, () => askOwn(g, f))));
+    out.push(...mgBox(g, f.id, depth + 1));
+  }
+  for (const x of placedIn(g.name, id)) out.push(...(x.alone ? x.agents.map((a) => mgActor(x, a, depth)) : mgGroup(x, depth)));
+  const mine = g.agents.filter((a) => folderOf(g.name, a) === id && !isCoordinator(a));
+  const shut = mine.filter((a) => ["Saved", "Closed"].includes(groupOf(g, a)));
+  out.push(...mine.filter((a) => !shut.includes(a)).map((a) => mgActor(g, a, depth)));
+  if (shut.length) out.push(el("div", { class: "mg-row shut", style: `--depth: ${depth}`, text: `${plural(shut.length, "closed actor")} here too` }));
+  return out;
+}
+// a group: its line -- placed in a folder, its switch -- then what is in it
+function mgGroup(g, depth) {
+  const outer = nestedIn(g), n = g.agents.filter((a) => !isCoordinator(a)).length;
+  return [el("div", { class: "mg-row group", style: `--depth: ${depth}` },
+    el("span", { class: "mg-name" }, strokeIcon(ICONS.group, 14), el("b", { text: titleOf(g) }), el("span", { class: "mg-n", text: plural(n, "actor") })),
+    outer ? mgSwitch(`${titleOf(g)}: its group`, ["Parent's group", "Own group"], 1, () => askAbove(g))
+      : el("span", { class: "mg-note", text: "a group" })), ...mgBox(g, null, depth + 1)];
+}
+function drawManage() {
+  if (!manage.dialog) return;
+  const shown = state.home.gatherers.filter((g) => !isHidden(g) && !isCrewHome(g) && !placeOf(g.name));
+  const lone = shown.filter((g) => g.alone);
+  manage.dialog.replaceChildren(el("div", { class: "newform mg-form" },
+    el("div", { class: "br-title" }, el("h3", { text: "Manage groups" }),
+      el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => manage.dialog.close() }, "×")),
+    el("p", { class: "mg-say", text: "Actors share context within their group only. A folder takes its parent's group or has its own; "
+      + "an actor has its folder's group or is on its own. Each change asks first." }),
+    el("div", { class: "mg-tree" }, ...shown.filter((g) => !g.alone).sort((x, y) => byName(titleOf(x), titleOf(y))).flatMap((g) => mgGroup(g, 0)),
+      ...(lone.length ? [el("div", { class: "mg-row group", style: "--depth: 0" }, el("span", { class: "mg-name" }, strokeIcon(ICONS.alone, 14),
+        el("b", { text: "On their own, at the list's top" })))] : []),
+      ...lone.flatMap((x) => x.agents.map((a) => mgActor(x, a, 1))))));
 }
