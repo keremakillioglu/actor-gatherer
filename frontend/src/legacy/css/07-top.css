@@ -23,12 +23,23 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .chat.mini > .mini-x { grid-area: x; align-self: start; }   /* in the box's top right corner, as an app's × in its panel's */
 /* with the conversation's last lines right of the box (18-mini-history.js): the box two parts, the lines three, the avatar
    alone not shown; a pane too narrow for them, none, and the avatar alone again */
-.chat.mini:has(> .mini-hist) { grid-template-columns: auto minmax(150px, 2fr) minmax(0, 3fr) auto auto;
+.chat.mini:has(> .mini-hist) { grid-template-columns: auto minmax(150px, var(--mini-box, 2fr)) minmax(0, var(--mini-hist, 3fr)) auto auto;
   grid-template-areas: "note note note note note" "back box hist me x" ". err err me x"; }
 .chat.mini > .mini-hist { grid-area: hist; }
 .chat.mini:has(> .mini-hist) > .mini-me { display: none; }
+/* the line between the box and the lines, dragged (18-top.js's miniGrip): a few px either side of it, darker as it is
+   pointed at or dragged, as the work area's bars are (features/layout/place.css) */
+.chat.mini > .mini-grip { grid-area: hist; justify-self: start; align-self: stretch; position: relative; z-index: 1; width: 9px;
+  margin-left: -4px; cursor: col-resize; touch-action: none; }
+.mini-grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; }
+.mini-grip:hover::after, :root[data-mini-drag="here"] .mini-grip::after { left: 3px; width: 3px; background: var(--axis); }
+/* dragged (here, or in a pane's frame): the frames -- the pane's own among them, in the page around it -- let the pointer
+   by, so it goes on over them */
+:root[data-mini-drag] { cursor: col-resize; user-select: none; }
+:root[data-mini-drag] body * { cursor: inherit; }
+:root[data-mini-drag] iframe { pointer-events: none; }
 @container pane (max-width: 420px) {
-  .chat.mini > .mini-hist { display: none; }
+  .chat.mini > :is(.mini-hist, .mini-grip) { display: none; }
   .chat.mini:has(> .mini-hist) { grid-template-columns: auto minmax(0, 1fr) auto auto;
     grid-template-areas: "note note note note" "back box me x" ". err me x"; }
   .chat.mini:has(> .mini-hist) > .mini-me { display: inline-flex; }
