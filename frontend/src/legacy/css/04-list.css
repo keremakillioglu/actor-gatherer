@@ -371,18 +371,10 @@ body.drag-out .outside-drop { display: flex; }
 .agent .tab-no.here { color: var(--ink); background: color-mix(in srgb, var(--ink) 16%, transparent); box-shadow: none; }
 .agent .t-faces .tab-no { margin-right: 4px; }
 .agent:not(.task):has(.a-face > .tab-no) { grid-template-columns: 10px minmax(0, 1fr) auto; }   /* (the face still at its right) */
-/* GROUPS INSIDE ANOTHER GROUP'S FOLDER (05-group-moves.js): its row set in where it is, as a folder's line, its name led
-   by the mark of a group of its own; an actor on its own in a folder, its name led by the mark of one. Marks, not colours:
-   the list stays as quiet as it is, and only where sharing differs from the group around it is anything said. */
+/* A GROUP INSIDE ANOTHER GROUP'S FOLDER (05-group-moves.js): its row set in where it is, drawn as a folder's line is --
+   the list says nothing of groups (Manage groups does) */
 .gatherer.nested { margin: 0; }
 .gatherer.nested > .gatherer-row .gname { font-size: 13px; font-weight: 600; }
-.gatherer-row .g-mark { flex: none; display: inline-flex; color: var(--s1); }
-.agent .name .alone-mark { display: inline-flex; vertical-align: -1px; margin-right: 4px; color: var(--muted); }
-.agent .a-acts .group-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; min-width: 22px;
-  height: 22px; border-radius: 6px; color: var(--muted); cursor: pointer; }
-.agent .a-acts .group-btn:is(:hover, :focus-visible) { color: var(--s1); background: var(--surface); }
-.rail .r-actor .group-btn { display: none; }
-.mv-dialog .row .mv-alt { margin-right: auto; }
 /* MANAGE GROUPS (05-group-moves.js): the list head's button, and its dialog -- each group, its folders and actors set in
    by depth, each with its switch of two at the right */
 .aside-head .manage-groups { display: inline-flex; align-items: center; padding: 4px 6px; margin-left: -6px; color: var(--ink-2); }

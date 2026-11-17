@@ -1,11 +1,12 @@
 // Groups inside another group's folder, and the two settings (the Notes design "Groups: folders, defaults and Manage
 // groups"; 05-group-moves.js's placeOf, askOwn, askAbove, askAloneHere, askJoin; groups.py's `place`, `own`, `above`):
-// a folder takes its parent's group or has its own, an actor has its folder's group or is on its own. A group placed in
-// a folder is drawn there, with the mark of a group; an actor on its own there, with the mark of one. Each switch asks
-// first; a group dropped into a folder asks Merge or Keep its own group.
+// a folder takes its parent's group or has its own, an actor has its folder's group or is on its own. The list says
+// nothing of groups: a group placed in a folder is drawn there as a folder is, an actor on its own there as any actor,
+// with no switch of theirs; a drop follows the default rule (into a folder: its group). Manage groups has the switches,
+// each asking first.
 import type { Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
-import { CLAUDE, CODEX, GATHERER, open } from "./home";
+import { CLAUDE, GATHERER, open } from "./home";
 
 const LAB = "lab";
 const LAB_ACTOR = "Lab notes";
@@ -64,35 +65,85 @@ async function answering(page: Page, json: (body: Record<string, unknown>) => Re
   return asked;
 }
 
-test("a group and an actor on its own placed in a folder are drawn there, marked, and nowhere else", async ({
+const panel = (page: Page) => page.locator("dialog.mg-dialog");
+const mgRow = (page: Page, text: string) => panel(page).locator(".mg-row", { hasText: text }).first();
+async function manage(page: Page) {
+  await page.locator("#agents .aside-head .manage-groups").click();
+  await expect(panel(page).locator("h3")).toHaveText("Manage groups");
+}
+
+test("a group and an actor on its own placed in a folder are drawn there, unmarked, with no group buttons", async ({
   page,
 }) => {
   await home(page, { [LAB]: { in: GATHERER, folder: WORK }, [ALONE]: { in: GATHERER, folder: WORK } });
   await open(page);
   await workLine(page).locator(".fname").click(); // folded at first: opened, to show what is in it
   const work = demoBox(page).locator(".f-kids").first();
-  const lab = work.locator(".gatherer.nested .gatherer-row", { hasText: LAB });
-  await expect(lab).toBeVisible();
-  await expect(lab.locator(".g-mark")).toHaveAttribute(
-    "title",
-    `A group of its own inside ${GATHERER}: its actors share context with each other, not with ${GATHERER}'s`,
-  );
+  await expect(work.locator(".gatherer.nested .gatherer-row", { hasText: LAB })).toBeVisible();
   await expect(work.locator("button.agent", { hasText: LAB_ACTOR })).toBeVisible();
-  await expect(work.locator("button.agent", { hasText: ALONE_ACTOR }).locator(".alone-mark")).toBeVisible();
+  await expect(work.locator("button.agent", { hasText: ALONE_ACTOR })).toBeVisible();
   await expect(work.locator("button.agent", { hasText: CLAUDE })).toBeVisible(); // demo's own, beside them
   await expect(page.locator("#agents > .gatherer > .gatherer-row", { hasText: LAB })).toHaveCount(0); // not at the top too
-  await expect(page.locator("#agents > .gatherer.alone")).toHaveCount(0);
   await expect(page.locator("#agents button.agent", { hasText: ALONE_ACTOR })).toHaveCount(1);
+  // nothing of groups in the list: no marks, no switches on a folder, a nested group or an actor
+  await expect(page.locator("#agents :is(.g-mark, .alone-mark, .group-btn, .act.own, .act.above)")).toHaveCount(0);
+  await workLine(page).hover();
+  await expect(workLine(page).locator(".f-acts button[aria-label*='group of its own']")).toHaveCount(0);
 });
 
-test("a folder given a group of its own where it is, asked first", async ({ page }) => {
+test("the list's head makes a folder, with no Folder only switch: at the top, a group by the default rule", async ({
+  page,
+}) => {
+  await home(page, {});
+  await open(page);
+  const button = page.locator("#agents .aside-head .gf-new");
+  await expect(button).toHaveAttribute("title", "New folder");
+  await button.click();
+  await expect(page.locator("#agents .folder-box")).toHaveAttribute("placeholder", "Folder name");
+  await expect(page.locator("#agents .gf-kind")).toHaveCount(0);
+});
+
+test("a group dropped on another's folder asks, with only Merge: it takes that folder's group", async ({ page }) => {
+  await home(page, {});
+  const asked = await answering(page, (body) =>
+    body.do === "merge_plan"
+      ? { from: LAB, to: GATHERER, into: WORK, folder: LAB, actors: 1, before: {}, apps: [] }
+      : {
+          merged: { group: GATHERER, folder: 60, name: LAB, actors: [], apps: [], joined: {}, from: LAB },
+          folders: {},
+          tasks: {},
+        },
+  );
+  await open(page);
+  await groupRow(page, LAB).dragTo(workLine(page));
+  const dialog = page.locator("dialog.mv-dialog");
+  await expect(dialog.locator("h3")).toHaveText(`Merge ${LAB} into ${GATHERER}?`);
+  await expect(dialog.getByRole("button", { name: "Keep its own group" })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Merge" }).click();
+  await expect(dialog).toBeHidden();
+  expect(asked.at(-1)).toEqual({ gatherer: LAB, to: GATHERER, into: WORK, do: "merge" });
+});
+
+test("Manage groups shows each group's folders and actors with their switches", async ({ page }) => {
+  await home(page, { [LAB]: { in: GATHERER, folder: WORK }, [ALONE]: { in: GATHERER, folder: WORK } });
+  await open(page);
+  await manage(page);
+  await expect(mgRow(page, GATHERER).locator(".mg-note")).toHaveText("a group"); // at the top: a group, no switch
+  await expect(mgRow(page, "Work").locator(".mg-opt.on")).toHaveText("Parent's group");
+  await expect(mgRow(page, LAB).locator(".mg-opt.on")).toHaveText("Own group"); // inside Work: its own
+  await expect(mgRow(page, ALONE_ACTOR).locator(".mg-opt.on")).toHaveText("On its own");
+  await expect(mgRow(page, CLAUDE).locator(".mg-opt.on")).toHaveText("Folder's group");
+  await expect(mgRow(page, LAB_ACTOR).locator(".mg-opt.on")).toHaveText("Folder's group");
+});
+
+test("Manage groups: a folder given a group of its own where it is, asked first", async ({ page }) => {
   await home(page, {});
   const asked = await answering(page, () => ({
     own: { group: "Work", actors: [], apps: [], from: GATHERER, in: GATHERER, folder: null },
   }));
   await open(page);
-  await workLine(page).hover();
-  await workLine(page).locator(".f-acts .act.own").click();
+  await manage(page);
+  await mgRow(page, "Work").getByRole("button", { name: "Own group" }).click();
   const dialog = page.locator("dialog.mv-dialog");
   await expect(dialog.locator("h3")).toHaveText("Give Work a group of its own?");
   await expect(dialog.locator(".mv-line").first()).toContainText(
@@ -104,9 +155,10 @@ test("a folder given a group of its own where it is, asked first", async ({ page
   await dialog.getByRole("button", { name: "Make a group" }).click();
   await expect(dialog).toBeHidden();
   expect(asked).toEqual([{ gatherer: GATHERER, do: "own", folder: WORK }]);
+  await expect(panel(page)).toBeVisible(); // over the panel, which stays
 });
 
-test("a nested group back in the group around it: the merge's question, without Keep", async ({ page }) => {
+test("Manage groups: a group inside a folder back in the group around it", async ({ page }) => {
   await home(page, { [LAB]: { in: GATHERER, folder: WORK } });
   const asked = await answering(page, (body) =>
     body.do === "merge_plan"
@@ -118,39 +170,16 @@ test("a nested group back in the group around it: the merge's question, without 
         },
   );
   await open(page);
-  await workLine(page).locator(".fname").click(); // folded at first: opened, to show what is in it
-  await groupRow(page, LAB).hover();
-  await groupRow(page, LAB).locator(".act.above").click();
+  await manage(page);
+  await mgRow(page, LAB).getByRole("button", { name: "Parent's group" }).click();
   const dialog = page.locator("dialog.mv-dialog");
   await expect(dialog.locator("h3")).toHaveText(`Make ${LAB} part of ${GATHERER} again?`);
-  await expect(dialog.getByRole("button", { name: "Keep its own group" })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Merge" }).click();
   await expect(dialog).toBeHidden();
   expect(asked.at(-1)).toEqual({ gatherer: LAB, to: GATHERER, into: WORK, do: "merge" });
 });
 
-test("a group dropped on another's folder: Keep its own group puts it there, a group inside it", async ({ page }) => {
-  await home(page, {});
-  const asked = await answering(page, (body) =>
-    body.do === "merge_plan"
-      ? { from: LAB, to: GATHERER, into: WORK, folder: LAB, actors: 1, before: {}, apps: [] }
-      : { placed: { group: LAB, in: GATHERER, folder: WORK }, places: {}, gatherer_folders: {} },
-  );
-  await open(page);
-  await groupRow(page, LAB).dragTo(workLine(page));
-  const dialog = page.locator("dialog.mv-dialog");
-  await expect(dialog.locator("h3")).toHaveText(`Merge ${LAB} into ${GATHERER}?`);
-  await expect(dialog.locator(".mv-line").last()).toHaveText(
-    "Or keep it a group of its own, inside Work: no actor starts or stops sharing context.",
-  );
-  await dialog.getByRole("button", { name: "Keep its own group" }).click();
-  await expect(dialog).toBeHidden();
-  expect(asked.at(-1)).toEqual({ gatherer: LAB, to: GATHERER, into: WORK, do: "place" });
-});
-
-test("an actor put on its own stays in its folder, and joins its folder's group again from its row", async ({
-  page,
-}) => {
+test("Manage groups: an actor on its own, staying in its folder, and back in its folder's group", async ({ page }) => {
   await home(page, { [ALONE]: { in: GATHERER, folder: WORK } });
   const asked = await answering(page, (body) =>
     body.do === "plan"
@@ -163,51 +192,19 @@ test("an actor put on its own stays in its folder, and joins its folder's group 
         },
   );
   await open(page);
-  await workLine(page).locator(".fname").click(); // folded at first: opened, to show what is in it
+  await manage(page);
   const dialog = page.locator("dialog.mv-dialog");
-  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
-  await claude.hover();
-  await claude.locator(".group-btn").click();
+  await mgRow(page, CLAUDE).getByRole("button", { name: "On its own" }).click();
   await expect(dialog.locator("h3")).toHaveText("Put it on its own?");
   await expect(dialog.locator(".mv-line").first()).toContainText("staying in Work");
   await dialog.getByRole("button", { name: "On its own" }).click();
   await expect(dialog).toBeHidden();
   expect(asked.at(-1)).toEqual({ gatherer: GATHERER, do: "alone", channel: expect.any(String), here: true });
 
-  const lone = page.locator("#agents button.agent", { hasText: ALONE_ACTOR });
-  await lone.hover();
-  await lone.locator(".group-btn").click();
+  await mgRow(page, ALONE_ACTOR).getByRole("button", { name: "Folder's group" }).click();
   await expect(dialog.locator("h3")).toHaveText(`Join the ${GATHERER} group?`);
-  await expect(dialog.getByRole("button", { name: "Stay on its own" })).toHaveCount(0); // asked to join: no staying
+  await expect(dialog.getByRole("button", { name: "Stay on its own" })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Join" }).click();
   await expect(dialog).toBeHidden();
   expect(asked.at(-1)).toEqual({ gatherer: ALONE, to: GATHERER, channels: [ALONE.slice(5)], do: "move", into: WORK });
-  await expect(page.locator("#agents button.agent", { hasText: CODEX }).locator(".group-btn")).toHaveCount(1); // demo's own
-});
-
-test("Manage groups shows each group's folders and actors with their switches, each asking as the list does", async ({
-  page,
-}) => {
-  await home(page, { [LAB]: { in: GATHERER, folder: WORK }, [ALONE]: { in: GATHERER, folder: WORK } });
-  await answering(page, (body) =>
-    body.do === "plan" ? { actors: [ALONE.slice(5)], from: ALONE, to: GATHERER, before: {}, after: {} } : {},
-  );
-  await open(page);
-  await page.locator("#agents .aside-head .manage-groups").click();
-  const panel = page.locator("dialog.mg-dialog");
-  await expect(panel.locator("h3")).toHaveText("Manage groups");
-  const row = (text: string) => panel.locator(".mg-row", { hasText: text });
-  await expect(row(GATHERER).first().locator(".mg-note")).toHaveText("a group"); // at the top: a group, no switch
-  await expect(row("Work").locator(".mg-opt.on")).toHaveText("Parent's group");
-  await expect(row(LAB).first().locator(".mg-opt.on")).toHaveText("Own group"); // inside Work: its own
-  await expect(row(ALONE_ACTOR).locator(".mg-opt.on")).toHaveText("On its own");
-  await expect(row(CLAUDE).locator(".mg-opt.on")).toHaveText("Folder's group");
-  await expect(row(LAB_ACTOR).locator(".mg-opt.on")).toHaveText("Folder's group");
-  await row("Work").getByRole("button", { name: "Own group" }).click();
-  const dialog = page.locator("dialog.mv-dialog");
-  await expect(dialog.locator("h3")).toHaveText("Give Work a group of its own?"); // the list's own question, over it
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(panel).toBeVisible();
-  await row(ALONE_ACTOR).getByRole("button", { name: "Folder's group" }).click();
-  await expect(dialog.locator("h3")).toHaveText(`Join the ${GATHERER} group?`);
 });

@@ -3,15 +3,16 @@
 // the list. None kept: the list as without them, every gatherer at its top. One holds gatherers and folders of gatherers
 // and nothing else: no actor is started in one, none is counted on its line -- its buttons, on hover: a folder in it,
 // rename (F2), delete (what is in it moves up a level). A folder made outside every group -- from the list's head (its
-// folder button), or in one of these -- is a GROUP of its own (groups.py's `make`, nameGroup), unless its name box's
-// "Folder only" is pressed: then it is one of these. A gatherer put in one by dragging its row onto its line
+// folder button), or in one of these -- is a GROUP of its own (groups.py's `make`, nameGroup), as the default rule has
+// it: the list shows folders, and says nothing of groups (who shares with whom is set in Manage groups,
+// 05-group-moves.js). These are made no more from the list; those kept still hold groups. A gatherer put in one by dragging its row onto its line
 // (dragGatherer), or onto the list's head for the top; a folder of them dragged so too. A gatherer dragged onto another
 // is merged into it, as a folder of it (05-group-moves.js's askMerge). The list's folder code draws and changes them, as a gatherer's folders: their gatherer GF, a name no gatherer
 // has (each a directory's name: no "/") -- treeOf, folderPost, makeFolder, startFolderEdit, ... -- and GFS where a
 // gatherer is asked for. Each open till the reader folds it (gfFolded, kept in this browser); folded, nothing of it is in
 // view, not even an actor open in a pane. The rail shows them so too (railGfLevel), to fold and open only.
 const GF = "/";
-const GF_NEW = "New folder: a group of its own, its actors sharing context";
+const GF_NEW = "New folder";
 const GFS = { name: GF, agents: [] };
 const GF_FOLDED_KEY = "ag-dashboard-gatherer-folders-folded";
 const gfFolded = (() => {
@@ -62,7 +63,7 @@ function dragGatherer(row, g) {
 function gfLevel(shown, id, draw) {
   const out = [], edit = state.folderEdit;
   if (edit && edit.g === GF && edit.id === null && edit.parent === id)
-    out.push(el("div", { class: "folder-line gf-line editing", "data-key": `${GF}/folder:new` }, folderBox(), gfKind(edit)));
+    out.push(el("div", { class: "folder-line gf-line editing", "data-key": `${GF}/folder:new` }, folderBox()));
   if (gfMaking && gfMaking.parent === id)              // a group being made (makeGroup): its name, till it is listed
     out.push(el("div", { class: "folder-line gf-line making", "data-key": `${GF}/group:new`, role: "status" },
       el("span", { class: "fname", text: gfMaking.text }), el("span", { class: "fill", text: "Making the group…" })));
@@ -75,23 +76,6 @@ function gfLevel(shown, id, draw) {
   }
   for (const g of shown) if (gfOf(g.name) === id) out.push(draw(g));
   return out;
-}
-// The new folder's "Folder only" switch, beside its name box: pressed, it is a folder of groups, not a group. Pressed
-// without the box losing its keys (so not named by the blur)
-function gfKind(edit) {
-  const b = el("button", { class: "gf-kind", type: "button", "aria-pressed": edit.group ? "false" : "true",
-    title: "Only to keep groups in: a folder of groups, not a group of its own" }, "Folder only");
-  b.addEventListener("mousedown", (ev) => ev.preventDefault());
-  b.addEventListener("click", () => {
-    edit.group = !edit.group;
-    b.setAttribute("aria-pressed", edit.group ? "false" : "true");
-    if (folderInput) {
-      folderInput.placeholder = edit.group ? "Group name" : "Folder name";
-      folderInput.setAttribute("aria-label", edit.group ? "The new group's name" : "The new folder's name");
-      folderInput.focus();
-    }
-  });
-  return b;
 }
 // The new folder outside every group named `text`, in folder of groups `parent` (null: the list's top): a group of its
 // own (groups.py's `make`). None typed is nothing done; a name a group beside it has (whatever its case), or one with

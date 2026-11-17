@@ -469,12 +469,12 @@ function renderAgents() {
 function gathererBox(g) {
   if (g.alone) return aloneBox(g);                   // an actor on its own: its row alone (05-group-moves.js)
   const open = !collapsed.has(g.name);
-  const crew = groupCrew(g), outer = nestedIn(g);    // inside another group's folder: marked so (05-group-moves.js)
+  const crew = groupCrew(g), outer = nestedIn(g);    // inside another group's folder: drawn there (05-group-moves.js)
   const box = el("div", { class: "gatherer" + (outer ? " nested" : "") + (picks.g === g.name && picks.cs.size > 1 ? " picking" : "") },
     dropOn(dragGatherer(el("div", { class: "gatherer-row", "data-key": g.name },
       el("button", { class: "name", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleGatherer(g.name),
         title: g.policy ? `${g.name} · policy ${g.policy}` : g.name },
-        el("span", { class: "caret", text: "▶" }), outer ? nestMark(outer) : null,
+        el("span", { class: "caret", text: "▶" }),
         state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, null) ? null
           : el("span", { class: "gname", text: titleOf(g) })),
       state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, null) ? nameBox() : null,
@@ -488,9 +488,6 @@ function gathererBox(g) {
             "aria-label": `New folder in ${titleOf(g)}`, onclick: () => startFolderEdit(g.name, null, null) }, strokeIcon(ICONS.folderNew, 14)),
           SNAPSHOT ? null : el("button", { class: "act rename", type: "button", title: `Rename ${titleOf(g)}`, "aria-label": `Rename ${titleOf(g)}`,
             onclick: () => retitle(g) }, strokeIcon("M10.6 2.6l2.8 2.8-7.9 7.9-3.4.6.6-3.4zM9.1 4.1l2.8 2.8", 14)),
-          SNAPSHOT || !outer ? null : el("button", { class: "act above", type: "button", "aria-label": `Join ${titleOf(outer)} again`,
-            title: `Join ${titleOf(outer)} again: a folder of it where it is, its actors sharing context with ${titleOf(outer)}'s`,
-            onclick: () => askAbove(g) }, strokeIcon(ICONS.folderUp, 14)),
           el("button", { class: "act hide", type: "button", title: `Hide ${g.name}`, "aria-label": `Hide ${g.name}`, onclick: () => setHidden(g, true) },
             hideIcon())))), g), g, null, () => { if (collapsed.has(g.name)) toggleGatherer(g.name); }));
   if (state.adding && state.adding.gatherer === g.name) box.append(newForm());
@@ -612,9 +609,9 @@ function agentRow(g, a, group) {
     el("div", {},
       // just its name, else what it was last asked, on one line: what it was asked and its recap, in its title (and over
       // the whole page, the monitor's card)
-      naming ? nameBox() : el("div", { class: "name" + (named ? "" : asked ? " unnamed" : " none"), ...nameIt }, aloneMark(g),
+      naming ? nameBox() : el("div", { class: "name" + (named ? "" : asked ? " unnamed" : " none"), ...nameIt },
         named || (asked ? firstLine(asked, 200) : isCoordinator(a) ? `Coordinates ${crewPlace(crewNode(g, a), g)}` : "No message yet")),
-      rowActs(addButton(g, a.channel), groupButton(g, a), saveButton(g, a), closeButton(g, a)),
+      rowActs(addButton(g, a.channel), saveButton(g, a), closeButton(g, a)),
       branchChip(g, a),
       (a.background || []).length ? el("div", { class: "bgline", title: a.background.map((t) => `${TASK_KINDS[t.kind] || t.kind}: ${t.label || t.id}`).join("\n") },
         `${a.background.length} in background · ${a.background.map((t) => t.label || t.id).join(", ")}`) : null),
@@ -1348,8 +1345,6 @@ function folderLine(g, f) {
     folderAct("reopen", `Reopen ${f.name}: back with the open folders, its actors still closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id)),
   ] : [...startButtons(g, f), crewAt(`folder:${f.id}`, g)[1] ? null : crewButton(g, `folder:${f.id}`),
     folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(g.name, null, f.id)),
-    state.home.merged ? folderAct("own", `Give ${f.name} a group of its own, where it is: its actors share context with each other, not with ${titleOf(g)}'s`,
-      strokeIcon(ICONS.group, 14), () => askOwn(g, f)) : null,
     folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
     folderAct("delete", `Delete ${f.name}: what is in it moves up a level${crewAt(`folder:${f.id}`, g)[1] ? ", and its coordinator agent is closed" : ""}`,
       strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
@@ -1461,8 +1456,7 @@ function folderBox() {
   if (folderInput) return folderInput;
   const f = state.folderEdit;
   folderInput = el("input", { class: "name-box folder-box", type: "text", maxlength: String(FOLDER_CHARS), spellcheck: "false",
-    autocomplete: "off", placeholder: f.group ? "Group name" : "Folder name",
-    "aria-label": f.group ? "The new group's name" : f.id === null ? "The new folder's name" : "The folder's name" });
+    autocomplete: "off", placeholder: "Folder name", "aria-label": f.id === null ? "The new folder's name" : "The folder's name" });
   folderInput.value = f.value;
   folderInput.addEventListener("input", () => { f.value = folderInput.value; });
   folderInput.addEventListener("keydown", (ev) => {

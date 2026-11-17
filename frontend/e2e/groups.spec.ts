@@ -240,7 +240,7 @@ test("in the home's one database, an actor dragged outside every group asks firs
   await lone.locator("button.agent", { hasText: CLAUDE }).dragTo(groupRow(page, GATHERER)); // back into a group: asked first
   await expect(dialog.locator("h3")).toHaveText(`Join the ${GATHERER} group?`);
   await expect(dialog.getByRole("button", { name: "Join" })).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Stay on its own" })).toBeVisible(); // or kept on its own there
+  await expect(dialog.getByRole("button", { name: "Stay on its own" })).toHaveCount(0); // the default rule: it joins
   expect(asked.at(-1)).toEqual({
     gatherer: `self:${state.claude}`,
     to: GATHERER,
