@@ -46,7 +46,10 @@ tree is kept there instead, as records ag reads and never shows an agent (the No
                 at its group's top. One that only files it has `was` its `group`: no move, nothing rebuilt
                 (groups.py's are the moves).
     filed       no channel's: {item, group, folder} -- an app's instance ("app:<id>", as the list has it) in a folder;
-                an app is no conversation, so it has no `group` record. The latest of an item wins.
+                an app is no conversation, so it has no `group` record. Or a whole GROUP ("group:<name>", an actor on
+                its own's too, `self:<channel>`) placed in a folder of another group -- keeping its own group: a group
+                inside that folder (groups.py's `place`) -- `group` "" when at the list's top. The latest of an item
+                wins (`places`).
 
 A change is made as in dashboard.db -- on a copy of the tree in memory, by the same code -- and what it changed put in
 by ag at once (actions.py's `insert`): a FolderError, and nothing kept, if ag did not take it. dashboard.db's folders
@@ -140,6 +143,7 @@ def _with_closed(conn: sqlite3.Connection) -> None:
 
 FOLDER, GROUP, FILED = "folder", "group", "filed"
 APP = "app:"                    # an app's instance in a folder (the list's item), kept by a FILED record
+PLACED = "group:"               # a group placed in another group's folder, kept by a FILED record (`places`)
 COPIED = "folders_in_home"      # dashboard.db's: when its folders were copied into the home's one database
 _copied: set = set()            # the dashboard.db paths whose folders are copied in, as seen by this process
 
@@ -182,7 +186,7 @@ def _records() -> tuple:
                 elif kind == GROUP and ch is not None:
                     folder = p.get("folder")
                     placed[ch] = (str(p.get("group") or ""), folder if isinstance(folder, int) else None)
-                elif kind == FILED and ch is None and str(p.get("item") or "").startswith(APP):
+                elif kind == FILED and ch is None and str(p.get("item") or "").startswith((APP, PLACED)):
                     folder = p.get("folder")
                     placed[p["item"]] = (str(p.get("group") or ""), folder if isinstance(folder, int) else None)
     except sqlite3.OperationalError:                    # no events yet, or no channel's column
@@ -194,7 +198,20 @@ def _records() -> tuple:
 
 def _filed(kept: Dict[int, dict], placed: Dict[str, tuple]) -> List[tuple]:
     """(group, channel, folder id) of each actor in a folder of its own group."""
-    return [(g, ch, f) for ch, (g, f) in placed.items() if f in kept and kept[f]["group"] == g]
+    return [(g, ch, f) for ch, (g, f) in placed.items() if f in kept and kept[f]["group"] == g and not ch.startswith(PLACED)]
+
+
+def places() -> Dict[str, dict]:
+    """In the home's one database, each group placed in another group: {group: {in: that group, folder: its folder's
+    id, or None for its top (a folder gone since: its top too)}}. {} before, or when none is."""
+    if not _in_home():
+        return {}
+    try:
+        kept, placed, _ = _records()
+    except sqlite3.Error:
+        return {}
+    return {k[len(PLACED):]: {"in": g, "folder": f if f in kept and kept[f]["group"] == g else None}
+            for k, (g, f) in placed.items() if k.startswith(PLACED) and g}
 
 
 def _stored_in_home() -> Dict[str, dict]:
@@ -238,7 +255,7 @@ def _filed_event(group: str, item: str, folder: Optional[int], tag: Optional[str
 
 def _placed_event(group: str, key: str, folder: Optional[int], tag: Optional[str] = None) -> dict:
     """Where an item of the list is: an actor's `group` record, an app's `filed` one."""
-    return (_filed_event if key.startswith(APP) else _group_event)(group, key, folder, tag)
+    return (_filed_event if key.startswith((APP, PLACED)) else _group_event)(group, key, folder, tag)
 
 
 def _group_event(group: str, channel: str, folder: Optional[int], tag: Optional[str] = None) -> dict:

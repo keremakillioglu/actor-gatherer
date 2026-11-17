@@ -244,6 +244,12 @@ class App:
         """The instance put to sleep -- its task closed: it stays open, and what runs for it (a process, a page) is let
         go of, its state kept to come back as it was once it is used again. Nothing runs for it: nothing to do."""
 
+    def folded(self, instance: Instance, was: str, title: str) -> None:
+        """The group `was` (titled `title`, as the user reads it) merged into the instance's group, as a folder of it:
+        what the app keeps for a group apart from its instances (a notebook, say) carried from `was` into the
+        instance's, the instance being that group's one of the app now (its own, or `was`'s moved). Called once for
+        each instance `was` had. Nothing kept per group: nothing to do."""
+
     def call(self, instance: Instance, tool: str, args: dict, caller: Caller) -> ToolResult:
         """A call of one of its tools (its own name) handled by the backend, on `instance`, by `caller`. Raise
         AppError, or return ToolResult.error, to refuse it."""

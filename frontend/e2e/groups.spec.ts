@@ -7,6 +7,7 @@
 import type { Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, GATHERER, open } from "./home";
+import { closeManage, dragOutside, manage, mgRow, panel } from "./manage";
 
 const LAB = "lab";
 const LAB_ACTOR = "Lab notes";
@@ -54,7 +55,9 @@ const inGroup = (page: Page, name: string, text: string) =>
     .locator("#agents .gatherer", { has: page.locator(".gatherer-row", { hasText: name }) })
     .locator("button.agent", { hasText: text });
 
-test("in the home's one database, an actor dragged onto another group asks first, then moves", async ({ page }) => {
+test("in the home's one database, an actor dragged onto another group moves at once in the list, asked first in Manage groups", async ({
+  page,
+}) => {
   const moved = { channel: null as string | null };
   await twoGroups(page, true, moved);
   const asked: Record<string, unknown>[] = [];
@@ -82,13 +85,8 @@ test("in the home's one database, an actor dragged onto another group asks first
   claude = (await row(page, CLAUDE).getAttribute("data-key"))!.slice(GATHERER.length + 1); // `${group}/${channel}`
   const dialog = page.locator("dialog.mv-dialog");
 
-  await row(page, CLAUDE).dragTo(page.locator(".aside-head")); // the list's head is no group: there it goes on its own,
-  await expect(dialog.locator("h3")).toHaveText("Take it out of every group?"); // asked first, nothing sent till then
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-  expect(asked).toEqual([]);
-
-  await row(page, CLAUDE).dragTo(groupRow(page, LAB));
-  await expect(dialog).toBeVisible();
+  await manage(page); // in Manage groups: asked first, saying who starts and stops sharing
+  await mgRow(page, CLAUDE).dragTo(mgRow(page, LAB));
   await expect(dialog.locator("h3")).toHaveText(`Move to the ${LAB} group?`);
   await expect(dialog.locator(".mv-line").first()).toHaveText(
     `${CLAUDE} moves from the ${GATHERER} group (1 other) to the ${LAB} group (1 other).`,
@@ -97,12 +95,15 @@ test("in the home's one database, an actor dragged onto another group asks first
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
   expect(asked.map((b) => b.do)).toEqual(["plan"]); // asked, nothing moved
+  await closeManage(page);
   await expect(inGroup(page, GATHERER, CLAUDE)).toBeVisible();
 
-  await row(page, CLAUDE).dragTo(groupRow(page, LAB));
-  await dialog.getByRole("button", { name: "Move" }).click();
+  await row(page, CLAUDE).dragTo(groupRow(page, LAB)); // in the list: by the default rule, at once
+  await expect
+    .poll(() => asked.at(-1))
+    .toEqual({ gatherer: GATHERER, to: LAB, do: "move", channels: [claude], into: null });
+  expect(asked.map((b) => b.do)).toEqual(["plan", "move"]);
   await expect(dialog).toBeHidden();
-  expect(asked.at(-1)).toEqual({ gatherer: GATHERER, to: LAB, do: "move", channels: [claude], into: null });
   await expect(inGroup(page, LAB, CLAUDE)).toBeVisible();
   await expect(inGroup(page, GATHERER, CLAUDE)).toHaveCount(0);
 });
@@ -125,7 +126,7 @@ test("with a database per gatherer, a drop into another group is refused, as bef
   expect(asked).toBe(0);
 });
 
-test("in the home's one database, a folder dragged outside every group asks first, then is a group of its own", async ({
+test("in the home's one database, a folder dragged outside every group is a group of its own: at once in the list, asked first in Manage groups", async ({
   page,
 }) => {
   const state = { split: false, claude: "" };
@@ -155,30 +156,33 @@ test("in the home's one database, a folder dragged outside every group asks firs
     });
   });
   await open(page);
-  const outside = page.locator(".outside-drop");
+  const outside = page.locator("#agents .outside-drop");
   await expect(outside).toBeHidden(); // shown only while a folder is dragged
-  const work = page.locator("#agents .folder-line", { hasText: "Work" }); // by hand: the place shows once a drag starts
-  await work.hover();
-  await page.mouse.down();
-  const at = (await work.boundingBox())!;
-  await page.mouse.move(at.x + 20, at.y + at.height + 12, { steps: 4 });
-  await expect(outside).toBeVisible();
-  await outside.hover();
-  await page.mouse.up();
   const dialog = page.locator("dialog.mv-dialog");
+  await manage(page); // in Manage groups: asked first
+  await dragOutside(page, mgRow(page, "Work"), panel(page), "Outside every group: a group of its own");
   await expect(dialog.locator("h3")).toHaveText("Make Work a group of its own?");
   await expect(dialog.locator(".mv-line").first()).toHaveText(
     "The folder Work becomes a group of its own, Work, and what is in it goes to the new group's top. " +
       `Its actor leaves the ${GATHERER} group (1 other) for it.`,
   );
-  await dialog.getByRole("button", { name: "Make a group" }).click();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  expect(asked).toEqual([]);
+  await closeManage(page);
+  // in the list: at once
+  await dragOutside(
+    page,
+    page.locator("#agents .folder-line", { hasText: "Work" }),
+    page.locator("#agents"),
+    "Outside every group: a group of its own",
+  );
+  await expect.poll(() => asked).toEqual([{ gatherer: GATHERER, do: "split", folder: 7 }]);
   await expect(dialog).toBeHidden();
-  expect(asked).toEqual([{ gatherer: GATHERER, do: "split", folder: 7 }]);
   await expect(inGroup(page, "Work", CLAUDE)).toBeVisible();
   await expect(outside).toBeHidden();
 });
 
-test("in the home's one database, an actor dragged outside every group asks first, then is on its own", async ({
+test("in the home's one database, an actor dragged outside every group is on its own: at once in the list, asked first in Manage groups", async ({
   page,
 }) => {
   const state = { alone: false, claude: "" };
@@ -215,39 +219,33 @@ test("in the home's one database, an actor dragged outside every group asks firs
     });
   });
   await open(page);
-  const outside = page.locator(".outside-drop");
-  const claudeRow = row(page, CLAUDE);
-  await claudeRow.hover(); // by hand: the place shows once a drag starts
-  await page.mouse.down();
-  const at = (await claudeRow.boundingBox())!;
-  await page.mouse.move(at.x + 20, at.y + at.height + 12, { steps: 4 });
-  await expect(outside).toHaveText("Outside every group: on its own");
-  await outside.hover();
-  await page.mouse.up();
   const dialog = page.locator("dialog.mv-dialog");
+  await manage(page); // in Manage groups: asked first
+  await dragOutside(page, mgRow(page, CLAUDE), panel(page), "Outside every group: on its own");
   await expect(dialog.locator("h3")).toHaveText("Take it out of every group?");
   await expect(dialog.locator(".mv-line").first()).toContainText(
     `${CLAUDE} leaves the ${GATHERER} group (1 other) and works on its own`,
   );
-  await dialog.getByRole("button", { name: "Take it out" }).click();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  expect(asked).toEqual([]);
+  await closeManage(page);
+  // in the list: at once
+  await dragOutside(page, row(page, CLAUDE), page.locator("#agents"), "Outside every group: on its own");
+  await expect.poll(() => asked).toEqual([{ gatherer: GATHERER, do: "alone", channel: state.claude }]);
   await expect(dialog).toBeHidden();
-  expect(asked).toEqual([{ gatherer: GATHERER, do: "alone", channel: state.claude }]);
   const lone = page.locator("#agents .gatherer.alone");
   await expect(lone.locator(".alone-head")).toHaveCount(0); // no "own context" head
   await expect(lone.locator("button.agent", { hasText: CLAUDE })).toBeVisible();
   await expect(inGroup(page, GATHERER, CLAUDE)).toHaveCount(0);
 
-  await lone.locator("button.agent", { hasText: CLAUDE }).dragTo(groupRow(page, GATHERER)); // back into a group: asked first
-  await expect(dialog.locator("h3")).toHaveText(`Move to the ${GATHERER} group?`);
-  expect(asked.at(-1)).toEqual({
-    gatherer: `self:${state.claude}`,
-    to: GATHERER,
-    do: "plan",
-    channels: [state.claude],
-  });
+  await lone.locator("button.agent", { hasText: CLAUDE }).dragTo(groupRow(page, GATHERER)); // back into a group: it joins
+  await expect
+    .poll(() => asked.at(-1))
+    .toEqual({ gatherer: `self:${state.claude}`, to: GATHERER, do: "move", channels: [state.claude], into: null });
+  await expect(dialog).toBeHidden();
 });
 
-// An actor on its own from its start (05-group-moves.js's aloneNew): the list head's "+" beside "+ New group" opens a
+// An actor on its own from its start (05-group-moves.js's aloneNew): the list head's "+" beside its folder button opens a
 // box -- the directory the latest active actor works in, the harnesses that can start on their own (Codex names its
 // session only at the first call: said, not offered) -- and starts one on its own, run under the shown actor's group,
 // listed as its own row; with a database per gatherer there is none
@@ -305,7 +303,7 @@ test("in the home's one database, the list head's + starts an actor on its own",
 test("with a database per gatherer, the list head has no + for an actor on its own", async ({ page }) => {
   await startingAlone(page, false, "a1012e00-0000-4000-8000-0000000000f2");
   await open(page);
-  await expect(page.locator(".aside-head").getByRole("button", { name: "+ New group" })).toBeVisible();
+  await expect(page.locator(".aside-head button.gf-new")).toBeVisible();
   await expect(page.locator(".aside-head button.alone-new")).toHaveCount(0);
 });
 
@@ -424,7 +422,7 @@ async function openWork(page: Page) {
   await page.keyboard.press("Enter");
 }
 
-test("in the home's one database, an app in a folder that moves goes with it, its pane opened again there", async ({
+test("in the home's one database, an app in a folder that moves goes with it, its pane opened again there: asked in Manage groups, at once in the list", async ({
   page,
 }) => {
   const state = { moved: false, claude: "" };
@@ -455,13 +453,16 @@ test("in the home's one database, an app in a folder that moves goes with it, it
   await page.locator("#agents button.agent.app-row", { hasText: "Shopping list" }).click(); // its pane open
   const frame = page.locator(".app-frame");
   await expect(frame).toHaveAttribute("src", new RegExp(`gatherer=${GATHERER}&instance=n1`));
-  await page.locator("#agents .folder-line", { hasText: "Work" }).dragTo(groupRow(page, LAB));
   const dialog = page.locator("dialog.mv-dialog");
+  await manage(page);
+  await mgRow(page, "Work").dragTo(mgRow(page, LAB));
   await expect(dialog.locator("h3")).toHaveText(`Move to the ${LAB} group?`);
   await expect(dialog.locator(".mv-line").last()).toHaveText("The app Notepad (Shopping list) goes with them.");
-  await dialog.getByRole("button", { name: "Move" }).click();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await closeManage(page);
+  await page.locator("#agents .folder-line", { hasText: "Work" }).dragTo(groupRow(page, LAB)); // in the list: at once
+  await expect.poll(() => asked.map((b) => b.do)).toEqual(["plan", "move"]);
   await expect(dialog).toBeHidden();
-  expect(asked.map((b) => b.do)).toEqual(["plan", "move"]);
   await expect(frame).toHaveCount(1); // the same pane, its panel opened again for lab
   await expect(frame).toHaveAttribute("src", new RegExp(`gatherer=${LAB}&instance=n1`));
 });

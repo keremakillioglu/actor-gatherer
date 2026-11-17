@@ -1357,36 +1357,6 @@ function paneReady() {
   PANE.ready(window, state.selected);
   watchTop(document.getElementById("pane-head"), "here");
 }
-// The forms in the agent list: a new gatherer's ("+ New gatherer", gatherer ""), a new session's in a gatherer (its "+").
-function openForm(gatherer) {
-  state.adding = state.adding && state.adding.gatherer === gatherer ? null : { gatherer };
-  renderAgents();
-  const first = document.querySelector(".newform input, .newform select");
-  if (first) first.focus();
-}
-function gathererForm() {
-  const name = el("input", { name: "name", required: "", placeholder: "letters, digits, . _ -", pattern: "[A-Za-z0-9._\\-]+",
-    spellcheck: "false", autocomplete: "off" });
-  const err = el("div", { class: "err", role: "alert" });
-  const make = el("button", { type: "submit", class: "primary" }, "Create");
-  const form = el("form", { class: "newform", "aria-label": "New group" },
-    el("label", {}, "Group name", name),
-    el("div", { class: "desc", text: "Made with ag's default policy and pollers. Agents in it share context with each other." }),
-    err,
-    el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), make));
-  form.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    make.disabled = true; err.textContent = "";
-    try {
-      const g = await post("/api/gatherers", { name: name.value.trim() });
-      collapsed.delete(g.name);
-      await loadHome();
-      state.adding = null;
-      addSession(state.home.gatherers.find((x) => x.name === g.name) || { name: g.name, agents: [] });   // next: its first session
-    } catch (e) { err.textContent = e.message; make.disabled = false; }
-  });
-  return form;
-}
 // A gatherer's start buttons, one for each harness a new session can run on here (the server's `harnesses`:
 // in ag's config.toml, and installed): a click starts one, on the harness's default model, in the directory of
 // the gatherer's most recently active actor -- or, when no actor has one (or starting there failed), the form

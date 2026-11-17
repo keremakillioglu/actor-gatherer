@@ -88,7 +88,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
-from . import answers, avatars, folders, gatherer_folders, hiding, live, saved, sessions, tasks, titles
+from . import answers, avatars, folders, gatherer_folders, hiding, live, merges, saved, sessions, tasks, titles
 import app_kit
 import harness_kit
 from harness_kit import USERS, Kind
@@ -210,6 +210,35 @@ def alone_names() -> List[str]:
         conn.close()
 
 
+# the records of a change made to what a group holds (groups.py, folders.py): an actor's group, a folder, a group's place
+CHANGES = ("group", "folder", "filed")
+
+
+def changed() -> Dict[str, float]:
+    """In the home's one database: {group: when what it holds last changed} -- the latest `group`, `folder` or `filed`
+    record naming it, as the group something went into or the one it left (`was`): an actor moved in or out, a group
+    merged into it, a folder made, moved or deleted there, a group placed in it. The list hides a group with nothing for
+    a week only once this is a week old too, so one just changed -- its actors all long idle -- stays in view. {} before."""
+    if not paths.merged() or not os.path.exists(paths.home_db()):
+        return {}
+    conn = sqlite3.connect(f"file:{paths.home_db()}?mode=ro", uri=True, timeout=8)
+    try:
+        rows = conn.execute("SELECT json_extract(e.payload_json, '$.group'), json_extract(e.payload_json, '$.was'), "
+                            "max(e.inserted_at) FROM events e JOIN event_types t USING (event_type_id) "
+                            f"WHERE t.name IN ({', '.join('?' * len(CHANGES))}) GROUP BY 1, 2", CHANGES).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    out: Dict[str, float] = {}
+    for group, was, at in rows:
+        when = _seconds(at)
+        for name in (group, was):
+            if isinstance(name, str) and name and when:
+                out[name] = max(out.get(name, 0.0), when)
+    return out
+
+
 def _columns(conn, table: str) -> set:
     return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
 
@@ -242,12 +271,15 @@ def _seconds(value) -> Optional[float]:
     return stamp.timestamp()
 
 
-def gatherer_names() -> List[str]:
+def gatherer_names(every: bool = False) -> List[str]:
+    """The home's groups, by name: each a directory of ag's holding a database or a config -- but those merged into
+    another (merges.py), unless `every`."""
     root = paths.gatherers_dir()
     if not os.path.isdir(root):
         return []
+    gone = set() if every else set(merges.stored())
     return sorted(n for n in os.listdir(root)                 # a database, or a config: made, no session yet
-                  if any(os.path.exists(os.path.join(root, n, f)) for f in ("context.db", "gatherer.toml")))
+                  if n not in gone and any(os.path.exists(os.path.join(root, n, f)) for f in ("context.db", "gatherer.toml")))
 
 
 def _made(gatherer: str) -> Optional[float]:
@@ -319,6 +351,10 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
                           "last": max((a["last"] or 0 for a in agents), default=0) or None,
                           **({"alone": True} if name in lone else {})})
     _with_started(gatherers, started, now, named)
+    changes = changed()                  # when what each holds last changed: an actor or a folder moved in or out, ...
+    for g in gatherers:
+        if g["name"] in changes:
+            g["changed"] = changes[g["name"]]
     # an actor on its own with nothing to list: one started on its own, its record in, then forgotten before its first
     # message (sessions.py's `discard`) -- its group of one stays named in the database, but holds no one
     gatherers = [g for g in gatherers if not (g.get("alone") and not g["agents"])]
@@ -334,7 +370,8 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
     gatherers.sort(key=lambda g: g.get("created") or 0, reverse=True)
     return {"home": paths.HOME, "merged": paths.merged(), "now": now, "running_seconds": RUNNING_SECONDS, "gatherers": gatherers,
             "hook_servers": _hook_servers(), "hiding": hiding.stored(), "titles": titles.stored(), "saved": saved.stored(),
-            "folders": folders.stored(), "gatherer_folders": gatherer_folders.stored(), "tasks": tasks.stored(),
+            "folders": folders.stored(), "gatherer_folders": gatherer_folders.stored(), "places": folders.places(),
+            "tasks": tasks.stored(),
             "seen": looked.stored(), "harness_info": harness_info(), "harness_default": harness_kit.DEFAULT}
 
 
