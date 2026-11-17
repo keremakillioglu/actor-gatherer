@@ -128,7 +128,8 @@ test("Manage groups shows each group's folders and actors with their switches", 
   await home(page, { [LAB]: { in: GATHERER, folder: WORK }, [ALONE]: { in: GATHERER, folder: WORK } });
   await open(page);
   await manage(page);
-  await expect(mgRow(page, GATHERER).locator(".mg-note")).toHaveText("a group"); // at the top: a group, no switch
+  await expect(mgRow(page, GATHERER).locator(".mg-opt")).toHaveText(["Own group"]); // at the top: its own, the only option
+  await expect(mgRow(page, GATHERER).locator(".mg-opt.on")).toHaveText("Own group");
   await expect(mgRow(page, "Work").locator(".mg-opt.on")).toHaveText("Parent's group");
   await expect(mgRow(page, LAB).locator(".mg-opt.on")).toHaveText("Own group"); // inside Work: its own
   await expect(mgRow(page, ALONE_ACTOR).locator(".mg-opt.on")).toHaveText("On its own");

@@ -525,11 +525,12 @@ function openManage() {
   drawManage();
   if (!manage.dialog.open) manage.dialog.showModal();
 }
-// a switch of two: `now` the one pressed; the other asks (`ask`), or, `why`, it can't be had and says why
-function mgSwitch(label, [one, two], now, ask, why = "") {
+// a switch of its options (two, or one: a group at the top has no parent's group to take): `now` the one pressed; the
+// other asks (`ask`), or, `why`, it can't be had and says why
+function mgSwitch(label, options, now, ask, why = "") {
   const pick = (text, on) => el("button", { type: "button", class: "mg-opt" + (on ? " on" : ""), "aria-pressed": on ? "true" : "false",
     ...(on || why ? { disabled: "" } : {}), ...(why && !on ? { title: why } : {}), onclick: () => { if (!on) ask(); } }, text);
-  return el("span", { class: "mg-switch", role: "group", "aria-label": label }, pick(one, now === 0), pick(two, now === 1));
+  return el("span", { class: "mg-switch", role: "group", "aria-label": label }, ...options.map((text, i) => pick(text, now === i)));
 }
 function mgActor(g, a, depth) {
   const lone = g.alone, inTask = !lone && withOwn(g, [a.channel]).filter((c) => !isAppItem(c)).length > 1;
@@ -557,13 +558,14 @@ function mgBox(g, id, depth) {
   if (shut.length) out.push(el("div", { class: "mg-row shut", style: `--depth: ${depth}`, text: `${plural(shut.length, "closed actor")} here too` }));
   return out;
 }
-// a group: its line -- placed in a folder, its switch -- then what is in it
+// a group: its line, a folder's as the list has it -- placed in a folder, its switch; at the top, its own group, the only
+// option -- then what is in it
 function mgGroup(g, depth) {
   const outer = nestedIn(g), n = g.agents.filter((a) => !isCoordinator(a)).length;
   return [el("div", { class: "mg-row group", style: `--depth: ${depth}` },
-    el("span", { class: "mg-name" }, strokeIcon(ICONS.group, 14), el("b", { text: titleOf(g) }), el("span", { class: "mg-n", text: plural(n, "actor") })),
+    el("span", { class: "mg-name" }, strokeIcon(ICONS.folder, 14), el("b", { text: titleOf(g) }), el("span", { class: "mg-n", text: plural(n, "actor") })),
     outer ? mgSwitch(`${titleOf(g)}: its group`, ["Parent's group", "Own group"], 1, () => askAbove(g))
-      : el("span", { class: "mg-note", text: "a group" })), ...mgBox(g, null, depth + 1)];
+      : mgSwitch(`${titleOf(g)}: its group (at the top, its own)`, ["Own group"], 0, () => {})), ...mgBox(g, null, depth + 1)];
 }
 function drawManage() {
   if (!manage.dialog) return;

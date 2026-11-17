@@ -392,9 +392,8 @@ dialog.mg-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(78vh, 
 .mg-name { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 7px; font-size: 13px; }
 .mg-name > span:last-child, .mg-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mg-name svg { flex: none; color: var(--muted); }
-.mg-row.group .mg-name svg { color: var(--s1); }
 .mg-name .logo { width: 18px; height: 18px; flex: none; }
-.mg-n, .mg-note { font-size: 12px; color: var(--muted); font-weight: 400; white-space: nowrap; }
+.mg-n { font-size: 12px; color: var(--muted); font-weight: 400; white-space: nowrap; }
 .mg-switch { flex: none; display: inline-flex; border-radius: 7px; box-shadow: 0 0 0 1px var(--ring); overflow: hidden; }
 .mg-switch .mg-opt { border: 0; border-radius: 0; padding: 3px 9px; font-size: 12px; background: none; color: var(--muted); cursor: pointer; }
 .mg-switch .mg-opt + .mg-opt { box-shadow: -1px 0 0 var(--ring); }
