@@ -6,7 +6,11 @@ writes it where it is used:
   (--side, the bar's, cut round each robot so the three stay apart);
 - frontend/index.html, between <!--FAVICON--> and <!--/FAVICON-->: the same as the page's icon, its colours fixed,
   light or dark as the browser is;
-- assets/agui.svg: that icon, as a file.
+- assets/agui.svg: that icon, as a file;
+- the app's icon, the mark on a white tile, as pictures (PNG, drawn by a headless Chrome: $CHROME, else where it is
+  installed): ag_dashboard/icons/, what the page's manifest names -- the icon a browser installs the page as an app
+  with, as Chrome's "Install" does, and puts in the Dock or the task bar -- and desktop/icon.png, the desktop app's
+  in the Dock, drawn as a macOS app's icon is (its rounded square inset, a shadow under it).
 
     python3 assets/src/logo.py
 """
@@ -14,7 +18,10 @@ writes it where it is used:
 import math
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from urllib.parse import quote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +31,15 @@ from kit import CREAM, P, face, shine  # noqa: E402
 ROOT = os.path.join(HERE, "..", "..")
 PAGE = os.path.join(ROOT, "frontend", "index.html")
 ICON = os.path.join(ROOT, "assets", "agui.svg")
+ICONS = os.path.join(ROOT, "ag_dashboard", "icons")
+DESKTOP_ICON = os.path.join(ROOT, "desktop", "icon.png")
+
+# the app's icons (the server's manifest names each, api/page.py): (file, how it is drawn, its size in pixels) --
+# "tile", the mark on a white rounded square, for where an icon is shown as it is; "full", on white to its edges, the
+# mark inside the middle 80% every mask keeps (a "maskable" icon: Chrome on macOS cuts it to the Dock's rounded square,
+# Safari to its own)
+APP_ICONS = [("agui-192.png", "tile", 192), ("agui-512.png", "tile", 512), ("agui-maskable-192.png", "full", 192),
+             ("agui-maskable-512.png", "full", 512), ("apple-touch-icon.png", "full", 180)]
 
 f = lambda v: f"{v:.2f}".rstrip("0").rstrip(".")  # noqa: E731
 
@@ -113,6 +129,58 @@ def put(text, name, inner):
     return pat.sub(lambda m: m.group(1) + inner + m.group(2), text)
 
 
+WHITE = "#fff"
+
+
+def app_icon(kind, px):
+    """The app's icon, `px` pixels square, on a 1024 canvas: the mark 73% across its white ground, the robots cut round in
+    white. "mac": Apple's grid -- the ground a rounded square 824 across, 100 in, a soft shadow under it -- the mark
+    600 across it; "tile": the ground the whole canvas, its corners rounded; "full": the whole canvas, square (the
+    mark, 750 across, inside the middle 80%: what a mask keeps)."""
+    if kind == "mac":
+        ground = ('<filter id="drop" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" '
+                  'stdDeviation="12" flood-color="#000" flood-opacity=".3"/></filter>'
+                  f'<rect x="100" y="100" width="824" height="824" rx="185" fill="{WHITE}" filter="url(#drop)"/>')
+        side = 640
+    else:
+        corner = ' rx="230"' if kind == "tile" else ""
+        ground = f'<rect width="1024" height="1024"{corner} fill="{WHITE}"/>'
+        side = 800
+    at = f((1024 - side) / 2)
+    style = HALO.replace("var(--side)", WHITE)
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{px}" height="{px}" viewBox="0 0 1024 1024">'
+            f'<style>{style}</style>{ground}'
+            f'<svg x="{at}" y="{at}" width="{side}" height="{side}" viewBox="0 0 64 64">{mark()}</svg></svg>\n')
+
+
+def chrome():
+    """A Chrome to draw the app's icons with: $CHROME, else Chrome or Chromium where macOS installs them, else on the
+    PATH."""
+    if os.environ.get("CHROME"):
+        return os.environ["CHROME"]
+    for top in ("/Applications", os.path.expanduser("~/Applications")):
+        for app in ("Google Chrome.app/Contents/MacOS/Google Chrome", "Chromium.app/Contents/MacOS/Chromium"):
+            if os.access(os.path.join(top, app), os.X_OK):
+                return os.path.join(top, app)
+    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
+        if shutil.which(name):
+            return shutil.which(name)
+    sys.exit("no Chrome to draw the app's icons with: set CHROME to one")
+
+
+def draw(svg, px, out):
+    """`svg` drawn as a PNG `px` pixels square at `out`, its background clear, by a headless Chrome of its own."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "icon.svg")
+        with open(src, "w") as fh:
+            fh.write(svg)
+        subprocess.run([chrome(), "--headless", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
+                        "--default-background-color=00000000", f"--window-size={px},{px}", "--no-first-run",
+                        "--no-default-browser-check", f"--user-data-dir={os.path.join(tmp, 'profile')}",
+                        f"--screenshot={os.path.abspath(out)}", "file://" + src],
+                       check=True, capture_output=True, timeout=120)
+
+
 def main():
     svg = icon()
     with open(ICON, "w") as fh:
@@ -124,6 +192,11 @@ def main():
     with open(PAGE, "w") as fh:
         fh.write(text)
     print(f"wrote {os.path.relpath(ICON, ROOT)} and the mark and icon in {os.path.relpath(PAGE, ROOT)}")
+    os.makedirs(ICONS, exist_ok=True)
+    for name, kind, px in APP_ICONS:
+        draw(app_icon(kind, px), px, os.path.join(ICONS, name))
+    draw(app_icon("mac", 1024), 1024, DESKTOP_ICON)
+    print(f"drew the app's icons in {os.path.relpath(ICONS, ROOT)}/ and {os.path.relpath(DESKTOP_ICON, ROOT)}")
 
 
 if __name__ == "__main__":

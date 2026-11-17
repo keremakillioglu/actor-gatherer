@@ -26,6 +26,8 @@ function option(name: string): string | undefined {
 const home = homeOf(process.env, option("--home"));
 const port = Number(option("--port")) || DEFAULT_PORT;
 const RETRY = "ag-retry:";
+// The app's icon, the AGUI mark as a macOS app's (drawn by assets/src/logo.py): the Dock's, and the window's elsewhere.
+const ICON = path.join(HERE, "..", "icon.png");
 
 app.setName("ag");
 app.setPath("userData", path.join(home, "desktop")); // the app's own files go in the home, as the dashboard's do
@@ -145,6 +147,7 @@ function open(): void {
   const w = (win = new BrowserWindow({
     ...savedPlace(),
     title: "ag",
+    icon: ICON,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#1b1b1d" : "#fafafa",
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(HERE, "preload.cjs") },
   }));
@@ -218,6 +221,7 @@ function menu(): void {
 }
 
 app.whenReady().then(() => {
+  app.dock?.setIcon(ICON); // (Electron's own, unpackaged, else)
   menu();
   open();
 });
