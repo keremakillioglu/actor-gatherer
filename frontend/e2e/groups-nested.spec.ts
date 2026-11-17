@@ -66,7 +66,12 @@ async function answering(page: Page, json: (body: Record<string, unknown>) => Re
 }
 
 const panel = (page: Page) => page.locator("dialog.mg-dialog");
-const mgRow = (page: Page, text: string) => panel(page).locator(".mg-row", { hasText: text }).first();
+// the panel's row of `text` by its name, not its switch (which can name a group too)
+const mgRow = (page: Page, text: string) =>
+  panel(page)
+    .locator(".mg-row")
+    .filter({ has: page.locator(".mg-name", { hasText: text }) })
+    .first();
 async function manage(page: Page) {
   await page.locator("#agents .aside-head .manage-groups").click();
   await expect(panel(page).locator("h3")).toHaveText("Manage groups");
@@ -130,11 +135,14 @@ test("Manage groups shows each group's folders and actors with their switches", 
   await manage(page);
   await expect(mgRow(page, GATHERER).locator(".mg-opt")).toHaveText(["Own group"]); // at the top: its own, the only option
   await expect(mgRow(page, GATHERER).locator(".mg-opt.on")).toHaveText("Own group");
-  await expect(mgRow(page, "Work").locator(".mg-opt.on")).toHaveText("Parent's group");
+  await expect(mgRow(page, "Work").locator(".mg-opt")).toHaveText([GATHERER, "Own group"]); // the group it is in, by name
+  await expect(mgRow(page, "Work").locator(".mg-opt.on")).toHaveText(GATHERER);
+  await expect(mgRow(page, LAB).locator(".mg-opt")).toHaveText([GATHERER, "Own group"]);
   await expect(mgRow(page, LAB).locator(".mg-opt.on")).toHaveText("Own group"); // inside Work: its own
+  await expect(mgRow(page, ALONE_ACTOR).locator(".mg-opt")).toHaveText([GATHERER, "On its own"]);
   await expect(mgRow(page, ALONE_ACTOR).locator(".mg-opt.on")).toHaveText("On its own");
-  await expect(mgRow(page, CLAUDE).locator(".mg-opt.on")).toHaveText("Parent's group");
-  await expect(mgRow(page, LAB_ACTOR).locator(".mg-opt.on")).toHaveText("Parent's group");
+  await expect(mgRow(page, CLAUDE).locator(".mg-opt.on")).toHaveText(GATHERER);
+  await expect(mgRow(page, LAB_ACTOR).locator(".mg-opt.on")).toHaveText(LAB); // in lab: lab's group, not demo's
   // highlighted: each row that starts a group of its own -- a group, at the top or inside a folder, an actor on its own
   for (const text of [GATHERER, LAB, ALONE_ACTOR]) await expect(mgRow(page, text)).toHaveClass(/\bdefines\b/);
   for (const text of ["Work", CLAUDE, LAB_ACTOR]) await expect(mgRow(page, text)).not.toHaveClass(/\bdefines\b/);
@@ -153,6 +161,7 @@ test("Manage groups: a folder given a group of its own where it is, asked first"
   }));
   await open(page);
   await manage(page);
+  await expect(mgRow(page, ALONE_ACTOR).locator(".mg-opt")).toHaveText(["On its own"]); // at the top: no group around it
   await mgRow(page, "Work").getByRole("button", { name: "Own group" }).click();
   const dialog = page.locator("dialog.mv-dialog");
   await expect(dialog.locator("h3")).toHaveText("Give Work a group of its own?");
@@ -181,7 +190,7 @@ test("Manage groups: a group inside a folder back in the group around it", async
   );
   await open(page);
   await manage(page);
-  await mgRow(page, LAB).getByRole("button", { name: "Parent's group" }).click();
+  await mgRow(page, LAB).getByRole("button", { name: GATHERER, exact: true }).click();
   const dialog = page.locator("dialog.mv-dialog");
   await expect(dialog.locator("h3")).toHaveText(`Make ${LAB} part of ${GATHERER} again?`);
   await dialog.getByRole("button", { name: "Merge" }).click();
@@ -211,7 +220,7 @@ test("Manage groups: an actor on its own, staying in its folder, and back in its
   await expect(dialog).toBeHidden();
   expect(asked.at(-1)).toEqual({ gatherer: GATHERER, do: "alone", channel: expect.any(String), here: true });
 
-  await mgRow(page, ALONE_ACTOR).getByRole("button", { name: "Parent's group" }).click();
+  await mgRow(page, ALONE_ACTOR).getByRole("button", { name: GATHERER, exact: true }).click();
   await expect(dialog.locator("h3")).toHaveText(`Join the ${GATHERER} group?`);
   await expect(dialog.getByRole("button", { name: "Stay on its own" })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Join" }).click();

@@ -507,7 +507,8 @@ const askAloneHere = (g, a) => askAlone({ g: g.name, cs: [a.channel] }, true);
 // ---- MANAGE GROUPS: who shares context with whom, at a glance, and the switches (the Notes design's section 4) -- each
 // row that starts a group of its own (a group, an actor on its own: `defines`) on a highlighted background: a
 // dialog from the list's head (manageButton) -- each group, at its place, its folders and open actors under it (closed
-// ones counted), a folder's switch "Parent's group | Own group", an actor's "Parent's group | On its own" (its folder's). A switch asks
+// ones counted), a folder's switch "<the group it is in> | Own group", an actor's "<the group it is in> | On its own" -- the
+// group by its name, the folder that starts it (mgIn). A switch asks
 // first, as in the list (askOwn, askAbove, askAloneHere, askJoin), then the dialog is drawn again from the new home
 // (renderAgents calls drawManage while it is open). The CLI's `ag groups` has the same.
 const manage = { dialog: null };
@@ -526,21 +527,25 @@ function openManage() {
   drawManage();
   if (!manage.dialog.open) manage.dialog.showModal();
 }
-// a switch of its options (two, or one: a group at the top has no parent's group to take): `now` the one pressed; the
-// other asks (`ask`), or, `why`, it can't be had and says why
+// a switch of its options (two, or one: a group at the top, or an actor on its own there, has no group around it to
+// take): `now` the one pressed; the other asks (`ask`), or, `why`, it can't be had and says why. An option is its text,
+// or [text, what it means on hover]
 function mgSwitch(label, options, now, ask, why = "") {
-  const pick = (text, on) => el("button", { type: "button", class: "mg-opt" + (on ? " on" : ""), "aria-pressed": on ? "true" : "false",
-    ...(on || why ? { disabled: "" } : {}), ...(why && !on ? { title: why } : {}), onclick: () => { if (!on) ask(); } }, text);
-  return el("span", { class: "mg-switch", role: "group", "aria-label": label }, ...options.map((text, i) => pick(text, now === i)));
+  const pick = ([text, tip], on) => el("button", { type: "button", class: "mg-opt" + (on ? " on" : ""), "aria-pressed": on ? "true" : "false",
+    ...(on || why ? { disabled: "" } : {}), ...(why && !on ? { title: why } : tip ? { title: tip } : {}), onclick: () => { if (!on) ask(); } }, text);
+  return el("span", { class: "mg-switch", role: "group", "aria-label": label },
+    ...options.map((o, i) => pick(Array.isArray(o) ? o : [o, ""], now === i)));
 }
+// the option of taking group `g`, the one a row sits in: by its name, the folder that starts it
+const mgIn = (g) => [titleOf(g), `${titleOf(g)}'s group: shares context with its actors`];
 function mgActor(g, a, depth) {
   const lone = g.alone, inTask = !lone && withOwn(g, [a.channel]).filter((c) => !isAppItem(c)).length > 1;
-  const why = isCoordinator(a) ? "The coordinator agent stays with its group" : inTask ? "It works in a task with others: a task moves whole"
-    : lone && !nestedIn(g) ? "At the list's top, in no folder: drag it into one" : "";
+  const around = lone ? nestedIn(g) : g;   // the group it sits in: none for one on its own at the list's top
+  const why = isCoordinator(a) ? "The coordinator agent stays with its group" : inTask ? "It works in a task with others: a task moves whole" : "";
   return el("div", { class: "mg-row actor" + (lone ? " defines" : ""), style: `--depth: ${depth}`,   // on its own: a group of one
-    ...(lone ? { title: "On its own: a group of one, sharing context with no other actor" } : {}) },
+    ...(lone ? { title: `On its own: a group of one, sharing context with no other actor${around ? "" : ". Drag it into a folder to join that folder's group"}` } : {}) },
     el("span", { class: "mg-name" }, plainFace(a), el("span", { text: actorTitle(a) || a.channel.slice(0, 8) })),
-    mgSwitch(`${actorTitle(a)}: its group`, ["Parent's group", "On its own"], lone ? 1 : 0,
+    mgSwitch(`${actorTitle(a)}: its group`, around ? [mgIn(around), "On its own"] : ["On its own"], lone && around ? 1 : 0,
       () => (lone ? askJoin(g) : askAloneHere(g, a)), why));
 }
 // group `g`'s folder `id` (null: its top), at `depth`: its folders, each with its switch and what is in it; the groups and
@@ -550,7 +555,7 @@ function mgBox(g, id, depth) {
   for (const f of kidFolders(g.name, id)) {
     out.push(el("div", { class: "mg-row folder", style: `--depth: ${depth}` },
       el("span", { class: "mg-name" }, strokeIcon(ICONS.folder, 14), el("span", { text: f.name })),
-      mgSwitch(`${f.name}: its group`, ["Parent's group", "Own group"], 0, () => askOwn(g, f))));
+      mgSwitch(`${f.name}: its group`, [mgIn(g), "Own group"], 0, () => askOwn(g, f))));
     out.push(...mgBox(g, f.id, depth + 1));
   }
   for (const x of placedIn(g.name, id)) out.push(...(x.alone ? x.agents.map((a) => mgActor(x, a, depth)) : mgGroup(x, depth)));
@@ -567,7 +572,7 @@ function mgGroup(g, depth) {
   return [el("div", { class: "mg-row group defines", style: `--depth: ${depth}`,   // a group starts here
     title: `${titleOf(g)} starts a group: its actors share context with each other${outer ? `, not with ${titleOf(outer)}'s` : ""}` },
     el("span", { class: "mg-name" }, strokeIcon(ICONS.folder, 14), el("b", { text: titleOf(g) }), el("span", { class: "mg-n", text: plural(n, "actor") })),
-    outer ? mgSwitch(`${titleOf(g)}: its group`, ["Parent's group", "Own group"], 1, () => askAbove(g))
+    outer ? mgSwitch(`${titleOf(g)}: its group`, [mgIn(outer), "Own group"], 1, () => askAbove(g))
       : mgSwitch(`${titleOf(g)}: its group (at the top, its own)`, ["Own group"], 0, () => {})), ...mgBox(g, null, depth + 1)];
 }
 function drawManage() {
@@ -577,8 +582,8 @@ function drawManage() {
   manage.dialog.replaceChildren(el("div", { class: "newform mg-form" },
     el("div", { class: "br-title" }, el("h3", { text: "Manage groups" }),
       el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => manage.dialog.close() }, "×")),
-    el("p", { class: "mg-say", text: "Actors share context within their group only. A folder takes its parent's group or has its own; "
-      + "an actor has its folder's group or is on its own. Each change asks first." }),
+    el("p", { class: "mg-say", text: "Actors share context within their group only. Each switch names the group a folder or actor "
+      + "sits in: it takes that group, or has its own. Each change asks first." }),
     el("div", { class: "mg-tree" }, ...shown.filter((g) => !g.alone).sort((x, y) => byName(titleOf(x), titleOf(y))).flatMap((g) => mgGroup(g, 0)),
       ...(lone.length ? [el("div", { class: "mg-row group", style: "--depth: 0" }, el("span", { class: "mg-name" }, strokeIcon(ICONS.alone, 14),
         el("b", { text: "On their own, at the list's top" })))] : []),
