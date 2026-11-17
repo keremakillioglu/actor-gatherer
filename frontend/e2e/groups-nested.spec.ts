@@ -7,6 +7,7 @@
 import type { Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, GATHERER, open } from "./home";
+import { closeManage, manage, mgRow, panel } from "./manage";
 
 const LAB = "lab";
 const LAB_ACTOR = "Lab notes: read every paper on the reading list, sum each one up, and file the summaries by topic";
@@ -65,18 +66,6 @@ async function answering(page: Page, json: (body: Record<string, unknown>) => Re
   return asked;
 }
 
-const panel = (page: Page) => page.locator("dialog.mg-dialog");
-// the panel's row of `text` by its name, not its switch (which can name a group too)
-const mgRow = (page: Page, text: string) =>
-  panel(page)
-    .locator(".mg-row")
-    .filter({ has: page.locator(".mg-name", { hasText: text }) })
-    .first();
-async function manage(page: Page) {
-  await page.locator("#agents .aside-head .manage-groups").click();
-  await expect(panel(page).locator("h3")).toHaveText("Manage groups");
-}
-
 test("a group and an actor on its own placed in a folder are drawn there, unmarked, with no group buttons", async ({
   page,
 }) => {
@@ -108,25 +97,19 @@ test("the list's head makes a folder, with no Folder only switch: at the top, a 
   await expect(page.locator("#agents .gf-kind")).toHaveCount(0);
 });
 
-test("a group dropped on another's folder asks, with only Merge: it takes that folder's group", async ({ page }) => {
+test("a group dropped on another's folder in the list merges at once: it takes that folder's group", async ({
+  page,
+}) => {
   await home(page, {});
-  const asked = await answering(page, (body) =>
-    body.do === "merge_plan"
-      ? { from: LAB, to: GATHERER, into: WORK, folder: LAB, actors: 1, before: {}, apps: [] }
-      : {
-          merged: { group: GATHERER, folder: 60, name: LAB, actors: [], apps: [], joined: {}, from: LAB },
-          folders: {},
-          tasks: {},
-        },
-  );
+  const asked = await answering(page, () => ({
+    merged: { group: GATHERER, folder: 60, name: LAB, actors: [], apps: [], joined: {}, from: LAB },
+    folders: {},
+    tasks: {},
+  }));
   await open(page);
   await groupRow(page, LAB).dragTo(workLine(page));
-  const dialog = page.locator("dialog.mv-dialog");
-  await expect(dialog.locator("h3")).toHaveText(`Merge ${LAB} into ${GATHERER}?`);
-  await expect(dialog.getByRole("button", { name: "Keep its own group" })).toHaveCount(0);
-  await dialog.getByRole("button", { name: "Merge" }).click();
-  await expect(dialog).toBeHidden();
-  expect(asked.at(-1)).toEqual({ gatherer: LAB, to: GATHERER, into: WORK, do: "merge" });
+  await expect.poll(() => asked).toEqual([{ gatherer: LAB, to: GATHERER, into: WORK, do: "merge" }]); // no plan, no question
+  await expect(page.locator("dialog.mv-dialog")).toHaveCount(0);
 });
 
 test("Manage groups shows each group's folders and actors with their switches", async ({ page }) => {
@@ -237,7 +220,7 @@ test("Manage groups folds what is under a group or a folder, and keeps it folded
   await expect(mgRow(page, "Work")).toBeVisible();
   await expect(mgRow(page, CLAUDE)).toHaveCount(0);
   await expect(mgRow(page, LAB)).toHaveCount(0); // a group inside it, folded with it
-  await panel(page).getByRole("button", { name: "Close", exact: true }).click();
+  await closeManage(page);
   await manage(page);
   await expect(mgRow(page, LAB)).toHaveCount(0); // still folded, opened again
   await mgRow(page, "Work").locator(".mg-name").click(); // its name opens it too
@@ -305,4 +288,42 @@ test("a group whose actors are long idle stays in view once something is moved i
   moved = true;
   await page.reload();
   await expect(groupRow(page, LAB)).toBeVisible(); // just changed: in view
+});
+
+test("Manage groups opens from the settings panel, and makes folders: at the top a group, in a group or folder from its row", async ({
+  page,
+}) => {
+  await home(page, {});
+  const made: Record<string, unknown>[] = [];
+  await page.route("**/api/folders", async (route) => {
+    made.push(route.request().postDataJSON());
+    await route.fulfill({ json: { made: 90, folders: {} } });
+  });
+  const asked = await answering(page, (body) => ({ made: { group: String(body.name), title: String(body.name) } }));
+  await open(page);
+  await expect(page.locator("#agents .aside-head .manage-groups")).toHaveCount(0); // not in the list's head
+  await manage(page); // from the settings panel
+  await expect(page.locator("#about")).toBeHidden(); // closed as the panel opens
+
+  await mgRow(page, "Work").hover();
+  await mgRow(page, "Work").getByRole("button", { name: "New folder in Work" }).click();
+  const box = panel(page).locator(".mg-input");
+  await expect(box).toBeFocused();
+  await expect(box).toHaveAttribute("placeholder", "Folder name");
+  await box.press("Escape"); // the box closed, not the panel
+  await expect(box).toHaveCount(0);
+  await expect(panel(page)).toBeVisible();
+
+  await mgRow(page, "Work").hover();
+  await mgRow(page, "Work").getByRole("button", { name: "New folder in Work" }).click();
+  await box.fill("Drafts");
+  await box.press("Enter");
+  await expect.poll(() => made).toEqual([{ gatherer: GATHERER, do: "new", name: "Drafts", parent: WORK }]);
+  await expect(box).toHaveCount(0);
+
+  await panel(page).getByRole("button", { name: "New folder", exact: true }).click(); // at the top: a group of its own
+  await expect(box).toHaveAttribute("placeholder", "Folder name: a group of its own");
+  await box.fill("Ideas");
+  await box.press("Enter");
+  await expect.poll(() => asked).toEqual([{ do: "new", name: "Ideas", folder: null }]);
 });

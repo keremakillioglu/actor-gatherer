@@ -4,6 +4,7 @@
 import type { Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, open } from "./home";
+import { closeManage, manage, mgRow } from "./manage";
 
 const LAB = "lab";
 const LAB_ACTOR = "Lab notes";
@@ -91,7 +92,9 @@ test("a folder made at the list's top is a group of its own, named as typed", as
   await expect(page.locator("#agents .gf-line")).toHaveCount(0); // no folder of groups made
 });
 
-test("a group dragged onto another asks first, then is a folder of it with all its actors", async ({ page }) => {
+test("a group dragged onto another is a folder of it with all its actors: asked in Manage groups, at once in the list", async ({
+  page,
+}) => {
   const state = { made: null as string | null, merged: false };
   await home(page, state);
   const asked: Record<string, unknown>[] = [];
@@ -122,7 +125,8 @@ test("a group dragged onto another asks first, then is a folder of it with all i
   await open(page);
   const dialog = page.locator("dialog.mv-dialog");
   await expect(groupRow(page, GATHERER)).toHaveAttribute("draggable", "true");
-  await groupRow(page, GATHERER).dragTo(groupRow(page, LAB));
+  await manage(page); // in Manage groups: asked first
+  await mgRow(page, GATHERER).dragTo(mgRow(page, LAB));
   await expect(dialog.locator("h3")).toHaveText(`Merge ${GATHERER} into ${LAB}?`);
   await expect(dialog.locator(".mv-line").first()).toHaveText(
     `${GATHERER} becomes a folder of ${LAB}, named ${GATHERER}, with everything in it.`,
@@ -132,12 +136,13 @@ test("a group dragged onto another asks first, then is a folder of it with all i
   );
   await dialog.getByRole("button", { name: "Cancel" }).click();
   expect(asked.map((b) => b.do)).toEqual(["merge_plan"]); // asked, nothing merged
+  await closeManage(page);
   await expect(groupRow(page, GATHERER)).toBeVisible();
 
-  await groupRow(page, GATHERER).dragTo(groupRow(page, LAB));
-  await dialog.getByRole("button", { name: "Merge" }).click();
+  await groupRow(page, GATHERER).dragTo(groupRow(page, LAB)); // in the list: at once
+  await expect.poll(() => asked.at(-1)).toEqual({ gatherer: GATHERER, to: LAB, into: null, do: "merge" });
+  expect(asked.map((b) => b.do)).toEqual(["merge_plan", "merge"]);
   await expect(dialog).toBeHidden();
-  expect(asked.at(-1)).toEqual({ gatherer: GATHERER, to: LAB, into: null, do: "merge" });
   await expect(groupRow(page, GATHERER)).toHaveCount(0);
   const lab = page.locator("#agents .gatherer", { has: page.locator(".gatherer-row", { hasText: LAB }) });
   const folder = lab.locator(".folder-line", { hasText: GATHERER });

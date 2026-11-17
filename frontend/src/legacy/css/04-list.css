@@ -377,9 +377,6 @@ body.drag-out .outside-drop { display: flex; }
 .gatherer.nested > .gatherer-row .gname { font-size: 13px; font-weight: 600; }
 /* MANAGE GROUPS (05-group-moves.js): the list head's button, and its dialog -- each group, its folders and actors set in
    by depth, each with its switch of two at the right */
-.aside-head .manage-groups { display: inline-flex; align-items: center; padding: 4px 6px; margin-left: -6px; color: var(--ink-2); }
-.aside-head .manage-groups:hover { color: var(--ink); }
-.aside-head .manage-groups svg { display: block; }
 dialog.mg-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(78vh, 760px); }
 .mg-form { display: flex; flex-direction: column; gap: 10px; max-height: calc(min(78vh, 760px) - 32px); }
 .mg-say { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
@@ -407,6 +404,13 @@ button.mg-fold:hover { color: var(--ink); }
 .mg-fold .caret { font-size: 9px; transition: transform .15s; }
 .mg-fold[aria-expanded="true"] .caret { transform: rotate(90deg); }
 .mg-name.foldable { cursor: pointer; }
+/* making a folder: the head's button (at the top: a group), a row's own (seen while it is hovered), the box in place */
+.mg-form .br-title .mg-new { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 9px; }
+.mg-add { flex: none; display: inline-flex; padding: 3px 4px; border: 0; background: none; color: var(--muted); cursor: pointer;
+  opacity: 0; }
+.mg-row:hover .mg-add, .mg-add:focus-visible { opacity: 1; }
+.mg-add:hover { color: var(--ink); }
+.mg-input { flex: 1 1 auto; min-width: 0; font-size: 13px; padding: 3px 6px; }
 /* dragged and dropped as the list's rows are: what is dragged faded, where it would go lit -- into another group, as
    the list marks it (asked first) */
 .mg-row.dragging { opacity: .45; }
@@ -425,3 +429,5 @@ button.mg-fold:hover { color: var(--ink); }
 .mg-switch .mg-opt.on { background: color-mix(in srgb, var(--s1) 16%, transparent); color: var(--ink); opacity: 1; cursor: default; }
 .mg-switch .mg-opt:disabled:not(.on) { opacity: .45; cursor: default; }
 .mg-switch .mg-opt:not(:disabled):hover { color: var(--ink); background: var(--wash); }
+/* the settings panel's Groups row: what Manage groups is for, its button (05-group-moves.js's manageEntry) */
+#groups-cfg .groups-say { color: var(--muted); font-size: 12px; }
