@@ -29,7 +29,7 @@ const RETRY = "ag-retry:";
 // The app's icon, the AGUI mark as a macOS app's (drawn by assets/src/logo.py): the Dock's, and the window's elsewhere.
 const ICON = path.join(HERE, "..", "icon.png");
 
-app.setName("ag");
+app.setName("AGUI"); // the name it shows: its menu's About, Hide and Quit (the Dock's is its bundle's)
 app.setPath("userData", path.join(home, "desktop")); // the app's own files go in the home, as the dashboard's do
 
 let win: BrowserWindow | null = null;
@@ -117,7 +117,7 @@ function wire(w: BrowserWindow): void {
 function note(w: BrowserWindow, text: string, retry = false): void {
   const dark = nativeTheme.shouldUseDarkColors;
   const esc = text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] as string);
-  const html = `<!doctype html><meta charset="utf-8"><title>ag</title><style>
+  const html = `<!doctype html><meta charset="utf-8"><title>AGUI</title><style>
     body{margin:0;height:100vh;display:grid;place-items:center;font:14px -apple-system,system-ui,sans-serif;
       background:${dark ? "#1b1b1d" : "#fafafa"};color:${dark ? "#d4d4d8" : "#3f3f46"}}
     main{max-width:640px;padding:24px} pre{white-space:pre-wrap;font:12px ui-monospace,monospace;opacity:.8}
@@ -146,7 +146,7 @@ async function show(w: BrowserWindow): Promise<void> {
 function open(): void {
   const w = (win = new BrowserWindow({
     ...savedPlace(),
-    title: "ag",
+    title: "AGUI",
     icon: ICON,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#1b1b1d" : "#fafafa",
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(HERE, "preload.cjs") },

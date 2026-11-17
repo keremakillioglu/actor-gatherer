@@ -10,7 +10,8 @@ writes it where it is used:
 - the app's icon, the mark on a white tile, as pictures (PNG, drawn by a headless Chrome: $CHROME, else where it is
   installed): ag_dashboard/icons/, what the page's manifest names -- the icon a browser installs the page as an app
   with, as Chrome's "Install" does, and puts in the Dock or the task bar -- and desktop/icon.png, the desktop app's
-  in the Dock, drawn as a macOS app's icon is (its rounded square inset, a shadow under it).
+  in the Dock, drawn as a macOS app's icon is (its rounded square inset, a shadow under it), with desktop/icon.icns,
+  the same as its bundle's icon file (made by macOS's iconutil).
 
     python3 assets/src/logo.py
 """
@@ -33,6 +34,7 @@ PAGE = os.path.join(ROOT, "frontend", "index.html")
 ICON = os.path.join(ROOT, "assets", "agui.svg")
 ICONS = os.path.join(ROOT, "ag_dashboard", "icons")
 DESKTOP_ICON = os.path.join(ROOT, "desktop", "icon.png")
+DESKTOP_ICNS = os.path.join(ROOT, "desktop", "icon.icns")
 
 # the app's icons (the server's manifest names each, api/page.py): (file, how it is drawn, its size in pixels) --
 # "tile", the mark on a white rounded square, for where an icon is shown as it is; "full", on white to its edges, the
@@ -181,6 +183,20 @@ def draw(svg, px, out):
                        check=True, capture_output=True, timeout=120)
 
 
+def icns(png, out):
+    """The 1024 picture `png` as a macOS icon file (.icns, every size the Finder and the Dock ask for), by macOS's own
+    sips and iconutil: the desktop app's bundle's (desktop/scripts/bundle.mjs)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        kit = os.path.join(tmp, "agui.iconset")
+        os.makedirs(kit)
+        for px in (16, 32, 128, 256, 512):
+            for scale in (1, 2):
+                name = f"icon_{px}x{px}{'@2x' if scale == 2 else ''}.png"
+                subprocess.run(["sips", "-z", str(px * scale), str(px * scale), png, "--out", os.path.join(kit, name)],
+                               check=True, capture_output=True)
+        subprocess.run(["iconutil", "-c", "icns", kit, "-o", out], check=True, capture_output=True)
+
+
 def main():
     svg = icon()
     with open(ICON, "w") as fh:
@@ -196,6 +212,10 @@ def main():
     for name, kind, px in APP_ICONS:
         draw(app_icon(kind, px), px, os.path.join(ICONS, name))
     draw(app_icon("mac", 1024), 1024, DESKTOP_ICON)
+    if shutil.which("iconutil"):
+        icns(DESKTOP_ICON, DESKTOP_ICNS)
+    else:
+        print(f"left {os.path.relpath(DESKTOP_ICNS, ROOT)} as it was: no iconutil (macOS's) here")
     print(f"drew the app's icons in {os.path.relpath(ICONS, ROOT)}/ and {os.path.relpath(DESKTOP_ICON, ROOT)}")
 
 
