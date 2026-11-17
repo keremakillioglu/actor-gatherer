@@ -1094,7 +1094,7 @@ function nowLine(a, cls, d) {
     text ? el("span", { class: "tx", text }) : null, extra || null);
   const since = (t) => t ? el("span", { class: "tm", "aria-hidden": "true", "data-ago": t, text: ago(t) }) : null;
   if (cls === "asking" && a.asking) return line("ask", "Waiting for you:", a.asking.kind === "permission" ? `Permission to ${permissionVerb(a.asking)}: ${a.asking.said || a.asking.tool}`
-    : a.asking.kind === "dialog" ? `In its terminal: ${[a.asking.title, a.asking.said].filter(Boolean).join(" · ")}`
+    : a.asking.kind === "dialog" ? `${a.asking.menu ? "Before it starts" : "In its terminal"}: ${[a.asking.title, a.asking.said].filter(Boolean).join(" · ")}`
     : a.asking.kind === "plan" ? "A plan to approve"
     : (a.asking.questions || []).map((q) => q.question).filter(Boolean).join(" · ") || "A question", since(a.asking.at));
   if (cls === "error" || cls === "failed") return line("err", "Error:", (a.failing && a.failing.error) || (a.stopped && a.stopped.text)

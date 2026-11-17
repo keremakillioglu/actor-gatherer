@@ -28,7 +28,8 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
-                   Shape, ToolCall, ToolResult, ask_arg, one_line, other_view, output_of, picked, seconds, typed_in)
+                   Shape, ToolCall, ToolResult, ask_arg, menu_of, one_line, other_view, output_of, picked, seconds,
+                   typed_in)
 from .shell import CODE_MODE, opened_script, script_calls, script_output
 
 # Codex item type -> Kind. None = a message: its role decides (ROLES). An item type not listed here is OTHER.
@@ -766,6 +767,14 @@ class Codex(Harness):
         """Its approval dialog, as its screen shows it (approval_shown): it has the keys, its cursor hidden."""
         return None if screen.cursor_shown else approval_shown(screen.lines())
 
+    def menu_shown(self, screen) -> Optional[dict]:
+        """A menu it shows as it starts (MENU_FOOT's notes), its cursor hidden: "Update now" among its options one it
+        ends after, to update itself."""
+        got = None if screen.cursor_shown else menu_of(screen.lines(), MENU_MARK, MENU_FOOT)
+        if got is not None:
+            got["restarts"] = [i for i, o in enumerate(got["options"]) if o.startswith(UPDATES)]
+        return got
+
 # ---------------------------------------------------------------- its own record of a thread: its rollout file
 
 #: Codex's record of a thread, its rollout: <its home: CODEX_HOME, else ~/.codex>/sessions/<year>/<month>/<day>/
@@ -812,6 +821,14 @@ WANTED = (b'"task_started"', b'"task_complete"', b'"turn_aborted"', b'"SubAgentA
 #: "No, and tell Codex what to do differently (esc)" last, then "Press enter to confirm or esc to cancel". Nothing of
 #: it is in its rollout, and ag sees no call for it: its screen is all that says it asks.
 APPROVAL_FOOT = "Press enter to confirm or esc to cancel"
+#: A menu it shows as it starts (0.164), before its composer: "Update available · 0.164.0 → 0.169.0" (1. "Update now
+#: (runs `npm install -g @openai/codex`)", 2. "Skip", 3. "Skip until next version"; "enter continue · esc skip"), and
+#: "Folder access" in a git repository it does not trust yet (1. "Trust and continue", 2. "Quit"; "enter continue · esc
+#: quit"): numbered, "›" before the one the cursor is on. "Update now" ends it: the update runs in its terminal, then
+#: it exits, its message not sent. A digit picks at once; Esc skips the update, and quits at the folder's trust.
+MENU_MARK = "›"
+MENU_FOOT = re.compile(r"^enter \w+ · esc \w+$")
+UPDATES = ("Update now",)
 APPROVAL_OPTION = re.compile(r"^\s*(›\s*)?(\d+)\.\s+(.*?)\s*$")
 APPROVAL_ASKS = re.compile(r"^\s*(Would you like|Do you want)\b")      # its question's row: the dialog's first
 APPROVAL_ROWS = 40                   # how far above its options its question is looked for

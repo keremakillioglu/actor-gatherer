@@ -75,8 +75,8 @@
   border: solid #fff; border-width: 0 0 1.75px 1.75px; transform: translateY(-1px) rotate(-45deg); }
 .asking-note .opt:disabled { opacity: 1; }
 .asking-note .opt:disabled:not([aria-checked="true"]) { opacity: .5; }
-/* not answered here: the options numbered as its terminal numbers them */
-.asking-note .opt.ro .box { width: 16px; height: 16px; margin-top: 1px; border-radius: 4px; box-shadow: none; background: var(--wash);
+/* not answered here: the options numbered as its terminal numbers them; a dialog's, picked at once with a click */
+.asking-note .opt:is(.ro, .pick) .box { width: 16px; height: 16px; margin-top: 1px; border-radius: 4px; box-shadow: none; background: var(--wash);
   font-size: 11px; font-weight: 600; color: var(--ink-2); }
 .asking-note .own { display: block; width: 100%; max-width: 900px; margin-top: 8px; font: inherit; font-size: 13px; color: var(--ink);
   background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; }
@@ -91,6 +91,8 @@
   overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; background: var(--page); border: 1px solid var(--ring); border-radius: 8px; }
 .asking-note .perm .diff { max-height: 260px; overflow: auto; }
 /* a dialog only its terminal shows (dialogView): its options as it lists them, answered there */
+.asking-note .perm.menu .menu-line { margin: 0; color: var(--ink-2); line-height: 1.5; overflow-wrap: anywhere; }
+.asking-note .perm.menu .opts { margin-top: 4px; }
 .asking-note .shown-opts { margin: 0; padding-left: 22px; color: var(--ink-2); line-height: 1.6; }
 .asking-note .shown-opts li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 .asking-note .plan { max-width: 900px; margin-top: 8px; padding: 2px 14px 10px; background: var(--page); border: 1px solid var(--ring); border-radius: 8px; }

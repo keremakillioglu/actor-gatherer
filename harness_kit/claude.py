@@ -33,7 +33,7 @@ from typing import Dict, List, Optional, Tuple
 from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
                    SaveError, Shape, ToolCall, ToolResult, TrustError, ask_arg, one_line, other_view, output_of, picked,
                    seconds, tool_title, typed_in)
-from .base import AT_DENY, permission_choice, rule
+from .base import AT_DENY, menu_of, permission_choice, rule
 
 # ---------------------------------------------------------------- Claude Code's own text, in the user's name
 
@@ -1229,6 +1229,10 @@ class ClaudeCode(Harness):
         """Its permission dialog, as its screen shows it (permission_shown): a dialog has the keys, its cursor hidden."""
         return None if screen.cursor_shown else permission_shown(screen.lines())
 
+    def menu_shown(self, screen) -> Optional[dict]:
+        """A menu it shows as it starts (MENU_FOOT's notes), its cursor hidden."""
+        return None if screen.cursor_shown else menu_of(screen.lines(), MENU_MARK, MENU_FOOT)
+
     def tool_output(self, text: str) -> Tuple[str, Optional[str], Optional[str]]:
         """A failed command's "Exit code N" before its output, and the note after it that the shell's directory was put
         back, taken off (EXIT_LINE, CWD_NOTE)."""
@@ -1372,6 +1376,12 @@ YES_KEY, UP_KEY, DOWN_KEY, WHY_KEY, ENTER_KEY = "1", "\x1b[A", "\x1b[B", "\t", "
 TO_NO = UP_KEY                           # from Yes, as it first shows: Up wraps round to No, the last
 OPTION_ROW = re.compile(r"^\s*(❯\s*)?(\d+)\.\s+(.*?)\s*$")
 DIALOG_FOOT = "Esc to cancel"
+#: A menu it shows as it starts (2.1.326), before its message box: "Accessing workspace:" (a folder it does not trust
+#: yet), "New MCP server found in this project", a settings file it can't read ("Settings Error"), "Make auto mode your
+#: default?": its options unnumbered, "❯" before the one the cursor is on, "Enter to confirm · Esc to cancel" under
+#: them. Esc there quits it, at its folder's trust (and Enter on "No, exit" too).
+MENU_MARK = "❯"
+MENU_FOOT = re.compile(r"^Enter to \w+ · Esc to \w+")
 DASHED = re.compile(r"^\s*╌{8,}\s*$")
 INPUT_CHARS = 4000                       # a string in a tool's input, kept for the page: at most this much of it
 SAID_KEYS = ("description", "summary", "file_path", "notebook_path", "path", "url", "pattern", "command", "prompt",

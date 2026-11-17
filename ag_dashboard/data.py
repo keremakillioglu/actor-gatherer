@@ -613,6 +613,9 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
         elif s.get("ended") and not s.get("kept") and not s.get("pid") and a.get("alive") is None and not a.get("holder") \
                 and (a["last"] or 0) <= s["ended"]:
             a["status"], a["running"] = CLOSED, bool(a.get("building"))   # its process gone, seen ending here, not used since
+        if shown and shown.get("menu") and not a.get("asking"):
+            a["asking"], a["status"] = shown, ASKING  # a menu its terminal shows as it starts: nothing goes on until it is
+            #                                           answered, whatever its status was (none of it recorded yet)
         g["last"] = max(g["last"] or 0, a["last"] or 0) or None
     for g in gatherers:                  # newest created first, as `_agents` has them
         for a in g["agents"]:
@@ -957,17 +960,20 @@ SHOWN_SECONDS = sessions.SHOWN_SECONDS
 
 
 def shown_ask(shown: Optional[dict], harness: Optional[str], now: Optional[float] = None) -> Optional[dict]:
-    """A permission dialog the dashboard's terminal shows, no hook reported (some the harness asks of a person alone:
-    Claude Code's auto mode, when its check gave no verdict), shown SHOWN_SECONDS: what it asks, as its screen has it --
-    {id, kind "dialog", harness, at, title, said (its question), lines (what it shows), options}. Answered in the
-    terminal, not from the page. None for none."""
+    """A dialog the dashboard's terminal shows that no hook reported, shown SHOWN_SECONDS: a permission (some the
+    harness asks of a person alone: Claude Code's auto mode, when its check gave no verdict), or a menu its harness
+    shows as it starts, before its message box (`menu`: an update it offers, a folder to trust, a project's MCP
+    server). What it asks, as its screen has it -- {id, kind "dialog", harness, at, title, said (its question), lines
+    (what it shows), options, cursor (the option its cursor is on), menu, restarts (options its harness ends after, to
+    update itself, and is started again)}. Answered by picking an option (sessions.py's `_pick`). None for none."""
     now = time.time() if now is None else now
     if not shown or now - (shown.get("since") or now) < SHOWN_SECONDS:
         return None
     key = zlib.crc32(json.dumps([shown.get("title"), shown.get("question"), shown.get("lines")]).encode())
     return {"id": f"dialog:{key:08x}", "kind": "dialog", "harness": harness, "async": False, "at": shown.get("since"),
             "call": None, "title": shown.get("title") or "", "said": shown.get("question") or "",
-            "lines": list(shown.get("lines") or [])[:40], "options": list(shown.get("options") or [])}
+            "lines": list(shown.get("lines") or [])[:40], "options": list(shown.get("options") or []),
+            "cursor": shown.get("cursor"), "menu": bool(shown.get("menu")), "restarts": list(shown.get("restarts") or [])}
 
 
 def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optional[dict]:

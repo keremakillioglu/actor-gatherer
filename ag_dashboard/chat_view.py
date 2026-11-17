@@ -19,7 +19,8 @@ The state follows what the conversation and the harness's record say, in order (
 message on; it is over when its answer ends it (data.py's `turn_over`) -- unless the harness holds a message for its end,
 which it goes on with; stopped when Esc or an error stopped it (its record, or a hang-up after its words came), or its
 session's process ended while it ran (the session's `ended`, later than the turn began); asking
-while it waits on the user. No time decides a state but a send not seen for UNSEEN_SECONDS.
+while it waits on the user -- and, before all but a stop, while its terminal shows a menu as it starts (an update its
+harness offers, a folder to trust: `_menu`), which holds back the message it was started with. No time decides a state but a send not seen for UNSEEN_SECONDS.
 
 A send from Chat is linked to the message it became once, in order (`_links`): the stored message of its words after
 it -- or, a message taken back (Esc) and sent again, the send after the take-back, ag restoring the old row at its old
@@ -220,6 +221,13 @@ def _over(conn, channel: str, tables: set) -> bool:
     return stop in data.OVER or stop not in data.GOES_ON
 
 
+def _menu(session: Optional[dict]) -> Optional[dict]:
+    """A menu the session's terminal shows as it starts (an update its harness offers, a folder to trust), as an ask
+    (data.py's `shown_ask`); None for none."""
+    got = data.shown_ask((session or {}).get("shown"), (session or {}).get("harness"))
+    return got if got is not None and got.get("menu") else None
+
+
 def _stop_on(opening: Optional[dict], session: Optional[dict]) -> tuple:
     """A turn opening that the harness has recorded nothing of, a key that stops a turn typed into its terminal since
     (the session's `stopped_at`), as the terminal's message box shows it after: empty -- the harness stopped it, before
@@ -246,6 +254,10 @@ def _state(conn, channel: str, tables: set, turns: List[dict], opening: Optional
     out = {"state": IDLE, "turn": None, "doing": None, "failing": None, "asking": None, "stopped": None}
     if opening is not None and opening.get("stopped"):
         return dict(out, state=STOPPED, turn="opening", stopped=opening["stopped"])
+    menu = _menu(session)
+    if menu is not None:                                 # a menu its terminal shows as it starts: nothing goes on till
+        return dict(out, state=ASKING, asking=menu,      # it is answered, the message it starts with included
+                    turn="opening" if opening is not None else turns[-1]["n"] if turns else None)
     if opening is not None:
         return dict(out, state=OPENING, turn="opening")
     if not turns:
@@ -401,7 +413,8 @@ def unstored(session: Optional[dict], now: Optional[float] = None) -> dict:
     waiting = [{"text": s["text"], "cid": s.get("cid"), "how": "chat"} for s in sends[1:]]
     waiting += [{"text": t, "cid": None, "how": "dashboard"} for t in (session or {}).get("queued") or []]
     stopped = (opening or {}).get("stopped")
-    current = {"state": STOPPED if stopped else OPENING if opening else IDLE, "turn": "opening" if opening else None,
-               "doing": None, "failing": None, "asking": None, "stopped": stopped}
+    menu = None if stopped else _menu(session)
+    current = {"state": STOPPED if stopped else ASKING if menu else OPENING if opening else IDLE,
+               "turn": "opening" if opening else None, "doing": None, "failing": None, "asking": menu, "stopped": stopped}
     return {"turns": [], "opening": opening, "current": current, "waiting": waiting, "taken_back": back,
             "version": [0, 0, (session or {}).get("ended"), len(waiting), len(sends), bool(opening and opening["unseen"])]}
