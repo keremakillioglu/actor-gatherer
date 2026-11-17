@@ -62,8 +62,71 @@ const miniClose = () => {
   return el("button", { type: "button", class: "mini-x", title: x.title, "aria-label": x.title, onclick: () => x.click() }, "×");
 };
 // right of the box, the conversation's last two lines (18-mini-history.js), hovered: the whole of it -- pressed, the chat
-// shown again; none shown (no turn yet, or a pane too narrow for them: 07-top.css), the actor's avatar alone does that
-const miniFoot = (ctx) => [miniHistory(ctx), miniMe(ctx.info, miniRest(ctx)), miniClose()];
+// shown again -- the line between them dragged (miniGrip); none shown (no turn yet, or a pane too narrow for them:
+// 07-top.css), the actor's avatar alone does that
+const miniFoot = (ctx) => {
+  const lines = miniHistory(ctx);
+  return [lines, lines ? miniGrip() : null, miniMe(ctx.info, miniRest(ctx)), miniClose()].filter(Boolean);
+};
+// THE ROOM BETWEEN THE BOX AND THE LINES: the line between them dragged, the box's share of the room the two take (two parts
+// in five at first; the box 150px at the least, the lines 140px) -- one for every minimized pane, kept in this browser,
+// each page told when another changes it (storage); double-clicked, as it was. Each page's root holds it (--mini-box,
+// --mini-hist: 07-top.css), in thousandths: a share under 1fr alone -- the lines', the box held at its least -- would leave
+// the rest of the room empty. The grip is made again at each draw, the same each time, so the draw keeps it (patch); a drag
+// is the page's, not the grip's -- followed on the page itself -- so a grip drawn again under it does not end it. A pane's
+// frame follows it in the page around it too, every frame there letting the pointer by meanwhile: a frame's pointer,
+// held, may still go to another frame it passes over (an app's), its release with it.
+const MINI_SPLIT_KEY = "ag-dashboard-mini-split", MINI_BOX_MIN = 150, MINI_LINES_MIN = 140;
+function setMiniSplit(f) {
+  const r = document.documentElement.style, n = Math.round(f * 1000);
+  if (n > 0 && n < 1000) { r.setProperty("--mini-box", `${n}fr`); r.setProperty("--mini-hist", `${1000 - n}fr`); }
+  else { r.removeProperty("--mini-box"); r.removeProperty("--mini-hist"); }
+}
+const keptMiniSplit = () => { try { return Number(localStorage.getItem(MINI_SPLIT_KEY)) || 0; } catch (e) { return 0; } };
+setMiniSplit(keptMiniSplit());
+window.addEventListener("storage", (ev) => { if (ev.key === MINI_SPLIT_KEY || ev.key === null) setMiniSplit(keptMiniSplit()); });
+const miniGrip = () => el("div", { class: "mini-grip", "aria-hidden": "true",
+  title: "Drag to give the message box or the last lines more room · double-click: as it was",
+  onpointerdown: miniGripDown, ondblclick: () => {
+    setMiniSplit(0);
+    try { localStorage.removeItem(MINI_SPLIT_KEY); } catch (e) { /* this page only */ }
+  } });
+function miniGripDown(ev) {
+  const grip = ev.currentTarget, strip = grip.closest(".chat.mini");
+  const box = strip && strip.querySelector(":scope > :is(.composer, .readonly)"), lines = strip && strip.querySelector(":scope > .mini-hist");
+  if (ev.button !== 0 || !box || !lines) return;
+  ev.preventDefault();
+  try { grip.setPointerCapture(ev.pointerId); } catch (e) { /* followed on the page all the same */ }
+  miniCard.shut();
+  const left = box.getBoundingClientRect().left, b = lines.getBoundingClientRect(), room = b.right - left, from = ev.clientX, was = b.left - left;
+  const frame = PANE && window.frameElement, docs = frame ? [document, window.parent.document] : [document];
+  // where the pointer is, in this page's terms: in the page around its frame, less where the frame is in it
+  const xOf = (e) => e.currentTarget === document ? e.clientX : e.clientX - frame.getBoundingClientRect().left - frame.clientLeft;
+  let f = null;
+  // the frames let the pointer by meanwhile, this page's line drawn as dragged (07-top.css): "here" this page, "frame" the
+  // page around its frame
+  for (const d of docs) d.documentElement.dataset.miniDrag = d === document ? "here" : "frame";
+  const move = (e) => {
+    if (!(e.buttons & 1)) { end(); return; }         // let go where the page did not see it
+    const w = Math.max(MINI_BOX_MIN, Math.min(room - MINI_LINES_MIN, was + xOf(e) - from));
+    f = Math.round((w / room) * 1000) / 1000;
+    setMiniSplit(f);
+  };
+  const end = () => {
+    for (const d of docs) {
+      d.removeEventListener("pointermove", move);
+      d.removeEventListener("pointerup", end);
+      d.removeEventListener("pointercancel", end);
+      delete d.documentElement.dataset.miniDrag;
+    }
+    if (f !== null) try { localStorage.setItem(MINI_SPLIT_KEY, String(f)); } catch (e) { /* this page only */ }
+  };
+  for (const d of docs) {
+    d.addEventListener("pointermove", move);
+    d.addEventListener("pointerup", end);
+    d.addEventListener("pointercancel", end);
+  }
+}
 // The actor's avatar, small and still -- a mark at its corner while it asks the reader or stopped on an error, its turn over
 // (`rest`: 18-mini-history.js's miniRest) a green check, as Chat's done avatar -- on its line of the history
 // (18-mini-history.js's meIcon, meDone), or alone right of the box (miniFoot); no avatar, the way back's icon.
