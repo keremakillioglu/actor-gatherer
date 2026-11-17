@@ -592,7 +592,9 @@ class ChromeTest(ChromeBase):
         for u in pages[1:]:
             self.b.new_tab(u)
         urls = lambda: [t.url for t in self.b.tabs]          # noqa: E731
-        self.assertTrue(self.until(lambda: urls() == pages and all(t.title for t in self.b.tabs)), urls())
+        # each page's own <title>: till it is read, Chrome names a tab by its address ("localhost:<port>/p2.html")
+        titles = lambda: [t.title for t in self.b.tabs]      # noqa: E731
+        self.assertTrue(self.until(lambda: urls() == pages and titles() == ["P0", "P1", "P2"]), (urls(), titles()))
         self.assertEqual(self.b.active, 2)
         self.b.move_tab(2, 0)                                 # dragged to the front: still the one shown
         self.assertEqual(urls(), [pages[2], pages[0], pages[1]])
