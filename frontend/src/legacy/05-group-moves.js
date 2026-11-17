@@ -504,9 +504,10 @@ function askJoin(x) {
 // An actor of group `g` on its own, staying in its folder
 const askAloneHere = (g, a) => askAlone({ g: g.name, cs: [a.channel] }, true);
 
-// ---- MANAGE GROUPS: who shares context with whom, at a glance, and the switches (the Notes design's section 4): a
+// ---- MANAGE GROUPS: who shares context with whom, at a glance, and the switches (the Notes design's section 4) -- each
+// row that starts a group of its own (a group, an actor on its own: `defines`) on a highlighted background: a
 // dialog from the list's head (manageButton) -- each group, at its place, its folders and open actors under it (closed
-// ones counted), a folder's switch "Parent's group | Own group", an actor's "Folder's group | On its own". A switch asks
+// ones counted), a folder's switch "Parent's group | Own group", an actor's "Parent's group | On its own" (its folder's). A switch asks
 // first, as in the list (askOwn, askAbove, askAloneHere, askJoin), then the dialog is drawn again from the new home
 // (renderAgents calls drawManage while it is open). The CLI's `ag groups` has the same.
 const manage = { dialog: null };
@@ -536,9 +537,10 @@ function mgActor(g, a, depth) {
   const lone = g.alone, inTask = !lone && withOwn(g, [a.channel]).filter((c) => !isAppItem(c)).length > 1;
   const why = isCoordinator(a) ? "The coordinator agent stays with its group" : inTask ? "It works in a task with others: a task moves whole"
     : lone && !nestedIn(g) ? "At the list's top, in no folder: drag it into one" : "";
-  return el("div", { class: "mg-row actor", style: `--depth: ${depth}` },
+  return el("div", { class: "mg-row actor" + (lone ? " defines" : ""), style: `--depth: ${depth}`,   // on its own: a group of one
+    ...(lone ? { title: "On its own: a group of one, sharing context with no other actor" } : {}) },
     el("span", { class: "mg-name" }, plainFace(a), el("span", { text: actorTitle(a) || a.channel.slice(0, 8) })),
-    mgSwitch(`${actorTitle(a)}: its group`, ["Folder's group", "On its own"], lone ? 1 : 0,
+    mgSwitch(`${actorTitle(a)}: its group`, ["Parent's group", "On its own"], lone ? 1 : 0,
       () => (lone ? askJoin(g) : askAloneHere(g, a)), why));
 }
 // group `g`'s folder `id` (null: its top), at `depth`: its folders, each with its switch and what is in it; the groups and
@@ -562,7 +564,8 @@ function mgBox(g, id, depth) {
 // option -- then what is in it
 function mgGroup(g, depth) {
   const outer = nestedIn(g), n = g.agents.filter((a) => !isCoordinator(a)).length;
-  return [el("div", { class: "mg-row group", style: `--depth: ${depth}` },
+  return [el("div", { class: "mg-row group defines", style: `--depth: ${depth}`,   // a group starts here
+    title: `${titleOf(g)} starts a group: its actors share context with each other${outer ? `, not with ${titleOf(outer)}'s` : ""}` },
     el("span", { class: "mg-name" }, strokeIcon(ICONS.folder, 14), el("b", { text: titleOf(g) }), el("span", { class: "mg-n", text: plural(n, "actor") })),
     outer ? mgSwitch(`${titleOf(g)}: its group`, ["Parent's group", "Own group"], 1, () => askAbove(g))
       : mgSwitch(`${titleOf(g)}: its group (at the top, its own)`, ["Own group"], 0, () => {})), ...mgBox(g, null, depth + 1)];

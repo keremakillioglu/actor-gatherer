@@ -385,8 +385,13 @@ dialog.mg-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(78vh, 
 .mg-say { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
 /* one column as wide as the panel, not as its longest name: a long name ends in "…", its switch in view at the right */
 .mg-tree { overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; min-height: 0; }
-.mg-row { display: flex; align-items: center; gap: 10px; min-height: 30px; min-width: 0; padding: 2px 6px 2px calc(6px + var(--depth) * 16px); border-radius: 6px; }
+.mg-row { display: flex; align-items: center; gap: 10px; min-height: 30px; min-width: 0; padding: 2px 6px;
+  margin-left: calc(var(--depth) * 16px); border-radius: 6px; }   /* set in by its margin: a highlight starts at its depth */
 .mg-row:hover { background: var(--wash); }
+/* a row that starts a group of its own -- a group, at the top or inside a folder; an actor on its own -- highlighted:
+   where who shares with whom changes, at a glance */
+.mg-row.defines { background: color-mix(in srgb, var(--s1) 11%, transparent); }
+.mg-row.defines:hover { background: color-mix(in srgb, var(--s1) 17%, transparent); }
 .mg-row.group { margin-top: 6px; }
 .mg-row.shut { color: var(--muted); font-size: 12px; min-height: 22px; }
 .mg-name { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 7px; font-size: 13px; }

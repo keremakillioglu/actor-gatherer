@@ -133,8 +133,11 @@ test("Manage groups shows each group's folders and actors with their switches", 
   await expect(mgRow(page, "Work").locator(".mg-opt.on")).toHaveText("Parent's group");
   await expect(mgRow(page, LAB).locator(".mg-opt.on")).toHaveText("Own group"); // inside Work: its own
   await expect(mgRow(page, ALONE_ACTOR).locator(".mg-opt.on")).toHaveText("On its own");
-  await expect(mgRow(page, CLAUDE).locator(".mg-opt.on")).toHaveText("Folder's group");
-  await expect(mgRow(page, LAB_ACTOR).locator(".mg-opt.on")).toHaveText("Folder's group");
+  await expect(mgRow(page, CLAUDE).locator(".mg-opt.on")).toHaveText("Parent's group");
+  await expect(mgRow(page, LAB_ACTOR).locator(".mg-opt.on")).toHaveText("Parent's group");
+  // highlighted: each row that starts a group of its own -- a group, at the top or inside a folder, an actor on its own
+  for (const text of [GATHERER, LAB, ALONE_ACTOR]) await expect(mgRow(page, text)).toHaveClass(/\bdefines\b/);
+  for (const text of ["Work", CLAUDE, LAB_ACTOR]) await expect(mgRow(page, text)).not.toHaveClass(/\bdefines\b/);
   // every switch inside the panel, whatever the length of the names beside it: none pushed past its edge
   const edge = (await panel(page).boundingBox())!;
   for (const b of await panel(page).locator(".mg-switch").all()) {
@@ -208,7 +211,7 @@ test("Manage groups: an actor on its own, staying in its folder, and back in its
   await expect(dialog).toBeHidden();
   expect(asked.at(-1)).toEqual({ gatherer: GATHERER, do: "alone", channel: expect.any(String), here: true });
 
-  await mgRow(page, ALONE_ACTOR).getByRole("button", { name: "Folder's group" }).click();
+  await mgRow(page, ALONE_ACTOR).getByRole("button", { name: "Parent's group" }).click();
   await expect(dialog.locator("h3")).toHaveText(`Join the ${GATHERER} group?`);
   await expect(dialog.getByRole("button", { name: "Stay on its own" })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Join" }).click();
