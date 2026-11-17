@@ -5,6 +5,7 @@ import os
 import re
 import shlex
 import shutil
+import sqlite3
 import subprocess
 import sys
 from typing import Dict, List, Optional
@@ -29,12 +30,13 @@ def say(msg: str) -> None:
 
 def parse(argv: List[str]):
     """ag's own options, then the command and everything after it."""
-    opts = {"gatherer": None, "policy": None, "pollers": [], "no_pollers": False, "dry_run": False, "quiet": False}
+    opts = {"gatherer": None, "policy": None, "pollers": [], "no_pollers": False, "dry_run": False, "quiet": False,
+            "channel": None}
     i = 0
     while i < len(argv):
         a = argv[i]
         name, eq, value = a.partition("=")
-        if name in ("--gatherer", "--group", "--policy", "--poller"):
+        if name in ("--gatherer", "--group", "--policy", "--poller", "--channel"):
             if not eq:
                 if i + 1 >= len(argv):
                     raise AgError(f"{name} takes a value")
@@ -204,11 +206,16 @@ def launch(harness: str, args: List[str], opts, settings) -> int:
         # The harness's setup falls back on it; with ag, the gatherer is --gatherer's or [cli] gatherer's alone.
         say("AG_GATHERER is ignored under ag (it is not passed on): use --gatherer, or [cli] gatherer")
     run = Run(args, [os.path.expanduser(str(c)) for c in section["command"]], env, gatherer, os.getcwd(),
-              opts["dry_run"], adaptor)
+              opts["dry_run"], adaptor, opts["channel"])
     if gatherer and (opts["policy"] or opts["pollers"] or opts["no_pollers"]) and not run.dry_run:
         prepare_gatherer(gatherer, opts["policy"], opts["pollers"], opts["no_pollers"], opts["quiet"])
     try:
         out = the_launcher.launch(run)
+        if not run.channel and out.session and gatherer and the_launcher.names_channel:
+            kept = paired_channel(gatherer, out.session)          # a session a dashboard kept under its own id,
+            if kept and kept != out.session:                      # resumed here: kept there still
+                run.channel = kept
+                out = the_launcher.launch(run)
     except LaunchError as exc:
         raise AgError(str(exc)) from exc
     if not opts["quiet"]:                    # what ag set up; its problems and warnings print either way
@@ -225,8 +232,9 @@ def launch(harness: str, args: List[str], opts, settings) -> int:
     if not program:
         raise AgError(f"no {out.argv[0]} to run; install {harness} or set [cli.harnesses.{harness}] command "
                       f"in {config.path()}")
-    if out.session:
-        claim(gatherer or out.session, out.session, opts["quiet"])
+    own = run.channel or out.session                     # the channel the run's session is kept in, where known
+    if own:
+        claim(gatherer or own, own, opts["quiet"])
     migrations(opts["quiet"])
     if os.name == "nt":
         return run_child([program, *out.argv[1:]], out.env)
@@ -246,6 +254,29 @@ def run_child(argv: List[str], env: Dict[str, str]) -> int:
             return child.wait()
         except KeyboardInterrupt:
             continue
+
+
+def paired_channel(gatherer: str, session: str) -> Optional[str]:
+    """The channel the harness's own session `session` is kept in where that is not its own id -- a run a dashboard
+    started kept it under the dashboard's (`--channel`), its turns' `model_call` events naming the session -- as the
+    gatherer's database says; None: none such (it is kept under its own id), or no database to read."""
+    root = config.home()
+    path = next((p for p in (os.path.join(root, "context.db"), os.path.join(root, "gatherers", gatherer, "context.db"))
+                 if os.path.isfile(p)), None)
+    if path is None:
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+        try:
+            row = conn.execute("SELECT e.p_channel FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+                               "WHERE t.name = 'model_call' AND e.p_channel IS NOT NULL "
+                               "AND json_extract(e.payload_json, '$.session') = ? ORDER BY e.row_id DESC LIMIT 1",
+                               (session,)).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+    return row[0] if row else None
 
 
 def claim(gatherer: str, session: str, quiet: bool = False) -> None:

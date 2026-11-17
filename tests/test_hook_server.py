@@ -82,6 +82,14 @@ class RouteOfTest(unittest.TestCase):
         self.assertEqual(run_of("/v1/x"), (None, "/v1/x"))
         self.assertEqual(run_of("/r/bad run/v1"), (None, "/r/bad run/v1"))
 
+    def test_the_url_s_channel_for_the_run_s_own_session(self):
+        actor_of = __import__("ag.integrations.tools.hook_server.hook_server", fromlist=["actor_of"]).actor_of if web else None
+        if actor_of is None:
+            self.skipTest("the hook server needs aiohttp")
+        self.assertEqual(actor_of("/a/3f2c-9d/l/100/v1/responses"), ("3f2c-9d", "/l/100/v1/responses"))
+        self.assertEqual(actor_of("/v1/x"), (None, "/v1/x"))
+        self.assertEqual(actor_of("/a/bad id/v1"), (None, "/a/bad id/v1"))
+
     def test_the_url_s_config_folder(self):
         server = __import__("ag.integrations.tools.hook_server.hook_server", fromlist=["config_of"]) if web else None
         if server is None:

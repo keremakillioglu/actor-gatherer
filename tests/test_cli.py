@@ -251,6 +251,35 @@ class Options(WithPlugins):
         self.assertNotIn("gatherer default", quiet[2])
         self.assertIn("no LLM model set", quiet[2])                         # a warning is not a note
 
+    def test_a_channel_is_handed_to_the_launcher(self):
+        """`--channel`: the channel its session is kept in, chosen by its starter (the dashboard's id for an actor whose
+        harness picks its own id at its first call): the launcher names it in the hook's URL."""
+        self.add_harness("echo")
+        launched = lambda: sys.modules["echo_launch"].EchoLauncher.launched[-1].channel     # noqa: E731
+        code, _, err = self.run_ag("--dry-run", "--channel", "dash-1", "echo", "hi")
+        self.assertEqual((code, launched()), (0, "dash-1"), err)
+        self.assertEqual((self.run_ag("--dry-run", "echo", "hi")[0], launched()), (0, None))
+
+    def test_a_resumed_session_s_channel_found_where_a_dashboard_kept_it(self):
+        """Its turns' `model_call`s name the harness's own session where it is kept under another id (`--channel`):
+        resumed by hand, `ag codex resume <thread>`, it is kept there still."""
+        import sqlite3
+        config.ensure()
+        folder = os.path.join(config.home(), "gatherers", "g")
+        os.makedirs(folder)
+        conn = sqlite3.connect(os.path.join(folder, "context.db"))
+        conn.executescript("""CREATE TABLE event_types (event_type_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+            CREATE TABLE events (row_id INTEGER PRIMARY KEY, event_type_id INTEGER NOT NULL, payload_json TEXT NOT NULL,
+              p_channel TEXT);
+            INSERT INTO event_types (name) VALUES ('model_call');
+            INSERT INTO events (event_type_id, payload_json, p_channel) VALUES (1, '{"kind": "turn", "run": "1"}', 't0');
+            INSERT INTO events (event_type_id, payload_json, p_channel) VALUES (1, '{"kind": "turn", "session": "t1"}', 'dash-1');""")
+        conn.commit()
+        conn.close()
+        self.assertEqual(main.paired_channel("g", "t1"), "dash-1")
+        self.assertIsNone(main.paired_channel("g", "t0"))                   # kept under its own id
+        self.assertIsNone(main.paired_channel("none", "t1"))                # no database
+
     def test_bad_gatherers_and_policies_without_one(self):
         self.assertEqual(self.run_ag("--dry-run", "--gatherer", "a/b", "pi")[0], 1)
         code, _, err = self.run_ag("--dry-run", "--gatherer", ".", "--policy", "proactive_context_manager", "pi")

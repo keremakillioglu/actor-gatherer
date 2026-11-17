@@ -42,7 +42,10 @@ What it decides, codex's own:
                    `prompt_cache_key`), the same when a thread is resumed; none: None
     gatherer       the request's label (/h/<label>/ in the URL codex was pointed
                    at), each thread a channel in it; without one, the thread id,
-                   and the channel the thread id too
+                   and the channel the thread id too -- but the run's own thread, in
+                   a run started for a channel the starter chose (/a/<channel>/: the
+                   dashboard's id for its actor), that channel (proxy_hook.py's
+                   `channel_of`)
     cwd            the last <environment_context> in the input's: its <cwd>, or (when
                    it has none) its first workspace root
 
@@ -155,7 +158,8 @@ class CodexContextManager(ProxyHook):
         if not thread:
             print("a model call with no thread id; request unchanged", file=sys.stderr, flush=True)
             return None
-        gatherer, channel = (request.label, thread) if request.label else (thread, thread)
+        channel = self.channel_of(request, thread)              # the dashboard's id for its own thread (/a/)
+        gatherer = request.label if request.label else thread
         metadata = call.detail.get("metadata") or {}
         kind, run = call.detail.get("source"), getattr(request, "run", None)
         if kind is not None:

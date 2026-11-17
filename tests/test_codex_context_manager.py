@@ -169,6 +169,24 @@ class HookTest(unittest.TestCase):
         [call] = [e for e in client.records if e["type"] == "model_call"]
         self.assertEqual((call["payload"]["kind"], call["payload"]["run"], call["channel"]), ("turn", "4242", "t1"))
 
+    def test_a_run_started_for_a_channel_keeps_its_own_thread_there(self):
+        """A run a dashboard started for its actor (the URL's /a/<channel>/): the run's own thread kept in that channel
+        from its first call, never under the thread's id -- its id named in the call's record, for the dashboard to
+        resume it by -- and another thread the run opens later (codex's /new) under its own id, as before."""
+        hook = self.hook()
+        for thread in ("t1", "t1", "t2"):
+            turn = self.request({"input": [DEV, user("q", 1)]}, label="demo", headers={**meta(thread_source="user"),
+                                                                                      "thread-id": thread})
+            turn.run, turn.actor, turn.state = "4242", "dash-1", {}
+            self.call(hook, turn)
+        calls = [(e["channel"], e["payload"].get("session")) for e in hook.ag_clients.client("demo").records
+                 if e["type"] == "model_call"]
+        self.assertEqual(calls, [("dash-1", "t1"), ("dash-1", "t1"), ("t2", None)])
+        plain = self.request({"input": [DEV, user("q", 1)]}, label="demo", headers=meta(thread_source="user"))
+        plain.run, plain.state = "5151", {}                              # no /a/: its thread's own id, as before
+        self.call(hook, plain)
+        self.assertEqual([e["channel"] for e in hook.ag_clients.client("demo").records if e["type"] == "model_call"][-1], "t1")
+
     def test_none_when_there_is_nothing_to_change(self):
         items = [DEV, user("q", 1)]
         same = lambda body: {"context": [{"type": e["type"], "id": e["id"], "payload": e["payload"]}

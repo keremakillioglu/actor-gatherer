@@ -2,7 +2,7 @@
 calls the context manager (its setup, setup.py), for this run only. ag finds the provider codex would use
 and where it points, and overrides the one setting codex takes that provider's base_url from:
 
-    "http://127.0.0.1:<port>[/h/<gatherer>][/r/<run>][/l/<limit>]<path>"
+    "http://127.0.0.1:<port>[/h/<gatherer>][/r/<run>][/a/<channel>][/l/<limit>]<path>"
 
 <run> is the run's process id: ag runs codex in its own process (exec), so every call this codex
 makes -- its thread's turns and its own side calls, a title for the thread or a recap, each in a
@@ -132,6 +132,7 @@ class Plan:
     limit: Optional[int] = None     # where codex compacts by itself (`harness_limit`), stated in the base URL
     session: Optional[str] = None   # the thread the run resumes (`resume <id>`), claimed by ag; None: a new one
     run: Optional[str] = None       # the run's id (its process's), stated in the base URL; None: not stated
+    actor: Optional[str] = None     # the channel its own thread is kept in (`ag --channel`), stated in the base URL
     daemonless: bool = False        # run without codex's shared background server (`--no-daemon`)
     home_set: bool = False          # CODEX_HOME set for the run: stated in the base URL, where the hook finds rollouts
 
@@ -143,6 +144,7 @@ class Plan:
 
     def base_url(self, server_url: str, gatherer: Optional[str]) -> str:
         return (server_url + (f"/h/{gatherer}" if gatherer else "") + (f"/r/{self.run}" if self.run else "")
+                + (f"/a/{self.actor}" if self.actor else "")
                 + (config_part(self.codex_home) if self.home_set else "") + (f"/l/{self.limit}" if self.limit else "")
                 + self.path)
 
@@ -360,6 +362,7 @@ def harness_limit(p: Plan, models: Callable[[], Dict[str, dict]]) -> Tuple[int, 
 
 class CodexLauncher(Launcher):
     defaults = {"command": ["codex"], "provider": "", "port": 4013, "log_dir": "", "env": {}}
+    names_channel = True              # its thread's id is its own, known at its first call: /a/<channel>/
     environment = (("AG_CODEX_AG_ROLE", "developer", "`user`: send the Gatherer's messages to Codex as user "
                                                      "messages instead of developer messages."),)
 
@@ -378,6 +381,7 @@ class CodexLauncher(Launcher):
         options = {"adaptor": run.adaptor} if run.adaptor else {}                  # the hook builds it
         notes = list(p.notes)
         p.run = None if run.dry_run else str(os.getpid())                          # codex's, once exec'd
+        p.actor = getattr(run, "channel", None)                                     # its thread's channel, chosen
         p.daemonless = takes(list(run.command), {**os.environ, **run.env}, NO_DAEMON)
         p.home_set = bool(run.env.get("CODEX_HOME") or os.environ.get("CODEX_HOME"))
         if run.dry_run:

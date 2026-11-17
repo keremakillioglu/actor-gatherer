@@ -89,6 +89,24 @@ class ProxyHook:
         self.under_way: Set[asyncio.Future] = set()
         #: (gatherer, channel) -> {an open permission's key: the subagent that asked, None the session itself}
         self.permissions: Dict[Tuple[str, str], Dict[str, Optional[str]]] = {}
+        #: (label, run, actor) -> the harness's own session the run opened, kept in the actor's channel (`channel_of`)
+        self.mains: Dict[Tuple[Optional[str], Optional[str], str], str] = {}
+
+    # ---- which channel a session is kept in
+
+    def channel_of(self, request, session: str) -> str:
+        """The channel the harness's own session `session` is kept in: the one the run's starter chose for it (the
+        URL's /a/<channel>/, `request.actor`) where it is the run's own -- the first session of its own the run calls
+        the model in: the one it opened or resumed -- so a session the dashboard started on a harness that picks its id
+        only at its first call (codex's thread, agy's conversation) is kept under the dashboard's id from that call on,
+        and never renamed; any other session (one the run opened later: codex's /new) and a run with no /a/, the
+        session's own id."""
+        actor = getattr(request, "actor", None)
+        if not actor or not session:
+            return session
+        mains = self.__dict__.setdefault("mains", {})
+        own = mains.setdefault((getattr(request, "label", None), getattr(request, "run", None), actor), session)
+        return actor if own == session else session
 
     # ---- recording, in the background
 
@@ -113,11 +131,14 @@ class ProxyHook:
         """A turn's call recorded as it comes in (`model_call`), before ag reads for it -- which can take seconds, as it
         waits for a build -- with the run it came from (`request.run`, the URL's /r/: the process a dashboard's terminal
         started), where known: what tells a reader the harness has begun its turn (a key that stops it now stops it),
-        and which session a new process works in (a codex thread, an agy conversation). Awaited, in the session's own
+        and which session a new process works in (a codex thread, an agy conversation) -- `session`, the harness's own
+        id for it, where that is not the channel (`channel_of`: the dashboard's, `request.actor`). Awaited, in the session's own
         lane at ag's server: so it is stored before the read begins, and a new gatherer's database is made by one lane,
         not two at once."""
         await self.recorded(gatherer, channel, [model_call(call.kind, self.harness.name, call.version, None,
-                                                           {"derives": True, "run": getattr(request, "run", None)})])
+                                                           {"derives": True, "run": getattr(request, "run", None),
+                                                            **({"session": call.session} if call.session and
+                                                               call.session != channel else {})})])
 
     def derive(self, gatherer: str, channel: str, parts: List[Part], history: Optional[list] = None,
                asks: bool = True) -> None:
