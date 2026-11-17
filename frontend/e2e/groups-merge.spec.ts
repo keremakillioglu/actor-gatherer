@@ -1,7 +1,6 @@
 // A folder made outside every group is a group of its own, and a group dropped into another is a folder of it
 // (05-gatherer-folders.js's nameGroup; 05-group-moves.js's askMerge; groups.py's `make` and `merge`): the list head's
-// folder button names a new group in place -- its "Folder only" switch makes a folder of groups instead
-// (gatherer-folders.spec.ts) -- and a group's row dragged onto another group asks first, then is merged into it.
+// folder button names a new group in place -- a folder at the list's top is a group, by the default rule -- and a group's row dragged onto another group asks first, then is merged into it.
 import type { Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, open } from "./home";
@@ -72,12 +71,12 @@ test("a folder made at the list's top is a group of its own, named as typed", as
   });
   await open(page);
   const button = page.locator("#agents .aside-head .gf-new");
-  await expect(button).toHaveAttribute("title", "New folder: a group of its own, its actors sharing context");
+  await expect(button).toHaveAttribute("title", "New folder");
   await expect(page.locator(".aside-head").getByRole("button", { name: "+ New group" })).toHaveCount(0); // the button is it
   await button.click();
   const box = page.locator("#agents .folder-box");
-  await expect(box).toHaveAttribute("placeholder", "Group name");
-  await expect(page.locator("#agents .gf-kind")).toHaveAttribute("aria-pressed", "false");
+  await expect(box).toHaveAttribute("placeholder", "Folder name");
+  await expect(page.locator("#agents .gf-kind")).toHaveCount(0); // no "Folder only" switch: the list says nothing of groups
   await box.fill(GATHERER.toUpperCase()); // a group beside it has that name: refused, nothing asked
   await box.press("Enter");
   await expect(box).toHaveCount(0);

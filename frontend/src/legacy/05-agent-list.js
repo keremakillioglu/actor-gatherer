@@ -1451,8 +1451,7 @@ function folderBox() {
   if (folderInput) return folderInput;
   const f = state.folderEdit;
   folderInput = el("input", { class: "name-box folder-box", type: "text", maxlength: String(FOLDER_CHARS), spellcheck: "false",
-    autocomplete: "off", placeholder: f.group ? "Group name" : "Folder name",
-    "aria-label": f.group ? "The new group's name" : f.id === null ? "The new folder's name" : "The folder's name" });
+    autocomplete: "off", placeholder: "Folder name", "aria-label": f.id === null ? "The new folder's name" : "The folder's name" });
   folderInput.value = f.value;
   folderInput.addEventListener("input", () => { f.value = folderInput.value; });
   folderInput.addEventListener("keydown", (ev) => {
