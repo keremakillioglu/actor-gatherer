@@ -72,7 +72,9 @@ def _data_of(name: str) -> dict:
                 size += os.lstat(os.path.join(root, f)).st_size
             except OSError:
                 pass
-    return {"path": path, "bytes": size, "there": os.path.isdir(path)}
+    mine = os.path.expanduser("~")
+    shown = "~" + path[len(mine):] if path == mine or path.startswith(mine + os.sep) else path
+    return {"path": shown, "bytes": size, "there": os.path.isdir(path)}
 
 
 def _windows(host) -> Dict[str, Dict[str, int]]:
@@ -115,7 +117,7 @@ def catalog(host) -> dict:
             available.append({"name": e["name"], "label": e["label"], "description": e["description"],
                               "origin": "index", "kind": "git", "source": e["source"], "needs": e["needs"]})
     return {"installed": installed, "available": available,
-            "broken": [{"folder": f, "name": os.path.basename(f), "error": e,
+            "broken": [{"folder": f, "name": os.path.basename(f), "error": e.replace(f + os.sep, ""),
                         "origin": finding.origin(f, home.HOME)} for f, e in broken]}
 
 

@@ -1,6 +1,7 @@
-// ag's settings, at the top of the dashboard's panel: the Gatherer's model, a new gatherer's defaults, the harnesses
-// ag runs, and config.toml itself in a dialog over the page (a Browser's logins: its panel's own menu). The markup and its classes are the page's
-// before (frontend/index.html's #cfg, src/legacy/css/00-base.css), so it looks as it did.
+// ag's settings, at the top of the dashboard's panel: the apps installed (the Apps page a click away), the Gatherer's
+// model, a new gatherer's defaults, the harnesses ag runs, and config.toml itself in a dialog over the page (a Browser's
+// logins: its panel's own menu). The markup and its classes are the page's before (frontend/index.html's #cfg,
+// src/legacy/css/00-base.css), so it looks as it did.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import type { Settings } from "../../core/api/types";
@@ -49,6 +50,7 @@ export function AgSettings({ closePanel }: AgSettingsProps) {
   return (
     <>
       <h3>ag</h3>
+      <AppsRow closePanel={closePanel} />
       <ModelForm key={`m${rev}`} s={s} closePanel={closePanel} />
       <DefaultsForm key={`d${rev}`} s={s} />
       <div>
@@ -282,6 +284,28 @@ function DefaultsForm({ s }: { s: Settings }) {
         </button>
       </div>
     </form>
+  );
+}
+
+/** The apps installed, and the Apps page a click away (src/legacy/07-apps-page.js): installed, updated, uninstalled
+ * there. */
+function AppsRow({ closePanel }: { closePanel: () => void }) {
+  const n = window.agNext?.apps.found().length ?? 0;
+  return (
+    <div className="row cfg-apps">
+      <h4>Apps</h4>
+      <span className="cfg-note">{n === 1 ? "1 installed" : `${n} installed`}, each on in every folder</span>
+      <button
+        type="button"
+        id="cfg-apps"
+        onClick={() => {
+          window.agLegacy?.openApps?.();
+          closePanel();
+        }}
+      >
+        Apps…
+      </button>
+    </div>
   );
 }
 

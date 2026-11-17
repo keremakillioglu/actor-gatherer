@@ -57,6 +57,14 @@ def on(gatherer: str) -> List["app_kit.Manifest"]:
     return [h.manifest for _, h in sorted(HOST.apps.items())]
 
 
+def gone(name: str) -> str:
+    """What an agent is told of a call of a tool it isn't given now: one it was given when its session started, its
+    app uninstalled (or updated without it) since -- the agent's list of tools is only read again then."""
+    names = sorted(HOST.apps) if HOST is not None else []
+    return (f"{name}: no such tool now. Its app was uninstalled, or changed, after your session started; the apps "
+            f"installed now: {', '.join(names) or 'none'}.")
+
+
 def channels_of(s: dict) -> Tuple[str, ...]:
     """The channels a session's agent is known by in its gatherer's attachments: its session's, and the one it was
     started under (a codex session's, before its thread had one)."""

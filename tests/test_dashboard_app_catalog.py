@@ -133,6 +133,18 @@ class CatalogTest(HostBase):
         self.assertEqual(status, 400)
         self.assertIn("no such folder", got["error"])
 
+    def test_a_tool_called_after_its_app_was_uninstalled_is_refused_saying_why(self):
+        from ag_dashboard import mcp
+        body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": "pager_page", "arguments": {}}}).encode()
+        status, got = mcp.handle(body, tool_gateway.tools("g"), lambda n, a: {}, unknown=tool_gateway.gone)
+        self.assertEqual(status, 200)
+        self.assertTrue(got["result"]["isError"])
+        said = got["result"]["content"][0]["text"]
+        self.assertIn("pager_page: no such tool now", said)
+        self.assertIn("installed now: notes, slate", said)
+        self.assertIn("error", mcp.handle(body, [], lambda n, a: {})[1])           # no `unknown`: the protocol's error
+
     def test_no_updates_for_apps_not_installed_from_git(self):
         self.assertEqual(self.api("GET", "/api/apps/updates"), (200, {"updates": {}}))
 
