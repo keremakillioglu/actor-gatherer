@@ -423,6 +423,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         if cmd == "apps":
             from . import apps
             return apps.main(rest)
+        if cmd == "groups":
+            from . import groups
+            return groups.main(rest)
         raise AgError(f"no command {cmd!r}: one of {', '.join(settings['harnesses'])} (the harnesses in "
                       f"{config.path()}), or {', '.join(c for c in config.RESERVED if c != 'help')}")
     except (AgError, config.ConfigError) as exc:

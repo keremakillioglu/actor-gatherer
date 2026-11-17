@@ -7,7 +7,7 @@ import harness_kit
 from fastapi import APIRouter
 from starlette.responses import Response
 
-from .. import folders, gatherer_folders, groups, hiding, naming, saved, seen, sessions, task_links, tasks, titles
+from .. import folders, gatherer_folders, group_admin, groups, hiding, naming, saved, seen, sessions, task_links, tasks, titles
 from ..models import Home
 from .common import Body, Errors, Parts, answer
 
@@ -147,6 +147,16 @@ def group(srv: Parts, body: Body) -> Response:
     moved = groups.move(g, to, [str(c) for c in channels], folder, into)
     srv.hub.ring(None, what="list")
     return answer({"moved": moved, "folders": folders.stored(), "tasks": tasks.stored()})
+
+
+@router.post("/api/groups/manage")
+def manage_groups(srv: Parts, body: Body) -> Response:
+    """`ag groups` (ag/cli/groups.py): the home's groups read, or changed by name, each change said first -- and only
+    said, `dry_run` (group_admin.py) -> {said: [lines], done, ...}."""
+    got = group_admin.manage(body)
+    if got.get("done"):
+        srv.hub.ring(None, what="list")
+    return answer(got)
 
 
 @router.post("/api/tasks")
