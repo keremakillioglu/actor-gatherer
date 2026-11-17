@@ -124,6 +124,27 @@ class AskTest(unittest.TestCase):
         self.assertEqual(status({**menu(menu=False), "since": time.time() - 5})[0], data.IDLE)   # a permission no hook
         #                                                                                 reported: only while it runs
 
+    @mock.patch.object(data, "_answer_given", lambda *a: None)
+    def test_a_message_its_harness_has_not_taken_yet_is_at_work(self):
+        """As Chat shows it ("Working…"): no Idle between the menu answered and its harness taking the message."""
+        now = time.time()
+
+        def status(**session):
+            g = [{"name": "g", "agents": [], "last": None}]
+            data._with_started(g, [{"session_id": "c", "gatherer": "g", "cwd": "/", "harness": "codex", "pid": 1,
+                                    "created_at": "2026-11-17T00:00:00+00:00", "status": "terminal", "kept": 0,
+                                    "terminal": True, **session}], now=now)
+            return g[0]["agents"][0]["status"]
+        sent = [{"cid": "c1", "text": "hi", "at": now - 3}]
+        late = [{"cid": "c1", "text": "hi", "at": now - 20}]
+        self.assertEqual(status(sent=sent), data.RUNNING)
+        self.assertEqual(status(sent=sent, terminal=False), data.IDLE)              # no terminal of the dashboard's
+        self.assertEqual(status(sent=late), data.IDLE)                              # not seen this long: not at work
+        self.assertEqual(status(sent=late, answer={"call": "dialog:x", "at": now - 2}), data.RUNNING)  # held behind a
+        #                                                                             menu answered a moment ago
+        self.assertEqual(status(sent=sent, shown={**menu(), "since": now - 2}), data.ASKING)
+        self.assertEqual(status(), data.IDLE)
+
     def test_chat_waits_on_it_with_the_message_it_holds_back(self):
         session = {"shown": {**menu(), "since": time.time() - 5}, "harness": "codex",
                    "sent": [{"cid": "c1", "text": "hi", "at": time.time() - 6}]}

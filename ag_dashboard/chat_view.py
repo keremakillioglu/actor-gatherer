@@ -36,7 +36,7 @@ from . import data, files
 
 OPENING, WORKING, ASKING, DONE, STOPPED, IDLE = "opening", "working", "asking", "done", "stopped", "idle"
 #: A send from Chat the harness has not had for this long: said so (its terminal may be asking something first).
-UNSEEN_SECONDS = 15.0
+UNSEEN_SECONDS = data.UNSEEN_SECONDS
 #: How much later than the message it became a send may say it was sent (seconds): none, as the dashboard keeps a send
 #: before it types it (sessions.py's `send`); a gatherer's sends from before that were kept once typed, ~0.2 s after.
 #: Small: the same words sent again soon after are another send.

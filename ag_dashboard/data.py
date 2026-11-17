@@ -26,7 +26,8 @@ RUNNING while ag checks and builds for it, before the read is recorded. A sessio
 started whose process its own end took, or it put away (saved.py's `Rest`) -- sessions.py's `kept` --
 is IDLE, not CLOSED; one whose process the dashboard saw end otherwise (closed from the list, exited:
 sessions.py's `ended`) is CLOSED where
-the process cannot be told, unless something happened for it since. An IDLE agent whose BACKGROUND
+the process cannot be told, unless something happened for it since. One whose terminal the dashboard runs, sent a
+message from Chat its harness has not taken yet (no call since: `_sent_pending`), is RUNNING, as Chat shows it at work. An IDLE agent whose BACKGROUND
 tasks still run (`background`) is BACKGROUND: its turn is over, but Claude Code is not done. A RUNNING
 agent whose turn waits on the user (`asking`) is ASKING: its hook recorded that an answer asks the user in its
 terminal (`asked`: a question, a plan to approve; codex's, as its rollout says) -- and nothing comes until they
@@ -96,6 +97,8 @@ from harness_kit.base import output_of as _output  # noqa: F401 - a tool result'
 
 RUNNING_SECONDS = 120          # (no longer decides anything; kept for the page's older copies)
 STALE_SECONDS = 1800           # an unfinished turn with no process to ask: over, after this long
+UNSEEN_SECONDS = 15.0          # a message from Chat its harness has not taken this long: not seen (its terminal may ask
+#                                something first; chat_view.py's), no longer shown at work (`_sent_pending`)
 FULL_SECONDS = 30.0            # a gatherer's agents kept between reads of the home (`Kept`): all read again this often
 RUNNING, IDLE, CLOSED, BACKGROUND, ASKING, ERROR = "running", "idle", "closed", "background", "asking", "error"
 ASK_CHARS = 4000               # the most of a question's words `ask_view` returns
@@ -606,8 +609,9 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
         if a.get("holder") and paths.runs_under(a["holder"]["pid"], s.get("pid")):
             a["holder"]["dashboard"] = True          # the dashboard's own agent or terminal (or a process under it)
         a["created"] = min((x for x in (a["created"], _seconds(s["created_at"])) if x), default=None)
-        if s["status"] in ("starting", "running") or s.get("queued"):   # its agent works, or a message waits for it
-            a["status"], a["running"] = RUNNING, True
+        if s["status"] in ("starting", "running") or s.get("queued") \
+                or (a["status"] != ASKING and _sent_pending(s, a, time.time() if now is None else now)):
+            a["status"], a["running"] = RUNNING, True   # its agent works, or a message waits for it, or its terminal
         elif s.get("kept") and a["status"] == CLOSED and (a["last"] or 0) <= s["kept"]:
             a["status"] = IDLE                   # ended by the dashboard's own end, not closed, nor used since
         elif s.get("ended") and not s.get("kept") and not s.get("pid") and a.get("alive") is None and not a.get("holder") \
@@ -623,6 +627,20 @@ def _with_started(gatherers: List[dict], started: List[dict], now: Optional[floa
             a["chattable"] = chattable(a)
             _settle_background(a, time.time() if now is None else now)
         g["agents"].sort(key=lambda a: a.get("created") or 0, reverse=True)
+
+
+def _sent_pending(s: dict, a: dict, now: float) -> bool:
+    """Whether the session's terminal, one the dashboard runs, has a message from Chat its harness has not taken yet --
+    sent after its latest call (`last`) -- sent less than UNSEEN_SECONDS ago, or less than that before the reader last
+    answered its terminal from the page (a menu it showed as it started, holding the message back: `_pick`)."""
+    if not s.get("terminal"):
+        return False
+    after = a.get("last") or 0
+    sends = [x.get("at") or 0 for x in s.get("sent") or [] if (x.get("at") or 0) > after]
+    if not sends:
+        return False
+    since = max(max(sends), (s.get("answer") or {}).get("at") or 0)
+    return now - since < UNSEEN_SECONDS
 
 
 def chattable(a: dict) -> bool:
