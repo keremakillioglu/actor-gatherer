@@ -45,10 +45,10 @@ export function fence(text: unknown, lang?: string | null): Fence {
     inner:
       `<pre><code>${rows}</code></pre>` +
       (long
-        ? `<button type="button" class="code-more" title="Show all of it">Show all ${ls.length} lines</button>`
+        ? `<button type="button" class="code-more" title="Show all lines">Show all ${ls.length} lines</button>`
         : "") +
-      `<div class="code-tools">${long ? `<button type="button" class="code-fold" aria-expanded="true" title="Fold it to its first lines">Fold</button>` : ""}` +
-      `<button type="button" class="code-copy" title="Copy the code">Copy</button></div>`,
+      `<div class="code-tools">${long ? `<button type="button" class="code-fold" aria-expanded="true" title="Fold to the first lines">Fold</button>` : ""}` +
+      `<button type="button" class="code-copy" title="Copy code">Copy</button></div>`,
   };
 }
 
@@ -64,7 +64,7 @@ export function foldCode(box: Element, on: boolean) {
   const b = box.querySelector<HTMLElement>(".code-fold");
   if (b) {
     b.textContent = on ? "Unfold" : "Fold";
-    b.title = on ? "Show all of it" : "Fold it to its first lines";
+    b.title = on ? "Show all lines" : "Fold to the first lines";
     b.setAttribute("aria-expanded", String(!on));
   }
 }

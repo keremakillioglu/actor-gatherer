@@ -31,7 +31,7 @@ if (!PANE && !SNAPSHOT) window.agTop = Object.freeze({ shown: () => topShown(),
 // lines -- the actor's avatar, small and still, on its own (18-mini-history.js) -- and its ×; what is above or below it the
 // rest. Offered where something of its task is above or below it; kept in its task's arrangement (the tab shown), so it is
 // minimized again there; moved where nothing is, shown whole.
-const MIN_TIP = "Minimize the chat: only its message box and its last lines, under what is above it";
+const MIN_TIP = "Minimize chat";
 const chatMin = () => !SNAPSHOT && (PANE ? !!(window.parent.agTop && window.parent.agTop.min(window))
   : !!workPlacer && workPlacer.isMin(panes.here.node));
 const canMinimize = () => !SNAPSHOT && !chatMin() && (PANE ? !!(window.parent.agTop && window.parent.agTop.canMin(window))
@@ -86,7 +86,7 @@ const keptMiniSplit = () => { try { return Number(localStorage.getItem(MINI_SPLI
 setMiniSplit(keptMiniSplit());
 window.addEventListener("storage", (ev) => { if (ev.key === MINI_SPLIT_KEY || ev.key === null) setMiniSplit(keptMiniSplit()); });
 const miniGrip = () => el("div", { class: "mini-grip", "aria-hidden": "true",
-  title: "Drag to give the message box or the last lines more room · double-click: as it was",
+  title: "Drag to resize · double-click to reset",
   onpointerdown: miniGripDown, ondblclick: () => {
     setMiniSplit(0);
     try { localStorage.removeItem(MINI_SPLIT_KEY); } catch (e) { /* this page only */ }
