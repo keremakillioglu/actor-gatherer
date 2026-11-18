@@ -71,12 +71,13 @@ def _sends(conn, channel: str, session: Optional[dict]) -> List[dict]:
 
 def _record(conn, channel: str) -> Tuple[List[dict], List[dict]]:
     """What the harness's record says of the user's messages: (sent as a turn's first message -- [{text, sent}] --,
-    queued and not yet sent nor taken out -- [{text, queued}])."""
+    queued and not yet sent nor taken out -- [{text, queued}]), each in the user's words: not as the harness keeps a
+    long one, in the tags of what was pasted, which the messages Chat shows and the sends from it are without."""
     prompts, pending = [], {}
     for t, f in data._facts(conn, channel, ("message_queued", "message_sent", "message_withdrawn"), RECORD_READ):
         q = f.get("queued")
         if t == "message_queued" and q:
-            pending[q] = {"text": f.get("text") or f.get("words") or "", "queued": f.get("at")}
+            pending[q] = {"text": f.get("words") or f.get("text") or "", "queued": f.get("at")}
         elif t in ("message_sent", "message_withdrawn"):
             pending.pop(q, None)
             if t == "message_sent" and f.get("how") == "prompt" and isinstance(f.get("at"), (int, float)):
@@ -392,10 +393,11 @@ def view(conn, channel: str, session: Optional[dict] = None, now: Optional[float
         waiting.append({"text": q["text"], "cid": s["cid"] if s else None, "how": "queued"})
     # held, sent with its turn's end, not stored yet: waits on -- not one queued in a process that had ended before:
     for m in data.meanwhile(conn, channel):              # a guess its record put right after (`_took`)
+        said = m.get("words") or m["text"]
         if m["sent"] is not None and m["sent"] > stored - SENT_BEFORE and not lost(m.get("written")) and not any(
-                _said(text) == _said(m["text"]) and at is not None and at >= m["sent"] - SENT_BEFORE for _, text, at in shown):
-            s = next((s for s in pending if _said(s["text"]) == _said(m["text"])), None)
-            waiting.append({"text": m["text"], "cid": s["cid"] if s else None, "how": "queued"})
+                _said(text) == _said(said) and at is not None and at >= m["sent"] - SENT_BEFORE for _, text, at in shown):
+            s = next((s for s in pending if _said(s["text"]) == _said(said)), None)
+            waiting.append({"text": said, "cid": s["cid"] if s else None, "how": "queued"})
     for text in (session or {}).get("queued") or []:
         waiting.append({"text": text, "cid": None, "how": "dashboard"})
     current = _state(conn, channel, tables, turns, opening, held, session, backs)

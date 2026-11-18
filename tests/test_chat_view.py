@@ -2,8 +2,8 @@
 terminal stopped before the harness recorded anything of it -- a codex session's first message, stopped before the call
 that makes its thread -- as the terminal's message box shows it after; a session whose process ended (its `ended`),
 before a turn, as it worked, or after it was over; whether a hang-up took its message back, recorded by a hook
-before it said (`_took`), or kept as the harness's record says (data.py's `on_esc`); and Esc before any of the answer
-with a message queued (tests/esc_runs)."""
+before it said (`_took`), or kept as the harness's record says (data.py's `on_esc`); Esc before any of the answer
+with a message queued (tests/esc_runs); and a long message, which Claude Code keeps in the tags of what was pasted."""
 import copy
 import json
 import os
@@ -18,6 +18,8 @@ import chat_replay  # noqa: E402
 from ag_dashboard import chat_view, data  # noqa: E402
 
 SENT = {"cid": "p1", "text": "Hello", "at": 100.0}
+#: A long message as Claude Code keeps and sends it: in the tags of what was pasted.
+PASTED = '<pasted_content id="ab12">\n{0}\n</pasted_content id="ab12">'
 
 
 def session(stopped_at=None, box=None, sent=(SENT,)):
@@ -118,19 +120,22 @@ class LostSendTest(unittest.TestCase):
     ended after it was queued: Claude Code's queue lives in its process (`queue_ends_with_process`), so it never sends
     it, nor does a process resumed after; a guess its record makes later that one was sent is no message waiting."""
 
-    def view(self, text: str, queued_after: float, ended_after: float = 0.0, guessed_after: float = 0.0) -> dict:
+    def view(self, text: str, queued_after: float, ended_after: float = 0.0, guessed_after: float = 0.0,
+             pasted: bool = False) -> dict:
         """The run at its end (its last turn over), with `text` queued `queued_after` seconds after its last turn's
         message was stored, and nothing after saying it was sent -- the session's process ended `ended_after` seconds
-        after that message (0: never), and its record guessing it was sent `guessed_after` seconds after (0: none)."""
+        after that message (0: never), and its record guessing it was sent `guessed_after` seconds after (0: none).
+        `pasted`: long, as Claude Code keeps it, in the tags of what was pasted -- its words without them."""
         run = chat_replay.load("claude-tool-call")
         conn = chat_replay.at_end(run)
         at = chat_view.view(conn, run["channel"], None)["turns"][-1]["at"]
-        payload = {"at": at + queued_after, "queued": "8.0a0b0c0d", "text": text, "words": text,
+        kept = PASTED.format(text) if pasted else text
+        payload = {"at": at + queued_after, "queued": "8.0a0b0c0d", "text": kept, "words": text,
                    "joins_after": at + queued_after + 1.0}
         facts = [("message_queued", "message_queued:x.jsonl:8.0a0b0c0d", payload)]
         if guessed_after:
             facts.append(("message_sent", "message_sent:x.jsonl:9.0a0b0c0d", {
-                "at": at + guessed_after, "queued": "8.0a0b0c0d", "text": text, "words": text, "how": "next",
+                "at": at + guessed_after, "queued": "8.0a0b0c0d", "text": kept, "words": text, "how": "next",
                 "joins": True, "written": at + queued_after}))
         for kind, event_id, p in facts:
             conn.execute("INSERT OR IGNORE INTO event_types (name, created_at) VALUES (?, '')", (kind,))
@@ -149,6 +154,13 @@ class LostSendTest(unittest.TestCase):
         self.assertEqual(got["current"]["state"], "working")
         self.assertEqual(got["waiting"], [{"text": "also count hidden files", "cid": None, "how": "queued"}])
 
+    def test_pasted_it_goes_by_its_words(self):
+        got = self.view("Run the shell command ls -la and tell me how many entries it lists.", -0.5, pasted=True)
+        self.assertEqual((got["current"]["state"], got["waiting"]), ("done", []))
+        got = self.view("also count hidden files", 1.0, pasted=True)
+        self.assertEqual((got["current"]["state"], got["waiting"]),
+                         ("working", [{"text": "also count hidden files", "cid": None, "how": "queued"}]))
+
     def test_queued_before_its_process_ended_it_went_with_it(self):
         got = self.view("also count hidden files", 1.0, ended_after=2.0)
         self.assertEqual((got["current"]["state"], got["waiting"]), ("done", []))
@@ -160,6 +172,40 @@ class LostSendTest(unittest.TestCase):
     def test_a_guess_that_one_gone_with_its_process_was_sent_is_no_message_waiting(self):
         got = self.view("also count hidden files", 1.0, ended_after=2.0, guessed_after=600.0)
         self.assertEqual((got["current"]["state"], got["waiting"]), ("done", []))
+
+
+class PastedHeldTest(unittest.TestCase):
+    """A message held for its turn's end (tests/chat_runs/claude-held-message) that was long: Claude Code keeps it, and
+    sends it, in the tags of what was pasted -- its record has its words without them, as ag stores them."""
+
+    WORDS = "and say done at the end"
+
+    def run_pasted(self) -> dict:
+        run = copy.deepcopy(chat_replay.load("claude-held-message"))
+        types = {t["event_type_id"]: t["name"] for t in run["event_types"]}
+        kept = PASTED.format(self.WORDS)
+        for e in run["events"]:
+            kind = types[e["event_type_id"]]
+            if kind in ("message_queued", "message_sent"):
+                f = json.loads(e["payload_json"])
+                if f.get("text") == self.WORDS:
+                    e["payload_json"] = json.dumps(dict(f, text=kept))
+            elif kind == "user_message" and e.get("text") == self.WORDS:
+                f = json.loads(e["payload_json"])
+                f["content"] = [dict(b, text=kept) for b in f["content"]]
+                e.update(text=kept, payload_json=json.dumps(f))
+        return run
+
+    def test_once_sent_it_is_part_of_its_turn_and_waits_no_more(self):
+        run = self.run_pasted()
+        got = None
+        for m in chat_replay.moments(run):
+            got = chat_view.view(m.conn, run["channel"], (m.session or {}).get("session"), m.at)
+            self.assertLessEqual(len(got["waiting"]), 1)        # one message waits: shown once, as sent or held
+            for w in got["waiting"]:
+                self.assertNotIn("pasted_content", w["text"])
+        self.assertEqual((got["current"]["state"], got["waiting"]), ("done", []))
+        self.assertEqual([x["text"] for x in got["turns"][-1]["more"]], [self.WORDS])
 
 
 class TookBackTest(unittest.TestCase):
