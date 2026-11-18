@@ -150,7 +150,7 @@ export function Turn({ t, place }: { t: TurnData; place: TurnPlace }) {
             text={m.text}
             kind={m.kind}
             joined
-            title={titled("Written while it worked, and given to the agent in this turn")}
+            title={titled("Sent while the agent was working")}
             button={earlier}
             expanded={whole}
             onClick={click}
@@ -165,11 +165,7 @@ export function Turn({ t, place }: { t: TurnData; place: TurnPlace }) {
                     type="button"
                     className="fl-more"
                     aria-expanded={hidden ? "false" : "true"}
-                    title={
-                      hidden
-                        ? "Show everything the agent said and thought in this turn"
-                        : "Fold the earlier messages again"
-                    }
+                    title={hidden ? "Show all earlier messages" : "Fold earlier messages"}
                     onClick={() => {
                       useTurns.getState().toggleOpened(t.n);
                       host.redraw();

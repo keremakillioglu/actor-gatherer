@@ -54,7 +54,7 @@ export function Pending({ w }: { w: Waiting }) {
   return (
     <div className="fl-pending">
       {w.texts.map((text, i) => (
-        <Bubble key={i} text={text} title="Written while it works: given to the agent at its next step" />
+        <Bubble key={i} text={text} title="Waiting for the agent's next step" />
       ))}
       <span className="lbl">Pending</span>
     </div>
@@ -80,7 +80,7 @@ export function OpenedTurn({ o, interrupting }: { o: Opening; interrupting: bool
   if (o.stopped)
     return (
       <div className={cls} style={grow ?? undefined}>
-        <Bubble text={o.text} title="Sent to the agent, and stopped before it was stored" />
+        <Bubble text={o.text} title="Stopped in the terminal before the agent received it" />
         <StoppedLine t={{ n: -1, text: o.text, stopped: o.stopped }} latest={true} />
         {w ? <Pending w={w} /> : null}
       </div>
@@ -88,16 +88,16 @@ export function OpenedTurn({ o, interrupting }: { o: Opening; interrupting: bool
   return (
     <>
       <div className={cls} style={grow ?? undefined}>
-        <Bubble text={o.text} title="Sent to the agent: shown here until the gatherer has stored it" />
+        <Bubble text={o.text} title="Sent to the agent" />
         {held ? (
           <div className="fl-pending">
-            <span className="lbl">Not sent yet: its terminal asks something first, below</span>
+            <span className="lbl">Not sent yet. Answer the question below first.</span>
           </div>
         ) : o.unseen ? (
           <div className="fl-pending">
             <span className="lbl">
-              Not seen by the session yet
-              {asks ? "; its terminal may be asking something first. " : null}
+              Not received by the session yet
+              {asks ? ". Its terminal may be asking something first. " : null}
               {asks ? (
                 <button type="button" className="to-term" onClick={() => host.setChatView("terminal")}>
                   Open the terminal

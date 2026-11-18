@@ -382,13 +382,13 @@ function histLabel(n, hits) {
     const t = n.task;
     if (t && n.current)                              // the build's last task, still open, and all since: as it is
       return [el("div", { class: "h-label" }, kind("Running task")),
-        el("div", { class: "h-sub dim", text: "Still going on: not summarized" }), hit];
+        el("div", { class: "h-sub dim", text: "In progress · not summarized yet" }), hit];
     return [el("div", { class: "h-label" + (t ? "" : " dim") }, t ? t.name : "Before ag's first task"),
       t && t.description ? el("div", { class: "h-sub", text: t.description }) : null, hit];
   }
   if (n.kind === "turn")
     return [el("div", { class: "h-label" + (n.n && n.ask ? "" : " dim") },
-      !n.n ? "The harness's setup: its system text, tools and environment" : n.ask || (n.cont ? "Continued from the task before" : "(no words)")), hit];
+      !n.n ? "Harness setup: system text, tools, environment" : n.ask || (n.cont ? "Continued from the previous task" : "(no text)")), hit];
   const e = n.event, [, name, swatch] = itemType({ name: e.type, group: "Recent history" });
   return [el("div", { class: "h-label" + (e.text ? "" : " dim"), title: name }, e.text || wordless({ name: e.type })), hit];
 }
@@ -406,7 +406,7 @@ function histRow(n, depth, header) {
   const sig = [st, open, depth, n.rows.length, n.tokens, n.reply || "", hits.length, hist.q.trim(), fullText === undefined ? "" : fullText.length].join("|");
   const k = n.id + (header ? "/h" : "");
   return histRows.get(k, sig, () => {
-    const what = n.kind === "message" ? (open ? "Hide its whole text" : "Show its whole text") : (open ? "Fold" : "Open: its parts");
+    const what = n.kind === "message" ? (open ? "Hide full text" : "Show full text") : (open ? "Fold" : "Open");
     const row = el("div", { class: `h-row ${n.kind}${header ? " head" : ""}${depth ? " nested" : ""}${n.current ? " current" : ""}`
         + `${st === "all" ? " on" : st === "some" ? " some" : ""}${open ? " open" : ""}`,
       style: `--depth:${depth}`, "data-key": k, title: histMeta(n, hits) },
@@ -442,7 +442,7 @@ function histBuildNote(h) {
     : b.status === "failed" ? ["bad", `Last build failed · ${since}`, b.error || ""]
     : !b.build_id ? ["", `No tasks yet · ${plural(b.since, "user message")}`, `ag builds tasks once an actor has ${HIST_BUILD_MESSAGES} user messages`]
     : ["", `Tasks as of ${clock(b.finished || b.started, true)} · ${since}`,
-      b.since < HIST_BUILD_MESSAGES ? `Built again once ${HIST_BUILD_MESSAGES} have come in; until then they are the running task` : ""];
+      b.since < HIST_BUILD_MESSAGES ? `Rebuilt after ${HIST_BUILD_MESSAGES} new user messages. Until then, new messages are in the running task.` : ""];
   return el("span", { class: "h-build " + cls, title }, cls === "run" ? el("span", { class: "spin", "aria-hidden": "true" }) : null, text);
 }
 // Which message types the list shows (`histTypes`): one button, its menu of the types.
@@ -450,9 +450,9 @@ const TYPE_SHORT = { gatherer: "Gatherer", system: "System" };
 function typesMenu() {
   const all = [TYPES[6], ...TYPES.slice(0, 6)];
   const on = all.filter(([t]) => histTypes.has(t)).map(([t, name]) => TYPE_SHORT[t] || name);
-  const said = on.length === all.length ? "All" : on.length > 3 ? `${on.length} types` : on.join(", ") || "Nothing";
+  const said = on.length === all.length ? "All" : on.length > 3 ? `${on.length} types` : on.join(", ") || "None";
   return el("details", { class: "h-types", id: "hist-types" },
-    el("summary", { title: "Which message types are listed" }, el("span", { class: "lbl", text: "Show" }), said, el("span", { class: "lbl", text: "▾" })),
+    el("summary", { title: "Message types shown" }, el("span", { class: "lbl", text: "Show" }), said, el("span", { class: "lbl", text: "▾" })),
     el("div", { class: "menu", role: "group", "aria-label": "Message types shown" }, ...all.map(([type, name, swatch]) => {
       const box = el("input", { type: "checkbox", ...(histTypes.has(type) ? { checked: "" } : {}) });
       box.addEventListener("change", () => toggleHistType(type));
@@ -470,7 +470,7 @@ function groupBox(h, grouped, hasTasks) {
   const box = el("input", { type: "checkbox", ...(grouped ? { checked: "" } : {}), ...(hasTasks ? {} : { disabled: "" }) });
   box.addEventListener("change", () => setHistGroup(box.checked));
   return el("label", { class: "h-group" + (hasTasks ? "" : " off") + (flash ? " flash" : ""),
-    title: hasTasks ? "Show the turns under the tasks ag split this history into"
+    title: hasTasks ? "Group turns by the tasks ag found"
       : building ? "ag is splitting this actor's history into tasks" : `ag splits an actor's history into tasks once it has ${HIST_BUILD_MESSAGES} user messages` },
     box, ...(building && !hasTasks ? [el("span", { class: "spin", "aria-hidden": "true" }), "Building tasks…"] : ["Group by tasks"]));
 }
@@ -497,8 +497,8 @@ function histBar(h, grouped, hasTasks) {
 function histActions() {
   const rows = [...hist.sel.values()], n = rows.length;
   const tokens = rows.reduce((t, [, k]) => t + k, 0), actors = new Set(rows.map(([c]) => c)).size;
-  const ask = el("textarea", { id: "hist-ask", rows: "2", "data-sig": "hist-ask", "aria-label": "What you want from it",
-    placeholder: "Optional: what you want from it" });
+  const ask = el("textarea", { id: "hist-ask", rows: "2", "data-sig": "hist-ask", "aria-label": "Instructions",
+    placeholder: "Instructions (optional)" });
   ask.value = hist.ask;
   ask.addEventListener("input", () => { hist.ask = ask.value; });
   const off = !n || hist.busy ? { disabled: "" } : {};
@@ -506,14 +506,14 @@ function histActions() {
     el("div", { class: "row" },
       el("span", { class: "h-picked" }, ...(n ? [el("b", { text: plural(n, "message") }), ` · about ${compact(tokens)} tokens`
         + (actors > 1 ? ` · ${actors} actors` : "")] : ["Nothing selected"])),
-      el("button", { type: "button", class: "h-x", title: "Close (Esc clears the selection)", "aria-label": "Close",
+      el("button", { type: "button", class: "h-x", title: "Close", "aria-label": "Close",
         onclick: () => { hist.panel = false; hist.recOpen = null; hist.saving = null; histSelect(new Map()); } }, "×")),
     ask,
     el("div", { class: "kinds" }, ...Object.entries(HIST_KINDS).filter(([, [label]]) => label).map(([k, [label]]) => el("button", { type: "button", ...off,
-      title: `Give the selected history to the Gatherer's model: ${label.toLowerCase()}`, onclick: () => histMake(k) }, label))),
+      title: `${label} with the Gatherer's model`, onclick: () => histMake(k) }, label))),
     el("div", { class: "row" }, el("span", { class: "h-picked", text: "Export" }),
       el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the selected history as a Markdown transcript", onclick: () => histExport("md") }, ".md"),
-      el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the selected events as stored, as JSON", onclick: () => histExport("json") }, ".json")),
+      el("button", { type: "button", ...(n ? {} : { disabled: "" }), title: "Save the selected events as JSON", onclick: () => histExport("json") }, ".json")),
     el("div", { class: "err", role: "alert", text: hist.err }));
 }
 function saveFile(name, text, type = "text/markdown") {
@@ -554,7 +554,7 @@ async function histDelete(r) {
 function recContent(r) {
   if (r.kind === "memory") return (r.memories || []).length ? r.memories.map((m) => el("div", { class: "h-mem" },
     el("div", { class: "t" }, m.title, el("span", { text: m.type })), el("div", { class: "d", text: m.description }), markdown(m.body)))
-    : [el("div", { class: "h-note", text: "Nothing in this history worth remembering, the model says." })];
+    : [el("div", { class: "h-note", text: "The model found nothing worth remembering." })];
   const m = r.kind === "skill" && /^---\n([\s\S]*?)\n---\n?/.exec(r.output);
   return m ? [el("pre", { class: "front", text: m[1] }), markdown(r.output.slice(m[0].length))] : [markdown(r.output)];
 }
@@ -592,7 +592,7 @@ function recSave(r) {
         : `${(hist.homes || {})[sv.harness] ? `${hist.homes[sv.harness]}: ` : ""}${where.replace(" there", "")}` })),
     sv.target === "dir" ? el("div", { class: "row" }, box, el("datalist", { id: `dirs-${r.id}` }, ...dirs.map((d) => el("option", { value: d }))),
       el("button", { type: "button", onclick: () => recPlan(r) }, "Preview")) : null,
-    ...(p ? [el("div", { class: "where", text: `For ${p.where}. ${plural(p.files.length, "file")}, as shown — nothing is written until you press Write:` }),
+    ...(p ? [el("div", { class: "where", text: `For ${p.where}. ${plural(p.files.length, "file")} below. Nothing is written until you press Write.` }),
       ...(p.note ? [el("div", { class: "warnline", text: p.note })] : []),
       ...p.files.map((f, i) => el("details", { class: "file", id: `save-${r.id}-${i}` },
         el("summary", {}, el("span", { class: `a ${f.action}`, text: f.action === "append" ? "add to end" : f.action }), el("span", { class: "p", text: f.path })),
@@ -646,7 +646,7 @@ function recCard(r) {
     const done = r.status === "done";
     const savable = done && savers(r).length && !(r.kind === "memory" && !(r.memories || []).length);
     const acts = el("div", { class: "acts" },
-      savable ? el("button", { type: "button", class: sv ? "" : "primary", title: `Write it where ${savers(r).map(harnessName).join(" or ")} reads it — you see each file first`,
+      savable ? el("button", { type: "button", class: sv ? "" : "primary", title: `Save where ${savers(r).map(harnessName).join(" or ")} reads it. You'll preview each file first.`,
         onclick: () => {
           if (sv) { hist.saving = null; } else {
             const info = selectedInfo() || {};
@@ -657,15 +657,15 @@ function recCard(r) {
           hist.version++; histRedraw();
         } }, "Save to…") : null,
       done ? copyButton(recText(r)) : null,
-      done ? el("button", { type: "button", title: `Save it as ${file}`, onclick: () => saveFile(file, recText(r)) }, "Download") : null,
-      el("button", { type: "button", title: "Select the history it was made from again", onclick: () => {
+      done ? el("button", { type: "button", title: `Download as ${file}`, onclick: () => saveFile(file, recText(r)) }, "Download") : null,
+      el("button", { type: "button", title: "Reselect the history it was made from", onclick: () => {
         const sel = new Map();
         for (const [a, b] of r.rows) for (let x = a; x <= b; x++) { const e = hist.byId.get(`m:${x}`); sel.set(x, e ? [e.channel, e.tokens] : [r.channels[0], 0]); }
         hist.ask = r.ask || ""; const box = document.getElementById("hist-ask"); if (box) box.value = hist.ask;
         histSelect(sel);
       } }, "Select again"),
       r.status === "failed" ? el("button", { type: "button", onclick: () => histMake(r.kind, r) }, "Try again") : null,
-      el("button", { type: "button", title: running ? "Stop it, and remove it" : "Remove it", onclick: () => histDelete(r) }, running ? "Stop" : "Delete"));
+      el("button", { type: "button", title: running ? "Stop and remove" : "Remove", onclick: () => histDelete(r) }, running ? "Stop" : "Delete"));
     const what = [plural(r.messages, "message"), plural(r.turns, "turn"), r.channels.length > 1 ? `${r.channels.length} actors` : null,
       r.model && !running ? r.model : null].filter(Boolean).join(" · ");
     return el("details", { class: "h-rec", id: `rec-${r.id}`, ...(r.id === hist.recOpen ? { open: "" } : {}) },
@@ -691,7 +691,7 @@ function histSide(h) {
   const shown = hist.allRecs ? list : list.slice(0, HIST_RECENT);
   side.kids = [histActions(), ...(list.length ? [el("div", { class: "h-side-h", text: "Recent artifacts" })] : []), ...shown.map(recCard),
     list.length > HIST_RECENT ? el("button", { type: "button", class: "h-older", onclick: () => { hist.allRecs = !hist.allRecs; hist.version++; histRedraw(); } },
-      hist.allRecs ? "Show only the recent" : `Show ${list.length - HIST_RECENT} older`) : null].filter(Boolean);
+      hist.allRecs ? "Show fewer" : `Show ${list.length - HIST_RECENT} older`) : null].filter(Boolean);
   return side;
 }
 function histRender() {
@@ -720,13 +720,13 @@ function histRender() {
     : [...shown.map(([n, depth, head]) => histRow(n, depth, head)),
       vis.length > shown.length ? el("button", { type: "button", class: "h-more", onclick: () => { hist.limit += HIST_SHOWN; hist.version++; histRedraw(); } },
         `Show ${full(Math.min(HIST_SHOWN, vis.length - shown.length))} more of ${full(vis.length - shown.length)}`) : null,
-      h.more ? el("button", { type: "button", class: "h-more", onclick: async () => { await loadOutline(); histRedraw(); } }, "Load more of the history") : null].filter(Boolean);
+      h.more ? el("button", { type: "button", class: "h-more", onclick: async () => { await loadOutline(); histRedraw(); } }, "Load more") : null].filter(Boolean);
   const left = el("div", { class: "h-left", "data-morph": "" }, histBar(h, grouped, hasTasks), list);
   return el("div", { class: "h-grid", "data-morph": "" }, left, histSide(h));
 }
 if (!SNAPSHOT) addChatView({
   id: "history", name: "History", feed: "outline", frame: "hist", chat: false, icon: ICONS.history,
-  description: "The history, searched, and picked by actor, task, turn or message: exported, or given to the Gatherer's model to summarize, or to make a memory or a skill of.",
+  description: "Search the history, export it, or have the Gatherer's model summarize it or make a memory or skill from it.",
   render: histRender,
 });
 
