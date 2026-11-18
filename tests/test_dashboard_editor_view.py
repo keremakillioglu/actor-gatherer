@@ -15,7 +15,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_apps.editor import chooser  # noqa: E402
+from app_kit.fileedit import chooser  # noqa: E402
 from ag_dashboard import livedocs  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR" + bytes(range(200))
@@ -156,7 +156,7 @@ class ServerTest(unittest.TestCase):
         self.url = f"http://127.0.0.1:{self.httpd.server_port}"
         self.app = f"editor.localhost:{self.httpd.server_port}"
         self.httpd.app_host.backend("editor")
-        self.ch = sys.modules["_ag_app_editor.chooser"]
+        self.ch = sys.modules["app_kit.fileedit.chooser"]
 
     def get(self, path: str):
         return urllib.request.urlopen(urllib.request.Request(self.url + path, headers={"Host": self.app}), timeout=10)

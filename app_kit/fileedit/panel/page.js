@@ -1,9 +1,9 @@
-// The Editor's panel (ag_apps/editor/): the page around its code -- what the dashboard's own page gave the Editor when
-// it was drawn there (frontend/src/legacy/01-helpers.js and the others), small and as it was, and the dashboard reached
-// through app_kit's SDK instead: the actors (`ag.actors`: their names, avatars, hues, folders, what they are doing),
-// the theme, the agent in focus, and an intent the page asks of it (open-file). Loaded first; the Editor's
-// own scripts (editor.js, editor-tree.js, editor-open.js, editor-view.js, preview.js) after it, in one scope, as they
-// were in the page's.
+// The panel of an app built on app_kit.fileedit: the page around its code -- what the dashboard's own page gave the
+// Editor when it was drawn there (frontend/src/legacy/01-helpers.js and the others), small and as it was, and the
+// dashboard reached through app_kit's SDK instead: the actors (`ag.actors`: their names, avatars, hues, folders, what
+// they are doing), the theme, the agent in focus, and an intent the page asks of it (open-file). Loaded first; the rest
+// (editor.js, editor-tree.js, editor-open.js, editor-view.js, editor-send.js), then the app's own, then start.js, after
+// it, in one scope, as they were in the page's.
 "use strict";
 const DASH = new URLSearchParams(location.search).get("host") || "";   // the dashboard's origin: its avatars
 const PANE = null, SNAPSHOT = false;                 // (the page's: a pane's frame, a snapshot -- never here)

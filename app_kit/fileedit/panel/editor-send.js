@@ -137,7 +137,7 @@ function edSendClose(back = false) {
 // fence longer than any run of backticks in them (too many: only where they are, to read in the file).
 function edSendText(words, q, saved) {
   const lines = edSendLines(q);
-  const where = `${lines[0].toUpperCase()}${lines.slice(1)} of ${q.s.path}${saved ? "" : " (as I have them in my Editor: not saved yet)"}`;
+  const where = `${lines[0].toUpperCase()}${lines.slice(1)} of ${q.s.path}${saved ? "" : " (as I have them open: not saved yet)"}`;
   if (q.text.length > ED_SEND_QUOTE_MAX) return `${words}\n\n${where}: too long to quote here, read them in the file.`;
   const ext = (edBase(q.s.path).match(/\.([A-Za-z0-9+#-]{1,10})$/) || [])[1] || "";
   const fence = "`".repeat(Math.max(3, ...(q.text.match(/`+/g) || []).map((r) => r.length + 1)));

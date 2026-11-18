@@ -1,5 +1,5 @@
-/* The Editor's panel (editor.js and the others), moved from the dashboard's page (frontend/src/legacy/css/07, 09, 10,
-   12 and 13) as it was: its head, its tree, its body (CodeMirror), its conflicts' boxes, its viewers; and Chat's way of
+/* The panel of an app built on app_kit.fileedit (editor.js and the others), moved from the dashboard's page
+   (frontend/src/legacy/css/07, 09, 10, 12 and 13) as it was: its head, its tree, its body (CodeMirror), its conflicts' boxes, its viewers; and Chat's way of
    showing a file's lines (11-files-view.css's), for an actor's changes beside the file. */
 
 .ed-top { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative;
@@ -34,16 +34,7 @@
 .ed-changes .ed-ch-go { flex: none; margin-left: auto; padding: 1px 8px; font-size: 11.5px; }
 .ed-changes .asked { padding: 0 16px 6px 34px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ed-changes .none { padding: 14px 16px; color: var(--muted); font-size: 12.5px; }
-/* beside the file, in its place when no actor's changes show: the project's preview (pvDraw) -- what its command makes,
-   or what it prints */
-.ed-exec { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; }
-.ed-topdf { padding: 3px 8px; white-space: nowrap; }
-.ed-exec svg { color: var(--good); }
 @keyframes ed-pv-pulse { from { opacity: .3; } to { opacity: 1; } }    /* the tree's native-open button's too */
-/* over its result (a PDF, a page, an image): its head and command tucked away above it, the result the panel's whole
-   height. The pointer at the panel's top edge (a handle there while the pointer is over the panel) slides them down
-   over the result, and they go back up a moment after it leaves them; the keyboard in them keeps them down too. */
-/* "Building…" over the one made before, while the next is: clicked, its output */
 .ed-noav { display: inline-block; background: var(--who); }
 .ed-avs.many { padding: 1px 5px 1px 2px; border-radius: 10px; background: color-mix(in srgb, var(--warning) 26%, transparent); }
 .ed-avs .n { font-size: 10.5px; font-weight: 650; margin-left: 4px; color: var(--ink); }
@@ -121,16 +112,6 @@ button.ed-person { cursor: pointer; }
 .ed-body .ed-disk { background: color-mix(in srgb, var(--who, var(--s2)) 26%, transparent); }
 /* the conflict zone: the lines edited here since the file was opened, tinted very lightly */
 .ed-body .ed-zone { background: color-mix(in srgb, var(--s1) 7%, transparent); }
-/* A LaTeX build's problems on their lines (editor.js, edProblems): the lines of errors and warnings tinted; CodeMirror's
-   lint marks the place, the gutter, and says the message on hover -- in the page's colours. */
-.ed-body .ed-prob.error { background: color-mix(in srgb, var(--critical) 8%, transparent); }
-.ed-body .ed-prob.warning { background: color-mix(in srgb, var(--warning) 8%, transparent); }
-.ed-body .cm-tooltip-lint { max-width: 520px; }
-.ed-body .cm-diagnostic { padding: 4px 8px 4px 7px; font-size: 12.5px; white-space: pre-wrap; }
-.ed-body .cm-diagnostic-error { border-left-color: var(--critical); }
-.ed-body .cm-diagnostic-warning { border-left-color: var(--warning); }
-.ed-body .cm-diagnostic-info { border-left-color: var(--axis); }
-.ed-body .cm-diagnosticSource { color: var(--muted); opacity: 1; font-size: 11px; }
 .ed-zone-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 11.5px; color: var(--ink-2); white-space: nowrap;
   padding: 1px 2px 1px 8px; border-radius: 9px; background: color-mix(in srgb, var(--s1) 13%, transparent); }
 .ed-zone-chip button { border: 0; background: none; font: inherit; color: var(--s1); padding: 0 6px; cursor: pointer; border-radius: 7px; }

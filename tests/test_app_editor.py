@@ -587,9 +587,12 @@ class ServedTest(ServedBase):
     def test_its_panel_its_page_s_helpers_and_the_editor_bundle(self):
         status, _, raw = self.at_app("/")
         self.assertEqual(status, 200)
-        for script in (b"page.js", b"editor.js", b"preview.js", b"editor-start.js", b"/_ag/app.js"):
+        for script in (b"/_ag/lib/fileedit/page.js", b"/_ag/lib/fileedit/editor.js", b"latex.js", b"preview.js",
+                       b"/_ag/lib/fileedit/start.js", b"/_ag/app.js"):
             self.assertIn(script, raw)
-        status, _, raw = self.at_app("/vendor/editor.js")
+        for lib in ("page.js", "editor.js", "start.js", "editor.css"):  # app_kit.fileedit's, served on its origin
+            self.assertEqual(self.at_app(f"/_ag/lib/fileedit/{lib}")[0], 200)
+        status, _, raw = self.at_app("/_ag/lib/fileedit/vendor/editor.js")
         self.assertEqual(status, 200)
         self.assertIn(b"agEditor", raw)
         self.assertIn(b"hlLines", raw)                                    # the dashboard's highlighter, in its bundle

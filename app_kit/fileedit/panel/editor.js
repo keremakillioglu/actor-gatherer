@@ -1,8 +1,8 @@
-// ------------------------------------------------------------------ the Editor
-// The Editor app's panel (ag_apps/editor/), above the actors' panes in the dashboard's top row, moved from the
-// dashboard's own page (frontend/src/legacy/18-editor.js) as it was: what changed is how it reaches the rest -- its
-// backend's routes on the app's own origin (the dashboard's routes before), the actors through the SDK (page.js),
-// and the project's preview beside the file its own (preview.js), not another app's. A folder's tree, any folder -- an actor's, or one typed, or the one above -- and its files to
+// ------------------------------------------------------------------ the editor
+// The panel of an app built on app_kit.fileedit (the Files app's, the LaTeX editor's), loaded from the host
+// (/_ag/lib/fileedit/), above the actors' panes in the dashboard's top row: its backend's routes on the app's own
+// origin, the actors through the SDK (page.js); what an app adds to it, its own (edAdd: the LaTeX editor's build and
+// PDF beside the file). A folder's tree, any folder -- an actor's, or one typed, or the one above -- and its files to
 // edit (the host's, app_kit.docs): each file shared live by every page that has it open -- their edits and cursors shown as they
 // type -- and the file on disk one more of its editors, so what an actor writes to it lands in the editor as it is
 // written, around what was typed and not saved, marked in that actor's hue until the next change on disk -- but for
@@ -30,7 +30,6 @@ const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, 
   nav: null, fold: null, cursor: null, revealing: null, newItem: null, pick: null, menu: null, find: null,   // 18-editor-tree.js's
   choose: null, choosing: null, go: null,                                                                     // 18-editor-open.js's
   mode: "live", modePick: null,                                                    // how an agent's change lands, its menu (edModePick)
-  problems: new Map(), problemsAt: 0,                                               // a LaTeX build's, by file (edProblems)
   auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })(),   // on unless turned off
   wrap: (() => { try { return localStorage.getItem(ED_WRAP_KEY) !== "0"; } catch (e) { return true; } })() };  // long lines wrapped: likewise
 const edB64 = (u8) => { let t = ""; for (let i = 0; i < u8.length; i += 0x8000) t += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(t); };
@@ -41,10 +40,23 @@ const edDir = (p) => p.slice(0, p.lastIndexOf("/")) || "/";
 const edBase = (p) => p.slice(p.lastIndexOf("/") + 1);
 const edTilde = (p) => tildePath(p, ed.home);
 const edRel = (p) => ed.root && ed.root !== "/" && p.startsWith(ed.root + "/") ? p.slice(ed.root.length + 1) : edTilde(p);
+// What an app built on this adds to it (its own scripts, loaded after these and before start.js), each part given to
+// edAdd as one more of its kind:
+//   head(x)     -> controls for the header, before Save (x: the file open, ed.s; or one shown, ed.v; or null: none)
+//   work(box)   called once, as the panel is drawn: a column of its own added beside the file's (box: its .ed-work)
+//   keys(ev)    a keydown, before the file's own -- in the panel, and in a PDF's viewer
+//   down(ev)    a mousedown on the file's text, before CodeMirror's
+//   view(s)     -> CodeMirror extensions for a text file's view, as it is made
+//   viewed(s)   its view, made
+//   markup      {test(path), bold, italic, off(doc, from, to, k)}: bold and italic in a kind of file (edMarkupKeys)
+//   message(m)  a message from its backend (start.js)
+const edAdded = { head: [], work: [], keys: [], down: [], view: [], viewed: [], markup: [], message: [] };
+function edAdd(parts) { for (const [k, f] of Object.entries(parts)) edAdded[k].push(f); }
+const edAddedHead = (x) => edAdded.head.flatMap((f) => [].concat(f(x) || [])).filter(Boolean);
 function edLib() {
   return ed.lib ||= new Promise((ok, no) => {
     const tag = document.createElement("script");
-    tag.src = "vendor/editor.js";
+    tag.src = "/_ag/lib/fileedit/vendor/editor.js";
     tag.onload = () => window.agEditor ? ok(window.agEditor) : no(new Error("The editor didn't load."));
     tag.onerror = () => { ed.lib = null; tag.remove(); no(new Error("The editor didn't load. Is the dashboard still running?")); };
     document.head.append(tag);
@@ -176,29 +188,6 @@ function edSelectText(text) {
   v.dispatch({ selection: { anchor: i, head: i + text.length }, effects: s.A.EditorView.scrollIntoView(i, { y: "center" }) });
   v.focus();
 }
-// The project's preview is the Editor's own (preview.js), beside the file: Execute (⌘↵) runs it for the file open, else
-// the folder shown (pvRun); → PDF, or a double-click in a TeX source, shows that place in what it built (pvLocate). A
-// place in a PDF's source it sends back the Editor opens (edShowFile).
-const pvPath = () => ed.file || ed.root;
-const edRuns = () => true;
-// ⌘↵ (Ctrl+Enter elsewhere) anywhere in the Editor -- the file, its tree, its header, a PDF's viewer: Execute. Taken
-// before CodeMirror's own (a blank line below); a text box keeps its own Enter.
-function edExecKey(ev) {
-  if (ev.key !== "Enter" || !(MAC ? ev.metaKey : ev.ctrlKey) || ev.shiftKey || ev.altKey || ev.isComposing) return;
-  const t = ev.target;
-  if (t && t.closest && t.closest("input, textarea, select")) return;
-  ev.preventDefault(); ev.stopPropagation();
-  if (!ev.repeat) edExecute();                       // held down: once
-}
-// Execute: the file saved first (as it is here), then its project's preview run, beside it.
-async function edExecute() {
-  const path = pvPath();
-  if (!path || !edRuns()) return;
-  const s = ed.s;
-  if (s && s.state && s.state.dirty && !s.state.missing && !edDiskConflicts(s).length) await edSave(s);
-  try { await pvRun({ path, ...(ed.file ? { file: ed.file } : {}) }); }
-  catch (e) { paneNote(e.message); }
-}
 // A line of the file open in the Editor (once it is: just opened, its document comes a moment later), selected and shown.
 async function edGoLine(path, line) {
   for (let i = 0; i < 80 && !(ed.s && ed.s.path === path && ed.s.view); i++) await new Promise((r) => setTimeout(r, 100));
@@ -215,77 +204,26 @@ async function edShowFile(path, line) {
   if (!ed.s || ed.s.path !== path) edOpen(path);
   if (line) edGoLine(path, line);
 }
-// A LaTeX build's problems (preview.js, from its log), each file's marked on its lines when it is open -- whichever
-// file of the document it is: a marker in the gutter, the place underlined (an undefined macro, a label: itself; else
-// the line's text), the message on hover over either, the lines of errors and warnings tinted. Moved with the edits
-// made since; the next build's replace them. `at`: the build's (its log's time).
-function edProblems(list, at) {
-  const by = new Map();
-  for (const p of list || []) if (p.path && p.line) { if (!by.has(p.path)) by.set(p.path, []); by.get(p.path).push(p); }
-  ed.problems = by; ed.problemsAt = at || 0;
-  if (ed.s && ed.s.view) edMarkProblems(ed.s);
-}
-function edMarkProblems(s) {
-  const A = s.A, v = s.view;
-  if (!v || !s.probs || !A.setDiagnostics) return;
-  const list = ed.problems.get((s.info && s.info.real) || s.path) || ed.problems.get(s.path) || [];
-  const sig = JSON.stringify([ed.problemsAt, list.map((p) => [p.level, p.line, p.message])]);
-  if (sig === s.probs.sig) return;
-  s.probs.sig = sig;
-  const doc = v.state.doc, diags = [], tints = new Map();
-  for (const p of list) {
-    const l = doc.line(Math.max(1, Math.min(p.line, doc.lines)));
-    const at = p.token ? l.text.indexOf(p.token) : -1;
-    const from = at >= 0 ? l.from + at : l.from + l.text.length - l.text.trimStart().length;
-    const to = at >= 0 ? from + p.token.length : Math.max(from, l.from + l.text.trimEnd().length);
-    diags.push({ from, to, severity: p.level === "error" ? "error" : p.level === "warning" ? "warning" : "info",
-      source: p.level === "box" ? "LaTeX (bad box)" : "LaTeX", message: p.message });
-    if (p.level !== "box" && tints.get(l.from) !== "error") tints.set(l.from, p.level);
-  }
-  const tinted = A.Decoration.set([...tints].map(([at, level]) => A.Decoration.line({ class: `ed-prob ${level}` }).range(at)), true);
-  const told = A.setDiagnostics(v.state, diags);
-  v.dispatch({ effects: [].concat(told.effects || [], s.probs.set.of(tinted),
-    s.probs.gutter.reconfigure(diags.length && A.lintGutter ? A.lintGutter() : [])) });
-}
-// Whether the file open is a TeX source, its places in what it built shown: "→ PDF" offered.
-const edTexToPdf = () => !!(ed.file && /\.(tex|ltx)$/i.test(ed.file));
-// `at`: the place in the file (a double-click's); else the cursor's.
-async function edToPdf(at = null) {
-  const s = ed.s;
-  if (!edTexToPdf() || !s || !s.view) return;
-  const head = at ?? s.view.state.selection.main.head, l = s.view.state.doc.lineAt(head);
-  try { await pvLocate({ path: ed.file, line: l.number, column: head - l.from }); }
-  catch (e) { paneNote(e.message); }
-}
-// A double-click in a TeX source's text: that place in the PDF too -- the word under it selected by CodeMirror, as
-// always (a modifier held, or a button of a box in the text: CodeMirror's or the box's alone).
-function edToPdfClick(ev) {
-  if (ev.button !== 0 || ev.detail !== 2 || ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return;
-  const s = ed.s, t = ev.target;
-  if (!s || !s.view || !edTexToPdf() || !s.view.contentDOM.contains(t) || (t.closest && t.closest("button, input, a"))) return;
-  const at = s.view.posAtCoords({ x: ev.clientX, y: ev.clientY });
-  if (at != null) edToPdf(at);
-}
 // A PDF the Editor shows (editor-view.js), in pdf.js's viewer (/_ag/lib/pdfjs: the dashboard's copy, libs.py), in the
 // dashboard's colours, with no scripts of the PDF's and its sidebar closed when it opens.
-const PV_NO_SIDEBAR = 0;                             // pdf.js's SidebarView.NONE
-const pvViewer = (url) => `/_ag/lib/pdfjs/web/viewer.html?file=${encodeURIComponent(url)}`;
+const ED_NO_SIDEBAR = 0;                             // pdf.js's SidebarView.NONE
+const edPdfViewer = (url) => `/_ag/lib/pdfjs/web/viewer.html?file=${encodeURIComponent(url)}`;
 // A PDF opened again in its viewer (it changed on disk): where the reader was -- its page, zoom and place -- its sidebar
 // as it was.
-async function pvPdfOpen(f, url) {
+async function edPdfOpen(f, url) {
   f.url = url;
   let app = null;
   try { app = f.frame.contentWindow.PDFViewerApplication; } catch (e) { /* not the viewer's page */ }
-  if (!app || !app.pdfViewer || !app.initialized) { f.frame.src = pvViewer(url); return; }
+  if (!app || !app.pdfViewer || !app.initialized) { f.frame.src = edPdfViewer(url); return; }
   const at = app.pdfViewer._location;
   if (at && at.pdfOpenParams) app.initialBookmark = at.pdfOpenParams.slice(1);
   try {
-    const side = app.pdfSidebar ? app.pdfSidebar.visibleView : PV_NO_SIDEBAR;
+    const side = app.pdfSidebar ? app.pdfSidebar.visibleView : ED_NO_SIDEBAR;
     f.frame.contentWindow.PDFViewerApplicationOptions.set("sidebarViewOnLoad", side);
   } catch (e) { /* an older viewer */ }
-  try { await app.open({ url }); } catch (e) { f.frame.src = pvViewer(url); }
+  try { await app.open({ url }); } catch (e) { f.frame.src = edPdfViewer(url); }
 }
-function pvPdfTheme(f) {
+function edPdfTheme(f) {
   let root;
   try { root = f && f.frame.contentDocument && f.frame.contentDocument.documentElement; } catch (e) { return; }
   if (!root) return;
@@ -302,7 +240,7 @@ document.addEventListener("webviewerloaded", (ev) => {     // the viewer, before
   try {                                              // its stored preferences would set it again: not read
     w.PDFViewerApplicationOptions.set("disablePreferences", true);
     w.PDFViewerApplicationOptions.set("enableScripting", false);
-    w.PDFViewerApplicationOptions.set("sidebarViewOnLoad", PV_NO_SIDEBAR);
+    w.PDFViewerApplicationOptions.set("sidebarViewOnLoad", ED_NO_SIDEBAR);
   } catch (e) { /* an older viewer */ }
 });
 // The writers in the tree: their avatars, overlapped; two or more, on an amber ground with their count.
@@ -499,15 +437,11 @@ async function edOpen(path, how = null, kept = null) {
 // Markdown's `*`, \emph as \textit). Nothing selected, the empty markup goes in with the cursor in it (again, taken out).
 // Each change made as typing is, through the file's view: shared live, undone with ⌘Z, in the conflict zone, autosaved.
 // Any other file: the keys are left as they were -- ⌘I CodeMirror's own (the syntax around the selection, selected).
-const ED_MARKUP = {
-  md: { md: true, bold: { open: ["**"], close: "**" }, italic: { open: ["*"], close: "*" } },
-  tex: { md: false, bold: { open: ["\\textbf{"], close: "}" }, italic: { open: ["\\textit{", "\\emph{"], close: "}" } },
-};
+const ED_MARKDOWN = { test: (ext) => /^(md|markdown|mdx)$/.test(ext), bold: { open: ["**"], close: "**" },
+  italic: { open: ["*"], close: "*" }, off: (doc, from, to, k) => edMarkdownOff(doc, from, to, k.close.length) };
 function edMarkupOf(path) {
   const base = String(path || "").split("/").pop().toLowerCase(), ext = base.includes(".") ? base.split(".").pop() : "";
-  if (/^(md|markdown|mdx)$/.test(ext)) return ED_MARKUP.md;
-  if (/^(tex|latex|ltx|sty|cls|dtx|tikz)$/.test(ext)) return ED_MARKUP.tex;
-  return null;
+  return [ED_MARKDOWN, ...edAdded.markup].find((m) => m.test(ext)) || null;
 }
 // The keys, for a view of the file at `path` (the file's own, a conflict box's).
 function edMarkupKeys(A, path) {
@@ -515,19 +449,19 @@ function edMarkupKeys(A, path) {
     const m = edMarkupOf(path);
     if (!m) return false;                            // not ours: the next binding's, or the browser's
     const st = view.state;
-    view.dispatch(st.update(st.changeByRange((r) => edMarkupRange(A, st.doc, r, m.md, m[style])),
+    view.dispatch(st.update(st.changeByRange((r) => edMarkupRange(A, st.doc, r, m, m[style])),
       { scrollIntoView: true, userEvent: "input.format" }));
     return true;
   };
   return [{ key: "Mod-b", run: run("bold") }, { key: "Mod-i", run: run("italic") }];
 }
 // One selection's change: the markup `k` taken off where it is already on, else put on.
-function edMarkupRange(A, doc, r, md, k) {
+function edMarkupRange(A, doc, r, m, k) {
   const keep = (a, b) => (r.head < r.anchor ? A.EditorSelection.range(b, a) : A.EditorSelection.range(a, b));
   let from = r.from, to = r.to;
   const text = doc.sliceString(from, to);
   if (text.trim()) { from += text.length - text.trimStart().length; to -= text.length - text.trimEnd().length; }
-  const off = md ? edMarkdownOff(doc, from, to, k.close.length) : edLatexOff(doc, from, to, k.open);
+  const off = m.off(doc, from, to, k);
   if (off) {
     const [ob, cb] = off;                            // the markup's lengths, before and after
     if (off.inside) return { changes: [{ from, to: from + ob }, { from: to - cb, to }], range: keep(from, to - ob - cb) };
@@ -558,29 +492,6 @@ function edMarkdownOff(doc, from, to, n) {
         return Object.assign([n, n], { inside: true });
       }
     }
-  }
-  return null;
-}
-// LaTeX's markup (`opens`, closed by `}`) on [from, to]: [open's length, 1] if one of them is just around it, or its own
-// ends (`.inside`) -- the brace it opens closed by that `}`, not one before; else null.
-function edLatexOff(doc, from, to, opens) {
-  const balanced = (a, b) => {                       // [a, b) of the text: its braces balanced (escaped ones not counted)
-    let d = 0;
-    const t = doc.sliceString(a, b);
-    for (let i = 0; i < t.length; i++) {
-      if (t[i] === "\\") { i++; continue; }
-      if (t[i] === "{") d++;
-      else if (t[i] === "}" && --d < 0) return false;
-    }
-    return d === 0;
-  };
-  for (const o of opens) {
-    if (from >= o.length && doc.sliceString(from - o.length, from) === o && doc.sliceString(to, to + 1) === "}"
-      && balanced(from, to)) return [o.length, 1];
-  }
-  for (const o of opens) {
-    if (to - from > o.length && doc.sliceString(from, from + o.length) === o && doc.sliceString(to - 1, to) === "}"
-      && balanced(from + o.length, to - 1)) return Object.assign([o.length, 1], { inside: true });
   }
   return null;
 }
@@ -633,17 +544,6 @@ function edView(s) {
     provide: (f) => A.EditorView.decorations.from(f),
   });
   s.agents = { set: setAgents, sig: "" };
-  const setProbs = A.StateEffect.define();
-  const probs = A.StateField.define({                // the lines of a LaTeX build's errors and warnings, tinted (edProblems)
-    create: () => A.Decoration.none,
-    update(deco, tr) {
-      deco = deco.map(tr.changes);
-      for (const e of tr.effects) if (e.is(setProbs)) deco = e.value;
-      return deco;
-    },
-    provide: (f) => A.EditorView.decorations.from(f),
-  });
-  s.probs = { set: setProbs, sig: "", gutter: new A.Compartment() };   // its gutter's markers only once it has some
   s.wrapping = new A.Compartment();                  // long lines wrapped, or not (the header's Wrap)
   ed.body.replaceChildren();
   s.view = new A.EditorView({
@@ -654,7 +554,7 @@ function edView(s) {
         A.keymap.of([...A.yUndoManagerKeymap, { key: "Mod-s", preventDefault: true, run: () => { edSave(s); return true; } }, A.indentWithTab,
           ...edMarkupKeys(A, s.path)]),
         A.basicSetup, A.EditorState.lineSeparator.of("\n"), A.highlight, A.language(s.path), A.yCollab(s.ytext, s.awareness), marks,
-        zone, agents, conflicts, probs, s.probs.gutter.of([]), s.wrapping.of(ed.wrap ? A.EditorView.lineWrapping : []),
+        zone, agents, conflicts, ...edAdded.view.flatMap((f) => f(s) || []), s.wrapping.of(ed.wrap ? A.EditorView.lineWrapping : []),
         A.EditorView.updateListener.of((u) => {
           if (u.docChanged && s.top) s.top = u.changes.mapPos(s.top);     // the line at the top, where edits moved it
           if (u.selectionSet) edPlaceMoved(s);
@@ -673,7 +573,7 @@ function edView(s) {
   edZone(s);
   edAgentMarks(s);
   edConflicts(s);
-  edMarkProblems(s);
+  for (const f of edAdded.viewed) f(s);
 }
 // The file open, where it is, kept as this Editor's (edKeepFile): its cursor, as the view has it now; the line at the top
 // of its view, as last seen while it was drawn (`s.top`: as the panel goes, its frame is no longer drawn, and its scroll
@@ -960,8 +860,8 @@ async function edSettleAll(s, take) {
 // those, a write around the Editor's tools (a shell command's) asked about too. Its agents are told when it changes.
 const ED_MODES = [
   ["live", "Live", "Agents' changes apply as they come, in their colour, and are saved. You're asked only about lines you're editing."],
-  ["review", "Review", "Each agent change is a proposal to accept or reject. The file on disk changes only when you accept. Changes made outside the Editor, such as by a shell command, are asked about too."],
-  ["handsoff", "Hands off", "Agents can't change files open here and are told to ask you first. Changes made outside the Editor are asked about."]];
+  ["review", "Review", "Each agent change is a proposal to accept or reject. The file on disk changes only when you accept. Changes made elsewhere, such as by a shell command, are asked about too."],
+  ["handsoff", "Hands off", "Agents can't change files open here and are told to ask you first. Changes made elsewhere are asked about."]];
 // Its menu: one, made once and kept from one header to the next (edHeadPut) -- the header is drawn again every ED_TICK
 // and at each edit, and a menu taken out of the page then closes under the reader as they pick.
 function edModePick() {
@@ -1423,7 +1323,7 @@ function edHead() {
   if (ed.v && ed.v.path === ed.file) return edViewHead(ed.v);
   if (!ed.file) {
     edHeadPut([el("span", { class: "ed-hint", text: "Pick a file to open it." }),
-      el("span", { class: "grow", style: "flex: 1" }), edModePick(), edExecBtn()]);
+      el("span", { class: "grow", style: "flex: 1" }), edModePick(), ...edAddedHead(null)]);
     return;
   }
   const st = s && s.state;
@@ -1487,9 +1387,7 @@ function edHead() {
     edModePick(),
     s && s.info && s.info.kind !== "text" ? el("button", { type: "button", class: "ed-mode", title: `Show ${edBase(s.path)} as ${ED_VIEW_SAID[s.info.kind] === "image" ? "an image" : `a ${ED_VIEW_SAID[s.info.kind]}`}`,
       onclick: () => edOpen(s.path, "view") }, strokeIcon(ICONS.page, 13), "View") : null,
-    edTexToPdf() ? el("button", { type: "button", class: "ed-topdf", onclick: () => edToPdf(),
-      title: "Show the cursor's line in the PDF. Double-click in the source or the PDF to jump between them." }, "→ PDF") : null,
-    edExecBtn(),
+    ...edAddedHead(s),
     el("button", { type: "button", class: "primary", title: `${nc ? "Save, keeping your lines where they conflict" : "Save"} (${MAC ? "⌘S" : "Ctrl+S"})`,
       disabled: s && st && (st.dirty || st.missing) ? null : "", onclick: () => s && edSave(s) }, "Save"),
     ].filter(Boolean));
@@ -1526,13 +1424,6 @@ function edKeptFile() {
   try { const v = JSON.parse(localStorage.getItem(edFileKey()) || "null"); return v && typeof v.path === "string" && v.path ? v : null; }
   catch (e) { return null; }
 }
-// Execute: the project's preview run, beside the file (edExecute).
-function edExecBtn() {
-  if (!edRuns()) return null;
-  return el("button", { type: "button", class: "ed-exec",
-    title: `Run the project's preview (${MAC ? "⌘↵" : "Ctrl+Enter"})`,
-    onclick: edExecute, "aria-keyshortcuts": MAC ? "Meta+Enter" : "Control+Enter" }, strokeIcon(ICONS.play, 13), "Execute");
-}
 // Drawn the first time, and its folder shown: the one last shown in this Editor, else the one it was started on -- and the
 // file it last had open, if any, where it was.
 function edMount() {
@@ -1542,7 +1433,7 @@ function edMount() {
     ed.tree = el("div", { class: "ed-rows", role: "tree", "aria-label": "File tree" });
     ed.head = el("div", { class: "ed-head" });
     ed.body = el("div", { class: "ed-body" + (ed.wrap ? " wrap" : "") });
-    ed.body.addEventListener("mousedown", edToPdfClick, true);     // before CodeMirror's: a double-click, to the PDF too
+    for (const f of edAdded.down) ed.body.addEventListener("mousedown", f, true);   // before CodeMirror's
     ed.side = el("aside", { class: "ed-changes files", hidden: "", "aria-label": "Actor's changes" });
     ed.brs = el("div", { class: "ed-brs" });
     const nav = ed.nav = el("nav", { class: "ed-tree", id: "ed-files", "aria-label": "Files" }, ed.bar, ed.brs, ed.tree);
@@ -1550,17 +1441,14 @@ function edMount() {
       "aria-controls": "ed-files", "aria-expanded": "false", onclick: () => edFoldTree(false) });
     const colGrip = () => el("div", { class: "ed-col-grip", role: "separator", "aria-orientation": "vertical",
       title: "Drag to resize · double-click to reset" });
-    const treeGrip = colGrip(), sideGrip = colGrip(), pvGrip = colGrip();
-    ed.pv = el("section", { class: "ed-pv", hidden: "", "aria-label": "Preview" });
-    ed.host = el("div", { class: "ed" }, ed.fold, nav, treeGrip,
-      el("div", { class: "ed-main" }, ed.head, el("div", { class: "ed-work" }, ed.body, sideGrip, ed.side, pvGrip, ed.pv)));
-    ed.host.addEventListener("keydown", edExecKey, true);          // ⌘↵: Execute
+    const treeGrip = colGrip(), sideGrip = colGrip(), work = el("div", { class: "ed-work" }, ed.body, sideGrip, ed.side);
+    ed.host = el("div", { class: "ed" }, ed.fold, nav, treeGrip, el("div", { class: "ed-main" }, ed.head, work));
+    for (const f of edAdded.keys) ed.host.addEventListener("keydown", f, true);
     widthGrip(treeGrip, "ag-dashboard-editor-tree-width", nav, "width", 120, (x) => x - nav.getBoundingClientRect().left);
     widthGrip(sideGrip, "ag-dashboard-editor-changes-width", ed.side, "width", 200, (x) => ed.side.getBoundingClientRect().right - x);
-    widthGrip(pvGrip, "ag-editor-preview-width", ed.pv, "width", 220, (x) => ed.pv.getBoundingClientRect().right - x);
     top.replaceChildren(ed.host);
     edTreeWire(nav);
-    pvMount(ed.pv);
+    for (const f of edAdded.work) f(work);
     let folded = false;
     try { folded = localStorage.getItem(ED_TREE_FOLDED_KEY) === "1"; } catch (e) { /* this page only */ }
     edFoldTree(folded, false);

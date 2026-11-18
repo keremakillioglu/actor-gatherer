@@ -1,14 +1,14 @@
-// Bundles entry.mjs into ag_apps/editor/panel/vendor/editor.js, and the licenses of every package in it into
+// Bundles entry.mjs into app_kit/fileedit/panel/vendor/editor.js, and the licenses of every package in it into
 // editor.LICENSE beside it. Run: npm ci && npm run build (here, in assets/src/editor).
 import * as esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
 
-const vendor = path.resolve(import.meta.dirname, "../../../ag_apps/editor/panel/vendor");
+const vendor = path.resolve(import.meta.dirname, "../../../app_kit/fileedit/panel/vendor");
 const built = await esbuild.build({
   entryPoints: [path.join(import.meta.dirname, "entry.mjs")], bundle: true, minify: true, format: "iife",
   target: "es2020", outfile: path.join(vendor, "editor.js"), metafile: true, legalComments: "none",
-  banner: { js: "/* The Editor app's editor: CodeMirror 6 and Yjs, bundled by assets/src/editor/build.mjs. Licenses: editor.LICENSE */" },
+  banner: { js: "/* The editor of app_kit.fileedit (the Files app, the LaTeX editor): CodeMirror 6 and Yjs, bundled by assets/src/editor/build.mjs. Licenses: editor.LICENSE */" },
 });
 
 const packages = new Set();
