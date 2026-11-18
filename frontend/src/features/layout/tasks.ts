@@ -189,7 +189,7 @@ export function drawStrip(
   if (tabs) {
     const box = span("lay-ttabs");
     box.setAttribute("role", "tablist");
-    box.setAttribute("aria-label", `${head.name}: its tabs`);
+    box.setAttribute("aria-label", `${head.name} tabs`);
     for (const t of tabs.tabs) box.append(chipOf(t));
     right.append(box);
   }
@@ -198,7 +198,7 @@ export function drawStrip(
     add.type = "button";
     add.className = "lay-tadd";
     add.textContent = "+";
-    add.title = add.ariaLabel = tabs ? "Another tab of this task" : "Another tab of this task (this one kept as it is)";
+    add.title = add.ariaLabel = "New tab for this task";
     add.addEventListener("click", (ev) => {
       ev.stopPropagation();
       hooks.add!();
@@ -210,7 +210,7 @@ export function drawStrip(
     x.type = "button";
     x.className = "lay-sclose";
     x.textContent = "×";
-    x.title = x.ariaLabel = `Close ${head.name} here (its agents go on)`;
+    x.title = x.ariaLabel = `Close ${head.name} here (agents keep running)`;
     x.addEventListener("click", (ev) => {
       ev.stopPropagation();
       hooks.closeTask!();
@@ -225,13 +225,13 @@ export function drawStrip(
     chip.dataset.tab = t.id;
     chip.setAttribute("role", "tab");
     chip.setAttribute("aria-selected", String(t.id === tabs!.shown));
-    chip.title = `${t.name} · double-click to name it · drop a panel here to move it to this tab (⌥: to copy it)`;
+    chip.title = `${t.name} · double-click to rename · drop a panel here to move it (⌥ to copy)`;
     const n = span("", t.name);
     const x = document.createElement("button");
     x.type = "button";
     x.className = "lay-tclose";
     x.textContent = "×";
-    x.title = x.ariaLabel = `Close ${t.name} (its panels stay in the task)`;
+    x.title = x.ariaLabel = `Close ${t.name} (panels stay in the task)`;
     x.addEventListener("click", (ev) => {
       ev.stopPropagation();
       hooks.close(t.id);

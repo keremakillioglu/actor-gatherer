@@ -208,7 +208,7 @@ def add_project(gatherer: str, where: str) -> List[dict]:
         raise BranchError("no such gatherer")
     where = (where or "").strip()
     if not where:
-        raise BranchError("a folder in a git repository, or a GitHub repository, please")
+        raise BranchError("give a folder in a git repository or a GitHub repository")
     local = os.path.abspath(os.path.expanduser(where))
     if os.path.isdir(local):
         top = repository(local)
@@ -217,12 +217,12 @@ def add_project(gatherer: str, where: str) -> List[dict]:
     else:
         m = GITHUB.match(where) or (SHORT.fullmatch(where) if not where.startswith((".", "/", "~")) else None)
         if m is None:
-            raise BranchError(f"{where}: no such folder, nor a GitHub repository (https://github.com/owner/repo, or owner/repo)")
+            raise BranchError(f"{where} is neither a folder nor a GitHub repository (https://github.com/owner/repo or owner/repo)")
         owner, repo = m.group(1), m.group(2)
         top = os.path.join(home.HOME, "projects", owner, repo)
         if repository(top) is None:
             if os.path.exists(top) and os.listdir(top):
-                raise BranchError(f"{top} is there already, and is not a clone of {owner}/{repo}")
+                raise BranchError(f"{top} already exists and is not a clone of {owner}/{repo}")
             os.makedirs(os.path.dirname(top), exist_ok=True)
             _git(os.path.dirname(top), "clone", "--quiet", f"https://github.com/{owner}/{repo}.git", top,
                  timeout=CLONE_TIMEOUT)
@@ -445,7 +445,7 @@ class Branches:
     def _row(self, sid: str) -> dict:
         b = next((r for r in self.rows() if sid in (r["session_id"], r["channel"])), None)
         if b is None:
-            raise BranchError(f"{sid} is no actor on a branch of its own")
+            raise BranchError(f"{sid} isn't an actor with its own branch")
         return b
 
     def listed(self) -> List[dict]:
@@ -475,7 +475,7 @@ class Branches:
         if mine is None:
             raise BranchError(f"{project} is not one of {gatherer}'s projects")
         if not os.path.isdir(project):
-            raise BranchError(f"{project} is not there any more")
+            raise BranchError(f"{project} no longer exists")
         start = _out(project, "rev-parse", "--verify", "HEAD^{commit}")
         started_on = checked_out(project)["branch"]
         sid = uuid.uuid4().hex[:8]

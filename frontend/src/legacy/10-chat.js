@@ -10,8 +10,8 @@ function chatCard(info) {
   const view = chatMin() ? MINI_VIEW : chatView(), feed = chatFeed(view);
   const writable = hasChat(info) && !SNAPSHOT && !view.readOnly;
   const held = info.chattable === false
-    ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}: `
-      + "close it there to message it here." : "";
+    ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}. `
+      + "Close it there to message it here." : "";
   const data = feed.data() || { items: [], pending: [], earlier: false };
   const ctx = { info, session: s, data, running: ["running", "building"].includes(turnStatus(info)[0]), queued: s.queued || [], held, writable,
     loadEarlier: async () => {                         // the view's "earlier" control: kept where the reader was
@@ -49,7 +49,7 @@ function chatCard(info) {
   if (view.feed !== "none" && view.chat !== false) {  // a view that draws the history: what waits, or that there is none yet
     if (view.queued !== false) for (const q of ctx.queued) blocks.push(el("div", { class: "queued", text: `Waiting for the turn to end: ${q}` }));
     if (!data.items.length && !data.pending.length && !ctx.queued.length && !view.greets)
-      blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation: run `ag dashboard` live to see it."
+      blocks.push(el("div", { class: "desc", text: SNAPSHOT ? "A snapshot has no conversation. Run `ag dashboard` live to see it."
         : s.status === "starting" ? "Starting the agent…" : writable ? "No messages yet. Write one below." : "No messages yet." }));
   }
   if (!view.mini) card.append(frame);
@@ -61,7 +61,7 @@ function chatCard(info) {
     const note = errorNote(info) || askingNote(info, !view.readOnly) || answeredNote(info); if (note) card.append(note); }
   if (view.background) { const note = backgroundNote(info); if (note) card.append(note); }
   if (!writable) {
-    if (!SNAPSHOT && !view.readOnly) card.append(el("div", { class: "readonly", text: `Read only: the dashboard can message only ${runnableNames("and")} sessions with a known directory.` }));
+    if (!SNAPSHOT && !view.readOnly) card.append(el("div", { class: "readonly", text: `Read only. Only ${runnableNames("and")} sessions with a known directory can be messaged here.` }));
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
   }
@@ -180,7 +180,7 @@ function backgroundNote(info, term = false) {
   if (!tasks.length) return null;
   return el("div", { class: term ? "status-line bg-tasks" : "bg-tasks", role: "status" },
     el("div", { class: "head" }, el("span", { class: "mark", "aria-hidden": "true" }),
-      `${plural(tasks.length, "background task")} running${info.status === "background" ? ": the turn is over, the work is not" : ""}`),
+      `${plural(tasks.length, "background task")} running${info.status === "background" ? " after the turn ended" : ""}`),
     ...tasks.map((t) => el("div", { class: "task", title: [t.label, t.output].filter(Boolean).join("\n") },
       el("span", { class: "kind", text: TASK_KINDS[t.kind] || t.kind }),
       el("span", { class: "label", text: t.label || t.id }),
@@ -212,7 +212,7 @@ function askingNote(info, answerable = true) {
   const sent = info.answer && info.answer.call === key ? info.answer : null;
   const who = info.harness ? harnessName(info.harness) : "The agent";
   const what = dialog && ask.menu ? `${who} asks something before it starts` : dialog ? `${who} is asking you in its terminal`
-    : perm ? `${who} asks to ${permissionVerb(ask)}${ask.agent ? " (a subagent of it)" : ""}`
+    : perm ? `${who} asks to ${permissionVerb(ask)}${ask.agent ? " (from a subagent)" : ""}`
     : ask.kind === "plan" ? `${who} has a plan for you to ${says.plan_verb}`
     : `${who} asked you ${qs.length > 1 ? plural(qs.length, "question") : "a question"}${ask.async ? " as it works" : ""}`;
   const d = draftOf(ask);
@@ -272,15 +272,15 @@ function askingNote(info, answerable = true) {
     el("summary", { text: "The plan" }), markdown(ask.plan)) : null;
   // the foot's line: how the answer sent goes, or why it is not answered here
   const said = (full) => {
-    const [cls, text] = dialog && !here ? ["", touched ? "Something was typed into its terminal since it showed this: finish there."
+    const [cls, text] = dialog && !here ? ["", touched ? "Something was typed in the terminal since this appeared. Answer it there."
         : "Answer it in the terminal."]
-      : sent ? [late ? "err" : "sent", late ? `Your answer (${sent.summary}) has not reached ${who}: answer it in the terminal.`
+      : sent ? [late ? "err" : "sent", late ? `Your answer (${sent.summary}) hasn't reached ${who}. Answer it in the terminal.`
         : `Typing your answer into the terminal: ${sent.summary}`]
       : d.error ? ["err", d.error]
-      : !here ? ["", touched ? "Something was typed into its terminal since it asked: finish answering there."
-        : reopened ? `Its terminal was opened again since it asked, and ${who} does not ask it there again: answer in a message.`
+      : !here ? ["", touched ? "Something was typed in the terminal since the question appeared. Answer it there."
+        : reopened ? "The terminal was reopened and no longer shows this question. Answer in a message."
         : SNAPSHOT ? "Answered in the terminal that runs the session."
-        : !answerable && s.terminal ? "Answer it in Chat, or in the terminal." : "Answer it in the terminal that runs the session."]
+        : !answerable && s.terminal ? "Answer it in Chat or in the terminal." : "Answer it in the terminal that runs the session."]
       : [null, null];
     return text ? el("span", { class: ["say", cls, full ? "full" : ""].filter(Boolean).join(" "), role: cls === "err" ? "alert" : "status", text }) : null;
   };
@@ -292,11 +292,11 @@ function askingNote(info, answerable = true) {
       said(true),
       el("div", { class: "change", "data-morph": "" }, own("plan", "Or say what to do instead", instead),
         el("button", { type: "button", disabled: busy || !d.change.trim() ? "" : null, onclick: instead,
-          title: "Deny it, with this for the agent to go on with" }, "Deny with this")),
+          title: "Deny and send this to the agent" }, "Deny with this")),
       el("div", { class: "acts" },
         el("button", { type: "button", disabled: busy ? "" : null, onclick: () => deny(null), title: "Deny it" }, "Deny"),
         el("button", { type: "button", class: "primary", disabled: busy ? "" : null, onclick: () => send({ allow: true }),
-          title: "Let it run, this once" }, d.sending ? "Answering…" : "Allow")));
+          title: "Allow once" }, d.sending ? "Answering…" : "Allow")));
   } else if (here && ask.kind === "plan") {
     const change = () => d.change.trim() && send({ plan: "change", text: d.change.trim() });
     foot = el("div", { class: "foot", "data-morph": "" },
@@ -381,7 +381,7 @@ function dialogView(ask, pick = null, busy = false) {
     ...((ask.lines || []).length ? ask.menu ? ask.lines.map((x) => el("p", { class: "menu-line", text: x }))
       : [el("pre", { class: "perm-input", text: ask.lines.join("\n") })] : []),
     ask.said ? el("div", { class: "qline" }, el("span", { class: "text", text: ask.said })) : null,
-    pick ? el("div", { class: "opts", role: "group", "aria-label": ask.said || ask.title || "Its options" }, ...opts.map(option))
+    pick ? el("div", { class: "opts", role: "group", "aria-label": ask.said || ask.title || "Options" }, ...opts.map(option))
       : el("ol", { class: "shown-opts" }, ...opts.map((o) => el("li", { text: o }))));
 }
 function draftOf(ask) {
@@ -413,13 +413,13 @@ function errorNote(info) {
   const st = over ? info.stopped : null;
   if (!f && !st) return null;
   const who = info.harness ? harnessName(info.harness) : "The agent";
-  const why = f ? (f.status ? `The model's endpoint answered ${f.status}: ${f.error}` : `No answer from the model's endpoint: ${f.error}`)
-    : st.text || "Its call to the model failed.";
+  const why = f ? (f.status ? `The model's endpoint returned ${f.status}: ${f.error}` : `No answer from the model's endpoint: ${f.error}`)
+    : st.text || "The model call failed.";
   const hint = errorHint(f, st);
   const tries = f ? `${f.attempts > 1 ? `${f.attempts} tries` : "1 try"} failed, the first ${ago(f.first)}` : null;
   return el("div", { class: "asking-note error-note" + (over ? "" : " retrying"), role: over ? "alert" : "status" },
     el("div", { class: "head" }, el("span", { class: "pill" }, el("i", { "aria-hidden": "true" }), over ? "Error" : "Retrying"),
-      el("span", { class: "what", text: over ? `${who} stopped: its call to the model failed` : `${who}'s call to the model failed` }),
+      el("span", { class: "what", text: over ? `${who} stopped after a failed model call` : `${who}'s model call failed` }),
       el("span", { class: "ago", text: ago((f && f.at) || st.at) })),
     el("div", { class: "body" }, el("div", { class: "why", text: why }), hint ? el("div", { class: "hint", text: hint }) : null,
       st && st.text && f && !st.text.includes(f.error) ? el("div", { class: "pair", style: "margin-top: 8px" },   // only what it adds
@@ -432,12 +432,12 @@ function errorHint(f, st) {
   const text = `${(f && f.error) || ""} ${(st && st.text) || ""}`;
   const status = (f && f.status) || (st && st.status);
   if (/nodename nor servname|Name or service not known|Temporary failure in name resolution|getaddrinfo/i.test(text))
-    return "This machine couldn't look up the endpoint's address (DNS): check its network connection.";
+    return "Couldn't resolve the endpoint's address (DNS). Check the network connection.";
   if (/Connection refused|Connect call failed|ECONNREFUSED|Cannot connect to host 127\.0\.0\.1/i.test(text))
-    return "Nothing answered at the endpoint's address.";
-  if (status === 429 || /rate.?limit/i.test(text)) return "Rate limited: the harness waits and tries again.";
-  if (status === 529 || /overloaded/i.test(text)) return "The model's service is overloaded for now.";
-  if (status === 401 || status === 403) return "Not authorized: the harness may need to log in again.";
+    return "Nothing is listening at the endpoint's address.";
+  if (status === 429 || /rate.?limit/i.test(text)) return "Rate limited. The harness will retry.";
+  if (status === 529 || /overloaded/i.test(text)) return "The model's service is overloaded.";
+  if (status === 401 || status === 403) return "Not authorized. The harness may need to log in again.";
   return null;
 }
 // The message box a view gets unless it brings its own: a text box, Enter sending it.
@@ -451,7 +451,7 @@ function defaultComposer(ctx) {
 function viewSwitcher(current) {
   const views = offeredViews().filter((v) => !v.more || v.id === current.id);
   if (views.length < 2) return null;
-  return el("div", { class: "views", role: "group", "aria-label": "How the history is shown" },
+  return el("div", { class: "views", role: "group", "aria-label": "View" },
     ...views.map((v) => el("button", { type: "button", "aria-pressed": v.id === current.id ? "true" : "false", title: v.description || v.name,
       "aria-label": v.name, onclick: () => setChatView(v.id) }, v.icon ? strokeIcon(v.icon) : null, el("span", { class: "lbl", text: v.name }))));
 }
@@ -473,13 +473,12 @@ function tile(labelText, value, note) {
 }
 function sizeCard(reads, hasReal) {
   const card = el("section", { class: "card" }, el("h3", { text: "Context size" }),
-    el("div", { class: "desc", text: (hasReal ? "Each model call's context, in tokens: as the provider counted it, and as ag counted all it sent "
-      + "when it made the call (the harness's preamble included, where it was recorded)."
-      : "Each model call's context, in tokens, as ag counts all it sent (these reads have no provider count).") + " Click the chart to see what a read held." }),
+    el("div", { class: "desc", text: (hasReal ? "Each model call's context in tokens, as counted by the provider and by ag."
+      : "Each model call's context in tokens, as counted by ag. These reads have no provider count.") + " Click the chart to see a call's context." }),
     legend([...(hasReal ? [{ label: "Provider's count", color: "var(--s1)" }] : []), { label: "ag's own count", color: "var(--s2)" },
       { label: "Rebuild", kind: "rule" }]),
     el("div", { id: "size-chart" }));
-  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["Read", "Time", "Provider's count", "ag's count", "of it, preamble", "ag's budgeted size", "Limit", "Tasks", "Build"].map((h, i) =>
+  const table = el("table", {}, el("thead", {}, el("tr", {}, ...["Read", "Time", "Provider's count", "ag's count", "Preamble", "ag's budgeted size", "Limit", "Tasks", "Build"].map((h, i) =>
     el("th", { class: i >= 2 && i <= 7 ? "n" : "", text: h })))));
   const body = el("tbody");
   for (const r of [...reads].reverse()) body.append(el("tr", {}, el("td", { class: "n", text: r.read_id }), el("td", { text: clock(r.at, true) }),
@@ -539,12 +538,12 @@ function contextCard() {
       ? "A snapshot keeps only each actor's latest context. Run `ag dashboard` live to see older ones." : "No context sent yet." }));
     return card;
   }
-  const real = typeof ctx.real_tokens === "number" ? ` · the provider counted ${full(ctx.real_tokens)}` : "";
+  const real = typeof ctx.real_tokens === "number" ? `, ${full(ctx.real_tokens)} by the provider's` : "";
   const pre = (ctx.preamble || []).reduce((n, p) => n + p.tokens, 0);
-  card.append(el("div", { class: "desc", text: `Everything ${latest ? "the latest call" : "this call"} sent (read ${ctx.read_id}, ${clock(ctx.at, true)}), in the order the model got it: `
-    + (pre ? `the harness's preamble (${full(pre)} tokens), then ` : "") + `${full(ctx.items.length)} items, ${full(ctx.tokens)} tokens by ag's own count${real}.`
-    + (ctx.cut ? ` Built from build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet: the whole history, verbatim.")
-    + (latest ? " Click the size chart to see an earlier call's." : "") }));
+  card.append(el("div", { class: "desc", text: `What ${latest ? "the latest call" : "this call"} sent (read ${ctx.read_id}, ${clock(ctx.at, true)}), in order: `
+    + (pre ? `the harness's preamble (${full(pre)} tokens), then ` : "") + `${full(ctx.items.length)} items, ${full(ctx.tokens)} tokens by ag's count${real}.`
+    + (ctx.cut ? ` From build ${ctx.basis}, which cut the history at row ${ctx.cut}.` : " No build yet, so the whole history is sent as is.")
+    + (latest ? " Click the size chart to see an earlier call." : "") }));
   card.append(contextSplit(ctx));
   const chips = contextChips(ctx);
   if (chips) card.append(chips);
@@ -621,8 +620,8 @@ function contextRuns(ctx) {
   if (uncounted(ctx.not_counted)) {                   // what the provider counted beyond all of it
     list.append(el("div", { class: "run" }, el("span", { class: "key-rect", style: `background:${color(NOT_COUNTED)}` }), el("strong", { text: NOT_COUNTED }),
       el("span", { text: `${full(ctx.not_counted)} tokens` })));
-    list.append(el("div", { class: "uncounted", text: "The provider's count for this call, less everything above: what ag cannot see or count -- "
-      + "the model's tokenizer differing from ag's, reasoning and hidden payloads (signatures in tool-call ids), message framing." }));
+    list.append(el("div", { class: "uncounted", text: "The provider's count minus everything above: tokens ag can't see, such as "
+      + "tokenizer differences, reasoning, hidden payloads and message framing." }));
   }
   return [...list.childNodes];
 }
@@ -716,9 +715,9 @@ function usageCard() {
   const card = el("section", { class: "card" }, el("h3", { text: "Tokens sent across all calls" }));
   if (!u || !u.entries || !u.entries.length) { card.append(el("div", { class: "desc", text: "No calls yet." })); return card; }
   const real = u.real_calls ? ` The provider counted ${full(u.real_tokens)} over the ${full(u.real_calls)} calls it reported.` : "";
-  card.append(el("div", { class: "desc", text: `Everything sent to the model over this actor's ${full(u.calls)} calls, by kind: `
-    + `${full(u.tokens)} tokens by ag's own count, each message (and the harness's preamble) counted once for every call it went in.${real}`
-    + (uncounted(u.not_counted) ? ` ${full(u.not_counted)} of the provider's count is in none of them: "Not counted by ag".` : "") }));
+  card.append(el("div", { class: "desc", text: `${full(u.tokens)} tokens sent over this actor's ${plural(u.calls, "call")}, by ag's count. `
+    + `Each message, and the harness's preamble, counts once per call it was sent in.${real}`
+    + (uncounted(u.not_counted) ? ` ${full(u.not_counted)} of the provider's count is shown as "${NOT_COUNTED}".` : "") }));
   // ag's messages among the history count in the recent raw history, where they sit
   const notCounted = uncounted(u.not_counted) ? [entry({ name: "not counted", tokens: u.not_counted }, NOT_COUNTED, u.real_calls)] : [];
   card.append(decomposition([...u.entries.map((e) => entry(e, INLINE.has(e.group) ? "Recent history" : e.group, e.items)), ...notCounted],
@@ -727,7 +726,7 @@ function usageCard() {
 }
 // What an item with no words is: a model's thinking can come back encrypted (its API reads it, no one else);
 // a model's text beside its tool call can be empty.
-const wordless = (it) => it.name === "agent_reasoning" ? "thinking, encrypted: not readable" : "no text";
+const wordless = (it) => it.name === "agent_reasoning" ? "encrypted thinking" : "no text";
 const columns = () => el("div", { class: "cols" }, el("span"), el("span", { text: "Type" }), el("span", { text: "Message" }),
   el("span", { class: "n", text: "Tokens", title: "ag's own count" }));
 // what a run's or list's header counts: all its items and tokens, and of them what the type filters leave shown
@@ -770,7 +769,7 @@ function llmCard(a) {
   const card = el("section", { class: "card" }, el("h3", { text: "ag's own model calls" }),
     el("div", { class: "desc", text: "The Gatherer's calls for this actor: new-task checks, segmentation, summaries, ranking." }));
   const rows = a.llm.by_purpose;
-  if (!rows.length) { card.append(el("div", { class: "desc", text: "None found in the home's call log." })); return card; }
+  if (!rows.length) { card.append(el("div", { class: "desc", text: "None found in the call log." })); return card; }
   const table = el("table", {}, el("thead", {}, el("tr", {}, ...["Purpose", "Calls", "Tokens in", "Tokens out", "Time", "Errors", "Cost"].map((h, i) => el("th", { class: i ? "n" : "", text: h })))));
   const body = el("tbody");
   for (const p of rows) body.append(el("tr", { title: p.models.join(", ") }, el("td", { text: p.purpose }), el("td", { class: "n", text: full(p.calls) }),
@@ -781,7 +780,7 @@ function llmCard(a) {
     el("td", { class: "n", text: compact(t.tokens_out) }), el("td"), el("td", { class: "n", text: full(t.errors) }), el("td", { class: "n", text: usd(t.cost) })));
   table.append(body);
   card.append(el("div", { class: "scroll" }, table));
-  if (t.unpriced) card.append(el("div", { class: "warn", text: `* ${t.unpriced} calls on models LiteLLM has no price for are not in the cost.` }));
+  if (t.unpriced) card.append(el("div", { class: "warn", text: `* Excludes ${t.unpriced} calls to models LiteLLM has no price for.` }));
   if (a.llm_attributed_by_time) card.append(el("div", { class: "warn", text: `${a.llm_attributed_by_time} calls predate job tags and were matched to this actor by time.` }));
   return card;
 }

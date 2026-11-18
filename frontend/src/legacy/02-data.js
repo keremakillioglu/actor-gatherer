@@ -220,7 +220,7 @@ const setLive = (text) => {
   document.getElementById("live").textContent = text;
   const st = /^Live/.test(text) ? "live" : text === "Paused" ? "paused" : /^Not /.test(text) ? "error" : "";
   for (const n of document.querySelectorAll(".state-dot")) n.dataset.state = st;   // the settings panel's
-  document.getElementById("about-btn").title = `${text}. Settings: ag's, and this page's`;
+  document.getElementById("about-btn").title = `Settings · ${text}`;
 };
 // The dashboard's panel: opened by its button, closed by it again, by a click elsewhere, by Esc, or once a
 // theme is picked or the Gatherer's model set.

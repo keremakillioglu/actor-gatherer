@@ -92,7 +92,7 @@ export function fromSource(asked: Asked, source = "", go = false): void {
     class: "ap-field",
     value: source,
     placeholder: "~/apps/pager, or https://github.com/someone/ag-pager",
-    "aria-label": "A folder or a git URL",
+    "aria-label": "Folder or git URL",
     spellcheck: "false",
   }) as HTMLInputElement;
   const check = el("button", { type: "button", class: "ap-btn primary" }, "Check") as HTMLButtonElement;
@@ -101,21 +101,21 @@ export function fromSource(asked: Asked, source = "", go = false): void {
     el("h2", { text: "Install an app" }),
     el("p", {
       class: "ap-sub",
-      text: "A folder on this computer, or a git URL. It's copied aside and checked before anything is installed.",
+      text: "A folder on this computer or a git URL.",
     }),
     input,
     buttons(cancel(), check),
   );
   const stage = async (): Promise<void> => {
     const src = input.value.trim();
-    if (!src) return failed(d, "Say where the app is: a folder, or a git URL.", check);
-    busy(d, "Copying it aside and reading its app.toml…", check);
+    if (!src) return failed(d, "Enter a folder or a git URL.", check);
+    busy(d, "Checking the app…", check);
     try {
       const st = await post<Staged>("/api/apps/stage", { source: src });
       if (!open.dim) return void post("/api/apps/discard", { id: st.id }).catch(() => {}); // closed meanwhile
       if (st.installed) {
         void post("/api/apps/discard", { id: st.id }).catch(() => {});
-        return failed(d, `${st.label} is installed already: update it from its details.`, check);
+        return failed(d, `${st.label} is already installed. Update it from its details.`, check);
       }
       confirmInstall(st, asked);
     } catch (e) {
@@ -131,27 +131,22 @@ export function fromSource(asked: Asked, source = "", go = false): void {
 function itCan(a: CatalogApp): HTMLElement[] {
   const who =
     a.offer === "always"
-      ? "every agent"
-      : `only agents attached to ${/^[aeiou]/i.test(a.label) ? "an" : "a"} ${a.label}`;
+      ? "Every agent, when it next starts"
+      : `Only agents attached to ${/^[aeiou]/i.test(a.label) ? "an" : "a"} ${a.label}, when they next start`;
   return [
     el("h3", { text: "It can" }),
     el(
       "ul",
       {},
       ...said.can(a).map((c) => el("li", { text: c })),
-      ...(a.schedules || []).map((s) => el("li", { text: `Work on its own: ${s}` })),
+      ...(a.schedules || []).map((s) => el("li", { text: `Runs ${s}` })),
     ),
     el("h3", { text: "Agents get" }),
     el(
       "ul",
       {},
-      el(
-        "li",
-        {},
-        `${said.count((a.tools || []).length, "tool")}, `,
-        tokens(a.tokens || 0, "each"),
-        `, ${who}, when their terminal next starts`,
-      ),
+      el("li", {}, `${said.count((a.tools || []).length, "tool")}, `, tokens(a.tokens || 0, "per agent")),
+      el("li", { text: who }),
       a.needs ? el("li", { text: `Needs: ${a.needs}` }) : null,
     ),
   ];
@@ -168,7 +163,7 @@ function confirmInstall(st: Staged, asked: Asked): void {
     el("p", { class: "ap-sub", text: "Once installed it's on in every folder." }),
     el("div", {
       class: "ap-warn",
-      text: "Installing runs its code on your computer with your permissions, as a VS Code extension does: ag doesn't sandbox it. Install apps you trust.",
+      text: "Apps run on your computer with your permissions. Only install apps you trust.",
     }),
     buttons(cancel(), go),
   );
@@ -178,10 +173,7 @@ function confirmInstall(st: Staged, asked: Asked): void {
       await post("/api/apps/install", { id: st.id });
       open.staged = "";
       closeDialog();
-      await asked.done(
-        `Installed ${st.label}. It's on in every folder; agents get its tools when their terminal next starts.`,
-        st.name,
-      );
+      await asked.done(`Installed ${st.label}. Agents get its tools when they next start.`, st.name);
     } catch (e) {
       failed(d, (e as Error).message, go);
     }
@@ -209,7 +201,7 @@ export function confirmBuiltin(a: CatalogApp, asked: Asked): void {
     try {
       await post("/api/apps/install", { builtin: a.name });
       closeDialog();
-      await asked.done(`Installed ${a.label} again. It's on in every folder.`, a.name);
+      await asked.done(`Installed ${a.label} again.`, a.name);
     } catch (e) {
       failed(d, (e as Error).message, go);
     }
@@ -229,19 +221,15 @@ export function confirmUninstall(a: CatalogApp, asked: Asked, broken = false): v
       "ul",
       {},
       broken
-        ? el("li", { text: "It never loaded, so nothing of it is open and no agent has its tools." })
+        ? el("li", { text: "It never loaded, so nothing is open and no agent has its tools." })
         : el("li", {
             text: n
               ? `Its ${n} open window${n > 1 ? "s" : ""} close (${per.map(([g, k]) => `${g} ${k}`).join(", ")}).`
-              : "Nothing of it is open.",
+              : "Nothing is open.",
           }),
-      broken
-        ? null
-        : el("li", { text: "Agents lose its tools when their terminal next starts; a call before then is refused." }),
+      broken ? null : el("li", { text: "Agents lose its tools when they next start. Calls before then are refused." }),
       broken ? null : el("li", { text: "What it put in your history stays." }),
-      a.origin === "builtin"
-        ? el("li", { text: "It comes with ag, so it moves to Available to install, where Install brings it back." })
-        : null,
+      a.origin === "builtin" ? el("li", { text: "It comes with ag. Reinstall it from Available to install." }) : null,
     ),
     el(
       "label",
@@ -275,7 +263,7 @@ export async function stageUpdate(a: CatalogApp, asked: Asked): Promise<void> {
   const go = el("button", { type: "button", class: "ap-btn primary" }, "Update") as HTMLButtonElement;
   go.disabled = true;
   const d = dialog(`Update ${a.label}`, lead(a, `Update ${a.label}`, fromLine(a)), buttons(cancel(), go));
-  busy(d, "Fetching its newest commit and checking it…", go);
+  busy(d, "Fetching the latest commit…", go);
   let st: Staged;
   try {
     st = await post<Staged>("/api/apps/stage", { source: a.source });
@@ -286,24 +274,20 @@ export async function stageUpdate(a: CatalogApp, asked: Asked): Promise<void> {
   open.staged = st.id;
   const ch = st.changes;
   const lines = [
-    ...(ch?.tools_added || []).map((t) => `A new tool for agents: ${t}`),
-    ...(ch?.tools_gone || []).map((t) => `A tool gone: ${t}`),
-    ...(ch?.can_added || []).map((c) => `New: it can do ${c}`),
-    ...(ch?.own_process ? ["New: it runs its own process on this computer"] : []),
+    ...(ch?.tools_added || []).map((t) => `New tool: ${t}`),
+    ...(ch?.tools_gone || []).map((t) => `Removed tool: ${t}`),
+    ...(ch?.can_added || []).map((c) => `New permission: ${c}`),
+    ...(ch?.own_process ? ["Now runs its own process on this computer"] : []),
   ];
   const v = ch ? ch.version.join(" → ") : st.version || "";
   dialog(
     `Update ${a.label}?`,
     lead(st, `Update ${a.label} to ${st.version}?`, `${v}${st.commit ? ` · ${st.commit.slice(0, 7)}` : ""}`),
     el("h3", { text: "What changes" }),
-    el(
-      "ul",
-      {},
-      ...(lines.length ? lines : ["Nothing agents get or it may do: only its code."]).map((t) => el("li", { text: t })),
-    ),
+    el("ul", {}, ...(lines.length ? lines : ["Only its code changes."]).map((t) => el("li", { text: t }))),
     el("p", {
       class: "ap-sub",
-      text: "Its backend stops, its folder is replaced, it starts again and its windows reload. Agents get any new tool when their terminal next starts.",
+      text: "The app restarts and its windows reload. Agents get new tools when they next start.",
     }),
     buttons(cancel(), go),
   );

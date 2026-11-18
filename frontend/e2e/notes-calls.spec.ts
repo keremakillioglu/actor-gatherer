@@ -40,7 +40,7 @@ test("a line goes to a second agent from its + button: a chip each, a tab each, 
   await row.hover();
   await row.locator(".sent .add-agent").click();
   const pop = panel.locator(".pop.at-pop");
-  await expect(pop.locator(".hd.lead")).toHaveText("Send it to another agent too, as your message");
+  await expect(pop.locator(".hd.lead")).toHaveText("Send to another agent");
   await expect(pop.locator(".it", { hasText: CLAUDE })).toHaveCount(0);
   await page.keyboard.type("Review it when done.");
   await pop.locator(".it", { hasText: CODEX }).click();
@@ -122,9 +122,7 @@ test("an agent taken off a line is told to leave it, keeps its tab, and the line
   await expect(convo.locator(".cv-tab")).toHaveCount(2);
   await expect(convo.locator(".cv-tab.on")).toContainText("Removed");
   await expect(convo.locator(".reply")).toHaveCount(0);
-  await expect(convo.locator(".cv-none")).toHaveText(
-    `Removed from this line: send it to ${CODEX} again to talk about it.`,
-  );
+  await expect(convo.locator(".cv-none")).toHaveText(`Removed from this line. Send it to ${CODEX} again to continue.`);
   await expect(convo.locator(".cv-drop")).toHaveCount(0);
 
   // the other, from the line's menu: no agent left -- a work item sent to no one, its conversations kept

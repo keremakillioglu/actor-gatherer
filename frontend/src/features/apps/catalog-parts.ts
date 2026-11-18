@@ -116,7 +116,7 @@ export const said = {
   /** Its version and where it came from, under its name. */
   from(a: CatalogApp): string {
     const v = a.version ? `version ${a.version} · ` : "";
-    if (a.origin === "builtin") return `${v}built in, comes with ag`;
+    if (a.origin === "builtin") return `${v}comes with ag`;
     if (a.origin === "path") return `${v}in AG_APPS_PATH`;
     return `${v}from ${a.source || "a folder"}`;
   },
@@ -130,14 +130,14 @@ export const said = {
     return [
       ...(a.own_process ? ["Run its own process on this computer"] : []),
       ...(a.can || []).map(first),
-      ...(a.own_process ? [] : ["It runs in the dashboard's process"]),
+      ...(a.own_process ? [] : ["Runs in the dashboard's process"]),
     ];
   },
   /** How it is kept up to date. */
   upToDate(a: CatalogApp): string {
-    if (a.origin === "builtin") return "Comes with ag: updated with it.";
-    if (a.origin === "path") return "In AG_APPS_PATH: updated there.";
+    if (a.origin === "builtin") return "Updated with ag.";
+    if (a.origin === "path") return "Updated in AG_APPS_PATH.";
     if (a.kind === "git") return `Up to date${a.commit ? ` (${a.commit.slice(0, 7)})` : ""}.`;
-    return "From a folder: install it again to update it.";
+    return "Install it again to update.";
   },
 };

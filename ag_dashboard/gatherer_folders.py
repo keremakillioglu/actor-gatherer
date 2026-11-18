@@ -97,10 +97,10 @@ def _folder(conn: sqlite3.Connection, fid) -> tuple:
     try:
         fid = int(fid)
     except (TypeError, ValueError):
-        raise FolderError(f"which folder? {fid!r} is none") from None
+        raise FolderError(f"no folder {fid!r}") from None
     row = conn.execute("SELECT id, parent, name FROM gatherer_folders WHERE id = ?", (fid,)).fetchone()
     if row is None:
-        raise FolderError(f"no folder {fid} of gatherers")
+        raise FolderError(f"no folder {fid}")
     return row
 
 
@@ -114,7 +114,7 @@ def _beside(conn: sqlite3.Connection, parent: Optional[int], name: str, but: Opt
 def _free(conn: sqlite3.Connection, parent: Optional[int], name: str, but: Optional[int] = None) -> None:
     other = _beside(conn, parent, name, but)
     if other is not None:
-        raise FolderError(f'there is a folder "{other}" there already')
+        raise FolderError(f'a folder named "{other}" is already there')
 
 
 def make(name: str, parent: Optional[int] = None) -> int:
@@ -150,7 +150,7 @@ def move(fid: int, parent: Optional[int]) -> None:
             up = _folder(conn, parent)[0]
             while up is not None:                       # its own folders, up to the top
                 if up == int(fid):
-                    raise FolderError(f'"{name}" can\'t go in itself, nor in a folder of its own')
+                    raise FolderError(f'"{name}" can\'t go in itself or in one of its own folders')
                 up = conn.execute("SELECT parent FROM gatherer_folders WHERE id = ?", (up,)).fetchone()[0]
         _free(conn, parent, name, but=int(fid))
         conn.execute("UPDATE gatherer_folders SET parent = ? WHERE id = ?", (parent, int(fid)))

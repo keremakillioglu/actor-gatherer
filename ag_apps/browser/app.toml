@@ -7,7 +7,7 @@
 name = "browser"
 label = "Browser"
 version = "1"
-description = "a browser you and an agent use together: point it at what you mean"
+description = "a browser you and an agent use together"
 instances = "many"
 offer = "attached"
 instructions_file = "instructions.md"
@@ -23,7 +23,7 @@ name = "Browser · {folder}"
 [asked]
 when = "<browser_state>"
 pattern = '^([\s\S]*?)\s*<browser_state>'
-otherwise = "A message, with the browser's state"
+otherwise = "A message with the browser's state"
 
 [backend]
 python = "backend:BrowserApp"

@@ -248,7 +248,7 @@ def _columns(conn, table: str) -> set:
 
 #: What an actor's views answer before its gatherer has stored anything: ag adds the channel's column
 #: with the first event, so a gatherer made (`ag new`) whose first session has sent nothing has none.
-NOTHING_YET = {"error": "Nothing stored yet: the session has sent no message through ag."}
+NOTHING_YET = {"error": "Nothing stored yet. The session hasn't sent a message through ag."}
 
 
 def _channels_kept(conn) -> bool:

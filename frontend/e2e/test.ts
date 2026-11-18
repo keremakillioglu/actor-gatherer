@@ -33,7 +33,7 @@ async function clearApps(page: Page) {
 }
 export { expect };
 
-/** An app's panel's menu (07-panes.js's appPanelMenu: where it can be moved, and "Close its panel"), opened as the reader
+/** An app's panel's menu (07-panes.js's appPanelMenu: where it can be moved, and "Close panel"), opened as the reader
  * opens it -- an app's panel has no head: its row in the list right-clicked (an app in a task: its row in the task's
  * card, the task's row hovered). */
 export async function panelMenu(page: Page, pane: Locator): Promise<Locator> {
@@ -57,9 +57,9 @@ export async function panelMenu(page: Page, pane: Locator): Promise<Locator> {
   return menu;
 }
 
-/** An app's panel (`pane`) closed, the app left open: "Close its panel" picked from its menu (panelMenu). */
+/** An app's panel (`pane`) closed, the app left open: "Close panel" picked from its menu (panelMenu). */
 export async function closePanel(page: Page, pane: Locator) {
-  await (await panelMenu(page, pane)).getByRole("menuitem", { name: /Close its panel/ }).click();
+  await (await panelMenu(page, pane)).getByRole("menuitem", { name: /Close panel/ }).click();
   await page.mouse.move(0, 0); // the task's card, if one was shown for it, put away
 }
 

@@ -327,7 +327,7 @@ test("the tree shows a closed actor that changed a file only while a change of i
   waiting = [{ gatherer: GATHERER, channel: closed.channel }]; // a change of the closed one's waits: it is shown too
   await expect(avatars.locator(":scope > img, :scope > .ed-noav")).toHaveCount(2);
   await expect(avatars).toHaveClass(/many/);
-  await expect(avatars).toHaveAttribute("title", /\(closed: its change waits for you\)/);
+  await expect(avatars).toHaveAttribute("title", /\(closed, change waiting for you\)/);
   await closePanel(page, editorPane(page));
   await expect(editorPane(page)).toHaveCount(0);
 });

@@ -154,9 +154,7 @@ export class Placer {
       attr(
         e,
         "title",
-        still
-          ? ""
-          : `Drag to resize${evens(b.split) ? ` · double-click: all the same ${row ? "width" : "height"}` : ""}`,
+        still ? "" : `Drag to resize${evens(b.split) ? ` · double-click for equal ${row ? "widths" : "heights"}` : ""}`,
       );
       e.classList.toggle("thick", !!b.split.thick);
       e.classList.toggle("gap", !!b.split.gap);

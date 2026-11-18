@@ -210,5 +210,5 @@ function notesSwitch() {
     try { localStorage.setItem(NOTES_KEY, showNotes ? "1" : "0"); } catch (e) { /* this page only */ }
     keepingPlace(renderMain);
   });
-  return el("label", { title: "The harness's system messages and ag's own notices, between the messages" }, box, "Show system and ag notes");
+  return el("label", { title: "The harness's system messages and ag's notices" }, box, "Show system and ag notes");
 }
