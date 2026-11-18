@@ -338,6 +338,19 @@
   height: 100%;
   background: none;
 }
+/* a phone's width (nothing placed: the page flows, 07-panes.js): the tabs still there, a row that scrolls sideways, each
+   tab no narrower than its map and a few letters */
+@media (max-width: 760px) {
+  :root:not(.list-full):has(.work) .tab-slot > .lay-tabs {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab-slot .lay-tab {
+    flex: none;
+    width: 150px;
+  }
+}
 .lay-tab-list {
   position: relative; /* its tabs' offsets its own: where a tab dragged along it would go (bar-drag.ts's slotAt) */
   min-width: 0;
