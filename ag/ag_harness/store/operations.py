@@ -279,12 +279,20 @@ def sent_again(conn: sqlite3.Connection, sp: Spec, values: tuple, event_id: str)
 
 
 def latest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: int,
-           types: Optional[List[str]] = None) -> List[Tuple[str, Any]]:
+           types: Optional[List[str]] = None, counted: Optional[List[str]] = None) -> List[Tuple[str, Any]]:
     """(event id, payload) of the `n` events last stored with exactly these identifying properties (one
     not given: unset) and an id -- of these `types` alone, when given (a harness's conversation, not what it
     records besides) -- oldest first: where a harness that re-sends its history picks it up -- not one it took
-    back (`withdraw`)."""
-    return [(event_id, json.loads(payload)) for _, event_id, payload in reversed(_newest(conn, properties, n, types))]
+    back (`withdraw`). With `counted`, `n` counts the events of those types alone: the `n` last of them, and
+    every event of `types` stored since the oldest of them (all of them, with fewer) -- however many of the
+    others there are (a harness's notes, stored in a run ahead of the message they followed)."""
+    if counted is None:
+        return [(event_id, json.loads(payload)) for _, event_id, payload in reversed(_newest(conn, properties, n, types))]
+    if n <= 0:
+        return []
+    found = _newest(conn, properties, n, counted if types is None else [t for t in counted if t in types])
+    since = found[-1][0] if len(found) == n else 0
+    return [(event_id, json.loads(payload)) for _, event_id, payload in reversed(_newest(conn, properties, None, types, since))]
 
 
 def latest_row(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]],
@@ -295,9 +303,9 @@ def latest_row(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]],
     return found[0][0] if found else None
 
 
-def _newest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: int,
-            types: Optional[List[str]]) -> List[Tuple[int, str, str]]:
-    """(row id, event id, payload JSON) of `latest`'s events, newest first."""
+def _newest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: Optional[int],
+            types: Optional[List[str]], since: Optional[int] = None) -> List[Tuple[int, str, str]]:
+    """(row id, event id, payload JSON) of `latest`'s events, newest first: `n` of them (None: all), from row `since` on."""
     names = identifying_names(conn)
     given = properties or {}
     typed, named = "", []
@@ -305,9 +313,12 @@ def _newest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: i
         named = [t for t in types if isinstance(t, str)]
         typed = (f"e.event_type_id IN (SELECT event_type_id FROM event_types WHERE name IN "
                  f"({', '.join('?' * len(named))})) AND " if named else "0 AND ")
+    after, limit = (" AND e.row_id >= ?", [since]) if since is not None else ("", [])
+    if n is not None:
+        limit += [max(0, n)]
     return conn.execute(f"SELECT row_id, event_id, payload_json FROM events e WHERE {_same(names, 'e.')}{typed}"
-                        f"event_id IS NOT NULL{KEPT} ORDER BY row_id DESC LIMIT ?",
-                        (*_unset_is_empty([given.get(name) for name in names]), *named, max(0, n))).fetchall()
+                        f"event_id IS NOT NULL{KEPT}{after} ORDER BY row_id DESC{' LIMIT ?' if n is not None else ''}",
+                        (*_unset_is_empty([given.get(name) for name in names]), *named, *limit)).fetchall()
 
 
 def locate(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], event_id: str) -> Optional[int]:
