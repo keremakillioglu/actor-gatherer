@@ -108,7 +108,7 @@ const chatFeed = (view = chatView()) => (chatMin() ? CHAT_FEEDS.files : CHAT_FEE
 // The views that come with the page.
 addChatView({
   id: "messages", name: "Messages", feed: "history", frame: "ctx", icon: ICONS.list, more: true, readOnly: true,
-  description: "The session's events as the gatherer has them, one row each, filtered by type.",
+  description: "The session's events, one row each, filtered by type.",
   tools: () => typeChips(null),
   render: ({ data }) => {
     const items = [...data.items, ...data.pending].map((i) => ({ ...i, group: "Recent history" }));

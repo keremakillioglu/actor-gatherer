@@ -30,7 +30,7 @@ test("lines selected in a file go to an actor picked, with what to do, as the us
   const pop = panel.locator(".ed-sendpop");
   await expect(pop).toBeVisible();
   await expect(button).toBeHidden();
-  await expect(pop.locator(".ed-send-hd")).toHaveText("Send line 1 of plot.py to an actor, as your message");
+  await expect(pop.locator(".ed-send-hd")).toHaveText("Send line 1 of plot.py to an actor");
   await expect(pop.locator(".ed-send-it", { hasText: CLAUDE })).toHaveCount(1);
   await expect(pop.locator(".ed-send-ask")).toBeFocused(); // its box has the keys at once
   await page.keyboard.press("Enter"); // nothing asked yet: not sent

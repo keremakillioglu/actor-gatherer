@@ -5,7 +5,7 @@
 name = "slack"
 label = "Slack"
 version = "1"
-description = "your Slack: new messages as they come, replies agents draft and you send"
+description = "your Slack messages as they arrive, and replies agents draft for you to send"
 instances = "one"
 offer = "attached"
 mark = "mark.svg"

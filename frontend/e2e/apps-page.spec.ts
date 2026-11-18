@@ -149,7 +149,7 @@ test("the settings panel's Apps opens the Apps page in a tab of its own: every a
   const browser = appRow(page, "browser");
   await expect(browser).toContainText("Agents attached to it");
   await expect(browser).toContainText("19 tools");
-  await expect(browser.locator(".ap-big")).toHaveText("≈8.9k tokens each"); // a large cost, marked
+  await expect(browser.locator(".ap-big")).toHaveText("≈8.9k tokens per agent"); // a large cost, marked
   await expect(browser.locator(".ap-badge.open")).toHaveText("4 open");
   await expect(appRow(page, "standup")).toContainText("1 tool");
   await expect(appRow(page, "standup").locator(".ap-badge.upd")).toHaveText("update"); // a newer commit
@@ -189,23 +189,24 @@ test("installing from a folder: checked, then asked with what it may do; Cancel 
   await open(page);
   await fromSettings(page);
   await appsPage(page).getByRole("button", { name: "+ Install from a folder or git URL…" }).click();
-  await dialog(page).getByLabel("A folder or a git URL").fill("/work/pager");
+  await dialog(page).getByLabel("Folder or git URL").fill("/work/pager");
   await dialog(page).getByRole("button", { name: "Check" }).click();
   await expect(dialog(page).locator("h2")).toHaveText("Install Pager?");
   await expect(dialog(page)).toContainText("Run its own process on this computer");
   await expect(dialog(page)).toContainText("Sending you notifications");
-  await expect(dialog(page)).toContainText("1 tool, ≈100 tokens each, every agent, when their terminal next starts");
-  await expect(dialog(page).locator(".ap-warn")).toContainText("ag doesn't sandbox it");
+  await expect(dialog(page)).toContainText("1 tool, ≈100 tokens per agent");
+  await expect(dialog(page)).toContainText("Every agent, when it next starts");
+  await expect(dialog(page).locator(".ap-warn")).toContainText("Only install apps you trust");
   await dialog(page).getByRole("button", { name: "Cancel" }).click();
   await expect(dialog(page)).toHaveCount(0);
   expect(state.asked.map(([p]) => p)).toEqual(["stage", "discard"]); // staged, then discarded
   await appsPage(page).getByRole("button", { name: "+ Install from a folder or git URL…" }).click();
-  await dialog(page).getByLabel("A folder or a git URL").fill("/work/pager");
-  await dialog(page).getByLabel("A folder or a git URL").press("Enter");
+  await dialog(page).getByLabel("Folder or git URL").fill("/work/pager");
+  await dialog(page).getByLabel("Folder or git URL").press("Enter");
   await dialog(page).getByRole("button", { name: "Install" }).click();
   await expect(dialog(page)).toHaveCount(0);
   expect(state.asked.at(-1)).toEqual(["install", { id: PAGER.id }]);
-  await expect(appsPage(page).locator(".ap-note")).toContainText("Installed Pager. It's on in every folder");
+  await expect(appsPage(page).locator(".ap-note")).toContainText("Installed Pager. Agents get its tools");
   await expect(appRow(page, "pager")).toHaveClass(/sel/); // shown, its details beside the list
 });
 
@@ -218,7 +219,7 @@ test("an app that comes with ag uninstalled -- its windows said, its data kept u
   await appRow(page, "browser").locator(".ap-more").click();
   await page.getByRole("menuitem", { name: "Uninstall…" }).click();
   await expect(dialog(page)).toContainText("Its 4 open windows close (demo 3, other 1).");
-  await expect(dialog(page)).toContainText("moves to Available to install");
+  await expect(dialog(page)).toContainText("Reinstall it from Available to install");
   await dialog(page)
     .getByLabel(/Also delete its data/)
     .check();
@@ -245,7 +246,7 @@ test("an app from git with a newer commit: Update says only what changes, then u
   await appRow(page, "standup").locator(".ap-more").click();
   await page.getByRole("menuitem", { name: "Update…" }).click();
   await expect(dialog(page).locator("h2")).toHaveText("Update Standup to 0.5.0?");
-  await expect(dialog(page)).toContainText("A new tool for agents: standup_post");
+  await expect(dialog(page)).toContainText("New tool: standup_post");
   await dialog(page).getByRole("button", { name: "Update" }).click();
   await expect(dialog(page)).toHaveCount(0);
   expect(state.asked.at(-1)).toEqual(["install", { id: "b".repeat(32), update: true }]);

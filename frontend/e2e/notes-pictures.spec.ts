@@ -244,9 +244,7 @@ test("a Figma link pasted alone on a line becomes the frame live, or stays a lin
     embeds.push(route.request().url());
     return route.fulfill({ contentType: "text/html", body: "<body style='background:#eee'>a frame</body>" });
   });
-  await page.route("**/api/figma/snap?**", (route) =>
-    route.fulfill({ json: { error: "the file isn't public: add a Figma token for a snapshot of it" } }),
-  );
+  await page.route("**/api/figma/snap?**", (route) => route.fulfill({ json: { error: "the file isn't public" } }));
   await page.route("**/api/figma/token?**", (route) => route.fulfill({ json: { who: "sam" } }));
   const { panel, instance } = await openNotes(page);
   await newPage(page, panel, "Design");
@@ -260,8 +258,8 @@ test("a Figma link pasted alone on a line becomes the frame live, or stays a lin
     }, t);
 
   await pasteText(FIGMA);
-  await expect(panel.locator(".pop .hd")).toHaveText("Show it as");
-  await expect(panel.locator(".pop .it.on")).toContainText("The frame, live");
+  await expect(panel.locator(".pop .hd")).toHaveText("Paste as");
+  await expect(panel.locator(".pop .it.on")).toContainText("Live frame");
   await page.keyboard.press("Enter");
   const fig = panel.locator(".blk[data-type=figma] .fig");
   await expect(fig.locator(".fg-name")).toHaveText("Paper figures");
@@ -288,7 +286,7 @@ test("a Figma link pasted alone on a line becomes the frame live, or stays a lin
   // pasted again, kept as a link: words, not a frame
   await panel.locator("#blocks > .blk").last().locator(".tx").click();
   await pasteText(FIGMA);
-  await panel.locator(".pop .it", { hasText: "A link" }).click();
+  await panel.locator(".pop .it", { hasText: "Link" }).click();
   await expect(panel.locator("#blocks > .blk").last().locator(".tx a")).toHaveAttribute("href", FIGMA);
   await expect.poll(() => types(panel)).toEqual(["figma", "text"]);
   await binPage(panel, "Design");

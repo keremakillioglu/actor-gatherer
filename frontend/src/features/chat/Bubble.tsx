@@ -272,7 +272,7 @@ export function bashOutput(t: Turn) {
         {bubble}
         <pre
           className={"fl-bash-out" + (output ? "" : " none")}
-          title="What it printed"
+          title="Output"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       </div>

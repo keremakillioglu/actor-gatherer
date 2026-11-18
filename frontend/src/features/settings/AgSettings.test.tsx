@@ -52,7 +52,7 @@ describe("AgSettings", () => {
   it("says no model is set, and lists the harnesses ag runs", () => {
     render(<AgSettings closePanel={() => {}} />);
     const note = document.getElementById("cfg-model-note")!;
-    expect(note.textContent).toMatch(/^No model set: every Gatherer call fails/);
+    expect(note.textContent).toMatch(/^No model set, so Gatherer calls fail/);
     expect(note.className).toBe("cfg-note bad");
     expect(document.getElementById("cfg-harnesses")!.textContent).toBe("claude runs claude · hook port 4013");
     expect((screen.getByLabelText("Gatherer model") as HTMLInputElement).value).toBe("");

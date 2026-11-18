@@ -246,7 +246,7 @@ export class AppPane {
     const x = el("button", "app-x");
     x.append(glyph("x", 16));
     x.type = "button";
-    x.title = x.ariaLabel = `Close this ${app.label} panel (the app stays open)`;
+    x.title = x.ariaLabel = `Close ${app.label} panel (app stays open)`;
     x.addEventListener("click", (ev) => {
       ev.stopPropagation();
       hooks.close();

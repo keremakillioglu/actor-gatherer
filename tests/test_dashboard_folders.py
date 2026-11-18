@@ -52,17 +52,17 @@ class FoldersTest(unittest.TestCase):
     def test_names_are_one_of_their_kind_beside_one_another(self):
         a = folders.make("g", "Paper")
         folders.make("g", "Notes", a)
-        with self.assertRaisesRegex(folders.FolderError, 'there is a folder "Paper" there already'):
+        with self.assertRaisesRegex(folders.FolderError, 'a folder named "Paper" is already there'):
             folders.make("g", "PAPER")
         folders.make("g", "Notes")                                            # the same name elsewhere: fine
-        with self.assertRaisesRegex(folders.FolderError, "which folder"):
+        with self.assertRaisesRegex(folders.FolderError, "needs a name"):
             folders.make("g", "  ")
-        with self.assertRaisesRegex(folders.FolderError, "can't hold"):
+        with self.assertRaisesRegex(folders.FolderError, "can't contain"):
             folders.make("g", "a/b")
         with self.assertRaisesRegex(folders.FolderError, "which gatherer"):
             folders.make("", "x")
         folders.rename("g", a, "paper")                                       # its own case: fine
-        with self.assertRaisesRegex(folders.FolderError, 'there is a folder "Notes" there already'):
+        with self.assertRaisesRegex(folders.FolderError, 'a folder named "Notes" is already there'):
             folders.rename("g", a, "notes")
         self.assertEqual(sorted(self.names()), ["Notes", "paper", "paper/Notes"])
 
@@ -89,7 +89,7 @@ class FoldersTest(unittest.TestCase):
             with self.assertRaisesRegex(folders.FolderError, "can't go in itself"):
                 folders.move("g", a, into)
         folders.make("g", "A")
-        with self.assertRaisesRegex(folders.FolderError, 'there is a folder "A" there already'):
+        with self.assertRaisesRegex(folders.FolderError, 'a folder named "A" is already there'):
             folders.move("g", a, None)
 
     def test_a_deleted_folders_actors_and_folders_move_up_a_level(self):
@@ -235,12 +235,12 @@ class FoldersTest(unittest.TestCase):
         self.assertEqual(started.did, [("stop", "running"), ("stop", "kept"), ("discard", "never"), ("stop", "ran"),
                                        ("stop", "thread-1"), ("shell", "sh1")])
         self.assertEqual(left, [{"channel": "kept", "why": "the dashboard has no process open for this session"},
-                                {"channel": "outside", "why": "no process of the dashboard's runs for it"}])
+                                {"channel": "outside", "why": "the dashboard isn't running it"}])
         self.assertEqual(sorted(saved.stored()["g"]), ["away"])                   # in it -- "gone" too, not in the home
         self.assertEqual({f["name"] for f in folders.of("g")["folders"] if f["closed"]}, {"A", "B"})
         with self.assertRaisesRegex(folders.FolderError, "no folder"):
             folders.close("g", 9999, started, home)
-        with self.assertRaisesRegex(folders.FolderError, "which folder"):
+        with self.assertRaisesRegex(folders.FolderError, "no folder 'x'"):
             folders.close("g", "x", started, home)
 
 

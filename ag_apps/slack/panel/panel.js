@@ -263,7 +263,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   function drawAgents() {
     const box = $("agents");
     const list = attached();
-    box.replaceChildren(list.length ? "Working with it:" : "No agent working with Slack",
+    box.replaceChildren(list.length ? "Agents:" : "No agent working with Slack",
       ...list.map((a) => el("button", { type: "button", class: "chip", title: `Go to ${a.name}`, onclick: () => ag.agents.focus(a.channel) },
         el("span", { class: "dot", style: `--h:${a.hue}`, "aria-hidden": "true" }), a.name)));
   }
@@ -306,8 +306,8 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
           el("label", null, el("input", { type: "radio", name: "pick-agent", checked: i === 0, onchange: () => { pick = a.channel; } }), a.name))));
       } else if (!list.length) {
         const others = actorsHere().filter((a) => a.channel);
-        pop.append(el("div", { class: "note" }, others.length ? "No agent works with Slack yet. Pick one to work with it, or start one from the + menu (Slack)."
-          : "No agent works with Slack yet. Start one from the + menu: Slack."));
+        pop.append(el("div", { class: "note" }, others.length ? "No agent is working with Slack. Pick one, or add one with the + on Slack's row."
+          : "No agent is working with Slack. Add one with the + on Slack's row."));
         const box = el("div");
         for (const a of others.slice(0, 8)) {
           const b = el("button", { type: "button", class: "pick", "aria-pressed": "false", onclick: () => {
@@ -332,7 +332,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         } catch (e) { err.textContent = `Couldn't ask it: ${e.message}`; go.disabled = false; }
       } }, "Ask");
       ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); go.click(); } });
-      pop.append(el("div", { class: "row" }, go, el("span", { class: "note" }, "It drafts; you send.")), err);
+      pop.append(el("div", { class: "row" }, go, el("span", { class: "note" }, "The agent drafts, you send.")), err);
     });
   }
   function replyAsk(cid, m) {
@@ -359,7 +359,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const note = document.querySelector("#composer .under");
     if (!note) return;
     const a = S.asked;
-    if (a && a.cid === S.open && Date.now() - a.at < 180000) note.replaceChildren(`Asked ${actor(a.channel).name}. Its draft will show here, for you to send.`);
+    if (a && a.cid === S.open && Date.now() - a.at < 180000) note.replaceChildren(`Asked ${actor(a.channel).name}. The draft will appear here.`);
     else note.replaceChildren();
   }
 
@@ -447,7 +447,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       const more = Math.max(0, ch.length - RECENT_MAX) + Math.max(0, dm.length - RECENT_MAX);
       kids.push(el("div", { class: "sec-empty" }, `Active in the last ${RECENT_DAYS} days`),
         el("button", { type: "button", class: "all-link", onclick: () => setFilter("all") },
-          more ? `${more} more, and all ${S.convs.size} conversations` : `All ${S.convs.size} conversations`));
+          more ? `${more} more · all ${S.convs.size} conversations` : `All ${S.convs.size} conversations`));
     } else {
       if (chans.length || !q) kids.push(...section("channels", "Channels", rows(chans), chans, q ? null : browseButton()));
       if (dms.length || !q) kids.push(...section("dms", "Direct messages", rows(dms), dms, q ? null : newDMButton()));
@@ -484,15 +484,16 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   }
   function drawStatus() {
     const s = S.setup || {}, box = $("status");
-    const [cls, text] = s.status === "connected" ? ["on", "Live: new messages arrive as they're sent"]
+    const [cls, text] = s.status === "connected" ? ["on", "Live"]
       : s.status === "connecting" ? ["warn", "Connecting to Slack…"]
-      : s.status === "live-off" ? ["warn", "No app-level token: new messages show when you open a conversation"]
-      : s.status === "copied" ? ["warn", "A copy of another ag home: new messages show when you open a conversation"]
+      : s.status === "live-off" ? ["warn", "Not live (no app-level token)"]
+      : s.status === "copied" ? ["warn", "Not live in this ag home"]
       : s.status === "disconnected" ? ["warn", "Reconnecting…"]
       : s.status === "error" ? ["bad", `Can't reach Slack: ${s.error || "unknown error"}`]
       : ["", "Not connected"];
     box.className = `status ${cls}`;
-    box.title = s.status === "copied" ? `Slack's live line stays with ${s.copy_of}, where you connected it, so this copy doesn't take its messages. Connecting again here moves it.` : "";
+    box.title = s.status === "copied" ? `Live updates go to ${s.copy_of}, where Slack was connected. New messages load when you open a conversation. Connect again here to move live updates to this home.`
+      : s.status === "live-off" ? "New messages load when you open a conversation." : "";
     box.replaceChildren(el("span", { class: "led", "aria-hidden": "true" }), el("span", null, text));
     $("team").textContent = s.team || "";
   }
@@ -557,7 +558,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
           say(`You left ${place(c)}`);
         } catch (e) { err.textContent = e.message; go.disabled = false; }
       } }, "Leave");
-      pop.append(el("h3", null, `Leave ${place(c)}?`), el("div", { class: "note" }, c.kind === "private" ? "It's private: you can come back only if someone adds you." : "You can join it again any time."),
+      pop.append(el("h3", null, `Leave ${place(c)}?`), el("div", { class: "note" }, c.kind === "private" ? "This channel is private. You can rejoin only if someone adds you." : "You can rejoin any time."),
         el("div", { class: "row" }, el("button", { type: "button", class: "btn small quiet", onclick: closePop }, "Cancel"), go), err);
     });
   }
@@ -652,7 +653,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         onclick: (e) => { if (!url) e.preventDefault(); else closePop(); } }, "Open in Slack");
       get(`permalink?conversation=${enc(cid)}&ts=${enc(m.ts)}`)
         .then((g) => { url = g.url || ""; if (url) { visit.href = url; visit.removeAttribute("aria-disabled"); copy.disabled = false; } })
-        .catch(() => { copy.textContent = "Copy link (Slack didn't give one)"; });
+        .catch(() => { copy.textContent = "Copy link (unavailable)"; });
       pop.append(copy, visit);
       if (topLevel(m) && m.subtype !== "thread_broadcast") {
         pop.append(el("button", { type: "button", class: "mi", role: "menuitem", onclick: async () => {
@@ -679,7 +680,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         go.disabled = true;
         try { await post("delete", { conversation: cid, ts: m.ts }); closePop(); } catch (e) { err.textContent = e.message; go.disabled = false; }
       } }, "Delete");
-      pop.append(el("h3", null, "Delete this message?"), el("div", { class: "note" }, "It goes from Slack for everyone. This can't be undone."),
+      pop.append(el("h3", null, "Delete this message?"), el("div", { class: "note" }, "It will be deleted for everyone. This can't be undone."),
         el("div", { class: "row" }, el("button", { type: "button", class: "btn small quiet", onclick: closePop }, "Cancel"), go), err);
     });
   }
@@ -710,7 +711,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const save = async () => {
       const text = ta.value.replace(/\s+$/, "");
       if (text === was) { done(); return; }
-      if (!text.trim()) { err.textContent = "There's no text left: delete the message instead."; return; }
+      if (!text.trim()) { err.textContent = "The message is empty. Delete it instead."; return; }
       ta.disabled = true;
       try { const got = await post("edit", { conversation: cid, ts: m.ts, text }); S.editing = null; landedEdit(cid, got.message); }
       catch (e) { err.textContent = `Not saved: ${e.message}`; ta.disabled = false; }
@@ -846,7 +847,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     openPop(anchor, (pop) => {
       const text = ta.value.replace(/\s+$/, "");
       pop.append(el("h3", null, "Schedule message"));
-      if (!text.trim()) { pop.append(el("div", { class: "note" }, "Write the message first, then pick when it goes.")); return; }
+      if (!text.trim()) { pop.append(el("div", { class: "note" }, "Write a message first.")); return; }
       const err = el("div", { class: "note", role: "alert" });
       const go = async (ms) => {
         err.textContent = "";
@@ -913,7 +914,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         const recent = keep.get("recent-emoji", []).filter((n) => emoji(n));
         if (recent.length) groups.push(["Recently used", recent]);
         const own = Object.keys(CUSTOM).sort();
-        if (own.length) groups.push(["Your workspace's", own]);
+        if (own.length) groups.push(["Custom", own]);
         groups.push(...EMO.groups);
         grid.replaceChildren(...groups.flatMap(([label, names]) => [el("div", { class: "eh" }, label), ...names.map(one)]));
       };
@@ -1085,7 +1086,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       try {
         const got = await get(`history?conversation=${enc(cid)}`);
         st.list = got.messages.slice().sort(byTs); st.more = got.more; st.loaded = true;
-      } catch (e) { st.error = `Couldn't load it: ${e.message}`; }
+      } catch (e) { st.error = `Couldn't load messages: ${e.message}`; }
     }
     if (S.open !== cid) return;
     drawLog(opts.ts ? { ts: opts.ts } : "unread");
@@ -1104,11 +1105,11 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const save = () => { if (ta.value !== saved && ta.value.trim()) { saved = ta.value; post("draft", { id: d.id, action: "edit", text: ta.value }).catch(() => {}); } };
     ta.addEventListener("blur", save);
     const bc = d.thread_ts ? el("input", { type: "checkbox", checked: d.broadcast }) : null;
-    const note = el("div", { class: "note", role: "status" }, "Sends from your account. You can edit it first.");
+    const note = el("div", { class: "note", role: "status" }, "Sent from your account. You can edit it first.");
     const buttons = [];
     const busy = (on) => buttons.forEach((b) => { b.disabled = on; });
     const send = el("button", { type: "button", class: "btn primary small", onclick: async () => {
-      if (!ta.value.trim()) { note.textContent = "There's nothing to send."; return; }
+      if (!ta.value.trim()) { note.textContent = "Nothing to send."; return; }
       busy(true); note.textContent = "Sending…";
       try {
         await post("draft", { id: d.id, action: "send", text: ta.value, broadcast: bc ? bc.checked : false });
@@ -1128,7 +1129,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         const go = el("button", { type: "button", class: "btn primary small", onclick: async () => {
           if (!fb.value.trim()) { fb.focus(); return; }
           const ch = ag.agents.attached.includes(d.by_channel) ? d.by_channel : (ag.agents.attached[0] || d.by_channel);
-          if (!ch) { err.textContent = "No agent works with Slack now."; return; }
+          if (!ch) { err.textContent = "No agent is working with Slack."; return; }
           save();
           go.disabled = true;
           try {
@@ -1184,7 +1185,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     };
     const add = (files) => {
       for (const f of files) {
-        if (f.size > 40 * 1048576) { err.textContent = `${f.name} is too large to share from here (40 MB at most): share it in Slack.`; continue; }
+        if (f.size > 40 * 1048576) { err.textContent = `${f.name} is over 40 MB. Share it in Slack instead.`; continue; }
         pending.push({ file: f, state: "" });
       }
       drawTray(); size(); ta.focus();
@@ -1216,7 +1217,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         const got = await post("send", { conversation: cid, text, thread: thread || "", broadcast: bc ? bc.checked : false, files: ids });
         ta.value = ""; remember(); pending.length = 0; drawTray(); size();
         if (got.message && got.message.ts) landed(cid, got.message, thread);
-        else if (ids.length) say("Shared: it shows here once Slack posts it");
+        else if (ids.length) say("Shared. It will appear once Slack posts it.");
       } catch (e) { err.textContent = `Not sent: ${e.message}`; for (const p of pending) p.state = ""; drawTray(); }
       delete ta.dataset.busy;
     };
@@ -1296,7 +1297,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     const scroll = el("div", { class: "scroll" });
     const [parent, ...replies] = th.list;
     if (th.loading) scroll.append(el("div", { class: "older" }, "Loading the thread…"));
-    else if (th.error) scroll.append(el("div", { class: "older" }, `Couldn't load it: ${th.error}`));
+    else if (th.error) scroll.append(el("div", { class: "older" }, `Couldn't load the thread: ${th.error}`));
     else if (parent) {
       scroll.append(msgEl(parent, th.cid, { cont: false, inThread: true }));
       scroll.append(el("div", { class: "count-line" }, `${replies.length} ${replies.length === 1 ? "reply" : "replies"}`));
@@ -1330,7 +1331,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     for (const m of got.messages) {
       const c = S.convs.get(m.channel);
       const where = `${c ? place(c) : `#${m.channel_name || m.channel} (you're not in it)`}${m.thread_ts ? " · in a thread" : ""}`;
-      box.append(el("button", { type: "button", class: "hit", disabled: !c, title: c ? null : "A channel you're not in: agents can read it, the panel lists only yours",
+      box.append(el("button", { type: "button", class: "hit", disabled: !c, title: c ? null : "You're not in this channel",
         onclick: () => { if (c) open(m.channel, m.thread_ts ? { ts: m.thread_ts, thread: m.thread_ts } : { ts: m.ts }); } },
         el("span", { class: "meta" }, `${where} · ${m.username || uname(m.user)} · ${tsDate(m.ts).toLocaleString()}`),
         el("span", { class: "txt" }, render(m.text))));
@@ -1353,7 +1354,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       el("button", { type: "button", class: "icon-btn", "aria-label": "Close", onclick: closeResults }, icon("x")));
     if (!quiet) box.replaceChildren(head, el("div", { class: "older" }, "Loading…"));
     let got;
-    try { got = await get(kind); } catch (e) { if (n === searched) box.replaceChildren(head, el("div", { class: "older" }, `Couldn't load it: ${e.message}`)); return; }
+    try { got = await get(kind); } catch (e) { if (n === searched) box.replaceChildren(head, el("div", { class: "older" }, `Couldn't load: ${e.message}`)); return; }
     if (n !== searched) return;
     if (kind === "channels") {
       const find = el("input", { type: "text", class: "view-find", placeholder: "Find a channel", "aria-label": "Find a channel" });
@@ -1366,7 +1367,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
           el("span", { class: "hm" }, el("b", null, `#${c.name}`), el("span", { class: "meta" }, ` ${c.members} ${c.members === 1 ? "member" : "members"}${c.member ? " · joined" : ""}`),
             (c.purpose || c.topic) ? el("span", { class: "txt clip" }, plainText(c.purpose || c.topic)) : ""),
           c.member ? el("button", { type: "button", class: "btn small", onclick: () => open(c.id) }, "Open")
-            : el("button", { type: "button", class: "btn small primary", disabled: !can("channels:write"), title: can("channels:write") ? null : "Joining needs a permission your Slack app lacks",
+            : el("button", { type: "button", class: "btn small primary", disabled: !can("channels:write"), title: can("channels:write") ? null : "Your Slack app lacks the permission to join channels",
               onclick: async (e) => {
                 const b = e.currentTarget;
                 b.disabled = true;
@@ -1535,13 +1536,13 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         onchange: async () => { try { const got = await post("settings", { tell_agents: v }); S.settings = got.settings; } catch { /* kept as it was */ } } }), label);
       pop.append(el("h3", null, "Slack settings"),
         el("div", { class: "note" }, s.team ? `${s.team}, signed in as ${uname(s.me)}` : "Not connected"),
-        el("fieldset", null, el("legend", null, "Tell the agents working with Slack about"),
+        el("fieldset", null, el("legend", null, "Tell agents about"),
           opt("all", "All new messages"), opt("mentions", "Only my DMs and mentions"), opt("none", "Nothing (they read when asked)")),
         el("fieldset", null, el("legend", null, "Notify me"),
           el("div", { class: "note" }, "DMs and mentions pop up in the dashboard. Other new messages show on Slack's row in the list."),
           el("label", null, el("input", { type: "checkbox", checked: S.settings.notify_system !== false,
             onchange: async (e) => { try { const got = await post("settings", { notify_system: e.target.checked }); S.settings = got.settings; } catch { e.target.checked = !e.target.checked; } } }),
-          "DMs and mentions on this computer too")),
+          "Also as system notifications")),
         el("div", { class: "row" }, el("button", { type: "button", class: "btn small", onclick: async () => {
           closePop();
           try { const got = await post("disconnect", {}); S.setup = got.setup; drawAll(); } catch { /* shown by the status */ }
@@ -1567,20 +1568,20 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       go.disabled = false;
     } }, "Connect");
     box.replaceChildren(el("div", { class: "setup-in" },
-      el("h2", null, "Connect your Slack"),
-      el("p", null, "ag reads your Slack with a Slack app of your own, so your messages go only between this machine and Slack, and what you send is posted as you. Agents only draft; you send."),
-      s.sdk === false ? el("p", { class: "err" }, "Slack's Python SDK isn't installed where ag runs: pip install slack_sdk, then restart the dashboard.") : "",
+      el("h2", null, "Connect Slack"),
+      el("p", null, "ag connects through a Slack app you create. Your messages go only between this computer and Slack, and what you send is posted as you. Agents only write drafts. You send them."),
+      s.sdk === false ? el("p", { class: "err" }, "Slack's Python SDK isn't installed. Run pip install slack_sdk, then restart the dashboard.") : "",
       el("ol", null,
         el("li", null, "Open ", el("a", { href: "https://api.slack.com/apps?new_app=1", target: "_blank", rel: "noopener noreferrer" }, "api.slack.com/apps"),
-          ", choose Create New App, then From a manifest, pick your workspace, and paste this:", pre, el("div", { class: "row" }, copy)),
-        el("li", null, "Install it to your workspace (Install App). If your workspace needs an admin to approve apps, the request goes from there."),
-        el("li", null, "Copy the User OAuth Token from OAuth & Permissions. It starts xoxp-."),
-        el("li", null, "In Basic Information, under App-Level Tokens, generate a token with the connections:write scope. It starts xapp-, and brings new messages as they're sent.")),
+          ", choose Create New App > From a manifest, pick your workspace, and paste this manifest:", pre, el("div", { class: "row" }, copy)),
+        el("li", null, "In Install App, install it to your workspace. If your workspace requires admin approval, request it there."),
+        el("li", null, "In OAuth & Permissions, copy the User OAuth Token. It starts with xoxp-."),
+        el("li", null, "In Basic Information > App-Level Tokens, generate a token with the connections:write scope. It starts with xapp- and delivers new messages live.")),
       el("label", null, "User OAuth Token", user),
       el("label", null, "App-Level Token", app),
-      el("div", { id: "tok-help", class: "note" }, "Kept in ag's data folder on this machine, readable only by you."),
+      el("div", { id: "tok-help", class: "note" }, "Stored on this computer, readable only by you."),
       el("div", { class: "row" }, go), err));
-    try { const r = await ag.api("manifest"); pre.textContent = await r.text(); } catch { pre.textContent = "Couldn't load it."; }
+    try { const r = await ag.api("manifest"); pre.textContent = await r.text(); } catch { pre.textContent = "Couldn't load the manifest."; }
   }
   function drawUpgrade() {
     const s = S.setup || {}, box = $("upgrade");
@@ -1598,7 +1599,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     openPop(anchor, (pop) => {
       pop.classList.add("wide", "upgrade-pop");
       const pre = el("pre", null, "Loading…");
-      ag.api("manifest").then((r) => r.text()).then((t) => { pre.textContent = t; }).catch(() => { pre.textContent = "Couldn't load it."; });
+      ag.api("manifest").then((r) => r.text()).then((t) => { pre.textContent = t; }).catch(() => { pre.textContent = "Couldn't load the manifest."; });
       const copy = el("button", { type: "button", class: "btn small", onclick: async () => { copy.textContent = (await copyText(pre.textContent)) ? "Copied" : "Select it and copy"; } }, "Copy the manifest");
       const tok = el("input", { type: "password", placeholder: "xoxp-… (only if Slack shows a new one)", "aria-label": "New user token", autocomplete: "off" });
       const err = el("div", { class: "note", role: "alert" });
@@ -1617,7 +1618,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
         el("ol", { class: "steps" },
           el("li", null, "Open ", el("a", { href: "https://api.slack.com/apps", target: "_blank", rel: "noopener noreferrer" }, "api.slack.com/apps"),
             ", pick your ag app, then App Manifest. Replace it with this one and save:", pre, copy),
-          el("li", null, "Slack asks you to reinstall the app: do it (Install App, Reinstall to workspace). If your workspace needs an admin's approval, the request goes from there."),
+          el("li", null, "When Slack asks, reinstall the app (Install App > Reinstall to Workspace). If your workspace requires admin approval, request it there."),
           el("li", null, "Your token usually stays the same. If Slack shows a new User OAuth Token, paste it here:", tok),
           el("li", null, "Then check again.")),
         el("div", { class: "note" }, `Missing now: ${((S.setup || {}).missing || []).join(", ")}`),
@@ -1634,7 +1635,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     drawStatus(); drawAgents(); drawConvs(); drawHead(); drawLog("keep"); drawUpgrade();
     if (S.open && JSON.stringify(s.scopes || null) !== S.composerFor) drawComposer();   // (what it offers changed)
     $("empty").replaceChildren(el("div", null, el("p", null, "Pick a conversation."),
-      el("p", { class: "note" }, "Point at a message and choose Reply with agent: an agent drafts the reply, and you send it.")));
+      el("p", { class: "note" }, "Hover over a message and choose Reply with agent. An agent drafts the reply, and you send it.")));
   }
 
   // ---------------------------------------------------------------- what the backend tells

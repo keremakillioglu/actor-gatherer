@@ -5,8 +5,8 @@
 // (startShell), so here it is only listened to. Once it ends -- exited, or terminated -- its pane closes, as a terminal's
 // window does (shownGone).
 function shellCard(id) {
-  const end = el("button", { type: "button", class: "terminate", "data-shell": id, "aria-label": "Terminate the terminal",
-    title: "Terminate: end the shell, and whatever runs in it",
+  const end = el("button", { type: "button", class: "terminate", "data-shell": id, "aria-label": "Terminate shell",
+    title: "End the shell and everything running in it",
     onclick: async (ev) => { const b = ev.currentTarget; b.disabled = true; await closeShell({ id }); b.disabled = false; } },
     strokeIcon(ICONS.power, 14), "Terminate");
   const controls = document.getElementById("controls");      // kept as it is while the same: no flash under the pointer

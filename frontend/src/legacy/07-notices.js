@@ -92,12 +92,12 @@ function popUp(k, w) {
   const away = () => { clearTimeout(timer); pop.remove(); };
   const later = () => { clearTimeout(timer); timer = setTimeout(away, POP_SECONDS * 1000); };
   const pop = el("div", { class: `pop ${cls}`, "data-want": k, role: "status" },
-    el("button", { class: "pop-open", type: "button", title: w.n ? "Open the app there" : "Show this actor",
+    el("button", { class: "pop-open", type: "button", title: w.n ? "Open in app" : "Show this actor",
       onclick: () => { away(); openWant(w); } },
     el("span", { class: "pop-face" }, face, el("i", { class: `pop-dot ${cls}`, "aria-hidden": "true" })),
     el("span", { class: "pop-tx" }, el("b", { text: title }), line ? el("span", { class: "pop-line", text: line }) : null,
       el("span", { class: "pop-where", text: where }))),
-    el("button", { class: "pop-x", type: "button", title: "Put it away", "aria-label": `Put away: ${title}`, onclick: away }, closeIcon()));
+    el("button", { class: "pop-x", type: "button", title: "Dismiss", "aria-label": `Dismiss: ${title}`, onclick: away }, closeIcon()));
   pop.addEventListener("pointerenter", () => clearTimeout(timer));
   pop.addEventListener("pointerleave", later);
   box.append(pop);
@@ -162,8 +162,8 @@ function drawHeed() {
   const note = document.getElementById("notify-leave");
   if (!note) return;
   const can = "Notification" in window, asked = can && Notification.permission;
-  note.replaceChildren(...(!heed.system ? [] : !can ? [el("span", { class: "cfg-note", text: "This browser shows none from a page" })]
-    : asked === "granted" ? [] : asked === "denied" ? [el("span", { class: "cfg-note", text: "Blocked by the browser: allow them in its site settings" })]
+  note.replaceChildren(...(!heed.system ? [] : !can ? [el("span", { class: "cfg-note", text: "This browser doesn't support notifications" })]
+    : asked === "granted" ? [] : asked === "denied" ? [el("span", { class: "cfg-note", text: "Blocked. Allow notifications in the browser's site settings." })]
       : [el("button", { type: "button", onclick: () => Notification.requestPermission().then(drawHeed, drawHeed) }, "Allow notifications…")]));
 }
 if (!PANE && !SNAPSHOT) {

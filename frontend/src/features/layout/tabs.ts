@@ -152,7 +152,7 @@ export class Tabs {
     this.add.type = "button";
     this.add.className = "lay-tab-add";
     this.add.append(glyph("plus", 16));
-    this.add.title = this.add.ariaLabel = "New tab, empty: what you open next goes in it";
+    this.add.title = this.add.ariaLabel = "New tab";
     this.add.addEventListener("click", () => void this.blank());
     this.drag = new BarDrag(this.list);
     this.strip.append(this.list, this.drag.ghost, this.add);
@@ -595,7 +595,7 @@ export class Tabs {
       close.type = "button";
       close.className = "lay-close";
       close.append(glyph("x", 13));
-      close.title = close.ariaLabel = "Close this tab (its actors go on)";
+      close.title = close.ariaLabel = "Close tab (actors keep running)";
       close.addEventListener("click", (ev) => {
         ev.stopPropagation();
         void this.close(t.id);

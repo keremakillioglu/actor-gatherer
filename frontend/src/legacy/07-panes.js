@@ -183,7 +183,7 @@ async function openTaskBeside(g, key, first) {
     if (allPanes().length >= MAX_PANES) { left++; continue; }
     openBeside(g, ch, (was && was.views && was.views[ch]) || null);
   }
-  if (left) paneNote(`At most ${MAX_PANES} actors side by side: ${plural(left, "actor")} of the task left out`);
+  if (left) paneNote(`${plural(left, "actor")} of the task not opened. At most ${MAX_PANES} fit side by side.`);
   await openTaskApps(g, first, key, was ? was.apps : null, true);
   const p = actorPanes().find((q) => isAt([q.g, q.c], g, first));
   if (p) focusPane(p);
@@ -299,7 +299,7 @@ function openBeside(g, c, view = null) {
   if (PANE || SNAPSHOT || !state.selected) return show(g, c, view);
   const there = actorPanes().find((p) => isAt([p.g, p.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null);
   if (there) return focusPane(there);
-  if (allPanes().length >= MAX_PANES) return paneNote(`At most ${MAX_PANES} actors side by side: close one (its ×) to open another.`);
+  if (allPanes().length >= MAX_PANES) return paneNote(`At most ${MAX_PANES} actors fit side by side. Close one to open another.`);
   const from = panes.focus, at = from === panes.here ? 0 : panes.others.indexOf(from) + 1;
   const p = addPane(g, c, view || (from === panes.here ? chatView().id : from.view), at);
   focusPane(p);
@@ -849,7 +849,7 @@ function appPanelMenu(gname, o, ev) {
   const name = appShown(o);
   moveMenu(p.node, ev.clientX, ev.clientY, {
     head: (m) => (!m ? name : m.task ? `Move ${name}'s task` : `Move ${name}`),
-    items: (mark) => [{ mark: mark("×"), text: "Close its panel (the app stays open)", run: () => { workClosed(p.node); closeAppPane(p); } }],
+    items: (mark) => [{ mark: mark("×"), text: "Close panel (app stays open)", run: () => { workClosed(p.node); closeAppPane(p); } }],
   });
 }
 // what a panel is called in the menu: an app's as its head names it, an actor's as the list does
@@ -1376,7 +1376,7 @@ function paneReady() {
 // the gatherer's most recently active actor -- or, when no actor has one (or starting there failed), the form
 // asks for the directory first, its buttons the same.
 const startable = () => (state.home.harnesses || []).filter(runsHere);
-const noHarness = () => `None of ${runnableNames("or")} is set up here: install one, or set its command in config.toml ([cli.harnesses])`;
+const noHarness = () => `None of ${runnableNames("or")} is set up. Install one, or set its command under [cli.harnesses] in config.toml.`;
 // Last, its terminal button: a shell (isShell), in that same directory -- or, with none, the form asks for it too.
 const SHELL_START = "shell";                       // the terminal button's, where a harness's name goes
 const APP_START = "app:";                          // an app's with an agent of its own ([agent] start): app:<name>:<harness>
@@ -1436,9 +1436,9 @@ function crewButton(g, node = g ? `group:${g.name}` : "all") {
     ? `the actors of the groups in ${place}` : node.startsWith("group:") ? "this group's actors" : `the actors in ${place}`;
   return el("button", { class: "act start crew" + (busy ? " busy" : "") + (crew ? " on" : ""), type: "button",
     ...(state.starting ? { disabled: "" } : {}),
-    title: hidden ? `The coordinator agent over ${place} (${label.toLowerCase()}), hidden from the list: click to show it and open it`
-      : crew ? `The coordinator agent over ${place}: it coordinates ${what} -- tell it what to arrange`
-      : `Start a coordinator agent over ${place}: it coordinates ${what}, settles their conflicts, and arranges their work for you`,
+    title: hidden ? `Coordinator agent over ${place} · ${label} · hidden from the list`
+      : crew ? `Coordinator agent over ${place}`
+      : `Start a coordinator agent for ${what}`,
     "aria-label": crew ? `The coordinator agent over ${place}` : `Start a coordinator agent over ${place}`,
     onclick: (ev) => { ev.stopPropagation(); openCoordinator(g, node); } },
     crewFace(crew, MANAGER), hidden ? el("i", { class: `crew-dot ${cls}`, "aria-hidden": "true" }) : null);
@@ -1458,7 +1458,7 @@ function startButtons(g, folder = null, prefix = "") {
   const actorKey = `${prefix}actor:${g.name}${at}`, moreKey = `${prefix}more:${g.name}${at}`;   // a card's: its own (prefix)
   const actor = !hs.length ? el("button", { class: "act add", type: "button", disabled: "", title: noHarness(), "aria-label": noHarness() }, "+")
     : el("button", { class: "act start new-actor" + (hs.includes(starting) ? " busy" : ""), type: "button", ...off, "data-pop": actorKey,
-      title: `New actor in ${place}${where ? `, in ${where}` : ""}: ${hs.map(harnessName).join(" or ")}`,
+      title: `New actor in ${place}${where ? ` · ${where}` : ""} · ${hs.map(harnessName).join(" or ")}`,
       "aria-label": `New actor in ${place}`, ...(hs.length > 1 ? { "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === actorKey) } : {}),
       onclick: (ev) => {
         aimStart(g.name, fid);
@@ -1478,10 +1478,10 @@ function moreStarts(g, hs, where, key = `more:${g.name}`) {
   const there = where ? `in ${where}` : "in a directory you choose";
   const tooled = hs.filter((h) => (harnessInfo(h) || {}).mcp);    // an app's agent: given its tools
   return [
-    hs.length ? { icon: ICONS.branch, text: "Actor on a branch…", note: "in a worktree of a project: its changes merged into the project",
+    hs.length ? { icon: ICONS.branch, text: "Actor on a branch…", note: "in its own worktree, merged into the project",
       run: (button) => openBranchMenu(g, button) } : null,
     ...(tooled.length ? startingApps() : []).map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null,
-      text: `${a.label}…`, note: a.description || "an app, with an agent of its own",
+      text: `${a.label}…`, note: a.description || "an app with its own agent",
       run: (button) => openPop(key, button, appStartBox(g, tooled, a)) })),
     state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: there, run: () => addSession(g, SHELL_START) } : null,
     ...(PANE || SNAPSHOT ? [] : window.agNext.apps.found()).filter((a) => !(a.agent && a.agent.start)).map((a) => ({ icon: ICONS.app,
@@ -1511,7 +1511,7 @@ function railNew(g, f = null, cls = "r-new") {
   const busy = state.starting && state.starting.gatherer === g.name && startIn.folder === fid && hs.includes(String(state.starting.harness));
   const pops = hs.length > 1 || !cwd;
   return el("button", { class: cls + (busy ? " busy" : ""), type: "button", "data-pop": key, ...(state.starting ? { disabled: "" } : {}),
-    title: `New actor in ${place}${where ? `, in ${where}` : ""}: ${hs.map(harnessName).join(" or ")}`,
+    title: `New actor in ${place}${where ? ` · ${where}` : ""} · ${hs.map(harnessName).join(" or ")}`,
     "aria-label": `New actor in ${place}`,
     ...(pops ? { "aria-haspopup": cwd ? "menu" : "dialog", "aria-expanded": String(rowPop.key === key) } : {}),
     onclick: (ev) => {
@@ -1570,10 +1570,10 @@ function railNewBox(g, hs, harness = hs[0], cwd = "", error = "", alone = false)
   const title = alone ? "New actor on its own" : `New actor in ${titleOf(g)}`;
   const box = el("div", { class: "dw-menu" + (alone ? " alone-box" : ""), role: "dialog", "aria-label": title },
     el("div", { class: "head", text: title }),
-    alone ? el("div", { class: "note", text: "It shares context with no group, and no group with it." }) : null,
+    alone ? el("div", { class: "note", text: "Shares context with no group." }) : null,
     el("label", {}, "Working directory", input),
     alone ? folderPicks(everyActor(), dir, input, err, "Where actors work") : folderPicks(g, dir, input, err),
-    el("div", { text: "Run it on" }),
+    el("div", { text: "Run on" }),
     el("div", { class: "on" }, ...hs.map((h) => el("button", { type: "button", class: "go", onclick: () => go(h) }, harnessBadge(h), harnessName(h)))),
     err);
   return box;
@@ -1694,7 +1694,7 @@ function appStartBox(g, hs, app) {
     el("div", { class: "head", text: `New ${app.label}` }),
     el("label", {}, "Folder", input),
     folderPicks(g, dir, input, err),
-    el("div", { text: "Its agent on" }),
+    el("div", { text: "Run its agent on" }),
     el("div", { class: "on" }, ...hs.map((h) => el("button", { type: "button", class: "go", onclick: () => appGo(g, h, box, app) },
       harnessBadge(h), harnessName(h)))),
     err);
@@ -1799,15 +1799,15 @@ const branchWaiting = (b) => Object.values(b.held || {}).reduce((n, v) => n + v.
 // What a folder has checked out (branches.py's `checked_out`): its branch, or its commit alone.
 const checkedOut = (o) => !o || !o.head ? "?" : o.branch || `${o.head} (no branch)`;
 // Where an actor's branch came from, and where its changes go: said whole, for a title.
-const branchRoute = (b) => `From: its own branch, ${b.branch}, in ${tildePath(b.worktree, state.home.home_dir)}, `
-  + `started from ${b.started_on || "a commit"} at ${(b.start || "").slice(0, 7)}.\n`
-  + `Into: ${tildePath(b.project, state.home.home_dir)}, on ${checkedOut(b.onto)} now: its changes merged there`
-  + `${b.approve ? " once you approve each" : ", but for lines you are editing, and lines you changed too"}.`;
+const branchRoute = (b) => `Branch ${b.branch} in ${tildePath(b.worktree, state.home.home_dir)}, `
+  + `from ${b.started_on || "a commit"} at ${(b.start || "").slice(0, 7)}.\n`
+  + `Merges into ${tildePath(b.project, state.home.home_dir)} (on ${checkedOut(b.onto)})`
+  + `${b.approve ? " after you approve each change" : ". Lines you're editing or also changed wait for you"}.`;
 function branchChip(g, a) {
   const b = branchOf(g.name, a);
   if (!b) return null;
   const n = branchWaiting(b);
-  return el("div", { class: "branchline", title: branchRoute(b) + (n ? `\n${plural(n, "change")} wait for you in the Editor` : "") },
+  return el("div", { class: "branchline", title: branchRoute(b) + (n ? `\n${plural(n, "change")} to approve in the Editor` : "") },
     strokeIcon(ICONS.branch, 11), el("span", { class: "rt", text: `${b.branch} → ${checkedOut(b.onto)}` }),
     n ? el("span", { class: "wait", text: `${n} to approve` }) : null);
 }
@@ -1840,7 +1840,7 @@ async function openBranchMenu(g, button) {
   if (brPick.menu && brPick.menu.g === g.name) return brMenuClose();
   brMenuClose();
   const box = el("div", { class: "br-menu", role: "menu", "aria-label": `New actor on a branch, in ${g.name}` },
-    el("div", { class: "hd", text: "Reading its sources…" }));
+    el("div", { class: "hd", text: "Loading sources…" }));
   const m = brPick.menu = { g: g.name, el: box, button,
     away: (ev) => { if (!box.contains(ev.target) && !button.contains(ev.target)) brMenuClose(); },
     esc: (ev) => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); brMenuClose(); button.focus(); } } };
@@ -1858,7 +1858,7 @@ async function openBranchMenu(g, button) {
   if (brPick.menu !== m) return;
   const pick = (p) => () => { brMenuClose(); openBranchDialog(g, p ? p.path : null); };
   box.replaceChildren(
-    el("div", { class: "hd", text: error || (brPick.projects.length ? "New actor on a branch of" : "No source yet") }),
+    el("div", { class: "hd", text: error || (brPick.projects.length ? "New actor on a branch of" : "No sources yet") }),
     ...brPick.projects.map((p) => el("button", { type: "button", role: "menuitem", title: `${p.path}${p.remote ? "\n" + p.remote : ""}`,
       onclick: pick(p) },
       el("span", { class: "nm", text: projectName(p) }), el("span", { class: "on", text: checkedOut(p) }),
@@ -1917,7 +1917,7 @@ function brRender() {
             onclick: () => { Object.assign(brPick, { project: p.path, choosing: false, error: "" }); brRender(); } },
             el("span", { class: "nm", text: projectName(p) }), el("span", { class: "at", text: tildePath(p.path, home) }),
             el("span", { class: "on", text: checkedOut(p) })),
-          el("button", { type: "button", class: "rm", title: `No longer one of ${g}'s sources (its actors' branches are left as they are)`,
+          el("button", { type: "button", class: "rm", title: `Remove from ${g}'s sources. Existing branches are kept.`,
             "aria-label": `Remove ${projectName(p)}`, ...busy, onclick: () => brSources({ remove: p.path }) }, strokeIcon(ICONS.x, 14))))) : null,
       brPick.suggestions.length ? el("div", { class: "projects" }, el("div", { class: "lbl", text: "Where its actors work" }),
         ...brPick.suggestions.map((p) => el("button", { type: "button", class: "suggest", title: `${p.path}${p.remote ? "\n" + p.remote : ""}`,
@@ -1933,8 +1933,8 @@ function brRender() {
       el("div", { class: "top" }, el("span", { class: "nm", text: projectName(chosen) }),
         el("span", { class: "at", title: chosen.path, text: tildePath(chosen.path, home) }),
         el("button", { type: "button", class: "link", onclick: () => { brPick.choosing = true; brRender(); } }, "Change")),
-      el("div", { class: "desc route" }, "From: a new branch, off ", el("code", { text: checkedOut(chosen) }),
-        ` at ${chosen.head || "?"}. Into: `, el("code", { text: tildePath(chosen.path, home) }), ", on ",
+      el("div", { class: "desc route" }, "A new branch off ", el("code", { text: checkedOut(chosen) }),
+        ` at ${chosen.head || "?"}, merged into `, el("code", { text: tildePath(chosen.path, home) }), " on ",
         el("code", { text: checkedOut(chosen) }), "."))];
   }
   const approve = el("input", { type: "checkbox", checked: brPick.approve ? "" : null, onchange: (ev) => {
@@ -1947,11 +1947,11 @@ function brRender() {
   form.append(...[
     el("div", { class: "br-title" }, el("h3", {}, strokeIcon(ICONS.branch, 15), "New actor on a branch"),
       el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => d.close() }, strokeIcon(ICONS.x, 16))),
-    el("div", { class: "desc", text: `In ${g}. It works in a worktree of its source, on a new branch from the source's last commit; what it changes is merged into the source's folder as it changes it.` }),
+    el("div", { class: "desc", text: `In ${g}. Works in its own worktree on a new branch from the source's last commit. Its changes are merged into the source's folder as it makes them.` }),
     el("div", { class: "lbl", text: "Source" }),
     ...source,
-    el("label", { class: "check", title: "Without it, its changes are merged in as they come, but for lines you are editing in the Editor, and lines you changed too, which wait for you" },
-      approve, el("span", {}, el("b", { text: "Auto-merge with approval" }), ": each change waits in the Editor for you to accept or reject it")),
+    el("label", { class: "check", title: "When off, changes merge as they come. Lines you're editing in the Editor, or also changed, wait for you." },
+      approve, el("span", {}, el("b", { text: "Auto-merge with approval" }), ": accept or reject each change in the Editor")),
     el("div", { class: "err", role: "alert", text: brPick.error || (hs.length ? "" : noHarness()) }),
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => d.close() }, "Cancel"), ...starts),
   ].filter(Boolean));
@@ -1989,14 +1989,14 @@ function newForm() {
   const tooled = hs.filter((h) => (harnessInfo(h) || {}).mcp);
   for (const a of tooled.length ? startingApps() : []) for (const h of tooled) starts.push(el("button", { type: "submit",
     value: `${APP_START}${a.name}:${h}`, class: adding.harness === `${APP_START}${a.name}:${h}` ? "primary" : "",
-    title: `${a.label}, its agent on ${harnessName(h)}`, ...(state.starting ? { disabled: "" } : {}) },
+    title: `${a.label} with its agent on ${harnessName(h)}`, ...(state.starting ? { disabled: "" } : {}) },
     a.mark ? appMarkImg(a) : strokeIcon(ICONS.app, 14), a.label, harnessBadge(h)));
   if (state.home.terminals !== false) starts.push(el("button", { type: "submit", value: SHELL_START, class: shell ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.terminal, 14), "Terminal"));
   const appAt = String(adding.harness || "").startsWith(APP_START) ? window.agNext.apps.named(appStart(adding.harness)[0]) : null;
   const form = el("form", { class: "newform", "aria-label": "New session" },
-    el("div", { class: "desc", text: shell ? `A new terminal, listed under ${fixed}` : appAt ? `A new ${appAt.label} in ${fixed}`
-      : `A new session in ${fixed}` }),
+    el("div", { class: "desc", text: shell ? `New terminal in ${fixed}` : appAt ? `New ${appAt.label} in ${fixed}`
+      : `New actor in ${fixed}` }),
     el("label", {}, "Working directory", cwd),
     err,
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => { state.adding = null; renderAgents(); } }, "Cancel"), ...starts));

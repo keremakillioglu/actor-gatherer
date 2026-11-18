@@ -74,7 +74,7 @@ function drawNewTab(box, tab) {
   newTab.box = box;
   box.classList.add("nt");
   const input = el("textarea", { class: "nt-text", rows: "2", placeholder: "Message a new actor", "aria-label": "Message a new actor",
-    title: "Enter starts a new actor with this message · Shift+Enter for a new line", enterkeyhint: "send", spellcheck: "true" });
+    title: "Enter to start a new actor · Shift+Enter for a new line", enterkeyhint: "send", spellcheck: "true" });
   input.value = workPlacer.tabs.shownTab().draft;
   input.addEventListener("input", () => { fitBox(input); workPlacer.tabs.setDraft(input.value); if (newTab.error) ntSay(""); });
   input.addEventListener("keydown", (ev) => {
@@ -92,8 +92,8 @@ function drawNewTab(box, tab) {
 function keysSaid() {
   let app = false;
   try { app = !!window.top.agApp; } catch (e) { /* not ours */ }
-  if (app) return IS_MAC ? " ⌘T opens a new tab, ⌘W closes the one shown." : " Ctrl+T opens a new tab, Ctrl+W closes the one shown.";
-  return IS_MAC ? " ⌃T opens a new tab, ⌃W closes the one shown." : "";
+  if (app) return IS_MAC ? " ⌘T opens a new tab, ⌘W closes the current one." : " Ctrl+T opens a new tab, Ctrl+W closes the current one.";
+  return IS_MAC ? " ⌃T opens a new tab, ⌃W closes the current one." : "";
 }
 // Its parts drawn again if what they show changed (the home: its groups, folders, harnesses; the apps found), or `now`
 function refreshNewTab(now = false) {
@@ -120,13 +120,13 @@ function ntLine(p) {
     el("span", { class: "lbl", text: label }), ...value, open ? el("span", { class: "caret down", "aria-hidden": "true", text: "▾" }) : null);
   return [
     chip("nt:in", "In", [el("span", { class: "val", text: placeName(p) })],
-      p ? `Where the new actor goes: ${placeName(p)}${p.alone ? " (it shares context with no group)" : ""}` : "Make a group first: the folder button at the top of the list",
-      realGroups().length ? (b) => openPop("nt:in", b, ntMenu("Start it in", ntPlaces(p))) : null),
-    chip("nt:dir", "Directory", [el("span", { class: "val dir", text: shortDir(ntCwd(p)) || "Choose one" })], `It works in ${ntCwd(p) || "a directory you choose"}`,
+      p ? (p.alone ? "On its own · shares context with no group" : `Start in ${placeName(p)}`) : "Make a group first with the folder button at the top of the list",
+      realGroups().length ? (b) => openPop("nt:in", b, ntMenu("Start in", ntPlaces(p))) : null),
+    chip("nt:dir", "Directory", [el("span", { class: "val dir", text: shortDir(ntCwd(p)) || "Choose one" })], ntCwd(p) ? `Working directory: ${ntCwd(p)}` : "Choose a working directory",
       off ? null : (b) => openPop("nt:dir", b, ntDirBox(p))),
     hs.length ? chip("nt:on", "On", [harnessBadge(h), el("span", { class: "val", text: harnessName(h) })],
-      `Its harness: ${harnessName(h)}`,
-      hs.length > 1 ? (b) => openPop("nt:on", b, ntMenu("Run it on", hs.map((x) => ({ mark: harnessBadge(x), text: harnessName(x),
+      `Harness: ${harnessName(h)}`,
+      hs.length > 1 ? (b) => openPop("nt:on", b, ntMenu("Run on", hs.map((x) => ({ mark: harnessBadge(x), text: harnessName(x),
         note: x === h ? "chosen" : "", run: () => { newTab.harness = x; refreshNewTab(true); ntFocus(); } })))) : null)
       : el("span", { class: "nt-none", title: noHarness(), text: "No harness here" }),
   ];
@@ -169,7 +169,7 @@ function ntDirBox(p) {
     el("div", { class: "head", text: "Where the new actor works" }),
     el("label", {}, "Working directory", input),
     g ? folderPicks(g, dir, input, err, p.alone ? "Where actors work" : "Where its actors work") : null,
-    el("div", { class: "on" }, el("button", { type: "button", class: "go", onclick: use }, "Use it")),
+    el("div", { class: "on" }, el("button", { type: "button", class: "go", onclick: use }, "Use")),
     err);
 }
 // The apps to open here instead -- each in the place's group, filed in its folder if it is a new one -- the apps with an
@@ -180,21 +180,21 @@ function ntApps(p, found) {
   const tooled = startable().filter((h) => (harnessInfo(h) || {}).mcp);
   const plain = found.filter((a) => !(a.agent && a.agent.start) && !a.failed);
   const agented = tooled.length ? found.filter((a) => a.agent && a.agent.start && !a.failed) : [];
-  const why = alone ? "Apps open in a group: pick one under In" : !p ? "Make a group first" : "";
+  const why = alone ? "Apps open in a group. Pick one under In." : !p ? "Make a group first" : "";
   const button = (mark, label, title, run) => el("button", { type: "button", class: "nt-app", title: why || title, ...(off ? { disabled: "" } : {}),
     onclick: () => void ntRun(label, run) }, mark, el("span", { text: label }));
   const markOf = (a) => a.mark ? appMarkImg(a) : strokeIcon(ICONS.app, 16);
   const items = [
     ...plain.map((a) => button(markOf(a), a.label, a.description || a.label, () => ntOpenApp(g, p, a))),
-    ...agented.map((a) => button(markOf(a), a.label, `${a.description || a.label} -- with an agent of its own`, () => {
+    ...agented.map((a) => button(markOf(a), a.label, `${a.description || a.label} · with its own agent`, () => {
       const h = tooled.includes(ntHarness(p)) ? ntHarness(p) : tooled[0];
       aimStart(g.name, p.folder);
       return startWithApp(g.name, ntCwd(p), a.name, h);
     })),
-    ...(state.home.terminals !== false ? [button(strokeIcon(ICONS.terminal, 16), "Terminal", `A terminal in ${ntCwd(p) || "the directory chosen"}`,
+    ...(state.home.terminals !== false ? [button(strokeIcon(ICONS.terminal, 16), "Terminal", `Terminal in ${ntCwd(p) || "the chosen directory"}`,
       () => { aimStart(g.name, p.folder); return startShell(g.name, ntCwd(p)); })] : []),
   ];
-  items.push(el("button", { type: "button", class: "nt-app manage", title: "See, install and uninstall apps", onclick: openAppsPage },
+  items.push(el("button", { type: "button", class: "nt-app manage", title: "Manage apps", onclick: openAppsPage },
     strokeIcon(ICONS.app, 16), el("span", { text: "Apps…" })));          // the Apps page, in this tab (07-apps-page.js)
   return [el("div", { class: "nt-lbl", text: "Or open" }), el("div", { class: "nt-row" }, ...items)];
 }
@@ -225,8 +225,8 @@ async function ntSend() {
   const input = newTab.input, text = input ? input.value.trim() : "";
   if (!text || newTab.busy) return;
   const p = ntPlace(), g = ntGroup(p), h = ntHarness(p), cwd = ntCwd(p).trim();
-  if (!p || !g) return ntSay("Make a group first: the folder button at the top of the list.");
-  if (!h) return ntSay(p.alone ? "No harness here starts an actor on its own: pick a group under In." : noHarness());
+  if (!p || !g) return ntSay("Make a group first with the folder button at the top of the list.");
+  if (!h) return ntSay(p.alone ? "No harness here can start an actor on its own. Pick a group under In." : noHarness());
   if (!cwd) return ntSay("Which directory? Choose one under Directory.");
   newTab.busy = "Starting…"; newTab.error = "";
   refreshNewTab(true);

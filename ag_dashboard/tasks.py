@@ -75,7 +75,7 @@ def task_name(text, none: bool = False) -> str:
     `none`, "": named by what is in it."""
     name = " ".join(str(text or "").split())[:TASK_CHARS].strip()
     if not name and not none:
-        raise TaskError("what is the task called?")
+        raise TaskError("a task needs a name")
     return name
 
 

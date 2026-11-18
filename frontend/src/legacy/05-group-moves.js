@@ -63,8 +63,8 @@ function appsLine(apps, many, to = null) {
   const list = going.map(named), out = [];
   if (list.length) out.push(`The ${list.length === 1 ? "app" : "apps"} ${list.length === 1 ? list[0] : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`} `
     + `${list.length === 1 ? "goes" : "go"} with ${many ? "them" : "it"}.`);
-  for (const x of joining) out.push(`${many ? "Their" : "Its"} ${named(x)} closes, as the ${to ? titleOf(to) : "other"} group has its own: `
-    + `${many ? "they" : "it"} will work with that one.`);
+  for (const x of joining) out.push(`${many ? "Their" : "Its"} ${named(x)} closes because the ${to ? titleOf(to) : "other"} group has its own. `
+    + `${many ? "They" : "It"} will use that one.`);
   return out.join(" ");
 }
 const mvCount = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -73,7 +73,7 @@ const crewsWithin = (from, fid) => from.agents.filter((a) => isCoordinator(a) &&
   && within(from.name, +a.over.slice("folder:".length), fid));
 const crewsSaid = (crews, made) => !crews.length ? null : crews.length === 1
   ? `Its coordinator agent ${made ? "becomes the new group's" : "goes with it"}.`
-  : `The ${crews.length} coordinator agents over it and its folders go with it${made ? ", the one over it the new group's" : ""}.`;
+  : `The ${crews.length} coordinator agents over it and its folders go with it${made ? ", and the one over it becomes the new group's" : ""}.`;
 
 // What is dragged (`d`, listDrag's), dropped into folder `id` of group `g` (null: its top): the move -- into that
 // folder's group, as the default rule has it (an actor on its own: it joins; kept on its own there only from Manage
@@ -127,10 +127,10 @@ function askOwn(g, f, here = true, ask = true) {
     .map((i) => appInfo(g.name, i)).filter(Boolean).map((o) => ({ id: o.id, app: o.app.name, title: o.name || o.title }));
   const actors = g.agents.filter((a) => inside.includes(a.channel)), n = actors.length;
   const others = g.agents.filter((a) => !isCoordinator(a) && !inside.includes(a.channel)).length;
-  const lines = [(here ? `${f.name} becomes a group of its own where it is, named after it, with the settings of ${titleOf(g)}.`
-    : `The folder ${f.name} becomes a group of its own, ${f.name}, and what is in it goes to the new group's top.`)
+  const lines = [(here ? `${f.name} becomes a group of its own, in place, with the settings of ${titleOf(g)}.`
+    : `The folder ${f.name} becomes a group of its own, with its contents at the top.`)
     + (n ? ` ${n === 1 ? "Its actor leaves" : `Its ${n} actors leave`} the ${titleOf(g)} group (${mvCount(others, "other")}) for it.`
-      : here ? " No actor is in it yet: those started there will share context with each other only." : ` It leaves the ${titleOf(g)} group.`)];
+      : here ? " It has no actors yet. Actors started there will share context only with each other." : ` It leaves the ${titleOf(g)} group.`)];
   if (n) lines.push(`${n === 1 ? "It" : "They"} will no longer share context with the actors of ${titleOf(g)}`
     + `${n === 1 ? "" : ", only with each other"}.`, rebuildLine(g, actors));
   const appsSaid = appsLine(going, n > 1), crewSaid = crewsSaid(crewsWithin(g, f.id), true);
@@ -270,8 +270,10 @@ function moveLines(from, g, plan) {
 // how many of `actors` (of group `from`) rebuild their context at their next call, working now
 function rebuildLine(from, actors) {
   const working = actors.filter((a) => WORKING.has(groupOf(from, a))).length, one = actors.length === 1;
-  return working ? `${mvCount(working, "of them is", "of them are")} working now, and ${working === 1 ? "rebuilds its" : "rebuild their"} `
-    + "context at the next call; the others when they next run." : `${one ? "It rebuilds its" : "Each rebuilds its"} context when it next runs.`;
+  if (!working) return `${one ? "It rebuilds its" : "Each rebuilds its"} context when it next runs.`;
+  if (one) return "It is working now and will rebuild its context at its next call.";
+  return `${mvCount(working, "of them is", "of them are")} working now and will rebuild ${working === 1 ? "its" : "their"} context at the next call.`
+    + (working < actors.length ? " The others rebuild when they next run." : "");
 }
 // the actors that move (by their channels), by name, when more than one
 function moveNames(from, channels) {
@@ -363,11 +365,10 @@ function aloneUnder() {
 function aloneNew() {
   if (SNAPSHOT || PANE || !state.home.merged) return null;
   const hs = startable(), g = aloneUnder();
-  const why = !g ? "Make a group first: an actor on its own runs under one"
-    : !hs.length ? noHarness() : "";
+  const why = !g ? "Make a group first" : !hs.length ? noHarness() : "";
   const busy = state.starting && state.starting.gatherer === ALONE_NEW;
   return el("button", { class: "alone-new" + (busy ? " busy" : ""), type: "button", "data-pop": ALONE_NEW,
-    ...(why || state.starting ? { disabled: "" } : {}), title: why || "New actor on its own: it shares context with no group",
+    ...(why || state.starting ? { disabled: "" } : {}), title: why || "New actor on its own · shares context with no group",
     "aria-label": "New actor on its own", "aria-haspopup": "dialog", "aria-expanded": String(rowPop.key === ALONE_NEW),
     onclick: (ev) => {
       if (rowPop.key === ALONE_NEW) return closePop();
@@ -379,7 +380,7 @@ function aloneNew() {
 // ---- an actor on its own: a group of one (groups.py's `alone`, `self:<channel>`), listed as its row alone (no head: its
 // title says what it is);
 // it has no coordinator agent. Dragged into a group, it is asked first, as any move between groups (askMove).
-const ALONE_SAYS = "On its own: it shares context with no other actor, and no other actor with it. Drag it into a group to bring it back.";
+const ALONE_SAYS = "On its own · shares context with no other actor. Drag it into a group to bring it back.";
 const aloneActor = (g) => g.agents.find((x) => !isCoordinator(x));
 function aloneBox(g) {
   const a = aloneActor(g);
@@ -416,7 +417,7 @@ function aloneShutRows(gs) {
     const shown = foldOpen[name].has(ALONE_KEY);
     out.push(el("button", { class: "agent-group fold-line", type: "button", "aria-expanded": shown ? "true" : "false",
       "data-key": `${ALONE_KEY}/${name}`, onclick: () => toggleFold(name, ALONE_KEY),
-      title: `${shown ? "Hide" : "Show"} the ${name === "Saved" ? "saved " : ""}actors on their own that are closed` },
+      title: `${shown ? "Hide" : "Show"} ${name === "Saved" ? "saved" : "closed"} actors on their own` },
     foldMark(shown), " ", aloneSays(name, list.length)));
     if (shown) out.push(...list.flatMap((g) => rowsOf(g, aloneActor(g), name)));
     else out.push(...aloneInPane(list).map((g) => agentRow(g, aloneActor(g), name)));
@@ -452,8 +453,8 @@ function askAlone(d, here = false) {
   if (d.ask === false) { mvNow(take, "Not taken out", d.g); return; }   // dropped in the list: at once
   const f = here ? folderById(d.g, folderOf(d.g, a)) : null, where = f ? f.name : `the top of ${titleOf(from)}`;
   const lines = [`${name} leaves the ${titleOf(from)} group (${mvCount(others, "other")}) and works on its own`
-    + (here ? `, staying in ${where}` : "") + ": it will share context with no other actor, and no other actor with it.",
-  appsLine(going, false), here ? `It has no coordinator agent. Manage groups brings it back into ${titleOf(from)}.`
+    + (here ? `, staying in ${where}` : "") + ". It won't share context with any other actor.",
+  appsLine(going, false), here ? `It has no coordinator agent. Use Manage groups to bring it back into ${titleOf(from)}.`
     : "It has no coordinator agent. Drag it into a group to bring it back.",
   rebuildLine(from, [a])].filter(Boolean);
   const shown = { title: here ? "Put it on its own?" : "Take it out of every group?", lines, goLabel: here ? "On its own" : "Take it out" };
@@ -567,7 +568,7 @@ function mgSwitch(label, options, now, ask, why = "") {
     ...options.map((o, i) => pick(Array.isArray(o) ? o : [o, ""], now === i)));
 }
 // the option of taking group `g`, the one a row sits in: by its name, the folder that starts it
-const mgIn = (g) => [titleOf(g), `${titleOf(g)}'s group: shares context with its actors`];
+const mgIn = (g) => [titleOf(g), `Shares context with ${titleOf(g)}'s actors`];
 // What the panel has folded: "g:<group>", "f:<group>:<folder id>", "alone" (those on their own at the top)
 const MG_FOLDED_KEY = "ag-dashboard-manage-groups-folded";
 const mgFolded = new Set((() => { try { return JSON.parse(localStorage.getItem(MG_FOLDED_KEY) || "[]"); } catch (e) { return []; } })());
@@ -600,7 +601,7 @@ function mgStartNaming(g, parent, key) {
 function mgNamingRow(depth) {
   const n = manage.naming;
   const input = el("input", { class: "mg-input", type: "text", maxlength: String(FOLDER_CHARS), "aria-label": "New folder's name",
-    placeholder: n.g === null ? "Folder name: a group of its own" : "Folder name" });
+    placeholder: n.g === null ? "Folder name (a new group)" : "Folder name" });
   input.value = n.value;
   input.addEventListener("input", () => { n.value = input.value; });
   input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); mgEndNaming(true); } });
@@ -621,10 +622,10 @@ const mgAdd = (g, id, name, key) => el("button", { type: "button", class: "mg-ad
 function mgActor(g, a, depth) {
   const lone = g.alone, inTask = !lone && withOwn(g, [a.channel]).filter((c) => !isAppItem(c)).length > 1;
   const around = lone ? nestedIn(g) : g;   // the group it sits in: none for one on its own at the list's top
-  const why = isCoordinator(a) ? "The coordinator agent stays with its group" : inTask ? "It works in a task with others: a task moves whole" : "";
+  const why = isCoordinator(a) ? "The coordinator agent stays with its group" : inTask ? "In a task with other actors. Tasks move as a whole." : "";
   return dragRow(el("div", { class: "mg-row actor" + (lone ? " defines" : ""), "data-key": `${g.name}/${a.channel}`,
     style: `--depth: ${depth}`,   // on its own: a group of one
-    ...(lone ? { title: `On its own: a group of one, sharing context with no other actor${around ? "" : ". Drag it into a folder to join that folder's group"}` } : {}) },
+    ...(lone ? { title: `On its own · shares context with no other actor${around ? "" : ". Drag it into a folder to join that folder's group."}` } : {}) },
     mgName("", "", false, plainFace(a), el("span", { text: actorTitle(a) || a.channel.slice(0, 8) })),
     mgSwitch(`${actorTitle(a)}: its group`, around ? [mgIn(around), "On its own"] : ["On its own"], lone && around ? 1 : 0,
       () => (lone ? askJoin(g) : askAloneHere(g, a)), why)), g, a);
@@ -653,10 +654,10 @@ function mgBox(g, id, depth) {
 function mgGroup(g, depth) {
   const outer = nestedIn(g), n = g.agents.filter((a) => !isCoordinator(a)).length, key = `g:${g.name}`, kids = mgBox(g, null, depth + 1);
   const row = el("div", { class: "mg-row group defines", "data-key": g.name, style: `--depth: ${depth}`,   // a group starts here
-    title: `${titleOf(g)} starts a group: its actors share context with each other${outer ? `, not with ${titleOf(outer)}'s` : ""}` },
+    title: `${titleOf(g)} is its own group. Its actors share context with each other${outer ? `, not with ${titleOf(outer)}'s` : ""}.` },
     mgName(key, titleOf(g), kids.length > 0, strokeIcon(ICONS.folder, 14), el("b", { text: titleOf(g) }), el("span", { class: "mg-n", text: plural(n, "actor") })),
     mgAdd(g, null, titleOf(g), key), outer ? mgSwitch(`${titleOf(g)}: its group`, [mgIn(outer), "Own group"], 1, () => askAbove(g))
-      : mgSwitch(`${titleOf(g)}: its group (at the top, its own)`, ["Own group"], 0, () => {}));
+      : mgSwitch(`${titleOf(g)}: its group`, ["Own group"], 0, () => {}));
   if (!SNAPSHOT) {                                   // dragged as the list's group row is: into a folder of another group
     row.draggable = true;
     row.addEventListener("dragstart", (ev) => startDrag(ev, GFS, { gs: [g.name] }));
@@ -672,15 +673,15 @@ function drawManage() {
   manage.drawing = true;                             // its box taken out: not a blur that names the folder
   manage.dialog.replaceChildren(el("div", { class: "newform mg-form" },
     el("div", { class: "br-title" }, el("h3", { text: "Manage groups" }),
-      el("button", { type: "button", class: "mg-new", title: "New folder at the top: a group of its own",
+      el("button", { type: "button", class: "mg-new", title: "New folder at the top (a new group)",
         onclick: () => mgStartNaming(null, null, null) }, strokeIcon(ICONS.folderNew, 14), "New folder"),
       el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => manage.dialog.close() }, strokeIcon(ICONS.x, 16))),
     el("div", { class: "mg-top" },
-      el("p", { class: "mg-say", text: "Actors share context within their group only. Each switch names the group a folder or actor "
-        + "sits in: it takes that group, or has its own. Drag rows as in the list. Each change asks first." }), outsideDrop()),
+      el("p", { class: "mg-say", text: "Actors share context only within their group. Change a folder's or actor's group with its "
+        + "switch, or drag rows as in the list. Each change asks for confirmation." }), outsideDrop()),
     el("div", { class: "mg-tree" }, ...(mgNamingIn(null, null) ? [mgNamingRow(0)] : []), ...shown.filter((g) => !g.alone).sort((x, y) => byName(titleOf(x), titleOf(y))).flatMap((g) => mgGroup(g, 0)),
       ...(lone.length ? [el("div", { class: "mg-row group", style: "--depth: 0" }, mgName("alone", "those on their own", true, strokeIcon(ICONS.alone, 14),
-        el("b", { text: "On their own, at the list's top" })))] : []),
+        el("b", { text: "On their own" })))] : []),
       ...(mgFolded.has("alone") ? [] : loneRows))));
   manage.drawing = false;
   const tree = manage.dialog.querySelector(".mg-tree");

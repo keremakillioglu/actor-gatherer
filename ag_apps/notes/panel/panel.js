@@ -40,23 +40,23 @@ and what agents see of it. The words under either are its caption. */
     number: "List", quote: "Quote", code: "Code", image: "Add a caption", figma: "Add a caption" };
   const MEDIA = ["image", "figma"];                        // blocks that show a picture: their words, its caption
   const KINDS = [                                          // the / menu, and a block's "Turn into"
-    { type: "text", label: "Text", note: "Just writing", glyph: "Aa", words: "text plain paragraph" },
+    { type: "text", label: "Text", note: "Plain text", glyph: "Aa", words: "text plain paragraph" },
     { type: "h1", label: "Heading 1", note: "A big section heading", glyph: "H1", words: "h1 heading title" },
     { type: "h2", label: "Heading 2", note: "A medium heading", glyph: "H2", words: "h2 heading subtitle" },
     { type: "h3", label: "Heading 3", note: "A small heading", glyph: "H3", words: "h3 heading" },
     { type: "todo", label: "To-do list", note: "Things to tick off", glyph: "☐", words: "todo to-do check task checkbox" },
     { type: "bullet", label: "Bulleted list", note: "A simple list", glyph: "•", words: "bullet list ul unordered" },
     { type: "number", label: "Numbered list", note: "A list with numbers", glyph: "1.", words: "number numbered list ol ordered" },
-    { type: "quote", label: "Quote", note: "Words set apart", glyph: "❝", words: "quote blockquote" },
-    { type: "code", label: "Code", note: "Code, as it is typed", glyph: "</>", words: "code snippet pre" },
-    { type: "divider", label: "Divider", note: "A line between parts", glyph: "—", words: "divider line rule hr separator" },
-    { type: "agents", label: "Agents", note: "Your actors, as they are now", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="6" cy="5.5" r="2.2"/><circle cx="11.5" cy="6.2" r="1.7"/><path d="M2 13c.5-2.3 2-3.4 4-3.4s3.5 1.1 4 3.4M10 9.9c.5-.3 1-.4 1.5-.4 1.5 0 2.5.9 2.9 2.6"/></svg>', words: "agents actors status table team" },
-    { type: "work", label: "Work items", note: "What is open, as it stands now", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 4.5h10M3 8h10M3 11.5h6.5"/></svg>', words: "work items tasks open tracker board" },
+    { type: "quote", label: "Quote", note: "Capture a quote", glyph: "❝", words: "quote blockquote" },
+    { type: "code", label: "Code", note: "Code snippet", glyph: "</>", words: "code snippet pre" },
+    { type: "divider", label: "Divider", note: "A line between sections", glyph: "—", words: "divider line rule hr separator" },
+    { type: "agents", label: "Agents", note: "Your actors and their status", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="6" cy="5.5" r="2.2"/><circle cx="11.5" cy="6.2" r="1.7"/><path d="M2 13c.5-2.3 2-3.4 4-3.4s3.5 1.1 4 3.4M10 9.9c.5-.3 1-.4 1.5-.4 1.5 0 2.5.9 2.9 2.6"/></svg>', words: "agents actors status table team" },
+    { type: "work", label: "Work items", note: "Open work items and their status", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 4.5h10M3 8h10M3 11.5h6.5"/></svg>', words: "work items tasks open tracker board" },
   ];
   const PAGE_KIND = { type: "page-new", label: "Page", note: "A new page inside this one", glyph: '<svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 1.8h5.2L12.5 5v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2v3.3h3.3M8.25 7.6v4.2M6.15 9.7h4.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', words: "page subpage new child doc document" };   // in the / menu too, not a block's type
   const LINK_KIND = { type: "page-link", label: "Link to a page", note: "Or type [[", glyph: '<svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 1.8h5.2L12.5 5v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2v3.3h3.3M6 8.2h4.5M6 10.8h4.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', words: "link page mention reference subpage" };   // in the / menu, not a block's type
   const IMAGE_KIND = { type: "image-new", label: "Image", note: "Upload, paste or drop a picture", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.6"/><path d="M2.3 11l3.4-3.4 2.8 2.8 1.8-1.8 3.4 3.4" stroke-linecap="round"/><circle cx="10.6" cy="6" r="1.1"/></svg>', words: "image picture photo png jpg screenshot figure upload" };   // in the / menu, not a block's type
-  const FIGMA_KIND = { type: "figma-new", label: "Figma", note: "A frame or board, kept live", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M5.5 2v12M10.5 2v12M2 5.5h12M2 10.5h12"/></svg>', words: "figma figjam design frame board embed diagram drawing" };
+  const FIGMA_KIND = { type: "figma-new", label: "Figma", note: "A live frame or board", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M5.5 2v12M10.5 2v12M2 5.5h12M2 10.5h12"/></svg>', words: "figma figjam design frame board embed diagram drawing" };
   const TABLE_KIND = { type: "table-new", label: "Table", note: "Rows and columns", glyph: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6.5h12M2 9.8h12M6.5 3v10"/></svg>', words: "table grid rows columns spreadsheet cells" };   // in the / menu, not a block's type
   const ICONS = ["📄", "📝", "✅", "📌", "📚", "💡", "🎯", "🚀", "🛒", "🏠", "💼", "🧪", "🐛", "🔧", "📅", "⭐", "❤️", "🔥", "🌱", "🎨",
     "🎵", "✈️", "🍳", "💰", "📈", "🧠", "☕", "🗂️", "🔖", "🧩", "🏃", "📖", "🎓", "🧾", "📦", "⚙️", "🗒️", "🌟", "🍀", "🐣"];
@@ -163,7 +163,7 @@ and what agents see of it. The words under either are its caption. */
       const id = pageOfLink(a);
       if (!id) continue;
       const p = pages.get(id), cls = `pg${!p ? " gone" : p.deleted ? " binned" : ""}`;
-      const tip = !p ? "That page was deleted" : p.deleted ? "In the trash: open it" : "Open the page";
+      const tip = !p ? "That page was deleted" : p.deleted ? "Open page (in the trash)" : "Open page";
       if (a.className !== cls) a.className = cls;
       if (a.getAttribute("contenteditable") !== "false") a.setAttribute("contenteditable", "false");
       if (p && a.textContent !== (p.title || "Untitled")) a.textContent = p.title || "Untitled";
@@ -410,7 +410,7 @@ and what agents see of it. The words under either are its caption. */
     if (!step) return;
     const now = standing(p, step.ids), want = again ? step.before : step.after;
     if (step.ids.some((id) => now.get(id) !== want.get(id))) {
-      say(again ? "Not redone: those lines have changed since" : "Not undone: those lines have changed since", true);
+      say(again ? "Can't redo: those lines have changed" : "Can't undo: those lines have changed", true);
       return;
     }
     const a = document.activeElement;                      // drawn afresh: no line kept back as being typed in
@@ -479,7 +479,7 @@ and what agents see of it. The words under either are its caption. */
     clearTimeout(savedTimer);
     s.classList.remove("quiet", "bad");
     if (how === "saving") s.textContent = "Saving…";
-    else if (how === "retry") { s.textContent = "Not saved yet: trying again"; s.classList.add("bad"); }
+    else if (how === "retry") { s.textContent = "Not saved. Retrying…"; s.classList.add("bad"); }
     else { s.textContent = "Saved"; savedTimer = setTimeout(() => s.classList.add("quiet"), 1400); }
   }
   addEventListener("pagehide", () => { flushTyped(); pump(true); });
@@ -564,7 +564,7 @@ and what agents see of it. The words under either are its caption. */
         "aria-selected": String(p.id === current), ...(kids.length ? { "aria-expanded": String(open) } : {}),
         onclick: () => openPage(p.id) },
         el("button", { class: `caret${kids.length ? "" : " none"}${open ? " open" : ""}`, type: "button", tabindex: "-1",
-          "aria-label": open ? "Fold" : "Unfold", html: SVG.caret,
+          "aria-label": open ? "Collapse" : "Expand", html: SVG.caret,
           onclick: (ev) => { ev.stopPropagation(); fold(p.id, !open); } }),
         el("span", { class: "ic", ...(p.icon ? { text: p.icon } : { html: SVG.doc }) }),
         el("span", { class: `nm${p.title ? "" : " untitled"}`, text: p.title || "Untitled" }),
@@ -582,7 +582,7 @@ and what agents see of it. The words under either are its caption. */
     if (q) {
       const hits = live().filter((p) => (p.title || "").toLowerCase().includes(q) || p.blocks.some((b) => plainOf(b.text).toLowerCase().includes(q)));
       for (const p of hits) row(p, 0, true);
-      if (!hits.length) tree.append(el("div", { class: "tree-none", text: "No page has that" }));
+      if (!hits.length) tree.append(el("div", { class: "tree-none", text: "No results" }));
     } else {
       for (const p of kidsOf(null)) row(p, 0);
       if (!live().length) tree.append(el("div", { class: "tree-none", text: "No pages yet" }));
@@ -594,7 +594,7 @@ and what agents see of it. The words under either are its caption. */
     const trash = $("trash");
     trash.hidden = !trashOpen;
     trash.replaceChildren(...(binned.length ? binned.map((p) => el("div", { class: "trash-row" },
-      el("span", { class: "nm", text: `${p.icon ? p.icon + " " : ""}${p.title || "Untitled"}`, title: "Open it", onclick: () => openPage(p.id) }),
+      el("span", { class: "nm", text: `${p.icon ? p.icon + " " : ""}${p.title || "Untitled"}`, title: "Open", onclick: () => openPage(p.id) }),
       el("button", { type: "button", title: "Restore", "aria-label": "Restore", html: SVG.restore, onclick: () => restore(p) }),
       el("button", { type: "button", title: "Delete for good", "aria-label": "Delete for good", html: SVG.x, onclick: () => purge(p) })))
       : [el("div", { class: "trash-none", text: "Nothing in the trash" })]));
@@ -616,9 +616,9 @@ and what agents see of it. The words under either are its caption. */
   const app = $("app"), sideEl = $("side"), sideGrip = $("side-grip");
   const SIDE_KEY = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘\\" : "Ctrl+\\";
   $("side-toggle").innerHTML = SVG.side;
-  $("side-toggle").title = `Show the pages (${SIDE_KEY})`;
+  $("side-toggle").title = `Show sidebar (${SIDE_KEY})`;
   $("side-hide").innerHTML = SVG.hide;
-  $("side-hide").title = `Hide the pages (${SIDE_KEY})`;
+  $("side-hide").title = `Hide sidebar (${SIDE_KEY})`;
   document.querySelector(".main").addEventListener("mousedown", (ev) => { if (!ev.target.closest("#side-toggle")) app.classList.remove("side-on"); });
   if (store.get("side", true) === false) app.classList.add("side-off");
   const sideShown = () => (narrow() ? app.classList.contains("side-on") : !app.classList.contains("side-off"));
@@ -643,7 +643,7 @@ and what agents see of it. The words under either are its caption. */
   }
   sideGrip.setAttribute("aria-valuemin", SIDE_MIN);
   sideGrip.setAttribute("aria-valuemax", SIDE_MAX);
-  sideGrip.title = "Drag to change the width, double-click for the usual one";
+  sideGrip.title = "Drag to resize · double-click to reset";
   sideWidth(typeof store.get("side-w", null) === "number" ? store.get("side-w", null) : null);
   sideGrip.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0) return;
@@ -776,21 +776,21 @@ and what agents see of it. The words under either are its caption. */
   function makeRow(b) {
     const gut = el("div", { class: "gut" },
       el("button", { class: "add", type: "button", tabindex: "-1", title: "Add a block below", "aria-label": "Add a block below", html: SVG.plus }),
-      el("button", { class: "grip", type: "button", tabindex: "-1", title: "Drag to move, click for more", "aria-label": "Move, or more", html: SVG.grip }));
+      el("button", { class: "grip", type: "button", tabindex: "-1", title: "Drag to move · click for menu", "aria-label": "Move or open menu", html: SVG.grip }));
     const n = el("div", { class: "blk", "data-id": b.id }, gut);
     if (b.type === "divider") n.append(el("div", { class: "hr", tabindex: "0", role: "separator" }));
-    else if (b.type === "agents") n.append(el("div", { class: "agt", tabindex: "0", role: "group", "aria-label": "The gatherer's actors" }));
-    else if (b.type === "work") n.append(el("div", { class: "agt wkb", tabindex: "0", role: "group", "aria-label": "Your open work items" }));
+    else if (b.type === "agents") n.append(el("div", { class: "agt", tabindex: "0", role: "group", "aria-label": "Actors" }));
+    else if (b.type === "work") n.append(el("div", { class: "agt wkb", tabindex: "0", role: "group", "aria-label": "Open work items" }));
     else if (MEDIA.includes(b.type)) n.append(el("div", { class: "fig", tabindex: "0", role: "figure" }), el("div", { class: "tx cap", spellcheck: "true" }));
     else if (b.type === "table") n.append(el("div", { class: "tbl" }, el("div", { class: "tbl-scroll" }, el("div", { class: "tbl-in" },
       el("table", { class: "grid" }, el("colgroup"), el("tbody")),
       el("div", { class: "tbl-edges" }),
-      el("button", { class: "tbl-h tbl-ch", type: "button", tabindex: "-1", title: "Drag to move the column, click for more", "aria-label": "The column: move it, or more", html: SVG.more }),
-      el("button", { class: "tbl-h tbl-rh", type: "button", tabindex: "-1", title: "Drag to move the row, click for more", "aria-label": "The row: move it, or more", html: SVG.grip }),
+      el("button", { class: "tbl-h tbl-ch", type: "button", tabindex: "-1", title: "Drag to move · click for menu", "aria-label": "Move column or open menu", html: SVG.more }),
+      el("button", { class: "tbl-h tbl-rh", type: "button", tabindex: "-1", title: "Drag to move · click for menu", "aria-label": "Move row or open menu", html: SVG.grip }),
       el("button", { class: "tbl-add tbl-add-col", type: "button", tabindex: "-1", title: "Add a column (drag for more)", "aria-label": "Add a column", html: SVG.plus }),
       el("button", { class: "tbl-add tbl-add-row", type: "button", tabindex: "-1", title: "Add a row (drag for more)", "aria-label": "Add a row", html: SVG.plus })))));
     else n.append(el("div", { class: "mk" }), el("div", { class: "tx", spellcheck: "true" }),
-      el("button", { class: "to-btn", type: "button", tabindex: "-1", title: "Send it to an agent (or type @)", html: SVG.at }));
+      el("button", { class: "to-btn", type: "button", tabindex: "-1", title: "Send to an agent (or type @)", html: SVG.at }));
     return n;
   }
   function updateRow(n, b, ro) {
@@ -806,7 +806,7 @@ and what agents see of it. The words under either are its caption. */
     const tx = n.querySelector(".tx");
     if (!tx) return;
     const to = n.querySelector(".to-btn");                 // its words drawn by the style: not the block's text
-    if (to) { to.dataset.label = b.type === "todo" ? "Assign" : "Ask"; to.setAttribute("aria-label", `${to.dataset.label}: send it to an agent`); }
+    if (to) { to.dataset.label = b.type === "todo" ? "Assign" : "Ask"; to.setAttribute("aria-label", b.type === "todo" ? "Assign to an agent" : "Ask an agent"); }
     n.classList.toggle("picked", picked.has(b.id));
     sentPart(n, b, ro);
     tx.setAttribute("contenteditable", ro ? "false" : b.type === "code" ? "plaintext-only" : "true");
@@ -918,7 +918,7 @@ and what agents see of it. The words under either are its caption. */
   function foldRow(p, items) {
     const d = items.filter((b) => endedOf(b) === "done").length, c = items.filter((b) => endedOf(b) === "canceled").length;
     const said = [d ? `${d} done` : "", c ? `${c} canceled` : ""].filter(Boolean).join(" · ") || `${items.length} folded`;
-    return el("div", { class: "fold" }, el("button", { type: "button", title: "Show the lines done or canceled on this page", "aria-label": `${said}: show them`,
+    return el("div", { class: "fold" }, el("button", { type: "button", title: "Show done and canceled lines", "aria-label": `Show ${said}`,
       onclick: () => { showDone(p.id, true); drawPage(); } }, el("span", { html: SVG.check }), el("span", { text: said })));
   }
   function drawDoneBtn(p) {
@@ -927,7 +927,7 @@ and what agents see of it. The words under either are its caption. */
     if (!n) return;
     const on = doneShown.has(p.id);
     btn.setAttribute("aria-pressed", String(on));
-    btn.title = on ? "Fold away the lines done or canceled" : "Show the lines done or canceled";
+    btn.title = on ? "Hide done and canceled lines" : "Show done and canceled lines";
     btn.replaceChildren(el("span", { class: "sw", "aria-hidden": "true" }), el("span", { text: `Show done (${n})` }));
   }
   $("done-btn").addEventListener("click", () => { const p = page(); if (!p) return; showDone(p.id, !doneShown.has(p.id)); drawPage(); });
@@ -1483,7 +1483,7 @@ and what agents see of it. The words under either are its caption. */
     menu.on = Math.min(menu.on || 0, Math.max(0, items.length - 1));
     const pop = menu.el;
     pop.replaceChildren(el("div", { class: "hd", text: "Blocks" }));
-    if (!items.length) pop.append(el("div", { class: "none", text: "No block like that" }));
+    if (!items.length) pop.append(el("div", { class: "none", text: "No results" }));
     const m = menu;                                       // (closed by a click before its pick runs)
     items.forEach((k, j) => {
       const it = item(k, () => slashPick(k.type, m));
@@ -1594,7 +1594,7 @@ and what agents see of it. The words under either are its caption. */
     menu.on = Math.min(menu.on || 0, Math.max(0, picks.length - 1));
     const pop = menu.el;
     pop.replaceChildren(el("div", { class: "hd", text: "Link to a page" }));
-    if (!picks.length) pop.append(el("div", { class: "none", text: "No pages yet: type a name to make one" }));
+    if (!picks.length) pop.append(el("div", { class: "none", text: "No pages yet. Type a name to create one." }));
     picks.forEach((x, j) => {
       const it = item(x.k, x.run);
       if (j === menu.on) it.classList.add("on");
@@ -1775,10 +1775,10 @@ and what agents see of it. The words under either are its caption. */
           item({ glyph: SVG.at, sm: true, label: "Send to another agent…" }, () => openPicker(b.id, n.getBoundingClientRect())),
           ...viewsOn(b).map((v) => item({ glyph: SVG.x, sm: true, label: `Remove ${nameOf(actorOf(v.to), v.to)}`, note: "from this line" }, () => drop(v))),
         ] : [item({ glyph: SVG.at, sm: true, label: "Send to an agent…" }, () => openPicker(b.id, n.getBoundingClientRect())),
-          b.work ? item({ glyph: SVG.x, sm: true, label: "Not a work item" }, () => markWork([b], false))
+          b.work ? item({ glyph: SVG.x, sm: true, label: "Remove from work items" }, () => markWork([b], false))
             : item({ glyph: SVG.work, sm: true, label: "Mark as a work item", note: "Tracked on the Work page" }, () => markWork([b], true))]),
-        ...(!isWork(b) ? [] : endedOf(b) ? [item({ glyph: SVG.restore, sm: true, label: "Reopen it" }, () => reopen([b]))] : [
-          item({ glyph: SVG.check, sm: true, label: "Accept it as done" }, () => accept([b])),
+        ...(!isWork(b) ? [] : endedOf(b) ? [item({ glyph: SVG.restore, sm: true, label: "Reopen" }, () => reopen([b]))] : [
+          item({ glyph: SVG.check, sm: true, label: "Accept as done" }, () => accept([b])),
           item({ glyph: SVG.x, sm: true, label: "Cancel it" }, () => cancel([b]))]),
         item({ glyph: "⧉", sm: true, label: "Duplicate" }, () => {
           const copy = copyOf(b);
@@ -1853,13 +1853,13 @@ and what agents see of it. The words under either are its caption. */
     if (bar.dataset.n !== `${n}:${can}`) {
       bar.dataset.n = `${n}:${can}`;
       bar.replaceChildren(el("span", { class: "pk-n", text: `${n} lines` }),
-        can ? el("button", { type: "button", class: "pk-send", title: `Send ${can === n ? "them" : `the ${can} with words`} to an agent, as one message`,
+        can ? el("button", { type: "button", class: "pk-send", title: `Send ${can === n ? "" : `${can} of ${n} lines `}to an agent as one message`,
           onclick: (ev) => {                               // the lines picked now (the bar is drawn again only as their count changes)
             const now = pickedBlocks().map((b) => b.id);
             if (now.length) openPicker(now[0], ev.currentTarget.getBoundingClientRect(), now);
           } },
         el("span", { html: SVG.at }), el("span", { text: "Send to an agent" })) : null,
-        el("button", { type: "button", class: "pk-more", title: "More", "aria-label": "More for these lines", html: SVG.more,
+        el("button", { type: "button", class: "pk-more", title: "More", "aria-label": "More", html: SVG.more,
           onclick: (ev) => linesMenu(ev.currentTarget.getBoundingClientRect()) }));
     }
     bar.hidden = false;
@@ -1890,7 +1890,7 @@ and what agents see of it. The words under either are its caption. */
     const near = fresh || (before ? blockOf(before) : page().blocks[0]);
     if (near) focusBlock(near.id, before ? "end" : "start");
     const h = historyOf(p.id);
-    undoable(`${gone.length === 1 ? "A line" : `${gone.length} lines`} deleted`, p.id, h.done[h.done.length - 1]);
+    undoable(`${gone.length === 1 ? "Line" : `${gone.length} lines`} deleted`, p.id, h.done[h.done.length - 1]);
   }
   // a toast with Undo, for as long as its step is still the page's last
   function undoable(text, pid, step) {
@@ -1948,12 +1948,12 @@ and what agents see of it. The words under either are its caption. */
   }
   // the picked lines' menu: a type for them all, sent to an agent together, duplicated, deleted
   function linesMenu(rect, n = null) {
-    const bs = pickedBlocks(), can = sendable(bs);
+    const bs = pickedBlocks(), can = sendable(bs), unmarked = can.filter((b) => !isWork(b));
     if (!bs.length) return;
     const types = new Set(bs.map((b) => b.type));
     if (n) n.classList.add("menu-open");
     popUp(rect, (pop) => {
-      pop.append(el("div", { class: "hd", text: `${bs.length} lines: turn into` }));
+      pop.append(el("div", { class: "hd", text: `Turn ${bs.length} lines into` }));
       for (const k of KINDS) if (!UNSENT.includes(k.type))
         pop.append(item({ ...k, note: "", sm: true, cur: types.size === 1 && types.has(k.type) }, () => { retypeLines(k.type); holdKeys(); }));
       pop.append(el("div", { class: "sep" }),
@@ -1961,8 +1961,8 @@ and what agents see of it. The words under either are its caption. */
           () => openPicker(can[0].id, rect, can.map((b) => b.id)))] : []),
         ...(bs.some((b) => b.type === "todo") ? [item({ glyph: SVG.check, sm: true, label: bs.some((b) => b.type === "todo" && !b.checked) ? "Tick the to-dos" : "Untick the to-dos", note: "⌘↵" },
           () => { tickLines(); holdKeys(); })] : []),
-        ...(can.some((b) => !isWork(b)) ? [item({ glyph: SVG.work, sm: true, label: `Mark ${can.filter((b) => !isWork(b)).length === 1 ? "one" : can.filter((b) => !isWork(b)).length} as work items`, note: "Tracked on the Work page" },
-          () => { markWork(can.filter((b) => !isWork(b)), true); holdKeys(); })] : []),
+        ...(unmarked.length ? [item({ glyph: SVG.work, sm: true, label: unmarked.length === 1 ? "Mark 1 as a work item" : `Mark ${unmarked.length} as work items`, note: "Tracked on the Work page" },
+          () => { markWork(unmarked, true); holdKeys(); })] : []),
         item({ glyph: "⧉", sm: true, label: "Duplicate", note: "⌘D" }, () => { duplicateLines(); holdKeys(); }),
         item({ glyph: SVG.trash, sm: true, label: `Delete ${bs.length} lines`, note: "⌫", bad: true }, () => deleteLines()));
     }, () => { if (n) n.classList.remove("menu-open"); });
@@ -2224,7 +2224,7 @@ and what agents see of it. The words under either are its caption. */
     const p = page();
     pop.append(el("div", { class: "grid" }, ...ICONS.map((e) => el("button", { type: "button", text: e, title: e,
       onclick: () => { closePop(); change([{ op: "page.set", page: p.id, icon: e }]); drawSide(); drawPage(); } }))));
-    if (p.icon) pop.append(el("div", { class: "sep" }), item({ glyph: SVG.x, sm: true, label: "Remove the icon" },
+    if (p.icon) pop.append(el("div", { class: "sep" }), item({ glyph: SVG.x, sm: true, label: "Remove icon" },
       () => { change([{ op: "page.set", page: p.id, icon: "" }]); drawSide(); drawPage(); }));
   }, null, "menu", "emoji");
   $("add-icon").addEventListener("click", (ev) => iconPicker(ev.currentTarget));
@@ -2454,7 +2454,7 @@ and what agents see of it. The words under either are its caption. */
     ws.forEach((w, j) => { if (cg.children[j].style.width !== `${w}px`) cg.children[j].style.width = `${w}px`; });
     table.style.width = `${ws.reduce((s, w) => s + w, 0)}px`;
     const edges = wrap.querySelector(".tbl-edges");
-    while (edges.children.length < ws.length) edges.append(el("div", { class: "tbl-rs", title: "Drag to change the width (double-click: an equal share)" }));
+    while (edges.children.length < ws.length) edges.append(el("div", { class: "tbl-rs", title: "Drag to resize · double-click to reset" }));
     while (edges.children.length > ws.length) edges.lastChild.remove();
     let x = 0;
     ws.forEach((w, j) => { x += w; edges.children[j].dataset.col = cols[j].id; edges.children[j].style.left = `${x - 3}px`; });
@@ -2885,7 +2885,7 @@ and what agents see of it. The words under either are its caption. */
           el("button", { type: "button", "data-do": "caption", text: "Caption" }),
           el("button", { type: "button", "data-do": "replace", text: "Replace" }),
           el("button", { type: "button", "data-do": "open", text: "Open" }),
-          el("button", { type: "button", "data-do": "delete", title: "Delete the picture", "aria-label": "Delete the picture", html: SVG.trash })),
+          el("button", { type: "button", "data-do": "delete", title: "Delete picture", "aria-label": "Delete picture", html: SVG.trash })),
         el("span", { class: "hdl l", "data-side": "l", title: "Drag to resize" }), el("span", { class: "hdl r", "data-side": "r", title: "Drag to resize" }));
       f.replaceChildren(pic);
     }
@@ -2918,12 +2918,12 @@ and what agents see of it. The words under either are its caption. */
       el("span", { class: `fg-state ${live ? "live" : "snap"}`, text: state }),
       el("span", { class: "fg-gap" }),
       navigator.onLine === false ? null : el("button", { type: "button", class: "fg-btn", "data-do": "view", text: live ? "Snapshot" : "Live",
-        title: live ? "Show the snapshot kept of it" : "Show it live, from Figma" }),
+        title: live ? "Show snapshot" : "Show live from Figma" }),
       el("a", { class: "fg-btn", href: b.url, target: "_blank", rel: "noopener", text: "Open in Figma" }),
-      el("button", { type: "button", class: "fg-btn icon", "data-do": "open", title: "Show it full size", "aria-label": "Show it full size", html: SVG.full }),
+      el("button", { type: "button", class: "fg-btn icon", "data-do": "open", title: "Full size", "aria-label": "Full size", html: SVG.full }),
       ro ? null : el("button", { type: "button", class: "fg-btn icon", "data-do": "more", title: "More", "aria-label": "More", text: "⋯" }));
-    const said = !live ? (unloaded.has(b.id) ? "Figma didn't load here, so this is the snapshot kept of it." : navigator.onLine === false
-      ? "Offline: this is the snapshot kept of it." : b.snap ? "" : err || "No snapshot of it yet.")
+    const said = !live ? (unloaded.has(b.id) ? "Figma didn't load here." : navigator.onLine === false
+      ? "You're offline." : b.snap ? "" : err || "No snapshot yet.")
       : !b.snap && err ? `Your agents can't see this frame: ${err.replace(/\.$/, "")}.` : "";
     band.hidden = !said;
     band.replaceChildren(el("span", { text: said }),
@@ -2962,7 +2962,7 @@ and what agents see of it. The words under either are its caption. */
     ag.api("figma/snap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ block: b.id }) })
       .then((r) => r.json()).then((got) => {
         if (got.error) snapErr.set(b.id, got.error); else snapErr.delete(b.id);
-        if (tell) say(got.error ? `No snapshot: ${got.error}` : "The snapshot is up to date", !!got.error);
+        if (tell) say(got.error ? `No snapshot: ${got.error}` : "Snapshot is up to date", !!got.error);
         redrawFig(b.id);
       }).catch(() => {});
   }
@@ -2988,11 +2988,11 @@ and what agents see of it. The words under either are its caption. */
   async function upload(file) {
     const r = await ag.api("image", { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
     const got = await r.json().catch(() => ({}));
-    if (!r.ok || got.error) throw new Error(got.error || `not kept (${r.status})`);
+    if (!r.ok || got.error) throw new Error(got.error || `upload failed (${r.status})`);
     return got;
   }
   async function putPictures(files, at) {
-    say(files.length > 1 ? `Adding ${files.length} pictures…` : "Adding the picture…");
+    say(files.length > 1 ? `Adding ${files.length} pictures…` : "Adding picture…");
     const made = [];
     for (const f of files) {
       try { made.push({ type: "image", text: "", checked: false, indent: 0, ...(await upload(f)) }); }
@@ -3048,9 +3048,9 @@ and what agents see of it. The words under either are its caption. */
     if (at) putMedia([{ type: "figma", url, title: figmaTitle(url), text: "", checked: false, indent: 0 }], at, into);
   }
   function figmaChoice(b, tx, url) {
-    const m = popUp(tx.getBoundingClientRect(), (pop) => pop.append(el("div", { class: "hd", text: "Show it as" }),
-      item({ glyph: FIGMA_KIND.glyph, label: "The frame, live", note: figmaTitle(url) || "From Figma" }, () => makeFigma(b, url, true)),
-      item({ glyph: "↗", label: "A link", note: "Keep it as words" }, () => linkIt(b, url))), null, "figma");
+    const m = popUp(tx.getBoundingClientRect(), (pop) => pop.append(el("div", { class: "hd", text: "Paste as" }),
+      item({ glyph: FIGMA_KIND.glyph, label: "Live frame", note: figmaTitle(url) || "From Figma" }, () => makeFigma(b, url, true)),
+      item({ glyph: "↗", label: "Link" }, () => linkIt(b, url))), null, "figma");
     m.on = 0;
     m.el.querySelector(".it").classList.add("on");
   }
@@ -3079,35 +3079,35 @@ and what agents see of it. The words under either are its caption. */
   }
   function figmaBox(b, tx) {
     const m = popUp(tx.getBoundingClientRect(), (pop) => {
-      const input = el("input", { class: "fg-input", type: "url", placeholder: "Paste the link to a frame or board", "aria-label": "The Figma link", autocomplete: "off" });
+      const input = el("input", { class: "fg-input", type: "url", placeholder: "Paste a link to a frame or board", "aria-label": "Figma link", autocomplete: "off" });
       const bad = el("div", { class: "fg-bad", hidden: true });
       const go = () => {
         const url = input.value.trim();
-        if (!FIGMA_URL.test(url)) { bad.textContent = "That isn't a link to a Figma file: figma.com/design/…, /board/…, /proto/…"; bad.hidden = false; return; }
+        if (!FIGMA_URL.test(url)) { bad.textContent = "Not a Figma file link (figma.com/design/…, /board/… or /proto/…)"; bad.hidden = false; return; }
         closePop();
         const at = blockOf(b.id), t = rowOf(b.id) && rowOf(b.id).querySelector(".tx");
         if (at) makeFigma(at, url, !!(t && empty(t) && at.type === "text"));
       };
       input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); go(); } });
       pop.append(el("div", { class: "hd", text: "Figma" }),
-        el("div", { class: "fg-row" }, input, el("button", { type: "button", class: "primary", text: "Show it", onclick: go })), bad,
-        el("p", { class: "fg-note", text: "In Figma, right-click a frame and pick Copy link to selection, or use Share, Copy link for the whole file." }));
+        el("div", { class: "fg-row" }, input, el("button", { type: "button", class: "primary", text: "Embed", onclick: go })), bad,
+        el("p", { class: "fg-note", text: "In Figma, right-click a frame and choose Copy link to selection, or use Share › Copy link for the whole file." }));
     }, null, "figma-box", "fg-pop");
     setTimeout(() => { const i = m.el.querySelector("input"); if (i) i.focus(); });
   }
   function tokenBox(rect) {
     const m = popUp(rect, (pop) => {
-      const input = el("input", { class: "fg-input", type: "password", placeholder: "figd_…", "aria-label": "Your Figma personal access token", autocomplete: "off" });
+      const input = el("input", { class: "fg-input", type: "password", placeholder: "figd_…", "aria-label": "Figma personal access token", autocomplete: "off" });
       const bad = el("div", { class: "fg-bad", hidden: true });
       const send = async (token) => {
         bad.hidden = true;
         let got;
         try { got = await (await ag.api("figma/token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) })).json(); }
-        catch { got = { error: "the dashboard didn't answer" }; }
+        catch { got = { error: "The dashboard didn't respond" }; }
         if (got.error) { bad.textContent = got.error; bad.hidden = false; return; }
         figmaToken = { token: !!token, who: got.who || "" };
         closePop();
-        say(token ? `Figma token saved${got.who ? ` (${got.who})` : ""}` : "Figma token forgotten");
+        say(token ? `Figma token saved${got.who ? ` (${got.who})` : ""}` : "Figma token removed");
         snapErr.clear();
         const p = page();
         if (p && token) for (const x of p.blocks) if (x.type === "figma") snapSoon(x, true);
@@ -3115,20 +3115,20 @@ and what agents see of it. The words under either are its caption. */
       };
       const save = () => { if (input.value.trim()) send(input.value.trim()); };
       input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); save(); } });
-      pop.append(el("div", { class: "hd", text: "A Figma token" }),
-        el("p", { class: "fg-note", text: "With one, Notes keeps a snapshot of any frame you can open in Figma: it shows when Figma can't, and it is what your agents see. Without one, only a public file's cover." }),
-        el("p", { class: "fg-note" }, "Make one in Figma's ", el("a", { href: "https://www.figma.com/settings", target: "_blank", rel: "noopener", text: "Settings" }),
-          ": Security, Personal access tokens, with read access to file content. It stays on this computer."),
+      pop.append(el("div", { class: "hd", text: "Figma token" }),
+        el("p", { class: "fg-note", text: "With a token, Notes keeps a snapshot of any frame you can open in Figma, for your agents to see. Without one, it can only get a public file's cover." }),
+        el("p", { class: "fg-note" }, "Create one in Figma's ", el("a", { href: "https://www.figma.com/settings", target: "_blank", rel: "noopener", text: "Settings" }),
+          " › Security › Personal access tokens, with read access to file content. It stays on this computer."),
         el("div", { class: "fg-row" }, input, el("button", { type: "button", class: "primary", text: "Save", onclick: save })), bad,
-        figmaToken.token ? el("button", { type: "button", class: "fg-forget", text: `Forget the token${figmaToken.who ? ` of ${figmaToken.who}` : ""}`, onclick: () => send("") }) : null);
+        figmaToken.token ? el("button", { type: "button", class: "fg-forget", text: `Remove token${figmaToken.who ? ` (${figmaToken.who})` : ""}`, onclick: () => send("") }) : null);
     }, null, "token", "fg-pop");
     setTimeout(() => { const i = m.el.querySelector("input"); if (i) i.focus(); });
   }
   function figmaMenu(b, rect) {
     popUp(rect, (pop) => pop.append(
-      item({ glyph: SVG.restore, sm: true, label: "Fetch the snapshot again" }, () => { unloaded.delete(b.id); snapSoon(b, true, true); }),
+      item({ glyph: SVG.restore, sm: true, label: "Refresh snapshot" }, () => { unloaded.delete(b.id); snapSoon(b, true, true); }),
       item({ glyph: "⚿", sm: true, label: figmaToken.token ? "Figma token…" : "Add a Figma token…", note: figmaToken.who || "" }, () => tokenBox(rect)),
-      item({ glyph: "⧉", sm: true, label: "Copy the link" }, () => navigator.clipboard.writeText(b.url).then(() => say("Link copied"), () => say("Couldn't copy the link", true))),
+      item({ glyph: "⧉", sm: true, label: "Copy link" }, () => navigator.clipboard.writeText(b.url).then(() => say("Link copied"), () => say("Couldn't copy the link", true))),
       el("div", { class: "sep" }),
       item({ glyph: SVG.trash, sm: true, label: "Delete", bad: true }, () => dropBlock(b))));
   }
@@ -3186,7 +3186,7 @@ and what agents see of it. The words under either are its caption. */
     let inner;
     if (b.type === "image") inner = el("img", { src: fileUrl(b.file), alt: plainOf(b.text) });
     else if (figViewOf(b) === "live") inner = el("iframe", { src: embedUrl(b.url), allowfullscreen: true, title: `${b.title || figmaTitle(b.url) || "Figma"}, live from Figma` });
-    else inner = b.snap ? el("img", { src: fileUrl(b.snap), alt: b.title || "" }) : el("p", { class: "lb-none", text: "No snapshot of it yet." });
+    else inner = b.snap ? el("img", { src: fileUrl(b.snap), alt: b.title || "" }) : el("p", { class: "lb-none", text: "No snapshot yet." });
     lb.replaceChildren(el("div", { class: `lb-in ${b.type}` }, inner),
       el("button", { type: "button", class: "lb-x", title: "Close (Esc)", "aria-label": "Close", html: SVG.x, onclick: hideFull }));
     lb.dataset.block = b.id;
@@ -3226,7 +3226,7 @@ and what agents see of it. The words under either are its caption. */
     ev.stopPropagation();
     $("drop").hidden = true;
     const pics = [...ev.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
-    if (!pics.length) return say("Only pictures can be dropped into the notes", true);
+    if (!pics.length) return say("Only pictures can be dropped here", true);
     putPictures(pics, dropAt ? p.blocks.find((x) => x.id === dropAt) : null);
   });
 
@@ -3267,7 +3267,7 @@ and what agents see of it. The words under either are its caption. */
     asking: ["ask", "Needs you"], error: ["bad", "Error"], failed: ["bad", "Failed"], finished: ["done", "Done"],
     closed: ["idle", "Closed"], idle: ["idle", "Idle"] };
   function stands(a) {
-    if (!a) return ["gone", "Not here now"];
+    if (!a) return ["gone", "Gone"];
     const k = (a.status && a.status[0]) || "idle";
     if (a.saved && (k === "idle" || k === "closed")) return ["idle", "Saved"];
     return WORDS[k] || ["idle", (a.status && a.status[1]) || "Idle"];
@@ -3352,10 +3352,10 @@ and what agents see of it. The words under either are its caption. */
   function itemSaid(b, s = itemStands(b)) {
     if (s.v) b = s.v;
     const a = b.to ? actorOf(b.to) : null;
-    if (s.key === "new") return "Sent to no one yet";
-    if (s.key === "ask") return s.word === "Agent gone" ? "Its agent is not here now: send it to another, or cancel it"
-      : askedOn(a, b) ? `Asks: ${askLine(a.asking)}` : s.cls === "bad" ? "Its agent stopped with an error" : "";
-    if (s.key === "queue" && s.word === "Queued") { const on = linesOn(a).length ? findLine(linesOn(a)[0]) : null; return on ? `After “${oneLine(on.b.text, 60)}”` : "After what it is on now"; }
+    if (s.key === "new") return "Not sent yet";
+    if (s.key === "ask") return s.word === "Agent gone" ? "The agent is gone. Send it to another agent or cancel it."
+      : askedOn(a, b) ? `Asks: ${askLine(a.asking)}` : s.cls === "bad" ? "The agent stopped with an error" : "";
+    if (s.key === "queue" && s.word === "Queued") { const on = linesOn(a).length ? findLine(linesOn(a)[0]) : null; return on ? `After “${oneLine(on.b.text, 60)}”` : "After its current work"; }
     const latest = [...(b.thread || [])].reverse().find((l) => l.by !== "user");
     if (s.key === "review" && !(latest && (latest.at || 0) >= lastSent(b))) return "Stopped without a report";
     return latest ? oneLine(latest.text, 240) : "";
@@ -3408,7 +3408,7 @@ and what agents see of it. The words under either are its caption. */
       const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, ${many ? `blocks ${them.map((b) => b.id).join(", ")}` : `block ${them[0].id}`}.`
         + ` The user canceled ${many ? "these lines" : "this line"}: stop any work on ${it}, and don't report on ${it}.)`
         + `\n\nCanceled: ${them.map((b) => oneLine(b.type === "code" ? esc(b.text) : b.text, 200)).join("; ")}`;
-      try { await ag.actors.send(to, text); } catch (e) { return say(`Canceled, but its agent was not told: ${e.message}`, true); }
+      try { await ag.actors.send(to, text); } catch (e) { return say(`Canceled, but couldn't tell the agent to stop: ${e.message}`, true); }
     }
     say(bs.length === 1 ? "Canceled" : `Canceled ${bs.length} lines`);
   }
@@ -3482,7 +3482,7 @@ and what agents see of it. The words under either are its caption. */
     const f = findLine(id), p = f && f.p, b = f && f.b;
     if (!p || !b) return;
     const words = plainOf(b.type === "code" ? esc(b.text) : pagesAsMd(b.text)).trim();
-    if (!words) return say("Write what to ask first, then send it.", true);
+    if (!words) return say("Nothing to send", true);
     const report = store.get("report", true);
     extra = extra.trim();
     const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, block ${b.id}.${alsoWith([b], who)}`
@@ -3514,7 +3514,7 @@ and what agents see of it. The words under either are its caption. */
     const all = p.blocks.filter((b) => ids.includes(b.id)), bs = sendable(all), tables = all.filter((b) => b.type === "table");
     if (bs.length < 2) {                                   // (a table picked with one line: it goes along, with what the user added)
       const more = [...tables.map((t) => tableMd(t).join("\n")), extra.trim()].filter(Boolean).join("\n\n");
-      return bs.length ? sendBlock(bs[0].id, who, more) : say("Write what to ask first, then send it.", true);
+      return bs.length ? sendBlock(bs[0].id, who, more) : say("Nothing to send", true);
     }
     const report = store.get("report", true);
     extra = extra.trim();
@@ -3585,7 +3585,7 @@ and what agents see of it. The words under either are its caption. */
       const text = `(From my Notes, page ${JSON.stringify(p.title || "Untitled")}, ${many ? `blocks ${g.map((x) => x.id).join(", ")}` : `block ${v.id}`}.`
         + ` The user took ${many ? "these lines" : "this line"} back from you: stop any work on ${it}, and don't report on ${it}.)`
         + `\n\nTaken back: ${g.map((x) => oneLine(x.type === "code" ? esc(x.text) : x.text, 200)).join("; ")}`;
-      try { await ag.actors.send(v.to, text); } catch (e) { return say(`Removed ${name}, but it was not told: ${e.message}`, true); }
+      try { await ag.actors.send(v.to, text); } catch (e) { return say(`Removed ${name}, but couldn't tell it to stop: ${e.message}`, true); }
     }
     say(`Removed ${name} from ${g.length > 1 ? `these ${g.length} lines` : "this line"}`);
   }
@@ -3614,7 +3614,7 @@ and what agents see of it. The words under either are its caption. */
       const told = `${nameOf(a, v.to)}: ${s.word}${g.length > 1 ? ` (${g.length} lines sent together)` : ""}${said ? `\n${said}` : ""}`;   // on hover, not on the page
       return { v, g, a, s, asks, told, open: open && convo.to === v.to };
     });
-    const alone = none && !sending ? (isWork(b) ? lineStands(b) : { key: "none", cls: "idle", word: "Sent to no one now" }) : null;
+    const alone = none && !sending ? (isWork(b) ? lineStands(b) : { key: "none", cls: "idle", word: "Not sent to anyone" }) : null;
     const first = ["ask", "run", "review", "queue"].map((k) => items.find((x) => x.s.key === k)).find(Boolean) || items[0] || null;
     const ended = items.length > 1 && endedOf(b) ? items[0].s : null;   // ended: how, once, with every agent's avatar
     const review = !ro && !!first && first.s.key === "review";
@@ -3635,13 +3635,13 @@ and what agents see of it. The words under either are its caption. */
         : items.map(chip)),
       alone ? el("span", { class: `chip ${alone.cls}`, title: alone.word, "aria-label": alone.word }, el("span", { text: alone.word })) : null,
       sending ? el("span", { class: "chip work", title: "Sending…", "aria-label": "Sending…" }, el("span", { text: "Sending…" })) : null,
-      review ? el("button", { type: "button", class: "accept", text: "Accept", title: "Accept it as done",
+      review ? el("button", { type: "button", class: "accept", text: "Accept", title: "Accept as done",
         onclick: () => accept([...new Map(items.flatMap((x) => x.g).map((x) => [x.id, x])).values()]) }) : null,
       !talks ? null : asking ? el("button", { type: "button", class: "talk answer", text: "Answer", onclick: () => openConvo(b.id, asking.v.to) })
-        : el("button", { type: "button", class: `talk${open ? " on" : ""}`, title: open ? "Close the conversation" : "Open the conversation",
-          "aria-label": `${open ? "Close" : "Open"} the conversation: ${count} message${count === 1 ? "" : "s"}`, onclick: () => toggleConvo(b.id, open ? undefined : talkTo && talkTo.to) },
+        : el("button", { type: "button", class: `talk${open ? " on" : ""}`, title: open ? "Close conversation" : "Open conversation",
+          "aria-label": `${open ? "Close" : "Open"} conversation (${count} message${count === 1 ? "" : "s"})`, onclick: () => toggleConvo(b.id, open ? undefined : talkTo && talkTo.to) },
           el("span", { html: SVG.bubble }), el("span", { text: String(count) })),
-      add ? el("button", { type: "button", class: "add-agent", title: "Send it to another agent too", "aria-label": "Send it to another agent too", html: SVG.plus,
+      add ? el("button", { type: "button", class: "add-agent", title: "Send to another agent", "aria-label": "Send to another agent", html: SVG.plus,
         onclick: (ev) => openPicker(b.id, ev.currentTarget.getBoundingClientRect()) }) : null].filter(Boolean));
   }
   // ---------------------------------------------------------------- lines an agent wrote from its conversation
@@ -3665,7 +3665,7 @@ and what agents see of it. The words under either are its caption. */
     return (cls === "work" || cls === "ask" || cls === "bad") && g.some((x) => linesOn(a).includes(x.id)) ? [cls, word] : ["src", ""];
   }
   // ... said in the conversation's head
-  const srcStands = (a, g) => { const [cls, word] = standsSrc(a, g); return { key: "source", ...(!a ? { cls: "gone", word: "Not here now" } : cls === "src" ? { cls: "idle", word: "Wrote this" } : { cls, word }) }; };
+  const srcStands = (a, g) => { const [cls, word] = standsSrc(a, g); return { key: "source", ...(!a ? { cls: "gone", word: "Gone" } : cls === "src" ? { cls: "idle", word: "Wrote this" } : { cls, word }) }; };
   const wroteLine = (b) => `Written from your conversation with ${nameOf(actorOf(b.source), b.source)} · ${wroteAt(b.source_at)}`;
   // A follow-up on lines an agent wrote: to that agent, as the user's message -- the note first (the Notes app's [asked]
   // reads it back), naming the lines and when it wrote them, then the lines, then what the user asks.
@@ -3696,8 +3696,8 @@ and what agents see of it. The words under either are its caption. */
     const kids = [el("button", { type: "button", class: `chip ${cls}`, title: `${told}\n(${open ? "close the conversation" : "follow up with it"})`,
       "aria-label": told, onclick: talk }, face(a, 16), word ? el("span", { text: word }) : null)];
     if (asks && !open) kids.push(el("button", { type: "button", class: "talk answer", text: "Answer", onclick: () => openConvo(b.id) }));
-    else if (count) kids.push(el("button", { type: "button", class: `talk${open ? " on" : ""}`, title: open ? "Close the conversation" : "Open the conversation",
-      "aria-label": `${open ? "Close" : "Open"} the conversation: ${count} message${count === 1 ? "" : "s"}`, onclick: talk },
+    else if (count) kids.push(el("button", { type: "button", class: `talk${open ? " on" : ""}`, title: open ? "Close conversation" : "Open conversation",
+      "aria-label": `${open ? "Close" : "Open"} conversation (${count} message${count === 1 ? "" : "s"})`, onclick: talk },
       el("span", { html: SVG.bubble }), el("span", { text: String(count) })));
     part.replaceChildren(...kids);
   }
@@ -3760,7 +3760,7 @@ and what agents see of it. The words under either are its caption. */
       box.replaceChildren(el("div", { class: "cv-head" }), el("div", { class: "cv-list", role: "log", "aria-live": "polite" }), el("div", { class: "cv-foot" }));
     }
     const who = b.to || b.source || "", a = who ? actorOf(who) : null, name = who ? nameOf(a, who) : "", ro = !!p.deleted;
-    const s = b.to || isWork(b) ? groupStands(g) : b.source ? srcStands(a, g) : { key: "none", cls: "idle", word: "Sent to no one now" }, cls = s.cls, word = s.word;
+    const s = b.to || isWork(b) ? groupStands(g) : b.source ? srcStands(a, g) : { key: "none", cls: "idle", word: "Not sent to anyone" }, cls = s.cls, word = s.word;
     const words = (x) => (x.type === "code" ? esc(x.text) : x.text);
     const about = g.length > 1 ? `${g.length} lines: ${g.map((x) => oneLine(words(x), 60)).join(" · ")}` : oneLine(words(b), 160);
     // its agents, one a tab: how the line stands with each
@@ -3776,11 +3776,11 @@ and what agents see of it. The words under either are its caption. */
         face(t.x, 18), el("b", { text: t.name }), el("span", { class: `pill ${t.s.cls}`, text: t.s.word }));
       head.replaceChildren(
         el("div", { class: "cv-who" },
-          ...(tabs.length > 1 ? [el("div", { class: "cv-tabs", role: "tablist", "aria-label": "Its agents" }, ...tabs.map(tab))]
+          ...(tabs.length > 1 ? [el("div", { class: "cv-tabs", role: "tablist", "aria-label": "Agents" }, ...tabs.map(tab))]
             : [who ? face(a, 22) : null, el("b", { text: name || "No one" }), el("span", { class: `pill ${cls}`, text: word })]),
-          add ? el("button", { type: "button", class: "cv-add", title: "Send it to another agent too", "aria-label": "Send it to another agent too", html: SVG.plus,
+          add ? el("button", { type: "button", class: "cv-add", title: "Send to another agent", "aria-label": "Send to another agent", html: SVG.plus,
             onclick: (ev) => openPicker(line.id, ev.currentTarget.getBoundingClientRect()) }) : null,
-          el("button", { type: "button", class: "cv-x", title: "Close", "aria-label": "Close the conversation", html: SVG.x, onclick: () => closeConvo() })),
+          el("button", { type: "button", class: "cv-x", title: "Close", "aria-label": "Close conversation", html: SVG.x, onclick: () => closeConvo() })),
         el("button", { type: "button", class: "cv-about", title: `${g.map((x) => oneLine(words(x), 400)).join("\n")}\n(show ${g.length > 1 ? "them" : "it"} on the page)`, onclick: () => {
           const rs = g.map((x) => rowOf(x.id)).filter(Boolean);
           if (rs[0]) rs[0].scrollIntoView({ block: "center", behavior: "smooth" });
@@ -3814,11 +3814,11 @@ and what agents see of it. The words under either are its caption. */
     if (!end) { end = el("div", { class: "cv-end" }); foot.prepend(end); }
     drawEnd(end, g, s, ro || !!b.dropped);
     let r = foot.querySelector(".reply");
-    const none = ro ? "This page is in the trash." : b.dropped ? `Removed from this line: send it to ${name} again to talk about it.`
-      : !(b.to || b.source) ? "Sent to no one now: send the line to an agent again to talk about it." : "";
+    const none = ro ? "This page is in the trash." : b.dropped ? `Removed from this line. Send it to ${name} again to continue.`
+      : !(b.to || b.source) ? "Not sent to anyone. Send the line to an agent to continue." : "";
     if (!none) {
       if (!r) { r = replyBox(b.id); for (const x of foot.querySelectorAll(".cv-none")) x.remove(); foot.append(r); }
-      r.querySelector("input").placeholder = !b.to ? `Follow up with ${name}` : s.key === "review" ? `Send it back to ${name}: what's left` : `Message ${name}`;
+      r.querySelector("input").placeholder = !b.to ? `Follow up with ${name}` : s.key === "review" ? `Tell ${name} what's left` : `Message ${name}`;
     } else {
       if (r) r.remove();
       let x = foot.querySelector(".cv-none");
@@ -3845,14 +3845,14 @@ and what agents see of it. The words under either are its caption. */
     if (s.key === "review") {
       end.append(el("div", { class: "cv-q", text: open.length > 1 ? `Are these ${open.length} done?` : "Is it done?" }),
         el("div", { class: "cv-acts" },
-          el("button", { type: "button", class: "accept big", text: "Accept: it's done", onclick: () => accept(open) }),
+          el("button", { type: "button", class: "accept big", text: "Accept as done", onclick: () => accept(open) }),
           el("button", { type: "button", class: "plain", text: "Cancel it", onclick: () => cancel(open) })),
         el("div", { class: "cv-hint", text: "Or send it back with what's left:" }));
       return;
     }
     end.append(el("div", { class: "cv-acts quiet" },
       el("button", { type: "button", class: "link", text: "Accept as done", onclick: () => accept(open) }),
-      el("button", { type: "button", class: "link", text: "Cancel it", title: "Cancel it, and tell its agent to stop", onclick: () => cancel(open) })));
+      el("button", { type: "button", class: "link", text: "Cancel it", title: "Cancel and tell the agent to stop", onclick: () => cancel(open) })));
   }
   function bubble(l) {
     const mine = l.by === "user", ch = mine ? "" : l.by.slice(6), a = mine ? null : actorOf(ch);
@@ -3877,7 +3877,7 @@ and what agents see of it. The words under either are its caption. */
       else if (ev.key === "Escape") { ev.preventDefault(); if (input.value) input.blur(); else closeConvo(); }
     });
     return el("div", { class: "reply" }, input,
-      el("button", { type: "button", title: "Send", "aria-label": "Send the message", html: SVG.send, onclick: go }));
+      el("button", { type: "button", title: "Send", "aria-label": "Send", html: SVG.send, onclick: go }));
   }
   // What an actor asks, in the conversation about the block it was sent: answered here, as Chat answers it, where the
   // dashboard's terminal
@@ -3955,11 +3955,11 @@ and what agents see of it. The words under either are its caption. */
     popUp(rect, (pop) => {
       const many = m.blocks ? m.blocks.length : 0;
       const extra = el("textarea", { class: "at-extra", rows: "1", "aria-label": `Instructions to send with the line${many ? "s" : ""}`,
-        placeholder: m.tx ? "Add instructions (optional): Tab to type here" : "Add instructions (optional)" });
+        placeholder: m.tx ? "Add instructions (optional) · Tab to type" : "Add instructions (optional)" });
       extra.addEventListener("input", () => { extra.style.height = "auto"; extra.style.height = `${Math.min(extra.scrollHeight, 140)}px`; });
       extra.addEventListener("keydown", (ev) => extraKey(ev, extra));
       const also = !many && onIt((findLine(m.block) || {}).b).length > 0;
-      pop.append(el("div", { class: "hd lead", text: many ? `Send ${many} lines to an agent, as one message of yours` : also ? "Send it to another agent too, as your message" : "Send it to an agent, as your message" }), extra,
+      pop.append(el("div", { class: "hd lead", text: many ? `Send ${many} lines to an agent as one message` : also ? "Send to another agent" : "Send to an agent" }), extra,
         el("div", { class: "at-list", role: "group", "aria-label": "Agents" }), el("div", { class: "at-end" }));
       menu.extra = extra;
     }, null, "at", "at-pop");
@@ -3976,15 +3976,15 @@ and what agents see of it. The words under either are its caption. */
     const taken = (ch) => !!line && onIt(line).some((c) => callTo(c, ch));
     if (!taken(lead ? lead.channel : "gatherer") && hit("coordinator agent", "gatherer agent", "manager"))
       out.push({ kind: "lead", group: "Coordinator", channel: lead ? lead.channel : "gatherer", a: lead, label: nameOf(lead, "gatherer"),
-        note: "hands it to an actor, now or once another is done" });
+        note: "Assigns it to an actor" });
     const shown = crew.agents.filter((a) => !isLead(a) && ((a.status || [])[0] !== "closed" || a.saved))
       .sort((x, y) => (y.last || 0) - (x.last || 0));
     for (const a of shown) if (!taken(a.channel) && hit(nameOf(a), a.last_user_message, a.channel))
       out.push({ kind: "actor", group: "Actors", channel: a.channel, a, label: nameOf(a), note: oneLine(a.last_user_message || "", 60) });
     for (const h of crew.harnesses) if (hit(`new ${h.label} actor`))
-      out.push({ kind: "new", group: "Start a new actor on it", harness: h.name, label: `New ${h.label} actor`, note: `in ${tilde(crew.start) || "a folder you name"}` });
+      out.push({ kind: "new", group: "Start a new actor", harness: h.name, label: `New ${h.label} actor`, note: `in ${tilde(crew.start) || "a folder you name"}` });
     if (crew.harnesses.length && hit("new actor in another folder"))
-      out.push({ kind: "where", group: "Start a new actor on it", label: "In another folder…", note: "" });
+      out.push({ kind: "where", group: "Start a new actor", label: "In another folder…", note: "" });
     return out;
   }
   function drawAt(q) {
@@ -3993,7 +3993,7 @@ and what agents see of it. The words under either are its caption. */
     if (menu.tx) menu.qEnd = menu.from + 1 + q.length;   // where the "@..." typed ends, should the caret leave the block
     const pop = menu.el, list = pop.querySelector(".at-list"), report = store.get("report", true);
     list.replaceChildren();
-    if (!items.length) list.append(el("div", { class: "none", text: crew.agents.length || crew.harnesses.length ? "No agent like that" : "No agents here yet" }));
+    if (!items.length) list.append(el("div", { class: "none", text: crew.agents.length || crew.harnesses.length ? "No matching agents" : "No agents yet" }));
     let group = null;
     items.forEach((it, j) => {
       if (it.group !== group) { group = it.group; list.append(el("div", { class: "hd", text: group })); }
@@ -4008,7 +4008,7 @@ and what agents see of it. The words under either are its caption. */
     });
     pop.querySelector(".at-end").replaceChildren(el("div", { class: "sep" }), el("button", { type: "button", class: "at-foot", role: "checkbox",
       "aria-checked": String(report), onmousedown: (ev) => ev.preventDefault(), onclick: () => { store.set("report", !report); drawAt(q); } },
-      el("span", { class: "box", html: report ? SVG.check : "" }), el("span", { text: "Ask it to report back here" }),
+      el("span", { class: "box", html: report ? SVG.check : "" }), el("span", { text: "Ask for a report" }),
       el("small", { text: "↑↓ ↵" })));
     place(pop, menu.rect);
     const on = list.querySelector(".it.on");
@@ -4072,7 +4072,7 @@ and what agents see of it. The words under either are its caption. */
   // A new actor's folder, asked: typed, and a harness picked.
   function folderAsk(ids, rect, extra) {
     popUp(rect, (pop) => {
-      const input = el("input", { type: "text", value: tilde(crew.start), "aria-label": "The folder it works in", placeholder: "~/a/folder" });
+      const input = el("input", { type: "text", value: tilde(crew.start), "aria-label": "Folder", placeholder: "~/a/folder" });
       const go = (h) => {
         const v = input.value.trim().replace(/^~(?=\/|$)/, crew.home);
         if (!v) return input.focus();
@@ -4080,7 +4080,7 @@ and what agents see of it. The words under either are its caption. */
         sendTo(ids, { harness: h, folder: v }, extra);
       };
       input.addEventListener("keydown", (e) => { if (e.key === "Enter" && crew.harnesses[0]) { e.preventDefault(); go(crew.harnesses[0].name); } });
-      pop.append(el("div", { class: "hd", text: "A new actor, working in" }), el("div", { class: "row" }, input),
+      pop.append(el("div", { class: "hd", text: "New actor in" }), el("div", { class: "row" }, input),
         el("div", { class: "row" }, ...crew.harnesses.map((h) => el("button", { type: "button", text: h.label, onclick: () => go(h.name) }))));
       setTimeout(() => input.focus(), 0);
     }, null, "menu", "at-pop");
@@ -4105,8 +4105,8 @@ and what agents see of it. The words under either are its caption. */
     const rank = (a) => ({ ask: 0, work: 1, bad: 2 })[stands(a)[0]] ?? 3;
     const rows = crew.agents.filter((a) => isLead(a) || (a.saved ? showSaved : (a.status || [])[0] === "closed" ? showClosed : true))
       .sort((x, y) => rank(x) - rank(y) || (y.last || 0) - (x.last || 0));
-    if (!rows.length) return el("div", { class: "agt-none", text: crew.agents.length ? "No actor to show: tick Saved or Closed to see those"
-      : "No actors in this gatherer yet. Type @ in a line to send it to a new one." });
+    if (!rows.length) return el("div", { class: "agt-none", text: crew.agents.length ? "No actors to show. Check Saved or Closed to see them."
+      : "No actors in this group yet. Type @ in a line to send it to a new one." });
     const go = (p, b) => { openPage(p.id); requestAnimationFrame(() => { const r = rowOf(b.id); if (r) { r.scrollIntoView({ block: "center" }); r.classList.add("flash"); } }); };
     const tr = (a) => {
       const [cls, word] = stands(a);
@@ -4136,9 +4136,9 @@ and what agents see of it. The words under either are its caption. */
     const needs = crew.agents.filter((a) => stands(a)[0] === "ask").length;
     $("agents-page").replaceChildren(
       el("h1", { class: "pg-title", text: "Agents" }),
-      el("p", { class: "agt-sub", text: `Every actor of ${ag.gatherer}, what you sent it from your notes, and what it last reported${needs ? `. ${needs} need${needs === 1 ? "s" : ""} you.` : "."}` }),
+      el("p", { class: "agt-sub", text: `Actors in ${ag.gatherer}, what you sent them from your notes, and their last reports.${needs ? ` ${needs} need${needs === 1 ? "s" : ""} you.` : ""}` }),
       agentsTable(store.get("saved", true), store.get("closed", false)), shows(),
-      el("p", { class: "agt-sub dim", text: "Type /agents on any page to put this table there." }));
+      el("p", { class: "agt-sub dim", text: "Type /agents on any page to add this table." }));
   }
   function drawAgentsBlock(n) {
     const box = n.querySelector(".agt");
@@ -4160,11 +4160,11 @@ and what agents see of it. The words under either are its caption. */
   // those accepted in the last week (folded); each with its agent, page, latest report and what it made, and what the
   // reader may do with it. The Logbook: every ended one, by the day it was ended. A work block: the open ones, on a page.
   const GROUPS = [
-    { key: "ask", name: "Needs you", hint: "Its agent waits on you" },
-    { key: "review", name: "To review", hint: "Its agent stopped: accept it, or send it back with what's left" },
-    { key: "run", name: "Working", hint: "An agent is on it now" },
-    { key: "queue", name: "Queued", hint: "Sent: its agent gets to it after what it is on" },
-    { key: "new", name: "Not started", hint: "Marked, sent to no one yet" },
+    { key: "ask", name: "Needs you", hint: "The agent is waiting for you" },
+    { key: "review", name: "To review", hint: "The agent stopped. Accept it or send it back." },
+    { key: "run", name: "Working", hint: "An agent is working on it" },
+    { key: "queue", name: "Queued", hint: "Starts after the agent's current work" },
+    { key: "new", name: "Not started", hint: "Not sent to an agent yet" },
     { key: "done", name: "Done", hint: "Accepted in the last 7 days" },
   ];
   const WEEK = 7 * 86400;
@@ -4198,18 +4198,18 @@ and what agents see of it. The words under either are its caption. */
     const btn = (label, cls, run, title) => el("button", { type: "button", class: `wk-btn${cls ? ` ${cls}` : ""}`, text: label, title: title || null, onclick: run });
     const pick = (ev) => openPicker(b.id, ev.currentTarget.getBoundingClientRect());
     const acts = s.key === "ask" ? (s.word === "Agent gone" ? [btn("Cancel", "", () => cancel([b])), btn("Send to…", "primary", pick)]
-      : [btn("Answer", "answer", () => goLine(p, b, true, v && v.to), "Open its conversation, where it asks")])
-      : s.key === "review" ? [btn("Send back", "", () => goLine(p, b, true, v && v.to), "Open its conversation, to say what's left"), btn("Accept", "accept", () => accept([b]), "Accept it as done")]
-      : s.key === "run" || s.key === "queue" ? [btn("Cancel", "", () => cancel([b]), "Cancel it, and tell its agent to stop")]
-      : s.key === "new" ? [btn("Remove", "", () => markWork([b], false), "Not a work item: the line stays on its page"),     // (done without an agent: ended here)
-        btn("Cancel", "", () => cancel([b]), "Cancel it: into the Logbook, as canceled"), btn("Done", "accept", () => accept([b]), "Accept it as done: no agent needed"),
-        btn("Assign", "primary", pick, "Send it to an agent")]
+      : [btn("Answer", "answer", () => goLine(p, b, true, v && v.to), "Open the conversation")])
+      : s.key === "review" ? [btn("Send back", "", () => goLine(p, b, true, v && v.to), "Open the conversation to say what's left"), btn("Accept", "accept", () => accept([b]), "Accept as done")]
+      : s.key === "run" || s.key === "queue" ? [btn("Cancel", "", () => cancel([b]), "Cancel and tell the agent to stop")]
+      : s.key === "new" ? [btn("Remove", "", () => markWork([b], false), "Remove from work items. The line stays on its page."),     // (done without an agent: ended here)
+        btn("Cancel", "", () => cancel([b]), "Cancel and move to the Logbook"), btn("Done", "accept", () => accept([b]), "Mark as done without an agent"),
+        btn("Assign", "primary", pick, "Send to an agent")]
       : [btn("Reopen", "", () => reopen([b]))];
     const pill = compact || s.key === "run" || s.key === "ask" || s.word === "Sent";
     return el("div", { class: `wk-row ${s.key}`, "data-id": b.id },
       v ? face(a, compact ? 18 : 22) : el("span", { class: "face dash", style: `width:${compact ? 18 : 22}px;height:${compact ? 18 : 22}px`, "aria-hidden": "true" }),
       el("div", { class: "wk-main" },
-        el("button", { type: "button", class: "wk-text", title: "Show it on its page", onclick: () => goLine(p, b, !done && s.key !== "new", v && v.to) }, wordsOf(b)),
+        el("button", { type: "button", class: "wk-text", title: "Show on its page", onclick: () => goLine(p, b, !done && s.key !== "new", v && v.to) }, wordsOf(b)),
         el("div", { class: "wk-meta" }, pill ? el("span", { class: `pill ${s.cls}`, text: s.word }) : null,
           el("span", { text: [namesOf(b) || "No one yet", p.title || "Untitled", time].filter(Boolean).join(" · ") })),
         said && !compact ? el("div", { class: "wk-said", text: said }) : null,
@@ -4236,10 +4236,10 @@ and what agents see of it. The words under either are its caption. */
     }).filter(Boolean);
     box.replaceChildren(
       el("h1", { class: "pg-title", text: "Work" }),
-      el("p", { class: "agt-sub", text: open.length ? `${open.length} open across ${on} page${on === 1 ? "" : "s"}. You decide when each is done.` : "Nothing open." }),
-      ...(sections.length ? sections : [el("div", { class: "wk-none", text: "No work items yet. Send a line to an agent (type @ in it), or mark one from its menu (⋮⋮), and it shows here." })]),
+      el("p", { class: "agt-sub", text: open.length ? `${open.length} open across ${on} page${on === 1 ? "" : "s"}.` : "Nothing open." }),
+      ...(sections.length ? sections : [el("div", { class: "wk-none", text: "No work items yet. Send a line to an agent with @, or mark one from its ⋮⋮ menu." })]),
       el("p", { class: "agt-sub dim" }, "Older finished items are in the ", el("button", { type: "button", class: "link", text: "Logbook", onclick: () => openPage(LOG) }),
-        ". Type /work on any page to put the open ones there."));
+        ". Type /work on any page to list open items there."));
   }
   const dayOf = (t) => {
     const d = new Date(t * 1000), y = new Date(Date.now() - 86400000);
@@ -4256,10 +4256,10 @@ and what agents see of it. The words under either are its caption. */
     }
     box.replaceChildren(
       el("h1", { class: "pg-title", text: "Logbook" }),
-      el("p", { class: "agt-sub", text: "Work items you accepted or canceled, newest first. They stay on their pages, folded away, so agents reading the notes still see them." }),
+      el("p", { class: "agt-sub", text: "Work items you accepted or canceled, newest first. They stay on their pages." }),
       ...(days.length ? days.map(({ d, items: its }) => el("section", { class: "lg-day", "aria-label": d }, el("h2", { text: d }),
         el("div", { class: "lg-list" }, ...its.map(logRow))))
-        : [el("div", { class: "wk-none", text: "Nothing done or canceled yet. Work items you accept or cancel show here." })]));
+        : [el("div", { class: "wk-none", text: "Nothing done or canceled yet." })]));
   }
   function logRow({ p, b, s }) {
     const done = s.key === "done", made = madeOf(b);
@@ -4285,7 +4285,7 @@ and what agents see of it. The words under either are its caption. */
     const n = forYou();
     return el("div", { class: `pg-row spec-row${current === WORK ? " on" : ""}`, role: "treeitem", "aria-selected": String(current === WORK), onclick: () => openPage(WORK) },
       el("span", { class: "caret none" }), el("span", { class: "ic", html: SVG.work }), el("span", { class: "nm", text: "Work" }),
-      n ? el("span", { class: "needs", title: `${n} waiting for you: an answer, or your review`, text: `${n} for you` }) : null);
+      n ? el("span", { class: "needs", title: `${n} waiting for your answer or review`, text: `${n} for you` }) : null);
   }
   function logEntry() {
     return el("div", { class: `pg-row spec-row${current === LOG ? " on" : ""}`, role: "treeitem", "aria-selected": String(current === LOG), onclick: () => openPage(LOG) },

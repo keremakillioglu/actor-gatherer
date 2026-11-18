@@ -208,7 +208,7 @@ test("a line its agent reported on is the reader's to accept: the line stays as 
   await line.locator(".sent .talk").click();
   const convo = panel.locator("#convo");
   await expect(convo.locator(".cv-q")).toHaveText("Is it done?");
-  await expect(convo.locator(".reply input")).toHaveAttribute("placeholder", `Send it back to ${CLAUDE}: what's left`);
+  await expect(convo.locator(".reply input")).toHaveAttribute("placeholder", `Tell ${CLAUDE} what's left`);
   await convo.locator(".accept.big").click();
   await expect(convo.locator(".cv-ended")).toContainText("Accepted as done");
   await expect(line.locator(".sent .chip")).toHaveText("Done");

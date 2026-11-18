@@ -178,7 +178,7 @@ class AppHost:
             if h.app is not None:
                 return h.app
             if h.failed:
-                raise AppError(f"{name}: its backend failed to start: {h.failed}", 502)
+                raise AppError(f"{name}'s backend failed to start: {h.failed}", 502)
             m = h.manifest
             try:
                 if m.backend.python:
@@ -194,7 +194,7 @@ class AppHost:
                 raise
             except Exception as exc:  # noqa: BLE001 - an app's failure is its own, shown, not the host's
                 h.failed = f"{type(exc).__name__}: {exc}"
-                raise AppError(f"{name}: its backend failed to start: {h.failed}", 502) from None
+                raise AppError(f"{name}'s backend failed to start: {h.failed}", 502) from None
             h.app = app
             return app
 
@@ -430,7 +430,7 @@ class AppHost:
         if not channel:
             raise AppError("attach: which agent (its channel)?")
         if self.attachable is not None and not self.attachable(gatherer, channel):
-            raise AppError(f"{channel}: a gatherer's own agent is attached to no app: it reaches every one without", 403)
+            raise AppError(f"{channel} is the coordinator agent, which can use every app without being attached", 403)
         with self.lock:
             if channel in self.attached.setdefault(i.id, set()):
                 return

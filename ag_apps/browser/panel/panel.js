@@ -110,7 +110,7 @@
   b.fwd = btn(ICONS.forward, "Forward", () => post("nav", { action: "forward" }).catch(bwSay(b)), { title: `Forward (${KEY}])` });
   b.reload = btn(ICONS.reload, "Reload", (ev) => post("nav", { action: b.loadingNow ? "stop" : ev.shiftKey ? "hard-reload" : "reload" })
     .catch(bwSay(b)), { title: `Reload (${KEY}R)` });
-  b.newTab = el("button", { type: "button", class: "add", title: `New tab (${KEY}T) -- a link ${MAC ? "Cmd" : "Ctrl"}+clicked, or middle-clicked, opens in one too`,
+  b.newTab = el("button", { type: "button", class: "add", title: `New tab (${KEY}T)`,
     "aria-label": "New tab", onclick: () => bwNewTab(b) }, strokeIcon(ICONS.plus, 16));
   b.addr = el("input", { type: "text", spellcheck: "false", autocomplete: "off", "aria-label": "Address and search bar", placeholder: "Search Google or type a URL" });
   b.addrShown = el("div", { class: "shown", "aria-hidden": "true" });
@@ -139,11 +139,11 @@
   });
   b.addr.addEventListener("focus", () => { if (!clickedIn) b.addr.select(); });
   b.addr.addEventListener("blur", () => bwAddr(b, b.addr.value));   // what was typed kept, as in Chrome, until the page moves on
-  b.pickBtn = btn(ICONS.pointer, "Pick an element to point the agent at (Esc to stop)", () => bwMode(b, bwModeOn(b) === "pick" ? null : "pick"), { "aria-pressed": "false" });
-  b.areaBtn = btn(ICONS.area, "Pick an area: drag a box over the page (Esc to stop)", () => bwMode(b, bwModeOn(b) === "area" ? null : "area"), { "aria-pressed": "false" });
+  b.pickBtn = btn(ICONS.pointer, "Pick an element to show the agent (Esc to cancel)", () => bwMode(b, bwModeOn(b) === "pick" ? null : "pick"), { "aria-pressed": "false" });
+  b.areaBtn = btn(ICONS.area, "Pick an area by dragging over the page (Esc to cancel)", () => bwMode(b, bwModeOn(b) === "area" ? null : "area"), { "aria-pressed": "false" });
   b.moreBtn = btn(ICONS.more, "More", () => moreMenu(), { "aria-haspopup": "menu" });
   b.mine = el("span", { class: "mine", hidden: "", text: "Your Chrome",
-    title: "This page runs in your own Chrome (config.toml's [dashboard] browser_profile = \"mine\"): your logins and history, a tab hidden from its tab strip" });
+    title: "Runs in your own Chrome, with your logins and history. The tab is hidden from Chrome's tab strip." });
   b.find = bwFindBar(b);
   b.loadLine = el("div", { class: "bw-load", "aria-hidden": "true" }, el("div"));
   b.bar = el("div", { class: "bw-bar" }, b.back, b.fwd, b.reload, form, b.find, b.mine, b.pickBtn, b.areaBtn, el("span", { class: "sep" }), b.moreBtn,
@@ -167,7 +167,7 @@
   b.tip = el("div", { class: "tip", role: "tooltip", hidden: "" });
   b.chooser = bwShield(el("div", { class: "dialog chooser", hidden: "" }));
   b.dl = bwShield(el("div", { class: "dl", hidden: "" }));
-  b.stage = el("div", { class: "bw-stage", tabindex: "0", "aria-label": "The page: click to use it, as the agent does" },
+  b.stage = el("div", { class: "bw-stage", tabindex: "0", "aria-label": "Page" },
     b.img, b.cv, b.acting, b.agentPtr, b.keycap = el("kbd", { class: "keycap", hidden: "", "aria-hidden": "true" }),
     b.scrollCue = el("div", { class: "scroll-cue", hidden: "", "aria-hidden": "true" }),
     b.dragBox, b.hint, b.tip, b.dl, b.dialog, b.chooser, b.cover);
@@ -304,7 +304,7 @@
     const loading = !!tab?.loading;
     if (loading !== !!b.loadingNow) {
       b.loadingNow = loading;
-      const label = loading ? "Stop loading this page" : `Reload (${KEY}R; with Shift, its files fetched again)`;
+      const label = loading ? "Stop loading this page" : `Reload (${KEY}R) · Shift-click for a hard reload`;
       b.reload.replaceChildren(strokeIcon(loading ? ICONS.stop : ICONS.reload, 16));
       b.reload.title = label;
       b.reload.setAttribute("aria-label", loading ? "Stop" : "Reload");
@@ -314,7 +314,7 @@
     const z = Math.round((tab?.zoom || 1) * 100);
     b.zoomBadge.hidden = !NATIVE || z === 100;
     b.zoomBadge.textContent = `${z}%`;
-    b.zoomBadge.title = `Zoom: ${z}% -- click for 100% (${KEY}0)`;
+    b.zoomBadge.title = `Zoom ${z}% · click to reset (${KEY}0)`;
     // what the agent is about to do, and does now: outlined, its pointer there; what it did, flashed then fading
     // (bwFeedDraw), and said under the page
     const a = st.acting, nx = st.next;
@@ -335,7 +335,7 @@
       b.dialog.dataset.sig = JSON.stringify(d);
       const input = d.type === "prompt" ? el("input", { type: "text", value: d.default || "" }) : null;
       const answer = (accept) => post("dialog", { accept, ...(input ? { text: input.value } : {}) }).catch(bwSay(b));
-      b.dialog.replaceChildren(...[el("div", { class: "lbl", text: `The page says (${d.type})` }), el("div", { class: "msg", text: d.message }), input].filter(Boolean),
+      b.dialog.replaceChildren(...[el("div", { class: "lbl", text: "The page says" }), el("div", { class: "msg", text: d.message }), input].filter(Boolean),
         el("div", { class: "row" }, d.type === "alert" ? null : el("button", { type: "button", onclick: () => answer(false) }, "Cancel"),
           el("button", { type: "button", class: "primary", onclick: () => answer(true) }, "OK")));
     }
@@ -344,7 +344,7 @@
     // nothing to show yet, or why not -- your Chrome asking whether to let the dashboard in, first
     const err = st.allow ? "" : st.error;
     b.cover.hidden = !!b.framed && !err && !st.allow;
-    if (!b.cover.hidden) b.cover.replaceChildren(...[el("div", { text: st.allow ? "Waiting for your Chrome: click Allow in its “Allow remote debugging?” dialog"
+    if (!b.cover.hidden) b.cover.replaceChildren(...[el("div", { text: st.allow ? "Waiting for Chrome. Click Allow in its “Allow remote debugging?” dialog."
       : err ? "The browser did not open." : "Opening the browser…" }), err ? el("div", { class: "err", text: err }) : null].filter(Boolean));
     bwPicks(b);
     bwUiDraw(b);
@@ -410,9 +410,9 @@
       : null;
     const n = el("div", { class: "t" + (on ? " on" : "") + (t.agent ? " agent" : "") + (acting ? " acting" : ""), role: "tab",
       "aria-selected": String(on), draggable: "true", "data-i": String(i),
-      title: `${t.title || name}\n${t.url}${t.agent ? "\nOpened by the agent" : ""}${acting ? "\nThe agent is working in it" : ""}` },
+      title: `${t.title || name}\n${t.url}${t.agent ? "\nOpened by the agent" : ""}${acting ? "\nThe agent is using this tab" : ""}` },
       mark, el("span", { class: "nm", text: name }), sound,
-      el("button", { type: "button", class: "x", title: `Close the tab (${KEY}W)`, "aria-label": "Close the tab",
+      el("button", { type: "button", class: "x", title: `Close tab (${KEY}W)`, "aria-label": "Close tab",
         onclick: (ev) => { ev.stopPropagation(); post("tab", { action: "close", index: i }).catch(bwSay(b)); } }, strokeIcon(ICONS.close, 12)));
     n.addEventListener("click", () => { if (!on) post("tab", { action: "switch", index: i }).catch(bwSay(b)); });
     n.addEventListener("mousedown", (ev) => { if (ev.button === 1) ev.preventDefault(); });   // (no scrolling by it)
@@ -477,7 +477,7 @@
       : /^file:/i.test(u) ? [ICONS.file, "A file on this computer", ""]
       : m && m[1].toLowerCase() === "https" ? [ICONS.lock, "Connection is secure", ""]
       : local ? [ICONS.info, "A page on this computer", ""]
-      : m ? [ICONS.warn, "Not secure: this site's connection isn't encrypted", "Not secure"]
+      : m ? [ICONS.warn, "Your connection to this site isn't secure", "Not secure"]
       : [ICONS.info, "", ""];
     b.site.replaceChildren(...[strokeIcon(icon, 14), word ? el("span", { text: word }) : null].filter(Boolean));
     b.site.title = label;
@@ -609,7 +609,7 @@
                 when: el("span", { class: "tm", "aria-hidden": "true" }), list: el("ol", { class: "list", hidden: "" }) };
     f.line = el("button", { type: "button", class: "line", "aria-expanded": "false", onclick: () => bwFeedOpen(b, !b.feedOpen) },
       f.dot, f.text, f.when, el("span", { class: "more", "aria-hidden": "true" }, strokeIcon(ICONS.chevron, 12)));
-    f.stop = el("button", { type: "button", class: "stop", hidden: "", title: "Stop the agent (Esc): its actions wait for your next message",
+    f.stop = el("button", { type: "button", class: "stop", hidden: "", title: "Stop the agent until your next message (Esc)",
                             onclick: () => bwStop(b) }, "Stop", el("kbd", { text: "Esc" }));
     f.root = el("div", { class: "bw-feed idle" }, f.list, el("div", { class: "row" }, f.line, f.stop));
     f.root.addEventListener("keydown", (ev) => {
@@ -646,8 +646,8 @@
     f.root.classList.toggle("no", !doing && !!last && !last.ok && !st.halted);
     f.root.classList.toggle("halted", !doing && !!st.halted);
     f.stop.hidden = !bwStoppable(b);
-    const said = doing ? `${doing.label}…` : reading ? `${reading}…` : st.halted ? "You stopped the agent (Esc): it waits for your next message"
-      : last ? last.text : "The agent has done nothing on the page yet";
+    const said = doing ? `${doing.label}…` : reading ? `${reading}…` : st.halted ? "Agent stopped until your next message"
+      : last ? last.text : "No agent actions yet";
     if (f.text.textContent !== said) f.text.textContent = said;
     f.line.title = doing || !last ? "" : last.detail ? `${last.text}\n\nWhat the agent was told:\n${last.detail}` : last.text;
     if (!doing && !reading && last && !st.halted) { f.when.dataset.ago = String(last.at / 1000); f.when.textContent = ago(last.at / 1000); }
@@ -696,7 +696,7 @@
     b.areaBtn.setAttribute("aria-pressed", String(mode === "area"));
     b.stage.classList.toggle("picking", !!mode);
     b.hint.hidden = !mode;
-    b.hint.textContent = mode === "pick" ? "Click the element to point the agent at" : mode === "area" ? "Drag a box over the area" : "";
+    b.hint.textContent = mode === "pick" ? "Click an element to show the agent" : mode === "area" ? "Drag over an area" : "";
     b.dragBox.hidden = true; b.drag = null;
     if (mode !== "pick" && b.hovered) { b.hovered = false; post("hover", {}).catch(() => {}); }
     if (mode) b.stage.focus();
@@ -1051,7 +1051,7 @@
       if (p.sel || p.editable) items.push(null);
       items.push({ label: "Back", run: nav("back") }, { label: "Forward", run: nav("forward") }, { label: "Reload", run: nav("reload") }, null,
         { label: "Find in page…", run: () => bwFindOpen(b) },
-        { label: "Point the agent at this", run: () => post("pick", { x, y }).then(toAgent).catch(bwSay(b)) });
+        { label: "Show this to the agent", run: () => post("pick", { x, y }).then(toAgent).catch(bwSay(b)) });
       return bwMenu(b, x, y, items);
     }
     if (p.k === "find") bwFindOpen(b);
@@ -1094,7 +1094,7 @@
   // app the native page is then its still picture -- which the shade over the whole page makes sure of (ag.native looks
   // at points across it for something over it), a click on it closing them.
   function bwHistory(b) {
-    const list = el("div", { class: "bw-menu hist", id: "bw-hist", role: "listbox", "aria-label": "Pages opened before", hidden: "" });
+    const list = el("div", { class: "bw-menu hist", id: "bw-hist", role: "listbox", "aria-label": "Visited pages", hidden: "" });
     const shade = el("div", { class: "hist-shade", hidden: "" });
     for (const n of [list, shade]) {
       bwShield(n);
@@ -1214,8 +1214,8 @@
     const btn = (d, label, onclick) => el("button", { type: "button", title: label, "aria-label": label, onclick }, strokeIcon(d, 14));
     b.findInput = input; b.findCount = count;
     return el("div", { class: "bw-find", hidden: "" }, input, count,
-      btn("M4 10 8 6l4 4", "The one before (Shift+Enter)", () => run(true, true)),
-      btn("M4 6l4 4 4-4", "The next (Enter)", () => run(false, true)),
+      btn("M4 10 8 6l4 4", "Previous (Shift+Enter)", () => run(true, true)),
+      btn("M4 6l4 4 4-4", "Next (Enter)", () => run(false, true)),
       btn("M4.5 4.5l7 7M11.5 4.5l-7 7", "Close (Esc)", () => bwFindClose(b)));
   }
   function bwFindOpen(b) {
@@ -1237,9 +1237,9 @@
     if (b.picks.dataset.sig === sig) return;
     b.picks.dataset.sig = sig;
     b.picks.hidden = !picks.length;
-    b.picks.replaceChildren(el("span", { class: "lbl", text: "Picked:" }), ...picks.map((p) => el("span", { class: "pk", title: `${p.id}: ${p.label} -- told the agent: name it in your message` },
+    b.picks.replaceChildren(el("span", { class: "lbl", text: "Picked:" }), ...picks.map((p) => el("span", { class: "pk", title: `${p.id}: ${p.label}\nSent to the agent. Refer to it as ${p.id} in your message.` },
       el("span", { class: "id", text: p.id }), el("span", { class: "nm", text: p.label }),
-      el("button", { type: "button", "aria-label": `Take ${p.id} off`, text: "×", onclick: () => post("unpick", { id: p.id }).catch(bwSay(b)) }))));
+      el("button", { type: "button", "aria-label": `Remove ${p.id}`, text: "×", onclick: () => post("unpick", { id: p.id }).catch(bwSay(b)) }))));
   }
 
   // ---------------------------------------------------------------- "⋯": the logins of the user's Chrome, imported
@@ -1263,7 +1263,7 @@
       item("Find in page…", `${KEY}F`, () => bwFindOpen(b)),
       el("hr"),
       el("button", { type: "button", role: "menuitem", disabled: mine ? "" : null,
-        title: mine ? "This Browser runs in your own Chrome: its logins are there already" : "Copy sites' logins from your Chrome into the Browsers' own",
+        title: mine ? "Already uses your Chrome's logins" : "Copy site logins from your Chrome to the Browsers",
         onclick: () => { closeMore(); logins(); } }, "Import logins from your Chrome…")));
     b.host.append(m);
     b.more = m;
@@ -1271,7 +1271,7 @@
     m.querySelector("button:not([disabled])")?.focus();
   }
   async function logins() {
-    const note = el("div", { class: "note", text: "Waiting for your Chrome: click Allow in its “Allow remote debugging?” dialog…" });
+    const note = el("div", { class: "note", text: "Waiting for Chrome. Click Allow in its “Allow remote debugging?” dialog." });
     const filter = el("input", { type: "text", placeholder: "Filter sites", spellcheck: "false", "aria-label": "Filter sites", hidden: "" });
     const list = el("div", { class: "list", role: "group", "aria-label": "Sites", hidden: "" });
     const count = el("span", { class: "note" });
@@ -1301,7 +1301,7 @@
       note.classList.add("err");
       return;
     }
-    note.textContent = `Your Chrome has cookies for ${sites.length} sites. Pick those whose logins every Browser here, and its agent, may use.`;
+    note.textContent = `Your Chrome has cookies for ${sites.length} sites. Choose which logins to share with every Browser and its agent.`;
     filter.hidden = list.hidden = false;
     draw();
     filter.focus();
@@ -1310,7 +1310,7 @@
       try {
         const got = await post("logins", { sites: [...picked] }, true);
         const done = got.imported.map((i) => `${i.site} (${i.cookies} cookie${i.cookies === 1 ? "" : "s"})`).join(", ");
-        const again = got.reloaded ? ` ${got.reloaded} tab${got.reloaded === 1 ? "" : "s"} on them loaded again.` : "";
+        const again = got.reloaded ? ` Reloaded ${got.reloaded} tab${got.reloaded === 1 ? "" : "s"}.` : "";
         note.textContent = `Imported: ${done}.${again}`;
         note.classList.remove("err");
         filter.hidden = list.hidden = true;
