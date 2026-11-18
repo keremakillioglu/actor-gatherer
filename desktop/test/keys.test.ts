@@ -1,7 +1,7 @@
 // desktop/src/keys.ts: a browser's own keys on a Browser's native page, and Chrome's zoom steps.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { appMenu, browserKey, zoomStep, ZOOMS } from "../src/keys.ts";
+import { appMenu, browserKey, keepsKeys, PRESS_GIVES_KEYS_MS, zoomStep, ZOOMS } from "../src/keys.ts";
 
 const press = (key: string, mods: Partial<{ meta: boolean; control: boolean; shift: boolean; alt: boolean }> = {}, type = "keyDown") =>
   ({ type, key, meta: false, control: false, shift: false, alt: false, ...mods });
@@ -70,4 +70,20 @@ test("the app's menu: Cmd+T and Cmd+W the page's screen tabs, Shift+Cmd+W the wi
   for (const m of [true, false]) assert.equal(all(m).filter((x) => x.role === "close" || x.accelerator === "CmdOrCtrl+W").length, 2);
   assert.equal(appMenu(true, () => {})[0].role, "appMenu");
   assert.ok(file(false).some((x) => x.role === "quit"));
+});
+
+test("a page keeps the keys it took only when the user's press gave them: shown, not held, pressed just now", () => {
+  const page = (shown: boolean, held: boolean, pressedAgo: number | null) => keepsKeys({ shown, held, pressedAgo });
+  assert.equal(page(true, false, 0), true); // the user's click on it
+  assert.equal(page(true, false, PRESS_GIVES_KEYS_MS - 1), true);
+  // an agent's navigation, or its tab switch (Page.bringToFront): no press, or one long before
+  assert.equal(page(true, false, null), false);
+  assert.equal(page(true, false, PRESS_GIVES_KEYS_MS), false);
+  assert.equal(page(true, false, 60_000), false);
+  assert.equal(page(true, false, -5), false); // (a clock gone back: no press of now)
+  // out of sight (another task's Browser, a panel closed): never the user's
+  assert.equal(page(false, false, 0), false);
+  assert.equal(page(false, false, null), false);
+  // held while its agent acts: the user's presses go to the shield over it
+  assert.equal(page(true, true, 0), false);
 });

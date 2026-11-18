@@ -42,6 +42,19 @@ export function browserKey(input: KeyInput, mac: boolean = process.platform === 
   return keys[key] ?? null;
 }
 
+/** ms after the user's press on a page in which the keys it took are theirs to give (`keepsKeys`). */
+export const PRESS_GIVES_KEYS_MS = 500;
+/** Whether a native page that has just taken the keys keeps them (browsers.ts's `tookKeys`): only when the user gave
+ * them, by a press on it (`pressedAgo`: ms since their last, null if none) -- so on a page shown in its pane, not held
+ * while its agent acts (the user's presses go to the shield over it then). Chromium also gives a page the keys when a
+ * navigation commits in it (a new site's page) and when it is sent Page.bringToFront (a Browser's agent switching tabs:
+ * core.py's `switch`). In Chrome only the tab shown has its page in the window; in the app every Browser's every page
+ * is, shown or not, so those took the keys from the user typing in the dashboard for a page they couldn't see. */
+export function keepsKeys(page: { shown: boolean; held: boolean; pressedAgo: number | null }): boolean {
+  const { shown, held, pressedAgo } = page;
+  return shown && !held && pressedAgo !== null && pressedAgo >= 0 && pressedAgo < PRESS_GIVES_KEYS_MS;
+}
+
 /** A key of the app's menu the dashboard's page does: a new screen tab, the one shown closed. */
 export type TabKey = "newTab" | "closeTab";
 /** The app's menu (main.ts): Electron's own but for File -- New Tab (Cmd+T) and Close Tab (Cmd+W), the dashboard's screen

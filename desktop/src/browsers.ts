@@ -8,7 +8,7 @@
 // opens no debugging port: Google refuses a sign-in in a browser that has one (desktop/DESIGN.md, "Rules the app keeps").
 import { dialog, Menu, session, WebContentsView, type BaseWindow, type IpcMainEvent, type WebContents } from "electron";
 import { editItems, spellingItems, tidy } from "./menu.ts";
-import { browserKey, zoomStep } from "./keys.ts";
+import { browserKey, keepsKeys, zoomStep } from "./keys.ts";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -24,6 +24,9 @@ const PICTURE_WAIT = 3000; // ms a hidden page has to give its still picture
 const STILL_WAIT = 500;
 // ms a page shown again keeps its still picture under it: the picture goes once the page is surely drawn over it
 const STILL_KEPT = 150;
+// ms after the window comes in front before a page that took the keys meanwhile is decided on (`keysHome`): the click
+// that brought it, if on that page, told by then
+const STRAY_WAIT = 50;
 
 export type Stage = { x: number; y: number; w: number; h: number; key?: string; target: string; covered?: boolean; app?: string };
 export type Size = { width: number; height: number };
@@ -33,11 +36,12 @@ type Log = (...parts: unknown[]) => void;
  * dashboard's covers its pane (`still`), or none to be had (`bare`: the page shown as it is); the dialog it waits on
  * (`asking`: page-preload.cts). Its `size`: its pane's when last placed (or, before any was, the one ag asked for),
  * which it is always laid out at (`Pages.emulate`: `sizedAt` the size last sent, `sizing` while Chrome has yet to
- * answer it). */
+ * answer it). `pressed`: when the user last pressed on it (ms since the epoch), for `tookKeys`. */
 type Page = {
   view: WebContentsView;
   app: string; // the dashboard's app it is of
   opener?: string;
+  pressed?: number;
   held?: boolean;
   esc?: boolean;
   still?: boolean;
@@ -125,6 +129,9 @@ export class Pages {
   } = {};
   /** The user's press on a page (or on the shield over a held one), told to the dashboard: its page never hears it. */
   onPress: (() => void) | null = null;
+  private dashboard: WebContents | null = null; // the dashboard's page (`keysHome`): the keys' place unless a page has them
+  private keys: WebContents | null = null; // where the user's keys are: the dashboard's page, or a page they pressed on
+  private stray: WebContents | null = null; // a page that took the keys unasked while the window was not in front
   private shield: WebContentsView | null = null; // over a page whose input is held: takes the user's clicks, not ag's
   private lastSize: Size | null = null; // the last pane's a page was shown in: a new page's, if ag gives none
   private static current: Pages | null = null; // the pages the profiles' downloads and permission asks are for
@@ -376,10 +383,15 @@ export class Pages {
         else this.hooks.key?.(id, of, key);
       }
     });
-    // a press on it: the dashboard closes what floats over its page (a menu, Settings), as a press on the page would
+    // a press on it: the dashboard closes what floats over its page (a menu, Settings), as a press on the page would;
+    // and the keys it takes now are the user's to give it (`tookKeys`)
     wc.on("before-mouse-event", (_e, mouse) => {
-      if (mouse.type === "mouseDown") this.onPress?.();
+      if (mouse.type !== "mouseDown") return;
+      const p = this.pages.get(id);
+      if (p) p.pressed = Date.now();
+      this.onPress?.();
     });
+    wc.on("focus", () => this.tookKeys(id, wc));
     // Cmd+scroll or a pinch asking for zoom: Chrome's steps, as its keys
     wc.on("zoom-changed", (_e, direction) => this.zoomBy(id, direction === "in" ? 1 : -1));
     id = await targetIdOf(wc);
@@ -594,6 +606,65 @@ export class Pages {
     if (!p) return;
     p[what] = on;
     if (what === "held") this.place();
+  }
+
+  /** The dashboard's page (main.ts): where the keys are given back to from a page that took them unasked, unless the
+   * user had them in a page of their own. A page that took them while the window was not in front (`stray`), decided on
+   * once it is, after the event that brought it (which may be the user's press on that very page): still holding them,
+   * as a page shown does; or, a page out of sight -- which the Mac lets hold no keys once the window is in front -- none
+   * holding them, the window's keys going nowhere. */
+  keysHome(wc: WebContents): void {
+    this.dashboard = this.keys = wc;
+    wc.on("focus", () => (this.keys = wc));
+    this.win.on("focus", () => {
+      const s = this.stray;
+      this.stray = null;
+      if (!s) return;
+      setTimeout(() => {
+        if (s.isDestroyed() || !this.win.isFocused()) return;
+        if (s.isFocused()) this.decideKeys(this.idOf(s) ?? "", s);
+        else if (!this.dashboard?.isFocused() && ![...this.pages.values()].some((p) => p.view.webContents.isFocused()))
+          this.giveBack(s);
+      }, STRAY_WAIT);
+    });
+  }
+
+  /** A page took the keys: kept if they were already the user's there (a navigation in the page they type in, as in
+   * Chrome) or the user gave them (keys.ts's `keepsKeys`, a press on it); else handed straight back to where they were
+   * (`decideKeys`). A page out of sight, or held, at once: nothing could have pressed on it (a held page's presses go
+   * to the shield); a page shown, once the event under way is done, as it may be the very press that gives them (a
+   * Mac's click focuses the page before it hands it the press). */
+  private tookKeys(id: string, wc: WebContents): void {
+    const p = this.pages.get(id);
+    if (p && p.view.getVisible() && !p.held) setTimeout(() => this.decideKeys(id, wc), 0);
+    else this.decideKeys(id, wc);
+  }
+
+  /** `wc` (page `id`) keeps the keys it took, or they go back (`giveBack`). Not while the window is not in front --
+   * Electron brings a window in front to focus a page of it, over the app the user is in -- but once it is
+   * (`keysHome`). */
+  private decideKeys(id: string, wc: WebContents): void {
+    if (this.keys === wc || wc.isDestroyed()) return;
+    const p = this.pages.get(id);
+    const pressedAgo = p?.pressed ? Date.now() - p.pressed : null;
+    if (p && keepsKeys({ shown: p.view.getVisible(), held: !!p.held, pressedAgo })) {
+      this.keys = wc;
+      return;
+    }
+    if (!this.win.isFocused()) {
+      this.stray = wc;
+      return;
+    }
+    this.giveBack(wc);
+  }
+
+  /** The keys back from `from` to where the user had them: a page they pressed on, still shown, or the dashboard's. */
+  private giveBack(from: WebContents): void {
+    const there = this.keys;
+    const theirs = there && there !== from && !there.isDestroyed() &&
+      (there === this.dashboard || !!this.pages.get(this.idOf(there) ?? "")?.view.getVisible());
+    const to = theirs ? there : this.dashboard;
+    if (to && !to.isDestroyed()) to.focus();
   }
 }
 
