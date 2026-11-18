@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ag_apps.browser import core  # noqa: E402
-from ag_dashboard import app_agents, app_host, server, sessions, tool_gateway  # noqa: E402
+from ag_dashboard import app_agents, app_host, server, sessions, task_links, tool_gateway  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
 from test_dashboard_app_host import insert_here  # noqa: E402
 
@@ -65,8 +65,8 @@ class Hosted(HomeBase):
 class AppTest(Hosted):
     def test_its_manifest_an_agent_of_its_own_its_tools_and_a_native_page(self):
         m = self.host.apps["browser"].manifest
-        self.assertEqual((m.instances, m.offer, m.agent.start, m.capabilities.native_view, m.capabilities.reads),
-                         ("many", "attached", True, True, ("user_message",)))
+        self.assertEqual((m.instances, m.access, m.agent.offered, m.capabilities.native_view, m.capabilities.reads),
+                         ("many", "task", True, True, ("user_message",)))
         self.assertEqual([t.name for t in m.tools], [t["name"] for t in core.TOOLS])   # tools.json: core's (make.py)
         self.assertTrue(all(t.handled_by == "backend" for t in m.tools))
         self.assertEqual(m.instructions.strip(), core.instructions().strip())            # instructions.md: core's
@@ -89,7 +89,7 @@ class AppTest(Hosted):
         self.host.flush()
         got = self.host.read("browser", i, ["context_stream"], channel="c1")
         self.assertEqual(len(got), 1)
-        self.assertEqual((got[0]["payload"]["stream"], got[0]["payload"]["author"]), ("Browser", "the user"))
+        self.assertEqual((got[0]["payload"]["stream"], got[0]["payload"]["author"]), (f"Browser ({i.id})", "the user"))
         self.assertIn('the user: clicked button "Pay"', got[0]["payload"]["text"])
         with self.assertRaises(Exception):                     # another agent's: not this Browser's to read
             self.host.read("browser", i, ["context_stream"], channel="c2")
@@ -137,7 +137,7 @@ class GatewayTest(Hosted):
         tool_gateway.HOST, tool_gateway.ORIGIN = self.host, "http://127.0.0.1:4999"
         self.addCleanup(lambda: setattr(tool_gateway, "HOST", saved[0]) or setattr(tool_gateway, "ORIGIN", saved[1]))
         self.inst = self.host.open("browser", "g", self.root)
-        self.host.attach("g", self.inst.id, "c1")
+        task_links.link("g", self.inst.id, "c1")
 
     def test_its_tools_for_its_agent_alone(self):
         self.assertIn("browser_snapshot", {t["name"] for t in tool_gateway.tools("g", ("c1",))})
@@ -153,7 +153,7 @@ class GatewayTest(Hosted):
         self.assertIn("Click only when there is no other way", told)          # dedicated tools first, the page last
         self.assertNotIn("<browser_state>", told)
         self.assertNotIn("--settings", args)                                   # no guard: it edits no files
-        self.host.attach("g", self.inst.id, "c3")
+        task_links.link("g", self.inst.id, "c3")
         parsed = {}
         for one in [a for k, a in zip(sessions.extra_args({**s, "session_id": "c3", "harness": "codex"}),
                                       sessions.extra_args({**s, "session_id": "c3", "harness": "codex"})[1:]) if k == "-c"]:

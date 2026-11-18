@@ -249,7 +249,7 @@ def _starters() -> Dict[str, Any]:
     h = tool_gateway.HOST
     if h is None:
         return {}
-    return {n: x.manifest for n, x in h.apps.items() if x.manifest.agent.start}
+    return {n: x.manifest for n, x in h.apps.items() if x.manifest.agent.offered}
 
 
 class Coordination:
@@ -944,6 +944,125 @@ class Coordination:
                 node["actors"].append(v)
         return top
 
+    def tree_text(self, actor: str, where: str = "") -> str:
+        """dashboard_ls (tool_gateway.py's AG_TOOLS), `ag tasks`: what is in one place of the list, as text an agent
+        reads -- a folder's folders, its tasks, and the actors and app instances in it that are in no task; a task's
+        actors and apps. `where`: a folder's path, `task:<id>`, `/` (the group's top; above groups, the groups), or ""
+        (the asker's own folder). Only what `ag actors` reaches (`_scope`). Read only."""
+        from . import access, tasks
+        sc = self._scope(actor)
+        groups_shown = sc.tree.reads(sc.node) if coordinators.above_groups(sc.node) else [sc.g]
+        where = (where or "").strip()
+        if where in ("/", "") and len(groups_shown) > 1:
+            return "\n".join(["/ (the groups you coordinate)"] + [f"  {g}/   group" for g in groups_shown])
+        g, rest = sc.g, where.strip("/")
+        if len(groups_shown) > 1:
+            first, _, more = rest.partition("/")
+            if first not in groups_shown:
+                raise CoordinationError(f"{where}: no group of yours named {first!r} ({', '.join(groups_shown)})")
+            g, rest = first, more
+        tree, known, kept = folders.of(g), tasks.of(g), _kept(g)
+        agents = [a for a in sc.agents if (a.get("group") or sc.g) == g and not self._is_coordinator(a)]
+        by_item: Dict[str, dict] = {}
+        for a in agents:
+            for c in (a["channel"], (a.get("session") or {}).get("started_as")):
+                if c:
+                    by_item[c] = a
+        host = access._host()
+        insts = {tasks.app_item(i.id): i for i in host.instances_of(g)} if host is not None else {}
+        mine = {c for c in (sc.me["channel"], (sc.me.get("session") or {}).get("started_as")) if c}
+        my_task = next((known["tasked"][c] for c in mine if c in known["tasked"]), None)
+
+        def folder_of(item: str) -> Optional[int]:
+            a = by_item.get(item)
+            return tree["filed"].get((_kept_as(a, tree["filed"]) if a else None) or item)
+
+        def task_items(tid: int) -> List[str]:
+            return [x for x, t in known["tasked"].items() if t == tid and (x in by_item or x in insts)]
+
+        def task_name(tid: int) -> str:
+            name = next((t["name"] for t in known["tasks"] if t["id"] == tid), "")
+            if name:
+                return name
+            lead = next((by_item[x] for x in task_items(tid) if x in by_item), None)
+            app = next((insts[x] for x in task_items(tid) if x in insts), None)
+            return (_name(lead) or "") if lead else access.shown(app) if app else ""
+
+        def actor_line(a: dict) -> str:
+            v = self._view(a, sc.me, kept)
+            bits = [v.get("status") or "?", v.get("harness") or "?", v.get("cwd") or "?"]
+            if v.get("asked"):
+                bits.append(f"asked: {json.dumps(v['asked'], ensure_ascii=False)}")
+            name = f" {json.dumps(v['name'], ensure_ascii=False)}" if v.get("name") else ""
+            return f"actor {v['id']}{name}{' (you)' if v['you'] else ''} -- {' · '.join(bits)}"
+
+        def app_line(i) -> str:
+            m = access._manifest(i.app)
+            who = tool_gateway_who(m.access) if m is not None else "?"
+            return f"app {access.shown(i)}{' in ' + i.folder if i.folder else ''} -- used by {who}"
+
+        if rest.startswith("task:"):
+            try:
+                tid = int(rest[5:])
+            except ValueError:
+                raise CoordinationError(f"{where}: task:<its number>") from None
+            items = task_items(tid)
+            if not items:
+                raise CoordinationError(f"{where}: no task {rest[5:]} in {g}")
+            at = folders.path(tree, folder_of(items[0]))
+            out = [f"task:{tid} {json.dumps(task_name(tid), ensure_ascii=False)} (group {g}, in /{at or ''})"
+                   + (" -- your task" if tid == my_task else "")]
+            out += ["  " + actor_line(by_item[x]) for x in items if x in by_item]
+            out += ["  " + app_line(insts[x]) for x in items if x in insts]
+            return "\n".join(out)
+
+        if where == "":
+            here = next((tree["filed"][c] for c in mine if c in tree["filed"]), None)
+        else:
+            try:
+                here = folders.find(g, rest) if rest else None
+            except folders.FolderError as exc:
+                raise CoordinationError(str(exc)) from None
+        out = [f"/{folders.path(tree, here) or ''} (group {g})"]
+        for f in tree["folders"]:
+            if f["parent"] == here:
+                inside = sum(1 for x in [*by_item, *insts] if folder_of(x) == f["id"])
+                out.append(f"  {f['name']}/ -- folder" + (" · closed" if f.get("closed") else "")
+                           + (f" · {inside} item(s) directly in it" if inside else ""))
+        shown_tasks, closed = set(), 0
+        for x in [*known["tasked"]]:
+            tid = known["tasked"][x]
+            if tid in shown_tasks or (x not in by_item and x not in insts):
+                continue
+            items = task_items(tid)
+            if folder_of(items[0]) != here:
+                continue
+            shown_tasks.add(tid)
+            n_actors = sum(1 for y in items if y in by_item)
+            out.append(f"  task:{tid} {json.dumps(task_name(tid), ensure_ascii=False)} -- task · {n_actors} actor(s), "
+                       f"{len(items) - n_actors} app(s)" + (" · your task" if tid == my_task else ""))
+        seen = set()
+        for a in sorted(agents, key=lambda a: -(a.get("last") or 0)):
+            if a["channel"] in seen or any(c in known["tasked"] for c in (a["channel"],
+                                                                         (a.get("session") or {}).get("started_as"))):
+                continue
+            seen.add(a["channel"])
+            if folder_of(a["channel"]) != here:
+                continue
+            if a.get("status") == data.CLOSED and _kept_as(a, kept[0]) is None and a["channel"] not in mine:
+                closed += 1
+                continue
+            out.append("  " + actor_line(a))
+        for item, i in insts.items():
+            if item not in known["tasked"] and folder_of(item) == here:
+                out.append("  " + app_line(i))
+        if closed:
+            out.append(f"  ({closed} closed actor(s) not listed)")
+        if len(out) == 1:
+            out.append("  (nothing here)")
+        out.append("A folder: dashboard_ls <its path>. A task: dashboard_ls task:<id>. The top: dashboard_ls /.")
+        return "\n".join(out)
+
     def folder(self, actor: str, do: str, name: str, to: str = "", group: Optional[str] = None) -> dict:
         """A folder, by its path (from the asker's node down), made (`new`: the folders of its path not there made too),
         renamed (`rename`: `to` its new name), put in another (`move`: `to` the other's path; none, or folders.TOP: the
@@ -1312,6 +1431,12 @@ def _role_in(group: str, channel: str) -> Optional[dict]:
 def _filed(gatherer: str) -> dict:
     """{channel: its folder's id}, of folders.py's `gatherer`."""
     return folders.of(gatherer)["filed"]
+
+
+def tool_gateway_who(how: str) -> str:
+    """Who may use an app's instances, as agents are told (tool_gateway.py's WHO)."""
+    from . import tool_gateway
+    return tool_gateway.WHO.get(how, how)
 
 
 def _kept(gatherer: str) -> Tuple[dict, dict]:

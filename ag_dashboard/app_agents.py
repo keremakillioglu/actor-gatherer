@@ -67,7 +67,8 @@ def adopt_all(started: "sessions.Sessions", host) -> None:
         name, key = got
         try:
             host.adopt(name, s["gatherer"], key, s.get("cwd") or None, s["session_id"])
-            task_links.link(s["gatherer"], key, s["session_id"])     # in one task, if its app is in none
+            if not task_links.link(s["gatherer"], key, s["session_id"]):     # in one task, if either is in none;
+                host.detach(s["gatherer"], key, s["session_id"], by="access")   # else not its to use
         except Exception:  # noqa: BLE001 - one actor's trouble is not the others'
             pass
 
@@ -76,8 +77,8 @@ def start(started: "sessions.Sessions", host, app: str, gatherer: str, cwd: str,
           model: Optional[str] = None, name: Optional[str] = None) -> Tuple[dict, Instance]:
     """A new instance of `app` and a new actor working with it (module doc)."""
     m = host.hosted(app).manifest
-    if not m.agent.start:
-        raise AppError(f"{m.label} has no agent of its own. Open it and attach an actor.")
+    if not m.agent.offered:
+        raise AppError(f"{m.label} has no agent of its own. Open it and put an actor in its task.")
     cwd = os.path.realpath(os.path.abspath(os.path.expanduser((cwd or "").strip() or ".")))
     if not os.path.isdir(cwd):
         raise AppError(f"no directory {cwd}")

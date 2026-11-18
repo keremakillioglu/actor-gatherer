@@ -7,13 +7,13 @@ label = "DocWriter"
 version = "1"
 description = "write with an agent that proposes its edits beside your text"
 instances = "many"
-offer = "attached"
+access = "task"
 instructions_file = "instructions.md"
 tools_file = "tools.json"
 mark = "mark.svg"
 
 [agent]
-start = true
+offered = true
 name = "DocWriter · {folder}"
 
 # what its agent was asked, as the list shows it: the author's words in DocWriter's prompt, not the workspace's state

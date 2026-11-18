@@ -19,6 +19,7 @@ import {
 import { escapeHtml } from "./core/ui/html";
 import { markdown, unplanned } from "./core/ui/md";
 import { draw as drawAppsPage } from "./features/apps/catalog";
+import { askedByAgent } from "./features/apps/catalog-dialogs";
 import * as apps from "./features/apps/host";
 import { drawTurns } from "./features/chat/mount";
 import { cidsOf } from "./features/chat/view";
@@ -78,7 +79,7 @@ const agNext = Object.freeze({
     pane: (app: apps.AppInfo, instance: apps.Instance, hooks: apps.PaneHooks) => new apps.AppPane(app, instance, hooks),
   }),
   /** The Apps page (features/apps/catalog.ts), drawn in a tab's box when the tab is its (src/legacy/07-apps-page.js). */
-  appsPage: Object.freeze({ draw: drawAppsPage }),
+  appsPage: Object.freeze({ draw: drawAppsPage, askedByAgent }),
   /** The work area's layout (features/layout/): the panels the old page shows (src/legacy/07-panes.js's shownPanels), each
    * task's as the reader arranges them, placed; a panel moved by its head or its menu. */
   layout: Object.freeze({ work }),

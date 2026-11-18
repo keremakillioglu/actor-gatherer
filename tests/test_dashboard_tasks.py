@@ -10,7 +10,7 @@ import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import home as dashboard_home  # noqa: E402
+from ag_dashboard import access, home as dashboard_home  # noqa: E402
 from ag_dashboard import task_links, tasks, tool_gateway  # noqa: E402
 
 
@@ -100,8 +100,9 @@ class Host:
 
         class Instance:
             def __init__(self, iid):
-                self.id, self.gatherer = iid, "g"
+                self.id, self.gatherer, self.app, self.name, self.title, self.folder = iid, "g", iid[:1], "", "", None
         self.lock = threading.RLock()
+        self.apps = {}
         self.instances = {i: Instance(i) for i in instances}
         self.attached = {i: set() for i in instances}
         self.log = []
@@ -117,6 +118,12 @@ class Host:
             self.attached[iid].discard(channel)
             self.log.append(("detach", iid, channel))
 
+    def instances_of(self, gatherer, app=None):
+        return [i for i in self.instances.values() if i.gatherer == gatherer]
+
+    def tell_agent(self, gatherer, channel, text, record):
+        self.log.append(("told", channel, text))
+
 
 class TaskLinksTest(TasksTest):
     def setUp(self):
@@ -125,6 +132,9 @@ class TaskLinksTest(TasksTest):
         patch = unittest.mock.patch.object(tool_gateway, "HOST", self.host)
         patch.start()
         self.addCleanup(patch.stop)
+        started = unittest.mock.patch.object(access, "STARTED", lambda g, c: True)   # every agent has had a call
+        started.start()
+        self.addCleanup(started.stop)
 
     def test_joining_a_task_attaches_every_agent_to_every_app_and_leaving_detaches(self):
         task_links.change("g", lambda: tasks.add("g", "a", ["app:b1"]))
@@ -186,6 +196,17 @@ class TaskLinksTest(TasksTest):
         self.host.attached["n1"] = {"c"}
         task_links.on_load("g")                                                              # once
         self.assertIsNone(tasks.task_of("g", "c"))
+        self.assertEqual(self.host.attached["n1"], set())                                    # not in its task: dropped
+
+    def test_an_agent_is_attached_only_to_the_apps_of_its_task(self):
+        trip, fix = tasks.add("g", "a", ["app:b1"], "Trip"), tasks.add("g", "x", ["app:n1"], "Fix")
+        self.assertFalse(task_links.link("g", "b1", "x"))                                    # each in a task: nothing
+        self.assertNotIn("x", self.host.attached["b1"])
+        self.assertEqual((tasks.task_of("g", "x"), tasks.task_of("g", "app:b1")), (fix, trip))
+        self.host.attached["b1"].add("x")                                                    # as `link` once made it
+        self.assertEqual(task_links.strays("g"), [("b1", "x")])                              # dropped, and told
+        self.assertEqual(self.host.attached["b1"], set())
+        self.assertIn("x", [e[1] for e in self.host.log if e[0] == "told"])
 
 
 if __name__ == "__main__":

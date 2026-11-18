@@ -16,7 +16,8 @@ const BROWSER: App = {
   description: "a browser you and an agent use together",
   origin: "builtin",
   kind: "builtin",
-  offer: "attached",
+  access: "task",
+  with_agent: true,
   instances: "many",
   tools: tool(19, "browser"),
   tokens: 8873,
@@ -34,7 +35,7 @@ const STANDUP: App = {
   kind: "git",
   source: "https://github.com/someone/ag-standup",
   commit: "9c1e04a11",
-  offer: "always",
+  access: "group",
   tools: ["standup_today"],
   tokens: 820,
   can: [],
@@ -64,7 +65,7 @@ const PAGER = {
   kind: "folder",
   source: "/work/pager",
   commit: "",
-  offer: "always",
+  access: "group",
   tools: ["pager_page"],
   tokens: 110,
   can: ["sending you notifications"],
@@ -147,7 +148,7 @@ test("the settings panel's Apps opens the Apps page in a tab of its own: every a
   await expect(page.locator(".lay-tabs:visible .lay-tab[aria-selected=true] .lay-name")).toHaveText("Apps");
   await expect(page.locator(".lay-tabs:visible .lay-tab[aria-selected=true] .lay-page")).toHaveCount(1); // its mark
   const browser = appRow(page, "browser");
-  await expect(browser).toContainText("Agents attached to it");
+  await expect(browser).toContainText("The agents in its task");
   await expect(browser).toContainText("19 tools");
   await expect(browser.locator(".ap-big")).toHaveText("≈8.9k tokens per agent"); // a large cost, marked
   await expect(browser.locator(".ap-badge.open")).toHaveText("4 open");
@@ -157,7 +158,8 @@ test("the settings panel's Apps opens the Apps page in a tab of its own: every a
   await browser.click();
   const side = appsPage(page).locator(".ap-side");
   await expect(side.locator("h2")).toHaveText("Browser");
-  await expect(side).toContainText("only agents attached to a Browser");
+  await expect(side).toContainText("only the agents in its task");
+  await expect(side.getByRole("button", { name: "With an agent" })).toBeVisible(); // alone, or with an agent
   await expect(side).toContainText("A native web view over its panel, in the desktop app");
   await expect(side.locator(".ap-kv").last()).toContainText("demo3 open");
   await expect(side.locator(".ap-tools code")).toHaveCount(5);
@@ -195,7 +197,7 @@ test("installing from a folder: checked, then asked with what it may do; Cancel 
   await expect(dialog(page)).toContainText("Run its own process on this computer");
   await expect(dialog(page)).toContainText("Sending you notifications");
   await expect(dialog(page)).toContainText("1 tool, ≈100 tokens per agent");
-  await expect(dialog(page)).toContainText("Every agent, when it next starts");
+  await expect(dialog(page)).toContainText("Every agent of the group, when it next starts");
   await expect(dialog(page).locator(".ap-warn")).toContainText("Only install apps you trust");
   await dialog(page).getByRole("button", { name: "Cancel" }).click();
   await expect(dialog(page)).toHaveCount(0);

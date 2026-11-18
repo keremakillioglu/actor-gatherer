@@ -26,7 +26,7 @@ test("a DocWriter started from the menu: its page above, its actor below, one ta
   const row = page.locator("#agents .gatherer-row").first();
   await row.hover();
   await row.locator("button.new-more").click();
-  await page.locator(".row-menu[role=menu]").getByText("DocWriter…", { exact: true }).click();
+  await page.locator(".row-menu[role=menu]").getByText("DocWriter with an agent…", { exact: true }).click();
   const box = page.locator(".dw-menu[role=dialog]", { hasText: "New DocWriter" });
   await box.locator("input").fill(folder);
   await box.locator("button.go").first().click();

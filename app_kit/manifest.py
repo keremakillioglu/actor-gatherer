@@ -43,10 +43,16 @@ INSTANCE_ARG = "instance"
 #: How many instances of an app there are: one per gatherer, one per folder, one per git checkout, one per git
 #: repository (its worktrees share it), or any number.
 INSTANCES = ("one", "per-folder", "per-checkout", "per-repository", "many")
-#: Which agents are given an app's tools and instructions: every agent of a gatherer it is on, or only those attached
-#: to an instance of it when they start. An "attached" app's instructions go in the agent's own instructions (the
-#: harness's `instruction_args`), as an app's that came with its own agent's did; an "always" app's in its MCP server's.
-OFFERS = ("always", "attached")
+#: Who may use an app's instances (ag_dashboard/access.py, checked at every call): the agents in the same task as the
+#: instance ("task"), or every agent of the instance's group ("group"). A coordinator agent may use every instance of
+#: the groups it is over, either way. A "task" app's instructions go in the agent's own instructions when it starts
+#: able to use one (the harness's `instruction_args`); a "group" app's in its MCP server's, for every agent.
+ACCESS = ("task", "group")
+#: The older key `offer`, read as `access`: "always" -> "group", "attached" -> "task".
+OFFERS = {"always": "group", "attached": "task"}
+#: Names no app may take: the tools agents are given for the apps themselves are named <name>_<what> (`apps_list`,
+#: `dashboard_ls`: ag_dashboard/tool_gateway.py's AG_TOOLS), as an app's are <app>_<tool>.
+RESERVED = ("apps", "dashboard")
 #: Who answers a tool's calls: the app's backend, or its open panel (the call waits for one to be open).
 HANDLED_BY = ("backend", "panel")
 #: The properties the host puts on every app event itself, which an app's event type does not declare: the app's name,
@@ -57,14 +63,15 @@ HOST_PROPERTY_NAMES = tuple(p.name for p in HOST_PROPERTIES)
 #: advice), so no policy changes for an app. An app's pollers output these only, as ag requires of any poller.
 CONTEXT_TYPES = ("context_stream", "environment_update")
 #: The records the host keeps of each app: an instance opened, named by the user or closed, an agent attached or
-#: detached, a tool call it passed to the app, and a notification it sent the user and its end (`notify` capability:
+#: detached, what an agent was told of a change of the instances it may use (`app_access`: ag_dashboard/access.py), a
+#: tool call it passed to the app, and a notification it sent the user and its end (`notify` capability:
 #: NOTICE_TYPES). Records like the harness's: no policy groups them, and no agent is shown them. An app reads its own;
 #: no app inserts them.
 HOST_TYPES = (EventType("app_opened", HOST_PROPERTIES), EventType("app_closed", HOST_PROPERTIES),
               EventType("app_attached", HOST_PROPERTIES), EventType("app_detached", HOST_PROPERTIES),
               EventType("app_call", HOST_PROPERTIES), EventType("app_notified", HOST_PROPERTIES),
               EventType("app_notice_settled", HOST_PROPERTIES), EventType("app_named", HOST_PROPERTIES),
-              EventType("app_regrouped", HOST_PROPERTIES))
+              EventType("app_regrouped", HOST_PROPERTIES), EventType("app_access", HOST_PROPERTIES))
 HOST_RECORDS = tuple(t.name for t in HOST_TYPES)
 #: A NOTIFICATION an app sends the user, as an agent's `asked` is: open until settled, as `ask_settled` settles that.
 #:     app_notified        {id, key, title, text, show, where}: listed by the dashboard, and where it pops up too
@@ -219,9 +226,11 @@ class Asked:
 
 @dataclass(frozen=True)
 class Agent:
-    """`[agent]`: whether opening the app from a gatherer's menu starts a new agent attached to the new instance (not
-    the agent in focus attached), and the name it is given ({folder}: the instance's folder's name; {app}: its label)."""
-    start: bool = False
+    """`[agent]`: whether the app can be opened with an agent of its own -- the gatherer's menus then offer it both ways,
+    alone and "with an agent", that one a new agent attached to the new instance (not the agent in focus attached) --
+    and the name that agent is given ({folder}: the instance's folder's name; {app}: its label). `offered` is the key;
+    `start`, its older name, is read too."""
+    offered: bool = False
     name: str = "{app} · {folder}"
 
 
@@ -233,7 +242,7 @@ class Manifest:
     version: str
     description: str = ""
     instances: str = "one"
-    offer: str = "always"
+    access: str = "task"
     instructions: str = ""
     agent: "Agent" = field(default_factory=lambda: Agent())
     asked: "Asked" = field(default_factory=lambda: Asked())
@@ -278,8 +287,8 @@ class Manifest:
         """The manifest as JSON (the host's /api/apps, the remote protocol)."""
         return {
             "name": self.name, "label": self.label, "version": self.version, "description": self.description,
-            "instances": self.instances, "offer": self.offer, "instructions": self.instructions,
-            "agent": {"start": self.agent.start, "name": self.agent.name},
+            "instances": self.instances, "access": self.access, "instructions": self.instructions,
+            "agent": {"offered": self.agent.offered, "name": self.agent.name},
             "asked": {"when": self.asked.when, "pattern": self.asked.pattern, "otherwise": self.asked.otherwise},
             "mark": bool(self.mark),
             "backend": {"python": self.backend.python, "command": list(self.backend.command)},
@@ -337,22 +346,35 @@ def load(folder: str) -> Manifest:
 def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE) -> Manifest:
     """The manifest the TOML's `data` says. With `folder`, the files it names are read from there and must exist."""
     r = _Reader(where)
-    _known(r, data, "", ("name", "label", "version", "description", "instances", "offer", "instructions",
+    _known(r, data, "", ("name", "label", "version", "description", "instances", "access", "offer", "instructions",
                          "instructions_file", "agent", "asked", "mark", "backend", "panel", "tools", "tools_file",
                          "events", "pollers", "handles", "schedules", "capabilities"))
     name = r.string(data, "name")
     if not NAME.match(name):
         r.fail("name", f"{name!r}: lowercase letters, digits and _, starting with a letter, at most 24")
+    if name in RESERVED:
+        r.fail("name", f"{name!r} is taken by the tools agents are given for the apps ({', '.join(RESERVED)})")
     instances = r.string(data, "instances", "one")
     if instances not in INSTANCES:
         r.fail("instances", f"{instances!r}: one of {', '.join(INSTANCES)}")
 
-    offer = r.string(data, "offer", "always")
-    if offer not in OFFERS:
-        r.fail("offer", f"{offer!r}: one of {', '.join(OFFERS)}")
+    if "access" in data and "offer" in data:
+        r.fail("offer", "the older name of `access`: give one of them")
+    if "offer" in data:
+        offer = r.string(data, "offer")
+        if offer not in OFFERS:
+            r.fail("offer", f"{offer!r}: one of {', '.join(OFFERS)} (the older name of `access`)")
+        access = OFFERS[offer]
+    else:
+        access = r.string(data, "access", "task")
+        if access not in ACCESS:
+            r.fail("access", f"{access!r}: one of {', '.join(ACCESS)}")
     agent_d = data.get("agent", {})
-    _known(r, agent_d, "agent.", ("start", "name"))
-    agent = Agent(start=r.flag(agent_d, "start", "agent."), name=r.string(agent_d, "name", "{app} · {folder}", "agent."))
+    _known(r, agent_d, "agent.", ("offered", "start", "name"))
+    if "offered" in agent_d and "start" in agent_d:
+        r.fail("agent.start", "the older name of `agent.offered`: give one of them")
+    agent = Agent(offered=r.flag(agent_d, "offered" if "offered" in agent_d else "start", "agent."),
+                  name=r.string(agent_d, "name", "{app} · {folder}", "agent."))
     asked_d = data.get("asked", {})
     _known(r, asked_d, "asked.", ("when", "pattern", "otherwise"))
     asked = Asked(when=r.string(asked_d, "when", "", "asked."), pattern=r.string(asked_d, "pattern", "", "asked."),
@@ -411,7 +433,7 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
     if schedules and not (backend.python or backend.command):
         r.fail("schedules", "a schedule runs its backend, and the app has no [backend]")
     return Manifest(name=name, label=r.string(data, "label", name), version=r.string(data, "version", "0"),
-                    description=r.string(data, "description", ""), instances=instances, offer=offer,
+                    description=r.string(data, "description", ""), instances=instances, access=access,
                     instructions=instructions, agent=agent, asked=asked, mark=mark,
                     backend=backend, panel=panel, tools=tools, events=events, pollers=pollers, handles=handles,
                     schedules=schedules, capabilities=_capabilities(r, data.get("capabilities", {})), folder=folder)
