@@ -10,6 +10,13 @@ installed, and installing, updating and uninstalling. `ag apps install|uninstall
     POST /api/apps/discard    {id}               the staged app removed
     POST /api/apps/uninstall  {name, data?}      uninstalled; `data`: its data/ deleted too
 
+With `actor` -- `ag apps` run in an agent's shell, which says who asks -- install and uninstall only ask the user
+(app_requests.py): {waiting: the request}, done once the user approves it in the dashboard:
+
+    GET  /api/apps/requests                      {requests}: those waiting, as the page shows them
+    GET  /api/apps/requests/<id>                 one, as its agent's `ag apps` waits on it
+    POST /api/apps/requests/<id> {approve}       the user's answer: done as asked, or not; the agent told
+
 An app installed or uninstalled is found again at once (app_host's `find`): its panel opens, or no longer, anywhere;
 agents get its tools, or lose them, when their terminal next starts."""
 
@@ -19,7 +26,7 @@ from starlette.responses import Response
 from app_kit import AppError
 from app_kit.installing import InstallError
 
-from .. import app_catalog
+from .. import app_catalog, app_requests
 from .common import Body, Errors, Parts, answer, failure, local_only
 
 router = APIRouter(route_class=Errors)
@@ -64,6 +71,10 @@ def apps_stage(srv: Parts, body: Body) -> Response:
 def apps_install(srv: Parts, body: Body) -> Response:
     """The staged app (`id`) installed -- `update`: in place of the one installed -- or (`builtin`) an app that comes
     with ag installed again. On in every group at once."""
+    if body.get("actor"):                                     # an agent's: the user's to approve
+        op = "update" if body.get("update") else "install"
+        args = {"builtin": str(body["builtin"])} if body.get("builtin") else {"id": str(body.get("id") or "")}
+        return _run(lambda: {"waiting": app_requests.ask(_host(srv), srv.sessions.list(), str(body["actor"]), op, args)})
     if body.get("builtin"):
         return _run(lambda: app_catalog.restore(_host(srv), str(body["builtin"])))
     return _run(lambda: app_catalog.install(_host(srv), str(body.get("id") or ""), bool(body.get("update"))))
@@ -79,4 +90,26 @@ def apps_discard(srv: Parts, body: Body) -> Response:
 def apps_uninstall(srv: Parts, body: Body) -> Response:
     """The app uninstalled: its windows close, its backend stops, agents lose its tools at their next start; its data
     kept unless `data`."""
+    if body.get("actor"):                                     # an agent's: the user's to approve
+        args = {"name": str(body.get("name") or ""), "data": bool(body.get("data"))}
+        return _run(lambda: {"waiting": app_requests.ask(_host(srv), srv.sessions.list(), str(body["actor"]),
+                                                         "uninstall", args)})
     return _run(lambda: app_catalog.uninstall(_host(srv), str(body.get("name") or ""), bool(body.get("data"))))
+
+
+@router.get("/api/apps/requests", dependencies=[Depends(local_only)])
+def apps_requests(srv: Parts) -> Response:
+    """The agents' requests waiting for the user (app_requests.py)."""
+    return _run(lambda: {"requests": app_requests.pending()})
+
+
+@router.get("/api/apps/requests/{rid}", dependencies=[Depends(local_only)])
+def apps_request(srv: Parts, rid: str) -> Response:
+    """One request, as its agent's `ag apps` waits on it."""
+    return _run(lambda: app_requests.get(rid))
+
+
+@router.post("/api/apps/requests/{rid}")
+def apps_request_settle(srv: Parts, rid: str, body: Body) -> Response:
+    """The user's answer to an agent's request: {approve: true} done as asked; else declined. The agent told."""
+    return _run(lambda: app_requests.settle(_host(srv), rid, bool(body.get("approve"))))

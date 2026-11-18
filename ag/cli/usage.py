@@ -31,8 +31,10 @@ COMMANDS = (
                                                "or to the gatherer agent (`ag actors --help`)."),
     ("ag preview [set|run|clear ...]", "The preview of a git project, which the dashboard Editor's Execute button runs "
                                        "and shows beside the file (`ag preview --help`)."),
-    ("ag apps [list|call ...]", "The apps of this actor's gatherer: their tools, and a call of one, for a harness the "
-                                "dashboard gives no MCP server (`ag apps --help`)."),
+    ("ag apps [list|help|mine|call ...]", "The apps: every one installed, an app's instructions and tools, the instances "
+                                          "this actor may use, and a call of one (`ag apps --help`)."),
+    ("ag tasks [path]", "From an actor's shell: the dashboard's folders, tasks, actors and apps, walked like a "
+                        "directory."),
     ("ag groups [show|folder|actor|merge|rename ...]", "The home's groups, who shares context with whom, and changes "
                                                         "to them, each said first (`ag groups --help`)."),
     ("ag gatherers", "List every gatherer: its policy, pollers, events and last activity."),

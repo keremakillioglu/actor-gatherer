@@ -58,7 +58,7 @@ def described(m: "app_kit.Manifest", where: str, src: Optional[dict] = None) -> 
     return {"name": m.name, "label": m.label, "version": m.version, "description": m.description,
             "mark": bool(m.mark), "origin": where, "kind": src.get("kind") or ("builtin" if where == "builtin" else ""),
             "source": src.get("source") or "", "commit": src.get("commit") or "",
-            "installed_at": src.get("at") or None, "offer": m.offer, "instances": m.instances,
+            "installed_at": src.get("at") or None, "access": m.access, "with_agent": m.agent.offered, "instances": m.instances,
             "tools": [app_kit.tool_name(m.name, t.name) for t in m.tools], "tokens": cost(m),
             "can": m.capabilities.asked(), "own_process": bool(m.backend.command),
             "panel": bool(m.panel), "schedules": [said_schedule(s) for s in m.schedules]}
@@ -149,6 +149,12 @@ def install(host, staged_id: str, update: bool = False) -> dict:
     m = installing.install(home.HOME, staged_id, update=update)
     host.find()
     return {"name": m.name}
+
+
+def staged(staged_id: str) -> dict:
+    """A staged app, as `stage` described it (its id kept): what an agent's request to install it shows the user."""
+    st = installing.staged(home.HOME, staged_id)
+    return {**described(st.manifest, "staged", st.source), "id": st.id}
 
 
 def discard(staged_id: str) -> dict:

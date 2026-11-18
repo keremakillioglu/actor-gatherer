@@ -1,11 +1,17 @@
-"""`ag apps`: the apps of the gatherer an actor works in -- each one's tools, and a call of one -- asked of the
-dashboard (ag_dashboard/tool_gateway.py), over its local API (POST /api/apps/agent...), as `ag actors` asks it. For an
-agent whose harness the dashboard gives no MCP server; one it gives one (Claude Code, codex) has the same tools there.
+"""`ag apps`: the apps of the dashboard an actor works in -- every one installed, an app's instructions and tools, the
+instances the actor may use, and a call of one -- asked of the dashboard (ag_dashboard/tool_gateway.py), over its local
+API (POST /api/apps/agent...), as `ag actors` asks it. For an agent whose harness the dashboard gives no MCP server; one
+it gives one (Claude Code, codex) has the same tools there (apps_list, apps_help, apps_mine, apps_call, dashboard_ls).
 
-    ag apps [list]                              the gatherer's apps: what each says of itself, its tools (with what
-                                                each takes) and the ones you are attached to
+    ag apps [list]                              the apps you are given: what each says of itself, its tools (with what
+                                                each takes) and the instances of it you may use -- and every app
+                                                installed, and who may use it
+    ag apps help <app>                          an app's instructions and its tools
+    ag apps mine                                the instances you may use now, and why (your task, your group)
     ag apps call <app>_<tool> [ARGS]            a tool called: ARGS its arguments, a JSON object (- reads it from
-                                                stdin; none: {}); --instance I, which one, when attached to several
+                                                stdin; none: {}); --instance I, which one, when you may use several
+    ag tasks [PATH]                             the dashboard's folders, tasks, actors and apps, walked like a
+                                                directory (dashboard_ls): a folder's path, task:<id>, or / for the top
 
 Installing (the dashboard's Apps page does the same; an app installed is on in every group, its tools given to an
 agent when its terminal next starts):
@@ -16,12 +22,18 @@ agent when its terminal next starts):
     ag apps uninstall <name> [--data]           asked first (--yes: not); --data: its data/ deleted too
     ag apps update <name>                       its git source fetched again, what changes printed, then asked
 
+Run by an agent (its shell says which: ag/cli/actors.py's `actor_id`), install, uninstall and update only ask the user:
+the dashboard shows what the app may do, and the command waits for their answer (up to WAIT seconds; past that, the agent
+is told in its conversation when they answer). `--yes` skips only the question asked here. Run in the user's own
+terminal, they go ahead once asked here, as the Apps page's do.
+
 Who asks is the session the command runs in, as for `ag actors` (--as names another). `--json` prints the answer as
 JSON. Standard library only."""
 
 import argparse
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from typing import Callable, List
@@ -29,6 +41,8 @@ from typing import Callable, List
 from . import actors
 
 CATALOG_OPS = ("install", "uninstall", "update")
+WAIT = 600.0                    # seconds an agent's install waits for the user's answer (then told it in its conversation)
+POLL = 2.0
 
 
 def parser() -> argparse.ArgumentParser:
@@ -40,10 +54,13 @@ def parser() -> argparse.ArgumentParser:
     ls = sub.add_parser("list", help="the gatherer's apps and their tools")
     ls.add_argument("--all", action="store_true",
                     help="every app installed, those that couldn't load, those to install")
+    h = sub.add_parser("help", help="an app's instructions and its tools")
+    h.add_argument("app")
+    sub.add_parser("mine", help="the app instances you may use now, and why")
     c = sub.add_parser("call", help="call an app's tool")
     c.add_argument("tool", help="<app>_<tool>, as `ag apps` lists it")
     c.add_argument("args", nargs="?", default="{}", help="its arguments, a JSON object (- reads it from stdin)")
-    c.add_argument("--instance", help="which one, when you are attached to more than one")
+    c.add_argument("--instance", help="which one, when you may use more than one")
     i = sub.add_parser("install", help="install an app: a folder, a git URL, or the name of one that comes with ag")
     i.add_argument("source", help="a folder, a git URL, or the name of an app that comes with ag, uninstalled")
     i.add_argument("--yes", action="store_true", help="install it without asking")
@@ -80,6 +97,9 @@ def main(argv: List[str]) -> int:
             if opts.instance:
                 args["instance"] = opts.instance
             got = actors.ask(url, "agent/call", {"actor": actor, "tool": opts.tool, "args": args}, api="apps")
+        elif op in ("help", "mine"):
+            got = actors.ask(url, "agent/call", {"actor": actor, "tool": f"apps_{op}",
+                                                 "args": {"app": opts.app} if op == "help" else {}}, api="apps")
         else:
             got = actors.ask(url, "agent", {"actor": actor}, api="apps")
     except actors.ActorsError as exc:
@@ -87,11 +107,35 @@ def main(argv: List[str]) -> int:
         return 1
     if opts.json:
         print(json.dumps(got, indent=2))
-    elif op == "call":
+    elif op in ("call", "help", "mine"):
         print(said(got))
     else:
         print(listed(got))
-    return 1 if op == "call" and got.get("isError") else 0
+    return 1 if op in ("call", "help", "mine") and got.get("isError") else 0
+
+
+def tasks_main(argv: List[str]) -> int:
+    """`ag tasks [PATH]`: the dashboard's folders, tasks, actors and apps (dashboard_ls), for the actor it runs in."""
+    ap = argparse.ArgumentParser(prog="ag tasks", description="The dashboard's folders, tasks, actors and app "
+                                 "instances, walked like a directory: what is in a folder or a task. Read only.")
+    ap.add_argument("path", nargs="?", default="", help="a folder's path (Figures/Plots), task:<id>, or / for the top; "
+                                                        "none: where you are")
+    ap.add_argument("--as", dest="who", help="ask as this actor (its id), not the session the command runs in")
+    opts = ap.parse_args(argv)
+    try:
+        url = actors.dashboard_url()
+        if not url:
+            raise actors.ActorsError("no dashboard runs on this home (`ag dashboard`)")
+        actor = actors.actor_id(given=opts.who)
+        if not actor:
+            raise actors.ActorsError("not run by an actor: say which with --as <id>")
+        got = actors.ask(url, "agent/call", {"actor": actor, "tool": "dashboard_ls", "args": {"path": opts.path}},
+                         api="apps")
+    except actors.ActorsError as exc:
+        print(f"ag tasks: {exc}", file=sys.stderr)
+        return 1
+    print(said(got))
+    return 1 if got.get("isError") else 0
 
 
 def said(result: dict) -> str:
@@ -106,19 +150,19 @@ def said(result: dict) -> str:
 
 
 def listed(got: dict) -> str:
-    if not got.get("apps"):
-        return f"No app is on in gatherer {got.get('gatherer')}."
     out = [got.get("instructions", "").strip(), ""]
-    for a in got["apps"]:
-        said = "open" if "open" in a else "attached"         # a gatherer agent's: the open ones, attached to none
-        mine = ", ".join(f"{i['id']} ({i.get('name') or i.get('title') or i.get('folder') or i['id']})" for i in a.get(said) or [])
-        out.append(f"{a['label']} ({a['name']})" + (f" -- {said}: {mine}" if mine else ""))
+    for a in got.get("apps") or []:
+        mine = ", ".join(f"{i['id']} ({i.get('name') or i.get('title') or i.get('folder') or i['id']}: {i.get('why')})"
+                         for i in a.get("usable") or [])
+        out.append(f"{a['label']} ({a['name']})" + (f" -- you may use: {mine}" if mine else ""))
         for t in a.get("tools") or []:
             props = (t.get("inputSchema") or {}).get("properties") or {}
             need = set((t.get("inputSchema") or {}).get("required") or [])
             args = ", ".join(f"{k}{'' if k in need else '?'}" for k in props if k != "instance")
             out.append(f"  {t['name']}({args}): {t.get('description', '')}")
         out.append("")
+    if got.get("installed"):
+        out.append(got["installed"])
     return "\n".join(out).rstrip()
 
 
@@ -154,9 +198,31 @@ def _staged_ok(ask: Callable[[], bool], post: Callable[[str, dict], dict], st: d
     return ok
 
 
+def _answered(url: str, got: dict) -> int:
+    """An agent's request, waited on: the user's answer said -> 0 approved (and done), 1 not."""
+    r = got["waiting"]
+    print(f"Asked the user to approve this in the dashboard (request {r['id']}). Waiting for their answer...",
+          flush=True)
+    end = time.time() + WAIT
+    while time.time() < end:
+        time.sleep(POLL)
+        r = _get(url, f"/api/apps/requests/{r['id']}")
+        if r.get("state") not in ("waiting", "settling"):
+            print(r.get("said") or r.get("state"))
+            return 0 if r.get("state") == "approved" else 1
+    print("No answer yet: you will be told in your conversation when the user answers.")
+    return 1
+
+
 def installing(url: str, op: str, opts) -> int:
+    asker = actors.actor_id(given=opts.who) if op in CATALOG_OPS else None   # an agent's: the user approves it
+
     def post(what: str, body: dict) -> dict:
-        return actors.ask(url, what, body, api="apps")
+        return actors.ask(url, what, {**body, **({"actor": asker} if asker and what in ("install", "uninstall")
+                                                  else {})}, api="apps")
+
+    def ok(question: str) -> bool:
+        return _confirm(question, opts.yes or bool(asker))
 
     got = _get(url, "/api/apps/catalog")
     names = {a["name"]: a for a in got.get("installed") or []}
@@ -168,17 +234,21 @@ def installing(url: str, op: str, opts) -> int:
         if a is None:
             raise actors.ActorsError(f"{opts.name} isn't installed (`ag apps list --all`)")
         print(uninstall_said(a, opts.data))
-        if not _confirm(f"Uninstall {a['label']}?", opts.yes):
+        if not ok(f"Uninstall {a['label']}?"):
             print("Not uninstalled.")
             return 1
         done = post("uninstall", {"name": opts.name, "data": opts.data})
+        if done.get("waiting"):
+            return _answered(url, done)
         print(f"Uninstalled {a['label']}." + ("" if opts.data else f" Its data is kept in {a['data']['path']}."))
         return 0 if done.get("name") else 1
     if op == "install":
         back = next((a for a in got.get("available") or [] if a["name"] == opts.source and a["origin"] == "builtin"),
                     None)
         if back is not None:                                     # one that comes with ag, uninstalled: back
-            post("install", {"builtin": back["name"]})
+            done = post("install", {"builtin": back["name"]})
+            if done.get("waiting"):
+                return _answered(url, done)
             print(f"Installed {back['label']} again: it's on in every group.")
             return 0
         st = post("stage", {"source": opts.source})
@@ -186,10 +256,12 @@ def installing(url: str, op: str, opts) -> int:
             post("discard", {"id": st["id"]})
             raise actors.ActorsError(f"{st['name']} is installed already: `ag apps update {st['name']}`")
         print(staged_said(st))
-        if not _staged_ok(lambda: _confirm(f"Install {st['label']}?", opts.yes), post, st):
+        if not _staged_ok(lambda: ok(f"Install {st['label']}?"), post, st):
             print("Not installed.")
             return 1
-        post("install", {"id": st["id"]})
+        done = post("install", {"id": st["id"]})
+        if done.get("waiting"):
+            return _answered(url, done)
         print(f"Installed {st['label']}: it's on in every group. Agents get its tools when their terminal next starts.")
         return 0
     a = names.get(opts.name)                                     # update
@@ -201,10 +273,12 @@ def installing(url: str, op: str, opts) -> int:
         post("discard", {"id": st["id"]})
         print(f"{a['label']} is up to date.")
         return 0
-    if not _staged_ok(lambda: _confirm(f"Update {a['label']}?", opts.yes), post, st):
+    if not _staged_ok(lambda: ok(f"Update {a['label']}?"), post, st):
         print("Not updated.")
         return 1
-    post("install", {"id": st["id"], "update": True})
+    done = post("install", {"id": st["id"], "update": True})
+    if done.get("waiting"):
+        return _answered(url, done)
     print(f"Updated {a['label']} to {st['version']}.")
     return 0
 
@@ -215,7 +289,7 @@ def _where(a: dict) -> str:
 
 
 def _who(a: dict) -> str:
-    return "every agent" if a.get("offer") == "always" else "agents attached to it"
+    return "every agent of a group" if a.get("access") == "group" else "the agents in its task"
 
 
 def catalog_said(got: dict) -> str:

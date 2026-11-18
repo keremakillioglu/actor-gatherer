@@ -96,6 +96,20 @@ function takeHome(home) {
   markSeen();
   appsAtWork();                                      // apps' panels told their agents' states; held while they work
   heedHome();                                        // what came to want the reader since: popped up (07-notices.js)
+  askedByAgents();                                   // an agent's asking to install an app: the reader's to approve
+}
+// An agent's asking to install, update or uninstall an app (app_requests.py; home's `app_requests`): the first not yet
+// shown here put to the reader in the Apps page's dialog -- the apps read again once they answer
+function askedByAgents() {
+  if (SNAPSHOT || PANE || !window.agNext || !(state.home.app_requests || []).length) return;
+  const who = (c) => {
+    for (const g of state.home.gatherers) {
+      const a = g.agents.find((x) => x.channel === c || (x.session && x.session.started_as === c));
+      if (a) return `${actorTitle(a)} (${g.name})`;
+    }
+    return `Agent ${c.slice(0, 8)}`;
+  };
+  window.agNext.appsPage.askedByAgent(state.home.app_requests, who, () => void appsChanged());
 }
 // An actor is looked at while it is open in a pane -- not this page's own, out of sight while a screen tab without it
 // shows (07-panes.js's isAway). An app is looked at as an actor is: its panel shown (not held out of sight) -- while

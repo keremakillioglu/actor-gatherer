@@ -28,7 +28,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import app_host, libs, livedocs, server, tool_gateway  # noqa: E402
+from ag_dashboard import app_host, libs, livedocs, server, task_links, tool_gateway  # noqa: E402
 from app_kit import AppError, Caller  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
 from test_dashboard_app_host import insert_here  # noqa: E402
@@ -418,7 +418,7 @@ class AppTest(AppBase):
         self.assertIn("editor", self.host.apps)
         self.assertNotIn("preview", self.host.apps)                       # the Editor's own now, not an app of its own
         m = self.host.apps["editor"].manifest
-        self.assertEqual((m.instances, m.offer, m.agent.start), ("many", "attached", True))   # as the Browser's, DocWriter's
+        self.assertEqual((m.instances, m.access, m.agent.offered), ("many", "task", True))   # as the Browser's, DocWriter's
         self.assertEqual((self.i.folder, self.i.title), (self.repo, "proj"))
         src = self.host.open("editor", "g", os.path.join(self.repo, "src"))
         self.assertNotEqual(src.id, self.i.id)                            # another, on its own folder
@@ -619,7 +619,7 @@ class ServedTest(ServedBase):
 
     def test_its_actor_has_its_tools_from_the_gateway_another_none(self):
         self.assertNotIn("editor_preview_run", [t["name"] for t in tool_gateway.tools("g", ("c1",))])
-        self.h.attach("g", self.inst.id, "c1")                            # the actor it was started with
+        task_links.link("g", self.inst.id, "c1")                          # the actor it was started with
         names = [t["name"] for t in tool_gateway.tools("g", ("c1",))]
         self.assertIn("editor_preview_run", names)
         got = tool_gateway.call(self.rows, "c1", "editor_preview_show", {})
@@ -637,7 +637,7 @@ class ServedTest(ServedBase):
         return code, out.getvalue(), err.getvalue()
 
     def test_an_agent_sets_shows_and_runs_it_with_ag_preview(self):
-        self.h.attach("g", self.inst.id, "c1")                            # its Editor's actor
+        task_links.link("g", self.inst.id, "c1")                          # its Editor's actor
         code, out, _ = self.run_cli()
         self.assertEqual(code, 0)
         self.assertIn("No preview is set for", out)
@@ -686,7 +686,7 @@ class EditToolsTest(ServedBase):
 
     def setUp(self):
         super().setUp()
-        self.h.attach("g", self.inst.id, "c1")
+        task_links.link("g", self.inst.id, "c1")
         self.told = []
         insert = self.h.insert
 

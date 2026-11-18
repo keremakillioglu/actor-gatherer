@@ -696,7 +696,7 @@ class AgentTest(AppBase):
 class ManifestTest(unittest.TestCase):
     def test_it_loads_with_its_schedule_and_tools(self):
         m = app_kit.load(FOLDER)
-        self.assertEqual((m.name, m.label, m.instances, m.offer), ("paper_news", "Paper news", "one", "attached"))
+        self.assertEqual((m.name, m.label, m.instances, m.access), ("paper_news", "Paper news", "one", "task"))
         self.assertEqual([t.mcp("paper_news")["name"] for t in m.tools],
                          ["paper_news_list", "paper_news_paper", "paper_news_profile", "paper_news_relevant"])
         from ag_apps.paper_news import interests as it

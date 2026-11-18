@@ -249,6 +249,34 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
   model in the backend with the home's LLM settings, or start an agent attached to the app. ag doesn't need to know
   which.
 
+### 4b. Who may use an instance, and what agents know of the apps (decided 2026-11-18)
+
+- **Access, said by the manifest and checked at every call** (`ag_dashboard/access.py`): `access = "task"` (the
+  default) -- the agents in the same task as the instance; `access = "group"` -- every agent of the instance's group
+  (Notes' one notebook). A coordinator agent may use every instance of its group either way. Nothing else gives
+  access: an attachment outside a task (once made when an agent used an app another task held) is dropped when the
+  group is read, its agent told. The older key `offer` is still read ("always" -> group, "attached" -> task).
+- **What an agent is given by name when it starts is only what it may use then.** Every tool call -- an app's own,
+  `apps_call`, `ag apps call` -- asks access.py again, and the host asks again before its backend (app_host's
+  `may_use`); an agent that left a task is refused at once, whatever its tool list says.
+- **Which instance:** the one named (`instance`) if the agent may use it; else the one it may use; several, refused,
+  each named; none -- a group app's opened for its folder, a task app's refused, saying which tasks hold one and that the
+  user puts one in its task.
+- **Every agent is told every app installed** (its MCP server's instructions; `ag apps` for a harness without MCP) and
+  has five tools for the apps themselves: `apps_list`, `apps_help <app>`, `apps_mine`, `apps_call` (a tool of an app
+  it gained after it started) and `dashboard_ls [path]` (the list's folders, tasks, actors and apps, walked like a
+  directory; `ag tasks` in a shell). App names `apps` and `dashboard` are taken.
+- **Told when its access changes:** an agent gaining or losing an instance through its task, or one renamed, is told
+  in its conversation -- a message from the stream "Apps", with an `app_access` record beside it -- before its next
+  call (access.py's `settle`, after each change of the tasks or the instances). A group's app never tells: every
+  agent may use it always. An app's own messages to its agents name the instance: "Browser · work (<id>)".
+- **Opened alone or with an agent:** `[agent] offered` (the older `start`) says an app can be opened with an agent of
+  its own; the menus offer it both ways, alone and "with an agent".
+- **Installing is the user's:** `ag apps install|update|uninstall` run in an agent's shell asks the user, who approves
+  or declines it in the dashboard (`ag_dashboard/app_requests.py`); the agent is told the answer. The Apps page, and
+  `ag apps` in the user's own terminal, are as before. (An agent calling the dashboard's local API itself is not
+  stopped by this: the API has no way to tell an agent's request from the page's.)
+
 ### 5. Panels
 
 - **One layout with two kinds of panel.** A tree of splits whose leaves are agent panes `{agent: channel, view}` or
@@ -430,7 +458,7 @@ desktop/                  the native-view capability, with no app named in it
 ### 8. Apps from outside
 
 - **Installed is on, everywhere** (decided 2026-11-17). An app found is installed, and on in every group: its panel
-  opens anywhere, an agent gets its tools when its terminal next starts (those whose `offer` gives them it), and every
+  opens anywhere, an agent gets its tools when its terminal next starts (those its `access` gives it, 4b), and every
   gatherer runs its pollers. There is no turning an app off in a group: `gatherer.toml`'s `apps` is no longer read.
 - **Install** (built: `app_kit/installing.py`): from a folder or a git URL (pip packages later), the app is staged --
   copied into `<home>/apps/.incoming/<id>` (a git URL cloned at its newest commit, its history dropped) -- and its
@@ -557,7 +585,7 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    2026-11-08: "the editor should be setup and used exactly like a browser, docwriter"): started from a gatherer's
    "+ ⋯" menu on a folder, with an actor of its own attached (`[agent] start`, "Editor · {folder}", its `mark` on the
    actor's avatar); one per Editor started (`instances = "many"`); its tools and instructions its attached actors'
-   (`offer = "attached"`); its panel in the top row under the head the dashboard draws over every app's. No button
+   (`access = "task"`); its panel in the top row under the head the dashboard draws over every app's. No button
    of its own on an actor's pane. It still takes `open-file` (an app naming the file's type first): an Editor open in
    the top row is told, rather than another opened.
    `ag_apps/editor/`: `app.toml`, `backend.py` (its panel's routes, the Preview's tools and runs: `runs.py`, moved
@@ -657,7 +685,7 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    and `instructions.md` and the dashboard's shared pdf.js at `ag_dashboard/vendor/pdfjs/`). The dashboard names it
    nowhere: its `docwriter.py`, `api/docwriter.py`, `vendor/docwriter/` and the page's DocWriter view are gone. What
    the contract gained for it, each general:
-   - manifest: `offer = "attached"` (its tools and instructions only for an agent attached to one: its instructions
+   - manifest: `access = "task"`, then `offer = "attached"` (its tools and instructions only for an agent in its task: its instructions
      as the agent's own, `instruction_args`, as before), `[agent] start` (the menu starts one with a new actor:
      app_agents.py, `/api/apps/start`, and `ag actors new --docwriter`), `tools_file` (tools a build writes), `mark`
      (the badge on its actor's avatar, served at `/apps/mark/<name>.svg`), `[asked]` (what the list shows of a
@@ -716,7 +744,7 @@ and subpages of blocks (text, headings, to-dos, lists, quotes, code, dividers), 
 of the app's data folder (`<home>/apps/notes/data/<gatherer>.json`), not as events: each keystroke's change would be
 an `ag home insert`, and a gatherer with no database yet holds its writes. The panel and the agents change it by the
 same ops (`notebook.py`), one batch at a time; the backend tells every open panel each batch, numbered, in order.
-Agents get `notes_read`, `notes_add` and `notes_change` (offer `always`), and read and write pages as markdown with
+Agents get `notes_read`, `notes_add` and `notes_change` (`access = "group"`), and read and write pages as markdown with
 each block's id. The test app it took the name of is now Notepad (`tests/apps/notepad/`). An app's mark now shows
 on its "+ ⋯" menu entry too.
 The pages' list (2026-11-12) hides by its own « button or ⌘\ (the bar's button shows it again, and is there only

@@ -6,6 +6,7 @@ label = "Notes"
 version = "1"
 description = "pages of to-dos, lists and notes"
 instances = "one"
+access = "group"
 mark = "mark.svg"
 instructions = """Notes is the user's notebook for this gatherer, which they keep in the dashboard: pages of to-dos,
 lists and notes (pages can sit under other pages). When the user mentions their notes, to-dos, lists or a page of

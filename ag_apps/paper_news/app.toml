@@ -7,7 +7,7 @@ label = "Paper news"
 version = "1"
 description = "new arXiv papers each weekday, with picks for your research"
 instances = "one"
-offer = "attached"
+access = "task"
 mark = "mark.svg"
 instructions = """Paper news is the user's daily listing of new arXiv papers in their categories, fetched each weekday
 and shown in the dashboard's Paper news panel. paper_news_list gives a day's papers, one line each (id, categories, title,

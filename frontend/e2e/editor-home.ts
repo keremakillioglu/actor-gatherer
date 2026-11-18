@@ -74,7 +74,7 @@ export async function startEditor(page: Page, repo: string) {
   const row = page.locator("#agents .gatherer-row").first();
   await row.hover();
   await row.locator("button.new-more").click();
-  await page.locator(".row-menu[role=menu]").getByText("Editor…", { exact: true }).click();
+  await page.locator(".row-menu[role=menu]").getByText("Editor with an agent…", { exact: true }).click();
   const box = page.locator(".dw-menu[role=dialog]", { hasText: "New Editor" });
   await box.locator("input").fill(repo);
   await box.locator("button.go").first().click();

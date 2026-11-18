@@ -12,11 +12,11 @@ import {
   isSplit,
   lay,
   lengths,
+  type Bar,
   type Laid,
   type Node,
   type Rect,
   type Size,
-  type Split,
 } from "./tree";
 
 export interface PlaceHooks {
@@ -32,6 +32,11 @@ export interface PlaceHooks {
   fitted?: (id: string) => boolean;
   /** The panels placed (again): whatever is drawn round them follows. */
   placed?: () => void;
+  /** Whether kid `kid` of a split can be minimized by its bar, and under what length: dragged shorter than that (past
+   * its least), minimized; dragged longer again, whole. Null: it can't (an app in it). */
+  folds?: (key: string, kid: number) => number | null;
+  /** Kid `kid` of a split minimized (`on`), or whole again: the page keeps it, and places again. */
+  fold?: (key: string, kid: number, on: boolean) => void;
 }
 
 const SPOT = ["left", "top", "width", "height", "bottom"] as const;
@@ -48,6 +53,7 @@ const attr = (e: HTMLElement, name: string, v: string): void => {
   if (e.getAttribute(name) !== v) e.setAttribute(name, v);
 };
 const HIT = 2; // a bar is this much wider on each side than the room it takes, to be caught
+const SLACK = 24; // a kid minimized by its bar: dragged this much longer than where it was minimized, whole again
 
 export class Placer {
   private readonly bars: HTMLElement;
@@ -147,14 +153,19 @@ export class Placer {
     all.forEach((b, i) => {
       const e = this.bars.children[i] as HTMLElement;
       const row = b.split.dir === "row",
-        still = !draggable(b.split, b.at);
+        still = !this.drags(b),
+        min = !draggable(b.split, b.at); // (beside a kid minimized: dragged to show it whole)
       attr(e, "data-split", b.split.key);
       attr(e, "data-dir", b.split.dir);
       attr(e, "aria-orientation", row ? "vertical" : "horizontal");
       attr(
         e,
         "title",
-        still ? "" : `Drag to resize${evens(b.split) ? ` · double-click for equal ${row ? "widths" : "heights"}` : ""}`,
+        still
+          ? ""
+          : min
+            ? "Drag to expand chat"
+            : `Drag to resize${evens(b.split) ? ` · double-click for equal ${row ? "widths" : "heights"}` : ""}`,
       );
       e.classList.toggle("thick", !!b.split.thick);
       e.classList.toggle("gap", !!b.split.gap);
@@ -169,28 +180,64 @@ export class Placer {
     return this.laid ? this.laid.bars[i] || null : null;
   }
 
+  // Whether a bar can be dragged: one of a split's (tree.ts's draggable), or one beside a kid minimized by being dragged
+  // short (folds), the other whole -- dragged to show it whole again
+  private drags(b: Bar): boolean {
+    if (draggable(b.split, b.at)) return true;
+    const fit = [b.at, b.at + 1].filter((k) => b.split.sizes[k]?.fit);
+    return !b.split.still && fit.length === 1 && this.hooks.folds?.(b.split.key, fit[0]) != null;
+  }
+
   // A bar dragged: the split's sizes as the pointer has moved since it was pressed, told as it moves and once let go
-  // -- the frames letting the pointer by meanwhile, so it goes on over them. Double-clicked: its kids even.
+  // -- the frames letting the pointer by meanwhile, so it goes on over them. A kid beside it that can be minimized
+  // (folds), dragged shorter than it says, minimized -- its sizes as they were before the drag kept, to show it whole
+  // again so; dragged longer again, whole, as long as the pointer says. Double-clicked: its kids even.
   private newBar(): HTMLElement {
     const e = document.createElement("div");
     e.className = "lay-bar";
     e.setAttribute("role", "separator");
     e.addEventListener("pointerdown", (ev) => {
       const b = this.barOf(e);
-      if (!b || ev.button !== 0 || !draggable(b.split, b.at)) return;
+      if (!b || ev.button !== 0 || !this.drags(b)) return;
       ev.preventDefault();
       e.setPointerCapture(ev.pointerId);
-      const split: Split = b.split,
+      const key = b.split.key,
         at = b.at,
-        ls = b.lengths,
-        row = split.dir === "row",
-        from = row ? ev.clientX : ev.clientY;
-      let sizes: Size[] | null = null;
+        row = b.split.dir === "row",
+        from = row ? ev.clientX : ev.clientY,
+        a0 = b.lengths[at],
+        both = a0 + b.lengths[at + 1];
+      // the sizes to keep if a kid is minimized: as they were when it was last whole (here, or shown whole mid-drag)
+      let whole: Size[] | null = b.split.sizes.some((z) => z.fit) ? null : b.split.sizes.map((z) => ({ ...z })),
+        sizes: Size[] | null = null;
       e.classList.add("on");
-      this.work.dataset.resizing = split.dir;
+      this.work.dataset.resizing = b.split.dir;
       const move = (m: PointerEvent): void => {
-        sizes = drag(split, at, ls, (row ? m.clientX : m.clientY) - from);
-        this.hooks.resized(split.key, sizes, false);
+        const a = a0 + (row ? m.clientX : m.clientY) - from,
+          want = [a, both - a];
+        let now = this.barOf(e);
+        if (!now || now.split.key !== key) return;
+        for (const k of [0, 1]) {
+          const kid = at + k,
+            fit = !!now.split.sizes[kid]?.fit,
+            least = this.hooks.folds?.(key, kid) ?? null;
+          if (least === null || !this.hooks.fold) continue;
+          if (!fit && want[k] < least) {
+            if (whole && sizes) this.hooks.resized(key, whole, true); // (shown whole again, as it was)
+            sizes = null;
+            this.hooks.fold(key, kid, true);
+            return;
+          }
+          if (fit && want[k] >= least + SLACK) {
+            this.hooks.fold(key, kid, false);
+            now = this.barOf(e);
+            if (!now || now.split.key !== key || now.split.sizes.some((z) => z.fit)) return;
+            whole = now.split.sizes.map((z) => ({ ...z }));
+          }
+        }
+        if (!draggable(now.split, at)) return;
+        sizes = drag(now.split, at, now.lengths, a - now.lengths[at]);
+        this.hooks.resized(key, sizes, false);
       };
       const up = (): void => {
         e.removeEventListener("pointermove", move);
@@ -198,7 +245,7 @@ export class Placer {
         e.removeEventListener("pointercancel", up);
         e.classList.remove("on");
         delete this.work.dataset.resizing;
-        if (sizes) this.hooks.resized(split.key, sizes, true);
+        if (sizes) this.hooks.resized(key, sizes, true);
       };
       e.addEventListener("pointermove", move);
       e.addEventListener("pointerup", up);

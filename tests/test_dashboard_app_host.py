@@ -24,7 +24,7 @@ from ag.ag_harness.home.__main__ import main as home_main  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.cli import apps as apps_cli  # noqa: E402
-from ag_dashboard import app_host, data, server, task_links, tasks, tool_gateway  # noqa: E402
+from ag_dashboard import access, app_host, data, server, task_links, tasks, tool_gateway  # noqa: E402
 import app_kit  # noqa: E402
 from app_kit import AppError, Caller  # noqa: E402
 from channels import ch  # noqa: E402
@@ -37,6 +37,7 @@ name = "notes"
 label = "Notes"
 version = "1"
 instances = "per-folder"
+access = "group"
 instructions = "Keep notes with notes_add."
 
 [backend]
@@ -97,11 +98,11 @@ BOOK = BACKEND.replace('"properties": {"by": caller.channel or "user"}}], channe
 assert BOOK != BACKEND
 
 
-def book_toml(instances: str, offer: str = "always") -> str:
-    """The test app as "book": its own events' names, `instances` and `offer` its."""
+def book_toml(instances: str, access: str = "group") -> str:
+    """The test app as "book": its own events' names, `instances` and `access` its."""
     return (NOTES.replace('name = "notes"', 'name = "book"').replace('label = "Notes"', 'label = "Book"')
             .replace("notes.added", "book.added")
-            .replace('instances = "per-folder"', f'instances = "{instances}"\noffer = "{offer}"'))
+            .replace('instances = "per-folder"\naccess = "group"', f'instances = "{instances}"\naccess = "{access}"'))
 
 
 def write_app(root: str, name: str, toml: str, backend: str = BACKEND) -> str:
@@ -276,7 +277,7 @@ class EventsTest(HostBase):
         self.refused([{"type": "environment_update", "payload": {"what": "changed"}}], "subject must be text")
         self.refused([{"type": "notes.added", "payload": {}, "properties": {"channel": "c2"}}], "the host's")
         self.refused([{"type": "notes.added", "payload": {}, "properties": {"colour": "red"}}], "declares no property")
-        self.refused([{"type": "notes.added", "payload": {}}], "not an agent attached", channel="c2")
+        self.refused([{"type": "notes.added", "payload": {}}], "not an agent that may use", channel="c2")
         self.refused([], "a list")
 
     def test_its_events_carry_the_host_s_properties_and_only_its_instance_reads_them(self):
@@ -312,7 +313,8 @@ class EventsTest(HostBase):
         ctx_c2, _ = self.m._context("g", store.high_water(self.m._conn("g")), ch("c2"), 244800)
         shown = [i["text"] for i in ctx_c1.items if i.get("name") == "context_stream"]
         self.assertEqual(len(shown), 1)
-        self.assertIn("Message in Notes from the user at", shown[0])           # the policy's own wording
+        self.assertIn(f"Message in Notes ({self.i.id}) from the user at", shown[0])   # the policy's own wording,
+                                                                                    # the instance named
         self.assertIn("pinned: buy milk", shown[0])
         self.assertNotIn("buy milk", json.dumps(ctx_c2.items))
         self.assertEqual([e["text"] for e in self.host.read("notes", self.i, ["context_stream"])],
@@ -372,7 +374,7 @@ class CallsTest(HostBase):
         self.host.page_wait = 0.2
         self.assertIn("none is open", self.host.call("notes", self.i, "picked", {},
                                                      Caller(channel="c1")).content[0]["text"])
-        self.assertIn("not attached", self.host.call("notes", self.i, "add", {"text": "x"},
+        self.assertIn("you may not use", self.host.call("notes", self.i, "add", {"text": "x"},
                                                      Caller(channel="c2")).content[0]["text"])
         user = self.host.call("notes", self.i, "add", {"text": "mine"}, Caller(gatherer="g"))   # the user's: no channel
         self.assertFalse(user.is_error)
@@ -444,6 +446,13 @@ class GatewayBase(HostBase):
         saved = tool_gateway.HOST, tool_gateway.ORIGIN
         tool_gateway.HOST, tool_gateway.ORIGIN = self.host, "http://127.0.0.1:4999"
         self.addCleanup(lambda: setattr(tool_gateway, "HOST", saved[0]) or setattr(tool_gateway, "ORIGIN", saved[1]))
+        kept = access.HOST, access.LEAD, access.ROWS
+        access.HOST, access.LEAD, access.ROWS = self.host, tool_gateway.lead, lambda: self.rows
+        access.STARTED = lambda g, c: c != "fresh"                     # every agent but "fresh" has had a call
+        self.host.may_use, self.host.changed = access.may_use, access.settle
+        access.forget()
+        self.addCleanup(lambda: (setattr(access, "HOST", kept[0]), setattr(access, "LEAD", kept[1]),
+                                 setattr(access, "ROWS", kept[2]), setattr(access, "STARTED", None), access.forget()))
         self.rows = [{"session_id": "c1", "gatherer": "g", "cwd": self.folder, "harness": "claude"},
                      {"session_id": "c2", "started_as": "tmp-2", "gatherer": "g", "cwd": self.folder,
                       "harness": "codex"},
@@ -457,11 +466,12 @@ class GatewayBase(HostBase):
 class GatewayTest(GatewayBase):
     def test_an_agent_sees_its_gatherer_s_apps_tools_named_by_app(self):
         tools = {t["name"]: t for t in tool_gateway.tools("g")}
-        self.assertEqual(set(tools), {"notes_add", "notes_picked"})
+        self.assertEqual(set(tools), {*tool_gateway.AG_TOOL_NAMES, "notes_add", "notes_picked"})
         self.assertEqual(tools["notes_add"]["description"], "Notes: Add a note.")
         self.assertIn("instance", tools["notes_add"]["inputSchema"]["properties"])
         said = tool_gateway.instructions("g")
         self.assertIn("## Notes (notes)\nKeep notes with notes_add.", said)
+        self.assertIn("- Notes (notes): Notes -- used by every agent of the group", said)   # every app installed
         self.assertNotIn("ag apps", said)
         self.assertIn("ag apps call", tool_gateway.instructions("g", cli=True))
 
@@ -483,56 +493,127 @@ class GatewayTest(GatewayBase):
         self.assertTrue(tool_gateway.served(self.rows[0]))
         self.assertFalse(tool_gateway.served(self.rows[2]))
 
-    def test_a_call_with_no_instance_attached_opens_one_for_the_agent_s_folder_and_attaches_it(self):
+    def test_a_group_s_app_is_opened_for_the_agent_s_folder_and_used_by_every_agent_attached_to_none(self):
         got = tool_gateway.call(self.rows, "c1", "notes_add", {"text": "milk"})
         self.assertEqual(got, {"content": [{"type": "text", "text": "kept"}], "isError": False})
-        mine = self.host.attached_to("g", "c1")
-        self.assertEqual([(i.app, i.folder) for i in mine], [("notes", os.path.realpath(self.folder))])
-        item = "app:" + mine[0].id
-        self.assertEqual(set(tasks.of("g")["tasked"]), {"c1", item})                # opened by it: in a task with it
+        (book,) = self.host.instances_of("g", "notes")
+        self.assertEqual(book.folder, os.path.realpath(self.folder))
         tool_gateway.call(self.rows, "tmp-2", "notes_add", {"text": "eggs"})        # codex, by the id it started as
-        self.assertEqual(self.host.attached_to("g", "c2"), mine)                    # the folder's one, shared
-        self.assertEqual(set(tasks.of("g")["tasked"]), {"c1", item})                # c1's task: c2 only attached
+        self.assertEqual(self.host.instances_of("g", "notes"), [book])              # the folder's one, shared
+        self.assertEqual((self.host.agents_of(book), tasks.of("g")["tasked"]), ([], {}))   # no one attached, no task
         self.host.flush()
         self.assertEqual([(e["properties"]["channel"], e["payload"]["text"]) for e in
-                          self.host.read("notes", mine[0], ["notes.added"])], [("c1", "milk"), ("c2", "eggs")])
+                          self.host.read("notes", book, ["notes.added"])], [("c1", "milk"), ("c2", "eggs")])
 
-    def test_the_gatherer_s_one_instance_of_an_app_is_put_in_no_task_by_a_call(self):
-        write_app(self.apps_dir, "book", book_toml("one"), BOOK)
+    def test_a_task_s_app_is_used_by_the_agents_in_its_task_alone_checked_at_each_call(self):
+        write_app(self.apps_dir, "book", book_toml("many", "task"), BOOK)
         self.host.find()
-        task_links.change("g", lambda: tasks.add("g", "c1", ["c3"]))                # c1 in a task
-        tool_gateway.call(self.rows, "c1", "book_add", {"text": "milk"})
-        (book,) = self.host.attached_to("g", "c1")
-        tool_gateway.call(self.rows, "tmp-2", "book_add", {"text": "eggs"})        # c2, in none
-        self.assertEqual(self.host.agents_of(book), ["c1", "c2"])                   # both attached to the one
-        self.assertEqual(set(tasks.of("g")["tasked"]), {"c1", "c3"})                # in no task, nor c2 put in one
+        self.assertNotIn("book_add", {t["name"] for t in tool_gateway.tools("g", ("c1",))})   # none of its: not given
+        got = tool_gateway.call(self.rows, "c1", "book_add", {"text": "x"})
+        self.assertTrue(got["isError"])
+        self.assertIn("Book: you may use none of its instances", got["content"][0]["text"])
+        self.assertIn("None is open in your group", got["content"][0]["text"])
+        book = self.host.open("book", "g", self.folder)
+        task_links.change("g", lambda: tasks.add("g", "c1", ["app:" + book.id]))   # c1 and the Book: one task
+        self.assertIn("book_add", {t["name"] for t in tool_gateway.tools("g", ("c1",))})
+        self.assertFalse(tool_gateway.call(self.rows, "c1", "book_add", {"text": "x"})["isError"])
+        got = tool_gateway.call(self.rows, "tmp-2", "book_add", {"text": "y", "instance": book.id})
+        self.assertIn("you may not use Book", got["content"][0]["text"])                     # c2: not in its task
+        got = tool_gateway.call(self.rows, "tmp-2", "book_add", {"text": "y"})
+        self.assertIn(f"{access.shown(book)} in task:1", got["content"][0]["text"])        # which task holds one
+        task_links.change("g", lambda: tasks.take_out("g", ["c1"]))                          # c1 leaves: refused at once
+        self.assertTrue(tool_gateway.call(self.rows, "c1", "book_add", {"text": "z"})["isError"])
+        refused = self.host.call("book", book, "add", {"text": "z"}, Caller(channel="c1", gatherer="g"))
+        self.assertTrue(refused.is_error)                                                    # the host asks again
+
+    def test_apps_call_reaches_an_app_not_given_by_name_with_the_same_check(self):
+        write_app(self.apps_dir, "book", book_toml("many", "task"), BOOK)
+        self.host.find()
+        book = self.host.open("book", "g", self.folder)
+        task_links.change("g", lambda: tasks.add("g", "c1", ["app:" + book.id]))
+        got = tool_gateway.call(self.rows, "c1", "apps_call", {"app": "book", "tool": "add", "arguments": {"text": "a"}})
+        self.assertEqual(got["content"][0]["text"], "kept")
+        got = tool_gateway.call(self.rows, "c1", "apps_call", {"app": "book", "tool": "add", "text": "b"})
+        self.assertEqual(got["content"][0]["text"], "kept")                     # its arguments beside `arguments`
+        got = tool_gateway.call(self.rows, "c2", "apps_call", {"app": "book", "tool": "book_add",
+                                                               "arguments": {"text": "a"}, "instance": book.id})
+        self.assertTrue(got["isError"])
+
+    def test_the_tools_for_the_apps_themselves_say_what_is_installed_and_what_an_agent_may_use(self):
+        write_app(self.apps_dir, "book", book_toml("many", "task"), BOOK)
+        self.host.find()
+        book = self.host.open("book", "g", self.folder)
+        self.host.rename("g", book.id, "Trip")
+        task_links.change("g", lambda: tasks.add("g", "c1", ["c2", "app:" + book.id], "Plan"))
+        listed = tool_gateway.call(self.rows, "c3", "apps_list", {})["content"][0]["text"]
+        self.assertIn("- Book (book): Book. Used by the agents in its task. Tools: book_add, book_picked.", listed)
+        self.assertIn("- Notes (notes): Notes. Used by every agent of the group.", listed)
+        helped = tool_gateway.call(self.rows, "c3", "apps_help", {"app": "book"})["content"][0]["text"]
+        self.assertIn("Keep notes with notes_add.", helped)
+        self.assertIn('"name": "book_add"', helped)
+        mine = tool_gateway.call(self.rows, "c1", "apps_mine", {})["content"][0]["text"]
+        self.assertIn(f"- Book 'Trip' (id {book.id}) in {book.folder}: your task 'Plan' "
+                      f"(with actors c2)", mine)
+        self.assertIn("None is open for you now", tool_gateway.call(self.rows, "c3", "apps_mine", {})
+                      ["content"][0]["text"])
+        self.assertTrue(tool_gateway.call(self.rows, "c3", "apps_help", {"app": "nope"})["isError"])
+
+    def test_an_agent_is_told_when_its_task_gains_or_loses_an_app_s_instance(self):
+        write_app(self.apps_dir, "book", book_toml("many", "task"), BOOK)
+        self.host.find()
+        told = []
+        self.host.tell_agent = lambda g, c, text, record: told.append((c, text, record["can"]))
+        task_links.change("g", lambda: tasks.add("g", "c1", ["c2"], "Plan"))
+        book = self.host.open("book", "g", self.folder)
+        task_links.change("g", lambda: tasks.add("g", "c1", ["app:" + book.id, "fresh"]))
+        self.assertEqual(sorted((c, can) for c, _, can in told), [("c1", True), ("c2", True)])   # not "fresh":
+                                                                                                 # given it at start
+        self.assertIn(f"You can now use {access.shown(book)}: it is in your task 'Plan'.", told[0][1])
+        told.clear()
+        self.host.rename("g", book.id, "Trip")
+        self.assertIn("is now called: Book 'Trip'", told[0][1])
+        told.clear()
+        task_links.change("g", lambda: tasks.take_out("g", ["c2"]))
+        self.assertEqual([(c, can) for c, _, can in told], [("c2", False)])
+        told.clear()
+        self.host.close_instance("g", book.id)
+        task_links.closed("g", book.id)
+        self.assertEqual([(c, can) for c, _, can in told], [("c1", False)])
+
+    def test_an_app_s_message_names_the_instance_it_is_from(self):
+        i = self.host.open("notes", "g", self.folder)
+        self.host.rename("g", i.id, "Trip")
+        self.assertEqual(app_host.stream_of("Notes", i), f"Notes ({i.id})")
+        self.assertEqual(app_host.stream_of("Notes", self.host.instance("g", i.id)), f"Notes · Trip ({i.id})")
 
     def test_agents_are_told_how_to_link_to_each_app_s_things(self):
         links = '\n[[links]]\nform = "entry/<id>"\nabout = "An entry: its id from book_add."\n'
         write_app(self.apps_dir, "notes", NOTES + links)
-        write_app(self.apps_dir, "book", book_toml("one", "attached") + links, BOOK)
+        write_app(self.apps_dir, "book", book_toml("one", "task") + links, BOOK)
         self.host.find()
-        said = tool_gateway.instructions("g")                          # an "always" app's: its MCP instructions
+        said = tool_gateway.instructions("g")                          # a "group" app's: its MCP instructions
         self.assertIn("## Notes (notes)\nKeep notes with notes_add.\n\nLinks: ", said)
         self.assertIn("- `ag://notes/entry/<id>`: An entry: its id from book_add.", said)
         self.assertIn("`?instance=<its id>`", said)                    # several Notes, one per folder
-        self.assertNotIn("ag://book/", said)                            # "attached": told only to its agents
+        self.assertNotIn("ag://book/", said)                            # a "task" app's: told only to its task's agents
+        self.assertIn("- `ag://book/entry/<id>`: An entry", tool_gateway.apps_help("g", "book"))   # or asked for
         book = self.host.open("book", "g", self.folder)
-        self.host.attach("g", book.id, "c1")
+        task_links.change("g", lambda: tasks.add("g", "c1", ["app:" + book.id]))   # c1 and the Book: one task
         told = " ".join(tool_gateway.launch_args(self.rows[0]))
         self.assertIn("- `ag://book/entry/<id>`: An entry: its id from book_add.", told)
-        self.assertNotIn("ag://book/entry/<id>`: An entry: its id from book_add.\nAttached to more", told)  # one Book
+        self.assertNotIn("`?instance=<its id>`", told)                 # one Book
 
     def test_the_gatherer_agent_reaches_every_app_attached_to_none(self):
-        write_app(self.apps_dir, "book", book_toml("per-folder", "attached"), BOOK)
+        write_app(self.apps_dir, "book", book_toml("per-folder", "task"), BOOK)
         self.host.find()
         lead = {"session_id": "lead", "gatherer": "g", "cwd": self.folder, "harness": "claude", "role": "coordinator"}
         rows = self.rows + [lead]
+        self.rows.append(lead)
         sessions = unittest.mock.patch.object(task_links, "SESSIONS", unittest.mock.Mock(list=lambda: rows))
         sessions.start()
         self.addCleanup(sessions.stop)
         self.host.attachable = task_links.attachable
-        self.assertNotIn("book_add", {t["name"] for t in tool_gateway.tools("g")})  # "attached": not offered others
+        self.assertNotIn("book_add", {t["name"] for t in tool_gateway.tools("g")})  # a task's app: not given others
         self.assertIn("book_add", {t["name"] for t in tool_gateway.tools("g", head=True)})   # every app, for it
         self.assertIn(tool_gateway.LEAD, tool_gateway.instructions("g", head=True))
         self.assertIn("## Book (book)", tool_gateway.instructions("g", head=True))
@@ -544,28 +625,28 @@ class GatewayTest(GatewayBase):
         self.assertEqual(len(self.host.instances_of("g", "book")), 1)
         other = self.host.open("book", "g", tempfile.mkdtemp(dir=self.tmp.name))
         got = tool_gateway.call(rows, "lead", "book_add", {"text": "x"})            # two open: say which
-        self.assertIn("2 of Book open in this gatherer: say which with `instance`", got["content"][0]["text"])
+        self.assertIn("2 of Book you may use: say which with `instance`", got["content"][0]["text"])
         self.assertFalse(tool_gateway.call(rows, "lead", "book_add", {"text": "x", "instance": other.id})["isError"])
         self.assertEqual(self.host.attached_to("g", "lead"), [])
         self.assertEqual(tasks.of("g")["tasked"], {})                               # in no task, nor its apps
         with self.assertRaises(AppError):                                           # nor attached by anyone
             self.host.attach("g", book.id, "lead")
         self.assertEqual(sorted(i["id"] for i in next(a for a in tool_gateway.listed(rows, "lead")["apps"]
-                                                       if a["name"] == "book")["open"]), sorted([book.id, other.id]))
+                                                       if a["name"] == "book")["usable"]), sorted([book.id, other.id]))
 
-    def test_an_agent_attached_to_several_says_which(self):
-        a = self.host.open("notes", "g", self.folder)
-        b = self.host.open("notes", "g", tempfile.mkdtemp(dir=self.tmp.name))
-        self.host.attach("g", a.id, "c1")
-        self.host.attach("g", b.id, "c1")
+    def test_an_agent_that_may_use_several_says_which(self):
+        write_app(self.apps_dir, "book", book_toml("many", "task"), BOOK)
+        self.host.find()
+        a, b = self.host.open("book", "g", self.folder), self.host.open("book", "g", self.folder)
+        task_links.change("g", lambda: tasks.add("g", "c1", ["app:" + a.id, "app:" + b.id]))
         self.host.rename("g", b.id, "Trip")                          # named by the user: said by that name
-        got = tool_gateway.call(self.rows, "c1", "notes_add", {"text": "x"})
+        got = tool_gateway.call(self.rows, "c1", "book_add", {"text": "x"})
         self.assertTrue(got["isError"])
         self.assertIn("say which with `instance`", got["content"][0]["text"])
-        self.assertIn(f"{b.id} (Trip)", got["content"][0]["text"])
-        self.assertFalse(tool_gateway.call(self.rows, "c1", "notes_add", {"text": "x", "instance": b.id})["isError"])
-        self.assertIn("not a Notes you are attached to",
-                      tool_gateway.call(self.rows, "c2", "notes_add", {"text": "x", "instance": b.id})
+        self.assertIn(f"Book 'Trip' (id {b.id})", got["content"][0]["text"])
+        self.assertFalse(tool_gateway.call(self.rows, "c1", "book_add", {"text": "x", "instance": b.id})["isError"])
+        self.assertIn("you may not use Book 'Trip'",
+                      tool_gateway.call(self.rows, "c2", "book_add", {"text": "x", "instance": b.id})
                       ["content"][0]["text"])
 
     def test_what_is_refused_is_said_to_the_agent(self):
@@ -611,7 +692,7 @@ class GatewayServedTest(GatewayBase):
         self.assertEqual(init["serverInfo"]["name"], "ag-apps")
         self.assertIn("Keep notes with notes_add.", init["instructions"])
         names = [t["name"] for t in self.rpc("c1", "tools/list")["result"]["tools"]]
-        self.assertEqual(names, ["notes_add", "notes_picked"])
+        self.assertEqual(names, [*tool_gateway.AG_TOOL_NAMES, "notes_add", "notes_picked"])
         got = self.rpc("c1", "tools/call", {"name": "notes_add", "arguments": {"text": "milk"}})["result"]
         self.assertEqual(got["content"][0]["text"], "kept")
         self.assertIsNotNone(__import__("ag_dashboard.mcp", fromlist=["listed"]).listed(tool_gateway.endpoint("c1")))
@@ -630,7 +711,7 @@ class GatewayServedTest(GatewayBase):
             with contextlib.redirect_stdout(out):
                 self.assertEqual(apps_cli.main([]), 0)
             listed = out.getvalue()
-            self.assertIn("Notes (notes) -- attached:", listed)
+            self.assertIn("Notes (notes) -- you may use:", listed)
             self.assertIn("notes_add(text): Add a note.", listed)
             err = io.StringIO()
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
