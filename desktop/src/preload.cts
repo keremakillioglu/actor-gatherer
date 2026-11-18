@@ -10,7 +10,8 @@
 // text box) about a word: whether it is misspelled, and its fixes (app_kit's ag.spelling, for apps' panels: a word
 // clicked in a Notes line), and add one to the user's dictionary.
 //
-// And it hands the page the app menu's tab keys (New Tab, Close Tab: keys.ts's appMenu), for its screen tabs.
+// And it hands the page the app menu's tab keys (New Tab, Close Tab: keys.ts's appMenu), for its screen tabs, and the
+// user's presses on a native page, for it to close what floats over it (a menu, Settings), as a press on it would.
 import { contextBridge, ipcRenderer, webFrame } from "electron";
 
 type Stage = { x: number; y: number; w: number; h: number; target: string; covered: boolean; app?: string; key?: string };
@@ -33,6 +34,19 @@ ipcRenderer.on("ag:key", (_event, key: unknown) => {
   for (const cb of tabKeys) {
     try {
       cb(String(key));
+    } catch {
+      // (the page's own trouble)
+    }
+  }
+});
+
+// The user's press on a native page (browsers.ts's onPress), which the page never hears: for it to close what floats
+// over it (07-panes.js's pressedAway)
+const presses = new Set<() => void>();
+ipcRenderer.on("ag:pressed", () => {
+  for (const cb of presses) {
+    try {
+      cb();
     } catch {
       // (the page's own trouble)
     }
@@ -68,5 +82,8 @@ contextBridge.exposeInMainWorld("agApp", {
   learn: (word: unknown) => ipcRenderer.send("ag:learn", aWord(word)),
   onKey: (cb: (key: string) => void) => {
     if (typeof cb === "function") tabKeys.add(cb);
+  },
+  onPressed: (cb: () => void) => {
+    if (typeof cb === "function") presses.add(cb);
   },
 });
