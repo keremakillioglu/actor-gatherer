@@ -19,11 +19,9 @@ const PREAMBLE = "Harness preamble", NOT_COUNTED = "Not counted by ag";
 const NOT_COUNTED_MIN = 50000;
 const uncounted = (n) => n > NOT_COUNTED_MIN ? n : 0;
 const GROUP_ORDER = [PREAMBLE, "Recent history", "ag's sections", "Kept from before the cut", "File-change notices", "Other agents' requests", "Stream messages", NOT_COUNTED];
-const DETAILS_KEY = "ag-dashboard-details";   // which side of the details panel the reader last chose
 let state = { home: null, selected: null, agent: null, readId: null, context: null, paused: false, stream: null,
   tx: null,             // the transcript feed's events, loaded as they come: {key, items, pending, first_row, last_row, earlier}
   details: !!SNAPSHOT,  // the details panel open beside the chat: at first in a snapshot, which has no conversation
-  detailsTab: (() => { try { const v = localStorage.getItem(DETAILS_KEY); return v === "gatherer" || v === "context" ? v : "actor"; } catch (e) { return "actor"; } })(),
   chat: null,           // the history feed's messages: {key, items (stored, append-only), pending, last_row}
   adding: null,         // the form open in the agent list: {gatherer: ""} a new gatherer's, {gatherer: G} a new session's in G
   renaming: null };     // the actor being named in the list: {g, c, value (as typed so far), was (its name before)}; a

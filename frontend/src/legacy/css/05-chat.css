@@ -145,6 +145,11 @@
 .drawer-head .close { border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 8px; color: var(--muted); }
 .drawer-head .close:hover { color: var(--ink); background: var(--wash); }
 .drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+.drawer-head h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--ink); text-transform: none; letter-spacing: 0; }
+/* its parts, one under another (detailsPanel): each headed as the views list is, with what it holds beside the name */
+.drawer-part { padding-top: 12px; border-top: 1px solid var(--grid); }
+.drawer-part > h4 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+.drawer-part > h4 span { margin-left: 8px; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .drawer .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; font-size: 12px; margin: 0 0 16px; }
 .drawer .facts dt { color: var(--muted); } .drawer .facts dd { margin: 0; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 @media (max-width: 760px) { .drawer { position: fixed; inset: 0; width: auto; } }
