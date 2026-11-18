@@ -12,7 +12,7 @@ label = "Editor"
 version = "1"
 description = "edit a folder's files live, with the actors, and preview what they make"
 instances = "many"
-offer = "attached"
+access = "task"
 mark = "mark.svg"
 instructions = """You work with the user's Editor, in the dashboard: it edits the files of a folder live, the user and you
 together. Change files with its tools -- editor_read, editor_edit (old_string -> new_string, as your own Edit), editor_write
@@ -30,7 +30,7 @@ first. editor_preview_show says what it is now; editor_preview_stop stops its ru
 preview` (see `ag preview --help`)."""
 
 [agent]
-start = true
+offered = true
 name = "Editor · {folder}"
 
 [backend]

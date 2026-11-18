@@ -1,13 +1,13 @@
 # The user's Slack, beside their agents: their conversations in a panel, new messages as they are sent (Socket Mode),
 # and replies that agents draft and only the user sends (backend.py). One line to Slack -- the user's own Slack app's
 # tokens, kept in the app's data folder -- serves every gatherer; each gatherer has one instance, and its agents are
-# told of new messages only when they work with it (offer "attached").
+# told of new messages only when they work with it (access "task": the agents in its task).
 name = "slack"
 label = "Slack"
 version = "1"
 description = "your Slack: new messages as they come, replies agents draft and you send"
 instances = "one"
-offer = "attached"
+access = "task"
 mark = "mark.svg"
 instructions = """Slack here is the user's own Slack, shown in the dashboard's Slack panel. New messages reach you as
 stream messages ("Message in Slack #design from Maya Chen ...") that end with [conversation <id>, ts <ts>]. Read with
@@ -32,7 +32,7 @@ call slack_draft with its `draft` id and the new text. Write as the user would: 
 through slack_draft."""
 
 [agent]
-start = true
+offered = true
 name = "Slack"
 
 [backend]

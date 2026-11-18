@@ -21,7 +21,7 @@ import harness_kit  # noqa: E402
 import page_source  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
 from ag.cli import actors as cli  # noqa: E402
-from ag_dashboard import branches, coordination, coordinators, data, files, folders, gatherer_folders, groups, livedocs, saved, server, sessions  # noqa: E402
+from ag_dashboard import access, branches, coordination, coordinators, data, files, folders, gatherer_folders, groups, livedocs, saved, server, sessions, tasks  # noqa: E402
 from test_dashboard_sessions import FAKE_AG, SessionsBase  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -394,6 +394,41 @@ class CoordinationTest(CoordinationBase):
 
 
 @unittest.skipIf(not livedocs.AVAILABLE, "pycrdt is not installed")      # the Editor, which branches merge into
+class DashboardViewTest(CoordinationBase):
+    """dashboard_ls / `ag tasks`: the list walked like a directory -- folders, tasks, actors, app instances."""
+
+    def test_a_folder_a_task_and_what_is_in_them(self):
+        class Inst:
+            def __init__(self, iid, app="browser", name="work", folder=None):
+                self.id, self.app, self.name, self.title, self.folder, self.gatherer = iid, app, name, "", folder, "g"
+
+        class Host:
+            apps = {}
+
+            def instances_of(self, g, app=None):
+                return [Inst("b12")] if g == "g" else []
+        p = unittest.mock.patch.object(access, "HOST", Host())
+        p.start()
+        self.addCleanup(p.stop)
+        fid = folders.make("g", "Paper")
+        folders.file("g", [self.b], fid)
+        tid = tasks.add("g", self.a, ["app:b12"], "Trip")
+        top = self.crew.tree_text(self.a, "/")
+        self.assertIn("/ (group g)", top)
+        self.assertIn("  Paper/ -- folder · 1 item(s) directly in it", top)
+        self.assertIn(f'  task:{tid} "Trip" -- task · 1 actor(s), 1 app(s) · your task', top)
+        self.assertNotIn(self.b, top)                                                       # in Paper
+        self.assertIn(f'actor {self.b} "Write the docs" -- idle', self.crew.tree_text(self.a, "Paper"))
+        self.assertIn("/Paper (group g)", self.crew.tree_text(self.b, ""))                  # none: where it is
+        task = self.crew.tree_text(self.b, f"task:{tid}")
+        self.assertIn(f'actor {self.a} "Fix the editor" -- idle', task)
+        self.assertIn("app browser 'work' (id b12) -- used by", task)
+        with self.assertRaises(coordination.CoordinationError):
+            self.crew.tree_text(self.a, "Nope")
+        with self.assertRaises(coordination.CoordinationError):
+            self.crew.tree_text(self.a, "task:999")
+
+
 class BranchTest(CoordinationBase):
     """`ag actors new --branch`: a new actor on a branch of its own, as the page's branch button starts one."""
 

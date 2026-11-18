@@ -12,7 +12,7 @@ import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import server, tool_gateway  # noqa: E402
+from ag_dashboard import app_requests, server, tool_gateway  # noqa: E402
 import app_kit  # noqa: E402
 from test_dashboard_app_host import NOTES, ROOT, HostBase, insert_here, write_app  # noqa: E402
 
@@ -66,8 +66,8 @@ class CatalogTest(HostBase):
         got = self.installed()
         self.assertEqual(set(got), {"notes", "slate"})
         notes = got["notes"]
-        self.assertEqual((notes["origin"], notes["offer"], notes["tools"]),
-                         ("path", "always", ["notes_add", "notes_picked"]))
+        self.assertEqual((notes["origin"], notes["access"], notes["tools"]),
+                         ("path", "group", ["notes_add", "notes_picked"]))
         self.assertGreater(notes["tokens"], 20)
         self.assertEqual(notes["open"], {"g": 1})
         self.assertIn("reading these events of the gatherer: user_message", notes["can"])
@@ -93,6 +93,54 @@ class CatalogTest(HostBase):
         self.assertIn("update it instead", got["error"])
         self.assertEqual(self.api("POST", "/api/apps/install", {"id": st["id"], "update": True})[0], 200)
         self.assertIn("pager_ring", self.installed()["pager"]["tools"])
+
+    def test_an_agent_s_install_and_uninstall_wait_for_the_user_s_answer_and_the_agent_is_told(self):
+        app_requests.forget()
+        self.addCleanup(app_requests.forget)
+        self.httpd.sessions.list = lambda: [{"session_id": "c1", "gatherer": "g", "cwd": self.folder,
+                                             "harness": "claude"}]
+        told = []
+        self.h.tell_agent = lambda g, c, text, record: told.append((g, c, text, record["state"]))
+        st = self.api("POST", "/api/apps/stage", {"source": self.src})[1]
+        status, got = self.api("POST", "/api/apps/install", {"id": st["id"], "actor": "c1"})
+        self.assertEqual((status, got["waiting"]["state"], got["waiting"]["op"]), (200, "waiting", "install"))
+        self.assertNotIn("pager", self.on())                                     # not until the user approves
+        rid = got["waiting"]["id"]
+        self.assertEqual([r["id"] for r in self.api("GET", "/api/apps/requests")[1]["requests"]], [rid])
+        self.assertEqual(app_requests.pending()[0]["about"]["name"], "pager")      # as the home lists them
+        status, done = self.api("POST", f"/api/apps/requests/{rid}", {"approve": True})
+        self.assertEqual((status, done["state"]), (200, "approved"))
+        self.assertIn("pager", self.on())
+        self.assertEqual(told[-1][:2] + told[-1][3:], ("g", "c1", "approved"))
+        self.assertIn("The user approved: Pager is installed.", told[-1][2])
+        self.assertEqual(self.api("GET", f"/api/apps/requests/{rid}")[1]["state"], "approved")   # as `ag apps` waits
+        self.assertEqual(self.api("GET", "/api/apps/requests")[1]["requests"], [])
+        rid = self.api("POST", "/api/apps/uninstall", {"name": "pager", "actor": "c1"})[1]["waiting"]["id"]
+        self.assertEqual(self.api("POST", f"/api/apps/requests/{rid}", {"approve": False})[1]["state"], "declined")
+        self.assertIn("pager", self.on())                                        # declined: still installed
+        self.assertIn("The user declined", told[-1][2])
+        self.assertEqual(self.api("POST", f"/api/apps/requests/{rid}", {"approve": True})[0], 404)   # answered once
+
+    def test_ag_apps_install_in_an_agent_s_shell_waits_for_the_user(self):
+        import contextlib
+        import io
+        from ag.cli import actors as actors_cli
+        from ag.cli import apps as apps_cli
+        app_requests.forget()
+        self.addCleanup(app_requests.forget)
+        env = {actors_cli.DASHBOARD_VAR: f"http://127.0.0.1:{self.port}", "AG_ACTOR": "c1"}
+        out = io.StringIO()
+        with unittest.mock.patch.dict(os.environ, env), unittest.mock.patch.object(apps_cli, "WAIT", 0.5), \
+                unittest.mock.patch.object(apps_cli, "POLL", 0.1), contextlib.redirect_stdout(out):
+            for v in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
+                os.environ.pop(v, None)
+            code = apps_cli.main(["install", self.src, "--yes"])                 # --yes: only its own question
+        self.assertEqual(code, 1)
+        self.assertIn("Asked the user to approve this in the dashboard", out.getvalue())
+        self.assertIn("No answer yet", out.getvalue())
+        self.assertNotIn("pager", self.on())
+        (r,) = app_requests.pending()
+        self.assertEqual((r["actor"], r["op"]), ("c1", "install"))
 
     def test_uninstalled_its_windows_go_and_come_back_when_it_is_installed_again(self):
         st = self.api("POST", "/api/apps/stage", {"source": self.src})[1]
@@ -168,6 +216,8 @@ class CatalogTest(HostBase):
         env = unittest.mock.patch.dict(os.environ, {actors_cli.DASHBOARD_VAR: f"http://127.0.0.1:{self.port}"})
         env.start()
         self.addCleanup(env.stop)
+        for v in actors_cli.ACTOR_VARS:                                         # the user's own terminal: no agent's
+            os.environ.pop(v, None)
 
         def run(*args):
             out, err = io.StringIO(), io.StringIO()

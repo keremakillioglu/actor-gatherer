@@ -454,6 +454,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         if cmd == "apps":
             from . import apps
             return apps.main(rest)
+        if cmd == "tasks":
+            from . import apps
+            return apps.tasks_main(rest)
         if cmd == "groups":
             from . import groups
             return groups.main(rest)

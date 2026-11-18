@@ -9,13 +9,13 @@ label = "Browser"
 version = "1"
 description = "a browser you and an agent use together: point it at what you mean"
 instances = "many"
-offer = "attached"
+access = "task"
 instructions_file = "instructions.md"
 tools_file = "tools.json"
 mark = "mark.svg"
 
 [agent]
-start = true
+offered = true
 name = "Browser · {folder}"
 
 # what its agent was asked, as the list shows it: a message from before the Browser was an app carried the browser's

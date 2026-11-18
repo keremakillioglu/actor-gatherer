@@ -27,7 +27,7 @@ def block(i, type="text", text="", **kw):
 class ManifestTest(unittest.TestCase):
     def test_it_loads_as_an_app_every_agent_is_offered(self):
         m = app_kit.load(FOLDER)
-        self.assertEqual((m.name, m.label, m.instances, m.offer), ("notes", "Notes", "one", "always"))
+        self.assertEqual((m.name, m.label, m.instances, m.access), ("notes", "Notes", "one", "group"))
         self.assertEqual([t.mcp("notes")["name"] for t in m.tools],
                          ["notes_read", "notes_add", "notes_change", "notes_report"])
         self.assertEqual(m.backend.python, "backend:NotesApp")
