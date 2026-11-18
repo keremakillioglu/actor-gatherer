@@ -56,7 +56,7 @@ from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.ag_orchestrator.call_ag import READ, call_ag, keep_read, preamble_of, report_measured
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ag.integrations.tools.ag_orchestrator.proxy_hook import ProxyHook
-from ag.integrations.tools.ag_orchestrator.records import derived, record
+from ag.integrations.tools.ag_orchestrator.records import derived
 from ..adaptor.adaptor import AntigravityAdaptor
 from .counting import Counter
 from .told import Told
@@ -229,8 +229,7 @@ class AntigravityContextManager(ProxyHook):
 
     def facts(self, gatherer: str, channel: str, facts: list) -> None:
         """Facts the hook knows itself, recorded in the background, beside the session's reads."""
-        self.keep(record(self.ag_clients.client(gatherer), gatherer, channel, [derived(f) for f in facts], self.log,
-                         beside=True))
+        self.keep(self.outbox.record(gatherer, channel, [derived(f) for f in facts], beside=True))
 
     async def side_answered(self, request, status: int, answer) -> bool:
         """A subagent's answer (`subagent`): one that calls no tool ends its turn -- its task ended until it is called
