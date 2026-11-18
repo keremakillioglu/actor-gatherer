@@ -1473,7 +1473,8 @@ function startButtons(g, folder = null, prefix = "") {
     onclick: (ev) => { aimStart(g.name, fid); openMoreMenu(g, hs, ev.currentTarget, moreKey, place); } }, plus(), strokeIcon(ICONS.more, 16)) : null;
   return [actor, more].filter(Boolean);
 }
-// The "+ more" drop-down's starts: what each is, said under it, and what choosing it does. `key`: its button's data-pop.
+// The "+ more" drop-down's starts: what each is (an app by its name and mark alone, no description under it; a branch and
+// a terminal say where they work), and what choosing it does. `key`: its button's data-pop.
 function moreStarts(g, hs, where, key = `more:${g.name}`) {
   const there = where ? `in ${where}` : "in a directory you choose";
   const tooled = hs.filter((h) => (harnessInfo(h) || {}).mcp);    // an app's agent: given its tools
@@ -1481,11 +1482,12 @@ function moreStarts(g, hs, where, key = `more:${g.name}`) {
     hs.length ? { icon: ICONS.branch, text: "Actor on a branch…", note: "in its own worktree, merged into the project",
       run: (button) => openBranchMenu(g, button) } : null,
     ...(tooled.length ? startingApps() : []).map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null,
-      text: `${a.label}…`, note: a.description || "an app with its own agent",
+      text: `${a.label}…`,
       run: (button) => openPop(key, button, appStartBox(g, tooled, a)) })),
-    state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: there, run: () => addSession(g, SHELL_START) } : null,
+    // (where it opens: the menu's heading says it)
+    state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: where ? null : there, run: () => addSession(g, SHELL_START) } : null,
     ...(PANE || SNAPSHOT ? [] : window.agNext.apps.found()).filter((a) => !(a.agent && a.agent.start)).map((a) => ({ icon: ICONS.app,
-      mark: a.mark ? appMarkImg(a) : null, text: a.label, note: a.description || "an app", run: () => openAppTab(g.name, a.name, startCwd(g)) })),
+      mark: a.mark ? appMarkImg(a) : null, text: a.label, run: () => openAppTab(g.name, a.name, startCwd(g)) })),
   ].filter(Boolean);
 }
 // `key`: the button's data-pop (the list's "+ actor", or the rail's "+"); `start`: what a harness chosen does; `place`: the

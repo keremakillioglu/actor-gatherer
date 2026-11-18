@@ -59,9 +59,11 @@
 .newform .link { border: 0; background: none; padding: 0; color: var(--s1); font: inherit; font-size: var(--fs-meta); cursor: pointer; justify-self: start; }
 /* the branch button's drop-down: the gatherer's sources, and adding one; and, in its style, a gatherer row's other
    drop-downs (popMenu), each item's mark beside it -- over a hover card (.actor-card, 70), whose buttons open them too */
-.br-menu { position: fixed; z-index: 72; min-width: 250px; max-width: min(380px, calc(100vw - 16px)); padding: 5px; display: grid; gap: 1px;
+/* one column, the menu's own width: a long path (its heading's, a note's) cut short in it, never widening it past its edge */
+.br-menu { position: fixed; z-index: 72; min-width: 250px; max-width: min(380px, calc(100vw - 16px)); padding: 5px; display: grid;
+  grid-template-columns: minmax(0, 1fr); gap: 1px;
   background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: var(--fs-ui); }
-.br-menu .hd { color: var(--muted); font-size: var(--fs-label); padding: 3px 8px 4px; }
+.br-menu .hd { min-width: 0; color: var(--muted); font-size: var(--fs-label); padding: 3px 8px 4px; }
 .br-menu .hd .sub { display: block; font-family: var(--mono, ui-monospace, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .br-menu button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; text-align: left; border: 0; background: none;
   padding: 5px 8px; border-radius: 5px; color: var(--ink); font: inherit; cursor: pointer; }
