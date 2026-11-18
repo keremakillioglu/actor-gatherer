@@ -515,7 +515,7 @@ def new_gatherer(name: str) -> dict:
     Refused when one has the name already."""
     name = (name or "").strip()
     if not GATHERER.fullmatch(name):
-        raise SessionError("a gatherer's name may hold letters, digits, '.', '_' and '-' only")
+        raise SessionError("a gatherer name can only contain letters, digits, '.', '_' and '-'")
     if os.path.isdir(home.gatherer_dir(name)):
         raise SessionError(f"there is a gatherer {name} already")
     try:
@@ -859,7 +859,7 @@ class Sessions:
         agent's node (coordinators.py)."""
         gatherer = (gatherer or "").strip()
         if not GATHERER.fullmatch(gatherer):
-            raise SessionError("a gatherer's name may hold letters, digits, '.', '_' and '-' only")
+            raise SessionError("a gatherer name can only contain letters, digits, '.', '_' and '-'")
         cwd = os.path.abspath(os.path.expanduser((cwd or "").strip() or "."))
         if not os.path.isdir(cwd):
             raise SessionError(f"no directory {cwd}")
@@ -869,7 +869,7 @@ class Sessions:
             raise SessionError(f"harness {harness!r}: one of {', '.join(HARNESSES)}")
         model = (model or "").strip() or None
         if model and not re.fullmatch(r"[A-Za-z0-9._:/@-]+", model):
-            raise SessionError(f"model {model!r}: not a model's name")
+            raise SessionError(f"{model!r} isn't a valid model name")
         if role is not None and not known_role(role):
             raise SessionError(f"role {role!r}: one of {', '.join(ROLES)}, or an app's actor's ({{\"app\": ..., \"key\": ...}})")
         session_id = str(uuid.uuid4())
@@ -894,7 +894,7 @@ class Sessions:
                 return s
             cwd = _session_cwd(gatherer, session_id)
             if not cwd or not os.path.isdir(cwd):
-                raise SessionError(f"session {session_id} named no directory that is still there to resume it in"
+                raise SessionError(f"can't resume session {session_id}: its directory is missing"
                                    + (f" ({cwd})" if cwd else ""))
             conn = self._db()
             try:
@@ -944,7 +944,7 @@ class Sessions:
     def _send(self, session_id: str, text: str, cols: int, rows: int, fullscreen: bool) -> dict:
         text = (text or "").strip()
         if not text:
-            raise SessionError("an empty message")
+            raise SessionError("the message is empty")
         t = self.terms.get(session_id)
         if t is not None and t.kept:                 # its terminal being put away: once it has ended, a process of its own
             self._gone(t)
@@ -976,7 +976,7 @@ class Sessions:
                 else:
                     held = holder(s["gatherer"], session_id) if s["turns"] else None
                     if held is not None:
-                        raise SessionError(f"the session is open in another process ({held['pid']}): close it there first")
+                        raise SessionError(f"the session is open in another process ({held['pid']}). Close it there first.")
                     self._exec(s, text)
                 return next(x for x in self.list() if x["session_id"] == s["session_id"] or x["session_id"] == session_id)
             if a is not None and a.kept and a.proc.poll() is None:   # being put away: the process after it takes it
@@ -984,11 +984,11 @@ class Sessions:
                 self._changed(s["gatherer"], session_id)
                 return next(x for x in self.list() if x["session_id"] == session_id)
             if a is not None and a.taken:
-                raise SessionError("the session was taken over by another process: close it there first")
+                raise SessionError("another process took over the session. Close it there first.")
             if a is None or a.proc.poll() is not None:
                 held = holder(s["gatherer"], session_id)
                 if held is not None:
-                    raise SessionError(f"the session is open in another process ({held['pid']}): close it there first")
+                    raise SessionError(f"the session is open in another process ({held['pid']}). Close it there first.")
                 a = self._start(s)
             a.queue.append(text)
             if not a.busy:
@@ -1020,7 +1020,7 @@ class Sessions:
                 # ended (an app's note to it, say): closed now, as asked, unless a process outside has it open
                 held = holder(s["gatherer"], session_id)
                 if held is not None:
-                    raise SessionError(f"the session is open in another process ({held['pid']}): close it there")
+                    raise SessionError(f"the session is open in another process ({held['pid']}). Close it there.")
                 self._set(session_id, ended=time.time())
                 return next(x for x in self.list() if x["session_id"] == session_id)
         if t is not None:                            # its end recorded by its reader, which takes the lock
@@ -1055,9 +1055,9 @@ class Sessions:
             a = self.agents.get(session_id)
             if session_id in self.terms or (a is not None and (a.proc.poll() is None or a.queue)) \
                     or s["status"] in ("starting", "running", "idle", "terminal"):
-                raise SessionError("it is running: close it first")
+                raise SessionError("it's running. Close it first.")
             if s["turns"]:
-                raise SessionError("it has had a turn: close it instead")
+                raise SessionError("it has already had a turn. Close it instead.")
             conn = self._db()
             try:
                 conn.execute("BEGIN IMMEDIATE")
@@ -1106,7 +1106,7 @@ class Sessions:
         """ag's command line that runs the session headless, as its harness says (harness_kit's `headless_args`)."""
         h = harness_kit.get(s["harness"])
         if h is None or not h.headless:
-            raise SessionError(f"{s['harness']} has no headless mode here: open it in a terminal")
+            raise SessionError(f"{s['harness']} has no headless mode. Open it in a terminal.")
         return [*ag_command(), "--gatherer", _launch(s), *channel_args(s), s["harness"],
                 *h.headless_args(self._own(s), resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
                                  instructions=instructions(s), extra=tuple(extra_args(s)))]
@@ -1235,7 +1235,7 @@ class Sessions:
                 a.taken = True
                 a.queue.clear()
                 self._set(session_id, status="failed",
-                          last_error="the session was taken over by another process: close it there first")
+                          last_error="another process took over the session. Close it there first.")
                 return
             a.yielding = False
         text = a.queue.pop(0)
@@ -1316,7 +1316,7 @@ class Sessions:
                 a = self.agents.get(session_id)
                 if a is not None and a.proc.poll() is None:
                     if a.busy or a.queue:
-                        raise SessionError("a turn is running: wait for it to end")
+                        raise SessionError("a turn is running. Wait for it to end.")
                     a.queue.clear()
                     try:
                         a.proc.stdin.close()
@@ -1335,7 +1335,7 @@ class Sessions:
             if session_id not in self.terms:
                 held = holder(s["gatherer"], session_id)
                 if held is not None:
-                    raise SessionError(f"the session is open in another process ({held['pid']}): close it there first")
+                    raise SessionError(f"the session is open in another process ({held['pid']}). Close it there first.")
                 row = self._row(session_id)
                 from . import tool_gateway           # here: the gateway uses this module
                 tools = ([tool_gateway.endpoint(tool_gateway.actor_of(row))]
@@ -1398,7 +1398,7 @@ class Sessions:
         resume = resumes(s)
         h = harness_kit.get(s["harness"])               # its own options: the harness's (harness_kit's `command`)
         if h is None:
-            raise SessionError(f"no rules for {s['harness']} to start it with")
+            raise SessionError(f"unknown harness {s['harness']!r}")
         first = h.first_prompt(prompt) if prompt else []     # its first message, never read as an option
         told = instructions(s)
         screen = h.screen_env(fullscreen)            # its screen as asked, whatever the dashboard's own environment says
@@ -1451,7 +1451,7 @@ class Sessions:
             raise SessionError("a terminal needs a Unix pseudo-terminal, which this system does not have")
         gatherer = (gatherer or "").strip()
         if not GATHERER.fullmatch(gatherer):
-            raise SessionError("a gatherer's name may hold letters, digits, '.', '_' and '-' only")
+            raise SessionError("a gatherer name can only contain letters, digits, '.', '_' and '-'")
         cwd = os.path.abspath(os.path.expanduser((cwd or "").strip() or "~"))
         if not os.path.isdir(cwd):
             raise SessionError(f"no directory {cwd}")
@@ -1729,20 +1729,20 @@ class Sessions:
             if t is None:
                 # An actor the dashboard runs headless, with no terminal, is answered by its driver instead (its
                 # session's own asks): not here, by keys.
-                raise SessionError("the dashboard does not run this session's terminal: answer it in the one that does")
+                raise SessionError("the dashboard doesn't run this session's terminal. Answer it in the terminal that does.")
             if t.answering:
-                raise SessionError("an answer is being typed into it already")
+                raise SessionError("an answer is already being typed")
             from . import data                       # data imports this module
             typed = max(t.typed or 0, data.typed_at((self._row(session_id) or {}).get("gatherer") or "", session_id) or 0)
             if typed and ask.get("at") and typed >= ask["at"]:      # here, or as the gatherer kept it (terminal_input)
-                raise SessionError("something was typed into its terminal since it asked: finish answering there")
+                raise SessionError("something was typed in the terminal since the question appeared. Answer it there.")
             rules = harness_kit.get(ask.get("harness") or harness_kit.DEFAULT)
             if (permission or rules is not None and not rules.asks_shown_again) and ask.get("at") and t.since > ask["at"]:
-                raise SessionError("its terminal opened after it asked, and does not ask it: answer in a message")
+                raise SessionError("the terminal was reopened and no longer shows this question. Answer in a message.")
             harness = (self._row(session_id) or {}).get("harness") or t.harness or ""
             shown = self._shown(t, harness) if permission else None
             if permission and shown is None:
-                raise SessionError("its terminal doesn't show it asking: answer it there")
+                raise SessionError("the terminal doesn't show the question. Answer it there.")
             keys = answers.keys(ask, choice, shown)      # AnswerError, a ValueError: a choice that does not fit
             sent = {"call": ask.get("id") or ask.get("call"), "summary": answers.summary(ask, choice),
                     "expect": answers.expected(ask, choice), "at": time.time()}
@@ -1766,17 +1766,17 @@ class Sessions:
         with self.lock:
             t = self.terms.get(session_id)
             if t is None:
-                raise SessionError("the dashboard does not run this session's terminal: answer it in the one that does")
+                raise SessionError("the dashboard doesn't run this session's terminal. Answer it in the terminal that does.")
             if t.answering:
-                raise SessionError("an answer is being typed into it already")
+                raise SessionError("an answer is already being typed")
             if t.typed and ask.get("at") and t.typed >= ask["at"]:
-                raise SessionError("something was typed into its terminal since it showed this: finish there")
+                raise SessionError("something was typed in the terminal since this appeared. Answer it there.")
             harness = (self._row(session_id) or {}).get("harness") or t.harness or ""
             h = harness_kit.get(harness)
             shown = self._shown(t, harness, menus=True)
             if h is None or shown is None or (shown["title"], shown["question"], shown["options"]) != (
                     ask.get("title"), ask.get("said"), ask.get("options")):
-                raise SessionError("its terminal no longer shows that: answer it there")
+                raise SessionError("the terminal no longer shows this. Answer it there.")
             place = choice.get("pick") if isinstance(choice, dict) else None
             keys = h.pick_keys(shown, place)         # AnswerError: no such option
             sent = {"call": ask.get("id"), "summary": shown["options"][place], "expect": [], "at": time.time()}
@@ -1978,10 +1978,10 @@ class Sessions:
         h = harness_kit.get(s["harness"])
         name = h.label if h is not None and h.label else s["harness"]
         if box == Box.HOLDS:
-            raise NotAtBox(f"Something is typed in {name}'s message box in its terminal and not sent: "
-                           f"send or clear it there, then send this.", box)
-        raise NotAtBox(f"{name}'s terminal shows a dialog, a menu or a question, not its message box: "
-                       f"finish it or close it there (Esc), then send this.", box)
+            raise NotAtBox(f"{name}'s message box in the terminal has unsent text. "
+                           f"Send or clear it there, then try again.", box)
+        raise NotAtBox(f"{name}'s terminal is showing a dialog, menu or question. "
+                       f"Finish it or press Esc there, then try again.", box)
 
     def _write(self, t: _Term, data: bytes) -> None:
         try:

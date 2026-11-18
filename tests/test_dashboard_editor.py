@@ -285,7 +285,7 @@ class RoomTest(RoomBase):
         room, conn, doc, text = self.open("p1")
         self.type(room, "p1", doc, len(str(text)), "y = 3\n")
         self.write("def f():\n    return 1\n\nx = f()\nz = 9\n")    # not looked at before the save
-        with self.assertRaisesRegex(livedocs.DocError, "see the conflicts"):
+        with self.assertRaisesRegex(livedocs.DocError, "Resolve the conflicts"):
             room.save()
         self.assertTrue(self.disk().endswith("z = 9\n"))               # the actor's line still there
         [c] = room.state()["conflicts"]
@@ -442,7 +442,7 @@ class RoomTest(RoomBase):
         self.write("def f():\n    return 7\n\nx = f()\n")              # the actor again, while the box was open
         room.check()
         [c] = room.state()["conflicts"]
-        with self.assertRaisesRegex(livedocs.DocError, "its lines changed again"):
+        with self.assertRaisesRegex(livedocs.DocError, "the proposed lines changed"):
             room.settle(c["id"], "edited", "    return 6 + 1\n", theirs="    return 6\n", mine="    return 5\n")
         with self.assertRaisesRegex(livedocs.DocError, "your lines changed"):
             room.settle(c["id"], "edited", "    return 7 + 1\n", theirs="    return 7\n", mine="    return 4\n")
@@ -561,13 +561,13 @@ class RoomTest(RoomBase):
         self.assertTrue(os.path.isdir(os.path.join(self.root, "lib", "deep")))
 
     def test_a_new_file_where_one_is_or_outside_the_root_is_refused(self):
-        for path, said in [(self.path, "there already"), (os.path.join(self.root, "pkg") + "/", "a name"),
-                           (os.path.join(self.root, "notes.py", "x.py"), "a file is where"),
+        for path, said in [(self.path, "already exists"), (os.path.join(self.root, "pkg") + "/", "a name"),
+                           (os.path.join(self.root, "notes.py", "x.py"), "a file is in the way"),
                            ("/etc/new.txt", "not under"), (os.path.join(self.root, ".."), "a name"),
                            (os.path.join(self.root, "..", "out.txt"), "not under"), ("new.txt", "absolute")]:
             if path.endswith("pkg/"):
                 os.makedirs(path)
-                said = "there already"
+                said = "already exists"
             with self.assertRaisesRegex(livedocs.DocError, said, msg=path):
                 livedocs.create(path, self.root)
         with open(self.path) as fh:                                      # what was there: left as it was

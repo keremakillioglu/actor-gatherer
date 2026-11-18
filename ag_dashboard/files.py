@@ -84,8 +84,8 @@ def _unsplit(shell: bool, text: str) -> dict:
     text = (text or "").rstrip("\n")
     if not text:
         return {"t": "note", "text": "read, but the output was empty"}
-    note = ("the command's whole output: this file's lines are in it, but which ones can't be told apart from the rest"
-            if shell else "the call's whole output: it shows none of the file's lines by number")
+    note = ("the command's full output, with this file's lines somewhere in it"
+            if shell else "the call's full output, without line numbers")
     return {"t": "output", "note": note, "lines": text.split("\n")}
 
 
@@ -755,9 +755,9 @@ def files_of(conn, channel: str, turn: Optional[int] = None, cwd: str = "") -> d
             unnamed = changing and r["named"] == 0
             rec.checked(f, src, None if r["checked"] is None else bool(r["checked"]), not unnamed)
             if gits == "meanwhile":
-                rec.block(f, src, {"t": "note", "text": "changed by git as this ran, in another call; this call doesn't name it"})
+                rec.block(f, src, {"t": "note", "text": "changed by git in another call while this ran"})
             elif unnamed:
-                rec.block(f, src, {"t": "note", "text": "changed while this ran; the call doesn't name it"})
+                rec.block(f, src, {"t": "note", "text": "changed while this ran, though the call doesn't name it"})
             if how == "read":
                 if d.get("image") and result.get("row_id") is not None:
                     rec.block(f, src, {"t": "image", "row_id": result["row_id"], "id": part.get("id")})
@@ -776,13 +776,13 @@ def files_of(conn, channel: str, turn: Optional[int] = None, cwd: str = "") -> d
             elif how == "modified":
                 for h in d.get("hunks") or []:
                     if h.get("more"):
-                        rec.block(f, src, {"t": "note", "text": "changed in more places, not shown"})
+                        rec.block(f, src, {"t": "note", "text": "more changes not shown"})
                     else:
                         rec.block(f, src, {"t": "diff", "at": h.get("at"), "old": h.get("old") or [], "new": h.get("new") or [],
                                            "above": h.get("above") or [], "below": h.get("below") or []})
                 if not d.get("hunks"):
-                    rec.block(f, src, {"t": "note", "text": "changed; at which lines isn't known (it wasn't seen before, "
-                                                            "or isn't text)"})
+                    rec.block(f, src, {"t": "note", "text": "changed at unknown lines. It wasn't seen before "
+                                                            "or isn't text."})
             else:
                 rec.block(f, src, {"t": "note", "text": "deleted"})
 
@@ -907,7 +907,7 @@ def files_of(conn, channel: str, turn: Optional[int] = None, cwd: str = "") -> d
                         f = rec.file(path)
                         src = rec.source(f, via, "edit", view, error)
                         rec.block(f, src, {"t": "append", "lines": what[:COMMAND_OUTPUT].split("\n")} if how == "append"
-                                  else {"t": "note", "text": f"changed by {what}, which doesn't say which lines"})
+                                  else {"t": "note", "text": f"changed by {what} at unknown lines"})
                     if how == "changed" and not error:
                         known.pop(path, None)               # its lines are no longer known
             if rec:
@@ -920,8 +920,8 @@ def files_of(conn, channel: str, turn: Optional[int] = None, cwd: str = "") -> d
                         src = rec.source(f, via, "hit", view, error)
                         if path not in noted:
                             noted.add(path)
-                            rec.block(f, src, {"t": "note", "text": "searched one after another with other files: "
-                                                                    "which of the matches are this file's can't be told apart"})
+                            rec.block(f, src, {"t": "note", "text": "searched together with other files, so its "
+                                                                    "matches can't be told apart"})
                     else:
                         src = rec.source(f, via, "read", view, error)
                         if how == "lines":                  # start None: where in the file is not known

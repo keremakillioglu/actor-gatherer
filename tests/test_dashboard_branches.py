@@ -354,7 +354,7 @@ class BranchesTest(unittest.TestCase):
         self.put(wt, "notes.py", "def f():\n    return 3\n\nx = f()\n")    # changed again on its branch
         self.branches.look(everything=True)
         [c] = room.state()["conflicts"]
-        with self.assertRaisesRegex(livedocs.DocError, "its lines changed again"):
+        with self.assertRaisesRegex(livedocs.DocError, "the proposed lines changed"):
             self.editors.settle(room.path, self.project, c["id"], "edited", "    return 2\n", theirs="    return 2\n")
         self.editors.settle(room.path, self.project, c["id"], "edited", "    return 3\n", theirs="    return 3\n")
         self.assertEqual((self.told(), room.state()["conflicts"]), ([], []))

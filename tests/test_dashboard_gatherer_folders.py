@@ -40,17 +40,17 @@ class GathererFoldersTest(unittest.TestCase):
         gatherer_folders.make("Archive")
         self.assertEqual([f["name"] for f in gatherer_folders.stored()["folders"]], ["Archive", "papers", "Work projects"])
         self.assertEqual(self.tree(), {"Archive": [], "Work projects": [], "Work projects/papers": []})
-        with self.assertRaisesRegex(FolderError, 'there is a folder "Archive" there already'):
+        with self.assertRaisesRegex(FolderError, 'a folder named "Archive" is already there'):
             gatherer_folders.make("ARCHIVE")
         gatherer_folders.make("Archive", work)                    # beside others: its own name
-        with self.assertRaisesRegex(FolderError, "can't hold"):
+        with self.assertRaisesRegex(FolderError, "can't contain"):
             gatherer_folders.make("a/b")
-        with self.assertRaisesRegex(FolderError, "Give it a name"):
+        with self.assertRaisesRegex(FolderError, "needs a name"):
             gatherer_folders.make("   ")
         with self.assertRaisesRegex(FolderError, "no folder"):
             gatherer_folders.make("x", 9999)
         gatherer_folders.rename(papers, "Papers")                 # its own name, its case changed
-        with self.assertRaisesRegex(FolderError, "there already"):
+        with self.assertRaisesRegex(FolderError, "already there"):
             gatherer_folders.rename(papers, "archive")
         self.assertIn("Work projects/Papers", self.tree())
 
@@ -79,7 +79,7 @@ class GathererFoldersTest(unittest.TestCase):
         with self.assertRaisesRegex(FolderError, "can't go in itself"):
             gatherer_folders.move(a, a)
         gatherer_folders.make("A")
-        with self.assertRaisesRegex(FolderError, 'a folder "A" there already'):
+        with self.assertRaisesRegex(FolderError, 'a folder named "A" is already there'):
             gatherer_folders.move(a, None)
         gatherer_folders.move(inner, None)
         self.assertEqual(self.tree(), {"A": [], "B": [], "B/A": [], "Inner": ["g"]})

@@ -886,7 +886,7 @@ class ChatBoxTest(SessionsBase):
         with self.assertRaises(sessions.NotAtBox) as got:
             self.s.send(sid, "hello")
         self.assertEqual(got.exception.box, Box.HOLDS)
-        self.assertIn("typed", str(got.exception))
+        self.assertIn("unsent text", str(got.exception))
         self.assertNotIn("hello", self.typed())
 
     def test_a_message_claude_code_put_back_is_cleared_first(self):
@@ -1627,9 +1627,9 @@ class EndpointTest(SessionsBase):
         paper = got["made"]
         self.assertEqual((code, got["folders"]), (200, {"g": {"folders": [{"id": paper, "parent": None, "name": "Paper revisions", "closed": None}], "filed": {}}}))
         figures = ask({"gatherer": "g", "do": "new", "name": "Figures", "parent": paper})[1]["made"]
-        self.assertEqual(ask({"gatherer": "g", "do": "new", "name": "paper REVISIONS"}), (400, {"error": 'there is a folder "Paper revisions" there already'}))
+        self.assertEqual(ask({"gatherer": "g", "do": "new", "name": "paper REVISIONS"}), (400, {"error": 'a folder named "Paper revisions" is already there'}))
         self.assertEqual(ask({"gatherer": "g", "do": "new", "name": "Figures"})[0], 200)       # beside another's: its own
-        self.assertIn("can't hold", ask({"gatherer": "g", "do": "new", "name": "a/b"})[1]["error"])
+        self.assertIn("can't contain", ask({"gatherer": "g", "do": "new", "name": "a/b"})[1]["error"])
         code, got = ask({"gatherer": "g", "do": "file", "channels": ["c1", "c2"], "folder": figures})
         self.assertEqual((code, got["folders"]["g"]["filed"]), (200, {"c1": figures, "c2": figures}))
         code, got = ask({"gatherer": "g", "do": "file", "channels": ["c2"]})                     # at the top again
@@ -1641,7 +1641,7 @@ class EndpointTest(SessionsBase):
         code, got = ask({"gatherer": "g", "do": "rename", "id": figures, "to": "Plots"})
         self.assertEqual(folders.path(got["folders"]["g"], figures), "Paper revisions/Plots")
         self.assertEqual(ask({"gatherer": "g", "do": "move", "id": paper, "parent": figures}),
-                         (400, {"error": '"Paper revisions" can\'t go in itself, nor in a folder of its own'}))
+                         (400, {"error": '"Paper revisions" can\'t go in itself or in one of its own folders'}))
         code, got = ask({"gatherer": "g", "do": "move", "id": figures})                          # now it can
         self.assertEqual(folders.path(got["folders"]["g"], figures), "Plots")
         ask({"gatherer": "g", "do": "move", "id": figures, "parent": paper})
@@ -1665,13 +1665,13 @@ class EndpointTest(SessionsBase):
         work = got["made"]
         self.assertEqual((code, got["gatherer_folders"]), (200, {"folders": [{"id": work, "parent": None, "name": "Work"}], "filed": {}}))
         old = ask({"do": "new", "name": "Old", "parent": work})[1]["made"]
-        self.assertEqual(ask({"do": "new", "name": "work"}), (400, {"error": 'there is a folder "Work" there already'}))
+        self.assertEqual(ask({"do": "new", "name": "work"}), (400, {"error": 'a folder named "Work" is already there'}))
         code, got = ask({"do": "file", "gatherers": ["g", "h"], "folder": old})
         self.assertEqual((code, got["gatherer_folders"]["filed"]), (200, {"g": old, "h": old}))
         self.assertEqual(ask({"do": "file", "gatherers": ["h"]})[1]["gatherer_folders"]["filed"], {"g": old})   # at the top again
         self.assertEqual(ask({"do": "rename", "id": old, "to": "Earlier"})[0], 200)
         self.assertEqual(ask({"do": "move", "id": work, "parent": old}),
-                         (400, {"error": '"Work" can\'t go in itself, nor in a folder of its own'}))
+                         (400, {"error": '"Work" can\'t go in itself or in one of its own folders'}))
         ask({"do": "move", "id": old})                                             # at the top
         code, got = ask({"do": "delete", "id": old})                               # its gatherer: at the top
         self.assertEqual((code, got["gatherer_folders"]), (200, {"folders": [{"id": work, "parent": None, "name": "Work"}], "filed": {}}))
@@ -1737,7 +1737,7 @@ class EndpointTest(SessionsBase):
         kept = self.post("/api/sessions", {"gatherer": "g", "cwd": self.work})[1]["session_id"]
         with unittest.mock.patch.object(data, "actors", return_value=[{"channel": kept}]):   # its gatherer has its history
             code, said = self.post("/api/discard", {"session_id": kept})
-        self.assertEqual((code, said["error"]), (400, "it has a conversation in its gatherer: close it instead"))
+        self.assertEqual((code, said["error"]), (400, "it already has a conversation. Close it instead."))
         self.assertEqual([x["session_id"] for x in sessions.stored()], [kept])
 
     def test_when_the_reader_last_looked_at_each_actor_is_the_same_for_every_dashboard_on_the_home(self):

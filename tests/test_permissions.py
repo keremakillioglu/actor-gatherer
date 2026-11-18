@@ -399,10 +399,10 @@ class TypedTest(SessionsBase):
     def test_refused_where_no_dialog_shows_or_its_terminal_opened_since(self):
         sid = self.started()
         with self.screens(None):
-            with self.assertRaisesRegex(sessions.SessionError, "doesn't show it asking"):
+            with self.assertRaisesRegex(sessions.SessionError, "doesn't show the question"):
                 self.s.answer(sid, self.ask(), {"allow": True})
         with self.screens(dialog()):
-            with self.assertRaisesRegex(sessions.SessionError, "opened after it asked"):
+            with self.assertRaisesRegex(sessions.SessionError, "no longer shows this question"):
                 self.s.answer(sid, self.ask(at=time.time() - 60), {"allow": True})
             with self.assertRaises(answers.AnswerError):
                 self.s.answer(sid, self.ask(), {"allow": "yes"})

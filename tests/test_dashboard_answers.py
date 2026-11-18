@@ -333,14 +333,14 @@ class TypedTest(SessionsBase):
         self.assertIsNone(self.session(sid)["typed"] or None)
         self.s.type(sid, "\x1b[B")                                                        # Down, in the dialog
         self.assertGreater(self.session(sid)["typed"], a["at"])
-        with self.assertRaisesRegex(sessions.SessionError, "typed into its terminal since it asked"):
+        with self.assertRaisesRegex(sessions.SessionError, "typed in the terminal since the question appeared"):
             self.s.answer(sid, a, {"answers": [{"options": [0]}]})
         self.s.answer(sid, dict(a, at=time.time() + 1), {"answers": [{"options": [0]}]})   # asked after it: answered
 
     def test_refused_where_its_terminal_opened_after_it_asked(self):
         """Claude Code resumed keeps no question left unanswered: no dialog to type the keys into."""
         sid = self.started()
-        with self.assertRaisesRegex(sessions.SessionError, "opened after it asked"):
+        with self.assertRaisesRegex(sessions.SessionError, "no longer shows this question"):
             self.s.answer(sid, dict(ask(COLOR), at=time.time() - 60), {"answers": [{"options": [0]}]})
         self.assertEqual(self.typed(), [])
         self.s.answer(sid, dict(ask(COLOR), at=time.time()), {"answers": [{"options": [0]}]})   # asked since: answered
@@ -348,7 +348,7 @@ class TypedTest(SessionsBase):
 
     def test_no_terminal_here_no_answer(self):
         sid = self.s.create("g", self.work)["session_id"]
-        with self.assertRaisesRegex(sessions.SessionError, "does not run this session's terminal"):
+        with self.assertRaisesRegex(sessions.SessionError, "doesn't run this session's terminal"):
             self.s.answer(sid, ask(COLOR), {"answers": [{"options": [0]}]})
 
 
