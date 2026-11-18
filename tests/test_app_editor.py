@@ -431,6 +431,13 @@ class AppTest(AppBase):
         got = self.host.call("editor", src, "preview_show", {"path": self.repo}, Caller(gatherer="g"))
         self.assertEqual(json.loads(got.content[0]["text"])["preview"]["command"], "echo hi")   # and the other Editor
 
+    def test_a_link_opens_a_file_by_its_absolute_path(self):
+        m = self.host.apps["editor"].manifest
+        self.assertEqual(m.link("file/Users/me/app/main.py")[1], {"path": "Users/me/app/main.py"})
+        self.assertEqual(m.link("file//Users/me/my%20app/main.py")[1], {"path": "/Users/me/my app/main.py"})
+        self.assertIsNone(m.link("file"))
+        self.assertIn("Attached to more than one Editor, add `?instance=<its id>`", m.told())
+
     def test_the_user_sets_and_runs_it(self):
         about = self.call("show", {"path": self.plot})
         self.assertEqual((about["preview"], about["guess"]["command"]), (None, "python3 {file}"))

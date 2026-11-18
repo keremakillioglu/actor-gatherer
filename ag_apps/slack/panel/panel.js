@@ -1805,9 +1805,15 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     if (!S.convs.has(where.conversation)) { noticeAsked = where; return; }   // the list not read yet: after reload
     noticeAsked = null;
     await open(where.conversation, where.thread ? { ts: where.thread, thread: where.thread } : { ts: where.ts });
-    post("notified", { conversation: where.conversation, thread: where.thread || "" }).catch(() => {});
+    if (!where.link) post("notified", { conversation: where.conversation, thread: where.thread || "" }).catch(() => {});
   }
   ag.notices.onOpen((where) => { openNoticed(where); });
+  // A link to it clicked in Chat (app.toml's [[links]]): a conversation, a message in it or a thread, opened as a
+  // notification's is (once the list has it), without marking a notification read
+  ag.links.onOpen((l) => {
+    const v = (l && l.values) || {};
+    openNoticed({ conversation: v.conversation, ts: v.ts || "", thread: v.thread || "", link: true });
+  });
   ag.actors.on(() => { drawAgents(); drawDrafts(); });
 
   async function reload() {

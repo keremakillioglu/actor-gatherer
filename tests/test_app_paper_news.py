@@ -412,6 +412,9 @@ class UseTest(AppBase):
         _, found = self.request("GET", "search", {"q": "QUERY agents"})
         self.assertEqual([(p["id"], p["day"]) for p in found["papers"]], [("2611.10002", "2026-11-10"),
                                                                            ("2611.09002", "2026-11-09")])
+        _, where = self.request("GET", "paper", {"id": "2611.09002"})                # a link to it: its day
+        self.assertEqual(where, {"day": "2026-11-09"})
+        self.assertEqual(self.request("GET", "paper", {"id": "2611.99999"})[1], {"day": None})
 
     def test_settings(self):
         fetched = []
@@ -710,6 +713,12 @@ class ManifestTest(unittest.TestCase):
                           ("picks", (), 1800, (), "")])
         self.assertTrue(m.capabilities.notify)
         self.assertTrue(os.path.isfile(os.path.join(FOLDER, m.mark)))
+
+    def test_a_link_opens_a_paper_or_a_day(self):
+        m = app_kit.load(FOLDER)
+        self.assertEqual(m.link("paper/2611.10001")[1], {"id": "2611.10001"})
+        self.assertEqual(m.link("day/2026-11-10")[1], {"day": "2026-11-10"})
+        self.assertIn("- `ag://paper_news/paper/<id>`: A paper: its arXiv id", m.told())
 
 
 if __name__ == "__main__":

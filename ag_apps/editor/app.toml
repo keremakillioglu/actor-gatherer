@@ -111,6 +111,11 @@ description = "No preview for the project any more: {key}."
 name = "editor.preview_ran"
 description = "A run, once over: {key, checkout, command, show, by, file, state, code, started, ended}."
 
+# A file, from a link to it (app_kit/links.py): shown at a line.
+[[links]]
+form = "file/<path...>"
+about = "A file: its absolute path after file/, as in `ag://editor/file/Users/me/app/main.py`. Add #L<line> for a line."
+
 # Any file shown, in an Editor open (else a new one, on its folder); an app taking its type, first.
 [[handles]]
 intent = "open-file"
