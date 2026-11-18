@@ -17,11 +17,13 @@ from starlette.exceptions import HTTPException
 from . import server
 from .api import (agent, branches, common, files, history, home, monitor, page, sessions, settings, stream,
                   terminal, ws)
+from .api import app_catalog
 from .api import apps as apps_api
 
 ROUTERS = (page.router, home.router, stream.router, agent.router, files.router, history.router, sessions.router,
            terminal.router, branches.router, monitor.router, settings.router, ws.router,
-           apps_api.router)                           # the apps' host (app_host.py)
+           apps_api.router,                           # the apps' host (app_host.py)
+           app_catalog.router)                        # the Apps page: installed, installing, uninstalling
 WEBSOCKETS = "wsproto" if importlib.util.find_spec("wsproto") else "none"   # without it, the page's streams are its own
                                                                            # connections (api/ws.py)
 WRITES = ("POST", "PUT", "PATCH", "DELETE")

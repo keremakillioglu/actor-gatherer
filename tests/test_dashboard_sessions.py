@@ -1425,6 +1425,17 @@ class EndpointTest(SessionsBase):
         self.assertEqual(home["gatherers"][0]["agents"][0]["session"]["session_id"], made["session_id"])
         self.assertIn("auto", home["permission_modes"])
 
+    def test_groups_are_read_and_changed_by_name_through_the_api(self):
+        code, got = self.post("/api/groups/manage", {"op": "list"})                  # `ag groups`
+        self.assertEqual((code, got["said"][0], got["done"]), (200, "Groups: each shares context within itself only.", False))
+        for body in ({"gatherer": "g", "to": "h", "do": "place"}, {"gatherer": "g", "folder": 1, "do": "own"},
+                     {"gatherer": "g", "do": "above"}):
+            code, got = self.post("/api/groups", body)                               # a database per gatherer
+            self.assertEqual(code, 400, body)
+            self.assertIn("error", got)
+        code, got = self.post("/api/groups/manage", {"op": "nope"})
+        self.assertEqual((code, got["error"]), (400, "no command 'nope': one of list, show, folder, actor, merge, rename"))
+
     @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a Unix pseudo-terminal")
     def test_a_message_opens_its_terminal_at_the_size_and_screen_the_page_sends(self):
         self.chat(None)

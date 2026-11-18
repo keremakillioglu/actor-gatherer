@@ -1,5 +1,7 @@
-"""The page and the files it loads: its build (static/), the vendored scripts, the avatars, the reader's own chat views."""
+"""The page and the files it loads: its build (static/), the vendored scripts, the avatars, the reader's own chat views,
+and what a browser installs it as an app with (its manifest, its icons)."""
 
+import json
 import os
 
 from fastapi import APIRouter
@@ -9,6 +11,35 @@ from .. import avatars, home, libs, server
 from .common import Errors, answer, not_found, send
 
 router = APIRouter(route_class=Errors)
+
+ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "icons")
+# the app's icons (icons/, drawn by assets/src/logo.py): (file, size, purpose) -- "any", the mark on a white rounded
+# square, shown as it is; "maskable", on white to its edges, which the browser cuts to its own shape (Chrome on macOS:
+# the Dock's rounded square)
+APP_ICONS = [("agui-192.png", 192, "any"), ("agui-512.png", 512, "any"),
+             ("agui-maskable-192.png", 192, "maskable"), ("agui-maskable-512.png", 512, "maskable")]
+TOUCH_ICON = "apple-touch-icon.png"  # Safari's: on white to its edges, which Safari rounds itself
+
+
+@router.get("/manifest.webmanifest")
+def manifest() -> Response:
+    """The page as an app (its web app manifest, which index.html links): its name and the icons a browser installs it
+    with -- Chrome's "Install", Safari's "Add to Dock" -- and shows in the Dock or the task bar; opened in a window of
+    its own at this dashboard's page."""
+    body = {"id": "/", "name": "AGUI", "short_name": "AGUI", "start_url": "/", "scope": "/", "display": "standalone",
+            "background_color": "#ffffff",
+            "icons": [{"src": f"/icons/{name}", "sizes": f"{px}x{px}", "type": "image/png", "purpose": purpose}
+                      for name, px, purpose in APP_ICONS]}
+    return send(200, json.dumps(body).encode("utf-8"), "application/manifest+json", cache="max-age=3600")
+
+
+@router.get("/icons/{name}")
+def app_icon(name: str) -> Response:
+    """One of the app's icons (icons/<name>, a PNG): those the manifest names, and Safari's (apple-touch-icon.png)."""
+    if name not in {n for n, _, _ in APP_ICONS} | {TOUCH_ICON}:
+        return not_found()
+    with open(os.path.join(ICONS, name), "rb") as fh:
+        return send(200, fh.read(), "image/png", cache="max-age=3600")
 
 
 @router.get("/index.html")

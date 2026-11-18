@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import unittest
+from dataclasses import replace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -14,6 +15,7 @@ import ag.ag_harness  # noqa: E402
 from ag.ag_harness import Manager  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 import codex_items as codex  # noqa: E402
+from ag.ag_interface import EventType, Property  # noqa: E402
 from ag.ag_policies.proactive_context_manager.events import context_stream, environment_update  # noqa: E402
 from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
@@ -134,6 +136,32 @@ class StreamTest(OutsideBase):
         self.put(PREAMBLE + [user("q", 1)])
         texts = self.texts(self.read())
         self.assertEqual(texts[len(PREAMBLE):], ["@#analytics alice: morning", "q"])
+
+    def put_tool(self, item):
+        """A tool call or its output, with the call id the harness's adaptor gives both (declaring it, as it does)."""
+        e = self.wrapped.event("w", item)
+        name = next(t.name for t in self.m.event_types("w") if t.id == e.type_id)
+        self.m.add_event_type("w", EventType(name, (Property("call_id"),)))
+        return self.m.insert("w", replace(e, properties={**ch("c1"), "call_id": item["call_id"]}))
+
+    def test_a_message_stored_between_a_tool_call_and_its_output_comes_after_the_output(self):
+        """The output stored again later than its call -- the harness hung up on the call that sent it (withdrawn), then
+        sent it changed -- with a message that came in meanwhile between them by row: the API takes nothing between a
+        tool call and its output, so the message is shown right after the output. One between two whole exchanges
+        stays where it came."""
+        first_call, first_output = opened("a.py", 1)
+        second_call, second_output = opened("b.py", 2)
+        self.put(PREAMBLE + [user("look at a.py and b.py", 1)])
+        self.put_tool(first_call)
+        self.put_tool(first_output)
+        self.post("between the two calls", 10)
+        self.put_tool(second_call)
+        self.post("while b.py was read", 11)
+        self.put_tool(second_output)
+        context = self.read()
+        kinds = [i.get("type") if i.get("type") != "ag" else self.texts([i])[0] for i in context[len(PREAMBLE):]]
+        self.assertEqual(kinds, ["message", "function_call", "function_call_output", "@#analytics alice: between the two calls",
+                                 "function_call", "function_call_output", "@#analytics alice: while b.py was read"])
 
     def test_the_default_wording(self):
         self.cfg.message = ProactiveContextManagerConfig().message

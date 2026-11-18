@@ -213,6 +213,17 @@ From `desktop/`, after `pnpm install` (which also downloads Electron's app):
 The app's own files (its window's place; later the Browsers' profile) are in `<home>/desktop/`. A dashboard it starts
 writes to `<home>/logs/dashboard/desktop.log`.
 
+On a Mac, `pnpm start` runs the app as **AGUI** (`scripts/bundle.mjs`). macOS takes an app's name in the Dock, Cmd+Tab
+and the menu bar, and its icon, from the bundle it runs from, which for `electron .` is Electron's own. So the script
+makes `out/AGUI.app` the first time and again after Electron, the icon or the script changes:
+- Electron's app, cloned so it takes almost no disk, with AGUI's name, its own bundle id (`io.github.ucbepic.agui`) and
+  `icon.icns`;
+- its code a link to this folder, so it always runs this checkout's `dist/`;
+- signed ad hoc, for this Mac only.
+
+You can keep `out/AGUI.app` in the Dock. Opened from there, it runs `dist/` as last built. The icons are drawn by
+`assets/src/logo.py`. This is not the shipped app (step 5).
+
 ## Steps
 
 1. **The app:** the window, finding or starting the dashboard, a development run. The Browser still streams.

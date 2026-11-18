@@ -284,6 +284,20 @@ def latest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: in
     not given: unset) and an id -- of these `types` alone, when given (a harness's conversation, not what it
     records besides) -- oldest first: where a harness that re-sends its history picks it up -- not one it took
     back (`withdraw`)."""
+    return [(event_id, json.loads(payload)) for _, event_id, payload in reversed(_newest(conn, properties, n, types))]
+
+
+def latest_row(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]],
+               types: Optional[List[str]] = None) -> Optional[int]:
+    """The row of the event `latest` would name last (n = 1): the newest of the conversation, None if it has
+    none -- what a call that brings no event of its own responds to."""
+    found = _newest(conn, properties, 1, types)
+    return found[0][0] if found else None
+
+
+def _newest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: int,
+            types: Optional[List[str]]) -> List[Tuple[int, str, str]]:
+    """(row id, event id, payload JSON) of `latest`'s events, newest first."""
     names = identifying_names(conn)
     given = properties or {}
     typed, named = "", []
@@ -291,10 +305,9 @@ def latest(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], n: in
         named = [t for t in types if isinstance(t, str)]
         typed = (f"e.event_type_id IN (SELECT event_type_id FROM event_types WHERE name IN "
                  f"({', '.join('?' * len(named))})) AND " if named else "0 AND ")
-    found = conn.execute(f"SELECT event_id, payload_json FROM events e WHERE {_same(names, 'e.')}{typed}event_id IS NOT NULL"
-                         f"{KEPT} ORDER BY row_id DESC LIMIT ?",
-                         (*_unset_is_empty([given.get(name) for name in names]), *named, max(0, n))).fetchall()
-    return [(event_id, json.loads(payload)) for event_id, payload in reversed(found)]
+    return conn.execute(f"SELECT row_id, event_id, payload_json FROM events e WHERE {_same(names, 'e.')}{typed}"
+                        f"event_id IS NOT NULL{KEPT} ORDER BY row_id DESC LIMIT ?",
+                        (*_unset_is_empty([given.get(name) for name in names]), *named, max(0, n))).fetchall()
 
 
 def locate(conn: sqlite3.Connection, properties: Optional[Dict[str, Any]], event_id: str) -> Optional[int]:

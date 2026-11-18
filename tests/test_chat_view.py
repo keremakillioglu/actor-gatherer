@@ -112,6 +112,56 @@ class AskedBeforeTest(unittest.TestCase):
         self.assertEqual((got["state"], got["asking"]["call"]), ("asking", "toolu_q"))
 
 
+class LostSendTest(unittest.TestCase):
+    """A message the harness's record has as queued and never as sent held no turn open once it was stored -- the hook
+    could not store its `message_sent` (the database locked): the harness had sent it -- nor once the harness's process
+    ended after it was queued: Claude Code's queue lives in its process (`queue_ends_with_process`), so it never sends
+    it, nor does a process resumed after; a guess its record makes later that one was sent is no message waiting."""
+
+    def view(self, text: str, queued_after: float, ended_after: float = 0.0, guessed_after: float = 0.0) -> dict:
+        """The run at its end (its last turn over), with `text` queued `queued_after` seconds after its last turn's
+        message was stored, and nothing after saying it was sent -- the session's process ended `ended_after` seconds
+        after that message (0: never), and its record guessing it was sent `guessed_after` seconds after (0: none)."""
+        run = chat_replay.load("claude-tool-call")
+        conn = chat_replay.at_end(run)
+        at = chat_view.view(conn, run["channel"], None)["turns"][-1]["at"]
+        payload = {"at": at + queued_after, "queued": "8.0a0b0c0d", "text": text, "words": text,
+                   "joins_after": at + queued_after + 1.0}
+        facts = [("message_queued", "message_queued:x.jsonl:8.0a0b0c0d", payload)]
+        if guessed_after:
+            facts.append(("message_sent", "message_sent:x.jsonl:9.0a0b0c0d", {
+                "at": at + guessed_after, "queued": "8.0a0b0c0d", "text": text, "words": text, "how": "next",
+                "joins": True, "written": at + queued_after}))
+        for kind, event_id, p in facts:
+            conn.execute("INSERT OR IGNORE INTO event_types (name, created_at) VALUES (?, '')", (kind,))
+            conn.execute("INSERT INTO events (inserted_at, event_id, event_type_id, payload_json, tokens, p_channel) "
+                         "SELECT '', ?, event_type_id, ?, 0, ? FROM event_types WHERE name = ?",
+                         (event_id, json.dumps(p), run["channel"], kind))
+        session = {"sent": [], "queued": [], "ended": at + ended_after} if ended_after else None
+        return chat_view.view(conn, run["channel"], session)
+
+    def test_stored_since_it_was_queued_the_turn_is_over(self):
+        got = self.view("Run the shell command ls -la and tell me how many entries it lists.", -0.5)
+        self.assertEqual((got["current"]["state"], got["waiting"]), ("done", []))
+
+    def test_not_stored_the_harness_holds_it_and_goes_on(self):
+        got = self.view("also count hidden files", 1.0)
+        self.assertEqual(got["current"]["state"], "working")
+        self.assertEqual(got["waiting"], [{"text": "also count hidden files", "cid": None, "how": "queued"}])
+
+    def test_queued_before_its_process_ended_it_went_with_it(self):
+        got = self.view("also count hidden files", 1.0, ended_after=2.0)
+        self.assertEqual((got["current"]["state"], got["waiting"]), ("done", []))
+
+    def test_queued_by_a_process_started_since_it_is_held_still(self):
+        got = self.view("also count hidden files", 1.0, ended_after=-5.0)    # before this turn
+        self.assertEqual((got["current"]["state"], [w["how"] for w in got["waiting"]]), ("working", ["queued"]))
+
+    def test_a_guess_that_one_gone_with_its_process_was_sent_is_no_message_waiting(self):
+        got = self.view("also count hidden files", 1.0, ended_after=2.0, guessed_after=600.0)
+        self.assertEqual((got["current"]["state"], got["waiting"]), ("done", []))
+
+
 class TookBackTest(unittest.TestCase):
     """`_took`: a hang-up (Esc) at 10.0 on the call of row 5, "Hello", stored at 9.0."""
 

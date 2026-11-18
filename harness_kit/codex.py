@@ -6,7 +6,8 @@ its own context among them, and its tools.
                  `thread_source` user is the thread's own turn, any other one of codex's side calls --
                  thread_title (a title, its answer {"title"}), system (/recap, {"summary", "next_action"}),
                  a subagent's (`parent_thread_id`), guardian_review, memory_consolidation; `request_kind`
-                 compaction, its input ending with a `compaction_trigger`. The thread in the `thread-id`
+                 compaction, its input ending with a `compaction_trigger` -- or, compacted on codex's own side,
+                 with its prompt as a user message (compaction_split). The thread in the `thread-id`
                  header (then `session-id`, then the body's `prompt_cache_key`); the working directory in
                  the last <environment_context> (its <cwd>, else its first workspace root)
     items        each input item, as it is (codex's items are already one thing each)
@@ -82,6 +83,12 @@ AGENT_TEXT = re.compile(r"^\s*Message Type: (\w+)\s*\nTask name: [^\n]*\nSender:
 #: Codex's summary of the history it compacted: what its input starts again from.
 COMPACTED = ("compaction", "compaction_summary", "context_compaction")
 TRIGGER = "compaction_trigger"   # the compaction call's last item: what asks for the summary
+#: Codex compacts in one of two ways. With OpenAI's own endpoint, as above: an encrypted `compaction` item, asked for by
+#: a `compaction_trigger`. With any other provider, on its own side (its turn metadata's compaction "implementation"
+#: is "responses", not "responses_compaction_v2"): its compaction call ends with its prompt as a user message (a
+#: setting, experimental_compact_prompt_file, can replace the prompt's words), and its summary comes back as a user
+#: message opening with this.
+LOCAL_SUMMARY = "Another language model started to solve this problem and produced a summary of its thinking process."
 
 METADATA = "x-codex-turn-metadata"   # codex's header (and client_metadata key) saying what a call is for
 TURN = "user"                         # the thread_source of a thread's own turn; any other is a side call
@@ -200,6 +207,8 @@ def kind_of(item) -> str:
     kind, role = item.get("type"), item.get("role")
     if kind == "message" or (kind is None and role is not None):
         if role == "user":
+            if is_summary(item):                    # its summary, compacted on its own side (LOCAL_SUMMARY)
+                return Kind.COMPACTION_SUMMARY
             own = own_context(item)
             if own is not None:
                 return own
@@ -369,11 +378,14 @@ def side_call(metadata: dict) -> Optional[str]:
 
 def compaction_split(metadata: dict, items: list) -> Optional[Tuple[list, list]]:
     """(the history, the trigger) of a compaction call -- `request_kind` compaction, or an input ending with a
-    `compaction_trigger` -- else None."""
+    `compaction_trigger` -- else None. Compacting on its own side (LOCAL_SUMMARY), codex sends no trigger item: its
+    prompt, the user message its input ends with, is the trigger."""
     last = items[-1] if items else None
     if isinstance(last, dict) and last.get("type") == TRIGGER:
         return items[:-1], [last]
     if metadata.get("request_kind") == "compaction":
+        if kind_of(last) == Kind.USER:
+            return items[:-1], [last]
         return items, []
     return None
 
@@ -402,11 +414,23 @@ def cwd_of(items: list) -> Optional[str]:
     return found
 
 
+def is_summary(item) -> bool:
+    """Whether the item is codex's summary of the history it compacted: a `compaction` item (COMPACTED), or, compacted
+    on its own side, a user message opening with LOCAL_SUMMARY."""
+    if not isinstance(item, dict):
+        return False
+    if item.get("type") in COMPACTED:
+        return True
+    if item.get("role") != "user" or item.get("type") not in ("message", None):
+        return False
+    return next((t.lstrip() for t in texts_of(item) if t.strip()), "").startswith(LOCAL_SUMMARY)
+
+
 def after_compaction(items: list) -> Tuple[int, list]:
     """(where what is new since codex's summary of its compacted history starts, the indexes of the items from then on
-    that are not a compaction trigger): after the last summary (`COMPACTED`), if any is there; all of them when it
+    that are not a compaction trigger): after the last summary (`is_summary`), if any is there; all of them when it
     compacted nothing."""
-    at = max((i for i, item in enumerate(items) if isinstance(item, dict) and item.get("type") in COMPACTED), default=-1)
+    at = max((i for i, item in enumerate(items) if is_summary(item)), default=-1)
     return at, [i for i in range(at + 1, len(items)) if not (isinstance(items[i], dict) and items[i].get("type") == TRIGGER)]
 
 
@@ -702,8 +726,9 @@ class Codex(Harness):
 
     def read(self, items: list) -> List[Part]:
         """Each item read. After codex compacts its history, its input starts again: its preamble re-sent under new ids,
-        the user messages it kept, and its encrypted summary (a `compaction` item), then what comes after -- the
-        items up to the summary are COMPACTION_REPEAT, the summary COMPACTION_SUMMARY, and a compaction trigger OTHER."""
+        the user messages it kept, and its summary (an encrypted `compaction` item, or, compacted on its own side, a
+        user message opening with LOCAL_SUMMARY), then what comes after -- the items up to the summary are
+        COMPACTION_REPEAT, the summary COMPACTION_SUMMARY, and a compaction trigger OTHER."""
         out = [self.part(it) for it in items]
         at, _ = after_compaction(items)
         for i in range(at):

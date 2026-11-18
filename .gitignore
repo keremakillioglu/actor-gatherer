@@ -19,6 +19,8 @@ ag_dashboard/static/
 # Playwright's runs (frontend/e2e)
 frontend/test-results/
 frontend/playwright-report/
-# the desktop app's Playwright runs (desktop/e2e); its build is dist/, above
+# the desktop app's bundle `pnpm start` runs on a Mac (desktop/scripts/bundle.mjs), and its Playwright runs
+# (desktop/e2e); its build is dist/, above
+desktop/out/
 desktop/test-results/
 desktop/playwright-report/

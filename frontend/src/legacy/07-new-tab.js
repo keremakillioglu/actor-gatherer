@@ -68,6 +68,8 @@ const placeName = (p) => !p ? "No group yet" : p.alone ? "On its own"
 // left it, in focus, and its parts
 function drawNewTab(box, tab) {
   if (PANE || SNAPSHOT || !workPlacer) return;
+  if (workPlacer.tabs.shownTab().page === "apps") return drawAppsPage(box);   // the Apps page's tab (07-apps-page.js)
+  box.classList.remove("ap");
   if (tab !== newTab.tab || !newTab.input || !box.contains(newTab.input))
     Object.assign(newTab, { tab, place: null, cwd: null, harness: null, error: "", sig: "" });
   newTab.box = box;
@@ -119,7 +121,7 @@ function ntLine(p) {
     el("span", { class: "lbl", text: label }), ...value, open ? el("span", { class: "caret", "aria-hidden": "true", text: "▾" }) : null);
   return [
     chip("nt:in", "In", [el("span", { class: "val", text: placeName(p) })],
-      p ? `Where the new actor goes: ${placeName(p)}${p.alone ? " (it shares context with no group)" : ""}` : "Make a group first: + New group in the list",
+      p ? `Where the new actor goes: ${placeName(p)}${p.alone ? " (it shares context with no group)" : ""}` : "Make a group first: the folder button at the top of the list",
       realGroups().length ? (b) => openPop("nt:in", b, ntMenu("Start it in", ntPlaces(p))) : null),
     chip("nt:dir", "Directory", [el("span", { class: "val dir", text: shortDir(ntCwd(p)) || "Choose one" })], `It works in ${ntCwd(p) || "a directory you choose"}`,
       off ? null : (b) => openPop("nt:dir", b, ntDirBox(p))),
@@ -172,7 +174,8 @@ function ntDirBox(p) {
     err);
 }
 // The apps to open here instead -- each in the place's group, filed in its folder if it is a new one -- the apps with an
-// agent of their own started with it (on the harness chosen, or one that can give it their tools), and a terminal
+// agent of their own started with it (on the harness chosen, or one that can give it their tools), a terminal, and
+// "Apps…": the Apps page, to see, install and uninstall them
 function ntApps(p, found) {
   const g = ntGroup(p), alone = !!(p && p.alone), off = !p || alone || !!newTab.busy;
   const tooled = startable().filter((h) => (harnessInfo(h) || {}).mcp);
@@ -192,7 +195,9 @@ function ntApps(p, found) {
     ...(state.home.terminals !== false ? [button(strokeIcon(ICONS.terminal, 16), "Terminal", `A terminal in ${ntCwd(p) || "the directory chosen"}`,
       () => { aimStart(g.name, p.folder); return startShell(g.name, ntCwd(p)); })] : []),
   ];
-  return items.length ? [el("div", { class: "nt-lbl", text: "Or open" }), el("div", { class: "nt-row" }, ...items)] : [];
+  items.push(el("button", { type: "button", class: "nt-app manage", title: "See, install and uninstall apps", onclick: openAppsPage },
+    strokeIcon(ICONS.app, 16), el("span", { text: "Apps…" })));          // the Apps page, in this tab (07-apps-page.js)
+  return [el("div", { class: "nt-lbl", text: "Or open" }), el("div", { class: "nt-row" }, ...items)];
 }
 // One of them opened -- in this tab, whatever is typed (tabs.ts's filling): what is typed stays with the tab
 async function ntRun(what, run) {
@@ -221,7 +226,7 @@ async function ntSend() {
   const input = newTab.input, text = input ? input.value.trim() : "";
   if (!text || newTab.busy) return;
   const p = ntPlace(), g = ntGroup(p), h = ntHarness(p), cwd = ntCwd(p).trim();
-  if (!p || !g) return ntSay("Make a group first: + New group in the list.");
+  if (!p || !g) return ntSay("Make a group first: the folder button at the top of the list.");
   if (!h) return ntSay(p.alone ? "No harness here starts an actor on its own: pick a group under In." : noHarness());
   if (!cwd) return ntSay("Which directory? Choose one under Directory.");
   newTab.busy = "Starting…"; newTab.error = "";

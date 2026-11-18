@@ -36,9 +36,20 @@ across groups is refused.
     start_alone(started, gatherer, cwd, harness)   a new actor on its own from its start (the list's "+" beside
                                             "+ New group"): its session made (sessions.py's `create`, `alone`) and its
                                             `group` record in before its first call, so it never shares
+    place(gatherer, to, into)               a group -- an actor on its own's too -- put in group `to`'s folder `into`,
+                                            keeping its own group: a group inside that folder, sharing with no one
+                                            around it (`to` "": back at the list's top). Its `filed` record (folders.py's
+                                            PLACED); what anyone shares is as it was. `places()`: where each one is
+    own(gatherer, folder)                   the folder given a group of its own where it is: `split`, then the new group
+                                            placed where the folder was, with its parent group's settings
+    above(gatherer)                         a group placed in another's folder back in that group: `merge`d there, a
+                                            folder of it where it was
     runs_under(group)                       the group ag runs a write of `group`'s under: an actor on its own's, the
                                             group it left (`launch_group`) -- ag keeps a config for the home's groups,
                                             and would make one for a name it does not know
+
+A group placed in a folder that moves goes with it, as an actor in it does: its place names the group the folder is in
+now (`_carried`) -- a folder made a group (`split`), the new group's top; a group merged (`merge`), the folder it became.
 
 A watch of the coordinator agent's on a moved actor goes as coordination.py's `check` says. A coordinator agent over a
 folder (sessions.py's `over`) goes where its folder goes (`_crews`): moved with it into another group, its session's
@@ -54,7 +65,7 @@ from typing import Dict, Iterable, List, Optional
 import harness_kit
 from app_kit import AppError
 
-from . import actions, data, folders, home, sessions, tasks, titles
+from . import actions, data, folders, gatherer_folders, home, merges, sessions, tasks, titles
 
 GROUP = "group"
 ALONE = "self:"                 # an actor on its own: the group of one `self:<its channel>` (the policy's ALONE too)
@@ -303,6 +314,9 @@ def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
     events = [{"type": GROUP, "id": f"{GROUP}:{c}:{secrets.token_hex(6)}", "properties": {"channel": c},
                "payload": {**said, "folder": there[c]}} for c in moving]
     events += [folders._filed_event(to, c, there[c]) for c in items if c.startswith(folders.APP)]   # an app's place
+    events += _carried(gatherer, to, {f: (into if f == gone else f) for f in under})
+    if is_alone(gatherer):                            # back in a group: its group of one placed nowhere
+        events.append(_placed(gatherer, "", None))
     kept = folders._records()[0]
     for fid in under:                                 # the folder at `into`, those in it where they were
         f = kept[fid]
@@ -375,7 +389,7 @@ def _over(channels: List[str], over: Optional[str]) -> None:
 def _group_name(title: str) -> str:
     """A new group's name, from `title`: what ag takes of it (letters, digits, '.', '_', '-'), one no group has."""
     base = re.sub(r"[^A-Za-z0-9._-]+", "_", title).strip("._-")[:60] or "group"
-    taken = {n.lower() for n in data.gatherer_names()}
+    taken = {n.lower() for n in data.gatherer_names(every=True)}    # a merged one's too: its directory is kept
     name, n = base, 1
     while name.lower() in taken:
         n += 1
@@ -405,16 +419,263 @@ def split(gatherer: str, folder: int) -> dict:
     return {"group": name, "actors": moved["actors"], "apps": moved["apps"], "from": gatherer}
 
 
+def make(title: str, under: Optional[int] = None) -> dict:
+    """A folder made outside every group -- at the list's top, or in a folder of groups `under` (gatherer_folders.py) --
+    made a group of its own (the list's folder button): named after `title`, as `split` names one (`ag new`, its exact
+    name its title where ag takes another), and put in `under`. -> {group, title}. GroupError: no name, one with "/", no
+    such folder of groups, or ag did not make it."""
+    try:
+        title = folders.folder_name(title)
+    except folders.FolderError as exc:
+        raise GroupError(str(exc)) from None
+    if under is not None and not any(f["id"] == int(under) for f in gatherer_folders.stored()["folders"]):
+        raise GroupError(f"no folder of groups {under}")
+    name = _group_name(title)
+    try:
+        sessions.new_gatherer(name)
+    except sessions.SessionError as exc:
+        raise GroupError(str(exc)) from None
+    if name != title:
+        titles.give(name, title)
+    if under is not None:
+        gatherer_folders.file([name], int(under))
+    return {"group": name, "title": title}
+
+
+def _merging(gatherer: str, to: str, into: Optional[int]) -> tuple:
+    """What `merge` of `gatherer` into `to`, at `to`'s folder `into`, takes -> (the folder's name -- the group's title,
+    one no folder beside it has -- its actors, by channel, its app instances). GroupError: not a merge (`merge`)."""
+    _check(gatherer, to)
+    if is_alone(gatherer) or is_alone(to):
+        raise GroupError("an actor on its own joins a group by a move, and nothing joins it")
+    target = _tree(to)
+    if into is not None and not any(f["id"] == int(into) for f in target["folders"]):
+        raise GroupError(f"{to} has no folder {into}")
+    base = folders.folder_name(_names(gatherer).replace("/", "-"))
+    beside = {f["name"].lower() for f in target["folders"] if f.get("parent") == into}
+    name, n = base, 1
+    while name.lower() in beside:
+        n += 1
+        name = f"{base} {n}"
+    channels = _members(gatherer) | {r["session_id"] for r in sessions.stored() if r.get("gatherer") == gatherer}
+    host = _host()
+    return name, sorted(channels), ([] if host is None else host.instances_of(gatherer))
+
+
+def merge_plan(gatherer: str, to: str, into: Optional[int] = None) -> dict:
+    """What `merge` would do, nothing done, for the page to ask first: {from, to, into, folder: the name it would have,
+    actors: how many move, before: {group: actors}, apps: [{id, app, title, joins?: `to`'s one it is closed for}]}."""
+    name, channels, insts = _merging(gatherer, to, into)
+    folds = _folds(to, insts)
+    return {"from": gatherer, "to": to, "into": into, "folder": name, "actors": len(channels),
+            "before": _sizes(gatherer, to),
+            "apps": [{"id": i.id, "app": i.app, "title": i.name or i.title,
+                      **({"joins": {"id": folds[i.id].id, "title": folds[i.id].name or folds[i.id].title}}
+                         if i.id in folds else {})} for i in insts]}
+
+
+def merge(gatherer: str, to: str, into: Optional[int] = None) -> dict:
+    """The group `gatherer` dropped into the group `to`: made a folder of it, named after it, in `to`'s folder `into`
+    (None: its top) -- as a folder dropped outside every group is made a group (`split`). Everything of it goes:
+
+      - its actors, closed ones too, each a `group` record naming `to`, in the new folder -- or in the folder of it
+        it was in, its folders going too, under the new one -- all in one call to ag, with the new folder's record;
+      - its apps: one with many instances moved (the host's `regroup`); a group's only one of its app moved too, or,
+        `to` having one already, closed, its agents working with `to`'s from then on (`_folds`) -- and what the app
+        keeps for the group carried into `to`'s (the host's `folded`: its Notes' pages, under a page named after it);
+      - the dashboard's own rows of it, `to`'s (`_rows_all`): its sessions -- the coordinator agent over it then over
+        the new folder -- what was saved, seen, tasked, its Editor's projects and branches; its hiding and its place
+        among the folders of groups dropped;
+      - it kept as merged (merges.py): gone from the list, ag's directory for it kept.
+
+    -> {group: `to`, folder: the new folder's id, name, actors, apps, joined, from}. GroupError: not on the home's one
+    database, no such group or folder, the same group, an actor on its own on either side, or a record ag did not take
+    -- nothing of the dashboard's then changed."""
+    name, channels, insts = _merging(gatherer, to, into)
+    folds = _folds(to, insts)
+    tree = _tree(gatherer)
+    kept, _, top = folders._records()
+    fid = max([top, *kept]) + 1
+    mine = {f["id"] for f in tree["folders"]}
+    crews = {r["session_id"] for r in sessions.stored()
+             if r.get("role") == sessions.COORDINATOR and r.get("gatherer") == gatherer}
+
+    def place(item: str) -> Optional[int]:            # in a folder of the group: still in it; else in the new one
+        if item in crews:
+            return None                               # (a coordinator agent is in none: it is over one, or the group)
+        f = tree["filed"].get(item)
+        return f if f in mine else fid
+
+    said = {"group": to, "was": gatherer, "name": _names(to), "was_name": _names(gatherer)}
+    events = [folders._folder_event(fid, (to, into, name, folders._now(), None))]
+    events += [{"type": GROUP, "id": f"{GROUP}:{c}:{secrets.token_hex(6)}", "properties": {"channel": c},
+                "payload": {**said, "folder": place(c)}} for c in channels]
+    for f in tree["folders"]:                         # its folders: under the new one, those in them where they were
+        k = kept[f["id"]]
+        events.append(folders._folder_event(f["id"], (to, fid if k["parent"] is None else k["parent"], k["name"],
+                                                       k["at"], k["closed"])))
+    events += [folders._filed_event(to, folders.APP + i.id, place(folders.APP + i.id)) for i in insts if i.id not in folds]
+    events += _carried(gatherer, to, {None: fid, **{f: f for f in mine}})   # groups placed in it: where they were
+    if gatherer in folders.places():                  # it, placed in a group's folder: a folder there now, nowhere else
+        events.append(_placed(gatherer, "", None))
+    try:
+        actions.insert(to, events)                    # ag first: what the policy reads, and where the folders are
+    except (RuntimeError, OSError, ValueError) as exc:
+        raise GroupError(f"ag did not take the merge: {exc}; nothing else changed") from None
+    missed = [c for c in channels if c not in _members(to)]
+    if missed:
+        raise GroupError(f"ag did not take the move of {', '.join(missed)}; nothing else changed")
+    host = _host()
+    moved = [i.id for i in insts if i.id not in folds]
+    for i in moved:
+        host.regroup(gatherer, i, to)
+    closed = {inst.id: _close(gatherer, inst, channels) for inst in insts if inst.id in folds}
+    _rows_all(gatherer, to, f"folder:{fid}")
+    for i, (users, own) in closed.items():
+        _join(to, folds[i], users, own)
+    title = _names(gatherer)
+    for inst in insts:                                # what each app keeps for the group: carried into `to`'s
+        host.folded(gatherer, folds.get(inst.id) or host.instance(to, inst.id), title)
+    return {"group": to, "folder": fid, "name": name, "actors": channels, "apps": moved,
+            "joined": {i: there.id for i, there in folds.items()}, "from": gatherer}
+
+
+def _rows_all(gatherer: str, to: str, over: str) -> None:
+    """Every row the dashboard keeps of the group `gatherer` made `to`'s, in one transaction (`merge`): the coordinator
+    agent over it over `over` (its folder now), what tables name the group by beside an actor or a task, its Editor's
+    projects (those `to` has already kept as they are), and it kept as merged -- its hiding and its place among the
+    folders of groups dropped."""
+    conn = folders._write()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if folders._has(conn, "sessions"):
+            conn.execute("UPDATE sessions SET over = ? WHERE gatherer = ? AND role = ? AND ifnull(over, '') = ''",
+                         (over, gatherer, sessions.COORDINATOR))
+        for table in ("sessions", *ACTOR_TABLES, "tasks", "branches"):
+            if folders._has(conn, table):
+                conn.execute(f"UPDATE {table} SET gatherer = ? WHERE gatherer = ?", (to, gatherer))
+        if folders._has(conn, "projects"):
+            conn.execute("INSERT OR IGNORE INTO projects (gatherer, path, remote, added) "
+                         "SELECT ?, path, remote, added FROM projects WHERE gatherer = ?", (to, gatherer))
+            conn.execute("DELETE FROM projects WHERE gatherer = ?", (gatherer,))
+        for table in ("hiding", "gatherers_filed"):
+            if folders._has(conn, table):
+                conn.execute(f"DELETE FROM {table} WHERE gatherer = ?", (gatherer,))
+        merges.add(conn, gatherer, to)
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.close()
+
+
+def _placed(group: str, to: str, folder: Optional[int]) -> dict:
+    """The `filed` record of the group `group` placed in group `to`'s folder `folder` ("": at the list's top)."""
+    return folders._filed_event(to or "", folders.PLACED + group, folder if to else None)
+
+
+def _carried(gatherer: str, to: str, where: Dict[Optional[int], Optional[int]]) -> List[dict]:
+    """The records of the groups placed in `gatherer`'s folders `where` names (None: its top), placed in `to`'s folder
+    `where` maps each to, as the folders they are in move there."""
+    return [_placed(g, to, where[p["folder"]]) for g, p in folders.places().items()
+            if p["in"] == gatherer and p["folder"] in where and g != to]
+
+
+def _inside(group: str, outer: str) -> bool:
+    """Whether `group` is `outer`, or placed in it, or in a group placed in it, ..."""
+    places, seen = folders.places(), set()
+    while group and group not in seen:
+        if group == outer:
+            return True
+        seen.add(group)
+        group = (places.get(group) or {}).get("in") or ""
+    return False
+
+
+def places() -> Dict[str, dict]:
+    """{group: {in, folder}}: each group placed in another group's folder (folders.py's `places`), of those listed."""
+    there = set(data.gatherer_names()) | set(data.alone_names())
+    return {g: p for g, p in folders.places().items() if g in there and p["in"] in there}
+
+
+def place(gatherer: str, to: Optional[str], into: Optional[int] = None) -> dict:
+    """The group `gatherer` -- an actor on its own's too -- put in group `to`'s folder `into` (None: its top), keeping
+    its own group: a group inside that folder, as the list shows it, its actors sharing with each other, no one around
+    them. `to` "" or None: back at the list's top. Nothing anyone shares changes: only its `filed` record (module doc).
+    A group placed so leaves the folder of groups it was in (gatherer_folders.py). -> {group, in, folder}. GroupError:
+    not on the home's one database, no such group or folder, `to` an actor on its own, or `to` inside it."""
+    if not home.merged():
+        raise GroupError("a group inside another's folder needs the home's one database: run `ag home merge` first")
+    if gatherer not in set(data.gatherer_names()) | set(data.alone_names()):
+        raise GroupError(f"no group {gatherer!r}")
+    to = str(to or "")
+    if to:
+        if is_alone(to) or to not in data.gatherer_names():
+            raise GroupError(f"no group {to!r} to put it in")
+        if _inside(to, gatherer):
+            raise GroupError("a group can't go inside itself, or inside a group inside it")
+        if into is not None and not any(f["id"] == int(into) for f in _tree(to)["folders"]):
+            raise GroupError(f"{to} has no folder {into}")
+    try:
+        actions.insert(runs_under(gatherer), [_placed(gatherer, to, into)])
+    except (RuntimeError, OSError, ValueError) as exc:
+        raise GroupError(f"ag did not take it: {exc}") from None
+    if to and not is_alone(gatherer) and gatherer in gatherer_folders.stored()["filed"]:
+        gatherer_folders.file([gatherer], None)
+    return {"group": gatherer, "in": to or None, "folder": into if to else None}
+
+
+def _settings_from(group: str, made: str) -> None:
+    """The new group `made` given `group`'s settings (its gatherer.toml: policy, pollers, options), as `own` makes one
+    in it. Left with ag's defaults when that file can't be read or written."""
+    try:
+        with open(os.path.join(home.gatherer_dir(group), "gatherer.toml"), encoding="utf-8") as fh:
+            text = fh.read()
+        with open(os.path.join(home.gatherer_dir(made), "gatherer.toml"), "w", encoding="utf-8") as fh:
+            fh.write(text.replace(f"The gatherer {group}:", f"The gatherer {made}:", 1))
+    except OSError:
+        pass
+
+
+def own(gatherer: str, folder: int) -> dict:
+    """The folder `folder` of `gatherer` given a group of its own, where it is (the list's folder menu, `ag groups folder
+    ... own`): `split` -- a new group named after it, its actors and folders in it, the rest of their tasks with them --
+    then that group placed where the folder was (`place`), and given `gatherer`'s settings. -> split's, with {in,
+    folder}: where it is. GroupError: as `split`'s."""
+    f = next((x for x in _tree(gatherer)["folders"] if x["id"] == int(folder)), None) if home.merged() else None
+    parent = f["parent"] if f else None
+    made = split(gatherer, folder)
+    _settings_from(gatherer, made["group"])
+    place(made["group"], gatherer, parent)
+    return {**made, "in": gatherer, "folder": parent}
+
+
+def above(gatherer: str) -> dict:
+    """The group `gatherer`, placed in a folder of another group, made part of that group again (its folder's menu,
+    `ag groups folder ... parent`): merged into it (`merge`), a folder of it where it was. -> merge's. GroupError: placed
+    nowhere, an actor on its own (it joins by a move), or as `merge`'s."""
+    p = places().get(gatherer)
+    if is_alone(gatherer):
+        raise GroupError("an actor on its own joins its folder's group by a move")
+    if p is None:
+        raise GroupError(f"{_names(gatherer)} is in no group's folder: there is no group above it")
+    return merge(gatherer, p["in"], p["folder"])
+
+
 def is_alone(group: str) -> bool:
     """Whether `group` is an actor's on its own (`alone`): a group of one, no group of the home's."""
     return str(group or "").startswith(ALONE)
 
 
-def alone(gatherer: str, channel: str) -> dict:
+def alone(gatherer: str, channel: str, here: bool = False) -> dict:
     """The actor `channel` of `gatherer` taken out of every group (module doc), in one call to ag: its `group` record,
     {group: self:<channel>, was, name: "", was_name, folder: none}, and a `filed` record of each app that goes with it --
     its task's, and its app's own window (`actors`) -- at that group's top; then the apps moved there (the host's
-    `regroup`), and the dashboard's own rows of them under that name. -> {group, actors, apps, from}. GroupError: not on
+    `regroup`), and the dashboard's own rows of them under that name. Its group of one placed (`place`) where it was --
+    `here`: in its folder of `gatherer`, on its own there -- else at the list's top. -> {group, actors, apps, from, in,
+    folder}. GroupError: not on
     the home's one database, no such actor, the coordinator agent (it stays with its group), one working in a task
     with other actors (a task moves whole: out of it first), or an app of its task that can't move (`apps`)."""
     if not home.merged():
@@ -433,8 +694,10 @@ def alone(gatherer: str, channel: str) -> dict:
     to = ALONE + channel
     event = {"type": GROUP, "id": f"{GROUP}:{channel}:{secrets.token_hex(6)}", "properties": {"channel": channel},
              "payload": {"group": to, "was": gatherer, "name": "", "was_name": _names(gatherer), "folder": None}}
+    spot = _tree(gatherer)["filed"].get(channel) if here else None
     try:                                              # ag runs it under a group of the home's: the one it leaves
-        actions.insert(gatherer, [event, *(folders._filed_event(to, folders.APP + i, None) for i in moved)])
+        actions.insert(gatherer, [event, *(folders._filed_event(to, folders.APP + i, None) for i in moved),
+                                  _placed(to, gatherer if here else "", spot)])
     except (RuntimeError, OSError, ValueError) as exc:
         raise GroupError(f"ag did not take it: {exc}; nothing else changed") from None
     if channel not in _members(to):
@@ -443,7 +706,8 @@ def alone(gatherer: str, channel: str) -> dict:
     for i in moved:
         _host().regroup(gatherer, i, to)
     _rows(gatherer, to, items)
-    return {"group": to, "actors": [channel], "apps": moved, "from": gatherer}
+    return {"group": to, "actors": [channel], "apps": moved, "from": gatherer, "in": gatherer if here else None,
+            "folder": spot}
 
 
 def start_alone(started, gatherer: str, cwd: str, harness: str, permission_mode: str = "auto",
@@ -503,6 +767,11 @@ def launch_group(channel: str, group: str) -> str:
         p = (folders._payload(row[0]) or {}) if row else {}
         was = p.get("was") or p.get("under")
         if was and not is_alone(str(was)):
+            gone = merges.stored()
+            seen = set()
+            while was in gone and was not in seen:     # merged into another since: that one
+                seen.add(was)
+                was = gone[was]
             return str(was)
     names = data.gatherer_names()
     return names[0] if names else group

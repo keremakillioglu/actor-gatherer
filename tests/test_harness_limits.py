@@ -171,6 +171,15 @@ class CodexLimitTest(unittest.TestCase):
         self.assertEqual(codex.harness_limit(plan(), lambda: asked.append(2) or {})[0], 244800)
         self.assertEqual(asked, [1])                       # no model named: the catalog is not asked
 
+    def test_a_set_window_for_a_model_codex_does_not_know_is_capped_at_its_fallback(self):
+        limit, found = codex.harness_limit(plan(model="gemini-3.1-pro-preview", window=1048576), lambda: self.CATALOG)
+        self.assertEqual(limit, 244800)                                  # codex caps it at 272000, whatever is set
+        self.assertIn("model_catalog_json", found)
+        self.assertEqual(codex.harness_limit(plan(model="gemini-3.1-pro-preview", window=200000),
+                                             lambda: self.CATALOG)[0], 180000)                       # under it: as set
+        self.assertEqual(codex.harness_limit(plan(model="gemini-3.1-pro-preview", window=1048576),
+                                             lambda: {})[0], 943718)     # no catalog to tell by: as set
+
     def test_the_run_s_own_limit_when_lower(self):
         limit, found = codex.harness_limit(plan(model="gpt-5.5", own_limit=150000), lambda: self.CATALOG)
         self.assertEqual((limit, found), (150000, "model_auto_compact_token_limit=150000"))

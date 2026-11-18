@@ -19,7 +19,7 @@ from harness_kit import claude as claude_rules, codex as codex_rules  # noqa: E4
 from ag.integrations.harnesses.claude.setup.launch import base_url  # noqa: E402
 from ag.integrations.harnesses.codex.setup.hook_servers import config_part  # noqa: E402
 from ag.integrations.harnesses.codex.setup.launch import Plan  # noqa: E402
-from ag.integrations.tools.ag_orchestrator import session_files  # noqa: E402
+from ag.integrations.tools.ag_orchestrator import records, session_files  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.session_files import SessionFiles  # noqa: E402
 
 SESSION = "0e1d2c3b-0000-4000-8000-000000000009"
@@ -31,10 +31,12 @@ def stamp(at=None):
 
 
 class Server:
-    """The gatherer's server, as the hook sees it: each `insert` kept, each event once by its id."""
+    """The gatherer's server, as the hook sees it: each `insert` kept, each event once by its id -- the next `locked`
+    inserts failing as a locked database fails them."""
 
     def __init__(self):
         self.inserted, self.ids, self.lanes = [], set(), []
+        self.locked = self.failed = 0
 
     def client(self, gatherer):
         return self
@@ -42,6 +44,10 @@ class Server:
     async def request(self, op, body=None, timeout=None):
         assert op == "insert", op
         self.lanes.append(body.get("lane"))
+        if self.locked:
+            self.locked -= 1
+            self.failed += 1
+            return {"error": "OperationalError: database is locked"}
         for e in body["events"]:
             if e["id"] not in self.ids:
                 self.ids.add(e["id"])
@@ -98,6 +104,19 @@ class FollowTest(unittest.IsolatedAsyncioTestCase):
         await self.until(lambda: self.server.types()[-1:] == ["message_sent"])
         self.assertEqual(self.server.inserted[-1][1]["payload"]["how"], "mid_turn")
         self.assertEqual(set(self.server.lanes), {"records"})              # beside the session's reads, not behind them
+
+    async def test_an_insert_that_fails_is_made_again_until_it_is_stored(self):
+        self.write(self.op("enqueue", "also do b"))
+        self.follow()
+        await self.until(lambda: self.server.types() == ["session_file", "message_queued"])
+        self.server.locked = 3                                             # the database locked a while
+        with unittest.mock.patch.object(records, "RETRY_SECONDS", 0.02):
+            self.write(self.op("remove", "also do b", reason="absorbed_mid_turn"))
+            await self.until(lambda: self.server.failed >= 1)
+            self.write(self.op("enqueue", "and c"))                       # read on meanwhile: after it, in order
+            await self.until(lambda: len(self.server.inserted) == 4)
+        self.assertEqual(self.server.types(), ["session_file", "message_queued", "message_sent", "message_queued"])
+        self.assertEqual(self.server.failed, 3)
 
     async def test_read_again_from_its_start_it_is_the_same_events(self):
         self.write(self.op("enqueue", "one"), self.op("dequeue"))

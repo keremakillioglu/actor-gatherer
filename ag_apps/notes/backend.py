@@ -89,6 +89,34 @@ class NotesApp(App):
     def open(self, instance: Instance, args: dict) -> Instance:
         return Instance(**{**instance.to_dict(), "title": instance.gatherer})
 
+    def folded(self, instance: Instance, was: str, title: str) -> None:
+        """The group `was` merged into the instance's (App.folded): the pages of its notebook not in the trash put in
+        the instance's, under a new page named after it (`title`), each under the page it was under -- their ids kept,
+        so links to them still work (one the notebook has already given a new id) -- and told to the panels. Its own
+        file is kept as it was."""
+        if was == instance.gatherer:
+            return
+        pages = [p for p in self.book(was).state()["pages"] if not p.get("deleted")]
+        if not pages:
+            return
+        taken = {p["id"] for p in self.book(instance.gatherer).state()["pages"]}
+        ids = {p["id"]: p["id"] if p["id"] not in taken else nb.new_id() for p in pages}
+        top = nb.new_id()
+        ops: List[dict] = [{"op": "page.new", "page": {"id": top, "title": title}}]
+        todo = pages
+        while todo:                                           # each after the page it is under
+            made = {op["page"]["id"] for op in ops}
+            ready = [p for p in todo if p.get("parent") not in ids or ids[p["parent"]] in made]
+            if not ready:                                     # (pages under each other in a loop: at the new page)
+                ready, todo = todo, []
+            for p in ready:
+                parent = ids[p["parent"]] if p.get("parent") in ids and ids[p["parent"]] in made else top
+                ops.append({"op": "page.new", "page": {"id": ids[p["id"]], "title": p.get("title") or "",
+                                                       "icon": p.get("icon") or "", "parent": parent},
+                            "blocks": p.get("blocks") or []})
+            todo = [p for p in todo if p not in ready]
+        self.change(instance, ops, "group")
+
     # -- the panel
 
     def request(self, instance, method, path, query, body):
