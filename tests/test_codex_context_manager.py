@@ -198,6 +198,12 @@ def meta(**fields):
 
 TRIGGER = {"type": "compaction_trigger"}
 SUMMARY = {"type": "compaction", "id": "cmp_1", "encrypted_content": "gAAAA"}
+# compacted on codex's own side (a provider other than OpenAI's): its prompt, and the summary it starts again from
+LOCAL_PROMPT = {"type": "message", "role": "user", "content": [{"type": "input_text", "text":
+                "You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM."}]}
+LOCAL_SUMMARY = {"type": "message", "role": "user", "id": "msg_9", "content": [{"type": "input_text", "text":
+                 "Another language model started to solve this problem and produced a summary of its thinking process. "
+                 "Here is the summary produced by the other language model:\nAsked q, answered a."}]}
 
 
 class SideCallTest(HookTest):
@@ -321,6 +327,21 @@ class SideCallTest(HookTest):
         again = [{**DEV, "id": "dev2"}, user("q", 1), SUMMARY, user("next", 2)]   # codex's window, started again
         self.assertEqual([e["payload"] for e in codex_format.to_events(again)], [user("next", 2)])
         self.assertEqual(len(codex_format.to_events([DEV, user("q", 1)])), 2)       # nothing compacted: all of it
+
+    def test_compacted_on_codex_s_own_side_its_prompt_is_the_trigger(self):
+        hook = self.hook()
+        items = [DEV, user("q", 1), agent("a", 1)]
+        out = self.call(hook, self.request({"input": items + [LOCAL_PROMPT]}, headers=meta(
+            thread_source="user", request_kind="compaction", compaction={"implementation": "responses"})))
+        op, body = FakeClient.made[0].requests[0]
+        self.assertEqual(op, "compaction")
+        self.assertEqual([e["payload"] for e in body["events"]], items)          # its prompt is no event
+        self.assertEqual(out["input"], [MANAGED] + items + [LOCAL_PROMPT])        # and is last, for the summary
+
+    def test_compacted_on_codex_s_own_side_only_what_follows_its_summary_is_new(self):
+        again = [DEV, {**user("<environment_context><cwd>/w</cwd></environment_context>", 7), "id": "env2"},
+                 {**user("q", 1), "id": "u1-again"}, LOCAL_SUMMARY, user("next", 2)]
+        self.assertEqual([e["payload"] for e in codex_format.to_events(again)], [user("next", 2)])
 
 
 if web is not None:

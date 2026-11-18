@@ -14,10 +14,13 @@ shows the model. A reasoning item costs 0 tokens and has no text: its content is
 an encrypted blob, sent back to the model as it is, but nothing to read or count.
 
 After codex compacts its history, it starts its input again: its preamble re-sent
-under new ids, the user messages it kept, and its encrypted summary (a
-`compaction` item), then what comes after. None of that up to the summary is an
-event: the gatherer holds the history the summary stands for, and built in its
-place (the hook's `compaction`). Nor is the compaction call's own `compaction_trigger`.
+under new ids, the user messages it kept, and its summary (an encrypted
+`compaction` item; compacted on codex's own side, with a provider other than
+OpenAI's, a user message opening with harness_kit.codex.LOCAL_SUMMARY), then what
+comes after. None of that up to the summary is an event: the gatherer holds the
+history the summary stands for, and built in its place (the hook's `compaction`).
+Nor is the compaction call's own trigger (a `compaction_trigger`, or the prompt
+its input ends with, as harness_kit.codex.compaction_split finds it).
 
 Nothing of the context manager is imported here.
 """

@@ -209,6 +209,24 @@ class CodexTest(unittest.TestCase):
         got = CODEX.read([item("user", "kept"), {"type": "compaction", "encrypted_content": "x"}, item("user", "new")])
         self.assertEqual([p.kind for p in got], [Kind.COMPACTION_REPEAT, Kind.COMPACTION_SUMMARY, Kind.USER])
 
+    def test_compacted_on_its_own_side_its_summary_is_a_user_message_and_its_prompt_the_trigger(self):
+        from harness_kit.codex import LOCAL_SUMMARY
+        summary = item("user", LOCAL_SUMMARY + " Here is the summary produced by the other language model:\nDid x.")
+        got = CODEX.read([item("user", "kept"), summary, item("user", "new")])
+        self.assertEqual([p.kind for p in got], [Kind.COMPACTION_REPEAT, Kind.COMPACTION_SUMMARY, Kind.USER])
+        self.assertEqual([p.kind for p in CODEX.read([item("user", "Did x. " + LOCAL_SUMMARY)])], [Kind.USER])  # not its start
+        prompt = item("user", "You are performing a CONTEXT CHECKPOINT COMPACTION.")
+        history = [item("user", "<environment_context><cwd>/w</cwd></environment_context>"), item("user", "hi"),
+                   item("assistant", "hello")]
+        compact = CODEX.call("POST", "/v1/responses", {"x-codex-turn-metadata": '{"thread_source": "user", '
+                             '"request_kind": "compaction", "compaction": {"implementation": "responses"}}'},
+                             {"input": history + [prompt]})
+        self.assertEqual((compact.kind, compact.history, compact.own), (CallKind.COMPACTION, history, [prompt]))
+        # one whose input does not end with a user's message: no trigger to take
+        bare = CODEX.call("POST", "/v1/responses", {"x-codex-turn-metadata": '{"request_kind": "compaction"}'},
+                          {"input": history})
+        self.assertEqual((bare.kind, bare.history, bare.own), (CallKind.COMPACTION, history, []))
+
     def test_its_calls_and_side_calls(self):
         ask = {"type": "function_call", "call_id": "c1", "name": "request_user_input",
                "arguments": '{"questions": [{"id": "q", "question": "Which?", "options": [{"label": "A"}]}]}'}
