@@ -149,14 +149,17 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 named `took_over`. A harness's call is refused when
                                                 it is not claimed
     {"op": "locate", "gatherer", "properties", "event_id"} -> {"row"}      (`id` is the request's own)
-    {"op": "latest", "gatherer", "properties", "n", "types"?} -> {"events": [{"id", "payload"}, ...]}
+    {"op": "latest", "gatherer", "properties", "n", "types"?, "counted"?} -> {"events": [{"id", "payload"}, ...]}
                                                 the `n` events last stored with exactly these
                                                 identifying properties (of `types` alone, when
                                                 given: the harness's conversation, not what its
                                                 hook records besides), oldest first: where a
                                                 harness that re-sends its whole history, and
                                                 gives its events ids of its own making, picks
-                                                it up (the claude adaptor's Continuity)
+                                                it up (the claude adaptor's Continuity). With
+                                                `counted`, `n` counts those types alone, and
+                                                every event of `types` since the oldest of them
+                                                comes too (the harness's own notes)
     {"op": "init", "gatherer", "event_types"?: [TYPE]} -> {"event_types": [TYPE with its id]}
     {"op": "event_types", "gatherer"} -> {"event_types": [...]}
     {"op": "add_event_type", "gatherer", TYPE's fields} -> {"type_id"}
@@ -677,10 +680,10 @@ class Server:
             n = request.get("n")
             if not isinstance(n, int) or isinstance(n, bool) or n < 0:
                 return {"error": "no n"}
-            types = request.get("types")
-            types = [t for t in types if isinstance(t, str)] if isinstance(types, list) else None
+            types, counted = ([t for t in v if isinstance(t, str)] if isinstance(v, list) else None
+                              for v in (request.get("types"), request.get("counted")))
             manager = self.factory(gatherer)        # read only, and on every model call: no `init`
-            return {"events": [{"id": i, "payload": p} for i, p in manager.latest(gatherer, properties, n, types)]}
+            return {"events": [{"id": i, "payload": p} for i, p in manager.latest(gatherer, properties, n, types, counted)]}
         if op == "init":
             return self.init(gatherer, request.get("event_types"))
         if op == "event_types":

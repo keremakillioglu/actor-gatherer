@@ -494,7 +494,7 @@ button.ed-changed.again:hover { color: var(--ink); }
   width: 1.5px; height: calc(var(--lh) / 2 + 3px); border-radius: 1px; background: var(--join-line); pointer-events: none; }
 .files :is(.fl-user, .fl-crew).joined:has(+ .joined)::after { height: auto; bottom: -1px; background: linear-gradient(
   var(--join-line) calc(var(--lh) / 2 + 3px), transparent 0 calc(var(--lh) / 2 + 19px), var(--join-line) 0); }
-/* written while it works, not sent yet: at the turn's end, faded, until Claude Code gives it to the agent */
+/* written while it works, not sent yet: at the turn's end, faded, until the harness gives it to the agent */
 .files .fl-pending { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
 .files .fl-pending .fl-user { opacity: .55; }
 .files .fl-pending .lbl { color: var(--muted); font-size: 11.5px; margin-left: 4px; }

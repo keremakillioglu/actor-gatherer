@@ -38,23 +38,31 @@ It holds the channel's last TAIL events as the gatherer stored them (the server'
 started again, or another one, carries on as well), and finds where they are in the
 request by the ids themselves: an id is the hash of its piece and of the id before it,
 so two stored events whose ids link pieces next to each other in the request are
-there, in that order. The run of such links holding the channel's newest stored event,
-the stored history's end, is where the request carries on (on nearly every call it
-holds every stored event): the pieces after it are chained from there -- new, whatever
-they repeat -- and only those, and the stored ones linked before them, are sent. Not
-the last run in the request: Claude Code sends some of its notes again word for word
-(resumed, that a connector's tools were removed, then added again), and those stored
-earlier link to one another as well; taken for the end, they left the user's message
-before them unsent. Notes stored twice are each taken where the longer run goes on.
+there, in that order. The run of such links holding the channel's newest stored event
+of the conversation, the stored history's end, is where the request carries on (on
+nearly every call it holds every stored event): the pieces after it are chained from
+there -- new, whatever they repeat -- and only those, and the stored ones linked before
+them, are sent. Not the last run in the request, nor one of Claude Code's own notes
+alone: it sends some of its notes again word for word (resumed, that a connector's tools
+were removed, then added again; after a failed call, after the user's next words), and
+those stored earlier link to one another as well; taken for the end, they left the
+user's message before them unsent. Notes stored twice are each taken where the longer
+run goes on.
 Where the history's end is not in the request, Claude Code went back, and the case is
 told apart (`Continuity.carry_on`) and logged by the hook: a rewind (the user's words
 after a run, where the stored history went on otherwise: the fork), a compaction (its
 summary in the request; never a run of the notes it sends again with it), its own notes
 at the end rewritten, or none of these. Order is told by the links, not by the rows:
 notes ag stored before the request they followed (`request_last`) still link where
-Claude Code sends them. Without a link (the first call, Claude Code rewriting the pieces
-at the end themselves), every piece's id is the chain from the request's start, which
-the history re-sent unchanged reproduces.
+Claude Code sends them -- and so the last TAIL events are counted without Claude Code's
+own notes (`COUNTED`), every note stored among them coming too: however many notes were
+stored ahead of the user's message, the piece before it in the request is among them.
+(Counted with them, more than TAIL notes left neither of the message's neighbours there:
+the newest stored event, it was never found, and a run of those notes Claude Code sent
+again after the user's next words was taken for where the request carried on.) Without
+a link (the first call, Claude Code rewriting the pieces at the end themselves), every
+piece's id is the chain from the request's start, which the history re-sent unchanged
+reproduces.
 One rewrite reaches a piece itself: when Claude Code joins two user messages in a row
 into one -- a turn that got no answer and the user's next words, or the last message a
 compaction summarizes and its instruction -- it adds a newline to the end of the first
@@ -107,7 +115,10 @@ def types_of(items: list, event_types: Dict[str, str] = EVENT_TYPES) -> Tuple[Li
     parts = HARNESS.read(items)
     return [event_types.get(p.kind, CONTEXT) for p in parts], {i for i, p in enumerate(parts) if p.detail.get("expands")}
 
-TAIL = 20      # the channel's last stored events a Continuity looks for in the request
+TAIL = 20      # the channel's last stored events a Continuity looks for in the request, counted in COUNTED alone
+#: The event types the TAIL counts: all to_events makes but Claude Code's own notes (CONTEXT), which come too among
+#: them -- a run of them stored ahead of the user's message (`request_last`) never pushes its neighbours out.
+COUNTED = tuple(t for t in OUTPUTS if t != CONTEXT)
 
 
 def piece_key(item) -> str:
@@ -179,8 +190,16 @@ class Continuity:
     def carry_on(self, items: list, keys: List[str], parts: Optional[list]) -> Optional[Tuple[int, List[str]]]:
         """(the index of its first piece, its ids) of the run of stored pieces the request carries on from, case by
         case, the case in `how`; None: from nothing stored, all of it new. First the stored history's end:
-          whole, end   the run holding the newest stored event -- of two, the longer, then the later; "whole" when it
-                       holds every stored event, as on nearly every call.
+          whole, end   the run holding the newest stored event of the conversation (not one of Claude Code's own
+                       notes: those it sends again word for word, rewrites and moves, and a run of them sent again
+                       after the user's words -- after a failed call's message, its notes changed and stored after
+                       it -- is no end) -- of two, the one it is linked to the piece before in (a run's first piece is
+                       only taken for the stored one: the user's words again, word for word, with the same notes
+                       after them make a run of their own), then the longer, then the later; "whole" when it holds
+                       every stored event, as on nearly every call.
+          rewritten    the same, but Claude Code's notes stored after that event are not after it in the request: it
+                       rewrote them (rebuilding its request, its tools to be found by ToolSearch since: their notes
+                       made one), left them out, or sent them again after the user's next words.
         Without it in the request, Claude Code went back, and fell back to what it went back to:
           rewind       the user's words the stored history goes on without come right after a run -- the fork -- or
                        right before one stored after other words (`cut_off`): the fork with the newest stored event;
@@ -188,9 +207,6 @@ class Continuity:
           compaction   its summary is in the request, and no fork: the run with the newest stored event; without one,
                        all after the summary is new. In a compacted history, never a run of only the notes it sends
                        again with the summary (COMPACTION_REPEAT), whatever the case.
-          rewritten    the stored events newer than any in the request are all Claude Code's own notes: it rewrote
-                       them (rebuilding its request, its tools to be found by ToolSearch since: their notes made one),
-                       or left them out -- the run with the newest stored event.
           unknown      none of these: the same; none of the stored in the request (a rewind further back than they
                        reach, Claude Code rewriting it all), all of it new."""
         self.how = "new"
@@ -198,10 +214,13 @@ class Continuity:
             return None
         runs = self.runs(keys)
         newest = max(self.order.values())
+        said = max((n for i, n in self.order.items() if not self.own[i]), default=newest)
         rank = lambda r: (max(self.order[i] for i in r[1]), len(r[1]))         # noqa: E731 - ties: the later (max: the first)
-        end = max((r for r in runs if rank(r)[0] == newest), key=rank, default=None)
+        shown = lambda r: next(k for k, i in enumerate(r[1]) if self.order[i] == said) > 0     # noqa: E731 - not first
+        end = max((r for r in runs if any(self.order[i] == said for i in r[1])),
+                  key=lambda r: (shown(r), len(r[1])), default=None)
         if end is not None:
-            self.how = "whole" if len(end[1]) == len(self.stored) else "end"
+            self.how = "whole" if len(end[1]) == len(self.stored) else "end" if rank(end)[0] == newest else "rewritten"
             return end
         parts = parts if parts is not None else HARNESS.read(items)
         compacted = any(p.kind == Kind.COMPACTION_SUMMARY for p in parts)
