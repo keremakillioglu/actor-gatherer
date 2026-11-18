@@ -1,0 +1,122 @@
+"""The Files app (ag_apps/files/) and the LaTeX editor (ag_apps/latex/), the two apps the Editor was split into: what
+each is (its tools, the files it takes), and the Editor's instances taken over by them -- one on a paper's folder by
+the LaTeX editor, any other by the Files app (a manifest's `replaces`, App.takes_over, the host's `_taken_over`) -- with
+their agents still attached and their actors' roles moved with them (app_agents.adopt_all). Their file editing is
+app_kit.fileedit's, tested through the LaTeX editor (test_app_latex.py) and the Files app (test_dashboard_editor*.py)."""
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import app_kit  # noqa: E402
+from ag_dashboard import app_agents, app_host  # noqa: E402
+from app_kit import Instance  # noqa: E402
+from test_dashboard import HomeBase  # noqa: E402
+from test_dashboard_app_host import insert_here  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class ManifestTest(unittest.TestCase):
+    def test_files_has_the_file_tools_alone_and_takes_any_file_the_latex_editor_its_sources_first(self):
+        files, latex = (app_kit.load(os.path.join(ROOT, "ag_apps", n)) for n in ("files", "latex"))
+        self.assertEqual([t.name for t in files.tools], ["read", "edit", "write", "open"])
+        self.assertEqual([t.name for t in latex.tools], ["read", "edit", "write", "open", "preview_show",
+                                                         "preview_set", "preview_run", "preview_stop", "preview_clear"])
+        self.assertEqual([(h.intent, h.types) for h in files.handles], [("open-file", ())])
+        self.assertEqual([(h.intent, h.types) for h in latex.handles], [("open-file", ("text/x-tex", "text/x-bibtex"))])
+        self.assertEqual((files.replaces, latex.replaces), (("editor",), ("editor",)))
+        for m in (files, latex):
+            self.assertTrue(m.agent.offered and m.capabilities.docs and m.capabilities.edit_guard)
+            self.assertEqual((m.instances, m.access), ("many", "task"))
+            self.assertNotIn("editor_", m.instructions)
+        self.assertNotIn("preview", files.instructions)
+
+    def test_replaces_names_another_app(self):
+        base = {"name": "a", "label": "A", "version": "1", "backend": {"python": "backend:A"}}
+        self.assertEqual(app_kit.parse({**base, "replaces": ["b"]}).replaces, ("b",))
+        for bad in (["a"], ["Not a name"], "b"):
+            with self.assertRaises(app_kit.ManifestError):
+                app_kit.parse({**base, "replaces": bad})
+        with self.assertRaises(app_kit.ManifestError):                  # its backend says which: it needs one
+            app_kit.parse({"name": "a", "label": "A", "version": "1", "replaces": ["b"]})
+
+
+class Sessions:
+    """The sessions table, as adopt_all reads and writes it."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def list(self):
+        return [dict(r) for r in self.rows]
+
+    def set_role(self, session_id, role):
+        next(r for r in self.rows if r["session_id"] == session_id)["role"] = role
+
+
+class TakenOverTest(HomeBase):
+    """Editors open before the split: kept by the host's records as instances of "editor", an app no longer found."""
+
+    def setUp(self):
+        super().setUp()
+        root = os.path.realpath(self.tmp.name)
+        self.paper, self.code = os.path.join(root, "paper"), os.path.join(root, "code")
+        os.makedirs(os.path.join(self.paper, "sections"))
+        os.makedirs(self.code)
+        for path in ("paper/main.tex", "paper/sections/one.tex", "code/notes.md", "code/app.py"):
+            with open(os.path.join(root, path), "w") as fh:
+                fh.write("x\n")
+        old = self.new_host()
+        self.editors = []
+        for folder, channel in ((self.paper, "c1"), (self.code, "c2")):
+            i = Instance(id=os.urandom(8).hex(), app="editor", gatherer="g", folder=folder, title="Editor")
+            old._record(i, "app_opened", {"instance": i.to_dict(), "by": "user"})
+            old._record(i, "app_attached", {}, channel)
+            old._record(i, "app_named", {"name": f"mine {channel}"})
+            self.editors.append(i)
+        old.flush()
+
+    def new_host(self):
+        h = app_host.AppHost(0, write=insert_here)
+        self.addCleanup(h.close)
+        self.hosts.append(h)                                # closed before the home goes (HomeBase's tearDown)
+        return h
+
+    def test_a_paper_s_editor_is_the_latex_editor_s_any_other_the_files_app_s_once(self):
+        h = self.new_host()
+        got = h.listed("g")
+        apps = {i["id"]: (i["app"], i["name"]) for i in got["instances"]}
+        paper, code = self.editors
+        self.assertEqual(apps, {paper.id: ("latex", "mine c1"), code.id: ("files", "mine c2")})   # its name kept
+        self.assertEqual(got["attached"], {paper.id: ["c1"], code.id: ["c2"]})                 # its agent still on it
+        self.assertEqual(h.instance("g", paper.id).title, "paper")                              # opened again by it
+        h.flush()
+        again = self.new_host()                                       # kept as theirs: not taken over a second time
+        self.assertEqual({i["id"]: i["app"] for i in again.listed("g")["instances"]},
+                         {paper.id: "latex", code.id: "files"})
+        again.flush()
+        conn = self.m._conn("g")
+        moved = conn.execute("SELECT count(*) FROM events e JOIN event_types t USING (event_type_id) "
+                             "WHERE t.name = 'app_opened' AND e.payload_json LIKE '%\"by\": \"replaced\"%'").fetchone()[0]
+        self.assertEqual(moved, 2)
+
+    def test_its_actor_s_role_names_the_app_that_took_it(self):
+        h = self.new_host()
+        paper, code = self.editors
+        rows = [{"session_id": "c1", "gatherer": "g", "cwd": self.paper, "role": app_agents.role("editor", paper.id)},
+                {"session_id": "c2", "gatherer": "g", "cwd": self.code, "role": app_agents.role("editor", code.id)},
+                {"session_id": "c3", "gatherer": "g", "cwd": self.code, "role": None}]
+        app_agents.adopt_all(Sessions(rows), h)
+        self.assertEqual([app_agents.role_of(r) for r in rows], [("latex", paper.id), ("files", code.id), None])
+        self.assertEqual(h.listed("g")["attached"][paper.id], ["c1"])
+
+    def test_an_editor_on_a_folder_gone_waits_as_it_did(self):
+        os.rename(self.code, self.code + ".gone")                    # the Files app can't open it: no app takes it
+        h = self.new_host()
+        self.assertEqual([i["app"] for i in h.listed("g")["instances"]], ["latex"])
+
+
+if __name__ == "__main__":
+    unittest.main()

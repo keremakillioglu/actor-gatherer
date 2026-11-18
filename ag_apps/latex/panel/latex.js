@@ -1,5 +1,5 @@
-// ------------------------------------------------------------------ the Editor's LaTeX parts
-// What the Editor adds to app_kit.fileedit's editor (its panel's code, from /_ag/lib/fileedit/), given to it by edAdd:
+// ------------------------------------------------------------------ the LaTeX editor
+// What the LaTeX editor adds to app_kit.fileedit's editor (its panel's code, from /_ag/lib/fileedit/), given to it by edAdd:
 // the project's preview in a column beside the file (preview.js: ed.pv), run by Execute (⌘↵); a LaTeX build's problems
 // marked on their lines; "→ PDF" and a double-click in a TeX source, to its place in the PDF; and ⌘B / ⌘I in LaTeX's
 // markup, \textbf{…} and \textit{…}.
@@ -8,7 +8,7 @@ Object.assign(ed, { problems: new Map(), problemsAt: 0, pv: null });   // a LaTe
 // in a TeX source, shows that place in what it built (pvLocate). A place in a PDF's source it sends back is opened here
 // (edShowFile).
 const pvPath = () => ed.file || ed.root;
-// ⌘↵ (Ctrl+Enter elsewhere) anywhere in the Editor -- the file, its tree, its header, a PDF's viewer: Execute. Taken
+// ⌘↵ (Ctrl+Enter elsewhere) anywhere in the LaTeX editor -- the file, its tree, its header, a PDF's viewer: Execute. Taken
 // before CodeMirror's own (a blank line below); a text box keeps its own Enter.
 function edExecKey(ev) {
   if (ev.key !== "Enter" || !(MAC ? ev.metaKey : ev.ctrlKey) || ev.shiftKey || ev.altKey || ev.isComposing) return;

@@ -4,8 +4,8 @@
     pdfjs/...         pdf.js and its viewer (web/viewer.html), as DocWriter's build puts it in its folder
     marked.min.js     marked, Markdown to HTML
     purify.min.js     DOMPurify, HTML made safe to put in a page
-    fileedit/...      app_kit.fileedit's panel code: a folder's files edited live (the Files app's and the LaTeX
-                      editor's), and vendor/editor.js, CodeMirror and Yjs
+    fileedit/...      app_kit.fileedit's panel code, for the apps built on it: a folder's files edited live, and
+                      vendor/editor.js, CodeMirror and Yjs
 
     lib_file(rel)     (bytes, media type) of one of their files, by its path under /_ag/lib/; None: none such
 

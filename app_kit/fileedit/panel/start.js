@@ -18,7 +18,7 @@
   ag.selection.on((sel) => { state.selected = sel ? [sel.gatherer, sel.channel] : null; });
   ag.intents.on("open-file", (d) => { if (d && d.path) edShowFile(String(d.path), Number(d.line) || 0); });
   // a link to a file clicked in Chat (the app's [[links]], `ag://<app>/file/<its absolute path>#L<line>`): shown, at
-  // its line -- the path absolute, whether or not the link keeps its first "/""
+  // its line -- the path absolute, whether or not the link keeps its first "/"
   ag.links.onOpen((l) => {
     const p = String((l && l.values && l.values.path) || "");
     const line = /^L?(\d+)$/i.exec(String((l && l.part) || ""));

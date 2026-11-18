@@ -154,8 +154,8 @@ class ServerTest(unittest.TestCase):
         self.addCleanup(self.httpd.server_close)
         self.addCleanup(self.httpd.shutdown)
         self.url = f"http://127.0.0.1:{self.httpd.server_port}"
-        self.app = f"editor.localhost:{self.httpd.server_port}"
-        self.httpd.app_host.backend("editor")
+        self.app = f"files.localhost:{self.httpd.server_port}"
+        self.httpd.app_host.backend("files")
         self.ch = sys.modules["app_kit.fileedit.chooser"]
 
     def get(self, path: str):

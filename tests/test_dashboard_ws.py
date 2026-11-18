@@ -130,8 +130,8 @@ class StreamsOverOneSocketTest(HomeBase):
         h = self.httpd.app_host                             # an app's panel's stream: the Editor's (one ag comes with)
         h._write_fn = insert_here
         self.hosts.append(h)
-        i = h.open("editor", "g", self.work)
-        s.say({"open": "2", "url": f"/api/apps/stream?app=editor&gatherer=g&instance={i.id}"})
+        i = h.open("files", "g", self.work)
+        s.say({"open": "2", "url": f"/api/apps/stream?app=files&gatherer=g&instance={i.id}"})
         self.assertIsNotNone(s.until("2", "!open"))
         self.assertTrue(until(lambda: h.subs))
         s.say({"close": "1"})                               # the one let go: the other still open
@@ -154,8 +154,8 @@ class StreamsOverOneSocketTest(HomeBase):
         h = self.httpd.app_host                             # an app's panel's stream: the Editor's
         h._write_fn = insert_here
         self.hosts.append(h)
-        i = h.open("editor", "g", self.work)
-        s.say({"open": "3", "url": f"/api/apps/stream?app=editor&gatherer=g&instance={i.id}"})
+        i = h.open("files", "g", self.work)
+        s.say({"open": "3", "url": f"/api/apps/stream?app=files&gatherer=g&instance={i.id}"})
         self.assertTrue(s.until_all(("2", "out"), ("3", "!open")))      # either first
         self.assertTrue(until(lambda: h.subs))
         s.close()

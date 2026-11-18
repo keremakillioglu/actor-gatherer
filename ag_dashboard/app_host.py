@@ -880,6 +880,9 @@ class AppHost:
                 attached.setdefault(inst, set()).add(channel)
             elif kind == "app_detached" and channel:
                 attached.get(inst, set()).discard(channel)
+        for i, inst in list(opened.items()):                   # an app no longer found: another that replaces it takes
+            if inst.app not in self.apps:                     # its instance, if one wants it
+                opened[i] = self._taken_over(inst) or inst
         with self.lock:
             for i, inst in opened.items():
                 if inst.app in self.apps:                          # an app no longer found: its instances wait for it
@@ -890,6 +893,39 @@ class AppHost:
                 self.loaded_then(gatherer)
             except Exception:  # noqa: BLE001 - what is told of it is not what reads it
                 pass
+
+    def _taken_over(self, inst: Instance) -> Optional[Instance]:
+        """An instance of an app no longer found, taken over by an app whose manifest `replaces` that app: the one whose
+        backend wants it most (App.takes_over; ties, by name), as its own -- the same id, so its agents stay attached and
+        its task, its name and its group are kept -- opened again by it (args {"replaced": the app it was}) and kept so
+        (`app_opened`, by "replaced"). None: no app takes it."""
+        with self.lock:
+            heirs = sorted(n for n, h in self.apps.items() if inst.app in h.manifest.replaces)
+        best, most = None, 0
+        for n in heirs:
+            try:
+                want = int(self.backend(n).takes_over(replace(inst, app=n)) or 0)
+            except Exception:  # noqa: BLE001 - an app that can't say does not take it
+                continue
+            if want > most:
+                best, most = n, want
+        if best is None:
+            return None
+        try:
+            got = self.backend(best).open(replace(inst, app=best), {"replaced": inst.app})
+        except Exception:  # noqa: BLE001 - one it can't open waits, as its app's would
+            return None
+        made = replace(inst, app=best, title=got.title, data=dict(got.data))
+        self._record(made, "app_opened", {"instance": made.to_dict(), "by": "replaced", "was": inst.app})
+        return made
+
+    def moved(self, gatherer: str, instance_id: str) -> Optional[str]:
+        """The app the instance is now, once the gatherer's records are read -- another than its agent's role says, if
+        an app took it over (`_taken_over`); None, no such instance open."""
+        self._load(gatherer)
+        with self.lock:
+            i = self.instances.get(instance_id)
+        return i.app if i is not None else None
 
 
 def _tagged(text: str, app: str) -> str:

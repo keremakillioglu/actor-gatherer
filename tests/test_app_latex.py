@@ -1,8 +1,9 @@
-"""The Editor app (ag_apps/editor/; app_kit/DESIGN.md step 7): set up as the Browser and DocWriter are -- one per Editor
-started, on a folder, its tools its attached actor's -- its panel and its routes over the host's files shared live
-(app_kit.docs; the routes' own tests are test_dashboard_editor*.py), and each git project's preview beside the file --
+"""The LaTeX editor app (ag_apps/latex/; app_kit/DESIGN.md step 7, the Editor before it was split into it and the Files
+app): set up as the Browser and DocWriter are -- one per LaTeX editor started, on a folder, its tools its attached
+actor's -- its panel and its routes over the host's files shared live (app_kit.fileedit and app_kit.docs; the routes'
+own tests are test_dashboard_editor*.py, through the Files app), and each git project's preview beside the file --
 the command its Execute runs in the checkout of the file open, and what it makes -- kept as its events (each project's
-by its repository, shared by the gatherer's Editors), set by the user (its panel) or an agent (its tools, `ag
+by its repository, shared by the gatherer's LaTeX editors), set by the user (its panel) or an agent (its tools, `ag
 preview`), an agent's command run only once the user lets it; its runs told to its panels, its files served on its own
 origin. The run logic is tested directly (runs.py); the rest through the dashboard as its host, its tool gateway and its
 server."""
@@ -39,7 +40,7 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAM
 
 def load(name: str):
     """A module of the app's, in its package (the host imports them as a package of its own: these are other copies)."""
-    return importlib.import_module(f"ag_apps.editor.{name}")
+    return importlib.import_module(f"ag_apps.latex.{name}")
 
 
 R = load("runs")
@@ -399,7 +400,7 @@ class AppBase(HomeBase):
         self.root = os.path.realpath(self.tmp.name)
         self.repo, self.plot = project(self.root)
         self.host = self.new_host()
-        self.i = self.host.open("editor", "g", self.repo)
+        self.i = self.host.open("latex", "g", self.repo)
 
     def new_host(self):
         h = app_host.AppHost(0, write=insert_here)
@@ -408,27 +409,27 @@ class AppBase(HomeBase):
         return h
 
     def call(self, tool, args, channel=None, host=None):
-        got = (host or self.host).call("editor", self.i, f"preview_{tool}", args, Caller(channel=channel, gatherer="g"))
+        got = (host or self.host).call("latex", self.i, f"preview_{tool}", args, Caller(channel=channel, gatherer="g"))
         text = "".join(c.get("text", "") for c in got.content)
         return {"error": text} if got.is_error else json.loads(text)
 
 
 class AppTest(AppBase):
     def test_one_per_editor_started_on_a_folder_the_preview_by_repository(self):
-        self.assertIn("editor", self.host.apps)
+        self.assertIn("latex", self.host.apps)
         self.assertNotIn("preview", self.host.apps)                       # the Editor's own now, not an app of its own
-        m = self.host.apps["editor"].manifest
+        m = self.host.apps["latex"].manifest
         self.assertEqual((m.instances, m.access, m.agent.offered), ("many", "task", True))   # as the Browser's, DocWriter's
         self.assertEqual((self.i.folder, self.i.title), (self.repo, "proj"))
-        src = self.host.open("editor", "g", os.path.join(self.repo, "src"))
+        src = self.host.open("latex", "g", os.path.join(self.repo, "src"))
         self.assertNotEqual(src.id, self.i.id)                            # another, on its own folder
         with self.assertRaises(AppError):
-            self.host.open("editor", "g", os.path.join(self.root, "nowhere"))
+            self.host.open("latex", "g", os.path.join(self.root, "nowhere"))
         wt = os.path.join(self.root, "proj-worktrees", "b")
         git(self.repo, "worktree", "add", "-q", "-b", "b", wt)
         self.call("set", {"path": self.repo, "command": "echo hi"})
         self.assertEqual(self.call("show", {"path": wt})["preview"]["command"], "echo hi")   # its worktrees share it
-        got = self.host.call("editor", src, "preview_show", {"path": self.repo}, Caller(gatherer="g"))
+        got = self.host.call("latex", src, "preview_show", {"path": self.repo}, Caller(gatherer="g"))
         self.assertEqual(json.loads(got.content[0]["text"])["preview"]["command"], "echo hi")   # and the other Editor
 
     def test_a_link_opens_a_file_by_its_absolute_path(self):
@@ -486,10 +487,10 @@ class AppTest(AppBase):
         self.call("run", {"path": self.repo, "ok": "echo hi", "wait": 10})
         self.host.flush()
         deadline = time.time() + 10
-        while time.time() < deadline and not self.host.read("editor", self.i, ["editor.preview_ran"]):
+        while time.time() < deadline and not self.host.read("latex", self.i, ["latex.preview_ran"]):
             time.sleep(0.1)
-        got = self.host.read("editor", self.i, ["editor.preview_set", "editor.preview_allowed", "editor.preview_ran"])
-        self.assertEqual([e["type"] for e in got], ["editor.preview_set", "editor.preview_allowed", "editor.preview_ran"])
+        got = self.host.read("latex", self.i, ["latex.preview_set", "latex.preview_allowed", "latex.preview_ran"])
+        self.assertEqual([e["type"] for e in got], ["latex.preview_set", "latex.preview_allowed", "latex.preview_ran"])
         self.assertEqual({e["payload"]["key"] for e in got}, {self.repo})
         again = self.new_host()
         row = self.call("show", {"path": self.repo}, host=again)["preview"]
@@ -505,7 +506,7 @@ class AppTest(AppBase):
         self.assertIn("which project", self.call("show", {})["error"])  # the user's call names its file, an agent's its cwd
 
     def test_its_panels_hear_each_run_and_a_server_none_shows_is_stopped(self):
-        sub, leave = self.host.subscribe("editor", self.i, [])
+        sub, leave = self.host.subscribe("latex", self.i, [])
         self.call("set", {"path": self.repo, "command": "echo told"})
         self.call("run", {"path": self.repo, "wait": 10})
         heard = []
@@ -516,7 +517,7 @@ class AppTest(AppBase):
         self.assertIn("told", "".join(m["out"]["text"] for m in heard if "out" in m))
         leave()                                                          # no panel of it open any more
         port = free_port()
-        backend = self.host.backend("editor")
+        backend = self.host.backend("latex")
         B = sys.modules[type(backend).__module__]
         self.call("set", {"path": self.repo, "command": f"exec python3 -m http.server {port} --bind 127.0.0.1",
                           "show": f"http://127.0.0.1:{port}/"})
@@ -547,12 +548,12 @@ class ServedBase(AppBase):
         self.port = self.httpd.server_port
         self.url = f"http://127.0.0.1:{self.port}"
         self.h = self.httpd.app_host
-        self.inst = self.h.open("editor", "g", self.repo)
+        self.inst = self.h.open("latex", "g", self.repo)
 
-    def at_app(self, path, method="GET", body=None, origin=None):
+    def at_app(self, path, method="GET", body=None, origin=None, app="latex"):
         import http.client
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
-        headers = {"Host": f"editor.localhost:{self.port}"}
+        headers = {"Host": f"{app}.localhost:{self.port}"}
         if origin:
             headers["Origin"] = origin
         conn.request(method, path, body, headers)
@@ -568,9 +569,9 @@ class ServedTest(ServedBase):
 
     def test_its_panel_s_routes_on_its_own_origin(self):
         q = f"gatherer=g&instance={self.inst.id}"
-        self.h.call("editor", self.inst, "preview_set", {"path": self.repo, "command": "python3 {file}", "show": "out.svg"},
+        self.h.call("latex", self.inst, "preview_set", {"path": self.repo, "command": "python3 {file}", "show": "out.svg"},
                     Caller(gatherer="g"))
-        self.h.call("editor", self.inst, "preview_run", {"path": self.plot, "file": self.plot, "wait": 20}, Caller(gatherer="g"))
+        self.h.call("latex", self.inst, "preview_run", {"path": self.plot, "file": self.plot, "wait": 20}, Caller(gatherer="g"))
         status, _, raw = self.at_app(f"/api/preview/about?path={urllib.parse.quote(self.plot)}&{q}")
         about = json.loads(raw)
         self.assertEqual((status, about["run"]["state"]), (200, "done"))
@@ -599,7 +600,7 @@ class ServedTest(ServedBase):
 
     def test_the_host_s_shared_files_are_its_own_by_its_manifest(self):
         from app_kit import AppError
-        backend = self.h.backend("editor")
+        backend = self.h.backend("latex")
         self.assertTrue(backend.host.docs().available)
         got = backend.host.docs().listing(self.repo, self.repo)
         self.assertIn("src", [e["name"] for e in got["entries"]])
@@ -621,11 +622,11 @@ class ServedTest(ServedBase):
         self.assertEqual(self.at_app("/_ag/lib/marked.min.js")[0], 200)
 
     def test_its_actor_has_its_tools_from_the_gateway_another_none(self):
-        self.assertNotIn("editor_preview_run", [t["name"] for t in tool_gateway.tools("g", ("c1",))])
+        self.assertNotIn("latex_preview_run", [t["name"] for t in tool_gateway.tools("g", ("c1",))])
         task_links.link("g", self.inst.id, "c1")                          # the actor it was started with
         names = [t["name"] for t in tool_gateway.tools("g", ("c1",))]
-        self.assertIn("editor_preview_run", names)
-        got = tool_gateway.call(self.rows, "c1", "editor_preview_show", {})
+        self.assertIn("latex_preview_run", names)
+        got = tool_gateway.call(self.rows, "c1", "latex_preview_show", {})
         self.assertIsNone(json.loads(got["content"][0]["text"])["preview"])           # its folder's project, by its cwd
         self.assertNotIn("user's Editor", tool_gateway.instructions("g", channels=("c1",)))   # its own, not the gatherer's
 
@@ -652,7 +653,7 @@ class ServedTest(ServedBase):
         code, _, err = self.run_cli("run", "--file", self.plot)
         self.assertEqual(code, 1)
         self.assertIn("the user has not let this command run yet", err)
-        self.h.call("editor", self.inst, "preview_run", {"path": self.repo, "ok": "python3 {file}", "file": self.plot,
+        self.h.call("latex", self.inst, "preview_run", {"path": self.repo, "ok": "python3 {file}", "file": self.plot,
                                                           "wait": 20}, Caller(gatherer="g"))   # the user lets it run
 
         code, out, _ = self.run_cli("run", "--file", self.plot, "--wait", "20")
@@ -665,7 +666,7 @@ class ServedTest(ServedBase):
         with open(os.path.join(self.repo, "fixture.log"), "w") as fh:
             fh.write(LOG)
         command = "cp fixture.log main.log && touch main.pdf && exit 1"
-        self.h.call("editor", self.inst, "preview_set", {"path": self.repo, "command": command, "show": "main.pdf"},
+        self.h.call("latex", self.inst, "preview_set", {"path": self.repo, "command": command, "show": "main.pdf"},
                     Caller(gatherer="g"))
         code, out, _ = self.run_cli("run", "--wait", "20")
         self.assertEqual(code, 0)
@@ -697,11 +698,11 @@ class EditToolsTest(ServedBase):
             self.told += [(e, channel) for e in events if e.get("type") == "context_stream"]
             return insert(name, instance, events, channel)
         self.h.insert = kept
-        self.own = f"http://editor.localhost:{self.port}"
+        self.own = f"http://latex.localhost:{self.port}"
         self.q = f"gatherer=g&instance={self.inst.id}"
 
     def tool(self, name, args, actor="c1"):
-        got = tool_gateway.call(self.rows, actor, f"editor_{name}", args)
+        got = tool_gateway.call(self.rows, actor, f"latex_{name}", args)
         return ("error: " if got.get("isError") else "") + "".join(c.get("text", "") for c in got["content"])
 
     def post(self, path, body):
@@ -714,11 +715,13 @@ class EditToolsTest(ServedBase):
         with open(self.plot) as fh:
             return fh.read()
 
-    def opened(self, conn="p1"):
-        """The file open in the Editor's panel: its stream, read until the end of the test."""
+    def opened(self, conn="p1", app="latex", inst=None):
+        """The file open in the app's panel (the LaTeX editor's, else `inst`'s): its stream, read until the end of the
+        test."""
         q = urllib.parse.urlencode({"path": self.plot, "root": self.repo, "conn": conn, "client": 1})
-        req = urllib.request.Request(f"{self.url}/api/edit/stream?{self.q}&{q}",
-                                     headers={"Host": f"editor.localhost:{self.port}"})
+        which = f"gatherer=g&instance={inst.id}" if inst is not None else self.q
+        req = urllib.request.Request(f"{self.url}/api/edit/stream?{which}&{q}",
+                                     headers={"Host": f"{app}.localhost:{self.port}"})
         resp = urllib.request.urlopen(req, timeout=10)
         self.addCleanup(resp.close)
         got = queue.Queue()
@@ -736,10 +739,37 @@ class EditToolsTest(ServedBase):
                 pass
         threading.Thread(target=read, daemon=True).start()
         self.assertEqual(got.get(timeout=10)[0], "init")
-        deadline = time.time() + 5                   # kept as the Editor's page
-        while time.time() < deadline and not self.h.backend("editor").file_mode(self.plot):
+        deadline = time.time() + 5                   # kept as the app's page
+        while time.time() < deadline and not any(i.id == (inst or self.inst).id for _, i, _ in
+                                                 self.h.backend(app)._open_in(os.path.realpath(self.plot))):
             time.sleep(0.02)
         return got
+
+    def test_a_file_open_in_a_files_app_too_takes_the_stricter_mode_and_is_settled_in_either(self):
+        files = self.h.open("files", "g", self.repo)               # the Files app, on the same folder: its own actor
+        task_links.link("g", files.id, "c2")                             # its own actor, in its task
+        self.rows.append({"session_id": "c2", "gatherer": "g", "cwd": self.repo, "harness": "claude"})
+        self.opened()                                               # open in both: the LaTeX editor Live,
+        self.opened("p2", "files", files)
+        own = f"http://files.localhost:{self.port}"
+        status, _, raw = self.at_app(f"/api/mode?gatherer=g&instance={files.id}", "POST",
+                                     json.dumps({"mode": "review"}), origin=own, app="files")
+        self.assertEqual((status, json.loads(raw)["mode"]), (200, "review"))   # the Files app Review
+        self.assertEqual(self.h.backend("latex").file_mode(os.path.realpath(self.plot)), "review")   # the stricter
+        self.assertIn("latex_edit", self.h.guard("g", "c1", self.plot))            # each pointed at its own app's tool
+        self.assertIn("files_edit", self.h.guard("g", "c2", self.plot))
+        was = self.disk()
+        self.assertIn("Proposed", self.tool("edit", {"path": self.plot, "old_string": "import sys",
+                                                     "new_string": "import os, sys"}))
+        self.assertEqual(self.disk(), was)
+        status, _, raw = self.at_app(f"/api/edit/settle_all?gatherer=g&instance={files.id}", "POST",
+                                     json.dumps({"path": self.plot, "root": self.repo, "take": "theirs",
+                                                 "channel": "c1"}), origin=own, app="files")
+        self.assertEqual(status, 200)                               # accepted in the Files app's panel
+        self.assertFalse(json.loads(raw)["conflicts"])
+        self.assertTrue(self.disk().startswith("import os, sys\n"))
+        self.assertIn("The user accepted the change you proposed", self.told[-1][0]["payload"]["text"])
+        self.assertEqual(self.told[-1][1], "c1")                    # the LaTeX editor's actor told
 
     def test_a_file_no_editor_has_open_is_read_and_written_on_disk(self):
         new = os.path.join(self.repo, "notes", "a.md")
@@ -754,11 +784,11 @@ class EditToolsTest(ServedBase):
 
     def test_live_its_edit_lands_in_the_open_file_and_on_disk_and_its_own_edit_tool_is_pointed_there(self):
         self.opened()
-        self.assertIn("editor_edit", self.h.guard("g", "c1", self.plot))
+        self.assertIn("latex_edit", self.h.guard("g", "c1", self.plot))
         said = self.tool("edit", {"path": self.plot, "old_string": "print('drawing'", "new_string": "print('drew'"})
         self.assertIn("shows as it lands", said)
         self.assertIn("print('drew'", self.disk())
-        self.assertIn("Open in the user's Editor (Live)", self.tool("read", {"path": self.plot}))
+        self.assertIn("Open in the user's LaTeX editor (Live)", self.tool("read", {"path": self.plot}))
         self.assertIsNone(self.h.guard("g", "c2", self.plot))             # an actor not attached: its own tools
 
     def test_review_its_edit_is_a_proposal_and_it_is_told_what_the_user_chose(self):
@@ -767,7 +797,7 @@ class EditToolsTest(ServedBase):
         self.assertFalse(self.told)                  # an agent that has not used its tools: told by them, not now
         self.tool("read", {"path": self.plot})
         self.assertEqual(self.post("mode", {"mode": "review"})["mode"], "review")
-        self.assertIn("set the Editor to Review", self.told[-1][0]["payload"]["text"])
+        self.assertIn("set the LaTeX editor to Review", self.told[-1][0]["payload"]["text"])
         self.assertEqual(self.told[-1][1], "c1")
         was = self.disk()
         said = self.tool("edit", {"path": self.plot, "old_string": "import sys", "new_string": "import os, sys"})
@@ -785,9 +815,9 @@ class EditToolsTest(ServedBase):
         self.post("edit/settle", {"path": self.plot, "root": self.repo, "conflict": c["id"], "take": "mine"})
         self.assertTrue(self.disk().startswith("import os, sys\n"))
         self.assertIn("rejected", self.told[-1][0]["payload"]["text"])
-        self.assertEqual(self.h.backend("editor").mode(self.inst), "review")          # kept: its event
-        self.h.backend("editor").modes.clear()
-        self.assertEqual(self.h.backend("editor").mode(self.inst), "review")
+        self.assertEqual(self.h.backend("latex").mode(self.inst), "review")          # kept: its event
+        self.h.backend("latex").modes.clear()
+        self.assertEqual(self.h.backend("latex").mode(self.inst), "review")
 
     def test_hands_off_it_is_refused_and_a_write_around_it_is_asked_about(self):
         self.opened()

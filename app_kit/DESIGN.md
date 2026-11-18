@@ -673,6 +673,37 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    what was quoted; otherwise the message says the lines are not saved yet. No `[asked]` note, no report back, no
    status: it is a message like any other, in its Chat. `panel/editor-send.js`; `e2e/editor.spec.ts`.
    - Not done: a new actor started from the picker (as Notes offers); a key for it.
+
+   **(d) Split into the Files app and the LaTeX editor** (2026-11-18). The user: "split editor app into (1) files app
+   (which is a generic file opener/directory viewer) and (2) a latex editor app which has the latex functionality and
+   also the preview button". Two apps, each set up as the Editor was (started from "+ ⋯" with an actor of its own,
+   `offer = "attached"`, `instances = "many"`), sharing what they both do as a library, not one of them the other's:
+   - **`app_kit/fileedit/`**: the file editing -- `FileEdit` (backend.py: the panel's edit/..., mode, branches and
+     files/changes requests, the mode, the file tools `<app>_read/_edit/_write/_open`, the guard, the agent told what
+     the user settled), `chooser.py`, and `panel/` (page.js, editor*.js, start.js, the CSS, vendor/editor.js), served
+     to every app's panel at `/_ag/lib/fileedit/` (the dashboard's libs.py). An app adds its parts with `edAdd`
+     (editor.js): header buttons, a column beside the file, keys, CodeMirror extensions, bold/italic markup, its
+     backend's messages. Which files are open, and as what mode, is one registry for every app built on it: a file's
+     mode is the strictest of all that have it open, and a change put in through one is settled in any.
+   - **Files** (`ag_apps/files/`, tools `files_*`, event `files.mode`): FileEdit alone. It takes `open-file` for any
+     file.
+   - **LaTeX** (`ag_apps/latex/`, tools `latex_*`, events `latex.mode`, `latex.preview_*`): FileEdit plus the
+     Editor's preview (runs.py, texlog.py: Execute, the PDF, SyncTeX, Problems) and its LaTeX parts (latex.js:
+     "→ PDF", the problems' marks, ⌘B/⌘I in LaTeX). The command can still be any; the guess for a .tex is latexmk.
+     It takes `open-file` for `text/x-tex` and `text/x-bibtex`. `ag preview` is a client of its tools.
+   - **Which opens a file**: the page asks the apps that take it in order (those naming its type, then those taking
+     any) and tells the first with a panel open; with none open, it opens the first. So a LaTeX source goes to a
+     LaTeX editor open, else a Files app open, else a new LaTeX editor; any other file to the Files app.
+   - **The Editors open before** (new in app_kit: a manifest's `replaces`, `App.takes_over`): an instance of an app
+     no longer found is taken over by an app that replaces it -- the one that wants it most -- kept as its own under
+     the same id (`app_opened` by "replaced"), so its agents stay attached and its name, task and group are kept;
+     its actors' roles are moved with it (app_agents.py's `adopt_all`). Both replace "editor": the LaTeX editor
+     wants one on a folder with a LaTeX source at its top, the Files app any other. Not carried over: a preview set
+     in an Editor (its events are `editor.*`, which no app now reads; the guess comes back), and what a browser kept
+     of an Editor's panel (its folder, its file open: kept on the Editor's origin).
+   - Checked: test_app_latex.py (the Editor's tests, as the LaTeX editor's; a file open in both apps),
+     test_app_files.py (the two manifests, the takeover), test_dashboard_editor*.py (through the Files app);
+     `e2e/editor*.spec.ts` (each test on the app it is about; a LaTeX source routed as above).
 8. **The Browser and DocWriter.** What they do for the user and the agent today is kept (2026-11-07): only where
    their panel sits and how they plug in change. DocWriter first, then the Browser, each its own PR.
    - Each becomes instances (the instance id is its key today, so its profile, logins and saved tabs stay where they

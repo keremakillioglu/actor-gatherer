@@ -805,7 +805,7 @@ class ServerTest(unittest.TestCase):
         self.addCleanup(self.httpd.server_close)
         self.addCleanup(self.httpd.shutdown)
         self.url = f"http://127.0.0.1:{self.httpd.server_port}"
-        self.app = f"editor.localhost:{self.httpd.server_port}"
+        self.app = f"files.localhost:{self.httpd.server_port}"
 
     def get(self, path: str):
         """A GET of the Editor app's, on its origin: the response."""

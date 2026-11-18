@@ -1,16 +1,20 @@
-"""The Editor app (app.toml): a folder's files edited live, with the actors (app_kit.fileedit: FileEdit, its panel's code
-and its agents' file tools), and beside them the project's preview (runs.py): a command run in the checkout, set by the
-user in the panel or by an agent with its tools (or `ag preview`), run by either, and what it makes. Its own panel
-requests, beside FileEdit's:
+"""The LaTeX editor (app.toml): a paper's files edited live, with the actors (app_kit.fileedit: FileEdit, its panel's
+code and its agents' file tools), and beside them the project's build -- its preview (runs.py): a command run in the
+checkout (latexmk on the main .tex, guessed until one is set), set by the user in the panel or by an agent with its
+tools (or `ag preview`), run by either, and what it makes. Its own panel requests, beside FileEdit's:
 
     preview/about, preview/files/<token>/<rel>, preview/synctex     the project's preview and what it made
 
-The preview's settings are its events, each with the repository it is for (`key`), shared by the gatherer's Editors open:
+The preview's settings are its events, each with the repository it is for (`key`), shared by the gatherer's LaTeX
+editors open:
 
-    editor.preview_set      {key, command, show, by}: set by the user (by "") or an agent (its channel)
-    editor.preview_allowed  {key, command}: a command an agent set, let run by the user
-    editor.preview_cleared  {key}: none any more
-    editor.preview_ran      {key, checkout, command, show, by, file, state, code, started, ended}: a run, once over
+    latex.preview_set       {key, command, show, by}: set by the user (by "") or an agent (its channel)
+    latex.preview_allowed   {key, command}: a command an agent set, let run by the user
+    latex.preview_cleared   {key}: none any more
+    latex.preview_ran       {key, checkout, command, show, by, file, state, code, started, ended}: a run, once over
+
+It takes over the Editor's instances (the app it was, before the Files app and it were made of it: `replaces`) on a
+folder with a LaTeX source at its top (`takes_over`); the Files app takes the rest.
 
 Who may run what: the user, anything -- a command an agent set, once they let it run (the panel's "Run it", which
 passes it as `ok`: a call by an agent passing it is refused). An agent, only the command the user set or let run.
@@ -31,10 +35,11 @@ from app_kit.fileedit.backend import USER, _body
 
 from . import runs as R
 
-IDLE = 600.0                # seconds a server is kept running with no Editor open
+IDLE = 600.0                # seconds a server is kept running with no LaTeX editor open
 TICK = 30.0                 # seconds between looks for such a server
 TAIL = 4000                 # the most characters of a run's output an agent's `preview_run` is told
-EVENTS = ("editor.preview_set", "editor.preview_allowed", "editor.preview_cleared")
+EVENTS = ("latex.preview_set", "latex.preview_allowed", "latex.preview_cleared")
+TEX = (".tex", ".ltx")       # a LaTeX source, at a folder's top: the folder a paper's (takes_over)
 
 
 def _said(got: dict, by: str) -> dict:
@@ -45,8 +50,17 @@ def _said(got: dict, by: str) -> dict:
     return got
 
 
-class EditorApp(FileEdit):
-    CALLED = "Editor"
+class LatexApp(FileEdit):
+    CALLED = "LaTeX editor"
+
+    def takes_over(self, instance: Instance) -> int:
+        """An Editor (the app it was made of, with the Files app) on a paper's folder: one with a LaTeX source at its
+        top -- more than the Files app wants it (1); any other, not."""
+        try:
+            names = os.listdir(instance.folder or "")
+        except OSError:
+            return 0
+        return 2 if any(n.lower().endswith(TEX) for n in names) else 0
 
     def start(self, host) -> None:
         super().start(host)
@@ -54,7 +68,7 @@ class EditorApp(FileEdit):
         self.rows: Dict[Tuple[str, str], Optional[dict]] = {}   # (gatherer, repository) -> its preview (None: none)
         self.keys: Dict[str, Instance] = {}                      # repository -> the instance last asked of it
         self.closed = threading.Event()
-        threading.Thread(target=self._idle, name="editor-preview-idle", daemon=True).start()
+        threading.Thread(target=self._idle, name="latex-preview-idle", daemon=True).start()
 
     def stop(self) -> None:
         super().stop()
@@ -90,11 +104,11 @@ class EditorApp(FileEdit):
                 old = self.row(instance, key)
                 row = {"command": command, "show": show, "set_by": by, "set_at": time.time(),
                        "allowed": command if by == USER else (old or {}).get("allowed")}
-                self._keep(instance, key, "editor.preview_set", {"command": command, "show": show, "by": by}, row)
+                self._keep(instance, key, "latex.preview_set", {"command": command, "show": show, "by": by}, row)
                 return ToolResult.json(_said(self.about(instance, path), by))
             if tool == "preview_clear":
                 key, _ = self.place(instance, path)
-                self._keep(instance, key, "editor.preview_cleared", {}, None)
+                self._keep(instance, key, "latex.preview_cleared", {}, None)
                 return ToolResult.json(_said(self.about(instance, path), by))
             if tool == "preview_run":
                 return ToolResult.json(_said(self.run(instance, path, args, by), by))
@@ -109,7 +123,7 @@ class EditorApp(FileEdit):
     # -- the project's preview, from its events
 
     def row(self, instance: Instance, key: str) -> Optional[dict]:
-        """The project's preview, as the gatherer's Editors' events say, the latest last."""
+        """The project's preview, as the gatherer's LaTeX editors' events say, the latest last."""
         with self.lock:
             if (instance.gatherer, key) in self.rows:
                 return self.rows[(instance.gatherer, key)]
@@ -119,13 +133,13 @@ class EditorApp(FileEdit):
             p = e["payload"] or {}
             if p.get("key") != key:
                 continue
-            if e["type"] == "editor.preview_set":
+            if e["type"] == "latex.preview_set":
                 row = {"command": p.get("command", ""), "show": p.get("show", ""), "set_by": p.get("by", USER),
                        "set_at": p.get("at", 0), "allowed": p.get("command") if p.get("by", USER) == USER else
                        (row or {}).get("allowed")}
-            elif e["type"] == "editor.preview_allowed" and row is not None and row["command"] == p.get("command"):
+            elif e["type"] == "latex.preview_allowed" and row is not None and row["command"] == p.get("command"):
                 row["allowed"] = p["command"]
-            elif e["type"] == "editor.preview_cleared":
+            elif e["type"] == "latex.preview_cleared":
                 row = None
         with self.lock:
             self.rows[(instance.gatherer, key)] = row
@@ -145,7 +159,7 @@ class EditorApp(FileEdit):
         self._tell(instance.gatherer, {"preview": {"key": key, "row": self.shown(row)}})
 
     def _tell(self, gatherer: str, message: dict) -> None:
-        """`message` to the panels of the gatherer's Editors (each takes what is its project's)."""
+        """`message` to the panels of the gatherer's LaTeX editors (each takes what is its project's)."""
         for i in self.mine(gatherer):
             try:
                 self.host.tell_panel(i, message)
@@ -176,18 +190,18 @@ class EditorApp(FileEdit):
         key, checkout = self.place(instance, path)
         row = self.shown(self.row(instance, key))
         if row is None:
-            raise R.PreviewError(f"no preview is set for {key}: set one (editor_preview_set, or `ag preview set`), "
-                                 f"or in the Editor")
+            raise R.PreviewError(f"no build is set for {key}: set one (latex_preview_set, or `ag preview set`), "
+                                 f"or in the LaTeX editor")
         if row["needs_ok"]:
             if by != USER:
                 who = "the user" if row["set_by"] == USER else f"actor {row['set_by']}"
                 raise R.PreviewError(f"the user has not let this command run yet ({row['command']!r}, set by {who}): "
-                                     f"they are asked when they next run it in the Editor, and once they let it run, "
+                                     f"they are asked when they next run it in the LaTeX editor, and once they let it run, "
                                      f"your run runs it too")
             if args.get("ok") != row["command"]:
                 raise R.PreviewError("this command was set by an agent: let it run first")
             allowed = {**self.row(instance, key), "allowed": row["command"]}
-            self._keep(instance, key, "editor.preview_allowed", {"command": row["command"]}, allowed)
+            self._keep(instance, key, "latex.preview_allowed", {"command": row["command"]}, allowed)
         file = str(args.get("file") or "") or None
         if file is None and path and os.path.isfile(path):
             file = os.path.realpath(path)
@@ -205,7 +219,7 @@ class EditorApp(FileEdit):
     def _preview_request(self, instance: Optional[Instance], method: str, path: str, query: Dict[str, str],
                          body: bytes) -> Response:
         if instance is None:
-            return Response.json({"error": "which Editor? (its gatherer and instance)"}, 404)
+            return Response.json({"error": "which LaTeX editor? (its gatherer and instance)"}, 404)
         if path == "about":
             got = self.about(instance, query.get("path") or None)
             r = self.runs.latest(got["checkout"])
@@ -238,14 +252,14 @@ class EditorApp(FileEdit):
         if instance is None:
             return
         if name == "ended":
-            self.host.insert(instance, [{"type": "editor.preview_ran", "payload": {"key": run.key, **{
+            self.host.insert(instance, [{"type": "latex.preview_ran", "payload": {"key": run.key, **{
                 k: value.get(k) for k in ("checkout", "command", "show", "by", "file", "state", "code", "started",
                                           "ended")}}}])
             return
         self._tell(instance.gatherer, {name: value})
 
     def _idle(self) -> None:
-        """A server no Editor of its project has shown for IDLE: stopped."""
+        """A server no LaTeX editor of its project has shown for IDLE: stopped."""
         while not self.closed.wait(TICK):
             now = time.time()
             for r in self.runs.servers():

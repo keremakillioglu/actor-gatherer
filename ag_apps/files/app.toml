@@ -1,0 +1,69 @@
+# The Files app: a folder's files, any of them opened -- each text file edited live (every page with it open, and the
+# file on disk, one more of its editors, so what an actor writes to it lands in it as it is written, around what was
+# typed and not saved, but for the lines the user is editing, its conflict zone, which an actor's change is asked
+# about), any other file shown (an image, a PDF, a sound, a video). All of it app_kit.fileedit's, as the LaTeX editor's
+# file editing is. Its files are the host's, shared live (app_kit.docs: the same documents the actors' branches merge
+# into). One per Files app started, on a folder, with an agent of its own (started with it), who alone is given its
+# tools and instructions -- as the Browser and DocWriter are. Lines selected in a file are sent from there to any
+# actor of the gatherer, with what to do, as the user's message (message_actors).
+name = "files"
+label = "Files"
+version = "1"
+description = "open a folder's files and edit them live with your actors"
+instances = "many"
+access = "task"
+mark = "mark.svg"
+replaces = ["editor"]
+instructions = """You work with the user's Files app, in the dashboard: it opens the files of a folder, and edits text
+files live, the user and you together. Change files with its tools -- files_read, files_edit (old_string -> new_string,
+as your own Edit), files_write (a whole file) -- not your own edit tools or shell commands: they work on any file, and a
+file the user has open is changed there, as its mode says. Live (the default): your change shows to the user as it lands
+and is written to the file, but one to lines they are editing is held for them to settle. Review: each change is a
+proposal they accept or reject in their own time -- propose and carry on with your task, never waiting for them; your
+next edits build on your proposals (files_read shows them in), and the file on disk changes only when they accept. Hands
+off: do not change files they have open; ask them first. You are told when they settle a change of yours, and when the
+mode changes. files_open shows the user a file, at a line."""
+
+[agent]
+offered = true
+name = "Files · {folder}"
+
+[backend]
+python = "backend:FilesApp"
+
+[panel]
+entry = "panel/index.html"
+
+[capabilities]
+docs = true
+actors = true
+edit_guard = true
+message_actors = true
+
+[[tools]]
+name = "read"
+description = "Read a file as the user's Files app has it: with what they typed and have not saved, if it is open there (in Review, your waiting changes in). Lines numbered, as your own Read."
+input_schema = { type = "object", properties = { path = { type = "string", description = "the file: absolute, or from your working directory" }, offset = { type = "integer", description = "the first line (default 1)" }, limit = { type = "integer", description = "how many lines (default 2000)" } }, required = ["path"] }
+
+[[tools]]
+name = "edit"
+description = "Change a file: old_string, which must be in it once (or replace_all), replaced by new_string -- through the user's Files app if it is open there (shown as it lands, or a proposal for them to review, as its mode says), else on disk."
+input_schema = { type = "object", properties = { path = { type = "string", description = "the file: absolute, or from your working directory" }, old_string = { type = "string" }, new_string = { type = "string" }, replace_all = { type = "boolean", description = "every place old_string is (default false)" } }, required = ["path", "old_string", "new_string"] }
+
+[[tools]]
+name = "write"
+description = "Write a whole file (made if it is not there) -- through the user's Files app if it is open there, as files_edit, else on disk."
+input_schema = { type = "object", properties = { path = { type = "string", description = "the file: absolute, or from your working directory" }, content = { type = "string", description = "the whole file" } }, required = ["path", "content"] }
+
+[[tools]]
+name = "open"
+description = "Show the user a file in their Files app, at a line: to point them at something."
+input_schema = { type = "object", properties = { path = { type = "string" }, line = { type = "integer" } }, required = ["path"] }
+
+[[events]]
+name = "files.mode"
+description = "The Files app's mode, set: {mode (live, review, handsoff), by}."
+
+# Any file shown, in a Files app open (else a new one, on its folder); an app taking its type, first.
+[[handles]]
+intent = "open-file"

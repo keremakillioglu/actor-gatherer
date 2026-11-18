@@ -1,4 +1,4 @@
-/* The LaTeX parts of the Editor's panel, beside app_kit.fileedit's (latex.js): Execute and "→ PDF" in the header, and a
+/* The LaTeX parts of the LaTeX editor's panel, beside app_kit.fileedit's (latex.js): Execute and "→ PDF" in the header, and a
    LaTeX build's problems on their lines. */
 /* the header's Execute (the project's preview, run) and → PDF */
 .ed-exec { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; }

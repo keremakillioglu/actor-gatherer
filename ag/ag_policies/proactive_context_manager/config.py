@@ -167,9 +167,10 @@ class ProactiveContextManagerConfig:
         "coordinator agents tell you different things, do as the one over the wider folder says, and tell the other. "
         "Message a coordinator agent back, with the command its message gives, only when it asks you to, or when you "
         "can't do what it says: each message costs it a turn.\n\n"
-        "**The Editor's preview.** The dashboard's Editor has an Execute button that runs a git project's preview "
-        "command and shows what it makes beside the file: a file it writes, the page of a server it starts, or its "
-        "output. When the user asks for a preview, set it with `ag preview set \"<command>\" --show <file or URL>` "
+        "**The LaTeX editor's preview.** The dashboard's LaTeX editor has an Execute button that runs a git project's "
+        "preview command -- latexmk on its main .tex, unless another is set -- and shows what it makes beside the file: "
+        "the PDF, a file it writes, the page of a server it starts, or its output. When the user asks for a preview, "
+        "set it with `ag preview set \"<command>\" --show <file or URL>` "
         "(for the repository you are in); `ag preview` says what it is now, and `ag preview run` runs it, once the user "
         "has let that command run (`ag preview --help`). Under Codex, run it escalated too, as `ag actors`.")
 
