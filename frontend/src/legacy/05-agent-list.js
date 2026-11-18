@@ -695,9 +695,11 @@ const appsNotified = (g, inside = undefined) => gathererApps(g.name).filter((o) 
 }).length;
 const actorTitle = (a) => (a.name && a.name.text) || (a.last_user_message ? firstLine(a.last_user_message, 120) : "No message yet");
 // an app as said: the user's name for it, else its kind and what it shows; in its row and card, its name, else what it
-// shows, else its kind (its face says the kind)
-const appTitle = (o) => o.name || (o.title ? `${o.app.label} · ${o.title}` : o.app.label);
-const appShown = (o) => o.name || o.title || o.app.label;
+// shows, else its kind (its face says the kind). What it shows is no name when it is only its group's (a group's Notes
+// shows the group's notebook): "Notes", not "demo" under the group "demo".
+const appSays = (o) => o.title && o.title !== o.group ? o.title : "";
+const appTitle = (o) => o.name || (appSays(o) ? `${o.app.label} · ${appSays(o)}` : o.app.label);
+const appShown = (o) => o.name || appSays(o) || o.app.label;
 // its items: its actors' channels, then its apps' (those open)
 const taskItems = (g, id) => [...taskMembers(g, id).map((a) => a.channel), ...taskApps(g, id).map((o) => appItem(o.id))];
 // its name: the reader's, else its lead actor's, else its first app's
@@ -754,11 +756,11 @@ function readApps(gname, now = false) {
 }
 // an open instance as the list has it -- {app (its manifest), id, title, name (the user's), folder, inst} -- null: of an
 // app not found here
-function appOf(i) {
+function appOf(i, gname) {
   const app = window.agNext && window.agNext.apps.named(i.app);
-  return app ? { app, id: i.id, title: i.title || "", name: i.name || "", folder: i.folder || null, inst: i } : null;
+  return app ? { app, id: i.id, title: i.title || "", name: i.name || "", folder: i.folder || null, group: gname, inst: i } : null;
 }
-const gathererApps = (gname) => PANE || SNAPSHOT ? [] : ((appsKnown.get(gname) || {}).instances || []).map(appOf).filter(Boolean);
+const gathererApps = (gname) => PANE || SNAPSHOT ? [] : ((appsKnown.get(gname) || {}).instances || []).map((i) => appOf(i, gname)).filter(Boolean);
 const appInfo = (gname, id) => gathererApps(gname).find((o) => o.id === id) || null;
 // a task's apps, as they were opened
 const taskApps = (g, id) => gathererApps(g.name).filter((o) => appTaskOf(g.name, o.id) === id);
