@@ -1,5 +1,5 @@
 // ------------------------------------------------------------------ the Terminal view
-// The session in Claude Code's own UI: its interactive process, run by the dashboard in a
+// The session in its harness's own UI: its interactive process, run by the dashboard in a
 // pseudo-terminal (sessions.py's `terminal`), drawn by xterm.js. The terminal keeps one node across
 // the tab's draws (moved, never made again), so what it shows, its scroll and its focus stay. Showing a
 // session in the view opens its terminal, once each time the session is chosen: one that exits or fails

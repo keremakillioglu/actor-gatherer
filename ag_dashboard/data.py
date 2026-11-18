@@ -27,7 +27,7 @@ started whose process its own end took, or it put away (saved.py's `Rest`) -- se
 is IDLE, not CLOSED; one whose process the dashboard saw end otherwise (closed from the list, exited:
 sessions.py's `ended`) is CLOSED where
 the process cannot be told, unless something happened for it since. An IDLE agent whose BACKGROUND
-tasks still run (`background`) is BACKGROUND: its turn is over, but Claude Code is not done. A RUNNING
+tasks still run (`background`) is BACKGROUND: its turn is over, but its harness is not done. A RUNNING
 agent whose turn waits on the user (`asking`) is ASKING: its hook recorded that an answer asks the user in its
 terminal (`asked`: a question, a plan to approve; codex's, as its rollout says) -- and nothing comes until they
 answer -- and nothing says the call has its result yet (`ask_settled`; `Record.settled`): answered there, the turn
