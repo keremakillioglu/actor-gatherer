@@ -158,20 +158,20 @@ class CodexContextManager(ProxyHook):
         if not thread:
             print("a model call with no thread id; request unchanged", file=sys.stderr, flush=True)
             return None
-        channel = self.channel_of(request, thread)              # the dashboard's id for its own thread (/a/)
         gatherer = request.label if request.label else thread
         metadata = call.detail.get("metadata") or {}
         kind, run = call.detail.get("source"), getattr(request, "run", None)
-        if kind is not None:
-            of = self.runs.get((request.label, run)) if kind in KEPT and run else None
-            if of is not None and isinstance(getattr(request, "state", None), dict):
+        if kind is not None:                              # in a thread of its own, never the run's own (`channel_of`):
+            of = self.runs.get((request.label, run)) if kind in KEPT and run else None   # a title can come before the
+            if of is not None and isinstance(getattr(request, "state", None), dict):     # thread's first turn
                 request.state[SIDE] = (kind, *of)
-                self.log(of[0], f"[{channel}] codex's own {kind} call, for {of[1]}: as it is, its answer kept")
+                self.log(of[0], f"[{thread}] codex's own {kind} call, for {of[1]}: as it is, its answer kept")
             else:
-                self.log(gatherer, f"[{channel}] codex's own {kind} call: as it is, not stored")
+                self.log(gatherer, f"[{thread}] codex's own {kind} call: as it is, not stored")
             if of is not None:                            # recorded in the thread it is for; one of a thread of its own, not
                 self.called(*of, call, source=kind)
             return None
+        channel = self.channel_of(request, thread)              # the dashboard's id for its own thread (/a/)
         if run:
             self.runs[(request.label, run)] = (gatherer, channel)
         self.following(request, gatherer, channel, call)       # its rollout, followed (session_files.py)

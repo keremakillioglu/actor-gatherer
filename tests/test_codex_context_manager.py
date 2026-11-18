@@ -187,6 +187,19 @@ class HookTest(unittest.TestCase):
         self.call(hook, plain)
         self.assertEqual([e["channel"] for e in hook.ag_clients.client("demo").records if e["type"] == "model_call"][-1], "t1")
 
+    def test_a_side_call_before_the_first_turn_never_takes_the_run_s_channel(self):
+        """A side call (a title, a subagent's call) is in a thread of its own: come before the run's first turn, it does
+        not make its thread the run's own, which its first turn then is."""
+        hook = self.hook()
+        for thread, source in (("side-1", "thread_title"), ("sub-1", "subagent"), ("t1", "user")):
+            call = self.request({"input": [DEV, user("q", 1)]}, label="demo",
+                                headers={**meta(thread_source=source), "thread-id": thread})
+            call.run, call.actor, call.state = "4242", "dash-1", {}
+            self.call(hook, call)
+        calls = [(e["channel"], e["payload"].get("session")) for e in hook.ag_clients.client("demo").records
+                 if e["type"] == "model_call"]
+        self.assertEqual(calls, [("dash-1", "t1")])
+
     def test_none_when_there_is_nothing_to_change(self):
         items = [DEV, user("q", 1)]
         same = lambda body: {"context": [{"type": e["type"], "id": e["id"], "payload": e["payload"]}

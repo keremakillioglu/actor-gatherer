@@ -51,8 +51,10 @@ every session with a warning that it does not use it. Not added when the argumen
 
 A run that resumes a thread by its id -- `resume <id>`, interactive or `exec ... resume <id>` -- has it
 known to ag (`Launch.session`), which claims it, so no other process -- a terminal, the dashboard's
-chat -- runs it at once. A new thread's id is codex's to choose, and is not known until its first call;
-`resume --last` and the picker do not say which thread they open: neither is claimed.
+chat -- runs it at once. A new thread's id is codex's to choose, and is not known until its first call:
+a run given a channel for it (`ag --channel <id>`, as the dashboard starts its actors) has that channel
+claimed, the thread kept there; any other new thread is not claimed. `resume --last` and the picker do
+not say which thread they open: neither is claimed.
 """
 
 import json

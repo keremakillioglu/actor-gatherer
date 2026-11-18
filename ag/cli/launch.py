@@ -50,8 +50,8 @@ class Run:
     dry_run: bool = False           # nothing may be started
     adaptor: str = ""               # the adaptor, as its entry names it (a TypeScript path made absolute)
     channel: Optional[str] = None   # the channel its own session is kept in, as its starter chose it (`--channel`): a
-                                    # launcher of a harness that picks its session's id at its first call (codex, agy)
-                                    # names it in the hook's URL (/a/<channel>/); None: the session's own id
+                                    # launcher of a harness that picks its session's id at its first call names it in
+                                    # the hook's URL (/a/<channel>/); None: the session's own id
 
 
 @dataclass
@@ -109,7 +109,7 @@ class Launcher(ABC):
     #: The environment variables this harness's side reads: (name, default, what it does).
     environment: ClassVar[Tuple[Tuple[str, str, str], ...]] = ()
     #: Whether it names the run's channel (`Run.channel`) in the hook's URL: a harness that picks its session's id only
-    #: at its first call (codex, agy), whose session a dashboard keeps under an id of its own.
+    #: at its first call, whose session a dashboard keeps under an id of its own.
     names_channel: ClassVar[bool] = False
 
     def __init__(self, settings: Dict[str, Any], home: str):
