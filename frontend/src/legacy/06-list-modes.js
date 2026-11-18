@@ -240,15 +240,16 @@ function railBoxOr(g, id, view) {
   const kids = railBox(g, id, view);
   return kids.length ? kids : [el("div", { class: "r-none", text: "Nothing open here" })];
 }
-// In the page's top bar, beside its logo, whatever shape the list is in: every shown group's actors open (its coordinator
-// agent left out, as a folder's counts leave it), counted by what they do -- waiting for the reader, stopped on an error,
-// running (in the background too), finished and not yet seen, idle -- each a dot of its colour and a number, none for a
-// state no actor is in. The whole home's, wherever the list or the rail is, so what needs the reader elsewhere still shows.
+// In the page's top bar, beside its logo, whatever shape the list is in: every shown group's actors open, counted by what
+// they do -- waiting for the reader, stopped on an error, running (in the background too), finished and not yet seen,
+// idle -- each a dot of its colour and a number, none for a state no actor is in. A coordinator agent counted too, but
+// not idle: every group has one, at rest most of the time. The whole home's, wherever the list or the rail is, so what
+// needs the reader elsewhere still shows.
 function drawTotals(shown) {
   const t = { asking: 0, error: 0, running: 0, background: 0, finished: 0, idle: 0 };
   for (const g of shown) for (const a of g.agents) {
-    if (isCoordinator(a)) continue;
     const group = groupOf(g, a);
+    if (group === "Idle" && isCoordinator(a)) continue;
     if (group === "Waiting for you") t.asking++; else if (group === "Error") t.error++; else if (group === "Running") t.running++;
     else if (group === "Background") t.background++; else if (group === "Finished") t.finished++; else if (group === "Idle") t.idle++;
   }
