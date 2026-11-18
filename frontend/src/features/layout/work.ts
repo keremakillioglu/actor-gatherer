@@ -7,10 +7,11 @@
 // Drawn so a task reads as one thing, a tab as another: the tabs' bar on top, the tasks under it in a well of their own,
 // each task a card (its frame drawn over its panels, the well showing between cards), its panels split by a line only;
 // a tab showing nothing, the page's new-tab page (hooks.blank: a box to message a new actor, its apps), or a note.
-import { addItem, keepSizes, leaves, mark, move, remove, swap, toSide, type Side, type Zone } from "./arrange";
+import { addItem, keepSizes, leaves, move, remove, swap, toSide, type Side, type Zone } from "./arrange";
 import { type Put } from "./blocks";
-import { APP, build, TOP_BAND, type Built, type Old, type Shown } from "./build";
+import { APP, build, FOLD_UNDER, TOP_BAND, type Built, type Old, type Shown } from "./build";
 import { Cards, withBlocks } from "./cards";
+import { canMin, foldable, folded, idOf, Mins, minimized } from "./mins";
 import { Mover } from "./move";
 import { Placer } from "./place";
 import { Tabs, type State, type TabsHooks } from "./tabs";
@@ -18,7 +19,7 @@ import { drawStrip, Tasks } from "./tasks";
 import type { Node, Rect, Size } from "./tree";
 
 export { addItem };
-export { build, firstTree, leafId, PANE_MIN, TOP_BAND, TOP_MIN, BELOW_MIN } from "./build";
+export { build, firstTree, leafId, PANE_MIN, TOP_BAND, TOP_MIN, BELOW_MIN, FOLD_UNDER } from "./build";
 export type { Built, Old, Shown, Shows } from "./build";
 
 const TOP_KEY = "ag-dashboard-editor-height";
@@ -117,8 +118,7 @@ export class Work {
   /** The screen tabs (tabs.ts). */
   readonly tabs: Tabs;
   private holding = false; // a tab being shown: the tasks' arrangement held as it is meanwhile
-  private mins = new Set<HTMLElement>(); // the panes minimized, as last placed; those that can be
-  private unders = new Set<HTMLElement>();
+  private readonly mins = new Mins((n, on) => this.hooks.minChanged(n, on));
   private readonly cards = new Cards(); // each block's card: its frame, drawn over its panels
   private readonly empty: HTMLElement;
   private blankFor = ""; // the tab whose new-tab page `empty` shows ("": none in sight)
@@ -191,6 +191,8 @@ export class Work {
       resized: (key, sizes, done) => this.resized(key, sizes, done),
       inset: () => ({ top: (this.tabs.height() || WELL) + PAD, right: IN, bottom: IN, left: IN }),
       fitted: (id) => !!this.last?.minimized.has(id),
+      folds: (key, kid) => (foldable(this.last, key, kid).length ? FOLD_UNDER : null),
+      fold: (key, kid, on) => this.fold(key, kid, on),
       placed: () => {
         const rects = this.last ? this.rects() : new Map<string, Rect>();
         this.cards.draw(this.last?.blocks || [], (b) => rects.get(BLOCK + b));
@@ -336,14 +338,7 @@ export class Work {
       this.listedFor = listed;
       queueMicrotask(() => this.hooks.listed?.());
     }
-    // the panes minimized now, or no longer -- or able to be, or no longer: each told (once placed), to draw itself so
-    const now = new Set([...built.minimized].map((id) => built.nodes.get(id)!)),
-      under = new Set([...built.under].map((id) => built.nodes.get(id)!));
-    for (const n of new Set([...now, ...this.mins, ...under, ...this.unders]))
-      if (now.has(n) !== this.mins.has(n) || under.has(n) !== this.unders.has(n))
-        queueMicrotask(() => this.hooks.minChanged(n, now.has(n)));
-    this.mins = now;
-    this.unders = under;
+    this.mins.placed(built); // (the panes minimized now, or no longer: each told)
     this.empty.hidden = !!built.tree;
     const shown = built.tree ? null : this.tabs.shownTab(),
       blank = shown ? `${shown.id} ${shown.page}` : ""; // (drawn again as its page changes: the Apps page opened in it)
@@ -354,20 +349,25 @@ export class Work {
     return { id: EMPTY };
   }
 
-  // PANES MINIMIZED, each on its own: only its message box, where something of its task is above or below it
+  // PANES MINIMIZED, each on its own (mins.ts): only its message box, where something is above or below it
   /** Whether a pane is minimized now. */
   isMin(node: HTMLElement): boolean {
     return this.mins.has(node);
   }
-  /** Whether a pane can be minimized: something of its task above or below it. */
+  /** Whether a pane can be minimized: something of its task, or another task, above or below it. */
   canMin(node: HTMLElement): boolean {
-    for (const [id, n] of this.last?.nodes || []) if (n === node) return !!this.last?.under.has(id);
-    return false;
+    return canMin(this.last, node);
   }
   /** A pane minimized, or shown whole again: kept in its task's arrangement (the tab shown). */
   setMin(node: HTMLElement, on: boolean): void {
-    const id = [...(this.last?.nodes || [])].find(([, n]) => n === node)?.[0] ?? null;
-    this.arrange(id, (t, item) => mark(t, item, { min: on || undefined }));
+    this.arrange(idOf(this.last, node), (t, item) => minimized(t, [item], on));
+  }
+  // kid `kid` of a split minimized, or shown whole again, by its bar dragged (place.ts): each of its panes, in its task's
+  // arrangement (the bar between tasks: each task's)
+  private fold(key: string, kid: number, on: boolean): void {
+    for (const [task, t] of folded(this.last, key, kid, on, (k) => this.tasks.tree(k))) this.tasks.set(task, t);
+    this.tasks.save();
+    this.place();
   }
 
   // A block's strip, while other blocks are shown (or its task has tabs): what it is called, dragged (or right-clicked)
