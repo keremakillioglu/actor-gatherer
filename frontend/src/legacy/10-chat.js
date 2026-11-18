@@ -36,8 +36,7 @@ function chatCard(info) {
       !canMinimize() ? null : el("button", { type: "button", class: "details-btn", "aria-label": "Minimize the chat", title: MIN_TIP,
         onclick: () => setChatMin(true) }, strokeIcon(ICONS.minimize, 16)),
       el("button", { type: "button", class: "details-btn", "aria-expanded": state.details ? "true" : "false", "aria-label": "Details",
-        title: "Details",
-        onclick: () => setDetails(!state.details) }, strokeIcon(ICONS.panel, 16)))];
+        title: DETAILS_TIP, onclick: () => setDetails(!state.details) }, strokeIcon(ICONS.info, 16)))];
   // the page's own buttons, unchanged, kept as they are: a view that redraws every few seconds (History, while
   // the Gatherer works) does not make them flash under the pointer. A view's own tools are made again each
   // draw: what they do may be the draw's.

@@ -1,7 +1,7 @@
 // ------------------------------------------------------------------ the selected agent
 // The main view is the actor's conversation (chatCard): all of it, with the message box under it where
-// the actor can be messaged here. What ag saw and did for it -- the Actor and Gatherer views -- is the
-// details panel (detailsPanel), opened from the page's header, at the chat's right. The apps' panels are above the
+// the actor can be messaged here. What it is, what ag saw and did for it -- its calls, its context, the Gatherer's work --
+// is the details panel (detailsPanel), opened from the page's header (the ⓘ), at the chat's right. The apps' panels are above the
 // panes, in the top row (18-top.js's topMount: the chat minimized under it, or not).
 function renderMain() {
   topMount();
@@ -53,21 +53,19 @@ function patch(parent, kids) {
   final.forEach((n, i) => { if (i >= old.length) parent.append(n); else if (n !== old[i]) parent.replaceChild(n, old[i]); });
   for (const o of old.slice(final.length)) o.remove();
 }
-function setDetails(open, tab) {
+// Open or close it; `part` (actor, context, gatherer): opened at that part of it.
+function setDetails(open, part) {
   state.details = open;
-  if (tab) {
-    state.detailsTab = tab;
-    try { localStorage.setItem(DETAILS_KEY, tab); } catch (e) { /* this page only */ }
-  }
   keepingPlace(renderMain);
   drawn.main = mainSignature();
-  if (open) { const b = document.querySelector(".drawer-body"); if (b && tab) b.scrollTop = 0; }
+  const body = open && part && document.querySelector(".drawer-body"), at = body && document.getElementById(`details-${part}`);
+  if (at) body.scrollTop = at.offsetTop - body.offsetTop;
 }
 // The dashboard's own commands, typed in a message box: done here, not sent to the agent. Any other "/" goes to the
 // agent as written -- Claude Code's own commands, skills and command files -- so the dashboard takes only these; one
 // that reaches the session's terminal shows the reader that terminal (the composer's send).
 //   /context   ag's context for the actor -- what the model was really sent, which under ag is not what Claude Code's
-//              own /context counts -- in the details panel, beside the chat
+//              own /context counts -- in the details panel, beside the chat, at its Context part
 const DASHBOARD_COMMANDS = { "/context": () => setDetails(true, "context") };
 function dashboardCommand(text) {
   const run = DASHBOARD_COMMANDS[String(text ?? "").trim().toLowerCase()];
@@ -104,22 +102,22 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")
     && !(state.selected && isShell(state.selected[1]))) setDetails(false);
 });
-// Its Context side, what the model was sent, beside the chat: what `/context` in the message box opens (dashboardCommand).
+const DETAILS_TIP = "Details";
+// All of it in one panel, one part under another: the history's other views and the actor's facts, then its calls
+// (Actor), what the model was sent (Context: what `/context` in the message box opens, dashboardCommand), and what ag
+// did for it (Gatherer).
 function detailsPanel(info) {
   const a = state.agent;
-  const switcher = el("div", { class: "views", role: "group", "aria-label": "Details shown" },
-    ...[["actor", "Actor", "Context size and tokens sent"],
-      ["context", "Context", "What the model was sent, item by item"],
-      ["gatherer", "Gatherer", "ag's builds and model calls"]].map(([id, name, title]) =>
-      el("button", { type: "button", title, "aria-pressed": state.detailsTab === id ? "true" : "false", onclick: () => setDetails(true, id) }, name)));
-  const head = el("div", { class: "drawer-head" }, switcher, el("span", { class: "grow" }),
+  const head = el("div", { class: "drawer-head" }, el("h2", { text: "Details" }), el("span", { class: "grow" }),
     el("button", { type: "button", class: "close", title: "Close (Esc)", "aria-label": "Close details", onclick: () => setDetails(false) }, "×"));
-  const tab = state.detailsTab;
-  const body = el("div", { class: "drawer-body", "data-keep": `details-${tab === "context" ? "context" : "more"}` },
-    ...(tab === "context" ? [] : [moreViews(), facts(info)]).filter(Boolean));
+  const body = el("div", { class: "drawer-body", "data-keep": "details" }, ...[moreViews(), facts(info)].filter(Boolean));
+  const part = (id, name, what, kids) => el("section", { class: "drawer-part", id: `details-${id}`, "aria-label": name },
+    el("h4", {}, name, el("span", { text: what })), ...kids);
   if (!a || a.error || !a.reads) body.append(el("div", { class: "empty", text: (a && a.error) || (info.session
     ? "No calls yet. Send the agent a message." : "No data for this actor.") }));
-  else body.append(...(tab === "gatherer" ? gathererDetails(a) : tab === "context" ? contextDetails(a) : actorDetails(a)));
+  else body.append(part("actor", "Actor", "calls and tokens sent", actorDetails(a)),
+    part("context", "Context", "what the model was sent", contextDetails(a)),
+    part("gatherer", "Gatherer", "ag's builds and model calls", gathererDetails(a)));
   return el("aside", { class: "drawer", role: "complementary", "aria-label": "Details" }, head, body);
 }
 // The actor's own facts: where it runs, as what, and how the dashboard can reach it.
