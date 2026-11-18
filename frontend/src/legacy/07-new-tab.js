@@ -172,21 +172,22 @@ function ntDirBox(p) {
     el("div", { class: "on" }, el("button", { type: "button", class: "go", onclick: use }, "Use it")),
     err);
 }
-// The apps to open here instead -- each in the place's group, filed in its folder if it is a new one -- the apps with an
-// agent of their own started with it (on the harness chosen, or one that can give it their tools), a terminal, and
+// The apps to open here instead -- each in the place's group, filed in its folder if it is a new one; an app that can have
+// an agent of its own also "with an agent", started with it (on the harness chosen, or one that can give it their
+// tools) -- a terminal, and
 // "Apps…": the Apps page, to see, install and uninstall them
 function ntApps(p, found) {
   const g = ntGroup(p), alone = !!(p && p.alone), off = !p || alone || !!newTab.busy;
   const tooled = startable().filter((h) => (harnessInfo(h) || {}).mcp);
-  const plain = found.filter((a) => !(a.agent && a.agent.start) && !a.failed);
-  const agented = tooled.length ? found.filter((a) => a.agent && a.agent.start && !a.failed) : [];
+  const plain = found.filter((a) => !a.failed);
+  const agented = tooled.length ? found.filter((a) => a.agent && a.agent.offered && !a.failed) : [];
   const why = alone ? "Apps open in a group: pick one under In" : !p ? "Make a group first" : "";
   const button = (mark, label, title, run) => el("button", { type: "button", class: "nt-app", title: why || title, ...(off ? { disabled: "" } : {}),
     onclick: () => void ntRun(label, run) }, mark, el("span", { text: label }));
   const markOf = (a) => a.mark ? appMarkImg(a) : strokeIcon(ICONS.app, 16);
   const items = [
     ...plain.map((a) => button(markOf(a), a.label, a.description || a.label, () => ntOpenApp(g, p, a))),
-    ...agented.map((a) => button(markOf(a), a.label, `${a.description || a.label} -- with an agent of its own`, () => {
+    ...agented.map((a) => button(markOf(a), `${a.label} with an agent`, `${a.description || a.label} -- with an agent of its own`, () => {
       const h = tooled.includes(ntHarness(p)) ? ntHarness(p) : tooled[0];
       aimStart(g.name, p.folder);
       return startWithApp(g.name, ntCwd(p), a.name, h);

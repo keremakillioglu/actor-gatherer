@@ -22,7 +22,7 @@ export interface AppInfo {
   origin: string;
   instances: string;
   offer?: string;
-  agent?: { start: boolean; name: string };
+  agent?: { offered: boolean; name: string };
   capabilities?: Partial<Record<Capability, boolean>>;
   tools?: { name: string; handled_by: string }[];
   handles: { intent: string; types: string[] }[];

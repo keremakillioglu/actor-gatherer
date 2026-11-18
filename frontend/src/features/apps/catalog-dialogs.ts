@@ -129,10 +129,7 @@ export function fromSource(asked: Asked, source = "", go = false): void {
 
 // what it may do, and what agents get of it, as the install and update dialogs say it
 function itCan(a: CatalogApp): HTMLElement[] {
-  const who =
-    a.offer === "always"
-      ? "every agent"
-      : `only agents attached to ${/^[aeiou]/i.test(a.label) ? "an" : "a"} ${a.label}`;
+  const who = a.access === "group" ? "every agent of the group" : "only the agents in its task";
   return [
     el("h3", { text: "It can" }),
     el(
@@ -320,4 +317,61 @@ export async function stageUpdate(a: CatalogApp, asked: Asked): Promise<void> {
       failed(d2, (e as Error).message, go);
     }
   });
+}
+
+/** An agent's asking to install, update or uninstall an app (ag_dashboard/app_requests.py), as the home lists them. */
+export interface AgentRequest {
+  id: string;
+  actor: string;
+  op: "install" | "update" | "uninstall";
+  about: CatalogApp;
+  args?: { data?: boolean };
+}
+const answered = new Set<string>();
+
+/** The first request waiting that this page hasn't shown yet, shown -- unless a dialog is open: the next one then, once
+ * it is closed (the page calls this as its home is read again). `who`: how the page names an actor. `done`: told after
+ * an answer, the apps read again. */
+export function askedByAgent(requests: AgentRequest[], who: (actor: string) => string, done: () => void): void {
+  if (open.dim) return;
+  const r = (requests || []).find((x) => !answered.has(x.id));
+  if (!r) return;
+  answered.add(r.id);
+  const a = r.about || ({ name: "?", label: "an app", origin: "" } as CatalogApp);
+  const verb = { install: "install", update: "update", uninstall: "uninstall" }[r.op] || r.op;
+  const yes = el(
+    "button",
+    { type: "button", class: `ap-btn ${r.op === "uninstall" ? "danger" : "primary"}` },
+    verb[0].toUpperCase() + verb.slice(1),
+  ) as HTMLButtonElement;
+  const no = el("button", { type: "button", class: "ap-btn" }, "Decline") as HTMLButtonElement;
+  const title = `${who(r.actor)} asks to ${verb} ${a.label}`;
+  const d = dialog(
+    title,
+    lead(a, title, fromLine(a)),
+    el("p", { text: said.sentence(a.description || "") }),
+    ...(r.op === "uninstall" ? [] : itCan(a)),
+    r.op === "uninstall"
+      ? el("p", {
+          text: `Its windows close, and agents lose its tools when their terminal next starts.${r.args?.data ? " Its data is deleted too." : ""}`,
+        })
+      : el("div", {
+          class: "ap-warn",
+          text: "Installing runs its code on your computer with your permissions: ag doesn't sandbox it. Approve only apps you trust.",
+        }),
+    buttons(no, yes),
+  );
+  const answer = async (approve: boolean) => {
+    const doing = { install: "Installing…", update: "Updating…", uninstall: "Uninstalling…" }[r.op] || "…";
+    busy(d, approve ? doing : "Declining…", approve ? yes : no);
+    try {
+      await post(`/api/apps/requests/${encodeURIComponent(r.id)}`, { approve });
+      closeDialog();
+      done();
+    } catch (e) {
+      failed(d, (e as Error).message, approve ? yes : no);
+    }
+  };
+  yes.addEventListener("click", () => void answer(true));
+  no.addEventListener("click", () => void answer(false));
 }
