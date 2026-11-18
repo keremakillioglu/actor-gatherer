@@ -156,6 +156,24 @@ class ManagerFunctionsTest(HomeBase):
         self.assertEqual(none["events"], [])
         self.assertIn("error", bad)
 
+    def test_a_rewrite_with_no_events_responds_to_the_conversation_s_newest(self):
+        sent = events(DEV, user("q", 1))
+        typed = ["user_message", "agent_message", "tool_call", "tool_output", "context"]
+        self.ask({"op": "insert", "gatherer": "s", "properties": {"channel": "c"}, "events": sent},
+                 {"op": "insert", "gatherer": "s", "properties": {"channel": "c"},
+                  "events": [{"type": "model_call", "id": "r1", "payload": {"kind": "turn"}}]},     # a record: not one
+                 {"op": "insert", "gatherer": "s", "properties": {"channel": "d"}, "events": events(user("t", 4))})
+        answer, plain, none = self.ask(
+            {"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "events": [], "latest_types": typed},
+            {"op": "rewrite", "gatherer": "s", "properties": {"channel": "c"}, "events": []},
+            {"op": "rewrite", "gatherer": "s", "properties": {"channel": "e"}, "events": [], "latest_types": typed})
+        self.assertEqual([e["payload"] for e in answer["context"] if e["type"] != "ag"], [DEV, user("q", 1)])
+        self.assertIn("no events in, the conversation's last (event 2)", answer["note"])   # c's, not the record
+        self.assertIsInstance(answer["read_id"], int)
+        self.assertIsNone(plain["context"])                       # not asked: as before
+        self.assertIn("no event to respond to", plain["note"])
+        self.assertIsNone(none["context"])                        # a conversation with nothing stored
+
     def test_every_request_is_stateless(self):
         """No manager outlives a request: two servers on one gatherer agree."""
         self.ask({"op": "insert", "gatherer": "s", "properties": {"channel": "c"}, "events": events(user("q", 1))})

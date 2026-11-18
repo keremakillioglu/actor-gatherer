@@ -16,7 +16,10 @@
  * a context entry not in its `accepts` is noted. The working directory, when
  * given, goes on the events and the read as the property CWD too. It never
  * throws: an adaptor that fails, a server that errors or does not answer, a
- * context that is not a list -- each gives null messages and a note.
+ * context that is not a list -- each gives null messages and a note. A call
+ * that makes no events (all it sends restates what is stored, as after the
+ * harness compacts mid-turn) is answered from the conversation's newest stored
+ * event of the adaptor's `outputs` (the server's `latest_types`).
  * call_ag.py is the same in Python.
  */
 
@@ -60,6 +63,7 @@ export async function call_ag<M>(server: Requester, where: Where, messages: M[],
 		return { messages: null, note: `adaptor ${declared.name} made events of types it does not declare (${undeclared.join(", ")})` };
 	}
 	const body: Record<string, unknown> = { ...where, events };
+	if (!events.length) body.latest_types = [...declared.outputs];   // nothing new: answered from the newest stored event
 	if (measured) body.measured = measured;
 	if (limit && limit > 0) body.limit = Math.floor(limit);
 	const parts = (preamble || []).filter((p) => p && p.name && typeof p.text === "string" && p.text.trim());
