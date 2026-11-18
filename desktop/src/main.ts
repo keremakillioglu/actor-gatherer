@@ -159,6 +159,7 @@ function open(): void {
     permissions: path.join(app.getPath("userData"), "permissions.json"),
   }, () => (w.isDestroyed() ? 1 : w.webContents.getZoomFactor()));
   pages.onPress = () => !w.isDestroyed() && w.webContents.send("ag:pressed");
+  pages.keysHome(w.webContents); // the keys given back to it from a page that took them unasked (an agent's at work)
   // Closing the window is not quitting (desktop/DESIGN.md): on a Mac it is hidden, its Browsers' pages kept open (the
   // agent may be using them), until Cmd+Q; its Dock icon shows it again.
   w.on("close", (event) => {

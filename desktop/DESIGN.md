@@ -178,6 +178,12 @@ A native view is drawn above the page's HTML, so anything the dashboard draws ov
   never sees it, and a view over the page doesn't stop it (both checked).
 - **Esc stops the agent, or ends a Pick or Area:** ag tells the app when the user's Esc on a page is ag's
   (`App.esc`); the app's keyboard hook takes it then and tells ag (`App.escape`).
+- **A page has the keys only when you give them** (a press on it): Chromium also gives a page the keys when a
+  navigation commits in it (a new site's page) and when it is sent `Page.bringToFront` (the agent switching tabs).
+  Chrome has only the tab shown in its window; the app has every Browser's every page, shown or not, so an agent at
+  work in another task's Browser took the keys from you typing in the dashboard. A page that takes them unasked hands
+  them straight back to where you had them (`Pages.tookKeys`, keys.ts's `keepsKeys`); with the window behind another
+  app's, once it is in front again, as focusing the dashboard would bring it there.
 
 ### What Electron leaves to the app
 
