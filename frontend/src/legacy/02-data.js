@@ -213,7 +213,7 @@ const mainSignature = () => {
     info && info.avatar_hello,
     state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
-    state.details && state.detailsTab, topShown(), chatMin(), canMinimize()]);
+    state.details, topShown(), chatMin(), canMinimize()]);
 };
 // The page's state, in the settings panel: its dot green while live, amber paused, red on an error; the logo's title says it.
 const setLive = (text) => {
