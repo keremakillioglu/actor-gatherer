@@ -665,6 +665,123 @@ test("a tab the agent opens while its pane shows something else: at the pane's s
   }
 });
 
+/** Where the window's keys are: "dashboard" (its page), a native page's address, "" (none of them), or "away" (the
+ * window not in front: no keys of its own). */
+const keysAt = (app: ElectronApplication) =>
+  app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    if (!w.isFocused()) return "away";
+    if (w.webContents.isFocused()) return "dashboard";
+    const v = w.contentView.children.find((c) => (c as Electron.WebContentsView).webContents?.isFocused());
+    return v ? (v as Electron.WebContentsView).webContents.getURL() : "";
+  });
+
+// Chromium gives a page the keys when a navigation commits in it (a new site's page) and when it is sent
+// Page.bringToFront (the agent's tab switch); in Chrome only the tab shown has its page in the window, in the app every
+// Browser's every page is (keys.ts's keepsKeys), so an agent at work in a Browser out of sight took the keys from the
+// user typing in the dashboard.
+test("a page its agent works takes no keys from the dashboard, shown or out of sight; the user's press on it gives them", async () => {
+  const { app, page } = await launch();
+  try {
+    expect((await browserAsk("nav", { url: site })).done).toBe(site);
+    await refOnce('button "Pay"');
+    // the window in front (the keys are only a window's in front), as the user's click in it would bring it. The Mac
+    // lets an app come in front only when the one there gives way: someone at work in another app keeps it there, and
+    // the test can't say where the keys go -- skipped, not failed.
+    const front = async () => {
+      const end = Date.now() + 5_000;
+      while (Date.now() < end) {
+        const there = await app.evaluate(({ app: a, BrowserWindow }) => {
+          if (process.platform === "darwin") a.show();
+          a.focus({ steal: true });
+          const w = BrowserWindow.getAllWindows()[0];
+          w.focus();
+          return w.isFocused();
+        });
+        if (there) return;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      test.skip(true, "the app couldn't come in front: another app on the screen is in use");
+    };
+    // the user typing in the actor's message box
+    const typing = async () => {
+      await front();
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.focus());
+      await page.locator("#composer-text").focus();
+      await expect.poll(() => keysAt(app)).toBe("dashboard");
+    };
+    // where the keys are with the window in front (the user's own clicks elsewhere on the screen meanwhile undone)
+    const keysInFront = async () => {
+      await front();
+      await new Promise((r) => setTimeout(r, 300));
+      return keysAt(app);
+    };
+    // a page drawn, then a moment for the keys to move as they would
+    const drawn = async (url: string, visible: boolean) => {
+      await until(async () => (await pagesOf(app)).some((p) => p.url === url && p.visible === visible), 15_000);
+      await new Promise((r) => setTimeout(r, 500));
+    };
+    const other = site.replace("127.0.0.1", "localhost"); // another site: its page a new one, in a process of its own
+    const red = `${other}red.html`, dialogs = `${site}dialogs.html`;
+
+    // shown in its pane: the agent going to another site, then opening a tab
+    await typing();
+    expect((await tool("navigate", { url: red, expect: [{ js: "document.title === 'Shop'", why: "the shop" }] })).error).toBe(false);
+    await drawn(red, true);
+    expect(await keysInFront()).toBe("dashboard");
+    expect((await tool("tabs", { action: "new", url: dialogs, expect: [{ js: "document.title === 'Red'", why: "the red page" }] })).error)
+      .toBe(false);
+    await drawn(dialogs, true);
+    expect(await keysInFront()).toBe("dashboard");
+
+    // out of sight (another screen tab shown, the task's Browser working in its own): the agent switching tabs, then
+    // going elsewhere
+    await page.locator(".lay-tab-add").click(); // a new screen tab, empty: the task and its Browser in the other
+    await until(async () => (await pagesOf(app)).every((p) => !p.visible));
+    await typing();
+    expect((await tool("tabs", { action: "switch", index: 1, expect: [{ js: "document.title === 'Dialogs'", why: "the dialogs tab" }] }))
+      .error).toBe(false);
+    await new Promise((r) => setTimeout(r, 500));
+    expect(await keysInFront()).toBe("dashboard");
+    expect((await tool("navigate", { url: site, expect: [{ js: "document.title === 'Red'", why: "the red page" }] })).error).toBe(false);
+    await drawn(site, false);
+    expect(await keysInFront()).toBe("dashboard");
+
+    // the user in another app (the app hidden): the agent's tab switch doesn't bring the window back in front -- as
+    // giving the dashboard the keys back there and then would -- and the keys are the dashboard's once it is
+    await app.evaluate(({ app: a }) => a.hide());
+    await until(async () => (await keysAt(app)) === "away", 10_000);
+    expect((await tool("tabs", { action: "switch", index: 2, expect: [{ js: `location.href === ${JSON.stringify(site)}`, why: "the shop" }] }))
+      .error).toBe(false);
+    await new Promise((r) => setTimeout(r, 500));
+    expect(await keysAt(app)).toBe("away");
+    expect(await keysInFront()).toBe("dashboard");
+    expect((await tool("tabs", { action: "switch", index: 1, expect: [{ js: "document.title === 'Dialogs'", why: "the dialogs tab" }] }))
+      .error).toBe(false);
+
+    // the user's press on the page shown: theirs to type in (a Mac's click: the page focused, then handed the press)
+    await page.locator(".lay-tab").first().click(); // back to the task's tab
+    await drawn(site, true);
+    await front();
+    await app.evaluate(({ BrowserWindow }, u) => {
+      const v = BrowserWindow.getAllWindows()[0].contentView.children.find((c) => (c as Electron.WebContentsView).webContents.getURL() === u);
+      const wc = (v as Electron.WebContentsView).webContents;
+      wc.focus();
+      wc.sendInputEvent({ type: "mouseDown", x: 20, y: 20, button: "left", clickCount: 1 });
+      wc.sendInputEvent({ type: "mouseUp", x: 20, y: 20, button: "left", clickCount: 1 });
+    }, site);
+    await new Promise((r) => setTimeout(r, 500));
+    expect(await keysAt(app)).toBe(site);
+
+    // (the empty screen tab, left, is gone; the Browser's second tab closed: the next test's app and Browser as before)
+    await expect(page.locator(".lay-tab")).toHaveCount(1);
+    expect((await tool("tabs", { action: "close", index: 2, expect: [{ tab: 2, js: "document.title === 'Dialogs'", why: "the dialogs tab" }] }))
+      .error).toBe(false);
+  } finally {
+    await app.close();
+  }
+});
+
 test("a browser's keys on the page are the Browser's: zoom, a new tab with its address bar ready, close and reopen; mute", async () => {
   const { app, page } = await launch();
   try {
