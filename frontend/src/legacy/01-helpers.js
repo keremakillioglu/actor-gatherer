@@ -473,7 +473,7 @@ async function discardSession(g, a) {
 // until they do -- but not while something it started runs in the background: Background, its turn over
 // and not done. A server from before `status`: running or idle by `running`.
 // A session started from the page says first what its agent is doing: starting, a message waiting, failed. The selected
-// actor runs, too, from the moment Claude Code sends a message that opens a turn, before ag has stored it (opened()).
+// actor runs, too, from the moment its harness sends a message that opens a turn, before ag has stored it (opened()).
 const sessionStatus = (s) => !s ? null : s.status === "starting" ? ["building", "Starting"]
   : s.status === "running" || (s.queued && s.queued.length) ? ["running", "Running"] : s.status === "failed" ? ["failed", "Failed"] : null;
 const statusOf = (a) => sessionStatus(a.session) || (opened(a) ? ["running", "Running"] : a.status === "asking" ? ["asking", "Waiting for you"]

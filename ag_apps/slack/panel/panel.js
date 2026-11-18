@@ -292,15 +292,15 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
   }
   function closePop() { if (popClose) { const c = popClose; popClose = null; c(); } }
 
-  // "Reply with Claude" / "Draft with Claude": what the user wants, to an agent working with Slack (one picked, or attached)
-  function askClaude(anchor, what) {
+  // "Reply with agent" / "Draft with agent": what the user wants, to an agent working with Slack (one picked, or attached)
+  function askAgent(anchor, what) {
     openPop(anchor, (pop) => {
       const list = attached();
       let pick = list.length ? list[0].channel : null;
       const ta = el("textarea", { rows: "3", placeholder: what.kind === "reply" ? "How should it reply? (optional)" : "What should it write?" });
       ta.value = what.instruction || "";
       const err = el("div", { class: "note", role: "alert" });
-      pop.append(el("h3", null, what.kind === "reply" ? "Reply with Claude" : "Draft with Claude"), ta);
+      pop.append(el("h3", null, what.kind === "reply" ? "Reply with agent" : "Draft with agent"), ta);
       if (list.length > 1) {
         pop.append(el("fieldset", null, el("legend", null, "Ask"), ...list.map((a, i) =>
           el("label", null, el("input", { type: "radio", name: "pick-agent", checked: i === 0, onchange: () => { pick = a.channel; } }), a.name))));
@@ -626,7 +626,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     if (!sys) {
       const acts = el("div", { class: "acts" });
       if (!mine) {
-        acts.append(el("button", { type: "button", class: "act ai", onclick: (e) => askClaude(e.currentTarget, replyAsk(cid, m)) }, icon("pen"), "Reply with Claude"));
+        acts.append(el("button", { type: "button", class: "act ai", onclick: (e) => askAgent(e.currentTarget, replyAsk(cid, m)) }, icon("pen"), "Reply with agent"));
       }
       if (!inThread && topLevel(m) && m.subtype !== "thread_broadcast") {
         acts.append(el("button", { type: "button", class: "act", "aria-label": "Reply in thread", title: "Reply in thread", onclick: () => openThread(cid, m.ts) }, icon("thread")));
@@ -1230,11 +1230,11 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     sendBtn.addEventListener("click", send);
     const schedBtn = el("button", { type: "button", class: "send sched-btn", "aria-label": "Schedule message", title: "Schedule message",
       onclick: (e) => schedulePop(e.currentTarget, cid, thread, ta, () => { ta.value = ""; remember(); size(); }) }, icon("clock"));
-    const draftBtn = el("button", { type: "button", class: "btn small", onclick: (e) => askClaude(e.currentTarget, {
+    const draftBtn = el("button", { type: "button", class: "btn small", onclick: (e) => askAgent(e.currentTarget, {
       kind: "draft", cid, instruction: ta.value.trim(),
       message: (how) => `Draft a Slack message for me in ${place(c)}${thread ? " (a reply in a thread)" : ""} with slack_draft (conversation ${cid}${thread ? `, thread ${thread}` : ""}); I'll send it from the Slack panel.\n\nWhat to write: ${how}`,
       done: () => { ta.value = ""; remember(); size(); },
-    }) }, icon("pen"), "Draft with Claude");
+    }) }, icon("pen"), "Draft with agent");
     requestAnimationFrame(size);
     const picker = el("input", { type: "file", multiple: true, hidden: true, onchange: () => { add([...picker.files]); picker.value = ""; } });
     const clipBtn = can("files:write") ? el("button", { type: "button", class: "send sched-btn", "aria-label": "Attach files", title: "Attach files",
@@ -1517,7 +1517,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
       el("div", { class: "txt" }, render(m.text)),
       el("div", { class: "row" },
         el("button", { type: "button", class: "btn small", onclick: () => { gone(); open(cid, inThread ? { thread: m.thread_ts } : { ts: m.ts }); } }, "Open"),
-        el("button", { type: "button", class: "btn primary small", onclick: (e) => askClaude(e.currentTarget, { ...replyAsk(cid, m), done: gone }) }, icon("pen"), "Reply with Claude")));
+        el("button", { type: "button", class: "btn primary small", onclick: (e) => askAgent(e.currentTarget, { ...replyAsk(cid, m), done: gone }) }, icon("pen"), "Reply with agent")));
     t.addEventListener("mouseenter", () => clearTimeout(timer));
     t.addEventListener("mouseleave", later);
     t.addEventListener("focusin", () => clearTimeout(timer));
@@ -1634,7 +1634,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     drawStatus(); drawAgents(); drawConvs(); drawHead(); drawLog("keep"); drawUpgrade();
     if (S.open && JSON.stringify(s.scopes || null) !== S.composerFor) drawComposer();   // (what it offers changed)
     $("empty").replaceChildren(el("div", null, el("p", null, "Pick a conversation."),
-      el("p", { class: "note" }, "Point at a message and choose Reply with Claude: an agent drafts the reply, and you send it.")));
+      el("p", { class: "note" }, "Point at a message and choose Reply with agent: an agent drafts the reply, and you send it.")));
   }
 
   // ---------------------------------------------------------------- what the backend tells
