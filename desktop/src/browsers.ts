@@ -123,6 +123,8 @@ export class Pages {
     download?: (app: string, begun: Record<string, string>) => void;
     downloaded?: (app: string, done: Record<string, string>) => void;
   } = {};
+  /** The user's press on a page (or on the shield over a held one), told to the dashboard: its page never hears it. */
+  onPress: (() => void) | null = null;
   private shield: WebContentsView | null = null; // over a page whose input is held: takes the user's clicks, not ag's
   private lastSize: Size | null = null; // the last pane's a page was shown in: a new page's, if ag gives none
   private static current: Pages | null = null; // the pages the profiles' downloads and permission asks are for
@@ -374,6 +376,10 @@ export class Pages {
         else this.hooks.key?.(id, of, key);
       }
     });
+    // a press on it: the dashboard closes what floats over its page (a menu, Settings), as a press on the page would
+    wc.on("before-mouse-event", (_e, mouse) => {
+      if (mouse.type === "mouseDown") this.onPress?.();
+    });
     // Cmd+scroll or a pinch asking for zoom: Chrome's steps, as its keys
     wc.on("zoom-changed", (_e, direction) => this.zoomBy(id, direction === "in" ? 1 : -1));
     id = await targetIdOf(wc);
@@ -480,6 +486,9 @@ export class Pages {
       if (!this.shield) {
         this.shield = new WebContentsView();
         this.shield.setBackgroundColor("#00000000");
+        this.shield.webContents.on("before-mouse-event", (_e, mouse) => {
+          if (mouse.type === "mouseDown") this.onPress?.();
+        });
       }
       this.win.contentView.addChildView(this.shield); // (again: on top)
       this.shield.setBounds(shielded);
