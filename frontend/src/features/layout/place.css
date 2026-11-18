@@ -409,6 +409,18 @@
   border-color: var(--s1);
   box-shadow: 0 0 0 0.5px var(--s1);
 }
+/* a page's tab (the Apps page): its mark in the middle of its map */
+.lay-map > .lay-page {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
 .lay-mcell {
   position: absolute;
   display: grid;

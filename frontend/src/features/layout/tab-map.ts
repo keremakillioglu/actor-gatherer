@@ -148,3 +148,15 @@ export function drawMap(cells: Drawn[], mark: (m: string) => HTMLElement): HTMLE
   }
   return map;
 }
+
+/** A page's mark in its tab's map (tabs.ts's `page`): the Apps page's, four squares, one a "+". */
+export function pageMark(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("class", "lay-page");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML =
+    '<rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/>' +
+    '<rect x="2" y="9" width="5" height="5" rx="1.2"/><path d="M11.5 9v5M9 11.5h5"/>';
+  return svg;
+}

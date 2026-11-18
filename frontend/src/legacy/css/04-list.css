@@ -424,4 +424,4 @@ button.mg-fold:hover { color: var(--ink); }
 .mg-switch .mg-opt:disabled:not(.on) { opacity: .45; cursor: default; }
 .mg-switch .mg-opt:not(:disabled):hover { color: var(--ink); background: var(--wash); }
 /* the settings panel's Groups row: what Manage groups is for, its button (05-group-moves.js's manageEntry) */
-#groups-cfg .groups-say { color: var(--muted); font-size: 12px; }
+#groups-cfg .groups-say, #apps-cfg .apps-say { color: var(--muted); font-size: 12px; }
