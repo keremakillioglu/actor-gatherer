@@ -54,11 +54,11 @@
   border: 1px dashed var(--axis);
   border-radius: 8px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-ui);
 }
 .lay-empty > strong {
   color: var(--ink-2);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 .work.placed > :where(.top-row, .panes) {
@@ -187,7 +187,7 @@
   align-items: center;
   gap: 8px;
   padding: 0 6px 0 9px;
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
   color: var(--ink);
   background: color-mix(in srgb, var(--ink) 6%, var(--surface));
   border-bottom: 1px solid var(--ring);
@@ -199,7 +199,7 @@
 .lay-grip {
   flex: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-label);
   letter-spacing: -2px;
 }
 .lay-sname {
@@ -215,7 +215,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 .lay-sright {
   flex: none;
@@ -244,7 +244,7 @@
   border-radius: 5px;
   cursor: pointer;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 .lay-ttab > span {
   overflow: hidden;
@@ -256,7 +256,7 @@
 .lay-ttab[aria-selected="true"] {
   background: color-mix(in srgb, var(--ink) 14%, var(--surface));
   color: var(--ink);
-  font-weight: 500;
+  font-weight: 600;
 }
 .lay-tclose,
 .lay-tadd {
@@ -264,7 +264,7 @@
   border: 0;
   background: none;
   padding: 0 4px;
-  font-size: 13px;
+  font-size: var(--fs-ui);
   line-height: 1;
   color: var(--muted);
   border-radius: 4px;
@@ -373,7 +373,7 @@
   height: 32px;
   box-sizing: border-box;
   padding: 0 4px;
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
   color: var(--ink-2);
   cursor: pointer;
   user-select: none;
@@ -540,7 +540,7 @@
   height: 32px;
   box-sizing: border-box;
   padding: 0 12px;
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
   color: var(--muted);
   border: 1px dashed var(--muted);
   border-radius: 9px;

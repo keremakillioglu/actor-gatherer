@@ -8,8 +8,8 @@
 .files .fl-right { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--ring); }
 .files .fl-grid:not(.open) .fl-right { border-left: 0; }
 .files .fl-right > .asking-note { flex-shrink: 1; min-height: 0; max-height: min(560px, 75%); }
-.files .fl-talk { flex: 1; min-height: 0; position: relative; overflow: auto; padding: 6px 0 24px; font-size: 13.5px; --lh: 20px; line-height: var(--lh); }
-.files .fl-grid:not(.open) .fl-talk { font-size: 14px; --lh: 21px; }
+.files .fl-talk { flex: 1; min-height: 0; position: relative; overflow: auto; padding: 6px 0 24px; font-size: var(--fs-ui); --lh: 20px; line-height: var(--lh); }
+.files .fl-grid:not(.open) .fl-talk { font-size: var(--fs-body); --lh: 21px; }
 .files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px 10px; }
 /* a turn opening (Pending.tsx's OpenedTurn): grown in from nothing, so what is under it -- the actor -- slides down to make
    room rather than jumping; the turn ag stores in its place goes on from where it was (--in, Pending.tsx's useGrowing) */
@@ -35,7 +35,7 @@
 .files .fl-user > .tx { flex: 1 1 auto; }   /* its words wide as the band: the count and the chevron at its end */
 /* the count and the chevron on its first line, however many lines it runs to: by the files button, the top row's */
 .files .fl-user .fold-mark { flex: none; align-self: flex-start; height: var(--lh); display: grid; place-items: center; color: var(--muted); }
-.files .fl-user .fl-count { flex: none; align-self: flex-start; font-size: 11.5px; line-height: var(--lh); color: var(--muted); white-space: nowrap;
+.files .fl-user .fl-count { flex: none; align-self: flex-start; font-size: var(--fs-meta); line-height: var(--lh); color: var(--muted); white-space: nowrap;
   font-variant-numeric: tabular-nums; }
 .files .fl-user .fold-mark svg { transition: transform .15s; }
 .files .fl-user[aria-expanded="true"] .fold-mark svg { transform: rotate(90deg); }
@@ -63,14 +63,14 @@
 /* written while it works, not sent yet: at the turn's end, faded, until the harness gives it to the agent */
 .files .fl-pending { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
 .files .fl-pending .fl-user { opacity: .55; }
-.files .fl-pending .lbl { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
+.files .fl-pending .lbl { color: var(--muted); font-size: var(--fs-meta); margin-left: 4px; }
 .files .fl-pending .to-term { font-size: inherit; padding: 0; border: 0; background: none; color: var(--term-link); text-decoration: underline; }
 /* a turn begun, its message sent, that ag has not stored yet: in full, as the latest turn shows it, not yet one to pick */
 .files .fl-turn.opened .fl-user .tx { -webkit-line-clamp: unset; }
 .files .fl-user .tx.bang { font: .92em/var(--lh) var(--mono); }   /* a command the user ran with `!`, or typed as /name */
 /* a message an app wrote for the user (a line Notes sent): where in the app it came from, then the user's words */
 .files .fl-user .tx.app-said { display: flex; flex-direction: column; gap: 2px; -webkit-line-clamp: unset; }
-.files .app-from { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+.files .app-from { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-meta); color: var(--muted); }
 .files .app-from img { width: 13px; height: 13px; flex: none; }
 .files .app-words { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .files .fl-turn.on .fl-user .app-words, .files .fl-turn.shown .fl-user .app-words, .files .fl-turn.opened .fl-user .app-words { -webkit-line-clamp: unset; }
@@ -86,15 +86,15 @@
 .files .crew-face { width: 26px; height: 26px; flex: none; }
 .files .crew-face.none { display: grid; place-items: center; color: var(--muted); background: var(--wash); border-radius: 50%; }
 .files .crew-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.files .crew-from { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.files .crew-from { font-size: var(--fs-meta); font-weight: 600; color: var(--ink-2); }
 .files .crew-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .files .fl-sent { display: flex; gap: 10px; align-items: flex-start; margin: 6px 0 4px; padding: 6px 12px; border-radius: 8px;
   line-height: var(--lh); color: var(--ink); }
-.files .fl-sent .crew-from { font-weight: 500; color: var(--muted); }
+.files .fl-sent .crew-from { font-weight: 600; color: var(--muted); }
 /* its words folded to their first three lines (crewFold; news, two), the rest under "Show all" -- shown only where
    there is more (.long). A turn's bubble, a button, is in a band (.fl-crew) with the toggle under it. */
 .files .crew-fold:not(.open) .crew-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.files .crew-more { align-self: flex-start; margin: 0; padding: 0; background: none; border: 0; font: inherit; font-size: 12px;
+.files .crew-more { align-self: flex-start; margin: 0; padding: 0; background: none; border: 0; font: inherit; font-size: var(--fs-meta);
   line-height: 18px; color: var(--muted); cursor: pointer; }
 .files .crew-more:hover { color: var(--ink); text-decoration: underline; }
 .files .crew-fold:not(.long) .crew-more { display: none; }
@@ -111,9 +111,9 @@
 .files .fl-user.crew.update { background: none; border-color: transparent; padding-top: 3px; padding-bottom: 3px; }
 .files button.fl-user.crew.update:hover { background: var(--wash); }
 .files .fl-user.crew.update .crew-face { width: 18px; height: 18px; margin-top: 2px; }
-.files .fl-user.crew.update .crew-from { font-weight: 500; }
+.files .fl-user.crew.update .crew-from { font-weight: 600; }
 .files .fl-user.crew.update .crew-how { font-weight: 400; color: var(--muted); }
-.files .fl-user.crew.update .crew-text { font-size: 12.5px; color: var(--muted); }
+.files .fl-user.crew.update .crew-text { font-size: var(--fs-ui); color: var(--muted); }
 .files .crew-fold.update:not(.open) .crew-text { -webkit-line-clamp: 2; }
 .files .fl-crew.update { background: none; border-color: transparent; }
 .files .fl-crew.update:has(> button.fl-user):hover { background: var(--wash); }
@@ -122,7 +122,7 @@
   background: var(--term-code); border: 1px solid color-mix(in srgb, var(--term-bash) 45%, transparent); border-radius: 8px; overflow: hidden; }
 .files .fl-bash > .fl-user.bash { border: 0; border-radius: 0; background: none; }
 .files .fl-bash-out { margin: 0; padding: 6px 12px 8px; border-top: 1px solid var(--term-rule); max-height: 15em; overflow: auto;
-  font: 12px/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; background: none; }
+  font: var(--fs-meta)/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; background: none; }
 .files .fl-bash-out.none { color: var(--muted); font-style: italic; }
 .files .fl-reply { margin: 4px 0 0 2px; color: var(--ink-2); overflow-wrap: anywhere; }
 .files .fl-reply > summary { display: flex; gap: 6px; margin: 0; font-size: inherit; cursor: pointer; list-style: none; }
@@ -137,25 +137,25 @@
    the latest few shown and the earlier behind "+ N earlier messages" (folded again by its "−") */
 .files .fl-reply.main { margin-top: 6px; color: var(--ink); }
 .files .fl-reply.main > summary .dot, .files .fl-reply.main[open] > summary .dot { color: var(--ink); }
-.files .fl-minor { font-size: .9em; --lh: 18px; color: var(--muted); }
+.files .fl-minor { font-size: var(--fs-ui); --lh: 18px; color: var(--muted); }
 .files .fl-minor .fl-reply { color: var(--ink-2); }
 .files .fl-minor .fl-reply:not([open]) > summary .first { color: var(--muted); }
 .files .fl-minor .fl-reply > summary:hover .first { color: var(--ink-2); }
 .files .fl-more { background: none; border: 0; border-radius: 4px; margin: 4px 0 0 2px; padding: 0 4px 0 0;
-  font-size: .95em; color: var(--muted); cursor: pointer; }
+  font-size: var(--fs-ui); color: var(--muted); cursor: pointer; }
 .files .fl-more .sg { display: inline-block; width: 15px; text-align: left; }   /* + or −, under the messages' dots */
 .files .fl-more:hover { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 /* above the turns drawn, how many are not yet: a pull up past the top draws them */
-.files .fl-earlier { margin: 2px 6px 6px; padding: 2px 10px; font-size: 12px; color: var(--muted); text-align: center; }
+.files .fl-earlier { margin: 2px 6px 6px; padding: 2px 10px; font-size: var(--fs-meta); color: var(--muted); text-align: center; }
 /* a reply's markdown, coloured as the NumPy docs (the PyData theme) colour it, and no more: links teal, inline
    code magenta on grey, a table's header ruled in teal; headings, code and quotes in the text's own colours */
 .files .md { min-width: 0; }
 .files .md > :first-child { margin-top: 0; } .files .md > :last-child { margin-bottom: 0; }
 .files .md p, .files .md ul, .files .md ol, .files .md pre, .files .md table, .files .md blockquote { margin: 0 0 10px; }
-.files .md h1, .files .md h2, .files .md h3, .files .md h4, .files .md h5, .files .md h6 { color: var(--ink); font-weight: 650; line-height: 1.35; margin: 18px 0 6px; }
+.files .md h1, .files .md h2, .files .md h3, .files .md h4, .files .md h5, .files .md h6 { color: var(--ink); font-weight: 600; line-height: 1.35; margin: 18px 0 6px; }
 .files .md h1 { font-size: 1.35em; } .files .md h2 { font-size: 1.2em; } .files .md h3 { font-size: 1.07em; } .files .md h4, .files .md h5, .files .md h6 { font-size: 1em; }
 .files .md > h1:first-child, .files .md > h2:first-child, .files .md > h3:first-child { line-height: var(--lh); }   /* beside the reply's dot */
-.files .md strong { color: var(--ink); font-weight: 650; }
+.files .md strong { color: var(--ink); font-weight: 600; }
 .files .md a { color: var(--md-link); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--md-link) 40%, transparent); text-underline-offset: 2px; }
 .files .md a:hover { text-decoration-color: currentColor; }
 .files .md ul, .files .md ol { padding-left: 22px; }
@@ -163,21 +163,21 @@
 .files .md li::marker { color: var(--muted); }
 .files .md li:has(> input[type="checkbox"]) { list-style: none; margin-left: -20px; }
 .files .md li > input[type="checkbox"] { margin: 0 6px 0 0; vertical-align: -2px; accent-color: var(--md-link); }
-.files .md code { font: .88em var(--mono); color: var(--md-code); background: color-mix(in srgb, var(--ink) 6%, transparent);
+.files .md code { font: .92em var(--mono); color: var(--md-code); background: color-mix(in srgb, var(--ink) 6%, transparent);
   border: 1px solid var(--ring); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
 .files .md pre { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); border: 1px solid var(--ring);
   border-radius: 4px; padding: 9px 12px; overflow-x: hidden; max-width: 100%; white-space: pre-wrap; tab-size: 4; }
-.files .md pre code { font: 12.5px/1.55 var(--mono); color: var(--ink); background: none; border: 0; padding: 0; border-radius: 0; overflow-wrap: anywhere; }
+.files .md pre code { font: var(--fs-ui)/1.55 var(--mono); color: var(--ink); background: none; border: 0; padding: 0; border-radius: 0; overflow-wrap: anywhere; }
 /* a fenced block's line wrapped in the box, never scrolled sideways: its rest two columns in from where it begins */
 .files .md .cf-l { padding-left: calc((var(--in) + 2) * 1ch); text-indent: calc((var(--in) + 2) * -1ch); }
 .files .md blockquote { padding: 7px 12px; border-left: 4px solid var(--muted); border-radius: 4px;
   background: color-mix(in srgb, var(--ink) 5%, var(--surface)); color: var(--ink-2); }
 .files .md hr { border: 0; border-top: 1px solid var(--axis); margin: 16px 0; }
-.files .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: .93em; line-height: 1.45; }
+.files .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--fs-ui); line-height: 1.45; }
 .files .md th, .files .md td { border: 0; border-bottom: 1px solid var(--ring); padding: 5px 12px; text-align: left; vertical-align: top; white-space: normal; }
 .files .md th + th, .files .md td + td { border-left: 1px solid var(--ring); }
 .files .md thead tr { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); }
-.files .md th { color: var(--ink); font-weight: 650; border-bottom: 2px solid var(--md-link); }
+.files .md th { color: var(--ink); font-weight: 600; border-bottom: 2px solid var(--md-link); }
 .files .md tbody tr:nth-child(even) { background: var(--wash); }
 .files .md th[align="right"], .files .md td[align="right"] { text-align: right; font-variant-numeric: tabular-nums; }
 .files .md th[align="center"], .files .md td[align="center"] { text-align: center; }
@@ -201,7 +201,7 @@
 .files .fl-reply.noted > summary .lbl { flex: none; color: var(--muted); }
 .files .fl-reply.noted[open] > summary .first { display: block; }
 .files .fl-reply.noted > .md, .files .fl-reply.noted > .fl-none { margin: 4px 0 6px 15px; }
-.files .fl-status { display: flex; align-items: center; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: .93em; }
+.files .fl-status { display: flex; align-items: center; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: var(--fs-ui); }
 .files .fl-status .spin { flex: none; }
 .files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the actor at work, "Simple" (buddy()): its avatar's character out of its circle, small, moving as it would -- its
@@ -327,14 +327,14 @@
    Its loops run on the page's clock (--t; its action's, --a, slowing to a stop as a call ends), a reaction from when it
    began (--r), so a redraw restarts neither. */
 /* at the end of the latest turn, its times; the actor at work under them, what it is doing in words beside it */
-.files .fl-working { margin: 6px 0 0 2px; font-size: .93em; min-width: 0; }
+.files .fl-working { margin: 6px 0 0 2px; font-size: var(--fs-ui); min-width: 0; }
 .files .fl-working > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .files .fl-working .now { color: var(--term-accent); }
 /* tall: the words shown beside the avatar (.fl-status, aria-hidden), so these only read out */
 @container talk (not (max-height: 420px)) {
   .files .fl-working > .now { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } }
 /* when it last did something, and how long the turn has run: counting, dim, above the words */
-.files .fl-working .fl-times { color: var(--muted); font-size: .86em; opacity: .8; font-variant-numeric: tabular-nums; }
+.files .fl-working .fl-times { color: var(--muted); font-size: var(--fs-meta); opacity: .8; font-variant-numeric: tabular-nums; }
 .files .fl-working > .fl-mini { display: none; }
 .files .fl-working.fl-finished { display: none; }   /* short of height only */
 .files .fl-mini img { display: block; width: 1.3em; height: 1.3em; }
@@ -567,7 +567,7 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-grid.folded.open { grid-template-columns: 30px minmax(0, 1fr) minmax(240px, 340px); }
 .files .fl-bar { display: flex; flex-direction: column; align-items: center; gap: 14px; min-width: 0; min-height: 0; overflow: hidden;
   margin: 0; padding: 10px 0; background: none; border: 0; border-right: 1px solid var(--ring); border-radius: 0;
-  font: 10.5px var(--mono); color: var(--muted); cursor: pointer; }
+  font: var(--fs-label) var(--mono); color: var(--muted); cursor: pointer; }
 .files .fl-bar:hover, .files .fl-bar:focus-visible { background: var(--wash); color: var(--ink-2); }
 .files .fl-bar > svg { flex: none; color: var(--ink-2); }
 /* the Editor open: the bar in a box with the pane's head's icons (barActs) at its top -- the numbers at its foot -- or,
@@ -614,30 +614,30 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-sec.bg-sec > .fl-h .tw { flex: none; width: 10px; text-align: center; font-size: 8px; color: var(--ink-2); }   /* as its rows' */
 .files .fl-sec.bg-sec > .fl-h .mark { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--good); }   /* the Background dot */
 .files .fl-cmd .g.bg { color: var(--good); }
-.files .fl-cmd summary .kind { color: var(--muted); font: 10.5px var(--mono); margin-right: 6px; }
-.files .fl-bg-meta { font-size: 11.5px; color: var(--ink-2); margin: 2px 0 6px; }
-.files .fl-bg-meta .p { font: 11px var(--mono); overflow-wrap: anywhere; }
-.files .fl-h { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+.files .fl-cmd summary .kind { color: var(--muted); font: var(--fs-label) var(--mono); margin-right: 6px; }
+.files .fl-bg-meta { font-size: var(--fs-meta); color: var(--ink-2); margin: 2px 0 6px; }
+.files .fl-bg-meta .p { font: var(--fs-label) var(--mono); overflow-wrap: anywhere; }
+.files .fl-h { display: flex; align-items: center; gap: 8px; font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .05em;
   color: var(--muted); padding: 10px 12px 4px; }
 .files .fl-h .tmp { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0;
-  font-size: 11.5px; cursor: pointer; }
+  font-size: var(--fs-meta); cursor: pointer; }
 .files .fl-h .tmp:hover { color: var(--ink-2); } .files .fl-h .tmp input { margin: 0; }
 .files .fl-dir { display: flex; align-items: center; gap: 4px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
-  padding: 3px 12px; font: 11.5px var(--mono); color: var(--ink-2); text-align: left; cursor: pointer; }
+  padding: 3px 12px; font: var(--fs-meta) var(--mono); color: var(--ink-2); text-align: left; cursor: pointer; }
 .files .fl-dir:hover { background: var(--wash); }
 .files .fl-dir .tw { flex: none; width: 10px; text-align: center; color: var(--muted); font-size: 10px; }
 .files .fl-dir .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.files .fl-dir .n, .files .fl-dir .wd { flex: none; color: var(--muted); font-size: 10.5px; }
+.files .fl-dir .n, .files .fl-dir .wd { flex: none; color: var(--muted); font-size: var(--fs-label); }
 /* an opened folder's contents, a line down from its caret along them */
 .files .fl-kids { position: relative; }
 .files .fl-kids::before { content: ""; position: absolute; left: var(--guide); top: 0; bottom: 4px; border-left: 1px solid var(--axis);
   pointer-events: none; }
 /* where the session works, under the files' heading */
-.files .fl-wd { flex: none; display: flex; align-items: baseline; gap: 6px; padding: 0 12px 6px; font-size: 11.5px; color: var(--muted); }
+.files .fl-wd { flex: none; display: flex; align-items: baseline; gap: 6px; padding: 0 12px 6px; font-size: var(--fs-meta); color: var(--muted); }
 .files .fl-wd > span:first-child { flex: none; white-space: nowrap; }
-.files .fl-wd .p { min-width: 0; font: 11px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
+.files .fl-wd .p { min-width: 0; font: var(--fs-label) var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
 .files .fl-file { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
-  padding: 3px 12px 3px 22px; text-align: left; cursor: pointer; font: 12px/1.5 var(--mono); color: var(--ink); }
+  padding: 3px 12px 3px 22px; text-align: left; cursor: pointer; font: var(--fs-meta)/1.5 var(--mono); color: var(--ink); }
 .files .fl-file:hover { background: var(--wash); } .files .fl-file.on { background: var(--selected); }
 .files .fl-file .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .badges { display: flex; gap: 3px; flex: none; }
@@ -645,32 +645,32 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 /* a kind's mark (kindMark), and a change's lines added and removed */
 .files .km { flex: none; display: inline-flex; align-items: center; } .files .km svg { display: block; }
 .files .badges .km + .km { margin-left: 1px; }
-.files .chg { flex: none; display: inline-flex; gap: 5px; font: 10.5px/1 var(--mono); white-space: nowrap; }
+.files .chg { flex: none; display: inline-flex; gap: 5px; font: var(--fs-label)/1 var(--mono); white-space: nowrap; }
 .files .chg .a, .files .fl-bar .chg-a { color: var(--term-ok); } .files .chg .r, .files .fl-bar .chg-r { color: var(--term-err); }
-.files .fl-bar .chg-a, .files .fl-bar .chg-r { font: 10.5px var(--mono); }
+.files .fl-bar .chg-a, .files .fl-bar .chg-r { font: var(--fs-label) var(--mono); }
 .files .fl-cmd-files button { display: inline-flex; align-items: center; gap: 4px; }
 .files .fl-cmd summary .chg { margin-left: 8px; vertical-align: 0; }
 .files .fv-call .chg { align-self: center; }
-.files .fl-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); }
+.files .fl-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--fs-label); color: var(--muted); }
 .files .fl-legend span { display: inline-flex; align-items: center; gap: 4px; }
 /* the files' legend: each kind a switch, the files of the kinds switched off left out of the tree */
 .files .fl-kinds .kind { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; border-radius: 0; margin: 0;
   padding: 0; font: inherit; color: inherit; cursor: pointer; }
 .files .fl-kinds .kind:hover { color: var(--ink-2); }
 .files .fl-kinds .kind.off { text-decoration: line-through; opacity: .55; }
-.files .fl-cmd summary .k { display: inline-block; min-width: 18px; color: var(--muted); font: 10.5px var(--mono); }
+.files .fl-cmd summary .k { display: inline-block; min-width: 18px; color: var(--muted); font: var(--fs-label) var(--mono); }
 .files .fl-cmd-files { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
-.files .fl-cmd-files button { margin: 0; padding: 1px 6px; font: 11px var(--mono); background: var(--wash); border: 1px solid var(--ring); border-radius: 4px; color: var(--ink-2); cursor: pointer; }
+.files .fl-cmd-files button { margin: 0; padding: 1px 6px; font: var(--fs-label) var(--mono); background: var(--wash); border: 1px solid var(--ring); border-radius: 4px; color: var(--ink-2); cursor: pointer; }
 .files .fl-cmd-files button:hover { color: var(--ink); border-color: var(--axis); }
-.files .fl-cmd { display: flex; gap: 8px; padding: 2px 12px; font-size: 12px; }
+.files .fl-cmd { display: flex; gap: 8px; padding: 2px 12px; font-size: var(--fs-meta); }
 .files .fl-cmd .g { flex: none; font-size: 10px; line-height: 18px; }
 .files .fl-cmd .g.ok { color: var(--good); } .files .fl-cmd .g.err { color: var(--critical); }
 .files .fl-cmd .g.run { color: var(--warning); animation: term-blink 1s steps(2) infinite; }
-.files .fl-cmd details { min-width: 0; flex: 1; } .files .fl-cmd summary { margin: 0; font-size: 12px; overflow-wrap: anywhere; list-style: none; }
+.files .fl-cmd details { min-width: 0; flex: 1; } .files .fl-cmd summary { margin: 0; font-size: var(--fs-meta); overflow-wrap: anywhere; list-style: none; }
 .files .fl-cmd summary::-webkit-details-marker { display: none; }
 .files .fl-cmd summary .tw { margin-right: 4px; }   /* the fold's chevron (00-base.css), as every fold's */
 .files .fl-cmd details[open] > summary .tw { transform: rotate(90deg); }
-.files pre.call, .files pre.out { font: 11px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--wash);
+.files pre.call, .files pre.out { font: var(--fs-label)/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--wash);
   border-radius: 4px; padding: 6px 8px; margin: 4px 0; max-height: 320px; overflow: auto; }
 .files .fl-pane { overflow: auto; min-width: 0; }
 .files .fv-h { position: sticky; top: 0; z-index: 1; background: var(--surface); padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--ring);
@@ -678,22 +678,22 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fv-h .fv-path { flex: 1; min-width: 0; }
 .files .fv-close { flex: none; background: none; border: 0; margin: 0; padding: 0 6px; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; border-radius: 4px; }
 .files .fv-close:hover { color: var(--ink); background: var(--wash); }
-.files .fv-path { font: 600 12.5px var(--mono); overflow-wrap: anywhere; }
+.files .fv-path { font: 600 var(--fs-ui) var(--mono); overflow-wrap: anywhere; }
 .files .fv-call { border-bottom: 1px solid var(--ring); }
-.files .fv-call > summary { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 6px 16px; font-size: 12.5px; cursor: pointer; list-style: none; }
+.files .fv-call > summary { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 6px 16px; font-size: var(--fs-ui); cursor: pointer; list-style: none; }
 .files .fv-call > summary::-webkit-details-marker { display: none; }
 .files .fv-call > summary:hover { background: var(--wash); } .files .fv-call > summary:hover .via { color: var(--ink); }
 .files .fv-call > summary .tw { flex: none; width: 10px; color: var(--muted); font-size: 10px; }
 .files .fv-call[open] > summary .tw { transform: rotate(90deg); }
 .files .fv-call[open] { padding-bottom: 8px; }
-.files .fv-call .k { flex: none; min-width: 16px; color: var(--muted); font: 11px var(--mono); }
+.files .fv-call .k { flex: none; min-width: 16px; color: var(--muted); font: var(--fs-label) var(--mono); }
 .files .fv-call .kinds { flex: none; display: flex; gap: 3px; align-self: center; }
-.files .fv-call .via { flex: 1; min-width: 0; color: var(--ink-2); font-weight: 500; overflow-wrap: anywhere; }
-.files .fv-call .what { flex: none; color: var(--muted); font-size: 11.5px; }
+.files .fv-call .via { flex: 1; min-width: 0; color: var(--ink-2); font-weight: 600; overflow-wrap: anywhere; }
+.files .fv-call .what { flex: none; color: var(--muted); font-size: var(--fs-meta); }
 .files .fv-call .what .chk { color: var(--good); } .files .fv-call .what .chk.off { color: var(--critical); }
 .files .fv-call.err .what { color: var(--critical); }
-.files .fv-cmd { margin: 0 16px 2px 58px; } .files .fv-cmd > summary { margin: 0; font-size: 11.5px; color: var(--muted); cursor: pointer; }
-.files .code { font: 12px/1.5 var(--mono); padding: 4px 0 0; }
+.files .fv-cmd { margin: 0 16px 2px 58px; } .files .fv-cmd > summary { margin: 0; font-size: var(--fs-meta); color: var(--muted); cursor: pointer; }
+.files .code { font: var(--fs-meta)/1.5 var(--mono); padding: 4px 0 0; }
 .files .code .sep { height: 6px; }
 .files .fv-img { display: block; margin: 4px 16px 0 58px; }
 .files .fv-img img { display: block; max-width: 100%; max-height: 70vh; border: 1px solid var(--ring); border-radius: 4px; background: #fff; }
@@ -707,9 +707,9 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .ln.del { background: color-mix(in srgb, var(--critical) 15%, transparent); } .files .ln.del .mk { color: var(--critical); }
 .files .ln.hit .mk { color: var(--s4); font-weight: 700; }
 .files .ln.hit .tx { background: color-mix(in srgb, var(--s4) 14%, transparent); }
-.files .gap { color: var(--muted); font-size: 11px; padding: 1px 0 1px 74px; margin: 3px 0; background: var(--wash); }
-.files .fv-note { color: var(--muted); font-size: 12px; padding: 10px 16px 0; }
-.files .fv-block { margin: 10px 16px 0; } .files .fv-block .diff div { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--mono); padding: 0 6px; }
+.files .gap { color: var(--muted); font-size: var(--fs-label); padding: 1px 0 1px 74px; margin: 3px 0; background: var(--wash); }
+.files .fv-note { color: var(--muted); font-size: var(--fs-meta); padding: 10px 16px 0; }
+.files .fv-block { margin: 10px 16px 0; } .files .fv-block .diff div { white-space: pre-wrap; overflow-wrap: anywhere; font: var(--fs-meta)/1.5 var(--mono); padding: 0 6px; }
 .files .fv-block .diff .add { background: color-mix(in srgb, var(--good) 15%, transparent); }
 .files .fv-block .diff .del { background: color-mix(in srgb, var(--critical) 15%, transparent); }
 .files .fv-block .diff .ctx { color: var(--muted); }
@@ -727,7 +727,7 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .code-box { position: relative; margin: 0 0 10px; }
 .files .md .code-box > pre, .term .md .code-box > pre { margin: 0; }
 .cf-l { display: block; }
-.code-copy, .code-fold { margin: 0; padding: 1px 7px; font: 11px system-ui, -apple-system, sans-serif; color: var(--muted);
+.code-copy, .code-fold { margin: 0; padding: 1px 7px; font: var(--fs-label) system-ui, -apple-system, sans-serif; color: var(--muted);
   background: var(--surface); border: 1px solid var(--ring); border-radius: 4px; cursor: pointer; opacity: 0; transition: opacity .12s; }
 .code-copy { position: absolute; top: 5px; right: 5px; }
 .code-tools { position: absolute; top: 5px; right: 5px; display: flex; gap: 4px; }
@@ -739,14 +739,14 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .code-box.folded > pre { padding-bottom: 30px; }
 .code-box.folded code { display: block; max-height: calc(6 * 1lh); overflow: hidden;
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6lh), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6lh), transparent); }
-.code-more { display: none; position: absolute; left: 6px; bottom: 5px; margin: 0; padding: 1px 6px; font: 11.5px system-ui, -apple-system, sans-serif;
+.code-more { display: none; position: absolute; left: 6px; bottom: 5px; margin: 0; padding: 1px 6px; font: var(--fs-meta) system-ui, -apple-system, sans-serif;
   color: var(--muted); background: none; border: 0; border-radius: 4px; cursor: pointer; }
 .code-more::before { content: "▸ "; }
 .code-more:hover, .code-more:focus-visible { color: var(--ink); background: var(--wash); }
 .code-box.folded .code-more { display: block; }
 /* a call opened (callView): its command as a terminal shows it -- "$ " in the gutter, each step on a line, the lines
    continuing one indented, a heredoc's body set apart; a script or a change coloured; other inputs one by one */
-.files .cv { margin: 4px 0 6px; font: 11.5px/1.5 var(--mono); min-width: 0; }
+.files .cv { margin: 4px 0 6px; font: var(--fs-meta)/1.5 var(--mono); min-width: 0; }
 .files .cv-in { position: relative; background: var(--hl-bg); border: 1px solid var(--ring); border-radius: 6px; max-height: 360px; overflow: auto; }
 .files .cv-in.sh { border-left: 3px solid color-mix(in srgb, var(--term-bash) 50%, transparent); }
 .files .cv-src { padding: 6px 10px; color: var(--ink); }
@@ -763,14 +763,14 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .cv .cl.add { background: color-mix(in srgb, var(--good) 13%, transparent); } .files .cv .cl.add .mk { color: var(--good); }
 .files .cv .cl.del { background: color-mix(in srgb, var(--critical) 13%, transparent); } .files .cv .cl.del .mk { color: var(--critical); }
 .files .cv-sep { height: 1px; background: var(--ring); margin: 4px 0; }
-.files .cv-path { font: 600 11px var(--mono); color: var(--ink-2); margin: 0 0 3px; overflow-wrap: anywhere; }
+.files .cv-path { font: 600 var(--fs-label) var(--mono); color: var(--ink-2); margin: 0 0 3px; overflow-wrap: anywhere; }
 .files .cv-args { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 10px; padding: 6px 10px; background: var(--hl-bg);
   border: 1px solid var(--ring); border-radius: 6px; max-height: 360px; overflow: auto; }
 .files .cv-args .k { color: var(--hl-prop); } .files .cv-args .v { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
-.files .cv-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 5px 0 0; font: 10.5px var(--mono); color: var(--muted); }
+.files .cv-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 5px 0 0; font: var(--fs-label) var(--mono); color: var(--muted); }
 .files .cv-tags span { padding: 0 7px; border: 1px solid var(--ring); border-radius: 9px; }
 .files .cv-tags .ok { color: var(--good); } .files .cv-tags .bad { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 40%, transparent); }
-.files .cv pre.out { margin: 4px 0 0; font-size: 11.5px; }
+.files .cv pre.out { margin: 4px 0 0; font-size: var(--fs-meta); }
 .files .cv.err pre.out { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--critical) 60%, transparent); }
 .files .fl-reply.call > .cv { margin: 4px 0 6px 15px; }
 .files .fv-cmd .cv { margin: 4px 0; }
@@ -794,22 +794,22 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 @media (prefers-reduced-motion: reduce) { .hist .h-grid { transition: none; } }
 .hist .h-left { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 /* the header: one line -- search, Tasks|Turns, which types are shown -- and at its right, how the tasks stand */
-.hist .h-bar { flex: none; position: relative; z-index: 5; padding: 10px 20px; border-bottom: 1px solid var(--ring); font-size: 12px; color: var(--ink-2); }
+.hist .h-bar { flex: none; position: relative; z-index: 5; padding: 10px 20px; border-bottom: 1px solid var(--ring); font-size: var(--fs-meta); color: var(--ink-2); }
 .hist .h-controls { display: flex; align-items: center; gap: 10px; }
 .hist .h-search { flex: 0 1 380px; display: flex; align-items: center; gap: 6px; min-width: 140px; border: 1px solid var(--ring); border-radius: 6px;
   background: var(--page); padding: 0 8px; }
 .hist .h-search:focus-within { border-color: var(--axis); }
 .hist .h-search svg { flex: none; color: var(--muted); }
-.hist .h-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 13px; padding: 5px 0; }
+.hist .h-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-ui); padding: 5px 0; }
 .hist .h-group { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--ring); border-radius: 6px;
-  font-size: 12px; color: var(--ink); cursor: pointer; white-space: nowrap; user-select: none; }
+  font-size: var(--fs-meta); color: var(--ink); cursor: pointer; white-space: nowrap; user-select: none; }
 .hist .h-group:hover { background: var(--wash); }
 .hist .h-group.off { color: var(--muted); cursor: default; } .hist .h-group.off:hover { background: none; }
 .hist .h-group input { margin: 0; accent-color: var(--s1); }
 .hist .h-group .spin { display: inline-block; width: 1.2em; text-align: center; }
 .hist .h-types { position: relative; flex: none; }
 .hist .h-types > summary { list-style: none; margin: 0; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ring); border-radius: 6px;
-  padding: 4px 10px; font-size: 12px; color: var(--ink); cursor: pointer; white-space: nowrap; }
+  padding: 4px 10px; font-size: var(--fs-meta); color: var(--ink); cursor: pointer; white-space: nowrap; }
 .hist .h-types > summary::-webkit-details-marker { display: none; }
 .hist .h-types > summary:hover, .hist .h-types[open] > summary { background: var(--wash); }
 .hist .h-types > summary .lbl { color: var(--muted); }
@@ -819,7 +819,7 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .hist .h-types .menu label:hover { background: var(--wash); }
 .hist .h-types .menu input { margin: 0; accent-color: var(--s1); }
 .hist .h-types .menu i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.hist .h-status { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 12px; font-size: 11.5px; overflow: hidden; white-space: nowrap; }
+.hist .h-status { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 12px; font-size: var(--fs-meta); overflow: hidden; white-space: nowrap; }
 .hist .h-found { white-space: nowrap; color: var(--ink-2); }
 .hist .h-build { white-space: nowrap; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hist .h-build.bad { color: var(--warning); }
@@ -843,46 +843,46 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .hist .h-row.nested { background-image: linear-gradient(var(--grid), var(--grid)); background-repeat: no-repeat; background-size: 1px 100%;
   background-position: calc(46px + (var(--depth) - 1) * 20px) 0; padding-top: 5px; padding-bottom: 5px; }
 .hist .h-full { user-select: text; cursor: text; }
-.hist .h-tw { border: 0; background: none; padding: 0; margin: 0; width: 14px; color: var(--muted); font-size: 11px; line-height: 19px; cursor: pointer; }
-.hist .h-tw:hover { color: var(--ink); background: none; }
+.hist .h-tw { border: 0; padding: 0; margin: 3px 1px 0; color: var(--muted); cursor: pointer; }   /* the fold's chevron (00-base.css) */
+.hist .h-tw:hover { color: var(--ink); background: currentColor; }
 .hist .h-main { min-width: 0; padding-right: 4px; }
-.hist .h-label { font-size: 13px; line-height: 1.45; color: var(--ink); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2;
+.hist .h-label { font-size: var(--fs-ui); line-height: 1.45; color: var(--ink); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow-wrap: anywhere; }
-.hist .h-row.task:not(.nested) .h-label { font-size: 13.5px; font-weight: 600; letter-spacing: -.005em; }
-.hist .h-row.nested .h-label { font-size: 12.5px; }
+.hist .h-row.task:not(.nested) .h-label { font-size: var(--fs-ui); font-weight: 600; letter-spacing: -.005em; }
+.hist .h-row.nested .h-label { font-size: var(--fs-ui); }
 .hist .h-row.message .h-label { color: var(--ink-2); }
 .hist .h-row.open .h-label { -webkit-line-clamp: 6; }
 .hist .h-label.dim { color: var(--muted); font-style: italic; }
-.hist .h-kind { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--good); margin-right: 6px; }
+.hist .h-kind { display: inline-block; font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--good); margin-right: 6px; }
 .hist .h-main.keyed { border-left: 3px solid var(--key); padding-left: 9px; }   /* a message's type, as the Messages view keys it */
-.hist .h-badge { display: inline-block; font-size: 10px; font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-right: 6px; line-height: 15px; }
-.hist .h-sub { font-size: 12.5px; line-height: 1.45; color: var(--ink-2); margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.hist .h-badge { display: inline-block; font-size: var(--fs-label); font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-right: 6px; line-height: 15px; }
+.hist .h-sub { font-size: var(--fs-ui); line-height: 1.45; color: var(--ink-2); margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .hist .h-sub.dim { color: var(--muted); }
-.hist .h-hit { font-size: 12px; color: var(--ink-2); margin-top: 3px; overflow-wrap: anywhere; }
+.hist .h-hit { font-size: var(--fs-meta); color: var(--ink-2); margin-top: 3px; overflow-wrap: anywhere; }
 .hist mark { background: color-mix(in srgb, var(--s4) 35%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
-.hist .h-meta { position: absolute; right: 14px; top: 8px; padding: 0 0 0 22px; font-size: 11px; line-height: 19px; color: var(--muted); white-space: nowrap;
+.hist .h-meta { position: absolute; right: 14px; top: 8px; padding: 0 0 0 22px; font-size: var(--fs-label); line-height: 19px; color: var(--muted); white-space: nowrap;
   font-variant-numeric: tabular-nums; background: linear-gradient(to right, transparent, var(--row-bg) 18px); opacity: 0; pointer-events: none; transition: opacity .12s; }
 .hist .h-row.nested .h-meta { top: 5px; }
 .hist .h-row:hover .h-meta { opacity: 1; }
-.hist .h-full { grid-column: 2 / -1; margin: 6px 0 2px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+.hist .h-full { grid-column: 2 / -1; margin: 6px 0 2px; font: var(--fs-meta)/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
   color: var(--ink-2); background: var(--page); border: 1px solid var(--grid); border-radius: 6px; padding: 8px 10px; max-height: 360px; overflow: auto; }
 .hist .h-more { display: block; margin: 12px auto; }
-.hist .h-note { color: var(--muted); font-size: 12px; padding: 14px 20px; }
+.hist .h-note { color: var(--muted); font-size: var(--fs-meta); padding: 14px 20px; }
 .hist .h-act { padding: 12px 14px; display: grid; gap: 8px; border-bottom: 1px solid var(--ring); margin-bottom: 10px; }
-.hist .h-act textarea { width: 100%; min-height: 38px; max-height: 30vh; resize: vertical; font: inherit; font-size: 13px; color: var(--ink); background: var(--page);
+.hist .h-act textarea { width: 100%; min-height: 38px; max-height: 30vh; resize: vertical; font: inherit; font-size: var(--fs-ui); color: var(--ink); background: var(--page);
   border: 1px solid var(--ring); border-radius: 6px; padding: 6px 8px; field-sizing: content; }
 .hist .h-act .row { display: flex; align-items: center; gap: 8px; }
 .hist .h-act .row .h-picked:first-child { flex: 1; }
 .hist .h-act .kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .hist .h-act .h-x { border: 0; background: none; font-size: 18px; line-height: 1; padding: 0 6px; color: var(--muted); }
 .hist .h-act .h-x:hover { color: var(--ink); background: var(--wash); }
-.hist .h-picked { font-size: 12px; color: var(--ink-2); }
+.hist .h-picked { font-size: var(--fs-meta); color: var(--ink-2); }
 .hist .h-picked b { color: var(--ink); font-weight: 600; }
-.hist .h-act .err { color: var(--critical); font-size: 12px; }
+.hist .h-act .err { color: var(--critical); font-size: var(--fs-meta); }
 .hist .h-act .err:empty { display: none; }
 .hist .h-side { border-left: 1px solid var(--ring); overflow: auto; min-height: 0; background: var(--page); }
 .hist .h-side.closed { display: none; }
-.hist .h-side-h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 2px 14px 6px; }
+.hist .h-side-h { font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 2px 14px 6px; }
 .hist .h-older { display: block; margin: 0 10px 12px; border: 0; background: none; color: var(--muted); padding: 2px 4px; }
 .hist .h-older:hover { color: var(--ink); background: none; text-decoration: underline; }
 .hist .h-side.open { animation: h-side-in .2s ease-out; }
@@ -892,49 +892,49 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .hist .h-rec { margin: 0 10px 10px; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; }
 .hist .h-rec > summary { list-style: none; margin: 0; padding: 8px 10px; cursor: pointer; display: grid; gap: 2px; color: var(--ink); }
 .hist .h-rec > summary::-webkit-details-marker { display: none; }
-.hist .h-rec > summary .top { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.hist .h-rec > summary .top .when { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
-.hist .h-rec > summary .what { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hist .h-rec > summary .ask { font-size: 12px; color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hist .h-rec .chip-k { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-radius: 999px; padding: 1px 7px; color: #fff; }
+.hist .h-rec > summary .top { display: flex; align-items: center; gap: 8px; font-size: var(--fs-meta); }
+.hist .h-rec > summary .top .when { margin-left: auto; color: var(--muted); font-size: var(--fs-label); white-space: nowrap; }
+.hist .h-rec > summary .what { font-size: var(--fs-meta); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .h-rec > summary .ask { font-size: var(--fs-meta); color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .h-rec .chip-k { font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-radius: 999px; padding: 1px 7px; color: #fff; }
 .hist .h-rec .chip-k.summary { background: var(--s1); } .hist .h-rec .chip-k.memory { background: var(--s7); } .hist .h-rec .chip-k.skill { background: var(--s3); }
 .hist .h-rec .chip-k.agents, .hist .h-rec .chip-k.claude { background: var(--s2); text-transform: none; letter-spacing: 0; }
 /* a memory: its title and type, what decides whether it is read, then the fact */
 .hist .h-mem { border: 1px solid var(--grid); border-radius: 6px; padding: 6px 8px; margin: 0 0 8px; background: var(--page); }
-.hist .h-mem .t { display: flex; align-items: baseline; gap: 6px; font-weight: 600; font-size: 12.5px; }
-.hist .h-mem .t span { flex: none; margin-left: auto; font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-.hist .h-mem .d { font-size: 12px; color: var(--ink-2); margin: 2px 0 4px; }
-.hist .h-mem .md { font-size: 12.5px; }
+.hist .h-mem .t { display: flex; align-items: baseline; gap: 6px; font-weight: 600; font-size: var(--fs-ui); }
+.hist .h-mem .t span { flex: none; margin-left: auto; font-weight: 600; font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.hist .h-mem .d { font-size: var(--fs-meta); color: var(--ink-2); margin: 2px 0 4px; }
+.hist .h-mem .md { font-size: var(--fs-ui); }
 /* saving: where to, then each file and what it gets, before anything is written */
-.hist .h-save { border-top: 1px solid var(--grid); padding: 8px 12px 10px; display: grid; gap: 8px; font-size: 12px; }
+.hist .h-save { border-top: 1px solid var(--grid); padding: 8px 12px 10px; display: grid; gap: 8px; font-size: var(--fs-meta); }
 .hist .h-save .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.hist .h-save input[type=text] { flex: 1; min-width: 0; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink);
+.hist .h-save input[type=text] { flex: 1; min-width: 0; font: var(--fs-meta) ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink);
   background: var(--page); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 8px; }
 .hist .h-save .where { color: var(--ink-2); }
 .hist .h-save .file { border: 1px solid var(--grid); border-radius: 6px; background: var(--page); }
 .hist .h-save .file > summary { list-style: none; margin: 0; padding: 5px 8px; display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
 .hist .h-save .file > summary::-webkit-details-marker { display: none; }
-.hist .h-save .file .p { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; min-width: 0; color: var(--ink); }
-.hist .h-save .file .a { flex: none; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--good); }
+.hist .h-save .file .p { font: var(--fs-meta) ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; min-width: 0; color: var(--ink); }
+.hist .h-save .file .a { flex: none; font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--good); }
 .hist .h-save .file .a.append { color: var(--s1); } .hist .h-save .file .a.replace { color: var(--warning); }
-.hist .h-save .file pre { margin: 0; padding: 6px 8px; border-top: 1px solid var(--grid); font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+.hist .h-save .file pre { margin: 0; padding: 6px 8px; border-top: 1px solid var(--grid); font: var(--fs-meta)/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; color: var(--ink-2); }
 .hist .h-save .err { color: var(--critical); } .hist .h-save .ok { color: var(--good); }
 .hist .h-save .warnline { color: var(--warning); }
-.hist .h-rec .saved { font-size: 11.5px; color: var(--ink-2); padding: 0 12px 8px; overflow-wrap: anywhere; }
+.hist .h-rec .saved { font-size: var(--fs-meta); color: var(--ink-2); padding: 0 12px 8px; overflow-wrap: anywhere; }
 .hist .h-rec .saved b { color: var(--good); font-weight: 600; }
-.hist .h-rec .body { border-top: 1px solid var(--grid); padding: 8px 12px 10px; font-size: 13px; overflow-wrap: anywhere; }
+.hist .h-rec .body { border-top: 1px solid var(--grid); padding: 8px 12px 10px; font-size: var(--fs-ui); overflow-wrap: anywhere; }
 .hist .h-rec .body .md > :first-child { margin-top: 0; } .hist .h-rec .body .md > :last-child { margin-bottom: 0; }
-.hist .h-rec .body .md pre { overflow: auto; background: var(--page); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
-.hist .h-rec .body .md code { font-size: 12px; }
-.hist .h-rec .body .md h1 { font-size: 16px; } .hist .h-rec .body .md h2 { font-size: 14px; } .hist .h-rec .body .md h3, .hist .h-rec .body .md h4 { font-size: 13px; }
+.hist .h-rec .body .md pre { overflow: auto; background: var(--page); border-radius: 6px; padding: 6px 8px; font-size: var(--fs-meta); }
+.hist .h-rec .body .md code { font-size: var(--fs-meta); }
+.hist .h-rec .body .md h1 { font-size: var(--fs-head); } .hist .h-rec .body .md h2 { font-size: var(--fs-body); } .hist .h-rec .body .md h3, .hist .h-rec .body .md h4 { font-size: var(--fs-ui); }
 .hist .h-rec .body .md h1, .hist .h-rec .body .md h2, .hist .h-rec .body .md h3 { margin: 12px 0 4px; }
 .hist .h-rec .body .md ul, .hist .h-rec .body .md ol { padding-left: 20px; }
-.hist .h-rec .front { margin: 0 0 8px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; background: var(--page);
+.hist .h-rec .front { margin: 0 0 8px; font: var(--fs-meta)/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; background: var(--page);
   border: 1px solid var(--grid); border-radius: 6px; padding: 6px 8px; color: var(--ink-2); }
 .hist .h-rec .acts { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 10px; }
-.hist .h-rec .fail { color: var(--critical); font-size: 12px; white-space: pre-wrap; }
-.hist .h-rec .working { color: var(--ink-2); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.hist .h-rec .fail { color: var(--critical); font-size: var(--fs-meta); white-space: pre-wrap; }
+.hist .h-rec .working { color: var(--ink-2); font-size: var(--fs-meta); display: flex; align-items: center; gap: 6px; }
 .hist .h-rec .working .spin, .hist .h-build .spin { flex: none; display: inline-block; width: 1.2em; text-align: center; }
 /* a time that counts up: its digits all one width, at the end of its line, where it moves nothing */
 .hist .ticking { font-variant-numeric: tabular-nums; color: var(--muted); }

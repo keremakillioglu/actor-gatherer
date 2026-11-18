@@ -51,7 +51,7 @@
   --buddy-edge: rgba(255,255,255,.28); --buddy-edge2: transparent;
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
-body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+body { margin: 0; background: var(--page); color: var(--ink); font: var(--fs-body)/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   height: 100vh; display: flex; flex-direction: column; }
 /* AN ACTOR AT WORK, wherever the page shows one (the list's, the rail's, a tab's and the monitor's state dot; a status
    line's .spin): three dots in the colours of the logo's robots (pink, sky, teal) going round, as the robots sit in its
@@ -80,7 +80,7 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 sy
 .topbar .brand-mark { position: relative; display: block; width: 30px; height: 30px; flex: none; }
 .topbar .ag-logo { display: block; width: 100%; height: 100%; }
 .ag-logo .halo * { fill: var(--side) !important; stroke: var(--side) !important; stroke-width: 5px !important; opacity: 1 !important; }
-.topbar .cfg-flag { font-size: 11px; color: var(--muted); }
+.topbar .cfg-flag { font-size: var(--fs-label); color: var(--muted); }
 .topbar .top-full { flex: none; display: flex; }
 .topbar .lb-full[aria-pressed="true"] { color: var(--ink); background: var(--wash); }
 .topbar .lb-full:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
@@ -88,7 +88,7 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 sy
    unseen: each its mark as the list draws it (running: the logo's dots going round; in the background: green), and the
    number; idle only when nothing else is (06-list-modes.js's drawTotals). The list hidden, the pointer on them slides it out
    (06-list-modes.js): the bar's whole height, so going straight down from them is onto the list */
-.top-totals { flex: none; align-self: stretch; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 6px; font-size: 12px; color: var(--ink-2);
+.top-totals { flex: none; align-self: stretch; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 6px; font-size: var(--fs-meta); color: var(--ink-2);
   font-variant-numeric: tabular-nums; }
 .top-totals:empty { display: none; }
 .top-totals .count { display: inline-flex; align-items: center; gap: 4px; }
@@ -103,41 +103,41 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 sy
 .state-dot[data-state="live"] { background: var(--good); } .state-dot[data-state="error"] { background: var(--critical); }
 .state-dot[data-state="paused"] { background: var(--warning); }
 .about { position: absolute; top: calc(100% + 6px); left: 12px; z-index: 5; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 90px); overflow: auto; background: var(--surface); border: 1px solid var(--ring);
-  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 12px 14px; font-size: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; overflow-x: hidden; }
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 12px 14px; font-size: var(--fs-meta); display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; overflow-x: hidden; }
 .about[hidden] { display: none; }
-.about .home { color: var(--ink-2); font-size: 12px; overflow-wrap: anywhere; }
-.about h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+.about .home { color: var(--ink-2); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+.about h4 { margin: 0 0 4px; font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
 .about .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .about .live { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
 /* ag's own settings, at the top of the panel; the file itself in a dialog over the page */
-.about h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--ring); padding-bottom: 4px; }
+.about h3 { margin: 0; font-size: var(--fs-meta); font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--ring); padding-bottom: 4px; }
 .about .cfg, .about .cfg form, .about .cfg-more { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .about .cfg { gap: 12px; }
 .about .cfg label, .about .cfg-label { display: grid; gap: 3px; color: var(--ink-2); }
-.about .cfg input, .about .cfg select, .cfg-file textarea { font: inherit; font-size: 12px; color: var(--ink); background: var(--page);
+.about .cfg input, .about .cfg select, .cfg-file textarea { font: inherit; font-size: var(--fs-meta); color: var(--ink); background: var(--page);
   border: 1px solid var(--ring); border-radius: 6px; padding: 4px 8px; min-width: 0; }
 .about .cfg .row input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .cfg-combo { position: relative; flex: 1; display: flex; min-width: 0; }
 .cfg-combo-list { position: absolute; top: calc(100% + 2px); left: 0; right: 0; z-index: 6; margin: 0; padding: 3px; list-style: none;
   background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.12);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-meta); }
 .cfg-combo-list li { padding: 4px 8px; border-radius: 4px; cursor: pointer; color: var(--ink); }
 .cfg-combo-list li[aria-selected="true"] { background: var(--wash); }
-.about .cfg-more summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.about .cfg-more summary { cursor: pointer; color: var(--muted); font-size: var(--fs-label); }
 .cfg-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ink); }
 .cfg-checks label { display: inline-flex !important; align-items: center; gap: 4px; }
-.cfg-note { color: var(--muted); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cfg-note { color: var(--muted); font-size: var(--fs-label); white-space: pre-wrap; overflow-wrap: anywhere; }
 .cfg-note.bad { color: var(--warning); } .cfg-note.err { color: var(--critical); }
-.cfg-harnesses { display: grid; gap: 2px; font-size: 11px; color: var(--ink-2); }
-.cfg-harnesses code, .about code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.cfg-harnesses { display: grid; gap: 2px; font-size: var(--fs-label); color: var(--ink-2); }
+.cfg-harnesses code, .about code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-label); }
 .cfg-logins, .cfg-logins-pick { display: grid; gap: 6px; }
 /* hidden, hidden: the display above would show them anyway (the picker before Chrome was read, the read button
    when Browsers run in the user's own Chrome) */
 .cfg-logins[hidden], .cfg-logins-pick[hidden], .about .row[hidden] { display: none; }
 .cfg-logins-list { max-height: 180px; overflow: auto; display: grid; gap: 1px; padding: 4px 6px; border: 1px solid var(--ring); border-radius: 6px; background: var(--page); }
-.cfg-logins-list label { display: flex !important; align-items: center; gap: 6px; color: var(--ink); font-size: 12px; cursor: pointer; }
-.cfg-logins-list label .n { margin-left: auto; color: var(--muted); font-size: 11px; }
-.cfg-path { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cfg-logins-list label { display: flex !important; align-items: center; gap: 6px; color: var(--ink); font-size: var(--fs-meta); cursor: pointer; }
+.cfg-logins-list label .n { margin-left: auto; color: var(--muted); font-size: var(--fs-label); }
+.cfg-path { color: var(--muted); font-size: var(--fs-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .cfg-flag { color: var(--warning); }
 #cfg-edit { white-space: nowrap; flex: none; }
 .cfg-file { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 16px; }
@@ -145,10 +145,10 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 sy
 .cfg-file-box { width: min(900px, 100%); height: min(85vh, 900px); background: var(--surface); border: 1px solid var(--ring); border-radius: 10px;
   padding: 12px 14px; display: grid; grid-template-rows: auto 1fr auto; gap: 8px; }
 .cfg-file-box .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.cfg-file-box h3 { margin: 0; font-size: 14px; }
-.cfg-file textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.45; resize: none; white-space: pre; tab-size: 4; }
-.cfg-file .err { color: var(--critical); font-size: 12px; }
-.about .servers { padding: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.cfg-file-box h3 { margin: 0; font-size: var(--fs-body); }
+.cfg-file textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-meta); line-height: 1.45; resize: none; white-space: pre; tab-size: 4; }
+.cfg-file .err { color: var(--critical); font-size: var(--fs-meta); }
+.about .servers { padding: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-label); }
 /* the selected actor's controls: how its history is shown, and its details */
 /* they take the top row right of the actor's name, wrapping there when they need more */
 .controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; flex: 0 1 auto; min-width: 0; }
@@ -157,19 +157,24 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 sy
   background: none; color: var(--muted); }
 .controls .details-btn:hover { background: var(--wash); color: var(--ink); }
 /* a shell's Terminate (shellCard): a word beside its mark, so it is not taken for the pane's × */
-.controls .terminate { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; font-size: 12.5px; color: var(--ink-2); }
+.controls .terminate { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; font-size: var(--fs-ui); color: var(--ink-2); }
 .controls .terminate svg { display: block; }
 .controls .terminate:hover:not(:disabled), .controls .terminate:focus-visible { color: var(--critical);
   border-color: color-mix(in srgb, var(--critical) 55%, var(--ring)); }
 .pane-head .terminate { grid-area: views; }
 .controls .details-btn svg { display: block; }
 .controls .details-btn[aria-expanded="true"] { background: var(--selected); color: var(--ink); }
-button { font: inherit; font-size: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button { font: inherit; font-size: var(--fs-meta); color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 button:hover { background: var(--wash); }
 /* AN ICON BUTTON -- an icon alone, no words -- is var(--ib) square wherever it is (the top bar, the list's head, a group's
    row, a pane's head, an app panel's corner, the files panel), bare at rest, a wash under the pointer, the selection's
    tint while on. Its × and + are icons (ICONS.x, ICONS.plus; core/ui/glyphs.ts), never the characters. */
 :root { --ib: 28px; }
+/* THE TYPE SCALE: five sizes, two weights (400, 600), for every word the page writes -- a label (caps, a section's or a
+   count's), meta (counts, times, paths), the UI (rows, tabs, buttons, menus), the conversation, a heading. Code inside a
+   line is a share of its line (em), never a size of its own; a glyph sized by its font (a state's dot, the orbit) and the
+   terminal's own transcript keep theirs. */
+:root { --fs-label: 11px; --fs-meta: 12px; --fs-ui: 13px; --fs-body: 14px; --fs-head: 16px; }
 /* A FOLD'S MARK, everywhere one folds (a group, a folder, a closed or saved line, a command, a History row, a directory): one
    chevron, turned down while open -- whatever character the markup still holds for its words (hidden here) */
 :root { --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 3.5 10.5 8 6 12.5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }

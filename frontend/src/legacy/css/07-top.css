@@ -70,7 +70,7 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .mk.ok > svg { width: 7px; height: 7px; display: block; }
 .mh-row .ic.at-rest:not(.me) > .mk.ok { width: 12px; height: 12px; border-radius: 50%; display: grid; place-items: center; }
 .at-rest { transform-origin: 30% 90%; animation: w-arrive .5s cubic-bezier(.3, 1.3, .5, 1) var(--r, -60s) 1 both; }
-.mini-sh { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 10px 8px 10px 0; color: var(--ink-2); font-size: 12.5px; }
+.mini-sh { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 10px 8px 10px 0; color: var(--ink-2); font-size: var(--fs-ui); }
 .mini-sh > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A task of apps only shown (07-panes.js's appsOnly): its apps' panels take the room, the actors' panes out of sight */
 .work.apps-only > .panes { display: none; }
@@ -81,19 +81,19 @@ main:has(> .chat.mini) { align-items: flex-end; }
 .mini-hist { align-self: stretch; display: flex; flex-direction: column; justify-content: center; gap: 1px; min-width: 0;
   padding: 5px 6px 5px 6px; border-left: 1px solid var(--ring); }
 .mh-row { position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 6px; height: 22px;
-  width: 100%; padding: 0 6px 0 4px; border: 0; border-radius: 6px; background: none; text-align: left; font: inherit; font-size: 12.5px;
+  width: 100%; padding: 0 6px 0 4px; border: 0; border-radius: 6px; background: none; text-align: left; font: inherit; font-size: var(--fs-ui);
   color: var(--ink-2); cursor: pointer; }
 .mh-row:hover, .mh-row.hot { background: var(--wash); color: var(--ink); }
 .mh-row:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
-.mh-row .ic { width: 16px; height: 16px; display: grid; place-items: center; color: var(--muted); font-size: 13px; font-weight: 700; }
+.mh-row .ic { width: 16px; height: 16px; display: grid; place-items: center; color: var(--muted); font-size: 13px; font-weight: 600; }
 .mh-row .ic.me { position: relative; }
 .mh-row .ic img { width: 15px; height: 15px; display: block; }
 .mh-row .ic .spin { display: flex; font-size: 12px; }   /* the dots going round (00-base.css) */
 .mh-row .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mh-row .tx .cmdline { font-size: 12px; }
+.mh-row .tx .cmdline { font-size: var(--fs-meta); }
 .mh-row .tx > .dotc { margin-right: 6px; vertical-align: 1px; }   /* a call's: before it, the avatar at the line's start */
-.mh-row .meta { font-size: 11px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.mh-row .sub { color: var(--muted); font-size: 11px; margin-right: 4px; }
+.mh-row .meta { font-size: var(--fs-label); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mh-row .sub { color: var(--muted); font-size: var(--fs-label); margin-right: 4px; }
 .mh-row.you { color: var(--ink); }
 .mh-row.you::before { content: ""; position: absolute; inset: 1px 0; border-radius: 6px; background: var(--term-user); z-index: -1; }
 .mini-hist { isolation: isolate; }
@@ -109,51 +109,51 @@ main:has(> .chat.mini) { align-items: flex-end; }
 /* the card: in the page around a pane's frame, over everything there (the hover cards' level), and over a native page
    (class floats: features/apps/native.ts) */
 .mh-card { position: fixed; z-index: 60; display: flex; flex-direction: column; background: var(--surface); color: var(--ink);
-  border: 1px solid var(--ring); border-radius: 12px; overflow: hidden; font-size: 13px; line-height: 1.45;
+  border: 1px solid var(--ring); border-radius: 12px; overflow: hidden; font-size: var(--fs-ui); line-height: 1.45;
   box-shadow: 0 12px 32px rgba(0, 0, 0, .16), 0 2px 6px rgba(0, 0, 0, .06); transform-origin: var(--ox, 0) 100%; }
 .mh-card.grow { animation: mh-grow .17s cubic-bezier(.2, .8, .3, 1); }
 @keyframes mh-grow { from { opacity: 0; transform: translateY(8px) scale(.97, .6); } }
-.mh-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--ring); font-size: 12px; }
+.mh-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--ring); font-size: var(--fs-meta); }
 .mh-head img { width: 22px; height: 22px; }
-.mh-head .who { font-weight: 600; font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mh-head .who { font-weight: 600; font-size: var(--fs-ui); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mh-head .st { margin-left: auto; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
 .mh-head .st .w { color: var(--mh-ink, var(--term-accent)); font-weight: 600; }
 .mh-head .st .d { color: var(--term-ok); font-weight: 600; }
 .mh-head .st .x { color: var(--ink-2); font-weight: 600; }
 .mh-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 5px; }
 .mh-body > * { flex: none; }
-.mh-foot { flex: none; display: flex; gap: 12px; padding: 6px 12px; border-top: 1px solid var(--ring); background: var(--side); font-size: 11px;
+.mh-foot { flex: none; display: flex; gap: 12px; padding: 6px 12px; border-top: 1px solid var(--ring); background: var(--side); font-size: var(--fs-label);
   color: var(--muted); white-space: nowrap; overflow: hidden; }
 .mh-foot kbd { font: inherit; padding: 0 4px; border: 1px solid var(--ring); border-radius: 4px; background: var(--surface); }
-.mh-sep { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mh-sep { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: var(--fs-label); color: var(--muted); font-variant-numeric: tabular-nums; }
 .mh-sep:first-child { margin-top: 0; }
 .mh-sep b { font-weight: 600; color: var(--ink-2); }
 .mh-sep::after { content: ""; flex: 1; height: 1px; background: var(--ring); margin-left: 4px; }
 .mh-you { background: var(--term-user); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
 .mh-you:hover, .mh-you:focus-visible { box-shadow: inset 0 0 0 1px var(--ring); outline: none; }
-.mh-you .lbl { display: block; font-size: 10.5px; color: var(--muted); }
+.mh-you .lbl { display: block; font-size: var(--fs-label); color: var(--muted); }
 .mh-you .tx { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12em; overflow: hidden; }
 .mh-you .tx.more { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--ring); }
 .mh-sum, .mh-more { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 2px 6px;
-  margin-left: -4px; border-radius: 6px; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }
+  margin-left: -4px; border-radius: 6px; font: inherit; font-size: var(--fs-meta); color: var(--muted); cursor: pointer; }
 .mh-sum:hover, .mh-more:hover { background: var(--wash); color: var(--ink-2); }
 .mh-sum .car { font-size: 9px; transition: transform .15s; } .mh-sum.open .car { transform: rotate(90deg); }
-.mh-wait, .mh-quiet { font-size: 12px; color: var(--muted); font-style: italic; }
-.mh-said { display: flex; gap: 7px; align-items: baseline; font-size: 12.5px; color: var(--ink-2); cursor: pointer; min-width: 0; }
+.mh-wait, .mh-quiet { font-size: var(--fs-meta); color: var(--muted); font-style: italic; }
+.mh-said { display: flex; gap: 7px; align-items: baseline; font-size: var(--fs-ui); color: var(--ink-2); cursor: pointer; min-width: 0; }
 .mh-said .dot { color: var(--muted); font-size: 9px; flex: none; }
 .mh-said .lbl { color: var(--muted); flex: none; }
 .mh-said .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mh-said.open { display: block; } .mh-said.open .dot { display: none; }
 .mh-cmd > .line { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 6px; align-items: center; width: 100%; padding: 1px 4px;
-  margin-left: -4px; border: 0; border-radius: 6px; background: none; text-align: left; font: inherit; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+  margin-left: -4px; border: 0; border-radius: 6px; background: none; text-align: left; font: inherit; font-size: var(--fs-ui); color: var(--ink-2); cursor: pointer; }
 .mh-cmd > .line:hover { background: var(--wash); color: var(--ink); }
 .mh-cmd .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mh-cmd .chg, .mh-cmd .mh-side { font-size: 11px; color: var(--muted); display: flex; gap: 4px; font-variant-numeric: tabular-nums; }
-.mh-cmd > .cv { margin: 4px 0 4px 18px; max-height: 260px; overflow: auto; font-size: 11.5px; }
+.mh-cmd .chg, .mh-cmd .mh-side { font-size: var(--fs-label); color: var(--muted); display: flex; gap: 4px; font-variant-numeric: tabular-nums; }
+.mh-cmd > .cv { margin: 4px 0 4px 18px; max-height: 260px; overflow: auto; font-size: var(--fs-meta); }
 .mh-cmd > .cv :is(pre, .cv-src) { white-space: pre-wrap; overflow-wrap: anywhere; }
-.mh-reply { font-size: 13px; color: var(--ink); overflow-wrap: anywhere; padding-top: 2px; }
+.mh-reply { font-size: var(--fs-ui); color: var(--ink); overflow-wrap: anywhere; padding-top: 2px; }
 .mh-reply.clamp { max-height: 8.8em; overflow: hidden; mask-image: linear-gradient(to bottom, #000 60%, transparent); }
-.mh-now { display: flex; align-items: center; gap: 8px; padding-top: 4px; font-size: 12px; color: var(--mh-ink, var(--term-accent)); }
+.mh-now { display: flex; align-items: center; gap: 8px; padding-top: 4px; font-size: var(--fs-meta); color: var(--mh-ink, var(--term-accent)); }
 .mh-now .buddy img { width: 22px; height: 22px; }
 .mh-now .mh-me { position: relative; display: inline-flex; }   /* the turn over: the actor done, as under Chat's last turn */
 .mh-now .mh-me > img { width: 22px; height: 22px; display: block; filter: drop-shadow(0 0 .6px var(--buddy-edge, rgba(0, 0, 0, .45))); }

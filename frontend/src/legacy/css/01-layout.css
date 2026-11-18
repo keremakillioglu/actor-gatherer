@@ -10,7 +10,7 @@
 :root:is(.list-folded, .list-full) .side-grip { display: none; }
 aside { border-right: 1px solid var(--side-rule); background: var(--side); padding: 12px 0; overflow-y: auto; }
 #agents { flex: 1; min-height: 0; border-right: 0; }
-aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
+aside h2 { font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
 /* a gatherer: the top folder, drawn as its folders are (04-list.css's .folder-line), its name a little larger, no icon,
    what is in it set in under it as a folder's is (.g-kids); no rule between gatherers */
 .gatherer { padding: 2px 0; }
@@ -25,8 +25,8 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
 .gatherer-row .name:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
 .gatherer-row .caret { display: inline-block; width: 10px; color: var(--muted); font-size: 10px; transition: transform .15s; }
 .gatherer-row .name[aria-expanded="true"] .caret { transform: rotate(90deg); }
-.gatherer-row .gname { font-size: 13.5px; font-weight: 650; letter-spacing: -.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.gatherer-row .count { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2);
+.gatherer-row .gname { font-size: var(--fs-ui); font-weight: 600; letter-spacing: -.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.gatherer-row .count { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-label); color: var(--ink-2);
   background: var(--wash); border-radius: 999px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .gatherer-row .count i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); display: inline-block; }
 .gatherer-row .count.asking i { background: var(--warning); }
@@ -51,7 +51,7 @@ aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; co
 .aside-head .act.crew { border: 0; background: none; padding: 0 3px; height: 24px; display: inline-flex; align-items: center; cursor: pointer; }
 .g-kids.crew-top { margin-bottom: 2px; }   /* the coordinator agent over everything, at the list's top */
 @media (hover: none) { .gatherer-row .g-acts { position: static; transform: none; opacity: 1; pointer-events: auto; background: none; } }
-.agent-group { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 6px 18px 2px 40px; }
+.agent-group { font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 6px 18px 2px 40px; }
 button.agent-group { display: block; width: 100%; text-align: left; background: none; border: 0; cursor: pointer; font-family: inherit; }
 button.agent-group:hover { color: var(--ink-2); }
 .agent { display: grid; grid-template-columns: 10px minmax(0, 1fr) 28px; gap: 9px; text-align: left; border: 0; border-radius: 8px;
@@ -75,26 +75,26 @@ button.agent-group:hover { color: var(--ink-2); }
   mask-image: radial-gradient(circle at 24.5px 24.5px, transparent 8px, #000 8.5px), radial-gradient(circle at 3.5px 24.5px, transparent 8px, #000 8.5px);
   -webkit-mask-composite: source-in; mask-composite: intersect; }
 .agent .avatar .dw-badge { position: absolute; left: -3px; bottom: -3px; width: 13px; height: 13px; display: block; }
-.agent .asked { font-size: 13px; line-height: 1.4; font-weight: 500; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+.agent .asked { font-size: var(--fs-ui); line-height: 1.4; font-weight: 400; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere; }
 .agent .asked.none { color: var(--muted); font-weight: 400; font-style: italic; }
 /* An actor's one line: its name (its harness's title for the session, or the reader's), else what it was last asked --
    less bold, as it is not a name -- else that it has had no message */
-.agent .name { font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden;
+.agent .name { font-size: var(--fs-ui); line-height: 1.4; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
-.agent .name.unnamed { font-weight: 500; }
+.agent .name.unnamed { font-weight: 400; }
 .agent .name.none { color: var(--muted); font-weight: 400; font-style: italic; }
-.agent .name + .asked { font-size: 12px; font-weight: 400; color: var(--ink-2); -webkit-line-clamp: 2; }
+.agent .name + .asked { font-size: var(--fs-meta); font-weight: 400; color: var(--ink-2); -webkit-line-clamp: 2; }
 /* the one shown: its top line clicked names it */
 .agent[aria-current="true"] .name[title], .agent[aria-current="true"] .asked[title] { cursor: text; }
 .agent.renaming { cursor: default; }
-:is(.agent, .gatherer-row) .name-box { display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; font-weight: 600; line-height: 1.4;
+:is(.agent, .gatherer-row) .name-box { display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-ui); font-weight: 600; line-height: 1.4;
   color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 5px; padding: 1px 6px; margin: -2px 0 -2px -7px;
   width: calc(100% + 7px); outline: none; }
 :is(.agent, .gatherer-row) .name-box:focus { border-color: var(--ink-2); }
-.gatherer-row .name-box { flex: 1 1 60%; min-width: 0; width: auto; margin: 4px 8px; font-size: 14px; }
+.gatherer-row .name-box { flex: 1 1 60%; min-width: 0; width: auto; margin: 4px 8px; font-size: var(--fs-body); }
 :is(.agent, .gatherer-row) .name-box::placeholder { color: var(--muted); font-weight: 400; }
-.agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.agent .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--fs-meta); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .agent .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--axis); flex: none; }
 .agent .dot.building { background: var(--warning); } .agent .dot.failed { background: var(--critical); }
 .agent .dot.finished { background: var(--s1); }
@@ -107,7 +107,7 @@ button.agent-group:hover { color: var(--ink-2); }
 /* its turn over, but something it started still runs: Running's colour, holding still */
 .agent .dot.background, .status.background i { background: var(--good); }
 /* what it runs in the background, under its facts: how many, and what they are for */
-.agent .bgline { font-size: 12px; color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent .bgline { font-size: var(--fs-meta); color: var(--ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agent .dot.closed { background: none; box-shadow: inset 0 0 0 1.5px var(--axis); }
 /* an actor is a task too (05-agent-list.js's agentRow): its state at its left, on its name's line, its face at its right;
    its state in a word on its meta line, as a task's line says it */
@@ -118,14 +118,14 @@ button.agent-group:hover { color: var(--ink-2); }
 .agent .meta b.error { color: var(--critical); }
 .agent .meta b.running { color: light-dark(#1b7a3a, #6fcf8a); }
 .hidden-list { border-top: 1px solid var(--grid); padding: 8px 0 4px; }
-.hidden-list > summary { margin: 0; padding: 4px 16px; font-size: 12px; color: var(--muted); list-style: none; }
+.hidden-list > summary { margin: 0; padding: 4px 16px; font-size: var(--fs-meta); color: var(--muted); list-style: none; }
 .hidden-list > summary::-webkit-details-marker { display: none; }
 .hidden-list > summary:hover { color: var(--ink-2); }
-.hidden-row { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 34px; font-size: 13px; }
+.hidden-row { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 34px; font-size: var(--fs-ui); }
 .hidden-row .gname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.hidden-row .why { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.hidden-row .why { color: var(--muted); font-size: var(--fs-meta); white-space: nowrap; }
 .hidden-row button { margin-left: auto; }
-.status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.status { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-meta); color: var(--ink-2); white-space: nowrap; }
 .status i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--axis); }
 .status.running i { background: var(--good); }
 .status.building i { background: var(--warning); }
@@ -165,7 +165,7 @@ button.agent-group:hover { color: var(--ink-2); }
 /* names in the rail -- a gatherer's, a folder's -- at the left, as a list's headings are, the caret over the line down
    the left of what is in it */
 .rail .r-gname { display: block; width: 100%; box-sizing: border-box; border: 0; background: none; text-align: left;
-  padding: 4px 2px; border-radius: 6px; color: var(--ink); font-family: inherit; font-size: 11.5px; font-weight: 700; line-height: 1.25;
+  padding: 4px 2px; border-radius: 6px; color: var(--ink); font-family: inherit; font-size: var(--fs-meta); font-weight: 600; line-height: 1.25;
   cursor: pointer; }
 /* a gatherer's or folder's name: its caret a column of its own, then the name on one line, "…" where the rail is too
    narrow for it (never broken inside a word); the whole in its card, and in more of it as the rail is dragged wider */
@@ -174,14 +174,14 @@ button.agent-group:hover { color: var(--ink-2); }
 .rail .r-gname .caret { flex: none; display: inline-block; font-size: 8px; position: relative; top: -1px; color: var(--muted); transition: transform .15s; }
 .rail .r-gname[aria-expanded="true"] .caret { transform: rotate(90deg); }
 .rail .r-gname:hover, .rail .r-gname:focus-visible { color: var(--ink); background: var(--wash); outline: none; }
-.rail .r-counts { display: flex; flex-wrap: wrap; justify-content: flex-start; align-self: stretch; gap: 2px 6px; padding: 1px 4px 2px 13px; font-size: 10.5px; color: var(--ink-2);
+.rail .r-counts { display: flex; flex-wrap: wrap; justify-content: flex-start; align-self: stretch; gap: 2px 6px; padding: 1px 4px 2px 13px; font-size: var(--fs-label); color: var(--ink-2);
   font-variant-numeric: tabular-nums; }
 .rail .r-counts .count { display: inline-flex; align-items: center; gap: 3px; }
 .rail .r-counts .count i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
 .rail .r-counts .count.asking i { background: var(--warning); }
 .rail .r-counts .count.error i { background: var(--critical); }
 /* its Saved or Closed, folded as the list folds them: the line that opens them, small */
-.rail .r-fold { align-self: flex-start; border: 0; background: none; padding: 2px 4px; border-radius: 5px; color: var(--muted); font: inherit; font-size: 10.5px;
+.rail .r-fold { align-self: flex-start; border: 0; background: none; padding: 2px 4px; border-radius: 5px; color: var(--muted); font: inherit; font-size: var(--fs-label);
   white-space: nowrap; cursor: pointer; font-variant-numeric: tabular-nums; }
 .rail .r-fold:hover, .rail .r-fold:focus-visible { color: var(--ink); background: var(--wash); outline: none; }
 /* an actor: its avatar, its status at its corner, and under it its name, in two short lines at most */
@@ -230,7 +230,7 @@ button.agent-group:hover { color: var(--ink-2); }
 .rail .r-actor .save-btn.on { color: var(--s1); }
 .rail .r-actor .save-btn:is(:hover, :focus-visible) { color: var(--s1); background: var(--surface); outline: none; }
 .rail .r-actor .close-btn:is(:hover, :focus-visible) { color: var(--critical); background: var(--surface); outline: none; }
-.rail .r-name { max-width: 100%; font-size: 10.5px; line-height: 1.2; color: var(--ink-2); text-align: center; overflow-wrap: anywhere;
+.rail .r-name { max-width: 100%; font-size: var(--fs-label); line-height: 1.2; color: var(--ink-2); text-align: center; overflow-wrap: anywhere;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .rail .r-name.none { color: var(--muted); font-style: italic; }
 /* FOLDERS in the rail (railBox): a folded folder its name, as a gatherer's is but smaller, its counts under it
@@ -241,7 +241,7 @@ button.agent-group:hover { color: var(--ink-2); }
    (r-fopen::before) -- folded, a small one closed beside its name -- the tree's line, drawn in the gutter (below), not
    setting what is in it in; a gatherer's name bold and bare, an actor's under its avatar: the three told apart at a glance */
 .rail :is(.r-fname, .r-fhead) { position: relative; display: block; width: 100%; box-sizing: border-box; border: 0; border-radius: 0;
-  background: none; color: var(--ink); font: inherit; font-size: 11px; font-weight: 500; line-height: 1.25; padding: 4px 3px 4px 4px;
+  background: none; color: var(--ink); font: inherit; font-size: var(--fs-label); font-weight: 600; line-height: 1.25; padding: 4px 3px 4px 4px;
   cursor: pointer; text-align: left; }
 .rail .r-ffold, .rail .r-fopen > .r-fhead { margin: 2px 0; }
 .rail :is(.r-fname, .r-fhead) .tx { gap: 2px; }
@@ -273,7 +273,7 @@ button.agent-group:hover { color: var(--ink-2); }
 .rail .r-gf + .r-gatherer, .rail .r-gatherer + .r-gf { margin-top: 4px; }
 /* drilled in (railHere): Up and Root, then where it is -- the path to it small, its name -- and what is in it, not set in */
 .rail .r-nav { display: flex; gap: 2px; padding: 0 0 4px; }
-.rail .r-navb { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 2px; border: 0; background: var(--wash); color: var(--ink-2); font: inherit; font-size: 11px;
+.rail .r-navb { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 2px; border: 0; background: var(--wash); color: var(--ink-2); font: inherit; font-size: var(--fs-label);
   font-weight: 600; padding: 3px 2px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
 .rail .r-navb svg { flex: none; display: block; }
 .rail .r-navb span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -286,20 +286,20 @@ button.agent-group:hover { color: var(--ink-2); }
    rail ends in "…" (its title the whole) -- the steps wrapping one under another when the rail is narrow */
 .rail .r-here .r-path { display: flex; flex-wrap: wrap; gap: 0 3px; margin-bottom: 2px; }
 .rail .r-step { display: inline-flex; align-items: baseline; gap: 3px; max-width: 100%; min-width: 0; border: 0; background: none; padding: 1px 0;
-  font: inherit; font-size: 10.5px; line-height: 1.25; color: var(--muted); cursor: pointer; text-align: left; }
+  font: inherit; font-size: var(--fs-label); line-height: 1.25; color: var(--muted); cursor: pointer; text-align: left; }
 .rail .r-step .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail .r-step .sep { flex: none; }
 .rail .r-step:is(:hover, :focus-visible) .nm { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .rail .r-step:focus-visible { outline: none; }
 /* its name: a button, as a folder's or gatherer's in the tree -- its caret turned down while what is in it shows */
 .rail .r-here .r-hname { display: flex; align-items: baseline; gap: 3px; width: 100%; box-sizing: border-box; border: 0; border-radius: 0;
-  background: none; padding: 2px; margin: 0 -2px; font: inherit; font-size: 12px; font-weight: 700; color: var(--ink); line-height: 1.25;
+  background: none; padding: 2px; margin: 0 -2px; font: inherit; font-size: var(--fs-meta); font-weight: 600; color: var(--ink); line-height: 1.25;
   text-align: left; cursor: pointer; }
 .rail .r-here .r-hname .nm { min-width: 0; overflow-wrap: break-word; }
 .rail .r-here .r-hname .caret { flex: none; font-size: 8px; position: relative; top: -1px; color: var(--muted); transition: transform .15s; }
 .rail .r-here .r-hname[aria-expanded="true"] .caret { transform: rotate(90deg); }
 .rail .r-here .r-hname:is(:hover, :focus-visible) { background: var(--wash); outline: none; }
-.rail .r-here.folder .r-hname { font-weight: 500; }
+.rail .r-here.folder .r-hname { font-weight: 600; }
 /* an actor dragged onto a name (05-agent-list.js "DRAGGING"): the name it would go in lit, as the list's folder line is;
    what is dragged, faded; selected with Shift+click, tinted in the selection's colour, a check at its avatar's top right
    (its bookmark and × are at its left) once two are */
@@ -312,12 +312,12 @@ button.agent-group:hover { color: var(--ink-2); }
   justify-content: center; background: var(--pick); box-shadow: 0 0 0 1.5px var(--side); color: #fff; cursor: pointer; }
 .rail .r-actor .pick svg { width: 11px; height: 11px; stroke-width: 2.2; }
 .rail .r-actor[aria-current="true"] .r-name { color: var(--ink); font-weight: 600; }
-.rail .r-none { color: var(--muted); font-size: 11px; text-align: center; padding: 8px 4px; }
+.rail .r-none { color: var(--muted); font-size: var(--fs-label); text-align: center; padding: 8px 4px; }
 /* its foot (RAIL_FOOT): "Show…"; hovered, in focus from the keys, or pressed, its boxes -- folders, saved, closed --
    open over the word, which stays where it is (the tree above giving them room), one under another while the rail is
    narrow, side by side as it is dragged wider */
 .rail .r-show { flex: none; display: flex; flex-direction: column; align-items: stretch; width: calc(100% - 12px); box-sizing: border-box;
-  padding: 3px 0 0; margin-top: 2px; border-top: 1px solid var(--grid); font-size: 10.5px; line-height: 1.3; color: var(--ink-2); }
+  padding: 3px 0 0; margin-top: 2px; border-top: 1px solid var(--grid); font-size: var(--fs-label); line-height: 1.3; color: var(--ink-2); }
 .rail .r-show-hd { border: 0; background: none; font: inherit; color: var(--muted); text-align: left; padding: 3px 2px; border-radius: 5px; cursor: default; }
 .rail .r-show-hd:focus-visible { outline: 2px solid var(--axis); outline-offset: -2px; }
 .rail .r-checks { display: none; flex-wrap: wrap; gap: 2px 8px; padding: 3px 2px 2px; }
@@ -330,7 +330,7 @@ button.agent-group:hover { color: var(--ink-2); }
    recap -- beside the rail or the list, the pointer passing through it */
 .actor-card { position: fixed; z-index: 70; width: 300px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 10px 12px 9px;
   display: grid; gap: 5px; background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 9px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.22); font-size: 12px; line-height: 1.4; pointer-events: none; }
+  box-shadow: 0 8px 24px rgba(0,0,0,.22); font-size: var(--fs-meta); line-height: 1.4; pointer-events: none; }
 .actor-card[hidden] { display: none; }
 .actor-card .c-who { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .actor-card .c-who .logo, .actor-card .c-who .avatar img { width: 26px; height: 26px; display: block; }
@@ -338,19 +338,19 @@ button.agent-group:hover { color: var(--ink-2); }
 .actor-card .c-who .avatar .badge { position: absolute; right: -3px; bottom: -3px; width: 12px; height: 12px; display: block; }
 .actor-card .c-who .avatar .dw-badge { display: none; }
 .actor-card .c-who .tx { min-width: 0; display: grid; }
-.actor-card .c-nm { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2;
+.actor-card .c-nm { font-size: var(--fs-ui); font-weight: 600; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow-wrap: anywhere; }
-.actor-card .c-nm.unnamed { font-weight: 500; }
-.actor-card .c-sub { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.actor-card .c-dir { color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis;
+.actor-card .c-nm.unnamed { font-weight: 400; }
+.actor-card .c-sub { color: var(--muted); font-size: var(--fs-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actor-card .c-dir { color: var(--muted); font: var(--fs-label) ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
-.actor-card .c-st { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
-.actor-card .c-st .status { font-size: 11.5px; }
+.actor-card .c-st { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+.actor-card .c-st .status { font-size: var(--fs-meta); }
 .actor-card :is(.c-asked, .c-recap) { color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   overflow-wrap: anywhere; }
-.actor-card .lbl { color: var(--muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; margin-right: 5px; }
+.actor-card .lbl { color: var(--muted); font-size: var(--fs-label); letter-spacing: .04em; text-transform: uppercase; margin-right: 5px; }
 .actor-card .c-bg { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.actor-card .branchline { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); min-width: 0; }
+.actor-card .branchline { display: flex; align-items: center; gap: 4px; font-size: var(--fs-label); color: var(--muted); min-width: 0; }
 .actor-card .branchline .rt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actor-card .branchline .wait { flex: none; color: var(--warning); font-weight: 600; }
 /* a live card (cardLive: a folder's or a gatherer's, in the rail) is used, not only read: the pointer goes onto it; its
@@ -359,7 +359,7 @@ button.agent-group:hover { color: var(--ink-2); }
 .actor-card.live { pointer-events: auto; }
 .actor-card .c-acts { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin: 1px -4px 0; }
 .actor-card .c-acts .act { border: 0; border-radius: 6px; background: none; color: var(--muted); height: 24px; padding: 0 6px; display: inline-flex;
-  align-items: center; justify-content: center; gap: 1px; font: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
+  align-items: center; justify-content: center; gap: 1px; font: inherit; font-size: var(--fs-body); line-height: 1; cursor: pointer; }
 .actor-card .c-acts .act svg { display: block; pointer-events: none; }
 .actor-card .c-acts .act:is(:hover, :focus-visible, [aria-expanded="true"]) { color: var(--ink); background: var(--wash); outline: none; }
 .actor-card .c-acts .act.start.busy svg { animation: term-blink 1s ease-in-out infinite; }
@@ -367,13 +367,13 @@ button.agent-group:hover { color: var(--ink-2); }
 .actor-card .c-acts .act.start + .act:not(.start) { margin-left: 8px; }
 .actor-card .c-acts .act:is(.delete, .close):hover { color: var(--critical); }
 .actor-card .c-counts { display: flex; flex-wrap: wrap; gap: 4px; }
-.actor-card .c-counts .count { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2); background: var(--wash);
+.actor-card .c-counts .count { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-label); color: var(--ink-2); background: var(--wash);
   border-radius: 999px; padding: 1px 7px; font-variant-numeric: tabular-nums; }
 .actor-card .c-counts .count i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); display: inline-block; }
 .actor-card .c-counts .count.asking i { background: var(--warning); }
 .actor-card .c-counts .count.error i { background: var(--critical); }
-.actor-card .c-edit { display: grid; gap: 3px; color: var(--muted); font-size: 11px; }
-.actor-card .c-edit .c-box { width: 100%; box-sizing: border-box; margin: 0; font-size: 12.5px; padding: 3px 6px; }
+.actor-card .c-edit { display: grid; gap: 3px; color: var(--muted); font-size: var(--fs-label); }
+.actor-card .c-edit .c-box { width: 100%; box-sizing: border-box; margin: 0; font-size: var(--fs-ui); padding: 3px 6px; }
 .actor-card button.c-row { width: calc(100% + 8px); margin: 0 -4px; padding: 3px 4px; border: 0; border-radius: 6px; background: none; color: inherit;
   font: inherit; text-align: left; cursor: pointer; }
 .actor-card button.c-row:is(:hover, :focus-visible) { background: var(--wash); outline: none; }
@@ -382,27 +382,27 @@ button.agent-group:hover { color: var(--ink-2); }
 /* one column as wide as the card: an auto one grew to a long name's whole width, its row's buttons past the card's edge */
 .actor-card .c-tree { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; max-height: min(60vh, 460px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
 .actor-card .c-tree .c-row { padding-left: calc(4px + var(--depth, 0) * 16px); }
-.actor-card .c-tree .c-rest { padding-left: calc(var(--depth, 0) * 16px); color: var(--muted); font-size: 11px; padding-top: 1px; }
+.actor-card .c-tree .c-rest { padding-left: calc(var(--depth, 0) * 16px); color: var(--muted); font-size: var(--fs-label); padding-top: 1px; }
 .actor-card .c-frow .caret { flex: none; width: 9px; font-size: 7px; color: var(--muted); transition: transform .15s; }
 .actor-card .c-frow[aria-expanded="true"] .caret { transform: rotate(90deg); }
 .actor-card .c-frow .g { flex: none; display: inline-flex; color: var(--muted); }
 .actor-card .c-frow .nm { font-weight: 600; }
-.actor-card button.c-more { border: 0; background: none; padding: 2px 0; text-align: left; font: inherit; font-size: 11.5px; color: var(--muted); cursor: pointer; }
+.actor-card button.c-more { border: 0; background: none; padding: 2px 0; text-align: left; font: inherit; font-size: var(--fs-meta); color: var(--muted); cursor: pointer; }
 .actor-card button.c-more:hover { color: var(--ink); text-decoration: underline; }
 /* a folder's card (folderCard): its mark, then a row for each actor it holds open -- its face, name, then its status dot
    (rowStatus) where a folder's row has its count */
 .actor-card .c-folder { width: 26px; height: 26px; border-radius: 7px; flex: none; display: flex; align-items: center; justify-content: center;
   color: var(--muted); background: var(--wash); }
-.actor-card .c-row { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; }
+.actor-card .c-row { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-meta); }
 .actor-card .c-row .status { flex: none; padding: 0 3px; }
 .actor-card .c-row .status i { width: 7px; height: 7px; }
 .actor-card .c-row .avatar { position: relative; flex: none; }
 .actor-card .c-row :is(.logo, .avatar img) { width: 16px; height: 16px; display: block; -webkit-mask-image: none; mask-image: none; }
 .actor-card .c-row :is(.badge, .dw-badge) { display: none; }
 .actor-card .c-row .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
-.actor-card .c-row .st { flex: none; color: var(--muted); font-size: 11px; }
-.actor-card .c-more { color: var(--muted); font-size: 11.5px; }
-.actor-card .c-hint { color: var(--muted); font-size: 10.5px; border-top: 1px solid var(--grid); padding-top: 5px; margin-top: 1px; }
+.actor-card .c-row .st { flex: none; color: var(--muted); font-size: var(--fs-label); }
+.actor-card .c-more { color: var(--muted); font-size: var(--fs-meta); }
+.actor-card .c-hint { color: var(--muted); font-size: var(--fs-label); border-top: 1px solid var(--grid); padding-top: 5px; margin-top: 1px; }
 :root.list-full .side { position: fixed; inset: var(--bar-h) 0 0 0; z-index: 25; border-right: 0; }
 :root.list-full .work { grid-column: 2; grid-row: 1; }
 :root.list-full #agents { display: none; }
@@ -411,20 +411,20 @@ button.agent-group:hover { color: var(--ink-2); }
    (the page across, where they are too many to fit); one folded, a strip with its name down it */
 :root.list-full .monitor { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; padding: 14px 20px 0; background: var(--page); }
 .monitor .m-top { flex: none; display: flex; align-items: baseline; gap: 8px; }
-.monitor .m-top h2 { font-size: 15px; font-weight: 600; margin: 0; }
-.monitor .m-top .m-old { font-size: 12.5px; color: var(--warning); }
+.monitor .m-top h2 { font-size: var(--fs-body); font-weight: 600; margin: 0; }
+.monitor .m-top .m-old { font-size: var(--fs-ui); color: var(--warning); }
 .monitor .m-board { flex: 1; min-height: 0; display: flex; gap: 12px; margin-top: 12px; padding-bottom: 14px; overflow-x: auto; }
 .monitor .m-col { flex: 1 1 0; min-width: 250px; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--grid);
   border-radius: 12px; background: color-mix(in srgb, var(--ink) 2.5%, var(--page)); container: mcol / inline-size; }
 .monitor .m-col.folded { flex: 0 0 40px; min-width: 40px; }
 .monitor .m-head { flex: none; display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-bottom: 1px solid var(--grid);
-  border-radius: 12px 12px 0 0; background: none; padding: 10px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  border-radius: 12px 12px 0 0; background: none; padding: 10px 12px; font-size: var(--fs-label); font-weight: 600; text-transform: uppercase;
   letter-spacing: .05em; color: var(--muted); text-align: left; }
 .monitor .m-head:hover { background: var(--wash); color: var(--ink-2); }
 .monitor .m-head svg { display: block; color: var(--muted); }
 .monitor .m-head .caret { display: inline-block; width: 10px; font-size: 10px; transition: transform .15s; }
 .monitor .m-head[aria-expanded="true"] .caret { transform: rotate(90deg); }
-.monitor .m-head .n { font-weight: 500; color: var(--ink-2); background: var(--wash); border-radius: 999px; padding: 0 7px; letter-spacing: 0; }
+.monitor .m-head .n { font-weight: 600; color: var(--ink-2); background: var(--wash); border-radius: 999px; padding: 0 7px; letter-spacing: 0; }
 .monitor .m-col.folded .m-head { flex: 1; writing-mode: vertical-rl; padding: 12px 0; border-bottom: 0; border-radius: 12px; }
 .monitor .m-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; display: grid; gap: 10px; align-content: start;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
@@ -451,26 +451,26 @@ button.agent-group:hover { color: var(--ink-2); }
 .m-card .c-pic .buddy { width: 36px; height: 36px; margin-top: 2px; }
 .m-card .c-pic .spin { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
 .m-card .c-who { min-width: 0; flex: 1; }
-.m-card .c-name { font-size: 13.5px; font-weight: 600; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.m-card .c-asked { font-size: 13px; line-height: 1.4; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+.m-card .c-name { font-size: var(--fs-ui); font-weight: 600; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-card .c-asked { font-size: var(--fs-ui); line-height: 1.4; font-weight: 400; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere; }
-.m-card .c-name + .c-asked { font-weight: 400; color: var(--ink-2); font-size: 12.5px; }
+.m-card .c-name + .c-asked { font-weight: 400; color: var(--ink-2); font-size: var(--fs-ui); }
 .m-card .c-asked.none { color: var(--muted); font-style: italic; font-weight: 400; }
-.m-card .c-meta { display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; color: var(--muted);
+.m-card .c-meta { display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; margin-top: 4px; font-size: var(--fs-meta); color: var(--muted);
   font-variant-numeric: tabular-nums; }
 /* the dots going round (00-base.css), in a box of their own size, so nothing after them moves */
 .monitor .status.running i { background: none; width: 12px; height: 12px; border-radius: 0; display: inline-flex; align-items: center;
-  justify-content: center; font-size: 10px; }
+  justify-content: center; font-size: var(--fs-label); }
 .m-card .c-meta .gname { color: var(--ink-2); background: var(--wash); border-radius: 4px; padding: 0 6px; }
-.m-card .c-now { display: flex; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.4; min-width: 0; }
-.m-card .c-now .lbl { flex: none; font-weight: 600; font-size: 12px; }
+.m-card .c-now { display: flex; gap: 8px; align-items: baseline; font-size: var(--fs-ui); line-height: 1.4; min-width: 0; }
+.m-card .c-now .lbl { flex: none; font-weight: 600; font-size: var(--fs-meta); }
 .m-card .c-now .tx { min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.m-card .c-now .tm { flex: none; margin-left: auto; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.m-card .c-now .tm { flex: none; margin-left: auto; color: var(--muted); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
 .m-card .c-now.run .lbl { color: var(--term-accent); } .m-card .c-now.ask .lbl { color: var(--warning); }
 .m-card .c-now.err .lbl { color: var(--critical); } .m-card .c-now.bg .lbl { color: var(--good); }
-.m-card .c-now.said .lbl { color: var(--muted); font-weight: 500; }
-.m-card .c-now.said .tx { color: var(--ink-2); font-size: 12.5px; }
-.m-card .c-steps { display: flex; flex-direction: column; gap: 1px; font-size: 12px; color: var(--ink-2); border-left: 2px solid var(--grid);
+.m-card .c-now.said .lbl { color: var(--muted); font-weight: 400; }
+.m-card .c-now.said .tx { color: var(--ink-2); font-size: var(--fs-ui); }
+.m-card .c-steps { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-meta); color: var(--ink-2); border-left: 2px solid var(--grid);
   padding-left: 8px; }
 .m-card .c-step { display: flex; gap: 7px; min-width: 0; }
 .m-card .c-step .g { flex: none; font-size: 9px; line-height: 18px; }
@@ -478,13 +478,13 @@ button.agent-group:hover { color: var(--ink-2); }
 .m-card .c-step .g.run { color: var(--warning); animation: term-blink 1s steps(2) infinite; }
 .m-card .c-step .g.stop { color: var(--muted); }
 .m-card .c-step .t { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 18px; }
-.m-card .c-step.more { color: var(--muted); font-size: 11px; padding-left: 16px; }
-.m-card .c-recap { font-size: 12px; line-height: 1.4; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.m-card .c-recap .lbl { color: var(--muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; margin-right: 5px; }
-.m-card .c-foot { display: flex; gap: 4px 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.m-card .c-step.more { color: var(--muted); font-size: var(--fs-label); padding-left: 16px; }
+.m-card .c-recap { font-size: var(--fs-meta); line-height: 1.4; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.m-card .c-recap .lbl { color: var(--muted); font-size: var(--fs-label); letter-spacing: .04em; text-transform: uppercase; margin-right: 5px; }
+.m-card .c-foot { display: flex; gap: 4px 12px; flex-wrap: wrap; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 .m-card .c-foot .fk { display: inline-flex; align-items: center; gap: 5px; }
 .m-card .c-foot .fk i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
-.m-card .c-wait { color: var(--muted); font-size: 12px; }
+.m-card .c-wait { color: var(--muted); font-size: var(--fs-meta); }
 /* in a narrow column: the actor at work smaller, and what it does under its label and time, not squeezed beside them */
 @container mcol (max-width: 380px) {
   .m-card { padding: 10px 12px; }
@@ -522,7 +522,7 @@ button.agent-group:hover { color: var(--ink-2); }
   .monitor .m-col { min-width: 0; margin-bottom: 12px; }
   .monitor .m-col.folded .m-head { writing-mode: horizontal-tb; padding: 10px 12px; }
   .monitor .m-body { overflow: visible; } }
-.servers { color: var(--ink-2); font-size: 12px; }
+.servers { color: var(--ink-2); font-size: var(--fs-meta); }
 main { padding: 0; min-width: 0; min-height: 0; display: flex; position: relative; overflow: hidden; }
 /* THE LIST HIDDEN (06-list-modes.js's setListHidden), the list or the rail: its column none, the panes the page's whole
    width, a thin edge at the page's left (.list-edge); the pointer on it (list-peek), the list slides out over the panes,
