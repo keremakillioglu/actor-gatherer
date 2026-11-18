@@ -339,6 +339,10 @@ class Harness(ABC):
     #: be sent again or changed: a message typed in after it then has that to clear first.
     esc_takes_back = False
 
+    #: Whether the messages it queues while it works (its record's `message_queued`) live in its process: once that
+    #: has ended, none it queued before is sent -- a process resumed after starts with an empty queue.
+    queue_ends_with_process = False
+
     #: How its terminal says, under a turn, that the turn stopped short: `lead`, the mark before the words;
     #: `interrupted`, its words for Esc; `error`, for an error that came with no words of its own (`error_status`:
     #: one with an HTTP status, "{status}" in it standing for that); `reasons`, its words for each other reason it

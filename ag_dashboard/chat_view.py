@@ -166,6 +166,24 @@ def _messages(turns: List[dict]) -> List[tuple]:
     return out
 
 
+def _stored(q: dict, shown: List[tuple]) -> bool:
+    """Whether a message the harness's record has as queued (`_record`'s held) was stored since it was queued: sent,
+    then, whatever its record says -- the fact of its sending can be lost (the hook could not store it), and a queue
+    entry never closed would otherwise hold every turn after it open (`_state`)."""
+    return q.get("queued") is not None and any(
+        _said(text) == _said(q["text"]) and at is not None and at >= q["queued"] - SENT_BEFORE for _, text, at in shown)
+
+
+def _lost_with(h, session: Optional[dict]):
+    """(when a message was queued -> whether it went with the harness's process): queued before the session's last
+    process ended, by a harness whose queue lives in its process (`queue_ends_with_process`) -- never sent, by that
+    process or one after it. A time not known: not lost."""
+    ended = (session or {}).get("ended") or 0.0
+    if not (h is not None and h.queue_ends_with_process and ended):
+        return lambda at: False
+    return lambda at: isinstance(at, (int, float)) and at < ended
+
+
 def _sorted_out(sends: List[dict], shown: List[tuple], backs: List[dict]) -> Tuple[Dict[int, dict], Dict[str, dict]]:
     """Each send from Chat, sorted out: (the send each shown message is, by its row; the sends Esc took back, by id, each
     with the hang-up that did). A message is the newest send of its words before it was stored (SENT_BEFORE), not
@@ -317,6 +335,10 @@ def view(conn, channel: str, session: Optional[dict] = None, now: Optional[float
         turns.pop()                                      # by what the harness's record says nor read: shown once it is
     for t in turns:
         del t["unsent"]
+    shown = _messages(turns)
+    lost = _lost_with(h, session)
+    dropped = [q for q in held if not _stored(q, shown) and lost(q.get("queued"))]   # held as its process ended
+    held = [q for q in held if not _stored(q, shown) and not lost(q.get("queued"))]   # what the harness holds now
     back, _ = data.taken_back(conn, channel, tables, rec, now)
     if back is not None:                                 # the send it was: the one the newest hang-up took back
         s = next((s for s in reversed(sends) if s["cid"] in took and _said(s["text"]) == _said(back["text"])), None)
@@ -338,8 +360,9 @@ def view(conn, channel: str, session: Optional[dict] = None, now: Optional[float
         _said(p["text"]) == _said(t.get("text")) and t.get("at") is not None and t["at"] >= p["sent"] - 1 for t in turns)]
     opening, waiting = None, []
     for s in pending:
-        if any(_said(q["text"]) == _said(s["text"]) for q in held):
-            continue                                     # the harness holds it: below, as its queue has it
+        if any(_said(q["text"]) == _said(s["text"]) for q in held + dropped):
+            continue                                     # the harness holds it: below, as its queue has it -- or held it
+                                                         # as its process ended: gone with it
         if opening is None and not at_work:
             seen = any(_said(p["text"]) == _said(s["text"]) for p in fresh)
             opening = {"text": s["text"], "cid": s["cid"], "began": s["at"], "seen": seen,
@@ -350,18 +373,14 @@ def view(conn, channel: str, session: Optional[dict] = None, now: Optional[float
         p = next((p for p in fresh if not any(_said(p["text"]) == _said(s["text"]) for s in sends)), None)
         if p is not None:
             opening = {"text": p["text"], "cid": None, "began": p["sent"], "seen": True, "unseen": False}
-    shown = _messages(turns)
     opening, stopped_back = _stop_on(opening, session)
     back = back or stopped_back
-    for q in held:                                       # held by the harness -- not one stored since it was queued, which
-        if any(_said(text) == _said(q["text"]) and at is not None and q.get("queued") is not None   # it has sent, its
-               and at >= q["queued"] - SENT_BEFORE for _, text, at in shown):                      # record yet to say
-            continue
+    for q in held:                                       # held by the harness
         s = next((s for s in pending if _said(s["text"]) == _said(q["text"])), None)
         waiting.append({"text": q["text"], "cid": s["cid"] if s else None, "how": "queued"})
-    # held, sent with its turn's end, not stored yet: waits on
-    for m in data.meanwhile(conn, channel):
-        if m["sent"] is not None and m["sent"] > stored - SENT_BEFORE and not any(
+    # held, sent with its turn's end, not stored yet: waits on -- not one queued in a process that had ended before:
+    for m in data.meanwhile(conn, channel):              # a guess its record put right after (`_took`)
+        if m["sent"] is not None and m["sent"] > stored - SENT_BEFORE and not lost(m.get("written")) and not any(
                 _said(text) == _said(m["text"]) and at is not None and at >= m["sent"] - SENT_BEFORE for _, text, at in shown):
             s = next((s for s in pending if _said(s["text"]) == _said(m["text"])), None)
             waiting.append({"text": m["text"], "cid": s["cid"] if s else None, "how": "queued"})
