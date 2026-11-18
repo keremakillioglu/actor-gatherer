@@ -1,6 +1,7 @@
 """Codex sessions started from the dashboard (ag_dashboard/sessions.py): a turn per process through
-`ag ... codex exec`, the interactive UI in a terminal, and the session renamed to the thread codex
-chooses -- here a fake ag standing in for codex. No real agent runs."""
+`ag ... codex exec`, the interactive UI in a terminal, and the session kept under the dashboard's id
+from its start (`ag --channel`), codex's own thread its `harness_id` -- here a fake ag standing in for
+codex. No real agent runs."""
 import json
 import os
 import sqlite3
@@ -19,18 +20,18 @@ from ag_dashboard import home as dashboard_home  # noqa: E402
 THREAD = "01a16f39-7f0a-7531-a545-d854579d7d68"
 # A fake `ag ... codex`: writes its arguments (and an exec's stdin) to $FAKE_AG_LOG. `exec` answers as
 # codex exec --json does: the thread (THREAD, or the one resumed), the reply, the turn's end. Run
-# interactively it records a call from a child of its own process (codex's wrapper runs the real codex so)
-# in the gatherer's database, as ag's hook would, with the thread as its channel and its own process as the
-# run (as codex's launcher names it) -- after a side call that names no directory -- then waits for EOF.
+# interactively it records its turn's call in the gatherer's database as ag's hook would: in the channel
+# ag was given (`--channel`, else the thread's own), naming the thread where that is not the channel --
+# and ag's read for it.
 FAKE_AG = textwrap.dedent("""
     import json, os, sqlite3, sys, time
     log = open(os.environ["FAKE_AG_LOG"], "a")
     argv = sys.argv[1:]
     gatherer = argv[argv.index("--gatherer") + 1]
+    thread = argv[argv.index("resume") + 1] if "resume" in argv else %(thread)r
     if "exec" in argv:
         message = sys.stdin.read()
         log.write(json.dumps({"argv": argv, "cwd": os.getcwd(), "stdin": message}) + "\\n"); log.flush()
-        thread = argv[argv.index("resume") + 1] if "resume" in argv else %(thread)r
         time.sleep(float(os.environ.get("FAKE_AG_DELAY", "0")))
         print(json.dumps({"type": "thread.started", "thread_id": thread}), flush=True)
         if os.environ.get("FAKE_AG_FAIL"):
@@ -40,21 +41,23 @@ FAKE_AG = textwrap.dedent("""
         print(json.dumps({"type": "turn.completed", "usage": {}}), flush=True)
         sys.exit(0)
     log.write(json.dumps({"argv": argv, "cwd": os.getcwd()}) + "\\n"); log.flush()
+    channel = argv[argv.index("--channel") + 1] if "--channel" in argv else thread
     path = os.path.join(os.environ["AG_HOME"], "gatherers", gatherer, "context.db")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     conn = sqlite3.connect(path)
-    conn.execute("CREATE TABLE IF NOT EXISTS _reads (read_id INTEGER PRIMARY KEY, p_channel TEXT, p_cwd TEXT, pid INTEGER, run TEXT)")
-    import subprocess
-    child, run = subprocess.Popen(["sleep", "60"]), str(os.getpid())
-    conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid, run) VALUES ('side-thread', NULL, ?, ?)", (child.pid, run))
-    conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid, run) VALUES ('elsewhere', '/x', 1, '1')")
-    conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid, run) VALUES (?, ?, ?, ?)", (%(thread)r, os.getcwd(), child.pid, run))
+    conn.executescript("CREATE TABLE IF NOT EXISTS event_types (event_type_id INTEGER PRIMARY KEY, name TEXT UNIQUE);"
+                       "CREATE TABLE IF NOT EXISTS events (row_id INTEGER PRIMARY KEY, event_type_id INT, "
+                       "payload_json TEXT, p_channel TEXT); INSERT OR IGNORE INTO event_types (name) VALUES ('model_call');")
+    call = {"kind": "turn", "harness": "codex", "run": str(os.getpid()), **({"session": thread} if thread != channel else {})}
+    conn.execute("INSERT INTO events (event_type_id, payload_json, p_channel) VALUES ((SELECT event_type_id FROM "
+                 "event_types WHERE name = 'model_call'), ?, ?)", (json.dumps(call), channel))
+    conn.execute("CREATE TABLE IF NOT EXISTS _reads (read_id INTEGER PRIMARY KEY, p_channel TEXT, p_cwd TEXT, run TEXT)")
+    conn.execute("INSERT INTO _reads (p_channel, p_cwd, run) VALUES (?, ?, ?)", (channel, os.getcwd(), str(os.getpid())))
     conn.commit(); conn.close()
     os.write(1, b"fake codex\\r\\n")
     while True:
         got = os.read(0, 1024)
         if not got or got == b"\\x04":
-            child.kill()
             sys.exit(0)
 """) % {"thread": THREAD}
 
@@ -105,10 +108,13 @@ class CodexBase(unittest.TestCase):
 
 
 class CreateTest(CodexBase):
-    def test_a_codex_session_keeps_its_model_and_the_id_it_starts_under(self):
+    def test_a_codex_session_keeps_its_model_and_its_id_is_the_dashboard_s(self):
         made = self.s.create("g", self.work, harness="codex", model="gpt-5.6-luna")
-        self.assertEqual((made["harness"], made["model"], made["started_as"]), ("codex", "gpt-5.6-luna", made["session_id"]))
-        self.assertIsNone(self.s.create("g", self.work)["started_as"])        # Claude Code's id is its own
+        self.assertEqual((made["harness"], made["model"], made["started_as"], made["harness_id"]),
+                         ("codex", "gpt-5.6-luna", None, None))           # its thread's, once its first call names it
+        self.assertEqual(sessions.channel_args(made), ["--channel", made["session_id"]])
+        claude = self.s.create("g", self.work)
+        self.assertEqual((claude["started_as"], sessions.channel_args(claude)), (None, []))   # its id is its own
         for bad in ({"harness": "pi"}, {"harness": "codex", "model": "a b"}):
             with self.assertRaises(sessions.SessionError):
                 self.s.create("g", self.work, **bad)
@@ -122,61 +128,60 @@ class CreateTest(CodexBase):
                      "DEFAULT 0, status TEXT NOT NULL, last_error TEXT)")
         conn.execute("INSERT INTO sessions VALUES ('old', 'g', 'claude', '/', 'auto', '2026-01-01', 1, 'stopped', NULL)")
         conn.commit(); conn.close()
-        self.assertEqual({k: sessions.stored()[0][k] for k in ("kept", "model", "started_as")},
-                         {"kept": 0, "model": None, "started_as": None})
+        self.assertEqual({k: sessions.stored()[0][k] for k in ("kept", "model", "started_as", "harness_id")},
+                         {"kept": 0, "model": None, "started_as": None, "harness_id": None})
         sessions.Sessions()
         conn = sqlite3.connect(sessions.db_path())
         have = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
         conn.close()
-        self.assertLessEqual({"kept", "model", "started_as"}, have)
+        self.assertLessEqual({"kept", "model", "started_as", "harness_id"}, have)
 
 
 class ExecTest(CodexBase):
-    def test_a_message_is_a_codex_exec_turn_and_the_session_takes_the_thread_s_id(self):
-        first = self.s.create("g", self.work, harness="codex", model="gpt-5.6-luna")["session_id"]
-        self.s.send(first, "Reply with pong")
-        done = self.until(lambda: (self.session(THREAD) or {}).get("turns") == 1 and self.session(THREAD))
-        self.until(lambda: self.session(THREAD)["pid"] is None)
+    def test_a_message_is_a_codex_exec_turn_its_session_keeping_its_id_and_resumed_by_its_thread(self):
+        sid = self.s.create("g", self.work, harness="codex", model="gpt-5.6-luna")["session_id"]
+        self.s.send(sid, "Reply with pong")
+        done = self.until(lambda: self.session(sid)["turns"] == 1 and self.session(sid))
+        self.until(lambda: self.session(sid)["pid"] is None)
         run = self.logged()[0]
-        self.assertEqual(run["argv"][:5], ["--gatherer", "g", "codex", "exec", "--json"])
+        self.assertEqual(run["argv"][:7], ["--gatherer", "g", "--channel", sid, "codex", "exec", "--json"])
         self.assertEqual(run["argv"][run["argv"].index("-m") + 1], "gpt-5.6-luna")
         self.assertIn("--approve-for-me", run["argv"])
         self.assertNotIn("resume", run["argv"])
         self.assertEqual((run["argv"][-1], run["stdin"]), ("-", "Reply with pong"))
         self.assertEqual(os.path.realpath(run["cwd"]), os.path.realpath(self.work))   # macOS: /var is /private/var
-        self.assertIsNone(self.session(first))
-        self.assertEqual(done["started_as"], first)
-        self.assertEqual(self.session(THREAD)["status"], "stopped")
-        self.assertGreater(self.session(THREAD)["kept"], 0)  # its process gone with its turn: Idle, not Closed
-        self.assertEqual(self.session(THREAD)["ended"], 0)
-        self.assertTrue(os.path.exists(sessions.log_path(THREAD)))
+        self.assertEqual((done["harness_id"], done["started_as"]), (THREAD, None))   # codex's thread, named by it
+        self.assertIsNone(self.session(THREAD))                                     # no session of the thread's id
+        self.assertEqual(self.session(sid)["status"], "stopped")
+        self.assertGreater(self.session(sid)["kept"], 0)  # its process gone with its turn: Idle, not Closed
+        self.assertEqual(self.session(sid)["ended"], 0)
+        self.assertTrue(os.path.exists(sessions.log_path(sid)))
 
-        self.s.send(THREAD, "again")                    # the next: the thread resumed
-        self.until(lambda: self.session(THREAD)["turns"] == 2)
+        self.s.send(sid, "again")                        # the next: the thread resumed, in the same channel
+        self.until(lambda: self.session(sid)["turns"] == 2)
         again = self.logged()[1]["argv"]
+        self.assertEqual(again[again.index("--channel") + 1], sid)
         self.assertEqual(again[again.index("resume") + 1:], [THREAD, "-"])
 
-    def test_a_message_from_chat_is_kept_in_the_thread_s_channel_not_the_id_it_started_under(self):
+    def test_a_message_from_chat_is_kept_in_its_channel_at_once(self):
         with unittest.mock.patch.object(sessions.actions, "chat_sent") as kept:
-            first = self.s.create("g", self.work, harness="codex")["session_id"]
+            sid = self.s.create("g", self.work, harness="codex")["session_id"]
             before = time.time()
-            self.s.send(first, "Reply with pong")
-            self.until(lambda: kept.call_args_list)
-            [(args, _)] = kept.call_args_list
-            self.assertEqual(args[:3], ("g", THREAD, "Reply with pong"))         # once it has its thread, sent when sent
+            self.s.send(sid, "Reply with pong")
+            [(args, _)] = kept.call_args_list                       # kept as sent, before codex has named its thread
+            self.assertEqual(args[:3], ("g", sid, "Reply with pong"))
             self.assertTrue(before <= args[3] <= time.time())
-            self.until(lambda: (self.session(THREAD) or {}).get("turns") == 1)
-            self.s.send(THREAD, "again")                                       # its thread's from the start
-            self.assertEqual(kept.call_args_list[-1].args[:3], ("g", THREAD, "again"))
+            self.until(lambda: self.session(sid)["turns"] == 1)
+            self.s.send(sid, "again")
+            self.assertEqual(kept.call_args_list[-1].args[:3], ("g", sid, "again"))
             self.assertEqual(len({a.args[4] for a in kept.call_args_list}), 2)   # each send with an id of its own
-            self.assertEqual(self.s.unsent, {})
 
     def test_a_message_sent_while_a_turn_runs_is_the_next_turn(self):
         os.environ["FAKE_AG_DELAY"] = "0.4"
         sid = self.s.create("g", self.work, harness="codex")["session_id"]
         self.s.send(sid, "one")
         self.s.send(sid, "two")
-        self.until(lambda: (self.session(THREAD) or {}).get("turns") == 2)
+        self.until(lambda: self.session(sid)["turns"] == 2)
         self.assertEqual([r["stdin"] for r in self.logged()], ["one", "two"])
         self.assertIn("resume", self.logged()[1]["argv"])
         self.assertNotIn("-m", self.logged()[0]["argv"])            # no model chosen: codex's own
@@ -186,93 +191,69 @@ class ExecTest(CodexBase):
         try:
             sid = self.s.create("g", self.work, harness="codex")["session_id"]
             self.s.send(sid, "hi")
-            s = self.until(lambda: (self.session(THREAD) or {}).get("status") == "failed" and self.session(THREAD))
+            s = self.until(lambda: self.session(sid)["status"] == "failed" and self.session(sid))
             self.assertEqual((s["last_error"], s["turns"]), ("model_not_found", 0))
         finally:
             del os.environ["FAKE_AG_FAIL"]
 
 
-class ThreadOfTest(CodexBase):
-    """Which codex thread a terminal's process opened, as the gatherer's calls say: by the run its launcher
-    named (the process the terminal started), on any system; else by the process that made the call."""
+class OwnIdTest(CodexBase):
+    """The harness's own id for a session (`own_id`): what it is resumed, renamed and found by in codex's own records."""
 
-    def reads(self, rows, run_column=True):
+    def calls(self, rows):
         path = os.path.join(dashboard_home.HOME, "gatherers", "g", "context.db")
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        conn = sqlite3.connect(path)
-        conn.execute("CREATE TABLE _reads (read_id INTEGER PRIMARY KEY, p_channel TEXT, p_cwd TEXT, pid INTEGER"
-                     + (", run TEXT)" if run_column else ")"))
-        for channel, cwd, pid, run in rows:
-            conn.execute("INSERT INTO _reads (p_channel, p_cwd, pid" + (", run) VALUES (?, ?, ?, ?)" if run_column
-                                                                         else ") VALUES (?, ?, ?)"),
-                         (channel, cwd, pid, run) if run_column else (channel, cwd, pid))
-        conn.commit()
-        conn.close()
-
-    def test_a_call_of_the_terminal_s_run_names_its_thread_where_no_process_is_known(self):
-        self.reads([("title", None, None, "4242"),          # codex's own side call: names no directory
-                    ("other", "/w", None, "999"),           # another run's
-                    (THREAD, "/w", None, "4242")])          # macOS: no process recorded, the run is
-        self.assertEqual(sessions._thread_of("g", 4242, set()), THREAD)
-        self.assertIsNone(sessions._thread_of("g", 4242, {THREAD}))       # already a session's
-        self.assertIsNone(sessions._thread_of("g", 777, set()))
-
-    def test_a_turn_s_call_from_the_terminal_s_run_names_its_thread_before_any_read(self):
-        """The hook records a turn's call, with its run, as it comes in -- before ag reads for it, which on a busy
-        gatherer takes seconds, and only then logs the read."""
-        self.reads([])
-        path = os.path.join(dashboard_home.HOME, "gatherers", "g", "context.db")
         conn = sqlite3.connect(path)
         conn.executescript("CREATE TABLE event_types (event_type_id INTEGER PRIMARY KEY, name TEXT);"
                            "CREATE TABLE events (row_id INTEGER PRIMARY KEY, event_type_id INT, payload_json TEXT, "
                            "p_channel TEXT); INSERT INTO event_types VALUES (1, 'model_call'), (2, 'name');")
-
-        def called(channel, kind, run, type_id=1):
+        for channel, payload, type_id in rows:
             conn.execute("INSERT INTO events (event_type_id, payload_json, p_channel) VALUES (?, ?, ?)",
-                         (type_id, json.dumps({"kind": kind, "harness": "codex", "run": run}), channel))
-            conn.commit()
-        called("old", "turn", "4242")                         # a run of the same pid, before the terminal started
-        after = sessions._top_row("g")
-        called("other", "turn", "999")                        # another run's
-        called("title", "title", "4242")                      # a side call of its own: no turn's
-        called("named", "turn", "4242", type_id=2)            # not a call
-        self.assertIsNone(sessions._thread_of("g", 4242, set(), after))
-        called(THREAD, "turn", "4242")
+                         (type_id, json.dumps(payload), channel))
+        conn.commit()
         conn.close()
-        self.assertEqual(sessions._thread_of("g", 4242, set(), after), THREAD)
-        self.assertIsNone(sessions._thread_of("g", 4242, {THREAD}, after))         # already a session's
-        self.assertEqual(sessions._top_row("nowhere"), 0)                          # no database yet
 
-    def test_a_gatherer_from_before_runs_is_read_by_process(self):
-        self.reads([(THREAD, "/w", os.getpid(), None)], run_column=False)
-        self.assertEqual(sessions._thread_of("g", os.getpid(), set()), THREAD)             # the process itself
-        self.assertIsNone(sessions._thread_of("g", os.getpid() + 100000, set()))
+    def test_its_thread_as_its_calls_name_it(self):
+        self.calls([("dash-1", {"kind": "turn", "session": "t-old"}, 1),
+                    ("dash-1", {"kind": "turn", "session": THREAD}, 1),      # the newest names it
+                    ("dash-1", {"kind": "turn"}, 1),
+                    ("dash-1", {"session": "not-a-call"}, 2),
+                    (THREAD, {"kind": "turn"}, 1)])                         # a session from before: its own id
+        row = {"session_id": "dash-1", "gatherer": "g", "harness": "codex"}
+        self.assertEqual(sessions.own_id(row), THREAD)
+        self.assertEqual(sessions.own_id({**row, "harness_id": "kept"}), "kept")        # the row's, where it has one
+        self.assertEqual(sessions.own_id({**row, "session_id": THREAD, "started_as": "dash-0"}), THREAD)  # moved before
+        self.assertEqual(sessions.own_id({**row, "session_id": "dash-2"}), "dash-2")    # no call yet
+        self.assertEqual(sessions.own_id({**row, "harness": "claude"}), "dash-1")       # its id its own: not read
+        self.assertEqual(sessions.own_id({**row, "gatherer": "nowhere"}), "dash-1")     # no database yet
 
 
 @unittest.skipUnless(sessions.TERMINALS, "a terminal needs a pseudo-terminal")
 class TerminalTest(CodexBase):
-    def test_a_codex_terminal_runs_its_ui_and_is_renamed_to_its_thread(self):
-        first = self.s.create("g", self.work, harness="codex", model="gpt-5.6-luna")["session_id"]
-        self.s.terminal(first, 100, 30)
-        s = self.until(lambda: self.session(THREAD))
-        self.assertEqual((s["terminal"], s["started_as"], s["turns"]), (True, first, 1))
-        self.assertIsNone(self.session(first))
+    def test_a_codex_terminal_runs_its_ui_under_its_id_for_good(self):
+        sid = self.s.create("g", self.work, harness="codex", model="gpt-5.6-luna")["session_id"]
+        self.s.terminal(sid, 100, 30)
+        self.until(lambda: self.logged())
         argv = self.logged()[0]["argv"]
-        self.assertEqual(argv[:4], ["--quiet", "--gatherer", "g", "codex"])
-        self.assertEqual(argv[4:6], ["-c", 'projects={"%s"={trust_level="trusted"}}' % os.path.realpath(self.work)])
+        self.assertEqual(argv[:6], ["--quiet", "--gatherer", "g", "--channel", sid, "codex"])
+        self.assertEqual(argv[6:8], ["-c", 'projects={"%s"={trust_level="trusted"}}' % os.path.realpath(self.work)])
         self.assertEqual(argv[argv.index("-m") + 1], "gpt-5.6-luna")
         self.assertIn("--no-alt-screen", argv)
         self.assertNotIn("resume", argv)
-        out = self.until(lambda: (self.s.output(THREAD, 0) or (b"",))[0])
+        out = self.until(lambda: (self.s.output(sid, 0) or (b"",))[0])
         self.assertIn(b"fake codex", out)
-        self.s.stop(THREAD)
-        self.assertEqual(self.session(THREAD)["status"], "stopped")
+        self.until(lambda: sessions.own_id(self.session(sid)) == THREAD)      # its first call named its thread
+        self.assertEqual([x["session_id"] for x in self.s.list()], [sid])    # one session, never renamed
+        self.s.stop(sid)
+        self.assertEqual(self.session(sid)["status"], "stopped")
 
-        self.s.terminal(THREAD, 100, 30, fullscreen=True)    # opened again: resumed, its own screen
+        self.s.terminal(sid, 100, 30, fullscreen=True)     # opened again: its thread resumed, its own screen
         self.until(lambda: len(self.logged()) == 2)
         again = self.logged()[1]["argv"]
+        self.assertEqual(again[again.index("--channel") + 1], sid)
         self.assertEqual(again[-2:], ["resume", THREAD])
         self.assertNotIn("--no-alt-screen", again)
+        self.assertEqual(self.session(sid)["harness_id"], THREAD)            # kept on its row once known
 
 
 class DataTest(CodexBase):

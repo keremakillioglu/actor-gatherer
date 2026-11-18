@@ -121,7 +121,8 @@ class AntigravityContextManager(ProxyHook):
                 print(f"agy's own {call.kind} call, for no conversation known: as it is", file=sys.stderr, flush=True)
             return None
         session = call.session
-        gatherer, channel = (request.label, session) if request.label else (session, session)
+        channel = self.channel_of(request, session)            # the dashboard's id for its own conversation (/a/)
+        gatherer = request.label if request.label else session
         if run:
             self.runs[(request.label, run)] = (gatherer, channel)
         told = self.told.of(run)
@@ -200,7 +201,7 @@ class AntigravityContextManager(ProxyHook):
         while root in self.callers and root not in seen:
             seen.add(root)
             root = self.callers[root]
-        gatherer, channel = (request.label, root) if request.label else (root, root)
+        gatherer, channel = (request.label if request.label else root), self.channel_of(request, root)
         self.called(gatherer, channel, call)
         if agent and (channel, agent) in self.ended:
             self.ended.discard((channel, agent))

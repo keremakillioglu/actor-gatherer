@@ -51,7 +51,7 @@ function termFor(sid) {
   const host = el("div", { class: "xterm-host", id: "xterm-host", "data-refocus": "1" });
   host.agFocus = () => xterm.focus();
   Object.assign(term, { sid, xterm, fit, host, opened: false, exited: null, error: "", tried: false });
-  // to the session by its id now, not the one it opened under: a codex session is renamed to its thread
+  // to the session by its id now, not the one it opened under: a codex session from before `ag --channel` was renamed to its thread
   xterm.onData((d) => { d = dropBareMoves(d); if (d && term.xterm === xterm) termType(term.sid, d); });
   xterm.onResize(({ cols, rows }) => {
     if (term.xterm === xterm && termRunning(term.sid)) post("/api/terminal/resize", { session_id: term.sid, cols, rows }).catch(() => {});

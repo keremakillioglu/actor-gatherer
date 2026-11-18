@@ -25,7 +25,9 @@ new JSON body or None, or a class, built with the `--option`s, whose
 instances are that. A hook with a `close()` has it called when the server
 stops. A URL's `/h/<label>/` may be followed by `/r/<run>/`: the hook's `request.run` is then
 `run` -- the one run of the harness (its process) the call came from, as its launcher named it,
-whichever thread or session the call is in -- then by `/c/<folder>/`: the hook's `request.config` is
+whichever thread or session the call is in -- then by `/a/<channel>/`: the hook's `request.actor` is then the channel
+the run's own session is kept in, as the run's starter chose it (the dashboard, for a harness that picks its session's
+id only at its first call: codex, agy) -- then by `/c/<folder>/`: the hook's `request.config` is
 then the harness's own folder for the run (its config folder, where it keeps its records of sessions),
 `folder` the path base64url-encoded, unpadded (the launchers' `config_part`) -- and then by `/l/<n>/`: the hook's
 `request.limit` is then `n` (the prefixes are stripped before forwarding), the
@@ -95,6 +97,7 @@ from .trace import ModelTrace, response_of, streamed_of
 HOP = {"host", "content-length", "transfer-encoding", "connection", "content-encoding", "accept-encoding"}
 LABEL_PREFIX = re.compile(r"^/h/([A-Za-z0-9._-]+)(?=/|$)")
 RUN_PREFIX = re.compile(r"^/r/([A-Za-z0-9._-]+)(?=/|$)")
+ACTOR_PREFIX = re.compile(r"^/a/([A-Za-z0-9._-]+)(?=/|$)")
 CONFIG_PREFIX = re.compile(r"^/c/([A-Za-z0-9_-]+)(?=/|$)")
 LIMIT_PREFIX = re.compile(r"^/l/([0-9]+)(?=/|$)")
 PART_DONE = (b'"content_block_stop"', b'"response.output_item.done"')   # a part of an answer is complete
@@ -119,6 +122,8 @@ class Request:
     limit: Optional[int] = None                 # the <n> of /l/<n>/..., if the URL had one
     run: Optional[str] = None                   # the <run> of /r/<run>/..., if the URL had one: the harness's
                                                 # run (its process) the call came from, as its launcher named it
+    actor: Optional[str] = None                 # the <channel> of /a/<channel>/..., if the URL had one: the channel
+                                                # the run's own session is kept in, as its starter chose it
     config: Optional[str] = None                # the folder of /c/<folder>/..., if the URL had one: the harness's
                                                 # own folder for the run (its config folder), as its launcher found it
     upstream: Optional[str] = None              # where the request is forwarded (path_qs after it)
@@ -188,6 +193,16 @@ def run_of(path: str):
     is run `run` and `/v1/chat` -- the harness's run (its process) the call came from, as its launcher
     named it. A run is letters, digits, `.`, `_` and `-`."""
     match = RUN_PREFIX.match(path)
+    if not match:
+        return None, path
+    return match.group(1), path[match.end():] or "/"
+
+
+def actor_of(path: str):
+    """(the channel the URL names for the run's own session, or None; the path to forward): `/a/<channel>/v1/chat`,
+    after any label and run, is channel `channel` and `/v1/chat` -- as the run's starter chose it. Letters, digits,
+    `.`, `_` and `-`."""
+    match = ACTOR_PREFIX.match(path)
     if not match:
         return None, path
     return match.group(1), path[match.end():] or "/"
@@ -341,6 +356,7 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         n = next(counter)
         label, path_qs = route_of(request.path_qs)
         run, path_qs = run_of(path_qs)
+        actor, path_qs = actor_of(path_qs)
         config, path_qs = config_of(path_qs)
         limit, path_qs = limit_of(path_qs)
         raw = await request.read()
@@ -350,7 +366,7 @@ def make_app(upstream: str, hook: Callable, log_dir: Optional[str] = None,
         except ValueError:
             body = None                                    # not JSON (e.g. compressed): as it is
         given = Request(request.method, path_qs.split("?", 1)[0], label, dict(request.headers), body, limit,
-                        upstream=upstream, process=sender(request), run=run, config=config)
+                        upstream=upstream, process=sender(request), run=run, config=config, actor=actor)
         try:
             new = await hooked(n, hook, given, request)
         except Exception as exc:  # noqa: BLE001 - a failing hook never blocks the call

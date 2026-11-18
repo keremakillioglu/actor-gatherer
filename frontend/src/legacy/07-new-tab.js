@@ -19,7 +19,7 @@ const newTab = { tab: "", box: null, input: null, parts: null, place: null, cwd:
 const keptValue = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
 const keepValue = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* this page only */ } };
 const realGroups = () => (state.home ? state.home.gatherers.filter((g) => !g.alone) : []);
-const canAlone = () => !!(state.home && state.home.merged && aloneHarnesses().length && aloneUnder());
+const canAlone = () => !!(state.home && state.home.merged && startable().length && aloneUnder());
 // a place as it is now: its group still there, its folder still in it and not closed (else the group's top); on its own,
 // while an actor can be started so. null: none.
 function placeNow(p) {
@@ -46,9 +46,8 @@ function keptStart(gname, alone = false, folder = undefined) {
 const keptHarness = (h) => keepValue(START_HARNESS_KEY, h);
 const ntPlace = () => placeNow(newTab.place) || startPlace();
 const ntGroup = (p) => !p ? null : p.alone ? aloneUnder() : realGroups().find((g) => g.name === p.g) || null;
-const ntHarnesses = (p) => p && p.alone ? aloneHarnesses() : startable();
 function ntHarness(p) {
-  const hs = ntHarnesses(p), last = keptValue(START_HARNESS_KEY);
+  const hs = startable(), last = keptValue(START_HARNESS_KEY);
   return hs.includes(newTab.harness) ? newTab.harness : hs.includes(last) ? last : hs[0] || null;
 }
 function ntCwd(p) {
@@ -101,7 +100,7 @@ function refreshNewTab(now = false) {
   const box = newTab.box, parts = newTab.parts;
   if (!box || !parts || box.hidden || !box.isConnected || !state.home) return;
   const p = ntPlace(), apps = PANE || SNAPSHOT ? [] : window.agNext.apps.found();
-  const sig = JSON.stringify([p, placeName(p), ntHarnesses(p), ntHarness(p), ntCwd(p), canAlone(), newTab.busy, newTab.error,
+  const sig = JSON.stringify([p, placeName(p), startable(), ntHarness(p), ntCwd(p), canAlone(), newTab.busy, newTab.error,
     state.home.terminals, apps.map((a) => [a.name, a.label, !!a.failed])]);
   if (!now && sig === newTab.sig) return;
   newTab.sig = sig;
@@ -114,7 +113,7 @@ function ntSay(text) { newTab.error = text; refreshNewTab(true); }
 // "In", "Directory", "On": a chip each, its drop-down or box a click away
 function ntLine(p) {
   if (newTab.busy) return [el("span", { class: "nt-busy", text: newTab.busy })];
-  const hs = ntHarnesses(p), h = ntHarness(p), off = !p;
+  const hs = startable(), h = ntHarness(p), off = !p;
   const chip = (key, label, value, title, open, extra = {}) => el("button", { type: "button", class: "nt-chip", "data-pop": key,
     title, "aria-haspopup": open ? "menu" : undefined, "aria-expanded": open ? String(rowPop.key === key) : undefined,
     ...(open ? { onclick: (ev) => { if (rowPop.key === key) return closePop(); open(ev.currentTarget); } } : { disabled: "" }), ...extra },
@@ -126,10 +125,10 @@ function ntLine(p) {
     chip("nt:dir", "Directory", [el("span", { class: "val dir", text: shortDir(ntCwd(p)) || "Choose one" })], `It works in ${ntCwd(p) || "a directory you choose"}`,
       off ? null : (b) => openPop("nt:dir", b, ntDirBox(p))),
     hs.length ? chip("nt:on", "On", [harnessBadge(h), el("span", { class: "val", text: harnessName(h) })],
-      `Its harness: ${harnessName(h)}${p && p.alone && startable().length > hs.length ? " (on its own: the ones that name their session from the start)" : ""}`,
+      `Its harness: ${harnessName(h)}`,
       hs.length > 1 ? (b) => openPop("nt:on", b, ntMenu("Run it on", hs.map((x) => ({ mark: harnessBadge(x), text: harnessName(x),
         note: x === h ? "chosen" : "", run: () => { newTab.harness = x; refreshNewTab(true); ntFocus(); } })))) : null)
-      : el("span", { class: "nt-none", title: noHarness(), text: p && p.alone ? "No harness starts an actor on its own here" : "No harness here" }),
+      : el("span", { class: "nt-none", title: noHarness(), text: "No harness here" }),
   ];
 }
 // a drop-down of the page's: scrolling, if long (many groups and folders)

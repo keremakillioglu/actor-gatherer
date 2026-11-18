@@ -390,8 +390,6 @@ def harness_info() -> Dict[str, dict]:
                     asked is answered in a message, not from the page
         reply_block a block its model writes in a reply that its terminal draws apart, as a card (`reply_block`)
         mcp         whether a run of it can be given an MCP server's tools (`mcp_args`): a DocWriter's, a Browser's
-        picks_id    whether it names its session itself, at its first call (`picks_session_id`: codex's thread):
-                    one can't be started on its own (groups.py's `start_alone`)
         memory_folder  where it keeps its memory of a directory, a pattern of the folder's path (`memory_folder`)
         saves       what History can save where it reads it, by kind (`saves`)
     Read once: what harness_kit says does not change while the dashboard runs."""
@@ -401,7 +399,6 @@ def harness_info() -> Dict[str, dict]:
                              "fullscreen": h.fullscreen, "stopped": dict(h.stopped_says), "ask_says": dict(h.ask_says),
                              "asks_shown_again": h.asks_shown_again,
                              "reply_block": h.reply_block, "mcp": h.mcp_args("x", "http://x") is not None,
-                             "picks_id": bool(h.picks_session_id),
                              "memory_folder": h.memory_folder, "saves": dict(h.saves)}
                          for n, h in harness_kit.HARNESSES.items()}
     return _HARNESS_INFO

@@ -2,7 +2,7 @@
 route, that API pointed at a hook server that calls the context manager (its setup, setup.py), for this run only:
 
     --settings '{"modelProvider": "gemini", ...}'     agy calls the Gemini API itself, not Google's Cloud Code API
-    GOOGLE_GEMINI_BASE_URL  "http://127.0.0.1:<port>[/h/<gatherer>][/r/<run>]<path>"
+    GOOGLE_GEMINI_BASE_URL  "http://127.0.0.1:<port>[/h/<gatherer>][/r/<run>][/a/<channel>]<path>"
 
 The hook server relays to where agy would have gone: GOOGLE_GEMINI_BASE_URL as the environment has it, else
 https://generativelanguage.googleapis.com. The key (GEMINI_API_KEY), the model and everything else stay as they were;
@@ -86,6 +86,7 @@ def session_args(args: List[str]) -> Tuple[List[str], Optional[str]]:
 
 class AntigravityLauncher(Launcher):
     defaults = {"command": ["agy"], "port": 4213, "env": {}}
+    names_channel = True              # its conversation's id is its own, known at its first call: /a/<channel>/
 
     def __init__(self, settings, home: str):
         super().__init__(settings, home)
@@ -111,7 +112,8 @@ class AntigravityLauncher(Launcher):
                 server_url = self.servers.start(SETUP, origin, int(self.settings["port"]), "", options).url
             except RuntimeError as exc:
                 raise LaunchError(str(exc)) from exc
-        server_url += (f"/h/{run.gatherer}" if run.gatherer else "") + ("" if run.dry_run else f"/r/{os.getpid()}")
+        server_url += (f"/h/{run.gatherer}" if run.gatherer else "") + ("" if run.dry_run else f"/r/{os.getpid()}") \
+            + (f"/a/{run.channel}" if getattr(run, "channel", None) else "")      # its conversation's channel, chosen
         if not run.dry_run:
             told_of.tidy(self.home)
             told_of.keep(self.home, str(os.getpid()), told or None)

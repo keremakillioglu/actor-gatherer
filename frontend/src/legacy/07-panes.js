@@ -963,7 +963,8 @@ function topLayout() {
   for (const p of panes.apps) p.node.style.flexGrow = String(p.size);
   placeWork();
 }
-// An actor of the home (its gatherer, its channel), as the page has it now; a codex actor's thread it was renamed to.
+// An actor of the home (its gatherer, its channel), as the page has it now; a codex actor's thread it was renamed to (one
+// from before `ag --channel`).
 const appActor = (g, c) => {
   const gg = state.home && state.home.gatherers.find((x) => x.name === g);
   return (gg && gg.agents.find((a) => a.channel === c || a.started_as === c || (a.session && a.session.started_as === c))) || null;
@@ -1326,7 +1327,7 @@ if (!PANE && !SNAPSHOT) window.agPanes = Object.freeze({
     const a = panes.actors.get(key(p.g, p.c));
     if (a) p.call("take", "actor", a);
   },
-  shows(win, sel) {                                  // its actor, chosen or renamed (a codex thread)
+  shows(win, sel) {                                  // its actor, chosen or renamed (a codex thread, from before)
     const p = paneOf(win);
     if (!p || !p.ready || !sel) return;              // not up yet: its pane's actor is the one it is given (ready)
     if (!isAt(sel, p.g, p.c)) { [p.g, p.c] = sel; savePanes(); connect(); renderAgents(); return; }
@@ -1547,7 +1548,7 @@ async function railStart(g, harness, key = railKey(g)) {
 // own), the folders the gatherer's actors work in a click away, and a button for each harness: a click on one starts it
 // there, Enter the one tried (or the first). The box closes once it has started; why not, if it cannot, is said in it.
 // `alone`: the list head's box for an actor on its own, run under `g` (05-group-moves.js's aloneNew) -- the folders any
-// actor works in a click away, and why a harness that runs here is not offered (`aloneHarnesses`).
+// actor works in a click away.
 function railNewBox(g, hs, harness = hs[0], cwd = "", error = "", alone = false) {
   const dir = tildePath(cwd || state.home.cwd || "", state.home.home_dir);
   const err = el("div", { class: "err", role: "alert", text: error });
@@ -1574,7 +1575,6 @@ function railNewBox(g, hs, harness = hs[0], cwd = "", error = "", alone = false)
     alone ? folderPicks(everyActor(), dir, input, err, "Where actors work") : folderPicks(g, dir, input, err),
     el("div", { text: "Run it on" }),
     el("div", { class: "on" }, ...hs.map((h) => el("button", { type: "button", class: "go", onclick: () => go(h) }, harnessBadge(h), harnessName(h)))),
-    alone ? aloneCant() : null,
     err);
   return box;
 }

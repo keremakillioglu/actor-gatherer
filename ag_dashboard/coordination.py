@@ -265,7 +265,6 @@ class Coordination:
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.marked: Dict[str, dict] = {}        # each coordinator agent's role record, as last put in (`_mark_roles`)
-        self.unnamed: Dict[str, Tuple[str, str]] = {}   # a new actor's id, its harness's still to come -> (gatherer, name)
         if watch:
             threading.Thread(target=self._run, name="ag-watches", daemon=True).start()
 
@@ -329,7 +328,7 @@ class Coordination:
             if row is not None:
                 return row
             can = sessions.available() or list(sessions.HARNESSES)
-            fits = [h for h in sessions.HARNESSES if h in can and not (above and sessions.picks_id(h))]
+            fits = [h for h in sessions.HARNESSES if h in can]
             harness = harness if harness in fits else fits[0] if fits else \
                 harness if harness in sessions.HARNESSES else harness_kit.DEFAULT
             cwd = cwd if cwd and os.path.isdir(cwd) else os.path.expanduser("~")
@@ -348,10 +347,6 @@ class Coordination:
         """A new coordinator agent over a node above groups: started on its own, run under the group under its node of
         the actor started here last (else the first it reads; else the home's first), its `group` and `role` records
         put in before its first call."""
-        if sessions.picks_id(harness):
-            rules = harness_kit.get(harness)
-            raise CoordinationError(f"{rules.label if rules else harness} names its session only at its first call: a "
-                                    "coordinator agent over several groups runs on a harness whose session is named here")
         reads = tree.reads(node)
         latest = sorted((r for r in self.started.list() if r["gatherer"] in reads and r.get("role") != COORDINATOR),
                         key=lambda r: r.get("created_at") or "", reverse=True)
@@ -661,10 +656,7 @@ class Coordination:
                 row, on = self._new_on_branch(g, cwd or "", harness, model, mode, approve)
             else:
                 row = self.started.create(g, cwd or "", mode, harness, model)
-            if name and sessions.picks_id(harness):       # one whose harness picks its id: named once it has it
-                with self.lock:
-                    self.unnamed[row["session_id"]] = (g, name)
-            elif name:
+            if name:
                 threading.Thread(target=_name_it, args=(g, row["session_id"], name), daemon=True).start()
         if target is not None:                            # filed by the id it is started under
             folders.file(g, [row["session_id"]], target)
@@ -1208,8 +1200,8 @@ class Coordination:
 
     def _mark_roles(self) -> None:
         """Each coordinator agent's channel marked private, with its node and, above groups, the groups it reads: a
-        `role` record in it, put in by ag (actions.py's `record`) once its gatherer has a database and the channel is the
-        session's own -- a codex session's, once it has its thread's id -- and again whenever what it should say changed
+        `role` record in it, put in by ag (actions.py's `record`) once its gatherer has a database -- the channel the
+        session's id, whatever its harness (`ag --channel`) -- and again whenever what it should say changed
         (a folder moved, a group put into or out of a folder of groups), never twice the same: what the channel holds is
         read once a dashboard's run, then kept (`marked`). A coordinator agent over a node no longer there (its folder
         deleted) is closed, once."""
@@ -1221,8 +1213,6 @@ class Coordination:
             ch, group = r["session_id"], r["gatherer"]
             if not os.path.exists(sessions.home.db_path(groups.runs_under(group))):
                 continue
-            if sessions.picks_id(r["harness"]) and r.get("started_as") == ch:
-                continue                             # not yet under its thread's id: no channel of the gatherer's
             if r.get("over") and tree.path(r["over"]) is None:
                 self._orphaned(r)
                 continue
@@ -1254,25 +1244,9 @@ class Coordination:
         except sessions.SessionError:
             pass
 
-    def _name_later(self) -> None:
-        """The names given to new actors whose harness picks the session's id (`new`), each recorded in the channel of
-        that id once the session has it (sessions.py's `_rename`) -- forgotten if the session is gone before."""
-        with self.lock:
-            if not self.unnamed:
-                return
-        rows = {r.get("started_as"): r for r in self.started.list() if r.get("started_as")}   # each one's, made before
-        with self.lock:
-            due = {k: (v, rows[k]["session_id"] if k in rows else None) for k, v in self.unnamed.items()
-                   if k not in rows or rows[k]["session_id"] != k}
-            for k in due:
-                del self.unnamed[k]
-        for (g, name), now in due.values():
-            if now:
-                threading.Thread(target=_name_it, args=(g, now, name), daemon=True).start()
-
     def _run(self) -> None:
         while not self.stop.wait(WATCH_CHECK):
-            for step in (self._mark_roles, self._name_later, self.check):
+            for step in (self._mark_roles, self.check):
                 try:
                     step()
                 except Exception:  # noqa: BLE001 - never stop looking
@@ -1348,7 +1322,8 @@ def _kept(gatherer: str) -> Tuple[dict, dict]:
 
 def _kept_as(a: dict, keys: dict) -> Optional[str]:
     """The channel the actor `a` is kept as, of {channel: ...} (saved, or filed): its own, else the one it was started
-    under (a codex session's, renamed to its thread since), as the page's `savedAs` finds it; None: not kept there."""
+    under (a codex session's from before `ag --channel`, renamed to its thread since), as the page's `savedAs` finds it;
+    None: not kept there."""
     started = (a.get("session") or {}).get("started_as")
     return a["channel"] if a["channel"] in keys else started if started and started in keys else None
 

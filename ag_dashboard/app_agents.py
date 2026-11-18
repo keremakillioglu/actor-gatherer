@@ -90,7 +90,7 @@ def start(started: "sessions.Sessions", host, app: str, gatherer: str, cwd: str,
     task_links.link(gatherer, inst.id, s["session_id"])                # the app and its agent: one task
     host.attach(gatherer, inst.id, s["session_id"])
     said = name or m.agent.name.format(app=m.label, folder=os.path.basename(cwd.rstrip("/")) or cwd)
-    threading.Thread(target=_name, args=(started, gatherer, s["session_id"], said), name=f"ag-{app}-name",
+    threading.Thread(target=_name, args=(gatherer, s["session_id"], said), name=f"ag-{app}-name",
                      daemon=True).start()
     return s, inst
 
@@ -129,23 +129,19 @@ class Messenger:
             raise AppError(str(exc)) from None
         task_links.link(instance.gatherer, instance.id, s["session_id"])   # the app and its agent: one task
         host.attach(instance.gatherer, instance.id, s["session_id"], by="app")
-        threading.Thread(target=_name, args=(self.started, instance.gatherer, s["session_id"], name),
+        threading.Thread(target=_name, args=(instance.gatherer, s["session_id"], name),
                          name=f"ag-{instance.app}-name", daemon=True).start()
         self.send(instance.gatherer, s["session_id"], text)
         return s["session_id"]
 
 
-def _name(started: "sessions.Sessions", gatherer: str, sid: str, said: str) -> None:
+def _name(gatherer: str, sid: str, said: str) -> None:
     """The new actor named `said` once its gatherer has it (its first call): a name is an event there (naming.py) --
     else the list shows it by its first message, which an app's page may have written."""
     end = time.time() + NAME_WAIT
-
-    def now() -> str:                                  # codex's: renamed to its thread
-        row = next((r for r in started.list() if sid in (r["session_id"], r.get("started_as"))), None)
-        return (row or {}).get("session_id") or sid
-    while time.time() < end and not sessions._has_calls(gatherer, now()):
+    while time.time() < end and not sessions._has_calls(gatherer, sid):
         time.sleep(2)
     try:
-        naming.record(gatherer, now(), said)
+        naming.record(gatherer, sid, said)
     except naming.NamingError:
         pass

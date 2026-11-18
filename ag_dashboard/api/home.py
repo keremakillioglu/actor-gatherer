@@ -236,7 +236,7 @@ def name(srv: Parts, body: Body) -> Response:
     harness = str(body.get("harness") or "") or None
     out = {"name": given, "store": None, "error": None, "terminal": False}
     try:
-        out["store"] = naming.in_store(harness, c, given, str(body.get("cwd") or "") or None)
+        out["store"] = naming.in_store(harness, srv.sessions.own(c), given, str(body.get("cwd") or "") or None)
     except harness_kit.RenameError as exc:
         out["error"] = str(exc)
     rules = harness_kit.get(harness)

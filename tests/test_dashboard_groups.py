@@ -106,9 +106,9 @@ class GroupsTest(unittest.TestCase):
             for name, kind in sessions.ADDED:
                 if name not in have:
                     conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {kind}")
-            conn.execute(f"INSERT INTO sessions ({', '.join(sessions.COLUMNS)}) VALUES (?, ?, 'claude', '/', 'auto', "
-                         "'2026-01-01T00:00:00Z', 0, 'stopped', NULL, 0, NULL, NULL, 0, 'coordinator', ?)",
-                         (channel, gatherer, over))
+            conn.execute("INSERT INTO sessions (session_id, gatherer, harness, cwd, permission_mode, created_at, status, "
+                         "role, over) VALUES (?, ?, 'claude', '/', 'auto', '2026-01-01T00:00:00Z', 'stopped', "
+                         "'coordinator', ?)", (channel, gatherer, over))
             conn.commit()
         finally:
             conn.close()
@@ -362,11 +362,21 @@ class GroupsTest(unittest.TestCase):
                 groups.start_alone(started, "a", self.tmp.name, "claude")
         self.assertEqual(started.list(), [])
 
-    def test_not_started_on_its_own_on_a_harness_that_names_its_session_at_its_first_call(self):
+    def test_started_on_its_own_on_a_harness_that_names_its_session_at_its_first_call(self):
+        """Codex and agy pick their session's id at their first call, but a session started here is kept under the
+        dashboard's id from that call on (`ag --channel`): its record goes into that channel before then."""
         started = self.sessions_here()
         for harness in ("codex", "antigravity"):
-            with self.assertRaisesRegex(groups.GroupError, "names its session only at its first call"):
-                groups.start_alone(started, "a", self.tmp.name, harness)
+            self.recorded.clear()
+            s = groups.start_alone(started, "b", self.tmp.name, harness)
+            sid = s["session_id"]
+            [(via, [event])] = self.recorded
+            self.assertEqual((s["gatherer"], s["harness"], via, event["properties"]), ("self:" + sid, harness, "b",
+                                                                                       {"channel": sid}))
+            self.assertEqual(sessions.channel_args(s), ["--channel", sid])
+
+    def test_refused_under_no_group(self):
+        started = self.sessions_here()
         for under in ("nowhere", "self:c1"):
             with self.assertRaises(groups.GroupError):
                 groups.start_alone(started, under, self.tmp.name, "claude")

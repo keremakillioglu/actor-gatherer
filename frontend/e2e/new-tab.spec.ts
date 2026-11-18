@@ -21,8 +21,8 @@ const menuItem = (page: Page, text: string) =>
     .locator(".row-menu[role=menu] [role=menuitem]")
     .filter({ has: page.locator(".nm", { hasText: new RegExp(`^${text}$`) }) });
 
-// The page on a Mac (where ⌃T and ⌃W are the page's); the server's home with both harnesses running (Codex naming its
-// session only at its first call), every actor in /work/demo, a folder "fixes" in demo -- on the home's one database
+// The page on a Mac (where ⌃T and ⌃W are the page's); the server's home with both harnesses running, every actor in
+// /work/demo, a folder "fixes" in demo -- on the home's one database
 // (`merged`) or not. Once started, the new actor is listed: in demo, or on its own. Each request a start makes, kept.
 async function newTabHome(page: Page, merged = false) {
   await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "MacIntel" }));
@@ -34,7 +34,6 @@ async function newTabHome(page: Page, merged = false) {
     for (const a of demo.agents) a.cwd = "/work/demo";
     home.harnesses = ["claude", "codex"];
     for (const h of home.harnesses) home.harness_info[h] = { ...home.harness_info[h], runs: true };
-    home.harness_info.codex.picks_id = true;
     home.folders = {
       [GATHERER]: { folders: [FOLDER], filed: state.started === "group" ? { [STARTED]: FOLDER.id } : {} },
     };
@@ -113,7 +112,7 @@ test("+ opens a new tab: Enter starts an actor where its line says, what was typ
   await expect(chip(page, "on")).toHaveText("Codex");
 });
 
-test("on the home's one database, a new tab starts an actor on its own, on a harness that can be", async ({ page }) => {
+test("on the home's one database, a new tab starts an actor on its own, on any harness", async ({ page }) => {
   const asked = await newTabHome(page, true);
   await open(page);
   await row(page, CLAUDE).click();
@@ -122,12 +121,14 @@ test("on the home's one database, a new tab starts an actor on its own, on a har
   await menuItem(page, "On its own").click();
   await expect(chip(page, "in")).toHaveText("On its own");
   await expect(chip(page, "on")).toHaveText("Claude Code");
-  await expect(page_(page).locator('.nt-chip[data-pop="nt:on"]')).toBeDisabled(); // Codex can't: the only one
+  await chip(page, "on").click(); // Codex too: its session is kept under the dashboard's id from its start
+  await menuItem(page, "Codex").click();
+  await expect(chip(page, "on")).toHaveText("Codex");
   await expect(page_(page).locator(".nt-app").first()).toBeDisabled(); // apps open in a group
   await box(page).fill("Something of its own");
   await box(page).press("Enter");
   await expect.poll(() => asked.map((x) => x.path)).toEqual(["sessions", "send"]); // filed in no folder
-  expect(asked[0].body).toEqual({ gatherer: GATHERER, cwd: "/work/demo", harness: "claude", alone: true });
+  expect(asked[0].body).toEqual({ gatherer: GATHERER, cwd: "/work/demo", harness: "codex", alone: true });
   await expect(page.locator("#agents .gatherer.alone button.agent")).toHaveCount(1);
 });
 

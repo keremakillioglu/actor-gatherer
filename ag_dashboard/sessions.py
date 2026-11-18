@@ -3,16 +3,19 @@ sends messages to. Each is an ordinary ag session -- a channel of its gatherer, 
 other actor -- and the dashboard's own table, `sessions` in <home>/dashboard.db, keeps which
 ones it started:
 
-    session_id       the harness's session id, which ag makes the gatherer's channel: Claude Code's, chosen
-                     here; codex's thread id, which codex chooses -- until its first call, the id it was
-                     started under, then renamed to the thread's (`started_as` keeps the first)
+    session_id       the session's id, chosen here, which ag makes the gatherer's channel: Claude Code's own
+                     (--session-id); for a harness that picks its session's id only at its first call (codex's
+                     thread, agy's conversation), the channel ag keeps that session in (`ag --channel`), for good
     gatherer         the gatherer it joined (ag makes a new one on its first call)
     harness          the harness it runs on, as harness_kit names it (of `HARNESSES`: those it can start)
     cwd              where the agent runs
     permission_mode  Claude Code's --permission-mode: auto (the default), acceptEdits, plan, ...; for codex,
                      auto is --approve-for-me, bypassPermissions its bypass, any other none (codex asks)
     model            the model it runs (-m), NULL: the harness's own default
-    started_as       the id it was started under, when that was not its harness's (codex's, renamed); else NULL
+    harness_id       the harness's own id for it, where that is not `session_id` (codex's thread, agy's conversation),
+                     once its first call named it (`own_id`); NULL: the same, or not known yet
+    started_as       (sessions from before `ag --channel`) the id one was started under, before it was renamed to the
+                     harness's once its first call named that; NULL for any other
     created_at       when it was started (ISO, UTC)
     turns            how many of its turns have ended: after the first, a restart resumes it
     status           starting / running / idle / terminal / stopped / failed, as last seen
@@ -80,12 +83,15 @@ actor (ACTOR_TABLES), so it is listed nowhere, as if it had never been made.
 CODEX runs the same ways, through `ag ... codex`: in a terminal, its own interactive UI (`codex
 [resume <id>]`); headless, a process per turn, `codex exec --json
 [resume <id>] -` with the message on its stdin, ending with the turn. Codex chooses its thread's id,
-so a codex session starts under an id of the dashboard's and is renamed to its thread's once known:
-from `codex exec`'s `thread.started`, or, in a terminal, the gatherer's first call from the terminal's
-process that names a directory (codex's side calls -- a title for the thread -- name none).
+at its first call; a codex session started here is kept under the dashboard's id all the same, from that
+call on: ag is told it (`ag --channel <id>`) and keeps the run's own thread in that channel. The id is the
+session's for good. Codex's own (`harness_id`, `own_id`) is what the dashboard resumes it by and finds its
+records by, and it comes with that first call: in the gatherer, its turns' `model_call` events name it,
+and `codex exec`'s `thread.started` names it too.
 
 ANTIGRAVITY (agy) runs in a terminal only, its own interactive UI, whatever `chat_mode` says (its headless
-mode is not built): it chooses its conversation's id too, so it is started and renamed as a codex terminal is.
+mode is not built): it chooses its conversation's id too, so it is kept under the dashboard's id as a codex
+session is.
 
 A new gatherer, with no session yet, is made by `ag new <name>` (`new_gatherer`).
 
@@ -163,12 +169,14 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS sessions (
     started_as      TEXT,
     ended           REAL NOT NULL DEFAULT 0,
     role            TEXT,
-    over            TEXT
+    over            TEXT,
+    harness_id      TEXT
 )"""
 COLUMNS = ("session_id", "gatherer", "harness", "cwd", "permission_mode", "created_at", "turns", "status", "last_error",
-           "kept", "model", "started_as", "ended", "role", "over")
+           "kept", "model", "started_as", "ended", "role", "over", "harness_id")
 ADDED = (("kept", "REAL NOT NULL DEFAULT 0"), ("model", "TEXT"), ("started_as", "TEXT"),
-         ("ended", "REAL NOT NULL DEFAULT 0"), ("role", "TEXT"), ("over", "TEXT"))   # columns a table from before lacks
+         ("ended", "REAL NOT NULL DEFAULT 0"), ("role", "TEXT"), ("over", "TEXT"),
+         ("harness_id", "TEXT"))   # columns a table from before lacks
 # The dashboard's other tables in dashboard.db with a row per actor, by (gatherer, channel): saved.py's, seen.py's,
 # avatars.py's -- what a session discarded (`discard`) takes with it.
 ACTOR_TABLES = ("saved", "seen", "avatars")
@@ -195,14 +203,24 @@ def log_path(session_id: str) -> str:
     return os.path.join(home.HOME, "logs", "dashboard", f"{session_id}.log")
 
 
+def _insert(conn: sqlite3.Connection, **row) -> None:
+    """A row put in the table, by its columns' names (of COLUMNS): any not given takes its default (SCHEMA's)."""
+    unknown = set(row) - set(COLUMNS)
+    if unknown:
+        raise ValueError(f"no such column: {', '.join(sorted(unknown))}")
+    conn.execute(f"INSERT INTO sessions ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})", tuple(row.values()))
+
+
 def stored() -> List[dict]:
     """The sessions the table has, newest first, read-only: [] when there is no table yet."""
     if not os.path.exists(db_path()):
         return []
     conn = sqlite3.connect(f"file:{db_path()}?mode=ro", uri=True, timeout=8)
     conn.row_factory = sqlite3.Row
-    try:                                # a table from before `kept`, `model`, `started_as`, `ended`, `role`, `over`: none
-        return [{"kept": 0, "model": None, "started_as": None, "ended": 0, "role": None, "over": None, **dict(r)}
+    try:                                # a table from before `kept`, `model`, `started_as`, `ended`, `role`, `over`,
+        #                                     `harness_id`: none
+        return [{"kept": 0, "model": None, "started_as": None, "ended": 0, "role": None, "over": None, "harness_id": None,
+                 **dict(r)}
                 for r in conn.execute("SELECT * FROM sessions ORDER BY created_at DESC")]
     except sqlite3.Error:
         return []
@@ -213,7 +231,6 @@ def stored() -> List[dict]:
 OUTER_TERMINAL = ("TMUX", "TMUX_PANE", "STY", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "WINDOWID",
                   "VTE_VERSION", "KITTY_WINDOW_ID", "WEZTERM_PANE", "ITERM_SESSION_ID")   # the dashboard's own terminal: not the page's
 TERM_KEEP = 512 * 1024             # how much of a terminal's output is kept, for a page that comes back
-THREAD_POLL = 0.25                 # how often a new codex (or agy) terminal's thread is looked for in the gatherer
 PASTE_ENTER = 0.15                 # after a message is pasted into a terminal, how long before its Enter
 CLEAR_GAP = 0.2                    # after Claude Code's input box is emptied (Ctrl+C), how long before a message is pasted
 STOP_KEYS = ("\x1b", "\x03")       # keys that stop a turn: Esc, Ctrl+C
@@ -277,7 +294,7 @@ def resumes(s: dict) -> bool:
         return True
     h = harness_kit.get(s["harness"])
     try:
-        return bool(h and h.record_path(s["session_id"], s.get("cwd")))
+        return bool(h and h.record_path(own_id(s), s.get("cwd")))
     except OSError:
         return False
 
@@ -338,9 +355,9 @@ def _session_cwd(gatherer: str, session_id: str) -> Optional[str]:
 
 
 def picks_id(harness: Optional[str]) -> bool:
-    """Whether `harness` picks its session's id itself (harness_kit's `picks_session_id`: codex's thread, agy's
-    conversation): a session started here takes one of ours, `started_as` keeps it, and it is renamed to the
-    harness's once its first call names that."""
+    """Whether `harness` picks its session's id itself, at its first call (harness_kit's `picks_session_id`: codex's
+    thread, agy's conversation): a session started here is kept under one of ours all the same (`ag --channel`), its
+    harness's own id named by that call (`own_id`)."""
     h = harness_kit.get(harness)
     return bool(h and h.picks_session_id)
 
@@ -367,53 +384,39 @@ def _session_harness(gatherer: str, session_id: str) -> str:
     return got if got in HARNESSES else harness_kit.DEFAULT
 
 
-def _top_row(gatherer: str) -> int:
-    """The row of the gatherer's newest event: 0 for none, or no database yet."""
-    conn = _gatherer_db(gatherer)
-    if conn is None:
-        return 0
-    try:
-        return conn.execute("SELECT max(row_id) FROM events").fetchone()[0] or 0
-    except sqlite3.Error:
-        return 0
-    finally:
-        conn.close()
-
-
-def _thread_of(gatherer: str, pid: int, known, after: int = 0) -> Optional[str]:
-    """The thread a process (a terminal's) works in -- codex's thread, agy's conversation -- as the gatherer says, not
-    among `known` (the sessions the table has): the channel of a turn's call from the run `pid`, stored after the row
-    `after` (its `model_call`, recorded as the call comes in, before ag reads for it: the launcher names the run by the
-    process ag runs in, which the terminal started and the harness then is); else, from a hook from before, the channel
-    of a call ag has read that names a directory -- side calls, a title for the thread, name none -- and came from
-    `pid`: its run is `pid`, or the process that made it is `pid` or runs under it (where that can be told: Linux's
-    /proc). ag logs a read once it has read for the call, which may take seconds."""
+def _named_id(gatherer: str, channel: str) -> Optional[str]:
+    """The harness's own id for the session kept in `channel` under another (`ag --channel`), as the newest of its
+    turns' calls recorded it (its `model_call`'s `session`); None: none named (one kept under its own id, or no call
+    yet)."""
     conn = _gatherer_db(gatherer)
     if conn is None:
         return None
     try:
-        try:
-            for (channel,) in conn.execute(
-                    "SELECT e.p_channel FROM events e WHERE e.event_type_id = (SELECT event_type_id FROM event_types "
-                    "WHERE name = 'model_call') AND e.row_id > ? AND json_extract(e.payload_json, '$.run') = ? "
-                    "AND json_extract(e.payload_json, '$.kind') = 'turn' ORDER BY e.row_id DESC LIMIT 20",
-                    (after, str(pid))):
-                if channel and channel not in known:
-                    return channel
-        except sqlite3.Error:                    # a gatherer from before events
-            pass
-        has_run = "run" in {r[1] for r in conn.execute("PRAGMA table_info(_reads)")}
-        for channel, by, run in conn.execute(
-                f"SELECT p_channel, pid, {'run' if has_run else 'NULL'} FROM _reads WHERE (pid IS NOT NULL"
-                f"{' OR run IS NOT NULL' if has_run else ''}) AND p_cwd IS NOT NULL AND p_cwd != '' "
-                "ORDER BY read_id DESC LIMIT 200"):
-            if channel and channel not in known and (run == str(pid) or home.runs_under(by, pid)):
-                return channel
-    except sqlite3.Error:
+        row = conn.execute(
+            "SELECT json_extract(e.payload_json, '$.session') FROM events e WHERE ifnull(e.p_channel, '') = ? "
+            "AND e.event_type_id = (SELECT event_type_id FROM event_types WHERE name = 'model_call') "
+            "AND json_extract(e.payload_json, '$.session') IS NOT NULL ORDER BY e.row_id DESC LIMIT 1", (channel,)).fetchone()
+    except sqlite3.Error:                        # a gatherer from before events
         return None
     finally:
         conn.close()
-    return None
+    return row[0] if row else None
+
+
+def channel_args(s: dict) -> List[str]:
+    """ag's options naming the channel the session `s` (a row) is kept in (`ag --channel`): for a harness that picks its
+    session's id only at its first call (codex's thread, agy's conversation), the session's id, from that call on; none
+    for one that is given its id (Claude Code's --session-id), which is the channel already."""
+    return ["--channel", s["session_id"]] if picks_id(s.get("harness")) else []
+
+
+def own_id(s: dict) -> str:
+    """The harness's own id for the session `s` (a row of the table) -- what it is resumed, renamed and found by in the
+    harness's own records: `harness_id` where its first call named it (codex's thread, agy's conversation, kept under
+    the session's id: `ag --channel`), as the gatherer has it where the row does not yet; else the session's id."""
+    if s.get("harness_id"):
+        return s["harness_id"]
+    return (picks_id(s.get("harness")) and _named_id(s["gatherer"], s["session_id"])) or s["session_id"]
 
 
 def _why(session_id: str) -> Optional[str]:
@@ -693,7 +696,6 @@ class _Term:
         self.pasted = 0.0               # when it last pasted one: a stop key waits until the harness has taken it (`type`)
         self.prompted = 0.0             # when it was started with its first message on its command line (`terminal`): a
         #                                 stop key waits until the harness has begun that turn (`_unsent`)
-        self.named = 0.0                # when its first call named its session (`_find_thread`: a harness that picks its own id)
         self.harness: Optional[str] = None   # the session's harness and gatherer, as it was started
         self.gatherer: Optional[str] = None
         self.boxed: Optional[str] = None     # its message box as last seen after a stop key (`_read_terminal`)
@@ -731,7 +733,6 @@ class Sessions:
         self._shells: Dict[str, dict] = {}       # the shells open, by id: {id, gatherer, cwd, since}
         self.answered: Dict[str, dict] = {}      # each session's last answer typed from the page (`answer`)
         self.renames: Dict[str, str] = {}        # each session's command naming it, held for its turn's end (`rename`)
-        self.unsent: Dict[str, List[tuple]] = {}  # a codex session's messages from Chat, (text, at, cid), kept for its thread
         self.sent: Dict[str, List[dict]] = {}    # each session's latest messages from Chat ({cid, text, at}), kept as each
         #                                          came, before it was typed: Chat's view (chat_view.py) knows them at once
         self.closing = False            # the dashboard stopping: what ends now is kept
@@ -788,6 +789,19 @@ class Sessions:
                 self.on_change(gatherer, session_id)
             except Exception:  # noqa: BLE001 - a listener's trouble is not the session's
                 pass
+
+    def own(self, session_id: str) -> str:
+        """The harness's own id for the session (`own_id`): the session's id for one the table does not have."""
+        s = self._row(session_id)
+        return self._own(s) if s is not None else session_id
+
+    def _own(self, s: dict) -> str:
+        """The harness's own id for the session `s` (a row), `own_id` -- kept as its `harness_id` once the gatherer
+        names it, where the row had none."""
+        got = own_id(s)
+        if got != s["session_id"] and not s.get("harness_id"):
+            self._set(s["session_id"], harness_id=got)
+        return got
 
     def chat_row(self, session_id: str) -> Optional[dict]:
         """What Chat's view (chat_view.py) takes of a session the table has: {ended, queued (its messages waiting), sent
@@ -852,9 +866,9 @@ class Sessions:
         session_id = str(uuid.uuid4())
         conn = self._db()
         try:
-            conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?, 0, 'stopped', NULL, 0, ?, ?, 0, ?, ?)",
-                         (session_id, ALONE + session_id if alone else gatherer, harness, cwd, permission_mode, _now(),
-                          model, session_id if picks_id(harness) else None, role, over))
+            _insert(conn, session_id=session_id, gatherer=ALONE + session_id if alone else gatherer, harness=harness,
+                    cwd=cwd, permission_mode=permission_mode, created_at=_now(), status="stopped", model=model, role=role,
+                    over=over)
         finally:
             conn.close()
         self._changed(ALONE + session_id if alone else gatherer, session_id)
@@ -875,8 +889,8 @@ class Sessions:
                                    + (f" ({cwd})" if cwd else ""))
             conn = self._db()
             try:
-                conn.execute(f"INSERT INTO sessions ({', '.join(COLUMNS)}) VALUES (?, ?, ?, ?, 'auto', ?, 1, 'stopped', NULL, 0, NULL, NULL, 0, NULL, NULL)",
-                             (session_id, gatherer, _session_harness(gatherer, session_id), cwd, _now()))
+                _insert(conn, session_id=session_id, gatherer=gatherer, harness=_session_harness(gatherer, session_id),
+                        cwd=cwd, permission_mode="auto", created_at=_now(), turns=1, status="stopped")
             finally:
                 conn.close()
             self._changed(gatherer, session_id)
@@ -890,8 +904,7 @@ class Sessions:
         terminal opened (`cols` x `rows`, `fullscreen` as `terminal` takes it) with the message its first
         prompt, or a turn of its agent -- now, or, while one runs, after it -- the agent started if it is not
         running. A turn of the agent's running or waiting takes it in either mode. The session as `list` has it;
-        the message kept in its gatherer as sent from Chat (actions.py's `chat_sent`) -- a new codex session's once it
-        has its thread (`_rename`), the id it is started under being no channel of the gatherer's. `cid`: the send's id,
+        the message kept in its gatherer as sent from Chat (actions.py's `chat_sent`). `cid`: the send's id,
         as the page that sent it knows it (one made here if none): kept with it, before it is typed (`sent`), and with
         `chat_sent` -- Chat's view tells the message it became by it."""
         sent = {"cid": str(cid or f"chat:{uuid.uuid4().hex}")[:80], "text": (text or "").strip(), "at": time.time()}
@@ -916,11 +929,6 @@ class Sessions:
             with self.lock:
                 for x in self.sent.pop(session_id, []):
                     self.sent.setdefault(sid, []).append(x)
-        with self.lock:                          # a codex session still under the id it was started under: no channel yet
-            s = self._row(sid)
-            if s is not None and picks_id(s["harness"]) and s["started_as"] == sid:
-                self.unsent.setdefault(sid, []).append((text, sent["at"], sent["cid"]))
-                return got
         actions.chat_sent(got.get("gatherer"), sid, text, sent["at"], sent["cid"])
         return got
 
@@ -1053,7 +1061,7 @@ class Sessions:
                 conn.execute("COMMIT")
             finally:
                 conn.close()                             # not committed: rolled back
-            for kept in (self.agents, self.answered, self.renames, self.unsent, self.sent):
+            for kept in (self.agents, self.answered, self.renames, self.sent):
                 kept.pop(session_id, None)
         self._changed(s["gatherer"], session_id)
 
@@ -1090,8 +1098,8 @@ class Sessions:
         h = harness_kit.get(s["harness"])
         if h is None or not h.headless:
             raise SessionError(f"{s['harness']} has no headless mode here: open it in a terminal")
-        return [*ag_command(), "--gatherer", _launch(s), s["harness"],
-                *h.headless_args(s["session_id"], resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
+        return [*ag_command(), "--gatherer", _launch(s), *channel_args(s), s["harness"],
+                *h.headless_args(self._own(s), resume=resume, model=s.get("model"), permission_mode=s["permission_mode"],
                                  instructions=instructions(s), extra=tuple(extra_args(s)))]
 
     def _start(self, s: dict) -> _Agent:
@@ -1148,9 +1156,9 @@ class Sessions:
         return a
 
     def _read_exec(self, session_id: str, a: _Agent) -> None:
-        """A turn's output, until its process exits, as its harness reads it (`headless_event`): the session's own id
-        (the session renamed to it: codex's thread), its end, an error; then the next waiting message, as a turn of its
-        own."""
+        """A turn's output, until its process exits, as its harness reads it (`headless_event`): the harness's own id for
+        the session (codex's thread: kept as its `harness_id`), its end, an error; then the next waiting message, as a
+        turn of its own."""
         h = harness_kit.get((self._row(session_id) or {}).get("harness"))
         error = None
         done = False
@@ -1161,9 +1169,9 @@ class Sessions:
             except ValueError:
                 continue
             got = (h.headless_event(event) if h is not None else None) or {}
-            if got.get("session"):
-                with self.lock:
-                    session_id = self._rename(session_id, got["session"])
+            if got.get("session") and got["session"] != session_id \
+                    and (self._row(session_id) or {}).get("harness_id") != got["session"]:
+                self._set(session_id, harness_id=got["session"])
             if got.get("ended"):
                 done = True
             if got.get("error"):
@@ -1193,37 +1201,6 @@ class Sessions:
             if a.queue and not a.ended and not self.closing:     # what was sent meanwhile: the next turn
                 b = self._exec(self._row(session_id), a.queue.pop(0))
                 b.queue = a.queue
-
-    def _rename(self, old: str, new: str) -> str:
-        """The session started as `old`, now known as its harness's `new` (codex's thread): its row, its
-        process, its log moved over, `started_as` kept, the messages sent from Chat before kept in its channel now
-        (`send`). The id it has now (the lock held)."""
-        if old == new or not SESSION_ID.fullmatch(new):
-            return old
-        conn = self._db()
-        try:
-            if conn.execute("SELECT 1 FROM sessions WHERE session_id = ?", (new,)).fetchone():
-                return old                       # another row has it already
-            conn.execute("UPDATE sessions SET session_id = ?, started_as = coalesce(started_as, ?) WHERE session_id = ?",
-                         (new, old, old))
-            row = conn.execute("SELECT gatherer FROM sessions WHERE session_id = ?", (new,)).fetchone()
-        finally:
-            conn.close()
-        for table in (self.agents, self.terms):
-            if old in table:
-                table[new] = table.pop(old)
-        for text, at, cid in self.unsent.pop(old, []) if row is not None else []:
-            actions.chat_sent(row["gatherer"], new, text, at, cid)
-        if old in self.sent:
-            self.sent[new] = self.sent.pop(old)
-        try:
-            os.replace(log_path(old), log_path(new))
-        except OSError:
-            pass
-        if row is not None:
-            self._changed(row["gatherer"], old)
-            self._changed(row["gatherer"], new)
-        return new
 
     def _hold(self, session_id: str, a: _Agent, yields: bool) -> Optional[bool]:
         """The agent's process gives way to another opening the session (`yields`), or stops giving
@@ -1423,8 +1400,8 @@ class Sessions:
                 trusted = h.trust(s["cwd"], env)
             except (harness_kit.TrustError, OSError) as exc:
                 untrusted = str(exc)
-        argv = [*ag_command(), "--quiet", "--gatherer", _launch(s), s["harness"],     # quiet: ag's notes not on its screen
-                *trusted, *extra_args(s), *h.command(sid, resume=resume, model=s.get("model"),
+        argv = [*ag_command(), "--quiet", "--gatherer", _launch(s), *channel_args(s),   # quiet: ag's notes not on its
+                s["harness"], *trusted, *extra_args(s), *h.command(self._own(s), resume=resume, model=s.get("model"),  # screen
                                                      permission_mode=s["permission_mode"], fullscreen=fullscreen,
                                                      instructions=told, cwd=s["cwd"]), *first]
         os.makedirs(os.path.dirname(log_path(sid)), exist_ok=True)
@@ -1454,8 +1431,6 @@ class Sessions:
         self._set(sid, status="terminal", last_error=None, kept=0)
         t.reader = threading.Thread(target=self._read_terminal, args=(sid, t), daemon=True)
         t.reader.start()
-        if picks_id(s["harness"]) and not resume:  # its own id for the session, once its first call names it
-            threading.Thread(target=self._find_thread, args=(sid, s["gatherer"], t), daemon=True).start()
         return t
 
     def shell(self, gatherer: str, cwd: str, cols: int = 120, rows: int = 32, folder: Optional[int] = None) -> dict:
@@ -1508,26 +1483,6 @@ class Sessions:
                 raise SessionError(f"no shell {shell_id} open")
             self._hang_up(t)
         self._gone(t)                                # its end recorded by its reader, which takes the lock
-
-    def _find_thread(self, session_id: str, gatherer: str, t: _Term) -> None:
-        """A new codex (or agy) terminal's thread, looked for in the gatherer's calls every THREAD_POLL seconds while
-        it runs, among those stored since it started: the session renamed to it once found."""
-        after = _top_row(gatherer)
-        while t.exited is None:
-            with self.lock:
-                if self.terms.get(session_id) is not t:
-                    session_id = next((k for k, v in self.terms.items() if v is t), None)
-                    if session_id is None:
-                        return
-                found = _thread_of(gatherer, t.pid, {x["session_id"] for x in stored()}, after)
-                if found:
-                    t.named = time.time()
-                    self._rename(session_id, found)
-                    s = self._row(found)
-                    if s is not None and not s["turns"]:
-                        self._set(found, turns=1)
-                    return
-            time.sleep(THREAD_POLL)
 
     def _read_terminal(self, session_id: str, t: _Term) -> None:
         """What the terminal prints, until it exits: kept, and the pages watching it woken."""
@@ -1668,18 +1623,13 @@ class Sessions:
     def _began(self, t: _Term) -> bool:
         """Whether the harness has begun the turn of the message the terminal `t` was started with, so a stop key stops
         it: the turn's first call has come in -- the hook's `model_call` of a turn in the session's channel since the
-        terminal started, recorded as the call comes in, before ag reads for it (seconds, on a busy gatherer); for a
-        new session of a harness that picks its own id, once that call has named it (`_find_thread`). True where that
-        is not known (no session for it now)."""
+        terminal started, recorded as the call comes in, before ag reads for it (seconds, on a busy gatherer). True where
+        that is not known (no session for it now)."""
         with self.lock:
             sid = next((k for k, v in self.terms.items() if v is t), None)
         s = self._row(sid) if sid else None
         if s is None:
             return True
-        if picks_id(s["harness"]) and s["started_as"] == sid:
-            return False                                 # its first call has not named it yet
-        if t.named >= t.prompted > 0:
-            return True                                  # named by its turn's first call
         from . import data                               # here: data.py reads this module
         conn = data._connect(s["gatherer"])
         if conn is None:
