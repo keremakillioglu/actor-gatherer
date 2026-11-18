@@ -127,7 +127,7 @@ test("in the home's one database, an app's own agent dragged into a group with t
   await mgRow(page, CLAUDE).dragTo(mgRow(page, LAB));
   await expect(dialog.locator("h3")).toHaveText(`Move to the ${LAB} group?`);
   await expect(dialog.locator(".mv-line").last()).toHaveText(
-    `Its Notepad (Shopping list) closes, as the ${LAB} group has its own: it will work with that one.`,
+    `Its Notepad (Shopping list) closes because the ${LAB} group has its own. It will use that one.`,
   );
   expect(asked[0]).toMatchObject({ do: "plan", channels: expect.arrayContaining(["app:n1", state.claude]) });
   await dialog.getByRole("button", { name: "Cancel" }).click();

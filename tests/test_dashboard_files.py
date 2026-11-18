@@ -350,7 +350,7 @@ class FilesTest(unittest.TestCase):
         self.assertEqual((diff["at"], diff["new"]), (7, ["x = 2"]))                     # where the file says
         out = by["/w/out.txt"]
         self.assertEqual((out["kinds"], out["created"], out["sources"][0].get("unnamed")), (["write"], True, True))
-        self.assertEqual(out["sources"][0]["blocks"][0]["text"], "changed while this ran; the call doesn't name it")
+        self.assertEqual(out["sources"][0]["blocks"][0]["text"], "changed while this ran, though the call doesn't name it")
         self.assertIn(("Run the tests", []), [(c["text"], c["files"]) for c in got["commands"]])
 
     def test_a_change_found_in_ag_s_home_is_left_out_unless_the_call_says_it_writes_it(self):
@@ -431,7 +431,7 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(self.kinds(got), {"/wt/.git": ([], ["write"]), "/wt/a.py": ([], ["write"]), "/w/out.log": (["write"], []),
                                            "/w/x.py": ([], ["edit"])})
         x = next(f for f in got["files"] if f["path"] == "/w/x.py")
-        self.assertEqual(x["sources"][0]["blocks"][0]["text"], "changed by git as this ran, in another call; this call doesn't name it")
+        self.assertEqual(x["sources"][0]["blocks"][0]["text"], "changed by git in another call while this ran")
         self.assertEqual(self.kinds(files.files("g", "c3", 0, cwd="/w")), {"/wt/a.py": ([], ["write"]), "/w/x.py": ([], ["edit"]),
                                                                            "/w/out.log": (["edit"], []), "/wt/b.py": (["edit"], []),
                                                                            "/w/y.py": (["delete"], [])})
@@ -454,7 +454,7 @@ class FilesTest(unittest.TestCase):
         for path in ("/w/a.py", "/w/b.py"):                             # which lines are whose: not known
             out, = by[path]
             self.assertEqual((out["t"], out["lines"]), ("output", ["def f():", "    return 1", "x = 1"]))
-            self.assertIn("can't be told apart", out["note"])
+            self.assertIn("somewhere in it", out["note"])
         self.assertEqual(by["/w/e.py"], [{"t": "note", "text": "read, but the output was empty"}])
         self.add(*[("file_touched", {"call": "u2", "path": path, "how": "read", "checked": None, "named": True,   # checked on
                                      "detail": {"unsplit": True}}) for path in ("/w/c.py", "/w/d.py")])         # disk: the same

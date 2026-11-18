@@ -14,7 +14,7 @@ const MODELS = [
   "gemini/gemini-3.8-flash",
 ];
 const NO_MODEL =
-  "No model set: every Gatherer call fails until one is. A coding agent on its own login (claude-code/…, codex/…), or any LiteLLM provider/model.";
+  "No model set, so Gatherer calls fail. Pick a coding agent with its own login (claude-code/…, codex/…) or any LiteLLM provider/model.";
 
 type Note = { text: string; kind?: "bad" | "err" };
 const noteClass = (n: Note) => "cfg-note" + (n.kind ? " " + n.kind : "");
@@ -149,7 +149,7 @@ function ModelForm({ s, closePanel }: { s: Settings; closePanel: () => void }) {
   const [note, setNote] = useState<Note | null>(null);
   const [busy, submit] = useSubmit(setNote);
   const notes = Object.entries(s.env || {}).map(
-    ([k, v]) => `${k}=${v} is set for this dashboard and overrides the file here.`,
+    ([k, v]) => `${k}=${v} is set in this dashboard's environment and overrides config.toml.`,
   );
   const shown: Note =
     note ??
@@ -181,7 +181,7 @@ function ModelForm({ s, closePanel }: { s: Settings; closePanel: () => void }) {
           API base
           <input
             id="cfg-api-base"
-            placeholder="the provider's own API"
+            placeholder="Provider default"
             spellCheck={false}
             value={apiBase}
             onChange={(ev) => setApiBase(ev.target.value)}
@@ -191,7 +191,7 @@ function ModelForm({ s, closePanel }: { s: Settings; closePanel: () => void }) {
           Key variable
           <input
             id="cfg-key-env"
-            placeholder="the provider's own, e.g. GEMINI_API_KEY"
+            placeholder="Provider default, e.g. GEMINI_API_KEY"
             spellCheck={false}
             value={keyEnv}
             onChange={(ev) => setKeyEnv(ev.target.value)}
@@ -217,9 +217,9 @@ function DefaultsForm({ s }: { s: Settings }) {
     (saved
       ? { text: saved }
       : !s.exists
-        ? { text: "ag makes config.toml once the model is set, or on its first run." }
+        ? { text: "config.toml is created when you set the model or when ag first runs." }
         : s.error
-          ? { text: "config.toml does not parse: " + s.error, kind: "err" }
+          ? { text: "Can't parse config.toml: " + s.error, kind: "err" }
           : { text: "" });
   return (
     <form
@@ -261,7 +261,7 @@ function DefaultsForm({ s }: { s: Settings }) {
           )}
         </span>
       </div>
-      <label title='[cli] gatherer: where `ag claude` files a run that names no --gatherer (".": one per session)'>
+      <label title='Used for runs that name no --gatherer ("." for one per session)'>
         <span>
           Gatherer for <code>ag &lt;harness&gt;</code> runs
         </span>
@@ -298,7 +298,7 @@ function Harnesses({ s }: { s: Settings }) {
           </div>
         ))
       ) : (
-        <span className="cfg-note">ag writes them here the first time it runs a harness.</span>
+        <span className="cfg-note">None yet. ag adds them when it first runs a harness.</span>
       )}
     </div>
   );

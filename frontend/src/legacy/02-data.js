@@ -213,14 +213,14 @@ const mainSignature = () => {
     info && info.avatar_hello,
     state.chat && [state.chat.key, state.chat.last_row, state.chat.pending], txSignature(), chatView().id,
     chatFeed().signature ? chatFeed().signature() : null,
-    state.details && state.detailsTab, topShown(), chatMin(), canMinimize()]);
+    state.details, topShown(), chatMin(), canMinimize()]);
 };
 // The page's state, in the settings panel: its dot green while live, amber paused, red on an error; the logo's title says it.
 const setLive = (text) => {
   document.getElementById("live").textContent = text;
   const st = /^Live/.test(text) ? "live" : text === "Paused" ? "paused" : /^Not /.test(text) ? "error" : "";
   for (const n of document.querySelectorAll(".state-dot")) n.dataset.state = st;   // the settings panel's
-  document.getElementById("about-btn").title = `${text}. Settings: ag's, and this page's`;
+  document.getElementById("about-btn").title = `Settings · ${text}`;
 };
 // The dashboard's panel: opened by its button, closed by it again, by a click elsewhere, by Esc, or once a
 // theme is picked or the Gatherer's model set.

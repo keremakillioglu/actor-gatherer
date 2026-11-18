@@ -241,9 +241,9 @@ class PickTest(SessionsBase):
             with self.assertRaises(AnswerError):
                 self.s.answer(sid, self.ask(), {"pick": 7})
             self.s.terms[sid].typed = time.time()
-            with self.assertRaisesRegex(sessions.SessionError, "typed into its terminal"):
+            with self.assertRaisesRegex(sessions.SessionError, "typed in the terminal"):
                 self.s.answer(sid, self.ask(), {"pick": 1})
-        with self.assertRaisesRegex(sessions.SessionError, "does not run"):
+        with self.assertRaisesRegex(sessions.SessionError, "doesn't run"):
             self.s.answer("nope", self.ask(), {"pick": 1})
         self.assertEqual(self.typed(), [])
 

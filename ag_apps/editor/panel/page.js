@@ -127,10 +127,10 @@ const statusOf = (a) => (a && a.status) || ["idle", "Idle"];
 const avatarSrc = (name) => `${DASH}/avatars/${encodeURIComponent(name)}.svg`;
 // What an actor's branch is (07-panes.js's branchRoute): where it works, and where its changes go.
 const checkedOut = (o) => !o || !o.head ? "?" : o.branch || `${o.head} (no branch)`;
-const branchRoute = (b) => `From: its own branch, ${b.branch}, in ${tildePath(b.worktree, state.home.home_dir)}, `
+const branchRoute = (b) => `Branch ${b.branch} in ${tildePath(b.worktree, state.home.home_dir)}, `
   + `started from ${b.started_on || "a commit"} at ${(b.start || "").slice(0, 7)}.\n`
-  + `Into: ${tildePath(b.project, state.home.home_dir)}, on ${checkedOut(b.onto)} now: its changes merged there`
-  + `${b.approve ? " once you approve each" : ", but for lines you are editing, and lines you changed too"}.`;
+  + `Merges into ${tildePath(b.project, state.home.home_dir)} (on ${checkedOut(b.onto)} now)`
+  + `${b.approve ? " once you approve each change" : ", except on lines you're editing or changed"}.`;
 
 // ------------------------------------------------------------------ a file's lines, as Chat shows them (16-files-view.js's)
 const FILE_KINDS = { read: ["read", "var(--s1)"], hit: ["search hit", "var(--s4)"], edit: ["edited", "var(--s2)"],
@@ -166,7 +166,7 @@ function fileBlock(b, lang) {
   const hl = (ls, top) => { const t = ls.join("\n"); return top ? hlLines(t, lang === "html" ? guessWeb(t) : lang) : hlPart(lang, t)[0]; };
   const cut = () => { if (b.cut) out.push(fileGap(`+${plural(b.cut, "more line")} not shown`)); };
   if (b.t === "lines") {
-    if (b.start === null) out.push(fileGap("where in the file is not known"));
+    if (b.start === null) out.push(fileGap("position in the file unknown"));
     const h = hl(b.lines, b.start === 1);
     b.lines.forEach((t, i) => out.push(fileLine(b.start === null ? null : b.start + i, "read", "", t, h[i])));
     cut();
@@ -186,7 +186,7 @@ function fileBlock(b, lang) {
     flush();
     cut();
   } else if (b.t === "diff") {
-    if (b.at === null) out.push(fileGap("where in the file is not known: its lines were not seen"));
+    if (b.at === null) out.push(fileGap("position in the file unknown"));
     const above = b.above || [], below = b.below || [], ctx = (rows) => rows.map((r) => r[1]);
     const [was, now] = hlPart(lang, [...ctx(above), ...b.old, ...ctx(below)].join("\n"), [...ctx(above), ...b.new, ...ctx(below)].join("\n"));
     above.forEach(([n, t], i) => out.push(fileLine(n, "ctx", "", t, was[i])));

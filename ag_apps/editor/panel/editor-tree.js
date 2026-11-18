@@ -106,16 +106,16 @@ function edBar() {
     "aria-label": label, onclick: run }, strokeIcon(icon, 15));
   ed.bar.replaceChildren(el("div", { class: "row" },
     el("button", { type: "button", class: "ed-folder", "aria-haspopup": "dialog", "aria-expanded": ed.pick ? "true" : "false",
-      title: `${edTilde(ed.root)}\nClick to show another folder: typed, one above it, an actor's or a recent one`,
+      title: `${edTilde(ed.root)}\nClick to open another folder`,
       onclick: (ev) => edPicker(ev.currentTarget) },
       edDirIcon(false), el("span", { class: "nm", text: ed.root === "/" ? "/" : edBase(ed.root) }), strokeIcon(ICONS.chevron, 11)),
     act(ED_SEARCH, `Go to a file… (${MAC ? "⌘P" : "Ctrl+P"})`, edGoto),
-    ed.choose ? act(ED_DIR_GLYPH.open, `${edNativeName("folder")} The folder shown here: the system's Open dialog, on this machine`,
+    ed.choose ? act(ED_DIR_GLYPH.open, edNativeName("folder"),
       () => edNative("folder"), "native") : null,
     act(ED_GLYPH.doc + "M8 7.75v4M6 9.75h4", "New file…", () => edNew(edTarget(), false), "opt"),
     act(ICONS.folderNew, "New folder…", () => edNew(edTarget(), true), "opt"),
-    el("button", { type: "button", class: "ed-act ed-hide", title: "Fold the files away: a thin bar in their place, clicked to show them again",
-      "aria-label": "Fold the files away", "aria-expanded": "true", onclick: () => edFoldTree(true) }, strokeIcon(ICONS.sidebar, 15))));
+    el("button", { type: "button", class: "ed-act ed-hide", title: "Hide files",
+      "aria-label": "Hide files", "aria-expanded": "true", onclick: () => edFoldTree(true) }, strokeIcon(ICONS.sidebar, 15))));
   if (ed.fold) {
     ed.fold.title = `Show the files of ${edTilde(ed.root)}`;
     ed.fold.replaceChildren(strokeIcon(ICONS.sidebar, 15), el("span", { class: "nm", text: edShort(ed.root) }));
@@ -177,8 +177,8 @@ async function edFetchList(dir) {
   try {
     const r = await fetch(`/api/edit/list?${new URLSearchParams({ dir, root: "/" })}`, { cache: "no-store" });
     const got = await r.json().catch(() => ({}));
-    return r.ok ? got : { error: got.error || `It could not be listed (${r.status})`, entries: [], ...("choose" in got ? { choose: got.choose } : {}) };
-  } catch (e) { return { error: "The dashboard did not answer: is it still running?", entries: [] }; }
+    return r.ok ? got : { error: got.error || `Couldn't list this folder (${r.status})`, entries: [], ...("choose" in got ? { choose: got.choose } : {}) };
+  } catch (e) { return { error: "The dashboard didn't respond. Is it still running?", entries: [] }; }
 }
 
 // ---- the folder picker --------------------------------------------------------------------------------------------
@@ -192,12 +192,12 @@ function edPicker(button) {
   edMenuClose(); edGoClose();
   const first = ed.root === "/" ? "/" : `${edTilde(ed.root)}/`;
   const input = el("input", { type: "text", class: "ed-pk-in", spellcheck: "false", autocomplete: "off", value: first,
-    "aria-label": "A folder's path", placeholder: "A folder's path: ~/… or /…", role: "combobox", "aria-autocomplete": "list",
+    "aria-label": "Folder path", placeholder: "Folder path (~/… or /…)", role: "combobox", "aria-autocomplete": "list",
     "aria-controls": "ed-pk-list", "aria-expanded": "true" });
   const err = el("div", { class: "ed-pk-err", role: "alert" });
   const list = el("div", { class: "ed-pk-list", id: "ed-pk-list", role: "listbox", "aria-label": "Folders" });
-  const hint = el("div", { class: "ed-pk-hint", text: "Tab completes · Enter shows it · Esc closes" });
-  const box = el("div", { class: "ed-pk", role: "dialog", "aria-label": "Show a folder" }, input, err, list, hint);
+  const hint = el("div", { class: "ed-pk-hint", text: "Tab to complete · Enter to open · Esc to close" });
+  const box = el("div", { class: "ed-pk", role: "dialog", "aria-label": "Open a folder" }, input, err, list, hint);
   const pk = ed.pick = { box, input, list, err, button, first, items: [], at: -1, cache: new Map(), seq: 0, off: null };
   input.addEventListener("input", () => { err.textContent = ""; edPickDraw(); });
   input.addEventListener("keydown", edPickKey);
@@ -255,20 +255,20 @@ function edPickDraw() {
     const dirs = got && got.entries ? got.entries.filter((e) => e.dir && e.name.toLowerCase().startsWith(start)) : [];
     if (!start.startsWith(".")) dirs.sort((a, b) => (a.name.startsWith(".") - b.name.startsWith(".")));
     groups.push([`In ${edTilde(dir)}`, dirs.slice(0, 60).map((e) => ({ path: edJoin(dir, e.name), name: e.name, kind: "in" })),
-      !got || got.loading ? "Loading…" : got.error ? got.error : start ? `No folder in it starting with “${start}”` : "No folders in it"]);
+      !got || got.loading ? "Loading…" : got.error ? got.error : start ? `No folders starting with “${start}”` : "No folders"]);
   }
   const has = (p) => !typed || untouched || edTilde(p).toLowerCase().includes(typed.trim().toLowerCase().replace(/\/+$/, ""));
   if (untouched && ed.root !== "/") {
     const up = [];
     for (let d = edDir(ed.root); ; d = edDir(d)) { up.push({ path: d, name: edTilde(d), kind: "up" }); if (d === "/") break; }
-    groups.push(["Above it", up]);
+    groups.push(["Parent folders", up]);
   }
   const theirs = edFolders().filter(([d]) => d !== ed.root && has(d));
   groups.push(["Actors' folders", theirs.map(([d, v]) => ({ path: d, name: edBase(d) || "/", note: `${edTilde(d)}${v.names.length ? " — " + v.names.join(", ") : ""}`, kind: "actor" }))]);
   const seen = new Set(theirs.map(([d]) => d));
   groups.push(["Recent", edRecent().filter((d) => d !== ed.root && !seen.has(d) && has(d))
     .map((d) => ({ path: d, name: edBase(d) || "/", note: edTilde(d), kind: "recent" }))]);
-  if (ed.choose) groups.push(["", [{ path: null, name: edNativeName("folder"), note: "the system's Open dialog, on this machine", kind: "native" }]]);
+  if (ed.choose) groups.push(["", [{ path: null, name: edNativeName("folder"), kind: "native" }]]);
   const keep = pk.items[pk.at] && (pk.items[pk.at].path || "native");
   pk.items = [];
   const nodes = [];
@@ -333,7 +333,7 @@ async function edPickGo(path) {
   const pk = ed.pick;
   if (!pk) return;
   path = (path || "").replace(/\/+$/, "") || "/";
-  if (!path.startsWith("/")) { pk.err.textContent = "A path from / or ~, please"; return; }
+  if (!path.startsWith("/")) { pk.err.textContent = "Enter a path starting with / or ~"; return; }
   const got = pk.cache.get(path) && !pk.cache.get(path).loading ? pk.cache.get(path) : await edFetchList(path);
   if (ed.pick !== pk) return;
   if (got.error) { pk.err.textContent = got.error; pk.input.focus(); return; }
@@ -390,7 +390,7 @@ function edTree() {
         rows.push(el("button", { ...at, class: "ed-row dir" + dim, "data-dir": "1", title: edTilde(p), "aria-expanded": open ? "true" : "false",
           onclick: () => edToggle(p) },
           el("span", { class: "tw" + (open ? " open" : "") }, strokeIcon(ICONS.chevron, 12)), edDirIcon(open), el("span", { class: "n", text: e.name }),
-          open ? null : edAvatars(writers, "files in it"), open ? null : edWaiting(e.pending, "in it")));
+          open ? null : edAvatars(writers, "files in it"), open ? null : edWaiting(e.pending)));
         if (open) walk(p, depth + 1);
         continue;
       }
@@ -403,7 +403,7 @@ function edTree() {
         edAvatars(writers, "it"),
         fresh ? el("span", { class: "mk fresh", title: "Changed in the last minute" }) : null,
         e.conflicts ? el("span", { class: "mk cf", title: `${plural(e.conflicts, "conflict")} with the file on disk`, text: "!" }) : null,
-        edWaiting(e.pending, "to it"),
+        edWaiting(e.pending),
         e.dirty && !e.conflicts ? el("span", { class: "mk dirty", title: "Unsaved changes" }) : null,
         e.pages ? el("span", { class: "mk eds", title: `Open in ${plural(e.pages, "editor")}`, text: String(e.pages) }) : null));
     }
@@ -505,8 +505,8 @@ function edMenu(row, x, y) {
     row ? item("M5.25 5.25V3.5a1 1 0 0 1 1-1h6.25a1 1 0 0 1 1 1v6.25a1 1 0 0 1-1 1H10.75M3.5 5.25h6.25a1 1 0 0 1 1 1v6.25a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V6.25a1 1 0 0 1 1-1z",
       "Copy relative path", () => edCopy(rel)) : null,
     sep(),
-    item(ICONS.reload, "Read the folders again", edRefresh),
-    item(ED_COLLAPSE, "Close every folder", edCollapseAll),
+    item(ICONS.reload, "Refresh", edRefresh),
+    item(ED_COLLAPSE, "Collapse all folders", edCollapseAll),
   ].filter(Boolean);
   const box = el("div", { class: "br-menu row-menu ed-menu", role: "menu", "aria-label": row ? edBase(p) : edTilde(ed.root) }, ...items);
   const buttons = () => [...box.querySelectorAll("button")];
@@ -547,7 +547,7 @@ function edMenuClose(back = false) {
 }
 async function edCopy(text) {
   try { await navigator.clipboard.writeText(text); edNote(`Copied ${text}`); }
-  catch (e) { edNote("Not copied: this browser refused the clipboard", true); }
+  catch (e) { edNote("Couldn't copy. The browser blocked the clipboard.", true); }
 }
 
 // ---- a new file or folder -----------------------------------------------------------------------------------------
@@ -560,8 +560,8 @@ function edNew(dir, folder) {
   if (!edUnder(dir, ed.root)) dir = ed.root;
   edOpenTo(dir);
   const input = el("input", { type: "text", class: "ed-new-in", spellcheck: "false", autocomplete: "off",
-    "aria-label": folder ? `A new folder's name, in ${edTilde(dir)}` : `A new file's name, in ${edTilde(dir)}`,
-    placeholder: folder ? "Folder name" : "File name (a/b.py makes a too)" });
+    "aria-label": folder ? `New folder name in ${edTilde(dir)}` : `New file name in ${edTilde(dir)}`,
+    placeholder: folder ? "Folder name" : "File name or path (a/b.py)" });
   const icon = el("span", { class: "ed-new-ic" }, folder ? edDirIcon(false) : edFileIcon(""));
   const err = el("div", { class: "ed-new-err", role: "alert" });
   const wrap = el("div", { class: "ed-new-wrap", role: "none" }, el("div", { class: "ed-new" }, el("span", { class: "tw" }), icon, input), err);
@@ -591,8 +591,8 @@ function edNewDone(it, back = false) {
 async function edMake(it) {
   const name = it.input.value.trim().replace(/\/+$/, "");
   if (!name) { edNewDone(it, true); return; }
-  const bad = name.startsWith("/") ? "A name in this folder, not a path from /"
-    : name.split("/").some((x) => !x || x === "." || x === "..") ? "No empty, . or .. folder names in it" : "";
+  const bad = name.startsWith("/") ? "Enter a name in this folder, not a path from /"
+    : name.split("/").some((x) => !x || x === "." || x === "..") ? "Folder names can't be empty, . or .." : "";
   if (bad) { it.err.textContent = bad; it.input.classList.add("bad"); return; }
   it.busy = true;
   const path = edJoin(it.dir, name);

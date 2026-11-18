@@ -281,7 +281,7 @@ test("lines picked with a box go to an agent as one message naming each; they sh
 
   await panel.locator("#pk-bar .pk-send").click();
   const pop = panel.locator(".pop.at-pop");
-  await expect(pop.locator(".hd.lead")).toHaveText("Send 2 lines to an agent, as one message of yours");
+  await expect(pop.locator(".hd.lead")).toHaveText("Send 2 lines to an agent as one message");
   await expect(pop.locator(".at-extra")).toBeFocused();
   await page.keyboard.type("One branch for both");
   await pop.locator(".it", { hasText: CLAUDE }).click();

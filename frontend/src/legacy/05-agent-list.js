@@ -326,11 +326,11 @@ function renderPickBar() {
   bar.replaceChildren(
     el("span", { class: "n", text: `${list.length} selected` }),
     el("button", { type: "button", class: "pb", "data-pop": "picks:move", "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === "picks:move"),
-      title: `Put them in a folder of ${titleOf(g)}, or at its top`, onclick: (ev) => openMoveMenu(g, list, ev.currentTarget) },
+      title: `Move to a folder in ${titleOf(g)}`, onclick: (ev) => openMoveMenu(g, list, ev.currentTarget) },
       strokeIcon(ICONS.folder, 14), "Move to…"),
     el("button", { type: "button", class: "pb", title: allSaved ? "Unsave them all" : "Save them all for later",
       onclick: () => savePicks(g, list, !allSaved) }, saveIcon(allSaved), allSaved ? "Unsave" : "Save"),
-    el("button", { type: "button", class: "pb", title: "Close them all: their processes ended, even mid-turn",
+    el("button", { type: "button", class: "pb", title: "Close them all, even mid-turn",
       onclick: () => closePicks(g, list) }, closeIcon(), "Close"),
     el("button", { type: "button", class: "pb x", title: "Clear the selection (Esc)", "aria-label": "Clear the selection", onclick: () => clearPicks() }, "✕"));
 }
@@ -344,7 +344,7 @@ function openMoveMenu(g, list, button) {
     }
   };
   walk(null, 1);
-  items.push({ icon: ICONS.folderNew, text: "New folder…", note: "made at the top, the selected actors put in it: name it next",
+  items.push({ icon: ICONS.folderNew, text: "New folder…", note: "at the top, with the selected actors",
     run: async () => {
       const got = await makeFolder(g.name, freeName(g.name, null, "New folder"), null);
       if (got && got.made !== undefined) { await movePicks(g, list, got.made); startFolderEdit(g.name, got.made); }
@@ -428,7 +428,7 @@ function renderAgents() {
     aloneNew(),                                      // an actor on its own (05-group-moves.js)
     SNAPSHOT || !state.home.merged ? null : crewButton(null, "all"),   // the coordinator agent over everything
     el("span", { class: "list-btns" }, ...listButtons())), GFS, null, () => {}));
-  if (!state.home.gatherers.length && !state.folderEdit) aside.append(el("div", { class: "servers", text: "No groups in this home yet: make one with the folder button above." }));
+  if (!state.home.gatherers.length && !state.folderEdit) aside.append(el("div", { class: "servers", text: "No groups yet. Make one with the folder button above." }));
   else if (!shown.length) aside.append(el("div", { class: "servers", text: "Every group is hidden." }));
   // the coordinator agent over everything; its gatherers, in the folders the reader keeps them in, if any; then the
   // actors on their own closed, in their lines
@@ -441,7 +441,7 @@ function renderAgents() {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
       el("summary", { text: `${hidden.length} hidden group${hidden.length === 1 ? "" : "s"}` }));
     for (const g of hidden) list.append(el("div", { class: "hidden-row" }, el("span", { class: "gname", text: titleOf(g) }),
-      el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `nothing for ${ago(lastOf(g)).replace(" ago", "")}` }),
+      el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `inactive for ${ago(lastOf(g)).replace(" ago", "")}` }),
       el("button", { type: "button", onclick: () => setHidden(g, false) }, "Show")));
     const wasOpen = document.getElementById("hidden-gatherers");
     if (wasOpen && wasOpen.open) list.open = true;
@@ -599,7 +599,7 @@ function agentRow(g, a, group) {
     // hovered, the card (actorCard) says who it is; where there is no hovering, its title
     ...(HOVERS.matches ? {} : { title: `${harnessName(a.harness)} · ${label} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}`
       + (asked && named ? `\nAsked: ${firstLine(asked, 300)}` : "") + (a.recap && a.recap.text ? `\nRecap, ${ago(a.recap.at)}: ${a.recap.text}` : "")
-      + (SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: open beside the one shown${isCoordinator(a) ? "" : "\nShift+click: select it, to move several"}`) }),
+      + (SNAPSHOT ? "" : `\n${BESIDE_KEY}+click to open side by side${isCoordinator(a) ? "" : "\nShift+click to select several"}`) }),
     ...(naming ? {} : { onclick: (ev) => {
       if (ev.shiftKey && !SNAPSHOT && !isCoordinator(a)) { ev.preventDefault(); togglePick(g, a); return; }
       pick(g.name, a.channel, ev);
@@ -776,7 +776,7 @@ const appStack = (list, most = 3) => list.length ? el("span", { class: "t-apps" 
 function tabMark(k) {
   const at = k && workPlacer && !SNAPSHOT ? workPlacer.tabs.where(k) : null;
   if (!at) return null;
-  const said = at.here ? `Open here, in tab ${at.n}` : `Open in tab ${at.n}: a click brings it forward`;
+  const said = at.here ? `Open here in tab ${at.n}` : `Open in tab ${at.n} · click to switch to it`;
   return el("span", { class: "tab-no" + (at.here ? " here" : ""), title: said, "aria-label": said }, String(at.n));
 }
 // an actor's face alone, no harness's badge (actorLogo's): its avatar, else its harness's mark
@@ -815,7 +815,7 @@ function taskRow(g, t, group) {
   const row = el(naming ? "div" : "button", { class: "agent task" + (naming ? " renaming" : ""), ...(naming ? {} : { type: "button" }),
     "aria-current": current ? "true" : "false", "data-key": `${g.name}/task:${t.id}`,
     "data-group": group, ...(open ? { "data-open": "true" } : {}), ...(naming ? {} : { "data-card": key(g.name, `task:${t.id}`) }),
-    ...(HOVERS.matches ? {} : { title: `${name}: ${what || "nothing"}${SNAPSHOT ? "" : `\nClick: open it · ${BESIDE_KEY}+click: open it beside the one shown\nDouble-click its name (or F2) to ${t.name ? "rename" : "name"} it`}` }),
+    ...(HOVERS.matches ? {} : { title: `${name} · ${what || "empty"}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click to open side by side\nDouble-click the name (or F2) to ${t.name ? "rename" : "name"} it`}` }),
     // pressed, its card put away (as the rail's tile does): a live card stays while the pointer is on the row, over the
     // panels the task opens
     ...(naming ? {} : { onclick: (ev) => { cardHide(ev); openTask(g.name, t.id, null, ev); }, onkeydown: (ev) => renameKey(ev, g, k) }) },
@@ -834,7 +834,7 @@ function taskSaveButton(g, t) {
   const saved = all.every((a) => !!savedAs(g.name, a));
   if (SNAPSHOT) return saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null;
   return rowButton("save-btn" + (saved ? " on" : ""), { "aria-pressed": saved ? "true" : "false",
-    title: saved ? "Saved for later: click to unsave its actors" : "Save the task for later: once closed, kept in its folder's saved line",
+    title: saved ? "Saved for later · click to unsave" : "Save the task for later",
     "aria-label": saved ? "Unsave the task" : "Save the task for later" }, () => saveTask(g.name, t.id, !saved), saveIcon(saved));
 }
 async function saveTask(gname, id, save) {
@@ -848,7 +848,7 @@ async function saveTask(gname, id, save) {
 // it was: its apps above (a Browser's tabs opened again), its actors as closed ones are, started again by a message.
 function taskCloseButton(g, t) {
   if (SNAPSHOT || !taskMembers(g, t.id).some(closable)) return null;
-  return rowButton("close-btn", { title: "Close the task: its actors closed, its apps put to sleep (a Browser's tabs kept) -- opened again as it was",
+  return rowButton("close-btn", { title: "Close the task · it reopens as it was",
     "aria-label": "Close the task" }, () => closeTask(g.name, t.id), closeIcon());
 }
 async function closeTask(gname, id) {
@@ -875,13 +875,13 @@ function appRow(g, o) {
   const row = el(naming ? "div" : "button", { class: "agent app-row" + (naming ? " renaming" : ""), ...(naming ? {} : { type: "button" }),
     "aria-current": chosen ? "true" : "false", "data-key": `${g.name}/${k}`, "data-instance": o.id,
     "data-group": OPEN, ...(shown ? { "data-open": "true" } : {}), ...(naming ? {} : { "data-card": appKey(g.name, o.id) }),
-    ...(HOVERS.matches ? {} : { title: `${o.name ? `${o.name} · ` : ""}${o.title ? `${o.app.label} · ${o.title}` : o.app.label}${last ? `\n${last.title}` : ""}${o.folder ? `\n${o.folder}` : ""}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: beside the ones shown\nRight-click: move or close its panel\nDouble-click its name (or F2) to ${o.name ? "rename" : "name"} it`}` }),
+    ...(HOVERS.matches ? {} : { title: `${o.name ? `${o.name} · ` : ""}${o.title ? `${o.app.label} · ${o.title}` : o.app.label}${last ? `\n${last.title}` : ""}${o.folder ? `\n${o.folder}` : ""}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click to open side by side\nRight-click to move or close the panel\nDouble-click the name (or F2) to ${o.name ? "rename" : "name"} it`}` }),
     ...(naming ? {} : { onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); }, onkeydown: (ev) => renameKey(ev, g, k),
       oncontextmenu: (ev) => appPanelMenu(g.name, o, ev) }) },
   told ? el("span", { class: `dot ${told[0]}`, "aria-label": told[1] }) : el("span", { class: "dot-none", "aria-hidden": "true" }),
   el("div", {},
     naming ? nameBox() : el("div", { class: "name", text: appShown(o), ...nameOnDouble(g, k) }),
-    rowActs(addButton(g, k), SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}: the app closed`, "aria-label": `Close ${o.app.label}` },
+    rowActs(addButton(g, k), SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}`, "aria-label": `Close ${o.app.label}` },
       () => closeApp(g.name, o), closeIcon()))),
   el("span", { class: "a-face" }, tabMark(taskKey(g.name, k)), appFace(o)));
   return naming ? row : dropOnItem(dragItems(row, g, () => [k]), g, k);
@@ -989,11 +989,11 @@ function addButton(g, k, label = null) {
   const mk = `${label ? "card-" : ""}task-add:${g.name}/${k}`, id = itemTaskOf(g, k);
   const where = id !== null ? taskName(g, taskById(g.name, id)) : a ? actorTitle(a) : appTitle(o);
   const items = [
-    ...hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), note: "a new agent, in the same directory", run: () => addToTask(g.name, k, h) })),
-    ...apps.map((app) => ({ icon: ICONS.app, mark: app.mark ? appMarkImg(app) : null, text: app.label, note: "an app, the task's agents attached to it",
+    ...hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), note: "a new agent in the same directory", run: () => addToTask(g.name, k, h) })),
+    ...apps.map((app) => ({ icon: ICONS.app, mark: app.mark ? appMarkImg(app) : null, text: app.label, note: "an app the task's agents can use",
       run: () => addAppToTask(g.name, k, app.name) })),
   ];
-  const b = rowButton("task-add", { title: `Add to this task: ${[hs.length ? "an agent" : null, apps.length ? "an app" : null].filter(Boolean).join(" or ")}`,
+  const b = rowButton("task-add", { title: `Add ${[hs.length ? "an agent" : null, apps.length ? "an app" : null].filter(Boolean).join(" or ")} to this task`,
     "aria-label": "Add to this task", "data-pop": mk, "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === mk) },
   () => openPop(mk, b, popMenu(`Add to ${where}`, items)),
   el("span", { class: "task-add-in", "aria-hidden": "true" }, "+", label ? el("span", { class: "t-lbl", text: label }) : null));
@@ -1020,7 +1020,7 @@ async function addToTask(gname, k, harness) {
   const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
   if (!a && !o) return;
   const cwd = (a ? cwdOf(a) : o.folder) || startCwd(g);
-  if (!cwd) return paneNote("Add an agent: this has no directory to start one in");
+  if (!cwd) return paneNote("Can't add an agent: no directory to start it in");
   const fid = a ? folderOf(gname, a) : appFolder(gname, o.id), to = keptAs(g, k);
   await showItemsTask(g, k);
   const was = selectedTask();
@@ -1090,7 +1090,7 @@ const rowActs = (...bs) => bs.some(Boolean) ? el("span", { class: "a-acts" }, ..
 // A selected actor's check, on its avatar, once two or more are selected: a click on it leaves it out
 function pickMark(g, a, logo) {
   if (!picked(g, a) || picks.cs.size < 2 || !(logo instanceof HTMLElement)) return logo;
-  logo.append(el("span", { class: "pick", role: "button", title: "Selected: click to leave it out", "aria-label": "Leave it out of the selection",
+  logo.append(el("span", { class: "pick", role: "button", title: "Selected · click to deselect", "aria-label": "Deselect",
     onclick: (ev) => { ev.stopPropagation(); togglePick(g, a); } }, strokeIcon("M4.25 8.25l2.5 2.5 5-5.25", 11)));
   return logo;
 }
@@ -1102,20 +1102,19 @@ const rowButton = (cls, attrs, run, icon) => el("span", { class: cls, role: "but
 // Its bookmark: saved for later (filled), or to be, a press either way -- in a snapshot, filled if saved, and nothing to
 // press. The gatherer agent's, in its place: hidden from the list (its face on the gatherer's row shows it again).
 function saveButton(g, a) {
-  if (isCoordinator(a)) return SNAPSHOT ? null : rowButton("save-btn", { title: "Hide the coordinator agent from the list: its face on its folder's row shows it again, and opens it",
+  if (isCoordinator(a)) return SNAPSHOT ? null : rowButton("save-btn", { title: "Hide the coordinator agent · click its face on the folder's row to show it again",
     "aria-label": "Hide the coordinator agent" }, () => setCrewHidden(crewHideKey(crewNode(g, a)), true), hideIcon());
   const saved = !!savedAs(g.name, a);
   if (SNAPSHOT) return saved ? el("span", { class: "save-btn on", title: "Saved for later" }, saveIcon(true)) : null;
   return rowButton("save-btn" + (saved ? " on" : ""), { "aria-pressed": saved ? "true" : "false",
-    title: saved ? "Saved for later: click to unsave (it stays in its folder)"
-      : "Save for later: once closed, kept in its folder's saved line, apart from the closed ones",
+    title: saved ? "Saved for later · click to unsave" : "Save for later",
     "aria-label": saved ? "Unsave" : "Save for later" }, () => setSaved(g.name, a, !saved), saveIcon(saved));
 }
 // Its ×: its process closed (closable), or, one that never started, it discarded (discardable); null: neither.
 function closeButton(g, a) {
-  return closable(a) ? rowButton("close-btn", { title: "Close this session's process (the dashboard's agent or terminal), even mid-turn",
+  return closable(a) ? rowButton("close-btn", { title: "Close this session, even mid-turn",
       "aria-label": "Close session" }, () => closeActor(g, a, closeSession), closeIcon())
-    : discardable(a) ? rowButton("close-btn", { title: "Close: it never started, so it goes from the list, and nothing of it is kept",
+    : discardable(a) ? rowButton("close-btn", { title: "Never started · remove it from the list",
       "aria-label": "Close session" }, () => closeActor(g, a, () => discardSession(g, a)), closeIcon()) : null;
 }
 // An actor closed from the list (`how`: its process closed, or it discarded): closed in the screen tabs first, as its tab's
@@ -1152,7 +1151,7 @@ const nameAnswers = new Map();                       // what came of each name g
 const nameKey = (gname, c) => `${gname}\u0000${c}`;
 function nameNote(g, a) {
   if (!a.name || !a.name.text) return "";
-  if (a.name.by !== "user") return `${harnessInfo(a.name.by) ? `${harnessName(a.name.by)}'s` : "Its harness's"} name for it\n`;
+  if (a.name.by !== "user") return `Named by ${harnessInfo(a.name.by) ? harnessName(a.name.by) : "its harness"}\n`;
   const how = nameAnswers.get(nameKey(g.name, a.channel));
   return "Named by you" + (!how ? "" : how.error ? ` · not in ${harnessName(a.harness)}: ${how.error}`
     : how.store || how.terminal ? ` · in ${harnessName(a.harness)} too` : "") + "\n";
@@ -1198,7 +1197,7 @@ async function endRename(keep) {
   try {
     const got = await post("/api/name", { gatherer: r.g, channel: r.c, name: text, harness: a.harness, cwd: a.cwd });
     nameAnswers.set(nameKey(r.g, r.c), got);
-    if (got.error) setLive(`${text ? "Named" : "Name taken back"} here; not in ${harnessName(a.harness)}: ${got.error}`);
+    if (got.error) setLive(`${text ? "Renamed" : "Name removed"} here but not in ${harnessName(a.harness)}: ${got.error}`);
   } catch (err) {
     a.name = before;
     setLive(`Not named: ${err.message}`);
@@ -1283,7 +1282,7 @@ function folderRows(g, f) {
   if (isOpenFolder(g.name, f.id)) {
     const rows = closed ? closedRows(g, f.id) : [crewRow(`folder:${f.id}`, g), ...boxRows(g, f.id)].filter(Boolean);
     out.push(el("div", { class: "f-kids" }, ...(rows.length ? rows
-      : [el("div", { class: "f-empty", text: SNAPSHOT || closed ? "Empty" : "Empty: drag actors here, or start one with its +" })])));
+      : [el("div", { class: "f-empty", text: SNAPSHOT || closed ? "Empty" : "Empty · drag actors here or start one with +" })])));
   } else {
     const peek = openIn(g, f.id);                    // folded: those open in a pane, in view under it
     if (peek.length) out.push(el("div", { class: "f-kids peek" }, ...peek.map((a) => agentRow(g, a, groupOf(g, a)))));
@@ -1304,7 +1303,7 @@ function foldRows(g, id, name, list) {
   const line = el("button", { class: "agent-group fold-line", type: "button", "aria-expanded": shown ? "true" : "false",
     "data-key": `${g.name}/${id === null ? "" : id}/${name}`,
     title: shells ? (shown ? "Hide the terminals" : "Show the terminals")
-      : name === "Saved" ? `${shown ? "Hide" : "Show"} the saved actors that are closed: kept here, apart from the closed ones, till unsaved`
+      : name === "Saved" ? `${shown ? "Hide" : "Show"} the saved actors that are closed`
       : `${shown ? "Hide" : "Show"} the closed ${kids.length ? "folders and actors" : "actors"}`,
     onclick: () => toggleFold(name, k) },
     `${shown ? "▾" : "▸"} `,
@@ -1327,8 +1326,7 @@ function tallyChips(t, of, idle = false) {
   return [count(t.asking, " asking", "waiting for you"), count(t.error, " error", "stopped on an error"), told, count(t.running, "", "running"),
     idle ? count(t.idle, " idle", "idle") : null].filter(Boolean);
 }
-const folderSays = (f, t) => `${f.name}: ${plural(t.open, "actor")} open${t.saved ? `, ${t.saved} saved` : ""}${t.closed ? `, ${t.closed} closed` : ""}`
-  + " (its folders' too)";
+const folderSays = (f, t) => `${f.name}: ${plural(t.open, "actor")} open${t.saved ? `, ${t.saved} saved` : ""}${t.closed ? `, ${t.closed} closed` : ""}`;
 // A folder's line: a button opening or folding it -- its caret, its name -- and at its right how many of the actors it
 // holds open (its folders' too) wait on the reader, stopped on an error, run, are idle (a click there too opens or
 // folds it). Hovered or in focus, its buttons over those counts: "+ actor" and "+ ⋯", started in it (startButtons), a
@@ -1343,14 +1341,14 @@ function folderLine(g, f) {
   const toggle = () => toggleFolder(g.name, f.id), held = t.open + t.saved + t.closed;
   const acts = closed ? [
     folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
-    folderAct("delete", `Delete ${f.name}: what is in it moves up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
-    folderAct("reopen", `Reopen ${f.name}: back with the open folders, its actors still closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id)),
+    folderAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
+    folderAct("reopen", `Reopen ${f.name} · its actors stay closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id)),
   ] : [...startButtons(g, f), crewAt(`folder:${f.id}`, g)[1] ? null : crewButton(g, `folder:${f.id}`),
     folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(g.name, null, f.id)),
     folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(g.name, f.id)),
-    folderAct("delete", `Delete ${f.name}: what is in it moves up a level${crewAt(`folder:${f.id}`, g)[1] ? ", and its coordinator agent is closed" : ""}`,
+    folderAct("delete", `Delete ${f.name} · its contents move up a level${crewAt(`folder:${f.id}`, g)[1] ? " and its coordinator agent closes" : ""}`,
       strokeIcon(ICONS.bin, 14), () => deleteFolder(g.name, f.id)),
-    folderAct("close", `Close ${f.name}: every actor in it closed, and it put in the closed line`, closeIcon(), () => pressClose(g, f, "list"))];
+    folderAct("close", `Close ${f.name} and every actor in it`, closeIcon(), () => pressClose(g, f, "list"))];
   const line = el("div", { class: "folder-line" + (closed ? " closed" : ""), "data-key": `${g.name}/folder:${f.id}`, "data-card": key(g.name, `folder:${f.id}`) },
     el("button", { class: "fbtn", type: "button", "aria-expanded": open ? "true" : "false",
       ...(HOVERS.matches ? {} : { title: closed ? `${f.name}: closed, ${plural(held, "actor")} in it` : folderSays(f, t) }), onclick: toggle,
@@ -1358,7 +1356,7 @@ function folderLine(g, f) {
       el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "fname", text: f.name })),
     SNAPSHOT || closed || !crewAt(`folder:${f.id}`, g)[1] ? null : crewButton(g, `folder:${f.id}`),   // its coordinator agent's
     el("span", { class: "fill", onclick: toggle },
-      ...(closed ? [held ? el("span", { class: "count closed", title: `${plural(held, "actor")} in it, closed` }, el("i", { "aria-hidden": "true" }), String(held)) : null]
+      ...(closed ? [held ? el("span", { class: "count closed", title: plural(held, "closed actor") }, el("i", { "aria-hidden": "true" }), String(held)) : null]
         : tallyChips(t, plural(t.open, "actor"), true)),
       SNAPSHOT ? null : el("span", { class: "f-acts", onclick: (ev) => ev.stopPropagation() }, ...acts)));
   return dropOn(dragFolder(line, g, f), g, f.id, () => { if (!isOpenFolder(g.name, f.id)) toggle(); });
@@ -1382,7 +1380,7 @@ function pressClose(g, f, from) {
 }
 function closeAsk(g, f) {
   const w = closeWhat(g, f), up = parentOf(g.name, f), where = up === null ? titleOf(g) : folderById(g.name, up).name;
-  const parts = [w.open ? `closes ${plural(w.open, "actor")}${w.busy ? ` (${w.busy} mid-turn: cut off)` : ""}` : null,
+  const parts = [w.open ? `closes ${plural(w.open, "actor")}${w.busy ? ` (stopping ${w.busy} mid-turn)` : ""}` : null,
     w.shells ? `ends ${plural(w.shells, "terminal")}` : null, w.marks ? `removes ${plural(w.marks, "bookmark")}` : null].filter(Boolean);
   const said = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || "closes it";
   const from = folderClosing.from;
@@ -1401,7 +1399,7 @@ function closeAsk(g, f) {
         if (cardLive() && !hover.node.matches(":hover")) cardHide(); else cardDraw();
       }, 0);
     } },
-    el("p", {}, el("b", { text: `Close ${f.name}?` }), ` This ${said}. Everything in it becomes closed, and it moves into ${where}'s closed line.`),
+    el("p", {}, el("b", { text: `Close ${f.name}?` }), ` This ${said}. The folder moves to ${where}'s closed line.`),
     el("div", { class: "f-ask-btns" },
       btn("go", "go", "Close folder", () => { folderClosing = null; if (from === "card") cardHide(); closeFolder(g, f); }),
       btn("cancel", "", "Cancel", cancel)));
@@ -1484,7 +1482,7 @@ function nameFolder(gname, id, parent, text) {
   if (!text || (was && text === was.name)) return false;
   const other = kidFolders(gname, parent).find((x) => x.id !== id && x.name.toLowerCase() === text.toLowerCase());
   if (text.includes("/") || other) {
-    setLive(other ? `There is a folder "${other.name}" there already` : 'A folder\'s name can\'t hold "/"');
+    setLive(other ? `A folder named "${other.name}" is already there` : 'Folder names can\'t contain "/"');
     return false;
   }
   if (was) renameFolder(gname, id, text); else makeFolder(gname, text, parent);
@@ -1666,15 +1664,15 @@ function shellRow(g, s) {
   const where = shellPath(s), close = (ev) => { ev.stopPropagation(); closeShell(s); };
   return el("button", { class: "agent shell", type: "button", "aria-current": current ? "true" : "false", "data-key": `${g.name}/${s.id}`,
     "data-group": SHELLS, ...(open ? { "data-open": "true" } : {}),
-    title: `Terminal · ${s.cwd}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click: open beside the one shown`}`,
+    title: `Terminal · ${s.cwd}${SNAPSHOT ? "" : `\n${BESIDE_KEY}+click to open side by side`}`,
     onclick: (ev) => pick(g.name, s.id, ev), oncontextmenu: (ev) => pickBeside(g.name, s.id, ev) },
     shellLogo(),
     el("div", {},
       el("div", { class: "name", text: where.split("/").filter(Boolean).pop() || where }),
       el("div", { class: "asked", text: where }),
       el("div", { class: "meta" }, el("span", { text: `Terminal · opened ${ago(s.since)}` }),
-        rowActs(el("span", { class: "close-btn", role: "button", tabindex: "0", title: "Terminate: end the shell, and whatever runs in it",
-          "aria-label": "Terminate the terminal", onclick: close,
+        rowActs(el("span", { class: "close-btn", role: "button", tabindex: "0", title: "End the shell and everything running in it",
+          "aria-label": "Terminate shell", onclick: close,
           onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); close(ev); } } }, closeIcon())))));
 }
 const shellLogo = () => el("span", { class: "logo shell-logo", "aria-hidden": "true" }, strokeIcon(ICONS.terminal, 18));

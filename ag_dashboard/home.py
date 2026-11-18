@@ -70,7 +70,7 @@ def save_upload(mime: str, data: str) -> dict:
     """An image pasted or dropped into a message box (`data`, base64), saved where the agent can read it: {path}."""
     ext = IMAGE_TYPES.get(mime)
     if ext is None:
-        raise ValueError(f"not an image the agents read: {mime or 'no type'}")
+        raise ValueError(f"unsupported image type: {mime or 'unknown'}")
     folder = os.path.join(HOME, "dashboard", "uploads")
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, uuid.uuid4().hex + ext)

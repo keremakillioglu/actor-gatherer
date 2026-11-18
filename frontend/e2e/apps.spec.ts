@@ -53,7 +53,7 @@ test("an app opens above the panes, with no agent attached, its panel on an orig
     }
   });
   expect(reached).toBe("refused");
-  await closePanel(page, pane); // its row in the list right-clicked: "Close its panel"
+  await closePanel(page, pane); // its row in the list right-clicked: "Close panel"
   await expect(page.locator("#top-row > .app-pane")).toHaveCount(0);
   await expect(page.locator("#top-row")).toBeHidden(); // nothing in it: the panes have the height
 });

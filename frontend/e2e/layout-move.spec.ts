@@ -78,7 +78,7 @@ test("a panel moved from its menu: along a side of its task, or in another's pla
     /To the bottom/,
     /^⇄Swap with Parser fixes/,
     /To a new tab of this task/,
-    /Close its panel/,
+    /Close panel/,
   ]);
   await appMenu.getByRole("menuitem", { name: "To the right" }).click();
   await expect(appMenu).toHaveCount(0);

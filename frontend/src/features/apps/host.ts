@@ -249,7 +249,7 @@ export class AppPane {
     // (app_kit/js/app.js's --ag-corner)
     const x = el("button", "app-x", "×");
     x.type = "button";
-    x.title = x.ariaLabel = `Close this ${app.label} panel (the app stays open)`;
+    x.title = x.ariaLabel = `Close ${app.label} panel (app stays open)`;
     x.addEventListener("click", (ev) => {
       ev.stopPropagation();
       hooks.close();

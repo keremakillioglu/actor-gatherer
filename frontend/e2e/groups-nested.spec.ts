@@ -149,7 +149,7 @@ test("Manage groups: a folder given a group of its own where it is, asked first"
   const dialog = page.locator("dialog.mv-dialog");
   await expect(dialog.locator("h3")).toHaveText("Give Work a group of its own?");
   await expect(dialog.locator(".mv-line").first()).toContainText(
-    `Work becomes a group of its own where it is, named after it, with the settings of ${GATHERER}.`,
+    `Work becomes a group of its own, in place, with the settings of ${GATHERER}.`,
   );
   await expect(dialog.locator(".mv-line").first()).toContainText(
     `Its actor leaves the ${GATHERER} group (1 other) for it.`,
@@ -322,7 +322,7 @@ test("Manage groups opens from the settings panel, and makes folders: at the top
   await expect(box).toHaveCount(0);
 
   await panel(page).getByRole("button", { name: "New folder", exact: true }).click(); // at the top: a group of its own
-  await expect(box).toHaveAttribute("placeholder", "Folder name: a group of its own");
+  await expect(box).toHaveAttribute("placeholder", "Folder name (a new group)");
   await box.fill("Ideas");
   await box.press("Enter");
   await expect.poll(() => asked).toEqual([{ do: "new", name: "Ideas", folder: null }]);

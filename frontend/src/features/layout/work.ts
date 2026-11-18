@@ -376,7 +376,7 @@ export class Work {
       e = document.createElement("div");
       e.className = "lay-strip";
       e.draggable = true;
-      e.title = "Drag to move this task: beside another, or onto the tab bar · right-click: move it";
+      e.title = "Drag or right-click to move this task";
       this.stripBox.append(e);
       this.strips.set(b, e);
     }

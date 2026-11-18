@@ -53,7 +53,7 @@ function widthGrip(grip, key, node, prop, min, at) {
 widthGrip(document.getElementById("side-grip"), "ag-dashboard-side-width", document.documentElement, "--side-w", 200,
   (x) => x - document.querySelector(".side").getBoundingClientRect().left);
 // the folded rail's own width (--rail-w), its right edge dragged as the list's is: 76px at the least, 360px at the most
-const RAIL_GRIP = el("div", { class: "rail-grip", "aria-hidden": "true", title: "Drag to widen the rail · double-click: as narrow as it was" });
+const RAIL_GRIP = el("div", { class: "rail-grip", "aria-hidden": "true", title: "Drag to resize · double-click to reset" });
 document.querySelector(".side").append(RAIL_GRIP);
 widthGrip(RAIL_GRIP, "ag-dashboard-rail-width", document.documentElement, "--rail-w", 76,
   (x) => Math.min(360, x - document.querySelector(".side").getBoundingClientRect().left));
@@ -65,7 +65,7 @@ function listButtons() {
       "aria-label": fold, onclick: () => setListMode(folded ? "list" : "folded") },
       strokeIcon(ICONS.sidebar + (folded ? LIST_ICONS.unfold : LIST_ICONS.fold))),
     full || PANE ? null : el("button", { class: "list-btn lb-hide", type: "button", "aria-pressed": listHidden ? "true" : "false",
-      title: listHidden ? "Keep the list open" : "Hide the list: it slides out when the pointer reaches the page's left edge, or the counts at the top",
+      title: listHidden ? "Keep the list open" : "Hide the list · hover the left edge to show it",
       "aria-label": listHidden ? "Keep the list open" : "Hide the list", onclick: () => setListHidden(!listHidden) },
       strokeIcon(listHidden ? LIST_ICONS.keep : LIST_ICONS.hide))];
 }
@@ -132,7 +132,7 @@ if (!PANE && !SNAPSHOT) {
 function fullButton() {
   const full = listMode === "full";
   return el("button", { class: "list-btn lb-full", type: "button", "aria-pressed": full ? "true" : "false",
-    title: full ? "Back to the list (Esc)" : "Every actor over the whole page: what each is doing",
+    title: full ? "Back to the list (Esc)" : "Show every actor full screen",
     "aria-label": full ? "Leave full screen" : "Full screen", onclick: () => full ? leaveFull() : setListMode("full") },
     strokeIcon(full ? LIST_ICONS.unfull : LIST_ICONS.full));
 }
@@ -221,11 +221,11 @@ function railHere(here, view) {
       el("button", { class: "r-navb root", type: "button", title: "Root: every group", onclick: () => railGo(null) },
         strokeIcon(ICONS.home, 13), el("span", { text: "Root" }))),
     el("div", { class: "r-here" + (f ? " folder" : "") },
-      steps.length ? el("div", { class: "r-path", role: "group", "aria-label": "Where it is" },
-        ...steps.map((s) => dropOn(el("button", { class: "r-step", type: "button", title: `${s.name}: show only it`, onclick: () => railGo(s.at) },
+      steps.length ? el("div", { class: "r-path", role: "group", "aria-label": "Path" },
+        ...steps.map((s) => dropOn(el("button", { class: "r-step", type: "button", title: `Show only ${s.name}`, onclick: () => railGo(s.at) },
           el("span", { class: "nm", text: s.name }), el("span", { class: "sep", "aria-hidden": "true", text: "›" })), g, s.at.f, () => {}))) : null,
       dropOn(el("button", { class: "r-hname", type: "button", "aria-expanded": open ? "true" : "false", "data-card": key(g.name, f ? `folder:${f.id}` : "gatherer:"),
-        title: `${name}: ${open ? "fold it" : "open it"}`, onclick: () => { cardHide(); fold(); } },
+        title: `${open ? "Fold" : "Open"} ${name}`, onclick: () => { cardHide(); fold(); } },
         el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "nm" }, ...breakable(name))),
         g, f ? f.id : null, () => { if (!(f ? railOpen(g, f, view.busy) : !collapsed.has(g.name))) fold(); })),
     ...(open ? [crew && !crewHidden.has(crewHideKey(node)) ? railActor(g, crew) : null, ...railBoxOr(g, f ? f.id : null, view)] : railHereFolded(g, f)));
@@ -287,11 +287,11 @@ const RAIL_FOOT = (() => {
     el("span", { text: what }));
   const foot = el("div", { class: "r-show", role: "group", "aria-label": "What the rail shows" },
     el("div", { class: "r-checks" },
-      box("folders", "Every folder: unchecked, only those with an actor in them that is not closed"),
-      box("saved", "The saved actors of each gatherer and folder, once closed: a line opening them"),
-      box("closed", "The closed actors of each gatherer and folder: a line opening them")),
+      box("folders", "Show every folder, not only those with open actors"),
+      box("saved", "Show saved actors that are closed"),
+      box("closed", "Show closed actors")),
     el("button", { class: "r-show-hd", type: "button", "aria-expanded": "false", text: "Show…",
-      title: "What else the rail shows: every folder, the saved actors, the closed ones",
+      title: "Choose what the rail shows",
       onclick: (ev) => ev.currentTarget.setAttribute("aria-expanded", String(foot.classList.toggle("open"))) }));
   return foot;
 })();
@@ -374,7 +374,7 @@ function railGatherer(g, view) {
   const open = !collapsed.has(g.name), crew = groupCrew(g);
   const sec = el("section", { class: "r-gatherer" + (open ? " open" : ""), "aria-label": titleOf(g) },
     dropOn(el("button", { class: "r-gname", type: "button", "aria-expanded": open ? "true" : "false", "data-card": key(g.name, "gatherer:"),
-      ...(HOVERS.matches ? {} : { title: `${titleOf(g)}${titleOf(g) !== g.name ? ` (${g.name})` : ""}: ${open ? "fold it" : "show its actors"} · double-click: only it` }),
+      ...(HOVERS.matches ? {} : { title: `${titleOf(g)}${titleOf(g) !== g.name ? ` (${g.name})` : ""} · double-click to show only this group` }),
       onclick: railNameClick(() => toggleGatherer(g.name), { g: g.name, f: null }) },
       el("span", { class: "tx" }, el("span", { class: "caret", text: "▶" }),
         el("span", { class: "nm", text: titleOf(g) }))), g, null, () => { if (collapsed.has(g.name)) toggleGatherer(g.name); }));
@@ -415,7 +415,7 @@ function railBox(g, id, view) {
     if (railOpen(g, f, view.busy)) {
       folders.push(el("div", { class: "r-fopen", role: "group", "aria-label": f.name },
         dropOn(el("button", { class: "r-fhead", type: "button", "aria-expanded": "true", "data-card": key(g.name, `folder:${f.id}`),
-          title: `${f.name}: fold it · double-click: only it`, onclick: railNameClick(fold, { g: g.name, f: f.id }) },
+          title: `${f.name} · double-click to show only this folder`, onclick: railNameClick(fold, { g: g.name, f: f.id }) },
           el("span", { class: "tx" }, el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "nm", text: f.name }))),
           g, f.id, () => {}),
         el("div", { class: "r-kids" }, ...railBox(g, f.id, view))));
@@ -453,7 +453,7 @@ function railClosed(g, f) {
   const mine = g.agents.filter((a) => !isCoordinator(a) && folderOf(g.name, a) === f.id).sort((x, y) => (y.last || 0) - (x.last || 0));
   return [el("div", { class: "r-fopen closed", role: "group", "aria-label": `${f.name} (closed)` },
     dropOn(el("button", { class: "r-fhead", type: "button", "aria-expanded": "true", "data-card": key(g.name, `folder:${f.id}`),
-      title: `${f.name}, closed: fold it · double-click: only it`, onclick: railNameClick(fold, { g: g.name, f: f.id }) },
+      title: `${f.name} (closed) · double-click to show only this folder`, onclick: railNameClick(fold, { g: g.name, f: f.id }) },
       el("span", { class: "tx" }, el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "nm", text: f.name }))),
       g, f.id, () => {}),
     el("div", { class: "r-kids" }, ...kidFolders(g.name, f.id).flatMap((k) => railClosed(g, k)), ...mine.map((a) => railActor(g, a))))];
@@ -542,7 +542,7 @@ function railApp(g, o) {
     ...(HOVERS.matches ? {} : { title: `${appTitle(o)} · ${titleOf(g)}` }), onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); } },
   el("span", { class: "r-pic" }, appFace(o), told ? el("i", { class: `rd ${told[0]}`, "aria-hidden": "true" }) : null),
   el("span", { class: "r-name", "aria-hidden": "true", text: o.title || o.app.label }),
-  SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}: the app closed`, "aria-label": `Close ${o.app.label}` },
+  SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}`, "aria-label": `Close ${o.app.label}` },
     () => closeApp(g.name, o), closeIcon()));
   return dropOnItem(dragItems(tile, g, () => [k]), g, k);
 }
@@ -670,8 +670,8 @@ function actorCard(g, a, shown = false) {
   const [cls, label] = statusOf(a), nm = railName(a), size = a.real_tokens ?? a.sent_tokens;
   const env = envelope(a.last_user_message), asked = env ? crewLine(env) : a.last_user_message;
   const bg = a.background || [], dir = cwdOf(a);
-  const hint = [SNAPSHOT ? "Click to show it" : `Click to show it · ${BESIDE_KEY}+click: beside the one shown`];
-  if (shown && !SNAPSHOT) hint.splice(0, 1, `${nameNote(g, a).trim() ? `${nameNote(g, a).trim()} · ` : ""}Double-click its name (or F2) to ${a.name && a.name.text ? "rename" : "name"} it`);
+  const hint = [SNAPSHOT ? "Click to show it" : `Click to show it · ${BESIDE_KEY}+click to open side by side`];
+  if (shown && !SNAPSHOT) hint.splice(0, 1, `${nameNote(g, a).trim() ? `${nameNote(g, a).trim()} · ` : ""}Double-click the name (or F2) to ${a.name && a.name.text ? "rename" : "name"} it`);
   return [
     el("div", { class: "c-who" }, plainFace(a),
       el("div", { class: "tx" }, el("div", { class: "c-nm" + (nm.cls ? ` ${nm.cls}` : ""), text: nm.text }),
@@ -708,27 +708,27 @@ function taskCard(g, t) {
     el("div", { class: "c-tree" }, ...all.map((a) => {
       const [cls, label] = statusOf(a);
       return el("div", { class: "c-task-row" },
-        el("button", { class: "c-row", type: "button", title: `Show it · ${BESIDE_KEY}+click: beside the one shown`,
+        el("button", { class: "c-row", type: "button", title: `Show it · ${BESIDE_KEY}+click to open side by side`,
           onclick: (ev) => { cardHide(); pick(g.name, a.channel, ev); } },
         plainFace(a), el("span", { class: "nm", text: actorTitle(a) }), rowStatus(cls, label)),
         // its own bookmark and close, as its row's; then out of the task (its own mark: not a close)
         saveButton(g, a), closeButton(g, a),
-        el("button", { class: "act take-out", type: "button", title: "Take it out of the task: an actor on its own again, detached from the task's apps",
+        el("button", { class: "act take-out", type: "button", title: "Take it out of the task",
           "aria-label": `Take ${actorTitle(a)} out of the task`, onclick: (ev) => { ev.stopPropagation(); takeOut(g.name, a.channel); } },
         strokeIcon(ICONS.takeOut, 13)));
     }), ...apps.map((o) => el("div", { class: "c-task-row c-app-row", "data-instance": o.id },
-      el("button", { class: "c-row", type: "button", title: `${o.app.label}: select it, its panel above the panes · right-click: move or close its panel`,
+      el("button", { class: "c-row", type: "button", title: `Show ${o.app.label} · right-click to move or close its panel`,
         onclick: (ev) => { cardHide(ev); selectApp(g.name, o, ev); },
         // its panel's menu opened: the card put away, as a click puts it away
         oncontextmenu: (ev) => { appPanelMenu(g.name, o, ev); if (ev.defaultPrevented) cardHide(ev); } },
       appMarkOf(o), el("span", { class: "nm", text: o.name || o.app.label }), el("span", { class: "st", text: o.title || "" })),
-      SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}: the app closed, and out of the task`, "aria-label": `Close ${o.app.label}` },
+      SNAPSHOT ? null : rowButton("close-btn", { title: `Close ${o.app.label}`, "aria-label": `Close ${o.app.label}` },
         () => closeApp(g.name, o), closeIcon()),
-      el("button", { class: "act take-out", type: "button", title: `Take it out of the task: an app on its own again, the task's agents detached from it`,
+      el("button", { class: "act take-out", type: "button", title: "Take it out of the task",
         "aria-label": `Take ${o.app.label} out of the task`, onclick: (ev) => { ev.stopPropagation(); takeOut(g.name, appItem(o.id)); } },
       strokeIcon(ICONS.takeOut, 13))))),
     ...apps.map((o) => noticeList(g, o, apps.length > 1)),
-    el("div", { class: "c-hint", text: "Click the task to open it: its apps above, its actors side by side · drag an actor or an app onto it to put it in · double-click its name in the list to rename it" }),
+    el("div", { class: "c-hint", text: "Drag an actor or app onto the task to add it · double-click its name in the list to rename it" }),
   ].filter(Boolean);
 }
 // An app's card (an app in no task: its row, its tile in the rail), live: what it is and shows -- the user's name for it
@@ -740,10 +740,10 @@ function appCard(g, o) {
         el("div", { class: "c-sub", text: [titleOf(g), o.app.label, o.name ? o.title : null, o.folder].filter(Boolean).join(" · ") }))),
     SNAPSHOT ? null : el("div", { class: "c-acts" },
       cardAct("rename", `${o.name ? "Rename" : "Name"} ${o.app.label}`, strokeIcon(ICONS.pencil, 13), () => editInCard({ g: g.name, item: appItem(o.id) })),
-      cardAct("close", `Close ${o.app.label}: the app closed`, closeIcon(), () => { cardHide(); closeApp(g.name, o); })),
+      cardAct("close", `Close ${o.app.label}`, closeIcon(), () => { cardHide(); closeApp(g.name, o); })),
     SNAPSHOT ? null : cardEditBox(g.name),
     noticeList(g, o) || el("div", { class: "c-st", text: "No notifications" }),
-    el("div", { class: "c-hint", text: "Click to show its panel · drag it onto an actor or a task to put it there · double-click its name in the list or its panel to rename it" }),
+    el("div", { class: "c-hint", text: "Drag it onto an actor or task to add it there · double-click its name to rename it" }),
   ].filter(Boolean);
 }
 // AN APP'S NOTIFICATIONS in a card: the newest first (NOTICES_SHOWN), each opening the app where it says (openNotice:
@@ -757,12 +757,12 @@ function noticeList(g, o, named = false) {
   return el("div", { class: "c-notices", role: "list", "aria-label": `${o.app.label}'s notifications` },
     named ? el("div", { class: "c-nhead", text: appTitle(o) }) : null,
     ...list.slice(0, NOTICES_SHOWN).map((n) => el("div", { class: "c-notice" + ((n.at || 0) > since ? " new" : ""), role: "listitem" },
-      el("button", { class: "c-row", type: "button", title: `Open ${o.app.label} there`,
+      el("button", { class: "c-row", type: "button", title: `Open in ${o.app.label}`,
         onclick: (ev) => { cardHide(ev); openNotice(g.name, o.id, n); } },
       el("span", { class: "status notified" }, el("i", { "aria-hidden": "true" })),
       el("span", { class: "nm" }, el("b", { text: n.title }), n.text ? el("span", { class: "nt", text: n.text }) : null),
       el("span", { class: "st", text: n.at ? ago(n.at) : "" })),
-      el("button", { class: "act take-out", type: "button", title: "Dismiss it", "aria-label": `Dismiss ${n.title}`,
+      el("button", { class: "act take-out", type: "button", title: "Dismiss", "aria-label": `Dismiss ${n.title}`,
         onclick: (ev) => { ev.stopPropagation(); dismissNotice(g.name, o.id, n); } }, closeIcon()))),
     list.length > NOTICES_SHOWN ? el("div", { class: "c-st", text: `and ${list.length - NOTICES_SHOWN} more` }) : null);
 }
@@ -777,27 +777,27 @@ function folderCard(g, f, live = false) {
   if (cardOpen.key !== hover.key) cardOpen = { key: hover.key, ids: new Set() };   // another card: its tree as it starts
   const up = parentOf(g.name, f), rows = cardTree(g, f.id, 0, live), closed = shownClosed(g, f);
   const rename = cardAct("rename", `Rename ${f.name}`, strokeIcon(ICONS.pencil, 13), () => editInCard({ g: g.name, id: f.id, parent: up }));
-  const del = cardAct("delete", `Delete ${f.name}: what is in it moves up a level`, strokeIcon(ICONS.bin, 14), () => { cardHide(); deleteFolder(g.name, f.id); });
+  const del = cardAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => { cardHide(); deleteFolder(g.name, f.id); });
   const asking = live && folderClosing && folderClosing.from === "card" && folderClosing.g === g.name && folderClosing.id === f.id;
   return [
     el("div", { class: "c-who" }, el("span", { class: "c-folder" }, strokeIcon(ICONS.folder, 18)),
       el("div", { class: "tx" }, el("div", { class: "c-nm", text: f.name }),
         el("div", { class: "c-sub", text: [titleOf(g), up === null ? null : folderPath(g.name, up), closed ? "closed" : null].filter(Boolean).join(" / ") }))),
     live ? el("div", { class: "c-acts" }, ...(closed ? [rename, del,
-      cardAct("reopen", `Reopen ${f.name}: back with the open folders, its actors still closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id))]
+      cardAct("reopen", `Reopen ${f.name} · its actors stay closed`, strokeIcon(ICONS.folderOpen, 14), () => reopenFolder(g.name, f.id))]
       : [...cardStarts(g, f),
         cardAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => editInCard({ g: g.name, id: null, parent: f.id })),
         rename, del,
-        cardAct("close", `Close ${f.name}: every actor in it closed, and it put in the closed line`, closeIcon(), () => pressClose(g, f, "card"))])) : null,
+        cardAct("close", `Close ${f.name} and every actor in it`, closeIcon(), () => pressClose(g, f, "card"))])) : null,
     asking ? closeAsk(g, f) : null,
     live ? cardEditBox(g.name) : null,
     rows.length ? el("div", { class: "c-tree" }, ...rows) : el("div", { class: "c-st", text: "Empty" }),
     // in the rail: opened there, or, the rail drilled into it, nothing to open
     live ? (sameAt(railAt, { g: g.name, f: f.id }) ? null : el("button", { class: "c-more", type: "button",
-      onclick: () => { cardHide(); showFolder(g.name, f.id, true); renderAgents(); } }, "Open it in the rail ›"))
+      onclick: () => { cardHide(); showFolder(g.name, f.id, true); renderAgents(); } }, "Open in the rail ›"))
       : el("div", { class: "c-hint", text: "Click to open or fold it" }),
     live && !sameAt(railAt, { g: g.name, f: f.id }) ? el("button", { class: "c-more only", type: "button", onclick: () => railDrill({ g: g.name, f: f.id }) },
-      "Show only it ›") : null,
+      "Show only this folder ›") : null,
   ].filter(Boolean);
 }
 // What is in folder `id`, as the list has it (boxGroups), `depth` in: its folders, each with how many actors it holds open
@@ -823,7 +823,7 @@ function cardTree(g, id, depth, live) {
   for (const a of groups.get(OPEN) || []) {
     const [cls, label] = statusOf(a);
     const parts = [actorLogo(a), el("span", { class: "nm", text: railName(a).text }), rowStatus(cls, label)];
-    out.push(live ? el("button", { class: "c-row", type: "button", ...pad, title: `Show it · ${BESIDE_KEY}+click: beside the one shown`,
+    out.push(live ? el("button", { class: "c-row", type: "button", ...pad, title: `Show it · ${BESIDE_KEY}+click to open side by side`,
       onclick: (ev) => { cardHide(); pick(g.name, a.channel, ev); } }, ...parts) : el("div", { class: "c-row", ...pad }, ...parts));
   }
   const rest = [(groups.get("Saved") || []).length ? `${groups.get("Saved").length} saved` : null,
@@ -847,8 +847,8 @@ function gathererCard(g) {
       cardAct("hide", `Hide ${g.name}`, hideIcon(), () => { cardHide(); setHidden(g, true); })),
     cardEditBox(g.name),
     sameAt(railAt, { g: g.name, f: null }) ? null : el("button", { class: "c-more only", type: "button", onclick: () => railDrill({ g: g.name, f: null }) },
-      "Show only it ›"),
-    el("div", { class: "c-hint", text: `Click its name to ${collapsed.has(g.name) ? "show" : "fold"} its actors · double-click: only it` }),
+      "Show only this group ›"),
+    el("div", { class: "c-hint", text: `Click the name to ${collapsed.has(g.name) ? "show" : "fold"} its actors · double-click to show only this group` }),
   ].filter(Boolean);
 }
 // A card's "+ actor" and "+ ⋯", started in its folder (`f`; null: its gatherer's top): the rail's own (railNew, railMore)
@@ -887,7 +887,7 @@ function cardEditBox(gname) {
     });
     cardInput.addEventListener("blur", () => { if (!cardMoving && document.hasFocus() && cardEdit === e) endCardEdit(true); });
   }
-  const what = e.kind ? `The ${e.kind}'s name` : e.gatherer ? "Its name" : e.id === null || e.id === undefined ? "A new folder's name" : "The folder's name";
+  const what = e.kind ? `The ${e.kind}'s name` : e.gatherer ? "The group's name" : e.id === null || e.id === undefined ? "A new folder's name" : "The folder's name";
   return el("label", { class: "c-edit" }, what, cardInput);
 }
 function endCardEdit(keep) {
@@ -937,9 +937,9 @@ const monFolded = (() => {
 })();
 const mon = { got: new Map(), cards: new Map(), secs: new Map(), box: null, visible: new Set(), timer: null, busy: false, last: -Infinity, seen: null,
   old: false };                                    // old: the server started before the monitor was, and has no /api/monitor
-// "N listed here (closed), of M saved in all: K still open, listed by their status"
-const savedCount = (n, m) => !m ? "none" : `${n} listed here (closed), of ${m} in all`
-  + (m > n ? `: ${m - n} still open, listed by ${m - n === 1 ? "its" : "their"} status` : "");
+// "N closed, K more open under their status" (M saved in all)
+const savedCount = (n, m) => !m ? "none" : `${n} closed`
+  + (m > n ? `, ${m - n} more open under ${m - n === 1 ? "its" : "their"} status` : "");
 const monSig = (a) => `${a.last}|${a.events}|${statusOf(a)[0]}`;
 function monForget() {                                 // left: nothing in view; what was read stays, for coming back
   if (mon.seen) mon.seen.disconnect();
@@ -972,9 +972,9 @@ function renderMonitor() {
   by.get("Closed").sort(([, x], [, y]) => (y.last || 0) - (x.last || 0));
   const total = shown.reduce((n, g) => n + g.agents.length, 0);
   const top = el("div", { class: "m-top" },
-    el("h2", { text: `${plural(total, "actor")}${many ? ` in ${plural(shown.length, "gatherer")}` : ""}` }),
+    el("h2", { text: `${plural(total, "actor")}${many ? ` in ${plural(shown.length, "group")}` : ""}` }),
     mon.old ? el("span", { class: "m-old", role: "status",
-      text: "This dashboard's server is older than its page: restart the dashboard to see each actor's calls and what it said." }) : null);
+      text: "The dashboard's server is out of date. Restart the dashboard to see each actor's calls and replies." }) : null);
   const want = new Set(), columns = [];
   for (const n of MON_ORDER) {
     const list = by.get(n);
@@ -992,7 +992,7 @@ function renderMonitor() {
     const savedAll = n === "Saved" ? shown.reduce((k, g) => k + g.agents.filter((a) => !isCoordinator(a) && savedAs(g.name, a)).length, 0) : 0;
     s.head.replaceChildren(el("span", { class: "caret", text: "▶" }), groupMark(n), n,
       el("span", { class: "n", text: n === "Saved" ? `${list.length} of ${savedAll}` : String(list.length) }));
-    if (n === "Saved") s.head.title += `: ${savedCount(list.length, savedAll)}`;
+    if (n === "Saved") s.head.title += ` · ${savedCount(list.length, savedAll)}`;
     if (open !== (s.body.parentNode === s.node)) { if (open) s.node.append(s.body); else s.body.remove(); }
     if (open) placeAll(s.body, monRows(n, list, many).map(([g, a, head]) => {
       if (head) return head;
@@ -1068,7 +1068,7 @@ function drawCard(g, a, d, many, current, open, read) {
     ? el("div", { class: "c-now said" }, el("span", { class: "lbl", text: "Said:" }), el("span", { class: "tx", text: plainWords(d.said) })) : null;
   const kinds = d && d.files ? Object.entries(d.files) : [];
   return el("button", { class: `m-card ${cls}`, type: "button", "aria-current": current ? "true" : "false", ...(open ? { "data-open": "true" } : {}),
-    title: `${harnessName(a.harness)} · ${g.name} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}\nClick: show it${SNAPSHOT ? "" : ` · ${BESIDE_KEY}+click: beside the one shown`}`,
+    title: `${harnessName(a.harness)} · ${g.name} · ${a.channel}${a.cwd ? "\n" + a.cwd : ""}\nClick to show it${SNAPSHOT ? "" : ` · ${BESIDE_KEY}+click to open side by side`}`,
     onclick: (ev) => { leaveFull(); pick(g.name, a.channel, ev); },
     oncontextmenu: (ev) => { if (MAC && ev.ctrlKey && !SNAPSHOT) leaveFull(); pickBeside(g.name, a.channel, ev); } },
     el("div", { class: "c-head" }, pic, el("div", { class: "c-who" },
@@ -1104,9 +1104,9 @@ function nowLine(a, cls, d) {
     : a.asking.kind === "plan" ? "A plan to approve"
     : (a.asking.questions || []).map((q) => q.question).filter(Boolean).join(" · ") || "A question", since(a.asking.at));
   if (cls === "error" || cls === "failed") return line("err", "Error:", (a.failing && a.failing.error) || (a.stopped && a.stopped.text)
-    || (cls === "failed" ? "Its agent failed to start" : "Its turn stopped on an error"), since((a.failing || a.stopped || {}).at));
+    || (cls === "failed" ? "The agent failed to start" : "Stopped on an error"), since((a.failing || a.stopped || {}).at));
   if (cls === "running") {
-    if (a.failing) return line("err", "Retrying:", `${a.failing.error || "its call to the model failed"} (${plural(a.failing.attempts, "try")})`, since(a.failing.at));
+    if (a.failing) return line("err", "Retrying:", `${a.failing.error || "the model call failed"} (${plural(a.failing.attempts, "try")})`, since(a.failing.at));
     const n = d && d.now;
     if (n && n.kind === "call") { const l = line("run", "Running:", n.text, since(a.last)); l.dataset.call = n.text; return l; }
     return line("run", n && n.kind === "thinking" ? "Thinking…" : "Working…", null, since(a.last));

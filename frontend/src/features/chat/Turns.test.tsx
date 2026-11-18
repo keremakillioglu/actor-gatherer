@@ -112,7 +112,7 @@ describe("Turns", () => {
     ]);
     act(() => more().click());
     expect(more().textContent).toBe("−2 earlier messages");
-    expect(more().getAttribute("title")).toBe("Fold the earlier messages again");
+    expect(more().getAttribute("title")).toBe("Fold earlier messages");
     expect(node.querySelectorAll("#fl-turn-0 .fl-minor > details").length).toBe(4);
     act(() => more().click());
     expect(node.querySelectorAll("#fl-turn-0 .fl-minor > details").length).toBe(2);
@@ -240,9 +240,7 @@ describe("Turns", () => {
     const { page } = testPage(ts, { view: chatView(ts, { opening, current: { state: "opening", turn: "opening" } }) });
     const node = page.draw();
     const opened = node.querySelector(":scope > .fl-turn.opened")!;
-    expect(opened.querySelector(".fl-user")!.getAttribute("title")).toBe(
-      "Sent to the agent: shown here until the gatherer has stored it",
-    );
+    expect(opened.querySelector(".fl-user")!.getAttribute("title")).toBe("Sent to the agent");
     expect(opened.querySelector(".fl-times")!.textContent).toBe("last activity 30s ago · 30s so far");
     expect(node.lastElementChild!.className).toBe("fl-status");
     expect(node.querySelector("#fl-turn-1 .fl-working, .fl-done")).toBeNull(); // the latest stored: not at work
@@ -325,7 +323,7 @@ describe("Turns", () => {
     const node = page.draw();
     const opened = node.querySelector(":scope > .fl-turn.opened")!;
     expect(opened.querySelector(".lbl")!.textContent).toBe(
-      "Not seen by the session yet; its terminal may be asking something first. Open the terminal",
+      "Not received by the session yet. Its terminal may be asking something first. Open the terminal",
     );
     expect(opened.querySelector(".fl-working")).toBeNull();
     act(() => opened.querySelector<HTMLButtonElement>(".to-term")!.click());
@@ -339,7 +337,7 @@ describe("Turns", () => {
     const joined = node.querySelector("#fl-turn-0 > .fl-user.joined")!;
     expect(joined.tagName).toBe("BUTTON");
     expect(joined.getAttribute("title")).toBe(
-      "Written while it worked, and given to the agent in this turn. Fold this turn to your message. ⌘+click: show this turn's files and commands",
+      "Sent while the agent was working. Fold this turn to your message. ⌘+click: show this turn's files and commands",
     );
     expect(node.querySelector("#fl-turn-1 > .fl-user.joined")!.textContent).toBe("And that.");
   });

@@ -43,13 +43,13 @@ test("a folder's × asks first, closes it into its gatherer's closed line, its b
     await expect(line.locator(".folder-act")).toHaveClass([/new/, /rename/, /delete/, /close/]);
     await expect(line.locator(".folder-act.delete")).toHaveAttribute(
       "title",
-      "Delete Paper: what is in it moves up a level",
+      "Delete Paper · its contents move up a level",
     );
 
     // the Codex actor in it idle and saved: asked first, Cancel in focus; Esc takes it back, nothing done
     await line.locator(".folder-act.close").click();
     await expect(ask.locator("p")).toHaveText(
-      "Close Paper? This closes 1 actor and removes 1 bookmark. Everything in it becomes closed, and it moves into demo's closed line.",
+      "Close Paper? This closes 1 actor and removes 1 bookmark. The folder moves to demo's closed line.",
     );
     await expect(ask.locator('[data-ask="cancel"]')).toBeFocused();
     await page.keyboard.press("Escape");
@@ -117,7 +117,7 @@ test("in the rail, a folder's card asks before closing it; closed, it is in the 
     await expect(card.locator(".c-acts .act.close")).toBeVisible();
     await card.locator(".c-acts .act.close").click();
     await expect(card.locator(".f-ask p")).toHaveText(
-      "Close Paper? This closes 1 actor. Everything in it becomes closed, and it moves into demo's closed line.",
+      "Close Paper? This closes 1 actor. The folder moves to demo's closed line.",
     );
     await expect(card.locator('[data-ask="cancel"]')).toBeFocused();
     await card.getByRole("button", { name: "Close folder" }).click();

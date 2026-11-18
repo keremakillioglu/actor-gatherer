@@ -165,7 +165,7 @@ def apps(gatherer: str, items: Iterable[str]) -> list:
         return []
     host = _host()
     if host is None:
-        raise GroupError("an app moves between groups only where the dashboard runs its apps")
+        raise GroupError("apps can only be moved by the dashboard that runs them")
     out, agents = [], _app_agents(gatherer)
     for i in ids:
         try:
@@ -173,8 +173,8 @@ def apps(gatherer: str, items: Iterable[str]) -> list:
         except AppError:
             raise GroupError(f"{gatherer} has no app {i}") from None
         if host.hosted(inst.app).manifest.instances != "many" and not set(agents.get(i, ())) & set(items):
-            raise GroupError(f"{inst.name or inst.title or inst.app} is its group's own (the group's only one): it stays "
-                             "with its group -- take it out of the task or the folder first")
+            raise GroupError(f"{inst.name or inst.title or inst.app} is the group's only one and stays with the group. "
+                             "Take it out of the task or folder first.")
         out.append(inst)
     return out
 
@@ -261,7 +261,7 @@ def _sizes(*groups: str) -> Dict[str, int]:
 
 def _check(gatherer: str, to: str) -> None:
     if not home.merged():
-        raise GroupError("moving between groups needs the home's one database: run `ag home merge` first")
+        raise GroupError("run `ag home merge` first to move between groups")
     if to == gatherer:
         raise GroupError(f"already in {to}")
     if to not in data.gatherer_names():
@@ -302,7 +302,7 @@ def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
     if folder is not None and not dissolve:
         name = next(f["name"] for f in _tree(gatherer)["folders"] if f["id"] == int(folder))
         if any(f.get("parent") == into and f["name"].lower() == name.lower() for f in target["folders"]):
-            raise GroupError(f'{to} has a folder "{name}" there already')
+            raise GroupError(f'{to} already has a folder named "{name}" there')
     said = {"group": to, "was": gatherer, "name": _names(to), "was_name": _names(gatherer)}
     tree = _tree(gatherer)
     under = _under(tree, int(folder)) if folder is not None else []
@@ -327,11 +327,11 @@ def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
     try:
         actions.insert(to, events)                    # ag first: what the policy reads, and where the folders are
     except (RuntimeError, OSError, ValueError) as exc:
-        raise GroupError(f"ag did not take the move: {exc}; nothing else changed") from None
+        raise GroupError(f"ag couldn't make the move ({exc}). Nothing changed.") from None
     got = _members(to)
     missed = [c for c in moving if c not in got]
     if missed:
-        raise GroupError(f"ag did not take the move of {', '.join(missed)}; nothing else changed")
+        raise GroupError(f"ag didn't move {', '.join(missed)}. Nothing else changed.")
     _unhook(gatherer, moving, [i.id for i in moved])  # one closed for `to`'s: its own let go of at its close
     for i in moved_apps:
         _host().regroup(gatherer, i, to)
@@ -402,7 +402,7 @@ def split(gatherer: str, folder: int) -> dict:
     itself gone. -> {group, actors, apps, from}. GroupError: no such folder, a group's only one of an app in it, or the
     move not taken."""
     if not home.merged():
-        raise GroupError("a new group from a folder needs the home's one database: run `ag home merge` first")
+        raise GroupError("run `ag home merge` first to make a group from a folder")
     f = next((x for x in _tree(gatherer)["folders"] if x["id"] == int(folder)), None)
     if f is None:
         raise GroupError(f"{gatherer} has no folder {folder}")
@@ -446,7 +446,7 @@ def _merging(gatherer: str, to: str, into: Optional[int]) -> tuple:
     one no folder beside it has -- its actors, by channel, its app instances). GroupError: not a merge (`merge`)."""
     _check(gatherer, to)
     if is_alone(gatherer) or is_alone(to):
-        raise GroupError("an actor on its own joins a group by a move, and nothing joins it")
+        raise GroupError("an actor on its own can only join a group by moving into it")
     target = _tree(to)
     if into is not None and not any(f["id"] == int(into) for f in target["folders"]):
         raise GroupError(f"{to} has no folder {into}")
@@ -520,10 +520,10 @@ def merge(gatherer: str, to: str, into: Optional[int] = None) -> dict:
     try:
         actions.insert(to, events)                    # ag first: what the policy reads, and where the folders are
     except (RuntimeError, OSError, ValueError) as exc:
-        raise GroupError(f"ag did not take the merge: {exc}; nothing else changed") from None
+        raise GroupError(f"ag couldn't make the merge ({exc}). Nothing changed.") from None
     missed = [c for c in channels if c not in _members(to)]
     if missed:
-        raise GroupError(f"ag did not take the move of {', '.join(missed)}; nothing else changed")
+        raise GroupError(f"ag didn't move {', '.join(missed)}. Nothing else changed.")
     host = _host()
     moved = [i.id for i in insts if i.id not in folds]
     for i in moved:
@@ -606,7 +606,7 @@ def place(gatherer: str, to: Optional[str], into: Optional[int] = None) -> dict:
     A group placed so leaves the folder of groups it was in (gatherer_folders.py). -> {group, in, folder}. GroupError:
     not on the home's one database, no such group or folder, `to` an actor on its own, or `to` inside it."""
     if not home.merged():
-        raise GroupError("a group inside another's folder needs the home's one database: run `ag home merge` first")
+        raise GroupError("run `ag home merge` first to put a group inside another group's folder")
     if gatherer not in set(data.gatherer_names()) | set(data.alone_names()):
         raise GroupError(f"no group {gatherer!r}")
     to = str(to or "")
@@ -614,13 +614,13 @@ def place(gatherer: str, to: Optional[str], into: Optional[int] = None) -> dict:
         if is_alone(to) or to not in data.gatherer_names():
             raise GroupError(f"no group {to!r} to put it in")
         if _inside(to, gatherer):
-            raise GroupError("a group can't go inside itself, or inside a group inside it")
+            raise GroupError("a group can't go inside itself or a group inside it")
         if into is not None and not any(f["id"] == int(into) for f in _tree(to)["folders"]):
             raise GroupError(f"{to} has no folder {into}")
     try:
         actions.insert(runs_under(gatherer), [_placed(gatherer, to, into)])
     except (RuntimeError, OSError, ValueError) as exc:
-        raise GroupError(f"ag did not take it: {exc}") from None
+        raise GroupError(f"ag couldn't make the change ({exc})") from None
     if to and not is_alone(gatherer) and gatherer in gatherer_folders.stored()["filed"]:
         gatherer_folders.file([gatherer], None)
     return {"group": gatherer, "in": to or None, "folder": into if to else None}
@@ -657,9 +657,9 @@ def above(gatherer: str) -> dict:
     nowhere, an actor on its own (it joins by a move), or as `merge`'s."""
     p = places().get(gatherer)
     if is_alone(gatherer):
-        raise GroupError("an actor on its own joins its folder's group by a move")
+        raise GroupError("move an actor on its own into its folder's group instead")
     if p is None:
-        raise GroupError(f"{_names(gatherer)} is in no group's folder: there is no group above it")
+        raise GroupError(f"{_names(gatherer)} isn't in another group's folder, so there is no group above it")
     return merge(gatherer, p["in"], p["folder"])
 
 
@@ -678,7 +678,7 @@ def alone(gatherer: str, channel: str, here: bool = False) -> dict:
     the home's one database, no such actor, the coordinator agent (it stays with its group), one working in a task
     with other actors (a task moves whole: out of it first), or an app of its task that can't move (`apps`)."""
     if not home.merged():
-        raise GroupError("an actor on its own needs the home's one database: run `ag home merge` first")
+        raise GroupError("run `ag home merge` first to have an actor on its own")
     channel = str(channel or "").strip()
     if is_alone(gatherer):
         raise GroupError("it is on its own already")
@@ -688,7 +688,7 @@ def alone(gatherer: str, channel: str, here: bool = False) -> dict:
         raise GroupError("the coordinator agent stays with its group")
     items = actors(gatherer, [channel])
     if [c for c in items if not c.startswith(folders.APP)] != [channel]:
-        raise GroupError("it works in a task with others: take it out of the task first")
+        raise GroupError("it's in a task with others. Take it out of the task first.")
     moved = [i.id for i in apps(gatherer, items)]
     to = ALONE + channel
     event = {"type": GROUP, "id": f"{GROUP}:{channel}:{secrets.token_hex(6)}", "properties": {"channel": channel},
@@ -698,9 +698,9 @@ def alone(gatherer: str, channel: str, here: bool = False) -> dict:
         actions.insert(gatherer, [event, *(folders._filed_event(to, folders.APP + i, None) for i in moved),
                                   _placed(to, gatherer if here else "", spot)])
     except (RuntimeError, OSError, ValueError) as exc:
-        raise GroupError(f"ag did not take it: {exc}; nothing else changed") from None
+        raise GroupError(f"ag couldn't make the change ({exc}). Nothing changed.") from None
     if channel not in _members(to):
-        raise GroupError(f"ag did not take it out of {gatherer}; nothing else changed")
+        raise GroupError(f"ag didn't take it out of {gatherer}. Nothing else changed.")
     _unhook(gatherer, [channel], moved)               # the apps it used that stay: their group's, not its own
     for i in moved:
         _host().regroup(gatherer, i, to)
@@ -721,7 +721,7 @@ def start_alone(started, gatherer: str, cwd: str, harness: str, permission_mode:
     then. -> the session. GroupError: not on the home's one database, no such group, or ag did not take the record (the
     session forgotten)."""
     if not home.merged():
-        raise GroupError("an actor on its own needs the home's one database: run `ag home merge` first")
+        raise GroupError("run `ag home merge` first to have an actor on its own")
     if is_alone(gatherer) or gatherer not in data.gatherer_names():
         raise GroupError(f"no group {gatherer!r} to run it under")
     s = started.create(gatherer, cwd, permission_mode, harness, model, alone=True)
@@ -732,7 +732,7 @@ def start_alone(started, gatherer: str, cwd: str, harness: str, permission_mode:
         actions.insert(gatherer, [event])
     except (RuntimeError, OSError, ValueError) as exc:
         started.discard(channel)
-        raise GroupError(f"ag did not take it: {exc}; nothing was started") from None
+        raise GroupError(f"ag couldn't record it ({exc}). Nothing was started.") from None
     return s
 
 

@@ -49,9 +49,9 @@ function pvMount(box) {
     el("div", { class: "pv-body" },
       el("div", { class: "pv-card", hidden: "" }), el("div", { class: "pv-result" }),
       el("div", { class: "pv-probs", hidden: "" }),
-      el("pre", { class: "pv-out", tabindex: "0", "aria-label": "Its output", hidden: "" }),
+      el("pre", { class: "pv-out", tabindex: "0", "aria-label": "Output", hidden: "" }),
       el("button", { type: "button", class: "pv-busy", hidden: "",
-        title: "It is being run again: the last one made stays here until the run ends. Click to see its output" }))));
+        title: "Rebuilding · click to see the output" }))));
   pvApi = pvMake(agApp, box.firstChild);
   let shown = pvKept().shown;                        // this Editor's, else as the last one was left
   if (typeof shown !== "boolean") try { shown = localStorage.getItem("ag-editor-preview-shown") === "1"; } catch (e) { shown = false; }
@@ -184,7 +184,7 @@ function pvMake(ag, root) {
     const t = (r.ended || Date.now() / 1000) - r.started, took = t < 10 ? `${Math.max(t, 0.1).toFixed(1)}s` : spell(t);
     return ({ running: ["run", r.server ? `Starting · ${took}` : `Running · ${took}`], ready: ["ok", r.command ? "Serving" : "Shown"],
       done: ["ok", r.command ? `Done · ${took}` : "Shown"], failed: ["bad", `Failed · exit ${r.code}`],
-      stopped: ["", "Stopped"], "timed out": ["bad", "Stopped: it ran over 5 minutes"] })[r.state] || ["", r.state];
+      stopped: ["", "Stopped"], "timed out": ["bad", "Timed out after 5 minutes"] })[r.state] || ["", r.state];
   }
   // What the body shows unless the user picks: the result once there is one (the one made before kept while the next
   // is made, "Building…" over it), the output when it failed or is all there is, a server's while it starts.
@@ -260,23 +260,23 @@ function pvMake(ag, root) {
     const btn = (text, title, onclick, attrs = {}) => el("button", { type: "button", title, onclick, ...attrs }, text);
     dom.head.replaceChildren(...[
       el("span", { class: "t", text: "Preview" }),
-      el("span", { class: "nm", title: a ? (a.git ? `The git project ${a.key}, its worktrees too` : `The folder ${a.key} (not in a git project)`) : null, text: a ? a.name : "" }),
+      el("span", { class: "nm", title: a ? (a.git ? `${a.key} and its worktrees` : `${a.key} (not a git project)`) : null, text: a ? a.name : "" }),
       card === "" || pv.busy ? stat : null,
       tab && (hasResult || pv.probs) ? el("span", { class: "pv-tabs", role: "group", "aria-label": "Show" },
         ...[hasResult && ["result", "Result", "What it makes"], pv.probs && ["problems", probsLabel(), probsTitle()],
           ["output", "Output", "What it printed"]].filter(Boolean).map(([k, t, title]) => btn(t, title,
           () => pick(k), { class: tab === k ? "on" : null, "aria-pressed": tab === k ? "true" : "false" }))) : null,
-      live ? btn("Stop", r.server ? "Stop its server" : "Stop its run", stopIt)
-        : p && !p.needs_ok && !pv.form ? btn(r ? "Re-run" : "Run", `Run it again: ${p.command || "(nothing to run)"}`, () => runIt(), { disabled: pv.busy }) : null,
-      p && !pv.form ? btn("Edit", "Change the command, or what it shows", edit) : null,
-      el("button", { type: "button", class: "pv-x", title: "Hide the preview: Execute (⌘↵) shows it again", "aria-label": "Hide the preview",
+      live ? btn("Stop", r.server ? "Stop the server" : "Stop the run", stopIt)
+        : p && !p.needs_ok && !pv.form ? btn(r ? "Re-run" : "Run", `${r ? "Run again" : "Run"}: ${p.command || "nothing to run"}`, () => runIt(), { disabled: pv.busy }) : null,
+      p && !pv.form ? btn("Edit", "Edit the command and what it shows", edit) : null,
+      el("button", { type: "button", class: "pv-x", title: "Hide the preview", "aria-label": "Hide the preview",
         onclick: () => pvShow(false) }, "×"),
     ].filter(Boolean));
     dom.cmd.hidden = !p || !!pv.form;
     if (p && !pv.form) dom.cmd.replaceChildren(...[
       el("code", { title: `In ${a.checkout}: ${p.command || "nothing to run"}${p.show ? `, showing ${p.show}` : ""}` },
         p.command ? `$ ${p.command}` : "(nothing to run)", p.show ? el("span", { class: "to", text: `  →  ${p.show}` }) : null),
-      url && tab === "result" ? el("a", { class: "pv-open", href: url, target: "_blank", rel: "noopener", title: "Open it in a tab of its own" }, "↗") : null,
+      url && tab === "result" ? el("a", { class: "pv-open", href: url, target: "_blank", rel: "noopener", title: "Open in a new tab" }, "↗") : null,
       el("span", { class: "by", title: `Set ${new Date((p.set_at || 0) * 1000).toLocaleString()}` },
         p.set_by ? `set by an agent (${p.set_by.slice(0, 8)}), ${ago(p.set_at)}` : `set by you, ${ago(p.set_at)}`),
     ].filter(Boolean));
@@ -293,7 +293,7 @@ function pvMake(ag, root) {
       if (sig !== pv.card) {
         pv.card = sig;
         dom.card.replaceChildren(...[err, card === "ask" ? ask() : card === "none" ? none() : card === "idle"
-          ? el("div", { class: "note", text: "Not run yet: Run (or Execute in the Editor) runs it, here." }) : card === "loading" ? el("div", { class: "note", text: "Loading…" }) : null].filter(Boolean));
+          ? el("div", { class: "note", text: "Not run yet." }) : card === "loading" ? el("div", { class: "note", text: "Loading…" }) : null].filter(Boolean));
       }
     }
     dom.result.classList.toggle("off", tab !== "result");       // laid out still: a PDF's viewer keeps its place
@@ -323,15 +323,15 @@ function pvMake(ag, root) {
     const node = el("div", { class: "pv-form" },
       el("div", { class: "head" }, a.preview ? "Change this project's preview" : "Set up a preview for this project",
         a.name ? el("span", { class: "note", text: ` · ${a.name}${a.git ? ", and its worktrees" : ""}` }) : null),
-      field("Command", "command", "python3 {file}", "Run through your shell in the project's checkout. Empty: nothing runs, what it shows is shown as it is."),
-      field("Show", "show", "out.png · {stem}.pdf · http://localhost:5173", "A file in the project it makes, or the URL of a server it starts (kept running until Stop). Empty: what it prints."),
+      field("Command", "command", "python3 {file}", "Runs in your shell, in the project's checkout. Leave empty to show without running anything."),
+      field("Show", "show", "out.png · {stem}.pdf · http://localhost:5173", "A file the command makes, or the URL of a server it starts. Leave empty to show its output."),
       el("div", { class: "note" }, el("code", { text: "{file}" }), " ", el("code", { text: "{stem}" }), " ", el("code", { text: "{name}" }), " ",
-        el("code", { text: "{dir}" }), " stand for the file run from the Editor: its path in the project, without its extension, its name, and its folder."),
+        el("code", { text: "{dir}" }), " stand for the open file's path in the project, that path without its extension, its name, and its folder."),
       el("div", { class: "row" },
         el("button", { type: "button", class: "primary", onclick: () => save(true) }, "Save and run"),
         el("button", { type: "button", onclick: () => save(false) }, "Save"),
         el("button", { type: "button", onclick: () => { pv.form = null; pv.err = ""; pv.card = ""; draw(); } }, "Cancel")),
-      el("div", { class: "note" }, "Agents can set it too: you are asked before an agent's command first runs."));
+      el("div", { class: "note" }, "Agents can set it too. You're asked before an agent's command first runs."));
     setTimeout(() => { const i = node.querySelector("input"); if (i && pv.form && pv.form.node === node) i.focus(); }, 0);
     return node;
   }
@@ -340,7 +340,7 @@ function pvMake(ag, root) {
     return el("div", { class: "pv-ask" },
       el("div", { class: "head", text: `An agent (${p.set_by.slice(0, 8)}) set this project's preview, ${ago(p.set_at)}:` }),
       el("pre", { text: `$ ${p.command}` }),
-      el("div", { class: "note", text: `Shows: ${p.show || "what it prints"}. It runs in ${a.checkout} as you, outside the agent's own permissions, so it waits for you to let it.` }),
+      el("div", { class: "note", text: `Shows: ${p.show || "its output"}. It runs in ${a.checkout} as you, outside the agent's permissions, so it needs your OK first.` }),
       el("div", { class: "row" },
         el("button", { type: "button", class: "primary", onclick: () => runIt(p.command) }, "Run it"),
         el("button", { type: "button", onclick: edit }, "Edit…")));
@@ -357,12 +357,12 @@ function pvMake(ag, root) {
     if (!r) return box.replaceChildren();
     if (s.error) return box.replaceChildren(el("div", { class: "pv-note", text: s.error }));
     if (s.path && !url) return box.replaceChildren(el("div", { class: "pv-note" },
-      el("code", { text: s.rel }), r.state === "running" ? " shows here once the run ends." : " is not there: the command did not make it."));
-    if (s.url && r.state !== "ready") return box.replaceChildren(el("div", { class: "pv-note", text: `Waiting for ${s.url} to answer…` }));
+      el("code", { text: s.rel }), r.state === "running" ? " shows here once the run ends." : " wasn't made by the command."));
+    if (s.url && r.state !== "ready") return box.replaceChildren(el("div", { class: "pv-note", text: `Waiting for ${s.url}…` }));
     if (s.kind === "image" || s.kind === "svg") return box.replaceChildren(el("div", { class: "img" }, el("img", { src: url, alt: s.rel || "", draggable: "false" })));
     if (s.kind === "pdf") return pdf(box, url, s.rel);
-    if (s.kind === "url") return box.replaceChildren(el("iframe", { src: url, title: "The preview", class: "url" }));
-    if (s.kind === "html") return box.replaceChildren(el("iframe", { src: url, title: "The preview", sandbox: "allow-scripts allow-forms allow-modals allow-popups" }));
+    if (s.kind === "url") return box.replaceChildren(el("iframe", { src: url, title: "Preview", class: "url" }));
+    if (s.kind === "html") return box.replaceChildren(el("iframe", { src: url, title: "Preview", sandbox: "allow-scripts allow-forms allow-modals allow-popups" }));
     box.replaceChildren(el("div", { class: "pv-note", text: "Loading…" }));
     fetch(url, { cache: "no-store" }).then((x) => x.ok ? x.text() : Promise.reject(new Error(`${x.status}`))).then((text) => {
       if (pv.sig !== sig) return;
@@ -372,7 +372,7 @@ function pvMake(ag, root) {
         box.replaceChildren(md);
         scrollBack(box);
       } else { box.replaceChildren(el("pre", { text })); scrollBack(box.firstChild); }
-    }).catch((e) => { if (pv.sig === sig) box.replaceChildren(el("div", { class: "pv-note", text: `It could not be read: ${e.message}` })); });
+    }).catch((e) => { if (pv.sig === sig) box.replaceChildren(el("div", { class: "pv-note", text: `Couldn't read it: ${e.message}` })); });
   }
   function scrollBack(node) {                         // where it was left, once: the run it showed then
     if (pv.resultTop > 0) node.scrollTop = pv.resultTop;
@@ -384,7 +384,7 @@ function pvMake(ag, root) {
     requestAnimationFrame(() => {
       pv.outQueued = false;
       const o = dom.output, r = pv.run, text = clean(pv.out);
-      o.textContent = text || (r && r.state === "running" ? "" : r && r.command ? "(It printed nothing.)" : "(Nothing ran.)");
+      o.textContent = text || (r && r.state === "running" ? "" : r && r.command ? "(No output.)" : "(Nothing ran.)");
       if (pv.pinned) o.scrollTop = o.scrollHeight;
       else if (pv.outTop !== null && text) { o.scrollTop = pv.outTop; pv.outTop = null; }   // where it was left
     });
@@ -407,8 +407,8 @@ function pvMake(ag, root) {
       w ? el("span", { class: "n warning", text: String(w) }) : null);
   }
   function probsTitle() {
-    return `Its log's ${plural(count("error"), "error", "errors")}, ${plural(count("warning"), "warning", "warnings")} and ` +
-      `${plural(count("box"), "bad box", "bad boxes")}: each opens its file at its line`;
+    return `${plural(count("error"), "error", "errors")}, ${plural(count("warning"), "warning", "warnings")} and ` +
+      `${plural(count("box"), "bad box", "bad boxes")} in the log`;
   }
   function probsDraw() {
     const P = pv.probs, box = dom.probs, a = pv.about;
@@ -417,8 +417,8 @@ function pvMake(ag, root) {
     pv.probsSig = sig;
     if (!P) return box.replaceChildren();
     const at = P.list.map((p, i) => [p, i]), kids = [];
-    if (!P.fresh) kids.push(el("div", { class: "pv-pr-note", text: `From the build ${ago(P.at)}: this run did not build the document again.` }));
-    if (!P.list.some((p) => p.level !== "box")) kids.push(el("div", { class: "pv-pr-none", text: "No errors or warnings in its log." }));
+    if (!P.fresh) kids.push(el("div", { class: "pv-pr-note", text: `From the build ${ago(P.at)}. This run didn't rebuild the document.` }));
+    if (!P.list.some((p) => p.level !== "box")) kids.push(el("div", { class: "pv-pr-none", text: "No errors or warnings." }));
     for (const level of ["error", "warning"]) for (const [p, i] of at) if (p.level === level) kids.push(...probRow(p, i));
     const boxes = at.filter(([p]) => p.level === "box");
     if (boxes.length) {
@@ -428,7 +428,7 @@ function pvMake(ag, root) {
       if (pv.boxesOpen) for (const [p, i] of boxes) kids.push(...probRow(p, i));
     }
     kids.push(el("div", { class: "pv-pr-foot" }, el("span", { text: `From ${P.log}` }),
-      el("button", { type: "button", onclick: () => pick("output") }, "See its output")));
+      el("button", { type: "button", onclick: () => pick("output") }, "Show output")));
     box.replaceChildren(...kids);
     if (pv.probsTop > 0) requestAnimationFrame(() => { box.scrollTop = pv.probsTop; pv.probsTop = null; });
   }
@@ -442,7 +442,7 @@ function pvMake(ag, root) {
       el("span", { class: "msg", text: p.message }),
       where ? el("span", { class: "at", text: where }) : null,
       more ? el("button", { type: "button", class: "more", "aria-expanded": open ? "true" : "false",
-        title: open ? "Hide its lines of the log" : "Show its lines of the log",
+        title: open ? "Hide log lines" : "Show log lines",
         onclick: (ev) => { ev.stopPropagation(); if (open) pv.probsOpen.delete(i); else pv.probsOpen.add(i); probsDraw(); } }, "▸") : null);
     if (go) {
       row.addEventListener("click", go);
@@ -526,10 +526,10 @@ function pvMake(ag, root) {
         body: JSON.stringify({ ...(pv.path ? { path: pv.path } : {}), pdf: s.rel, ...askFor }) });
       if (got.ok) return got;
       const asks = /synctex/i.test((pv.about.preview && pv.about.preview.command) || "");
-      said = { "no-synctex": asks ? "This PDF has no SyncTeX yet: its build did not write it (latexmk saw nothing to rebuild). Change the source, or delete the PDF, and run it again."
-          : "This PDF has no SyncTeX: add -synctex=1 to the preview's command (Edit), and run it again.",
-        "no-tool": "SyncTeX needs TeX's synctex tool where the dashboard runs.",
-        "no-match": "SyncTeX has no match for that place." }[got.reason] || `SyncTeX: ${got.reason}`;
+      said = { "no-synctex": asks ? "This PDF has no SyncTeX data yet because latexmk had nothing to rebuild. Change the source or delete the PDF, then run again."
+          : "This PDF has no SyncTeX data. Add -synctex=1 to the preview's command (Edit), then run again.",
+        "no-tool": "SyncTeX needs the synctex tool on the dashboard's machine.",
+        "no-match": "SyncTeX found no match for that spot." }[got.reason] || `SyncTeX: ${got.reason}`;
     } catch (e) { said = e.message; }
     pv.err = said; draw();
     setTimeout(() => { if (pv.err === said) { pv.err = ""; draw(); } }, 6000);
@@ -548,7 +548,7 @@ function pvMake(ag, root) {
   async function toPdf(file, line, column) {
     const s = pv.run && pv.run.shows;
     if (!s || s.kind !== "pdf" || !s.exists || !pv.pdf) {
-      pv.err = "No PDF is shown yet: run the preview first."; draw();
+      pv.err = "No PDF yet. Run the preview first."; draw();
       return;
     }
     if (pv.picked === "output") pick("result");

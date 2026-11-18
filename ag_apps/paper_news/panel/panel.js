@@ -120,8 +120,8 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     const nav = $("days");
     nav.replaceChildren();
     const cur = S.view || {};
-    const sub = !mine.told ? "Tell it what you work on" : mine.summarizing ? "The agent is writing your summary…"
-      : mine.profile ? `${mine.feedback || 0} of ${mine.every} feedback until it updates` : "No summary yet";
+    const sub = !mine.told ? "Tell it what you work on" : mine.summarizing ? "Writing your summary…"
+      : mine.profile ? `${mine.feedback || 0} of ${mine.every} marks until the summary updates` : "No summary yet";
     nav.append(el("button", { class: `day mine${!mine.told ? " todo" : ""}`, type: "button", "aria-current": cur.type === "interests" ? "true" : null,
       onclick: () => open({ type: "interests" }) },
       el("span", { class: "ic", html: SVG.me }), el("span", { class: "lbl" }, "Your interests", el("span", { class: "sub" }, sub))));
@@ -160,7 +160,7 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     box.replaceChildren();
     if (s.fetching) box.append(el("div", { class: "busy" }, "Fetching from arXiv…"));
     else if (s.error) box.append(el("div", { class: "err" }, s.error));
-    else if (s.waiting) box.append(el("div", null, `Waiting for ${dayShort(s.waiting)}'s listing: checking every 30 min`));
+    else if (s.waiting) box.append(el("div", null, `Waiting for ${dayShort(s.waiting)}'s listing · checking every 30 min`));
     if (s.checked) box.append(el("div", null, `Checked ${clock(s.checked)}`));
     if (s.next) box.append(el("div", null, `Next check ${clock(s.next)}`));
     $("fetch").classList.toggle("spin", !!s.fetching);
@@ -209,11 +209,11 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     const updated = S.papers.length - listed.length;
     const picks = S.papers.filter((p) => p.pick);
     $("head").textContent = v.type === "day" ? dayLong(v.day) : v.type === "saved" ? "Saved papers"
-      : v.type === "search" ? `“${v.q}” in every day kept` : v.type === "waiting" ? dayLong(v.day)
+      : v.type === "search" ? `“${v.q}” in all days` : v.type === "waiting" ? dayLong(v.day)
         : page ? "Your interests" : "Paper news";
     const nNew = listed.filter((p) => p.kind === "new").length;
     $("counts").textContent = v.type === "day" && S.papers.length
-      ? (forTab() ? (S.judged?.done_at ? `${plural(picks.length, "paper")} for you, of ${listed.length}` : `${listed.length} papers`)
+      ? (forTab() ? (S.judged?.done_at ? `${picks.length} of ${listed.length} papers for you` : `${listed.length} papers`)
         : `${listed.length} papers · ${nNew} new · ${listed.length - nNew} cross-lists` + (settings.replacements && updated ? ` · ${updated} updated` : ""))
       : (v.type === "saved" || v.type === "search") && S.papers.length ? plural(S.papers.length, "paper") : "";
     // For you / All papers
@@ -264,36 +264,36 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     const j = S.judged || {};
     let parts = null;
     if (v.type === "waiting" || (info && info.status === "waiting")) {
-      parts = [`arXiv hasn't put out the listing of ${dayShort(v.day)} yet (it announces at 8 PM New York time, Sunday to Thursday). `,
-        "The app checks again every 30 minutes until it's out."];
+      parts = [`arXiv hasn't published ${dayShort(v.day)}'s listing yet. It announces at 8 PM New York time, Sunday to Thursday. `,
+        "Checking every 30 minutes."];
     } else if (info && info.status === "none") {
       parts = ["arXiv announced nothing for this day (a holiday, or no mailing)."];
     } else if (info && info.status === "missed") {
       const cats = info.categories || S.state?.settings.categories || [];
-      parts = [`This day's listing couldn't be read${info.note ? ` (${info.note})` : ""}. The app tries again on its next run. On arXiv: `,
+      parts = [`Couldn't read this day's listing${info.note ? ` (${info.note})` : ""}. The app will try again on its next run. On arXiv: `,
         ...cats.flatMap((c, i) => [i ? ", " : "", el("a", { href: `https://arxiv.org/catchup/${c}/${v.day}?abs=True`, target: "_blank", rel: "noopener noreferrer" }, c)])];
     } else if (info && info.status === "error") {
-      parts = [`Couldn't load this: ${info.note}`];
+      parts = [`Couldn't load: ${info.note}`];
     } else if (forTab() && S.papers.length) {
       const all = () => open({ ...v, tab: "all" });
       const n = S.papers.filter((p) => !p.kind || p.kind === "new" || p.kind === "cross").length;
       if (!told()) {
-        parts = ["Tell the Paper news agent what you work on, and each day it picks the papers here that are for you. ",
+        parts = ["Tell the Paper news agent what you work on, and it will pick papers for you each day. ",
           button("Set up your interests", () => open({ type: "interests" }), "btn small primary"), " ", button(`See all ${n} papers`, all, "btn small quiet")];
       } else if (!S.state?.interests?.profile) {
-        parts = ["The Paper news agent is writing a summary of your interests; it picks from this day once it has. ", button(`See all ${n} papers`, all, "btn small quiet")];
+        parts = ["The Paper news agent is summarizing your interests. It will pick from this day after that. ", button(`See all ${n} papers`, all, "btn small quiet")];
       } else if (j.asked_at && !j.done_at && !j.stale) {
-        parts = [el("span", { class: "dots" }), ` The Paper news agent is reading this day's ${n} papers to pick yours. `, button(`See all ${n} papers`, all, "btn small quiet")];
+        parts = [el("span", { class: "dots" }), ` The Paper news agent is picking from this day's ${n} papers. `, button(`See all ${n} papers`, all, "btn small quiet")];
       } else if (!j.done_at) {
-        parts = [j.asked_at ? "The Paper news agent hasn't picked from this day: " : "The Paper news agent hasn't picked from this day yet. ",
+        parts = [j.asked_at ? "The Paper news agent didn't finish picking from this day. " : "The Paper news agent hasn't picked from this day yet. ",
           button("Ask it to pick", () => askJudge(v.day), "btn small primary"), " ", button(`See all ${n} papers`, all, "btn small quiet")];
       } else if (!S.papers.some((p) => p.pick)) {
-        parts = [`Nothing for you this day, the agent says. `, button(`See all ${n} papers`, all, "btn small quiet")];
+        parts = ["The agent found nothing for you this day. ", button(`See all ${n} papers`, all, "btn small quiet")];
       } else if (S.find && !filtered().length) {
-        parts = ["None of your papers holds those words. ", el("a", { href: "#", onclick: (e) => { e.preventDefault(); searchAll(); } }, "Search every day kept"), "."];
+        parts = ["None of your papers match. ", el("a", { href: "#", onclick: (e) => { e.preventDefault(); searchAll(); } }, "Search all days"), "."];
       }
     } else if (v.type === "day" && S.find && !filtered().length) {
-      parts = ["Nothing here holds those words. ", el("a", { href: "#", onclick: (e) => { e.preventDefault(); searchAll(); } }, "Search every day kept"), "."];
+      parts = ["No papers match. ", el("a", { href: "#", onclick: (e) => { e.preventDefault(); searchAll(); } }, "Search all days"), "."];
     }
     note.hidden = !parts;
     if (parts) note.replaceChildren(...parts);
@@ -308,7 +308,7 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     if (!papers.length) {
       const st = S.state || {};
       const empty = !v.type ? (st.status?.fetching ? "Fetching arXiv's listings…" : (st.days || []).length ? "Pick a day." : "No listing yet.")
-        : v.type === "saved" ? "No saved papers yet: a paper's star saves it." : S.papers.length ? "No papers match." : "No papers.";
+        : v.type === "saved" ? "No saved papers yet. Click a paper's star to save it." : S.papers.length ? "No papers match." : "No papers.";
       list.append(el("div", { class: "empty" }, empty));
       $("more").hidden = true;
       return;
@@ -331,12 +331,12 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
   function paperEl(p, i, terms, showDay) {
     const authors = p.authors.length > 8 ? [p.authors.slice(0, 8).join(", "), el("span", { class: "more-a" }, ` and ${p.authors.length - 8} more`)]
       : [p.authors.join(", ")];
-    const abs = el("p", { class: "pp-abs clamp", title: "Show all of it", onclick: (e) => toggleAbs(e.currentTarget) }, ...marked(p.abstract, terms));
+    const abs = el("p", { class: "pp-abs clamp", title: "Show more", onclick: (e) => toggleAbs(e.currentTarget) }, ...marked(p.abstract, terms));
     const star = el("button", { class: "star-btn", type: "button", "aria-pressed": p.saved ? "true" : "false",
-      title: p.saved ? "Saved: click to unsave (s)" : "Save (s)", "aria-label": p.saved ? "Unsave" : "Save",
+      title: p.saved ? "Saved · click to unsave (s)" : "Save (s)", "aria-label": p.saved ? "Unsave" : "Save",
       html: p.saved ? SVG.starOn : SVG.star, onclick: () => save(p) });
     const say = (verdict, label, icon) => el("button", { class: `fb ${verdict}`, type: "button", "aria-pressed": p.verdict === verdict ? "true" : "false",
-      title: p.verdict === verdict ? "Click to take it back" : `Tell the agent: ${label.toLowerCase()}`, onclick: () => feedback(p, p.verdict === verdict ? null : verdict) },
+      title: p.verdict === verdict ? "Click to undo" : `Mark as ${label.toLowerCase()}`, onclick: () => feedback(p, p.verdict === verdict ? null : verdict) },
       el("span", { html: icon }), label);
     return el("article", { class: `pp${i === S.at ? " on" : ""}${p.pick ? ` picked s${p.pick.score}` : ""}`, tabindex: "-1", "data-i": i, "data-id": p.id },
       p.pick ? el("div", { class: "why" }, el("span", { class: `score s${p.pick.score}` }, SCORE[p.pick.score] || ""), ...marked(p.pick.why, terms)) : null,
@@ -360,7 +360,7 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
 
   function toggleAbs(n) {
     n.classList.toggle("clamp");
-    n.title = n.classList.contains("clamp") ? "Show all of it" : "Show less";
+    n.title = n.classList.contains("clamp") ? "Show more" : "Show less";
   }
 
   async function save(p) {
@@ -382,7 +382,7 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
       const got = await post("feedback", { id: p.id, verdict, day: S.view?.type === "day" ? S.view.day : p.day || null });
       if (S.state?.interests) { S.state.interests.feedback = got.count; if (got.summarizing) S.state.interests.summarizing = true; }
       drawSide();
-      if (got.summarizing) flash(`That's ${got.every}: the agent is updating your summary from your feedback.`);
+      if (got.summarizing) flash(`That's ${got.every} marks. The agent is updating your summary.`);
     } catch (e) { p.verdict = was; drawList(); flash(e.message); }
   }
 
@@ -415,11 +415,11 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
         : el("input", { "data-in": key, type: "text", value: value || "", spellcheck: "false", autocomplete: "off" }),
       hint ? el("span", { class: "hint" }, hint) : null);
     const form = el("div", { class: "form" },
-      told("scholar", "Your profile", "Your Google Scholar page (or your own site): the agent reads your papers from it.", false, inputs.scholar),
-      told("keywords", "Keywords", "Comma apart: words that should catch a paper.", false, (inputs.keywords || []).join(", ")),
-      told("topics", "Topics you follow", "One a line.", true, linesOf(inputs.topics)),
-      told("papers", "Papers to follow related work on", "One a line: arXiv ids or links, or titles.", true, linesOf(inputs.papers)),
-      told("notes", "Anything else", "In your words: what you want to see, and what you don't.", true, inputs.notes));
+      told("scholar", "Your profile", "Your Google Scholar page or personal site. The agent reads your papers there.", false, inputs.scholar),
+      told("keywords", "Keywords", "Words that should flag a paper, separated by commas.", false, (inputs.keywords || []).join(", ")),
+      told("topics", "Topics you follow", "One per line.", true, linesOf(inputs.topics)),
+      told("papers", "Papers to follow related work on", "arXiv IDs, links or titles, one per line.", true, linesOf(inputs.papers)),
+      told("notes", "Anything else", "What you want to see, and what you don't.", true, inputs.notes));
     const err = el("p", { class: "err", hidden: true });
     const send = async (b) => {
       const body = {};
@@ -432,7 +432,7 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     if (!m.inputs) {                                         // first: what it does, and the form
       page.append(el("section", { class: "sec intro" },
         el("h2", null, "Tell the Paper news agent about your research"),
-        el("p", null, "It writes a summary of what you're interested in, then reads each weekday's new papers and picks the ones for you, each with why. Mark papers relevant or not as you go: every ", String(m.feedback?.every || 20), " marks, it updates the summary."),
+        el("p", null, "It summarizes your interests, then picks papers for you from each weekday's listing and says why. Mark papers Relevant or Not for me as you go. Every ", String(m.feedback?.every || 20), " marks, it updates the summary."),
         form, err,
         el("div", { class: "row" }, el("button", { class: "btn primary", type: "button", onclick: (e) => send(e.currentTarget) }, "Make my summary"))));
       fit(page);
@@ -449,12 +449,12 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     if (p) {
       const edited = new Set(p.edited || []);
       sum.append(el("p", { class: "hint" }, p.by === "agent" ? `Written by the agent, ${clock(p.at)}` : `Edited by you, ${clock(p.at)}`,
-        edited.size ? ` · fields you wrote stay yours: ${m.fields.filter((f) => edited.has(f.name)).map((f) => f.label).join(", ")}` : ""));
+        edited.size ? ` · kept as you wrote them: ${m.fields.filter((f) => edited.has(f.name)).map((f) => f.label).join(", ")}` : ""));
       const boxes = el("div", { class: "form" });
       for (const f of m.fields) {
         const v = p.fields[f.name];
         boxes.append(el("label", { class: `field${edited.has(f.name) ? " yours" : ""}` }, f.label,
-          el("span", { class: "hint" }, f.help + (f.kind === "list" ? " One a line." : "")),
+          el("span", { class: "hint" }, f.help + (f.kind === "list" ? " One per line." : "")),
           el("textarea", { "data-f": f.name, "data-kind": f.kind, rows: Math.min(8, Math.max(2, f.kind === "list" ? (v || []).length + 1 : 3)), spellcheck: "true" }, linesOf(v))));
       }
       const saveBtn = el("button", { class: "btn primary", type: "button", disabled: true, onclick: async () => {
@@ -464,7 +464,7 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
           if (n.value !== was) fields[n.dataset.f] = n.dataset.kind === "list" ? n.value.split("\n") : n.value;
         }
         saveBtn.disabled = true;
-        try { S.mine = await post("profile", { fields }); drawMain(); flash("Saved: the agent judges by it from the next day on."); }
+        try { S.mine = await post("profile", { fields }); drawMain(); flash("Saved. The agent uses it from the next day on."); }
         catch (e) { flash(e.message); saveBtn.disabled = false; }
       } }, "Save changes");
       boxes.addEventListener("input", () => { saveBtn.disabled = false; });
@@ -476,23 +476,23 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     // feedback
     const fb = m.feedback || { count: 0, every: 20, recent: [] };
     const fsec = el("section", { class: "sec" }, el("h2", null, "Your feedback"),
-      el("p", { class: "hint" }, `${fb.count} of ${fb.every} since the summary was written: at ${fb.every}, the agent updates it from them. Mark papers with Relevant or Not for me.`));
+      el("p", { class: "hint" }, `${fb.count} of ${fb.every} marks since the summary was written. At ${fb.every}, the agent updates it.`));
     if (fb.recent.length) {
       fsec.append(el("ul", { class: "fb-list" }, ...fb.recent.map((r) => el("li", null,
         el("span", { class: `chip ${r.verdict}` }, r.verdict === "relevant" ? "Relevant" : "Not for me"),
         el("a", { href: `https://arxiv.org/abs/${r.id}`, target: "_blank", rel: "noopener noreferrer" }, r.title),
-        el("span", { class: "hint" }, r.picked ? " · the agent had picked it" : " · not picked"),
-        el("button", { class: "x", type: "button", title: "Take it back", "aria-label": "Take it back", onclick: async () => {
+        el("span", { class: "hint" }, r.picked ? " · picked by the agent" : " · not picked"),
+        el("button", { class: "x", type: "button", title: "Remove", "aria-label": "Remove", onclick: async () => {
           try { await post("feedback", { id: r.id, verdict: null }); S.mine = await get("interests"); await loadState(); drawMain(); } catch (e) { flash(e.message); }
         } }, "×")))));
     }
     page.append(fsec);
     // what they told it
     page.append(el("section", { class: "sec" }, el("h2", null, "What you told it"),
-      el("p", { class: "hint" }, "Change these and the agent writes the summary again from them (fields you wrote stay yours)."),
-      form, err, el("div", { class: "row" }, el("button", { class: "btn", type: "button", onclick: (e) => send(e.currentTarget) }, "Save and write the summary again"))));
+      el("p", { class: "hint" }, "If you change these, the agent rewrites the summary. Fields you edited are kept."),
+      form, err, el("div", { class: "row" }, el("button", { class: "btn", type: "button", onclick: (e) => send(e.currentTarget) }, "Save and rewrite the summary"))));
     if (m.agent) page.append(el("section", { class: "sec" }, el("h2", null, "The agent"),
-      el("p", { class: "hint" }, "An actor of this gatherer, named Paper news: ask it why it picked a paper, or for more like one."),
+      el("p", { class: "hint" }, "The Paper news actor. Ask it why it picked a paper, or for more like one."),
       el("div", { class: "row" }, button("Talk to it", () => { try { ag.agents.focus(m.agent); } catch { /* not in this page */ } }))));
     fit(page);
   }
@@ -512,7 +512,7 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     $("set-err").hidden = true;
     const when = S.state?.status?.schedule || [];
     $("set-when").textContent = "arXiv announces new papers Sunday to Thursday at 8 PM New York time. The app fetches them "
-      + (when.length ? `${when.join("; ")}` : "each weekday") + ", and catches up on days it missed while the dashboard wasn't running.";
+      + (when.length ? `${when.join("; ")}` : "each weekday") + ", and catches up on days missed while the dashboard was off.";
     $("sheet").hidden = false;
     $("gear").setAttribute("aria-expanded", "true");
     $("set-cats").focus();
