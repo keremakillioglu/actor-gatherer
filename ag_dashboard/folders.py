@@ -16,7 +16,7 @@ Table `folders`, one row per folder, kept until it is deleted, empty or not:
 Table `filed`, one row per actor in a folder (none: at its gatherer's top level):
 
     gatherer, channel   the actor, by the channel it was filed as: its own, or the id the dashboard started it under
-                        (a Codex session's, before its thread's id comes with its first turn) -- the page and
+                        (a Codex session's from before `ag --channel`, renamed to its thread's) -- the page and
                         `ag actors` find it by either, as they find saved.py's bookmark
     folder              the folder's id
     at                  when it was put there

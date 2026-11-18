@@ -327,9 +327,10 @@ session's id, reused by another process later, does not hold the session forever
     at every call, by the process at the other end of the call's connection (hook_server/peer.py, which reads
     /proc/net/tcp). On macOS neither runs: the launcher's process can't be told, and the hook skips the claim
     when it has no process.
-  - **Codex:** the launcher claims a thread resumed by its id (`resume <id>`). A new thread's id is codex's to
-    choose, known only at its first call, and codex's hook does not claim at calls -- so a new thread is not
-    claimed on Linux either, and `resume --last` or the picker neither.
+  - **Codex:** the launcher claims a thread resumed by its id (`resume <id>`), and a new thread the dashboard
+    starts by the channel it keeps it in (`ag --channel`). A new thread's id is codex's to choose, known only at
+    its first call, and codex's hook does not claim at calls -- so a new thread started outside the dashboard is
+    not claimed on Linux either, and `resume --last` or the picker neither.
   - **What it needs:** a process's start time on macOS (`sysctl` KERN_PROC_PID's `p_starttime`, through ctypes;
     or `ps -o lstart= -p <pid>`, to the second), with the boot time (`sysctl kern.boottime`) in place of the boot
     id. The caller's process then comes from the run in the URL, not the connection: codex's launcher already
@@ -357,7 +358,8 @@ Not covered yet:
 - [x] **macOS: a new codex terminal was never renamed to its thread**, so it showed twice: the dashboard's id with
   nothing, the thread with its messages. The dashboard found a terminal's thread by the process that made its
   calls (`_reads.pid`, from /proc). Each read now keeps its run too (`_reads.run`, the process ag started for the
-  terminal), which the dashboard matches on any system.
+  terminal), which the dashboard matches on any system. Since `ag --channel` there is no rename at all: the
+  dashboard's id is the channel from the first call.
 - [x] **Codex's recap and title.** `/recap` (`thread_source=system`) and the thread's title (`thread_title`) run in
   threads of their own that name no other; codex's launcher now puts its run (its process id) in the URL
   (`/r/<run>/`), and the hook keeps each answer for the thread whose own turn that run sent last: the recap in
@@ -523,8 +525,8 @@ is closed.
 - **The note needs ag's policy.** An actor is told its change was left out through ag's stream messages
   (`context_stream`), which the proactive_context_manager policy shows at its next model call; a gatherer on another
   policy may not show them. Nothing else of the project's reaches the actor: it is not told of the reader's own edits.
-- **Codex.** Branches work for Codex sessions too (its thread's id is followed through `started_as`), but have only
-  been tried live with Claude Code.
+- **Codex.** Branches work for Codex sessions too (one started before `ag --channel`, renamed to its thread then, is
+  followed through `started_as`), but have only been tried live with Claude Code.
 
 ## DocWriter
 

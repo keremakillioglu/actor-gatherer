@@ -83,7 +83,7 @@ async function setHidden(g, hide) {
 // dashboard on this home shows the same. One saved is listed in its folder's saved line once it is closed, not with
 // the closed ones; while open it is listed by its status (idle among the idle), its bookmark filled. It keeps
 // its gatherer from being hidden for having had nothing for a week. The channel it was saved as: a codex
-// session's, renamed to its thread since, its first.
+// session's from before `ag --channel`, renamed to its thread since, its first.
 const savedAs = (gname, a) => {
   const kept = (state.home.saved || {})[gname] || {};
   return a.channel in kept ? a.channel : a.session && a.session.started_as in kept ? a.session.started_as : null;

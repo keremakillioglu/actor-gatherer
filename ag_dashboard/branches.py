@@ -431,7 +431,8 @@ class Branches:
 
     # ------------------------------------------------------------------ the branches
     def rows(self) -> List[dict]:
-        """Every branch, with its actor's channel now (`channel`: a codex session renamed to its thread's)."""
+        """Every branch, with its actor's channel now (`channel`: a codex session from before `ag --channel`, renamed
+        to its thread's)."""
         conn = _db()
         try:
             rows = conn.execute("SELECT b.*, coalesce((SELECT s.session_id FROM sessions s WHERE s.session_id = b.session_id "

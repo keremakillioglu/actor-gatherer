@@ -248,7 +248,7 @@ in making_ag both readings agreed, but for 15 ToolSearch results, which touch no
 
 | Type | Payload | Read by |
 |---|---|---|
-| `chat_sent` | text | `data.typed`: pending (`chat`) until a message of its words is queued, sent or stored, at most 60 s -- not a "/" command, which the harness runs itself; the page that sent it shows it pending until the harness has it. A new codex session's waits for its thread's id (`sessions._rename`) |
+| `chat_sent` | text | `data.typed`: pending (`chat`) until a message of its words is queued, sent or stored, at most 60 s -- not a "/" command, which the harness runs itself; the page that sent it shows it pending until the harness has it |
 | `answer_given` | call, summary, expect | `data._with_started`: the answer and whether it was recorded, past a restart |
 | `terminal_input` | | `sessions.answer`'s check that nothing was typed since a question was asked: one per burst of keys (2 s quiet) |
 | `actor_message` | kind, to, to_name, text | `files.files`' `sent`: a message the actor sent another of its gatherer (`ag actors send`; `new`, a new actor started with it), shown in its turn in Chat; the receiver has it as a message of its conversation, in its envelope (coordination.py) |

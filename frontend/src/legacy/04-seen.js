@@ -80,7 +80,7 @@ function takeHome(home) {
       a.last_user_message = appAsked(a, a.last_user_message);
     }
   }
-  if (state.selected) {                              // a codex session renamed to its thread: followed there
+  if (state.selected) {          // a codex session renamed to its thread (one from before `ag --channel`): followed there
     const g = home.gatherers.find((x) => x.name === state.selected[0]);
     const moved = g && !g.agents.some((a) => a.channel === state.selected[1])
       && g.agents.find((a) => a.session && a.session.started_as === state.selected[1]);

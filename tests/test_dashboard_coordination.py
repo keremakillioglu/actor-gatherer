@@ -308,26 +308,15 @@ class CoordinationTest(CoordinationBase):
             self.crew.new(self.a, "Draw more.", folder="Paper/ /x")
         self.assertEqual(len([r for r in self.s.list() if r["gatherer"] == "g"]), 3)  # refused: none started
 
-    def test_a_new_actors_name_is_recorded_in_its_channel_once_its_harness_gave_it_its_id(self):
+    def test_a_new_actors_name_is_recorded_in_its_channel_at_once_whatever_its_harness(self):
+        """Codex picks its thread's id at its first call, but its session is kept under the dashboard's id from that call
+        on (`ag --channel`): its name goes into that channel at once, as a Claude Code actor's does."""
         named = []
         with unittest.mock.patch.object(coordination, "_name_it", lambda g, channel, name: named.append((g, channel, name))):
-            mine = self.crew.new(self.a, "Write the tests.", name="Tests")["actor"]["channel"]         # its id ours: at once
-            self.until(lambda: named)
-            self.assertEqual(named, [("g", mine, "Tests")])
-            started_as = self.crew.new(self.a, "Port the parser.", harness="codex", name="Parser")["actor"]["channel"]
-            gone = self.crew.new(self.a, "Port the lexer.", harness="codex", name="Lexer")["actor"]["channel"]
-            self.crew._name_later()
-            self.assertEqual(len(named), 1)                  # its channel is its thread's, not known yet: not named
-            thread = "019a43c1-0000-7000-8000-00000000a11d"
-            with self.s.lock:
-                self.assertEqual(self.s._rename(started_as, thread), thread)
-            conn = self.s._db()
-            conn.execute("DELETE FROM sessions WHERE session_id = ?", (gone,))     # gone before it had its thread
-            conn.close()
-            self.crew._name_later()
-            self.until(lambda: len(named) > 1)
-            self.assertEqual(named[1:], [("g", thread, "Parser")])   # once it has it; the one gone before: forgotten
-            self.assertEqual(self.crew.unnamed, {})
+            mine = self.crew.new(self.a, "Write the tests.", name="Tests")["actor"]["channel"]
+            codex = self.crew.new(self.a, "Port the parser.", harness="codex", name="Parser")["actor"]["channel"]
+            self.until(lambda: len(named) == 2)
+            self.assertEqual(sorted(named), sorted([("g", mine, "Tests"), ("g", codex, "Parser")]))
 
     def docwriter_host(self, app: str = "docwriter"):
         """A host that finds the apps ag comes with (DocWriter and the Browser among them), as the gateway's: what the
@@ -365,7 +354,7 @@ class CoordinationTest(CoordinationBase):
         self.assertEqual(got["docwriter"], {"key": role["key"], "root": os.path.realpath(paper)})
         self.assertEqual(h.agents_of(h.instance("g", role["key"])), [new])       # attached to its DocWriter
         self.assertTrue(got["actor"]["docwriter"])
-        self.assertEqual(name_it.call_args.args[1:], ("g", new, "Paper"))
+        self.assertEqual(name_it.call_args.args, ("g", new, "Paper"))
         self.assertEqual(coordination.opened(self.until(lambda: self.messages(new))[0])["text"], "Tighten the introduction.")
         self.assertEqual(self.kept[-1][2][0]["payload"]["kind"], "new")
         with self.assertRaisesRegex(coordination.CoordinationError, "no DocWriter started: no directory"):
@@ -391,7 +380,7 @@ class CoordinationTest(CoordinationBase):
         self.assertEqual(got["browser"], {"key": role["key"], "root": os.path.realpath(site)})
         self.assertEqual(h.agents_of(h.instance("g", role["key"])), [new])
         self.assertTrue(got["actor"]["browser"])
-        self.assertEqual(name_it.call_args.args[1:], ("g", new, "Deadlines"))
+        self.assertEqual(name_it.call_args.args, ("g", new, "Deadlines"))
         self.assertEqual(coordination.opened(self.until(lambda: self.messages(new))[0])["text"], "Find the conference's deadline.")
         with self.assertRaisesRegex(coordination.CoordinationError, "--browser alone"):
             self.crew.new(self.a, "Go.", cwd=site, browser=True, docwriter=True)
