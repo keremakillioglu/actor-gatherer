@@ -152,11 +152,11 @@ def set_key(text: str, section: str, key: str, value: Any) -> str:
 def _write(text: str, version: str) -> None:
     """config.toml written as `text`, when it still is what the page read (`version`) and `text` parses."""
     if _version(_text() or "") != version:
-        raise SettingsError("config.toml changed since this page read it: reload the settings and try again")
+        raise SettingsError("config.toml changed since it was loaded. Reload and try again.")
     try:
         tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise SettingsError(f"not saved, it would not parse: {exc}") from exc
+        raise SettingsError(f"not saved because the file doesn't parse: {exc}") from exc
     os.makedirs(os.path.dirname(path()), exist_ok=True)
     tmp = path() + ".dashboard"
     with open(tmp, "w", encoding="utf-8") as fh:
@@ -168,7 +168,7 @@ def set_defaults(version: str, policy: Optional[str] = None, pollers: Optional[L
                  gatherer: Optional[str] = None) -> Dict[str, Any]:
     """[policies] default, [pollers] default, [cli] gatherer: each given set, the rest of the file kept."""
     if _text() is None:
-        raise SettingsError("ag has made no config.toml here yet: set the model first, or run ag once")
+        raise SettingsError("there is no config.toml yet. Set the model first or run ag once.")
     now = read()
     text = now["text"]
     if policy is not None:
@@ -183,7 +183,7 @@ def set_defaults(version: str, policy: Optional[str] = None, pollers: Optional[L
     if gatherer is not None:
         gatherer = gatherer.strip()
         if gatherer != "." and not sessions.GATHERER.fullmatch(gatherer):
-            raise SettingsError("a gatherer's name may hold letters, digits, '.', '_' and '-' only (\".\": one per session)")
+            raise SettingsError("a gatherer name can only contain letters, digits, '.', '_' and '-' (or \".\" for one per session)")
         text = set_key(text, "cli", "gatherer", gatherer)
     _write(text, version)
     return read()

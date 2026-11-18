@@ -78,7 +78,7 @@ def start(started: "sessions.Sessions", host, app: str, gatherer: str, cwd: str,
     """A new instance of `app` and a new actor working with it (module doc)."""
     m = host.hosted(app).manifest
     if not m.agent.offered:
-        raise AppError(f"{m.label} starts no agent of its own: open it, and attach an actor to it")
+        raise AppError(f"{m.label} has no agent of its own. Open it and put an actor in its task.")
     cwd = os.path.realpath(os.path.abspath(os.path.expanduser((cwd or "").strip() or ".")))
     if not os.path.isdir(cwd):
         raise AppError(f"no directory {cwd}")
@@ -114,8 +114,8 @@ class Messenger:
         try:
             self.started.send(row["session_id"], text, fullscreen=bool(rules is None or rules.fullscreen))
         except sessions.NotAtBox:
-            raise AppError("its terminal can't take a message now: a dialog or a question is open in it, or "
-                           "something is typed there and not sent. Nothing was typed; try again later.", 409) from None
+            raise AppError("the agent's terminal is showing a dialog or question, or has unsent text. "
+                           "Nothing was sent. Try again later.", 409) from None
         except sessions.SessionError as exc:
             raise AppError(str(exc), 409) from None
 

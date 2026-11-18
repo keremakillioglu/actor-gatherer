@@ -37,7 +37,7 @@ function miniHistory({ info, running }) {
     agoOf(more ? more.at : t.at)));
   // the agent's: what it does now, else how its turn ended
   const state_ = opening ? "opening" : cur ? cur.state : running ? "working" : "done";
-  if (opening) rows.push(miniRow("now quiet", meIcon(info, null, strokeIcon(ICONS.history, 12)), "Sent · waiting for the actor to take it", null));
+  if (opening) rows.push(miniRow("now quiet", meIcon(info, null, strokeIcon(ICONS.history, 12)), "Sent · waiting for the actor", null));
   else if (state_ === "asking") rows.push(miniRow("now ask", meIcon(info, ME_MARKS.asking, el("span", { class: "mk ask", text: "?" })), "Waiting for you", null));
   else if (atWork || state_ === "working") {
     // a call under way; else thinking; else its latest call, if nothing was said since (files.py's `last`); else what it
@@ -62,7 +62,7 @@ function miniHistory({ info, running }) {
   }
   miniCard.drawn(info, rows);
   const ink = HUE_INK[info.avatar_hue];
-  return el("div", { class: "mini-hist", role: "group", "aria-label": "The conversation, last lines",
+  return el("div", { class: "mini-hist", role: "group", "aria-label": "Latest messages",
     style: ink ? `--mh-ink: light-dark(${ink[0]}, ${ink[1]})` : null }, ...rows);
 }
 // The actor's line's icon: its avatar, small and still (18-top.js's miniMe), `mark` at its corner; no avatar, `alt`.
@@ -88,7 +88,7 @@ const agoOf = (t) => t ? el("span", { "data-ago": t, text: ago(t) }) : null;
 const stoppedWords = (s) => s.kind === "interrupted" ? "Interrupted" : s.text ? `Stopped: ${firstLine(s.text, 120)}` : "Stopped";
 function miniRow(kind, icon, text, meta, extra = "") {
   const r = el("button", { type: "button", class: `mh-row ${kind}${extra}`, "data-kind": kind.split(" ")[0],
-    title: "Hover for the whole conversation · click: show the chat" },
+    title: "Hover to see the conversation · click to open the chat" },
     icon, el("span", { class: "tx" }, ...[].concat(text).filter((x) => x !== null && x !== undefined)), el("span", { class: "meta" }, meta));
   r.addEventListener("mouseenter", () => miniCard.hover(r));
   r.addEventListener("mouseleave", () => miniCard.leave());
@@ -213,13 +213,13 @@ const miniCard = (() => {
       el("span", { class: "st" }, ...headState(a, t, cur, live), ` · ${plural(turns.length, "turn")}`));
     const body = el("div", { class: "mh-body" });
     turns.forEach((tt, i) => body.append(...turnNodes(a, tt, i, i === last, live && i === last)));
-    if (cur && cur.state === "asking") body.append(el("div", { class: "mh-now ask" }, el("span", { class: "mk ask", text: "?" }), "Waiting for you: its question is over the message box"));
+    if (cur && cur.state === "asking") body.append(el("div", { class: "mh-now ask" }, el("span", { class: "mk ask", text: "?" }), "Waiting for you · the question is above the message box"));
     else if (live) body.append(el("div", { class: "mh-now" }, src ? buddy(a, !!a.failing) : el("span", { class: "spin" }),
       cur && cur.failing ? "Retrying…" : ((cur && cur.doing) || (t && t.now) || {}).kind === "thinking" ? "Thinking…" : "Working…"));
     else { const rest = miniRest({ info: a, running: false });   // its turn over: the actor done under it, as in Chat
       if (rest) body.append(el("div", { class: "mh-now rested", title: `Done · ${ago(rest.end || rest.at)}` }, meDone(a, rest, "mh-me"))); }
-    const foot = el("div", { class: "mh-foot" }, el("span", {}, el("kbd", { text: "Click" }), " a message: the chat there"),
-      el("span", {}, el("kbd", { text: "⌘" }), " with its commands"), el("span", {}, el("kbd", { text: "Esc" }), " close"));
+    const foot = el("div", { class: "mh-foot" }, el("span", {}, el("kbd", { text: "Click" }), " a message to open it in the chat"),
+      el("span", {}, el("kbd", { text: "⌘" }), " to show its commands too"), el("span", {}, el("kbd", { text: "Esc" }), " to close"));
     const ink = HUE_INK[a.avatar_hue];
     if (ink) card.style.setProperty("--mh-ink", `light-dark(${ink[0]}, ${ink[1]})`); else card.style.removeProperty("--mh-ink");
     card.replaceChildren(head, body, foot);
@@ -237,7 +237,7 @@ const miniCard = (() => {
   // a turn: where it began, the user's message(s), what it did, its reply
   function turnNodes(a, t, i, latest, live) {
     const out = [el("div", { class: "mh-sep" }, el("b", { text: `Turn ${i + 1}` }), el("span", { "data-ago": t.at, text: ago(t.at) }))];
-    const you = el("div", { class: "mh-you", tabindex: "0", title: "Show the chat at this turn · ⌘ click: with its commands" },
+    const you = el("div", { class: "mh-you", tabindex: "0", title: "Open the chat at this turn · ⌘-click to show its commands too" },
       el("span", { class: "lbl", text: "You" }), el("div", { class: "tx", text: str(t.text) }),
       ...(t.more || []).map((m) => el("div", { class: "tx more" }, el("span", { class: "lbl", text: "While it worked" }), str(m.text))));
     you.addEventListener("click", (ev) => { shut(); miniOpenAt(latest ? null : t.n, ev.metaKey || ev.ctrlKey); });
@@ -262,7 +262,7 @@ const miniCard = (() => {
     if (finalAt >= 0) {
       const long = !latest && str(reply).length > MINI_REPLY && !opened.has(`r${t.n}`);
       out.push(el("div", { class: "mh-reply" + (long ? " clamp" : "") }, window.agNext.ui.markdown(str(reply))));
-      if (long) out.push(el("button", { type: "button", class: "mh-more", text: "Show the whole reply", onclick: () => { opened.add(`r${t.n}`); fill(true); } }));
+      if (long) out.push(el("button", { type: "button", class: "mh-more", text: "Show full reply", onclick: () => { opened.add(`r${t.n}`); fill(true); } }));
     } else if (!live && !(latest && miniCurState(a) === "asking")) {
       const stopped = t.stopped || null;
       if (stopped) out.push(el("div", { class: "mh-quiet", text: stoppedWords(stopped) }));

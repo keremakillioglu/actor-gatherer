@@ -18,13 +18,13 @@ function drawAppsPage(box) {
 }
 async function appsPageOpen(a, withAgent = false) {
   const app = window.agNext.apps.named(a.name);
-  if (!app) throw new Error("it isn't loaded on this page yet: reload it");
+  if (!app) throw new Error("it isn't loaded yet. Reload the page.");
   const p = startPlace(), g = p && !p.alone ? ntGroup(p) : realGroups()[0];
   if (!g) throw new Error("make a group first");
   const cwd = startCwd(g) || state.home.cwd || null, folder = p && !p.alone ? p.folder : null;
   if (withAgent && app.agent && app.agent.offered) {   // with an agent of its own: started with it, on a harness that
     const tooled = startable().filter((h) => (harnessInfo(h) || {}).mcp);   // can give it its tools
-    if (!tooled.length) throw new Error("no harness here can give its agent its tools");
+    if (!tooled.length) throw new Error("no harness here supports its agent's tools");
     const kept = keptValue(START_HARNESS_KEY);
     aimStart(g.name, folder);
     return startWithApp(g.name, cwd, app.name, tooled.includes(kept) ? kept : tooled[0]);

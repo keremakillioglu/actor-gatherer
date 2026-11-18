@@ -141,6 +141,6 @@ export async function connect(home: string, port: number, env: () => NodeJS.Proc
   if (found.kind === "other") throw new Error(`Port ${port} is taken by ${found.what}, so this home's dashboard can't start there.`);
   const startEnv = env();
   const ag = findAg(startEnv);
-  if (!ag) throw new Error("ag isn't installed where your shell finds it: install it (pip install 'actor-gatherer[dashboard]').");
+  if (!ag) throw new Error("Couldn't find ag on your shell's PATH. Install it with pip install 'actor-gatherer[dashboard]'.");
   return waitFor(port, home, startDashboard(ag, home, port, startEnv));
 }

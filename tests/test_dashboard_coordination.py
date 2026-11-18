@@ -304,7 +304,7 @@ class CoordinationTest(CoordinationBase):
         got = self.crew.new(self.a, "Draw the figures.", folder="Paper/Figures")      # the folders of its path made
         new = got["actor"]["channel"]
         self.assertEqual((got["actor"]["folder"], folders.of("g")["filed"]), ("Paper/Figures", {new: folders.find("g", "Paper/Figures")}))
-        with self.assertRaisesRegex(coordination.CoordinationError, "which folder"):
+        with self.assertRaisesRegex(coordination.CoordinationError, "needs a name"):
             self.crew.new(self.a, "Draw more.", folder="Paper/ /x")
         self.assertEqual(len([r for r in self.s.list() if r["gatherer"] == "g"]), 3)  # refused: none started
 

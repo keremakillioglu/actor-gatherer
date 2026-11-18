@@ -58,5 +58,5 @@ def in_store(harness: Optional[str], channel: str, name: str, cwd: Optional[str]
     it was not (no rules for the harness, its record not found, it refused the name)."""
     h = harness_kit.get(harness)
     if h is None:
-        raise harness_kit.RenameError(f"no rules for {harness or 'its harness'}: named here only")
+        raise harness_kit.RenameError(f"renaming isn't supported for {harness or 'this harness'}")
     return h.rename(channel, clean(name), env=sessions.agent_env(), cwd=cwd)     # its own record, where it keeps one

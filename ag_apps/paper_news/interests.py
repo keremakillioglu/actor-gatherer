@@ -80,7 +80,7 @@ def clean_inputs(d: dict) -> dict:
         raise InterestError("a JSON object, please")
     scholar = _text(d.get("scholar"), "scholar")
     if scholar and not re.match(r"^https?://\S+$", scholar):
-        raise InterestError("scholar: a web address, such as https://scholar.google.com/citations?user=...")
+        raise InterestError("Your profile must be a web address, such as https://scholar.google.com/citations?user=...")
     keywords = d.get("keywords")
     if isinstance(keywords, str):
         keywords = re.split(r"[,\n;]", keywords)
@@ -88,7 +88,7 @@ def clean_inputs(d: dict) -> dict:
            "topics": _items(d.get("topics"), "topics", INPUT_ITEMS_MAX),
            "papers": _items(d.get("papers"), "papers", INPUT_ITEMS_MAX), "notes": _text(d.get("notes"), "notes")}
     if not any(got.values()):
-        raise InterestError("tell it something: a profile, keywords, topics or papers")
+        raise InterestError("Fill in your profile, keywords, topics or papers.")
     return got
 
 

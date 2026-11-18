@@ -123,10 +123,10 @@ def create(path: str, root: str, folder: bool = False) -> dict:
         raise DocError("an absolute path and the directory it is under, please")
     name = os.path.basename(path.rstrip("/"))
     if not name or name in (".", "..") or "\0" in path:
-        raise DocError("a name, please")
+        raise DocError("give it a name")
     real = resolve(path.rstrip("/"), root)
     if os.path.lexists(real):
-        raise DocError(f"{name} is there already")
+        raise DocError(f"{name} already exists")
     try:
         os.makedirs(os.path.dirname(real), exist_ok=True)
         if folder:
@@ -135,11 +135,11 @@ def create(path: str, root: str, folder: bool = False) -> dict:
             with open(real, "x", encoding="utf-8"):
                 pass
     except FileExistsError:                         # made meanwhile, or a file where a folder above it would go
-        raise DocError(f"{name} is there already, or a file is where a folder above it would be") from None
+        raise DocError(f"{name} already exists, or a file is in the way") from None
     except NotADirectoryError:
-        raise DocError(f"a file is where a folder above {name} would be") from None
+        raise DocError(f"a file is in the way of {name}") from None
     except PermissionError:
-        raise DocError(f"{os.path.dirname(real)} may not be written") from None
+        raise DocError(f"no permission to write in {os.path.dirname(real)}") from None
     return {"path": real, "dir": folder}
 
 
@@ -204,7 +204,7 @@ def read(path: str) -> Tuple[str, tuple]:
     if not stat.S_ISREG(before.st_mode):
         raise DocError(f"{path} is not a file")
     if before.st_size > MAX_BYTES:
-        raise DocError(f"{path} is too large to edit here ({before.st_size:,} bytes; at most {MAX_BYTES:,})")
+        raise DocError(f"{path} is too large to edit here ({before.st_size:,} bytes, limit {MAX_BYTES:,})")
     with open(path, "rb") as fh:
         raw = fh.read(MAX_BYTES + 1)
     after = os.stat(path)
@@ -263,7 +263,7 @@ def about(path: str, root: str) -> dict:
         with open(real, "rb") as fh:
             head = fh.read(SNIFF)
     except PermissionError:
-        raise DocError(f"{path} may not be read") from None
+        raise DocError(f"no permission to read {path}") from None
     name = os.path.basename(path.rstrip("/")) or os.path.basename(real)
     ext = os.path.splitext(name)[1][1:].lower()
     sniffed = next((x for magic, x in MAGIC if head.startswith(magic)), None) \
@@ -638,7 +638,7 @@ class Room:
         with self.lock:
             conn = self.conns.get(cid)
             if conn is None:
-                raise DocError("this page has the file open no more: open it again")
+                raise DocError("the file is no longer open here. Open it again.")
             conn.hold = how
             self._restate()
             return self.state()
@@ -683,7 +683,7 @@ class Room:
         with self.lock:
             conn = self.conns.get(cid)
             if conn is None:
-                raise DocError("this page has the file open no more: open it again")
+                raise DocError("the file is no longer open here. Open it again.")
             conn.aware = update
             self._send("aware", {"update": b64(update)}, but=cid)
 
@@ -745,7 +745,7 @@ class Room:
             raw = str(self.text).encode("utf-8")
             here = raw[c.start:c.end].decode("utf-8", "replace")
             if _put_by(c, why="approve") and take in ("theirs", "both") and here != c.base:
-                raise DocError("these lines changed since it was proposed: reject it, or Edit it in its box")
+                raise DocError("these lines changed since it was proposed. Reject it or edit it in its box.")
             # what the file on disk has here now: the file's lines, where it asked; else the document's
             before = (raw[:c.start] + c.theirs.encode("utf-8") + raw[c.end:]).decode("utf-8") if c.asked \
                 else raw.decode("utf-8")
@@ -770,9 +770,9 @@ class Room:
             if not isinstance(text, str):
                 raise DocError("edited: the lines, please")
             if theirs is not None and theirs != c.theirs:
-                raise DocError("its lines changed again since you began editing them: look at them again")
+                raise DocError("the proposed lines changed since you started editing. Check them again.")
             if mine is not None and mine != str(self.text).encode("utf-8")[c.start:c.end].decode("utf-8", "replace"):
-                raise DocError("your lines changed since you began editing its: look at them again")
+                raise DocError("your lines changed since you started editing. Check them again.")
         return c
 
     def _replace(self, c: Conflict, text: str) -> None:
@@ -938,13 +938,13 @@ class Room:
             for _ in range(3):
                 self.check()                        # the file's own change first, merged in
                 if set(self.conflicts) - shown:     # where it was edited here too: shown, not saved over
-                    raise DocError("The file changed on disk where it was edited here: see the conflicts, then save.")
+                    raise DocError("The file changed on disk in lines edited here. Resolve the conflicts, then save.")
                 text = str(self.text)
                 sig = self._write(text)
                 if sig is not None:
                     break
             else:
-                raise DocError("the file keeps changing on disk: save again in a moment")
+                raise DocError("the file keeps changing on disk. Try saving again in a moment.")
             self.disk, self.sig = text, sig
             for c in [c for c in self.conflicts.values() if c.agent is None]:
                 del self.conflicts[c.id]            # those shown: settled as the lines kept here (a branch's wait)
@@ -1000,7 +1000,7 @@ class LiveDocs:
             room = self.rooms.get(real)
             if room is None:
                 if not create:
-                    raise DocError(f"{path} is not open: open it again")
+                    raise DocError(f"{path} is not open. Open it again.")
                 for _ in range(5):
                     try:
                         room = self.rooms[real] = Room(real)
@@ -1008,7 +1008,7 @@ class LiveDocs:
                     except _Changing:
                         time.sleep(0.05)
                 else:
-                    raise DocError(f"{path} keeps changing on disk: open it again in a moment")
+                    raise DocError(f"{path} keeps changing on disk. Try opening it again in a moment.")
                 if self.branches is not None:       # its branches' changes to it, shown in it
                     self.branches.opened(real)
             return room
@@ -1088,7 +1088,7 @@ class LiveDocs:
         except (FileNotFoundError, NotADirectoryError):
             raise DocError(f"{directory} is not a directory") from None
         except PermissionError:
-            raise DocError(f"{directory} may not be read") from None
+            raise DocError(f"no permission to read {directory}") from None
         found: Dict[str, List[dict]] = {}           # by entry: its own writers, or those of what is in it
         changed = writers([real, os.path.abspath(directory)], time.time() - RECENT)
         for rel, ws in changed.items():

@@ -139,11 +139,11 @@ async function termOpen(info) {
 }
 if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
   id: "terminal", name: "Terminal", feed: "none", frame: "xterm-frame", icon: ICONS.terminal,
-  description: "The harness's own interface, in a terminal: what it would show and ask in one outside, its keys included.",
+  description: "The harness's own interface, in a terminal.",
   render: (ctx) => {
     const { info, held } = ctx;
     if (state.home && state.home.terminals === false)
-      return el("div", { class: "xterm-cover" }, el("div", { class: "desc", text: "A terminal needs a Unix pseudo-terminal, which the dashboard's system does not have." }));
+      return el("div", { class: "xterm-cover" }, el("div", { class: "desc", text: "Terminals need a Unix pseudo-terminal, which this system doesn't have." }));
     const t = termFor(info.channel), running = !!(info.session && info.session.terminal);
     if (running) { termListen(info.channel); t.tried = true; }   // seen open: once it ends (closed), not opened again here
     const open = !running && !held && !t.tried && hasChat(info);

@@ -319,7 +319,7 @@ def _rows(rows) -> List[int]:
             raise HistoryError(f"at most {MAX_ROWS:,} events at once")
         got.update(range(a, b + 1))
     if not got:
-        raise HistoryError("nothing picked: pick some of the history first")
+        raise HistoryError("nothing picked. Pick some of the history first.")
     return sorted(got)
 
 
@@ -531,14 +531,14 @@ def start(gatherer: str, kind: str, rows, ask: str = "") -> dict:
         raise HistoryError(f"one of {', '.join(KINDS)}")
     ask = (ask or "").strip()
     if len(ask) > MAX_ASK:
-        raise HistoryError(f"instructions of at most {MAX_ASK:,} characters")
+        raise HistoryError(f"instructions can be at most {MAX_ASK:,} characters")
     rows = _rows(rows)
     text, about = render(gatherer, rows)
     if len(text) > PROMPT_CHARS:
         text, about = render(gatherer, rows, TIGHT)
     if len(text) > PROMPT_CHARS:
-        raise HistoryError(f"too much for one call: {len(text) // 4:,} tokens or so, even with tool output cut short "
-                           f"(at most {PROMPT_CHARS // 4:,}); pick less")
+        raise HistoryError(f"too much history for one call: about {len(text) // 4:,} tokens with tool output shortened, "
+                           f"over the {PROMPT_CHARS // 4:,} limit. Pick less.")
     name, system = KINDS[kind]
     prompt = (f"Make the {name if kind == 'agents' else name.lower()} the system message asks for, from the history below."
               + (f"\n\nWhat the user asks of it -- follow it where it differs from the system message:\n\n{ask}" if ask else "")
@@ -663,9 +663,9 @@ def memories(output: str) -> List[dict]:
     try:
         got = json.loads(fenced.group(1) if fenced else text)
     except ValueError:
-        raise HistoryError("the model's answer was not the list of memories asked for: try again") from None
+        raise HistoryError("the model didn't return a list of memories. Try again.") from None
     if not isinstance(got, list):
-        raise HistoryError("the model's answer was not the list of memories asked for: try again")
+        raise HistoryError("the model didn't return a list of memories. Try again.")
     out, names = [], set()
     for m in got:
         if not isinstance(m, dict) or not str(m.get("body") or "").strip():
@@ -705,7 +705,7 @@ def _skill_name(output: str) -> str:
     found = re.search(r"^name:\s*[\"']?([^\"'\n]+?)[\"']?\s*$", m.group(1), re.M) if m else None
     name = _slug(found.group(1)) if found else ""
     if not name:
-        raise HistoryError("the skill has no name in its front matter: try again")
+        raise HistoryError("the skill has no name in its front matter. Try again.")
     return name
 
 
@@ -723,15 +723,15 @@ def plan(rid: str, target: str, directory: str = "", harness: Optional[str] = No
         raise HistoryError(f"no harness {harness!r}")
     kind = "agents" if rec.get("kind") == "claude" else rec.get("kind")       # "claude": one made as a CLAUDE.md, before
     if kind not in h.saves:
-        raise HistoryError(f"a {kind} is not saved where {h.label} reads it: download it instead")
+        raise HistoryError(f"{h.label} doesn't read a saved {kind} file. Download it instead.")
     if target not in TARGETS:
         raise HistoryError(f"a target of {' or '.join(TARGETS)}")
     if target == "user" and h.saves[kind].get("user") is not True:
-        raise HistoryError(str(h.saves[kind].get("user") or f"a {kind} is a directory's: save it to one"))
+        raise HistoryError(str(h.saves[kind].get("user") or f"a {kind} belongs in a directory. Save it to one."))
     if target == "dir":
         directory = os.path.expanduser((directory or "").strip())
         if not os.path.isabs(directory):
-            raise HistoryError("a directory's full path, please")
+            raise HistoryError("give the directory's full path")
         if not os.path.isdir(directory):
             raise HistoryError(f"no directory {directory}")
         directory = os.path.realpath(directory)
@@ -760,7 +760,7 @@ def save(rid: str, target: str, directory: str = "", version: str = "", harness:
     if not version:
         return got
     if version != got["version"]:
-        raise HistoryError("what would be written changed since the preview (a file changed): preview it again")
+        raise HistoryError("a file changed since the preview. Preview it again.")
     for f in got["files"]:
         os.makedirs(os.path.dirname(f["path"]), exist_ok=True)
         whole = ((_read(f["path"]) or "") + f["text"]) if f["action"] == "append" else f["text"]

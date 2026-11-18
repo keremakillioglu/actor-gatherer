@@ -5,7 +5,7 @@
 name = "paper_news"
 label = "Paper news"
 version = "1"
-description = "each weekday's new arXiv papers, and the ones for your research"
+description = "new arXiv papers each weekday, with picks for your research"
 instances = "one"
 access = "task"
 mark = "mark.svg"

@@ -258,7 +258,7 @@ class RunTest(AppBase):
         n = self.host.notices[0]
         self.assertEqual((n["title"], n["text"], n["key"], n["show"], n["where"]),
                          ("2 new papers · Mon, Nov 9",
-                          "cs.AI 2 · cs.DB 1 · tell it what you work on to see what's for you", "listing", ("ag",),
+                          "cs.AI 2 · cs.DB 1 · set up your interests to see picks for you", "listing", ("ag",),
                           {"day": "2026-11-09"}))
         self.assertIn(("a" * 16, {"news": "days", "day": "2026-11-09"}), self.host.told)
         # the day comes out: kept from the feed, told, done
@@ -268,7 +268,7 @@ class RunTest(AppBase):
         self.assertEqual(self.days(), {"2026-11-09": "got", "2026-11-10": "got"})
         self.assertIsNone(self.app.status["waiting"])
         self.assertEqual(self.host.notices[-1]["title"], "3 new papers · Tue, Nov 10")
-        self.assertTrue(self.host.notices[-1]["text"].startswith("cs.AI 1 · cs.DB 2 · tell it what you work on"))
+        self.assertTrue(self.host.notices[-1]["text"].startswith("cs.AI 1 · cs.DB 2 · set up your interests"))
         asked = len(self.arxiv.asked)
         self.assertIsNone(self.app.scheduled("listing", self.now))          # again: nothing new, nothing told
         self.assertEqual(len(self.host.notices), 4)

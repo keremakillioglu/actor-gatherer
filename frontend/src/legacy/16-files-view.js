@@ -30,8 +30,8 @@ const changedCount = (ch) => !ch || !(ch[0] || ch[1]) ? null
     ch[0] ? el("span", { class: "a", text: `+${full(ch[0])}` }) : null, ch[1] ? el("span", { class: "r", text: `−${full(ch[1])}` }) : null);
 const addChanged = (all) => all.reduce((a, x) => !x ? a : !a ? [...x] : [a[0] + x[0], a[1] + x[1]], null);
 // What the disk said of a call, where ag's hook server checked it as it ran (files.py's `checked`)
-const CHECKED = { true: ["checked", "What the call showed of this file matched the file on disk right after it ran"],
-  false: ["not as on disk", "What the call showed of this file did not match the file on disk right after it ran"] };
+const CHECKED = { true: ["checked", "Matched the file on disk after the call"],
+  false: ["not as on disk", "Didn't match the file on disk after the call"] };
 // One load at a time, and at most one more after it, for all that asked while it ran -- not one each: a stream
 // message asks with every change, and while a load is held up (the browser's connections all taken by streams:
 // 03-settings.js's loadedSoon) they would pile up, each to be fetched in turn once it goes through.
@@ -104,7 +104,7 @@ function kindSwitches(gitFiles) {
   return el("div", { class: "fl-legend fl-kinds" }, ...Object.entries(FILE_KINDS).map(([k, [name, color]]) => {
     const on = !hiddenKinds.has(k);
     return el("button", { type: "button", class: "kind" + (on ? "" : " off"), "aria-pressed": on ? "true" : "false",
-      title: on ? `Leave out the files only ${name}` : `Show the files ${name}`,
+      title: `${on ? "Hide" : "Show"} ${name} files`,
       onclick: () => {
         on ? hiddenKinds.add(k) : hiddenKinds.delete(k);
         try { localStorage.setItem(KINDS_KEY, JSON.stringify([...hiddenKinds])); } catch (e) { /* this page only */ }
@@ -124,7 +124,7 @@ function tmpSwitch(n) {
     try { localStorage.setItem(TMP_KEY, showTmp ? "1" : "0"); } catch (e) { /* this page only */ }
     keepingPlace(renderMain);
   });
-  return el("label", { class: "tmp", title: "Files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders)" },
+  return el("label", { class: "tmp", title: "Show files in temporary folders (/tmp, $TMPDIR)" },
     box, `tmp (${n})`);
 }
 // What git changed as the commands ran -- a pull, a merge, a checkout, a new work tree; in this session's commands or
@@ -135,8 +135,7 @@ let showGit = (() => { try { return localStorage.getItem(GIT_KEY) === "1"; } cat
 const gitOnly = (f) => !f.kinds.length && !!(f.git || []).length;   // a file only git changed
 function gitSwitch(n) {
   return el("button", { type: "button", class: "kind" + (showGit ? "" : " off"), "aria-pressed": showGit ? "true" : "false",
-    title: `${showGit ? "Leave out" : "Show"} what git changed as the commands ran (a pull, a merge, a checkout, a new work tree): `
-      + plural(n, "file"),
+    title: `${showGit ? "Hide" : "Show"} ${plural(n, "file")} changed by git (pulls, merges, checkouts)`,
     onclick: () => {
       showGit = !showGit;
       try { localStorage.setItem(GIT_KEY, showGit ? "1" : "0"); } catch (e) { /* this page only */ }
@@ -188,7 +187,7 @@ function sideBar(files, cmds, info) {
         changed && changed[1] ? el("span", { class: "sub chg-r", text: `−${full(changed[1])}` }) : null),
       el("span", { class: "it" }, strokeIcon(ICONS.terminal, 13),
         ...(how.length ? how.map(([k, cls]) => el("span", { class: "sub " + cls }, dot(cls), full(k))) : [el("span", { text: "0" })])),
-      bg ? el("span", { class: "it bg", title: `${plural(bg, "background task")}: show them` }, strokeIcon(ICONS.pulse, 13),
+      bg ? el("span", { class: "it bg", title: `Show ${plural(bg, "background task")}` }, strokeIcon(ICONS.pulse, 13),
         el("span", { class: "sub bg" }, dot("bg"), full(bg))) : null));
   const acts = barActs();
   return acts ? el("div", { class: "fl-barbox" }, acts, bar) : bar;
@@ -203,11 +202,11 @@ function barActs() {
   const act = (label, title, icon, onclick, pressed = null, cls = "") => el("button", { type: "button", class: `fl-act ${cls}`.trim(),
     title, "aria-label": label, "aria-pressed": pressed === null ? null : pressed ? "true" : "false", onclick }, icon);
   return el("div", { class: "fl-acts", role: "group", "aria-label": "This pane" },
-    el("span", { class: "fl-act fl-grip", draggable: "true", title: "Drag to move this pane beside another of its task · right-click: move it",
+    el("span", { class: "fl-act fl-grip", draggable: "true", title: "Drag or right-click to move",
       "aria-label": "Move this pane" }, strokeIcon(ICONS.move, 14)),
     ...offeredViews().filter((v) => !v.more || v.id === now).map((v) =>
       act(v.name, v.description || v.name, v.icon ? strokeIcon(v.icon, 14) : v.name.slice(0, 1), () => setChatView(v.id), v.id === now)),
-    act("Details", "Details: what ag saw and did for this actor, and the history's other views", strokeIcon(ICONS.panel, 14),
+    act("Details", DETAILS_TIP, strokeIcon(ICONS.info, 14),
       () => setDetails(!state.details), !!state.details),
     canMinimize() ? act("Minimize the chat", MIN_TIP, strokeIcon(ICONS.minimize, 14), () => setChatMin(true)) : null,
     act("Close this pane", $("pane-close").title, "×", () => $("pane-close").click(), null, "close"));
@@ -216,7 +215,7 @@ function barActs() {
 function filesTools() {
   const d = state.files && state.files.data;
   if (!d || !d.turns.length || state.files.turn === null) return [];
-  return [el("button", { type: "button", title: "Show the latest turn, and follow it", onclick: () => setFilesTurn(null) }, "Latest")];
+  return [el("button", { type: "button", title: "Show the latest turn", onclick: () => setFilesTurn(null) }, "Latest")];
 }
 // A shell call's command, as its harness's rules read it (its view's); null for any other call.
 const shellCommand = (call) => call && call.view && call.view.shape === "shell" ? str(call.view.command) : null;
@@ -238,7 +237,7 @@ function callView(call, ran = {}) {
     const src = el("div", { class: "cv-src" });
     src.innerHTML = html;
     return el("div", { class: "cv-in " + cls }, src,
-      copy === undefined ? null : el("button", { type: "button", class: "code-copy", title: "Copy it as written", "data-copy": copy }, "Copy"));
+      copy === undefined ? null : el("button", { type: "button", class: "code-copy", title: "Copy as written", "data-copy": copy }, "Copy"));
   };
   const lined = (hs, cls, mark) => hs.map((h) => `<div class="cl ${cls}"><span class="mk">${mark}</span><span class="tx">${h || "&#8203;"}</span></div>`).join("");
   const cwd = ((selectedInfo() || {}).cwd || "").replace(/\/$/, "");   // a path from the session's directory, else from ~
@@ -323,7 +322,7 @@ function fileBlock(b, lang) {
   const hl = (ls, top) => { const t = ls.join("\n"); return top ? hlLines(t, lang === "html" ? guessWeb(t) : lang) : hlPart(lang, t)[0]; };
   const cut = () => { if (b.cut) out.push(fileGap(`+${plural(b.cut, "more line")} not shown`)); };
   if (b.t === "lines") {
-    if (b.start === null) out.push(fileGap("where in the file is not known"));
+    if (b.start === null) out.push(fileGap("position in the file unknown"));
     const h = hl(b.lines, b.start === 1);
     b.lines.forEach((t, i) => out.push(fileLine(b.start === null ? null : b.start + i, "read", "", t, h[i])));
     cut();
@@ -343,7 +342,7 @@ function fileBlock(b, lang) {
     flush();
     cut();
   } else if (b.t === "diff") {
-    if (b.at === null) out.push(fileGap("where in the file is not known: its lines were not seen"));
+    if (b.at === null) out.push(fileGap("position in the file unknown"));
     const above = b.above || [], below = b.below || [], ctx = (rows) => rows.map((r) => r[1]);
     // the lines before and after, coloured once with the old lines between them and once with the new, both from
     // inside what the lines above begin in
@@ -366,7 +365,7 @@ function fileBlock(b, lang) {
     const [g] = state.selected || [];
     out.push(el("a", { class: "fv-img", target: "_blank", rel: "noopener",
       href: `/api/image?gatherer=${encodeURIComponent(g)}&row_id=${b.row_id}&id=${encodeURIComponent(b.id)}` },
-      el("img", { alt: "the image the agent viewed", loading: "lazy",
+      el("img", { alt: "Image the agent viewed", loading: "lazy",
         src: `/api/image?gatherer=${encodeURIComponent(g)}&row_id=${b.row_id}&id=${encodeURIComponent(b.id)}` })));
   } else if (b.t === "note") {
     out.push(el("div", { class: "fv-note", text: b.text }));
@@ -380,7 +379,7 @@ function filesRender({ info, session, running, writable, held }) {
   // have come, not the turns first and what they are at a moment later (the actor done under the latest popping in, and
   // the conversation moved under the reader)
   const waits = !d || (!chatViewOf(info) && !!state.stream && !state.paused && !SNAPSHOT);
-  if (waits) return [el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files: run `ag dashboard` live to see them." : "Loading…" }), asking].filter(Boolean);
+  if (waits) return [el("div", { class: "desc", style: "padding: 10px 16px", text: SNAPSHOT ? "A snapshot has no files. Run `ag dashboard` live to see them." : "Loading…" }), asking].filter(Boolean);
   // the view opened afresh (from another view, or the page's first draw): the conversation and the
   // commands start where they would for a new turn -- the commands at their end, the conversation at its end or at the turn picked
   const afresh = !document.querySelector("#main .files .fl-grid");
@@ -453,7 +452,7 @@ function filesRender({ info, session, running, writable, held }) {
         el("span", { class: "tw", text: open ? "▾" : "▸" }), el("span", { class: "name", text: label(above, dir.path) }),
         cwd && dir.path === cwd ? el("span", { class: "wd", title: "The session's working directory", text: "cwd" }) : null,
         MEMORY.find(([re]) => re.test(dir.path)) ? el("span", { class: "wd", text: "memory",
-          title: `${harnessName(MEMORY.find(([re]) => re.test(dir.path))[1])}'s memory of a directory: what it keeps for later sessions there` }) : null,
+          title: `${harnessName(MEMORY.find(([re]) => re.test(dir.path))[1])}'s memory folder` }) : null,
         open ? null : el("span", { class: "n", text: `${count(dir)}` })));
       if (!open) continue;
       const kids = el("div", { class: "fl-kids", style: `--guide: ${17 + depth * 14}px` });   // under its caret's middle
@@ -463,7 +462,7 @@ function filesRender({ info, session, running, writable, held }) {
     for (const [f, name] of node.files.sort((x, y) => x[1].localeCompare(y[1]))) into.append(fileRow(f, name, depth));
   };
   grow(root, list, 0, null);
-  if (!files.length) list.append(el("div", { class: "fv-note", text: kindHidden ? `Only ${plural(kindHidden, "file")} of the kinds switched off below.`
+  if (!files.length) list.append(el("div", { class: "fv-note", text: kindHidden ? `Only ${plural(kindHidden, "file")} of the kinds turned off below.`
     : gitHidden ? `Only ${plural(gitHidden, "file")} git changed.`
     : tmpFiles ? `Only ${plural(tmpFiles, "file")} in temporary folders.`
     : opening || (running && d.turn === d.turns.length - 1) ? "No files yet in this turn." : "The agent touched no files in this turn." }));
@@ -497,7 +496,7 @@ function filesRender({ info, session, running, writable, held }) {
     el("section", { class: "fl-sec files-sec" },
       el("div", { class: "fl-h" }, el("span", { text: files.length ? plural(files.length, "file") : "No files" }),
         tmpFiles ? tmpSwitch(tmpFiles) : null,
-        el("button", { type: "button", class: "fold", title: "Fold the files and commands to a bar", "aria-label": "Fold the files and commands",
+        el("button", { type: "button", class: "fold", title: "Fold files and commands", "aria-label": "Fold files and commands",
           onclick: () => foldSide(true) }, strokeIcon(ICONS.sidebar, 14))),
       cwd ? el("div", { class: "fl-wd", title: cwd }, el("span", { text: "Working directory" }),
         el("span", { class: "p", text: under(cwd, home) ? "~" + cwd.slice(home.length) : cwd })) : null, list,
@@ -659,7 +658,7 @@ addChatView({
   greets: true,                                      // says itself that there is no conversation yet
   asking: false,                                     // drawn under its conversation, at the right
   queued: false,                                     // what waits for the turn to end: at its conversation's end, pending
-  description: "The conversation, and beside it each turn's files and commands: what the agent read, searched and changed, with the lines it saw and its changes in place.",
+  description: "The conversation, with each turn's files and commands beside it.",
   tools: filesTools,
   render: filesRender,
 });

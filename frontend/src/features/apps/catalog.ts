@@ -90,7 +90,7 @@ async function reload(updates = false): Promise<void> {
     const f = page.got.found;
     if (f && f.added.length + f.gone.length + f.changed.length) await page.hooks?.changed(); // the page's own list too
   } catch (e) {
-    page.error = `The apps couldn't be read: ${(e as Error).message}`;
+    page.error = `Couldn't load apps: ${(e as Error).message}`;
   }
   render();
   if (updates && page.got?.installed.some((a) => a.kind === "git"))
@@ -159,7 +159,7 @@ function head(): HTMLElement[] {
     ),
     el("p", {
       class: "ap-lede",
-      text: "An installed app is on in every folder. Agents get its tools when their terminal next starts.",
+      text: "Installed apps are on in every folder. Agents get new tools when they next start.",
     }),
     page.note ? el("div", { class: "ap-note", role: "status" }, page.note) : null,
     page.error ? el("div", { class: "ap-error", role: "alert" }, page.error) : null,
@@ -172,7 +172,7 @@ const matches = (a: { name: string; label?: string; description?: string; tools?
 
 function body(): HTMLElement[] {
   const got = page.got;
-  if (!got) return page.error ? [] : [el("p", { class: "ap-quiet", text: "Reading the apps…" })];
+  if (!got) return page.error ? [] : [el("p", { class: "ap-quiet", text: "Loading apps…" })];
   const inst = got.installed.filter(matches),
     av = got.available.filter(matches),
     br = got.broken.filter(matches);
@@ -248,8 +248,8 @@ function installedRow(a: CatalogApp): HTMLElement {
       meta([
         whoGets(a),
         said.count((a.tools || []).length, "tool"),
-        tokens(a.tokens || 0, "each"),
-        (a.schedules || []).length ? "works on its own" : null,
+        tokens(a.tokens || 0, "per agent"),
+        (a.schedules || []).length ? "runs on a schedule" : null,
       ]),
     ),
     moreButton(a),
@@ -277,7 +277,7 @@ function availableRow(a: CatalogApp): HTMLElement {
       meta([
         a.origin === "builtin" ? "comes with ag" : "ag's index",
         a.tools ? said.count(a.tools.length, "tool") : null,
-        a.tokens ? tokens(a.tokens, "each") : null,
+        a.tokens ? tokens(a.tokens, "per agent") : null,
         a.needs || null,
       ]),
     ),
@@ -422,12 +422,12 @@ function details(a: CatalogApp): HTMLElement {
       el("div", {}, el("h2", { text: a.label }), el("div", { class: "ap-sub", text: said.from(a) })),
       el(
         "button",
-        { type: "button", class: "ap-close", "aria-label": "Close its details", onclick: () => select(null) },
+        { type: "button", class: "ap-close", "aria-label": "Close details", onclick: () => select(null) },
         "×",
       ),
     ),
     el("p", { text: said.sentence(a.description) }),
-    a.failed ? el("p", { class: "err", text: `Its backend failed to start: ${a.failed}` }) : null,
+    a.failed ? el("p", { class: "err", text: `Backend failed to start: ${a.failed}` }) : null,
     el(
       "div",
       { class: "ap-acts" },
@@ -447,7 +447,7 @@ function details(a: CatalogApp): HTMLElement {
       el("span", { text: "Who" }),
       el("span", { text: a.access === "group" ? "every agent of the group" : `only the agents in its task` }),
       el("span", { text: "Tools" }),
-      el("span", {}, `${(a.tools || []).length}, `, tokens(a.tokens || 0, "in each such agent's context")),
+      el("span", {}, `${(a.tools || []).length}, `, tokens(a.tokens || 0, "per agent")),
     ),
     el(
       "div",
@@ -463,7 +463,7 @@ function details(a: CatalogApp): HTMLElement {
     ),
     el("h3", { text: "What it can do" }),
     el("ul", {}, ...said.can(a).map((c) => el("li", { text: c }))),
-    (a.schedules || []).length ? el("h3", { text: "Works on its own" }) : null,
+    (a.schedules || []).length ? el("h3", { text: "Schedule" }) : null,
     (a.schedules || []).length
       ? el("ul", {}, ...(a.schedules || []).map((s) => el("li", { text: said.sentence(s) })))
       : null,
@@ -475,7 +475,7 @@ function details(a: CatalogApp): HTMLElement {
           ...openNow.flatMap(([g, n]) => [el("span", { text: g }), el("span", { text: `${n} open` })]),
         )
       : el("p", { class: "ap-quiet", text: "Nothing open." }),
-    el("h3", { text: "Its data" }),
+    el("h3", { text: "Data" }),
     el(
       "div",
       { class: "mono" },

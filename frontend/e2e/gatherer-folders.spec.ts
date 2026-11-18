@@ -30,7 +30,7 @@ test("keeps gatherers in folders of their own: filled by dragging, nested, folde
     await gfPost(page, { do: "new", name: "Work projects" }); // kept from before: the list makes none now
     await page.reload();
     await expect(line("Work projects")).toBeVisible();
-    await expect(page.locator("#agents .gf-kids .f-empty")).toHaveText("Empty: drag gatherers here"); // made open
+    await expect(page.locator("#agents .gf-kids .f-empty")).toHaveText("Empty · drag groups here"); // made open
     await expect.poll(async () => (await gfTree(page)).folders.map((f) => f.name)).toEqual(["Work projects"]);
     const work = (await gfTree(page)).folders[0].id;
     await line("Work projects").hover(); // its buttons: a folder in it, rename, delete -- no counts, no starts
