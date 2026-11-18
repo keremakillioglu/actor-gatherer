@@ -596,10 +596,12 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-h .tmp + .fold { margin-left: 0; }
 .files .fl-h .fold:hover { background: var(--wash); color: var(--ink); }
 .files .fl-sec { display: flex; flex-direction: column; min-height: 0; }
-.files .fl-sec.files-sec { flex: 3 1 0; } .files .fl-sec.cmds-sec { flex: 2 1 0; border-top: 1px solid var(--ring); }
-/* short of room (a short window, a pane under another): each keeps its heading, a few rows and its legend, nothing of it
-   over the next, and the files and commands scroll whole */
-.files .fl-sec:is(.files-sec, .cmds-sec) { min-height: 120px; overflow: hidden; }
+/* the files as tall as they are (a turn with none: its heading and a line), up to 60%; the commands the rest */
+.files .fl-sec.files-sec { flex: 0 1 auto; max-height: 60%; } .files .fl-sec.cmds-sec { flex: 1 1 0; border-top: 1px solid var(--ring); }
+.files .fl-sec.files-sec > .fl-scroll { flex: 0 1 auto; }
+/* short of room (a short window, a pane under another): the commands keep their heading and a few rows, nothing of them
+   under the files, and the files and commands scroll whole */
+.files .fl-sec:is(.files-sec, .cmds-sec) { overflow: hidden; } .files .fl-sec.cmds-sec { min-height: 120px; }
 .files .fl-sec > .fl-h { flex: none; }
 .files .fl-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
 .files .fl-sec > .fl-legend { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--ring); }
@@ -654,10 +656,12 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--fs-label); color: var(--muted); }
 .files .fl-legend span { display: inline-flex; align-items: center; gap: 4px; }
 /* the files' legend: each kind a switch, the files of the kinds switched off left out of the tree */
-.files .fl-kinds .kind { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; border-radius: 0; margin: 0;
-  padding: 0; font: inherit; color: inherit; cursor: pointer; }
-.files .fl-kinds .kind:hover { color: var(--ink-2); }
-.files .fl-kinds .kind.off { text-decoration: line-through; opacity: .55; }
+/* each a pill: outlined while shown, dashed and faint while left out -- never struck through, which read as "deleted" */
+.files .fl-kinds { gap: 6px; }
+.files .fl-kinds .kind { display: inline-flex; align-items: center; gap: 4px; background: none; border: 1px solid var(--ring); border-radius: 999px;
+  margin: 0; padding: 2px 8px; font: inherit; color: var(--ink-2); cursor: pointer; }
+.files .fl-kinds .kind:hover { color: var(--ink); background: var(--wash); }
+.files .fl-kinds .kind.off { border-style: dashed; color: var(--muted); opacity: .7; }
 .files .fl-cmd summary .k { display: inline-block; min-width: 18px; color: var(--muted); font: var(--fs-label) var(--mono); }
 .files .fl-cmd-files { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
 .files .fl-cmd-files button { margin: 0; padding: 1px 6px; font: var(--fs-label) var(--mono); background: var(--wash); border: 1px solid var(--ring); border-radius: 4px; color: var(--ink-2); cursor: pointer; }

@@ -472,7 +472,8 @@ function filesRender({ info, session, running, writable, held }) {
   const cmdFiles = (c) => (c.files || []).filter((p) => showGit || (c.did || {})[p] || !(c.git || {})[p]);
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
   commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
-    el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
+    el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●",
+      title: c.error ? "Failed" : c.running && running ? "Running" : "Passed" }),   // (no legend: each dot says it)
     el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "tw", "aria-hidden": "true" }),
       el("span", { class: "k", text: `${i + 1}` }), callLabel(c, 140),
       changedCount(c.changed)),
@@ -488,9 +489,7 @@ function filesRender({ info, session, running, writable, held }) {
     cmdsShown = shown;
     n.scrollTop = n.scrollHeight;
   });
-  // two sections, each its own size and scrolling, each with the legend of its colours
-  const legend = (pairs) => el("div", { class: "fl-legend" }, ...pairs.map(([name, color]) =>
-    el("span", {}, el("i", { class: "fb", style: `background: ${color}` }), name)));
+  // two sections, each its own size and scrolling; the files' kinds switched under them
   const failed = commands.filter((c) => c.error).length;
   const busy = commands.filter((c) => !c.error && c.running && running).length;
   const side = sideFolded ? sideBar(files, { ok: commands.length - failed - busy, err: failed, run: busy }, info)
@@ -504,8 +503,7 @@ function filesRender({ info, session, running, writable, held }) {
         el("span", { class: "p", text: under(cwd, home) ? "~" + cwd.slice(home.length) : cwd })) : null, list,
       kindSwitches(gitFiles)),
     el("section", { class: "fl-sec cmds-sec" },
-      el("div", { class: "fl-h", text: plural(commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds,
-      legend([["passed", "var(--good)"], ["failed", "var(--critical)"], ["running", "var(--warning)"]])),
+      el("div", { class: "fl-h", text: plural(commands.length, "command") + (failed ? ` · ${failed} failed` : "") }), cmds),
     filesBackground(info));
   // the file view only while a file is picked: the files and the conversation have the page until then
   const pane = sel ? el("div", { class: "fl-pane", "data-keep": "files-pane" }, fileView(sel, rel, `fl-${d.turn}-${d.files.indexOf(sel)}`)) : null;
