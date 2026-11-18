@@ -15,7 +15,9 @@ send(messages if messages is not None else harness_messages)   # None: the Gathe
 ```
 
 `call_ag` runs `to_events`, sends the events to the Gatherer, and runs `to_messages` on the
-context it returns. In TypeScript, `call_ag(server, {gatherer, properties, cwd}, messages,
+context it returns. A call that makes no events -- all it sends is the harness's restatement of
+what is stored, as after it compacts mid-turn -- is answered from the conversation's newest stored
+event of the adaptor's `outputs` (the server's `latest_types`). In TypeScript, `call_ag(server, {gatherer, properties, cwd}, messages,
 adaptor)` does the same. It holds the adaptor to what it declares: an event of a type not in
 its `outputs`, a property of the request not in its `properties`, or one an event carries of its
 own not in its `event_properties`, sends nothing (None), and a context entry not in its
@@ -76,6 +78,8 @@ async def call_ag(client, gatherer: str, properties: Dict[str, Any], cwd: Option
         return None, (f"adaptor {adaptor.name} set properties on its events it does not declare "
                       f"({', '.join(own)}); request unchanged")
     body = {"gatherer": gatherer, "properties": properties, "cwd": cwd, "events": events}
+    if not events and op != "compaction":       # nothing new: answered from the conversation's newest event
+        body["latest_types"] = list(adaptor.outputs)
     if measured is not None:
         body["measured"] = measured
     if limit:

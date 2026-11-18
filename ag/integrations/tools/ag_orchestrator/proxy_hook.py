@@ -37,7 +37,7 @@ from harness_kit.base import HOOK_PATH
 
 from .adaptor import CHANNEL
 from .call_ag import HUNG_UP, read_of, report_measured
-from .records import call_failed, derived, model_call, record, recap, reply_end, reply_parts, name
+from .records import Outbox, call_failed, derived, model_call, recap, reply_end, reply_parts, name
 from .session_files import SessionFiles
 
 
@@ -84,7 +84,8 @@ class ProxyHook:
 
     def __init__(self, ag_clients, log: Callable[[str, str], None], files=None, sessions: Optional[SessionFiles] = ...):
         self.ag_clients, self.log, self.files = ag_clients, log, files
-        self.sessions = SessionFiles(ag_clients, log) if sessions is ... else sessions
+        self.outbox = Outbox(ag_clients, log)        # every event it records: in order per channel, none lost to a lock
+        self.sessions = SessionFiles(ag_clients, log, outbox=self.outbox) if sessions is ... else sessions
         self.adaptor = getattr(self, "adaptor", None)
         self.under_way: Set[asyncio.Future] = set()
         #: (gatherer, channel) -> {an open permission's key: the subagent that asked, None the session itself}
@@ -117,8 +118,9 @@ class ProxyHook:
         task.add_done_callback(self.under_way.discard)
 
     async def recorded(self, gatherer: str, channel: str, events: list) -> Optional[dict]:
-        """`events` recorded in the channel (records.py's `record`: never raises)."""
-        return await record(self.ag_clients.client(gatherer), gatherer, channel, events, self.log) if events else None
+        """`events` recorded in the channel, after those before them (records.py's `Outbox`: never raises, never
+        lost to a locked database) -- the server's answer, None when not stored now."""
+        return await self.outbox.record(gatherer, channel, events) if events else None
 
     def called(self, gatherer: str, channel: str, call: Call, read_id: Optional[int] = None, **detail) -> None:
         """A model call the hook saw, recorded (`model_call`), in the background: its kind, the harness and its version
@@ -158,8 +160,7 @@ class ProxyHook:
             for f in facts:
                 if f.type in (Facts.TASK_STARTED, Facts.TASK_ENDED):
                     self.sessions.task(gatherer, channel, f.data["task"], f.data.get("output") if f.type == Facts.TASK_STARTED else None)
-        self.keep(record(self.ag_clients.client(gatherer), gatherer, channel, [derived(f) for f in facts], self.log,
-                         beside=True))
+        self.keep(self.outbox.record(gatherer, channel, [derived(f) for f in facts], beside=True))
 
     def following(self, request, gatherer: str, channel: str, call: Call) -> None:
         """The session's own record followed (session_files.py), from this call of it on: where it runs, and the
@@ -208,14 +209,14 @@ class ProxyHook:
                                    + (f" (subagent {f.data['agent']})" if f.data.get("agent") else ""))
             events.append(derived(f))
         if events:
-            self.keep(record(self.ag_clients.client(gatherer), gatherer, channel, events, self.log, beside=True))
+            self.keep(self.outbox.record(gatherer, channel, events, beside=True))
 
     def moved_on(self, gatherer: str, channel: str, agent: Optional[str] = None) -> None:
         """The session's turn (`agent` None), or its subagent `agent`, calls its model: the permission it asked is
         answered -- it does not call again while its dialog waits. Recorded `ask_settled`, in the background."""
         events = self._settled(gatherer, channel, agent)
         if events:
-            self.keep(record(self.ag_clients.client(gatherer), gatherer, channel, events, self.log, beside=True))
+            self.keep(self.outbox.record(gatherer, channel, events, beside=True))
 
     def _settled(self, gatherer: str, channel: str, agent: Optional[str]) -> List[dict]:
         """The permissions `agent` (None: the session itself) asked that are open, closed: their `ask_settled` events --
@@ -366,4 +367,5 @@ class ProxyHook:
             await self.files.close()
         if self.sessions is not None:
             await self.sessions.close()
+        await self.outbox.close()
         await self.ag_clients.close()

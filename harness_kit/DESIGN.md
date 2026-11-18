@@ -125,7 +125,7 @@ The doc's kinds, and five more the old rules told apart that the doc's list fold
 | TASK_NOTICE, RETRY_NOTE | `<task-notification>`; its notes after a response went wrong | none |
 | HOOK_FEEDBACK (new) | "Stop hook feedback:" and the like | `<hook_prompt` |
 | TOOL_NOTICE | "Tool loaded."; tools added or removed (a system-role `tool_addition`) | `additional_tools` |
-| COMPACTION_SUMMARY, COMPACTION_REPEAT | its summary (after its "others wrote" notice, #131), and what it sends again | its compaction item, and what precedes it |
+| COMPACTION_SUMMARY, COMPACTION_REPEAT | its summary (after its "others wrote" notice, #131), and what it sends again | its compaction item (compacted on its own side, with a provider other than OpenAI's: the user message opening with `LOCAL_SUMMARY`), and what precedes it |
 | OTHER (new) | anything else of its own | anything else |
 
 The adaptors map them as before: the user's kinds to `user_message`, the model's to their own types, every other

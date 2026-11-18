@@ -33,7 +33,9 @@ What it decides, codex's own:
                    A call with no metadata (an older codex) is a turn.
     a compaction   codex compacting its thread's history (/compact, or its own at
                    its limit): `request_kind` compaction, its input ending with a
-                   `compaction_trigger` item. The gatherer builds in its place (the
+                   `compaction_trigger` item -- or, compacting on its own side (a
+                   provider other than OpenAI's), with its prompt as a user message:
+                   the trigger either way. The gatherer builds in its place (the
                    server's `compaction`: the history's events inserted, a build that
                    closes the running task), and the call gets that context read only,
                    the trigger after it, for the summary codex goes on from -- which

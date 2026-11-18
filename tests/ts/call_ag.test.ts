@@ -35,6 +35,14 @@ test("messages to events, to the server, and back", async () => {
 	assert.deepEqual(s.requests, [{ op: "rewrite", body: { ...sent, events: new Stand().toEvents(["a", "b"]) } }]);
 });
 
+test("a call that makes no events asks for the conversation's newest", async () => {
+	const s = server(() => ({ context: [{ type: "t", payload: "a" }], note: "ok" }));
+	assert.deepEqual((await call_ag(s, where, ["restated"], adaptor({ toEvents: () => [] }))).messages, ["a"]);
+	assert.deepEqual(s.requests[0].body?.latest_types, ["t"]);      // the adaptor's outputs
+	await call_ag(s, where, ["a"], adaptor());
+	assert.equal(s.requests[1].body?.latest_types, undefined);      // events of its own: not asked
+});
+
 test("every failure leaves the harness's own messages", async () => {
 	const cases: [ReturnType<typeof server>, Stand, string][] = [
 		[server(() => ({ error: "server exited (1)" })), adaptor(), "server: server exited (1)"],

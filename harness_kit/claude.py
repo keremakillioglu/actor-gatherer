@@ -867,6 +867,7 @@ class ClaudeCode(Harness):
     label = "Claude Code"
     checked_with = "2.1.310"
     esc_takes_back = True            # stopped before its answer came, the message is back in its box
+    queue_ends_with_process = True   # its queue is in memory: what it held as its process ended is never sent
     asks_shown_again = False         # resumed, it keeps no call left unanswered (2.1.319): no dialog, its box empty
     ask_says = {"plan_verb": "approve", "own_answer": "Or type your own answer",       # its plan dialog's choices (PLAN_KEYS)
                 "plan_choices": [{"id": "manual", "label": "Approve, I'll approve edits",

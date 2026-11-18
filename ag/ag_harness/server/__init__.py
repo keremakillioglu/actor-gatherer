@@ -42,11 +42,18 @@ carries them, and its read is made with them -- {name: value}, the names the
 policy's event types declare (e.g. {"channel": <the harness's thread>});
 none: {}. `cwd` is the working directory the gatherer's pollers look at.
 
-    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?, "preamble"?, "process"?, "run"?}
+    {"op": "rewrite", "gatherer", "properties", "cwd", "events", "measured"?, "limit"?, "preamble"?, "process"?, "run"?,
+     "latest_types"?}
         -> {"context": [...] or null, "note", "read_id", "tokens", "budget", "sent_tokens", "basis", "uncounted"}
                                                 one model call: insert, then read
                                                 in response to the last event; null: send
-                                                your own. `read_id` names the read, for
+                                                your own. A call that brings no event (all it
+                                                sends the harness's restatement of what is
+                                                stored: the call after it compacted mid-turn)
+                                                is read in response to the conversation's
+                                                newest stored event of `latest_types` (the
+                                                adaptor's outputs, as for `latest`), when it
+                                                has one. `read_id` names the read, for
                                                 `measured`; a `measured` given here is
                                                 recorded before the read. `limit` is the
                                                 harness's own limit for the call (where it
@@ -81,7 +88,7 @@ none: {}. `cwd` is the working directory the gatherer's pollers look at.
                                                 stored), and of those the harness had taken back
                                                 and sends again: for a `withdraw`, should it take
                                                 them back once more
-    {"op": "context", "gatherer", "properties", "cwd", "events", "limit"?, "preamble"?}
+    {"op": "context", "gatherer", "properties", "cwd", "events", "limit"?, "preamble"?, "latest_types"?}
         -> {"context": [...] or null, "note", "tokens", "budget", "sent_tokens", "basis"}
                                                 a rewrite's context, read only: the events are
                                                 inserted, then the context the next call would get
@@ -291,6 +298,12 @@ def process_of(value) -> Optional[dict]:
     if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 and isinstance(started, str) and started:
         return {"pid": pid, "started": started[:200]}
     return None
+
+
+def types_of(value) -> Optional[List[str]]:
+    """Event type names, as a request lists them (`latest_types`): its strings; None if it is not a list of any."""
+    names = [t for t in value if isinstance(t, str) and t] if isinstance(value, list) else []
+    return names or None
 
 
 def run_of(value) -> Optional[str]:
@@ -516,7 +529,7 @@ class Server:
                 measured: Optional[dict] = None, limit: Optional[int] = None,
                 preamble: Optional[List[dict]] = None, read_only: bool = False, compacted: bool = False,
                 process: Optional[dict] = None, run: Optional[str] = None,
-                stopped: Optional[Callable[[], bool]] = None) -> dict:
+                stopped: Optional[Callable[[], bool]] = None, latest_types: Optional[List[str]] = None) -> dict:
         """Insert `events`, then read in response to the last. `measured`,
         {"read_id", "tokens"}, is the provider's count of an earlier read's
         context, recorded first, so this read sees it. With `read_only`, the
@@ -525,8 +538,10 @@ class Server:
         too), the harness compacted its history: the policy builds first, and
         waits for it (`Manager.compacted`). `stopped`: whether the harness has
         given up on the call -- a read or a compaction waiting for a build stops
-        waiting then (`Read.stopped`). Never raises: a failure anywhere
-        answers a null context."""
+        waiting then (`Read.stopped`). With no events and `latest_types`, the
+        read responds to the conversation's newest stored event of those types
+        (a call that only restates what is stored). Never raises: a failure
+        anywhere answers a null context."""
         prefix = tag(properties)
         if measured is not None:
             try:
@@ -537,6 +552,9 @@ class Server:
             manager = self.manager(gatherer)
             inserted = self.insert(gatherer, properties, events, manager)
             last = inserted["last"]
+            carried = None
+            if last is None and not events and latest_types and not compacted:
+                last = carried = manager.latest_row(gatherer, properties, latest_types)
         except Exception as exc:  # noqa: BLE001 - never block the model call
             note = f"insert failed: {exc!r}; messages unchanged"
             self.log(gatherer, prefix + note)
@@ -565,7 +583,9 @@ class Server:
             return {"context": None, "note": note}
         context = answer["context"]
         ags = sum(1 for e in context if e.get("type") == "ag")
-        note = f"{len(events)} events in (event {last}), {len(context)} out ({ags} ag)" + (" read only" if read_only else "") \
+        note = (f"no events in, the conversation's last (event {last})" if carried is not None else
+                f"{len(events)} events in (event {last})") + f", {len(context)} out ({ags} ag)" \
+            + (" read only" if read_only else "") \
             + (f", compaction build: {built or 'none'}" if compacted else "")
         self.log(gatherer, prefix + note)
         try:
@@ -599,13 +619,13 @@ class Server:
             return self.rewrite(gatherer, properties, cwd, events, measured_of(request.get("measured")),
                                 limit_of(request.get("limit")), preamble_of(request.get("preamble")),
                                 process=process_of(request.get("process")), run=run_of(request.get("run")),
-                                stopped=stopped)
+                                stopped=stopped, latest_types=types_of(request.get("latest_types")))
         if op in ("context", "compaction"):
             if not isinstance(events, list):
                 return {"context": None, "note": "no events; messages unchanged"}
             return self.rewrite(gatherer, properties, cwd, events, None, limit_of(request.get("limit")),
                                 preamble_of(request.get("preamble")), read_only=True, compacted=op == "compaction",
-                                stopped=stopped)
+                                stopped=stopped, latest_types=types_of(request.get("latest_types")))
         if op == "measured":
             measured = measured_of(request)
             if measured is None:

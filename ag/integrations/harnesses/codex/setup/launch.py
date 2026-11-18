@@ -42,8 +42,11 @@ says (codex caps the limit there), so the run states that as its own limit (`/l/
 for the context manager to keep under: 90% of the window `model_context_window` sets (`-c`,
 the profile's, config.toml's), else of the model's in codex's catalog (`codex debug
 models`), else of the window codex gives a model it does not know (FALLBACK_WINDOW); a
-limit set in the arguments, the profile or config.toml, when lower. The model is `-m`/`--model`,
-else `-c model=`, the profile's, config.toml's.
+limit set in the arguments, the profile or config.toml, when lower. A window that is set is
+capped as codex caps it: at the catalog's max_context_window for the model -- at FALLBACK_WINDOW
+for a model the catalog does not have, whatever the setting says, until a `model_catalog_json`
+file gives codex an entry for it (that file is the catalog `codex debug models` then lists). The
+model is `-m`/`--model`, else `-c model=`, the profile's, config.toml's.
 
 Codex is run without its shared background server (`--no-daemon`, where its version has it): ag's
 `-c` overrides need it to run embedded anyway, and with the server running, codex otherwise starts
@@ -343,14 +346,21 @@ def catalog(command: List[str], env: Dict[str, str]) -> Dict[str, dict]:
 
 def harness_limit(p: Plan, models: Callable[[], Dict[str, dict]]) -> Tuple[int, str]:
     """(where codex compacts by itself in this run, how that was found): WINDOW_SHARE of
-    the model's window -- model_context_window, capped at the catalog's max_context_window,
-    else the catalog's context_window, else FALLBACK_WINDOW -- or the run's own limit when
-    lower. `models` is asked only when the run names a model."""
-    entry = models().get(p.model or "", {}) if p.model else {}
+    the model's window -- model_context_window, capped at the catalog's max_context_window
+    (at FALLBACK_WINDOW for a model the catalog does not have), else the catalog's
+    context_window, else FALLBACK_WINDOW -- or the run's own limit when lower. `models` is
+    asked only when the run names a model; when it lists nothing (codex could not be asked),
+    a window that is set is taken as it is."""
+    known = models() if p.model else {}
+    entry = known.get(p.model or "", {})
     if p.window:
-        top = entry.get("max_context_window")
+        top = entry.get("max_context_window") if entry else FALLBACK_WINDOW if known else None
         window = min(p.window, top) if isinstance(top, int) and top > 0 else p.window
         source = "model_context_window"
+        if window < p.window:
+            source = (f"model_context_window {p.window}, capped at {p.model}'s largest in codex's catalog" if entry else
+                      f"model_context_window {p.window}, capped at codex's window for a model it does not know; "
+                      f"a model_catalog_json entry for {p.model} gives it its own")
     elif isinstance(entry.get("context_window"), int) and entry["context_window"] > 0:
         window, source = entry["context_window"], f"{p.model}'s window in codex's catalog"
     else:
