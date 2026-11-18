@@ -501,6 +501,24 @@ class ReadTest(StoreTest):
         self.assertIsNone(self.put(item(1), "c1", "b"))
         self.assertEqual(self.m.locate("s", "b", properties=ch("c1")), 2)
 
+    def test_latest_counts_the_types_it_is_told_and_brings_the_rest_among_them(self):
+        """A harness's notes stored in a run ahead of the message they followed (the claude adaptor's request_last):
+        counted, more of them than `n` left the message's neighbour out; counted without them, it is there."""
+        self.put(item(0), "c1", "q")
+        self.put(item(1), "c1", "a")
+        for n in range(5):
+            self.insert(ev({"note": n}, f"n{n}", type_id=5), channel_id="c1")         # context
+        self.put(item(2), "c1", "q2")
+        self.insert(ev({"note": 9}, "other", type_id=5), channel_id="c2")              # another channel's
+        both = ["user_message", "context"]
+        self.assertEqual([i for i, _ in self.m.latest("s", ch("c1"), 3, both)], ["n3", "n4", "q2"])
+        self.assertEqual([i for i, _ in self.m.latest("s", ch("c1"), 2, both, ["user_message"])],
+                         ["a", "n0", "n1", "n2", "n3", "n4", "q2"])
+        self.assertEqual([i for i, _ in self.m.latest("s", ch("c1"), 9, both, ["user_message"])],
+                         ["q", "a", "n0", "n1", "n2", "n3", "n4", "q2"])                # fewer: all of them
+        self.assertEqual(self.m.latest("s", ch("c1"), 0, both, ["user_message"]), [])
+        self.assertEqual([i for i, _ in self.m.latest("s", ch("c1"), 1, ["user_message"], ["user_message"])], ["q2"])
+
     def test_reading_back_what_it_returned_changes_nothing(self):
         # The hook inserts the request it sent, which after a rewrite IS read's
         # output. With nothing synthesised, that must be a no-op.

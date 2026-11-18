@@ -656,14 +656,18 @@ class StoreClient:
 
     def __init__(self):
         self.ids, self.events, self.records = set(), [], []
+        self.sent = []                       # each rewrite's events, as the hook sent them: the last is what it answers
 
     async def request(self, op, body=None, timeout=None):
         if op == "latest":                   # of the conversation's types: not what the hook records besides
             ours = [e for e in self.events if e["type"] in body.get("types", [e["type"]])]
-            return {"events": [{"id": e["id"], "payload": e["payload"]} for e in ours[-body["n"]:]]}
+            counted = [i for i, e in enumerate(ours) if e["type"] in body.get("counted", [e["type"]])]
+            first = counted[-body["n"]] if 0 < body["n"] <= len(counted) else 0 if body["n"] else len(ours)
+            return {"events": [{"id": e["id"], "payload": e["payload"]} for e in ours[first:]]}
         if op == "insert":
             self.records += body["events"]
             return {"rows": []}
+        self.sent.append(body["events"])
         for e in body["events"]:
             if e["id"] not in self.ids:
                 self.ids.add(e["id"])
@@ -768,6 +772,56 @@ class RepeatsTest(unittest.TestCase):
         self.assertEqual(stored[-3:], ["note 1", "note 2", "q"])
         self.call(first + [txt("assistant", "a")], hook=self.new_hook())
         self.assertEqual([e["payload"]["content"][0]["text"] for e in self.client.events[len(stored):]], ["a"])
+
+    def test_more_notes_than_the_tail_stored_before_the_request_still_find_its_end(self):
+        """More of Claude Code's notes after the user's message than TAIL (a connector's tools added again, some
+        removed), stored before it (request_last): the newest stored event, the message, had neither of the pieces
+        next to it in the request among the last TAIL stored. The same request again (a retry after an API error)
+        was taken for a compaction, and its read answered the last note, not the message; and on the next one,
+        Claude Code having joined the user's new words to that message, the run of its notes sent again after them
+        was taken for where the request carries on, and the new words were neither stored nor sent."""
+        tools = [{"type": "tool_addition", "tool": {"type": "tool_definition", "definition": {**TOOL, "name": f"mcp__t__{i}"}}}
+                 for i in range(claude.TAIL + 5)]
+        notes = {"role": "system", "content": [{"type": "text", "text": "Tools just became available."}] + tools}
+        turns = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(10)]
+        first = turns + [txt("user", "Continue"), notes]
+        self.call(first)
+        stored = len(self.client.events)
+        self.assertEqual(self.client.sent[-1][-1]["text"], "Continue")
+        self.call(first, hook=self.new_hook())                       # the same request again
+        self.assertEqual(len(self.client.events), stored)
+        self.assertEqual(self.client.sent[-1][-1]["text"], "Continue")   # the read answers the user's message
+        self.assertFalse([line for line in self.lines if "stored history's end" in line])
+        joined = {"role": "user", "content": [{"type": "text", "text": "Continue\n"}, {"type": "text", "text": "Continue"}]}
+        out = self.call(turns + [joined, notes], hook=self.new_hook())
+        new = [e for e in self.client.events[stored:] if e["type"] == USER_MESSAGE]
+        self.assertEqual([e["payload"]["content"][0]["text"] for e in new], ["Continue"])
+        self.assertEqual(self.client.sent[-1][-1]["id"], new[0]["id"])
+        self.assertEqual([b.get("text") for b in [m for m in out if m["role"] == "user"][-1]["content"]][-2:],
+                         ["Continue", "Continue"])                      # both go out: the stored one as stored
+        self.assertFalse([line for line in self.lines if "stored history's end" in line])
+
+    def test_the_words_joined_to_a_message_its_notes_were_sent_again_after_are_kept(self):
+        """Any number of notes: a retry with Claude Code's notes after the message changed stores them as new, after
+        the message -- the stored history's newest. The user's next words, joined to the message, come before those
+        notes sent again word for word: the notes' run held the newest stored event and was taken for where the
+        request carries on, and the words were neither stored nor sent."""
+        tools = [{"type": "tool_addition", "tool": {"type": "tool_definition", "definition": {**TOOL, "name": f"mcp__t__{i}"}}}
+                 for i in range(3)]
+        notes = lambda text: {"role": "system", "content": [{"type": "text", "text": text}] + tools}   # noqa: E731
+        turns = [txt("user" if i % 2 == 0 else "assistant", f"turn {i}") for i in range(10)]
+        self.call(turns + [txt("user", "Continue"), notes("Tools just became available.")])
+        self.call(turns + [txt("user", "Continue"), notes("Tools became available again.")], hook=self.new_hook())
+        stored = len(self.client.events)
+        self.assertEqual(self.client.sent[-1][-1]["text"], "Continue")
+        for words in ("Continue", "go on"):
+            with self.subTest(words=words):
+                self.client.events, self.client.ids = self.client.events[:stored], {e["id"] for e in self.client.events[:stored]}
+                joined = {"role": "user", "content": [{"type": "text", "text": "Continue\n"}, {"type": "text", "text": words}]}
+                self.call(turns + [joined, notes("Tools became available again.")], hook=self.new_hook())
+                new = [e for e in self.client.events[stored:] if e["type"] == USER_MESSAGE]
+                self.assertEqual([e["payload"]["content"][0]["text"] for e in new], [words])
+                self.assertEqual(self.client.sent[-1][-1]["id"], new[0]["id"])     # the read answers them
 
     def test_a_repeat_right_after_the_stored_end_is_new(self):
         """Issue #35 at the stored end: the same words again after it are an event of their own, not the
