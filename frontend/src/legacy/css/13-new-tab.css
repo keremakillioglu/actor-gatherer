@@ -30,6 +30,7 @@
   background: var(--page); color: var(--ink); font: inherit; font-size: 12.5px; line-height: 1.2; cursor: pointer; }
 .nt-app:hover:not(:disabled) { background: var(--wash); border-color: var(--grid); }
 .nt-app:disabled { opacity: .5; cursor: default; }
+.nt-app.manage { border-style: dashed; color: var(--ink-2); }
 .nt-app :is(img, svg) { width: 16px; height: 16px; flex: none; color: var(--ink-2); }
 .nt-hint { color: var(--muted); font-size: 12px; }
 .nt-menu { max-height: min(420px, calc(100vh - 32px)); overflow-y: auto; }

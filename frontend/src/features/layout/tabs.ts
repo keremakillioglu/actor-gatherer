@@ -20,8 +20,22 @@
 // (filling) goes in it. The close key closes the tab shown (closeShown) -- the only one, emptied: a new tab again.
 // A task closed in the list (its ×) is closed in the tabs too (closed): its tab closed, as that tab's × does, if it held
 // nothing else; else the task out of it.
+// A PAGE of the dashboard's -- the Apps page -- is a tab's too (openPage): a tab holding no task shows it in place of
+// the new-tab page, named after it, kept when left as one with tasks is; a task clicked in the list goes in a tab of
+// its own, as from a tab with tasks. One tab at most shows a page: opened again, that tab is shown.
 import { BarDrag } from "./bar-drag";
-import { cellsFor, drawMap, drawnCells, sameMap, snapshot, type Cell, type CellLook, type Drawn } from "./tab-map";
+import { nameInPlace } from "./tab-naming";
+import {
+  cellsFor,
+  drawMap,
+  drawnCells,
+  pageMark,
+  sameMap,
+  snapshot,
+  type Cell,
+  type CellLook,
+  type Drawn,
+} from "./tab-map";
 import type { Node, Rect } from "./tree";
 
 export interface Tab {
@@ -33,6 +47,8 @@ export interface Tab {
   focus: string | null;
   /** what its new-tab page's message box holds (a tab showing nothing): kept as it is */
   draft?: string;
+  /** a page of the dashboard's it shows in place of its new-tab page, holding no task: "apps", the Apps page */
+  page?: string;
   /** its panels as they were last laid out, for its map (tab-map.ts) */
   map?: Cell[];
 }
@@ -83,6 +99,10 @@ export interface State {
 /** The marks, the most pressing first: what waits on the reader (a question, an error, an app's notification, a turn
  * done since they looked) before what is at work (a turn, in the background). A task's mark, its items' most pressing. */
 export const MARKS = ["asking", "error", "notified", "finished", "working", "background"];
+/** The pages a tab can show (Tab's `page`), by the name its tab is given. */
+export const PAGES: Record<string, string> = { apps: "Apps" };
+// whether a tab is kept when another is shown: one with tasks, a name, something typed in its new-tab page, or a page
+const holds = (t: Tab): boolean => t.tasks.length > 0 || !!t.name || !!t.draft || !!t.page;
 const rank = (m: string): number => (MARKS.includes(m) ? MARKS.indexOf(m) : MARKS.length);
 /** The most pressing of these states (none marked: the first, its word only). */
 export function pressing(states: State[]): State {
@@ -201,7 +221,7 @@ export class Tabs {
     const tab = this.tab(),
       kept = this.tasksOf({ ...tab, id: "" }),
       shown = this.hooks.shown();
-    if (!kept.length && tab.draft && shown.length) {
+    if (!kept.length && (tab.draft || tab.page) && shown.length) {
       await this.switch(() => this.hooks.clear?.() ?? Promise.resolve()); // a new tab left with something typed: its page
       return true;
     }
@@ -246,7 +266,7 @@ export class Tabs {
     if (here.includes(task)) return;
     const holding = this.tabs.find((t) => t.id !== this.current && this.tasksOf(t).includes(task));
     if (holding) return this.show(holding.id, task);
-    if ((here.length || (this.tab().draft && !this.fill)) && !idle) this.fresh();
+    if (this.tab().page || ((here.length || (this.tab().draft && !this.fill)) && !idle)) this.fresh();
   }
   /** The tab shown's new-tab page opening something (an actor, an app), or done: meanwhile, a task routed goes in it,
    * whatever is typed there. */
@@ -257,7 +277,7 @@ export class Tabs {
   /** ⌥+click: the task out of any other tab (one left with none closed, unless named), to be the tab shown's alone. */
   take(task: string): void {
     for (const t of this.tabs) if (t.id !== this.current) t.tasks = this.tasksOf(t).filter((k) => k !== task);
-    this.tabs = this.tabs.filter((t) => t.id === this.current || t.tasks.length > 0 || t.name || t.draft);
+    this.tabs = this.tabs.filter((t) => t.id === this.current || holds(t));
     this.save();
     this.hooks.changed();
   }
@@ -343,9 +363,10 @@ export class Tabs {
     if (this.switching) await this.settling;
     if (this.tabs.length > 1) return this.close(this.current);
     const tab = this.tab();
-    if (!this.hooks.shown().length && !tab.name && !tab.draft) return;
+    if (!this.hooks.shown().length && !tab.name && !tab.draft && !tab.page) return;
     this.leave();
     Object.assign(tab, { tasks: [], screen: null, focus: null, name: "", draft: "" });
+    delete tab.page;
     this.hooks.setScreen(null);
     this.save();
     await this.switch(() => this.hooks.clear?.() ?? Promise.resolve());
@@ -366,11 +387,27 @@ export class Tabs {
     this.hooks.changed();
   }
 
-  /** The tab shown: its id, and its new-tab page's draft. */
-  shownTab(): { id: string; draft: string } {
+  /** The tab shown: its id, its new-tab page's draft, and the page it shows in its place ("": none). */
+  shownTab(): { id: string; draft: string; page: string } {
     const t = this.tab();
-    return { id: t.id, draft: t.draft || "" };
+    return { id: t.id, draft: t.draft || "", page: t.page || "" };
   }
+
+  /** A page of the dashboard's (PAGES) in a tab of its own: the tab showing it already, shown; else the tab shown, if it
+   * shows nothing and has nothing typed in it; else a new tab after it, shown -- the tab left kept as it is. */
+  async openPage(page: string): Promise<void> {
+    if (this.switching) await this.settling;
+    const there = this.tabs.find((t) => t.page === page);
+    if (there) return there.id === this.current ? undefined : this.show(there.id);
+    const tab = this.tab(),
+      empty = !this.hooks.shown().length && !tab.draft && !tab.page;
+    if (!empty) this.fresh();
+    this.tab().page = page;
+    this.save();
+    if (empty) return this.hooks.changed();
+    await this.switch(() => this.hooks.clear?.() ?? Promise.resolve());
+  }
+
   /** What the new-tab page's box of tab `id` (the tab shown's, by default) holds now, kept with it (none: dropped). */
   setDraft(text: string, id = this.current): void {
     const t = this.tabs.find((x) => x.id === id);
@@ -480,6 +517,7 @@ export class Tabs {
   }
   private look(t: Tab): {
     id: string;
+    page: string;
     name: string;
     given: boolean;
     on: boolean;
@@ -490,7 +528,7 @@ export class Tabs {
       names = tasks.map((k) => this.hooks.name(k)).filter(Boolean);
     const said = names.length
       ? names.slice(0, 2).join(", ") + (names.length > 2 ? ` +${names.length - 2}` : "")
-      : "New tab";
+      : (t.page && PAGES[t.page]) || "New tab";
     // each task: its state, marked on its lead's box in the map (cellsFor gives every task a box)
     const states = new Map(tasks.map((k) => [k, pressing(this.hooks.status?.(k) || [])]));
     const title = (k: string): string => {
@@ -504,6 +542,7 @@ export class Tabs {
     );
     return {
       id: t.id,
+      page: tasks.length ? "" : t.page || "",
       name: t.name || said,
       given: !!t.name,
       on: t.id === this.current,
@@ -520,12 +559,12 @@ export class Tabs {
     this.hooks.remember?.(tasks);
     Object.assign(tab, { tasks, screen: this.hooks.screen(), focus: this.hooks.focus() });
     for (const t of this.tabs) if (t !== tab) t.tasks = this.tasksOf(t).filter((k) => !tasks.includes(k));
-    this.tabs = this.tabs.filter((t) => t === tab || t.tasks.length > 0 || t.name || t.draft);
+    this.tabs = this.tabs.filter((t) => t === tab || holds(t));
     return tab;
   }
   // a tab left showing nothing, unnamed, nothing typed in its new-tab page (a new one, nothing opened in it): closed
   private drop(left: Tab): void {
-    if (!left.tasks.length && !left.name && !left.draft) this.tabs = this.tabs.filter((t) => t !== left);
+    if (!holds(left)) this.tabs = this.tabs.filter((t) => t !== left);
   }
 
   private save(): void {
@@ -547,7 +586,9 @@ export class Tabs {
     const name = document.createElement("span");
     name.className = "lay-name";
     name.textContent = look.name;
-    e.append(drawMap(look.map, mark), name);
+    const map = drawMap(look.map, mark);
+    if (look.page) map.append(pageMark()); // a page's tab: its mark in its map, where a tab's panels would be
+    e.append(map, name);
     if (this.tabs.length > 1) {
       const close = document.createElement("button");
       close.type = "button";
@@ -577,29 +618,11 @@ export class Tabs {
 
   // its name typed in place: Enter or leaving it keeps it (none: its tasks' names again), Esc as it was
   private naming(t: Tab, span: HTMLElement, was: string): void {
-    const input = document.createElement("input");
-    input.className = "lay-naming";
-    input.value = was;
-    input.placeholder = "Name this tab";
-    let done = false;
-    const end = (keep: boolean): void => {
-      if (done) return;
-      done = true;
-      input.remove();
+    nameInPlace(span, was, (keep, value) => {
       this.list.dataset.sig = "";
-      if (keep) this.rename(t.id, input.value);
+      if (keep) this.rename(t.id, value);
       else this.draw();
-    };
-    input.addEventListener("keydown", (ev) => {
-      ev.stopPropagation();
-      if (ev.key === "Enter") end(true);
-      else if (ev.key === "Escape") end(false);
     });
-    input.addEventListener("blur", () => end(true));
-    input.addEventListener("click", (ev) => ev.stopPropagation());
-    span.replaceWith(input);
-    input.focus();
-    input.select();
   }
 }
 

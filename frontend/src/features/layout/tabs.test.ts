@@ -238,7 +238,7 @@ describe("screen tabs", () => {
     expect(strip(t)).toEqual(["A *", "New tab", "B"]);
     await t.show(drafted); // shown again: the panels shown closed, its page
     expect(shown).toEqual([]);
-    expect(t.shownTab()).toEqual({ id: drafted, draft: "fix the parser" });
+    expect(t.shownTab()).toEqual({ id: drafted, draft: "fix the parser", page: "" });
     shown = [];
     t.filling(true); // what its page opens: in it, whatever is typed
     await t.route("c");
@@ -254,6 +254,32 @@ describe("screen tabs", () => {
     expect(await again.start()).toBe(true);
     expect(shown).toEqual([]);
     expect(again.shownTab().draft).toBe("next");
+  });
+
+  it("the Apps page: in a tab of its own (the tab shown, if empty), kept when left, one at most, a task clicked elsewhere", async () => {
+    const t = tabs();
+    await t.openPage("apps"); // tab 1 shows a: a new tab after it, its panels closed
+    expect(shown).toEqual([]);
+    expect(t.shownTab().page).toBe("apps");
+    expect(strip(t)).toEqual(["A", "Apps *"]);
+    expect(work.querySelector('.lay-tab[aria-selected="true"] .lay-page')).not.toBeNull(); // its mark in its map
+    const page = t.shownTab().id;
+    await t.route("b"); // a task open nowhere: a tab of its own, not this page's
+    shown = ["b"];
+    expect(strip(t)).toEqual(["A", "Apps", "B *"]);
+    await t.openPage("apps"); // opened again: its tab shown, no second one
+    expect(t.shownTab()).toEqual({ id: page, draft: "", page: "apps" });
+    expect(strip(t)).toEqual(["A", "Apps *", "B"]);
+    await t.closeShown(); // closed: gone, the next shown
+    expect(strip(t)).toEqual(["A", "B *"]);
+    await t.blank(); // an empty tab shown: the page opens in it
+    await t.openPage("apps");
+    expect(strip(t)).toEqual(["A", "B", "Apps *"]);
+    const again = tabs(); // a reload on it: its page, not what the page opened on by itself
+    shown = ["z"];
+    expect(await again.start()).toBe(true);
+    expect(shown).toEqual([]);
+    expect(again.shownTab().page).toBe("apps");
   });
 
   it("each task's state marked on its lead's box in the map: its first actor's, top left first", () => {

@@ -465,12 +465,11 @@ class GatewayTest(GatewayBase):
         self.assertNotIn("ag apps", said)
         self.assertIn("ag apps call", tool_gateway.instructions("g", cli=True))
 
-    def test_a_gatherer_toml_s_apps_say_which_are_on(self):
-        self.gatherer_toml("apps = []\n")
-        self.assertEqual(tool_gateway.tools("g"), [])
-        self.assertEqual(tool_gateway.launch_args(self.rows[0]), [])
-        self.gatherer_toml('apps = ["notes", "nosuch"]\n')
+    def test_every_app_installed_is_on_in_every_group_whatever_its_gatherer_toml_says(self):
+        self.gatherer_toml("apps = []\n")                               # the old key: no longer read
         self.assertEqual([m.name for m in tool_gateway.on("g")], ["notes"])
+        self.assertEqual([m.name for m in tool_gateway.on("another")], ["notes"])
+        self.assertTrue(tool_gateway.launch_args(self.rows[0]))
 
     def test_each_harness_is_given_the_apps_as_it_takes_them(self):
         claude = tool_gateway.launch_args(self.rows[0])

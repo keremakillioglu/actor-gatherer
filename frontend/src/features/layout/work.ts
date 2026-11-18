@@ -73,8 +73,9 @@ export interface WorkHooks {
   look?: TabsHooks["look"];
   /** Where the tasks are open changed (a tab shown, made, closed; a task opened or closed): the list marked again. */
   listed?: () => void;
-  /** The tab shown, showing nothing: its new-tab page drawn in `box` (placed in the whole well) -- each time it comes in
-   * sight, or another tab showing nothing is shown (`tab`, its id). None: a note says to click a task in the list. */
+  /** The tab shown, showing nothing: its new-tab page -- or the page it shows in its place (its `page`: the Apps page)
+   * -- drawn in `box` (placed in the whole well), each time it comes in sight, or another tab showing nothing is shown
+   * (`tab`, its id), or its page changes. None: a note says to click a task in the list. */
   blank?: (box: HTMLElement, tab: string) => void;
 }
 /** What a panel (or a task, by its strip) can be moved to from its menu: a side, or another's place; `task`: the task is
@@ -342,9 +343,9 @@ export class Work {
     this.mins = now;
     this.unders = under;
     this.empty.hidden = !!built.tree;
-    const blank = built.tree ? "" : this.tabs.shownTab().id;
-    if (blank && blank !== this.blankFor && this.hooks.blank)
-      queueMicrotask(() => this.hooks.blank!(this.empty, blank));
+    const shown = built.tree ? null : this.tabs.shownTab(),
+      blank = shown ? `${shown.id} ${shown.page}` : ""; // (drawn again as its page changes: the Apps page opened in it)
+    if (shown && blank !== this.blankFor) queueMicrotask(() => this.hooks.blank?.(this.empty, shown.id));
     this.blankFor = blank;
     if (built.tree) return built.tree;
     built.nodes.set(EMPTY, this.empty); // nothing open: the note, in the whole well

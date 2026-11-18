@@ -269,7 +269,8 @@ async def apps_mcp(srv: Parts, actor: str, request: Request) -> Response:
         return mcp.handle(raw, tool_gateway.tools(row["gatherer"], channels, head),
                           lambda name, args: tool_gateway.call(srv.sessions.list(), actor, name, args),
                           tool_gateway.NAME, tool_gateway.endpoint(actor),
-                          tool_gateway.instructions(row["gatherer"], channels=channels, head=head))
+                          tool_gateway.instructions(row["gatherer"], channels=channels, head=head),
+                          unknown=tool_gateway.gone)
     status, got = await anyio.to_thread.run_sync(serve)
     return answer(got, status) if got is not None else Response(status_code=status)
 
@@ -291,6 +292,11 @@ def apps_mark(srv: Parts, name: str) -> Response:
     h = getattr(srv, "app_host", None)
     hosted = h.apps.get(name) if h is not None else None
     m = hosted.manifest if hosted is not None else None
+    if m is None and name in app_kit.installing.builtins():      # one that comes with ag, uninstalled: the Apps page
+        try:                                                     # lists it to install again
+            m = app_kit.load(os.path.join(app_kit.finding.BUILTIN, name))
+        except (app_kit.ManifestError, OSError):
+            m = None
     if m is None or not m.mark or not m.folder:
         return not_found()
     try:

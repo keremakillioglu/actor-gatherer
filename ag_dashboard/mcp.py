@@ -46,24 +46,27 @@ def result(text: str, error: bool = False) -> dict:
 
 
 def handle(body: bytes, tools: List[dict], call: Callable[[str, dict], dict],
-           name: str = NAME, at: Optional[str] = None, instructions: str = "") -> Tuple[int, Optional[dict]]:
+           name: str = NAME, at: Optional[str] = None, instructions: str = "",
+           unknown: Optional[Callable[[str], str]] = None) -> Tuple[int, Optional[dict]]:
     """One POST to the server: (status, JSON to answer with, or None for none). `tools`: [{name, description,
     inputSchema}]; `call(name, arguments)`: a tool's result (`result`). A batch -- a list of messages -- is answered
     with the list of their answers. `at`: the server's endpoint (`endpoint`), its `tools/list` answered kept (`listed`).
-    `instructions`: what `initialize` tells the client of the server's tools."""
+    `instructions`: what `initialize` tells the client of the server's tools. `unknown(name)`: what a call of a tool
+    not listed (now) is answered, as its result, for the model to read -- none: an error of the protocol's."""
     try:
         message = json.loads(body or b"null")
     except ValueError:
         return 400, _error(None, -32700, "not JSON")
     if isinstance(message, list):
-        answers = [a for a in (_one(m, tools, call, name, at, instructions) for m in message) if a is not None]
+        answers = [a for a in (_one(m, tools, call, name, at, instructions, unknown) for m in message) if a is not None]
         return (200, answers) if answers else (202, None)
-    answer = _one(message, tools, call, name, at, instructions)
+    answer = _one(message, tools, call, name, at, instructions, unknown)
     return (200, answer) if answer is not None else (202, None)
 
 
 def _one(message, tools: List[dict], call: Callable[[str, dict], dict], server: str = NAME,
-         at: Optional[str] = None, instructions: str = "") -> Optional[dict]:
+         at: Optional[str] = None, instructions: str = "",
+         unknown: Optional[Callable[[str], str]] = None) -> Optional[dict]:
     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
         return _error(None, -32600, "not a JSON-RPC 2.0 message")
     if "id" not in message:                     # a notification, or a client's answer: nothing to say
@@ -84,6 +87,8 @@ def _one(message, tools: List[dict], call: Callable[[str, dict], dict], server: 
     if method == "tools/call":
         name, arguments = params.get("name"), params.get("arguments") or {}
         if not any(t["name"] == name for t in tools):
+            if unknown is not None:
+                return _ok(mid, result(unknown(str(name)), error=True))
             return _error(mid, -32602, f"no tool {name!r}")
         if not isinstance(arguments, dict):
             return _error(mid, -32602, "arguments: an object, please")
