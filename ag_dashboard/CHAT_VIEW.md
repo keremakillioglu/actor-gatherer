@@ -58,6 +58,12 @@ reads.
    - **A held message, known as held.** A message Claude Code holds for the turn's end was a turn of its own for
      ~0.1 s, until its record said it joined. The record now says, as it queues one, from when on it joins
      (`message_queued`'s `joins_after`: Claude's BUSY_SECONDS); files.py's `_turn_starts` uses it.
+   - **A message held no longer than it is.** One lost `message_sent` (the hook's insert failed on a locked
+     database) left a message queued for good, and every turn after it read `working`. The hook now sends again what
+     a locked database failed, in order (records.py's `Outbox`); and the view holds a message only while nothing shows
+     it was sent -- not one stored since it was queued, nor one queued before the session's process last ended by a
+     harness whose queue lives in its process (`queue_ends_with_process`: Claude Code's), nor a guess its record made
+     later that such a one was sent.
    - **A hang-up from before the message's own send** is not its turn's: ag restores a message taken back and sent
      again before it logs the read that sends it.
    - **An answer that ended its turn ends it.** ag stores an answer's events one by one as the next call carries them

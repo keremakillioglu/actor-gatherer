@@ -1492,9 +1492,10 @@ def typed_at(gatherer: str, channel: str) -> Optional[float]:
 
 def meanwhile(conn, channel: str) -> List[dict]:
     """The messages written while a turn ran that the harness held until it ended, and sent then, unwrapped, as the next
-    request's -- part of that turn too: [{text (as the harness sent it), sent}], in order; then those it holds now,
-    queued and neither sent nor taken out ({text, sent: None, joins_after}): sent after `joins_after` (its record's), one
-    joins its turn -- the message stored then is one of them before its record says it was sent."""
+    request's -- part of that turn too: [{text (as the harness sent it), sent, written (when it was queued)}], in
+    order; then those it holds now, queued and neither sent nor taken out ({text, sent: None, joins_after}): sent after
+    `joins_after` (its record's), one joins its turn -- the message stored then is one of them before its record says
+    it was sent."""
     out: List[dict] = []
     pending: Dict[str, dict] = {}
     for t, f in _facts(conn, channel, ("message_queued", "message_sent", "message_withdrawn"), MESSAGES_READ):
@@ -1504,7 +1505,7 @@ def meanwhile(conn, channel: str) -> List[dict]:
         elif t in ("message_sent", "message_withdrawn"):
             pending.pop(q, None)
             if t == "message_sent" and f.get("how") == "next" and f.get("joins") and f.get("at") is not None:
-                out.append({"text": f.get("text") or "", "sent": f.get("at")})
+                out.append({"text": f.get("text") or "", "sent": f.get("at"), "written": f.get("written")})
     return out + [q for q in pending.values() if isinstance(q["joins_after"], (int, float))]
 
 

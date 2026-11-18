@@ -14,7 +14,10 @@ Run by the proxy hooks:
                                        POLL_SECONDS while it changes -- each new fact inserted (the server's
                                        `insert`, in its lane for records: beside the session's, so not held up
                                        behind a read that waits for its build), each the same event however
-                                       often it is read, by its line's place in the file
+                                       often it is read, by its line's place in the file -- through the hook's
+                                       outbox (records.py's `Outbox`), which sends again, in order, what a locked
+                                       database failed: the record is read on past its lines, which are not read
+                                       again, so a fact lost there (a message's `message_sent`) would be lost for good
     the record unchanged QUIET_SECONDS  followed no more; the session's next call follows it again, from where
                                        it was
     a background task started          `SessionFiles.task` (the hook's `derive`, from the call's result): its output
@@ -31,7 +34,7 @@ from typing import Callable, Dict, Optional, Tuple
 
 from harness_kit import Fact, Facts, Harness
 
-from .records import fact, record, session_file
+from .records import Outbox, fact, session_file
 
 POLL_SECONDS = 0.25         # how often a followed record is looked at
 QUIET_SECONDS = 3600.0      # unchanged this long, with no call of its session: followed no more
@@ -64,11 +67,14 @@ class SessionFiles:
         ag_clients: the server client per gatherer (the hook's own).
         log: (gatherer, line) -> None.
         poll, quiet, find: POLL_SECONDS, QUIET_SECONDS and FIND_SECONDS, for a test.
+        outbox: where its events are sent (the hook's, shared: one order per channel); None: its own.
     """
 
     def __init__(self, ag_clients, log: Callable[[str, str], None], poll: float = POLL_SECONDS,
-                 quiet: float = QUIET_SECONDS, find: float = FIND_SECONDS):
+                 quiet: float = QUIET_SECONDS, find: float = FIND_SECONDS, outbox: Optional[Outbox] = None):
         self.ag_clients, self.log, self.poll, self.quiet, self.find = ag_clients, log, poll, quiet, find
+        self.outbox = outbox if outbox is not None else Outbox(ag_clients, log)
+        self.own_outbox = outbox is None
         self.followed: Dict[Tuple[str, str], _Followed] = {}
 
     def follow(self, gatherer: str, channel: str, harness: Harness, session: Optional[str], cwd: Optional[str] = None,
@@ -164,7 +170,7 @@ class SessionFiles:
 
     async def _insert(self, gatherer: str, channel: str, events: list) -> None:
         for i in range(0, len(events), BATCH):
-            await record(self.ag_clients.client(gatherer), gatherer, channel, events[i:i + BATCH], self.log, beside=True)
+            await self.outbox.record(gatherer, channel, events[i:i + BATCH], beside=True)
 
     async def close(self) -> None:
         """Every record followed no more."""
@@ -173,6 +179,8 @@ class SessionFiles:
             t.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        if self.own_outbox:
+            await self.outbox.close()
 
 
 def _written(path: str) -> Optional[float]:
