@@ -145,6 +145,18 @@ class CatalogTest(HostBase):
         self.assertIn("installed now: notes, slate", said)
         self.assertIn("error", mcp.handle(body, [], lambda n, a: {})[1])           # no `unknown`: the protocol's error
 
+    def test_each_read_finds_what_is_in_the_folders_now_an_app_put_there_by_hand_too(self):
+        got = self.api("GET", "/api/apps/catalog")[1]
+        self.assertEqual(got["found"], {"added": [], "gone": [], "changed": []})
+        write_app(os.path.join(self.h_home(), "apps"), "pager", PAGER)        # copied in by hand, not installed
+        got = self.api("GET", "/api/apps/catalog")[1]
+        self.assertEqual(got["found"]["added"], ["pager"])
+        self.assertIn("pager", [a["name"] for a in got["installed"]])
+        self.assertIn("pager", self.on())                                        # on everywhere, as an install's
+        os.remove(os.path.join(self.h_home(), "apps", "pager", "app.toml"))      # and removed by hand
+        self.assertEqual(self.api("GET", "/api/apps/catalog")[1]["found"]["gone"], ["pager"])
+        self.assertNotIn("pager", self.on())
+
     def test_no_updates_for_apps_not_installed_from_git(self):
         self.assertEqual(self.api("GET", "/api/apps/updates"), (200, {"updates": {}}))
 

@@ -43,6 +43,8 @@ export interface Catalog {
   installed: CatalogApp[];
   available: CatalogApp[];
   broken: Broken[];
+  /** the apps the server found added, gone or changed as it read their folders again for this */
+  found?: { added: string[]; gone: string[]; changed: string[] };
 }
 /** What the page around it gives it. */
 export interface PageHooks {
@@ -80,8 +82,10 @@ export function draw(box: HTMLElement, hooks: PageHooks): void {
 /** The apps read again (`updates`: each app from git asked whether it has a newer commit, once read). */
 async function reload(updates = false): Promise<void> {
   try {
-    page.got = await get<Catalog>("/api/apps/catalog");
+    page.got = await get<Catalog>("/api/apps/catalog"); // (the server reads the app folders again for it)
     page.error = "";
+    const f = page.got.found;
+    if (f && f.added.length + f.gone.length + f.changed.length) await page.hooks?.changed(); // the page's own list too
   } catch (e) {
     page.error = `The apps couldn't be read: ${(e as Error).message}`;
   }

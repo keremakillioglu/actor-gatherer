@@ -1,7 +1,8 @@
 """The Apps page's routes (app_catalog.py; app_kit's installing.py): what is installed, can't load, or can be
 installed, and installing, updating and uninstalling. `ag apps install|uninstall|update|list --all` ask the same.
 
-    GET  /api/apps/catalog                       {installed, broken, available} (app_catalog.catalog)
+    GET  /api/apps/catalog                       {installed, broken, available, found} (app_catalog.catalog): the app
+                                                 folders read again first, `found` what changed since
     GET  /api/apps/updates                       {updates: {name: newest commit}}: apps installed from git, newer
     POST /api/apps/stage      {source}           a folder or git URL copied aside and checked -> what it is, its `id`
     POST /api/apps/install    {id, update?}      the staged app installed (`update`: in place of the one there)

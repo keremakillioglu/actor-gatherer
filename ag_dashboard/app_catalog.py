@@ -6,7 +6,8 @@ updates and uninstalls, after each of which the host finds the apps again (app_h
 An app installed is on in every group (there is no turning one off in a group): its panel opens anywhere, and an
 agent gets its tools when its terminal next starts (tool_gateway.py).
 
-    catalog(host)              {installed, broken, available}
+    catalog(host)              {installed, broken, available, found}: the folders read again first (`found`: the
+                               names added, gone and changed since -- an app put in <home>/apps by hand, or edited)
     stage(host, source)        a folder or git URL staged and checked -> what it is (as `catalog` lists an app), its
                                staging `id`, and -- an app installed of that name -- what changes (`changes`)
     install(host, id, update)  the staged app installed (or, `update`, in place of the one there) -> its name
@@ -93,6 +94,7 @@ def _windows(host) -> Dict[str, Dict[str, int]]:
 
 
 def catalog(host) -> dict:
+    found = host.find()                                         # a few ms: what is there now, whoever put it there
     windows = _windows(host)
     with host.lock:
         apps = sorted(host.apps.items())
@@ -116,7 +118,7 @@ def catalog(host) -> dict:
         if e["name"] not in names:
             available.append({"name": e["name"], "label": e["label"], "description": e["description"],
                               "origin": "index", "kind": "git", "source": e["source"], "needs": e["needs"]})
-    return {"installed": installed, "available": available,
+    return {"installed": installed, "available": available, "found": found,
             "broken": [{"folder": f, "name": os.path.basename(f), "error": e.replace(f + os.sep, ""),
                         "origin": finding.origin(f, home.HOME)} for f, e in broken]}
 
