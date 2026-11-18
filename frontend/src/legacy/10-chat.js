@@ -3,7 +3,7 @@
 // its newest and takes all the height there is; then what was sent and waits for the turn to end; then
 // the box to write the next. A session not started here is resumed by the dashboard on its first message
 // (in the directory its calls named); while another process has it open -- a terminal -- the box is off
-// (`ctx.held`). An actor that cannot be messaged from here at all (not Claude Code, or no directory; or
+// (`ctx.held`). An actor that cannot be messaged from here at all (a harness the dashboard does not run, or no directory; or
 // a snapshot) has its history and no box; so has every actor in a view to read it by (`readOnly`: the ones in Details).
 function chatCard(info) {
   const s = info.session || { cwd: info.cwd, permission_mode: "auto", queued: [], status: "stopped" };
@@ -172,7 +172,7 @@ function chatCard(info) {
   if (held) for (const n of card.querySelectorAll("[data-send], #composer-text")) n.disabled = true;   // whatever the view drew
   return card;
 }
-// What Claude Code still runs in the background for the actor (data.py's `background`): the commands,
+// What the harness still runs in the background for the actor (data.py's `background`): the commands,
 // agents, monitors and workflows it started and has not been told have ended, each with what it is for and its
 // last sign of life. Null when none runs. `term`: drawn as a terminal's status line.
 const TASK_KINDS = { command: "Command", agent: "Agent", monitor: "Monitor", workflow: "Workflow" };
@@ -391,8 +391,8 @@ function draftOf(ask) {
     cleared: {}, sending: false, error: "", tab: 0 });
   return d;
 }
-// Once a question answered here has its answer recorded: what Claude Code recorded, when it is not what was
-// picked (the dialog was not as it first showed, or Claude Code takes its keys otherwise). Null otherwise.
+// Once a question answered here has its answer recorded: what the harness recorded, when it is not what was
+// picked (the dialog was not as it first showed, or the harness takes its keys otherwise). Null otherwise.
 function answeredNote(info) {
   const a = info && info.answer;
   if (!a || a.recorded !== false || info.status === "asking" || answersSeen.has(a.call)) return null;
@@ -406,7 +406,7 @@ function answeredNote(info) {
       el("span", { class: "v", text: a.result || "nothing" }))));
 }
 // The model call the agent's turn stopped on, or keeps failing on (data.py's `failing`, `stopped`): why, as ag's hook
-// server saw it and as Claude Code put it, and how many tries failed. While the harness tries again, that it does;
+// server saw it and as the harness put it, and how many tries failed. While the harness tries again, that it does;
 // once it gave up, that a message tries again. Null while no call fails.
 function errorNote(info) {
   const over = !!info && info.status === "error";
@@ -726,7 +726,7 @@ function usageCard() {
     "all calls"));
   return card;
 }
-// What an item with no words is: Claude's thinking comes back encrypted (the API reads it, no one else);
+// What an item with no words is: a model's thinking can come back encrypted (its API reads it, no one else);
 // a model's text beside its tool call can be empty.
 const wordless = (it) => it.name === "agent_reasoning" ? "thinking, encrypted: not readable" : "no text";
 const columns = () => el("div", { class: "cols" }, el("span"), el("span", { text: "Type" }), el("span", { text: "Message" }),

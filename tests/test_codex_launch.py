@@ -146,6 +146,8 @@ class Plan(Home):
         url = 'model_providers.gemini.base_url="http://127.0.0.1:4013/h/demo{}' + config_part(self.codex_home) + '/l/244800/v1"'
         self.assertIn(url.format(f"/r/{os.getpid()}"), launcher.launch(run(False)).argv)   # codex's process, once exec'd;
         self.assertIn(url.format(""), launcher.launch(run(True)).argv)                     # its home, where its rollouts are
+        mine = Run(["exec", "hi"], ["codex"], dict(os.environ), "demo", "/w", channel="dash-1")
+        self.assertIn(url.format(f"/r/{os.getpid()}/a/dash-1"), launcher.launch(mine).argv)   # its thread's channel, chosen
 
     def test_codex_runs_without_its_background_server_where_it_can(self):
         self.codex_config(GEMINI)

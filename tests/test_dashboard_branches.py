@@ -286,9 +286,14 @@ class BranchesTest(unittest.TestCase):
         self.assertEqual(self.get(self.project, "notes.py"), "def f():\n    return 2\n\nx = f()\n")
 
     def test_a_codex_session_renamed_to_its_thread_keeps_its_branch(self):
+        """A codex session from before `ag --channel` was renamed to its thread at its first call (`started_as` keeps
+        the id it started under): its branch, made under that id, is still its."""
         s, wt = self.branch()
         thread = "019a0000-0000-7000-8000-000000000001"
-        self.started._rename(s["session_id"], thread)
+        conn = self.started._db()                      # as the dashboard's rename left it
+        conn.execute("UPDATE sessions SET session_id = ?, started_as = ? WHERE session_id = ?",
+                     (thread, s["session_id"], s["session_id"]))
+        conn.close()
         [b] = self.branches.listed()
         self.assertEqual((b["session_id"], b["channel"]), (s["session_id"], thread))
         self.assertEqual(self.branches.set_approve(thread, True)["approve"], True)

@@ -62,7 +62,6 @@ import secrets
 import sqlite3
 from typing import Dict, Iterable, List, Optional
 
-import harness_kit
 from app_kit import AppError
 
 from . import actions, data, folders, gatherer_folders, home, merges, sessions, tasks, titles
@@ -717,17 +716,14 @@ def start_alone(started, gatherer: str, cwd: str, harness: str, permission_mode:
     `group` record, {group: self:<channel>, under: gatherer, name: "", folder: none}, put in before its first call as the
     conversation's first record -- ag writes one of its own only when it has none (ag_harness's `grouped`), and none
     with an insert that brings one -- so even its first call is built with its own context alone. No `was`: it came from no group, so it is never told it left one (the policy's
-    `group_changes`). -> the session. GroupError: not on the home's one database, no such group, or a harness that
-    names its session only at its first call (codex's thread, agy's conversation: no channel to record before then);
-    or ag did not take the record (the session forgotten)."""
+    `group_changes`). Any harness: one that picks its session's id at its first call (codex's thread, agy's
+    conversation) is kept under the session's id all the same (`ag --channel`), so its channel takes the record before
+    then. -> the session. GroupError: not on the home's one database, no such group, or ag did not take the record (the
+    session forgotten)."""
     if not home.merged():
         raise GroupError("an actor on its own needs the home's one database: run `ag home merge` first")
     if is_alone(gatherer) or gatherer not in data.gatherer_names():
         raise GroupError(f"no group {gatherer!r} to run it under")
-    if sessions.picks_id(harness):
-        rules = harness_kit.get(harness)
-        raise GroupError(f"{rules.label if rules else harness} names its session only at its first call: "
-                         "start it in a group, then drag it out of the group")
     s = started.create(gatherer, cwd, permission_mode, harness, model, alone=True)
     channel = s["session_id"]
     event = {"type": GROUP, "id": f"{GROUP}:{channel}:{secrets.token_hex(6)}", "properties": {"channel": channel},

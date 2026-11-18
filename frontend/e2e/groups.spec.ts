@@ -246,8 +246,8 @@ test("in the home's one database, an actor dragged outside every group is on its
 });
 
 // An actor on its own from its start (05-group-moves.js's aloneNew): the list head's "+" beside its folder button opens a
-// box -- the directory the latest active actor works in, the harnesses that can start on their own (Codex names its
-// session only at the first call: said, not offered) -- and starts one on its own, run under the shown actor's group,
+// box -- the directory the latest active actor works in, each harness that runs here (Codex too: its session is kept
+// under the dashboard's id from its start) -- and starts one on its own, run under the shown actor's group,
 // listed as its own row; with a database per gatherer there is none
 async function startingAlone(page: Page, merged: boolean, started: string) {
   const state = { started: false };
@@ -257,7 +257,6 @@ async function startingAlone(page: Page, merged: boolean, started: string) {
     for (const a of demo.agents) a.cwd = "/work/demo";
     home.harnesses = ["claude", "codex"];
     for (const h of home.harnesses) home.harness_info[h] = { ...home.harness_info[h], runs: true };
-    home.harness_info.codex.picks_id = true;
     if (state.started) {
       const claude = demo.agents.find((a) => a.harness === "claude")!;
       const fresh = { ...claude, channel: started, status: "idle", last_user_message: null, name: null, last: null };
@@ -288,12 +287,11 @@ test("in the home's one database, the list head's + starts an actor on its own",
   const box = page.locator(".dw-menu.alone-box");
   await expect(box.locator(".head")).toHaveText("New actor on its own");
   await expect(box.getByRole("textbox", { name: "Working directory" })).toHaveValue("/work/demo");
-  await expect(box.locator("button.go")).toHaveCount(1); // Codex not offered: said why
-  await expect(box.locator("button.go")).toContainText("Claude Code");
-  await expect(box).toContainText(
-    "Codex names its session only at the first call: start it in a group, then drag it out.",
-  );
-  await box.locator("button.go").click();
+  await expect(box.locator("button.go")).toHaveCount(2); // each harness that runs here
+  await expect(box.locator("button.go").nth(0)).toContainText("Claude Code");
+  await expect(box.locator("button.go").nth(1)).toContainText("Codex");
+  await expect(box.locator(".note")).toHaveText(["It shares context with no group, and no group with it."]);
+  await box.locator("button.go", { hasText: "Claude Code" }).click();
   await expect.poll(() => asked.length).toBe(1);
   expect(asked[0]).toEqual({ gatherer: GATHERER, cwd: "/work/demo", harness: "claude", alone: true });
   await expect(box).toBeHidden();

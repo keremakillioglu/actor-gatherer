@@ -10,6 +10,8 @@ OPTIONS = (
     ("--policy P", "Create the gatherer with policy `P`. Refused if it exists with another policy."),
     ("--poller X", "Create the gatherer with poller `X` (repeatable)."),
     ("--no-pollers", "Create the gatherer with no pollers."),
+    ("--channel ID", "Keep the session in channel `ID` of the gatherer, for a harness that picks its session's id only "
+                     "at its first call (codex, agy): the session is known by `ID` from its start."),
     ("--dry-run", "Print the command and environment that would run, and run nothing."),
     ("--quiet", "Start the harness without ag's notes on what it set up. Problems still print."),
     ("-h, --help", "Show this help."),

@@ -16,7 +16,7 @@ Table `tasks`, one row per task:
 Table `tasked`, one row per item in a task:
 
     gatherer, channel   the item: an actor by the channel it was put in as -- its own, or the id the dashboard started
-                        it under (a Codex session's, before its thread's id comes with its first turn); the page finds
+                        it under (a Codex session's from before `ag --channel`, renamed to its thread's); the page finds
                         it by either, as it finds folders.py's `filed` -- or an app's instance, "app:<its id>"
     task                the task's id
     at                  when it was put in it
