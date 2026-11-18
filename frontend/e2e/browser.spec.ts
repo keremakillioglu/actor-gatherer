@@ -140,7 +140,7 @@ test("before the agent has acted the line says so, and does not open", async ({ 
   );
   await openOwn(page);
   const line = panel(page).locator(".bw-feed .line");
-  await expect(line.locator(".tx")).toHaveText("The agent has done nothing on the page yet");
+  await expect(line.locator(".tx")).toHaveText("No agent actions yet");
   await expect(line).toBeDisabled();
 });
 
@@ -222,7 +222,7 @@ test("stopped: the line says the agent waits for the user's message, and Esc is 
   });
   await openOwn(page);
   const feed = panel(page).locator(".bw-feed");
-  await expect(feed.locator(".line .tx")).toHaveText("You stopped the agent (Esc): it waits for your next message");
+  await expect(feed.locator(".line .tx")).toHaveText("Agent stopped until your next message");
   await expect(feed).toHaveClass(/\bhalted\b/);
   await expect(feed.locator(".stop")).toBeHidden();
   await panel(page).locator(".bw-stage").focus();
