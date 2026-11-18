@@ -726,7 +726,7 @@ function histRender() {
 }
 if (!SNAPSHOT) addChatView({
   id: "history", name: "History", feed: "outline", frame: "hist", chat: false, icon: ICONS.history,
-  description: "Search the history, export it, or have the Gatherer's model summarize it or make a memory or skill from it.",
+  description: "Search, export and summarize the history",
   render: histRender,
 });
 
