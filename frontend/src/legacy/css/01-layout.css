@@ -402,6 +402,7 @@ button.agent-group:hover { color: var(--ink-2); }
 .actor-card .c-row .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .actor-card .c-row .st { flex: none; color: var(--muted); font-size: var(--fs-label); }
 .actor-card .c-more { color: var(--muted); font-size: var(--fs-meta); }
+.actor-card .c-tab { color: var(--ink-2); font-size: var(--fs-meta); }   /* where it is open: the tab (05-agent-list.js's tabLine) */
 .actor-card .c-hint { color: var(--muted); font-size: var(--fs-label); border-top: 1px solid var(--grid); padding-top: 5px; margin-top: 1px; }
 :root.list-full .side { position: fixed; inset: var(--bar-h) 0 0 0; z-index: 25; border-right: 0; }
 :root.list-full .work { grid-column: 2; grid-row: 1; }
@@ -439,15 +440,8 @@ button.agent-group:hover { color: var(--ink-2); }
 .m-card .c-head { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
 .m-card .c-pic { flex: none; width: 40px; display: flex; justify-content: center; }
 .m-card .c-pic .logo, .m-card .c-pic .avatar img { width: 40px; height: 40px; display: block; }
-.m-card .c-pic .avatar img { -webkit-mask-image: radial-gradient(circle at 35px 35px, transparent 10px, #000 10.5px);
-  mask-image: radial-gradient(circle at 35px 35px, transparent 10px, #000 10.5px); }
-.m-card .c-pic .avatar { position: relative; }
-.m-card .c-pic .avatar .badge { position: absolute; right: -3px; bottom: -3px; width: 16px; height: 16px; display: block; }
-.m-card .c-pic .avatar.dw img {
-  -webkit-mask-image: radial-gradient(circle at 35px 35px, transparent 10px, #000 10.5px), radial-gradient(circle at 5px 35px, transparent 10px, #000 10.5px);
-  mask-image: radial-gradient(circle at 35px 35px, transparent 10px, #000 10.5px), radial-gradient(circle at 5px 35px, transparent 10px, #000 10.5px);
-  -webkit-mask-composite: source-in; mask-composite: intersect; }
-.m-card .c-pic .avatar .dw-badge { position: absolute; left: -3px; bottom: -3px; width: 16px; height: 16px; display: block; }
+/* the face alone (plainFace), as in the list: no badge, so no room cut out of it for one */
+.m-card .c-pic .avatar img { -webkit-mask-image: none; mask-image: none; }
 .m-card .c-pic.acting { width: 72px; color: var(--term-accent); }
 .m-card .c-pic svg.stage { height: 58px; margin: -6px -6px -4px -8px; }
 .m-card .c-pic .buddy { width: 36px; height: 36px; margin-top: 2px; }

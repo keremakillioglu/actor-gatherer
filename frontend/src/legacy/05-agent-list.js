@@ -771,13 +771,20 @@ const appFace = (o) => el("span", { class: "logo app-face", title: appTitle(o) }
   ? el("img", { src: `/apps/mark/${encodeURIComponent(o.app.name)}.svg`, alt: "", draggable: "false" }) : strokeIcon(ICONS.app, 16));
 // several apps' marks, stacked over one another as faces are (`most` at most); none: nothing
 const appStack = (list, most = 3) => list.length ? el("span", { class: "t-apps" }, ...list.slice(0, most).map(appMarkOf)) : null;
-// Where a row's task is OPEN (07-panes.js's screen tabs): its tab's number -- filled, the tab shown; ringed, another.
-// None, open nowhere: a click opens it in a tab of its own, and it can be dragged onto the work area.
+// Where a row's task is OPEN (07-panes.js's screen tabs): its tab's number, for a screen reader only (04-list.css) -- a
+// boxed number by a face read as an unread count, and the row's bar already says it is open; the hover card says which
+// tab (tabLine). None, open nowhere: a click opens it in a tab of its own, and it can be dragged onto the work area.
+const tabAt = (k) => k && workPlacer && !SNAPSHOT ? workPlacer.tabs.where(k) : null;
 function tabMark(k) {
-  const at = k && workPlacer && !SNAPSHOT ? workPlacer.tabs.where(k) : null;
+  const at = tabAt(k);
   if (!at) return null;
   const said = at.here ? `Open here in tab ${at.n}` : `Open in tab ${at.n} · click to switch to it`;
-  return el("span", { class: "tab-no" + (at.here ? " here" : ""), title: said, "aria-label": said }, String(at.n));
+  return el("span", { class: "tab-no" + (at.here ? " here" : ""), "aria-label": said }, String(at.n));
+}
+// the same, said in its hover card
+function tabLine(k) {
+  const at = tabAt(k);
+  return at ? el("div", { class: "c-tab", text: at.here ? `Open here, in tab ${at.n}` : `Open in tab ${at.n}` }) : null;
 }
 // an actor's face alone, no harness's badge (actorLogo's): its avatar, else its harness's mark
 function plainFace(a) {

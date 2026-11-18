@@ -679,8 +679,10 @@ function actorCard(g, a, shown = false) {
   const [cls, label] = statusOf(a), nm = railName(a), size = a.real_tokens ?? a.sent_tokens;
   const env = envelope(a.last_user_message), asked = env ? crewLine(env) : a.last_user_message;
   const bg = a.background || [], dir = cwdOf(a);
-  const hint = [SNAPSHOT ? "Click to show it" : `Click to show it · ${BESIDE_KEY}+click to open side by side`];
-  if (shown && !SNAPSHOT) hint.splice(0, 1, `${nameNote(g, a).trim() ? `${nameNote(g, a).trim()} · ` : ""}Double-click the name (or F2) to ${a.name && a.name.text ? "rename" : "name"} it`);
+  // one hint, the same wherever the card shows (the list, the rail, shown or not): every way to use the row
+  const hint = SNAPSHOT ? ["Click to show it"] : [`Click to show it · ${BESIDE_KEY}+click to open side by side`,
+    `double-click the name (or F2) to ${a.name && a.name.text ? "rename" : "name"} it`];
+  if (shown && !SNAPSHOT && nameNote(g, a).trim()) hint.unshift(nameNote(g, a).trim());
   return [
     el("div", { class: "c-who" }, plainFace(a),
       el("div", { class: "tx" }, el("div", { class: "c-nm" + (nm.cls ? ` ${nm.cls}` : ""), text: nm.text }),
@@ -694,6 +696,7 @@ function actorCard(g, a, shown = false) {
     a.recap && a.recap.text ? el("div", { class: "c-recap" }, el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
     bg.length ? el("div", { class: "c-bg", text: `${bg.length} in background · ${bg.map((t) => t.label || t.id).join(", ")}` }) : null,
     branchChip(g, a),
+    tabLine(taskKey(g.name, a.channel)),
     el("div", { class: "c-hint", text: hint.join(" · ") }),
   ].filter(Boolean);
 }
@@ -737,6 +740,7 @@ function taskCard(g, t) {
         "aria-label": `Take ${o.app.label} out of the task`, onclick: (ev) => { ev.stopPropagation(); takeOut(g.name, appItem(o.id)); } },
       strokeIcon(ICONS.takeOut, 13))))),
     ...apps.map((o) => noticeList(g, o, apps.length > 1)),
+    tabLine(`${g.name}\u0000t${t.id}`),
     el("div", { class: "c-hint", text: "Drag an actor or app onto the task to add it · double-click its name in the list to rename it" }),
   ].filter(Boolean);
 }
@@ -752,6 +756,7 @@ function appCard(g, o) {
       cardAct("close", `Close ${o.app.label}`, closeIcon(), () => { cardHide(); closeApp(g.name, o); })),
     SNAPSHOT ? null : cardEditBox(g.name),
     noticeList(g, o) || el("div", { class: "c-st", text: "No notifications" }),
+    tabLine(taskKey(g.name, appItem(o.id))),
     el("div", { class: "c-hint", text: "Drag it onto an actor or task to add it there · double-click its name to rename it" }),
   ].filter(Boolean);
 }
@@ -1061,7 +1066,7 @@ function drawCard(g, a, d, many, current, open, read) {
   const [cls, label] = statusOf(a), live = cls === "running";
   const named = a.name && a.name.text, words = a.last_user_message;
   const pic = live ? el("div", { class: "c-pic acting", "aria-hidden": "true" }, atWork({ ...a, channel: `monitor ${a.channel}` }, { work: (d && d.work) || {} }))
-    : el("div", { class: "c-pic" }, actorLogo(a));
+    : el("div", { class: "c-pic" }, plainFace(a));   // no harness badge, as in the list
   const size = a.real_tokens ?? a.sent_tokens;
   const meta = el("div", { class: "c-meta" },
     el("span", { class: `status ${cls}` }, el("i", { "aria-hidden": "true", style: `--spin-at: -${Date.now() % 1200}ms` }), label),
