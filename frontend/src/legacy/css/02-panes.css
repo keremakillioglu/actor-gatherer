@@ -21,19 +21,18 @@
    line, the switch and Details under them, then the tools */
 .pane-top { flex: none; display: flex; flex-direction: column; justify-content: center; min-height: var(--top-h, 0px); background: var(--surface);
   border-bottom: 1px solid var(--ring); }
-.pane-head { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 6px 12px 6px 16px; }
+.pane-head { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 4px 8px 4px 16px; }
 .pane-who { display: none; }
 :is(.panes.split, :root.pane-mode .panes) .pane-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto;
-  grid-template-areas: "who views details close" "tools tools tools tools"; column-gap: 8px; padding: 6px 6px 6px 12px; }
+  grid-template-areas: "who views details close" "tools tools tools tools"; column-gap: 6px; padding: 4px 6px 4px 12px; }
 :is(.panes.split, :root.pane-mode .panes) :is(.pane-who, .pane-close) { display: flex; }
 :is(.panes.split, :root.pane-mode .panes) .controls { display: contents; }
 .pane-who { grid-area: who; } .pane-close { grid-area: close; }
 .pane-head .views { grid-area: views; flex-wrap: wrap; } .pane-head .side-btns { grid-area: details; }
 :is(.panes.split, :root.pane-mode .panes) .chat-tools { grid-area: tools; justify-content: flex-end; margin-top: 6px; }
+/* a narrow pane's head stays one line -- its name cut short, the view switch icons alone (05-chat.css) -- so the
+   conversation keeps the room; only the view's own tools go under it */
 @container pane (max-width: 460px) {
-  :is(.panes.split, :root.pane-mode .panes) .pane-head { grid-template-columns: auto auto minmax(0, 1fr) auto;
-    grid-template-areas: "who who who close" "views details . ." "tools tools tools tools"; }
-  :is(.panes.split, :root.pane-mode .panes) :is(.views, .side-btns) { margin-top: 6px; }
   :is(.panes.split, :root.pane-mode .panes) .chat-tools { justify-content: flex-start; } }
 .pane.focused > .pane-top, :root.pane-focused .pane-top { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
 .pane-who { align-items: center; gap: 8px; min-width: 0; min-height: 28px; align-self: stretch; font-size: var(--fs-ui);

@@ -166,7 +166,7 @@
 .chat-tools .filters { margin: 0; }
 .chat-tools label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .views { display: inline-flex; border: 1px solid var(--ring); border-radius: 8px; padding: 2px; gap: 2px; }
-.views button { border: 0; border-radius: 6px; background: none; padding: 4px 10px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+.views button { border: 0; border-radius: 6px; background: none; padding: 3px 10px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
 .views button svg { display: block; flex: none; }
 /* a narrow pane's (a phone's, or one of several side by side): the views by their icons, named on hover */
 @container pane (max-width: 560px) { .pane-head .views { flex-wrap: nowrap; } .pane-head .views button:has(svg) .lbl { display: none; }

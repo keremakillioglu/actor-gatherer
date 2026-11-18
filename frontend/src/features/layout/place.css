@@ -14,11 +14,8 @@
 .work.placed > .lay-well {
   display: block;
   position: absolute;
-  top: 6px; /* the tabs' bar in the page's top bar (tabs.ts), over it */
-  left: 6px;
-  right: 6px;
-  bottom: 6px;
-  border-radius: 10px;
+  inset: 0; /* the whole work area (work.ts's WELL): the cards 6px in from its sides */
+  border-radius: 0;
   background: var(--well);
   pointer-events: none;
 }

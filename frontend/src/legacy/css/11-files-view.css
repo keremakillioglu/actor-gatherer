@@ -793,6 +793,12 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
   .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; }
   .files .fl-barbox { flex-direction: row-reverse; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-barbox > .fl-bar { border: 0; }
   .files .fl-acts { flex-direction: row; padding: 0 6px; border-bottom: 0; border-left: 1px solid var(--grid); } }
+/* a NARROW pane's (16-files-view.js's sideNarrow, the width the queries above use): opened, the files and commands lie
+   over the conversation's left, not above it, so the conversation keeps its height; folded, they are the bar above it */
+.files .fl-grid.narrow:not(.folded) { position: relative; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.files .fl-grid.narrow:not(.folded) > .fl-side { position: absolute; inset: 0 auto 0 0; z-index: 6; width: min(320px, 88%); max-height: none;
+  background: var(--surface); border-right: 1px solid var(--ring); border-bottom: 0; box-shadow: 6px 0 22px rgba(0,0,0,.28); }
+.files .fl-grid.narrow:not(.folded) > :is(.fl-pane, .fl-right) { grid-column: 1; grid-row: 1; }
 /* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
 .chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }

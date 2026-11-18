@@ -91,8 +91,10 @@ export interface Moves {
 }
 
 const SCREEN_KEY = "ag-dashboard-screen";
-// the well under the tabs' bar, this far from the work area's sides and bottom; the cards this far in it, and apart
-export const WELL = 6,
+// the well under the tabs' bar, this far from the work area's sides and bottom (none: it is the work area -- the cards
+// 6px in from every side and 6px apart, the least room the page's frame takes from what they show); the cards this far
+// in it, and apart
+export const WELL = 0,
   PAD = 6,
   GAP = 6,
   IN = WELL + PAD; // a panel's least distance from the work area's sides and bottom
