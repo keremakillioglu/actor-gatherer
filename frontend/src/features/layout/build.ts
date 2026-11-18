@@ -2,7 +2,8 @@
 // none, a terminal's), arranged as the tasks' arrangement says (blocks.ts), each laid out as its task's arrangement says
 // (arrange.ts) -- made the first time the task shows (its apps side by side above its actors side by side; or as an
 // older page kept the task: firstTree), a panel opened in it since put where a panel of its kind goes (addItem) -- the
-// panels not shown left out, the chat minimized under the apps (the panes as tall as their message boxes), the apps' row
+// panels not shown left out, the chat minimized under the apps or another task (the panes as tall as their message
+// boxes), the apps' row
 // never dragged as tall as the one dragged last, and a block under a strip of its own while others are shown.
 import { addItem, leafNodes, leaves, view } from "./arrange";
 import { arrangeBlocks, type Put } from "./blocks";
@@ -27,7 +28,8 @@ export interface Old {
 export const PANE_MIN = 260, // a pane's width, a bar dragged
   TOP_BAND = 5, // the band under the apps' row
   TOP_MIN = 140, // the apps' row's height, the band in it
-  BELOW_MIN = 220; // the panes' under it: room for a view and its message box
+  BELOW_MIN = 220, // the panes' under it: room for a view and its message box
+  FOLD_UNDER = 150; // panes dragged shorter than this (past BELOW_MIN), above or below something of their task: minimized
 export const APP = "app:";
 
 /** A split laid out: the task whose arrangement it shows, or (`screen`) the blocks' own. */
@@ -45,7 +47,7 @@ export interface Built<N = HTMLElement> {
   splits: Map<string, Shows>;
   /** the arrangements made or added to, by task */
   added: Record<string, Node>;
-  /** the panes with something of their task above or below them; of those, the ones minimized */
+  /** the panes with something of their task, or another task, above or below them; of those, the ones minimized */
   under: Set<string>;
   minimized: Set<string>;
 }
@@ -113,6 +115,7 @@ export function build<N>(
     minimized: new Set(),
   };
   const blockOf = (s: Shown<N>): string => s.key ?? `\u0002${s.item}`;
+  const marked = new Set<string>(); // the panes marked minimized (each so only above or below something)
   for (const s of shown) if (!out.blocks.includes(blockOf(s))) out.blocks.push(blockOf(s));
   const blocks0 = [...out.blocks];
   const laid = out.blocks.map((block) => {
@@ -134,8 +137,9 @@ export function build<N>(
       const id = leafId(block, v.id);
       out.nodes.set(id, items.find((i) => i.item === v.id)!.node);
       out.items.set(id, { block, key, item: v.id });
+      if (v.min && !v.id.startsWith(APP)) marked.add(id);
       if (under) out.under.add(id);
-      if (under && v.min && !v.id.startsWith(APP)) out.minimized.add(id);
+      if (under && marked.has(id)) out.minimized.add(id);
       return { id };
     }
     const apps = v.kids.map((k) => leaves(k).every((id) => id.startsWith(APP))),
@@ -191,7 +195,11 @@ export function build<N>(
       none = v.kids.map((k) => !apps(k).some(Boolean));
     const band = v.dir === "col" && all.some(Boolean) && none.some(Boolean);
     const kids = v.kids.map(blocks);
+    // a kid of a column all of whose panels are panes minimized: as long as what it shows (as in a task's)
+    const fits = kids.map((k) => v.dir === "col" && panels(k).every((id) => marked.has(id)));
     const sizes = v.sizes.map((z, i): Size => {
+      if (fits[i]) return { fit: true };
+      if (fits.some(Boolean)) return { share: 1 };
       const least = v.dir === "row" ? PANE_MIN : all[i] ? TOP_MIN - TOP_BAND : BELOW_MIN;
       if (z.top) return { px: Math.max(TOP_MIN, opts.top || opts.h / 2) - TOP_BAND, min: least };
       return z.px !== undefined ? { px: z.px, min: least } : { share: z.share ?? 1, min: least };
@@ -212,7 +220,18 @@ export function build<N>(
     out.splits.set(s.key, s);
     return s;
   };
+  const panels = (n: Node): string[] => leaves(n).filter((id) => !out.strips.has(id));
+  // a task's panels above or below another task's: with something above or below them too (a pane there minimized) --
+  // not a terminal's, of no task (kept nowhere, it could not stay so)
+  const stacked = (n: Node, on: boolean): void => {
+    if (isSplit(n)) for (const k of n.kids) stacked(k, on || (!!(n as Shows).screen && n.dir === "col"));
+    else if (on && (out.items.get(n.id)?.key ?? null) !== null) {
+      out.under.add(n.id);
+      if (marked.has(n.id)) out.minimized.add(n.id);
+    }
+  };
   const v = out.screen && view(out.screen, () => true);
   out.tree = v ? blocks(v) : null;
+  if (out.tree) stacked(out.tree, false);
   return out;
 }
