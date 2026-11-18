@@ -71,6 +71,8 @@ export interface PaneHooks {
   sendActor?: (gatherer: string, channel: string, text: string) => Promise<{ channel: string }>;
   startActor?: (gatherer: string, harness: string, folder: string, text: string) => Promise<{ channel: string }>;
   showActor?: (gatherer: string, channel: string) => Promise<unknown> | void;
+  /** A press in its panel, which the page around it never hears: what floats over the page (a menu, Settings) closed. */
+  pressed?: () => void;
 }
 /** What a panel asking `actors` is told of them (the SDK's ag.actors). */
 export interface Actors {
@@ -400,6 +402,9 @@ export class AppPane {
         return this.hooks.intent(String(m.kind), (m.data || {}) as Record<string, unknown>, this);
       case "close":
         this.hooks.close();
+        return null;
+      case "pressed":
+        this.hooks.pressed?.();
         return null;
       case "key": {
         document.dispatchEvent(
