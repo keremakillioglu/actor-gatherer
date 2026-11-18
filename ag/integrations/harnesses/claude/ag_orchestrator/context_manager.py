@@ -111,7 +111,7 @@ from ag.integrations.tools.ag_orchestrator.proxy_hook import ProxyHook
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from ..adaptor import to_messages as back
 from ..adaptor.adaptor import ClaudeAdaptor
-from ..adaptor.to_events import TAIL, Continuity
+from ..adaptor.to_events import COUNTED, TAIL, Continuity
 from .counting import Counter, countable, fresh_thinking  # noqa: F401 - countable: this module's before counting.py
 
 ANSWERED = "claude_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
@@ -273,12 +273,14 @@ class ClaudeContextManager(ProxyHook):
         return (request.label, session) if request.label else (session, session)
 
     async def continuity(self, client, gatherer: str, channel: str) -> Continuity:
-        """Where the channel's next request carries on (to_events.py): its last stored events, read from the
+        """Where the channel's next request carries on (to_events.py): its last stored events -- TAIL of them
+        counted without Claude Code's own notes (COUNTED), the notes among them too -- read from the
         gatherer on every call -- nothing of it is kept here, so a hook server started again carries on as
         this one would. The gatherer not answering: none, and the ids are chained from the request's start."""
         try:
             answer = await client.request("latest", {"gatherer": gatherer, "properties": {CHANNEL: channel}, "n": TAIL,
-                                                     "types": list(self.adaptor.outputs)})
+                                                     "types": list(self.adaptor.outputs),
+                                                     "counted": [t for t in self.adaptor.outputs if t in COUNTED]})
         except Exception as exc:  # noqa: BLE001 - never block the model call
             answer = {"error": repr(exc)}
         events = answer.get("events") if isinstance(answer, dict) else None

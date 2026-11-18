@@ -68,6 +68,19 @@ class HomeBase(unittest.TestCase):
         return sorted(answers, key=lambda a: a["id"])        # as asked: each comes out as it is ready
 
 
+class LatestTest(HomeBase):
+    """`latest`: where a harness that gives its events ids of its own making picks up its history."""
+
+    def test_counted_types_alone_count_and_the_rest_come_among_them(self):
+        sent = events(user("q", 1), DEV, *cat("a.py", 2))         # user_message, context, tool_call, tool_output
+        self.ask({"op": "insert", "gatherer": "s", "properties": {"channel": "c"}, "events": sent})
+        base = {"op": "latest", "gatherer": "s", "properties": {"channel": "c"},
+                "types": ["user_message", "context", "tool_call", "tool_output"]}
+        plain, counted = self.ask(dict(base, n=3), dict(base, n=3, counted=["user_message", "tool_call", "tool_output"]))
+        self.assertEqual([e["id"] for e in plain["events"]], [e["id"] for e in sent[1:]])
+        self.assertEqual([e["id"] for e in counted["events"]], [e["id"] for e in sent])
+
+
 class EventPropertiesTest(HomeBase):
     """What a harness's rules read of each event (its kind, the user's words, a call's action and id) is kept with it,
     declared on its type the first time it is seen: no policy declares them."""
