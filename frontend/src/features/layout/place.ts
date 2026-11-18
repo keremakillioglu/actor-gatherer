@@ -164,8 +164,8 @@ export class Placer {
         still
           ? ""
           : min
-            ? "Drag to show the chat whole"
-            : `Drag to resize${evens(b.split) ? ` · double-click: all the same ${row ? "width" : "height"}` : ""}`,
+            ? "Drag to expand chat"
+            : `Drag to resize${evens(b.split) ? ` · double-click for equal ${row ? "widths" : "heights"}` : ""}`,
       );
       e.classList.toggle("thick", !!b.split.thick);
       e.classList.toggle("gap", !!b.split.gap);

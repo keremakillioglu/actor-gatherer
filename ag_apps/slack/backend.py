@@ -1227,7 +1227,7 @@ class SlackApp(App):
         no ts when Slack hadn't posted it yet (the line brings it)."""
         staged = [self._staged.get(i) for i in ids]
         if not ids or any(x is None for x in staged):
-            raise AppError("a file to share is no longer here: attach it again")
+            raise AppError("File no longer available. Attach it again.")
         c = self.find(cid)
         cl = self._client()
         try:
@@ -1515,7 +1515,7 @@ class SlackApp(App):
         if not users:
             raise AppError("whom: one person or more")
         if len(users) > 8:
-            raise AppError("a group DM is at most 8 people besides you")
+            raise AppError("A group DM can include at most 8 other people.")
         cl = self._client()
         if len(users) == 1:
             got = next((c for c in self.store.conversations() if c["kind"] == "im" and c["user"] == users[0]), None)
@@ -1665,9 +1665,9 @@ class SlackApp(App):
             if not text.strip():
                 raise AppError("nothing to schedule")
             if at < time.time() + 30:
-                raise AppError("pick a time in the future")
+                raise AppError("Pick a time in the future.")
             if at > time.time() + 120 * 86400:
-                raise AppError("Slack schedules at most 120 days ahead")
+                raise AppError("Slack can schedule at most 120 days ahead.")
             c = self.find(cid)
             try:
                 got = self._client().schedule(c["id"], self.linked(text), at, str(ask.get("thread") or ""))
@@ -1699,7 +1699,7 @@ class SlackApp(App):
             new = str(ask.get("user_token") or "").strip()     # (reinstalling the app may have given a new one)
             if new:
                 if not new.startswith("xoxp-"):
-                    raise AppError("the user token starts xoxp- (OAuth & Permissions)")
+                    raise AppError("The User OAuth Token starts with xoxp-.")
                 if self._copy_of is None:
                     self._save_tokens(new, app)
                 user = new
@@ -1717,11 +1717,13 @@ class SlackApp(App):
         if path == "connect":
             user, app = str(ask.get("user_token") or "").strip(), str(ask.get("app_token") or "").strip()
             if not user.startswith("xoxp-"):
-                raise AppError("the user token starts xoxp- (OAuth & Permissions, after installing the app)")
+                raise AppError("The User OAuth Token starts with xoxp-. Find it in OAuth & Permissions "
+                               "after installing the app.")
             if app and not app.startswith("xapp-"):
-                raise AppError("the app-level token starts xapp- (Basic Information, App-Level Tokens)")
+                raise AppError("The App-Level Token starts with xapp-. Find it in Basic Information > "
+                               "App-Level Tokens.")
             if not slack.available():
-                raise AppError("Slack's SDK isn't installed here: pip install slack_sdk", 500)
+                raise AppError("Slack's Python SDK isn't installed. Run pip install slack_sdk.", 500)
             self._save_tokens(user, app)
             self._connect(user, app, wait=bool(ask.get("wait")))
             return Response.json({"setup": self.setup()})

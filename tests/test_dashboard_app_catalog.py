@@ -131,7 +131,7 @@ class CatalogTest(HostBase):
         self.assertEqual(self.api("POST", "/api/apps/uninstall", {"name": "nope"})[0], 400)
         status, got = self.api("POST", "/api/apps/stage", {"source": os.path.join(self.tmp.name, "nowhere")})
         self.assertEqual(status, 400)
-        self.assertIn("no such folder", got["error"])
+        self.assertIn("isn't a folder or a git URL", got["error"])
 
     def test_a_tool_called_after_its_app_was_uninstalled_is_refused_saying_why(self):
         from ag_dashboard import mcp

@@ -59,8 +59,8 @@ def send_message(srv: Parts, body: Body) -> Response:
         return answer(next(x for x in started.list() if x["session_id"] == sid))
     if held is not None:
         rules = harness_kit.get(held.get("harness"))
-        raise sessions.SessionError(f"{rules.label if rules else 'It'} waits on its question in the "
-                                    "terminal: answer it, or press Esc there to stop the turn, first")
+        raise sessions.SessionError(f"{rules.label if rules else 'It'} is asking a question in the "
+                                    "terminal. Answer it there or press Esc to stop the turn.")
     sent = started.send(sid, text, int(body.get("cols") or 120), int(body.get("rows") or 32), bool(body.get("fullscreen")),
                         str(body.get("cid") or "") or None)
     return answer(sent)
@@ -88,7 +88,7 @@ def discard(srv: Parts, body: Body) -> Response:
     if row is None:
         raise sessions.SessionError(f"no session {sid} started from the dashboard")
     if data.actors(row["gatherer"], {sid}, []):   # its gatherer has something of it: a history to keep
-        raise sessions.SessionError("it has a conversation in its gatherer: close it instead")
+        raise sessions.SessionError("it already has a conversation. Close it instead.")
     srv.sessions.discard(sid)
     if srv.branches is not None:                 # its branch, if it had one: gone too
         srv.branches.discarded(sid)
@@ -111,7 +111,7 @@ def answer_ask(srv: Parts, body: Body) -> Response:
     shown = data.shown_ask(row.get("shown"), row.get("harness"))
     ask = shown if shown and shown["id"] == want else data.asking_of(row["gatherer"], sid, row.get("cwd"))
     if not ask or (ask.get("id") or ask.get("call")) != want:
-        raise sessions.SessionError("it no longer asks that")
+        raise sessions.SessionError("that question is no longer open")
     choice = body.get("choice")
     return answer(srv.sessions.answer(sid, ask, choice if isinstance(choice, dict) else {}))
 

@@ -97,9 +97,9 @@ def folder_name(text) -> str:
     """A folder's name as given, its spaces made one and its ends trimmed; FolderError for none, or one with "/"."""
     name = " ".join(str(text or "").split())[:FOLDER_CHARS].strip()
     if not name:
-        raise FolderError("which folder? Give it a name")
+        raise FolderError("a folder needs a name")
     if "/" in name:
-        raise FolderError(f'"{name}": a folder\'s name can\'t hold "/" (it joins the names of folders in folders)')
+        raise FolderError(f'"{name}": folder names can\'t contain "/"')
     return name
 
 
@@ -239,7 +239,7 @@ def _put(gatherer: str, events: List[dict]) -> None:
     try:
         actions.insert(gatherer, events)
     except (RuntimeError, OSError, ValueError) as exc:
-        raise FolderError(f"not kept: {exc}") from None
+        raise FolderError(f"ag couldn't save the change ({exc})") from None
 
 
 def _folder_event(fid: int, row: Optional[tuple], tag: Optional[str] = None) -> dict:
@@ -431,7 +431,7 @@ def _folder(conn: sqlite3.Connection, gatherer: str, fid) -> tuple:
     try:
         fid = int(fid)
     except (TypeError, ValueError):
-        raise FolderError(f"which folder? {fid!r} is none") from None
+        raise FolderError(f"no folder {fid!r}") from None
     row = conn.execute("SELECT id, parent, name FROM folders WHERE id = ? AND gatherer = ?", (fid, gatherer)).fetchone()
     if row is None:
         raise FolderError(f"no folder {fid} in {gatherer}")
@@ -478,7 +478,7 @@ def make(gatherer: str, name: str, parent: Optional[int] = None) -> int:
             _opened(conn, int(parent))
         other = _beside(conn, gatherer, parent, name)
         if other is not None:
-            raise FolderError(f'there is a folder "{other}" there already')
+            raise FolderError(f'a folder named "{other}" is already there')
         return conn.execute("INSERT INTO folders (gatherer, parent, name, at) VALUES (?, ?, ?, ?)",
                             (gatherer, parent, name, _now())).lastrowid
     return _change(gatherer, do)
@@ -492,7 +492,7 @@ def rename(gatherer: str, fid: int, to: str) -> None:
         _, parent, _ = _folder(conn, gatherer, fid)
         other = _beside(conn, gatherer, parent, to, but=int(fid))
         if other is not None:
-            raise FolderError(f'there is a folder "{other}" there already')
+            raise FolderError(f'a folder named "{other}" is already there')
         conn.execute("UPDATE folders SET name = ? WHERE id = ?", (to, int(fid)))
     _change(gatherer, do)
 
@@ -506,11 +506,11 @@ def move(gatherer: str, fid: int, parent: Optional[int]) -> None:
             up = _folder(conn, gatherer, parent)[0]
             while up is not None:                       # its own folders, up to the top
                 if up == int(fid):
-                    raise FolderError(f'"{name}" can\'t go in itself, nor in a folder of its own')
+                    raise FolderError(f'"{name}" can\'t go in itself or in one of its own folders')
                 up = conn.execute("SELECT parent FROM folders WHERE id = ?", (up,)).fetchone()[0]
         other = _beside(conn, gatherer, parent, name, but=int(fid))
         if other is not None:
-            raise FolderError(f'there is a folder "{other}" there already')
+            raise FolderError(f'a folder named "{other}" is already there')
         conn.execute("UPDATE folders SET parent = ? WHERE id = ?", (parent, int(fid)))
         _opened(conn, None if parent is None else int(parent))
     _change(gatherer, do)
@@ -589,7 +589,7 @@ def close(gatherer: str, fid: int, started: "sessions.Sessions", home: dict) -> 
     try:
         want = int(fid)
     except (TypeError, ValueError):
-        raise FolderError(f"which folder? {fid!r} is none") from None
+        raise FolderError(f"no folder {fid!r}") from None
     if not any(f["id"] == want for f in tree["folders"]):
         raise FolderError(f"no folder {fid} in {gatherer}")
     ids = {want}
@@ -617,7 +617,7 @@ def close(gatherer: str, fid: int, started: "sessions.Sessions", home: dict) -> 
             elif sid and not a.get("events") and not a.get("reads"):
                 started.discard(sid)                    # never started: nothing of it kept, as the list's x does
             else:
-                left.append({"channel": a["channel"], "why": "no process of the dashboard's runs for it"})
+                left.append({"channel": a["channel"], "why": "the dashboard isn't running it"})
         except sessions.SessionError as err:
             left.append({"channel": a["channel"], "why": str(err)})
     for key in [c for c, f in (tree.get("filed") or {}).items() if f in ids and c in kept]:

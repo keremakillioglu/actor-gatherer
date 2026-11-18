@@ -163,7 +163,7 @@ test("in the home's one database, a folder dragged outside every group is a grou
   await dragOutside(page, mgRow(page, "Work"), panel(page), "Outside every group: a group of its own");
   await expect(dialog.locator("h3")).toHaveText("Make Work a group of its own?");
   await expect(dialog.locator(".mv-line").first()).toHaveText(
-    "The folder Work becomes a group of its own, Work, and what is in it goes to the new group's top. " +
+    "The folder Work becomes a group of its own, with its contents at the top. " +
       `Its actor leaves the ${GATHERER} group (1 other) for it.`,
   );
   await dialog.getByRole("button", { name: "Cancel" }).click();
@@ -282,7 +282,7 @@ test("in the home's one database, the list head's + starts an actor on its own",
   await open(page);
   await expect(page.locator("#agents .gatherer.alone")).toHaveCount(0);
   const plus = page.locator(".aside-head button.alone-new");
-  await expect(plus).toHaveAttribute("title", "New actor on its own: it shares context with no group");
+  await expect(plus).toHaveAttribute("title", "New actor on its own · shares context with no group");
   await plus.click();
   const box = page.locator(".dw-menu.alone-box");
   await expect(box.locator(".head")).toHaveText("New actor on its own");
@@ -290,7 +290,7 @@ test("in the home's one database, the list head's + starts an actor on its own",
   await expect(box.locator("button.go")).toHaveCount(2); // each harness that runs here
   await expect(box.locator("button.go").nth(0)).toContainText("Claude Code");
   await expect(box.locator("button.go").nth(1)).toContainText("Codex");
-  await expect(box.locator(".note")).toHaveText(["It shares context with no group, and no group with it."]);
+  await expect(box.locator(".note")).toHaveText(["Shares context with no group."]);
   await box.locator("button.go", { hasText: "Claude Code" }).click();
   await expect.poll(() => asked.length).toBe(1);
   expect(asked[0]).toEqual({ gatherer: GATHERER, cwd: "/work/demo", harness: "claude", alone: true });

@@ -177,7 +177,7 @@ def task(srv: Parts, body: Body) -> Response:
     if do == "add":
         new = [str(c) for c in items]
         if any(task_links.coordinator(c) for c in [str(body.get("to") or ""), *new]):
-            raise ValueError("a gatherer's own agent is in no task")
+            raise ValueError("the coordinator agent can't be in a task")
         tid, attached = task_links.change(g, lambda: tasks.add(g, str(body.get("to") or ""), new, body.get("name")))
         got = {"task": tid, "attached": attached}
     elif do == "out":

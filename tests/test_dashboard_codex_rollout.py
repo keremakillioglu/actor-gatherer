@@ -425,7 +425,7 @@ class TypedTest(SessionsBase):
         sid = self.s.create("g", self.work, harness="codex")["session_id"]
         self.s.terminal(sid, 100, 30)
         self.until(lambda: "fake terminal" in self.s.output(sid, -1)[0].decode("utf-8", "replace"))
-        with self.assertRaisesRegex(sessions.SessionError, "opened after it asked"):
+        with self.assertRaisesRegex(sessions.SessionError, "no longer shows this question"):
             self.s.answer(sid, dict(CODEX_PLAN, at=time.time() - 60), {"plan": "implement"})
         self.s.answer(sid, dict(CODEX_PLAN, at=time.time()), {"plan": "implement"})
         self.until(lambda: [x["typed"] for x in self.logged() if "typed" in x] == ["1"])
@@ -489,7 +489,7 @@ class SendTest(SessionsBase, RolloutBase):
         self.gatherer(sid, ("tool_call", {"type": "function_call", "name": "request_user_input", "call_id": "q",
                                           "arguments": json.dumps({"questions": [FRUIT]})}))
         code, got = self.post("/api/send", {"session_id": sid, "text": "2 more things"})
-        self.assertEqual((code, "waits on its question" in got.get("error", "")), (400, True))
+        self.assertEqual((code, "is asking a question" in got.get("error", "")), (400, True))
         time.sleep(0.3)
         self.assertEqual(self.typed(), [])                                                  # nothing typed into its dialog
 

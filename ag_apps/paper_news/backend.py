@@ -238,7 +238,7 @@ class PaperNewsApp(App):
         text = " · ".join(f"{c} {v['listed']}" for c, v in info["by_category"].items())
         if days > 1:
             text += f" · {days - 1} earlier day{'s' if days > 2 else ''} caught up"
-        text += " · tell it what you work on to see what's for you"
+        text += " · set up your interests to see picks for you"
         show = ("ag", "system") if s["notify_system"] else ("ag",)
         for i in self.host.instances():
             try:
@@ -334,7 +334,7 @@ class PaperNewsApp(App):
     def _ask_summary(self, why: str, instance: Optional[Instance] = None) -> None:
         inputs = self.store.get("interests")
         if not inputs:
-            raise AppError("tell it what you're interested in first")
+            raise AppError("Set up your interests first.")
         prof = self.store.get("profile")
         feedback = self.store.feedback_since(prof["feedback_seq"] if prof else 0)
         text = it.summarize_message(inputs, prof["fields"] if prof else None, prof.get("edited", []) if prof else [],
@@ -610,10 +610,11 @@ class PaperNewsApp(App):
             if isinstance(cats, str):
                 cats = cats.replace(",", " ").split()
             if not isinstance(cats, list) or not cats or len(cats) > CATEGORIES_MAX:
-                raise AppError(f"categories: 1 to {CATEGORIES_MAX} of arXiv's, such as cs.AI")
+                raise AppError(f"Enter 1 to {CATEGORIES_MAX} arXiv categories, such as cs.AI.")
             bad = [c for c in cats if not feed.is_category(c)]
             if bad:
-                raise AppError(f"not an arXiv category: {', '.join(map(str, bad))} (they look like cs.AI or stat.ML)")
+                raise AppError(f"Not an arXiv category: {', '.join(map(str, bad))}. "
+                               "Categories look like cs.AI or stat.ML.")
             values["categories"] = list(dict.fromkeys(cats))
         for k in ("replacements", "notify_system"):
             if k in ask:

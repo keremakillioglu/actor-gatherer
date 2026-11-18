@@ -228,9 +228,9 @@ class Figma:
     def _me(self, token: str) -> str:
         status, body = self.fetch(f"{API}/me", {"X-Figma-Token": token})
         if status in (401, 403):
-            raise MediaError("Figma refused that token: make one in Figma's Settings, Security, Personal access tokens")
+            raise MediaError("Figma refused that token")
         if status != 200:
-            raise MediaError(f"Figma answered {status}")
+            raise MediaError(f"Figma returned an error ({status})")
         got = _json(body)
         return str(got.get("handle") or got.get("email") or "")
 
@@ -267,19 +267,19 @@ class Figma:
         else:
             where = got.get("thumbnailUrl")
         if not where:
-            raise MediaError("Figma made no picture of it (an empty frame?)")
+            raise MediaError("Figma returned no image (is the frame empty?)")
         return {"title": title[:300], "mod": changed, "data": self._picture(str(where))}
 
     def _public(self, url: str) -> Dict[str, object]:
         status, body = self.fetch(f"https://www.figma.com/api/oembed?url={urllib.parse.quote(url, safe='')}", {})
         if status in (401, 403, 404):
-            raise MediaError("the file isn't public: add a Figma token for a snapshot of it")
+            raise MediaError("the file isn't public")
         if status != 200:
-            raise MediaError(f"Figma answered {status}")
+            raise MediaError(f"Figma returned an error ({status})")
         got = _json(body)
         where = got.get("thumbnail_url")
         if not where:
-            raise MediaError("Figma gave no picture of it")
+            raise MediaError("Figma returned no image")
         return {"title": str(got.get("title") or "")[:300], "mod": "", "data": self._picture(str(where))}
 
     def _picture(self, where: str) -> bytes:
@@ -287,7 +287,7 @@ class Figma:
             raise MediaError("Figma's picture isn't on https")
         status, body = self.fetch(where, {})
         if status != 200 or not body:
-            raise MediaError(f"Figma's picture didn't come ({status})")
+            raise MediaError(f"Figma's image didn't download ({status})")
         if len(body) > MAX_IMAGE:
             raise MediaError("Figma's picture is too large")
         return body
@@ -298,12 +298,12 @@ class Figma:
             return
         said = str(_json(body).get("err") or _json(body).get("message") or "")
         if status in (401, 403):
-            raise MediaError("Figma won't show that file to this token" + (f": {said}" if said else ""))
+            raise MediaError("this token can't open that file" + (f": {said}" if said else ""))
         if status == 404:
             raise MediaError("Figma has no such file")
         if status == 429:
-            raise MediaError("Figma asks to wait: too many requests")
-        raise MediaError(f"Figma answered {status}" + (f": {said}" if said else ""))
+            raise MediaError("too many requests to Figma. Try again later")
+        raise MediaError(f"Figma returned an error ({status})" + (f": {said}" if said else ""))
 
 
 def _json(body: bytes) -> dict:

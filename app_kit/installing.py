@@ -105,7 +105,7 @@ def stage(home: str, source: str) -> Staged:
         else:
             path = os.path.realpath(os.path.expanduser(source.strip()))
             if not os.path.isdir(path):
-                raise InstallError(f"{source}: no such folder (or a git URL git can clone)")
+                raise InstallError(f"{source} isn't a folder or a git URL")
             if not os.path.isfile(os.path.join(path, FILE)):
                 raise InstallError(f"{source}: no {FILE} in it, so it isn't an app")
             shutil.copytree(path, dest, ignore=shutil.ignore_patterns(*NOT_COPIED), symlinks=True)
@@ -142,8 +142,7 @@ def install(home: str, staged_id: str, update: bool = False) -> Manifest:
     st = staged(home, staged_id)
     name = st.manifest.name
     if name in builtins():
-        raise InstallError(f"{name}: an app that comes with ag has this name; rename the app (its `name`) to "
-                           "install it")
+        raise InstallError(f"an app that comes with ag is named {name}: change the `name` in its {FILE} to install it")
     target = os.path.join(_apps(home), name)
     there = os.path.isfile(os.path.join(target, FILE))
     if there and not update:
@@ -164,7 +163,7 @@ def uninstall(home: str, name: str, folder: str, data: bool = False) -> str:
     """App `name`, found in `folder`, uninstalled (module doc) -> how: "home" or "builtin"."""
     where = finding.origin(folder, home)
     if where == "path":
-        raise InstallError(f"{name} is in {os.path.dirname(folder)}, a folder of AG_APPS_PATH: remove it there")
+        raise InstallError(f"{name} is in {os.path.dirname(folder)} (on AG_APPS_PATH): remove it there")
     own = os.path.join(_apps(home), name)
     if where == "builtin":
         set_removed(home, sorted(set(finding.removed(home)) | {name}))
@@ -290,7 +289,7 @@ def _git(args: List[str], wait: float) -> "subprocess.CompletedProcess":
     except FileNotFoundError:
         raise InstallError("git isn't installed, so an app can't be installed from a git URL") from None
     except subprocess.TimeoutExpired:
-        raise InstallError(f"git took over {int(wait)} s, so it was stopped") from None
+        raise InstallError(f"git timed out after {int(wait)} s") from None
 
 
 def _last_line(text: str) -> str:

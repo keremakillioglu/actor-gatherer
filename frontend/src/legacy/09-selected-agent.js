@@ -12,8 +12,7 @@ function renderMain() {
     return;
   }
   const x = document.getElementById("pane-close"), shell = isShell(state.selected[1]);
-  x.title = shell ? "Close this pane: the terminal runs on, under its gatherer (Terminate ends it)"
-    : "Close this pane (the actor stays open: click it in the list to show it again)";
+  x.title = shell ? "Close pane (the terminal keeps running)" : "Close pane (the actor stays open)";
   x.setAttribute("aria-label", x.title);
   if (shell) { patch(main, [chatMin() ? shellMini(state.selected[1]) : shellCard(state.selected[1])]); fitMini(); return; }
   const info = selectedInfo() || {};
@@ -103,7 +102,7 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")
     && !(state.selected && isShell(state.selected[1]))) setDetails(false);
 });
-const DETAILS_TIP = "Details: this actor, its context, and what ag did for it";
+const DETAILS_TIP = "Details";
 // All of it in one panel, one part under another: the history's other views and the actor's facts, then its calls
 // (Actor), what the model was sent (Context: what `/context` in the message box opens, dashboardCommand), and what ag
 // did for it (Gatherer).
@@ -115,10 +114,10 @@ function detailsPanel(info) {
   const part = (id, name, what, kids) => el("section", { class: "drawer-part", id: `details-${id}`, "aria-label": name },
     el("h4", {}, name, el("span", { text: what })), ...kids);
   if (!a || a.error || !a.reads) body.append(el("div", { class: "empty", text: (a && a.error) || (info.session
-    ? "No calls yet: send the agent a message." : "No data for this actor.") }));
-  else body.append(part("actor", "Actor", "its calls", actorDetails(a)),
+    ? "No calls yet. Send the agent a message." : "No data for this actor.") }));
+  else body.append(part("actor", "Actor", "calls and tokens sent", actorDetails(a)),
     part("context", "Context", "what the model was sent", contextDetails(a)),
-    part("gatherer", "Gatherer", "what ag did for it", gathererDetails(a)));
+    part("gatherer", "Gatherer", "ag's builds and model calls", gathererDetails(a)));
   return el("aside", { class: "drawer", role: "complementary", "aria-label": "Details" }, head, body);
 }
 // The actor's own facts: where it runs, as what, and how the dashboard can reach it.
@@ -128,10 +127,10 @@ function facts(info) {
     ["Harness", harnessName(info.harness || (state.agent && state.agent.harness))],
     ["Gatherer", state.selected[0]], ["Channel", state.selected[1]], ["Directory", info.cwd || (s && s.cwd)],
     ["Process", info.pid ? `PID ${info.pid}` : null],
-    ["Chat", !hasChat(info) ? `Not from the dashboard: only ${runnableNames("and")} sessions with a directory can be messaged here`
-      : s && s.terminal ? "Open in the dashboard's terminal: a message from any view is typed there"
-      : s ? `Run by the dashboard, permissions ${s.permission_mode}; let go after each turn`
-      : "Started elsewhere: a message resumes it here, permissions auto"],
+    ["Chat", !hasChat(info) ? `Only ${runnableNames("and")} sessions with a directory can be messaged here`
+      : s && s.terminal ? "Open in the dashboard's terminal"
+      : s ? `Run by the dashboard · permissions ${s.permission_mode}`
+      : "Started elsewhere · a message resumes it here with auto permissions"],
   ].filter(([, v]) => v);
   return el("dl", { class: "facts" }, ...rows.flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })]));
 }
@@ -142,7 +141,7 @@ function actorDetails(a) {                           // what the agent saw and d
       tile("Context now", compact(last.real_tokens ?? last.counted_tokens),
         last.real_tokens !== null && last.real_tokens !== undefined ? `provider's count · ag counted ${compact(last.counted_tokens)}` : "ag's count"),
       tile("Harness limit", compact(last.limit_tokens), last.limit_tokens ? "where the harness compacts" : "none stated"),
-      tile("Tasks", full(a.tasks.length), "as ag has segmented the history"),
+      tile("Tasks", full(a.tasks.length), "segmented by ag"),
       tile("Reads", full(reads.length), last.at ? `last ${ago(last.at)}` : "")),
     usageCard(),
   ];
@@ -157,7 +156,7 @@ function gathererDetails(a) {                        // what ag did for the agen
     el("div", { class: "tiles" },
       tile("Rebuilds", full(a.rebuilds), "reads on a new build"),
       tile("Builds", full(builds.length), failed ? `${failed} failed` : "none failed"),
-      tile("New-task checks", full(a.checks.length), `${a.checks.filter((x) => x.new_task).length} said a new task`),
+      tile("New-task checks", full(a.checks.length), `${a.checks.filter((x) => x.new_task).length} found a new task`),
       tile("ag's model calls", full(llm.calls), `${usd(llm.cost)}${llm.unpriced ? ` + ${llm.unpriced} unpriced` : ""}`)),
     buildsCard(builds),
     llmCard(a),

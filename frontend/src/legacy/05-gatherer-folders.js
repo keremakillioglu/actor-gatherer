@@ -85,7 +85,7 @@ function nameGroup(parent, text) {
   if (!text) return false;
   const other = state.home.gatherers.find((g) => !g.alone && gfOf(g.name) === parent && titleOf(g).toLowerCase() === text.toLowerCase());
   if (text.includes("/") || other) {
-    setLive(other ? `There is a group "${titleOf(other)}" there already` : 'A group\'s name can\'t hold "/"');
+    setLive(other ? `A group named "${titleOf(other)}" is already there` : 'Group names can\'t contain "/"');
     return false;
   }
   makeGroup(text, parent);
@@ -108,7 +108,7 @@ async function makeGroup(text, parent) {
 // what an open folder with nothing shown in it says: that its gatherers are hidden, or that it has none
 function gfEmpty(f) {
   const hid = Object.entries(treeOf(GF).filed).some(([name, at]) => within(GF, at, f.id) && state.home.gatherers.some((g) => g.name === name));
-  return hid ? "Its gatherers are hidden" : SNAPSHOT ? "Empty" : "Empty: drag gatherers here";
+  return hid ? "Its groups are hidden" : SNAPSHOT ? "Empty" : "Empty · drag groups here";
 }
 // A folder of gatherers' line: a button opening or folding it -- its caret, its name, its coordinator agent's face if it
 // has one -- and, hovered or in focus, its buttons: a coordinator agent started over it (none yet), a folder made in it,
@@ -128,7 +128,7 @@ function gfLine(f) {
         state.home.merged && !crewAt(`groups:${f.id}`)[1] ? crewButton(null, `groups:${f.id}`) : null,
         folderAct("new", `New folder in ${f.name}`, strokeIcon(ICONS.folderNew, 14), () => startFolderEdit(GF, null, f.id)),
         folderAct("rename", `Rename ${f.name} (F2)`, strokeIcon(ICONS.pencil, 13), () => startFolderEdit(GF, f.id)),
-        folderAct("delete", `Delete ${f.name}: what is in it moves up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(GF, f.id)))));
+        folderAct("delete", `Delete ${f.name} · its contents move up a level`, strokeIcon(ICONS.bin, 14), () => deleteFolder(GF, f.id)))));
   return dropOn(dragFolder(line, GFS, f), GFS, f.id, () => { if (!isOpenFolder(GF, f.id)) toggle(); });
 }
 // A level of the rail (`id` null: its top), as the list's (gfLevel): each folder its name in a bracket, as a gatherer's
@@ -139,7 +139,7 @@ function railGfLevel(shown, id, draw) {
   for (const f of kidFolders(GF, id)) {
     const open = isOpenFolder(GF, f.id);
     const name = el("button", { class: open ? "r-fhead" : "r-fname", type: "button", "aria-expanded": open ? "true" : "false",
-      title: `${f.name}: a folder of groups · ${open ? "fold it" : "open it"}`, onclick: () => { cardHide(); toggleFolder(GF, f.id); } },
+      title: `${f.name}: a folder of groups · click to ${open ? "fold" : "open"}`, onclick: () => { cardHide(); toggleFolder(GF, f.id); } },
       el("span", { class: "tx" }, el("span", { class: "caret", "aria-hidden": "true", text: "▶" }), el("span", { class: "nm", text: f.name })));
     if (open) {
       const kids = railGfLevel(shown, f.id, draw);

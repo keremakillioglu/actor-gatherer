@@ -10,7 +10,7 @@
 name = "editor"
 label = "Editor"
 version = "1"
-description = "edit a folder's files live, with the actors, and preview what they make"
+description = "edit a folder's files live with your actors and preview the result"
 instances = "many"
 offer = "attached"
 mark = "mark.svg"

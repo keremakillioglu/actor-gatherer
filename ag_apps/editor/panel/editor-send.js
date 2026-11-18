@@ -40,7 +40,7 @@ function edSendDraw() {
   b.style.top = `${Math.round(below ? at.bottom + 4 : Math.max(box.top + 2, at.top - h - 4))}px`;
 }
 function edSendButton() {
-  const b = el("button", { type: "button", class: "ed-send", hidden: "", title: "Send the lines selected to an actor, with what to do",
+  const b = el("button", { type: "button", class: "ed-send", hidden: "", title: "Send the selected lines to an actor",
     onmousedown: (ev) => ev.preventDefault(),        // the file keeps the keys, and its selection
     onclick: () => edSendOpen() },
   strokeIcon("M2.25 8h10.5M9 4.25 12.75 8 9 11.75", 13), el("span", { text: "Send to an actor" }));
@@ -73,9 +73,9 @@ function edSendOpen() {
   const ask = el("textarea", { class: "ed-send-ask", rows: "2", "aria-label": "What the actor should do with the lines",
     placeholder: "What should it do with them?" });
   const list = el("div", { class: "ed-send-list", role: "listbox", "aria-label": "Actors" });
-  const box = el("div", { class: "ed-sendpop", role: "dialog", "aria-label": "Send the lines selected to an actor" },
-    el("div", { class: "ed-send-hd", text: `Send ${edSendLines(q)} of ${edBase(q.s.path)} to an actor, as your message` }),
-    ask, list, el("div", { class: "ed-send-ft", text: "↵ sends · ⇧↵ a new line · ↑↓ another actor · Esc" }));
+  const box = el("div", { class: "ed-sendpop", role: "dialog", "aria-label": "Send the selected lines to an actor" },
+    el("div", { class: "ed-send-hd", text: `Send ${edSendLines(q)} of ${edBase(q.s.path)} to an actor` }),
+    ask, list, el("div", { class: "ed-send-ft", text: "↵ send · ⇧↵ new line · ↑↓ choose actor · Esc close" }));
   const p = edSend.pop = { box, ask, list, q, items: edSendActors(), on: 0, off: null };
   ask.addEventListener("keydown", edSendKey);
   ask.addEventListener("input", () => { ask.classList.remove("bad"); ask.style.height = "auto"; ask.style.height = `${Math.min(ask.scrollHeight, 160)}px`; });
@@ -149,7 +149,7 @@ async function edSendGo(a) {
   const words = p.ask.value.trim();
   if (!words) {
     p.ask.classList.add("bad");
-    p.ask.placeholder = "Say what it should do first, then pick the actor.";
+    p.ask.placeholder = "Say what it should do first.";
     p.ask.focus();
     return;
   }

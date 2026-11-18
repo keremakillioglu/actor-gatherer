@@ -3,7 +3,7 @@ document.getElementById("pause").addEventListener("click", async (ev) => {
   state.paused = !state.paused;
   const b = ev.currentTarget;
   b.textContent = state.paused ? "Resume" : "Pause";
-  b.title = state.paused ? "Update this page again" : "Stop updating this page; the agents and the server go on";
+  b.title = state.paused ? "Resume live updates" : "Pause live updates (agents keep running)";
   if (!state.paused) await refresh(true);
   connect();
   if (state.paused) render();

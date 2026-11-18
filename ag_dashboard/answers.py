@@ -29,7 +29,7 @@ PERMISSION = "permission"                # what an ask is that a tool waits on (
 def _harness(ask: dict) -> harness_kit.Harness:
     h = harness_kit.get(ask.get("harness") or harness_kit.DEFAULT)
     if h is None:
-        raise AnswerError(f"no rules for {ask.get('harness')}: answer it in its terminal")
+        raise AnswerError(f"can't answer {ask.get('harness')} here. Answer it in the terminal.")
     return h
 
 
