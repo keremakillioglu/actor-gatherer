@@ -123,10 +123,10 @@ function ntLine(p) {
     chip("nt:dir", "Directory", [el("span", { class: "val dir", text: shortDir(ntCwd(p)) || "Choose one" })], `It works in ${ntCwd(p) || "a directory you choose"}`,
       off ? null : (b) => openPop("nt:dir", b, ntDirBox(p))),
     hs.length ? chip("nt:on", "On", [harnessBadge(h), el("span", { class: "val", text: harnessName(h) })],
-      `Its harness: ${harnessName(h)}${p && p.alone && startable().length > hs.length ? " (on its own: the ones that name their session from the start)" : ""}`,
+      `Its harness: ${harnessName(h)}`,
       hs.length > 1 ? (b) => openPop("nt:on", b, ntMenu("Run it on", hs.map((x) => ({ mark: harnessBadge(x), text: harnessName(x),
         note: x === h ? "chosen" : "", run: () => { newTab.harness = x; refreshNewTab(true); ntFocus(); } })))) : null)
-      : el("span", { class: "nt-none", title: noHarness(), text: p && p.alone ? "No harness starts an actor on its own here" : "No harness here" }),
+      : el("span", { class: "nt-none", title: noHarness(), text: "No harness here" }),
   ];
 }
 // a drop-down of the page's: scrolling, if long (many groups and folders)
