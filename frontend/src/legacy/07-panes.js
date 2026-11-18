@@ -1379,14 +1379,14 @@ const startable = () => (state.home.harnesses || []).filter(runsHere);
 const noHarness = () => `None of ${runnableNames("or")} is set up. Install one, or set its command under [cli.harnesses] in config.toml.`;
 // Last, its terminal button: a shell (isShell), in that same directory -- or, with none, the form asks for it too.
 const SHELL_START = "shell";                       // the terminal button's, where a harness's name goes
-const APP_START = "app:";                          // an app's with an agent of its own ([agent] start): app:<name>:<harness>
+const APP_START = "app:";                          // an app's with an agent of its own ([agent] offered): app:<name>:<harness>
 const startAny = (gatherer, cwd, harness) => harness === SHELL_START ? startShell(gatherer, cwd)
   : harness.startsWith(APP_START) ? startWithApp(gatherer, cwd, ...appStart(harness))
   : startSession(gatherer, cwd, harness);
 const appStart = (v) => { const [name, ...h] = v.slice(APP_START.length).split(":"); return [name, h.join(":")]; };
-// The apps found whose menu entry starts an agent of their own (DocWriter, say): those a new actor is started with.
+// The apps found that can be opened with an agent of their own (DocWriter, say): those a new actor can be started with.
 const startingApps = () => (PANE || SNAPSHOT || !window.agNext ? [] : window.agNext.apps.found())
-  .filter((a) => a.agent && a.agent.start && !a.failed);
+  .filter((a) => a.agent && a.agent.offered && !a.failed);
 const cwdOf = (a) => a.cwd || (a.session && a.session.cwd) || "";    // a session started here: its own, before any call names one
 const startCwd = (g) => cwdOf(g.agents.filter(cwdOf).sort((x, y) => (y.last || 0) - (x.last || 0))[0] || {});
 // A coordinator agent's button (CREW_START), on its node's row -- a group's, a folder's, a folder of groups', the list's
@@ -1482,11 +1482,11 @@ function moreStarts(g, hs, where, key = `more:${g.name}`) {
     hs.length ? { icon: ICONS.branch, text: "Actor on a branch…", note: "in its own worktree, merged into the project",
       run: (button) => openBranchMenu(g, button) } : null,
     ...(tooled.length ? startingApps() : []).map((a) => ({ icon: ICONS.app, mark: a.mark ? appMarkImg(a) : null,
-      text: `${a.label}…`,
+      text: `${a.label} with an agent…`,
       run: (button) => openPop(key, button, appStartBox(g, tooled, a)) })),
     // (where it opens: the menu's heading says it)
     state.home.terminals !== false ? { icon: ICONS.terminal, text: "Terminal", note: where ? null : there, run: () => addSession(g, SHELL_START) } : null,
-    ...(PANE || SNAPSHOT ? [] : window.agNext.apps.found()).filter((a) => !(a.agent && a.agent.start)).map((a) => ({ icon: ICONS.app,
+    ...(PANE || SNAPSHOT ? [] : window.agNext.apps.found()).filter((a) => !a.failed).map((a) => ({ icon: ICONS.app,
       mark: a.mark ? appMarkImg(a) : null, text: a.label, run: () => openAppTab(g.name, a.name, startCwd(g)) })),
   ].filter(Boolean);
 }

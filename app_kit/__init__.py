@@ -21,8 +21,8 @@ ag or of the dashboard (tests/test_app_kit.py).
 
 from . import docs, events, finding, installing, notices, schedules  # noqa: F401
 from .backend import App, AppError, Caller, Host, Instance, Response, ToolResult  # noqa: F401 - the package's API
-from .manifest import (CAPABILITIES, CONTEXT_TYPES, HOST_PROPERTIES, HOST_RECORDS, HOST_TYPES, INSTANCES, OFFERS,  # noqa: F401
-                       INTENTS, NOTICE_TYPES, SHOWS, Agent, Backend, Capabilities, Handles, Manifest, ManifestError,
+from .manifest import (ACCESS, CAPABILITIES, CONTEXT_TYPES, HOST_PROPERTIES, HOST_RECORDS, HOST_TYPES, INSTANCES,  # noqa: F401
+                       OFFERS, RESERVED, INTENTS, NOTICE_TYPES, SHOWS, Agent, Backend, Capabilities, Handles, Manifest, ManifestError,
                        PollerDef, Tool, load, parse, split_tool_name, tool_name)
 from .events import context_stream, environment_update  # noqa: F401
 from .docs import Docs, Joined  # noqa: F401

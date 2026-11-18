@@ -24,7 +24,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import app_agents, app_host, coordination, libs, server, sessions, tool_gateway  # noqa: E402
+from ag_dashboard import app_agents, app_host, coordination, libs, server, sessions, task_links, tool_gateway  # noqa: E402
 from app_kit import Caller  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
 from test_dashboard_app_host import insert_here  # noqa: E402
@@ -309,7 +309,7 @@ class Hosted(HomeBase):
 class AppTest(Hosted):
     def test_an_instance_is_a_docwriter_on_its_folder_its_agent_attached(self):
         m = self.host.apps["docwriter"].manifest
-        self.assertEqual((m.instances, m.offer, m.agent.start), ("many", "attached", True))
+        self.assertEqual((m.instances, m.access, m.agent.offered), ("many", "task", True))
         self.assertEqual({t.name for t in m.tools}, {"edit_doc", "read_doc", "write_doc", "comment_doc",
                                                      "reply_to_comment", "list_threads"})
         self.assertTrue(all(t.handled_by == "panel" for t in m.tools))
@@ -390,14 +390,16 @@ class GatewayTest(Hosted):
         tool_gateway.HOST, tool_gateway.ORIGIN = self.host, "http://127.0.0.1:4999"
         self.addCleanup(lambda: setattr(tool_gateway, "HOST", self.saved[0]) or setattr(tool_gateway, "ORIGIN", self.saved[1]))
         self.inst = self.host.open("docwriter", "g", self.root)
-        self.host.attach("g", self.inst.id, "c1")
+        task_links.link("g", self.inst.id, "c1")
 
     def test_its_tools_and_instructions_for_its_agent_alone(self):
         mine = {t["name"] for t in tool_gateway.tools("g", ("c1",))}
         other = {t["name"] for t in tool_gateway.tools("g", ("c2",))}
         self.assertIn("docwriter_edit_doc", mine)
         self.assertNotIn("docwriter_edit_doc", other)
-        self.assertNotIn("DocWriter", tool_gateway.instructions("g", channels=("c1",)))   # its own: the agent's instructions
+        said = tool_gateway.instructions("g", channels=("c1",))
+        self.assertIn("- DocWriter (docwriter):", said)                       # listed, as every app installed is
+        self.assertNotIn("You are the agent of DocWriter", said)              # its own words: the agent's instructions
 
     def test_claude_code_gets_the_tools_the_instructions_and_the_guard(self):
         s = {"session_id": "c1", "gatherer": "g", "harness": "claude", "cwd": self.root,
@@ -416,7 +418,7 @@ class GatewayTest(Hosted):
         self.assertNotIn("--settings", other)
 
     def test_codex_gets_them_as_its_config(self):
-        self.host.attach("g", self.inst.id, "c3")
+        task_links.link("g", self.inst.id, "c3")
         args = tool_gateway.launch_args({"session_id": "c3", "gatherer": "g", "harness": "codex", "cwd": self.root})
         parsed = {}
         for one in [args[i + 1] for i, a in enumerate(args) if a == "-c"]:

@@ -97,15 +97,14 @@ def apps_listed(srv: Parts, gatherer: str = "") -> Response:
 @router.post("/api/apps/open")
 def apps_open(srv: Parts, body: Body) -> Response:
     """The app's instance for the gatherer (and folder, for an app with one per folder or checkout): the open one, or
-    a new one. With `channel`, that agent attached to it -- the app, in no task, put in the agent's (task_links.py's
-    `link`)."""
+    a new one. With `channel`, that agent attached to it when they come to be in one task -- the app, in no task, put
+    in the agent's; the agent, in none, in the app's (task_links.py's `link`)."""
     try:
         name, gatherer = _need(body, "app", "gatherer")
         h = _host(srv)
         i = h.open(name, gatherer, body.get("folder") or None, body.get("args") or {})
-        if body.get("channel"):                                # its task first: whoever hears of the attaching
-            task_links.link(gatherer, i.id, body["channel"])   # finds it in it
-            h.attach(gatherer, i.id, body["channel"])
+        if body.get("channel"):                                # in one task with it, attached; else (each in a
+            task_links.link(gatherer, i.id, body["channel"])   # task of its own already) only opened
         return answer(i.to_dict())
     except AppError as exc:
         return _failed(exc)
@@ -154,8 +153,7 @@ def apps_attach(srv: Parts, body: Body) -> Response:
     try:
         gatherer, instance, channel = _need(body, "gatherer", "instance", "channel")
         _host(srv).instance(gatherer, instance)
-        task_links.link(gatherer, instance, channel, move=True)   # its task first, as `apps_open`
-        _host(srv).attach(gatherer, instance, channel)
+        task_links.link(gatherer, instance, channel, move=True)   # in the app's task: attached to its apps
         return answer({})
     except AppError as exc:
         return _failed(exc)

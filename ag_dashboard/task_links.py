@@ -5,26 +5,32 @@ which attaches and detaches what the change asks, and has the page told (RING).
 
 What else puts an app and an agent together, here too:
 
-    link(g, instance, channel, move)   an agent to be attached to an app's instance (app_host.py's `attach`, after:
-                                       the app, in no task, put in the agent's -- a task of the two, the agent in none
-                                       -- else the agent, in none, put in the app's; both in tasks already, the agent
-                                       moved to the app's only when `move` (the reader's own attaching, from the app's
-                                       panel), else just attached (an agent using an app another task holds) -- its
-                                       task changed first, so whoever hears of the attaching finds it there
+    link(g, instance, channel, move)   an agent to be attached to an app's instance: the app, in no task, put in the
+                                       agent's -- a task of the two, the agent in none -- else the agent, in none, put
+                                       in the app's; both in tasks already, the agent moved to the app's only when
+                                       `move` (the reader's own attaching, from the app's panel), else nothing: an
+                                       agent is attached only to the apps of its task (access.py) -> whether the two
+                                       are in one task now, attached. Its task changed first, so whoever hears of the
+                                       attaching finds it there
     unlink(g, instance, channel)       an agent detached from an app by the reader: in its task, taken out of it (and so
                                        detached from every app of it), else only detached
     closed(g, instance)                an app's instance closed: out of its task
     on_load(g)                         the host's records of a gatherer read (app_host.py's `loaded_then`): a gatherer
-                                       agent's attachments dropped (kept before it was attached to none); and once, the
+                                       agent's attachments dropped (kept before it was attached to none); once, the
                                        items sharing an app made one task (tasks.py's `group`), what was kept before
-                                       apps were items
+                                       apps were items; and every attachment of an agent to an app outside its task
+                                       dropped -- what `link` once made of an agent using an app another task held --
+                                       the agent told, when it could use it only so (access.py)
+
+Each change of the tasks has what the agents may use through them settled after (access.py's `settle`): an agent
+gaining or losing an app's instance is told.
 
 A gatherer's own agent (sessions.py's COORDINATOR) is in no task, and attached to no app (`attachable`, the host's
 check): it reaches every app without (tool_gateway.py)."""
 
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import sessions, tasks, tool_gateway
+from . import access, sessions, tasks, tool_gateway
 from app_kit import AppError
 
 RING: Optional[Callable] = None         # the server's hub.ring: the page told the tasks changed (server.py)
@@ -88,26 +94,47 @@ def sync(gatherer: str, before: Dict[str, int], after: Dict[str, int]) -> Dict[s
 def change(gatherer: str, do: Callable[[], object]) -> Tuple[object, Dict[str, List[str]]]:
     """`do()`, a change of the gatherer's tasks (tasks.py), the attachments made to follow it (`sync`), the page told ->
     (what `do` returned, the attachments made)."""
+    host = _host()
+    if host is not None:
+        host.instances_of(gatherer)                     # its records read first: what its agents may use, noted
     before = dict(tasks.of(gatherer)["tasked"])
     got = do()
     attached = sync(gatherer, before, dict(tasks.of(gatherer)["tasked"]))
     _ring(gatherer)
+    access.settle(gatherer)
     return got, attached
 
 
-def link(gatherer: str, instance: str, channel: str, move: bool = False) -> None:
-    """An agent attached to an app's instance (module doc)."""
+def link(gatherer: str, instance: str, channel: str, move: bool = False) -> bool:
+    """An agent to be attached to an app's instance (module doc) -> whether they are in one task now, attached."""
     if not channel or coordinator(channel):
-        return
+        return False
     item = tasks.app_item(instance)
     has = tasks.of(gatherer)["tasked"]
-    mine, its = has.get(channel), has.get(item)
+    mine, its = _task_of(has, channel), has.get(item)
     if its is not None and mine == its:
-        return
+        host = _host()
+        if host is not None:
+            host.attach(gatherer, instance, channel, by="task")
+        return True
     if its is None:
         change(gatherer, lambda: tasks.add(gatherer, channel, [item]))
     elif mine is None or move:
         change(gatherer, lambda: tasks.add(gatherer, item, [channel]))
+    else:
+        return False
+    return True
+
+
+def _aliases(channel: str) -> Tuple[str, ...]:
+    """A channel and the other its session is known by (its own id, the one it was started under)."""
+    rows = SESSIONS.list() if SESSIONS is not None else []
+    row = next((r for r in rows if channel in (r.get("session_id"), r.get("started_as"))), None)
+    return access.channels_of(row) if row is not None else (channel,)
+
+
+def _task_of(has: Dict[str, int], channel: str) -> Optional[int]:
+    return next((has[c] for c in _aliases(channel) if c in has), None)
 
 
 def unlink(gatherer: str, instance: str, channel: str) -> None:
@@ -131,8 +158,8 @@ def closed(gatherer: str, instance: str) -> None:
 
 
 def on_load(gatherer: str) -> None:
-    """A gatherer's records read: its own agent's attachments dropped; once, the items sharing an app made one task
-    (module doc)."""
+    """A gatherer's records read: its own agent's attachments dropped; once, the items sharing an app made one task;
+    every attachment outside a task dropped (module doc)."""
     host = _host()
     if host is None:
         return
@@ -144,9 +171,38 @@ def on_load(gatherer: str) -> None:
             host.detach(gatherer, i, c, by="dashboard")
         except AppError:
             continue
-    if tasks.grouped(gatherer):
-        return
+    if not tasks.grouped(gatherer):
+        with host.lock:
+            held = [(i, sorted(host.attached.get(i, ()))) for i, inst in host.instances.items()
+                    if inst.gatherer == gatherer]
+        links = [[tasks.app_item(i), *(c for c in cs if not coordinator(c))] for i, cs in held]
+        change(gatherer, lambda: tasks.group(gatherer, links))
+    strays(gatherer)
+    access.settle(gatherer)                             # what its agents may use, noted: changes after are told
+
+
+def strays(gatherer: str) -> List[Tuple[str, str]]:
+    """Each attachment of an agent to an app's instance outside its task dropped (module doc); the agent told, where it
+    could use the instance only so -> [(instance id, channel)] dropped."""
+    host = _host()
+    if host is None:
+        return []
+    has = tasks.of(gatherer)["tasked"]
     with host.lock:
-        held = [(i, sorted(host.attached.get(i, ()))) for i, inst in host.instances.items() if inst.gatherer == gatherer]
-    links = [[tasks.app_item(i), *(c for c in cs if not coordinator(c))] for i, cs in held]
-    change(gatherer, lambda: tasks.group(gatherer, links))
+        held = [(i, inst, sorted(host.attached.get(i, ()))) for i, inst in host.instances.items()
+                if inst.gatherer == gatherer]
+    dropped = []
+    for iid, inst, cs in held:
+        its = has.get(tasks.app_item(iid))
+        for c in cs:
+            if its is not None and _task_of(has, c) == its:
+                continue
+            try:
+                host.detach(gatherer, iid, c, by="access")
+            except AppError:
+                continue
+            dropped.append((iid, c))
+            if access.why(access.row_of(gatherer, c), inst) is None and access._started(gatherer, c):
+                host.tell_agent(gatherer, c, f"You can no longer use {access.shown(inst)}: it is not in your task.",
+                                {"can": False, "group": gatherer, "app": inst.app, "instance": iid})
+    return dropped

@@ -22,7 +22,10 @@ export interface CatalogApp {
   kind?: string;
   source?: string;
   commit?: string;
-  offer?: string;
+  /** who may use its instances: "task" (the agents in its task) or "group" (every agent of the group) */
+  access?: string;
+  /** it can be opened with an agent of its own (its manifest's [agent] offered) */
+  with_agent?: boolean;
   instances?: string;
   tools?: string[];
   tokens?: number;
@@ -50,7 +53,7 @@ export interface Catalog {
 /** What the page around it gives it. */
 export interface PageHooks {
   /** The app opened where things start (a new tab, in its group). */
-  open: (app: CatalogApp) => Promise<void>;
+  open: (app: CatalogApp, withAgent?: boolean) => Promise<void>;
   /** The apps installed changed: the page reads them again, closes the panels of those gone. */
   changed: () => Promise<void>;
   /** A folder shown in the computer's file manager. */
@@ -201,7 +204,7 @@ function section(title: string, n: number, rows: HTMLElement[], none: string, hi
 }
 
 const windows = (a: CatalogApp): number => Object.values(a.open || {}).reduce((x, y) => x + y, 0);
-const whoGets = (a: CatalogApp): string => (a.offer === "always" ? "Every agent" : "Agents attached to it");
+const whoGets = (a: CatalogApp): string => (a.access === "group" ? "Every agent of a group" : "The agents in its task");
 
 function badges(a: CatalogApp): HTMLElement[] {
   const out = [
@@ -343,6 +346,7 @@ function moreButton(a: CatalogApp): HTMLElement {
     if (b.getAttribute("aria-expanded") === "true") return closeMenu();
     menu(b, [
       ["Open", () => open(a)],
+      ...(a.with_agent ? ([["Open with an agent", () => open(a, true)]] as [string, () => void][]) : []),
       ["Details", () => select(a.name, true)],
       ...(page.updates[a.name] ? ([["Update…", () => void stageUpdate(a, asked)]] as [string, () => void][]) : []),
       ["Uninstall…", () => confirmUninstall(a, asked)],
@@ -391,13 +395,13 @@ function select(name: string | null, keep = false): void {
   render();
 }
 
-function open(a: CatalogApp): void {
+function open(a: CatalogApp, withAgent = false): void {
   const hooks = page.hooks;
   if (!hooks) return;
-  page.note = `Opening ${a.label}…`;
+  page.note = withAgent ? `Opening ${a.label} with an agent…` : `Opening ${a.label}…`;
   render();
   hooks
-    .open(a)
+    .open(a, withAgent)
     .then(() => (page.note = ""))
     .catch((e: Error) => (page.note = `${a.label} couldn't be opened: ${e.message}`))
     .finally(render);
@@ -433,13 +437,16 @@ function details(a: CatalogApp): HTMLElement {
         { type: "button", class: "ap-btn primary", onclick: () => open(a) },
         a.instances === "one" ? `Open ${a.label}` : `Open ${art} ${a.label}`,
       ),
+      a.with_agent
+        ? el("button", { type: "button", class: "ap-btn", onclick: () => open(a, true) }, "With an agent")
+        : null,
     ),
     el("h3", { text: "What agents get" }),
     el(
       "div",
       { class: "ap-kv" },
       el("span", { text: "Who" }),
-      el("span", { text: a.offer === "always" ? "every agent" : `only agents attached to ${art} ${a.label}` }),
+      el("span", { text: a.access === "group" ? "every agent of the group" : `only the agents in its task` }),
       el("span", { text: "Tools" }),
       el("span", {}, `${(a.tools || []).length}, `, tokens(a.tokens || 0, "per agent")),
     ),

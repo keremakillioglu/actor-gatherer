@@ -69,6 +69,12 @@ NAME_CHARS = 120                # the longest name the user gives an instance
 TOLD = (*app_kit.NOTICE_TYPES, "app_closed")   # records that change what the page shows of the gatherer's apps
 
 
+def stream_of(stream: str, instance: Instance) -> str:
+    """The stream an app's message to its agents is told in, named for the instance it is from -- "Browser · work
+    (<id>)" -- so an agent that may use several of the app's tells them apart, and names it in a call (`instance`)."""
+    return f"{stream} · {instance.name} ({instance.id})" if instance.name else f"{stream} ({instance.id})"
+
+
 def home_apps() -> str:
     return os.path.join(home.HOME, "apps")
 
@@ -114,6 +120,12 @@ class AppHost:
         # who may be attached, (gatherer, channel) -> bool: the server's (task_links.py's `attachable`: not a gatherer's
         # own agent, which reaches every app attached to none); none set, anyone
         self.attachable: Optional[Callable[[str, str], bool]] = None
+        # who may use an instance, (instance, caller's row-less (gatherer, channel)) -> bool: the server's (access.py's
+        # `may_use`, every way in); none set, the agents attached to it
+        self.may_use: Optional[Callable[[Instance, Caller], bool]] = None
+        # told a gatherer's instances changed -- one opened, closed, renamed or moved to another group -- for what its
+        # agents may use to be settled (access.py's `settle`, the server's); none set, nothing
+        self.changed: Optional[Callable[[str], None]] = None
         self.subs: List[_Sub] = []
         self.asked: Dict[str, dict] = {}                       # a call its panel answers, by its id: {done, result}
         self.page_wait, self.tool_wait = PAGE_WAIT, TOOL_WAIT
@@ -285,6 +297,7 @@ class AppHost:
             self.attached.setdefault(made.id, set())
         self._record(made, "app_opened", {"instance": made.to_dict(), "by": by})
         self._ring(made)
+        self._changed(gatherer)
         return made
 
     def adopt(self, name: str, gatherer: str, instance_id: str, folder: Optional[str], channel: str) -> Instance:
@@ -376,6 +389,7 @@ class AppHost:
             self._record(i, "app_detached", {"by": by}, channel=c)
         self._record(i, "app_closed", {"by": by})
         self._ring(i)
+        self._changed(gatherer)
 
     def rename(self, gatherer: str, instance_id: str, name: Any, by: str = "user") -> Instance:
         """The instance called `name` by the user -- its spaces made one, NAME_CHARS at most; "": not named, its own title
@@ -388,6 +402,7 @@ class AppHost:
             i = self.instances[i.id] = replace(self.instances.get(i.id, i), name=text)
         self._record(i, "app_named", {"name": text, "by": by})
         self._ring(i)
+        self._changed(gatherer)
         return i
 
     def regroup(self, gatherer: str, instance_id: str, to: str) -> Instance:
@@ -401,6 +416,8 @@ class AppHost:
             i = self.instances[i.id] = replace(self.instances.get(i.id, i), gatherer=to)
         self._record(i, "app_regrouped", {"group": to, "was": gatherer})
         self._ring(i)
+        self._changed(gatherer)
+        self._changed(to)
         return i
 
     def folded(self, was: str, instance: Instance, title: str) -> None:
@@ -510,6 +527,35 @@ class AppHost:
             raise AppError("this host has no agents to message", 404)
         return m
 
+    def _may_use(self, instance: Instance, caller: Caller) -> bool:
+        if self.may_use is not None:
+            return bool(self.may_use(instance, caller))
+        return caller.channel in self.agents_of(instance)
+
+    def _reaches(self, instance: Instance, channel: str) -> bool:
+        """Whether an app may put events in, or read them from, the channel of the agent `channel`: one attached to the
+        instance, or one that may use it (a group's app, used by an agent of the group attached to none)."""
+        return channel in self.agents_of(instance) or (self.may_use is not None and self._may_use(
+            instance, Caller(channel=channel, gatherer=instance.gatherer)))
+
+    def _changed(self, gatherer: str) -> None:
+        if self.changed is not None:
+            try:
+                self.changed(gatherer)
+            except Exception as exc:  # noqa: BLE001 - what agents are told is never the change's failure
+                print(f"dashboard: apps' access in {gatherer} not settled: {exc}", file=sys.stderr, flush=True)
+
+    def tell_agent(self, gatherer: str, channel: str, text: str, record: dict) -> None:
+        """An agent told of a change of the instances it may use (access.py's `settle`): `text`, a message in its
+        conversation from the stream "Apps", and `record` kept beside it (`app_access`), both in its channel."""
+        from . import access                                        # (it imports nothing of this module)
+        own = {"app": str(record.get("app") or "apps"), "instance": str(record.get("instance") or "")}
+        t = next(t for t in app_kit.HOST_TYPES if t.name == "app_access")
+        said = {**app_kit.events.context_stream(access.STREAM, access.AUTHOR, text), "properties": own}
+        self._write(gatherer, {"channel": channel},
+                    [said, {"type": "app_access", "payload": {**record, "at": time.time()}, "properties": own}],
+                    [_type_json(t)])
+
     def panels_of(self, instance: Instance) -> int:
         """How many panels of the instance are open: its streams that take its backend's messages."""
         with self.lock:
@@ -535,8 +581,8 @@ class AppHost:
         m = self.hosted(name).manifest
         if instance.app != name:
             raise AppError(f"{instance.id}: not an instance of {name}", 403)
-        if channel is not None and channel not in self.agents_of(instance):
-            raise AppError(f"{channel}: not an agent attached to this {m.label}", 403)
+        if channel is not None and not self._reaches(instance, channel):
+            raise AppError(f"{channel}: not an agent that may use this {m.label}", 403)
         if not isinstance(events, list) or not events:
             raise AppError("events: a list of {type, payload, ...}")
         out, declared = [], {}
@@ -565,6 +611,11 @@ class AppHost:
             # the host's properties on the event itself: ag declares a property an event carries on a type that lacks
             # it (the context types), where one given for the whole insert must be its type's already
             payload = e["payload"]
+            if t == "context_stream" and isinstance(payload, dict) and isinstance(payload.get("stream"), str) \
+                    and instance.id not in payload["stream"]:            # which one it is from, as tools name it
+                with self.lock:
+                    now = self.instances.get(instance.id, instance)
+                payload = {**payload, "stream": stream_of(payload["stream"], now)}
             if channel is None and t in app_kit.CONTEXT_TYPES and home.merged() and isinstance(payload, dict):
                 payload = {**payload, "group": instance.gatherer}   # the home's one database: its group's agents alone
             ev = {"type": t, "payload": payload, **({"text": e["text"]} if isinstance(e.get("text"), str) else {}),
@@ -587,8 +638,8 @@ class AppHost:
         if refused:
             raise AppError(f"{', '.join(refused)}: not event types {name} may read", 403)
         agents = self.agents_of(instance)
-        if channel is not None and channel not in agents:
-            raise AppError(f"{channel}: not an agent attached to this {m.label}", 403)
+        if channel is not None and not self._reaches(instance, channel):
+            raise AppError(f"{channel}: not an agent that may use this {m.label}", 403)
         return _read(instance, types, after, channel, agents, min(max(1, limit), READ_MAX))
 
     # -- tools and the panel's own requests
@@ -605,8 +656,8 @@ class AppHost:
             return ToolResult.error(f"{tool}: not a tool of {m.label}")
         if t.handled_by == "panel" and from_panel:
             return ToolResult.error(f"{tool}: its panel answers it, not its backend")
-        if caller.channel is not None and not reaches_all and caller.channel not in self.agents_of(instance):
-            return ToolResult.error(f"not attached to this {m.label}")
+        if caller.channel is not None and not reaches_all and not self._may_use(instance, caller):
+            return ToolResult.error(f"you may not use this {m.label}: it is not in your task")
         try:
             got = self.ask_panel(name, instance, tool, dict(args or {}), caller) if t.handled_by == "panel" else \
                 self.backend(name).call(instance, tool, dict(args or {}), caller)

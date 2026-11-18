@@ -29,9 +29,11 @@ import time
 from typing import Optional
 
 import harness_kit
+from app_kit import AppError
 
-from . import (actions, app_agents, app_docs, app_host, app_schedules, avatars, branches, coordination, data, folders,
-               home, live, livedocs, migrating, page_build, saved, sessions, task_links, tool_gateway)
+from . import (access, actions, app_agents, app_docs, app_host, app_requests, app_schedules, avatars, branches,
+               coordination, data, folders, home, live, livedocs, migrating, page_build, saved, sessions, task_links,
+               tool_gateway)
 
 STATIC, INDEX = page_build.STATIC, page_build.INDEX   # frontend/'s build (vite.config.ts), built by page_build.py
 BUILD = page_build.COMMAND
@@ -183,6 +185,11 @@ class Server:
         task_links.RING, task_links.SESSIONS = self.hub.ring, self.sessions   # a task's agents attached to its apps
         self.app_host.loaded_then = task_links.on_load
         self.app_host.attachable = task_links.attachable              # a gatherer's own agent: attached to no app
+        access.HOST, access.LEAD, access.ROWS = self.app_host, tool_gateway.lead, self.sessions.list   # who may use
+        self.app_host.may_use = access.may_use                        # an app's instance, asked at every call; what
+        self.app_host.changed = access.settle                         # an agent may use, settled as instances change
+        tool_gateway.DASHBOARD = self._dashboard_ls                   # the list as agents walk it (dashboard_ls)
+        app_requests.RING = lambda: self.hub.ring(None, what="list")  # an agent's asking to install: the page told
         self.app_host.told = lambda g: self.hub.ring(g, what="list")  # an app's notifications: the home read again
         self.app_host.agents = app_agents.Messenger(self.sessions)   # an app's own messages to its agents
         if live_updates:                                              # an app's actors from before it was an app,
@@ -205,6 +212,13 @@ class Server:
             threading.Thread(target=lambda: data.home([], known), name="ag-home-first", daemon=True).start()   # first
 
     # -- what the routes share (api/)
+
+    def _dashboard_ls(self, actor: str, where: str) -> str:
+        """dashboard_ls for an actor (coordination.py's `tree_text`), its refusal an app tool's (AppError)."""
+        try:
+            return self.crew.tree_text(actor, where)
+        except sessions.SessionError as exc:
+            raise AppError(str(exc)) from None
 
     def home_view(self, woken: bool = False) -> dict:
         """The home as the page gets it (`read_home`). One read serves every stream woken by the same change
@@ -235,7 +249,8 @@ class Server:
         return {**avatars.assign(got), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
                 "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "shells": started.shells(),
                 "home_dir": os.path.expanduser("~"),
-                "branches": self.branches.listed() if self.branches is not None else []}
+                "branches": self.branches.listed() if self.branches is not None else [],
+                "app_requests": app_requests.pending()}
 
     def dialog(self, sid: str) -> Optional[dict]:
         """What a session's terminal -- the dashboard's -- shows asking the user now, where a message typed into it
@@ -313,7 +328,9 @@ class Server:
         if self.keeps_actions:
             actions.ENABLED = False
         if tool_gateway.HOST is self.app_host:          # the gateway's no longer: no session is given a closed host's
-            tool_gateway.HOST, tool_gateway.ORIGIN = None, ""
+            tool_gateway.HOST, tool_gateway.ORIGIN, tool_gateway.DASHBOARD = None, "", None
+        if access.HOST is self.app_host:
+            access.HOST = None
         if self.address_file:
             home.forget_address(self.address_file, sessions.DASHBOARD)
         if self.socket is not None:

@@ -89,6 +89,7 @@ class _Home(Answer):
     shells: Optional[List[Any]] = None
     home_dir: Optional[str] = None
     branches: Optional[List[Any]] = None
+    app_requests: Optional[List[Any]] = None    # agents' asking to install, update or uninstall an app (app_requests.py)
 
 
 Home = _Home

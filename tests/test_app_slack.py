@@ -292,8 +292,8 @@ class Host(app_kit.Host):
 class ManifestTest(unittest.TestCase):
     def test_it_loads_as_an_app_that_starts_its_own_agent_and_offers_its_tools_to_attached_ones(self):
         m = app_kit.load(FOLDER)
-        self.assertEqual((m.name, m.label, m.instances, m.offer), ("slack", "Slack", "one", "attached"))
-        self.assertTrue(m.agent.start)
+        self.assertEqual((m.name, m.label, m.instances, m.access), ("slack", "Slack", "one", "task"))
+        self.assertTrue(m.agent.offered)
         self.assertEqual([t.mcp("slack")["name"] for t in m.tools], ["slack_read", "slack_search", "slack_draft"])
         self.assertEqual([e.name for e in m.events], ["slack.drafted", "slack.sent", "slack.discarded"])
         self.assertTrue(m.capabilities.message_agents and m.capabilities.actors and m.capabilities.notify)
