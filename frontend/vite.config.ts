@@ -28,7 +28,17 @@ export default defineConfig({
     host: "127.0.0.1", // as the dashboard's own address
     proxy: Object.fromEntries(
       // the Host kept as the page's, as the dashboard's own-page check (server.py's own_page) expects
-      ["/api", "/avatars", "/vendor", "/views", "/preview", "/browser", "/docwriter"].map((p) => [
+      [
+        "/api",
+        "/avatars",
+        "/icons",
+        "/manifest.webmanifest",
+        "/vendor",
+        "/views",
+        "/preview",
+        "/browser",
+        "/docwriter",
+      ].map((p) => [
         p,
         { target: dashboard, changeOrigin: false, ws: true }, // ws: the page's streams' socket, /api/ws
       ]),

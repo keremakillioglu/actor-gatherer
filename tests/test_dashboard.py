@@ -578,6 +578,38 @@ class PageTest(HomeBase):
             get("/api/read?gatherer=g&read_id=x")
         self.assertEqual(caught.exception.code, 404)
 
+    def test_the_page_installs_as_an_app_with_its_icons(self):
+        httpd = server.serve("127.0.0.1", 0, live_updates=False)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(httpd.shutdown)
+        url = f"http://127.0.0.1:{httpd.server_port}"
+        get = lambda path: urllib.request.urlopen(url + path, timeout=10)  # noqa: E731
+        size = lambda png: (int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big"))  # noqa: E731
+        r = get("/manifest.webmanifest")
+        self.assertEqual(r.headers["content-type"], "application/manifest+json")
+        app = json.load(r)
+        self.assertEqual((app["name"], app["start_url"], app["display"]), ("AGUI", "/", "standalone"))
+        for icon in app["icons"]:                         # each there, a PNG of the size it says
+            r = get(icon["src"])
+            png = r.read()
+            self.assertEqual((r.headers["content-type"], png[:8]), ("image/png", b"\x89PNG\r\n\x1a\n"))
+            self.assertEqual("%dx%d" % size(png), icon["sizes"])
+        kinds = {(i["purpose"], i["sizes"]) for i in app["icons"]}
+        self.assertTrue({("any", "192x192"), ("any", "512x512"), ("maskable", "512x512")} <= kinds)  # Chrome's install
+        self.assertEqual(size(get("/icons/apple-touch-icon.png").read()), (180, 180))
+        for other in ("/icons/..", "/icons/logo.py", "/icons/%2e%2e%2fapi%2fpage.py"):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                get(other)
+            self.assertEqual(caught.exception.code, 404)
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        with open(os.path.join(root, "frontend", "index.html")) as fh:
+            head = fh.read().split("</head>")[0]
+        self.assertIn('<link rel="manifest" href="/manifest.webmanifest">', head)
+        self.assertIn('<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">', head)
+        with open(os.path.join(root, "desktop", "icon.png"), "rb") as fh:   # the desktop app's, in the Dock
+            self.assertEqual(size(fh.read(24)), (1024, 1024))
+
 
 class CommandTest(HomeBase):
     def test_out_writes_the_page_and_a_bad_argument_is_refused(self):

@@ -8,7 +8,7 @@
   "scripts": {
     "postinstall": "install-electron",
     "build": "tsc -p tsconfig.build.json",
-    "start": "tsc -p tsconfig.build.json && electron .",
+    "start": "tsc -p tsconfig.build.json && node scripts/bundle.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types --no-warnings test/*.test.ts",
     "e2e": "tsc -p tsconfig.build.json && playwright test"
