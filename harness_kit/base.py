@@ -290,6 +290,81 @@ def rule(line: str) -> bool:
     return len(line) >= 20 and line.count("─") >= 0.8 * len(line)
 
 
+#: Above a menu's options, how far its head is looked for (`menu_of`).
+MENU_HEAD_ROWS = 24
+#: A menu option's number ("1. Update now"), and the mark of the one in use now ("✔ Auto"): not its label.
+MENU_NUMBER = re.compile(r"^(?:\d+\.\s+)?(?:✔\s+)?")
+
+
+def menu_of(lines: List[str], marker: str, foot: "re.Pattern") -> Optional[dict]:
+    """A menu as a screen's rows show it (the last one in them), in `Harness.menu_shown`'s shape: its options in rows one
+    under the other, each label starting in the same column -- the option the cursor is on with `marker` before it, a
+    label that wraps going on in the rows under it, further in -- then a row its `foot` matches (its keys: "Enter to
+    confirm · Esc to cancel"), blank rows between them or not; over its options, its head: up to a rule ("───"), two
+    blank rows or MENU_HEAD_ROWS, rows with no letter or digit (a logo) left out -- its first row its title, the rest its
+    lines, each a paragraph (rows with no blank row between them, which the terminal wrapped, joined again), its last
+    one ending "?" its question. None where the rows show none."""
+    for end in range(len(lines) - 1, -1, -1):
+        if not foot.match(lines[end].strip()):
+            continue
+        last = end - 1
+        while last >= 0 and not lines[last].strip():
+            last -= 1
+        top = last
+        while top > 0 and lines[top - 1].strip():
+            top -= 1
+        marked = [r for r in range(top, last + 1) if lines[r].lstrip().startswith(marker + " ")]
+        if last < 0 or len(marked) != 1:
+            continue
+        row = lines[marked[0]]
+        col = len(row) - len(row.lstrip()) + len(marker)
+        while col < len(row) and row[col] == " ":
+            col += 1
+        indent = lambda line: len(line) - len(line.lstrip(" "))     # noqa: E731
+        first = marked[0]                    # its options: the rows over the marked one starting at its labels' column
+        while first > top and indent(lines[first - 1]) >= col:      # (or further in: a label that wraps)
+            first -= 1
+        while first < marked[0] and indent(lines[first]) > col:     # a wrapped row with no label over it: the head's
+            first += 1
+        options: List[str] = []
+        cursor = None
+        for r in range(first, last + 1):
+            line = lines[r]
+            if r == marked[0] or indent(line) == col:
+                cursor = len(options) if r == marked[0] else cursor
+                options.append(MENU_NUMBER.sub("", line[col:].strip(), count=1))
+            elif options and indent(line) > col:
+                options[-1] = f"{options[-1]} {line.strip()}"
+            else:
+                options = []
+                break
+        if len(options) < 2 or cursor is None:
+            continue
+        rows: List[str] = []
+        blanks, r = 0, first - 1
+        while r >= 0 and first - r <= MENU_HEAD_ROWS and not rule(lines[r]):
+            text = lines[r].strip()
+            blanks = 0 if text else blanks + 1
+            if blanks >= 2:
+                break
+            if not text or any(ch.isalnum() for ch in text):
+                rows.insert(0, text)
+            r -= 1
+        while rows and not rows[0]:
+            rows.pop(0)
+        paragraphs, run = [], []                     # under its title, the rows the terminal wrapped joined again
+        for text in rows[1:] + [""]:
+            if text:
+                run.append(text)
+            elif run:
+                paragraphs.append(" ".join(run))
+                run = []
+        question = next((x for x in reversed(paragraphs) if x.endswith("?")), "")
+        return {"title": rows[0] if rows else "", "question": question,
+                "lines": [x for x in paragraphs if x != question], "options": options, "cursor": cursor, "restarts": []}
+    return None
+
+
 def typed_in(screen, first: int, last: int, start: int = 0) -> str:
     """What is typed in rows `first`..`last` of `screen` (harness_kit.screen's), from column `start` of the first: a
     box's placeholder, drawn faint, left out."""
@@ -634,6 +709,30 @@ class Harness(ABC):
         where it shows none -- or the harness has no rule for it. What a reader goes by where no hook reported it."""
         return None
 
+    # ---- what it asks in its terminal as it starts, before its message box first has the keys
+
+    def menu_shown(self, screen) -> Optional[dict]:
+        """A menu its terminal's screen shows as it starts -- an update it offers, a folder to trust, a project's MCP
+        server to use, a way to sign in -- with the keys, its cursor hidden: {title (its head), question (the row it
+        asks in, or ""), lines (what it shows besides), options (their labels, in order), cursor (the place of the
+        option it would pick now), restarts (the places of options after which it ends, to update itself: started
+        again then, with the message it was started with)}; None where it shows none, or the harness has no rule for
+        one. Read only until its message box first has the keys: a menu after that is one the reader opened in it."""
+        return None
+
+    #: The keys that move a menu's cursor one option up and down, and pick the one it is on.
+    menu_up, menu_down, menu_enter = "\x1b[A", "\x1b[B", "\r"
+
+    def pick_keys(self, shown: dict, place: int) -> List[str]:
+        """The keys that pick option `place` of a menu or dialog its screen shows (`menu_shown`'s, or
+        `permission_shown`'s), each typed on its own: its cursor moved from where it is to that option, `at_option`
+        (the cursor there, as its screen shows, before going on), then Enter. Raises AnswerError for no such option."""
+        options = shown.get("options") or []
+        if not isinstance(place, int) or isinstance(place, bool) or not 0 <= place < len(options):
+            raise AnswerError("pick one of its options")
+        gap = place - int(shown.get("cursor") or 0)
+        return [*([self.menu_down] * gap if gap > 0 else [self.menu_up] * -gap), at_option(place), self.menu_enter]
+
 
 #: Where ag's launchers point a harness's own hooks (`permission_hooks`' url): its hook server's URL for the run, after
 #: /h/<gatherer>/ (and /c/<folder>/), then this -- a path no model endpoint has (ag's proxy_hook.py's `reported`).
@@ -641,6 +740,13 @@ HOOK_PATH = "/ag/hooked"
 #: Among a permission's keys (`permission_keys`): not a key, but a check -- the dialog's cursor is on its option that
 #: denies, as its screen shows (`permission_shown`) -- the keys after it typed only then.
 AT_DENY = "\x00at-deny"
+#: Among a menu's keys (`pick_keys`), the same for an option: AT_OPTION, then its place.
+AT_OPTION = "\x00at:"
+
+
+def at_option(place: int) -> str:
+    """Among a menu's keys: not a key, but a check -- its cursor is on option `place`, as its screen shows."""
+    return f"{AT_OPTION}{place}"
 
 
 def permission_choice(choice) -> Tuple[bool, Optional[str]]:

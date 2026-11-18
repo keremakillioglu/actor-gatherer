@@ -6,7 +6,7 @@ import { useState, type CSSProperties } from "react";
 import { useChat } from "./context";
 import { Bubble } from "./Bubble";
 import { turnsSeen } from "./store";
-import { waitsOf } from "./view";
+import { currentOf, waitsOf } from "./view";
 import { Status, StoppedLine, Working } from "./Working";
 import type { ChatFeed, Opening } from "./types";
 
@@ -64,13 +64,15 @@ export function Pending({ w }: { w: Waiting }) {
 /** The turn a message opened, not stored yet (view.ts's openingOf): its message in full, as the terminal shows it; the
  * actor at work under it, from when it was sent -- or, the session not having had it for long (`unseen`), that, and the
  * way to its terminal, which may be asking something first; or how it stopped, Esc stopping it before the harness
- * recorded anything of it (`stopped`); what waits after it. Replaced by the stored turn, which counts from the same
- * moment. */
+ * recorded anything of it (`stopped`); or, its terminal showing a menu as it starts (an update, a folder to trust: the
+ * state "asking"), that it goes once that is answered, in the card below; what waits after it. Replaced by the stored
+ * turn, which counts from the same moment. */
 export function OpenedTurn({ o, interrupting }: { o: Opening; interrupting: boolean }) {
   const { feed, host } = useChat();
   const now = interrupting ? "Interrupting…" : "Working…";
   const w = waiting(feed);
   const asks = !!o.unseen && !!feed.info.session?.terminal && feed.terminalView;
+  const held = currentOf(feed)?.state === "asking";
   const key = seenKey(feed, o.cid, o.text);
   seeing(key);
   const grow = useGrowing(key);
@@ -87,7 +89,11 @@ export function OpenedTurn({ o, interrupting }: { o: Opening; interrupting: bool
     <>
       <div className={cls} style={grow ?? undefined}>
         <Bubble text={o.text} title="Sent to the agent: shown here until the gatherer has stored it" />
-        {o.unseen ? (
+        {held ? (
+          <div className="fl-pending">
+            <span className="lbl">Not sent yet: its terminal asks something first, below</span>
+          </div>
+        ) : o.unseen ? (
           <div className="fl-pending">
             <span className="lbl">
               Not seen by the session yet
@@ -104,7 +110,7 @@ export function OpenedTurn({ o, interrupting }: { o: Opening; interrupting: bool
         )}
         {w ? <Pending w={w} /> : null}
       </div>
-      {o.unseen ? null : <Status work={{}} now={now} />}
+      {o.unseen || held ? null : <Status work={{}} now={now} />}
     </>
   );
 }

@@ -17,14 +17,26 @@ A plain "No" or Esc interrupts the turn, which Claude Code's record says. Chat's
 
 Prompts no hook reports are read off the screen of a terminal the dashboard runs (harness_kit's `permission_shown`,
 sessions.py's `_watch_shown`): shown for a second with none recorded, the actor is "Waiting for you" and Chat shows
-the dialog as the screen has it, read-only, to answer in the terminal. That covers Claude Code's asks for a person
-alone (auto mode's "couldn't check this action", its Chrome block, some connector file sends: they skip the hook) and
-Codex's approvals, of which nothing is recorded. Allow and Deny type keys worked out from that same screen, the cursor
-checked to be on No before Enter.
+the dialog as the screen has it, each option a button that picks it there (sessions.py's `_pick`: the cursor moved to
+it, seen there, then Enter). That covers Claude Code's asks for a person alone (auto mode's "couldn't check this
+action", its Chrome block, some connector file sends: they skip the hook) and Codex's approvals, of which nothing is
+recorded. Allow and Deny type keys worked out from that same screen, the cursor checked to be on No before Enter.
 
-- [ ] **Codex's approvals answered from Chat**, and seen in a terminal outside the dashboard. Today Codex gets only
-  the read-only card, from the screen of a terminal the dashboard runs (`approval_shown`), and only where it asks at
-  all: manual mode. In auto mode (`--approve-for-me`) its reviewer decides. Nothing of an approval is in its rollout,
+The menus a harness shows as it starts, before its message box, are read the same way (harness_kit's `menu_shown`)
+until that box has had the keys a second: Codex's update offer ("Update now" ends it; the dashboard starts it again,
+with the message it was started with, once it exits 0) and its folder trust, Claude Code's folder trust, a project's
+new MCP server and its settings error, Antigravity's folder trust and sign-in. The message they hold back waits under
+the card ("Not sent yet").
+
+- [ ] **Claude Code not signed in hides its cursor at its message box** ("Not logged in · Run /login"), so its box is
+  never seen there: Chat's message is never typed in, and its startup menus stay read past the box. Seen with a
+  scratch CLAUDE_CONFIG_DIR; signed in, the cursor shows.
+- [ ] **A Codex update that fails** (npm can't write its global folder) exits non-zero: the terminal is left ended,
+  npm's error in it, the message not sent. Codex's own update offer comes back on its next start.
+
+- [ ] **Codex's approvals answered from Chat as Allow/Deny**, and seen in a terminal outside the dashboard. Today Codex
+  gets the card read off the screen of a terminal the dashboard runs (`approval_shown`), its options picked there by
+  keys, and only where it asks at all: manual mode. In auto mode (`--approve-for-me`) its reviewer decides. Nothing of an approval is in its rollout,
   and ag sees no model call for one. The way in is Codex 0.164's own `PermissionRequest` hook (it also has
   `PreToolUse`, `PostToolUse`, `Stop`, `Interrupt`), with two catches:
   - it runs a command only (no HTTP type): a small `ag` command reading the hook's JSON on stdin and POSTing it to

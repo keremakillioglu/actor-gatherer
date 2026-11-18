@@ -58,7 +58,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 from .base import (Action, AnswerError, Box, Call, CallKind, Fact, Facts, Follower, Harness, Kind, Part, RenameError,
-                   Shape, ToolCall, ToolResult, ask_arg, other_view, output_of, picked, rule, typed_in)
+                   Shape, ToolCall, ToolResult, ask_arg, menu_of, other_view, output_of, picked, rule, typed_in)
 
 MODEL_CALL = re.compile(r"/models/([^/:]+):(?:stream)?[gG]enerateContent$")
 CONVERSATION = re.compile(r"^Conversation ID:\s*([0-9a-fA-F-]{36})\s*$", re.M)
@@ -378,6 +378,12 @@ def error_of(payload) -> Tuple[Optional[str], Optional[int]]:
 
 
 TITLE = re.compile(r'^title:\s*"((?:[^"\\]|\\.)*)"', re.M)
+#: A menu it shows as it starts (1.5.8), before its message box: "Accessing workspace:" ... "Do you trust the contents
+#: of this project?" (a folder it was not given with `--add-dir`, nor trusted before: "Yes, I trust this folder", "No,
+#: exit"), and, not signed in on its Gemini API route, "Select login method:" (1. "Google OAuth", 2. "Use a Google
+#: Cloud project"): ">" before the option the cursor is on, "↑/↓ Navigate · enter Confirm" (or "Select") under them.
+MENU_MARK = ">"
+MENU_FOOT = re.compile(r"^↑/↓ Navigate · enter \w+")
 
 
 def _written(path: str) -> Optional[float]:
@@ -695,6 +701,10 @@ class Antigravity(Harness):
         if not lines[top + 1].startswith(">"):
             return Box.AWAY
         return Box.HOLDS if typed_in(screen, top + 1, bottom - 1, 1).strip() else Box.EMPTY
+
+    def menu_shown(self, screen) -> Optional[dict]:
+        """A menu it shows as it starts (MENU_FOOT's notes), its cursor hidden."""
+        return None if screen.cursor_shown else menu_of(screen.lines(), MENU_MARK, MENU_FOOT)
 
     def answer_keys(self, ask: dict, choice: dict) -> List[str]:
         """Its question dialog, a question at a time, each starting on its first option: an option picked by moving

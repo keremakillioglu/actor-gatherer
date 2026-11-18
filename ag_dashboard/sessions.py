@@ -121,7 +121,7 @@ from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlsplit
 
 import harness_kit
-from harness_kit.base import AT_DENY, Box
+from harness_kit.base import AT_DENY, AT_OPTION, Box
 from harness_kit.processes import end_group
 from harness_kit.screen import Screen
 
@@ -241,6 +241,10 @@ CLOSE_SECONDS = 3.0                # a permission's keys typed in: how long its 
 DENY_SECONDS = 1.5                 # a permission's No: how long its dialog is watched for the cursor to reach it (AT_DENY)
 SHOWN_SECONDS = 1.0                # a permission dialog shown with none recorded this long: what its screen shows is what
 #                                    it asks (data.py's `shown_ask`) -- its hook, where it calls one, records it sooner
+READY_SECONDS = 1.0                # a terminal's message box with the keys this long: its harness has started, its menus
+#                                    (an update, a folder to trust) behind it -- a menu after that is the reader's own
+#                                    (`_watch_shown`); Codex draws its composer for a moment between two of them
+DIALOG = "dialog"                  # what an ask is that only a terminal's screen shows (data.py's `shown_ask`): `_pick`
 CLEARED = b"\x1b[2J"               # a full screen clearing it, to draw it all again (Claude Code's, at its start and each resize)
 REDRAW_WAIT = 1.0                  # a full screen made a row shorter (`redraw`): how long it is given to draw, before it is put back
 BOX_SETTLE = 0.5                   # a terminal's message box not shown empty: how long its screen is watched for it to be (a
@@ -699,7 +703,12 @@ class _Term:
         self.harness: Optional[str] = None   # the session's harness and gatherer, as it was started
         self.gatherer: Optional[str] = None
         self.boxed: Optional[str] = None     # its message box as last seen after a stop key (`_read_terminal`)
-        self.shown: Optional[dict] = None    # the permission dialog its screen shows (`_watch_shown`), and `since`
+        self.shown: Optional[dict] = None    # the permission dialog its screen shows (`_watch_shown`), and `since` --
+        #                                      or, as it starts, a menu of its harness's (`menu`)
+        self.ready = False              # its message box seen with the keys READY_SECONDS on end: started (`_watch_ready`)
+        self.box_seen = 0.0             # since when its message box has had the keys, until then; 0: it has not now
+        self.prompt: Optional[str] = None    # the message it was started with (`terminal`)
+        self.restart = False            # started again once it ends, as its harness ends to update itself (`_pick`)
         self.drafted = 0                # characters the reader typed into its input box and has not sent (`drafted`)
         self.kept = False               # put away (`put_away`): its end is kept
         self.drawn = -1                 # where in what it printed it last cleared its screen (CLEARED), to draw it all
@@ -1332,6 +1341,7 @@ class Sessions:
                 tools = ([tool_gateway.endpoint(tool_gateway.actor_of(row))]
                          if prompt and tool_gateway.served(row) else [])
                 t = self._start_terminal(row, cols, rows, fullscreen, None if tools else prompt)
+                t.prompt = prompt
                 if prompt:
                     t.typed = time.time()
                     if not tools:
@@ -1544,6 +1554,8 @@ class Sessions:
                 s = self._row(session_id)
                 self._set(session_id, status="stopped", ended=time.time(), kept=time.time() if self.closing or t.kept else 0,
                           **({"turns": max(1, s["turns"])} if s and _has_calls(s["gatherer"], session_id) else {}))
+                if t.restart and code == 0 and not self.closing and s is not None:     # it updated itself (`_pick`)
+                    threading.Thread(target=self._restart, args=(session_id, t), daemon=True).start()
 
     def output(self, session_id: str, since: int, wait: float = 0.0):
         """What the session's terminal printed after byte `since`, waiting up to `wait` seconds for
@@ -1708,7 +1720,9 @@ class Sessions:
         opened after it asked (the process that asked is gone, and its dialog with it) or its screen shows no dialog
         (`_box` not AWAY: the keys would go into its message box); once its keys are in, its dialog closing is what
         settles it here (`_closed`). -> the answer, as `list` then has it: {call (what it answered: data.py's `id`),
-        summary, expect (what the harness's result for the call will hold), at}."""
+        summary, expect (what the harness's result for the call will hold), at}. A dialog only its screen shows: `_pick`."""
+        if ask.get("kind") == DIALOG:
+            return self._pick(session_id, ask, choice)
         permission = ask.get("kind") == answers.PERMISSION
         with self.lock:
             t = self.terms.get(session_id)
@@ -1741,12 +1755,62 @@ class Sessions:
         self._changed(gatherer, session_id)
         return sent
 
+    def _pick(self, session_id: str, ask: dict, choice: dict) -> dict:
+        """A dialog the session's terminal shows that no hook reported (data.py's `shown_ask`: a menu its harness shows
+        as it starts -- an update, a folder to trust -- or a permission only its screen says it asks) answered by
+        picking one of its options (`choice`: {"pick": its place}): its cursor moved there, seen there, then Enter
+        (harness_kit's `pick_keys`). Refused where the dashboard has no terminal for the session, something was typed
+        into it since it showed, or its screen no longer shows it as it was asked. An option its harness ends after, to
+        update itself (`restarts`), has its terminal started again once it ends well (`_restart`). Nothing is kept in
+        its gatherer: no model has had any of it. -> the answer, as `answer`'s."""
+        with self.lock:
+            t = self.terms.get(session_id)
+            if t is None:
+                raise SessionError("the dashboard does not run this session's terminal: answer it in the one that does")
+            if t.answering:
+                raise SessionError("an answer is being typed into it already")
+            if t.typed and ask.get("at") and t.typed >= ask["at"]:
+                raise SessionError("something was typed into its terminal since it showed this: finish there")
+            harness = (self._row(session_id) or {}).get("harness") or t.harness or ""
+            h = harness_kit.get(harness)
+            shown = self._shown(t, harness, menus=True)
+            if h is None or shown is None or (shown["title"], shown["question"], shown["options"]) != (
+                    ask.get("title"), ask.get("said"), ask.get("options")):
+                raise SessionError("its terminal no longer shows that: answer it there")
+            place = choice.get("pick") if isinstance(choice, dict) else None
+            keys = h.pick_keys(shown, place)         # AnswerError: no such option
+            sent = {"call": ask.get("id"), "summary": shown["options"][place], "expect": [], "at": time.time()}
+            self.answered[session_id] = sent
+            t.answering = True
+            t.restart = place in (shown.get("restarts") or [])
+            gatherer = (self._row(session_id) or {}).get("gatherer")
+        _note(t, f"picked {shown['options'][place]!r} in {shown['title'] or 'its menu'!r} from the page"
+                 f"{': started again once it ends' if t.restart else ''}")
+        threading.Thread(target=self._keys, args=(t, keys, None, harness), daemon=True).start()
+        self._changed(gatherer, session_id)
+        return sent
+
+    def _restart(self, session_id: str, t: _Term) -> None:
+        """The session's terminal `t` started again as it was -- its size, its screen, the message it was started with --
+        once its harness ended it to update itself, at a pick of the reader's (`_pick`'s `restarts`): the message,
+        not sent before it ended, goes this time."""
+        size = (t.screen.cols, t.screen.rows) if t.screen is not None else (120, 32)
+        try:
+            self.terminal(session_id, *size, fullscreen=t.fullscreen, prompt=t.prompt)
+        except SessionError as exc:
+            log = open(log_path(session_id), "a", encoding="utf-8")
+            with log:
+                log.write(f"--- {_now()} not started again after its update: {exc}\n")
+
     def _keys(self, t: _Term, keys: List[str], after: Optional[Callable[[], None]] = None, harness: str = "") -> None:
         typed = False
         try:
             for k in keys:
                 if k == AT_DENY:                     # not a key: the dialog's cursor on its No before going on
                     self._at_deny(t, harness)
+                    continue
+                if k.startswith(AT_OPTION):          # nor this: its cursor on the option picked
+                    self._at_option(t, harness, int(k[len(AT_OPTION):]))
                     continue
                 self._write(t, k.encode("utf-8"))
                 time.sleep(ANSWER_GAP)
@@ -1768,6 +1832,18 @@ class Sessions:
                 return
             if time.time() >= end:
                 raise SessionError(f"its dialog's cursor is not on No ({got and got['options'][got['cursor']]!r})")
+            time.sleep(0.1)
+
+    def _at_option(self, t: _Term, harness: str, place: int) -> None:
+        """Waits, up to DENY_SECONDS, for the cursor of the dialog or menu its screen shows to be on option `place`;
+        raises SessionError where it isn't -- the Enter that would pick there not typed."""
+        end = time.time() + DENY_SECONDS
+        while True:
+            got = self._shown(t, harness, menus=True)
+            if got is not None and got["cursor"] == place:
+                return
+            if time.time() >= end:
+                raise SessionError(f"its cursor is not on the option picked ({got and got['options'][got['cursor']]!r})")
             time.sleep(0.1)
 
     def _closed(self, t: _Term, harness: str, gatherer: Optional[str], session_id: str, sent: dict,
@@ -1810,27 +1886,34 @@ class Sessions:
             if t.screen is not None:
                 t.screen.resize(cols, rows)
 
-    def _shown(self, t: _Term, harness: str) -> Optional[dict]:
-        """The permission dialog the terminal's screen shows now (harness_kit's `permission_shown`); None: none, or not
-        known."""
+    def _shown(self, t: _Term, harness: str, menus: bool = False) -> Optional[dict]:
+        """The permission dialog the terminal's screen shows now (harness_kit's `permission_shown`) -- or, with `menus`, a
+        menu its harness shows as it starts (`menu_shown`, marked `menu`); None: none, or not known."""
         h = harness_kit.get(harness)
         with t.screen_lock:
             if h is None or t.screen is None:
                 return None
             try:
-                return h.permission_shown(t.screen)
+                got = h.permission_shown(t.screen)
+                if got is None and menus:
+                    got = h.menu_shown(t.screen)
+                    got = dict(got, menu=True) if got is not None else None
+                return got
             except Exception:  # noqa: BLE001 - a rule that fails on a screen says nothing of it
                 return None
 
     def _watch_shown(self, session_id: str, t: _Term) -> None:
-        """After the terminal drew: whether a permission dialog came or went on its screen (`shown`, with `since`) --
-        read only while something else than its message box has the keys (the cursor hidden), or one was shown. A
-        change wakes the page; one still shown SHOWN_SECONDS on, once more (data.py's `shown_ask`)."""
+        """After the terminal drew: whether a permission dialog came or went on its screen (`shown`, with `since`) -- or,
+        as it starts, a menu of its harness's (`_watch_ready`) -- read only while something else than its message box
+        has the keys (the cursor hidden), or one was shown. A change wakes the page; one still shown SHOWN_SECONDS on,
+        once more (data.py's `shown_ask`)."""
+        if not t.ready:
+            self._watch_ready(t)
         with t.screen_lock:
             look = t.screen is not None and (t.shown is not None or not t.screen.cursor_shown)
         if not look:
             return
-        got = self._shown(t, t.harness or "")
+        got = self._shown(t, t.harness or "", menus=not t.ready)
         sig = lambda d: (d["title"], d["question"], tuple(d["options"])) if d else None    # noqa: E731
         if sig(got) == sig(t.shown):
             return
@@ -1847,6 +1930,16 @@ class Sessions:
             timer = threading.Timer(SHOWN_SECONDS + 0.1, again)
             timer.daemon = True
             timer.start()
+
+    def _watch_ready(self, t: _Term) -> None:
+        """Whether the terminal's harness has started (`ready`): its message box seen with the keys READY_SECONDS on end,
+        as what it drew since shows -- its menus as it starts (an update it offers, a folder to trust) behind it."""
+        now = time.time()
+        if t.box_seen and now - t.box_seen >= READY_SECONDS:
+            t.ready = True
+            return
+        box = self._box(t, t.harness or "")
+        t.box_seen = (t.box_seen or now) if box in (Box.EMPTY, Box.HOLDS) else 0.0
 
     def _box(self, t: _Term, harness: str) -> Optional[str]:
         """What a message typed into the terminal now would go into, as its screen shows (harness_kit's `box`): a Box;
