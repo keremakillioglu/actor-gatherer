@@ -576,7 +576,7 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-barbox > .fl-bar { flex: 1 1 auto; border: 0; }
 .files .fl-acts { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 0;
   border-bottom: 1px solid var(--grid); }
-.files .fl-act { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0;
+.files .fl-act { display: inline-flex; align-items: center; justify-content: center; width: var(--ib); height: var(--ib); padding: 0;
   border: 0; border-radius: 5px; background: none; color: var(--ink-2); font-size: 16px; line-height: 1; cursor: pointer; }
 .files .fl-act:hover, .files .fl-act:focus-visible { background: var(--wash); color: var(--ink); }
 .files .fl-act[aria-pressed="true"] { background: var(--selected); color: var(--ink); }
@@ -591,8 +591,8 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-bar .g.run { background: var(--warning); animation: term-blink 1s steps(2) infinite; } .files .fl-bar .sub.run { color: var(--warning); }
 .files .fl-bar .sub.kd { color: var(--ink-2); }   /* the files of a kind, by its colour in the tree */
 .files .fl-bar .g.bg { background: var(--good); } .files .fl-bar .sub.bg { color: var(--ink-2); }   /* the Background dot */
-.files .fl-h .fold { flex: none; display: inline-flex; margin: -3px -4px -3px auto; padding: 3px; background: none; border: 0; border-radius: 4px;
-  color: var(--muted); cursor: pointer; }
+.files .fl-h .fold { flex: none; display: inline-grid; place-items: center; width: var(--ib); height: var(--ib); margin: -6px -8px -6px auto; padding: 0;
+  background: none; border: 0; border-radius: 7px; color: var(--muted); cursor: pointer; }
 .files .fl-h .tmp + .fold { margin-left: 0; }
 .files .fl-h .fold:hover { background: var(--wash); color: var(--ink); }
 .files .fl-sec { display: flex; flex-direction: column; min-height: 0; }
@@ -666,7 +666,10 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 .files .fl-cmd .g { flex: none; font-size: 10px; line-height: 18px; }
 .files .fl-cmd .g.ok { color: var(--good); } .files .fl-cmd .g.err { color: var(--critical); }
 .files .fl-cmd .g.run { color: var(--warning); animation: term-blink 1s steps(2) infinite; }
-.files .fl-cmd details { min-width: 0; flex: 1; } .files .fl-cmd summary { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.files .fl-cmd details { min-width: 0; flex: 1; } .files .fl-cmd summary { margin: 0; font-size: 12px; overflow-wrap: anywhere; list-style: none; }
+.files .fl-cmd summary::-webkit-details-marker { display: none; }
+.files .fl-cmd summary .tw { margin-right: 4px; }   /* the fold's chevron (00-base.css), as every fold's */
+.files .fl-cmd details[open] > summary .tw { transform: rotate(90deg); }
 .files pre.call, .files pre.out { font: 11px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--wash);
   border-radius: 4px; padding: 6px 8px; margin: 4px 0; max-height: 320px; overflow: auto; }
 .files .fl-pane { overflow: auto; min-width: 0; }

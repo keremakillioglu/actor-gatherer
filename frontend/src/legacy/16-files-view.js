@@ -210,7 +210,7 @@ function barActs() {
     act("Details", DETAILS_TIP, strokeIcon(ICONS.info, 14),
       () => setDetails(!state.details), !!state.details),
     canMinimize() ? act("Minimize the chat", MIN_TIP, strokeIcon(ICONS.minimize, 14), () => setChatMin(true)) : null,
-    act("Close this pane", $("pane-close").title, "×", () => $("pane-close").click(), null, "close"));
+    act("Close this pane", $("pane-close").title, strokeIcon(ICONS.x, 16), () => $("pane-close").click(), null, "close"));
 }
 // Turns are picked in the conversation at the right; the header only offers going back to the latest.
 function filesTools() {
@@ -285,7 +285,7 @@ function callView(call, ran = {}) {
 function fileView(f, rel, id) {
   const box = el("div", { class: "fv" }, el("div", { class: "fv-h" }, el("div", { class: "fv-path", text: rel(f.path) }),
     el("button", { type: "button", class: "fv-close", title: "Close the file", "aria-label": "Close the file",
-      onclick: () => { state.files.sel = null; keepingPlace(renderMain); } }, "×")));
+      onclick: () => { state.files.sel = null; keepingPlace(renderMain); } }, strokeIcon(ICONS.x, 16))));
   // the last call opened when it first shows -- the file opened, or a call new to it -- and left as the reader leaves it;
   // what git changed left out unless shown (gitSwitch)
   const shown = f.sources.map((s, i) => [s, i]).filter(([s]) => showGit || !s.git);
@@ -473,7 +473,8 @@ function filesRender({ info, session, running, writable, held }) {
   const cmds = el("div", { class: "fl-scroll", "data-keep": `files-cmds-${d.turn}`, "data-follow": "1" });
   commands.forEach((c, i) => cmds.append(el("div", { class: "fl-cmd" },
     el("span", { class: "g " + (c.error ? "err" : c.running && running ? "run" : "ok"), text: "●" }),
-    el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "k", text: `${i + 1}` }), callLabel(c, 140),
+    el("details", { id: `fl-${d.turn}-c${i}` }, el("summary", {}, el("span", { class: "tw", "aria-hidden": "true" }),
+      el("span", { class: "k", text: `${i + 1}` }), callLabel(c, 140),
       changedCount(c.changed)),
       cmdFiles(c).length ? el("div", { class: "fl-cmd-files" }, ...cmdFiles(c).map((p) => el("button", { type: "button", title: p,
         onclick: () => { state.files.sel = p; keepingPlace(renderMain); } }, ...((c.did || {})[p] || []).map((k) => kindMark(k, 11)),

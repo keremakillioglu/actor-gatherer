@@ -153,7 +153,9 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 sy
 /* they take the top row right of the actor's name, wrapping there when they need more */
 .controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; justify-content: flex-end; flex: 0 1 auto; min-width: 0; }
 .controls:empty { visibility: hidden; }
-.controls .details-btn { display: inline-flex; align-items: center; padding: 5px 7px; }
+.controls .details-btn { display: inline-grid; place-items: center; width: var(--ib); height: var(--ib); padding: 0; border: 0; border-radius: 7px;
+  background: none; color: var(--muted); }
+.controls .details-btn:hover { background: var(--wash); color: var(--ink); }
 /* a shell's Terminate (shellCard): a word beside its mark, so it is not taken for the pane's × */
 .controls .terminate { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; font-size: 12.5px; color: var(--ink-2); }
 .controls .terminate svg { display: block; }
@@ -161,6 +163,18 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 sy
   border-color: color-mix(in srgb, var(--critical) 55%, var(--ring)); }
 .pane-head .terminate { grid-area: views; }
 .controls .details-btn svg { display: block; }
-.controls .details-btn[aria-expanded="true"] { background: var(--selected); border-color: transparent; }
+.controls .details-btn[aria-expanded="true"] { background: var(--selected); color: var(--ink); }
 button { font: inherit; font-size: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 button:hover { background: var(--wash); }
+/* AN ICON BUTTON -- an icon alone, no words -- is var(--ib) square wherever it is (the top bar, the list's head, a group's
+   row, a pane's head, an app panel's corner, the files panel), bare at rest, a wash under the pointer, the selection's
+   tint while on. Its × and + are icons (ICONS.x, ICONS.plus; core/ui/glyphs.ts), never the characters. */
+:root { --ib: 28px; }
+/* A FOLD'S MARK, everywhere one folds (a group, a folder, a closed or saved line, a command, a History row, a directory): one
+   chevron, turned down while open -- whatever character the markup still holds for its words (hidden here) */
+:root { --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 3.5 10.5 8 6 12.5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+:is(.caret, .tw, .car, .h-tw) { display: inline-block; flex: none; width: 12px !important; height: 12px !important; font-size: 0 !important;
+  line-height: 0 !important; vertical-align: -1px; text-align: center; overflow: hidden; color: var(--muted); background: currentColor;
+  -webkit-mask: var(--chev) center / 12px 12px no-repeat; mask: var(--chev) center / 12px 12px no-repeat; transition: transform .15s; }
+:is(.caret, .tw, .car, .h-tw).open, .caret.down, .h-tw[aria-expanded="true"], [aria-expanded="true"] > :is(.caret, .tw) { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { :is(.caret, .tw, .car, .h-tw) { transition: none; } }

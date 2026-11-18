@@ -6,6 +6,7 @@
 // the theme, the agent in focus, an intent) comes back the same way. The old page (src/legacy/07-panes.js) keeps the
 // pane among its others, as it keeps an actor's.
 import { get, post } from "../../core/api/client";
+import { glyph } from "../../core/ui/glyphs";
 import { stream, type Stream } from "../../core/api/stream";
 import "./apps.css";
 import { desktop, nativePanes, nativeSoon, type NativePlace } from "./native";
@@ -242,7 +243,8 @@ export class AppPane {
     );
     // its panel closed (the app left open): a small × over its frame's top right corner, which the panel keeps clear
     // (app_kit/js/app.js's --ag-corner)
-    const x = el("button", "app-x", "×");
+    const x = el("button", "app-x");
+    x.append(glyph("x", 16));
     x.type = "button";
     x.title = x.ariaLabel = `Close this ${app.label} panel (the app stays open)`;
     x.addEventListener("click", (ev) => {

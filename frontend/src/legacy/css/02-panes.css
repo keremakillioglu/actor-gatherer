@@ -43,7 +43,8 @@
 .pane-who .badge, .pane-who .dw-badge { display: none; }
 .pane-who .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :is(.panes.split, :root.pane-mode .panes) .views button { padding: 3px 8px; }
-.pane-close { flex: none; border: 0; background: none; font-size: 18px; line-height: 1; padding: 5px 7px; color: var(--muted); }
+.pane-close { flex: none; border: 0; background: none; width: var(--ib); height: var(--ib); padding: 0; border-radius: 7px; align-items: center;
+  justify-content: center; color: var(--muted); }
 .pane-close:hover { color: var(--ink); background: var(--wash); }
 .pane-close[hidden] { display: none; }
 /* a phone's width, the pane alone: nothing else placed to show in its place -- its × (the head's, its Chat bar's, its

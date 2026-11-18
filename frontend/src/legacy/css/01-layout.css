@@ -141,7 +141,8 @@ button.agent-group:hover { color: var(--ink-2); }
 .list-btns { display: flex; gap: 2px; flex: none; }
 .list-top { display: none; }
 :root.list-folded .list-top { display: flex; flex: none; justify-content: center; padding: 6px 0 0; }
-.list-btn { border: 0; background: none; padding: 5px; border-radius: 6px; color: var(--muted); display: inline-flex; align-items: center; flex: none; }
+.list-btn { border: 0; background: none; width: var(--ib); height: var(--ib); padding: 0; border-radius: 7px; color: var(--muted); display: inline-grid;
+  place-items: center; flex: none; }
 .list-btn:hover { color: var(--ink); background: var(--wash); }
 .list-btn svg { display: block; }
 /* folded, the rail: 76px, or as wide as the reader dragged its right edge (--rail-w; widthGrip) */
@@ -151,7 +152,6 @@ button.agent-group:hover { color: var(--ink-2); }
 /* folded: over the rail, its buttons in one row -- open the list, hide -- small enough for 76px */
 :root.list-folded .list-top .list-btns { gap: 0; flex-wrap: wrap; justify-content: center; }
 :root.list-folded .list-top .lb-fold { order: -1; }
-:root.list-folded .list-top .list-btn { padding: 4px; }
 :root.list-folded #agents { display: none; }
 .rail, .monitor { display: none; }
 :root.list-folded .rail { display: flex; flex-direction: column; align-items: center; flex: 1; min-height: 0; padding: 8px 0; }

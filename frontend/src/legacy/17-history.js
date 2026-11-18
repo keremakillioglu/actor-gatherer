@@ -507,7 +507,7 @@ function histActions() {
       el("span", { class: "h-picked" }, ...(n ? [el("b", { text: plural(n, "message") }), ` · about ${compact(tokens)} tokens`
         + (actors > 1 ? ` · ${actors} actors` : "")] : ["Nothing selected"])),
       el("button", { type: "button", class: "h-x", title: "Close (Esc clears the selection)", "aria-label": "Close",
-        onclick: () => { hist.panel = false; hist.recOpen = null; hist.saving = null; histSelect(new Map()); } }, "×")),
+        onclick: () => { hist.panel = false; hist.recOpen = null; hist.saving = null; histSelect(new Map()); } }, strokeIcon(ICONS.x, 16))),
     ask,
     el("div", { class: "kinds" }, ...Object.entries(HIST_KINDS).filter(([, [label]]) => label).map(([k, [label]]) => el("button", { type: "button", ...off,
       title: `Give the selected history to the Gatherer's model: ${label.toLowerCase()}`, onclick: () => histMake(k) }, label))),

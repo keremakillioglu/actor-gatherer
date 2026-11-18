@@ -442,7 +442,7 @@ function railBox(g, id, view) {
       if (!view[what]) { lines.push(...peek()); continue; }          // its line not shown: those open in a pane, in view
       lines.push(el("button", { class: "r-fold", type: "button", "aria-expanded": unfolded ? "true" : "false",
         title: `${unfolded ? "Hide" : "Show"} the ${what} ${kids.length ? "folders and actors" : "actors"}`, onclick: () => toggleFold(name, k) },
-        `${unfolded ? "▾" : "▸"} ${name === "Closed" ? closedSays(g, id, items.length) : `${items.length} ${what}`}`));
+        foldMark(unfolded), ` ${name === "Closed" ? closedSays(g, id, items.length) : `${items.length} ${what}`}`));
       if (unfolded) lines.push(...kids.flatMap((f) => railClosed(g, f)), ...items.flatMap((a) => railRowsOf(g, a)));
       else lines.push(...peek());
       continue;

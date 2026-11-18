@@ -1307,7 +1307,7 @@ function foldRows(g, id, name, list) {
       : name === "Saved" ? `${shown ? "Hide" : "Show"} the saved actors that are closed: kept here, apart from the closed ones, till unsaved`
       : `${shown ? "Hide" : "Show"} the closed ${kids.length ? "folders and actors" : "actors"}`,
     onclick: () => toggleFold(name, k) },
-    `${shown ? "▾" : "▸"} `,
+    foldMark(shown), " ",
     shells ? plural(list.length, "terminal") : name === "Closed" ? closedSays(g, id, list.length) : `${list.length} ${name.toLowerCase()}`);
   if (shells) return [line, ...(shown ? list.map((s) => shellRow(g, s)) : [])];
   if (shown) return [line, ...kids.flatMap((f) => folderRows(g, f)), ...list.flatMap((a) => rowsOf(g, a, name))];

@@ -43,10 +43,10 @@ test("Details is one panel: the actor, its context and the Gatherer's work, one 
   await expect.poll(() => homes.sent()).toBe(true);
   await page.locator("#controls .details-btn").last().click();
   const drawer = page.locator(".drawer");
-  await expect(drawer.locator(".drawer-head button")).toHaveCount(1); // the close: no sides to pick
+  await expect(drawer.locator(".drawer-head button")).toHaveCount(0); // no sides to pick, no × of its own
   await expect(drawer.locator(".drawer-part > h4")).toContainText(["Actor", "Context", "Gatherer"]);
   await expect(drawer.locator(".facts")).toBeVisible();
-  await page.locator(".drawer-head .close").click();
+  await page.locator("#controls .details-btn").last().click(); // its button again closes it
   await expect(drawer).toHaveCount(0);
   // `/context` in the message box: the panel opened at its Context part
   await page.locator("#composer-text").fill("/context");

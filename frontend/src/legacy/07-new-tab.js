@@ -117,7 +117,7 @@ function ntLine(p) {
   const chip = (key, label, value, title, open, extra = {}) => el("button", { type: "button", class: "nt-chip", "data-pop": key,
     title, "aria-haspopup": open ? "menu" : undefined, "aria-expanded": open ? String(rowPop.key === key) : undefined,
     ...(open ? { onclick: (ev) => { if (rowPop.key === key) return closePop(); open(ev.currentTarget); } } : { disabled: "" }), ...extra },
-    el("span", { class: "lbl", text: label }), ...value, open ? el("span", { class: "caret", "aria-hidden": "true", text: "▾" }) : null);
+    el("span", { class: "lbl", text: label }), ...value, open ? el("span", { class: "caret down", "aria-hidden": "true", text: "▾" }) : null);
   return [
     chip("nt:in", "In", [el("span", { class: "val", text: placeName(p) })],
       p ? `Where the new actor goes: ${placeName(p)}${p.alone ? " (it shares context with no group)" : ""}` : "Make a group first: the folder button at the top of the list",

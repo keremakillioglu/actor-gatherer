@@ -1918,7 +1918,7 @@ function brRender() {
             el("span", { class: "nm", text: projectName(p) }), el("span", { class: "at", text: tildePath(p.path, home) }),
             el("span", { class: "on", text: checkedOut(p) })),
           el("button", { type: "button", class: "rm", title: `No longer one of ${g}'s sources (its actors' branches are left as they are)`,
-            "aria-label": `Remove ${projectName(p)}`, ...busy, onclick: () => brSources({ remove: p.path }) }, "×")))) : null,
+            "aria-label": `Remove ${projectName(p)}`, ...busy, onclick: () => brSources({ remove: p.path }) }, strokeIcon(ICONS.x, 14))))) : null,
       brPick.suggestions.length ? el("div", { class: "projects" }, el("div", { class: "lbl", text: "Where its actors work" }),
         ...brPick.suggestions.map((p) => el("button", { type: "button", class: "suggest", title: `${p.path}${p.remote ? "\n" + p.remote : ""}`,
           ...busy, onclick: () => brSources({ add: p.path }) },
@@ -1946,7 +1946,7 @@ function brRender() {
     harnessBadge(h), harnessName(h)));
   form.append(...[
     el("div", { class: "br-title" }, el("h3", {}, strokeIcon(ICONS.branch, 15), "New actor on a branch"),
-      el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => d.close() }, "×")),
+      el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => d.close() }, strokeIcon(ICONS.x, 16))),
     el("div", { class: "desc", text: `In ${g}. It works in a worktree of its source, on a new branch from the source's last commit; what it changes is merged into the source's folder as it changes it.` }),
     el("div", { class: "lbl", text: "Source" }),
     ...source,

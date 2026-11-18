@@ -71,8 +71,9 @@ keeps var(--ag-corner) clear at its right end, which this file sets on :root. */
   "use strict";
   const params = new URLSearchParams(location.search);
   const HOST = params.get("host") || "";                  // the dashboard's origin: the only one listened to
-  // what the page's × covers at the panel's top right (frontend/src/features/apps/apps.css's .app-x: 22px, 6px in)
-  document.documentElement.style.setProperty("--ag-corner", "34px");
+  // what the page's × covers at the panel's top right (frontend/src/features/apps/apps.css's .app-x: 28px, 6px in, and a
+  // 6px gap), the same × as an actor pane's
+  document.documentElement.style.setProperty("--ag-corner", "40px");
   let seq = 0;
   const waiting = new Map();
   const listeners = { event: new Map(), message: [], attached: [], selection: [], theme: [], intent: new Map(),

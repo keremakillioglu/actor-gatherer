@@ -203,8 +203,9 @@ button:disabled { opacity: .5; cursor: default; }
 /* FOLDERS OF GATHERERS (05-gatherer-folders.js): made from the list's head (.gf-new), a line as a gatherer's folder's;
    what is in one set in under it, its guide line under its caret (the line's margin + 4px padding + half the 10px
    caret), 14px a level, a gatherer's own as in the list's top. The head, a gatherer dragged over it: lit, as a line is */
-.aside-head .gf-new { display: inline-flex; align-items: center; padding: 4px 7px; margin-left: -4px; color: var(--ink-2); }
-.aside-head .gf-new:hover { color: var(--ink); }
+.aside-head .gf-new { display: inline-grid; place-items: center; width: var(--ib); height: var(--ib); padding: 0; margin-left: -4px; border: 0;
+  border-radius: 7px; background: none; color: var(--muted); }
+.aside-head .gf-new:hover { color: var(--ink); background: var(--wash); }
 .aside-head .gf-new svg { display: block; }
 /* a new folder outside every group is a group (05-gatherer-folders.js's nameGroup): its line while ag makes it */
 .gf-line.making { padding: 0 8px 0 20px; color: var(--ink-2); }

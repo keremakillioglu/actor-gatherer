@@ -109,8 +109,8 @@ const DETAILS_TIP = "Details: this actor, its context, and what ag did for it";
 // did for it (Gatherer).
 function detailsPanel(info) {
   const a = state.agent;
-  const head = el("div", { class: "drawer-head" }, el("h2", { text: "Details" }), el("span", { class: "grow" }),
-    el("button", { type: "button", class: "close", title: "Close (Esc)", "aria-label": "Close details", onclick: () => setDetails(false) }, "×"));
+  // no × of its own: the pane head's Details button (pressed while it is open) closes it, as Esc does -- one close per pane
+  const head = el("div", { class: "drawer-head" }, el("h2", { text: "Details" }));
   const body = el("div", { class: "drawer-body", "data-keep": "details" }, ...[moreViews(), facts(info)].filter(Boolean));
   const part = (id, name, what, kids) => el("section", { class: "drawer-part", id: `details-${id}`, "aria-label": name },
     el("h4", {}, name, el("span", { text: what })), ...kids);

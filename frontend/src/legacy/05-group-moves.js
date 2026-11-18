@@ -240,7 +240,7 @@ function mvDraw({ title, lines = [], names = null, note = "", go = null, goLabel
   const box = moveAsk.dialog, busy = moveAsk.busy ? { disabled: "" } : {};
   const form = el("form", { class: "newform", method: "dialog" },
     el("div", { class: "br-title" }, el("h3", { text: title }),
-      el("button", { type: "button", class: "x", "aria-label": "Close", ...busy, onclick: () => box.close() }, "×")),
+      el("button", { type: "button", class: "x", "aria-label": "Close", ...busy, onclick: () => box.close() }, strokeIcon(ICONS.x, 16))),
     ...lines.map((t) => el("p", { class: "mv-line", text: t })),
     names,
     note ? el("p", { class: "mv-note", role: "status", text: note }) : null,
@@ -417,7 +417,7 @@ function aloneShutRows(gs) {
     out.push(el("button", { class: "agent-group fold-line", type: "button", "aria-expanded": shown ? "true" : "false",
       "data-key": `${ALONE_KEY}/${name}`, onclick: () => toggleFold(name, ALONE_KEY),
       title: `${shown ? "Hide" : "Show"} the ${name === "Saved" ? "saved " : ""}actors on their own that are closed` },
-    `${shown ? "▾" : "▸"} `, aloneSays(name, list.length)));
+    foldMark(shown), " ", aloneSays(name, list.length)));
     if (shown) out.push(...list.flatMap((g) => rowsOf(g, aloneActor(g), name)));
     else out.push(...aloneInPane(list).map((g) => agentRow(g, aloneActor(g), name)));
   }
@@ -431,7 +431,7 @@ function railAloneShut(gs) {
     if (!railShow[what]) { out.push(...peek()); continue; }   // its line not shown: those open in a pane, in view
     out.push(el("button", { class: "r-fold", type: "button", "aria-expanded": unfolded ? "true" : "false",
       title: `${aloneSays(name, list.length)}: ${unfolded ? "hide" : "show"} ${list.length === 1 ? "it" : "them"}`,   // its words: too wide here
-      onclick: () => toggleFold(name, ALONE_KEY) }, `${unfolded ? "▾" : "▸"} ${list.length} ${what}`));
+      onclick: () => toggleFold(name, ALONE_KEY) }, foldMark(unfolded), ` ${list.length} ${what}`));
     out.push(...(unfolded ? list.flatMap((g) => railRowsOf(g, aloneActor(g))) : peek()));
   }
   return out.length ? [el("section", { class: "r-gatherer r-alone shut", "aria-label": "Closed, on their own" }, ...out)] : [];
@@ -674,7 +674,7 @@ function drawManage() {
     el("div", { class: "br-title" }, el("h3", { text: "Manage groups" }),
       el("button", { type: "button", class: "mg-new", title: "New folder at the top: a group of its own",
         onclick: () => mgStartNaming(null, null, null) }, strokeIcon(ICONS.folderNew, 14), "New folder"),
-      el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => manage.dialog.close() }, "×")),
+      el("button", { type: "button", class: "x", "aria-label": "Close", onclick: () => manage.dialog.close() }, strokeIcon(ICONS.x, 16))),
     el("div", { class: "mg-top" },
       el("p", { class: "mg-say", text: "Actors share context within their group only. Each switch names the group a folder or actor "
         + "sits in: it takes that group, or has its own. Drag rows as in the list. Each change asks first." }), outsideDrop()),
