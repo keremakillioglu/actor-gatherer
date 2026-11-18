@@ -288,6 +288,7 @@ document.getElementById("about-btn").addEventListener("click", () => {
   setAbout(open);
   if (open) window.agNext.settings.load().catch(() => {});
 });
+document.getElementById("about-x").addEventListener("click", () => setAbout(false));   // its own ×, as Esc
 document.addEventListener("click", (ev) => { if (!ev.target.closest(".about-wrap, .cfg-file")) setAbout(false); });
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
