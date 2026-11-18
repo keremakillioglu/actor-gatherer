@@ -45,8 +45,10 @@
 .files .fl-btns { position: absolute; top: 3px; right: 4px; display: flex; }
 .files .fl-btns button { width: 28px; height: calc(var(--lh) + 6px); padding: 0; border: 0; border-radius: 6px; background: none;
   color: var(--muted); cursor: pointer; display: grid; place-items: center; }
-.files .fl-btns button:hover { color: var(--ink); background: color-mix(in srgb, var(--s7) 22%, transparent); }
-.files .fl-btns button[aria-pressed="true"] { color: var(--ink); background: color-mix(in srgb, var(--s7) 30%, transparent); }
+/* on the message's violet band: a wash under the pointer, the selection's blue while its files are shown (violet is the
+   user's own words, not "on") */
+.files .fl-btns button:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.files .fl-btns button[aria-pressed="true"] { color: var(--ink); background: color-mix(in srgb, var(--s1) 32%, transparent); }
 /* what was written while the turn ran, sent to the agent: under the turn's message, set in a little, a + in the gap
    by its first line saying it came later in the same turn, and a thin line down from the message above into the +
    (::after; its box starts at the bottom edge of what is above: the 4px gap and this one's border). Another written

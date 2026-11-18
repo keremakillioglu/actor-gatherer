@@ -384,7 +384,8 @@
   background: var(--wash);
   color: var(--ink);
 }
-/* the tab shown: a tint, its map ringed -- never a raised tab joined to what is under it, as a browser's */
+/* the tab shown: the selection's tint, as a list row's -- no ring on its map, never a raised tab joined to what is under
+   it, as a browser's */
 .lay-tab[aria-selected="true"] {
   background: color-mix(in srgb, var(--s1) 18%, transparent);
   color: var(--ink);
@@ -408,10 +409,6 @@
   border-radius: 6px;
   background: var(--well);
   --face-ring: var(--well);
-}
-.lay-tab[aria-selected="true"] .lay-map {
-  border-color: var(--s1);
-  box-shadow: 0 0 0 0.5px var(--s1);
 }
 /* a page's tab (the Apps page): its mark in the middle of its map */
 .lay-map > .lay-page {
