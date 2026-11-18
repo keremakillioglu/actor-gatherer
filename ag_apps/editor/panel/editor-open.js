@@ -41,7 +41,7 @@ function edChoosing(on) {
     b.classList.toggle("busy", on);
     b.setAttribute("aria-busy", on ? "true" : "false");
   }
-  if (on) edNote(`Waiting for ${ed.choose}: pick it there`);
+  if (on) edNote(`Waiting for ${ed.choose}…`);
 }
 const edNativeName = (what) => what === "folder" ? `Choose a folder in ${ed.choose}…` : `Open a file from ${ed.choose}…`;
 
@@ -97,10 +97,10 @@ function edGoto() {
   edPickClose(); edMenuClose();
   const input = el("input", { type: "text", class: "ed-go-in", spellcheck: "false", autocomplete: "off", role: "combobox",
     "aria-autocomplete": "list", "aria-controls": "ed-go-list", "aria-expanded": "true", "aria-label": `A file in ${edTilde(ed.root)}`,
-    placeholder: `Go to a file in ${ed.root === "/" ? "/" : edBase(ed.root)}: part of its name, or of its path` });
+    placeholder: `Search files in ${ed.root === "/" ? "/" : edBase(ed.root)} by name or path` });
   const list = el("div", { class: "ed-go-list", id: "ed-go-list", role: "listbox", "aria-label": "Files" });
   const status = el("div", { class: "ed-go-st" });
-  const box = el("div", { class: "ed-go", role: "dialog", "aria-label": "Go to a file" }, input, list, status);
+  const box = el("div", { class: "ed-go", role: "dialog", "aria-label": "Go to file" }, input, list, status);
   const go = ed.go = { box, input, list, status, root: ed.root, at: -1, items: [], got: edGoCache.get(ed.root) || null, err: "", off: null };
   input.addEventListener("input", () => edGoDraw());
   input.addEventListener("keydown", edGoKey);
@@ -120,8 +120,8 @@ async function edGoFetch(go) {
   try {
     const r = await fetch(`/api/edit/files?${new URLSearchParams({ dir: go.root, root: "/" })}`, { cache: "no-store" });
     got = await r.json().catch(() => ({}));
-    if (!r.ok) got = { error: got.error || `Its files could not be listed (${r.status})` };
-  } catch (e) { got = { error: "The dashboard did not answer: is it still running?" }; }
+    if (!r.ok) got = { error: got.error || `Couldn't list the files (${r.status})` };
+  } catch (e) { got = { error: "The dashboard didn't respond. Is it still running?" }; }
   if (!got.error) { got.lower = got.files.map((f) => f.toLowerCase()); edGoCache.set(go.root, got); }
   if (ed.go !== go) return;
   if (got.error) go.err = got.error; else { go.got = got; go.err = ""; }
@@ -167,7 +167,7 @@ function edGoDraw() {
   let items = [], head = "", found = 0;
   if (!q) {
     items = recent.slice(0, 12).map((rel) => ({ rel, hits: [] }));
-    head = items.length ? "Opened lately" : "";
+    head = items.length ? "Recently opened" : "";
   } else if (files.length) {
     const lately = new Set(recent), scored = [];
     for (let i = 0; i < files.length; i++) {
@@ -187,8 +187,7 @@ function edGoDraw() {
     if (it.native) {
       nodes.push(el("div", { class: "ed-go-it native", role: "option", id: `ed-go-${i}`, "aria-selected": "false",
         onmousedown: (ev) => ev.preventDefault(), onclick: () => edGoPick(it) },
-        strokeIcon(ED_DIR_GLYPH.open, 15), el("span", { class: "nm", text: edNativeName("file") }),
-        el("span", { class: "at", text: "the system's Open dialog, on this machine" })));
+        strokeIcon(ED_DIR_GLYPH.open, 15), el("span", { class: "nm", text: edNativeName("file") })));
       return;
     }
     const base = it.rel.lastIndexOf("/") + 1;
@@ -201,9 +200,9 @@ function edGoDraw() {
   // what is searched: said under the list
   const n = files.length.toLocaleString();
   go.status.textContent = go.err ? go.err
-    : !got ? `Listing the files of ${edTilde(go.root)}…`
-    : !q ? `${n} files in ${edTilde(go.root)}${got.git ? " (git's: those it ignores left out)" : ""}${got.more ? ", the first found" : ""}. Type part of a name.`
-    : `${found ? `${found.toLocaleString()} found` : "None found"} in ${n} files${got.more ? " (the first found only: a narrower folder finds the rest)" : ""}`;
+    : !got ? `Listing files in ${edTilde(go.root)}…`
+    : !q ? `${n} files in ${edTilde(go.root)}${got.git ? ", git-ignored files left out" : ""}${got.more ? ", more not listed" : ""}`
+    : `${found ? `${found.toLocaleString()} found` : "None found"} in ${n} files${got.more ? " (more not listed: open a smaller folder to search them)" : ""}`;
   go.status.classList.toggle("bad", !!go.err);
   const again = keep ? items.findIndex((it) => (it.path || "native") === keep) : -1;
   edGoAt(q ? 0 : again);                             // typed: the best found; else the one picked, if still there

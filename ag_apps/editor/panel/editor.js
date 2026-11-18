@@ -45,8 +45,8 @@ function edLib() {
   return ed.lib ||= new Promise((ok, no) => {
     const tag = document.createElement("script");
     tag.src = "vendor/editor.js";
-    tag.onload = () => window.agEditor ? ok(window.agEditor) : no(new Error("The editor did not load."));
-    tag.onerror = () => { ed.lib = null; tag.remove(); no(new Error("The editor did not load: is the dashboard still running?")); };
+    tag.onload = () => window.agEditor ? ok(window.agEditor) : no(new Error("The editor didn't load."));
+    tag.onerror = () => { ed.lib = null; tag.remove(); no(new Error("The editor didn't load. Is the dashboard still running?")); };
     document.head.append(tag);
   });
 }
@@ -64,7 +64,7 @@ function edMe() {
   return ed.me = { name: name || ed.user || "Someone", color, colorLight: color + "40" };
 }
 function edRename() {
-  const name = (prompt("Your name, as the others with a file open see it", edMe().name) || "").trim();
+  const name = (prompt("Your name, as others see it", edMe().name) || "").trim();
   if (!name) return;
   try { localStorage.setItem(ED_NAME_KEY, name); } catch (e) { /* this page only */ }
   ed.me = { ...edMe(), name };
@@ -239,7 +239,7 @@ function edMarkProblems(s) {
     const from = at >= 0 ? l.from + at : l.from + l.text.length - l.text.trimStart().length;
     const to = at >= 0 ? from + p.token.length : Math.max(from, l.from + l.text.trimEnd().length);
     diags.push({ from, to, severity: p.level === "error" ? "error" : p.level === "warning" ? "warning" : "info",
-      source: p.level === "box" ? "LaTeX: a bad box" : "LaTeX", message: p.message });
+      source: p.level === "box" ? "LaTeX (bad box)" : "LaTeX", message: p.message });
     if (p.level !== "box" && tints.get(l.from) !== "error") tints.set(l.from, p.level);
   }
   const tinted = A.Decoration.set([...tints].map(([at, level]) => A.Decoration.line({ class: `ed-prob ${level}` }).range(at)), true);
@@ -311,7 +311,7 @@ function edAvatars(writers, what) {
   const many = writers.length > 1;
   return el("span", { class: "ed-avs" + (many ? " many" : ""),
     title: `${many ? `${writers.length} actors changed ${what}` : `Changed ${what}`} in the last half hour:\n`
-      + writers.map((w) => `${edWriterName(w)}, ${ago(w.at)}${w.closed ? " (closed: its change waits for you)" : ""}`).join("\n") },
+      + writers.map((w) => `${edWriterName(w)}, ${ago(w.at)}${w.closed ? " (closed, change waiting for you)" : ""}`).join("\n") },
     ...writers.slice(0, 3).map(edAvatar), many ? el("span", { class: "n", text: String(writers.length) }) : null);
 }
 // Whose a change seen on disk at `t` was: the actor whose recorded change is nearest it, and not long before it (ag records
@@ -330,7 +330,7 @@ async function edList(dir, draw = true) {
   ed.lists.set(dir, got);
   if (draw) { edTree(); edHead(); }
 }
-const edWaiting = (n, what) => n ? el("span", { class: "mk br", title: `${plural(n, "change")} from an actor's branch ${what}, waiting for you`, text: String(n) }) : null;
+const edWaiting = (n) => n ? el("span", { class: "mk br", title: `${plural(n, "change")} from an actor's branch waiting for you`, text: String(n) }) : null;
 // Above the tree, under the folder: the actors on branches of the project shown (branches.py), and what waits from them.
 async function edFetchBranches() {
   if (!ed.root) return;
@@ -366,12 +366,12 @@ function edBranches() {
     const waiting = Object.values(b.held || {}).reduce((n, v) => n + (v.kind === "lines" ? v.n || 1 : 1), 0), on = b === shown;
     return el("button", { type: "button", class: "ed-br-av" + (on ? " on" : ""), style: color ? `--who: ${color}` : null,
       "aria-pressed": on ? "true" : "false", "aria-label": `${name}${waiting ? `, ${plural(waiting, "change")} waiting` : ""}`,
-      title: `${name}\n${branchRoute(b)}\n${waiting ? `${plural(waiting, "change")} waiting for you. ` : ""}${on ? "Click to put away" : "Click to see what it merges"}`,
+      title: `${name}\n${branchRoute(b)}\n${waiting ? `${plural(waiting, "change")} waiting for you. ` : ""}${on ? "Click to hide" : "Click to see its changes"}`,
       onclick: () => edBrToggle(b) },
       a && a.avatar ? el("img", { src: avatarSrc(a.avatar), alt: "", draggable: "false" }) : el("span", { class: "ed-noav" }),
       waiting ? el("span", { class: "n", text: String(waiting) }) : null);
   });
-  ed.brs.replaceChildren(...[el("div", { class: "ed-br-avs", role: "group", "aria-label": "Actors merging in" }, ...avs),
+  ed.brs.replaceChildren(...[el("div", { class: "ed-br-avs", role: "group", "aria-label": "Actors on branches" }, ...avs),
     shown ? edBranch(shown) : null].filter(Boolean));
 }
 // What waits from an actor on a branch: a file's changed lines, asked about in the file (opened by its name); a file it
@@ -381,20 +381,20 @@ function edBranch(b) {
   const files = Object.entries(b.held || {}).sort(([x], [y]) => x.localeCompare(y));
   const decide = (path, take) => edDecide(b, path, take);
   return el("div", { class: "ed-br", style: color ? `--who: ${color}` : null },
-    el("label", { class: "ap", title: "On: each of its changes waits for you to accept or reject it. Off: its changes are merged in as they come, but for lines you are editing here (the conflict zone), and lines you changed too." },
+    el("label", { class: "ap", title: "On: each change waits for you to accept or reject it. Off: changes merge as they come, except on lines you're editing or changed." },
       el("input", { type: "checkbox", checked: b.approve ? "" : null, onchange: (ev) => edApprove(b, ev.target.checked) }), "Auto-merge with approval"),
     ...(files.length ? files.map(([path, v]) => {
       const whole = v.kind !== "lines", there = v.kind === "created" || v.kind === "missing";
       const open = there ? b.worktree + path.slice(b.project.length) : path;
       return el("div", { class: "f" },
-        el("button", { type: "button", class: "go", title: there ? `Open its file on its branch: ${edTilde(open)}` : `Open ${edTilde(path)}`,
+        el("button", { type: "button", class: "go", title: there ? `Open the file on its branch: ${edTilde(open)}` : `Open ${edTilde(path)}`,
           onclick: () => edOpen(open) }, edRel(path)),
         el("span", { class: "k", text: whole ? ED_KIND[v.kind] || v.kind : plural(v.n, "change") }),
         whole || v.n > 1 ? el("button", { type: "button", class: "pick", title: { created: "Add the file to the project", deleted: "Delete the file from the project",
-          missing: "Add the file to the project again" }[v.kind] || "Take every change of its into the file", onclick: () => decide(path, "theirs") }, whole ? "Accept" : "Accept all") : null,
-        whole || v.n > 1 ? el("button", { type: "button", class: "pick", title: whole ? "Leave the project's as it is: not asked about again, until it changes the file again"
-          : "Leave every change of its out of the file", onclick: () => decide(path, "mine") }, whole ? "Reject" : "Reject all") : null);
-    }) : [el("div", { class: "none", text: b.approve ? "Nothing waiting for you" : "Merged as it goes: nothing waiting" })]));
+          missing: "Add the file to the project again" }[v.kind] || "Apply all its changes to the file", onclick: () => decide(path, "theirs") }, whole ? "Accept" : "Accept all") : null,
+        whole || v.n > 1 ? el("button", { type: "button", class: "pick", title: whole ? "Keep the project's version. You won't be asked again unless it changes the file."
+          : "Leave all its changes out of the file", onclick: () => decide(path, "mine") }, whole ? "Reject" : "Reject all") : null);
+    }) : [el("div", { class: "none", text: b.approve ? "Nothing waiting for you" : "Merges as it goes. Nothing waiting." })]));
 }
 async function edApprove(b, on) {
   try { await post("/api/branches/approve", { session_id: b.session_id, approve: on }); } catch (e) { ed.err = e.message; edHead(); }
@@ -488,7 +488,7 @@ async function edOpen(path, how = null, kept = null) {
   on("left", (v) => A.removeAwarenessStates(awareness, [v.client], "remote"));
   on("state", (v) => { s.state = v; edZone(s); edAgentMarks(s); edConflicts(s); edAutoLater(s); edHead(); });   // after each edit, any page's, and the disk's
   on("failed", (v) => {
-    if (!s.epoch && how !== "edit") { edClose(); return edShow(path, { ...info, text: false, why: `${v.error}: it is shown, not edited.` }); }   // not text after all
+    if (!s.epoch && how !== "edit") { edClose(); return edShow(path, { ...info, text: false, why: `${v.error}.` }); }   // not text after all
     s.err = v.error; es.close(); edHead();
   });
   es.onerror = es.onopen = () => { if (ed.s === s) edHead(); };   // the header says while it reconnects
@@ -825,57 +825,57 @@ function edConflictWidget(A) {
         const nm = who ? edWhoName(who) : "An actor";
         what = { rewrote: `${nm} proposes to change these lines`, deleted: `${nm} proposes to delete these lines`, added: `${nm} proposes to add lines here` }[kind];
         picks = [
-          pick("theirs", "Accept", c.theirs ? "Put its lines in the file, in place of these (written to the file on disk)" : "Delete these lines, as it proposes"),
-          pick("mine", "Reject", "Leave its change out: the file keeps these lines, and the actor is told"),
-          kind === "rewrote" ? pick("both", "Keep both", "Keep these lines, and its after them") : null];
+          pick("theirs", "Accept", c.theirs ? "Replace these lines with its lines (written to disk)" : "Delete these lines"),
+          pick("mine", "Reject", "Keep these lines. The actor is told."),
+          kind === "rewrote" ? pick("both", "Keep both", "Keep these lines, with its lines after them") : null];
       } else if (c.asked) {                          // Review or Hands off: the file changed on disk, around the tools
         const nm = name || "Something";
         what = { rewrote: `${nm} changed these lines on disk`, deleted: `${nm} deleted these lines on disk`, added: `${nm} added lines here on disk` }[kind];
         picks = [
-          pick("theirs", "Accept", c.theirs ? "Take the file's lines in place of these" : "Delete these lines, as the file did"),
-          pick("mine", "Reject", mine ? "Put these lines back on the file on disk, in place of its change" : "Take the lines it added out of the file on disk"),
-          kind === "rewrote" ? pick("both", "Keep both", "Keep these lines, and the file's after them") : null];
+          pick("theirs", "Accept", c.theirs ? "Replace these lines with the file's" : "Delete these lines, as on disk"),
+          pick("mine", "Reject", mine ? "Write these lines back to the file on disk" : "Remove the added lines from the file on disk"),
+          kind === "rewrote" ? pick("both", "Keep both", "Keep these lines, with the file's after them") : null];
       } else if (branch && !c.zone) {                // an actor's branch's change: taken in, or left out, as the reader says
         const nm = who ? edWhoName(who) : branch.branch;
         what = branch.why === "approve"
           ? { rewrote: `${nm} changed these lines on its branch`, deleted: `${nm} deleted these lines on its branch`, added: `${nm} added lines here on its branch` }[kind]
           : `${nm} changed these lines on its branch, and they were changed here too`;
         picks = branch.why === "approve" ? [
-          pick("theirs", "Accept", c.theirs ? "Put its lines in the file, in place of these" : "Delete these lines, as its branch did"),
-          pick("mine", "Reject", "Leave its change out: the file keeps these lines, and it is not asked about again"),
-          kind === "rewrote" ? pick("both", "Keep both", "Keep these lines, and its after them") : null]
-          : [pick("mine", "Keep yours", "Leave its change out: the file keeps these lines"),
-            pick("theirs", c.theirs ? "Take its" : "Delete them", c.theirs ? "Put its lines in place of these" : "Delete these lines, as its branch did"),
-            c.theirs && mine ? pick("both", "Keep both", "Keep these lines, and its after them") : null];
+          pick("theirs", "Accept", c.theirs ? "Replace these lines with its lines" : "Delete these lines, as on its branch"),
+          pick("mine", "Reject", "Keep these lines. You won't be asked about this change again."),
+          kind === "rewrote" ? pick("both", "Keep both", "Keep these lines, with its lines after them") : null]
+          : [pick("mine", "Keep yours", "Keep these lines"),
+            pick("theirs", c.theirs ? "Take its" : "Delete them", c.theirs ? "Replace these lines with its lines" : "Delete these lines, as on its branch"),
+            c.theirs && mine ? pick("both", "Keep both", "Keep these lines, with its lines after them") : null];
       } else if (c.zone) {                                  // in the conflict zone: the reader's lines, rewritten on disk
         what = { rewrote: name ? `${name} rewrote lines you edited` : "Lines you edited were rewritten on disk",
           deleted: name ? `${name} deleted lines you edited` : "Lines you edited were deleted on disk",
           added: name ? `${name} added lines among those you edited` : "Lines were added on disk among those you edited" }[kind];
         picks = [
-          pick("mine", mine ? "Restore yours" : "Leave them out", mine ? "Keep your lines; a save (or Auto-save) writes them over the file's"
-            : "Leave the file's new lines out; a save (or Auto-save) writes the file without them"),
+          pick("mine", mine ? "Restore yours" : "Leave them out", mine ? "Keep your lines. Saving writes them over the file's."
+            : "Leave the new lines out. Saving writes the file without them."),
           pick("theirs", { rewrote: many ? "Accept their rewrite" : "Accept its rewrite", deleted: "Accept the deletion", added: "Add them" }[kind],
-            c.theirs ? "Put the file's lines in place of yours" : "Delete your lines, as the file did"),
-          kind === "rewrote" ? pick("both", "Keep both", "Keep your lines, and the file's after them") : null];
+            c.theirs ? "Replace your lines with the file's" : "Delete your lines, as on disk"),
+          kind === "rewrote" ? pick("both", "Keep both", "Keep your lines, with the file's after them") : null];
       } else {                                       // both changed, differently, outside the zone (it was cleared)
-        what = `${c.theirs ? "Changed" : "Deleted"} on disk${name ? ` by ${name}` : ""} where it was edited here too`;
-        picks = [pick("mine", "Keep yours", "Keep the lines above; the file's are left out (a save writes yours)"),
-          pick("theirs", c.theirs ? "Take theirs" : "Delete them", c.theirs ? "Put the file's lines in place of yours" : "Delete your lines, as the file did"),
-          c.theirs && mine ? pick("both", "Keep both", "Keep your lines, and the file's after them") : null];
+        what = `${c.theirs ? "Changed" : "Deleted"} on disk${name ? ` by ${name}` : ""} where you also edited`;
+        picks = [pick("mine", "Keep yours", "Keep the lines above. Saving writes them over the file's."),
+          pick("theirs", c.theirs ? "Take theirs" : "Delete them", c.theirs ? "Replace your lines with the file's" : "Delete your lines, as on disk"),
+          c.theirs && mine ? pick("both", "Keep both", "Keep your lines, with the file's after them") : null];
       }
-      picks.push(el("button", { type: "button", title: "Edit its lines here, in this box, before they go in place of yours: what they take out of your lines and put in shows as you type. Accept edit puts them in the file; Cancel leaves everything as it is.",
+      picks.push(el("button", { type: "button", title: "Edit its lines before accepting them",
         onclick: (ev) => { ev.preventDefault(); edBoxOpen(s, c); } }, "Edit"));
       const color = branch ? edWhoColor(who) : null;
       return el("div", { class: "ed-cf" + (branch ? " from-branch" : ""), style: color ? `--who: ${color}` : null },
         el("div", { class: "ed-cf-head" }, branch && who && who.avatar ? el("span", { class: "ed-avs" }, el("img", { src: avatarSrc(who.avatar), alt: "", draggable: "false" })) : null,
-          el("span", { class: "what", title: put ? null : branch ? `Its branch: ${branch.branch}` : many ? `Their changes, one after the other:\n${this.by.names.join("\n")}` : null,
+          el("span", { class: "what", title: put ? null : branch ? `Branch: ${branch.branch}` : many ? `Changed by, in order:\n${this.by.names.join("\n")}` : null,
           text: `${what}, ${ago(c.at)}.` }), el("span", { class: "grow" }), ...picks),
         // its lines -- with the words changed, both those it takes out of the lines above (red) and those it puts in
         // (green), in place, where they are told (edWordDiff)
-        c.theirs ? el("div", { class: "ed-cf-label" }, put ? (this.parts ? "Its change to the lines above: " : mine ? "Its lines, in place of those above:" : "Its lines:")
-          : branch ? (this.parts ? "Its change to the lines above: " : mine ? "On its branch, in place of the lines above:" : "On its branch:")
-          : this.parts ? "The change on disk to the lines above: " : mine ? "On disk now, in place of the lines above:" : "On disk now:",
-          ...(this.parts ? [el("span", { class: "ed-del", text: "taken out" }), ", ", el("span", { class: "ed-add", text: "put in" })] : [])) : null,
+        c.theirs ? el("div", { class: "ed-cf-label" }, put ? (this.parts ? "Its change to the lines above: " : mine ? "Its lines, replacing those above:" : "Its lines:")
+          : branch ? (this.parts ? "Its change to the lines above: " : mine ? "On its branch, replacing the lines above:" : "On its branch:")
+          : this.parts ? "The change on disk to the lines above: " : mine ? "On disk now, replacing the lines above:" : "On disk now:",
+          ...(this.parts ? [el("span", { class: "ed-del", text: "removed" }), ", ", el("span", { class: "ed-add", text: "added" })] : [])) : null,
         c.theirs ? el("pre", { class: "ed-cf-theirs" }, ...(this.parts
           ? edGroups(this.parts).map((g, k, all) => {
             const end = (t) => k === all.length - 1 ? t.replace(/\n$/, "") : t;
@@ -959,16 +959,16 @@ async function edSettleAll(s, take) {
 // you are editing asked about); Review, each change a proposal to accept or reject; Hands off, refused -- and in both of
 // those, a write around the Editor's tools (a shell command's) asked about too. Its agents are told when it changes.
 const ED_MODES = [
-  ["live", "Live", "Agents' changes land as they come, in their colour, and are written to the file. Only a change to lines you are editing is asked about."],
-  ["review", "Review", "Each change an agent makes is a proposal here, to accept or reject; the file on disk changes only when you accept. A write that does not come through the Editor (a shell command's) is asked about too."],
-  ["handsoff", "Hands off", "Agents may not change the files you have open here: they are told to ask you first. A write that does not come through the Editor is asked about."]];
+  ["live", "Live", "Agents' changes apply as they come, in their colour, and are saved. You're asked only about lines you're editing."],
+  ["review", "Review", "Each agent change is a proposal to accept or reject. The file on disk changes only when you accept. Changes made outside the Editor, such as by a shell command, are asked about too."],
+  ["handsoff", "Hands off", "Agents can't change files open here and are told to ask you first. Changes made outside the Editor are asked about."]];
 // Its menu: one, made once and kept from one header to the next (edHeadPut) -- the header is drawn again every ED_TICK
 // and at each edit, and a menu taken out of the page then closes under the reader as they pick.
 function edModePick() {
   const now = ED_MODES.find((m) => m[0] === ed.mode) || ED_MODES[0];
-  ed.modePick ||= el("label", { class: "ed-mode-pick", title: `How the agents' changes land in the files open here:\n${ED_MODES.map((m) => `${m[1]}: ${m[2]}`).join("\n")}` },
+  ed.modePick ||= el("label", { class: "ed-mode-pick", title: `How agents' changes reach open files:\n${ED_MODES.map((m) => `${m[1]}: ${m[2]}`).join("\n")}` },
     el("span", { class: "lbl", text: "Agents:" }),
-    el("select", { "aria-label": "How the agents' changes land", onchange: (ev) => edSetMode(ev.target.value) },
+    el("select", { "aria-label": "How agents' changes reach open files", onchange: (ev) => edSetMode(ev.target.value) },
       ...ED_MODES.map(([v, label]) => el("option", { value: v }, label))));
   const select = ed.modePick.querySelector("select");
   if (select.value !== now[0]) select.value = now[0];
@@ -1073,7 +1073,7 @@ function edBoxGoneWidget(A) {
     eq(other) { return other.text === this.text && other.i === this.i && other.put === this.put; }
     toDOM(view) {
       const span = el("span", { class: "ed-gone", text: this.text.replace(/\n/g, "↵"),
-        title: `Taken out of your lines: click to put it back${this.put.trim() ? ` in place of "${this.put.trim().slice(0, 60)}"` : ""}${this.text.includes("\n") ? " (its line breaks too)" : ""}` });
+        title: `Removed from your lines. Click to restore it${this.put.trim() ? ` in place of "${this.put.trim().slice(0, 60)}"` : ""}${this.text.includes("\n") ? ", line breaks included" : ""}.` });
       span.addEventListener("mousedown", (ev) => ev.preventDefault());
       span.addEventListener("click", (ev) => {
         ev.preventDefault();
@@ -1155,14 +1155,14 @@ function edBoxOpen(s, c) {
   const btn = (label, title, f, cls) => el("button", { type: "button", class: cls || null, title, onclick: (ev) => { ev.preventDefault(); f(); } }, label);
   box.dom = el("div", { class: "ed-cf editing" + (branch ? " from-branch" : ""), style: color ? `--who: ${color}` : null },
     el("div", { class: "ed-cf-head" }, branch && who && who.avatar ? el("span", { class: "ed-avs" }, el("img", { src: avatarSrc(who.avatar), alt: "", draggable: "false" })) : null,
-      el("span", { class: "what", text: `Editing ${nm ? `${nm}'s` : "the file's"} lines${branch ? ", from its branch" : ""}: what you leave here goes in place of your lines above` }),
+      el("span", { class: "what", text: `Editing ${nm ? `${nm}'s` : "the file's"} lines${branch ? " from its branch" : ""} to replace yours above` }),
       el("span", { class: "grow" }),
-      btn("Accept edit", branch ? "Put these lines in the file, in place of yours above; the actor is told what you changed of its" : "Put these lines in the file, in place of yours above",
+      btn("Accept edit", branch ? "Replace your lines above with these. The actor is told what you changed." : "Replace your lines above with these",
         () => edBoxDone(s, c.id), "primary"),
-      btn("Cancel", "Close the box: your lines and the file as they are", () => { edBoxClose(s, c.id); edConflicts(s); edHead(); })),
+      btn("Cancel", "Close without changing anything", () => { edBoxClose(s, c.id); edConflicts(s); edHead(); })),
     box.note,
-    el("div", { class: "ed-cf-label" }, "Its lines, to edit here: ", el("span", { class: "ed-del", text: "taken out of yours" }), ", ",
-      el("span", { class: "ed-add", text: "put in" }), ". Click a struck piece to put it back."),
+    el("div", { class: "ed-cf-label" }, "Its lines: ", el("span", { class: "ed-del", text: "removed from yours" }), ", ",
+      el("span", { class: "ed-add", text: "added" }), ". Click struck text to restore it."),
     host, box.err);
   box.view = new A.EditorView({
     parent: host,
@@ -1201,7 +1201,7 @@ function edBoxAgain(s, c, box) {
   box.note.hidden = !(theirsNew || mineNew);
   box.note.replaceChildren(...(theirsNew || mineNew ? [
     theirsNew ? "Its lines changed again since you began editing them." : "Your lines above changed since you began.",
-    el("button", { type: "button", title: "Begin again: its lines as they are now, against your lines as they are now (what you changed here is dropped)",
+    el("button", { type: "button", title: "Start over from the current lines. Your edits in this box are dropped.",
       onclick: (ev) => {
         ev.preventDefault();
         const d = s.view.state.doc, f = Math.min(c.from, d.length), cur = (s.state.conflicts || []).find((x) => x.id === c.id) || c;
@@ -1388,7 +1388,7 @@ function edReopen(s) {
   const lost = s.state && s.state.dirty;
   edClose();
   edOpen(s.path, s.info && s.info.kind !== "text" ? "edit" : null).then(() => {
-    if (lost && ed.s) { ed.s.note = "The dashboard restarted, and this file's unsaved changes there were lost: it was opened again from disk."; edHead(); }
+    if (lost && ed.s) { ed.s.note = "The dashboard restarted and unsaved changes were lost. Reopened from disk."; edHead(); }
   });
 }
 window.addEventListener("pagehide", edClose);
@@ -1422,7 +1422,7 @@ function edHead() {
   const s = ed.s;
   if (ed.v && ed.v.path === ed.file) return edViewHead(ed.v);
   if (!ed.file) {
-    edHeadPut([el("span", { class: "ed-hint", text: "Pick a file to open it. Text opens to edit: everyone with it open sees the others' edits as they type, and what an actor writes to it shows here as it lands. Images, PDFs, sound and video open to look at." }),
+    edHeadPut([el("span", { class: "ed-hint", text: "Pick a file to open it." }),
       el("span", { class: "grow", style: "flex: 1" }), edModePick(), edExecBtn()]);
     return;
   }
@@ -1431,14 +1431,14 @@ function edHead() {
   const nc = edDiskConflicts(s).length, np = proposed.length, na = all.length - nc - np, nb = s ? s.boxes.size : 0;
   const nasked = all.filter((c) => c.asked).length;
   const [cls, said] = ed.err || (s && s.err) ? ["bad", ed.err || s.err]
-    : nb ? ["warn", `Editing ${nb > 1 ? `${nb} changes` : "a change"} in ${nb > 1 ? "their boxes" : "its box"}: Accept edit or Cancel there`]
+    : nb ? ["warn", `Editing ${nb > 1 ? `${nb} changes` : "a change"} · Accept edit or Cancel to finish`]
     : nasked && nasked === nc ? ["warn", `${plural(nasked, "change")} on disk to review`]
     : nc ? ["bad", `${plural(nc, "conflict")} with the file on disk`]
     : np ? ["warn", `${plural(np, "change")} to review`]
-    : na ? ["warn", `${plural(na, "change")} held for you`]
+    : na ? ["warn", `${plural(na, "change")} waiting for you`]
     : !s || !s.epoch ? ["", "Opening…"]
     : s.es.readyState !== 1 ? ["warn", "Reconnecting…"]
-    : st && st.missing ? ["bad", "Deleted on disk: Save writes it again"]
+    : st && st.missing ? ["bad", "Deleted on disk. Save to restore it."]
     : st && st.error ? ["bad", st.error]
     : st && st.dirty ? (ed.auto ? ["", "Saving…"] : ["warn", "Unsaved"]) : ["ok", "Saved"];
   const others = s ? [...s.awareness.getStates().entries()].filter(([id, v]) => id !== s.doc.clientID && v && v.user) : [];
@@ -1454,44 +1454,43 @@ function edHead() {
     const near = edCredit(writers, st.changed);
     const who = near ? near.actor : s.who, color = edWhoColor(who);
     changed = el("span", { class: "ed-changed", style: color ? `--who: ${color}` : null,
-      title: near ? `By ${edWriterName(near)}, as ag's hook recorded the actor's change` : s.who ? `Likely by ${edWhoName(s.who)}: the one actor running in a directory that holds the file, until ag records who it was`
-        : "Written to the file by something other than this editor" },
+      title: near ? `By ${edWriterName(near)}` : s.who ? `Probably by ${edWhoName(s.who)}`
+        : "Changed outside this editor" },
       `Changed on disk ${ago(st.changed)}`,
-      s.marked ? el("button", { type: "button", class: "ed-unmark", title: "Clear the marks of what changed on disk", "aria-label": "Clear the marks",
+      s.marked ? el("button", { type: "button", class: "ed-unmark", title: "Clear change highlights", "aria-label": "Clear change highlights",
         onclick: () => edUnmark(s) }, "×") : null);
   }
   const zoned = s && st && (st.zone || []).length ? el("span", { class: "ed-zone-chip",
-    title: "The lines edited here since the file was opened, tinted: an actor's change to them is asked about, not merged in. Cleared when the file is closed, or by Clear." },
-    "Conflict zone", el("button", { type: "button", title: "Clear the conflict zone: the actors' changes to its lines merge in, as anywhere else",
+    title: "Lines you edited since opening the file. Actors' changes to them are asked about, not merged. Cleared when the file closes." },
+    "Conflict zone", el("button", { type: "button", title: "Clear the conflict zone so actors' changes merge in as usual",
       onclick: () => edClearZone(s) }, "Clear")) : null;
   const by = edByChip(writers);
   edHeadPut([
     el("span", { class: "ed-path", title: ed.file, text: edRel(ed.file) }),
     (nc || na || np) && !(ed.err || (s && s.err)) ? el("button", { type: "button", class: `ed-status ${cls}`, role: "status",
-      title: nc && nasked !== nc ? "Show the first: keep yours, take the file's, or both" : "Show the first: accept it, or reject it",
+      title: nc && nasked !== nc ? "Go to the first conflict" : "Go to the first change",
       onclick: () => edToConflict(s) }, said) : el("span", { class: `ed-status ${cls}`, role: "status", text: said }),
     np > 1 && !nb ? el("span", { class: "ed-all" },
-      el("button", { type: "button", title: "Accept every change proposed here: each written to the file on disk, and its actor told", onclick: () => edSettleAll(s, "theirs") }, "Accept all"),
-      el("button", { type: "button", title: "Reject every change proposed here: the file keeps its lines, and the actors are told", onclick: () => edSettleAll(s, "mine") }, "Reject all")) : null,
+      el("button", { type: "button", title: "Accept all proposed changes and write them to disk. Their actors are told.", onclick: () => edSettleAll(s, "theirs") }, "Accept all"),
+      el("button", { type: "button", title: "Reject all proposed changes. Their actors are told.", onclick: () => edSettleAll(s, "mine") }, "Reject all")) : null,
     zoned, by, changed,
     s && s.note ? el("span", { class: "ed-status bad", text: s.note }) : null,
     el("span", { class: "ed-people" },
       ...others.map(([, v]) => el("span", { class: "ed-person", style: `--who: ${v.user.color}`, title: `${v.user.name} has it open`, text: v.user.name })),
-      s ? el("button", { type: "button", class: "ed-person", style: `--who: ${edMe().color}`, title: "You, as the others see you: click to change your name",
+      s ? el("button", { type: "button", class: "ed-person", style: `--who: ${edMe().color}`, title: "You · click to change your name",
         onclick: edRename, text: `${edMe().name} (you)` }) : null),
     el("button", { type: "button", class: "ed-wrap" + (ed.wrap ? " on" : ""), "aria-pressed": ed.wrap ? "true" : "false",
-      title: ed.wrap ? "Long lines wrapped, here and in the boxes of changes to merge: click to scroll them instead"
-        : "Wrap long lines, here and in the boxes of changes to merge, so they read whole without scrolling",
+      title: ed.wrap ? "Wrapping long lines · click to turn off" : "Wrap long lines",
       "aria-label": "Wrap long lines", onclick: () => edSetWrap(!ed.wrap) }, strokeIcon(ICONS.wrap, 15)),
-    el("label", { class: "ed-auto", title: "Save the file a moment after each edit to it, yours or another's: the actors read it as it is typed. Not while a conflict with the file waits." },
+    el("label", { class: "ed-auto", title: "Save a moment after each edit. Paused while a conflict waits." },
       el("input", { type: "checkbox", checked: ed.auto ? "" : null, onchange: (ev) => edSetAuto(ev.target.checked) }), "Auto-save"),
     edModePick(),
     s && s.info && s.info.kind !== "text" ? el("button", { type: "button", class: "ed-mode", title: `Show ${edBase(s.path)} as ${ED_VIEW_SAID[s.info.kind] === "image" ? "an image" : `a ${ED_VIEW_SAID[s.info.kind]}`}`,
       onclick: () => edOpen(s.path, "view") }, strokeIcon(ICONS.page, 13), "View") : null,
     edTexToPdf() ? el("button", { type: "button", class: "ed-topdf", onclick: () => edToPdf(),
-      title: "Show the cursor's line in the PDF beside (SyncTeX), or double-click a word of the source. Double-click the PDF to come back to its source." }, "→ PDF") : null,
+      title: "Show the cursor's line in the PDF. Double-click in the source or the PDF to jump between them." }, "→ PDF") : null,
     edExecBtn(),
-    el("button", { type: "button", class: "primary", title: nc ? "Write it to the file on disk, your lines kept where they conflict (⌘S / Ctrl+S)" : "Write it to the file on disk (⌘S / Ctrl+S)",
+    el("button", { type: "button", class: "primary", title: `${nc ? "Save, keeping your lines where they conflict" : "Save"} (${MAC ? "⌘S" : "Ctrl+S"})`,
       disabled: s && st && (st.dirty || st.missing) ? null : "", onclick: () => s && edSave(s) }, "Save"),
     ].filter(Boolean));
 }
@@ -1502,11 +1501,11 @@ function edByChip(writers) {
   if (!writers.length) return null;
   const many = writers.length > 1;
   return el("span", { class: "ed-writers" + (many ? " many" : ""),
-    title: `${many ? `${writers.length} actors are changing this file` : "The actor changing this file"} (in the last half hour):\n`
+    title: `${many ? `${writers.length} actors changed this file` : "Changed this file"} in the last half hour:\n`
       + writers.map((w) => `${edWriterName(w)}, ${ago(w.at)}`).join("\n") },
     el("span", { class: "ed-avs" }, ...writers.slice(0, 4).map((w) => el("button", { type: "button",
       class: "ed-av" + (ed.changes && ed.changes.k === edKey(w) ? " on" : ""), "aria-label": `${edWriterName(w)}'s changes to this file`,
-      title: `${edWriterName(w)}: its changes to this file in the last ${ED_CHANGES_S / 60} minutes`, onclick: () => edChanges(w) }, edAvatar(w)))),
+      title: `${edWriterName(w)}'s changes in the last ${ED_CHANGES_S / 60} minutes`, onclick: () => edChanges(w) }, edAvatar(w)))),
     many ? el("span", { class: "lbl", text: `${writers.length} actors changing it` }) : null);
 }
 
@@ -1531,7 +1530,7 @@ function edKeptFile() {
 function edExecBtn() {
   if (!edRuns()) return null;
   return el("button", { type: "button", class: "ed-exec",
-    title: "Run this project's preview, and show what it makes beside: the first time, set what it runs (⌘↵ / Ctrl+Enter)",
+    title: `Run the project's preview (${MAC ? "⌘↵" : "Ctrl+Enter"})`,
     onclick: edExecute, "aria-keyshortcuts": MAC ? "Meta+Enter" : "Control+Enter" }, strokeIcon(ICONS.play, 13), "Execute");
 }
 // Drawn the first time, and its folder shown: the one last shown in this Editor, else the one it was started on -- and the
@@ -1540,19 +1539,19 @@ function edMount() {
   const top = document.getElementById("ed-top");
   if (!ed.host) {
     ed.bar = el("div", { class: "ed-bar" });
-    ed.tree = el("div", { class: "ed-rows", role: "tree", "aria-label": "The folder's files" });
+    ed.tree = el("div", { class: "ed-rows", role: "tree", "aria-label": "File tree" });
     ed.head = el("div", { class: "ed-head" });
     ed.body = el("div", { class: "ed-body" + (ed.wrap ? " wrap" : "") });
     ed.body.addEventListener("mousedown", edToPdfClick, true);     // before CodeMirror's: a double-click, to the PDF too
-    ed.side = el("aside", { class: "ed-changes files", hidden: "", "aria-label": "An actor's changes to the file" });
+    ed.side = el("aside", { class: "ed-changes files", hidden: "", "aria-label": "Actor's changes" });
     ed.brs = el("div", { class: "ed-brs" });
     const nav = ed.nav = el("nav", { class: "ed-tree", id: "ed-files", "aria-label": "Files" }, ed.bar, ed.brs, ed.tree);
     ed.fold = el("button", { type: "button", class: "ed-fold", hidden: "", "aria-label": "Show the files",
       "aria-controls": "ed-files", "aria-expanded": "false", onclick: () => edFoldTree(false) });
     const colGrip = () => el("div", { class: "ed-col-grip", role: "separator", "aria-orientation": "vertical",
-      title: "Drag to resize · double-click: the width it had first" });
+      title: "Drag to resize · double-click to reset" });
     const treeGrip = colGrip(), sideGrip = colGrip(), pvGrip = colGrip();
-    ed.pv = el("section", { class: "ed-pv", hidden: "", "aria-label": "The project's preview" });
+    ed.pv = el("section", { class: "ed-pv", hidden: "", "aria-label": "Preview" });
     ed.host = el("div", { class: "ed" }, ed.fold, nav, treeGrip,
       el("div", { class: "ed-main" }, ed.head, el("div", { class: "ed-work" }, ed.body, sideGrip, ed.side, pvGrip, ed.pv)));
     ed.host.addEventListener("keydown", edExecKey, true);          // ⌘↵: Execute

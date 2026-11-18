@@ -31,7 +31,7 @@ function edWhat(info) {
 async function edAbout(path) {
   const r = await fetch(`/api/edit/about?${new URLSearchParams({ path, root: "/" })}`, { cache: "no-store" });
   const got = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(got.error || `It could not be opened (${r.status})`);
+  if (!r.ok) throw new Error(got.error || `Couldn't open the file (${r.status})`);
   return got;
 }
 
@@ -47,8 +47,8 @@ function edViewBody(v) {
   if (info.kind === "image") {
     const img = v.img = el("img", { src: url, alt: info.name, draggable: "false",
       onload: () => { if (ed.v !== v) return; v.dims = [img.naturalWidth, img.naturalHeight]; v.broken = false; edHead(); },
-      onerror: () => { if (ed.v !== v || v.broken) return; v.broken = true; ed.body.replaceChildren(edCard(v, "It could not be shown as an image: the browser cannot read it.")); edHead(); } });
-    const box = el("div", { class: "ed-view ev-img", title: "Click: its own size, or fit to the panel" }, img);
+      onerror: () => { if (ed.v !== v || v.broken) return; v.broken = true; ed.body.replaceChildren(edCard(v, "The browser can't display this image.")); edHead(); } });
+    const box = el("div", { class: "ed-view ev-img", title: "Click to switch between actual size and fit" }, img);
     box.addEventListener("click", () => { v.full = !v.full; box.classList.toggle("ev-full", v.full); });
     return box;
   }
@@ -65,12 +65,12 @@ function edViewBody(v) {
     const m = v.media = el(info.kind, { src: url, controls: "", preload: "metadata",
       onloadedmetadata: () => { if (ed.v !== v) return; v.dims = info.kind === "video" && m.videoWidth ? [m.videoWidth, m.videoHeight] : null; v.length = m.duration; edHead(); },
       onpause: () => { if (ed.v === v && v.stale) edViewAgain(v); },
-      onerror: () => { if (ed.v === v && m.error) { ed.body.replaceChildren(edCard(v, `It could not be played here: the browser cannot read this ${info.kind}.`)); edHead(); } } });
+      onerror: () => { if (ed.v === v && m.error) { ed.body.replaceChildren(edCard(v, `The browser can't play this ${info.kind}.`)); edHead(); } } });
     return el("div", { class: `ed-view ev-media ev-${info.kind}` }, info.kind === "audio" ? el("div", { class: "ed-snd" }, edBigIcon(info.name), el("div", { class: "nm", text: info.name }), m) : m);
   }
   return edCard(v, info.why || (info.kind === "text"
-    ? `Too large to edit here: ${edSize(info.size)}, and the Editor opens text up to ${edSize(info.max)}.`
-    : "The Editor shows text, images, PDFs, sound and video: this file is none of them."));
+    ? `Too large to edit (${edSize(info.size)}). The limit is ${edSize(info.max)}.`
+    : "The Editor can't open this type of file."));
 }
 function edBigIcon(name) {
   const svg = edFileIcon(name);
@@ -90,13 +90,13 @@ function edCard(v, why) {
 }
 function edDownload(v, big = false) {
   return el("a", { class: "ed-dl" + (big ? " big" : ""), href: edRaw(v.path, v.at, true), download: v.info.name,
-    title: `Save a copy of ${v.info.name} from the dashboard's machine` }, strokeIcon(ED_DL, big ? 14 : 13), "Download");
+    title: `Download ${v.info.name}` }, strokeIcon(ED_DL, big ? 14 : 13), "Download");
 }
 const ED_DL = "M8 2.5v8M4.75 7.25 8 10.5l3.25-3.25M3 13.25h10";
 function edRevealBtn(v, big = false) {
   const where = v.info.reveal;
   if (!where) return null;
-  return el("button", { type: "button", class: "ed-reveal" + (big ? " big" : ""), title: `Show ${v.info.name} in ${where}, on this machine: open it from there`,
+  return el("button", { type: "button", class: "ed-reveal" + (big ? " big" : ""), title: `Show ${v.info.name} in ${where}`,
     onclick: async () => { try { await post("/api/edit/reveal", { path: v.path, root: "/" }); } catch (e) { edNote(e.message, true); } } },
     strokeIcon(ICONS.folder, big ? 14 : 13), `Show in ${where}`);
 }
@@ -113,10 +113,10 @@ function edViewHead(v) {
   let changed = null;
   if (v.changed && (v.stale || Date.now() / 1000 - v.changed < 120)) {
     const near = edCredit(writers, v.changed), color = near ? edWhoColor(near.actor) : null;
-    const tip = near ? `By ${edWriterName(near)}, as ag's hook recorded the actor's change` : "Written by something other than this editor";
+    const tip = near ? `By ${edWriterName(near)}` : "Changed outside this editor";
     changed = v.stale
-      ? el("button", { type: "button", class: "ed-changed again", style: color ? `--who: ${color}` : null, title: `${tip}. Show it as it is now`,
-        onclick: () => edViewAgain(v, true) }, `Changed on disk ${ago(v.changed)} · Show it`)
+      ? el("button", { type: "button", class: "ed-changed again", style: color ? `--who: ${color}` : null, title: `${tip} · click to reload`,
+        onclick: () => edViewAgain(v, true) }, `Changed on disk ${ago(v.changed)} · Reload`)
       : el("span", { class: "ed-changed", style: color ? `--who: ${color}` : null, title: tip }, `Changed on disk ${ago(v.changed)}`);
   }
   edHeadPut([
@@ -124,7 +124,7 @@ function edViewHead(v) {
     el("span", { class: `ed-status ${cls}`, role: "status", text: status }),
     edByChip(writers), changed,
     el("span", { class: "grow", style: "flex: 1" }),
-    info.text && info.kind !== "text" ? el("button", { type: "button", class: "ed-mode", title: `Edit ${info.name}'s text, live with everyone who has it open`,
+    info.text && info.kind !== "text" ? el("button", { type: "button", class: "ed-mode", title: `Edit ${info.name} as text`,
       onclick: () => edOpen(v.path, "edit") }, strokeIcon(ICONS.code, 13), "Edit") : null,
     edDownload(v), edRevealBtn(v),
     edExecBtn()].filter(Boolean));
