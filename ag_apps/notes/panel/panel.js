@@ -105,7 +105,7 @@ and what agents see of it. The words under either are its caption. */
     set(k, v) { try { localStorage.setItem(`notes:${ag.instance}:${k}`, JSON.stringify(v)); } catch { /* storage off: kept for now only */ } },
   };
   const clean = (h) => window.DOMPurify.sanitize((h || "").replace(/\u200b/g, ""), { ALLOWED_TAGS: ["b", "i", "u", "s", "code", "a", "br"], ALLOWED_ATTR: ["href"],
-    ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|page:[a-z0-9]{6,24}$)/i })
+    ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|page:[a-z0-9]{6,24}$|ag:\/\/[a-z])/i })
     .replace(/<(b|i|u|s|code)><\/\1>/g, "").replace(/^(<br>)+$/, "");
   const plainOf = (h) => { const t = document.createElement("template"); t.innerHTML = (h || "").replace(/<br>/g, "\n"); return t.content.textContent; };
   const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
@@ -174,14 +174,15 @@ and what agents see of it. The words under either are its caption. */
   // whether a page has a link to one of those pages (renamed, binned, ...: the links drawn again)
   const linksTo = (p, ids) => !!p && ids.size > 0 && p.blocks.some((b) => b.text && b.text.includes('href="page:')
     && [...ids].some((id) => b.text.includes(`href="page:${id}"`)));
-  // ... and as markdown, `[its title](page:<id>)`, the rest of the line as it was: a line sent to an agent, so it can read the page
+  // ... and as markdown, `[its title](ag://notes/page/<id>)` -- the link to the page agents write, which Chat opens --
+  // the rest of the line as it was: a line sent to an agent, so it can read the page
   function pagesAsMd(h) {
     if (!h || !h.includes('href="page:')) return h;
     const t = document.createElement("template");
     t.innerHTML = clean(h);
     for (const a of t.content.querySelectorAll("a")) {
       const id = pageOfLink(a), p = id && pages.get(id);
-      if (id) a.replaceWith(`[${p ? p.title || "Untitled" : a.textContent}](page:${id})`);
+      if (id) a.replaceWith(`[${p ? p.title || "Untitled" : a.textContent}](ag://notes/page/${id})`);
     }
     return t.innerHTML;
   }
@@ -1706,7 +1707,12 @@ and what agents see of it. The words under either are its caption. */
     }
     if (followPage(ev)) return;
     const a = ev.target.closest(".tx a");
-    if (a && (ev.metaKey || ev.ctrlKey || page().deleted)) { ev.preventDefault(); window.open(a.href, "_blank", "noopener"); }
+    if (!a || !(ev.metaKey || ev.ctrlKey || page().deleted)) return;
+    ev.preventDefault();
+    const href = a.getAttribute("href") || "";
+    // a link to something in an app (ag://, a page's line here too): opened there, as a click on it in Chat opens it
+    if (/^ag:\/\//.test(href)) ag.links.open(href).catch((e) => say(e.message, true));
+    else window.open(a.href, "_blank", "noopener");
   });
   box.addEventListener("mousedown", (ev) => { if (ev.target.closest(".chk, .gut .add, .to-btn, .tx a.pg")) ev.preventDefault(); });
   let drag = null;
@@ -4292,6 +4298,22 @@ and what agents see of it. The words under either are its caption. */
       el("span", { class: "caret none" }), el("span", { class: "ic", html: SVG.log }), el("span", { class: "nm", text: "Logbook" }));
   }
 
+  // ---------------------------------------------------------------- links to it
+  // A link to a page clicked in Chat, or in another app (`ag://notes/page/<id>#<block id>`, app.toml's [[links]]): the
+  // page opened, and the line it names, if it names one, scrolled to and flashed. One before the notebook is read: once
+  // it is.
+  let linked = null;
+  function goLink(l) {
+    const id = l && l.values && l.values.id, p = id && pages.get(id);
+    if (!p) return say("That page isn't in these notes any more", true);
+    openPage(id);
+    const n = l.part && box.querySelector(`.blk[data-id="${CSS.escape(l.part)}"]`);
+    if (!n) return;
+    n.scrollIntoView({ block: "center" });
+    n.classList.remove("flash"); void n.offsetWidth; n.classList.add("flash");
+  }
+  ag.links.onOpen((l) => { if (ready) goLink(l); else linked = l; });
+
   // ---------------------------------------------------------------- start
   try { book = await (await ag.api("state")).json(); } catch { book = { version: 0, pages: [] }; }
   if (!book || !Array.isArray(book.pages)) book = { version: 0, pages: [] };
@@ -4307,5 +4329,6 @@ and what agents see of it. The words under either are its caption. */
   if (narrow()) app.classList.remove("side-on");
   drawSide();
   drawPage();
+  if (linked) goLink(linked);
   document.body.dataset.ready = "1";
 })();
