@@ -52,10 +52,10 @@ include = ["ag*", "harness_kit*", "app_kit*", "ag_apps*"]
 [tool.setuptools.package-data]
 # what runs from the installed package besides Python: ag's harness entries, and the TypeScript
 # plugins (Pi, OpenCode) with the shared harness-side code they import; each harness's mark; and the
-# dashboard's page and its actors' avatars and what they say
+# dashboard's page, its actors' avatars and what they say, and its icons as an app
 ag = ["cli/harnesses.toml", "integrations/**/*.ts"]
 harness_kit = ["marks/*.svg"]
 app_kit = ["js/*.js", "DESIGN.md"]
 ag_apps = ["index.toml", "*/app.toml", "*/tools.json", "*/slack_app_manifest.json", "*/instructions.md", "*/mark.svg",
            "*/panel/*", "*/panel/**/*"]
-ag_dashboard = ["static/*", "static/assets/*", "gatherer_agent.md", "vendor/*", "vendor/pdfjs/**/*", "examples/*.js", "avatars/*/*.svg", "avatars/hello.toml"]
+ag_dashboard = ["static/*", "static/assets/*", "gatherer_agent.md", "vendor/*", "vendor/pdfjs/**/*", "examples/*.js", "avatars/*/*.svg", "avatars/hello.toml", "icons/*.png"]
