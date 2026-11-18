@@ -103,3 +103,29 @@ describe("markdown", () => {
     }
   });
 });
+
+describe("a link in a message", () => {
+  const link = (md: string) => markdown(md).querySelector("a");
+
+  it("to a web page opens apart", () => {
+    const a = link("See [the docs](https://example.org/a).");
+    expect(a?.getAttribute("href")).toBe("https://example.org/a");
+    expect(a?.getAttribute("target")).toBe("_blank");
+    expect(a?.classList.contains("ag-link")).toBe(false);
+  });
+
+  it("to something in an app is kept, marked with its app's mark, for the page to open", () => {
+    const a = link("Added to [your To dos](ag://notes/page/k3p9x2wq#b8k2).");
+    expect(a?.getAttribute("href")).toBe("ag://notes/page/k3p9x2wq#b8k2");
+    expect(a?.classList.contains("ag-link")).toBe(true);
+    expect(a?.dataset.app).toBe("notes");
+    expect(a?.getAttribute("style")).toBe('--ag-mark: url("/apps/mark/notes.svg")');
+    expect(a?.hasAttribute("target")).toBe(false);
+  });
+
+  it("of any other scheme is dropped, as before", () => {
+    expect(link("[x](javascript:alert(1))")?.hasAttribute("href")).toBe(false);
+    expect(link("[x](page:k3p9x2wq)")?.hasAttribute("href")).toBe(false);
+    expect(link('[x](ag://Notes"onclick=1/x)')?.classList.contains("ag-link")).toBe(false);
+  });
+});

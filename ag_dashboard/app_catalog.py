@@ -34,7 +34,7 @@ DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 def cost(m: "app_kit.Manifest") -> int:
     """About how many tokens an agent given the app's tools carries for them: their definitions and its instructions."""
     tools = [t.mcp(m.name, m.label) for t in m.tools]
-    return round((len(json.dumps(tools)) + len(m.instructions or "")) / CHARS_PER_TOKEN)
+    return round((len(json.dumps(tools)) + len(m.told())) / CHARS_PER_TOKEN)
 
 
 def said_schedule(s) -> str:

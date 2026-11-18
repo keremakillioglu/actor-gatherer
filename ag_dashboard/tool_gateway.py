@@ -117,7 +117,7 @@ def instructions(gatherer: str, cli: bool = False, channels: Tuple[str, ...] = (
              "message. Each app's tools are named <app>_<tool>." + (" " + CLI if cli else "") +
              (" " + LEAD if head else "")]
     for m in apps:
-        about = (m.instructions or m.description).strip()
+        about = (m.told() or m.description).strip()
         parts.append(f"## {m.label} ({m.name})\n{about}" if about else f"## {m.label} ({m.name})")
     return "\n\n".join(parts)
 
@@ -146,7 +146,7 @@ def launch_args(s: dict) -> List[str]:
         return []
     served = h.mcp_args(NAME, f"{ORIGIN}/mcp/{actor_of(s)}")
     mine = attached_apps(s["gatherer"], channels)
-    told = [m.instructions.strip() for m in mine if m.offer == "attached" and m.instructions.strip()]
+    told = [m.told() for m in mine if m.offer == "attached" and m.told()]
     if served is None:
         told.insert(0, instructions(s["gatherer"], cli=True, channels=channels, head=lead(s)))
     out = list(served or [])

@@ -5,11 +5,12 @@ gatherer -- ag's events: its types are ag EventTypes, its pollers ag Pollers, it
 policies take them unchanged. It imports the standard library and ag's contract, ag.ag_interface, and nothing else of
 ag or of the dashboard (tests/test_app_kit.py).
 
-    manifest.py   Manifest: load(folder), parse(data); its Tools, event types (ag's), PollerDefs, Handles,
+    manifest.py   Manifest: load(folder), parse(data); its Tools, event types (ag's), PollerDefs, Handles, Links,
                   Capabilities;
                   tool_name / split_tool_name (<app>_<tool>)
     backend.py    App (what a backend subclasses), Host (what the host gives it), Instance, Caller, ToolResult,
                   Response, AppError
+    links.py      links to things in apps, `ag://<app>/<path>`: an app's forms (Link), parse / href, told
     events.py     what an app inserts for agents to see, in ag's own shapes: context_stream, environment_update
     docs.py       Docs, Joined: the host's files shared live, for an app that asks `docs` (Host.docs())
     schedules.py  Schedule: an app's [[schedules]], when each is due (`last`, `next`)
@@ -19,7 +20,7 @@ ag or of the dashboard (tests/test_app_kit.py).
                   serve / main / RemoteHost (the app's)
 """
 
-from . import docs, events, finding, installing, notices, schedules  # noqa: F401
+from . import docs, events, finding, installing, links, notices, schedules  # noqa: F401
 from .backend import App, AppError, Caller, Host, Instance, Response, ToolResult  # noqa: F401 - the package's API
 from .manifest import (CAPABILITIES, CONTEXT_TYPES, HOST_PROPERTIES, HOST_RECORDS, HOST_TYPES, INSTANCES, OFFERS,  # noqa: F401
                        INTENTS, NOTICE_TYPES, SHOWS, Agent, Backend, Capabilities, Handles, Manifest, ManifestError,

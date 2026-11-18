@@ -265,6 +265,7 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
   | `tools` | `handle(name, fn)` for the tools it handles |
   | `agents` | `attached()`, `attach` / `detach`, `start({harness})` attached, `focus(channel)` |
   | `intents` | `open(intent)`; the intents it handles come in as calls |
+  | `links` | `onOpen(cb)`: a link to something in it clicked (5d); `href(path, part)`; `open(href)`: any app's link opened |
   | `selection` | the focused agent pane: its agent, and the turn, call or file selected in it (read-only) |
   | `theme` | light or dark, and the theme's colour tokens |
   | `native` | in the desktop app, a native web view at a rectangle of the panel (`native_view` capability) |
@@ -343,6 +344,32 @@ its instances (`host.instances()`), as Paper news fetches a day's arXiv listing 
   saves anything. An app that needs the answer looks for it on a schedule of its own and asks again: Paper news's
   "picks" schedule, every 30 minutes, asks for a day's picks again while none came, telling the asks its agent took
   up (it used one of the app's tools after them) from those it never saw, and stopping after a few of the first.
+
+### 5d. Links: an agent pointing the user at something in an app
+
+An agent points the user at something in an app -- a Notes page, a Slack message, a line of a file -- with a LINK in its
+reply: markdown, `[the To dos page](ag://notes/page/k3p9x2wq#b8k2)`. The user clicks it, and the app's panel opens
+there. The format, `ag://<app>/<path>[?instance=<id>][#<part>]`, is one scheme for every app (app_kit/links.py; the
+page's side frontend/src/features/apps/links.ts), not one each: an app's name may be a real scheme too (`slack:`).
+
+- **An app lists the paths it opens** in its manifest's `[[links]]`: each a `form` -- words, `<name>` for one segment,
+  a last `<name...>` for the rest of the path -- and what agents are told of it (`about`, which says what #part
+  takes). A path of none of its forms is not opened.
+- **Agents are told the forms** with the app's instructions, by the host (`Manifest.told`: its instructions, then a
+  "Links:" paragraph listing each form): an "always" app's in the MCP server's instructions, an attached one's in the
+  agent's own. An app's tools can hand back ready links (`links.href`), so an agent copies one rather than making it.
+- **Chat draws one** as a link with the app's mark before its words (core/ui/md.ts lets `ag://` through DOMPurify; any
+  other scheme but the web's is still dropped). Other places drawing an agent's markdown do the same.
+- **A click opens it** (src/legacy/07-panes.js's `openAppLink`): the link checked against the app's forms; the
+  instance the link names, else the one the agent who wrote it is attached to (the one shown, of several), else one
+  of the app's shown above the panes, else the gatherer's for the agent's folder (opened if none is, in no task); its
+  panel shown (opened above what is shown, if it isn't) and selected, and handed the link -- `{href, path, part,
+  values, form}`, the SDK's `ag.links.onOpen` -- which goes there. Any key held, the same: never the browser's to
+  open.
+- **A click is only the user looking.** It calls no tool, attaches no agent and is no event: what the agent sees
+  doesn't change. The panel treats the path as untrusted, as it would one the user typed.
+- **Between apps too.** A panel opens any app's link as Chat does (`ag.links.open(href)`), so a Notes line can link
+  to a Slack thread.
 
 ### 6. What moves out of the agent views
 

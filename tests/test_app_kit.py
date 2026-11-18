@@ -58,6 +58,13 @@ args = { root = "{cwd}" }
 intent = "open-file"
 types = ["text/markdown", "text/*"]
 
+[[links]]
+form = "note/<id>"
+about = "A note: its id from notes_add. Add #<line> for one line of it."
+
+[[links]]
+form = "file/<path...>"
+
 [capabilities]
 reads = ["tool_call"]
 files = true
@@ -212,6 +219,62 @@ class ManifestTest(unittest.TestCase):
     def test_no_such_folder(self):
         with self.assertRaises(ManifestError):
             app_kit.load(os.path.join(tempfile.mkdtemp(), "nothing"))
+
+
+class LinksTest(unittest.TestCase):
+    """Links to things in apps, `ag://<app>/<path>`: an app's [[links]] forms, read, matched and told to agents."""
+
+    def test_its_forms_match_paths_and_hand_back_their_values_decoded(self):
+        m = app_kit.load(app_folder())
+        self.assertEqual([k.form for k in m.links], ["note/<id>", "file/<path...>"])
+        self.assertEqual(m.link("note/a1b2")[1], {"id": "a1b2"})
+        self.assertEqual(m.link("note/a%20b")[1], {"id": "a b"})
+        self.assertIsNone(m.link("note/a1/b2"))                    # <id> is one segment
+        self.assertIsNone(m.link("note/"))
+        self.assertIsNone(m.link("notes/a1"))
+        self.assertEqual(m.link("file//Users/x/a%20b.py")[1], {"path": "/Users/x/a b.py"})   # <path...>: the rest
+        self.assertEqual(m.link("file/src/a.py")[0].form, "file/<path...>")
+        self.assertEqual(m.to_dict()["links"][0], {"form": "note/<id>",
+                                                   "about": "A note: its id from notes_add. Add #<line> for one line of it."})
+
+    def test_a_link_read_and_written(self):
+        h = app_kit.links.parse("ag://notes/note/a1b2?instance=i9#l%203")
+        self.assertEqual((h.app, h.path, h.part, h.instance), ("notes", "note/a1b2", "l 3", "i9"))
+        self.assertEqual(app_kit.links.parse("ag://notes").path, "")
+        for no in ("https://x.org/a", "ag:notes/x", "ag://Notes/x", "ag://9x/y", "page:abc123", "", None):
+            self.assertIsNone(app_kit.links.parse(no), no)
+        made = app_kit.links.href("notes", "file//Users/x/a b.py", part="L12", instance="i9")
+        self.assertEqual(made, "ag://notes/file//Users/x/a%20b.py?instance=i9#L12")
+        back = app_kit.links.parse(made)
+        self.assertEqual(app_kit.load(app_folder()).link(back.path)[1], {"path": "/Users/x/a b.py"})
+
+    def test_agents_are_told_each_form_after_the_app_s_instructions(self):
+        m = app_kit.load(app_folder())
+        told = m.told()
+        self.assertTrue(told.startswith("Use notes_add to keep a note."))
+        self.assertIn("[its name](ag://notes/note/<id>)", told)
+        self.assertIn("- `ag://notes/note/<id>`: A note: its id from notes_add.", told)
+        self.assertIn("- `ag://notes/file/<path...>`", told)
+        self.assertIn("`?instance=<its id>`", told)                # several Notes may be open: per-folder
+        one = app_kit.parse({"name": "x", "instances": "one", "panel": {"entry": "i.html"},
+                             "links": [{"form": "a/<b>"}]})
+        self.assertNotIn("?instance=", one.told())
+        self.assertEqual(app_kit.parse({"name": "x"}).told(), "")
+
+    def test_a_form_it_may_not_have(self):
+        refused = ManifestTest.refused
+        for form, says in (("", "none empty"), ("/note/<id>", "none empty"), ("note/<id>/", "none empty"),
+                           ("note//<id>", "none empty"), ("note/<id>/<id>", "<id> twice"),
+                           ("<rest...>/x", "comes last"), ("note/<Id>", "neither a word"), ("a b", "neither a word")):
+            refused(self, FULL.replace('form = "note/<id>"', f"form = {json.dumps(form)}"), f"links[0].form: ")
+            with self.assertRaises(ValueError) as ctx:
+                app_kit.links.form(form)
+            self.assertIn(says, str(ctx.exception))
+        refused(self, FULL.replace('form = "file/<path...>"', 'form = "note/<id>"'), "links: a form given twice")
+        refused(self, FULL.replace('form = "note/<id>"', 'form = "note/<id>"\nopens = "x"'), "links[0].opens: not a key")
+        refused(self, without(FULL, '[panel]\nentry = "panel/index.html"\n').replace('handled_by = "panel"\n', "")
+                .replace('[[handles]]\nintent = "open-file"\ntypes = ["text/markdown", "text/*"]\n', ""),
+                "links: an app opens links in its panel")
 
 
 class EventsTest(unittest.TestCase):

@@ -1055,6 +1055,7 @@ function addAppPane(app, instance, size = 1, held = false) {
   p.panel = window.agNext.apps.pane(app, instance, {
     close: () => { workClosed(p.node); closeAppPane(p); },   // its panel asking (ag.close)
     intent: (kind, data, from) => appIntent(kind, data, from.instance.gatherer),
+    openLink: (href, from) => openAppLink(from.instance.gatherer, null, href, from.instance.folder),   // ag.links.open
     selection: () => appsSelection(),
     agents: (g) => ((state.home && state.home.gatherers.find((x) => x.name === g)) || { agents: [] }).agents     // a gatherer's own
       .filter((a) => !a.closed && !isCoordinator(a))                                                           // agent: attached to no app
@@ -1268,14 +1269,26 @@ const webLink = (href) => {
   } catch (e) { return ""; }
 };
 const plainClick = (ev) => !ev || (!ev.button && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey);
-// Whether the page takes a click on a link to `href` shown with this page's actor (a frame's: the page around it does)
+const appLink = (href) => !!(window.agNext && window.agNext.apps.links.isApp(href));
+// Whether the page takes a click on a link to `href` shown with this page's actor (a frame's: the page around it does).
+// A link to something in an app (ag://, openAppLink): always, whatever key is held -- never the browser's to open.
 function linkClicked(href, ev) {
+  if (appLink(href)) {
+    if (ev && ev.button) return true;               // another button: nothing opened (nor by the browser)
+    if (PANE) return !!(PANE.openLink && PANE.openLink(window, String(href).trim()));
+    const sel = state.selected || [];
+    openAppLink(sel[0] || ((state.home && state.home.gatherers[0]) || {}).name, sel[1] || null, String(href).trim())
+      .catch((e) => paneNote(e.message));
+    return true;
+  }
   const url = webLink(href);
   if (!url || !plainClick(ev) || SNAPSHOT || !state.selected) return false;
   return PANE ? !!(PANE.openLink && PANE.openLink(window, url)) : openLink(state.selected[0], state.selected[1], url);
 }
-// `url` opened for actor `c` of `gname`, if a Browser can be given it: false, nothing done
+// `url` opened for actor `c` of `gname`, if a Browser can be given it: false, nothing done (a link to something in an
+// app: opened there, openAppLink)
 function openLink(gname, c, url) {
+  if (appLink(url)) { openAppLink(gname, c, url).catch((e) => paneNote(e.message)); return true; }
   const g = state.home && state.home.gatherers.find((x) => x.name === gname);
   const a = g && !isShell(c) ? actorOf(g, c) : null;
   const app = window.agNext && window.agNext.apps.named(LINK_APP);
@@ -1305,6 +1318,53 @@ async function linkInBrowser(g, a, app, url) {
   saveAppPanes();
   selectAppPane(p);
   p.panel.intent("open-url", { url });               // held by the panel's host until a new panel has connected
+}
+// ------------------------------------------------------------------ links to apps
+// A link to something in an app (`ag://<app>/<path>[?instance=<id>][#<part>]`, app_kit/links.py) -- clicked in an
+// actor's pane (`c`, the actor whose message it is in), or opened by a panel (the SDK's ag.links.open; `folder`, its
+// instance's) -- opened in the app: its panel shown, selected, and handed the link (its `link` intent: the SDK's
+// ag.links.onOpen), which takes it there. Only a path of a form the app's manifest lists ([[links]]). The instance: the
+// one the link names; else, for an actor's link, the one it is attached to (the one whose panel shows, of several); else
+// the app's panel shown above the panes in the gatherer; else the gatherer's instance for the actor's folder (opened, if
+// none is: put in no task). Its panel shown where it is, else opened above what is shown. A click calls no tool and
+// attaches no agent: the user only looks. What can't be opened: an error saying why.
+async function openAppLink(gname, c, href, folder = null) {
+  const apps = window.agNext && window.agNext.apps, h = apps ? apps.links.parse(href) : null;
+  if (!h) throw new Error(`Not a link to anything in an app: ${href}`);
+  const app = apps.named(h.app);
+  if (!app || app.failed) throw new Error(`No app called ${h.app} here, to open ${href}`);
+  const m = apps.links.match(app.links, h.path);
+  if (!m) throw new Error(`${app.label}: no such place to open (${h.path || "nothing"})`);
+  const g = state.home && state.home.gatherers.find((x) => x.name === gname);
+  if (!g || PANE || SNAPSHOT) return;
+  const a = c && !isShell(c) ? actorOf(g, c) : null;
+  const shown = (id) => panes.apps.find((q) => !q.held && q.instance.id === id);
+  let inst = null;
+  if (h.instance) {
+    inst = await apps.instanceOf(app.name, gname, h.instance);
+    if (!inst) throw new Error(`${app.label}: that one (${h.instance}) is closed`);
+  }
+  if (!inst && a) {
+    const had = (await apps.attachedTo(gname, a.channel)).filter((i) => i.app === app.name);
+    inst = had.find((i) => shown(i.id)) || had[0] || null;
+  }
+  if (!inst) {
+    const p = panes.apps.find((q) => !q.held && q.app.name === app.name && q.instance.gatherer === gname);
+    if (p) inst = p.instance;
+  }
+  let fresh = false;
+  if (!inst) {
+    inst = await apps.open(app.name, gname, (a && cwdOf(a)) || folder || null);
+    fresh = true;
+  }
+  let p = panes.apps.find((q) => q.instance.id === inst.id);
+  if (!p) { p = addAppPane(app, inst); fresh = true; }
+  else if (p.held) holdAppPane(p, false);
+  saveAppPanes();
+  selectAppPane(p);
+  // held by the panel's host until a panel just opened has connected
+  p.panel.intent("link", { href: h.href, path: h.path, part: h.part, values: m.values, form: m.form });
+  if (fresh) await readApps(gname, true);           // the list's rows, the app now open
 }
 if (!SNAPSHOT) document.addEventListener("click", (ev) => {
   const a = ev.target instanceof Element ? ev.target.closest("a[href]") : null;
