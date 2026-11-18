@@ -384,19 +384,29 @@ page's side frontend/src/features/apps/links.ts), not one each: an app's name ma
   a last `<name...>` for the rest of the path -- and what agents are told of it (`about`, which says what #part
   takes). A path of none of its forms is not opened.
 - **Agents are told the forms** with the app's instructions, by the host (`Manifest.told`: its instructions, then a
-  "Links:" paragraph listing each form): an "always" app's in the MCP server's instructions, an attached one's in the
-  agent's own. An app's tools hand back ready links too (`links.href`): an agent copies one rather than making it,
+  "Links:" paragraph listing each form): a "group" app's in the MCP server's instructions, to every agent; a "task"
+  app's in the own instructions of the agents of a task holding one; any app's in `apps_help`'s answer. An app's tools hand back ready links too (`links.href`): an agent copies one rather than making it,
   and it is what makes an agent link at all -- in a live run (2026-11-18) a small model told only the forms, at the
   end of the instructions, named a page in its reply without linking it, even asked where it was; with notes_add's
   answer saying "link it as [Parser plan](ag://notes/page/...)", it linked it.
 - **Chat draws one** as a link with the app's mark before its words (core/ui/md.ts lets `ag://` through DOMPurify; any
   other scheme but the web's is still dropped). Other places drawing an agent's markdown do the same.
-- **A click opens it** (src/legacy/07-panes.js's `openAppLink`): the link checked against the app's forms; the
-  instance the link names, else the one the agent who wrote it is attached to (the one shown, of several), else one
-  of the app's shown above the panes, else the gatherer's for the agent's folder (opened if none is, in no task); its
-  panel shown (opened above what is shown, if it isn't) and selected, and handed the link -- `{href, path, part,
-  values, form}`, the SDK's `ag.links.onOpen` -- which goes there. Any key held, the same: never the browser's to
-  open.
+- **A click opens it** (src/legacy/07-panes.js's `openAppLink`), the link checked against the app's forms. THE
+  INSTANCE, the first of: the one the link names; one of the writing agent's task (attached to it: the one shown, of
+  several); one of the app's whose panel is shown; one open in the group -- one that opens here (in no task, or in
+  this one) before one of another task, and of those one on the agent's folder first; else the group's for that
+  folder from the server, which opens one only where there is none to be had (a new one in no task). An app with
+  many instances (the Editor) is so reused before another is made. WHERE: its panel shown, it is selected there; an
+  instance of another task, that task is shown, as a click on the app's row (or on a notification of the app's) shows
+  it; else its panel opens above what is shown. Then the panel is handed the link -- `{href, path, part, values,
+  form}`, the SDK's `ag.links.onOpen` -- and goes there. Any key held, the same: never the browser's to open.
+- **A file's path is a link too.** Agents write paths without being told any form -- `[parser.py](src/parser.py#L12)`,
+  `/work/plan.md:7`, `file:///work/plan.md` -- and a browser would open one as a page of the dashboard's own site.
+  Chat marks one (core/ui/md.ts's `data-path`, `file://` let through DOMPurify; a link the dashboard draws itself, as
+  `/api/image?…`, isn't marked), and a click on it, or on a `file://` link a terminal shows, opens it
+  (`openFileLink`) as the link of the form `file/<path...>` (links.ts's FILE_FORM) in an app whose `[[links]]` take
+  that form -- of several, the one the agent has, else the first installed. A relative path is from the agent's
+  folder; `#L12` or a last `:12` is the line.
 - **A click is only the user looking.** It calls no tool, attaches no agent and is no event: what the agent sees
   doesn't change. The panel treats the path as untrusted, as it would one the user typed.
 - **Between apps too.** A panel opens any app's link as Chat does (`ag.links.open(href)`), so a Notes line can link

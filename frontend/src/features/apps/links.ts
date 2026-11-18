@@ -84,3 +84,62 @@ export function matchPath(forms: LinkForm[] | undefined, path: string): LinkMatc
   }
   return null;
 }
+
+// A FILE'S PATH, as agents write one in a reply without being told any form -- `[parser.py](src/parser.py#L12)`,
+// `[plan](/work/plan.md)`, `file:///work/plan.md`, `/work/plan.md:12` -- opened as a link to it in an app that shows
+// files: one whose [[links]] take FILE_FORM (src/legacy/07-panes.js's openFileLink). A relative one is from the
+// agent's folder. Not one: a link with a scheme (http:, mailto:, ag:), one to a host (//…), an anchor or query alone,
+// one from the home folder (~/…: whose, the page can't say).
+
+/** The link form an app takes files by: `file/` and the absolute path after it (its first / left out). */
+export const FILE_FORM = "file/<path...>";
+
+export interface FilePath {
+  /** decoded; relative to the agent's folder unless it starts with / */
+  path: string;
+  /** the line, from #L12 or a last :12; 0: none */
+  line: number;
+}
+
+const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+const FILE_URL = /^file:\/\/(?:localhost)?(\/[^?#]*)(?:\?[^#]*)?(?:#([\s\S]*))?$/i;
+const AT_LINE = /:(\d+)(?::\d+)?$/;
+
+/** The file `href` is a path to, and the line it points at; null: not a file's path. */
+export function filePath(href: string | null | undefined): FilePath | null {
+  const text = String(href ?? "").trim();
+  let raw: string, part: string;
+  const url = FILE_URL.exec(text);
+  if (url) [raw, part] = [url[1], url[2] || ""];
+  else {
+    if (!text || SCHEME.test(text) || /^(?:\/\/|[#?~])/.test(text)) return null;
+    const hash = text.indexOf("#"),
+      bare = hash < 0 ? text : text.slice(0, hash);
+    part = hash < 0 ? "" : text.slice(hash + 1);
+    raw = bare.split("?")[0];
+  }
+  let path = decode(raw);
+  if (!path || path.includes("\u0000")) return null;
+  let line = Number((/^L(\d+)/i.exec(decode(part) ?? "") || [])[1] || 0);
+  const at = AT_LINE.exec(path);
+  if (at) {
+    path = path.slice(0, at.index);
+    line ||= Number(at[1]);
+  }
+  return path ? { path, line } : null;
+}
+
+/** `path` from the folder `from` (both absolute: a path starting with / is itself), its . and .. taken out. */
+export function joinPath(from: string, path: string): string {
+  const out: string[] = [];
+  for (const s of (path.startsWith("/") ? path : `${from}/${path}`).split("/")) {
+    if (s === "..") out.pop();
+    else if (s && s !== ".") out.push(s);
+  }
+  return `/${out.join("/")}`;
+}
+
+/** The link to the file at the absolute `path` (at `line`, if any) in the app `app`, of its FILE_FORM. */
+export const fileHref = (app: string, path: string, line = 0): string =>
+  `ag://${app}/file/${joinPath("/", path).slice(1).split("/").map(encodeURIComponent).join("/")}` +
+  (line > 0 ? `#L${line}` : "");

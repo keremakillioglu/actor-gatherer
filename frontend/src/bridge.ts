@@ -21,7 +21,7 @@ import { markdown, unplanned } from "./core/ui/md";
 import { draw as drawAppsPage } from "./features/apps/catalog";
 import { askedByAgent } from "./features/apps/catalog-dialogs";
 import * as apps from "./features/apps/host";
-import { isAppHref, matchPath, parseHref } from "./features/apps/links";
+import { FILE_FORM, fileHref, filePath, isAppHref, joinPath, matchPath, parseHref } from "./features/apps/links";
 import { drawTurns } from "./features/chat/mount";
 import { cidsOf } from "./features/chat/view";
 import { work } from "./features/layout/work";
@@ -77,8 +77,17 @@ const agNext = Object.freeze({
     attachedTo: apps.attachedTo,
     start: apps.start,
     handler: apps.handler,
-    /** Links to things in apps, `ag://<app>/<path>` (features/apps/links.ts): read, and matched to an app's forms. */
-    links: Object.freeze({ parse: parseHref, match: matchPath, isApp: isAppHref }),
+    /** Links to things in apps, `ag://<app>/<path>` (features/apps/links.ts): read, and matched to an app's forms; and
+     * a file's path an agent writes, read and made a link of an app's FILE_FORM. */
+    links: Object.freeze({
+      parse: parseHref,
+      match: matchPath,
+      isApp: isAppHref,
+      file: filePath,
+      join: joinPath,
+      fileHref,
+      FILE_FORM,
+    }),
     pane: (app: apps.AppInfo, instance: apps.Instance, hooks: apps.PaneHooks) => new apps.AppPane(app, instance, hooks),
   }),
   /** The Apps page (features/apps/catalog.ts), drawn in a tab's box when the tab is its (src/legacy/07-apps-page.js). */

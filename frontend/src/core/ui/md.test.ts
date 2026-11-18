@@ -123,6 +123,17 @@ describe("a link in a message", () => {
     expect(a?.hasAttribute("target")).toBe(false);
   });
 
+  it("to a file -- a path, or file:// -- is kept, marked for the page to open in an app that shows files", () => {
+    for (const href of ["src/parser.py#L12", "/work/plan.md", "./a.txt", "../b/c.md:3", "file:///work/plan.md"]) {
+      const a = link(`See [it](${href}).`);
+      expect(a?.getAttribute("href")).toBe(href);
+      expect(a?.hasAttribute("data-path")).toBe(true);
+      expect(a?.hasAttribute("target")).toBe(false);
+    }
+    for (const href of ["https://example.org/a", "#top", "mailto:a@b.org", "//example.org/x"])
+      expect(link(`[x](${href})`)?.hasAttribute("data-path")).toBe(false);
+  });
+
   it("of any other scheme is dropped, as before", () => {
     expect(link("[x](javascript:alert(1))")?.hasAttribute("href")).toBe(false);
     expect(link("[x](page:k3p9x2wq)")?.hasAttribute("href")).toBe(false);

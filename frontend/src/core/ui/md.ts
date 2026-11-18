@@ -30,10 +30,15 @@ declare global {
   }
 }
 
-// DOMPurify's own list of the links it keeps (its ALLOWED_URI_REGEXP), and `ag://` ones: links to things in apps
+// DOMPurify's own list of the links it keeps (its ALLOWED_URI_REGEXP), `ag://` ones (links to things in apps) and
+// `file://` ones: a file's, which the page opens in an app as it does a path (src/legacy/07-panes.js's openFileLink)
 const URIS =
-  /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|ag:\/\/[a-z]|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
+  /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|ag:\/\/[a-z]|file:\/\/(?:localhost)?\/|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
 const APP_LINK = /^ag:\/\/([a-z][a-z0-9_]{0,23})(?:[/?#]|$)/;
+// A file's path, as an agent writes one (no scheme, not to a host, not an anchor or query alone), or a file:// link:
+// marked data-path, for the page to open in an app that shows files (src/legacy/07-panes.js's openFileLink; the rules
+// it is read by, features/apps/links.ts's filePath) -- not a link the dashboard draws itself, as /api/image?…
+const FILE_LIKE = /^(?:file:\/\/|(?![a-z][a-z0-9+.-]*:|\/\/|[#?~]))./i;
 
 let ready: boolean | undefined;
 /** marked and DOMPurify set up as the page uses them, once: whether they are there. */
@@ -55,6 +60,11 @@ function setUp(): boolean {
           n.classList.add("ag-link");
           n.setAttribute("data-app", app[1]);
           n.setAttribute("style", `--ag-mark: url("/apps/mark/${app[1]}.svg")`);
+          n.removeAttribute("target");
+          return;
+        }
+        if (FILE_LIKE.test(n.getAttribute("href") || "")) {
+          n.setAttribute("data-path", "");
           n.removeAttribute("target");
           return;
         }
