@@ -357,7 +357,10 @@ page's side frontend/src/features/apps/links.ts), not one each: an app's name ma
   takes). A path of none of its forms is not opened.
 - **Agents are told the forms** with the app's instructions, by the host (`Manifest.told`: its instructions, then a
   "Links:" paragraph listing each form): an "always" app's in the MCP server's instructions, an attached one's in the
-  agent's own. An app's tools can hand back ready links (`links.href`), so an agent copies one rather than making it.
+  agent's own. An app's tools hand back ready links too (`links.href`): an agent copies one rather than making it,
+  and it is what makes an agent link at all -- in a live run (2026-11-18) a small model told only the forms, at the
+  end of the instructions, named a page in its reply without linking it, even asked where it was; with notes_add's
+  answer saying "link it as [Parser plan](ag://notes/page/...)", it linked it.
 - **Chat draws one** as a link with the app's mark before its words (core/ui/md.ts lets `ag://` through DOMPurify; any
   other scheme but the web's is still dropped). Other places drawing an agent's markdown do the same.
 - **A click opens it** (src/legacy/07-panes.js's `openAppLink`): the link checked against the app's forms; the

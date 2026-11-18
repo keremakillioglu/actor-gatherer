@@ -107,9 +107,9 @@ def told(m) -> str:
     "": it takes none."""
     if not m.links:
         return ""
-    lines = [f"Links: to point the user at one of these in a reply (or in another app), write a markdown link -- "
-             f"`[its name](ag://{m.name}/{m.links[0].form})` -- in one of these forms; they click it to open it in "
-             f"{m.label}."]
+    lines = [f"Links: whenever you refer to one of these in a reply (or in another app), link it -- "
+             f"`[its name](ag://{m.name}/{m.links[0].form})`, in one of these forms -- so the user opens it in "
+             f"{m.label} with a click, rather than looking for it:"]
     lines += [f"- `ag://{m.name}/{k.form}`" + (f": {k.about}" if k.about else "") for k in m.links]
     if m.instances != "one":
         lines.append(f"Attached to more than one {m.label}, add `?instance=<its id>` before any #.")

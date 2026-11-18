@@ -625,7 +625,8 @@ class Notebook:
             head = f"# {(page.get('icon') + ' ') if page.get('icon') else ''}{page.get('title') or 'Untitled'}"
             where = f"page {page['id']}" + (f", under {parent.get('title') or 'Untitled'} ({parent['id']})"
                                            if parent else "")
-            lines = [f"{head}   ({where})", ""]
+            link = f"[{page.get('title') or 'Untitled'}](ag://notes/page/{page['id']})"     # as a reply links it
+            lines = [f"{head}   ({where}) -- link it as {link}", ""]
             body = markdown_lines(page.get("blocks", []), title=self.link_title)
             lines.extend(body or ["(no blocks yet)"])
             sent = [b for b in page.get("blocks", []) if is_work(b) or (b.get("thread") and not b.get("source"))]

@@ -2,10 +2,14 @@
 // a message (core/ui/md.ts) with its app's mark, and opened by a click in the app's panel above the actor (07-panes.js's
 // openAppLink), which is handed the link (the SDK's ag.links.onOpen). The test app is Notepad (tests/apps/notepad/),
 // whose [[links]] take `note/<n>`. Its instance is left open, as apps.spec.ts leaves it; its panel closed.
+import fs from "node:fs";
+import path from "node:path";
 import type { Page } from "@playwright/test";
 import { closePanel, expect, test } from "./test";
-import { CLAUDE, openActor } from "./home";
+import { CLAUDE, GATHERER, openActor } from "./home";
+import { editorPane, editorPanel, project } from "./editor-home";
 
+const CLAUDE_CHANNEL = "5f0c2a2e-8d1b-4c7e-9a3f-1b2c3d4e5f60";
 const beside = process.platform === "darwin" ? "Meta" : "Control";
 const notepad = (page: Page) => page.locator("#top-row > .app-pane[data-app=notepad]");
 const notepadFrame = (page: Page) => page.frames().find((f) => /^http:\/\/notepad\.localhost:\d+\//.test(f.url()))!;
@@ -68,4 +72,25 @@ test("a link to no place an app lists, or to no app, opens nothing and says why"
   await expect(page.locator(".pane-note").last()).toHaveText("No app called nowhere here, to open ag://nowhere/a");
   await expect(notepad(page)).toHaveCount(0);
   expect(page.url()).not.toContain("ag:");
+});
+
+test("a link to a file opens it in the agent's own Editor, at its line", async ({ page }) => {
+  const { repo } = project();
+  const other = path.join(repo, "notes.txt");
+  fs.writeFileSync(other, "one\ntwo\nthree\n");
+  // an Editor of the actor's, on the project (the test home's actors have no folder to open one on)
+  const opened = await page.request.post("/api/apps/open", {
+    data: { app: "editor", gatherer: GATHERER, folder: repo, channel: CLAUDE_CHANNEL },
+  });
+  const editor = ((await opened.json()) as { id: string }).id;
+  await openActor(page, CLAUDE);
+  // its absolute path after file/, as the Editor's [[links]] say
+  await (await says(page, "said-5", `See [line 2](ag://editor/file${other}#L2).`)).click();
+  const shown = editorPane(page).filter({ visible: true });
+  await expect(shown).toHaveCount(1);
+  await expect(editorPane(page)).toHaveCount(1); // and no other, out of sight
+  expect(new URL((await shown.locator("iframe").getAttribute("src")) || "").searchParams.get("instance")).toBe(editor);
+  await expect(editorPanel(page).locator(".ed-head .ed-path")).toContainText("notes.txt");
+  await expect(editorPanel(page).locator(".cm-activeLine")).toHaveText("two");
+  await page.request.post("/api/apps/close", { data: { gatherer: GATHERER, instance: editor } });
 });

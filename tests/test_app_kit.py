@@ -252,7 +252,7 @@ class LinksTest(unittest.TestCase):
         m = app_kit.load(app_folder())
         told = m.told()
         self.assertTrue(told.startswith("Use notes_add to keep a note."))
-        self.assertIn("[its name](ag://notes/note/<id>)", told)
+        self.assertIn("`[its name](ag://notes/note/<id>)`, in one of these forms", told)
         self.assertIn("- `ag://notes/note/<id>`: A note: its id from notes_add.", told)
         self.assertIn("- `ag://notes/file/<path...>`", told)
         self.assertIn("`?instance=<its id>`", told)                # several Notes may be open: per-folder
