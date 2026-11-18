@@ -1493,8 +1493,9 @@ function moreStarts(g, hs, where, key = `more:${g.name}`) {
 function openActorMenu(g, hs, button, key = `actor:${g.name}`, start = (h) => addSession(g, h), place = null) {
   const cwd = startCwd(g);
   const where = cwd ? tildePath(cwd, state.home.home_dir) : "";
-  openPop(key, button, popMenu(place ? `New actor in ${place}` : where ? `New actor in ${where.replace(/\/+$/, "").split("/").pop() || where}` : `New actor in ${g.name}`,
-    hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => start(h) })), where));
+  // headed by where it goes -- the folder, else the group, as the "+ ⋯" menu's -- its directory under that
+  openPop(key, button, popMenu(`New actor in ${place || titleOf(g)}`,
+    hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), run: () => start(h) })), where, where));
 }
 // The "+ actor" of a gatherer's or a folder's card in the rail (gathererCard, folderCard; `f` null: the gatherer's top): a
 // new actor there, as the list's "+ actor" starts one -- on the one harness at once, or on the one picked from a drop-down
@@ -1578,13 +1579,16 @@ function railNewBox(g, hs, harness = hs[0], cwd = "", error = "", alone = false)
     err);
   return box;
 }
-function openMoreMenu(g, hs, button, key = `more:${g.name}`, place = g.name) {
+function openMoreMenu(g, hs, button, key = `more:${g.name}`, place = titleOf(g)) {
   if (brPick.menu && brPick.menu.g === g.name) return brMenuClose();     // the branch drop-down it opened: pressed again
-  openPop(key, button, popMenu(`New in ${place}`, moreStarts(g, hs, startCwd(g) && tildePath(startCwd(g), state.home.home_dir), key)));
+  const dir = startCwd(g) && tildePath(startCwd(g), state.home.home_dir);
+  openPop(key, button, popMenu(`New in ${place}`, moreStarts(g, hs, dir, key), dir, dir));
 }
 // A drop-down's box: its heading, then an item for each choice -- its mark, what it is, and a note under it.
-function popMenu(head, items, title) {
-  return el("div", { class: "br-menu row-menu", role: "menu", "aria-label": head }, el("div", { class: "hd", text: head, ...(title ? { title } : {}) }),
+// `sub`: a second line under its heading, muted (where a new actor would work)
+function popMenu(head, items, title, sub) {
+  return el("div", { class: "br-menu row-menu", role: "menu", "aria-label": head },
+    el("div", { class: "hd", ...(title ? { title } : {}) }, head, sub ? el("span", { class: "sub", text: sub }) : null),
     ...items.map((it) => el("button", { type: "button", role: "menuitem", ...(it.depth ? { style: `padding-left: ${10 + it.depth * 14}px` } : {}), onclick: (ev) => {
       ev.stopPropagation();
       const button = popButton();

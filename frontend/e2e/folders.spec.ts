@@ -221,7 +221,7 @@ test("a folder starts actors in it: its + and + ⋯ on its line, shown while hov
     await expect(gRow.locator(":scope > .act.crew")).toBeVisible();
     await line.locator("button.new-actor").click();
     const menu = page.locator(".row-menu[role=menu]");
-    await expect(menu.locator(".hd")).toHaveText("New actor in Ideas");
+    await expect(menu.locator(".hd")).toContainText("New actor in Ideas"); // (its directory under it)
     await menu.getByRole("menuitem", { name: "Claude Code" }).click();
     await expect.poll(async () => (await treeOf(page)).filed).toEqual({ [started]: ideas }); // filed there once started
   } finally {
