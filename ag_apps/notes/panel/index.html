@@ -10,21 +10,21 @@
 <div id="app" class="nt">
   <aside id="side" class="side" aria-label="Pages">
     <div class="side-top">
-      <input id="find" class="find" type="search" placeholder="Search" aria-label="Search the pages" autocomplete="off">
+      <input id="find" class="find" type="search" placeholder="Search" aria-label="Search pages" autocomplete="off">
       <button id="new-page" class="icon-btn" type="button" title="New page" aria-label="New page"></button>
-      <button id="side-hide" class="icon-btn" type="button" aria-label="Hide the pages"></button>
+      <button id="side-hide" class="icon-btn" type="button" aria-label="Hide sidebar"></button>
     </div>
     <nav id="tree" class="tree" role="tree" aria-label="Pages"></nav>
     <div class="side-foot">
       <button id="trash-btn" class="side-btn" type="button" aria-expanded="false"></button>
       <div id="trash" class="trash" hidden></div>
     </div>
-    <div id="side-grip" class="side-grip" role="separator" aria-orientation="vertical" aria-label="The pages' width" tabindex="0"></div>
+    <div id="side-grip" class="side-grip" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
   </aside>
   <main class="main">
     <div class="bar">
-      <button id="side-toggle" class="icon-btn" type="button" aria-label="Show the pages"></button>
-      <nav id="crumbs" class="crumbs" aria-label="Where this page is"></nav>
+      <button id="side-toggle" class="icon-btn" type="button" aria-label="Show sidebar"></button>
+      <nav id="crumbs" class="crumbs" aria-label="Breadcrumb"></nav>
       <button id="done-btn" class="done-btn" type="button" aria-pressed="false" hidden></button>
       <span id="who" class="who" aria-live="polite"></span>
       <span id="saved" class="saved" aria-live="polite"></span>
@@ -34,13 +34,13 @@
       <article id="page" class="page" hidden>
         <div class="pg-head">
           <div class="pg-tools"><button id="add-icon" class="pg-tool" type="button">Add icon</button></div>
-          <button id="icon" class="pg-icon" type="button" title="Change the icon" hidden></button>
+          <button id="icon" class="pg-icon" type="button" title="Change icon" hidden></button>
           <h1 id="title" class="pg-title" contenteditable="plaintext-only" spellcheck="true" data-ph="Untitled" aria-label="Title"></h1>
         </div>
-        <div id="blocks" class="blocks" aria-label="The page's lines"></div>
+        <div id="blocks" class="blocks" aria-label="Page content"></div>
         <div id="fold-all" class="fold-all" hidden></div>
-        <div id="pk-bar" class="pk-bar" role="toolbar" aria-label="The lines picked" hidden></div>
-        <div id="below" class="below" title="Click to add a block, or drag to pick lines"></div>
+        <div id="pk-bar" class="pk-bar" role="toolbar" aria-label="Selected lines" hidden></div>
+        <div id="below" class="below" title="Click to add a line, or drag to select lines"></div>
       </article>
       <section id="agents-page" class="page agents-page" aria-label="Agents" hidden></section>
       <section id="work-page" class="page agents-page work-page" aria-label="Work items" hidden></section>
@@ -52,7 +52,7 @@
       </div>
     </div>
   </main>
-  <aside id="convo" class="convo" aria-label="The conversation about a line" hidden></aside>
+  <aside id="convo" class="convo" aria-label="Conversation" hidden></aside>
   <div id="pop" class="pop" hidden></div>
   <div id="drop" class="drop" hidden></div>
   <div id="band" class="band" hidden></div>

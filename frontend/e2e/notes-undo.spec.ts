@@ -138,7 +138,7 @@ test("a line an agent changed since is left as it is, and the reader told", asyn
   await expect.poll(() => lines(panel)).toEqual(after);
   const now = await lines(panel);
   await undo(page); // the Tab: its line the agent's now
-  await expect(panel.locator("#who")).toContainText("Not undone");
+  await expect(panel.locator("#who")).toContainText("Can't undo");
   await expect.poll(() => lines(panel)).toEqual(now);
   await binPage(panel, "Theirs");
 });
