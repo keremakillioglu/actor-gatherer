@@ -82,7 +82,7 @@ class HookTest(unittest.TestCase):
         ag_home._HOMES.clear()
         self.addCleanup(lambda: (setattr(paths, "TRACE_DIR", saved[0]), setattr(paths, "AG_HOME", saved[1]),
                                  ag_home._HOMES.clear()))
-        server = server_for()
+        server = self.server = server_for()
 
         class Local:                                                         # the server, in this process
             async def request(self, op, body=None, timeout=None):
@@ -94,13 +94,17 @@ class HookTest(unittest.TestCase):
         self.hook = claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda gatherer: Local()), log=lambda g, l: None,
                                                    count="off", files="off")
 
-    def call(self, messages):
-        """One model call: what the model is sent (its texts, in order), and the request, for `failed`."""
+    def send(self, messages):
+        """One model call: the messages the model is sent, and the request, for `failed`."""
         req = SimpleNamespace(method="POST", path="/v1/messages", label="g", headers={"X-Claude-Code-Session-Id": "sess"},
                               body={"model": "m", "tools": [{"name": "Bash"}], "messages": messages}, state={})
         out = asyncio.run(self.hook(req))
         self.assertIsNotNone(out, "ag's context, not the request as it came")
-        sent = out["messages"]
+        return out["messages"], req
+
+    def call(self, messages):
+        """One model call: what the model is sent (its texts, in order), and the request, for `failed`."""
+        sent, req = self.send(messages)
         return [b.get("text") for m in sent for b in (m["content"] if isinstance(m["content"], list) else [])
                 if isinstance(b, dict) and b.get("type") == "text"], req
 
@@ -200,6 +204,42 @@ class HookTest(unittest.TestCase):
                                      user("[Request interrupted by user]", "go on")])
         self.assertEqual(sent.count("What is 2+2?"), 1)
         self.assertIn("go on", sent)
+
+    def test_a_tool_s_result_withdrawn_then_sent_again_changed_still_comes_right_after_its_call(self):
+        """The computer slept as the call after a tool's result was answered: the hang-up withdrew the result (the
+        call's newest user row), not its tool call. Resumed, Claude Code sent the result again with a note of its own
+        appended inside it, so it was stored as a new row -- after a stream message that came in meanwhile. Sorted by
+        row, the message went between the tool call and its result, became user text ahead of the result, and the
+        API refused every call: "`tool_use` ids were found without `tool_result` blocks immediately after"."""
+        tool_use = {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "Bash",
+                                                      "input": {"command": "grep -n INSERT sessions.py"}}]}
+
+        def result(text, *after):
+            return {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": text}]
+                    + [{"type": "text", "text": t} for t in after]}
+
+        first = [user(*REMINDERS, "Find every insert into sessions."), NOTES]
+        self.call(first)
+        _, req = self.call(first + [tool_use, result("sessions.py:844: INSERT INTO sessions")])
+        self.hang_up(req)                                                    # asleep while the answer came
+        stored = self.server.answer({"op": "insert", "id": 1, "gatherer": "g", "properties": {"channel": "sess"},
+                                     "events": [{"type": "context_stream", "payload": {
+                                         "stream": "Browser", "author": "the user", "timestamp": 1794967308,
+                                         "text": "the page went to http://127.0.0.1:4918/"}}]})
+        self.assertTrue(stored["rows"][0])
+        again = result("sessions.py:844: INSERT INTO sessions\n\n<system-reminder>\nInstruction files were re-read "
+                       "when this session started.\n</system-reminder>", "Continue")
+        sent, _ = self.send(first + [tool_use, again])
+        at = next(i for i, m in enumerate(sent) if m["role"] == "assistant"
+                  and any(b.get("type") == "tool_use" for b in m["content"]))
+        after = sent[at + 1]
+        self.assertEqual((after["role"], after["content"][0].get("type"), after["content"][0].get("tool_use_id")),
+                         ("user", "tool_result", "toolu_1"))
+        self.assertEqual(sum(b.get("type") == "tool_result" for m in sent for b in m["content"]), 1)
+        texts = [b.get("text") or "" for m in sent[at + 1:] for b in m["content"] if b.get("type") == "text"]
+        shown = [i for i, t in enumerate(texts) if "the page went to http://127.0.0.1:4918/" in t]
+        self.assertEqual(len(shown), 1)                                      # still shown, once: after the result
+        self.assertLess(shown[0], texts.index("Continue"))                   # and before the user's next words
 
 
 class EndedTest(unittest.TestCase):

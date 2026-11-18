@@ -158,6 +158,7 @@ function open(): void {
     downloads: path.join(home, "dashboard", "downloads"), // (ag's own Chrome's: ag_apps/browser/core.py's downloads_dir)
     permissions: path.join(app.getPath("userData"), "permissions.json"),
   }, () => (w.isDestroyed() ? 1 : w.webContents.getZoomFactor()));
+  pages.onPress = () => !w.isDestroyed() && w.webContents.send("ag:pressed");
   // Closing the window is not quitting (desktop/DESIGN.md): on a Mac it is hidden, its Browsers' pages kept open (the
   // agent may be using them), until Cmd+Q; its Dock icon shows it again.
   w.on("close", (event) => {

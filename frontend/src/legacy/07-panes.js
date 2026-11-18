@@ -401,9 +401,21 @@ function selectedTask() {
   return f && !(panes.focus === panes.here && isAway()) ? taskKey(f[0], f[1]) : null;   // (this page's own out of sight: none)
 }
 if (!PANE && !SNAPSHOT) window.addEventListener("blur", () => setTimeout(() => {   // the focus gone into an app's frame
+  if (document.activeElement && document.activeElement.localName === "iframe") pressedAway();   // (any frame's: one of a page no panel runs)
   const p = panes.apps.find((q) => q.frame === document.activeElement);
   if (p && appSel !== p.instance.id) selectAppPane(p);
 }, 0));
+// A press this page never hears -- in a pane's frame (agPanes.focus), an app's panel (its `pressed`), a native page of
+// the ag app (agApp.onPressed), the focus gone into a frame: what floats over the page and closes on a press elsewhere
+// (Settings, a row's drop-down, the branch drop-down, History's types) closed, as such a press on the page closes it.
+function pressedAway() {
+  setAbout(false);
+  closePop();
+  brMenuClose();
+  const types = document.getElementById("hist-types");
+  if (types && types.open) types.open = false;
+}
+if (!PANE && !SNAPSHOT) { try { if (window.agApp && window.agApp.onPressed) window.agApp.onPressed(pressedAway); } catch (e) { /* not the app */ } }
 // The panes' widths (each its share, `size`), which is in focus, and whether the page is split at all: split,
 // each pane's head says whose it is, and has its ×. Placed so (placeWork).
 function layout() {
@@ -1049,6 +1061,7 @@ function addAppPane(app, instance, size = 1, held = false) {
       .map((a) => ({ channel: a.channel, name: (a.name && a.name.text) || a.last_user_message || a.channel })),
     agentState: appAgentState, send: appSend, answer: appAnswer, interrupt: appInterrupt, focusAgent: appFocusAgent,
     actors: appActors, sendActor: appSendActor, startActor: appStartActor, showActor: appShowActor,
+    pressed: pressedAway,                            // a press in its panel
   });
   p.node = p.panel.node; p.frame = p.panel.frame;
   p.node.hidden = held;
@@ -1323,7 +1336,7 @@ if (!PANE && !SNAPSHOT) window.agPanes = Object.freeze({
   },
   viewed(win, id) { const p = paneOf(win); if (p) { p.view = id; savePanes(); } },
   top(win, height) { const p = paneOf(win); if (p) topRow(p, height); },
-  focus(win) { if (state.renaming) endRename(true); const p = paneOf(win); if (p) focusPane(p); },   // a press in its frame
+  focus(win) { if (state.renaming) endRename(true); pressedAway(); const p = paneOf(win); if (p) focusPane(p); },   // a press in its frame
   close(win) { const p = paneOf(win); if (p) { workClosed(p.node); closePane(p); } },
   openLink(win, url) { const p = paneOf(win); return !!p && openLink(p.g, p.c, url); },   // a link clicked in it (linkClicked)
   move(win, on) { const p = paneOf(win); if (!on) { moveEnd(); return true; } return !!p && moveStart(p.node); },   // its head dragged

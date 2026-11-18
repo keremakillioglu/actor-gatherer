@@ -62,7 +62,8 @@ Everything goes through the page around it, by postMessage, which checks it agai
     ag.api(path, init?)                                  its backend's own routes, on its own origin (no bridge)
     ag.close()                                           its pane closed
 
-Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as they would outside the frame.
+Esc, and keys with Ctrl or ⌘ the panel leaves unhandled, go on to the page, as they would outside the frame. A press in
+the panel is told to the page too, which closes what floats over it (a menu, Settings), as a press outside the frame would.
 
 The page draws a × over the panel's top right corner (its panel closed, the app left open): a bar along the panel's top
 keeps var(--ag-corner) clear at its right end, which this file sets on :root. */
@@ -142,6 +143,11 @@ keeps var(--ag-corner) clear at its right end, which this file sets on :root. */
     window.parent.postMessage({ ag: 1, op: "key", key: ev.key, code: ev.code, meta: ev.metaKey, ctrl: ev.ctrlKey,
                                 shift: ev.shiftKey, alt: ev.altKey }, HOST);
   });
+
+  // a press anywhere in the panel -- also one the panel's own code stops -- told to the page, which never hears it
+  window.addEventListener("pointerdown", () => {
+    if (HOST && window.parent !== window) window.parent.postMessage({ ag: 1, op: "pressed" }, HOST);
+  }, true);
 
   // -- a native page over an element (ag.native): where it is, each frame, and whether something covers it
   const GRID = 5;                      // points across and down the element looked at for something over it

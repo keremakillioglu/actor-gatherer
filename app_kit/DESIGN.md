@@ -1,6 +1,6 @@
 # Apps beside agents: plan
 
-Status: being built, from 2026-11-06. Steps 1 (`app_kit/`), 2 (the host), 3 (the tool gateway), 4 (app panels), 5 (Preview), 8 (DocWriter, the Browser) and 7's first part (the Editor as an app, the Preview taken into it) are built. This file is the package's design, as
+Status: being built, from 2026-11-06. Steps 1 (`app_kit/`), 2 (the host), 3 (the tool gateway), 4 (app panels), 5 (Preview), 8 (DocWriter, the Browser; installing and uninstalling apps, from the Apps page) and 7's first part (the Editor as an app, the Preview taken into it) are built. This file is the package's design, as
 `harness_kit/DESIGN.md` is that package's.
 
 ## Goal
@@ -375,7 +375,7 @@ app_kit/                  the contract, on ag's (ag.ag_interface): standard libr
 ag_apps/                  our apps, each a folder with an app.toml, built as an outside app would be
   preview/  editor/  browser/  docwriter/  skills/  sources/
 ag/                       knows an app only as event types and pollers
-  ag_harness/home/        [apps] in config.toml (what is installed); apps = [...] in gatherer.toml (what is on)
+  ag_harness/home/        [apps] removed in config.toml (ag's own apps uninstalled); every app found is on everywhere
 ag_dashboard/             the host: no app's name in its code
   app_host.py             reads manifests, runs backends, keeps attachments
   tool_gateway.py         /mcp/<channel>; `ag apps call`
@@ -399,8 +399,28 @@ desktop/                  the native-view capability, with no app named in it
 
 ### 8. Apps from outside
 
-- **Install:** `ag apps install <folder | git URL | pip package>` puts it in `<home>/apps/<name>/`. `ag apps list`
-  shows what's installed; a gatherer turns apps on in its `gatherer.toml`, as it does pollers.
+- **Installed is on, everywhere** (decided 2026-11-17). An app found is installed, and on in every group: its panel
+  opens anywhere, an agent gets its tools when its terminal next starts (those whose `offer` gives them it), and every
+  gatherer runs its pollers. There is no turning an app off in a group: `gatherer.toml`'s `apps` is no longer read.
+- **Install** (built: `app_kit/installing.py`): from a folder or a git URL (pip packages later), the app is staged --
+  copied into `<home>/apps/.incoming/<id>` (a git URL cloned at its newest commit, its history dropped) -- and its
+  app.toml checked as `load` checks it; a bad one is removed again, with why. Installing moves it to
+  `<home>/apps/<name>/`, beside the `data/` it may have there from before, with where it came from
+  (`.ag-installed.json`: git or folder, the source, the commit). Refused: a name already installed (Update instead),
+  and a name of an app that comes with ag (one of AG_APPS_PATH overrides that instead).
+- **Update** (an app from git): its source staged again; what changes for the user (tools added and gone, what it may
+  do that it couldn't) said first; then its folder is replaced in place, its `data/` kept.
+- **Uninstall:** one installed in `<home>/apps`, its folder removed but its `data/` (unless asked); one that comes
+  with ag, named in config.toml's `[apps] removed` (which `finding` skips) and so listed to install again; one of
+  AG_APPS_PATH's is removed there. Its windows close, its backend stops, an agent's call of its tool is refused at once
+  (saying why) and its tools leave the agent's list when its terminal next starts; its windows' records stay, so
+  installed again it finds them as they were.
+- **Where:** the dashboard's Apps page (`ag_dashboard/app_catalog.py`, `api/app_catalog.py`; the page's
+  `features/apps/catalog.ts`), a screen tab of its own, from the settings panel and a new tab's "Apps…": every app
+  installed with what it gives agents and costs them (≈ tokens: its tools' definitions and its instructions), what
+  it may do, its windows and its data; the apps to install (ag's index, `ag_apps/index.toml`, empty for now, and
+  ag's own uninstalled); the folders that couldn't load. `ag apps install | uninstall | update | list --all` do the
+  same from a shell, asking first unless `--yes`.
 - **Permissions:** the manifest lists them, and they're shown at install:
   - event types it reads besides its own (for example `tool_call` of its agents);
   - `native_view`;
@@ -438,8 +458,8 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    - The dashboard imports nothing of ag directly; through `app_kit` it has ag's contract (`ag.ag_interface`), not
      its runtime.
 3. **The tool gateway.** Built:
-   - `ag_dashboard/tool_gateway.py`: the apps on for a gatherer (its `gatherer.toml`'s `apps`, else every app
-     found), their tools as MCP lists them, their instructions, and each call resolved to an instance.
+   - `ag_dashboard/tool_gateway.py`: the apps on for a gatherer (every app installed: see 8), their tools as MCP
+     lists them, their instructions, and each call resolved to an instance.
    - `POST /mcp/<actor>`, one MCP server per actor (the id it started under, so a codex session keeps it once its
      thread has its own), given to every session at launch whose harness takes one, when any app is on; a session's
      first message waits for it to have listed its tools, as for the app actors' servers now.
@@ -447,8 +467,8 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    - A tool its panel answers is sent to the instance's open panels as a message and waited for (30 s for a panel,
      120 s for its answer), as DocWriter's are now; the panel answers with `POST /api/apps/answer`.
    - An app's `[[pollers]]` are entries of ag's own catalog, `<app>.<name>` (`Home.pollers`, through app_kit's
-     `finding`, so ag and the dashboard find the same apps). A gatherer runs one when its `gatherer.toml` names it
-     in `pollers`, or names its app in `apps`; ag builds and checks it as any poller.
+     `finding`, so ag and the dashboard find the same apps). Every gatherer runs every installed app's pollers
+     (once, if its `pollers` names one too); ag builds and checks each as any poller.
    - The Browser's and DocWriter's own endpoints stay until step 8; their actors are given those, not the gateway.
 4. **App panels** (front end). Built, one change from the plan: app panes join the page's panes as they are (one
    more kind beside the actors', `07-panes.js`), and the layout tree waits; rebuilding the panes as a tree now would
@@ -764,9 +784,9 @@ Settled on 2026-11-06:
 1. **Every app's panel is an iframe**, ours and outside ones alike. One way for all apps; outside apps are isolated
    from the dashboard; our apps test the same contract an outside one uses. The cost: the SDK forwards keys, theme,
    focus and drag and drop across the frame, and each open panel costs about a page.
-2. **Which tools an agent is given: every app turned on for the gatherer, at launch.** Kept so once Preview, an app
-   that comes with ag, put its tools in every session (2026-11-07) -- the Editor's now (2026-11-08): a gatherer turns
-   apps off with `apps = []`. Works for Claude Code and Codex
+2. **Which tools an agent is given: every app installed, at launch** (an app installed is on in every group, since
+   2026-11-17: no `apps = []` in a gatherer.toml any more; an app is removed by uninstalling it, ag's own too). Kept
+   so once Preview, an app that comes with ag, put its tools in every session (2026-11-07). Works for Claude Code and Codex
    alike; costs context for each app's tools, so a gatherer's apps should be few. The others, kept for later:
    - only the apps it's attached to, with the list sent again when that changes. Claude Code refreshes on MCP's
      `tools/list_changed` (checked in its 2.1.319 binary); Codex knows the message, but whether it refreshes

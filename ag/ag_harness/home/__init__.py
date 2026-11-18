@@ -208,7 +208,6 @@ class GathererConfig:
     pollers: List[str]
     options: Dict[str, Any]
     path: str
-    apps: Optional[List[str]] = None         # gatherer.toml's `apps`: the apps on (their pollers run); None: no key
 
 
 # ---------------------------------------------------------------- writing TOML (the little we need)
@@ -230,8 +229,7 @@ def _value(v) -> str:
 def gatherer_toml(cfg: GathererConfig) -> str:
     lines = [f"# The gatherer {cfg.name}: its policy (fixed once it has been read), and its",
              "# pollers (change them any time). Made from ~/.ag/config.toml.",
-             f"policy = {_value(cfg.policy)}", f"pollers = {_value(cfg.pollers)}",
-             *([f"apps = {_value(cfg.apps)}"] if cfg.apps is not None else []), "", "[options]",
+             f"policy = {_value(cfg.policy)}", f"pollers = {_value(cfg.pollers)}", "", "[options]",
              "# this gatherer's overrides of the policy's options"]
     lines += [f"{k} = {_value(v)}" for k, v in cfg.options.items()]
     return "\n".join(lines) + "\n"
@@ -661,11 +659,8 @@ class Home:
                 data = tomllib.load(fh)
             except tomllib.TOMLDecodeError as exc:
                 raise ConfigError(f"{path}: {exc}") from exc
-        apps = data.get("apps")
-        if apps is not None and (not isinstance(apps, list) or not all(isinstance(a, str) for a in apps)):
-            raise ConfigError(f"{path}: `apps` is a list of app names")
         return GathererConfig(gatherer, str(data.get("policy") or self.default_policy()),
-                             list(data.get("pollers") or []), dict(data.get("options") or {}), path, apps)
+                             list(data.get("pollers") or []), dict(data.get("options") or {}), path)
 
     def write_gatherer(self, cfg: GathererConfig) -> None:
         os.makedirs(os.path.dirname(cfg.path), exist_ok=True)
@@ -707,16 +702,16 @@ class Home:
         when gatherer.toml or config.toml has changed, so a poller that holds
         a connection is not remade on every call."""
         cfg = self.gatherer(gatherer)
-        key = (gatherer, cwd, os.path.getmtime(cfg.path), os.path.getmtime(self.config_path))
+        by_app = self.app_pollers()             # every app installed is on in every gatherer: its pollers too
+        of_apps = [n for polls in by_app.values() for n in polls]
+        key = (gatherer, cwd, os.path.getmtime(cfg.path), os.path.getmtime(self.config_path), tuple(of_apps))
         with self._lock:                        # built once: lanes in one directory share them (Manager.poll)
             if key in self._pollers:
                 return self._pollers[key]
             known = self.pollers()
             found = []
             names = list(cfg.pollers)
-            if cfg.apps:                         # the apps on: their pollers too
-                by_app = self.app_pollers()
-                names += [n for a in cfg.apps for n in by_app.get(a, {}) if n not in names]
+            names += [n for n in of_apps if n not in names]
             for name in names:
                 spec = known.get(name)
                 if spec is None:

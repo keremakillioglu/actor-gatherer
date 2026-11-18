@@ -11,6 +11,8 @@ history before a build):
   * `context_stream` events are shown as a developer message (`message`) at
     their row's place. Pollers run at read time, so a message's row is where
     the model first saw it, and each read's context extends the last one.
+    Never between a tool call and its output, though: one whose row falls
+    there (the output stored again later) goes right after it (`interleave`).
   * `environment_update` events whose SUBJECT one of the agent's own tool
     calls in the verbatim part opened before them (by that path: `mentions`)
     get a developer message (`notice`) at their row's place; what the model
@@ -133,6 +135,8 @@ DRIFT_MAX = 1.5                 # the most `drift_of` scales ag's count by: toke
                                 # not its own items counted short, and is left to `measured_over`
 GUIDE = "gatherer_guide"        # the guide every context opens with
 AGENT_STEP = ("agent_message", "tool_call", "agent_reasoning")   # what an agent step may start with
+TOOL_CALL, TOOL_OUTPUT = "tool_call", "tool_output"
+CALL_ID = "call_id"             # the property a harness's adaptor gives a tool call and its output alike (`exchanges`)
 ROLE = "role"                   # a channel's role, as the dashboard records it: {role, private} (`unseen`)
 GROUP = "group"                 # a channel's group, as the dashboard records it: {group, ...} (`unseen`); each
                                 # record an id of its own, naming its channel: a read returns an id once, where it
@@ -799,9 +803,46 @@ class ProactiveContextManager(Policy):
         """The tail's rows, as ("row", row_id, payload, tokens), and the
         messages and notices made for outside events, together in row
         order: each where its event was stored, which -- the pollers being
-        asked at read time -- is where the model first saw it."""
+        asked at read time -- is where the model first saw it. But never
+        between a tool call and its output (`exchanges`): one stored there
+        goes right after the output. A call and its output come in with one
+        request, so nothing is stored between them -- until the harness hangs
+        up on the call that sent the output (the output withdrawn: its newest
+        user row) and sends it again changed (Claude Code, resumed, puts a
+        note of its own inside it): stored again as a new row, after what came
+        in meanwhile. The API refuses a tool call with anything but its
+        result right after it."""
         entries = [("row", r.row_id, r.payload, r.tokens) for r in tail] + list(made_here)
-        return sorted(entries, key=lambda e: e[1])
+        spans = self.exchanges(tail, types)
+
+        def place(e) -> tuple:
+            if e[0] == "row":
+                return (e[1], 0, e[1])
+            at = e[1]
+            moved = True
+            while moved:                                     # past every exchange it falls in, nested or chained
+                ends = [end for start, end in spans if start < at < end]
+                moved = bool(ends)
+                at = max(ends) if ends else at
+            return (at, 0 if at == e[1] else 1, e[1])        # moved: right after the output, in its own order
+        return sorted(entries, key=place)
+
+    @staticmethod
+    def exchanges(tail, types: TypeIds) -> List[Tuple[int, int]]:
+        """(call row, output row) of each tool call of `tail` whose output is in it too, paired by the call id
+        the harness's adaptor gives both (CALL_ID); a row without one pairs with nothing."""
+        calls_ids, outputs_ids = types.of(TOOL_CALL), types.of(TOOL_OUTPUT)
+        calls: Dict[Any, int] = {}
+        spans = []
+        for r in tail:
+            call = (r.properties or {}).get(CALL_ID)
+            if call is None:
+                continue
+            if r.type.id in calls_ids:
+                calls.setdefault(call, r.row_id)
+            elif r.type.id in outputs_ids and call in calls:
+                spans.append((calls[call], r.row_id))
+        return spans
 
     def outside(self, conn, types: TypeIds, channel_id, cut: int, name: str) -> list:
         """The events of type `name` the channel can see from `cut` on -- the

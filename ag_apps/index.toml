@@ -1,0 +1,12 @@
+# ag's index of apps to install: what the dashboard's Apps page lists under "Available to install" (app_kit's
+# installing.py `index`). Each entry, an app somewhere ag doesn't ship it -- a git URL, as `ag apps install` takes:
+#
+#   [[apps]]
+#   name = "pager"                                  # its app.toml's name
+#   label = "Pager"
+#   description = "pages you when an actor needs you"
+#   source = "https://github.com/someone/ag-pager"
+#   needs = "desktop app only"                      # optional: what it needs that not every home has
+#
+# None yet.
+apps = []

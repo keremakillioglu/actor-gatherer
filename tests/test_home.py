@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ag.ag_harness import FORMAT, Manager  # noqa: E402
 from ag.ag_harness import home as ag_home  # noqa: E402
 import codex_items as codex  # noqa: E402
-from ag.ag_harness.home import ConfigError, Home  # noqa: E402
+from ag.ag_harness.home import ConfigError, Home, gatherer_toml  # noqa: E402
 from ag.ag_harness.home.__main__ import main as cli  # noqa: E402
 from ag.ag_pollers import FileChangePoller  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
@@ -332,18 +332,27 @@ class AppPollerTest(HomeBase):
         self.assertEqual(spec.file, os.path.join(self.root, "apps", "tickets_app", "inbox.py"))
         self.assertEqual(self.h.problems(), [])
 
-    def test_a_gatherer_runs_it_once_its_app_is_on_there_or_it_names_it(self):
+    def test_every_gatherer_runs_an_installed_app_s_pollers_once(self):
         self.h.ensure()
-        self.assertEqual([type(p).__name__ for p in self.h.gatherer_pollers("demo", "/w")], ["FileChangePoller"])
-        self.assertEqual(self.run_with('apps = ["tickets_app"]'), ["FileChangePoller", "TicketPoller"])
+        self.assertEqual(self.pollers(), ["FileChangePoller", "TicketPoller"])     # installed: on in every gatherer
         cfg = self.h.gatherer("demo")
-        self.assertEqual(cfg.apps, ["tickets_app"])
-        self.h.write_gatherer(cfg)                                            # written back: `apps` kept
-        self.assertEqual(self.h.gatherer("demo").apps, ["tickets_app"])
-        cfg.apps, cfg.pollers = None, ["tickets_app.inbox"]
+        cfg.pollers = [*cfg.pollers, "tickets_app.inbox"]                         # named too: still run once
         self.h.write_gatherer(cfg)
         os.utime(cfg.path, (os.path.getmtime(cfg.path) + 10,) * 2)
-        self.assertEqual([type(p).__name__ for p in self.h.gatherer_pollers("demo", "/w")], ["TicketPoller"])
+        self.assertEqual(self.pollers(), ["FileChangePoller", "TicketPoller"])
+        cfg.pollers = [p for p in cfg.pollers if p != "tickets_app.inbox"]
+        self.h.write_gatherer(cfg)
+        os.utime(cfg.path, (os.path.getmtime(cfg.path) + 20,) * 2)
+        os.remove(os.path.join(self.root, "apps", "tickets_app", "app.toml"))     # uninstalled: built again, without
+        self.assertEqual(self.pollers(), ["FileChangePoller"])
+
+    def test_a_gatherer_toml_s_old_apps_key_is_ignored(self):
+        self.h.ensure()
+        self.assertEqual(self.run_with('apps = []'), ["FileChangePoller", "TicketPoller"])
+        self.assertNotIn("apps", gatherer_toml(self.h.gatherer("demo")))
+
+    def pollers(self):
+        return [type(p).__name__ for p in self.h.gatherer_pollers("demo", "/w")]
 
     def test_its_message_reaches_the_context_as_any_poller_s(self):
         self.assertEqual(cli(["new", "demo", "--policy", "proactive_context_manager", "--poller", "tickets_app.inbox"]), 0)
