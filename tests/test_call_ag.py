@@ -59,6 +59,16 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(client.requests, [("rewrite", {"gatherer": "s", "properties": {"channel": "c", "cwd": "/w"}, "cwd": "/w",
                                                         "events": to_events(["a", "b"])})])
 
+    def test_a_call_that_makes_no_events_asks_for_the_conversation_s_newest(self):
+        client = Client(lambda body: {"context": [{"type": "t", "payload": "a"}], "note": "ok"})
+        out, _ = run(client, messages=("restated",), events=lambda m: [])
+        self.assertEqual(out, ["a"])
+        self.assertEqual(client.requests[0][1]["latest_types"], ["t"])        # the adaptor's outputs
+        run(client)
+        self.assertNotIn("latest_types", client.requests[1][1])              # events of its own: not asked
+        asyncio.run(call_ag(client, "s", {CHANNEL: "c"}, "/w", [], Stand(lambda m: []), op="compaction"))
+        self.assertNotIn("latest_types", client.requests[2][1])              # a compaction has nothing to build from
+
     def test_every_failure_leaves_the_harness_s_own_messages(self):
         def broken(*_):
             raise ValueError("no")

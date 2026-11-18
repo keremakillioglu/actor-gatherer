@@ -338,6 +338,15 @@ class SideCallTest(HookTest):
         self.assertEqual([e["payload"] for e in body["events"]], items)          # its prompt is no event
         self.assertEqual(out["input"], [MANAGED] + items + [LOCAL_PROMPT])        # and is last, for the summary
 
+    def test_the_call_after_a_mid_turn_compaction_gets_the_context_too(self):
+        hook = self.hook()
+        again = [{**DEV, "id": "dev2"}, {**user("q", 1), "id": "u1-again"}, LOCAL_SUMMARY]    # nothing after it
+        out = self.call(hook, self.request({"input": again}, headers=meta(thread_source="user")))
+        op, body = FakeClient.made[0].requests[0]
+        self.assertEqual((op, body["events"]), ("rewrite", []))
+        self.assertEqual(body["latest_types"], list(hook.adaptor.outputs))   # answered from what is stored
+        self.assertEqual(out["input"][0], MANAGED)
+
     def test_compacted_on_codex_s_own_side_only_what_follows_its_summary_is_new(self):
         again = [DEV, {**user("<environment_context><cwd>/w</cwd></environment_context>", 7), "id": "env2"},
                  {**user("q", 1), "id": "u1-again"}, LOCAL_SUMMARY, user("next", 2)]

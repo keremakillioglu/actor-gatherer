@@ -187,6 +187,13 @@ class Manager(ContextManager):
             return []
         return store.latest(schema.connection(gatherer_id), properties, n, types)     # a read: no tables to set up
 
+    def latest_row(self, gatherer_id: str, properties: Optional[dict], types: Optional[list] = None) -> Optional[int]:
+        """Not part of the interface: the row of the newest event `latest` would name (`store.latest_row`), None
+        if there is none."""
+        if not os.path.exists(db_path(gatherer_id)):
+            return None
+        return store.latest_row(schema.connection(gatherer_id), properties, types)
+
     def event_types(self, gatherer_id: str) -> List[EventType]:
         """The gatherer's types, in the order defined, with their ids."""
         if not os.path.exists(db_path(gatherer_id)):
