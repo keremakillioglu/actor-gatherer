@@ -70,18 +70,7 @@ function pvMake(ag, root) {
     back: pvKept(), outTop: null, resultTop: null, probsTop: null };  // back: as it was left (pvKept), taken once each; *Top: its scrolls
 
   // ---- helpers
-  function el(tag, attrs, ...kids) {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs || {})) {
-      if (v === null || v === undefined || v === false) continue;
-      if (k === "text") n.textContent = v;
-      else if (k === "class") n.className = v;
-      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
-      else n.setAttribute(k, v === true ? "" : v);
-    }
-    for (const k of kids) if (k !== null && k !== undefined && k !== false) n.append(k);
-    return n;
-  }
+  function el(...a) { return window.agKit.el(...a); }   // the panels' kit (app_kit/js/kit.js)
   const spell = (s) => s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
   const ago = (t) => { const s = Math.max(0, Date.now() / 1000 - (t || 0)); return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} d ago`; };
   const clean = (t) => t.replace(ANSI, "").replace(/\r\n/g, "\n").split("\n")
