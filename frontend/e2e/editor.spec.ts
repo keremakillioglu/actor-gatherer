@@ -240,6 +240,9 @@ test("the preview comes back as it was left: its tab, its output's scroll, its P
   // the output picked, scrolled up from its end
   await panel.locator(".pv-edge").hover(); // over a result, its head is tucked away above it until the pointer comes
   await panel.locator(".pv-tabs button", { hasText: "Output" }).click();
+  // drawn first, at its end, as an output picked is: scrolled up before that, its drawing scrolls it back down
+  const fromEnd = () => panel.locator(".pv-out").evaluate((o) => o.scrollHeight - o.clientHeight - o.scrollTop);
+  await expect.poll(fromEnd).toBeLessThan(8);
   await panel.locator(".pv-out").evaluate((o) => (o.scrollTop = 40));
   await page.waitForTimeout(500); // kept a moment after it moves
   await away();
