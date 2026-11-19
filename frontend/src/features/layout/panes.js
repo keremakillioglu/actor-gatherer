@@ -26,6 +26,8 @@ import { CHAT_VIEWS, CHAT_VIEW_KEY, chatView, setChatView } from "../chat/views.
 import { term } from "../terminal/terminal.js";
 import { minRedraw, topChanged } from "./top.js";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
+import * as model from "./model";
+import { shadow } from "./shadow";
 
 // ------------------------------------------------------------------ panes
 // Actors side by side. A click in the list shows its actor in the pane in focus; Ctrl+click (⌘+click on a
@@ -146,6 +148,7 @@ function enterTask(g, c) {
   const to = taskKey(g, c), sel = focusedActor();
   const from = appsOnly || (sel && taskKey(sel[0], sel[1])) || (state.selected && taskKey(...state.selected));
   if (to) taskNow = to;
+  if (to && from !== to) shadow.tell("enter", model.open, to);   // the layout model beside the page (shadow.ts)
   if (!to || !sel) return null;
   const was = taskLayout(to), open = openActors().some((s) => isAt(s, g, c));
   if (from === to) {
@@ -173,6 +176,7 @@ function enterAppTask(g, k) {
   if (PANE || SNAPSHOT) return;
   const sel = focusedActor(), from = appsOnly || (sel && taskKey(sel[0], sel[1]));
   if (from === k) return;
+  shadow.tell("apps", model.open, k);                 // (the layout model beside the page: shadow.ts)
   if (from && tasksLaidOut.has(from) && (!isAway() || isShut())) rememberTask(from);
   taskNow = k;
   for (const p of [...actorPanes()]) if (!isShell(p.c)) closePane(p);
@@ -202,6 +206,7 @@ function layOutTask(g, to, c, rest, was = null) {
 // was left (else its lead first; `first`, first), in panes beside the one in focus, as many as there is room for, and its
 // apps' panels added above (openTaskApps, `beside`); `first`'s pane in focus after.
 async function openTaskBeside(g, key, first) {
+  shadow.tell("beside", model.open, key, true);
   await outOfAppsOnly(g, first);
   const gg = gathererNamed(g), was = taskLayout(key);
   tasksLaidOut.add(key);
@@ -293,7 +298,11 @@ function taskAppsFound(g, gg, c, to, only) {
 // closed by the reader when its task was left (rememberTask), shown out of sight, as it was, the task's apps beside.
 async function show(g, c, view = null, wait = true, shut = false) {
   if (shut) putAway([g, c], true);                   // (out of sight once it is the one in this page's pane)
-  else if (isAt(hereAway, g, c)) backInSight();     // asked for: in sight again (and in its task's tab shown)
+  else if (isAt(hereAway, g, c)) {                  // asked for: in sight again (and in its task's tab shown)
+    backInSight();
+    const k = taskKey(g, c);
+    if (k) shadow.tell("back", model.open, k, true);
+  }
   const entered = enterTask(g, c);
   const shown = await showIn(g, c, view || (entered && entered.view) || null, false);
   if (entered) entered.after();
@@ -329,6 +338,8 @@ function openBeside(g, c, view = null) {
   const there = actorPanes().find((p) => isAt([p.g, p.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null);
   if (there) return focusPane(there);
   if (allPanes().length >= MAX_PANES) return paneNote(`At most ${MAX_PANES} actors fit side by side. Close one to open another.`);
+  const bk = taskKey(g, c);
+  if (bk) shadow.tell("beside", model.open, bk, true);
   const from = panes.focus, at = from === panes.here ? 0 : panes.others.indexOf(from) + 1;
   const p = addPane(g, c, view || (from === panes.here ? chatView().id : from.view), at);
   focusPane(p);
@@ -350,9 +361,14 @@ function addPane(g, c, view, at, size = 1) {
   panes.others.splice(at, 0, p);
   return p;
 }
+// the layout model told task `k` is closed here once none of its panels is left (shadow.ts)
+function shadowGone(k) {
+  if (k && !shownPanels().some((s) => s.key === k)) shadow.tell("gone", model.closeHere, k);
+}
 function closePane(p) {
   const i = panes.others.indexOf(p);
   if (i < 0) return;
+  queueMicrotask(() => shadowGone(state.home ? taskKey(p.g, p.c) : null));
   panes.others.splice(i, 1);
   p.node.remove();                                   // its page goes, and its terminal's stream; the session stays
   topRow(p, null);
@@ -378,6 +394,8 @@ async function closeHere(next = actorPanes()[0]) {
 // opened again, its apps alone. At a phone's width, none placed, there is nothing to show instead: it stays.
 async function closeHerePane() {
   if (!state.selected || isAway()) return;
+  const hk = taskKey(...state.selected);
+  queueMicrotask(() => shadowGone(hk));
   if (actorPanes().length) { workClosed(panes.here.node); return closeHere(); }
   if (NARROW.matches) return;
   workClosed(panes.here.node);
@@ -525,7 +543,7 @@ function startPlacing() {
 // True: the task now shown where the click goes on as a plain one (⌘ having brought its tab forward).
 let autoShown = null;
 // The actor the page opened on by itself, set where it is opened (features/page/data.js's refresh, features/settings/panel.js's restore).
-const setAutoShown = (k) => { autoShown = k; };
+const setAutoShown = (k) => { autoShown = k; if (k) shadow.tell("auto", model.opened, k); };   // (shown by itself: state.selected set)
 async function viaTabs(k, ev, item = null) {
   if (!workPlacer || !k || !ev || ev.inTabs || SNAPSHOT || ev.shiftKey) return false;
   const tabs = workPlacer.tabs;
@@ -601,6 +619,7 @@ async function openTaskHereBeside(k) {
 // closed -- its agents go on -- this page's own pane given the next pane's actor if it showed one of k's, else out of
 // sight (the tab showing nothing else: its note says so); the focus, if it was k's, on the next task shown
 async function closeTaskHere(k) {
+  shadow.tell("closeHere", model.closeHere, k);
   const mine = (g, c) => taskKey(g, c) === k;
   if (tasksLaidOut.has(k)) rememberTask(k);
   for (const p of [...panes.apps]) if (!p.held && appPaneTask(p) === k) closeAppPane(p);
@@ -688,6 +707,25 @@ function keyNow(k) {
   if (!id || taskNumber(id) !== null || !state.home) return k;
   return taskKey(g, id) || k;
 }
+// The layout model's keys now (shadow.ts): keyNow's -- and for a task, the keys now of the items it held when last asked
+// about and holds no more whose panels are open (taken out of it: each a task of its own, shown still; one closed for
+// good, not), with its own if it is left. (Step 4's model knows each task's open items itself.)
+const heldSeen = new Map();
+function keysNow(k) {
+  const { group: g, id } = parseKey(k), n = taskNumber(id);
+  if (!state.home) return [k];
+  if (n === null) return isAppItem(id) || taskKey(g, id) ? [keyNow(k)] : [];   // (an actor gone from its group: none)
+  const kept = (state.home.tasks || {})[g] || { tasks: [], tasked: {} };
+  const was = heldSeen.get(k) || [], open = new Set(shownPanels().map((p) => p.item));
+  const left = (now) => was.filter((item) => !now.includes(item) && open.has(item)).map((item) => taskKey(g, item)).filter(Boolean);
+  if (!kept.tasks.some((t) => String(t.id) === String(n))) return was.length ? [...new Set(left([]))] : [k];
+  const now = Object.keys(kept.tasked).filter((item) => String(kept.tasked[item]) === String(n));
+  heldSeen.set(k, now);
+  return [...new Set([k, ...left(now)])];
+}
+shadow.keysWith(keysNow);
+// (an actor shown that the home does not list yet -- just started: no key -- not checked against the model till it does)
+shadow.waitWhile(() => !!state.home && shownPanels().some((s) => s.key === null && s.item !== "here" && !isShell(s.item)));
 // A TASK'S STATES, for its face in its screen tab (tabs.ts marks the most pressing): each of its actors' (statusOf),
 // its lead's first, and its apps' notifications not seen -- each as a mark (tabs.ts's MARKS: a turn, a build, a start
 // all "working"; idle, closed none) and its word as the list says it
@@ -1069,6 +1107,8 @@ function addAppPane(app, instance, size = 1, held = false) {
   p.node.hidden = held;
   topRowEl().append(p.node);
   panes.apps.push(p);
+  const ak = !held && state.home ? appPaneTask(p) : null;
+  if (ak) shadow.tell("app", model.open, ak, true);
   topLayout();
   p.panel.refresh();                                 // its agents, as the host has them
   topChanged();
@@ -1079,6 +1119,8 @@ function addAppPane(app, instance, size = 1, held = false) {
 function swapAppPane(p, inst) {
   const i = panes.apps.indexOf(p);
   if (i < 0) return null;
+  const was = state.home && !p.held ? appPaneTask(p) : null;
+  queueMicrotask(() => shadowGone(was));            // (its key in the group it left: the layout model told, shadow.ts)
   const q = addAppPane(p.app, inst, p.size, p.held);  // made at the row's end: put where p was
   topRowEl().insertBefore(q.node, p.node);
   panes.apps.splice(panes.apps.indexOf(q), 1);
@@ -1098,6 +1140,8 @@ function holdAppPane(p, held) {
 function closeAppPane(p) {
   const i = panes.apps.indexOf(p);
   if (i < 0) return;
+  const gk = state.home ? appPaneTask(p) : null;
+  queueMicrotask(() => shadowGone(gk));
   if (appNeeded(p)) return holdAppPane(p, true);     // its agent at work: its page answers its tools, out of sight
   panes.apps.splice(i, 1);
   unselectApp(p.instance.id);

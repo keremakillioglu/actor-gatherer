@@ -81,14 +81,23 @@ const withTab = (l: Layout, id: string, f: (t: Tab) => Tab): Layout => ({
   ...l,
   tabs: l.tabs.map((t) => (t.id === id ? f(t) : t)),
 });
-// the tab left (`left`) dropped if it holds nothing
+// the tab shown left: none of its tasks in another tab now (one left with none, dropped, unless it holds something
+// else); then, once another is shown, the tab left (`left`) dropped too if it holds nothing
+const leaving = (l: Layout): Layout => {
+  const here = shownTab(l).tasks;
+  const tabs = l.tabs
+    .map((t) => (t.id === l.current ? t : { ...t, tasks: t.tasks.filter((k) => !here.includes(k)) }))
+    .filter((t) => t.id === l.current || holds(t));
+  return { ...l, tabs };
+};
 const dropping = (l: Layout, left: string): Layout => ({
   ...l,
   tabs: l.tabs.filter((t) => t.id !== left || t.id === l.current || holds(t)),
 });
 
 /** A new tab after the tab shown, shown; the one left dropped if it holds nothing. */
-export function fresh(l: Layout, id = newTabId()): Layout {
+export function fresh(was: Layout, id = newTabId()): Layout {
+  const l = leaving(was);
   const at = l.tabs.findIndex((t) => t.id === l.current);
   const tabs = [...l.tabs];
   tabs.splice(at + 1, 0, { id, name: "", tasks: [], screen: null, focus: null });
@@ -96,8 +105,10 @@ export function fresh(l: Layout, id = newTabId()): Layout {
 }
 
 /** Tab `id` shown, `focus` its task in focus (none: as it was left); the tab left dropped if it holds nothing. */
-export function show(l: Layout, id: string, focus: string | null = null): Layout {
-  if (id === l.current || !l.tabs.some((t) => t.id === id)) return l;
+export function show(was: Layout, id: string, focus: string | null = null): Layout {
+  if (id === was.current || !was.tabs.some((t) => t.id === id)) return was;
+  const l = leaving(was);
+  if (!l.tabs.some((t) => t.id === id)) return l; // (emptied by it)
   const shownNow = withTab(l, id, (t) => (focus ? { ...t, focus } : t));
   return dropping({ ...shownNow, current: id }, l.current);
 }
@@ -119,6 +130,10 @@ export function route(
   return { layout: l, go: "in" };
 }
 
+/** `route`'s layout alone (for shadow.ts). */
+export const routed = (l: Layout, task: string, opts: { idle?: boolean; fill?: boolean; id?: string }): Layout =>
+  route(l, task, opts).layout;
+
 /** Task `task` opened in the tab shown: with the others (`beside`), or in their place; in focus either way. */
 export function open(l: Layout, task: string, beside = false): Layout {
   return withTab(l, l.current, (t) => ({
@@ -128,6 +143,15 @@ export function open(l: Layout, task: string, beside = false): Layout {
     page: undefined,
   }));
 }
+
+/** A plain click on task `task` routed to the tab shown: in it already, put in focus; else shown in place of the others. */
+export function pick(l: Layout, task: string): Layout {
+  return shownTab(l).tasks.includes(task) ? withTab(l, l.current, (t) => ({ ...t, focus: task })) : open(l, task);
+}
+
+/** The page opening on task `task` by itself (the first actor, as the home comes): in the tab shown if it holds nothing
+ * -- one left with tasks, something typed, or a page is shown as it was left (tabs.ts's start). */
+export const opened = (l: Layout, task: string): Layout => (holds(shownTab(l)) ? l : open(l, task));
 
 /** ⌥+click: the task out of every other tab (one left holding nothing, gone), to be the tab shown's alone. */
 export function take(l: Layout, task: string): Layout {
@@ -165,6 +189,14 @@ export function closed(l: Layout, task: string): Layout {
   return withTab(l, tab.id, (t) => ({ ...t, tasks: rest, focus: t.focus === task ? rest[0] : t.focus }));
 }
 
+/** Task `task` closed in the tab shown (its card head's ×, or moved to another tab): out of it, the tab kept. */
+export function closeHere(l: Layout, task: string): Layout {
+  const tab = shownTab(l);
+  if (!tab.tasks.includes(task)) return l;
+  const rest = tab.tasks.filter((k) => k !== task);
+  return withTab(l, tab.id, (t) => ({ ...t, tasks: rest, focus: t.focus === task ? rest[0] || null : t.focus }));
+}
+
 /** Task `task` put in tab `to` (another), last -- or, none, in a new tab after the tab shown (`last`: at the end). */
 export function put(l: Layout, task: string, to: string | null, last = false, id = newTabId()): Layout {
   let tabs = [...l.tabs];
@@ -195,6 +227,9 @@ export function merge(l: Layout, id: string): { layout: Layout; tasks: string[] 
     tasks: tab.tasks,
   };
 }
+
+/** `merge`'s layout alone (for shadow.ts). */
+export const merged = (l: Layout, id: string): Layout => merge(l, id).layout;
 
 /** Tab `id` put at place `at` (from 0) among the others. */
 export function move(l: Layout, id: string, at: number): Layout {
