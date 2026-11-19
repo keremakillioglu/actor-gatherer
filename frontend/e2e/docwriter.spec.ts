@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { closePanel, expect, streamsAsRequests, test } from "./test";
+import { closePanel, expect, homeAs, streamsAsRequests, test } from "./test";
 import { CLAUDE, openActor } from "./home";
 
 test("a DocWriter started from the menu: its page above, its actor below, one task", async ({ page, request }) => {
@@ -77,12 +77,16 @@ test("an app set on the Apps page to open on its own: its one menu entry opens i
   page,
   request,
 }) => {
-  await page.route("**/api/home", async (route) => {
-    const home = await (await route.fetch()).json();
-    home.harnesses = ["claude"];
-    home.harness_info.claude = { ...home.harness_info.claude, runs: true };
-    await route.fulfill({ json: home });
-  });
+  // Claude Code set up here, whether or not it is on this machine (CI has no harness: no app could then open with an
+  // agent of its own) -- in the home read by request and in each the stream sends, which would otherwise replace it
+  const claudeHere = (home: Record<string, unknown>) => {
+    const info = home.harness_info as Record<string, Record<string, unknown>>;
+    return { ...home, harnesses: ["claude"], harness_info: { ...info, claude: { ...info.claude, runs: true } } };
+  };
+  await page.route("**/api/home", async (route) =>
+    route.fulfill({ json: claudeHere(await (await route.fetch()).json()) }),
+  );
+  await homeAs(page, claudeHere);
   expect((await request.post("/api/apps/settings", { data: { app: "docwriter", agent: false } })).ok()).toBe(true);
   try {
     await openActor(page, CLAUDE);

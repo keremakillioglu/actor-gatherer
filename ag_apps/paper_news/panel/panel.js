@@ -6,6 +6,9 @@ is where the user tells the app what they work on, and reads and edits the summa
 the papers they starred; Enter in the find box searches every day kept. The backend tells the panel when anything
 changes; a notification of a day opens it.
 
+A link to a web page (a paper's arXiv page, PDF or HTML, a day's listing on arXiv) opens in the dashboard's Browser app,
+not in a browser outside it (`openPage`).
+
 Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter its abstract in full, / the find box. */
 (async function () {
   "use strict";
@@ -52,6 +55,22 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
   };
   const listedOf = (d) => (d.kinds.new || 0) + (d.kinds.cross || 0);
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many || `${one}s`}`;
+
+  // ---------------------------------------------------------------- links
+  // A web page opened in the dashboard's Browser app, by app_kit's open-url intent: in a Browser shown beside this panel
+  // (a new tab of it), else in a new Browser. No app here to take it (no Browser installed): a tab of the browser's own.
+  function openPage(url) {
+    ag.intents.open("open-url", { url }).catch(() => window.open(url, "_blank", "noopener"));
+  }
+  // Every link to a web page in the panel, plainly clicked: there. A click with a key held (⌘, Ctrl, Shift, ⌥) or another
+  // button is left to the browser -- a tab of its own, outside -- as a link in an actor's pane is.
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest ? e.target.closest("a[href]") : null;
+    if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (!/^https?:$/.test(a.protocol) || a.origin === location.origin) return;
+    e.preventDefault();
+    openPage(a.href);
+  });
 
   // ---------------------------------------------------------------- state
   const S = {
@@ -543,7 +562,7 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     else if (e.key === "k") { move(-1); e.preventDefault(); }
     else if (e.key === "/") { $("find").focus(); e.preventDefault(); }
     else if (cur && e.key === "s") { cur.querySelector(".star-btn").click(); e.preventDefault(); }
-    else if (cur && e.key === "o") { window.open(cur.querySelector(".pp-title").href, "_blank", "noopener"); e.preventDefault(); }
+    else if (cur && e.key === "o") { openPage(cur.querySelector(".pp-title").href); e.preventDefault(); }
     else if (cur && e.key === "Enter" && e.target === cur) { toggleAbs(cur.querySelector(".pp-abs")); e.preventDefault(); }
   });
 
