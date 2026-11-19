@@ -141,23 +141,25 @@ test("an app's panel closed in a task stays closed when the task is opened again
   await expect(notes).toHaveCount(0);
 });
 
-test("in the folded rail, a task is one tile: its actors' faces grouped in the room of one avatar", async ({
-  page,
-}) => {
+test("in the folded rail, a task is one tile: its lead's face, and how many it holds on a badge", async ({ page }) => {
   await taskHome(page, true);
   await open(page);
   await page.locator("#agents .lb-fold").click();
   const rail = page.locator("#rail");
   const tile = rail.locator(".r-task");
   await expect(tile).toHaveCount(1);
-  await expect(tile.locator(".r-group.n2 > .logo")).toHaveCount(2);
+  await expect(tile.locator(".r-group > .logo")).toHaveCount(1); // one face: its lead's
+  await expect(tile.locator(".r-many")).toHaveText("2"); // and how many it holds
   await expect(rail.locator(".r-actor:not(.r-task)")).toHaveCount(0); // its actors in it, not tiles of their own
-  const [group, face] = [
+  const [group, face, count] = [
     await tile.locator(".r-group").boundingBox(),
-    await tile.locator(".r-group > .logo").first().boundingBox(),
+    await tile.locator(".r-group > .logo").boundingBox(),
+    await tile.locator(".r-many").boundingBox(),
   ];
   expect(Math.round(group!.width)).toBe(30); // the room of one avatar
-  expect(face!.width).toBeLessThan(group!.width);
+  expect(Math.round(face!.width)).toBe(30);
+  expect(Math.round(count!.x)).toBeGreaterThanOrEqual(Math.round(group!.x)); // at its top left, clear of the bookmark
+  expect(count!.y).toBeLessThan(group!.y);
   await tile.click(); // opened: both side by side
   await expect(page.locator("#panes > .pane")).toHaveCount(2);
 });
