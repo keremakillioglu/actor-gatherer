@@ -120,3 +120,11 @@ class AntigravityLauncher(Launcher):
             told_of.keep(self.home, str(os.getpid()), os.path.abspath(run.cwd or os.getcwd()), "cwd")
         return Launch([*run.command, *args], {**run.env, BASE_URL: server_url + path},
                       [f"{BASE_URL}={server_url + path} -> {origin}{path}"], session)
+
+    def status(self) -> List[str]:
+        """The hook servers ag started for agy, one line each."""
+        return self.servers.status(SETUP)
+
+    def stop(self) -> List[str]:
+        """Stop the hook servers ag started for agy."""
+        return self.servers.stop_all(SETUP)

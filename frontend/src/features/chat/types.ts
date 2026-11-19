@@ -15,7 +15,7 @@ export interface Reply {
   /** a report's task, or the session a message came from */
   name?: string | null;
   /** how many of the turn's calls came before it: where it goes among the commands (a minimized pane's card,
-   * src/legacy/18-mini-history.js) */
+   * src/features/chat/mini-history.js) */
   after?: number;
 }
 
@@ -157,7 +157,7 @@ export interface ChatView {
   version?: unknown;
 }
 
-/** A message sent from this page's box (10-chat.js's send), by its id: shown until the view has it. */
+/** A message sent from this page's box (features/chat/chat.js's send), by its id: shown until the view has it. */
 export interface MySend {
   cid: string;
   text: string;
@@ -165,7 +165,7 @@ export interface MySend {
   at: number;
 }
 
-/** What the old page hands the turn list at each draw (16-files-view.js's talkFeed). */
+/** What the old page hands the turn list at each draw (features/chat/files-view.js's talkFeed). */
 export interface ChatFeed {
   /** the actor's key (its gatherer and channel) and its gatherer */
   key: string;
@@ -200,14 +200,14 @@ export interface ChatFeed {
 
 /** What the turn list calls of the old page, until those parts move too. */
 export interface ChatHost {
-  /** the actor's stage (01-helpers.js): at work, done, waving hello */
+  /** the actor's stage (core/page/helpers.js): at work, done, waving hello */
   atWork(info: Actor, t: { work?: unknown }): Node;
   atRest(info: Actor, turn: number | null | undefined): Node;
   greeting(info: Actor): Node | null;
-  /** a call as the commands at the left show it (16-files-view.js): opened, and its line */
+  /** a call as the commands at the left show it (features/chat/files-view.js): opened, and its line */
   callView(call: unknown, ran: CallRun): Node;
   callLabel(c: CallRun, n: number): Node | string;
-  /** an actor's face, small (05-agent-list.js's crewFace); the gatherer agent's picture for one with none */
+  /** an actor's face, small (features/list/list.js's crewFace); the gatherer agent's picture for one with none */
   crewFace(a: Actor | null, coordinator: boolean): Node;
   /** a message an app wrote with its own block (a Browser's), as the app draws it; null for any other */
   appWords(text: string): Node | null;

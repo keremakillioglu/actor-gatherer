@@ -1,4 +1,4 @@
-// Several Browsers of one task in the app (07-panes.js's TASKS): an actor attached to two Browsers, opened, shows both
+// Several Browsers of one task in the app (features/layout/panes.js's TASKS): an actor attached to two Browsers, opened, shows both
 // panels above it -- each Browser's tab a native page kept over its own panel's screen, both shown at once.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";

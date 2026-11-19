@@ -107,8 +107,8 @@ const panel = (page: Page): FrameLocator => page.frameLocator("#top-row .app-pan
 /** The panel's frame itself, to run a script in. */
 const panelFrame = (page: Page) => page.frames().find((f) => f.url().startsWith(`http://browser.localhost:${port}/`))!;
 /** The Browser's panel closed (the Browser stays open) -- a panel has no head: its row in its task's card right-clicked,
- * "Close panel" (frontend's 07-panes.js, appPanelMenu) -- and opened again: its actor shown, and -- a panel closed in a
- * task staying closed (07-panes.js, TASKS) -- the Browser selected from its task's card. */
+ * "Close panel" (frontend's features/layout/panes.js, appPanelMenu) -- and opened again: its actor shown, and -- a panel closed in a
+ * task staying closed (features/layout/panes.js, TASKS) -- the Browser selected from its task's card. */
 const closePanel = async (page: Page) => {
   await page.mouse.move(0, 0);
   await page.locator(".agent:not(.coordinator)").first().hover();

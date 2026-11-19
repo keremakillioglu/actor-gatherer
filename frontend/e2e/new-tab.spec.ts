@@ -1,4 +1,4 @@
-// A NEW TAB's page (07-new-tab.js): "+" on the tabs' bar, or ⌃T (⌘T in the ag app), opens a tab showing a message box
+// A NEW TAB's page (features/layout/new-tab.js): "+" on the tabs' bar, or ⌃T (⌘T in the ag app), opens a tab showing a message box
 // for a new actor -- Enter starts one where its line says (a group, a folder of one, or on its own; a directory; a
 // harness), what was typed its first message, in this tab -- and the apps to open in it instead. Where it goes to start
 // with: the place last started in. What is typed is kept with the tab: left with something typed, the tab stays, and a

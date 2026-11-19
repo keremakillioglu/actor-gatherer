@@ -27,9 +27,9 @@ from harness_kit.claude import (permission_asked, permission_dialog_keys, permis
 from harness_kit.screen import Screen  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
 from ag.integrations.harnesses.claude.setup import launch  # noqa: E402
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from ag.integrations.tools.hook_server.hook_server import Answer  # noqa: E402
-from ag_dashboard import answers, chat_view, data, server, sessions  # noqa: E402
+from ag_dashboard import answers, chat_view, data, server, sessions, store  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 from test_dashboard_answers import GathererBase, call  # noqa: E402
 from test_dashboard_sessions import SessionsBase  # noqa: E402
@@ -327,7 +327,7 @@ class ViewTest(GathererBase):
     def test_chat_waits_on_it_where_nothing_was_recorded(self):
         self.add([("model_call", {"kind": "turn", "harness": "claude", "derives": True}, None)])
         self.pend([call("toolu_b", "Bash", {"command": "rm x"})])
-        conn = data._connect("g")
+        conn = store.gatherer("g")
         self.addCleanup(conn.close)
         session = {"shown": {**dialog(), "since": time.time() - 5}, "harness": "claude"}
         got = chat_view._state(conn, "s1", data._tables(conn), [{"n": 1, "began": time.time() - 9}], None, [], session, [])

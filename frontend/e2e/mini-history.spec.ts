@@ -1,4 +1,4 @@
-// A minimized pane's HISTORY (src/legacy/18-mini-history.js): right of its message box, the user's last message and what
+// A minimized pane's HISTORY (src/features/chat/mini-history.js): right of its message box, the user's last message and what
 // the actor said last; hovered, the whole conversation in a card over what is above the pane -- each turn's message, its
 // commands with its messages among them in the order they came (files.py's reply `after`), its reply; an earlier turn
 // folded to its count of commands, fetched when opened. A pane in a frame, only as tall as its strip, has its card drawn

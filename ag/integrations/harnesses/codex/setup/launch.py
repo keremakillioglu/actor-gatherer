@@ -423,16 +423,9 @@ class CodexLauncher(Launcher):
         return [f"provider: {p.provider} ({p.codex_home}) -> {p.upstream}{p.path}"]
 
     def status(self) -> List[str]:
-        """The hook servers ag started, one line each."""
-        return [f"hook server :{s.port}  pid {s.pid}  -> {s.upstream}"
-                + (f"  logs {s.log_dir}" if s.log_dir else "")
-                + f"  output {self.servers.log(s.port)}"
-                for s in self.servers.running()]
+        """The hook servers ag started for codex, one line each."""
+        return self.servers.status(SETUP)
 
     def stop(self) -> List[str]:
-        """Stop the hook servers ag started."""
-        stopped = []
-        for s in self.servers.running():
-            self.servers.stop(s)
-            stopped.append(f"stopped the hook server :{s.port} (-> {s.upstream})")
-        return stopped
+        """Stop the hook servers ag started for codex."""
+        return self.servers.stop_all(SETUP)

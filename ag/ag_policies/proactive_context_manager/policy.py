@@ -112,6 +112,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import harness_kit
+
 from ag.ag_interface import LLM, Format, Tokenizer
 from ag.ag_policies.tools import boundary, channel, history, ranking, segmentation, summarize
 from ag.ag_policies.tools import tasks as tasks_tool
@@ -156,19 +158,24 @@ WRITE = re.compile(
     r"|\.write\(|writelines|write_text\(|to_csv\(|\.dump\(|shutil\.(?:copy|move)")
 # `>` alone also matches 2>/dev/null or `x > 5` in a script: a redirect only counts when the file follows it.
 
-# A harness's own file-editing tool (Claude Code's Edit, Write, MultiEdit, NotebookEdit; pi's and
-# opencode's edit, write), as a tool call's text shows it: `Name({...})`. It writes the file its path
-# argument names, and only that one.
-EDIT_TOOL = re.compile(r"(?:Edit|Write|MultiEdit|NotebookEdit|edit|write|multiedit)\(")
-EDIT_PATH = re.compile(r'"(?:file_path|notebook_path|filePath|path)"\s*:\s*"((?:[^"\\]|\\.)*)"')
+# A harness's own file-editing tool (harness_kit's `edit_tools`, every harness's: Claude Code's Edit, Write, MultiEdit,
+# NotebookEdit; agy's write_file, edit_file; pi's and opencode's edit, write), as a tool call's text shows it:
+# `Name({...})`. It writes the file its path argument names, and only that one.
+def edit_patterns() -> Tuple["re.Pattern", "re.Pattern"]:
+    """(the call of an editing tool, the path argument it names) for every harness harness_kit knows now."""
+    names = sorted({n for h in harness_kit.HARNESSES.values() for n in h.edit_tools}, key=lambda n: (-len(n), n))
+    keys = sorted({k for h in harness_kit.HARNESSES.values() for k in h.edit_tools.values()}, key=lambda k: (-len(k), k))
+    return (re.compile(r"(?:" + "|".join(map(re.escape, names)) + r")\("),
+            re.compile(r'"(?:' + "|".join(map(re.escape, keys)) + r')"\s*:\s*"((?:[^"\\]|\\.)*)"'))
 
 
 def writes(call_text: str, subject: str, cwd=None) -> bool:
     """Whether a tool call that names `subject` could have written it: a harness's editing tool
-    whose path is the subject (`EDIT_TOOL`), a redirect INTO it, an in-place editor, a move/copy/
+    whose path is the subject (`edit_patterns`), a redirect INTO it, an in-place editor, a move/copy/
     remove, an apply_patch, or a script that opens something for writing. Unclear means no."""
-    if EDIT_TOOL.match(call_text):
-        return any(mentions(path, subject, cwd) for path in EDIT_PATH.findall(call_text))
+    edit_tool, edit_path = edit_patterns()
+    if edit_tool.match(call_text):
+        return any(mentions(path, subject, cwd) for path in edit_path.findall(call_text))
     for m in WRITE.finditer(call_text):
         if m.group(0).startswith(">"):                      # a redirect: only into the subject itself
             if re.match(r">>?\s*['\"\\]*[^\s'\"\\]*" + re.escape(subject), call_text[m.start():]):

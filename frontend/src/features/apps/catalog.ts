@@ -4,7 +4,7 @@
 // be installed (ag's index, and those that come with ag, uninstalled); the folders that couldn't load. A row clicked
 // shows its details beside the list; its ⋯ opens it, updates it (one from git) or uninstalls it. Installing, updating
 // and uninstalling are each asked in a dialog first (catalog-dialogs.ts). What it asks of the page around it
-// (src/legacy/07-apps-page.js): an app opened, and the apps installed changed.
+// (src/features/apps/apps-page.js): an app opened, and the apps installed changed.
 import { get, post } from "../../core/api/client";
 import { glyph } from "../../core/ui/glyphs";
 import "./catalog.css";

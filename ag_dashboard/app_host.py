@@ -56,7 +56,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 import app_kit
 from app_kit import App, AppError, Caller, Instance, Manifest, Response, ToolResult, remote
 
-from . import app_settings, home
+from . import app_settings, home, store
 
 PATH_ENV = app_kit.finding.PATH_ENV
 HELD_RETRY = 2.0                # a new gatherer has no database until its first call: its writes, held, tried this often
@@ -1066,22 +1066,13 @@ def _ag_insert(gatherer: str, properties: dict, events: List[dict], types: List[
         raise RuntimeError((done.stdout or done.stderr).strip()[-300:] or f"exited {done.returncode}")
 
 
-def _connect(gatherer: str) -> Optional[sqlite3.Connection]:
-    path = home.db_path(gatherer)
-    if not os.path.exists(path):
-        return None
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def _columns(conn: sqlite3.Connection) -> Set[str]:
     return {r[1] for r in conn.execute("PRAGMA table_info(events)")}
 
 
 def _host_records(gatherer: str) -> List[Tuple[str, str, Optional[str], dict]]:
     """(kind, instance, channel, payload) of the gatherer's app records, in order."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return []
     try:
@@ -1106,7 +1097,7 @@ def _host_records(gatherer: str) -> List[Tuple[str, str, Optional[str], dict]]:
 
 def _read(instance: Instance, types: Sequence[str], after: int, channel: Optional[str], agents: List[str],
           limit: int) -> List[dict]:
-    conn = _connect(instance.gatherer)
+    conn = store.gatherer(instance.gatherer)
     if conn is None:
         return []
     try:
