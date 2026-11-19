@@ -68,8 +68,9 @@ from . import actions, data, folders, gatherer_folders, home, merges, sessions, 
 
 GROUP = "group"
 ALONE = "self:"                 # an actor on its own: the group of one `self:<its channel>` (the policy's ALONE too)
-#: The dashboard's tables that name an actor's gatherer beside its channel (sessions apart: by its session_id).
-ACTOR_TABLES = ("saved", "seen", "avatars", "tasked")
+#: The dashboard's tables that name an actor's gatherer beside its channel (sessions apart: by its session_id): one
+#: list, sessions.py's, so what a discard clears and what a move takes are the same tables.
+ACTOR_TABLES = sessions.ACTOR_TABLES
 
 
 class GroupError(ValueError):
@@ -356,6 +357,9 @@ def _rows(gatherer: str, to: str, moving: List[str]) -> None:
         conn.execute("BEGIN IMMEDIATE")
         if folders._has(conn, "sessions"):
             conn.execute(f"UPDATE sessions SET gatherer = ? WHERE gatherer = ? AND session_id IN ({marks})",
+                         (to, gatherer, *moving))
+        if folders._has(conn, "branches"):                 # its own branch (branches.py): told by its group from now on
+            conn.execute(f"UPDATE branches SET gatherer = ? WHERE gatherer = ? AND session_id IN ({marks})",
                          (to, gatherer, *moving))
         for table in ACTOR_TABLES:
             if folders._has(conn, table):

@@ -118,19 +118,25 @@ def of(gatherer: str) -> dict:
     return stored().get(gatherer) or {"tasks": [], "tasked": {}}
 
 
+def tidy(conn: sqlite3.Connection, gatherer: str) -> None:
+    """In `conn`'s open transaction: `gatherer`'s tasks left with fewer than two items gone (a task is two or more).
+    After any change to `tasked`, here or elsewhere (sessions.py's `discard`)."""
+    conn.execute("DELETE FROM tasked WHERE gatherer = ? AND task IN (SELECT task FROM tasked WHERE gatherer = ? "
+                 "GROUP BY task HAVING count(*) < 2)", (gatherer, gatherer))
+    conn.execute("DELETE FROM tasks WHERE gatherer = ? AND id NOT IN (SELECT task FROM tasked WHERE gatherer = ?)",
+                 (gatherer, gatherer))
+
+
 def _change(gatherer: str, do):
     """`do(conn)` in a transaction of its own (BEGIN IMMEDIATE), rolled back if it raises; then the tasks left with
-    fewer than two items gone."""
+    fewer than two items gone (`tidy`)."""
     if not gatherer:
         raise TaskError("which gatherer?")
     conn = _write()
     try:
         conn.execute("BEGIN IMMEDIATE")
         got = do(conn)
-        conn.execute("DELETE FROM tasked WHERE gatherer = ? AND task IN (SELECT task FROM tasked WHERE gatherer = ? "
-                     "GROUP BY task HAVING count(*) < 2)", (gatherer, gatherer))
-        conn.execute("DELETE FROM tasks WHERE gatherer = ? AND id NOT IN (SELECT task FROM tasked WHERE gatherer = ?)",
-                     (gatherer, gatherer))
+        tidy(conn, gatherer)
         conn.execute("COMMIT")
         return got
     except BaseException:

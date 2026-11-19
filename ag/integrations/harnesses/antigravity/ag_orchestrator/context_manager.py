@@ -84,14 +84,18 @@ class AntigravityContextManager(ProxyHook):
         count: "on" (Gemini's counts of what each call holds, `counting.py`), "check" (only the count before
             sending, near the budget) or "off".
         log: (gatherer, line) -> None, for what each model call came to.
+        factory, path: handed to each gatherer's server (`--factory`, `--path`), as setup.py's options say.
     """
     harness = Antigravity()
     ANSWERED, FILES = ANSWERED, FILES
 
     def __init__(self, cwd: Optional[str] = None, ag_clients: Optional[AgClients] = None,
                  log: Callable[[str, str], None] = _print, adaptor: Union[Adaptor, str, None] = None, files: str = "on",
-                 home: Optional[str] = None, count: str = "on"):
-        ag_clients = ag_clients or AgClients(lambda gatherer: AgClient("antigravity"))
+                 home: Optional[str] = None, count: str = "on", factory: Optional[str] = None,
+                 path: Optional[str] = None):
+        args = (["--factory", factory] if factory else []) + \
+            [x for p in (path.split(os.pathsep) if path else []) for x in ("--path", p)]
+        ag_clients = ag_clients or AgClients(lambda gatherer: AgClient("antigravity", args=args))
         if files not in ("on", "off"):
             raise ValueError(f"files: {files!r}, not on or off")
         super().__init__(ag_clients, log, Files(ag_clients, log, harness=self.harness) if files == "on" else None)
