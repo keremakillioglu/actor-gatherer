@@ -37,8 +37,10 @@ const lists = (home, sel) => !sel || isShell(sel[1]) || home.gatherers.some((g) 
 async function loadAgent() {
   if (!state.selected || isShell(state.selected[1])) return;
   const [g, c] = state.selected;
-  await takeAgent(SNAPSHOT ? SNAPSHOT.agents[key(g, c)] || null
-    : await get(`/api/agent?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`));
+  const got = SNAPSHOT ? SNAPSHOT.agents[key(g, c)] || null
+    : await get(`/api/agent?gatherer=${encodeURIComponent(g)}&channel=${encodeURIComponent(c)}`);
+  if (!state.selected || state.selected[0] !== g || state.selected[1] !== c) return;   // another picked meanwhile: not it
+  await takeAgent(got);
 }
 // The selected agent, fetched or pushed: its calls' counts, and the context of the call shown.
 async function takeAgent(agent) {
