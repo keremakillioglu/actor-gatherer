@@ -16,15 +16,16 @@ function drawAppsPage(box) {
   box.classList.remove("nt");
   window.agNext.appsPage.draw(box, { open: appsPageOpen, changed: appsChanged });
 }
+// An app opened from the page: the way the reader chose there (`withAgent`), as a group's "+ ⋯" menu opens it
+// (07-panes.js's opensWithAgent) -- on its own when no harness here can give an agent its tools.
 async function appsPageOpen(a, withAgent = false) {
   const app = window.agNext.apps.named(a.name);
   if (!app) throw new Error("it isn't loaded yet. Reload the page.");
   const p = startPlace(), g = p && !p.alone ? ntGroup(p) : realGroups()[0];
   if (!g) throw new Error("make a group first");
   const cwd = startCwd(g) || state.home.cwd || null, folder = p && !p.alone ? p.folder : null;
-  if (withAgent && app.agent && app.agent.offered) {   // with an agent of its own: started with it, on a harness that
-    const tooled = startable().filter((h) => (harnessInfo(h) || {}).mcp);   // can give it its tools
-    if (!tooled.length) throw new Error("no harness here supports its agent's tools");
+  const tooled = startable().filter((h) => (harnessInfo(h) || {}).mcp);   // can give an agent its tools
+  if (withAgent && app.agent && app.agent.offered && tooled.length) {   // with an agent of its own: started with it
     const kept = keptValue(START_HARNESS_KEY);
     aimStart(g.name, folder);
     return startWithApp(g.name, cwd, app.name, tooled.includes(kept) ? kept : tooled[0]);

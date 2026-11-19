@@ -437,7 +437,7 @@ class AppTest(AppBase):
         self.assertEqual(m.link("file/Users/me/app/main.py")[1], {"path": "Users/me/app/main.py"})
         self.assertEqual(m.link("file//Users/me/my%20app/main.py")[1], {"path": "/Users/me/my app/main.py"})
         self.assertIsNone(m.link("file"))
-        self.assertIn("Attached to more than one LaTeX, add `?instance=<its id>`", m.told())
+        self.assertIn("Attached to more than one LaTeX Editor, add `?instance=<its id>`", m.told())
         self.assertFalse(m.links[0].paths)                               # a plain file path: the Files app's
 
     def test_the_user_sets_and_runs_it(self):

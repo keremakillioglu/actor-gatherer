@@ -8,7 +8,7 @@
 # DocWriter are. Lines selected in a file are sent from there to any actor of the gatherer, with what to do, as the
 # user's message (message_actors).
 name = "latex"
-label = "LaTeX"
+label = "LaTeX Editor"
 version = "1"
 description = "edit a paper's LaTeX live with your actors, build it and see the PDF"
 instances = "many"
