@@ -326,9 +326,9 @@ function openBeside(g, c, view = null) {
   const bk = taskKey(g, c);
   if (bk) shadow.tell("beside", model.open, bk, true);
   const from = focusedPane(), at = from === panes.here ? 0 : panes.others.indexOf(from) + 1;
-  const p = addPane(g, c, view || (from === panes.here ? chatView().id : from.view), at);
-  focusPane(p);
-  layout(); savePanes(); connect();
+  shadow.update(model.wantPane, { g, c, view: view || (from === panes.here ? chatView().id : from.view), size: 1 }, at);
+  renderPanes();
+  focusPane(actorPanes().find((p) => isAt([p.g, p.c], g, c)));
 }
 // A pane of its own for an actor, its frame put at `at` among the others. Nothing else on the page is moved:
 // a frame moved is a frame loaded again.
@@ -350,22 +350,43 @@ function addPane(g, c, view, at, size = 1) {
 function shadowGone(k) {
   if (k && !shownPanels().some((s) => s.key === k)) shadow.tell("gone", model.closeHere, k);
 }
-function closePane(p) {
+// THE PANES BESIDE this page's own follow the layout model's `panes.others` (model.ts): what opens or closes one says so to
+// the model (openBeside, closePane, closeHere) and renderPanes makes them match -- each wanted one opened at its place
+// (its frame loaded), each open one no longer wanted gone. (This page's own pane is state.selected's.)
+const wantedPanes = () => ((shadow.layout.panes || {}).others || []);
+function renderPanes() {
+  if (PANE || SNAPSHOT) return;
+  const want = wantedPanes();
+  let changed = false;
+  for (const p of [...panes.others]) if (!want.some((o) => isAt([o.g, o.c], p.g, p.c))) { dropPane(p); changed = true; }
+  want.forEach((o, i) => {
+    if (panes.others.some((p) => isAt([p.g, p.c], o.g, o.c))) return;
+    addPane(o.g, o.c, o.view, Math.min(i, panes.others.length), +o.size || 1);
+    changed = true;
+  });
+  if (changed) { layout(); savePanes(); connect(); if (state.home) renderAgents(); }
+}
+// its frame gone (its page, and its terminal's stream; the session stays); the focus, if it had it, to the pane before
+function dropPane(p, gone = true) {
   const i = panes.others.indexOf(p);
   if (i < 0) return;
-  queueMicrotask(() => shadowGone(state.home ? taskKey(p.g, p.c) : null));
+  if (gone) queueMicrotask(() => shadowGone(state.home ? taskKey(p.g, p.c) : null));
   panes.others.splice(i, 1);
-  p.node.remove();                                   // its page goes, and its terminal's stream; the session stays
+  p.node.remove();
   topRow(p, null);
   if (focusedPane() === p) focusPane(panes.others[i - 1] || panes.here);
-  layout(); savePanes(); connect(); renderAgents();
+}
+// an actor's pane closed (its ×, its task left, a tab cleared): no longer wanted
+function closePane(p) {
+  if (!panes.others.includes(p)) return;
+  shadow.update(model.unwantPanes, (o) => isAt([o.g, o.c], p.g, p.c));
+  renderPanes();
 }
 // This page's own pane closed: the next pane's actor (`next`) -- and view -- moves into it, its frame gone.
 async function closeHere(next = actorPanes()[0]) {
   if (!next) return;
-  panes.others.splice(panes.others.indexOf(next), 1);
-  next.node.remove();
-  topRow(next, null);
+  shadow.update(model.unwantPanes, (o) => isAt([o.g, o.c], next.g, next.c));
+  dropPane(next, false);                             // (its actor shown on in this page's own: not gone)
   panes.here.size = next.size;
   if (next.view) setViewHere(next.view);
   focusPane(panes.here);
@@ -424,6 +445,7 @@ function appSelected() {
 // pane `p` showing actor `c` of `g` in place of its own: focus goes with it, if it had it
 function retarget(p, g, c) {
   const had = focusedPane() === p;
+  shadow.update(model.retargetPane, p.g, p.c, { g, c });
   p.g = g; p.c = c;
   if (had) shadow.update(model.focusOn, key(g, c), true);
 }
@@ -735,6 +757,7 @@ shadow.keysWith(keysNow);
 // (an actor shown that the home does not list yet -- just started: no key -- not checked against the model till it does)
 shadow.waitWhile(() => fetching.size > 0 || (!!state.home && shownPanels().some((s) => s.key === null && s.item !== "here" && !isShell(s.item))));
 shadow.appsWith(() => panes.apps.filter((p) => !p.held).map((p) => p.instance.id));   // (renderApps: the model's `apps`)
+shadow.panesWith(() => panes.others.map((p) => key(p.g, p.c)));   // (renderPanes: the model's `panes.others`)
 // A TASK'S STATES, for its face in its screen tab (tabs.ts marks the most pressing): each of its actors' (statusOf),
 // its lead's first, and its apps' notifications not seen -- each as a mark (tabs.ts's MARKS: a turn, a build, a start
 // all "working"; idle, closed none) and its word as the list says it
@@ -965,8 +988,10 @@ function paneNote(text) {
 }
 function savePanes() {
   if (PANE || SNAPSHOT) return;
-  shadow.update(model.keptPanes, !panes.others.length ? null : { here: state.selected, size: panes.here.size,   // (the layout
-    focus: panes.others.indexOf(focusedPane()), others: panes.others.map((p) => ({ g: p.g, c: p.c, view: p.view, size: p.size })) });  // model's)
+  shadow.update(model.panesNoted, state.selected, panes.here.size, panes.others.indexOf(focusedPane()), (o) => {
+    const p = panes.others.find((q) => isAt([q.g, q.c], o.g, o.c));   // (which panes beside: the layout model's, model.ts)
+    return p ? { view: p.view || undefined, size: p.size } : null;
+  });
   shadow.persist();
 }
 // The panes kept, opened again once the home is known: those whose actors are still in it.
@@ -974,16 +999,16 @@ function restorePanes() {
   panes.checked = true;
   if (PANE || SNAPSHOT) return;
   const kept = shadow.now().panes;                  // (the layout model's: model.ts)
-  if (!kept || !Array.isArray(kept.others)) return;
+  if (!kept || !Array.isArray(kept.others) || !kept.others.length) return;   // none beside: the tab's tasks say (tabs.ts's
+                                                     // start), its own pane closed staying so
   const exists = (g, c) => isShell(c) ? (state.home.shells || []).some((s) => s.id === c && s.gatherer === g)
     : state.home.gatherers.some((x) => x.name === g && x.agents.some((a) => a.channel === c));
   if (!state.selected && Array.isArray(kept.here) && exists(...kept.here)) state.selected = kept.here;
   if (!state.selected) return;
   panes.here.size = +kept.size || 1;
-  for (const o of kept.others) {
-    if (!o || allPanes().length >= MAX_PANES || !exists(o.g, o.c) || openActors().some((sel) => isAt(sel, o.g, o.c))) continue;
-    addPane(o.g, o.c, o.view, panes.others.length, +o.size || 1);
-  }
+  let room = MAX_PANES - 1;                           // those still in the home, not this page's own, as many as fit
+  shadow.update(model.unwantPanes, (o) => !o || !exists(o.g, o.c) || isAt(state.selected, o.g, o.c) || room-- <= 0);
+  renderPanes();
   focusPane(panes.others[kept.focus] || panes.here);
   layout();
 }

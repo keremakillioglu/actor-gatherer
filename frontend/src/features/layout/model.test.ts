@@ -24,6 +24,10 @@ import {
   take,
   unfocus,
   unwantApps,
+  unwantPanes,
+  wantPane,
+  retargetPane,
+  panesNoted,
   swapApp,
   wantApp,
   where,
@@ -212,6 +216,26 @@ describe("the migration from the six keys", () => {
     l = unwantApps(l, (a) => a.instance === "i1");
     expect(l.apps!.map((a) => a.instance)).toEqual(["i9"]);
     expect("apps" in unwantApps(l, () => true)).toBe(false);
+  });
+
+  it("the panes beside wanted at their place, once; some no longer; one showing another actor; each one's view noted", () => {
+    let l = wantPane(two(), { g: "g", c: "c2" }, 0);
+    l = wantPane(l, { g: "g", c: "c1" }, 0);
+    l = wantPane(l, { g: "g", c: "c1" }, 5);
+    expect(l.panes!.others.map((o) => o.c)).toEqual(["c1", "c2"]);
+    l = retargetPane(l, "g", "c2", { g: "h", c: "c3" });
+    expect(l.panes!.others[1]).toEqual({ g: "h", c: "c3" });
+    l = panesNoted(l, ["g", "c0"], 2, 1, (o) => (o.c === "c1" ? { view: "files", size: 3 } : null));
+    expect(l.panes).toEqual({
+      here: ["g", "c0"],
+      size: 2,
+      focus: 1,
+      others: [
+        { g: "g", c: "c1", view: "files", size: 3 },
+        { g: "h", c: "c3" },
+      ],
+    });
+    expect(unwantPanes(l, (o) => o.g === "h").panes!.others.map((o) => o.c)).toEqual(["c1"]);
   });
 
   it("starts as a fresh home with nothing kept, or what was kept unreadable", () => {
