@@ -10,7 +10,7 @@ import { glyph } from "../../core/ui/glyphs";
 import "./catalog.css";
 import { closeDialog, confirmBuiltin, confirmUninstall, fromSource, stageUpdate, type Asked } from "./catalog-dialogs";
 import { onTaskChoice, type OnTask } from "./catalog-on-task";
-import { el, kb, markOf, said, tokens } from "./catalog-parts";
+import { el, kb, markOf, meta, said, tokens, whoGets, windows } from "./catalog-parts";
 
 export interface CatalogApp {
   name: string;
@@ -127,7 +127,8 @@ function render(): void {
   if (!box || !box.isConnected || !box.classList.contains("ap")) return;
   const main = box.querySelector<HTMLElement>(".ap-main"),
     scroll = main ? main.scrollTop : 0,
-    typing = document.activeElement?.classList.contains("ap-search");
+    was = document.activeElement,
+    typing = was instanceof HTMLInputElement && was.classList.contains("ap-search") ? was : null;
   const sel = page.sel ? page.got?.installed.find((a) => a.name === page.sel) || null : null;
   box.replaceChildren(
     el("div", { class: "ap-page" }, el("div", { class: "ap-main" }, ...head(), ...body()), sel ? details(sel) : null),
@@ -137,7 +138,7 @@ function render(): void {
   if (typing) {
     const s = box.querySelector<HTMLInputElement>(".ap-search")!;
     s.focus();
-    s.setSelectionRange(s.value.length, s.value.length);
+    s.setSelectionRange(typing.selectionStart, typing.selectionEnd); // where the caret was, not at the end
   }
   page.flash = "";
 }
@@ -150,10 +151,12 @@ function head(): HTMLElement[] {
     "aria-label": "Search apps",
     value: page.q,
   }) as HTMLInputElement;
-  search.addEventListener("input", () => {
+  search.addEventListener("input", (ev) => {
     page.q = search.value;
+    if ((ev as InputEvent).isComposing) return; // a word being composed (an input method): drawn once it is done
     render();
   });
+  search.addEventListener("compositionend", () => render());
   return [
     el(
       "div",
@@ -211,9 +214,6 @@ function section(title: string, n: number, rows: HTMLElement[], none: string, hi
   ];
 }
 
-const windows = (a: CatalogApp): number => Object.values(a.open || {}).reduce((x, y) => x + y, 0);
-const whoGets = (a: CatalogApp): string => (a.access === "group" ? "Every agent of a group" : "The agents in its task");
-
 function badges(a: CatalogApp): HTMLElement[] {
   const out = [
     el("span", { class: `ap-badge ${a.origin === "home" && a.kind === "git" ? "git" : ""}`, text: said.where(a) }),
@@ -223,14 +223,6 @@ function badges(a: CatalogApp): HTMLElement[] {
   if (page.updates[a.name]) out.push(el("span", { class: "ap-badge upd", text: "update" }));
   if (a.failed) out.push(el("span", { class: "ap-badge bad", text: "failed to start" }));
   return out;
-}
-
-function meta(parts: (string | HTMLElement | null)[]): HTMLElement {
-  return el(
-    "div",
-    { class: "ap-meta" },
-    ...parts.filter(Boolean).map((p) => (typeof p === "string" ? el("span", { text: p }) : p)),
-  );
 }
 
 function installedRow(a: CatalogApp): HTMLElement {

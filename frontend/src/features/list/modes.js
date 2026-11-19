@@ -695,7 +695,8 @@ function actorCard(g, a, shown = false) {
         el("div", { class: "c-sub", text: `${titleOf(g)} · ${harnessName(a.harness)}` }))),
     dir ? el("div", { class: "c-dir", title: dir, text: tail(tildePath(dir, state.home.home_dir), 44) }) : null,
     el("div", { class: "c-st" }, el("span", { class: `status ${cls}` }, el("i", { "aria-hidden": "true" }), label),
-      el("span", { text: [ago(a.last), size !== null && size !== undefined ? `${compact(size)} tokens` : null].filter(Boolean).join(" · ") }),
+      el("span", {}, el("span", { "data-ago": a.last || "", text: ago(a.last) }),
+        size !== null && size !== undefined ? ` · ${compact(size)} tokens` : null),
       // saved: said here, the rail's bookmark showing only while hovered
       !isCoordinator(a) && savedAs(g.name, a) ? el("span", { class: "c-saved" }, saveIcon(true), "Saved") : null),
     asked && nm.cls !== "unnamed" ? el("div", { class: "c-asked" }, el("span", { class: "lbl", text: "Asked" }), firstLine(asked, 400)) : null,
@@ -781,7 +782,7 @@ function noticeList(g, o, named = false) {
         onclick: (ev) => { cardHide(ev); openNotice(g.name, o.id, n); } },
       el("span", { class: "status notified" }, el("i", { "aria-hidden": "true" })),
       el("span", { class: "nm" }, el("b", { text: n.title }), n.text ? el("span", { class: "nt", text: n.text }) : null),
-      el("span", { class: "st", text: n.at ? ago(n.at) : "" })),
+      el("span", { class: "st", ...(n.at ? { "data-ago": n.at } : {}), text: n.at ? ago(n.at) : "" })),
       el("button", { class: "act take-out", type: "button", title: "Dismiss", "aria-label": `Dismiss ${n.title}`,
         onclick: (ev) => { ev.stopPropagation(); dismissNotice(g.name, o.id, n); } }, closeIcon()))),
     list.length > NOTICES_SHOWN ? el("div", { class: "c-st", text: `and ${list.length - NOTICES_SHOWN} more` }) : null);

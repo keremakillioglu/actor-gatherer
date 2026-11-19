@@ -439,7 +439,8 @@ and what agents see of it. The words under either are its caption. */
   }
   async function pump(keepalive = false) {
     if (sending) return;
-    if (!queue.length) { if (!dirty.size && !titleDirty && status !== "saved") saved("saved"); return; }
+    // (one refused says so till the next is saved)
+    if (!queue.length) { if (!dirty.size && !titleDirty && status !== "saved" && status !== "refused") saved("saved"); return; }
     sending = true;
     saved("saving");
     const ops = queue.splice(0, queue.length);
@@ -455,12 +456,33 @@ and what agents see of it. The words under either are its caption. */
       setTimeout(() => pump(), 2500);
       return;
     }
-    if (refused) {                                      // the page read again, still "sending": a change made meanwhile
-      console.error("notes: a change refused:", refused, ops);   // waits in the queue, applied over the page as read --
-      try { await resync(); } finally { sending = false; }       // not sent before the read comes, and lost under it
+    if (refused) {
+      // The notebook refuses a whole batch for one op it won't take: each sent again alone, so only that one is lost --
+      // not the words typed beside it -- and the reader told. Then the page read again, still "sending": a change made
+      // meanwhile waits in the queue, applied over the page as read -- not sent before the read comes, and lost under it.
+      console.error("notes: a change refused:", refused, ops);
+      let lost = ops.length === 1, left = [];
+      if (ops.length > 1) {
+        lost = false;
+        for (let i = 0; i < ops.length; i++) {
+          const one = await sendOps([ops[i]]);
+          if (one === "refused") lost = true;
+          else if (one === "unreached") { left = ops.slice(i); break; }   // tried again later, in the same order
+        }
+      }
+      try { await resync(); } finally { sending = false; }
+      if (left.length) { queue.unshift(...left); saved("retry"); setTimeout(() => pump(), 2500); return; }
+      if (lost) saved("refused");
     }
     sending = false;
     pump();
+  }
+  // `ops` sent: "sent", "refused" (the notebook won't take them), or "unreached"
+  async function sendOps(ops) {
+    try {
+      const r = await ag.api("ops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ by: ME, ops }) });
+      return r.status >= 400 && r.status < 500 ? "refused" : r.ok ? "sent" : "unreached";
+    } catch { return "unreached"; }
   }
   function saved(how) {
     const s = $("saved");
@@ -469,6 +491,7 @@ and what agents see of it. The words under either are its caption. */
     s.classList.remove("quiet", "bad");
     if (how === "saving") s.textContent = "Saving…";
     else if (how === "retry") { s.textContent = "Not saved. Retrying…"; s.classList.add("bad"); }
+    else if (how === "refused") { s.textContent = "A change couldn't be saved"; s.classList.add("bad"); }
     else { s.textContent = "Saved"; savedTimer = setTimeout(() => s.classList.add("quiet"), 1400); }
   }
   addEventListener("pagehide", () => { flushTyped(); pump(true); });

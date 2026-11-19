@@ -280,17 +280,18 @@ async function histOpen(id, header) {
   const n = hist.byId.get(id);
   if (!header && n && n.kind === "message" && hist.open.has(id) && !hist.full.has(n.event.row_id)) {
     const [g] = state.selected, e = n.event;
+    const into = hist.full;                         // this group's: an answer that comes after another's is shown, dropped
     try {
       if (e.type === "tool_call") {
         const got = await get(`/api/event?gatherer=${enc(g)}&row_id=${e.row_id}`);
-        hist.full.set(e.row_id, (got.parts || []).filter((p) => p.kind === "call").map(callInput).join("\n\n") || "(no input)");
+        into.set(e.row_id, (got.parts || []).filter((p) => p.kind === "call").map(callInput).join("\n\n") || "(no input)");
         hist.version++; histRedraw();
         return;
       }
       const got = await get(`/api/history?gatherer=${enc(g)}&channel=${enc(e.channel)}&from=${e.row_id}&to=${e.row_id}`);
       const it = got.items && got.items[0];
-      hist.full.set(e.row_id, it ? (it.text || `(${wordless(it)})`) + (it.clipped ? `\n… ${full(it.clipped)} more characters not shown` : "") : "(not found)");
-    } catch (err) { hist.full.set(e.row_id, `Not loaded: ${err.message}`); }
+      into.set(e.row_id, it ? (it.text || `(${wordless(it)})`) + (it.clipped ? `\n… ${full(it.clipped)} more characters not shown` : "") : "(not found)");
+    } catch (err) { into.set(e.row_id, `Not loaded: ${err.message}`); }
     hist.version++;
     histRedraw();
   }
@@ -650,7 +651,11 @@ function histSide(h) {
 function histRender() {
   const h = state.hist;
   if (!h || h.key !== histKey() || !h.loaded) return el("div", { class: "h-note", text: "Loading…" });
-  if (hist.selFor !== h.gatherer) { hist.sel = new Map(); hist.selFor = h.gatherer; hist.last = null; hist.panel = false; }
+  // another group's: its messages are other rows (row ids are a group's database's), so none picked, opened or read yet
+  if (hist.selFor !== h.gatherer) {
+    hist.sel = new Map(); hist.selFor = h.gatherer; hist.last = null; hist.panel = false;
+    hist.open = new Set(); hist.full = new Map();
+  }
   const tree = histTree(h);
   const hasTasks = h.tasks.length > 0;
   if (hist.hadTasks && hist.hadTasks.key === h.key && !hist.hadTasks.had && hasTasks) {
@@ -686,12 +691,14 @@ export function start() {
     signature: () => [state.hist && state.hist.key, state.hist && state.hist.version, hist.version],
   };
   // Each time that counts up (`data-since`, in the server's seconds; `data-ago`, how long ago, as ago() says it) set where
-  // it is, every second: nothing redrawn.
+  // it is, every second: nothing redrawn -- and only one whose words changed ("3m ago" stays so for a minute), since
+  // setting a text, even to what it was, lays the page out again.
+  const set = (n, text) => { if (n.textContent !== text) n.textContent = text; };
   setInterval(() => {
     const now = Date.now() / 1000;
-    for (const n of document.querySelectorAll("[data-since]")) n.textContent = span(+n.dataset.since, now);
-    for (const n of document.querySelectorAll("[data-ago]")) n.textContent = ago(+n.dataset.ago);
-    for (const n of document.querySelectorAll("[data-lasting]")) n.textContent = lasting(+n.dataset.lasting);
+    for (const n of document.querySelectorAll("[data-since]")) set(n, span(+n.dataset.since, now));
+    for (const n of document.querySelectorAll("[data-ago]")) set(n, ago(+n.dataset.ago));
+    for (const n of document.querySelectorAll("[data-lasting]")) set(n, lasting(+n.dataset.lasting));
   }, 1000);
   document.addEventListener("mousedown", (ev) => {
     const list = ev.button === 0 && ev.target.closest && ev.target.closest(".hist .h-list");

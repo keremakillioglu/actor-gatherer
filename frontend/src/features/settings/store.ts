@@ -22,6 +22,10 @@ interface SettingsState {
   saveFile: (text: string) => Promise<void>;
 }
 
+/** Whether `a` and `b` say the same, whatever the server said with either. */
+const same = (a: Settings | null, b: Settings): boolean =>
+  !!a && JSON.stringify({ ...a, said: null }) === JSON.stringify({ ...b, said: null });
+
 export const useSettings = create<SettingsState>()((set, getState) => ({
   settings: null,
   rev: 0,
@@ -33,7 +37,13 @@ export const useSettings = create<SettingsState>()((set, getState) => ({
     getState().take(s);
     return s;
   },
-  take: (settings, said = "") => set((st) => ({ settings, said, savedDefaults: "", rev: st.rev + 1 })),
+  take: (settings, said = "") =>
+    set((st) =>
+      // the same as held (read again to open config.toml, say): the forms kept as they are, with what is typed in them
+      same(st.settings, settings)
+        ? { settings, said: said || st.said }
+        : { settings, said, savedDefaults: "", rev: st.rev + 1 },
+    ),
   setModel: async (model, apiBase, keyEnv) => {
     const got = await post<Settings>("/api/settings/model", { model, api_base: apiBase, key_env: keyEnv });
     getState().take(got, got.said);

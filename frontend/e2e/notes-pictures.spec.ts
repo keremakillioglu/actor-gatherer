@@ -222,6 +222,47 @@ test("a change made while the page is read again after a refusal is kept", async
   await binPage(panel, "Refused");
 });
 
+test("words typed in a batch with a change refused are kept, and the reader told of the one refused", async ({
+  page,
+}) => {
+  await open(page);
+  const { panel, instance } = await openNotes(page);
+  await newPage(page, panel, "Refused batch");
+  await page.keyboard.type("first");
+  await page.keyboard.press("Enter");
+  await expect(panel.locator("#saved")).toHaveText("Saved");
+  let release = () => {};
+  const released = new Promise<void>((r) => (release = r));
+  let held = false;
+  const ops = (u: URL) => u.pathname.endsWith("/ops");
+  await page.route(ops, async (route) => {
+    const body = route.request().postData() || "";
+    if (body.includes("REFUSE")) return route.fulfill({ status: 400, json: { error: "refused by the test" } });
+    if (!held) {
+      held = true; // the first sent waits: what is typed meanwhile goes in the next batch, together
+      await released;
+    }
+    await route.continue();
+  });
+  await panel.locator("#blocks > .blk").nth(0).locator(".tx").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" one");
+  await page.waitForTimeout(900); // sent, and held
+  await panel.locator("#blocks > .blk").nth(1).locator(".tx").click();
+  await page.keyboard.type("good");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("REFUSE");
+  await page.waitForTimeout(900);
+  release();
+  await expect(panel.locator("#saved")).toHaveText("A change couldn't be saved");
+  await expect.poll(async () => (await call(page, instance, "read", { page: "Refused batch" })).text).toMatch(/good/);
+  await page.unroute(ops);
+  await panel.locator("#blocks > .blk").nth(0).locator(".tx").click();
+  await page.keyboard.type("!"); // the next change saved: said so
+  await expect(panel.locator("#saved")).toHaveText("Saved");
+  await binPage(panel, "Refused batch");
+});
+
 test("pictures dropped land between the lines where the drop line shows", async ({ page }) => {
   await open(page);
   const { panel } = await openNotes(page);
