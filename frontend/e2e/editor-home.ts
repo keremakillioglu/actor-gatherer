@@ -1,13 +1,13 @@
 // What the browser tests of the Files app and the LaTeX editor share (ag_apps/files/, ag_apps/latex/: app_kit.fileedit's
 // panel, each): a project to open -- a git repository the test makes, with a script that draws an SVG -- an intent
 // raised from a panel, as a page's link raises it, the app's pane and panel, and one started from the menu on a folder
-// with its actor, and closed again.
+// with its actor, and closed again; and what a LaTeX preview's PDF viewer says.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
-import { closePanel, expect, streamsAsRequests } from "./test";
+import { atEnd, closePanel, expect, streamsAsRequests } from "./test";
 import { CLAUDE, openActor } from "./home";
 
 export function project(): { repo: string; plot: string } {
@@ -57,6 +57,17 @@ export const appOf = (file: string): FileApp => (/\.(tex|ltx|sty|cls|bib)$/i.tes
 export const editorPane = (page: Page, app: FileApp = "files") => page.locator(`#top-row > .app-pane[data-app=${app}]`);
 export const editorPanel = (page: Page, app: FileApp = "files") => editorPane(page, app).frameLocator("iframe");
 
+/** For expect.poll: what pdf.js's viewer in a preview says of its PDF -- `expr`, of its PDFViewerApplication `app` -- or
+ * null while there is no viewer, or none with its PDF loaded yet. A viewer's frame is there before pdf.js has run in it
+ * (no PDFViewerApplication yet), and expect.poll does not call again after a call that throws. */
+export const inPdf = (page: Page, expr: string) => async () => {
+  const viewer = page.frames().find((f) => /\/_ag\/lib\/pdfjs\/web\/viewer\.html/.test(f.url()));
+  if (!viewer) return null;
+  return viewer
+    .evaluate(`(app => (app && app.pdfDocument ? ${expr} : null))(globalThis.PDFViewerApplication)`)
+    .catch((e: Error) => `not read: ${e.message}`); // its frame gone meanwhile (a PDF built again): read again
+};
+
 /** Claude Code set up here, and only it -- whatever the machine has (CI: none) -- so what starts an actor is offered:
  * the home read by requests, which this route answers, its stream held back. Before the page opens. */
 export async function claudeRuns(page: Page) {
@@ -77,6 +88,8 @@ export async function openFile(page: Page, file: string, app: FileApp = appOf(fi
   await expect(editorPanel(page, app).locator(".ed-head .ed-path")).toContainText(path.basename(file));
   await expect(editorPanel(page, app).locator(".cm-content")).toHaveCount(1);
 }
+
+const started = new Set<string>(); // the actors of the apps started, not yet forgotten
 
 /** The app started from the menu on `repo`, with its actor (as DocWriter's test: Claude Code set up here, the page's
  * stream held back; the actor's session is only made, never run): the actor's row, and how to put the home back. */
@@ -100,6 +113,11 @@ export async function startEditor(page: Page, repo: string, app: FileApp = "file
   const listed = await (await page.request.get(`/api/apps?gatherer=${src.searchParams.get("gatherer")}`)).json();
   const sid: string = (listed.attached[src.searchParams.get("instance") || ""] || [])[0] || "";
   expect(sid).toMatch(/^[0-9a-f-]{36}$/);
+  started.add(sid);
+  atEnd(async (p) => {
+    // the test failed before its endEditor: the actor forgotten all the same (the app closed with every app)
+    if (started.delete(sid)) await p.request.post("/api/discard", { data: { session_id: sid } });
+  });
   return { actor, sid, src };
 }
 
@@ -113,4 +131,5 @@ export async function endEditor(page: Page, request: APIRequestContext, sid: str
   expect(closed.ok()).toBe(true);
   const discarded = await request.post("/api/discard", { data: { session_id: sid } });
   expect(discarded.ok(), await discarded.text()).toBe(true);
+  started.delete(sid);
 }
