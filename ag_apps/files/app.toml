@@ -2,10 +2,11 @@
 # a file changed on disk since it was read reloaded, or kept as the reader has it if they choose: no merging), any
 # other file shown (an image, a PDF, a sound, a video). Which actors changed which files lately, and where in a file,
 # shown with their avatars (app_kit.fileedit's panel, as the LaTeX editor's). Its agents do not edit through it: they
-# use their own tools, and it shows what they did; files_open shows the user a file. Any agent of the group may use it
-# (access "group"), and it opens alone, with no agent of its own. Lines selected in a file are sent from there to any
-# actor of the gatherer, and an actor started on a file or folder of its tree, as the user's message (message_actors).
-# Added to an actor or a task ("+" on its row): opened at the actor's directory, shown with the task (on_task "folder").
+# use their own tools, and it shows what they did; files_open shows the user a file or folder. Any agent of the group
+# may use it (access "group"), and it opens alone, with no agent of its own. Lines selected in a file are sent from
+# there to any actor of the gatherer, and an actor started on a file or folder of its tree, as the user's message
+# (message_actors). Added to an actor or a task ("+" on its row): opened at the actor's directory, shown with the task
+# (on_task "folder").
 name = "files"
 label = "Files"
 version = "1"
@@ -17,7 +18,7 @@ mark = "mark.svg"
 replaces = ["editor"]
 instructions = """The user has a Files app in the dashboard: it shows a folder's files, and which actors changed which files
 lately and where. Edit files with your own tools, as always: the user sees your changes there. files_open shows the user a
-file, at a line, in their Files app: to point them at something."""
+file, at a line, or a folder, in their Files app: to point them at something."""
 
 [backend]
 python = "backend:FilesApp"
@@ -32,7 +33,7 @@ message_actors = true
 
 [[tools]]
 name = "open"
-description = "Show the user a file in their Files app, at a line: to point them at something."
+description = "Show the user a file in their Files app, at a line, or a folder: to point them at something."
 input_schema = { type = "object", properties = { path = { type = "string" }, line = { type = "integer" } }, required = ["path"] }
 
 # A file, from a link to it (app_kit/links.py): shown at a line. `paths`: a file's path an agent writes in a reply with
@@ -41,6 +42,12 @@ input_schema = { type = "object", properties = { path = { type = "string" }, lin
 form = "file/<path...>"
 paths = true
 about = "A file: its absolute path after file/, as in `ag://files/file/Users/me/app/main.py`. Add #L<line> for a line."
+
+# A folder, from a link to it: shown in the tree, opened (a file's link to a folder, or a plain path to one, is shown
+# the same way: the panel asks what the path is).
+[[links]]
+form = "folder/<path...>"
+about = "A folder: its absolute path after folder/, as in `ag://files/folder/Users/me/app/src`."
 
 # Any file shown, in a Files app open (else a new one, on its folder); an app taking its type, first.
 [[handles]]
