@@ -479,6 +479,7 @@ class Antigravity(Harness):
     name = "antigravity"
     label = "Antigravity"
     checked_with = "1.4.12"
+    edit_tools = {n: key for n, (action, key) in TOOLS.items() if action == Action.EDIT and key}
     picks_session_id = True          # its conversation's id, which it picks
 
     def call(self, method: str, path: str, headers, body) -> Optional[Call]:

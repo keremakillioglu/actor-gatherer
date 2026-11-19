@@ -1,0 +1,63 @@
+/* The Transcript view: the conversation as a terminal shows it, in the page's theme (the --term-* colors above) */
+.term {
+  background: var(--term-bg); color: var(--term-ink); border-radius: 10px; border: 1px solid var(--ring);
+  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 14px 18px 18px;
+  overflow-y: auto; overflow-x: hidden; }
+.term .blk { margin: 0 0 12px; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 4px; }
+.term .g { user-select: none; }
+.term .g.dot-ok { color: var(--term-ok); } .term .g.dot-err { color: var(--term-err); } .term .g.dot-run { color: var(--term-run); animation: term-blink 1s steps(2) infinite; }
+.term .g.text { color: var(--term-ink); } .term .g.think { color: var(--term-accent); }
+@keyframes term-blink { 50% { opacity: .25; } }
+.term .user { background: var(--term-user); border-radius: 6px; padding: 6px 10px; margin: 4px 0 14px; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 4px; }
+.term .user .g { color: var(--term-dim); }
+.term .user .body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.term .head { overflow-wrap: anywhere; }
+.term .head b { font-weight: 600; }
+.term .head .arg { color: var(--term-ink); }
+.term .head .note { color: var(--term-dim); margin-left: 10px; }
+.term .res { grid-column: 2; display: grid; grid-template-columns: 22px minmax(0, 1fr); color: var(--term-dim); }
+.term .res .g { color: var(--term-faint); }
+.term .res pre, .term pre.out { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--term-dim); }
+.term .res .err { color: var(--term-err); }
+.term details > summary { list-style: none; cursor: pointer; color: var(--term-faint); font-size: inherit; margin-top: 0; }
+.term details > summary::-webkit-details-marker { display: none; }
+.term details > summary:hover { color: var(--term-dim); }
+.term .more { color: var(--term-faint); cursor: pointer; }
+.term .think-blk summary { color: var(--term-dim); font-style: italic; }
+.term .think-blk .body { color: var(--term-dim); font-style: italic; white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0 0; }
+.term .notes { color: var(--term-faint); font-size: 12px; }
+.term .notes pre { margin: 4px 0 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.term .diff { margin-top: 2px; border-radius: 4px; overflow: hidden; }
+.term .diff div { white-space: pre-wrap; overflow-wrap: anywhere; padding: 0 6px; }
+.term .diff .add { background: var(--term-add); color: var(--term-add-ink); } .term .diff .del { background: var(--term-del); color: var(--term-del-ink); }
+.term .diff .ctx { color: var(--term-dim); } .term .diff .hunk { color: var(--term-faint); }
+.term .todo { white-space: pre-wrap; } .term .todo .done { color: var(--term-dim); text-decoration: line-through; } .term .todo .doing { color: var(--term-ink); font-weight: 600; }
+.term .md { overflow-wrap: anywhere; }
+.term .md > :first-child { margin-top: 0; } .term .md > :last-child { margin-bottom: 0; }
+.term .md p, .term .md ul, .term .md ol, .term .md pre, .term .md table, .term .md blockquote { margin: 0 0 8px; }
+.term .md h1, .term .md h2, .term .md h3, .term .md h4 { font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
+.term .md h1, .term .md h2 { text-decoration: underline; text-underline-offset: 3px; }
+.term .md ul, .term .md ol { padding-left: 22px; }
+.term .md code { color: #c9b6ff; font: inherit; }
+.term .md pre { background: var(--term-code); border: 1px solid var(--term-rule); border-radius: 6px; padding: 8px 10px; overflow-x: auto; white-space: pre; }
+.term .md pre code { color: var(--term-ink); }
+.term .md a { color: var(--term-link); }
+.term .md blockquote { border-left: 2px solid var(--term-rule); padding-left: 10px; color: var(--term-dim); }
+.term .md table { border-collapse: collapse; width: auto; font-size: 12.5px; display: block; overflow-x: auto; }
+.term .md th, .term .md td { border: 1px solid var(--term-rule); padding: 2px 8px; color: var(--term-ink); text-align: left; }
+.term .md th { color: var(--term-ink); font-weight: 600; }
+.term .md hr { border: 0; border-top: 1px solid var(--term-rule); }
+.term .earlier { display: block; margin: 0 auto 14px; color: var(--term-dim); background: var(--term-user); border-color: var(--term-rule); }
+.term .status-line { color: var(--term-accent); margin-top: 6px; }
+/* while the agent works, the status line starts with the dots going round (core/page/base.css) */
+.term .status-line .spin::before { margin-right: .45em; }
+/* a stretch of tool calls: one line each, what it is for; the call and its output behind a click */
+.term .call-line, .term .more { margin-bottom: 4px; }
+.term .call-line > details > summary, .term .more > details > summary { color: var(--term-dim); }
+.term .call-line > details > summary:hover, .term .more > details > summary:hover { color: var(--term-ink); }
+.term .call-line > details > summary.bad { color: var(--term-err); }
+.term .call-line > details[open] > summary { margin-bottom: 6px; }
+.term .call-line .calls { border-left: 1px solid var(--term-rule); padding-left: 10px; margin-bottom: 8px; }
+.term .more > details[open] > summary { margin-bottom: 4px; }
+.term .empty-term { color: var(--term-faint); }
+@media (max-width: 760px) { .term { padding: 10px 12px 14px; font-size: var(--fs-meta); } }

@@ -32,7 +32,7 @@ from ag.ag_interface.store import Ref  # noqa: E402
 from ag.integrations.harnesses.claude.adaptor import to_events as claude  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator.counting import Counter, fresh_thinking  # noqa: E402
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
 
 SYSTEM, TOOLS = "You are Claude Code." * 4, [{"name": "Bash", "input_schema": {"type": "object"}}]

@@ -17,7 +17,7 @@ from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.integrations.harnesses.claude.adaptor.adaptor import ClaudeAdaptor  # noqa: E402
 from ag.integrations.tools.ag_orchestrator import records  # noqa: E402
-from ag_dashboard import data, files, sessions  # noqa: E402
+from ag_dashboard import data, files, sessions, store  # noqa: E402
 from harness_kit.base import Fact, Facts  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
@@ -99,14 +99,14 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual(self.agent()["status"], data.IDLE)
         self.record(context_stream("Browser", "the user", "opened a page"))      # what the user did there, told it
         self.assertEqual(self.agent()["status"], data.IDLE)                      # its turn over all the same
-        self.assertEqual([r["text"] for r in data.replies(data._connect("g"), "s")], ["There are 42 rows."])
+        self.assertEqual([r["text"] for r in data.replies(store.gatherer("g"), "s")], ["There are 42 rows."])
 
     def test_an_answer_that_broke_off_as_it_streamed_is_dropped_at_the_next_turn(self):
         read = self.turn([user("count the rows")])
         self.reply("msg_1", [TEXT])                                          # streams, then breaks off: no end
-        self.assertEqual(len(data.replies(data._connect("g"), "s")), 1)
+        self.assertEqual(len(data.replies(store.gatherer("g"), "s")), 1)
         self.record(records.model_call("turn", "claude", None, read))        # Claude Code tries again
-        self.assertEqual(data.replies(data._connect("g"), "s"), [])
+        self.assertEqual(data.replies(store.gatherer("g"), "s"), [])
 
     def test_a_call_the_user_stopped_ends_the_turn_and_is_no_failure(self):
         read = self.turn([user("count the rows")])
@@ -250,10 +250,10 @@ class RecordsTest(unittest.TestCase):
         time.sleep(0.05)
         sent = time.time()                                                   # Claude Code sends it again
         q = {"text": "count the rows", "at": sent, "sent": sent, "joins": False}
-        conn = data._connect("g")
+        conn = store.gatherer("g")
         self.assertEqual(data._unstored(conn, "s", [q]), [q])               # not yet read: not had
         self.turn(first)                                                     # its call: nothing new stored
-        self.assertEqual(data._unstored(data._connect("g"), "s", [q]), [])
+        self.assertEqual(data._unstored(store.gatherer("g"), "s", [q]), [])
 
     def test_one_actor_s_records_are_found_by_its_channel_not_by_their_type(self):
         """Searched by type, each actor's would go through every actor's records newer than its own last event: the
@@ -261,7 +261,7 @@ class RecordsTest(unittest.TestCase):
         read = self.turn([user("count the rows")])
         self.reply("msg_1", [TEXT, CALL], "tool_use", read)
         self.record(records.call_failed(read, 529, "overloaded_error: Overloaded"))
-        conn, plans = data._connect("g"), []
+        conn, plans = store.gatherer("g"), []
 
         class Planned:                                                       # the plan of each query on events
             def execute(self, sql, args=()):

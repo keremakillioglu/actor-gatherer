@@ -10,7 +10,7 @@ import { currentOf, waitsOf } from "./view";
 import { Status, StoppedLine, Working } from "./Working";
 import type { ChatFeed, Opening } from "./types";
 
-/** A turn that opens grows in (fl-in, 11-files-view.css) this long; the stored turn after it goes on from where it is. */
+/** A turn that opens grows in (fl-in, features/chat/files-view.css) this long; the stored turn after it goes on from where it is. */
 export const GROW_MS = 320;
 
 /** The key a turn opening is known by on this page, from its first draw on: the actor and its send (its message's words,

@@ -1,5 +1,5 @@
 // An icon drawn as a stroke, in the colour of the text around it: `d`, an SVG path in a 16x16 box -- the same SVG as the
-// old page's strokeIcon (src/legacy/01-helpers.js), whose paths (ICONS) it hands the views it hosts.
+// old page's strokeIcon (src/core/page/helpers.js), whose paths (ICONS) it hands the views it hosts.
 export function StrokeIcon({ d, size = 15 }: { d: string; size?: number }) {
   return (
     <svg

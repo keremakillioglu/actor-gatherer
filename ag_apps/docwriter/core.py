@@ -38,6 +38,8 @@ import threading
 import time
 from typing import Callable, Dict, List, Optional, Tuple
 
+from app_kit import tex
+
 try:
     from pycrdt import Doc
     AVAILABLE = True
@@ -979,47 +981,19 @@ def synctex(root: str, body: dict) -> dict:
             line, col = int(body.get("line") or 0), int(body.get("column") or 0)
             if line < 1:
                 raise DocWriterError("line: 1 or more")
-            out = _synctex(["view", "-i", f"{line}:{col}:{src}", "-o", pdf], root)
-            got = {}
-            for raw in out.splitlines():
-                k, _, v = raw.partition(":")
-                if k in ("Page", "x", "y", "h", "v", "W", "H") and k not in got:
-                    got[k] = v.strip()
-                if raw.startswith("SyncTeX result end"):
-                    break
-            if "Page" not in got:
-                return {"ok": False, "reason": "no-match"}
-            num = lambda k: float(got[k]) if k in got else None   # noqa: E731
-            return {"ok": True, "page": int(float(got["Page"])), "x": num("x"), "y": num("y"), "h": num("h"),
-                    "v": num("v"), "w": num("W"), "height": num("H")}
+            got = tex.forward(pdf, src, line, col, root)
+            return {"ok": True, **got} if got else {"ok": False, "reason": "no-match"}
         page, x, y = float(body.get("page")), float(body.get("x")), float(body.get("y"))
-        out = _synctex(["edit", "-o", f"{round(page)}:{x}:{y}:{pdf}"], root)
     except (TypeError, ValueError):
         raise DocWriterError("page, x and y: numbers") from None
-    src, line = None, None
-    begun = False
-    for raw in out.splitlines():
-        begun = begun or raw.startswith("SyncTeX result begin")
-        if begun and raw.startswith("Input:") and src is None:
-            src = raw[len("Input:"):].strip()
-        elif begun and raw.startswith("Line:") and line is None:
-            line = int(raw[len("Line:"):].strip() or 0)
-    if not src or not line:
+    found = tex.backward(pdf, page, x, y, root)
+    if found is None:
         return {"ok": False, "reason": "no-match"}
-    full = os.path.normpath(src if os.path.isabs(src) else os.path.join(os.path.dirname(pdf), src))
     try:
-        rel = tab_id(root, inside(root, full))
+        rel = tab_id(root, inside(root, found[0]))
     except DocWriterError:
         return {"ok": False, "reason": "outside-workspace"}
-    return {"ok": True, "file": rel, "line": line}
-
-
-def _synctex(args: List[str], root: str) -> str:
-    try:
-        return subprocess.run(["synctex", *args], cwd=root, capture_output=True, text=True, timeout=20,
-                              stdin=subprocess.DEVNULL).stdout
-    except (OSError, subprocess.SubprocessError):
-        return ""
+    return {"ok": True, "file": rel, "line": found[1]}
 
 
 # ---- the page's own files ------------------------------------------------------------------------------------------

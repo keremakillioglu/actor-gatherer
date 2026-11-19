@@ -111,6 +111,26 @@ class HookServers:
         return found
 
 
+    def of(self, setup: str) -> List[HookServer]:
+        """The running hook servers one harness's `setup` started. Every harness's are recorded in the same directory,
+        so a launcher's `ag status` and `ag stop` take only these."""
+        return [s for s in self.running() if s.setup == setup]
+
+    def status(self, setup: str) -> List[str]:
+        """`ag status`: `setup`'s hook servers, one line each."""
+        return [f"hook server :{s.port}  pid {s.pid}  -> {s.upstream}"
+                + (f"  logs {s.log_dir}" if s.log_dir else "")
+                + f"  output {self.log(s.port)}"
+                for s in self.of(setup)]
+
+    def stop_all(self, setup: str) -> List[str]:
+        """`ag stop`: `setup`'s hook servers stopped, one line each."""
+        stopped = []
+        for s in self.of(setup):
+            self.stop(s)
+            stopped.append(f"stopped the hook server :{s.port} (-> {s.upstream})")
+        return stopped
+
     def find(self, setup: str, upstream: str, log_dir: str = "",
              options: Optional[Dict[str, str]] = None, trace_root: str = "") -> Optional[HookServer]:
         for server in self.running():

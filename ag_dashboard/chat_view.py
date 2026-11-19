@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 
 import harness_kit
 
-from . import data, files
+from . import data, files, store
 
 OPENING, WORKING, ASKING, DONE, STOPPED, IDLE = "opening", "working", "asking", "done", "stopped", "idle"
 #: A send from Chat the harness has not had for this long: said so (its terminal may be asking something first).
@@ -411,7 +411,7 @@ def view(conn, channel: str, session: Optional[dict] = None, now: Optional[float
 def of(gatherer: str, channel: str, session: Optional[dict] = None, now: Optional[float] = None) -> dict:
     """`view`, of the gatherer as it is now -- with no database for it yet (made by its first call), of the session's
     sends alone (`unstored`)."""
-    conn = data._connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return unstored(session, now)
     try:

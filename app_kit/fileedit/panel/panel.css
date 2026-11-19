@@ -1,4 +1,4 @@
-/* The Editor's panel, its page: the dashboard's colours (frontend/src/legacy/css/00-base.css's), the theme the dashboard
+/* The Editor's panel, its page: the dashboard's colours (frontend/src/core/page/base.css's), the theme the dashboard
    shows as the SDK tells it (its colours set on :root, data-ag-theme), and the page's own elements as the dashboard's
    page draws them. */
 :root {

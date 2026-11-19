@@ -26,7 +26,7 @@ from ag.integrations.harnesses.antigravity.adaptor.to_messages import ag_message
 from ag.integrations.harnesses.antigravity.ag_orchestrator import context_manager as agy_ag  # noqa: E402
 from ag.integrations.harnesses.antigravity.ag_orchestrator import counting  # noqa: E402
 from ag.integrations.harnesses.antigravity.ag_orchestrator.counting import Counter, signature_chars  # noqa: E402
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 
 MODEL = "gemini-4-argon"
 PATH = f"/v1beta/models/{MODEL}:streamGenerateContent"

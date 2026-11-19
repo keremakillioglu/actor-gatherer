@@ -316,7 +316,7 @@ connections to the dashboard. What a second tab still costs:
   while actors work -- and each page then loads its actor's Chat again. A second tab doubles both. Sending only the
   actors that changed (the hub already knows which: data.py's `Kept`) would cut most of it.
 - [ ] **Two tabs on one actor's Terminal set its size in turn.** Each fits the terminal to its own window and sends
-  that size (14-terminal.js: on a resize, and when it starts listening); the harness then draws for the last one, and
+  that size (features/terminal/terminal.js: on a resize, and when it starts listening); the harness then draws for the last one, and
   the other tab shows its screen at the wrong width. One size for all of them (the smallest, as tmux does), or the
   focused tab's, would keep both readable.
 - [ ] **DocWriter's page** (vendor/docwriter, built apart) still opens an EventSource of its own: one of the six while

@@ -3,6 +3,8 @@
 // tasks, their arrangement and the one in focus; a tab left kept so (each task remembered).
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CellLook } from "./tab-map";
+import * as M from "./model";
+import { shadow } from "./shadow";
 import { MARKS, pressing, Tabs, type State, type TabsHooks } from "./tabs";
 import type { Node, Rect } from "./tree";
 
@@ -16,16 +18,30 @@ let shown: string[],
   looks: Record<string, CellLook>, // what each item's box in a map shows (none: grey)
   dragging: string | null, // the task being dragged by its card head, if one can go to another tab
   carried: [string, string | null][]; // each let go on the bar: the task, the tab it goes in (null: a new one)
+// what the page shows changed: the layout model told, as the page's own changes tell it (panes.js: a task entered, opened
+// beside, closed)
+function setShown(list: string[]) {
+  shown = list;
+  shadow.update((l) => ({ ...l, tabs: l.tabs.map((t) => (t.id === l.current ? { ...t, tasks: [...list] } : t)) }));
+}
+// what a page just loaded opens on by itself (its first actor): shown, the model told as the page tells it (opened)
+function openedOn(list: string[]) {
+  shown = list;
+  for (const k of list) shadow.tell("auto", M.opened, k);
+}
+// a page loaded: the model read from what this browser keeps, the page showing what it opened on by itself (`shown`) --
+// in the tab shown only if it holds nothing, as the page's first actor is (model.ts's opened)
 function tabs(): Tabs {
+  shadow.reset();
   const hooks: TabsHooks = {
     shown: () => shown,
     focus: () => shown[0] || null,
     enter: async (tasks, focus) => {
       entered.push([tasks, focus]);
-      shown = [...new Set([focus, ...tasks].filter((k): k is string => !!k))];
+      setShown([...new Set([focus, ...tasks].filter((k): k is string => !!k))]);
     },
     clear: async () => {
-      shown = [];
+      setShown([]);
     },
     remember: (k) => remembered.push(k),
     canon: (k) => now[k] ?? k,
@@ -40,7 +56,9 @@ function tabs(): Tabs {
     carried: () => dragging,
     carry: (k, to) => carried.push([k, to]),
   };
-  return new Tabs(work, hooks);
+  const t = new Tabs(work, hooks);
+  if (!shadow.now().tabs.find((x) => x.id === shadow.now().current)!.tasks.length) setShown(shown);
+  return t;
 }
 // the strip as drawn: each tab's name, the one shown marked
 function strip(t: Tabs): string[] {
@@ -54,7 +72,7 @@ const ids = () => [...work.querySelectorAll<HTMLElement>(".lay-tab")].map((e) =>
 beforeEach(() => {
   localStorage.clear();
   work = document.createElement("div");
-  shown = ["a"];
+  setShown(["a"]);
   screen = null;
   entered = [];
   remembered = [];
@@ -72,7 +90,7 @@ describe("screen tabs", () => {
     t.fresh();
     expect(screen).toBe(null);
     expect(remembered).toEqual([["a"]]); // each task left kept as it is
-    shown = ["b"];
+    setShown(["b"]);
     expect(strip(t)).toEqual(["A", "B *"]);
     await t.route("a"); // a, in the first tab: that tab shown again, as it was left
     expect(entered).toEqual([[["a"], "a"]]);
@@ -86,18 +104,18 @@ describe("screen tabs", () => {
     await t.route("a"); // shown here: as it is
     expect(strip(t)).toEqual(["A *"]);
     await t.route("b"); // open nowhere: a new tab, a kept in its own
-    shown = ["b"];
+    setShown(["b"]);
     expect(strip(t)).toEqual(["A", "B *"]);
-    shown = [];
+    setShown([]);
     await t.route("c"); // the tab shown showing nothing: c goes in it
-    shown = ["c"];
+    setShown(["c"]);
     expect(strip(t)).toEqual(["A", "C *"]);
   });
 
   it("a tab left with a lone item, put in a task since, holds the task: a click on it brings the tab forward", async () => {
     const t = tabs();
     t.fresh(); // tab 1 left with a, alone
-    shown = ["b"];
+    setShown(["b"]);
     now = { a: "T" }; // a put in task T since
     expect(t.where("T")).toEqual({ n: 1, here: false });
     expect(t.where("a")).toBe(null);
@@ -110,10 +128,10 @@ describe("screen tabs", () => {
     const t = tabs();
     await t.start(); // nothing kept yet: as it is
     expect(entered).toEqual([]);
-    shown = ["a", "b"];
+    setShown(["a", "b"]);
     t.draw(); // kept as it is now
     const again = tabs(); // the page reloaded, on the actor it opens on by itself
-    shown = ["z"];
+    openedOn(["z"]);
     expect(await again.start()).toBe(true);
     expect(entered).toEqual([[["a", "b"], "a"]]);
     expect(await again.start()).toBe(false); // once
@@ -121,9 +139,9 @@ describe("screen tabs", () => {
 
   it("where a task is open: its tab's number, and whether it is the tab shown", () => {
     const t = tabs();
-    shown = ["a", "b"];
+    setShown(["a", "b"]);
     t.fresh();
-    shown = ["c"];
+    setShown(["c"]);
     expect(t.where("a")).toEqual({ n: 1, here: false });
     expect(t.where("c")).toEqual({ n: 2, here: true });
     expect(t.where("d")).toBe(null);
@@ -132,7 +150,7 @@ describe("screen tabs", () => {
   it("⌥: the task taken out of the tab holding it, a tab left with none closed", () => {
     const t = tabs();
     t.fresh(); // tab 1: a
-    shown = ["b"];
+    setShown(["b"]);
     t.take("a"); // a, ⌥+clicked in tab 2: out of tab 1, which goes
     expect(strip(t)).toEqual(["B *"]);
     expect(t.where("a")).toBe(null);
@@ -141,15 +159,15 @@ describe("screen tabs", () => {
   it("keeps a task in one tab only: shown in another, it leaves the first, and a tab left with none goes", () => {
     const t = tabs();
     t.fresh(); // tab 1: a
-    shown = ["a", "b"]; // a opened beside b in tab 2
+    setShown(["a", "b"]); // a opened beside b in tab 2
     t.fresh(); // tab 2 kept with a and b: a leaves tab 1, left empty
-    shown = ["c"];
+    setShown(["c"]);
     expect(strip(t)).toEqual(["A, B", "C *"]);
   });
 
   it('"+": a new tab, empty, the tab left kept with its tasks', async () => {
     const t = tabs();
-    shown = ["a", "b"];
+    setShown(["a", "b"]);
     await t.blank();
     expect(shown).toEqual([]);
     expect(strip(t)).toEqual(["A, B", "New tab *"]);
@@ -160,7 +178,7 @@ describe("screen tabs", () => {
   it("closing the tab shown shows the next first; the last one is not closed, nor has a ×", async () => {
     const t = tabs();
     t.fresh();
-    shown = ["b"];
+    setShown(["b"]);
     strip(t);
     const [first, second] = ids();
     expect(work.querySelectorAll(".lay-close").length).toBe(2);
@@ -175,7 +193,7 @@ describe("screen tabs", () => {
   it("the close key: the tab shown closed, the next shown; the only one emptied, a new tab -- already one, as it is", async () => {
     const t = tabs();
     t.fresh();
-    shown = ["b"];
+    setShown(["b"]);
     await t.closeShown(); // two tabs: the one shown (b's) closed, a's shown
     expect(shown).toEqual(["a"]);
     expect(strip(t)).toEqual(["A *"]);
@@ -188,7 +206,7 @@ describe("screen tabs", () => {
     await t.closeShown(); // showing nothing already: as it is
     expect(strip(t)).toEqual(["New tab *"]);
     await t.route("a"); // a open nowhere now: it goes in the empty tab, not a new one
-    shown = ["a"];
+    setShown(["a"]);
     expect(strip(t)).toEqual(["A *"]);
   });
 
@@ -197,13 +215,13 @@ describe("screen tabs", () => {
       here: string[] = [];
     const closeHere = (k: string) => async () => {
       here.push(k);
-      shown = shown.filter((x) => x !== k);
+      setShown(shown.filter((x) => x !== k));
     };
-    shown = ["a", "b"];
+    setShown(["a", "b"]);
     t.fresh(); // tab 1: a and b, a in focus
-    shown = ["c"];
+    setShown(["c"]);
     t.fresh(); // tab 2: c
-    shown = ["d", "e"]; // tab 3, shown: d and e
+    setShown(["d", "e"]); // tab 3, shown: d and e
     expect(strip(t)).toEqual(["A, B", "C", "D, E *"]);
     await t.closed("a", closeHere("a")); // in tab 1 with b: out of it, b in focus there now
     expect(strip(t)).toEqual(["B", "C", "D, E *"]);
@@ -229,17 +247,17 @@ describe("screen tabs", () => {
     t.setDraft("fix the parser");
     expect(t.shownTab().draft).toBe("fix the parser");
     const drafted = t.shownTab().id;
-    shown = [];
+    setShown([]);
     await t.route("b"); // open nowhere: a tab of its own, not this one with something typed in it
     expect(t.shownTab().id).not.toBe(drafted);
-    shown = ["b"];
+    setShown(["b"]);
     expect(strip(t)).toEqual(["A", "New tab", "B *"]);
     await t.route("a"); // a, in tab 1: tab 3 left, b in it
     expect(strip(t)).toEqual(["A *", "New tab", "B"]);
     await t.show(drafted); // shown again: the panels shown closed, its page
     expect(shown).toEqual([]);
     expect(t.shownTab()).toEqual({ id: drafted, draft: "fix the parser", page: "" });
-    shown = [];
+    setShown([]);
     t.filling(true); // what its page opens: in it, whatever is typed
     await t.route("c");
     t.filling(false);
@@ -250,7 +268,7 @@ describe("screen tabs", () => {
     await t.blank();
     t.setDraft("next"); // a reload on a new tab with something typed: its page, not what the page opened on
     const again = tabs();
-    shown = ["z"];
+    openedOn(["z"]);
     expect(await again.start()).toBe(true);
     expect(shown).toEqual([]);
     expect(again.shownTab().draft).toBe("next");
@@ -265,7 +283,7 @@ describe("screen tabs", () => {
     expect(work.querySelector('.lay-tab[aria-selected="true"] .lay-page')).not.toBeNull(); // its mark in its map
     const page = t.shownTab().id;
     await t.route("b"); // a task open nowhere: a tab of its own, not this page's
-    shown = ["b"];
+    setShown(["b"]);
     expect(strip(t)).toEqual(["A", "Apps", "B *"]);
     await t.openPage("apps"); // opened again: its tab shown, no second one
     expect(t.shownTab()).toEqual({ id: page, draft: "", page: "apps" });
@@ -276,7 +294,7 @@ describe("screen tabs", () => {
     await t.openPage("apps");
     expect(strip(t)).toEqual(["A", "B", "Apps *"]);
     const again = tabs(); // a reload on it: its page, not what the page opened on by itself
-    shown = ["z"];
+    openedOn(["z"]);
     expect(await again.start()).toBe(true);
     expect(shown).toEqual([]);
     expect(again.shownTab().page).toBe("apps");
@@ -285,7 +303,7 @@ describe("screen tabs", () => {
   it("each task's state marked on its lead's box in the map: its first actor's, top left first", () => {
     const t = tabs();
     const st = (mark: string, said: string): State => ({ mark, said });
-    shown = ["a", "b", "c"];
+    setShown(["a", "b", "c"]);
     looks = { a1: { hue: "#f97316", src: "/avatars/a.svg" }, b1: { app: true } };
     states = {
       a: [st("", "Idle"), st("working", "Running"), st("finished", "Finished")], // done since looked: before at work
@@ -315,7 +333,7 @@ describe("screen tabs", () => {
 
   it("the tab shown's map taken as its panels are placed, kept with it when left, drawn so till its tasks change", async () => {
     const t = tabs();
-    shown = ["a"];
+    setShown(["a"]);
     const rect = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });
     const items = new Map([
       ["p1", { key: "a", item: "app:n" }],
@@ -335,14 +353,14 @@ describe("screen tabs", () => {
       );
     expect(map(0)).toEqual(["1px,1px,35px,4px", "1px,6px,35px,14px"]);
     t.fresh(); // left: kept as it was
-    shown = ["b"];
+    setShown(["b"]);
     t.draw();
     expect(map(0)).toEqual(["1px,1px,35px,4px", "1px,6px,35px,14px"]);
     expect(map(1)).toEqual(["1px,1px,35px,19px"]); // b: no map yet, one box
     now = { a: "t1" }; // a put in a task since: its key now, the same map
     t.draw();
     expect(map(0)).toHaveLength(2);
-    expect(JSON.parse(localStorage.getItem("ag-dashboard-screen-tabs")!).tabs[0].map).toHaveLength(2); // kept on reload
+    expect(JSON.parse(localStorage.getItem("ag-dashboard-layout")!).tabs[0].map).toHaveLength(2); // kept on reload
   });
 
   it("marks ranked: what waits on the reader before what is at work", () => {
@@ -365,13 +383,13 @@ describe("screen tabs", () => {
   it("a task put in a new tab: after the tab shown, or last; the tab shown stays; shown, the new tab opens it", async () => {
     const t = tabs();
     t.fresh();
-    shown = ["b", "c", "d", "e"]; // tab 1: a; tab 2 (shown): b, c, d, e
-    shown = ["b", "d", "e"]; // c closed here (the page's), then put
+    setShown(["b", "c", "d", "e"]); // tab 1: a; tab 2 (shown): b, c, d, e
+    setShown(["b", "d", "e"]); // c closed here (the page's), then put
     t.put("c", null);
     expect(strip(t)).toEqual(["A", "B, D +1 *", "C"]);
-    shown = ["b", "e"];
+    setShown(["b", "e"]);
     t.put("d", null, true); // dropped on the bar: at its end
-    shown = ["b"];
+    setShown(["b"]);
     t.put("e", null); // from the menu: after the tab shown
     expect(strip(t)).toEqual(["A", "B *", "E", "C", "D"]);
     await t.route("c"); // shown: c opened, in focus
@@ -382,13 +400,13 @@ describe("screen tabs", () => {
   it("a task put in another tab, last, that tab's focus kept; the tabs to go to, the others", async () => {
     const t = tabs();
     t.fresh();
-    shown = ["b", "c", "d"];
+    setShown(["b", "c", "d"]);
     strip(t);
     const [first, second] = ids();
     expect(t.others()).toEqual([{ id: first, n: 1, name: "A" }]);
-    shown = ["b", "d"];
+    setShown(["b", "d"]);
     t.put("c", first);
-    shown = ["b"];
+    setShown(["b"]);
     t.put("d", second); // the tab shown: no tab to go in -- a new one
     expect(strip(t)).toEqual(["A, C", "B *", "D"]);
     await t.show(first);
@@ -398,7 +416,7 @@ describe("screen tabs", () => {
   it("a task dragged onto the bar: on another tab's name, into it; on the tab shown's, nowhere; elsewhere, a new tab", () => {
     const t = tabs();
     t.fresh();
-    shown = ["b", "c"];
+    setShown(["b", "c"]);
     strip(t);
     const [first] = ids();
     const drop = (on: Element): boolean => on.dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
@@ -421,9 +439,9 @@ describe("screen tabs", () => {
   it("a tab dragged along the bar: the others slid aside where it would go; let go anywhere on it, it goes there", () => {
     const t = tabs();
     t.fresh();
-    shown = ["b"];
+    setShown(["b"]);
     t.fresh();
-    shown = ["c"];
+    setShown(["c"]);
     expect(strip(t)).toEqual(["A", "B", "C *"]);
     // each tab 98px wide, 100px apart (the bar itself at 0)
     const chips = () => [...work.querySelectorAll<HTMLElement>(".lay-tab")];

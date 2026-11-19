@@ -45,7 +45,7 @@ from typing import Dict, List, Optional, Tuple
 
 import harness_kit
 
-from . import data, files, home, sessions
+from . import data, files, home, sessions, store
 
 CHANNEL = data.CHANNEL
 PREVIEW = 300               # the characters of an event's words the outline carries
@@ -219,7 +219,7 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
     tool call's, what it is for (`_call_label`),
     its input left for when it is opened; every task ag has made of them; and each channel's latest build
     (`_builds`)."""
-    conn = data._connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -257,7 +257,7 @@ def outline(gatherer: str, channel: Optional[str] = None, after: int = 0) -> dic
 def event(gatherer: str, row_id: int) -> dict:
     """One event as the transcript shows it -- {row_id, type, parts} (data.parts, each text clipped at TEXT_CHARS):
     a tool call opened in the list, its input whole where its stored text is cut."""
-    conn = data._connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -277,7 +277,7 @@ def search(gatherer: str, channel: Optional[str], q: str) -> dict:
     q = (q or "").strip()
     if not q:
         return {"hits": [], "more": False}
-    conn = data._connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -386,7 +386,7 @@ def render(gatherer: str, rows, clip: Optional[dict] = CLIP) -> Tuple[str, dict]
     clipped as `clip` says (CLIP; None: whole). With what it holds: {messages, turns, channels, dirs (the
     actors' working directories), tokens}."""
     rows = _rows(rows)
-    conn = data._connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         raise HistoryError(f"no database for gatherer {gatherer!r}")
     try:
@@ -444,7 +444,7 @@ def export(gatherer: str, rows, fmt: str = "md") -> dict:
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     if fmt == "json":
         rows = _rows(rows)
-        conn = data._connect(gatherer)
+        conn = store.gatherer(gatherer)
         if conn is None:
             raise HistoryError(f"no database for gatherer {gatherer!r}")
         try:

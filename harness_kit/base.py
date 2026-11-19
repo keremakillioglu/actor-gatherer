@@ -386,6 +386,10 @@ class Harness(ABC):
     label: str = ""
     checked_with: str = ""
 
+    #: Its own file-editing tools, each one's name and the input key that names the one file it writes: what a reader
+    #: of tool calls knows was written, and where, without guessing from a command's words.
+    edit_tools: Dict[str, str] = {}
+
     # ---- how a person tells it apart, and how its terminal behaves: what a reader of its sessions shows of it
 
     def mark(self) -> Optional[str]:

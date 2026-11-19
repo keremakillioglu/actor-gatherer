@@ -1,5 +1,5 @@
 // A folder made outside every group is a group of its own, and a group dropped into another is a folder of it
-// (05-gatherer-folders.js's nameGroup; 05-group-moves.js's askMerge; groups.py's `make` and `merge`): the list head's
+// (features/list/gatherer-folders.js's nameGroup; features/list/group-moves.js's askMerge; groups.py's `make` and `merge`): the list head's
 // folder button names a new group in place -- a folder at the list's top is a group, by the default rule -- and a group's row dragged onto another group asks first, then is merged into it.
 import type { Page } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";

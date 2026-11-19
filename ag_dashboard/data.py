@@ -89,7 +89,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
-from . import answers, avatars, folders, gatherer_folders, hiding, live, merges, saved, sessions, tasks, titles
+from . import (answers, avatars, folders, gatherer_folders, hiding, live, merges, placement, saved, sessions, store,
+               tasks, titles)
 import app_kit
 import harness_kit
 from harness_kit import USERS, Kind
@@ -155,91 +156,32 @@ NOT_RECORD = ("e.event_type_id NOT IN (SELECT event_type_id FROM event_types WHE
 BY_CHANNEL = "t.event_type_id = +e.event_type_id"
 
 
-def _connect(gatherer: str) -> Optional[sqlite3.Connection]:
-    path = paths.db_path(gatherer)
-    if not os.path.exists(path):
-        return None
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _groups(conn) -> Dict[str, Any]:
-    """{channel: its group, as its latest `group` record names it}."""
-    latest: Dict[str, Any] = {}
-    for ch, raw in conn.execute(f"SELECT e.{CHANNEL}, e.payload_json FROM events e JOIN event_types t "
-                                f"ON t.event_type_id = e.event_type_id WHERE t.name = 'group' AND e.{CHANNEL} IS NOT NULL "
-                                "ORDER BY e.row_id"):
-        payload = _json(raw)
-        if isinstance(payload, dict):
-            latest[ch] = payload.get("group")
-    return latest
-
-
 def members(conn, gatherer: str) -> Optional[set]:
     """The channels of `gatherer` in its database: None -- every one -- while each gatherer has a database of its own;
-    in the home's one database (ag's `paths.merged`), those whose latest `group` record names it."""
+    in the home's one database (ag's `paths.merged`), those whose latest `group` record names it (placement.py)."""
     if not paths.merged():
         return None
-    return {ch for ch, group in _groups(conn).items() if group == gatherer}
+    return placement.of(conn).members(gatherer)
 
 
-ALONE = "self:"                  # an actor on its own: its group of one (groups.py's `alone`)
+ALONE = placement.ALONE          # an actor on its own: its group of one (groups.py's `alone`)
 
 
 def groups_now() -> Dict[str, Any]:
     """In the home's one database: {channel: its group now} (coordination.py's watches); {} before."""
-    if not paths.merged() or not os.path.exists(paths.home_db()):
-        return {}
-    conn = sqlite3.connect(f"file:{paths.home_db()}?mode=ro", uri=True, timeout=8)
-    try:
-        return _groups(conn)
-    except sqlite3.Error:
-        return {}
-    finally:
-        conn.close()
+    return dict(placement.now().groups)
 
 
 def alone_names() -> List[str]:
     """In the home's one database, the groups of one of the actors on their own (`self:<channel>`); [] before."""
-    if not paths.merged() or not os.path.exists(paths.home_db()):
-        return []
-    conn = sqlite3.connect(f"file:{paths.home_db()}?mode=ro", uri=True, timeout=8)
-    try:
-        return sorted({g for g in _groups(conn).values() if isinstance(g, str) and g.startswith(ALONE)})
-    except sqlite3.Error:
-        return []
-    finally:
-        conn.close()
-
-
-# the records of a change made to what a group holds (groups.py, folders.py): an actor's group, a folder, a group's place
-CHANGES = ("group", "folder", "filed")
+    return placement.now().alone()
 
 
 def changed() -> Dict[str, float]:
-    """In the home's one database: {group: when what it holds last changed} -- the latest `group`, `folder` or `filed`
-    record naming it, as the group something went into or the one it left (`was`): an actor moved in or out, a group
-    merged into it, a folder made, moved or deleted there, a group placed in it. The list hides a group with nothing for
-    a week only once this is a week old too, so one just changed -- its actors all long idle -- stays in view. {} before."""
-    if not paths.merged() or not os.path.exists(paths.home_db()):
-        return {}
-    conn = sqlite3.connect(f"file:{paths.home_db()}?mode=ro", uri=True, timeout=8)
-    try:
-        rows = conn.execute("SELECT json_extract(e.payload_json, '$.group'), json_extract(e.payload_json, '$.was'), "
-                            "max(e.inserted_at) FROM events e JOIN event_types t USING (event_type_id) "
-                            f"WHERE t.name IN ({', '.join('?' * len(CHANGES))}) GROUP BY 1, 2", CHANGES).fetchall()
-    except sqlite3.Error:
-        return {}
-    finally:
-        conn.close()
-    out: Dict[str, float] = {}
-    for group, was, at in rows:
-        when = _seconds(at)
-        for name in (group, was):
-            if isinstance(name, str) and name and when:
-                out[name] = max(out.get(name, 0.0), when)
-    return out
+    """In the home's one database: {group: when what it holds last changed} (placement.py's `changed`). The list hides
+    a group with nothing for a week only once this is a week old too, so one just changed -- its actors all long idle --
+    stays in view. {} before."""
+    return dict(placement.now().changed)
 
 
 def _columns(conn, table: str) -> set:
@@ -336,7 +278,7 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
     if kept is not None:
         kept.only(names)
     for name in names:
-        conn = _connect(name)
+        conn = store.gatherer(name)
         if conn is None:                 # made (`ag new`), no session has run in it yet
             gatherers.append({"name": name, "policy": _policy(name), "agents": [], "last": None})
             continue
@@ -412,7 +354,7 @@ def actors(gatherer: str, channels: set, started: List[dict]) -> List[dict]:
     `list`) -- read for them alone, so at a small part of its cost; nothing is watched from it from now on (home()'s
     wakes stay as they were). sqlite3.Error: the gatherer's database could not be read."""
     now = time.time()
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     try:
         agents = _agents(conn, now, set(channels)) if conn is not None else []
     finally:
@@ -430,7 +372,7 @@ def gatherer_actors(gatherer: str, started: List[dict]) -> List[dict]:
     gatherer read alone; nothing is watched from it from now on (home()'s wakes stay as they were). [] for a gatherer
     with no database yet but for its sessions started here. sqlite3.Error: its database could not be read."""
     now = time.time()
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     named: Dict[str, Dict[str, dict]] = {}
     try:
         agents = _agents(conn, now, members(conn, gatherer)) if conn is not None else []
@@ -561,7 +503,7 @@ class Kept:
         """The gatherer read whole, on a connection of its own, and kept -- but where a channel was read since it began,
         that read: it is newer; and one it did not find, gone to another group, no longer kept unless read since."""
         began = time.time()
-        conn = _connect(gatherer)
+        conn = store.gatherer(gatherer)
         try:
             got, opens = (_agents(conn, began, members(conn, gatherer)), self._open(conn)) if conn is not None else (None, None)
         except sqlite3.Error:
@@ -802,23 +744,9 @@ def app_notices(conn, gatherer: Optional[str] = None) -> Dict[str, dict]:
 
 
 def _instances_of(conn, gatherer: str) -> set:
-    """The app instances in `gatherer` now, by id: opened in it (their `app_opened` records say), or moved to it since
-    (`app_regrouped`: with a task, a folder or their own agent, groups.py) -- as the app host reads them (`_load`), so
-    a notification is listed in the group that lists its app."""
-    where: Dict[str, str] = {}
-    for kind, inst, raw in conn.execute("SELECT t.name, e.p_instance, e.payload_json FROM events e JOIN event_types t "
-                                        "ON t.event_type_id = e.event_type_id "
-                                        "WHERE t.name IN ('app_opened', 'app_regrouped') ORDER BY e.row_id"):
-        payload = _json(raw)
-        if not inst or not isinstance(payload, dict):
-            continue
-        if kind == "app_opened":
-            made = payload.get("instance")
-            if isinstance(made, dict) and made.get("gatherer"):
-                where[inst] = str(made["gatherer"])
-        elif inst in where and payload.get("group"):
-            where[inst] = str(payload["group"])
-    return {inst for inst, g in where.items() if g == gatherer}
+    """The app instances in `gatherer` now, by id (placement.py's `apps`): opened in it, or moved to it since -- as the
+    app host reads them, so a notification is listed in the group that lists its app."""
+    return placement.of(conn).instances(gatherer)
 
 
 def _status(conn, ch: str, a: dict, tables: set, now: float) -> None:
@@ -1031,7 +959,7 @@ def shown_ask(shown: Optional[dict], harness: Optional[str], now: Optional[float
 def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optional[dict]:
     """What the agent waits on the user for now, as its hook recorded it (`_asking`), None if nothing; `cwd`, where the
     session runs (no longer needed: the record is read from events)."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:
@@ -1047,7 +975,7 @@ def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optiona
 def answer_result(gatherer: str, channel: str, call: Optional[str]) -> Optional[str]:
     """What the harness recorded as the answer to `call` -- as its own record says (`Record.result`), else the words of
     the tool's result once a call has carried it -- None before either has."""
-    conn = _connect(gatherer) if call else None
+    conn = store.gatherer(gatherer) if call else None
     if conn is None:
         return None
     try:
@@ -1484,7 +1412,7 @@ def _answer_given(gatherer: str, channel: str) -> Optional[dict]:
     key = (paths.db_path(gatherer), channel)
     if key in _ANSWERS_READ:
         return _ANSWERS_READ[key]
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None                                  # no database yet: read once there is one
     try:
@@ -1499,7 +1427,7 @@ def _answer_given(gatherer: str, channel: str) -> Optional[dict]:
 
 def typed_at(gatherer: str, channel: str) -> Optional[float]:
     """When keys were last typed into the session's terminal from a page, as the dashboard kept it (`terminal_input`)."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:
@@ -1535,7 +1463,7 @@ def meanwhile(conn, channel: str) -> List[dict]:
 
 def _result(gatherer: str, channel: str, call: Optional[str]) -> Optional[str]:
     """The words of the tool's result for `call` once a call has carried it, None before."""
-    conn = _connect(gatherer) if call else None
+    conn = store.gatherer(gatherer) if call else None
     if conn is None:
         return None
     try:
@@ -1595,7 +1523,7 @@ def _harness(conn, channel: str) -> Optional[str]:
 
 def harness_of(gatherer: str, channel: str) -> Optional[str]:
     """The harness a channel of the gatherer runs on (`_harness`), its database opened for it; None: not known."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:
@@ -1705,7 +1633,7 @@ def _sent(conn, read_id: int) -> int:
 def agent(gatherer: str, channel: str, llm: Optional[List[dict]] = None) -> dict:
     """One agent over time, as the module says. `llm` is the Gatherer's model calls
     (`llm_calls()`), when the caller has them already."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -1947,7 +1875,7 @@ def read(gatherer: str, read_id: int) -> dict:
     count; all of them add up to its `sent_tokens`), grouped as the agent's own events,
     verbatim, by event type -- RECENT (since the cut of the read's build) and KEPT (before
     it) -- and ag's own messages, by name."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -1980,7 +1908,7 @@ def history(gatherer: str, channel: str, first_row: int, last_row: Optional[int]
     TEXT_CHARS; `clipped` says how much more), at most HISTORY_ITEMS of them (`more` counts
     the rest) -- a task's messages, or those since the last task. To its newest, they end with
     the channel's pending events (`_pending`): what the model answered that no call has stored yet."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -2146,7 +2074,7 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
     else the newest before row `before` (None: the newest of all). `earlier` says whether the
     channel has events before the first; reaching its newest, the items end with its pending
     events (row None): what the model answered that no call has stored yet."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -2184,7 +2112,7 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
 def context(gatherer: str, read_id: int) -> dict:
     """Every item read `read_id` put in the context, in the order the model got them: its
     group, name, size and text (at most TEXT_CHARS of it; `clipped` says how much more)."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
