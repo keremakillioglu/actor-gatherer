@@ -12,12 +12,13 @@ import os from "node:os";
 import path from "node:path";
 import { closePanel, expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, NOW, openActor } from "./home";
-import { editorPane, editorPanel, endEditor, openFile, project, raise, startEditor } from "./editor-home";
+import { claudeRuns, editorPane, editorPanel, endEditor, openFile, project, raise, startEditor } from "./editor-home";
 
 test("a Files app: opened alone, never with an agent, its files edited plain -- no mode, no build", async ({
   page,
 }) => {
   const { plot } = project();
+  await claudeRuns(page); // so the apps "with an agent" are offered at all
   await openActor(page, CLAUDE);
   const row = page.locator("#agents .gatherer-row").first();
   await row.hover();

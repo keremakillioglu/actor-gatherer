@@ -57,6 +57,19 @@ export const appOf = (file: string): FileApp => (/\.(tex|ltx|sty|cls|bib)$/i.tes
 export const editorPane = (page: Page, app: FileApp = "files") => page.locator(`#top-row > .app-pane[data-app=${app}]`);
 export const editorPanel = (page: Page, app: FileApp = "files") => editorPane(page, app).frameLocator("iframe");
 
+/** Claude Code set up here, and only it -- whatever the machine has (CI: none) -- so what starts an actor is offered:
+ * the home read by requests, which this route answers, its stream held back. Before the page opens. */
+export async function claudeRuns(page: Page) {
+  await page.route("**/api/home", async (route) => {
+    const home = await (await route.fetch()).json();
+    home.harnesses = ["claude"];
+    home.harness_info.claude = { ...home.harness_info.claude, runs: true };
+    await route.fulfill({ json: home });
+  });
+  await streamsAsRequests(page);
+  await page.route("**/api/stream*", (route) => route.abort());
+}
+
 /** The file opened in its app (`app`, else the one it opens in), as Chat's link to it opens it. */
 export async function openFile(page: Page, file: string, app: FileApp = appOf(file)) {
   await raise(page, "open-file", { path: file });
@@ -68,14 +81,7 @@ export async function openFile(page: Page, file: string, app: FileApp = appOf(fi
 /** The app started from the menu on `repo`, with its actor (as DocWriter's test: Claude Code set up here, the page's
  * stream held back; the actor's session is only made, never run): the actor's row, and how to put the home back. */
 export async function startEditor(page: Page, repo: string, app: FileApp = "files") {
-  await page.route("**/api/home", async (route) => {
-    const home = await (await route.fetch()).json();
-    home.harnesses = ["claude"];
-    home.harness_info.claude = { ...home.harness_info.claude, runs: true };
-    await route.fulfill({ json: home });
-  });
-  await streamsAsRequests(page);
-  await page.route("**/api/stream*", (route) => route.abort());
+  await claudeRuns(page);
   await openActor(page, CLAUDE);
   const row = page.locator("#agents .gatherer-row").first();
   await row.hover();

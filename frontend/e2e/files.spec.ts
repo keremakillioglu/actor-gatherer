@@ -6,7 +6,7 @@ import fs from "node:fs";
 import type { Page } from "@playwright/test";
 import { closePanel, expect, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, NOW, openActor } from "./home";
-import { editorPane, editorPanel, openFile, project } from "./editor-home";
+import { claudeRuns, editorPane, editorPanel, openFile, project } from "./editor-home";
 
 type Agent = { channel: string; name?: { text?: string } | null; last_user_message?: string };
 type Home = { gatherers: { name: string; agents: Agent[] }[] };
@@ -133,12 +133,7 @@ test("an actor started from the tree's menu, on a folder or a file, in that fold
   page,
 }) => {
   const { repo, plot } = project();
-  await page.route("**/api/home", async (route) => {
-    const home = await (await route.fetch()).json();
-    home.harnesses = ["claude"];
-    home.harness_info.claude = { ...home.harness_info.claude, runs: true };
-    await route.fulfill({ json: home });
-  });
+  await claudeRuns(page);
   const started: { sessions: Record<string, unknown>[]; sent: Record<string, unknown>[] } = { sessions: [], sent: [] };
   await page.route("**/api/sessions", (route) => {
     if (route.request().method() !== "POST") return route.fallback();
@@ -157,7 +152,7 @@ test("an actor started from the tree's menu, on a folder or a file, in that fold
   await panel.getByRole("menuitem", { name: "Start an actor on this file…" }).click();
   const box = panel.locator(".ed-startpop");
   await expect(box.locator(".ed-send-hd")).toContainText("Start an actor in");
-  await expect(box.locator(".ed-start-h").first()).toHaveText("Claude Code"); // each harness that runs here, the first picked
+  await expect(box.locator(".ed-start-h")).toHaveText(["Claude Code"]); // each harness that runs here, the first picked
   await expect(box.locator(".ed-start-h.on")).toHaveText("Claude Code");
   await expect(box.locator("textarea")).toHaveValue(`${plot}\n\n`);
   await box.locator("textarea").press("End");
