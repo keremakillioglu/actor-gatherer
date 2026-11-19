@@ -777,6 +777,10 @@ class Sessions:
         finally:
             conn.close()
 
+    def set_role(self, session_id: str, role: Optional[str]) -> None:
+        """An app's actor whose instance another app took over (app_agents.py's `adopt_all`): its role, that app's."""
+        self._set(session_id, role=role)
+
     def set_over(self, session_id: str, over: Optional[str]) -> None:
         """A coordinator agent's node changed (coordinators.py): `over`, None for its group's."""
         self._set(session_id, over=over)

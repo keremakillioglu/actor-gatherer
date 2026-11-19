@@ -1,6 +1,6 @@
-"""The Editor's preview runs (backend.py): a project's preview run in a checkout, its output kept and followed, what it
+"""The LaTeX editor's preview runs (backend.py): a project's preview run in a checkout, its output kept and followed, what it
 shows found and served, and SyncTeX between a PDF it shows and its source. Ported from the dashboard's own preview
-(ag_dashboard/preview.py, then the Preview app before the Editor took it in); nothing of the dashboard is imported.
+(ag_dashboard/preview.py, then the Preview app, then the Editor's); nothing of the dashboard is imported.
 
     place(path)              (key, checkout) of a file or folder: its git repository (a worktree's: its repository's,
                              which its worktrees share) and the checkout holding it; in no repository, its folder
@@ -109,7 +109,7 @@ def expand(text: str, file: Optional[str], checkout: str, quote: bool = False) -
     if not NAMES.search(text or ""):
         return text or ""
     if not file:
-        raise PreviewError(f"{text!r} names the file open in the Editor ({{file}}, ...): open a file first")
+        raise PreviewError(f"{text!r} names the file open in the LaTeX editor ({{file}}, ...): open a file first")
     rel = os.path.relpath(os.path.realpath(file), checkout)
     if rel == ".." or rel.startswith(".." + os.sep):
         raise PreviewError(f"{file} is not in {checkout}")

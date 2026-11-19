@@ -408,8 +408,9 @@ page's side frontend/src/features/apps/links.ts), not one each: an app's name ma
   Chat marks one (core/ui/md.ts's `data-path`, `file://` let through DOMPurify; a link the dashboard draws itself, as
   `/api/image?…`, isn't marked), and a click on it, or on a `file://` link a terminal shows, opens it
   (`openFileLink`) as the link of the form `file/<path...>` (links.ts's FILE_FORM) in an app whose `[[links]]` take
-  that form -- of several, the one the agent has, else the first installed. A relative path is from the agent's
-  folder; `#L12` or a last `:12` is the line.
+  that form -- the one whose form says `paths = true` (the Files app's, 2026-11-18: "for references to files in chat
+  ... it will open in the file viewer app"), else of several the one the agent has, else the first installed. A
+  relative path is from the agent's folder; `#L12` or a last `:12` is the line.
 - **A click is only the user looking.** It calls no tool, attaches no agent and is no event: what the agent sees
   doesn't change. The panel treats the path as untrusted, as it would one the user typed.
 - **Between apps too.** A panel opens any app's link as Chat does (`ag.links.open(href)`), so a Notes line can link
@@ -673,6 +674,61 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    what was quoted; otherwise the message says the lines are not saved yet. No `[asked]` note, no report back, no
    status: it is a message like any other, in its Chat. `panel/editor-send.js`; `e2e/editor.spec.ts`.
    - Not done: a new actor started from the picker (as Notes offers); a key for it.
+
+   **(d) Split into the Files app and the LaTeX editor** (2026-11-18). The user: "split editor app into (1) files app
+   (which is a generic file opener/directory viewer) and (2) a latex editor app which has the latex functionality and
+   also the preview button". Two apps, each set up as the Editor was (started from "+ ⋯" with an actor of its own,
+   `offer = "attached"`, `instances = "many"`), sharing what they both do as a library, not one of them the other's:
+   - **`app_kit/fileedit/`**: the file editing -- `FileEdit` (backend.py: the panel's edit/..., mode, branches and
+     files/changes requests, the mode, the file tools `<app>_read/_edit/_write/_open`, the guard, the agent told what
+     the user settled), `chooser.py`, and `panel/` (page.js, editor*.js, start.js, the CSS, vendor/editor.js), served
+     to every app's panel at `/_ag/lib/fileedit/` (the dashboard's libs.py). An app adds its parts with `edAdd`
+     (editor.js): header buttons, a column beside the file, keys, CodeMirror extensions, bold/italic markup, its
+     backend's messages. Which files are open, and as what mode, is one registry for every app built on it: a file's
+     mode is the strictest of all that have it open, and a change put in through one is settled in any.
+   - **Files** (`ag_apps/files/`): FileEdit, edited **plain** (the user, 2026-11-18: "just a regular viewer (i.e., no
+     support for accepting/reviewing agent edit), or considering for concurrency of conflicts", then "You can do
+     non-read-only"). A text file is read whole (`edit/text`: text and version), edited in the page alone, and saved
+     whole (`edit/put`) by Save, ⌘S or Auto-save. Changed on disk with nothing unsaved, it is read again; with edits
+     unsaved, the reader picks Reload or Keep mine, and no save goes over the change until then (409). It has no live
+     document, mode, conflict zone or branch approvals (`panel/plain.js`, the panel's `ed.plain`). Its agents edit
+     with their own tools; their one tool is `files_open`. `access = "group"` (any actor of the group may show the
+     user a file in it), `offered = false` (it opens alone). It takes `open-file` for any file.
+   - **LaTeX** (`ag_apps/latex/`, tools `latex_*`, events `latex.mode`, `latex.preview_*`): FileEdit plus the
+     Editor's preview (runs.py, texlog.py: Execute, the PDF, SyncTeX, Problems) and its LaTeX parts (latex.js:
+     "→ PDF", the problems' marks, ⌘B/⌘I in LaTeX). The command can still be any; the guess for a .tex is latexmk.
+     It takes `open-file` for `text/x-tex` and `text/x-bibtex`. `ag preview` is a client of its tools.
+   - **What actors changed lately**, in both apps (`panel/recent.js`): a window picked over the tree (10 min, 30 min,
+     1 h, 4 h; 30 min unless picked, kept per instance) is what the tree's avatars (the listing's `since`), the
+     header's and the file's marks show. The lines an actor changed are found in the file as it is now from what ag
+     recorded of its edits (`/api/files/changes`: a diff's new lines, a Write's text) and marked with a bar in its hue,
+     with its avatar after the first. A shell command's change has no recorded lines; deletions show only in the
+     header's Changes list. Any avatar pressed opens its actor as its row in the list does (`ag.actors.show`).
+   - **An actor started from the tree**: its menu's "Start an actor here…" (a folder) or "… on this file…" (a file,
+     its path put first in the box) asks for a harness and what to do, and starts it in that folder
+     (`ag.actors.start`), then opens it.
+   - **Links to files** (5d): both take `file/<path...>`, the Editor's form -- `ag://files/file/...`,
+     `ag://latex/file/...` -- each its own (`start.js`'s `ag.links.onOpen` -> `edShowFile`). A file's path an agent
+     writes with no app named (`[a.py](src/a.py#L3)`, `file://`, a terminal's path) opens in the Files app: its form says
+     `paths = true` (links.py: allowed on FILE_FORM only), which the page's `openFileLink` takes before any app the
+     actor has open. Every agent of the group is told the Files app's form (a group app); an agent of a LaTeX editor,
+     its form too, to open a file in that editor.
+   - **Which opens a file**: the page asks the apps that take it in order (those naming its type, then those taking
+     any) and tells the first with a panel open; with none open, it opens the first. So a LaTeX source goes to a
+     LaTeX editor open, else a Files app open, else a new LaTeX editor; any other file to the Files app.
+   - **The Editors open before** (new in app_kit: a manifest's `replaces`, `App.takes_over`): an instance of an app
+     no longer found is taken over by an app that replaces it -- the one that wants it most -- kept as its own under
+     the same id (`app_opened` by "replaced"), so its agents stay attached and its name, task and group are kept;
+     its actors' roles are moved with it (app_agents.py's `adopt_all`). Both replace "editor": the LaTeX editor
+     wants one on a folder with a LaTeX source at its top, the Files app any other. One taken by an app of access
+     "group" (the Files app) leaves the task the Editor was in -- an app every agent of the group may use is in no task
+     (the user, 2026-11-18) -- as its group is read (task_links.py's `on_load`, as any group app found in a task); one taken by the LaTeX
+     editor (access "task") stays in it. Not carried over: a preview set
+     in an Editor (its events are `editor.*`, which no app now reads; the guess comes back), and what a browser kept
+     of an Editor's panel (its folder, its file open: kept on the Editor's origin).
+   - Checked: test_app_latex.py (the Editor's tests, as the LaTeX editor's; a file open in both apps),
+     test_app_files.py (the two manifests, the takeover), test_dashboard_editor*.py (through the Files app);
+     `e2e/editor*.spec.ts` (each test on the app it is about; a LaTeX source routed as above).
 8. **The Browser and DocWriter.** What they do for the user and the agent today is kept (2026-11-07): only where
    their panel sits and how they plug in change. DocWriter first, then the Browser, each its own PR.
    - Each becomes instances (the instance id is its key today, so its profile, logins and saved tabs stay where they

@@ -7,6 +7,8 @@
 export interface LinkForm {
   form: string;
   about?: string;
+  /** FILE_FORM only: a file's path an agent writes with no app named opens in this app (app_kit/links.py) */
+  paths?: boolean;
 }
 /** An `ag://` link read: the app it names, its path (%-encoded, as written), its #part (decoded), the instance named. */
 export interface AppHref {

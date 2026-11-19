@@ -1,5 +1,5 @@
-/* The Editor's panel (editor.js and the others), moved from the dashboard's page (frontend/src/legacy/css/07, 09, 10,
-   12 and 13) as it was: its head, its tree, its body (CodeMirror), its conflicts' boxes, its viewers; and Chat's way of
+/* The panel of an app built on app_kit.fileedit (editor.js and the others), moved from the dashboard's page
+   (frontend/src/legacy/css/07, 09, 10, 12 and 13) as it was: its head, its tree, its body (CodeMirror), its conflicts' boxes, its viewers; and Chat's way of
    showing a file's lines (11-files-view.css's), for an actor's changes beside the file. */
 
 .ed-top { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative;
@@ -34,16 +34,7 @@
 .ed-changes .ed-ch-go { flex: none; margin-left: auto; padding: 1px 8px; font-size: 11.5px; }
 .ed-changes .asked { padding: 0 16px 6px 34px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ed-changes .none { padding: 14px 16px; color: var(--muted); font-size: 12.5px; }
-/* beside the file, in its place when no actor's changes show: the project's preview (pvDraw) -- what its command makes,
-   or what it prints */
-.ed-exec { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; }
-.ed-topdf { padding: 3px 8px; white-space: nowrap; }
-.ed-exec svg { color: var(--good); }
 @keyframes ed-pv-pulse { from { opacity: .3; } to { opacity: 1; } }    /* the tree's native-open button's too */
-/* over its result (a PDF, a page, an image): its head and command tucked away above it, the result the panel's whole
-   height. The pointer at the panel's top edge (a handle there while the pointer is over the panel) slides them down
-   over the result, and they go back up a moment after it leaves them; the keyboard in them keeps them down too. */
-/* "Building…" over the one made before, while the next is: clicked, its output */
 .ed-noav { display: inline-block; background: var(--who); }
 .ed-avs.many { padding: 1px 5px 1px 2px; border-radius: 10px; background: color-mix(in srgb, var(--warning) 26%, transparent); }
 .ed-avs .n { font-size: 10.5px; font-weight: 650; margin-left: 4px; color: var(--ink); }
@@ -121,16 +112,6 @@ button.ed-person { cursor: pointer; }
 .ed-body .ed-disk { background: color-mix(in srgb, var(--who, var(--s2)) 26%, transparent); }
 /* the conflict zone: the lines edited here since the file was opened, tinted very lightly */
 .ed-body .ed-zone { background: color-mix(in srgb, var(--s1) 7%, transparent); }
-/* A LaTeX build's problems on their lines (editor.js, edProblems): the lines of errors and warnings tinted; CodeMirror's
-   lint marks the place, the gutter, and says the message on hover -- in the page's colours. */
-.ed-body .ed-prob.error { background: color-mix(in srgb, var(--critical) 8%, transparent); }
-.ed-body .ed-prob.warning { background: color-mix(in srgb, var(--warning) 8%, transparent); }
-.ed-body .cm-tooltip-lint { max-width: 520px; }
-.ed-body .cm-diagnostic { padding: 4px 8px 4px 7px; font-size: 12.5px; white-space: pre-wrap; }
-.ed-body .cm-diagnostic-error { border-left-color: var(--critical); }
-.ed-body .cm-diagnostic-warning { border-left-color: var(--warning); }
-.ed-body .cm-diagnostic-info { border-left-color: var(--axis); }
-.ed-body .cm-diagnosticSource { color: var(--muted); opacity: 1; font-size: 11px; }
 .ed-zone-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 11.5px; color: var(--ink-2); white-space: nowrap;
   padding: 1px 2px 1px 8px; border-radius: 9px; background: color-mix(in srgb, var(--s1) 13%, transparent); }
 .ed-zone-chip button { border: 0; background: none; font: inherit; color: var(--s1); padding: 0 6px; cursor: pointer; border-radius: 7px; }
@@ -1373,3 +1354,33 @@ svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-b
 
 /* the page's × over the panel's top right corner (app_kit/js/app.js's --ag-corner): the file's head keeps it clear */
 .ed-top .ed-head { padding-right: max(12px, var(--ag-corner, 0px)); }
+
+/* What actors changed lately (recent.js): the window's picker over the tree; avatars that open their actor; the lines an
+   actor changed, a bar in its hue and its avatar after the first; the header's Changes; an actor started from the tree. */
+.ed-win { position: sticky; top: var(--top-h, 40px); z-index: 2; background: var(--side); padding: 0 10px 4px; }
+.ed-window { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.ed-window select { font: inherit; font-size: 11.5px; color: var(--ink-2); background: transparent; border: 1px solid var(--grid);
+  border-radius: 5px; padding: 1px 4px; }
+.ed-avs > .ed-tree-av { display: inline-flex; padding: 0; margin-left: -5px; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.ed-avs > .ed-tree-av:first-child { margin-left: 0; }
+.ed-avs > .ed-tree-av img, .ed-avs > .ed-tree-av .ed-noav { margin-left: 0; }
+.ed-avs > .ed-tree-av:hover img, .ed-avs > .ed-tree-av:focus-visible img { box-shadow: 0 0 0 2px var(--axis); }
+.ed-chs { padding: 1px 8px; font-size: 11.5px; }
+.ed-chs.on { background: var(--selected); }
+.ed-body .ed-recent { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--who, var(--s2)) 75%, transparent);
+  background: color-mix(in srgb, var(--who, var(--s2)) 6%, transparent); }
+.ed-recent-av { display: inline-flex; vertical-align: -3px; margin-left: 8px; padding: 0; border: 0; border-radius: 50%; background: none;
+  cursor: pointer; }
+.ed-recent-av img, .ed-recent-av .ed-noav { width: 15px; height: 15px; border-radius: 50%; opacity: .85; }
+.ed-recent-av:hover img, .ed-recent-av:focus-visible img { opacity: 1; box-shadow: 0 0 0 2px var(--axis); }
+.ed-ch-av { display: inline-flex; flex: none; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.ed-ch-av img, .ed-ch-av .ed-noav { width: 16px; height: 16px; border-radius: 50%; }
+.ed-start-hs { display: flex; flex-wrap: wrap; gap: 4px; }
+.ed-start-h { padding: 2px 10px; font-size: 12px; border-radius: 12px; }
+.ed-start-h.on { background: var(--selected); border-color: var(--s1); color: var(--ink); }
+.ed-start-ft { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--grid); padding-top: 4px; }
+.ed-start-ft .ed-send-ft { flex: 1; border: 0; padding: 0; }
+.ed-window .lbl { white-space: nowrap; }
+.ed-window select { min-width: 0; max-width: 100%; }
+.ed-changes .fv-call summary .via { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-changes .fv-call summary { min-width: 0; }

@@ -1198,13 +1198,17 @@ async function openAppTab(gname, name, folder) {
 async function appIntent(kind, data, g) {
   const ext = kind === "open-file" && data && data.path ? String(data.path).split(".").pop().toLowerCase() : "";
   const type = { md: "text/markdown", txt: "text/plain", pdf: "application/pdf", png: "image/png", jpg: "image/jpeg",
-    jpeg: "image/jpeg", svg: "image/svg+xml", html: "text/html", json: "application/json" }[ext] || (ext ? "text/plain" : undefined);
-  const app = window.agNext.apps.handler(kind, type);
+    jpeg: "image/jpeg", svg: "image/svg+xml", html: "text/html", json: "application/json", tex: "text/x-tex",
+    ltx: "text/x-tex", sty: "text/x-tex", cls: "text/x-tex", bib: "text/x-bibtex" }[ext] || (ext ? "text/plain" : undefined);
+  const apps = window.agNext.apps.handlers(kind, type), app = apps[0];
   if (!app) throw new Error(`no app here takes ${kind}`);
   const into = g || (focusedActor() || [])[0] || ((state.home && state.home.gatherers[0]) || {}).name;
-  // an app opened anew each time (instances "many": the Editor's) with one open above the panes: that one told, not
-  // another opened -- any other is opened as its instances say (one per folder: the file's folder's)
-  const open = app.instances === "many" && panes.apps.find((q) => !q.held && q.app.name === app.name && q.instance.gatherer === into);
+  // an app opened anew each time (instances "many": the Files app's, the LaTeX editor's) with one open above the panes:
+  // that one told, not another opened -- the first of the apps that take it that has one open (a LaTeX source: a
+  // LaTeX editor's, else the Files app's); none open, the first is opened as its instances say (one per folder: the
+  // file's folder's)
+  const open = apps.map((a) => a.instances === "many"
+    && panes.apps.find((q) => !q.held && q.app.name === a.name && q.instance.gatherer === into)).find(Boolean);
   if (open) return open.panel.intent(kind, data || {});
   const folder = data && data.path ? String(data.path).replace(/\/[^/]*$/, "") : null;
   const p = await openApp(into, app.name, folder);
@@ -1399,8 +1403,9 @@ async function openAppLink(gname, c, href, from = {}) {
 }
 // A FILE'S PATH an agent wrote (features/apps/links.ts's `file`: `[parser.py](src/parser.py#L12)`, file:///…, a path its
 // terminal marks as a link) opened as a link to it (openAppLink) in an app that shows files -- one whose [[links]] take
-// `file/<path...>` (FILE_FORM): of several, one the actor has open, else the first installed. A relative path is from the
-// actor's folder (a panel's: its instance's). None installed: an error saying so.
+// `file/<path...>` (FILE_FORM): the one whose FILE_FORM says `paths` (the app files open in, as its manifest says), else
+// of several, one the actor has open, else the first installed. A relative path is from the actor's folder (a panel's:
+// its instance's). None installed: an error saying so.
 async function openFileLink(gname, c, href, from = {}) {
   const apps = window.agNext && window.agNext.apps, f = apps ? apps.links.file(href) : null;
   if (!f) throw new Error(`Not a file's path: ${href}`);
@@ -1415,8 +1420,9 @@ async function openFileLink(gname, c, href, from = {}) {
   }
   const takers = apps.found().filter((x) => !x.failed && (x.links || []).some((l) => l.form === apps.links.FILE_FORM));
   if (!takers.length) throw new Error(`No app here opens files, to open ${path}`);
-  let app = takers[0];
-  if (takers.length > 1 && a) {
+  const plain = takers.find((x) => (x.links || []).some((l) => l.form === apps.links.FILE_FORM && l.paths));
+  let app = plain || takers[0];
+  if (!plain && takers.length > 1 && a) {
     const had = await apps.attachedTo(gname, a.channel);
     app = takers.find((x) => had.some((i) => i.app === x.name)) || app;
   }
@@ -1937,7 +1943,7 @@ function branchChip(g, a) {
   const b = branchOf(g.name, a);
   if (!b) return null;
   const n = branchWaiting(b);
-  return el("div", { class: "branchline", title: branchRoute(b) + (n ? `\n${plural(n, "change")} to approve in the Editor` : "") },
+  return el("div", { class: "branchline", title: branchRoute(b) + (n ? `\n${plural(n, "change")} to approve in the LaTeX editor` : "") },
     strokeIcon(ICONS.branch, 11), el("span", { class: "rt", text: `${b.branch} → ${checkedOut(b.onto)}` }),
     n ? el("span", { class: "wait", text: `${n} to approve` }) : null);
 }
@@ -2080,8 +2086,8 @@ function brRender() {
     el("div", { class: "desc", text: `In ${g}. Works in its own worktree on a new branch from the source's last commit. Its changes are merged into the source's folder as it makes them.` }),
     el("div", { class: "lbl", text: "Source" }),
     ...source,
-    el("label", { class: "check", title: "When off, changes merge as they come. Lines you're editing in the Editor, or also changed, wait for you." },
-      approve, el("span", {}, el("b", { text: "Auto-merge with approval" }), ": accept or reject each change in the Editor")),
+    el("label", { class: "check", title: "When off, changes merge as they come. Lines you're editing in the LaTeX editor, or also changed, wait for you." },
+      approve, el("span", {}, el("b", { text: "Auto-merge with approval" }), ": accept or reject each change in the LaTeX editor")),
     el("div", { class: "err", role: "alert", text: brPick.error || (hs.length ? "" : noHarness()) }),
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => d.close() }, "Cancel"), ...starts),
   ].filter(Boolean));

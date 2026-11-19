@@ -1,6 +1,6 @@
-// The Editor's keys in a file's text (ag_apps/editor/panel/editor.js, edMarkupKeys): ⌘B and ⌘I, bold and italic in a
-// Markdown or LaTeX file's own markup, put on and taken off -- in the file, and in the box an actor's proposed lines are
-// edited in -- and in any other file, left as they were.
+// The keys in a file's text (app_kit/fileedit/panel/editor.js, edMarkupKeys; LaTeX's, ag_apps/latex/panel/latex.js), in
+// the LaTeX editor: ⌘B and ⌘I, bold and italic in a Markdown or LaTeX file's own markup, put on and taken off -- in the
+// file, and in the box an actor's proposed lines are edited in -- and in any other file, left as they were.
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "./test";
@@ -15,9 +15,9 @@ test("⌘B and ⌘I make a Markdown or LaTeX file's selection bold and italic, a
     tex = path.join(repo, "paper.tex");
   fs.writeFileSync(md, "Some words here\nand more words\n");
   fs.writeFileSync(tex, "\\section{A}\nSome words here\nand \\emph{more} words\n\\textbf{a} or \\textbf{b}\n");
-  const { sid, src } = await startEditor(page, repo);
-  const panel = editorPanel(page);
-  const frame = () => page.frames().find((f) => /^http:\/\/editor\.localhost:\d+\//.test(f.url()))!;
+  const { sid, src } = await startEditor(page, repo, "latex");
+  const panel = editorPanel(page, "latex");
+  const frame = () => page.frames().find((f) => /^http:\/\/latex\.localhost:\d+\//.test(f.url()))!;
   const text = () => frame().evaluate("ed.s.view.state.doc.toString()") as Promise<string>;
   const line = (n: number) => frame().evaluate(`ed.s.view.state.doc.line(${n}).text`) as Promise<string>;
   const picked = () =>
@@ -126,7 +126,7 @@ test("⌘B and ⌘I make a Markdown or LaTeX file's selection bold and italic, a
       id: 1,
       method: "tools/call",
       params: {
-        name: "editor_edit",
+        name: "latex_edit",
         arguments: { path: md, old_string: "and more *words*", new_string: "and more *words*, proposed" },
       },
     },
@@ -141,5 +141,5 @@ test("⌘B and ⌘I make a Markdown or LaTeX file's selection bold and italic, a
   );
   await keys("b");
   expect(await frame().evaluate(`${inBox}.state.doc.toString()`)).toBe("and more *words*, **proposed**\n");
-  await endEditor(page, request, sid, src);
+  await endEditor(page, request, sid, src, "latex");
 });

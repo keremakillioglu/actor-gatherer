@@ -285,6 +285,12 @@ class App:
         network is down) -- None when it is done. An exception is tried again too, a while later."""
         return None
 
+    def takes_over(self, instance: Instance) -> int:
+        """An instance of an app its manifest `replaces` (that app no longer found): how much this app wants it -- 0
+        not at all; of the apps that do, the host gives it to the one that says most (ties: by name), as an instance of
+        its own, the same id, its agents still attached, opened again by `open` (args {"replaced": its old app})."""
+        return 1
+
     def guard(self, instance: Instance, path: str, caller: Caller) -> Optional[str]:
         """An agent attached to the instance is about to change `path` with its harness's own edit tools (an app whose
         manifest asks `edit_guard`): why it must not -- the file is one the app has open, say, and the agent should use

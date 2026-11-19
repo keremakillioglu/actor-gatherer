@@ -1060,9 +1060,10 @@ class LiveDocs:
     def clear_zone(self, path: str, root: str) -> dict:
         return self._room(path, root).clear_zone()
 
-    def listing(self, directory: str, root: str) -> dict:
+    def listing(self, directory: str, root: str, since: Optional[float] = None) -> dict:
         """The directory's entries -- folders first, then files, by name -- each with whether pages edit it now,
-        whether it has changes no one saved, the actors that changed it lately (`writers`), and the actors whose
+        whether it has changes no one saved, the actors that changed it since `since` (`writers`; none: in the last
+        RECENT seconds), and the actors whose
         changes to it wait for the reader (`waiting`: [{gatherer, channel}]; `_waiting`) -- a folder's: of the files in
         it, all the way down."""
         real = resolve(directory, root)
@@ -1090,7 +1091,7 @@ class LiveDocs:
         except PermissionError:
             raise DocError(f"no permission to read {directory}") from None
         found: Dict[str, List[dict]] = {}           # by entry: its own writers, or those of what is in it
-        changed = writers([real, os.path.abspath(directory)], time.time() - RECENT)
+        changed = writers([real, os.path.abspath(directory)], time.time() - RECENT if since is None else since)
         for rel, ws in changed.items():
             found.setdefault(rel.split("/")[0], []).extend(ws)
         waiting = self._waiting(real, changed)

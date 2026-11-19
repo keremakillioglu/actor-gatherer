@@ -1,6 +1,7 @@
-// What the Editor's browser tests share (ag_apps/editor/): a project to open -- a git repository the test makes, with a
-// script that draws an SVG -- an intent raised from a panel, as a page's link raises it, the Editor's pane and panel,
-// an Editor started from the menu on a folder with its actor, and closed again; and what a preview's PDF viewer says.
+// What the browser tests of the Files app and the LaTeX editor share (ag_apps/files/, ag_apps/latex/: app_kit.fileedit's
+// panel, each): a project to open -- a git repository the test makes, with a script that draws an SVG -- an intent
+// raised from a panel, as a page's link raises it, the app's pane and panel, and one started from the menu on a folder
+// with its actor, and closed again; and what a LaTeX preview's PDF viewer says.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -48,8 +49,13 @@ export async function raise(page: Page, kind: string, data: Record<string, unkno
   );
 }
 
-export const editorPane = (page: Page) => page.locator("#top-row > .app-pane[data-app=editor]");
-export const editorPanel = (page: Page) => editorPane(page).frameLocator("iframe");
+/** The apps built on app_kit.fileedit; the one a file opens in, as the page sends a link to it: a LaTeX source or a
+ * bibliography, the LaTeX editor; any other, the Files app. */
+export type FileApp = "files" | "latex";
+const LABEL: Record<FileApp, string> = { files: "Files", latex: "LaTeX" };
+export const appOf = (file: string): FileApp => (/\.(tex|ltx|sty|cls|bib)$/i.test(file) ? "latex" : "files");
+export const editorPane = (page: Page, app: FileApp = "files") => page.locator(`#top-row > .app-pane[data-app=${app}]`);
+export const editorPanel = (page: Page, app: FileApp = "files") => editorPane(page, app).frameLocator("iframe");
 
 /** For expect.poll: what pdf.js's viewer in a preview says of its PDF -- `expr`, of its PDFViewerApplication `app` -- or
  * null while there is no viewer, or none with its PDF loaded yet. A viewer's frame is there before pdf.js has run in it
@@ -62,19 +68,9 @@ export const inPdf = (page: Page, expr: string) => async () => {
     .catch((e: Error) => `not read: ${e.message}`); // its frame gone meanwhile (a PDF built again): read again
 };
 
-/** The file opened in the Editor, as Chat's link to it opens it. */
-export async function openFile(page: Page, file: string) {
-  await raise(page, "open-file", { path: file });
-  await expect(editorPane(page)).toHaveCount(1);
-  await expect(editorPanel(page).locator(".ed-head .ed-path")).toContainText(path.basename(file));
-  await expect(editorPanel(page).locator(".cm-content")).toHaveCount(1);
-}
-
-const started = new Set<string>(); // the actors of Editors started, not yet forgotten
-
-/** An Editor started from the menu on `repo`, with its actor (as DocWriter's test: Claude Code set up here, the page's
- * stream held back; the actor's session is only made, never run): the actor's row, and how to put the home back. */
-export async function startEditor(page: Page, repo: string) {
+/** Claude Code set up here, and only it -- whatever the machine has (CI: none) -- so what starts an actor is offered:
+ * the home read by requests, which this route answers, its stream held back. Before the page opens. */
+export async function claudeRuns(page: Page) {
   await page.route("**/api/home", async (route) => {
     const home = await (await route.fetch()).json();
     home.harnesses = ["claude"];
@@ -83,36 +79,52 @@ export async function startEditor(page: Page, repo: string) {
   });
   await streamsAsRequests(page);
   await page.route("**/api/stream*", (route) => route.abort());
+}
+
+/** The file opened in its app (`app`, else the one it opens in), as Chat's link to it opens it. */
+export async function openFile(page: Page, file: string, app: FileApp = appOf(file)) {
+  await raise(page, "open-file", { path: file });
+  await expect(editorPane(page, app)).toHaveCount(1);
+  await expect(editorPanel(page, app).locator(".ed-head .ed-path")).toContainText(path.basename(file));
+  await expect(editorPanel(page, app).locator(".cm-content")).toHaveCount(1);
+}
+
+const started = new Set<string>(); // the actors of the apps started, not yet forgotten
+
+/** The app started from the menu on `repo`, with its actor (as DocWriter's test: Claude Code set up here, the page's
+ * stream held back; the actor's session is only made, never run): the actor's row, and how to put the home back. */
+export async function startEditor(page: Page, repo: string, app: FileApp = "files") {
+  await claudeRuns(page);
   await openActor(page, CLAUDE);
   const row = page.locator("#agents .gatherer-row").first();
   await row.hover();
   await row.locator("button.new-more").click();
-  await page.locator(".row-menu[role=menu]").getByText("Editor with an agent…", { exact: true }).click();
-  const box = page.locator(".dw-menu[role=dialog]", { hasText: "New Editor" });
+  await page.locator(".row-menu[role=menu]").getByText(`${LABEL[app]} with an agent…`, { exact: true }).click();
+  const box = page.locator(".dw-menu[role=dialog]", { hasText: `New ${LABEL[app]}` });
   await box.locator("input").fill(repo);
   await box.locator("button.go").first().click();
-  await expect(editorPane(page)).toHaveCount(1);
-  // the Editor and its actor, one task (the dashboard's task_links.py): the task's row shown, the Editor's mark among its
-  // faces; its actor, the one attached to the Editor's instance
+  await expect(editorPane(page, app)).toHaveCount(1);
+  // the app and its actor, one task (the dashboard's task_links.py): the task's row shown, the app's mark among its
+  // faces; its actor, the one attached to the app's instance
   const actor = page.locator("#agents button.agent.task[aria-current=true]");
-  await expect(actor.locator(".t-faces img.t-app")).toHaveAttribute("src", "/apps/mark/editor.svg");
+  await expect(actor.locator(".t-faces img.t-app")).toHaveAttribute("src", `/apps/mark/${app}.svg`);
   await expect(actor.locator(".t-faces .t-face")).toHaveCount(1);
-  const src = new URL((await editorPane(page).locator("iframe").getAttribute("src")) || "");
+  const src = new URL((await editorPane(page, app).locator("iframe").getAttribute("src")) || "");
   const listed = await (await page.request.get(`/api/apps?gatherer=${src.searchParams.get("gatherer")}`)).json();
   const sid: string = (listed.attached[src.searchParams.get("instance") || ""] || [])[0] || "";
   expect(sid).toMatch(/^[0-9a-f-]{36}$/);
   started.add(sid);
   atEnd(async (p) => {
-    // the test failed before its endEditor: the actor forgotten all the same (the Editor closed with every app)
+    // the test failed before its endEditor: the actor forgotten all the same (the app closed with every app)
     if (started.delete(sid)) await p.request.post("/api/discard", { data: { session_id: sid } });
   });
   return { actor, sid, src };
 }
 
-/** The home as it was, for the tests after: the Editor closed, its actor (never started) forgotten. */
-export async function endEditor(page: Page, request: APIRequestContext, sid: string, src: URL) {
-  await closePanel(page, editorPane(page));
-  await expect(editorPane(page)).toHaveCount(0);
+/** The home as it was, for the tests after: the app closed, its actor (never started) forgotten. */
+export async function endEditor(page: Page, request: APIRequestContext, sid: string, src: URL, app: FileApp = "files") {
+  await closePanel(page, editorPane(page, app));
+  await expect(editorPane(page, app)).toHaveCount(0);
   const closed = await request.post("/api/apps/close", {
     data: { gatherer: src.searchParams.get("gatherer"), instance: src.searchParams.get("instance") },
   });

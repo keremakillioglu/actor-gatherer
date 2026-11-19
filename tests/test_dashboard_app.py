@@ -142,7 +142,7 @@ class StreamsTest(HomeBase):
         with open(path, "w") as fh:
             fh.write("hello\n")
         s = self.open(f"/api/edit/stream?path={path}&root={self.work}&conn=c1&client=7",   # the Editor app's
-                      host=f"editor.localhost:{self.port}")
+                      host=f"files.localhost:{self.port}")
         self.assertEqual(s.event(), "init")
         room = next(iter(self.httpd.docs.rooms.values()))
         self.assertEqual(list(room.conns), ["c1"])
@@ -155,7 +155,7 @@ class StreamsTest(HomeBase):
         h = self.httpd.app_host
         h._write_fn = insert_here
         self.hosts.append(h)
-        return f"/api/apps/stream?app=editor&gatherer=g&instance={h.open('editor', 'g', self.work).id}"
+        return f"/api/apps/stream?app=files&gatherer=g&instance={h.open('files', 'g', self.work).id}"
 
     def test_an_app_s_stream_lets_go_of_its_subscription_once_its_page_goes(self):
         s = self.open(self.app_stream())

@@ -53,11 +53,11 @@ function edViewBody(v) {
     return box;
   }
   if (info.kind === "pdf") {
-    const frame = el("iframe", { class: "pdf", title: info.name, src: pvViewer(url) });
+    const frame = el("iframe", { class: "pdf", title: info.name, src: edPdfViewer(url) });
     v.pdf = { frame, url };
     frame.addEventListener("load", () => {
-      pvPdfTheme(v.pdf);
-      try { frame.contentDocument.addEventListener("keydown", edExecKey, true); } catch (e) { /* not the viewer's page */ }
+      edPdfTheme(v.pdf);
+      try { for (const f of edAdded.keys) frame.contentDocument.addEventListener("keydown", f, true); } catch (e) { /* not the viewer's page */ }
     });
     return el("div", { class: "ed-view ev-pdf" }, frame);
   }
@@ -70,7 +70,7 @@ function edViewBody(v) {
   }
   return edCard(v, info.why || (info.kind === "text"
     ? `Too large to edit (${edSize(info.size)}). The limit is ${edSize(info.max)}.`
-    : "The Editor can't open this type of file."));
+    : "This type of file can't be opened here."));
 }
 function edBigIcon(name) {
   const svg = edFileIcon(name);
@@ -127,7 +127,7 @@ function edViewHead(v) {
     info.text && info.kind !== "text" ? el("button", { type: "button", class: "ed-mode", title: `Edit ${info.name} as text`,
       onclick: () => edOpen(v.path, "edit") }, strokeIcon(ICONS.code, 13), "Edit") : null,
     edDownload(v), edRevealBtn(v),
-    edExecBtn()].filter(Boolean));
+    ...edAddedHead(v)].filter(Boolean));
 }
 // Its listing looked at again (edTick): changed on disk, shown again -- deleted, said.
 async function edViewCheck(v) {
@@ -151,7 +151,7 @@ async function edViewCheck(v) {
   edViewAgain(v);
 }
 // Shown as the file now is, where the reader was: an image's new bytes swapped in once loaded, a PDF opened again at its
-// page and zoom (pvPdfOpen), a sound or video once it is not playing -- its place kept.
+// page and zoom (edPdfOpen), a sound or video once it is not playing -- its place kept.
 function edViewAgain(v, now = false) {
   if (ed.v !== v) return;
   const url = edRaw(v.path, v.at);
@@ -161,7 +161,7 @@ function edViewAgain(v, now = false) {
     next.onerror = next.onload;
     next.src = url;
   } else if (v.pdf) {
-    pvPdfOpen(v.pdf, url);
+    edPdfOpen(v.pdf, url);
   } else if (v.media && !v.media.error) {
     if (!v.media.paused && !now) { v.stale = true; edHead(); return; }
     const at = v.media.currentTime, playing = !v.media.paused;
@@ -184,4 +184,4 @@ function edViewClose() {
   if (v.media) { v.media.pause(); v.media.removeAttribute("src"); v.media.load(); }   // its download stopped too
   if (ed.body) ed.body.replaceChildren();
 }
-window.addEventListener("ag-theme", () => { if (ed.v && ed.v.pdf) pvPdfTheme(ed.v.pdf); });
+window.addEventListener("ag-theme", () => { if (ed.v && ed.v.pdf) edPdfTheme(ed.v.pdf); });

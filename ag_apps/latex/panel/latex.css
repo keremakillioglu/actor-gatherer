@@ -1,0 +1,16 @@
+/* The LaTeX parts of the LaTeX editor's panel, beside app_kit.fileedit's (latex.js): Execute and "→ PDF" in the header, and a
+   LaTeX build's problems on their lines. */
+/* the header's Execute (the project's preview, run) and → PDF */
+.ed-exec { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; }
+.ed-topdf { padding: 3px 8px; white-space: nowrap; }
+.ed-exec svg { color: var(--good); }
+/* A LaTeX build's problems on their lines (latex.js, edProblems): the lines of errors and warnings tinted; CodeMirror's
+   lint marks the place, the gutter, and says the message on hover -- in the page's colours. */
+.ed-body .ed-prob.error { background: color-mix(in srgb, var(--critical) 8%, transparent); }
+.ed-body .ed-prob.warning { background: color-mix(in srgb, var(--warning) 8%, transparent); }
+.ed-body .cm-tooltip-lint { max-width: 520px; }
+.ed-body .cm-diagnostic { padding: 4px 8px 4px 7px; font-size: 12.5px; white-space: pre-wrap; }
+.ed-body .cm-diagnostic-error { border-left-color: var(--critical); }
+.ed-body .cm-diagnostic-warning { border-left-color: var(--warning); }
+.ed-body .cm-diagnostic-info { border-left-color: var(--axis); }
+.ed-body .cm-diagnosticSource { color: var(--muted); opacity: 1; font-size: 11px; }

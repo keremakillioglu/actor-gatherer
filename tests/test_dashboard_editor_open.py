@@ -18,7 +18,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_apps.editor import chooser  # noqa: E402
+from app_kit.fileedit import chooser  # noqa: E402
 from ag_dashboard import livedocs  # noqa: E402
 
 
@@ -184,9 +184,9 @@ class RoutesTest(unittest.TestCase):
         self.addCleanup(self.httpd.server_close)
         self.addCleanup(self.httpd.shutdown)
         self.url = f"http://127.0.0.1:{self.httpd.server_port}"
-        self.app = f"editor.localhost:{self.httpd.server_port}"
-        self.httpd.app_host.backend("editor")
-        self.ch = sys.modules["_ag_app_editor.chooser"]
+        self.app = f"files.localhost:{self.httpd.server_port}"
+        self.httpd.app_host.backend("files")
+        self.ch = sys.modules["app_kit.fileedit.chooser"]
 
     def get(self, path, **q):
         req = urllib.request.Request(f"{self.url}{path}?{urllib.parse.urlencode(q)}", headers={"Host": self.app})

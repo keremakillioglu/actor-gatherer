@@ -1,7 +1,7 @@
 {
   "name": "ag-dashboard-editor",
   "private": true,
-  "description": "The Editor app's panel: CodeMirror 6 and Yjs, bundled into ag_apps/editor/panel/vendor/editor.js by build.mjs",
+  "description": "app_kit.fileedit's panel (the Files app, the LaTeX editor): CodeMirror 6 and Yjs, bundled into app_kit/fileedit/panel/vendor/editor.js by build.mjs",
   "type": "module",
   "scripts": {
     "build": "node build.mjs"

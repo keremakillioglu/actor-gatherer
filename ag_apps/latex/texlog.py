@@ -1,5 +1,5 @@
 """A LaTeX build's problems, read from the log TeX writes (<job>.log): its errors, warnings and bad boxes, each with
-the file and line it is at -- what the Editor's preview lists, and marks on the file's lines (runs.py's `problems`;
+the file and line it is at -- what the LaTeX editor's preview lists, and marks on the file's lines (runs.py's `problems`;
 preview.js, editor.js), as Overleaf does.
 
     parse(data)        the log's problems, in its order: {level, file, line, message, token, log}

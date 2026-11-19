@@ -29,7 +29,7 @@ COMMANDS = (
                              "it runs close (`ag dashboard restart --help`)."),
     ("ag actors [show|who|send|new|when ...]", "From an actor's shell: the other actors of its gatherer, a message to one "
                                                "or to the gatherer agent (`ag actors --help`)."),
-    ("ag preview [set|run|clear ...]", "The preview of a git project, which the dashboard Editor's Execute button runs "
+    ("ag preview [set|run|clear ...]", "The preview of a git project, which the LaTeX editor's Execute button runs "
                                        "and shows beside the file (`ag preview --help`)."),
     ("ag apps [list|help|mine|call ...]", "The apps: every one installed, an app's instructions and tools, the instances "
                                           "this actor may use, and a call of one (`ag apps --help`)."),

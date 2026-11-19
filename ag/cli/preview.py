@@ -1,12 +1,12 @@
-"""`ag preview`: the preview of a git project -- the command the Editor app runs in the project (its Execute button),
+"""`ag preview`: the preview of a git project -- the command the LaTeX editor app runs in the project (its Execute button),
 and what it shows beside the file (a file the command writes, the page of a server it starts, or its output) -- asked of
-the Editor app (ag_apps/editor/) through the dashboard's tool gateway, as `ag apps call editor_preview_<op>` asks it.
+the LaTeX editor app (ag_apps/latex/) through the dashboard's tool gateway, as `ag apps call latex_preview_<op>` asks it.
 
     ag preview [show]                       the preview of the repository of this directory (or --repo D)
     ag preview set <command> [--show S]     set it: <command> run through the shell in the project's checkout (- reads
                                             it from stdin; none: S shown as it is); S a path in the checkout or a URL
                                             (the command a server: kept running, its page shown); none: its output.
-                                            {file}, {stem}, {name}, {dir}: the file open in the Editor
+                                            {file}, {stem}, {name}, {dir}: the file open in the LaTeX editor
     ag preview run [--file F] [--wait N]    run it now, in this directory's checkout, as the user has let it run;
                                             the pages showing its preview show the run. Waits N seconds (default 60)
                                             for it to end -- or its server to answer -- then says how it went
@@ -29,8 +29,8 @@ WAIT = 60.0                 # seconds `run` waits, by default, for the run to en
 
 
 def parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="ag preview", description="The preview of a git project: the command the dashboard "
-                                 "Editor's Execute button runs, and what it shows beside the file.")
+    ap = argparse.ArgumentParser(prog="ag preview", description="The preview of a git project: the command the "
+                                 "LaTeX editor's Execute button runs, and what it shows beside the file.")
     ap.add_argument("--repo", help="a directory of the project (default: this one)")
     ap.add_argument("--as", dest="who", help="ask as this actor (its id), not the session the command runs in")
     ap.add_argument("--json", action="store_true", help="print the answer as JSON")
@@ -38,7 +38,7 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("show", help="the project's preview")
     s = sub.add_parser("set", help="set the project's preview")
     s.add_argument("command", nargs="*", help="run through the shell in the project's checkout (- reads it from stdin); "
-                   "{file}, {stem}, {name}, {dir}: the file open in the Editor")
+                   "{file}, {stem}, {name}, {dir}: the file open in the LaTeX editor")
     s.add_argument("--show", default="", help="what it shows: a path in the checkout, or a URL (the command a server); "
                    "none: its output")
     r = sub.add_parser("run", help="run it now, as the user has let it run")
@@ -68,7 +68,7 @@ def main(argv: List[str]) -> int:
             args["wait"] = max(0.0, opts.wait)
             if opts.file:
                 args["file"] = os.path.abspath(os.path.expanduser(opts.file))
-        result = actors.ask(url, "agent/call", {"actor": me, "tool": f"editor_preview_{op}", "args": args}, api="apps")
+        result = actors.ask(url, "agent/call", {"actor": me, "tool": f"latex_preview_{op}", "args": args}, api="apps")
         said = "".join(c.get("text", "") for c in result.get("content") or [])
         if result.get("isError"):
             raise actors.ActorsError(said or "the Preview refused it")
@@ -114,7 +114,7 @@ def _shows(r: dict) -> str:
 
 
 def _problems(p: Optional[dict]) -> List[str]:
-    """A LaTeX build's errors and warnings, as its log says them (the Editor's runs.said_problems)."""
+    """A LaTeX build's errors and warnings, as its log says them (the LaTeX editor's runs.said_problems)."""
     if not p:
         return []
     counts = ", ".join(f"{p[k]} {one if p[k] == 1 else many}" for k, one, many in
@@ -135,7 +135,7 @@ def shown(op: str, got: dict, me: str) -> str:
         return f"Stopped: its run in {got['checkout']} is {_run(r)}." if r else f"Nothing runs in {got['checkout']}."
     if p is None:
         return (f"No preview is set for {where}. `ag preview set \"<command>\" --show <file or URL>` sets one: the Preview "
-                f"runs it and shows what it makes, when the user runs it (the Editor's Execute) or you do.")
+                f"runs it and shows what it makes, when the user runs it (the LaTeX editor's Execute) or you do.")
     lines = []
     if op == "set":
         lines.append(f"Set the preview of {where}.")
