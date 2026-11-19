@@ -27,11 +27,10 @@ kept before apps were items.
 `add` puts items in the task another item is in -- one in none, a task made of them all; `take_out` takes them out. A
 task left with one item, or none, is gone: its last item a task of its own again."""
 
-import os
 import sqlite3
 from typing import Dict, Iterable, List, Optional
 
-from . import folders, sessions
+from . import folders, store
 
 TASK_CHARS = 80                 # the longest name a task takes
 APP = "app:"                    # an app's instance, as an item: APP + its id
@@ -66,6 +65,12 @@ SCHEMA = (
 )
 
 
+def _move(conn: sqlite3.Connection, gatherer: str, to: str, items) -> None:
+    """A task of the items that moved group moves with them (groups.py's `move` moves a task whole)."""
+    conn.execute(f"UPDATE tasks SET gatherer = ? WHERE gatherer = ? AND id IN (SELECT task FROM tasked WHERE channel IN "
+                 f"({', '.join('?' * len(items))}))", (to, gatherer, *items))
+
+
 class TaskError(ValueError):
     """A task that cannot be made, changed or found as asked: its text says why."""
 
@@ -79,27 +84,11 @@ def task_name(text, none: bool = False) -> str:
     return name
 
 
-def _write() -> sqlite3.Connection:
-    """The dashboard's database, for a change, this module's tables made the first time."""
-    os.makedirs(os.path.dirname(sessions.db_path()), exist_ok=True)
-    conn = sqlite3.connect(sessions.db_path(), timeout=8, isolation_level=None)
-    try:
-        for statement in SCHEMA:
-            conn.execute(statement)
-    except BaseException:
-        conn.close()
-        raise
-    return conn
-
-
 def stored() -> Dict[str, dict]:
     """{gatherer: {tasks: [{id, name}] (oldest first), tasked: {channel: task id}}}, of every gatherer with a task: {}
     when there is none yet."""
-    if not os.path.exists(sessions.db_path()):
-        return {}
-    conn = sqlite3.connect(f"file:{sessions.db_path()}?mode=ro", uri=True, timeout=8)
-    try:
-        if not folders._has(conn, "tasks"):
+    with store.reading() as conn:
+        if conn is None or not store.has(conn, "tasks"):
             return {}
         found: Dict[str, dict] = {}
         for tid, g, name in conn.execute("SELECT id, gatherer, name FROM tasks ORDER BY id"):
@@ -107,10 +96,6 @@ def stored() -> Dict[str, dict]:
         for g, c, tid in conn.execute("SELECT gatherer, channel, task FROM tasked ORDER BY at"):
             found.setdefault(g, {"tasks": [], "tasked": {}})["tasked"][c] = tid
         return found
-    except sqlite3.Error:
-        return {}
-    finally:
-        conn.close()
 
 
 def of(gatherer: str) -> dict:
@@ -120,11 +105,17 @@ def of(gatherer: str) -> dict:
 
 def tidy(conn: sqlite3.Connection, gatherer: str) -> None:
     """In `conn`'s open transaction: `gatherer`'s tasks left with fewer than two items gone (a task is two or more).
-    After any change to `tasked`, here or elsewhere (sessions.py's `discard`)."""
+    After any change to `tasked`: here, and by the store (`tasked`'s tidy) after a move, a merge or a discard."""
     conn.execute("DELETE FROM tasked WHERE gatherer = ? AND task IN (SELECT task FROM tasked WHERE gatherer = ? "
                  "GROUP BY task HAVING count(*) < 2)", (gatherer, gatherer))
     conn.execute("DELETE FROM tasks WHERE gatherer = ? AND id NOT IN (SELECT task FROM tasked WHERE gatherer = ?)",
                  (gatherer, gatherer))
+
+
+TABLES = ("tasks", "tasked", "tasks_grouped")
+store.table("tasks", SCHEMA[0], merged=store.MOVE, on_move=_move)
+store.table("tasked", SCHEMA[1], actor="channel", merged=store.MOVE, tidy=tidy)
+store.table("tasks_grouped", SCHEMA[2], merged=store.DROP)   # the other group's own items were grouped, or not, on their own
 
 
 def _change(gatherer: str, do):
@@ -132,19 +123,10 @@ def _change(gatherer: str, do):
     fewer than two items gone (`tidy`)."""
     if not gatherer:
         raise TaskError("which gatherer?")
-    conn = _write()
-    try:
-        conn.execute("BEGIN IMMEDIATE")
+    with store.transaction(*TABLES) as conn:
         got = do(conn)
         tidy(conn, gatherer)
-        conn.execute("COMMIT")
         return got
-    except BaseException:
-        if conn.in_transaction:
-            conn.execute("ROLLBACK")
-        raise
-    finally:
-        conn.close()
 
 
 def _channels(channels: Iterable[str]) -> List[str]:
@@ -205,16 +187,9 @@ def task_of(gatherer: str, item: str) -> Optional[int]:
 
 def grouped(gatherer: str) -> bool:
     """Whether the gatherer's items sharing an app were made one task already (`group`)."""
-    if not os.path.exists(sessions.db_path()):
-        return False
-    conn = sqlite3.connect(f"file:{sessions.db_path()}?mode=ro", uri=True, timeout=8)
-    try:
-        return folders._has(conn, "tasks_grouped") and conn.execute(
+    with store.reading() as conn:
+        return conn is not None and store.has(conn, "tasks_grouped") and conn.execute(
             "SELECT 1 FROM tasks_grouped WHERE gatherer = ?", (gatherer,)).fetchone() is not None
-    except sqlite3.Error:
-        return False
-    finally:
-        conn.close()
 
 
 def group(gatherer: str, links: Iterable[Iterable[str]]) -> List[int]:

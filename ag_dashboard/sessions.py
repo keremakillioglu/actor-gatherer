@@ -78,7 +78,7 @@ other way, clears it.
 
 A session that NEVER STARTED -- made (`create`), but no process of it ever had a turn, so its gatherer has
 nothing of it -- can be DISCARDED (`discard`): its row deleted, with every row the dashboard keeps of it as an
-actor (ACTOR_TABLES), so it is listed nowhere, as if it had never been made.
+actor (store.py's `discard_actor`), so it is listed nowhere, as if it had never been made.
 
 CODEX runs the same ways, through `ag ... codex`: in a terminal, its own interactive UI (`codex
 [resume <id>]`); headless, a process per turn, `codex exec --json
@@ -125,7 +125,7 @@ from harness_kit.base import AT_DENY, AT_OPTION, Box
 from harness_kit.processes import end_group
 from harness_kit.screen import Screen
 
-from . import actions, answers, home
+from . import actions, answers, home, store
 
 try:                                    # a terminal needs a pseudo-terminal: Unix only
     import fcntl
@@ -177,10 +177,15 @@ COLUMNS = ("session_id", "gatherer", "harness", "cwd", "permission_mode", "creat
 ADDED = (("kept", "REAL NOT NULL DEFAULT 0"), ("model", "TEXT"), ("started_as", "TEXT"),
          ("ended", "REAL NOT NULL DEFAULT 0"), ("role", "TEXT"), ("over", "TEXT"),
          ("harness_id", "TEXT"))   # columns a table from before lacks
-# The dashboard's other tables in dashboard.db with a row per actor, by (gatherer, channel): saved.py's, seen.py's,
-# avatars.py's, tasks.py's -- what a session discarded (`discard`) takes with it, and what moves with an actor that moves
-# group (groups.py's).
-ACTOR_TABLES = ("saved", "seen", "avatars", "tasked")
+
+
+def _added(conn: sqlite3.Connection, column: str) -> None:
+    if column == "ended":                # what had run and stopped, not kept: ended by now
+        conn.execute("UPDATE sessions SET ended = ? WHERE status IN ('stopped', 'failed') AND kept = 0 AND turns > 0",
+                     (time.time(),))
+
+
+store.table("sessions", SCHEMA, added=ADDED, on_added=_added, actor="session_id", merged=store.MOVE)
 
 
 class SessionError(ValueError):
@@ -194,10 +199,6 @@ class NotAtBox(SessionError):
     def __init__(self, text: str, box: str):
         super().__init__(text)
         self.box = box
-
-
-def db_path() -> str:
-    return os.path.join(home.HOME, "dashboard.db")
 
 
 def log_path(session_id: str) -> str:
@@ -214,19 +215,14 @@ def _insert(conn: sqlite3.Connection, **row) -> None:
 
 def stored() -> List[dict]:
     """The sessions the table has, newest first, read-only: [] when there is no table yet."""
-    if not os.path.exists(db_path()):
-        return []
-    conn = sqlite3.connect(f"file:{db_path()}?mode=ro", uri=True, timeout=8)
-    conn.row_factory = sqlite3.Row
-    try:                                # a table from before `kept`, `model`, `started_as`, `ended`, `role`, `over`,
-        #                                     `harness_id`: none
+    with store.reading(rows=True) as conn:
+        if conn is None or not store.has(conn, "sessions"):
+            return []
+        # a table from before `kept`, `model`, `started_as`, `ended`, `role`, `over`, `harness_id` (read before any
+        # write has added them): none
         return [{"kept": 0, "model": None, "started_as": None, "ended": 0, "role": None, "over": None, "harness_id": None,
                  **dict(r)}
                 for r in conn.execute("SELECT * FROM sessions ORDER BY created_at DESC")]
-    except sqlite3.Error:
-        return []
-    finally:
-        conn.close()
 
 
 OUTER_TERMINAL = ("TMUX", "TMUX_PANE", "STY", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "WINDOWID",
@@ -279,7 +275,7 @@ def drafted(n: int, keys: str) -> int:
 
 def _has_calls(gatherer: str, session_id: str) -> bool:
     """Whether the session made a model call: Claude Code has saved it, so it can be resumed."""
-    conn = _gatherer_db(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return False
     try:
@@ -307,20 +303,11 @@ def resumes(s: dict) -> bool:
 SESSION_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
-def _gatherer_db(gatherer: str) -> Optional[sqlite3.Connection]:
-    path = home.db_path(gatherer)
-    if not os.path.exists(path):
-        return None
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def holder(gatherer: str, session_id: str) -> Optional[dict]:
     """The process that has the session open, as the gatherer says, and still runs: {pid, by} -- its
     `_open` row (ag's launcher's claim, or a call's), else the process its newest call named. None:
     none, or none that can be told."""
-    conn = _gatherer_db(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:
@@ -346,7 +333,7 @@ def holder(gatherer: str, session_id: str) -> Optional[dict]:
 
 def _session_cwd(gatherer: str, session_id: str) -> Optional[str]:
     """Where the session's calls said it works: the newest read's `cwd`."""
-    conn = _gatherer_db(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:
@@ -393,7 +380,7 @@ def _named_id(gatherer: str, channel: str) -> Optional[str]:
     """The harness's own id for the session kept in `channel` under another (`ag --channel`), as the newest of its
     turns' calls recorded it (its `model_call`'s `session`); None: none named (one kept under its own id, or no call
     yet)."""
-    conn = _gatherer_db(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:
@@ -664,7 +651,7 @@ def took_back(gatherer: str, channel: str, stopped: float) -> bool:
     if not stopped:
         return False
     from . import data                                 # data imports this module
-    conn = data._connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return False
     try:                                               # the hang-up as ag kept it on the read, or the hook's `call_failed`
@@ -754,21 +741,7 @@ class Sessions:
             conn.close()
 
     def _db(self) -> sqlite3.Connection:
-        os.makedirs(home.HOME, exist_ok=True)
-        conn = sqlite3.connect(db_path(), timeout=8, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        conn.execute(SCHEMA)
-        have = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
-        for name, kind in ADDED:                 # a table from before them
-            if name not in have:
-                try:
-                    conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {kind}")
-                except sqlite3.OperationalError:     # another process added it meanwhile
-                    continue
-                if name == "ended":              # what had run and stopped, not kept: ended by now
-                    conn.execute("UPDATE sessions SET ended = ? WHERE status IN ('stopped', 'failed') AND kept = 0 "
-                                 "AND turns > 0", (time.time(),))
-        return conn
+        return store.write("sessions", rows=True)
 
     def _row(self, session_id: str) -> Optional[dict]:
         conn = self._db()
@@ -1051,7 +1024,7 @@ class Sessions:
 
     def discard(self, session_id: str) -> None:
         """A session that never started, forgotten (module doc): its row deleted, and the dashboard's rows of it as an
-        actor (ACTOR_TABLES). Refused while a process of the dashboard's runs for it, or a message waits for one, and
+        actor (store.discard_actor). Refused while a process of the dashboard's runs for it, or a message waits for one, and
         once a turn of it has ended; that its gatherer has nothing of it is the caller's to tell (data.py's)."""
         with self.lock:
             s = self._row(session_id)
@@ -1063,23 +1036,8 @@ class Sessions:
                 raise SessionError("it's running. Close it first.")
             if s["turns"]:
                 raise SessionError("it has already had a turn. Close it instead.")
-            conn = self._db()
-            try:
-                conn.execute("BEGIN IMMEDIATE")
-                conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
-                for table in ACTOR_TABLES:
-                    try:
-                        conn.execute(f"DELETE FROM {table} WHERE gatherer = ? AND channel = ?", (s["gatherer"], session_id))
-                    except sqlite3.OperationalError:     # no such table yet: nothing of it there
-                        pass
-                from . import tasks                      # here: tasks.py imports this module
-                try:
-                    tasks.tidy(conn, s["gatherer"])      # a task it was one of two in: gone, as any task under two
-                except sqlite3.OperationalError:         # no tasks yet
-                    pass
-                conn.execute("COMMIT")
-            finally:
-                conn.close()                             # not committed: rolled back
+            with store.transaction("sessions") as conn:  # its row and every one kept of it as an actor; a task it
+                store.discard_actor(conn, s["gatherer"], session_id)   # was one of two in, gone
             for kept in (self.agents, self.answered, self.renames, self.sent):
                 kept.pop(session_id, None)
         self._changed(s["gatherer"], session_id)
@@ -1653,7 +1611,7 @@ class Sessions:
         if s is None:
             return True
         from . import data                               # here: data.py reads this module
-        conn = data._connect(s["gatherer"])
+        conn = store.gatherer(s["gatherer"])
         if conn is None:
             return False
         since = datetime.fromtimestamp(t.prompted, timezone.utc).isoformat()

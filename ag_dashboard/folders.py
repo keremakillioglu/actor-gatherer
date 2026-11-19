@@ -64,7 +64,7 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional
 
-from . import actions, saved, sessions
+from . import actions, saved, sessions, store
 
 FOLDER_CHARS = 60               # the longest name a folder takes
 TOP = ("", "/", "top")          # what names the gatherer's top level, where a folder is asked for by path
@@ -108,13 +108,9 @@ def _now() -> str:
     return datetime.fromtimestamp(time.time(), timezone.utc).isoformat()
 
 
-def _has(conn: sqlite3.Connection, table: str) -> bool:
-    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone() is not None
-
-
 def _from_saved(conn: sqlite3.Connection) -> None:
     """saved.py's folders of saved actors copied in (module doc): each at its gatherer's top, its actors filed in it."""
-    if not _has(conn, "saved_folders"):
+    if not store.has(conn, "saved_folders"):
         return
     made: Dict[tuple, int] = {}
     for g, name, at in conn.execute("SELECT gatherer, name, at FROM saved_folders ORDER BY gatherer, at").fetchall():
@@ -123,22 +119,11 @@ def _from_saved(conn: sqlite3.Connection) -> None:
             continue
         cur = conn.execute("INSERT INTO folders (gatherer, parent, name, at) VALUES (?, NULL, ?, ?)", (g, clean, at))
         made[(g, clean.lower())] = made[(g, str(name).lower())] = cur.lastrowid
-    if made and _has(conn, "saved") and "folder" in [r[1] for r in conn.execute("PRAGMA table_info(saved)")]:
+    if made and store.has(conn, "saved") and "folder" in [r[1] for r in conn.execute("PRAGMA table_info(saved)")]:
         for g, c, f, at in conn.execute("SELECT gatherer, channel, folder, at FROM saved WHERE folder IS NOT NULL").fetchall():
             fid = made.get((g, str(f).lower()))
             if fid is not None:
                 conn.execute("INSERT OR IGNORE INTO filed (gatherer, channel, folder, at) VALUES (?, ?, ?, ?)", (g, c, fid, at))
-
-
-def _with_closed(conn: sqlite3.Connection) -> None:
-    """Table `folders` as made before `closed`: given it (every folder open)."""
-    if "closed" in [r[1] for r in conn.execute("PRAGMA table_info(folders)")]:
-        return
-    try:
-        conn.execute("ALTER TABLE folders ADD COLUMN closed TEXT")
-    except sqlite3.OperationalError:                    # another gave it meanwhile
-        if "closed" not in [r[1] for r in conn.execute("PRAGMA table_info(folders)")]:
-            raise
 
 
 FOLDER, GROUP, FILED = "folder", "group", "filed"
@@ -146,6 +131,12 @@ APP = "app:"                    # an app's instance in a folder (the list's item
 PLACED = "group:"               # a group placed in another group's folder, kept by a FILED record (`places`)
 COPIED = "folders_in_home"      # dashboard.db's: when its folders were copied into the home's one database
 _copied: set = set()            # the dashboard.db paths whose folders are copied in, as seen by this process
+# A home's folders that can move or merge with their groups are its records (`_records`, in the home's one database);
+# these tables are a home's from before, copied there once (`_copy_in`), and do not follow a merge.
+TABLES = ("filed", "folders")
+store.table("filed", SCHEMA[2], merged=store.STAY)
+store.table("folders", *SCHEMA[:2], added=[("closed", "TEXT")], made=lambda conn: _from_saved(conn), merged=store.STAY)
+store.table(COPIED, f"CREATE TABLE IF NOT EXISTS {COPIED} (at TEXT NOT NULL)")
 
 
 def _in_home() -> bool:
@@ -299,12 +290,12 @@ def _copy_in() -> None:
     """dashboard.db's folders and filed actors copied into the home's one database as records, once (module doc). An
     actor whose channel has a folder there already, or is in another group there now, is left as the records have it.
     Each record's id is the copy's, so a copy made twice keeps nothing new."""
-    if sessions.db_path() in _copied or not os.path.exists(sessions.db_path()):
+    if store.path() in _copied or not os.path.exists(store.path()):
         return
     conn = _write()
     try:
-        if _has(conn, COPIED):
-            _copied.add(sessions.db_path())
+        if store.has(conn, COPIED):
+            _copied.add(store.path())
             return
         rows = conn.execute("SELECT id, gatherer, parent, name, at, closed FROM folders").fetchall()
         filed = conn.execute("SELECT gatherer, channel, folder FROM filed").fetchall()
@@ -322,39 +313,14 @@ def _copy_in() -> None:
             by.setdefault(g, []).append(_placed_event(g, ch, fid, tag="folder-copied"))
     for g, events in by.items():
         _put(g, events)
-    conn = _write()
-    try:
-        conn.execute(f"CREATE TABLE IF NOT EXISTS {COPIED} (at TEXT NOT NULL)")
+    with store.transaction(COPIED) as conn:
         conn.execute(f"INSERT INTO {COPIED} (at) VALUES (?)", (_now(),))
-    finally:
-        conn.close()
-    _copied.add(sessions.db_path())
+    _copied.add(store.path())
 
 
 def _write() -> sqlite3.Connection:
-    """The dashboard's database, for a change: this module's tables made the first time, saved.py's folders copied in."""
-    os.makedirs(os.path.dirname(sessions.db_path()), exist_ok=True)
-    conn = sqlite3.connect(sessions.db_path(), timeout=8, isolation_level=None)
-    if _has(conn, "folders"):
-        try:
-            _with_closed(conn)
-        except BaseException:
-            conn.close()
-            raise
-        return conn
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        if not _has(conn, "folders"):                   # another made them meanwhile
-            for statement in SCHEMA:
-                conn.execute(statement)
-            _from_saved(conn)
-        conn.execute("COMMIT")
-    except BaseException:
-        if conn.in_transaction:
-            conn.execute("ROLLBACK")
-        conn.close()
-        raise
-    return conn
+    """The dashboard's database, for a change: this module's tables made the first time (saved.py's folders copied in)."""
+    return store.write(*TABLES)
 
 
 def ensure() -> None:
@@ -377,26 +343,21 @@ def stored() -> Dict[str, dict]:
         except (FolderError, sqlite3.Error) as exc:
             print(f"dashboard: folders not read: {exc}", file=sys.stderr, flush=True)
             return {}
-    if not os.path.exists(sessions.db_path()):
+    if not os.path.exists(store.path()):
         return {}
-    conn = sqlite3.connect(f"file:{sessions.db_path()}?mode=ro", uri=True, timeout=8)
-    try:
-        if not _has(conn, "folders"):
-            conn.close()
-            ensure()                                    # made, and saved.py's copied, at the first read
-            conn = sqlite3.connect(f"file:{sessions.db_path()}?mode=ro", uri=True, timeout=8)
+    with store.reading() as conn:
+        made = store.has(conn, "folders")
+    if not made:
+        ensure()                                        # made, and saved.py's copied, at the first read
+    with store.reading() as conn:
         found: Dict[str, dict] = {}
-        closed = "closed" if "closed" in [r[1] for r in conn.execute("PRAGMA table_info(folders)")] else "NULL"   # before `closed`
+        closed = "closed" if "closed" in store.columns(conn, "folders") else "NULL"   # read before a write added it
         for fid, g, parent, name, shut in conn.execute(f"SELECT id, gatherer, parent, name, {closed} FROM folders "
                                                        "ORDER BY gatherer, lower(name), name"):
             found.setdefault(g, {"folders": [], "filed": {}})["folders"].append({"id": fid, "parent": parent, "name": name, "closed": shut})
         for g, c, fid in conn.execute("SELECT gatherer, channel, folder FROM filed ORDER BY at"):
             found.setdefault(g, {"folders": [], "filed": {}})["filed"][c] = fid
         return found
-    except sqlite3.Error:
-        return {}
-    finally:
-        conn.close()
 
 
 def of(gatherer: str) -> dict:

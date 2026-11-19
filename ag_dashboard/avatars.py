@@ -36,7 +36,7 @@ import tomllib
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
-from . import sessions
+from . import sessions, store
 
 DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "avatars")
 CLOSED = "closed"                        # data.CLOSED: an actor whose hue another may take
@@ -53,6 +53,7 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS avatars (
     said     INTEGER,
     PRIMARY KEY (gatherer, channel)
 )"""
+store.table("avatars", SCHEMA, added=[("said", "INTEGER")], actor="channel", merged=store.MOVE)
 STYLES = 4                               # the lines a drawn picture says, one of each style (LINES)
 LINES = "hello.toml"                     # in DIR: what each says before its actor's first message, by its name
 ROLE_KIND = "roles"                      # DIR's folder of the pictures of actors with a role: not in the pool
@@ -158,16 +159,11 @@ def order(name: str) -> str:
 def kept() -> Tuple[Dict[Tuple[str, str], str], Dict[Tuple[str, str], int]]:
     """({(gatherer, channel): its picture}, {(gatherer, channel): which of its lines it says}), read-only: empty when none
     is kept yet."""
-    if not os.path.exists(sessions.db_path()):
-        return {}, {}
-    conn = sqlite3.connect(f"file:{sessions.db_path()}?mode=ro", uri=True, timeout=8)
-    try:
+    with store.reading() as conn:
+        if conn is None or not store.has(conn, "avatars"):
+            return {}, {}
         rows = _rows(conn)
         return {(g, c): a for g, c, a, _ in rows}, {(g, c): s for g, c, _, s in rows if s is not None}
-    except sqlite3.Error:                # no table yet
-        return {}, {}
-    finally:
-        conn.close()
 
 
 def stored() -> Dict[Tuple[str, str], str]:
@@ -176,11 +172,11 @@ def stored() -> Dict[Tuple[str, str], str]:
 
 
 def _rows(conn: sqlite3.Connection) -> List[Tuple[str, str, str, Optional[int]]]:
-    """Every row kept, (gatherer, channel, avatar, said), oldest given first: said None in a table from before it."""
-    try:
-        return list(conn.execute("SELECT gatherer, channel, avatar, said FROM avatars ORDER BY at"))
-    except sqlite3.OperationalError:     # a table from before `said`
+    """Every row kept, (gatherer, channel, avatar, said), oldest given first: said None in a table from before it (read
+    before any write has added it)."""
+    if "said" not in store.columns(conn, "avatars"):
         return [(g, c, a, None) for g, c, a in conn.execute("SELECT gatherer, channel, avatar FROM avatars ORDER BY at")]
+    return list(conn.execute("SELECT gatherer, channel, avatar, said FROM avatars ORDER BY at"))
 
 
 def next_said(said: List[int]) -> int:
@@ -229,15 +225,8 @@ def assign(home: dict) -> dict:
     actors = sorted(((g, a) for g in home["gatherers"] for a in g["agents"] if not role_picture(a)),
                     key=lambda ga: ga[1].get("created") or ga[1].get("last") or 0, reverse=True)
     with _lock:
-        os.makedirs(os.path.dirname(sessions.db_path()), exist_ok=True)
-        conn = sqlite3.connect(sessions.db_path(), timeout=8, isolation_level=None)
+        conn = store.write("avatars")
         try:
-            conn.execute(SCHEMA)
-            if "said" not in {r[1] for r in conn.execute("PRAGMA table_info(avatars)")}:   # a table from before it
-                try:
-                    conn.execute("ALTER TABLE avatars ADD COLUMN said INTEGER")
-                except sqlite3.OperationalError:     # another dashboard added it meanwhile
-                    pass
             conn.execute("BEGIN IMMEDIATE")          # another dashboard on this home gives none meanwhile
             rows = _rows(conn)
             has = {(g, c): a for g, c, a, _ in rows}

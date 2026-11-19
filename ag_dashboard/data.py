@@ -89,7 +89,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
-from . import answers, avatars, folders, gatherer_folders, hiding, live, merges, saved, sessions, tasks, titles
+from . import answers, avatars, folders, gatherer_folders, hiding, live, merges, saved, sessions, store, tasks, titles
 import app_kit
 import harness_kit
 from harness_kit import USERS, Kind
@@ -153,15 +153,6 @@ NOT_RECORD = ("e.event_type_id NOT IN (SELECT event_type_id FROM event_types WHE
 #: (events_id) by the `+`. Joined on e.event_type_id itself it searches by type, through every channel's records newer
 #: than the row asked for -- once per actor, so the list slowed with every record in the gatherer.
 BY_CHANNEL = "t.event_type_id = +e.event_type_id"
-
-
-def _connect(gatherer: str) -> Optional[sqlite3.Connection]:
-    path = paths.db_path(gatherer)
-    if not os.path.exists(path):
-        return None
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _groups(conn) -> Dict[str, Any]:
@@ -336,7 +327,7 @@ def home(started: Optional[List[dict]] = None, kept: Optional["Kept"] = None) ->
     if kept is not None:
         kept.only(names)
     for name in names:
-        conn = _connect(name)
+        conn = store.gatherer(name)
         if conn is None:                 # made (`ag new`), no session has run in it yet
             gatherers.append({"name": name, "policy": _policy(name), "agents": [], "last": None})
             continue
@@ -412,7 +403,7 @@ def actors(gatherer: str, channels: set, started: List[dict]) -> List[dict]:
     `list`) -- read for them alone, so at a small part of its cost; nothing is watched from it from now on (home()'s
     wakes stay as they were). sqlite3.Error: the gatherer's database could not be read."""
     now = time.time()
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     try:
         agents = _agents(conn, now, set(channels)) if conn is not None else []
     finally:
@@ -430,7 +421,7 @@ def gatherer_actors(gatherer: str, started: List[dict]) -> List[dict]:
     gatherer read alone; nothing is watched from it from now on (home()'s wakes stay as they were). [] for a gatherer
     with no database yet but for its sessions started here. sqlite3.Error: its database could not be read."""
     now = time.time()
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     named: Dict[str, Dict[str, dict]] = {}
     try:
         agents = _agents(conn, now, members(conn, gatherer)) if conn is not None else []
@@ -561,7 +552,7 @@ class Kept:
         """The gatherer read whole, on a connection of its own, and kept -- but where a channel was read since it began,
         that read: it is newer; and one it did not find, gone to another group, no longer kept unless read since."""
         began = time.time()
-        conn = _connect(gatherer)
+        conn = store.gatherer(gatherer)
         try:
             got, opens = (_agents(conn, began, members(conn, gatherer)), self._open(conn)) if conn is not None else (None, None)
         except sqlite3.Error:
@@ -1031,7 +1022,7 @@ def shown_ask(shown: Optional[dict], harness: Optional[str], now: Optional[float
 def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optional[dict]:
     """What the agent waits on the user for now, as its hook recorded it (`_asking`), None if nothing; `cwd`, where the
     session runs (no longer needed: the record is read from events)."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:
@@ -1047,7 +1038,7 @@ def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optiona
 def answer_result(gatherer: str, channel: str, call: Optional[str]) -> Optional[str]:
     """What the harness recorded as the answer to `call` -- as its own record says (`Record.result`), else the words of
     the tool's result once a call has carried it -- None before either has."""
-    conn = _connect(gatherer) if call else None
+    conn = store.gatherer(gatherer) if call else None
     if conn is None:
         return None
     try:
@@ -1484,7 +1475,7 @@ def _answer_given(gatherer: str, channel: str) -> Optional[dict]:
     key = (paths.db_path(gatherer), channel)
     if key in _ANSWERS_READ:
         return _ANSWERS_READ[key]
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None                                  # no database yet: read once there is one
     try:
@@ -1499,7 +1490,7 @@ def _answer_given(gatherer: str, channel: str) -> Optional[dict]:
 
 def typed_at(gatherer: str, channel: str) -> Optional[float]:
     """When keys were last typed into the session's terminal from a page, as the dashboard kept it (`terminal_input`)."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:
@@ -1535,7 +1526,7 @@ def meanwhile(conn, channel: str) -> List[dict]:
 
 def _result(gatherer: str, channel: str, call: Optional[str]) -> Optional[str]:
     """The words of the tool's result for `call` once a call has carried it, None before."""
-    conn = _connect(gatherer) if call else None
+    conn = store.gatherer(gatherer) if call else None
     if conn is None:
         return None
     try:
@@ -1595,7 +1586,7 @@ def _harness(conn, channel: str) -> Optional[str]:
 
 def harness_of(gatherer: str, channel: str) -> Optional[str]:
     """The harness a channel of the gatherer runs on (`_harness`), its database opened for it; None: not known."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:
@@ -1705,7 +1696,7 @@ def _sent(conn, read_id: int) -> int:
 def agent(gatherer: str, channel: str, llm: Optional[List[dict]] = None) -> dict:
     """One agent over time, as the module says. `llm` is the Gatherer's model calls
     (`llm_calls()`), when the caller has them already."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -1947,7 +1938,7 @@ def read(gatherer: str, read_id: int) -> dict:
     count; all of them add up to its `sent_tokens`), grouped as the agent's own events,
     verbatim, by event type -- RECENT (since the cut of the read's build) and KEPT (before
     it) -- and ag's own messages, by name."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -1980,7 +1971,7 @@ def history(gatherer: str, channel: str, first_row: int, last_row: Optional[int]
     TEXT_CHARS; `clipped` says how much more), at most HISTORY_ITEMS of them (`more` counts
     the rest) -- a task's messages, or those since the last task. To its newest, they end with
     the channel's pending events (`_pending`): what the model answered that no call has stored yet."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -2146,7 +2137,7 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
     else the newest before row `before` (None: the newest of all). `earlier` says whether the
     channel has events before the first; reaching its newest, the items end with its pending
     events (row None): what the model answered that no call has stored yet."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -2184,7 +2175,7 @@ def transcript(gatherer: str, channel: str, after: Optional[int] = None, before:
 def context(gatherer: str, read_id: int) -> dict:
     """Every item read `read_id` put in the context, in the order the model got them: its
     group, name, size and text (at most TEXT_CHARS of it; `clipped` says how much more)."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:

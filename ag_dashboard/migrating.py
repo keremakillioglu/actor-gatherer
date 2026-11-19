@@ -15,7 +15,7 @@ import sys
 import threading
 from typing import Callable, List, Optional
 
-from . import data, sessions
+from . import data, sessions, store
 
 OLD_TABLES = ("_pending", "_recaps", "_names", "_touches")
 SECONDS = 600                   # the most a run may take
@@ -24,7 +24,7 @@ PROGRAM = "ag.integrations.tools.ag_orchestrator.migrate"
 
 def due(gatherer: str) -> bool:
     """Whether the gatherer's old tables are still to be copied (module doc)."""
-    conn = data._connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return False
     try:

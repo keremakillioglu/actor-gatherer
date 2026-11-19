@@ -52,7 +52,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 import harness_kit
 
-from . import actions, home, livedocs, sessions
+from . import actions, home, livedocs, sessions, store
 
 POLL = 1.0              # seconds between looks at a branch whose actor the dashboard runs a process of
 SLOW = 10.0             # ... at any other
@@ -91,21 +91,29 @@ CLIP = 1500             # the most characters of each side's lines told
 ONTO_SECONDS = 5.0      # how long what a project has checked out is kept before git is asked again
 
 
+
+
+def _projects_merged(conn: sqlite3.Connection, gatherer: str, to: str) -> None:
+    """A group merged into `to`: its projects are `to`'s (one `to` has already, as `to` keeps it)."""
+    conn.execute("INSERT OR IGNORE INTO projects (gatherer, path, remote, added) "
+                 "SELECT ?, path, remote, added FROM projects WHERE gatherer = ?", (to, gatherer))
+    conn.execute("DELETE FROM projects WHERE gatherer = ?", (gatherer,))
+
+
+TABLES = ("projects", "branches", "branch_files")
+_PROJECTS, _BRANCHES, _FILES = (s.strip() for s in SCHEMA.split(";\n"))
+store.table("projects", _PROJECTS, merged=_projects_merged)
+# an actor's own branch moves with it; it is not discarded with it: its row stands for a worktree on disk
+store.table("branches", _BRANCHES, added=[("started_on", "TEXT")], actor="session_id", merged=store.MOVE, discarded=False)
+store.table("branch_files", _FILES)
+
+
 class BranchError(ValueError):
     """What the page is told: why a project cannot be set, or a branch made or settled."""
 
 
 def _db() -> sqlite3.Connection:
-    os.makedirs(home.HOME, exist_ok=True)
-    conn = sqlite3.connect(sessions.db_path(), timeout=8, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA)
-    if "started_on" not in {r[1] for r in conn.execute("PRAGMA table_info(branches)")}:   # a table from before it
-        try:
-            conn.execute("ALTER TABLE branches ADD COLUMN started_on TEXT")
-        except sqlite3.OperationalError:            # another process added it meanwhile
-            pass
-    return conn
+    return store.write(*TABLES, rows=True)
 
 
 def _git(cwd: str, *args: str, timeout: float = GIT_TIMEOUT, ok: Tuple[int, ...] = (0,)) -> subprocess.CompletedProcess:

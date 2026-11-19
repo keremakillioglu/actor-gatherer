@@ -1,6 +1,6 @@
 # The dashboard on a standard stack: plan
 
-Status: A0–A4, B1 and B3 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
+Status: A0–A4, B1, B3 and B4 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
 the views share, in `core/ui/`; Chat's turn list, in `features/chat/`). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
@@ -442,6 +442,24 @@ What went another way, and why:
   DocWriter's folder) would end that; not done here.
 - **`compare_servers.py`** gives the old server's call of `Coordination` (an argument per app) its new form
   (`_as_before`): the old `server.py` runs on today's modules.
+
+**B4. The dashboard's database in one place (`store.py`).** Built. Twelve modules each opened `dashboard.db` their
+own way (37 `sqlite3.connect` calls), made their tables on every write, added columns by hand, and kept their own lists
+of which tables follow an actor that moves group, a group merged or an actor discarded; two such lists disagreed (a
+discarded actor's task row left behind, a moved actor's branch left under its old group). Now:
+- **Each table is declared once,** by the module that keeps it (`store.table`): its statements, the columns added
+  since, and what its rows do when an actor moves (`actor`, `on_move`), a group is merged (`merged`: MOVE, DROP, STAY or
+  a function; required of any table with a `gatherer` column, so a new one is decided, not forgotten), or an actor is
+  discarded (`discarded`), and a `tidy` after any of these.
+- **Made at the first write** (`store.write`, `store.transaction`), and given its columns since once per database a
+  process opens (looked at again after any schema change, `PRAGMA schema_version`). A read never makes one: some
+  tell "never kept" by its absence.
+- **Moves, merges and discards** (`move_actors`, `merge_group`, `discard_actor`) go over every declared table; groups.py
+  and sessions.py no longer list tables.
+- **A locked database is an error**, after the connection's TIMEOUT: a read no longer takes it for "nothing kept". The
+  page's stream keeps the home it has and reads it again at the next wake.
+- **A gatherer's database** (ag's) is opened read-only by `store.gatherer`, not by three copies of it.
+Checked against a copy of a real home: `data.home()`'s output is the same, byte for byte, before and after.
 
 ### Dependencies
 
