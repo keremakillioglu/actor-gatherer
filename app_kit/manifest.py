@@ -317,7 +317,7 @@ class Manifest:
                        for e in self.events],
             "pollers": [{"name": p.name, "class": p.cls, "file": p.file, "args": p.args} for p in self.pollers],
             "handles": [{"intent": h.intent, "types": list(h.types)} for h in self.handles],
-            "links": [{"form": k.form, "about": k.about} for k in self.links],
+            "links": [{"form": k.form, "about": k.about, **({"paths": True} if k.paths else {})} for k in self.links],
             "replaces": list(self.replaces),
             "schedules": [s.to_dict() for s in self.schedules],
             "capabilities": {"native_view": self.capabilities.native_view, "reads": list(self.capabilities.reads),
@@ -647,9 +647,10 @@ def _handles(r: _Reader, i: int, d: dict) -> Handles:
 
 def _link(r: _Reader, i: int, d: dict) -> "_links.Link":
     at = f"links[{i}]."
-    _known(r, d, at, ("form", "about"))
+    _known(r, d, at, ("form", "about", "paths"))
     try:
-        return _links.form(r.string(d, "form", at=at), r.string(d, "about", "", at=at).strip())
+        return _links.form(r.string(d, "form", at=at), r.string(d, "about", "", at=at).strip(),
+                           r.flag(d, "paths", at))
     except ValueError as exc:
         r.fail(at + "form", str(exc))
 

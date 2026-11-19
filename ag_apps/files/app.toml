@@ -33,6 +33,13 @@ name = "open"
 description = "Show the user a file in their Files app, at a line: to point them at something."
 input_schema = { type = "object", properties = { path = { type = "string" }, line = { type = "integer" } }, required = ["path"] }
 
+# A file, from a link to it (app_kit/links.py): shown at a line. `paths`: a file's path an agent writes in a reply with
+# no app named (`[a.py](src/a.py#L3)`) opens here too.
+[[links]]
+form = "file/<path...>"
+paths = true
+about = "A file: its absolute path after file/, as in `ag://files/file/Users/me/app/main.py`. Add #L<line> for a line."
+
 # Any file shown, in a Files app open (else a new one, on its folder); an app taking its type, first.
 [[handles]]
 intent = "open-file"

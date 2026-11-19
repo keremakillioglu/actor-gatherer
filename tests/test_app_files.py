@@ -41,6 +41,16 @@ class ManifestTest(unittest.TestCase):
             self.assertNotIn("editor_", m.instructions)
         self.assertNotIn("preview", files.instructions)
 
+    def test_both_open_files_by_link_a_path_written_with_no_app_in_files(self):
+        files, latex = (app_kit.load(os.path.join(ROOT, "ag_apps", n)) for n in ("files", "latex"))
+        self.assertEqual([(k.form, k.paths) for k in files.links], [(app_kit.links.FILE_FORM, True)])
+        self.assertEqual([(k.form, k.paths) for k in latex.links], [(app_kit.links.FILE_FORM, False)])
+        self.assertEqual(files.to_dict()["links"][0]["paths"], True)       # as the page reads it
+        self.assertIn("ag://files/file/", files.told())                   # every agent of the group told how
+        base = {"name": "a", "label": "A", "version": "1", "panel": {"entry": "index.html"}}
+        with self.assertRaises(app_kit.ManifestError):                    # `paths`: for the file form only
+            app_kit.parse({**base, "links": [{"form": "page/<id>", "paths": True}]})
+
     def test_replaces_names_another_app(self):
         base = {"name": "a", "label": "A", "version": "1", "backend": {"python": "backend:A"}}
         self.assertEqual(app_kit.parse({**base, "replaces": ["b"]}).replaces, ("b",))

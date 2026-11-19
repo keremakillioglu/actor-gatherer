@@ -1403,8 +1403,9 @@ async function openAppLink(gname, c, href, from = {}) {
 }
 // A FILE'S PATH an agent wrote (features/apps/links.ts's `file`: `[parser.py](src/parser.py#L12)`, file:///…, a path its
 // terminal marks as a link) opened as a link to it (openAppLink) in an app that shows files -- one whose [[links]] take
-// `file/<path...>` (FILE_FORM): of several, one the actor has open, else the first installed. A relative path is from the
-// actor's folder (a panel's: its instance's). None installed: an error saying so.
+// `file/<path...>` (FILE_FORM): the one whose FILE_FORM says `paths` (the app files open in, as its manifest says), else
+// of several, one the actor has open, else the first installed. A relative path is from the actor's folder (a panel's:
+// its instance's). None installed: an error saying so.
 async function openFileLink(gname, c, href, from = {}) {
   const apps = window.agNext && window.agNext.apps, f = apps ? apps.links.file(href) : null;
   if (!f) throw new Error(`Not a file's path: ${href}`);
@@ -1419,8 +1420,9 @@ async function openFileLink(gname, c, href, from = {}) {
   }
   const takers = apps.found().filter((x) => !x.failed && (x.links || []).some((l) => l.form === apps.links.FILE_FORM));
   if (!takers.length) throw new Error(`No app here opens files, to open ${path}`);
-  let app = takers[0];
-  if (takers.length > 1 && a) {
+  const plain = takers.find((x) => (x.links || []).some((l) => l.form === apps.links.FILE_FORM && l.paths));
+  let app = plain || takers[0];
+  if (!plain && takers.length > 1 && a) {
     const had = await apps.attachedTo(gname, a.channel);
     app = takers.find((x) => had.some((i) => i.app === x.name)) || app;
   }

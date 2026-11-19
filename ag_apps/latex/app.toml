@@ -113,6 +113,12 @@ description = "No build for the project any more: {key}."
 name = "latex.preview_ran"
 description = "A run, once over: {key, checkout, command, show, by, file, state, code, started, ended}."
 
+# A file, from a link to it (app_kit/links.py): shown at a line, in the LaTeX editor -- a plain file path an agent writes
+# opens in the Files app instead (its `paths`).
+[[links]]
+form = "file/<path...>"
+about = "A file of the paper, in this LaTeX editor: its absolute path after file/, as in `ag://latex/file/Users/me/paper/main.tex`. Add #L<line> for a line."
+
 # A LaTeX source or bibliography shown -- in a LaTeX editor open (else in the Files app open, else a new LaTeX editor, on
 # its folder).
 [[handles]]

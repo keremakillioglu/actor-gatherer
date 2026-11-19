@@ -408,8 +408,9 @@ page's side frontend/src/features/apps/links.ts), not one each: an app's name ma
   Chat marks one (core/ui/md.ts's `data-path`, `file://` let through DOMPurify; a link the dashboard draws itself, as
   `/api/image?…`, isn't marked), and a click on it, or on a `file://` link a terminal shows, opens it
   (`openFileLink`) as the link of the form `file/<path...>` (links.ts's FILE_FORM) in an app whose `[[links]]` take
-  that form -- of several, the one the agent has, else the first installed. A relative path is from the agent's
-  folder; `#L12` or a last `:12` is the line.
+  that form -- the one whose form says `paths = true` (the Files app's, 2026-11-18: "for references to files in chat
+  ... it will open in the file viewer app"), else of several the one the agent has, else the first installed. A
+  relative path is from the agent's folder; `#L12` or a last `:12` is the line.
 - **A click is only the user looking.** It calls no tool, attaches no agent and is no event: what the agent sees
   doesn't change. The panel treats the path as untrusted, as it would one the user typed.
 - **Between apps too.** A panel opens any app's link as Chat does (`ag.links.open(href)`), so a Notes line can link
@@ -706,6 +707,12 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
    - **An actor started from the tree**: its menu's "Start an actor here…" (a folder) or "… on this file…" (a file,
      its path put first in the box) asks for a harness and what to do, and starts it in that folder
      (`ag.actors.start`), then opens it.
+   - **Links to files** (5d): both take `file/<path...>`, the Editor's form -- `ag://files/file/...`,
+     `ag://latex/file/...` -- each its own (`start.js`'s `ag.links.onOpen` -> `edShowFile`). A file's path an agent
+     writes with no app named (`[a.py](src/a.py#L3)`, `file://`, a terminal's path) opens in the Files app: its form says
+     `paths = true` (links.py: allowed on FILE_FORM only), which the page's `openFileLink` takes before any app the
+     actor has open. Every agent of the group is told the Files app's form (a group app); an agent of a LaTeX editor,
+     its form too, to open a file in that editor.
    - **Which opens a file**: the page asks the apps that take it in order (those naming its type, then those taking
      any) and tells the first with a panel open; with none open, it opens the first. So a LaTeX source goes to a
      LaTeX editor open, else a Files app open, else a new LaTeX editor; any other file to the Files app.
