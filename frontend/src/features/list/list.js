@@ -788,8 +788,28 @@ function readApps(gname, now = false) {
     const moved = had !== JSON.stringify(state.home.tasks || {});
     if (!moved && JSON.stringify(appsKnown.get(gname) || null) === is) return;
     appsKnown.set(gname, JSON.parse(is));
+    appsFollowHome(state.home);                      // read before a move the home has since: where the home has it
     renderAgents();
   }).catch(() => { /* none known: none shown */ });
+}
+// Each app where the home says it is (its `app_groups`, the server's app host's: read with the actors): one read under
+// another group -- moved since with its task or folder -- taken over to that one, its agents with it. Else the list
+// draws it twice for a moment: in its task in the new group, and alone in the old one, as last read there.
+function appsFollowHome(home) {
+  const where = home && home.app_groups;
+  if (!where) return;
+  for (const [g, known] of [...appsKnown]) {
+    const gone = (known.instances || []).filter((i) => where[i.id] !== undefined && where[i.id] !== g);
+    if (!gone.length) continue;
+    const ids = new Set(gone.map((i) => i.id)), attached = known.attached || {};
+    appsKnown.set(g, { ...known, instances: known.instances.filter((i) => !ids.has(i.id)),
+      attached: Object.fromEntries(Object.entries(attached).filter(([id]) => !ids.has(id))) });
+    for (const i of gone) {
+      const to = where[i.id], there = appsKnown.get(to) || { instances: [], attached: {} };
+      appsKnown.set(to, { ...there, instances: [...(there.instances || []).filter((x) => x.id !== i.id), { ...i, gatherer: to }],
+        attached: { ...(there.attached || {}), [i.id]: attached[i.id] || [] } });
+    }
+  }
 }
 // an open instance as the list has it -- {app (its manifest), id, title, name (the user's), folder, inst} -- null: of an
 // app not found here
@@ -1752,7 +1772,7 @@ export function start() {
 export {
   APP_ITEM, COLLAPSED_KEY, FOLDER_CHARS, GROUPS, LEAD_RANK, MANAGER, OPEN, SHELLS, TASK_ITEM, actorOf, actorTitle,
   actorsWithin, addButton, agentRow, aimStart, appFace, appFolder, appInfo, appItem, appKey, appMarkOf, appNotices,
-  appRowsIn, appShown, appStatusOf, appTaskOf, appTitle, appsKnown, appsNotified, askRefocus, boxGroups, boxKey,
+  appRowsIn, appShown, appStatusOf, appTaskOf, appTitle, appsFollowHome, appsKnown, appsNotified, askRefocus, boxGroups, boxKey,
   byName, closeApp, closeAsk, closeButton, closeShell, closedKids, closedSays, collapsed, crewAt, crewFace, crewHidden,
   crewHideKey, crewLine, crewPlace, crewRow, deleteFolder, dragFolder, dragItems, dragRow, dropFolderClosing, dropOn,
   dropOnItem, endDrag, endRename, envelope, fileStarted, firstAgent, foldOpen, folderAct, folderBox, folderById,

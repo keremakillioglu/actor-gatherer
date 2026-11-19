@@ -2,7 +2,7 @@ import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import { closable, gathererNamed, key, post, sessionStatus } from "../../core/page/helpers.js";
 import { setLive } from "../page/data.js";
 import { connect } from "../settings/panel.js";
-import { actorTitle, appItem, appKey, renderAgents } from "./list.js";
+import { actorTitle, appItem, appKey, appsFollowHome, renderAgents } from "./list.js";
 import { appsAtWork, isAt, isAway, openActors } from "../layout/panes.js";
 import { appsChanged } from "../apps/apps-page.js";
 import { dropGone, heedHome } from "../notify/notify.js";
@@ -101,6 +101,8 @@ function newerTasks(had, got, at, only = null) {
 // it kept any); the selected actor, while the page is visible.
 function takeHome(home) {
   homesTaken++;
+  appsFollowHome(home);                              // an app moved with its task: in its new group, as its task is --
+  //                                                    before anything draws the list for this home
   if (state.home) home.tasks = newerTasks(state.home.tasks, home.tasks, home.now);
   else newerTasks({}, home.tasks, home.now);
   window.agNext.home(home);                        // the new code's store has it too (src/bridge.ts)

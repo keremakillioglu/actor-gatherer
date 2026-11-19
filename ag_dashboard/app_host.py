@@ -266,6 +266,13 @@ class AppHost:
         with self.lock:
             return [i for i in self.instances.values() if i.gatherer == gatherer and (app is None or i.app == app)]
 
+    def groups(self) -> Dict[str, str]:
+        """{instance id: its group now} of the open instances the host holds -- those of the groups read so far, which
+        are all the page has listed (`listed`): the home's (server.py's `read_home`), so the list puts an app that moved
+        where the home has its task, not where it read the app last."""
+        with self.lock:
+            return {i.id: i.gatherer for i in self.instances.values()}
+
     def instance(self, gatherer: str, instance_id: str, app: Optional[str] = None) -> Instance:
         self._load(gatherer)
         with self.lock:
