@@ -991,7 +991,8 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     $("scroll").hidden = !S.open;
     $("conv-head").hidden = !S.open;
     if (!S.open) { log.replaceChildren(); $("here-drafts").replaceChildren(); $("older").hidden = true; drawJump(); return; }
-    log.replaceChildren(st && st.loaded ? build(st.list, S.open, { readAt: S.readAt[S.open] }) : el("div", { class: "older" }, st && st.error ? st.error : "Loading…"));
+    // drawn anew, each message the same as before kept (agKit.patch): one arriving draws only itself
+    agKit.patch(log, st && st.loaded ? build(st.list, S.open, { readAt: S.readAt[S.open] }) : [el("div", { class: "older" }, st && st.error ? st.error : "Loading…")]);
     if (st && st.loaded && !st.list.length) log.replaceChildren(el("div", { class: "older" }, "No messages yet."));
     const older = $("older");
     older.hidden = !(st && st.loaded && (st.older || !st.more) && st.list.length);
