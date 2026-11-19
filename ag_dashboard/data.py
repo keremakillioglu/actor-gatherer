@@ -89,7 +89,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import home as paths
 from . import seen as looked                    # `seen` names a file's stat here
-from . import answers, avatars, folders, gatherer_folders, hiding, live, merges, saved, sessions, store, tasks, titles
+from . import (answers, avatars, folders, gatherer_folders, hiding, live, merges, placement, saved, sessions, store,
+               tasks, titles)
 import app_kit
 import harness_kit
 from harness_kit import USERS, Kind
@@ -155,82 +156,32 @@ NOT_RECORD = ("e.event_type_id NOT IN (SELECT event_type_id FROM event_types WHE
 BY_CHANNEL = "t.event_type_id = +e.event_type_id"
 
 
-def _groups(conn) -> Dict[str, Any]:
-    """{channel: its group, as its latest `group` record names it}."""
-    latest: Dict[str, Any] = {}
-    for ch, raw in conn.execute(f"SELECT e.{CHANNEL}, e.payload_json FROM events e JOIN event_types t "
-                                f"ON t.event_type_id = e.event_type_id WHERE t.name = 'group' AND e.{CHANNEL} IS NOT NULL "
-                                "ORDER BY e.row_id"):
-        payload = _json(raw)
-        if isinstance(payload, dict):
-            latest[ch] = payload.get("group")
-    return latest
-
-
 def members(conn, gatherer: str) -> Optional[set]:
     """The channels of `gatherer` in its database: None -- every one -- while each gatherer has a database of its own;
-    in the home's one database (ag's `paths.merged`), those whose latest `group` record names it."""
+    in the home's one database (ag's `paths.merged`), those whose latest `group` record names it (placement.py)."""
     if not paths.merged():
         return None
-    return {ch for ch, group in _groups(conn).items() if group == gatherer}
+    return placement.of(conn).members(gatherer)
 
 
-ALONE = "self:"                  # an actor on its own: its group of one (groups.py's `alone`)
+ALONE = placement.ALONE          # an actor on its own: its group of one (groups.py's `alone`)
 
 
 def groups_now() -> Dict[str, Any]:
     """In the home's one database: {channel: its group now} (coordination.py's watches); {} before."""
-    if not paths.merged() or not os.path.exists(paths.home_db()):
-        return {}
-    conn = sqlite3.connect(f"file:{paths.home_db()}?mode=ro", uri=True, timeout=8)
-    try:
-        return _groups(conn)
-    except sqlite3.Error:
-        return {}
-    finally:
-        conn.close()
+    return dict(placement.now().groups)
 
 
 def alone_names() -> List[str]:
     """In the home's one database, the groups of one of the actors on their own (`self:<channel>`); [] before."""
-    if not paths.merged() or not os.path.exists(paths.home_db()):
-        return []
-    conn = sqlite3.connect(f"file:{paths.home_db()}?mode=ro", uri=True, timeout=8)
-    try:
-        return sorted({g for g in _groups(conn).values() if isinstance(g, str) and g.startswith(ALONE)})
-    except sqlite3.Error:
-        return []
-    finally:
-        conn.close()
-
-
-# the records of a change made to what a group holds (groups.py, folders.py): an actor's group, a folder, a group's place
-CHANGES = ("group", "folder", "filed")
+    return placement.now().alone()
 
 
 def changed() -> Dict[str, float]:
-    """In the home's one database: {group: when what it holds last changed} -- the latest `group`, `folder` or `filed`
-    record naming it, as the group something went into or the one it left (`was`): an actor moved in or out, a group
-    merged into it, a folder made, moved or deleted there, a group placed in it. The list hides a group with nothing for
-    a week only once this is a week old too, so one just changed -- its actors all long idle -- stays in view. {} before."""
-    if not paths.merged() or not os.path.exists(paths.home_db()):
-        return {}
-    conn = sqlite3.connect(f"file:{paths.home_db()}?mode=ro", uri=True, timeout=8)
-    try:
-        rows = conn.execute("SELECT json_extract(e.payload_json, '$.group'), json_extract(e.payload_json, '$.was'), "
-                            "max(e.inserted_at) FROM events e JOIN event_types t USING (event_type_id) "
-                            f"WHERE t.name IN ({', '.join('?' * len(CHANGES))}) GROUP BY 1, 2", CHANGES).fetchall()
-    except sqlite3.Error:
-        return {}
-    finally:
-        conn.close()
-    out: Dict[str, float] = {}
-    for group, was, at in rows:
-        when = _seconds(at)
-        for name in (group, was):
-            if isinstance(name, str) and name and when:
-                out[name] = max(out.get(name, 0.0), when)
-    return out
+    """In the home's one database: {group: when what it holds last changed} (placement.py's `changed`). The list hides
+    a group with nothing for a week only once this is a week old too, so one just changed -- its actors all long idle --
+    stays in view. {} before."""
+    return dict(placement.now().changed)
 
 
 def _columns(conn, table: str) -> set:
@@ -793,23 +744,9 @@ def app_notices(conn, gatherer: Optional[str] = None) -> Dict[str, dict]:
 
 
 def _instances_of(conn, gatherer: str) -> set:
-    """The app instances in `gatherer` now, by id: opened in it (their `app_opened` records say), or moved to it since
-    (`app_regrouped`: with a task, a folder or their own agent, groups.py) -- as the app host reads them (`_load`), so
-    a notification is listed in the group that lists its app."""
-    where: Dict[str, str] = {}
-    for kind, inst, raw in conn.execute("SELECT t.name, e.p_instance, e.payload_json FROM events e JOIN event_types t "
-                                        "ON t.event_type_id = e.event_type_id "
-                                        "WHERE t.name IN ('app_opened', 'app_regrouped') ORDER BY e.row_id"):
-        payload = _json(raw)
-        if not inst or not isinstance(payload, dict):
-            continue
-        if kind == "app_opened":
-            made = payload.get("instance")
-            if isinstance(made, dict) and made.get("gatherer"):
-                where[inst] = str(made["gatherer"])
-        elif inst in where and payload.get("group"):
-            where[inst] = str(payload["group"])
-    return {inst for inst, g in where.items() if g == gatherer}
+    """The app instances in `gatherer` now, by id (placement.py's `apps`): opened in it, or moved to it since -- as the
+    app host reads them, so a notification is listed in the group that lists its app."""
+    return placement.of(conn).instances(gatherer)
 
 
 def _status(conn, ch: str, a: dict, tables: set, now: float) -> None:

@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ag.ag_harness.store import paths  # noqa: E402
 import app_kit  # noqa: E402
+from ag_dashboard import placement  # noqa: E402
 from ag_dashboard import actions, app_agents, app_host, branches, coordinators, data, folders, gatherer_folders, group_admin, groups, merges, naming, saved, sessions, store, tasks, titles, tool_gateway  # noqa: E402
 from replies import insert  # noqa: E402
 from test_dashboard_app_host import NOTES, insert_here, write_app  # noqa: E402
@@ -56,6 +57,17 @@ class GroupsTest(unittest.TestCase):
             return sorted(conn.execute(f"SELECT gatherer, channel FROM {table}"))
         finally:
             conn.close()
+
+    def test_what_is_where_is_read_once_for_every_part_that_asks_and_again_after_a_move(self):
+        with unittest.mock.patch.object(placement, "_read", wraps=placement._read) as read:
+            data.home()                                       # the list, its groups, folders and app notices
+            data.groups_now(), data.alone_names(), data.changed(), folders.of("a")
+            self.assertEqual(read.call_count, 1)
+            groups.move("a", "b", ["c1"])
+            self.assertEqual((self.members("a"), self.members("b")), (["c3"], ["c1", "c2"]))   # read again: moved
+            self.assertEqual(data.groups_now()["c1"], "b")
+            self.assertEqual(read.call_count, 2)
+        self.assertGreater(data.changed()["b"], 0)            # just changed: kept in view
 
     def test_a_plan_says_who_moves_and_changes_nothing(self):
         got = groups.plan("a", "b", ["c1"])

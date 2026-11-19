@@ -1,6 +1,6 @@
 # The dashboard on a standard stack: plan
 
-Status: A0–A4, B1, B3 and B4 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
+Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
 the views share, in `core/ui/`; Chat's turn list, in `features/chat/`). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
@@ -460,6 +460,14 @@ discarded actor's task row left behind, a moved actor's branch left under its ol
   page's stream keeps the home it has and reads it again at the next wake.
 - **A gatherer's database** (ag's) is opened read-only by `store.gatherer`, not by three copies of it.
 Checked against a copy of a real home: `data.home()`'s output is the same, byte for byte, before and after.
+
+**B5. Where each thing is, read once (`placement.py`).** Built. Which group each actor is in, the folders and what is
+filed in them, each app instance's group and when each group last changed were each worked out from ag's records in
+their own place: `data._groups` (once per group, for each group listed), `alone_names`, `changed`, `_instances_of`,
+`folders._records`. Two of them missed a move once (an actor listed under its old group; an app's notices left under
+it). Now one pass over those records gives all of it, kept until a record of theirs is added (their last row id, how
+many, their sum), and every one of those reads it: a home read replays them once, not once per group. `data.home()`
+gives the same output on a copy of a real home.
 
 ### Dependencies
 

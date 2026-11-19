@@ -64,7 +64,7 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional
 
-from . import actions, saved, sessions, store
+from . import actions, placement, saved, sessions, store
 
 FOLDER_CHARS = 60               # the longest name a folder takes
 TOP = ("", "/", "top")          # what names the gatherer's top level, where a folder is asked for by path
@@ -152,39 +152,11 @@ def _payload(raw) -> Optional[dict]:
 
 
 def _records() -> tuple:
-    """Of the home's one database: ({id: {id, group, parent, name, at, closed}} the folders there are, {channel: (group,
-    folder id or None)} each one's latest `group` record's, the highest folder id ever kept, gone or not)."""
-    kept: Dict[int, dict] = {}
-    placed: Dict[str, tuple] = {}
-    top = 0
-    path = sessions.home.home_db()
-    if not os.path.exists(path):
-        return kept, placed, top
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
-    try:
-        for kind in (FOLDER, GROUP, FILED):
-            for ch, raw in conn.execute("SELECT e.p_channel, e.payload_json FROM events e JOIN event_types t "
-                                        "ON t.event_type_id = e.event_type_id WHERE t.name = ? ORDER BY e.row_id", (kind,)):
-                p = _payload(raw)
-                if p is None:
-                    continue
-                if kind == FOLDER and ch is None and isinstance(p.get("id"), int):
-                    top = max(top, p["id"])
-                    if p.get("gone"):
-                        kept.pop(p["id"], None)
-                    else:
-                        kept[p["id"]] = {k: p.get(k) for k in ("id", "group", "parent", "name", "at", "closed")}
-                elif kind == GROUP and ch is not None:
-                    folder = p.get("folder")
-                    placed[ch] = (str(p.get("group") or ""), folder if isinstance(folder, int) else None)
-                elif kind == FILED and ch is None and str(p.get("item") or "").startswith((APP, PLACED)):
-                    folder = p.get("folder")
-                    placed[p["item"]] = (str(p.get("group") or ""), folder if isinstance(folder, int) else None)
-    except sqlite3.OperationalError:                    # no events yet, or no channel's column
-        pass
-    finally:
-        conn.close()
-    return kept, placed, top
+    """Of the home's one database: ({id: {id, group, parent, name, at, closed}} the folders there are, {item: (group,
+    folder id or None)} each one's place, the highest folder id ever kept, gone or not) -- placement.py's, copied, as a
+    change works on them."""
+    p = placement.now()
+    return {fid: dict(f) for fid, f in p.folders.items()}, dict(p.placed), p.top
 
 
 def _filed(kept: Dict[int, dict], placed: Dict[str, tuple]) -> List[tuple]:
