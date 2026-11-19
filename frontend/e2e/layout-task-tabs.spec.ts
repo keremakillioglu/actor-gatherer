@@ -28,7 +28,7 @@ test("a panel moved to a new tab of its task: that tab shown, holding it alone; 
   page,
 }) => {
   await notepadInItsOwnTab(page);
-  await expect(chips(page)).toHaveText(["Tab 1×", "Tab 2×"]);
+  await expect(chips(page)).toHaveText(["Tab 1", "Tab 2"]); // (each × an icon)
   await expect(chips(page).nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(notes(page)).toHaveCount(1);
   await expect(here(page)).toBeHidden(); // Claude's pane not in this tab: out of sight
@@ -89,5 +89,5 @@ test("a task's tab named by a double-click", async ({ page }) => {
   await chips(page).nth(1).dblclick();
   await page.locator(".lay-strip .lay-naming").fill("Notes");
   await page.keyboard.press("Enter");
-  await expect(chips(page).nth(1)).toHaveText("Notes×");
+  await expect(chips(page).nth(1)).toHaveText("Notes");
 });

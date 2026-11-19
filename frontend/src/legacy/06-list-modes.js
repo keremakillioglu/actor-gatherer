@@ -241,10 +241,12 @@ function railBoxOr(g, id, view) {
   return kids.length ? kids : [el("div", { class: "r-none", text: "Nothing open here" })];
 }
 // In the page's top bar, beside its logo, whatever shape the list is in: every shown group's actors open, counted by what
-// they do -- waiting for the reader, stopped on an error, running (in the background too), finished and not yet seen,
-// idle -- each a dot of its colour and a number, none for a state no actor is in. A coordinator agent counted too, but
-// not idle: every group has one, at rest most of the time. The whole home's, wherever the list or the rail is, so what
-// needs the reader elsewhere still shows.
+// they do -- waiting for the reader, stopped on an error, running (the logo's dots going round, as on a list row or a tab),
+// running only in the background (green, as there), finished and not yet seen -- each a mark and a number, none for a
+// state no actor is in. Idle actors need nothing, so they are counted only in the bar's one tooltip, which names every
+// count; shown only when nothing else is (the bar keeps something to point at, which slides a hidden list out). A
+// coordinator agent counted too, but not idle: every group has one, at rest most of the time. The whole home's, wherever
+// the list or the rail is, so what needs the reader elsewhere still shows.
 function drawTotals(shown) {
   const t = { asking: 0, error: 0, running: 0, background: 0, finished: 0, idle: 0 };
   for (const g of shown) for (const a of g.agents) {
@@ -253,16 +255,23 @@ function drawTotals(shown) {
     if (group === "Waiting for you") t.asking++; else if (group === "Error") t.error++; else if (group === "Running") t.running++;
     else if (group === "Background") t.background++; else if (group === "Finished") t.finished++; else if (group === "Idle") t.idle++;
   }
-  const chip = (k, cls, what) => k ? el("span", { class: `count ${cls}`, title: `${k} ${what}` }, el("i", { "aria-hidden": "true" }), String(k)) : null;
   const told = shown.reduce((n, g) => n + appsNotified(g), 0);
-  const chips = [chip(t.asking, "asking", "waiting for you"), chip(t.error, "error", "stopped on an error"),
-    chip(told, "notified", told === 1 ? "app with a notification you haven't seen" : "apps with a notification you haven't seen"),
-    chip(t.running + t.background, "running", t.background ? `running (${t.background} in the background)` : "running"),
-    chip(t.finished, "finished", "finished, not yet seen"), chip(t.idle, "idle", "idle")].filter(Boolean);
+  const counts = [[t.asking, "asking", "waiting for you"], [t.error, "error", "stopped on an error"],
+    [told, "notified", told === 1 ? "app with a notification you haven't seen" : "apps with a notification you haven't seen"],
+    [t.running, "running", "running"], [t.background, "background", "running in the background"],
+    [t.finished, "finished", "finished, not yet seen"], [t.idle, "idle", "idle"]].filter(([k]) => k);
+  const said = counts.map(([k, , what]) => `${k} ${what}`);
+  const chip = ([k, cls]) => {
+    const i = el("i", { "aria-hidden": "true" });
+    if (cls === "running") i.style.setProperty("--spin-at", `-${Date.now() % 1200}ms`);   // in step with the list's
+    return el("span", { class: `count ${cls}` }, i, String(k));
+  };
+  const needs = counts.filter(([, cls]) => cls !== "idle");
+  const chips = (needs.length ? needs : counts).map(chip);
   const box = document.getElementById("top-totals");
   box.replaceChildren(...chips);
-  if (chips.length) box.setAttribute("aria-label", `Every group's actors: ${chips.map((c) => c.title).join(", ")}`);
-  else box.removeAttribute("aria-label");
+  if (said.length) { box.title = said.join(" · "); box.setAttribute("aria-label", `Every group's actors: ${said.join(", ")}`); }
+  else { box.removeAttribute("title"); box.removeAttribute("aria-label"); }
 }
 // The rail shows only what the reader checks at its foot (RAIL_FOOT), over every gatherer and drilled in alike, kept in
 // this browser, each unchecked at first: "folders" -- unchecked, only the folders with an actor not closed in them, at
@@ -433,7 +442,7 @@ function railBox(g, id, view) {
       if (!view[what]) { lines.push(...peek()); continue; }          // its line not shown: those open in a pane, in view
       lines.push(el("button", { class: "r-fold", type: "button", "aria-expanded": unfolded ? "true" : "false",
         title: `${unfolded ? "Hide" : "Show"} the ${what} ${kids.length ? "folders and actors" : "actors"}`, onclick: () => toggleFold(name, k) },
-        `${unfolded ? "▾" : "▸"} ${name === "Closed" ? closedSays(g, id, items.length) : `${items.length} ${what}`}`));
+        foldMark(unfolded), ` ${name === "Closed" ? closedSays(g, id, items.length) : `${items.length} ${what}`}`));
       if (unfolded) lines.push(...kids.flatMap((f) => railClosed(g, f)), ...items.flatMap((a) => railRowsOf(g, a)));
       else lines.push(...peek());
       continue;
@@ -670,8 +679,10 @@ function actorCard(g, a, shown = false) {
   const [cls, label] = statusOf(a), nm = railName(a), size = a.real_tokens ?? a.sent_tokens;
   const env = envelope(a.last_user_message), asked = env ? crewLine(env) : a.last_user_message;
   const bg = a.background || [], dir = cwdOf(a);
-  const hint = [SNAPSHOT ? "Click to show it" : `Click to show it · ${BESIDE_KEY}+click to open side by side`];
-  if (shown && !SNAPSHOT) hint.splice(0, 1, `${nameNote(g, a).trim() ? `${nameNote(g, a).trim()} · ` : ""}Double-click the name (or F2) to ${a.name && a.name.text ? "rename" : "name"} it`);
+  // one hint, the same wherever the card shows (the list, the rail, shown or not): every way to use the row
+  const hint = SNAPSHOT ? ["Click to show it"] : [`Click to show it · ${BESIDE_KEY}+click to open side by side`,
+    `double-click the name (or F2) to ${a.name && a.name.text ? "rename" : "name"} it`];
+  if (shown && !SNAPSHOT && nameNote(g, a).trim()) hint.unshift(nameNote(g, a).trim());
   return [
     el("div", { class: "c-who" }, plainFace(a),
       el("div", { class: "tx" }, el("div", { class: "c-nm" + (nm.cls ? ` ${nm.cls}` : ""), text: nm.text }),
@@ -685,6 +696,7 @@ function actorCard(g, a, shown = false) {
     a.recap && a.recap.text ? el("div", { class: "c-recap" }, el("span", { class: "lbl", text: "Recap" }), a.recap.text) : null,
     bg.length ? el("div", { class: "c-bg", text: `${bg.length} in background · ${bg.map((t) => t.label || t.id).join(", ")}` }) : null,
     branchChip(g, a),
+    tabLine(taskKey(g.name, a.channel)),
     el("div", { class: "c-hint", text: hint.join(" · ") }),
   ].filter(Boolean);
 }
@@ -728,6 +740,7 @@ function taskCard(g, t) {
         "aria-label": `Take ${o.app.label} out of the task`, onclick: (ev) => { ev.stopPropagation(); takeOut(g.name, appItem(o.id)); } },
       strokeIcon(ICONS.takeOut, 13))))),
     ...apps.map((o) => noticeList(g, o, apps.length > 1)),
+    tabLine(`${g.name}\u0000t${t.id}`),
     el("div", { class: "c-hint", text: "Drag an actor or app onto the task to add it · double-click its name in the list to rename it" }),
   ].filter(Boolean);
 }
@@ -743,6 +756,7 @@ function appCard(g, o) {
       cardAct("close", `Close ${o.app.label}`, closeIcon(), () => { cardHide(); closeApp(g.name, o); })),
     SNAPSHOT ? null : cardEditBox(g.name),
     noticeList(g, o) || el("div", { class: "c-st", text: "No notifications" }),
+    tabLine(taskKey(g.name, appItem(o.id))),
     el("div", { class: "c-hint", text: "Drag it onto an actor or task to add it there · double-click its name to rename it" }),
   ].filter(Boolean);
 }
@@ -1052,7 +1066,7 @@ function drawCard(g, a, d, many, current, open, read) {
   const [cls, label] = statusOf(a), live = cls === "running";
   const named = a.name && a.name.text, words = a.last_user_message;
   const pic = live ? el("div", { class: "c-pic acting", "aria-hidden": "true" }, atWork({ ...a, channel: `monitor ${a.channel}` }, { work: (d && d.work) || {} }))
-    : el("div", { class: "c-pic" }, actorLogo(a));
+    : el("div", { class: "c-pic" }, plainFace(a));   // no harness badge, as in the list
   const size = a.real_tokens ?? a.sent_tokens;
   const meta = el("div", { class: "c-meta" },
     el("span", { class: `status ${cls}` }, el("i", { "aria-hidden": "true", style: `--spin-at: -${Date.now() % 1200}ms` }), label),

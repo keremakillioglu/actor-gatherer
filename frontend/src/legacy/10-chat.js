@@ -5,13 +5,18 @@
 // (in the directory its calls named); while another process has it open -- a terminal -- the box is off
 // (`ctx.held`). An actor that cannot be messaged from here at all (a harness the dashboard does not run, or no directory; or
 // a snapshot) has its history and no box; so has every actor in a view to read it by (`readOnly`: the ones in Details).
+// Why an actor cannot be messaged from here, said the same in every view (the Chat's foot, the Terminal's cover): one
+// the dashboard cannot run at all (a harness it does not run, or no directory: hasChat false) -- which closing a process
+// would not change -- else one that can, but that another process has open (data.py's chattable false), else none.
+const readOnlyWhy = () => `Read only. Only ${runnableNames("and")} sessions with a known directory can be messaged here.`;
+const heldWhy = (info) => hasChat(info) && info.chattable === false
+  ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}. `
+    + "Close it there to message it here." : "";
 function chatCard(info) {
   const s = info.session || { cwd: info.cwd, permission_mode: "auto", queued: [], status: "stopped" };
   const view = chatMin() ? MINI_VIEW : chatView(), feed = chatFeed(view);
   const writable = hasChat(info) && !SNAPSHOT && !view.readOnly;
-  const held = info.chattable === false
-    ? `Open in another process${info.holder ? ` (PID ${info.holder.pid})` : info.pid ? ` (PID ${info.pid})` : ""}. `
-      + "Close it there to message it here." : "";
+  const held = heldWhy(info);
   const data = feed.data() || { items: [], pending: [], earlier: false };
   const ctx = { info, session: s, data, running: ["running", "building"].includes(turnStatus(info)[0]), queued: s.queued || [], held, writable,
     loadEarlier: async () => {                         // the view's "earlier" control: kept where the reader was
@@ -61,7 +66,8 @@ function chatCard(info) {
     const note = errorNote(info) || askingNote(info, !view.readOnly) || answeredNote(info); if (note) card.append(note); }
   if (view.background) { const note = backgroundNote(info); if (note) card.append(note); }
   if (!writable) {
-    if (!SNAPSHOT && !view.readOnly) card.append(el("div", { class: "readonly", text: `Read only. Only ${runnableNames("and")} sessions with a known directory can be messaged here.` }));
+    // one line, even in a narrow pane: the whole reason in its tooltip (and on the Terminal's cover, which has room)
+    if (!SNAPSHOT && !view.readOnly) card.append(el("div", { class: "readonly", title: readOnlyWhy(), text: "Read only. Can't be messaged from here." }));
     card.append(...safely(() => view.footer && view.footer(ctx)));
     return card;
   }

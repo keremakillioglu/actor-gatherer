@@ -155,7 +155,7 @@ if (!SNAPSHOT && window.Terminal && window.FitAddon) addChatView({
       if (open) termOpen(info);                        // the session's terminal, at the size it was just fitted to
     });
     const cover = running ? null : el("div", { class: "xterm-cover" },
-      el("div", { class: "desc", text: held || (!hasChat(info) ? "This session cannot be opened from the dashboard."
+      el("div", { class: "desc", text: held || (!hasChat(info) ? readOnlyWhy()
         : t.exited !== null ? "The session's process ended." : t.error ? "The terminal did not open." : "Opening the terminal…") }),
       held || !hasChat(info) || (!t.error && t.exited === null) ? null
         : el("button", { type: "button", class: "primary", onclick: () => termOpen(info) }, "Open again"),

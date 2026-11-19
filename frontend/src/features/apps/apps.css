@@ -15,27 +15,24 @@
   border: 0;
   background: var(--surface);
 }
-/* its × (host.ts): over its frame's top right corner, small -- its panel closed, the app left open. A panel's bars along
-   its top keep that corner clear (app_kit/js/app.js's --ag-corner: 34px, this 22px and 6px in). */
+/* its × (host.ts): over its frame's top right corner -- its panel closed, the app left open -- the same × as an actor
+   pane's (00-base.css's icon button, var(--ib)), 6px in; over the app's own page, so on a little of the panel's surface.
+   A panel's bars along its top keep that corner clear (app_kit/js/app.js's --ag-corner: 40px). */
 .app-pane > .app-x {
   position: absolute;
   top: 6px;
   right: 6px;
   z-index: 2;
-  width: 22px;
-  height: 22px;
+  width: var(--ib);
+  height: var(--ib);
   display: grid;
   place-items: center;
   padding: 0;
-  border: 1px solid var(--ring);
-  border-radius: 6px;
+  border: 0;
+  border-radius: 7px;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
-  color: var(--ink-2);
-  font: inherit;
-  font-size: 15px;
-  line-height: 1;
+  color: var(--muted);
   cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
 }
 .app-pane > .app-x:hover {
   background: var(--wash);

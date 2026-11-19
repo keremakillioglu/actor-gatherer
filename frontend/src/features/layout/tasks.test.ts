@@ -62,8 +62,8 @@ describe("a task's tabs", () => {
     });
     expect(e.querySelector(".lay-sname")!.textContent).toBe("Parser work");
     expect([...e.querySelectorAll(".lay-ttab")].map((c) => [c.textContent, c.getAttribute("aria-selected")])).toEqual([
-      ["Tab 1×", "true"],
-      ["Tab 2×", "false"],
+      ["Tab 1", "true"],
+      ["Tab 2", "false"],
     ]);
     expect(e.querySelector(".lay-tadd")).not.toBe(null);
   });

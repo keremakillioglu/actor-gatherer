@@ -22,6 +22,8 @@ test("a coordinator agent counted in the top bar waiting, failed, at work and fi
   const totals = page.locator("#top-totals");
   // a state's number, 0 with no chip (read without waiting: the chips are drawn again on every change)
   const count = async (cls: string) => Number((await totals.locator(`.count.${cls}`).allInnerTexts())[0] ?? 0);
+  // idle: named in the counts' tooltip, a chip only while nothing else is counted
+  const idleOf = async () => Number(((await totals.getAttribute("title")) ?? "").match(/(\d+) idle/)?.[1] ?? 0);
   const show = async (to: Record<string, unknown>) => {
     codex = to;
     homes.again();
@@ -33,10 +35,10 @@ test("a coordinator agent counted in the top bar waiting, failed, at work and fi
   await expect.poll(homes.sent).toBe(true);
   // idle, an actor as any other: counted; its group's coordinator agent: not
   await show({ status: "idle", last: 0 });
-  await expect.poll(() => count("idle")).toBeGreaterThan(0);
-  const idle = await count("idle");
+  await expect.poll(() => idleOf()).toBeGreaterThan(0);
+  const idle = await idleOf();
   await show({ status: "idle", last: 0, role: "coordinator", avatar: "roles/manager" });
-  await expect.poll(() => count("idle")).toBe(idle - 1);
+  await expect.poll(() => idleOf()).toBe(idle - 1);
   // what it does otherwise: counted, as any actor's
   for (const [status, cls, said] of [
     ["asking", "asking", "waiting for you"],
@@ -57,5 +59,6 @@ test("a coordinator agent counted in the top bar waiting, failed, at work and fi
   const finished = await count("finished");
   await show({ status: "idle", last: NOW + 60, role: "coordinator", avatar: "roles/manager" });
   await expect.poll(() => count("finished")).toBe(finished + 1);
-  await expect.poll(() => count("idle")).toBe(idle - 1);
+  await expect.poll(() => idleOf()).toBe(idle - 1);
+  await expect(totals.locator(".count.idle")).toHaveCount(0); // something else counted: no idle chip
 });

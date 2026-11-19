@@ -12,7 +12,7 @@
 .term .user .g { color: var(--term-dim); }
 .term .user .body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .term .head { overflow-wrap: anywhere; }
-.term .head b { font-weight: 700; }
+.term .head b { font-weight: 600; }
 .term .head .arg { color: var(--term-ink); }
 .term .head .note { color: var(--term-dim); margin-left: 10px; }
 .term .res { grid-column: 2; display: grid; grid-template-columns: 22px minmax(0, 1fr); color: var(--term-dim); }
@@ -31,11 +31,11 @@
 .term .diff div { white-space: pre-wrap; overflow-wrap: anywhere; padding: 0 6px; }
 .term .diff .add { background: var(--term-add); color: var(--term-add-ink); } .term .diff .del { background: var(--term-del); color: var(--term-del-ink); }
 .term .diff .ctx { color: var(--term-dim); } .term .diff .hunk { color: var(--term-faint); }
-.term .todo { white-space: pre-wrap; } .term .todo .done { color: var(--term-dim); text-decoration: line-through; } .term .todo .doing { color: var(--term-ink); font-weight: 700; }
+.term .todo { white-space: pre-wrap; } .term .todo .done { color: var(--term-dim); text-decoration: line-through; } .term .todo .doing { color: var(--term-ink); font-weight: 600; }
 .term .md { overflow-wrap: anywhere; }
 .term .md > :first-child { margin-top: 0; } .term .md > :last-child { margin-bottom: 0; }
 .term .md p, .term .md ul, .term .md ol, .term .md pre, .term .md table, .term .md blockquote { margin: 0 0 8px; }
-.term .md h1, .term .md h2, .term .md h3, .term .md h4 { font-size: 13px; font-weight: 700; margin: 10px 0 4px; }
+.term .md h1, .term .md h2, .term .md h3, .term .md h4 { font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
 .term .md h1, .term .md h2 { text-decoration: underline; text-underline-offset: 3px; }
 .term .md ul, .term .md ol { padding-left: 22px; }
 .term .md code { color: #c9b6ff; font: inherit; }
@@ -45,7 +45,7 @@
 .term .md blockquote { border-left: 2px solid var(--term-rule); padding-left: 10px; color: var(--term-dim); }
 .term .md table { border-collapse: collapse; width: auto; font-size: 12.5px; display: block; overflow-x: auto; }
 .term .md th, .term .md td { border: 1px solid var(--term-rule); padding: 2px 8px; color: var(--term-ink); text-align: left; }
-.term .md th { color: var(--term-ink); font-weight: 700; }
+.term .md th { color: var(--term-ink); font-weight: 600; }
 .term .md hr { border: 0; border-top: 1px solid var(--term-rule); }
 .term .earlier { display: block; margin: 0 auto 14px; color: var(--term-dim); background: var(--term-user); border-color: var(--term-rule); }
 .term .status-line { color: var(--term-accent); margin-top: 6px; }
@@ -60,4 +60,4 @@
 .term .call-line .calls { border-left: 1px solid var(--term-rule); padding-left: 10px; margin-bottom: 8px; }
 .term .more > details[open] > summary { margin-bottom: 4px; }
 .term .empty-term { color: var(--term-faint); }
-@media (max-width: 760px) { .term { padding: 10px 12px 14px; font-size: 12px; } }
+@media (max-width: 760px) { .term { padding: 10px 12px 14px; font-size: var(--fs-meta); } }

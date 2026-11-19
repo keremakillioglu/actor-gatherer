@@ -59,7 +59,7 @@ const miniBack = () => el("button", { type: "button", class: "mini-back", title:
 // its pane's × (its head, hidden while minimized, has it: 21-start.js), at its far right
 const miniClose = () => {
   const x = document.getElementById("pane-close");
-  return el("button", { type: "button", class: "mini-x", title: x.title, "aria-label": x.title, onclick: () => x.click() }, "×");
+  return el("button", { type: "button", class: "mini-x", title: x.title, "aria-label": x.title, onclick: () => x.click() }, strokeIcon(ICONS.x, 16));
 };
 // right of the box, the conversation's last two lines (18-mini-history.js), hovered: the whole of it -- pressed, the chat
 // shown again -- the line between them dragged (miniGrip); none shown (no turn yet, or a pane too narrow for them:
