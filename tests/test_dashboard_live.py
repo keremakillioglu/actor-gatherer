@@ -325,6 +325,19 @@ class StreamTest(HomeBase):
         go.set()
         self.assertEqual(s.next(2)[0], "home")
 
+    def test_a_pane_s_actor_comes_while_the_home_is_still_being_read(self):
+        """A pane opened beside the actor shown (a task's other actors): its Chat waits for no read of the whole home."""
+        httpd = self.start()
+        go, real = threading.Event(), httpd.home_view
+        httpd.home_view = lambda *a: go.wait(5) and real(*a)            # a slow read of the home
+        self.addCleanup(go.set)
+        also = urllib.parse.quote(json.dumps([["g", "c2"]]))
+        s = self.open(httpd, f"?gatherer=g&channel=c1&also={also}")
+        self.assertEqual([s.next(2)[0] for _ in range(3)], ["chat", "agent", "actor"])   # while the home is still read
+        self.assertFalse(go.is_set())
+        go.set()
+        self.assertEqual(s.next(2)[0], "home")
+
     def test_chat_s_view_at_once_then_as_a_message_is_stored(self):
         httpd = self.start()
         s = self.open(httpd, "?gatherer=g&channel=c1")

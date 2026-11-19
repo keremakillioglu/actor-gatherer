@@ -78,8 +78,9 @@ def stream(srv: Parts, gatherer: Optional[str] = None, channel: Optional[str] = 
 
     def next_events() -> tuple:
         """What to send next, once woken (or KEEPALIVE passed): (woken, [(event, what it is kept as, how it is read)]) --
-        the actor's Chat first, then its agent, the home and the other actors: each sent as soon as it is read, so the
-        Chat of an actor just picked waits for no other read (the home's, a pane's)."""
+        the actor's Chat first, then its agent, the other actors and the home last: each sent as soon as it is read, so
+        the Chat of an actor just picked, or of a pane just opened beside it, waits for no read of the whole home (every
+        actor of every group: the longest read here)."""
         woken = watch.wake.wait(server.KEEPALIVE)
         if gone.is_set():                        # the page went: nothing more to read for it
             return woken, []
@@ -91,12 +92,12 @@ def stream(srv: Parts, gatherer: Optional[str] = None, channel: Optional[str] = 
             out.append(("chat", "chat", lambda: chat_of(gatherer, channel)))
         if agent and gatherer and channel is not None:
             out.append(("agent", "agent", lambda: agent_of(gatherer, channel)))
-        if home or not woken:                    # unwoken: the time alone may have changed it
-            out.append(("home", "home", lambda: home_of(woken)))
         for i in sorted(changed):
             g, c = others[i]
             out.append(("actor", ("actor", g, c), lambda g=g, c=c: {"gatherer": g, "channel": c,
                                                                      "agent": agent_of(g, c), "chat": chat_of(g, c)}))
+        if home or not woken:                    # unwoken: the time alone may have changed it
+            out.append(("home", "home", lambda: home_of(woken)))
         return woken, out
 
     def changed(name: str, kept, value) -> Optional[bytes]:

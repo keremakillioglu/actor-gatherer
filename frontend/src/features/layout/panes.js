@@ -2308,6 +2308,7 @@ export function start() {
   // What a frame's page asks of this one (its PANE).
   if (!PANE && !SNAPSHOT) window.agPanes = Object.freeze({
     get stream() { return state.stream; },
+    get home() { return panes.home; },                 // the home as last sent (JSON): a pane's to start from (loadHome)
     ready(win, sel) {                                  // its page is up: given what the stream has said so far
       const p = paneOf(win);
       if (!p) return;
