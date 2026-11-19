@@ -15,6 +15,7 @@ import { NOTICE_OPS, toNotices } from "./notices";
 import { SPELLING_OPS, spellingOn, toSpelling } from "./spelling";
 import type { LinkForm } from "./links";
 import { THEME_VARS } from "./theme-vars";
+import type { AgInfo, AgTheme } from "../../../../app_kit/js/app";
 
 type Capability =
   "message_agents" | "transcript" | "edit_guard" | "native_view" | "docs" | "actors" | "notify" | "message_actors";
@@ -177,11 +178,11 @@ export function handlers(kind: string, mediaType?: string): AppInfo[] {
   ];
 }
 
-export function theme(): { mode: string; vars: Record<string, string> } {
+export function theme(): AgTheme {
   const root = document.documentElement;
   const css = getComputedStyle(root);
   const picked = root.dataset.theme;
-  const mode =
+  const mode: AgTheme["mode"] =
     picked === "dark" || picked === "light"
       ? picked
       : matchMedia("(prefers-color-scheme: dark)").matches
@@ -321,8 +322,16 @@ export class AppPane {
       case "hello": {
         this.ready = true;
         this.openBase();
+        const info: AgInfo = {
+          app: w.app,
+          gatherer: w.gatherer,
+          instance: w.instance,
+          label: this.app.label,
+          title: this.instance.title,
+          folder: this.instance.folder,
+        };
         return {
-          info: { ...w, label: this.app.label, title: this.instance.title, folder: this.instance.folder },
+          info, // (the SDK's AgInfo: app_kit/js/app.d.ts)
           attached: this.attached,
           native: !!desktop() && !!this.app.capabilities?.native_view,
           spelling: spellingOn(),
