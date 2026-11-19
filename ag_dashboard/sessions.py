@@ -1304,12 +1304,7 @@ class Sessions:
                 from . import tool_gateway           # here: the gateway uses this module
                 tools = ([tool_gateway.endpoint(tool_gateway.actor_of(row))]
                          if prompt and tool_gateway.served(row) else [])
-                t = self._start_terminal(row, cols, rows, fullscreen, None if tools else prompt)
-                t.prompt = prompt
-                if prompt:
-                    t.typed = time.time()
-                    if not tools:
-                        t.prompted = t.typed
+                t = self._start_terminal(row, cols, rows, fullscreen, prompt, typed_later=bool(tools))
                 if tools:                            # typed in once its tools are there, not on its command line
                     threading.Thread(target=self._first_message, args=(session_id, t, prompt, tools), daemon=True).start()
             else:                                    # open already (opened meanwhile): the prompt typed into it
@@ -1357,13 +1352,17 @@ class Sessions:
                  f"its tools listed {time.time() - t.since:.2f}s after its start: the message sent")
 
     def _start_terminal(self, s: dict, cols: int, rows: int, fullscreen: bool = False,
-                        prompt: Optional[str] = None) -> _Term:
+                        prompt: Optional[str] = None, typed_later: bool = False) -> _Term:
+        """The session `s`'s terminal started, `cols` x `rows`, with `prompt` its first message: on its command line, or,
+        with `typed_later`, typed into it later (`terminal`'s `_first_message`, once its tools are listed). Registered in
+        `terms` with what it was started with already on it: a reader not holding the lock (`type`'s `_unsent`) never
+        sees it without."""
         sid = s["session_id"]
         resume = resumes(s)
         h = harness_kit.get(s["harness"])               # its own options: the harness's (harness_kit's `command`)
         if h is None:
             raise SessionError(f"unknown harness {s['harness']!r}")
-        first = h.first_prompt(prompt) if prompt else []     # its first message, never read as an option
+        first = h.first_prompt(prompt) if prompt and not typed_later else []   # its first message, never read as an option
         told = instructions(s)
         screen = h.screen_env(fullscreen)            # its screen as asked, whatever the dashboard's own environment says
         env = {**{k: v for k, v in actor_env(s, agent_env()).items() if k not in OUTER_TERMINAL and k not in screen},
@@ -1399,6 +1398,11 @@ class Sessions:
                 os._exit(127)
         t = _Term(pid, fd, log, fullscreen, cols, rows)
         t.harness, t.gatherer = s["harness"], s["gatherer"]
+        t.prompt = prompt
+        if prompt:
+            t.typed = time.time()
+            if not typed_later:
+                t.prompted = t.typed
         self.terms[sid] = t
         if resume and not s["turns"]:
             self._set(sid, turns=1)
