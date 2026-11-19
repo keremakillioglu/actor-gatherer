@@ -14,10 +14,26 @@ import { canMinimize, chatMin, topShown } from "../layout/top.js";
 
 // ------------------------------------------------------------------ data
 let hidingMoved = false;
+// The home. In a pane, the one the page around it has (its stream's last, or its own first read: panes.home, as sent) --
+// a read of every actor of every group, the longest the dashboard makes, not made again for each pane opened (a task's
+// actors, beside its first, each waited seconds for theirs) -- unless it does not list this pane's actor yet (one just
+// started): then read, as the page reads its own.
 async function loadHome() {
-  takeHome(SNAPSHOT ? SNAPSHOT.home : await get("/api/home"));
+  let home = SNAPSHOT ? SNAPSHOT.home : PANE && PANE.home ? JSON.parse(PANE.home) : null;
+  if (home && PANE && !lists(home, state.selected)) home = null;
+  if (!home) {
+    const r = await fetch("/api/home", { cache: "no-store" });
+    if (!r.ok) throw new Error(`/api/home: ${r.status}`);
+    const text = await r.text();
+    if (!PANE) panes.home = text;                    // the panes' to start from, until the stream sends one
+    home = JSON.parse(text);
+  }
+  takeHome(home);
   if (!hidingMoved && !PANE) { hidingMoved = true; await moveHidingToServer(); }
 }
+// whether `home` lists the actor `sel` ([gatherer, channel]): a shell, its terminal, is not an actor
+const lists = (home, sel) => !sel || isShell(sel[1]) || home.gatherers.some((g) => g.name === sel[0]
+  && g.agents.some((a) => a.channel === sel[1] || a.started_as === sel[1] || (a.session && a.session.started_as === sel[1])));
 async function loadAgent() {
   if (!state.selected || isShell(state.selected[1])) return;
   const [g, c] = state.selected;
