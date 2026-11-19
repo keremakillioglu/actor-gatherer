@@ -1,0 +1,172 @@
+import { describe, expect, it } from "vitest";
+import {
+  close,
+  closed,
+  closeShown,
+  empty,
+  forgetActor,
+  holds,
+  merge,
+  migrate,
+  move,
+  open,
+  openPage,
+  put,
+  rekey,
+  remember,
+  route,
+  setDraft,
+  show,
+  shown,
+  shownTab,
+  take,
+  where,
+  type Layout,
+} from "./model";
+
+// tabs a (shown) and b, as the e2e home's screen tabs would be
+const two = (): Layout => ({
+  tabs: [
+    { id: "a", name: "", tasks: ["g\u0000c1"], screen: null, focus: "g\u0000c1" },
+    { id: "b", name: "", tasks: ["g\u0000c2", "g\u0000t1"], screen: null, focus: "g\u0000c2" },
+  ],
+  current: "a",
+  tasks: {},
+});
+
+describe("the layout model's tabs", () => {
+  it("routes a click: in the tab shown, here; in another, that tab shown with it in focus; nowhere, a new tab", () => {
+    expect(route(two(), "g\u0000c1").go).toBe("here");
+    const r = route(two(), "g\u0000t1");
+    expect([r.go, r.layout.current, shownTab(r.layout).focus]).toEqual(["tab", "b", "g\u0000t1"]);
+    const f = route(two(), "g\u0000c9", { id: "n" });
+    expect([f.go, f.layout.current, f.layout.tabs.map((t) => t.id)]).toEqual(["fresh", "n", ["a", "n", "b"]]);
+  });
+
+  it("puts a click in the tab shown when it shows nothing, or only what the page opened on by itself", () => {
+    const l = empty("e");
+    expect(route(l, "g\u0000c9").go).toBe("in");
+    expect(route(two(), "g\u0000c9", { idle: true }).go).toBe("in");
+    expect(route(setDraft(l, "hi"), "g\u0000c9", { id: "n" }).go).toBe("fresh"); // what was typed is kept
+    expect(route(setDraft(l, "hi"), "g\u0000c9", { fill: true }).go).toBe("in"); // ... unless it is opening it
+  });
+
+  it("drops a tab left holding nothing, and keeps one with a name, a draft or a page", () => {
+    const l = {
+      ...empty("e"),
+      tabs: [...empty("e").tabs, { id: "b", name: "", tasks: ["g\u0000c2"], screen: null, focus: null }],
+    };
+    expect(show(l, "b").tabs.map((t) => t.id)).toEqual(["b"]);
+    expect(holds({ id: "x", name: "Mine", tasks: [], screen: null, focus: null })).toBe(true);
+  });
+
+  it("opens a task in place of the others, or beside them, in focus", () => {
+    expect(shown(open(two(), "g\u0000c5"))).toEqual(["g\u0000c5"]);
+    const beside = open(two(), "g\u0000c5", true);
+    expect([shown(beside), shownTab(beside).focus]).toEqual([["g\u0000c1", "g\u0000c5"], "g\u0000c5"]);
+  });
+
+  it("⌥+click takes a task from another tab to be the tab shown's alone, that tab gone if left empty", () => {
+    const l = take({ ...two(), tabs: [two().tabs[0], { ...two().tabs[1], tasks: ["g\u0000c2"] }] }, "g\u0000c2");
+    expect([l.tabs.map((t) => t.id), shown(l)]).toEqual([["a"], ["g\u0000c2"]]);
+  });
+
+  it("closes a tab: the shown one, the next shown; the only one is emptied, a new tab again", () => {
+    expect(close(two(), "a").current).toBe("b");
+    expect(close({ ...two(), current: "b" }, "b").current).toBe("a");
+    const only = closeShown({ ...two(), tabs: [{ ...two().tabs[0], name: "Mine", draft: "x" }] });
+    expect(only.tabs).toEqual([{ id: "a", name: "", tasks: [], screen: null, focus: null }]);
+    expect(closeShown(empty("e"))).toEqual(empty("e"));
+  });
+
+  it("a task closed in the list leaves its tab, the tab closed if it held nothing else", () => {
+    expect(closed(two(), "g\u0000c1").tabs.map((t) => t.id)).toEqual(["b"]);
+    const l = closed(two(), "g\u0000c2");
+    expect([l.tabs[1].tasks, l.tabs[1].focus]).toEqual([["g\u0000t1"], "g\u0000t1"]);
+  });
+
+  it("puts a task in another tab, or in a new one after the shown one, or at the end", () => {
+    expect(put(two(), "g\u0000c1", "b").tabs[1].tasks).toEqual(["g\u0000c2", "g\u0000t1", "g\u0000c1"]);
+    expect(put(two(), "g\u0000c9", null, false, "n").tabs.map((t) => t.id)).toEqual(["a", "n", "b"]);
+    expect(put(two(), "g\u0000c9", null, true, "n").tabs.map((t) => t.id)).toEqual(["a", "b", "n"]);
+  });
+
+  it("merges a tab dropped on the work area into the shown one, moves tabs, and finds where a task is", () => {
+    const m = merge(two(), "b");
+    expect([m.tasks, shown(m.layout), m.layout.tabs.length]).toEqual([
+      ["g\u0000c2", "g\u0000t1"],
+      ["g\u0000c1", "g\u0000c2", "g\u0000t1"],
+      1,
+    ]);
+    expect(move(two(), "a", 5).tabs.map((t) => t.id)).toEqual(["b", "a"]);
+    expect([where(two(), "g\u0000t1"), where(two(), "g\u0000c9")]).toEqual([{ n: 2, here: false }, null]);
+  });
+
+  it("opens a page in the tab already showing it, an empty tab, or a new one; keeps or drops a draft", () => {
+    const p = openPage(two(), "apps", "n");
+    expect([p.current, shownTab(p).page]).toEqual(["n", "apps"]);
+    expect(openPage({ ...p, current: "a" }, "apps").current).toBe("n");
+    expect(shownTab(openPage(empty("e"), "apps")).page).toBe("apps");
+    expect("draft" in shownTab(setDraft(setDraft(empty("e"), "x"), ""))).toBe(false);
+  });
+
+  it("follows a task's new key everywhere, and keeps what each task was left with, the newest only", () => {
+    let l = remember(
+      two(),
+      "g\u0000c2",
+      { actors: ["c2"], apps: [], focus: "c2", focusApp: null, views: {}, shut: null },
+      1,
+    );
+    l = rekey(l, "g\u0000c2", "g\u0000t1");
+    expect([l.tabs[1].tasks, l.tabs[1].focus, Object.keys(l.tasks)]).toEqual([
+      ["g\u0000t1"],
+      "g\u0000t1",
+      ["g\u0000t1"],
+    ]);
+    l = forgetActor(l, "g\u0000t1", "c2");
+    expect([l.tasks["g\u0000t1"].actors, l.tasks["g\u0000t1"].focus]).toEqual([[], null]);
+    for (let i = 0; i < 205; i++)
+      l = remember(
+        l,
+        `g\u0000x${i}`,
+        { actors: [], apps: [], focus: null, focusApp: null, views: {}, shut: null },
+        10 + i,
+      );
+    expect([Object.keys(l.tasks).length, "g\u0000x0" in l.tasks, "g\u0000x204" in l.tasks]).toEqual([200, false, true]);
+  });
+});
+
+describe("the migration from the six keys", () => {
+  it("reads the tabs, the shown tab's arrangement, and what each task was left with and its trees", () => {
+    const leaf = { id: "c1" };
+    const kept: Record<string, string> = {
+      "ag-dashboard-screen-tabs": JSON.stringify({ tabs: two().tabs, current: "b" }),
+      "ag-dashboard-screen": JSON.stringify(leaf),
+      "ag-dashboard-task-layouts-2": JSON.stringify({
+        "g\u0000c1": { actors: ["c1"], focus: "c1", views: { c1: "files" }, at: 5 },
+      }),
+      "ag-dashboard-task-trees": JSON.stringify({
+        "g\u0000c1": { tree: leaf, at: 7 },
+        "g\u0000t1": { tree: leaf, at: 3 },
+      }),
+    };
+    const l = migrate((k) => kept[k] ?? null);
+    expect([l.current, l.tabs.length, shownTab(l).screen]).toEqual(["b", 2, leaf]);
+    expect(l.tasks["g\u0000c1"]).toEqual({
+      actors: ["c1"],
+      apps: [],
+      focus: "c1",
+      focusApp: null,
+      views: { c1: "files" },
+      shut: null,
+      tree: leaf,
+      at: 7,
+    });
+    expect(l.tasks["g\u0000t1"].tree).toEqual(leaf);
+  });
+
+  it("starts as a fresh home with nothing kept, or what was kept unreadable", () => {
+    expect(migrate(() => null).tabs.length).toBe(1);
+    expect(migrate(() => "{not json").tabs[0].tasks).toEqual([]);
+  });
+});
