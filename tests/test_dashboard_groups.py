@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ag.ag_harness.store import paths  # noqa: E402
 import app_kit  # noqa: E402
-from ag_dashboard import actions, app_agents, app_host, coordinators, data, folders, gatherer_folders, group_admin, groups, merges, naming, saved, sessions, tasks, titles, tool_gateway  # noqa: E402
+from ag_dashboard import actions, app_agents, app_host, branches, coordinators, data, folders, gatherer_folders, group_admin, groups, merges, naming, saved, sessions, tasks, titles, tool_gateway  # noqa: E402
 from replies import insert  # noqa: E402
 from test_dashboard_app_host import NOTES, insert_here, write_app  # noqa: E402
 import test_home_db  # noqa: E402
@@ -73,6 +73,12 @@ class GroupsTest(unittest.TestCase):
 
     def test_an_actor_moved_is_in_its_new_group_with_its_rows(self):
         saved.choose("a", "c1", True)
+        conn = sqlite3.connect(sessions.db_path())             # c1's own branch (branches.py), and c3's
+        conn.executescript(branches.SCHEMA)
+        conn.executemany("INSERT INTO branches (session_id, gatherer, project, worktree, branch, start, created) "
+                         "VALUES (?, 'a', '/p', ?, ?, 'main', 0)", [("c1", "/w1", "ag/c1"), ("c3", "/w3", "ag/c3")])
+        conn.commit()
+        conn.close()
         into = folders.make("b", "Inbox")
         groups.move("a", "b", ["c1"], into=into)
         self.assertEqual((self.members("a"), self.members("b")), (["c3"], ["c1", "c2"]))
@@ -81,6 +87,9 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual({k: event["payload"][k] for k in ("group", "was", "folder")}, {"group": "b", "was": "a", "folder": into})
         self.assertIn("c1", event["id"])                          # a read returns an id once, whatever its channel
         self.assertEqual(self.rows("saved"), [("b", "c1")])
+        conn = sqlite3.connect(sessions.db_path())
+        self.assertEqual(sorted(conn.execute("SELECT gatherer, session_id FROM branches")), [("a", "c3"), ("b", "c1")])
+        conn.close()
         self.assertEqual(folders.of("b")["filed"], {"c1": into})
         self.assertEqual(folders.of("a")["filed"], {})
 

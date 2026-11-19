@@ -21,7 +21,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app_kit.finding  # noqa: E402
-from ag_dashboard import avatars, data, folders, hiding, saved, seen, server, sessions, titles  # noqa: E402
+from ag_dashboard import avatars, data, folders, hiding, saved, seen, server, sessions, tasks, titles  # noqa: E402
 import harness_kit  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
@@ -1177,6 +1177,7 @@ class DiscardTest(SessionsBase):
         for c in (sid, other):
             saved.choose("g", c, True)
             seen.look([["g", c, 1.0]])
+        tasks.add("g", other, [sid, "app:notes"])                       # one task of three
         conn = sqlite3.connect(sessions.db_path())
         conn.execute(avatars.SCHEMA)
         conn.executemany("INSERT INTO avatars VALUES ('g', ?, 'animals/fox', 'now', NULL)", [(sid,), (other,)])
@@ -1184,9 +1185,19 @@ class DiscardTest(SessionsBase):
         conn.close()
         self.s.discard(sid)
         self.assertEqual([x["session_id"] for x in self.s.list()], [other])
-        self.assertEqual(self.actor_rows(), {t: [("g", other)] for t in sessions.ACTOR_TABLES})
+        rows = self.actor_rows()
+        self.assertEqual(rows.pop("tasked"), sorted([("g", other), ("g", "app:notes")]))   # the task, two left
+        self.assertEqual(rows, {t: [("g", other)] for t in sessions.ACTOR_TABLES if t != "tasked"})
         with self.assertRaises(sessions.SessionError):                      # gone
             self.s.discard(sid)
+
+    def test_forgotten_out_of_a_task_of_two_the_task_goes(self):
+        # a task is two items or more: its other one is on its own again, as when taken out
+        sid = self.s.create("g", self.work)["session_id"]
+        other = self.s.create("g", self.work)["session_id"]
+        tasks.add("g", other, [sid])
+        self.s.discard(sid)
+        self.assertEqual(tasks.of("g"), {"tasks": [], "tasked": {}})
 
     def test_no_table_of_the_others_yet_is_nothing_to_forget(self):
         sid = self.s.create("g", self.work)["session_id"]

@@ -178,8 +178,9 @@ ADDED = (("kept", "REAL NOT NULL DEFAULT 0"), ("model", "TEXT"), ("started_as", 
          ("ended", "REAL NOT NULL DEFAULT 0"), ("role", "TEXT"), ("over", "TEXT"),
          ("harness_id", "TEXT"))   # columns a table from before lacks
 # The dashboard's other tables in dashboard.db with a row per actor, by (gatherer, channel): saved.py's, seen.py's,
-# avatars.py's -- what a session discarded (`discard`) takes with it.
-ACTOR_TABLES = ("saved", "seen", "avatars")
+# avatars.py's, tasks.py's -- what a session discarded (`discard`) takes with it, and what moves with an actor that moves
+# group (groups.py's).
+ACTOR_TABLES = ("saved", "seen", "avatars", "tasked")
 
 
 class SessionError(ValueError):
@@ -1071,6 +1072,11 @@ class Sessions:
                         conn.execute(f"DELETE FROM {table} WHERE gatherer = ? AND channel = ?", (s["gatherer"], session_id))
                     except sqlite3.OperationalError:     # no such table yet: nothing of it there
                         pass
+                from . import tasks                      # here: tasks.py imports this module
+                try:
+                    tasks.tidy(conn, s["gatherer"])      # a task it was one of two in: gone, as any task under two
+                except sqlite3.OperationalError:         # no tasks yet
+                    pass
                 conn.execute("COMMIT")
             finally:
                 conn.close()                             # not committed: rolled back
