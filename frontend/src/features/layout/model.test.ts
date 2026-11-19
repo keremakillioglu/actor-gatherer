@@ -180,7 +180,7 @@ describe("the migration from the six keys", () => {
     expect(migrate((k) => old[k] ?? null).tasks["g\u0000t1"].left!.sizes).toEqual({ a: 0.5 });
     const now = { ...two(), current: "b" };
     const both: Record<string, string> = { ...old, "ag-dashboard-layout": JSON.stringify(now) };
-    expect(load((k) => both[k] ?? null)).toEqual({ ...now, focus: null, lastActor: null }); // (focus: the page's alone)
+    expect(load((k) => both[k] ?? null)).toEqual({ ...now, focus: null, lastActor: null, away: null, appsOnly: null }); // (focus: the page's alone)
     expect(load((k) => (k === "ag-dashboard-layout" ? "{broken" : (old[k] ?? null))).tasks["g\u0000t1"]).toBeTruthy();
   });
 

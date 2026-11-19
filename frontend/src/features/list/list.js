@@ -17,7 +17,7 @@ import {
   renderFolded, slideList,
 } from "./modes.js";
 import {
-  CREW_GROUP, actorPanes, appClosed, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsOnly, branchChip,
+  CREW_GROUP, actorPanes, appClosed, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsOnlyKey, branchChip,
   closeAppPane, closePane, closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, isAt,
   isAway, moveEnd, newForm, openActors, openPop, openTaskBeside, paneNote, pick, pickBeside, showAppPanel,
   placeIfShown, popMenu, rekeyTask, rememberTask, rowMore, rowPop, selectAppPane, selectedTask, show, shownPanels,
@@ -619,8 +619,8 @@ function agentRow(g, a, group) {
   const [cls, label] = statusOf(a);
   const pk = picked(g, a);
   const away = isAway() && isAt(state.selected, g.name, a.channel);   // this page's own pane's, out of sight (an empty tab)
-  const current = !away && !appSelected() && !appsOnly && isAt(focusedActor(), g.name, a.channel);   // an app selected: it is, not the actor
-  const open = !current && !away && !appsOnly && openActors().some((sel) => isAt(sel, g.name, a.channel));   // (out of sight: not)
+  const current = !away && !appSelected() && !appsOnlyKey() && isAt(focusedActor(), g.name, a.channel);   // an app selected: it is, not the actor
+  const open = !current && !away && !appsOnlyKey() && openActors().some((sel) => isAt(sel, g.name, a.channel));   // (out of sight: not)
   const naming = !!state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, a.channel);
   const named = a.name && a.name.text;
   // its name -- else what it was last asked -- double-clicked once it is the one shown (or F2): named there. Not a single
@@ -988,7 +988,7 @@ async function openTask(gname, id, focus = null, ev = null) {
   const k = `${gname}\u0000t${id}`, sel = focusedActor(), was = taskLayout(k);
   const wait = !(ev && ev.inTabs);                   // a tab being shown (features/layout/panes.js's enterTasks): its actor's Chat not waited on
   const ok = (c) => !!c && taskActors(g, id).some((a) => a.channel === c);
-  const mine = !appsOnly && !!sel && taskKey(sel[0], sel[1]) === k;   // its actor in the pane in focus
+  const mine = !appsOnlyKey() && !!sel && taskKey(sel[0], sel[1]) === k;   // its actor in the pane in focus
   const blank = mine && isAway() && !shownPanels().some((s) => s.key === k);   // ... out of sight, nothing else of it shown
   if (blank) tasksLaidOut.delete(k);                       // laid out again, as it was left (enterTask)
   const laid = mine && !blank && tasksLaidOut.has(k);      // shown already, laid out: as it is

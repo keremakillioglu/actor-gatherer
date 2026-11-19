@@ -85,10 +85,11 @@ function taskKey(g, c) {
 }
 // the task an app's panel is of: its instance's
 const appPaneTask = (p) => taskKey(p.g, appItem(p.instance.id));
-// A TASK OF APPS ONLY shown (its key): the actors' panes out of sight, its apps' panels taking the room; null: none is
-let appsOnly = null;
+// A TASK OF APPS ONLY shown (its key): the actors' panes out of sight, its apps' panels taking the room; null: none is --
+// the layout model's (model.ts's appsOnly)
+const appsOnlyKey = () => shadow.layout.appsOnly || null;
 function setAppsOnly(k) {
-  appsOnly = k;
+  shadow.update(model.setAppsOnly, k || null);
   const work = document.querySelector(".work");
   if (work) work.classList.toggle("apps-only", !!k);
   placeWork();
@@ -97,7 +98,7 @@ let taskNow = null;                                  // the task last entered: w
 // The task entered, and the one whose apps alone show, under the key a change of the tasks gave it (`was` -> `now`).
 function rekeyTask(was, now) {
   if (taskNow === was) taskNow = now;
-  if (appsOnly === was) appsOnly = now;
+  if (appsOnlyKey() === was) shadow.update(model.setAppsOnly, now);
 }
 // Each task's LAYOUT, as it was left (the layout model's record of it, `left`: model.ts): its actors' panes, in order, the one in focus,
 // the view each shows, and its apps' panels -- with the chat minimized under them or not -- so a task is opened again as
@@ -116,9 +117,9 @@ function rememberTask(key) {
   for (const p of actorPanes()) if (its(p.g, p.c) && p.view) views[p.c] = p.view;
   const apps = panes.apps.filter((p) => !p.held && p.g === g && appPaneTask(p) === key).map((p) => ({ app: p.app.name, id: p.instance.id }));
   const chosen = appSelected(), focusApp = chosen && apps.some((a) => a.id === chosen) ? chosen : null;   // an app selected in it
-  const mine = !appsOnly && sel && sel[1] !== shut && taskKey(sel[0], sel[1]) === key;
-  const left = { actors: appsOnly ? [] : actors, focus: mine ? sel[1] : appsOnly ? null : actors[0] || null, focusApp, apps,
-    views: appsOnly ? {} : views, shut: appsOnly ? null : shut };
+  const mine = !appsOnlyKey() && sel && sel[1] !== shut && taskKey(sel[0], sel[1]) === key;
+  const left = { actors: appsOnlyKey() ? [] : actors, focus: mine ? sel[1] : appsOnlyKey() ? null : actors[0] || null, focusApp, apps,
+    views: appsOnlyKey() ? {} : views, shut: appsOnlyKey() ? null : shut };
   shadow.update(model.remember, key, left, Date.now());   // (the layout model's record of it: model.ts)
   shadow.persist();
 }
@@ -140,7 +141,7 @@ function forgetActor(key, c) {
 function enterTask(g, c) {
   if (PANE || SNAPSHOT) return null;
   const to = taskKey(g, c), sel = focusedActor();
-  const from = appsOnly || (sel && taskKey(sel[0], sel[1])) || (state.selected && taskKey(...state.selected));
+  const from = appsOnlyKey() || (sel && taskKey(sel[0], sel[1])) || (state.selected && taskKey(...state.selected));
   if (to) taskNow = to;
   if (to && from !== to) shadow.tell("enter", model.open, to);   // the layout model beside the page (shadow.ts)
   if (!to || !sel) return null;
@@ -168,7 +169,7 @@ let taskAppsOpening = Promise.resolve();            // the apps' panels the task
 // its own opened above -- as it was left, else all of them (openTaskApps)
 function enterAppTask(g, k) {
   if (PANE || SNAPSHOT) return;
-  const sel = focusedActor(), from = appsOnly || (sel && taskKey(sel[0], sel[1]));
+  const sel = focusedActor(), from = appsOnlyKey() || (sel && taskKey(sel[0], sel[1]));
   if (from === k) return;
   shadow.tell("apps", model.open, k);                 // (the layout model beside the page: shadow.ts)
   if (from && tasksLaidOut.has(from) && (!isAway() || isShut())) rememberTask(from);
@@ -220,8 +221,8 @@ async function openTaskBeside(g, key, first) {
 // An actor opened beside a task of apps alone (⌘+click): this page's own pane, out of sight while apps alone show (its
 // actor not shown, though selected), in sight again with `c` in it -- the apps kept, beside
 async function outOfAppsOnly(g, c) {
-  if (!appsOnly || !c || PANE) return;
-  if (isAt(hereAway, g, c)) backInSight();
+  if (!appsOnlyKey() || !c || PANE) return;
+  if (isAt(awayOf(), g, c)) backInSight();
   setAppsOnly(null);
   focusPane(panes.here);
   if (!isAt(state.selected, g, c)) await showIn(g, c, null);
@@ -283,7 +284,7 @@ function taskAppsFound(g, gg, c, to, only) {
 // closed by the reader when its task was left (rememberTask), shown out of sight, as it was, the task's apps beside.
 async function show(g, c, view = null, wait = true, shut = false) {
   if (shut) putAway([g, c], true);                   // (out of sight once it is the one in this page's pane)
-  else if (isAt(hereAway, g, c)) {                  // asked for: in sight again (and in its task's tab shown)
+  else if (isAt(awayOf(), g, c)) {                  // asked for: in sight again (and in its task's tab shown)
     backInSight();
     const k = taskKey(g, c);
     if (k) shadow.tell("back", model.open, k, true);
@@ -472,7 +473,7 @@ function selectAppPane(p) {
 function selectedTask() {
   const sel = appSelected(), p = sel && panes.apps.find((q) => q.instance.id === sel);
   if (p) return appPaneTask(p);
-  if (appsOnly) return appsOnly;
+  if (appsOnlyKey()) return appsOnlyKey();
   const f = focusedActor();
   return f && !(focusedPane() === panes.here && isAway()) ? taskKey(f[0], f[1]) : null;   // (this page's own out of sight: none)
 }
@@ -510,19 +511,20 @@ let workPlacer = null;
 // out of sight till it shows another, or the reader asks for that one (show).
 // CLOSED by the reader (its ×: closeHerePane), and not by a tab that leaves it out: its task, left and opened again, shows
 // what else of it was shown, without it (rememberTask's `shut`)
-let hereAway = null, hereClosed = false;
-function putAway(sel, closed = false) { hereAway = sel; hereClosed = closed; }
+// -- the layout model's (model.ts's away)
+const awayOf = () => { const a = shadow.layout.away; return a ? [a.g, a.c] : null; };
+function putAway(sel, closed = false) { shadow.update(model.setAway, sel ? [sel[0], sel[1]] : null, closed); }
 // this page's own pane in sight again: its actor looked at now (features/list/seen.js), the list and the tabs' marks drawn so
-function backInSight() { hereAway = null; hereClosed = false; markSeen(); if (state.home) renderAgents(); }
-const isAway = () => !!hereAway && isAt(state.selected, hereAway[0], hereAway[1]);
-const isShut = () => hereClosed && isAway();
+function backInSight() { shadow.update(model.setAway, null); markSeen(); if (state.home) renderAgents(); }
+const isAway = () => { const a = shadow.layout.away; return !!a && isAt(state.selected, a.g, a.c); };
+const isShut = () => !!(shadow.layout.away && shadow.layout.away.shut) && isAway();
 // No actor to show in it at all (none yet), the home come: out of sight too -- the tab, showing nothing, shows its
 // new-tab page (features/layout/new-tab.js), not this pane's "No actors yet".
 function shownPanels() {
   const known = !!state.home, out = [], actor = (g, c, node) => out.push({ key: known ? taskKey(g, c) : null, item: c, node, app: false });
   const none = known && !state.selected && !!workPlacer;
   panes.here.node.classList.toggle("lay-away", isAway() || none);
-  if (!appsOnly) {
+  if (!appsOnlyKey()) {
     if (state.selected && isAway()) { /* out of sight */ }
     else if (state.selected) actor(state.selected[0], state.selected[1], panes.here.node);
     else if (!none) out.push({ key: null, item: "here", node: panes.here.node, app: false });
@@ -606,7 +608,7 @@ async function startTabs() {
 function focusTask(k) {
   if (!k || selectedTask() === k) return;
   const mine = (g, c) => taskKey(g, c) === k;
-  if (!appsOnly && state.selected && !isAway() && mine(...state.selected)) return focusPane(panes.here);
+  if (!appsOnlyKey() && state.selected && !isAway() && mine(...state.selected)) return focusPane(panes.here);
   const p = actorPanes().find((q) => mine(q.g, q.c));
   if (p) return focusPane(p);
   const a = panes.apps.find((q) => !q.held && appPaneTask(q) === k);
@@ -623,7 +625,7 @@ async function onlyTask(k) {
   const g = parseKey(k).group, mine = (pg, c) => taskKey(pg, c) === k;
   unwantTaskApps((t) => t === k);
   for (const p of [...actorPanes()]) if (!isShell(p.c) && !mine(p.g, p.c)) closePane(p);
-  if (!appsOnly && state.selected && !isAway() && !mine(...state.selected)) {
+  if (!appsOnlyKey() && state.selected && !isAway() && !mine(...state.selected)) {
     const next = actorPanes().find((p) => mine(p.g, p.c));
     if (next) await closeHere(next);
     else enterAppTask(g, k);
@@ -654,7 +656,7 @@ async function closeTaskHere(k) {
   if (tasksLaidOut.has(k)) rememberTask(k);
   unwantTaskApps((t) => t !== k);
   for (const p of [...actorPanes()]) if (mine(p.g, p.c)) closePane(p);
-  if (appsOnly === k) {                              // apps alone: the actors' panes out of sight still
+  if (appsOnlyKey() === k) {                              // apps alone: the actors' panes out of sight still
     if (state.selected) putAway(state.selected);
     setAppsOnly(null);
   } else if (state.selected && !isAway() && mine(...state.selected)) {
@@ -1253,7 +1255,7 @@ function appClosed(id) {
 // (its new-tab page), this page's own actor not brought back into it: that actor's task was left when the apps were
 // entered (it is another tab's, or ⌥ replaced it), and one task is never in two tabs
 function appsOnlyLeft() {
-  if (!appsOnly || panes.apps.some((q) => !q.held)) return;
+  if (!appsOnlyKey() || panes.apps.some((q) => !q.held)) return;
   setAppsOnly(null);
   if (workPlacer && state.selected && !isShell(state.selected[1]) && !isAway()) putAway(state.selected);
 }
@@ -1968,7 +1970,7 @@ async function startSession(gatherer, cwd, harness, join = null, alone = false) 
     state.adding = null;
     collapsed.delete(s.gatherer);
     await loadHome();
-    if (join && state.selected && !appsOnly) await openBeside(s.gatherer, s.session_id, "files");
+    if (join && state.selected && !appsOnlyKey()) await openBeside(s.gatherer, s.session_id, "files");
     else { await viaTabs(taskKey(s.gatherer, s.session_id), {}); await show(s.gatherer, s.session_id, "files"); }   // a tab of its own
   } finally { state.starting = null; renderAgents(); }
   const box = focusedPane() !== panes.here ? null : document.getElementById("composer-text");
@@ -2326,7 +2328,7 @@ export function start() {
 }
 
 export {
-  renderApps, appClosed, showAppPanel, CREW_GROUP, actorPanes, addAppPane, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsAtWork, appsOnly,
+  renderApps, appClosed, showAppPanel, CREW_GROUP, actorPanes, addAppPane, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsAtWork, appsOnlyKey,
   appsOnlyLeft, appsSelected, branchChip, byLabel, closeAppPane, closeHere, closeHerePane, closePane, closePop,
   closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, focusedPane, folderPicks, holdAppPane, isAt,
   isAway, linkClicked, moveEnd, newForm, noHarness, openActors, openApp, openAppTab, openPop, openTaskBeside, paneNote,
