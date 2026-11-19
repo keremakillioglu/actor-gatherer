@@ -274,8 +274,10 @@ class RecordsTest(unittest.TestCase):
         data.replies(Planned(), "s")
         data._harness(Planned(), "s")
         data._newest_reads(Planned(), "s", 2)
+        with unittest.mock.patch.object(data.store, "gatherer", lambda g: Planned()):   # (closes `conn` after)
+            data._result("g", "s", "permission:0a1b")                # a permission's answer: no tool's result carries it
         conn.close()
-        self.assertEqual(len(plans), 3)
+        self.assertEqual(len(plans), 4)
         for plan in plans:
             self.assertIn("events_id", plan)
             self.assertNotIn("events_type", plan)

@@ -972,10 +972,23 @@ def asking_of(gatherer: str, channel: str, cwd: Optional[str] = None) -> Optiona
         conn.close()
 
 
+_RECORDED: Dict[Tuple[str, str, str], str] = {}   # (database, channel, call) -> the record's result for it: kept once read
+_RECORDED_LOCK = threading.Lock()                  # (home reads run in threads of their own)
+RECORDED_KEPT = 4096                               # the most kept (the oldest let go first)
+
+
 def answer_result(gatherer: str, channel: str, call: Optional[str]) -> Optional[str]:
     """What the harness recorded as the answer to `call` -- as its own record says (`Record.result`), else the words of
-    the tool's result once a call has carried it -- None before either has."""
-    conn = store.gatherer(gatherer) if call else None
+    the tool's result once a call has carried it -- None before either has. The record's, once there, is kept: the home
+    asks again on every read, for each session the dashboard answered, closed ones included, and the record's first
+    result for a call is the one it keeps (`Record`)."""
+    if not call:
+        return None
+    key = (paths.db_path(gatherer), channel, call)
+    with _RECORDED_LOCK:
+        if key in _RECORDED:
+            return _RECORDED[key]
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:
@@ -983,6 +996,10 @@ def answer_result(gatherer: str, channel: str, call: Optional[str]) -> Optional[
             return None
         got = record_of(conn, channel).result(call)
         if got is not None:
+            with _RECORDED_LOCK:
+                _RECORDED[key] = got
+                while len(_RECORDED) > RECORDED_KEPT:
+                    del _RECORDED[next(iter(_RECORDED))]
             return got
     finally:
         conn.close()
@@ -1469,7 +1486,10 @@ def _result(gatherer: str, channel: str, call: Optional[str]) -> Optional[str]:
     try:
         if not _channels_kept(conn):
             return None
-        r = conn.execute(f"SELECT e.text, e.payload_json FROM events e JOIN event_types t ON t.event_type_id = e.event_type_id "
+        # by the channel's index (BY_CHANNEL), not the type's: by the type, every tool's result in the home was searched
+        # for the call -- 55,000 in a 2.9 GB home, 0.4 s on every read of the home, for an answer no result ever carries
+        # (a permission's: its call is the dashboard's key, not a tool call's id)
+        r = conn.execute(f"SELECT e.text, e.payload_json FROM events e JOIN event_types t ON {BY_CHANNEL} "
                          f"WHERE t.name = 'tool_output' AND ifnull(e.{CHANNEL}, '') = ? AND instr(e.payload_json, ?) > 0 "
                          "ORDER BY e.row_id DESC LIMIT 1", (channel, json.dumps(call))).fetchone()
         return (r["text"] or readable(r["payload_json"]) or "") if r else None
