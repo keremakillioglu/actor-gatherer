@@ -215,8 +215,11 @@ button:disabled { opacity: .5; cursor: default; }
 .gf-line.making { padding: 0 8px 0 20px; color: var(--ink-2); }
 .gf-line.making .fill { margin-left: 8px; font-size: var(--fs-meta); color: var(--muted); }
 /* the head's "+" for an actor on its own (05-group-moves.js's aloneNew): "+" and an actor, as a group's "+ actor" */
-.aside-head .alone-new { display: inline-flex; align-items: center; gap: 1px; padding: 4px 6px; margin-left: -6px; color: var(--ink-2); }
-.aside-head .alone-new:hover:not(:disabled) { color: var(--ink); }
+/* as the folder button beside it: the page's icon button (00-base.css's --ib), bare, a wash under the pointer -- two marks
+   wide, "+" and an agent */
+.aside-head .alone-new { display: inline-flex; align-items: center; justify-content: center; gap: 1px; height: var(--ib); padding: 0 6px;
+  margin-left: -4px; border: 0; border-radius: 7px; background: none; color: var(--muted); }
+.aside-head .alone-new:hover:not(:disabled) { color: var(--ink); background: var(--wash); }
 .aside-head .alone-new:disabled { opacity: .45; cursor: default; }
 .aside-head .alone-new svg { display: block; }
 .aside-head .alone-new.busy svg { animation: term-blink 1s ease-in-out infinite; }
