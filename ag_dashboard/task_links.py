@@ -25,6 +25,10 @@ What else puts an app and an agent together, here too:
 Each change of the tasks has what the agents may use through them settled after (access.py's `settle`): an agent
 gaining or losing an app's instance is told.
 
+An instance of an app every agent of its group may use (its manifest's `access = "group"`: access.py) is in no task
+either (`taskable`): a task would mean nothing for it. One found in a task -- put there before this rule -- is taken out
+of it as its group is read (`on_load`).
+
 A gatherer's own agent (sessions.py's COORDINATOR) is in no task, and attached to no app (`attachable`, the host's
 check): it reaches every app without (tool_gateway.py)."""
 
@@ -105,9 +109,31 @@ def change(gatherer: str, do: Callable[[], object]) -> Tuple[object, Dict[str, L
     return got, attached
 
 
+def taskable(gatherer: str, item: str) -> bool:
+    """Whether `item` may be put in a task: an actor that is not a gatherer's own agent, or an instance of an app whose
+    manifest says `access = "task"` -- not one every agent of its group may use (module doc). An instance this host
+    doesn't know, or of an app it can't find: as a task app's."""
+    iid = tasks.app_of(item)
+    if iid is None:
+        return not coordinator(item)
+    host = _host()
+    if host is None:
+        return True
+    with host.lock:
+        inst = host.instances.get(iid)
+        hosted = host.apps.get(inst.app) if inst is not None else None
+    return hosted is None or hosted.manifest.access != access.GROUP
+
+
+def untaskable(gatherer: str, items) -> List[str]:
+    """Of `items`, those that may not be put in a task (`taskable`)."""
+    return [str(x) for x in items if not taskable(gatherer, str(x))]
+
+
 def link(gatherer: str, instance: str, channel: str, move: bool = False) -> bool:
-    """An agent to be attached to an app's instance (module doc) -> whether they are in one task now, attached."""
-    if not channel or coordinator(channel):
+    """An agent to be attached to an app's instance (module doc) -> whether they are in one task now, attached. An app
+    every agent of the group may use: never (it is in no task), whoever asks."""
+    if not channel or coordinator(channel) or not taskable(gatherer, tasks.app_item(instance)):
         return False
     item = tasks.app_item(instance)
     has = tasks.of(gatherer)["tasked"]
@@ -175,8 +201,12 @@ def on_load(gatherer: str) -> None:
         with host.lock:
             held = [(i, sorted(host.attached.get(i, ()))) for i, inst in host.instances.items()
                     if inst.gatherer == gatherer]
-        links = [[tasks.app_item(i), *(c for c in cs if not coordinator(c))] for i, cs in held]
+        links = [[tasks.app_item(i), *(c for c in cs if not coordinator(c))] for i, cs in held
+                 if taskable(gatherer, tasks.app_item(i))]     # a group's app ties no one together
         change(gatherer, lambda: tasks.group(gatherer, links))
+    loose = untaskable(gatherer, [x for x in tasks.of(gatherer)["tasked"] if tasks.app_of(x) is not None])
+    if loose:                                           # a group's app, in a task from before the rule: out of it
+        change(gatherer, lambda: tasks.take_out(gatherer, loose))
     strays(gatherer)
     access.settle(gatherer)                             # what its agents may use, noted: changes after are told
 

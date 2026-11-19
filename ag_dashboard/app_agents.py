@@ -88,8 +88,8 @@ def start(started: "sessions.Sessions", host, app: str, gatherer: str, cwd: str,
     except sessions.SessionError as exc:
         host.close_instance(gatherer, inst.id)
         raise AppError(str(exc)) from None
-    task_links.link(gatherer, inst.id, s["session_id"])                # the app and its agent: one task
-    host.attach(gatherer, inst.id, s["session_id"])
+    if task_links.link(gatherer, inst.id, s["session_id"]):           # the app and its agent: one task (a group's
+        host.attach(gatherer, inst.id, s["session_id"])                # app: in none, its agent's to use anyway)
     said = name or m.agent.name.format(app=m.label, folder=os.path.basename(cwd.rstrip("/")) or cwd)
     threading.Thread(target=_name, args=(gatherer, s["session_id"], said), name=f"ag-{app}-name",
                      daemon=True).start()
@@ -128,8 +128,8 @@ class Messenger:
             s = self.started.create(instance.gatherer, cwd, "auto", harness, model, role=role(instance.app, instance.id))
         except sessions.SessionError as exc:
             raise AppError(str(exc)) from None
-        task_links.link(instance.gatherer, instance.id, s["session_id"])   # the app and its agent: one task
-        host.attach(instance.gatherer, instance.id, s["session_id"], by="app")
+        if task_links.link(instance.gatherer, instance.id, s["session_id"]):   # the app and its agent: one task
+            host.attach(instance.gatherer, instance.id, s["session_id"], by="app")
         threading.Thread(target=_name, args=(instance.gatherer, s["session_id"], name),
                          name=f"ag-{instance.app}-name", daemon=True).start()
         self.send(instance.gatherer, s["session_id"], text)

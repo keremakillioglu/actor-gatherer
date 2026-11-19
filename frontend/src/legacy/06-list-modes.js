@@ -491,7 +491,8 @@ function railName(a) {
   return { text: isCoordinator(a) ? "Coordinator agent" : "No message yet", cls: "none" };
 }
 // A TASK in the rail (05-agent-list.js's TASKS): one tile where its first actor comes, as an actor's -- its actors'
-// faces grouped in the room of one avatar (two side by side, more in a square of four), its lead's state at its corner,
+// lead's face (none: its first app's mark) in the room of one avatar, how many actors and apps it holds on a badge at its
+// top left, its apps' mark at its top right as an actor's, its lead's state at its corner,
 // its name under it, and its row's bookmark and × (taskSaveButton, taskCloseButton) left of its faces, where an actor's
 // are -- pressed, opened (openTask); hovered, its card.
 const railTasksDrawn = new Set();
@@ -522,7 +523,8 @@ function railAppsIn(g, id) {
 }
 function railTask(g, t) {
   const all = taskMembers(g, t.id), apps = taskApps(g, t.id), lead = taskLead(g, t.id), open = taskActors(g, t.id);
-  const faces = [...(open.length ? open : all).map(plainFace), ...(all.length ? [] : apps.map(appFace))].slice(0, 4);
+  const who = lead || open[0] || all[0];
+  const face = who ? plainFace(who) : apps.length ? appFace(apps[0]) : null, n = all.length + apps.length;
   const [cls, label] = taskStatus(g, t.id), name = taskName(g, t);
   const current = selectedTask() === `${g.name}\u0000t${t.id}`;
   const inPane = !current && (all.some((a) => openActors().some((s) => isAt(s, g.name, a.channel)))
@@ -533,7 +535,8 @@ function railTask(g, t) {
     ...(inPane ? { "data-open": "true" } : {}), "aria-label": `${name}, a task of ${what || "nothing"}, in ${titleOf(g)}: ${label}`,
     ...(HOVERS.matches ? {} : { title: `${name}\n${what} · ${label} · ${titleOf(g)}` }),
     onclick: (ev) => { cardHide(ev); openTask(g.name, t.id, null, ev); } },
-  el("span", { class: "r-pic" }, el("span", { class: `logo r-group n${faces.length}` }, ...faces),
+  el("span", { class: "r-pic" }, el("span", { class: "logo r-group" }, face),
+    n > 1 ? el("span", { class: "r-many", "aria-hidden": "true", text: String(n) }) : null,
     lead || cls === "notified" ? el("i", { class: `rd ${cls}`, "aria-hidden": "true", style: `--spin-at: -${Date.now() % 1200}ms` }) : null,
     all.length ? railApps(apps) : null),
   el("span", { class: "r-name", "aria-hidden": "true", text: name }),
