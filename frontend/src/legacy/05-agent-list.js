@@ -760,6 +760,9 @@ function appOf(i) {
 }
 const gathererApps = (gname) => PANE || SNAPSHOT ? [] : ((appsKnown.get(gname) || {}).instances || []).map(appOf).filter(Boolean);
 const appInfo = (gname, id) => gathererApps(gname).find((o) => o.id === id) || null;
+// an app every agent of its group may use (its manifest's access "group": task_links.py's `taskable`): in no task, ever
+const groupApp = (app) => !!app && app.access === "group";
+const isGroupItem = (g, k) => isAppItem(k) && groupApp((appInfo(g.name, k.slice(APP_ITEM.length)) || {}).app);
 // a task's apps, as they were opened
 const taskApps = (g, id) => gathererApps(g.name).filter((o) => appTaskOf(g.name, o.id) === id);
 // an app's mark: small, beside a task's faces
@@ -981,9 +984,9 @@ async function openTask(gname, id, focus = null, ev = null) {
 // item's task -- a new agent on a harness picked (addToTask), or an app (addAppToTask) -- from its menu
 function addButton(g, k, label = null) {
   const a = isAppItem(k) ? null : actorOf(g, k), o = a ? null : appInfo(g.name, k.slice(APP_ITEM.length));
-  if ((!a && !o) || (a && isCoordinator(a))) return null;
+  if ((!a && !o) || (a && isCoordinator(a)) || (o && groupApp(o.app))) return null;
   const hs = SNAPSHOT ? [] : startable();
-  const apps = SNAPSHOT || PANE || !window.agNext ? [] : window.agNext.apps.found();
+  const apps = SNAPSHOT || PANE || !window.agNext ? [] : window.agNext.apps.found().filter((app) => !groupApp(app) && !app.failed);
   if (!hs.length && !apps.length) return null;
   // its menu's key: its own, apart from the list's "+" for the same item, which the menu would hang from otherwise
   const mk = `${label ? "card-" : ""}task-add:${g.name}/${k}`, id = itemTaskOf(g, k);
@@ -1559,10 +1562,11 @@ function fileItems(gname, items, id) {
   });
 }
 // Whether what is dragged may be put in item `k`'s task (dropped on its row): of its gatherer, items -- not `k` itself,
-// and one of them at least not in its task yet
+// and one of them at least not in its task yet; neither `k` nor any of them an app every agent of the group may use
 function canJoin(g, k) {
   const d = listDrag;
   if (!d || d.g !== g.name || !d.cs || d.cs.includes(k)) return false;
+  if (isGroupItem(g, k) || d.cs.some((c) => isGroupItem(g, c))) return false;   // a group's app: in no task
   const t = itemTaskOf(g, k);
   return d.cs.some((c) => t === null || itemTaskOf(g, c) !== t);
 }

@@ -580,6 +580,22 @@ class GatewayTest(GatewayBase):
         task_links.closed("g", book.id)
         self.assertEqual([(c, can) for c, _, can in told], [("c1", False)])
 
+    def test_an_app_every_agent_of_the_group_may_use_is_put_in_no_task(self):
+        notes = self.host.open("notes", "g", self.folder)                          # access "group"
+        item = "app:" + notes.id
+        self.assertEqual((task_links.taskable("g", item), task_links.taskable("g", "c1")), (False, True))
+        self.assertFalse(task_links.link("g", notes.id, "c1", move=True))          # not even by the reader's attaching
+        self.assertEqual((tasks.of("g")["tasked"], self.host.agents_of(notes)), ({}, []))
+        write_app(self.apps_dir, "book", book_toml("many", "task"), BOOK)
+        self.host.find()
+        book = self.host.open("book", "g", self.folder)
+        self.assertTrue(task_links.taskable("g", "app:" + book.id))                 # a task's app: as before
+        tasks.add("g", "c1", [item, "c2"])                                          # put in one before the rule
+        task_links.on_load("g")                                                     # its group read: out of it
+        self.assertNotIn(item, tasks.of("g")["tasked"])
+        self.assertEqual(set(tasks.of("g")["tasked"]), {"c1", "c2"})
+        self.assertFalse(tool_gateway.call(self.rows, "c3", "notes_add", {"text": "x"})["isError"])   # still everyone's
+
     def test_an_app_s_message_names_the_instance_it_is_from(self):
         i = self.host.open("notes", "g", self.folder)
         self.host.rename("g", i.id, "Trip")
@@ -681,6 +697,26 @@ class GatewayServedTest(GatewayBase):
         self.assertIsNotNone(__import__("ag_dashboard.mcp", fromlist=["listed"]).listed(tool_gateway.endpoint("c1")))
         self.assertIn("not an actor", json.dumps(self.rpc("zzz", "tools/list")))
 
+    def post(self, path, body):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+        conn.request("POST", path, json.dumps(body), {"Content-Type": "application/json"})
+        r = conn.getresponse()
+        got = (r.status, json.loads(r.read() or b"{}"))
+        conn.close()
+        return got
+
+    def test_the_routes_refuse_a_group_s_app_in_a_task(self):
+        notes = self.httpd.app_host.open("notes", "g", self.folder)
+        status, got = self.post("/api/tasks", {"gatherer": "g", "do": "add", "to": "c1", "items": ["app:" + notes.id]})
+        self.assertGreaterEqual(status, 400)
+        self.assertIn("isn't put in a task", got.get("error", ""))
+        status, got = self.post("/api/apps/attach", {"gatherer": "g", "instance": notes.id, "channel": "c1"})
+        self.assertEqual(status, 409)
+        self.assertIn("every agent of the group can use Notes", got.get("error", ""))
+        status, _ = self.post("/api/apps/open", {"app": "notes", "gatherer": "g", "folder": self.folder, "channel": "c1"})
+        self.assertEqual(status, 200)                                                # opened, in no task
+        self.assertEqual(tasks.of("g")["tasked"], {})
+
     def test_ag_apps_lists_and_calls_as_the_actor_it_runs_in(self):
         env = {"AG_DASHBOARD": f"http://127.0.0.1:{self.port}", "AG_ACTOR": "c3"}
         for v in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
@@ -765,8 +801,11 @@ class ServedTest(HostBase):
 
     def test_an_app_and_the_agents_working_with_it_are_one_task(self):
         """task_links.py through the routes: an app opened by an agent put in a task with it; another the reader attaches
-        put in it too, and detached taken out; the app closed, out of it."""
-        _, inst = self.api("POST", "/api/apps/open", {"app": "notes", "gatherer": "g", "folder": self.folder,
+        put in it too, and detached taken out; the app closed, out of it. (An app of the agents in its task: a group's
+        is in no task.)"""
+        write_app(self.apps_dir, "book", book_toml("per-folder", "task"), BOOK)
+        self.httpd.app_host.find()
+        _, inst = self.api("POST", "/api/apps/open", {"app": "book", "gatherer": "g", "folder": self.folder,
                                                       "channel": "c1"})
         item, host = "app:" + inst["id"], self.httpd.app_host
         tasked = lambda: self.api("GET", "/api/apps?gatherer=g")[1]["tasks"]["tasked"]   # noqa: E731

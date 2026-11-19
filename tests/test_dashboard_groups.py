@@ -782,7 +782,8 @@ class GroupAppsTest(GroupsTest):
         super().setUp()
         src = os.path.join(self.tmp.name, "apps-src")
         for name, mode in (("pages", "many"), ("board", "one"), ("news", "one")):
-            write_app(src, name, NOTES.replace("notes", name).replace('instances = "per-folder"', f'instances = "{mode}"'))
+            write_app(src, name, NOTES.replace("notes", name).replace('instances = "per-folder"', f'instances = "{mode}"')
+                      .replace('access = "group"', 'access = "task"'))     # apps of their tasks' agents
         for patch in (unittest.mock.patch.dict(os.environ, {app_host.PATH_ENV: src}),
                       unittest.mock.patch.object(app_kit.finding, "BUILTIN", os.path.join(self.tmp.name, "no-apps"))):
             patch.start()
