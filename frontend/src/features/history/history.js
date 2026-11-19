@@ -691,12 +691,14 @@ export function start() {
     signature: () => [state.hist && state.hist.key, state.hist && state.hist.version, hist.version],
   };
   // Each time that counts up (`data-since`, in the server's seconds; `data-ago`, how long ago, as ago() says it) set where
-  // it is, every second: nothing redrawn.
+  // it is, every second: nothing redrawn -- and only one whose words changed ("3m ago" stays so for a minute), since
+  // setting a text, even to what it was, lays the page out again.
+  const set = (n, text) => { if (n.textContent !== text) n.textContent = text; };
   setInterval(() => {
     const now = Date.now() / 1000;
-    for (const n of document.querySelectorAll("[data-since]")) n.textContent = span(+n.dataset.since, now);
-    for (const n of document.querySelectorAll("[data-ago]")) n.textContent = ago(+n.dataset.ago);
-    for (const n of document.querySelectorAll("[data-lasting]")) n.textContent = lasting(+n.dataset.lasting);
+    for (const n of document.querySelectorAll("[data-since]")) set(n, span(+n.dataset.since, now));
+    for (const n of document.querySelectorAll("[data-ago]")) set(n, ago(+n.dataset.ago));
+    for (const n of document.querySelectorAll("[data-lasting]")) set(n, lasting(+n.dataset.lasting));
   }, 1000);
   document.addEventListener("mousedown", (ev) => {
     const list = ev.button === 0 && ev.target.closest && ev.target.closest(".hist .h-list");
