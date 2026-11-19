@@ -366,8 +366,11 @@ The layout slice comes first, in four steps, each with every test passing:
      `setTree`, `addTaskTab`, `showTaskTab`, `changeTaskTab`, `closeTaskTab`, `renameTaskTab`). The model is kept under
      one key, `ag-dashboard-layout` (`load`), made once from the keys of before (`migrate`), which are then dropped:
      `screen-tabs`, `task-layouts-2`, `task-trees`.
-   - 4b: the rest of the page's layout state -- its own pane out of sight (`hereAway`), a task of apps only
-     (`appsOnly`), the panes and top apps kept (`panes`, `top-apps`, `screen`).
+   - 4b (built): the page's panes and the apps' panels above them as it last showed them (`savePanes`,
+     `saveAppPanes`: the model's `panes` and `apps`, page-wide as they were) and the tab shown's arrangement (`work.ts`:
+     the tab's `screen`) -- the one key holds all; `panes`, `top-apps` and `screen` are dropped with the others. Its own
+     pane out of sight (`hereAway`) and a task of apps only (`appsOnly`), this page's alone and never kept, are 4c's:
+     the renderer makes them from the model.
    - 4c: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
      and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
    (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,

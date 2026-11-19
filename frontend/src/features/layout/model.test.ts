@@ -175,6 +175,17 @@ describe("the migration from the six keys", () => {
     expect(load((k) => (k === "ag-dashboard-layout" ? "{broken" : (old[k] ?? null))).tasks["g\u0000t1"]).toBeTruthy();
   });
 
+  it("reads the page's panes and the apps' panels above them, as the page last showed them", () => {
+    const panes = { here: ["g", "c1"], size: 1, focus: 0, others: [{ g: "g", c: "c2", view: "files", size: 2 }] };
+    const apps = { apps: [{ app: "notes", instance: "i1", g: "g", size: 1 }] };
+    const old: Record<string, string> = {
+      "ag-dashboard-panes": JSON.stringify(panes),
+      "ag-dashboard-top-apps": JSON.stringify(apps),
+    };
+    const l = migrate((k) => old[k] ?? null);
+    expect([l.panes, l.apps]).toEqual([panes, apps.apps]);
+  });
+
   it("starts as a fresh home with nothing kept, or what was kept unreadable", () => {
     expect(migrate(() => null).tabs.length).toBe(1);
     expect(migrate(() => "{not json").tabs[0].tasks).toEqual([]);
