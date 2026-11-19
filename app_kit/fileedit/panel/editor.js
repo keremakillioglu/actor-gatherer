@@ -28,7 +28,7 @@ const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, 
   timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null, side: null, changes: null,
   v: null, turn: 0, keys: false, blurAt: -Infinity,                                 // v: 18-editor-view.js's; keys, blurAt: edHadKeys's
   branches: [], brSig: "", brs: null, brOpen: null,
-  nav: null, fold: null, cursor: null, revealing: null, newItem: null, pick: null, menu: null, find: null,   // 18-editor-tree.js's
+  nav: null, fold: null, cursor: null, revealing: null, flashFolder: null, flash: null, newItem: null, pick: null, menu: null, find: null,   // 18-editor-tree.js's
   choose: null, choosing: null, go: null,                                                                     // 18-editor-open.js's
   mode: "live", modePick: null,                                                    // how an agent's change lands, its menu (edModePick)
   auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })(),   // on unless turned off
@@ -143,12 +143,38 @@ async function edGoLine(path, line) {
   s.view.dispatch({ selection: { anchor: l.from, head: l.to }, effects: s.A.EditorView.scrollIntoView(l.from, { y: "center" }) });
   s.view.focus();
 }
-// A file opened in the Editor, at a line: an `open-file` the page asks of it, or a place in a PDF's source. A file
-// outside the folder shown: its folder shown.
+// A file opened in the Editor, at a line: an `open-file` the page asks of it, a link to it, an agent's <app>_open, or a
+// place in a PDF's source. A file outside the folder shown: its folder shown -- at once, before anything is asked, so a
+// panel the link just opened starts there (edMount keeps a folder already shown). The path a folder's (a plain path an
+// agent wrote, or a link of the file form, to one): that folder shown instead (edShowFolder), the file open left open.
 async function edShowFile(path, line) {
+  path = path.replace(/\/+$/, "") || "/";
   if (!ed.root || !edUnder(path, ed.root)) edGo(edDir(path));
+  if (await edIsFolder(path)) return edShowFolder(path);
   if (!ed.s || ed.s.path !== path) edOpen(path);
   if (line) edGoLine(path, line);
+}
+// Whether `path` is a folder: as its folder's listing has it, if listed, else as the server says (edit/about's kind).
+// Not there, or not to be read: no (edOpen says why).
+async function edIsFolder(path) {
+  if (path === "/" || path === ed.root) return true;
+  const listing = ed.lists.get(edDir(path));
+  const entry = listing && listing.entries && listing.entries.find((x) => x.name === edBase(path));
+  if (entry) return !!entry.dir;
+  try { return (await edAbout(path)).kind === "folder"; } catch (err) { return false; }
+}
+// A folder shown, from outside (a link to it, an agent's <app>_open): in the tree, the folders down to it and it
+// opened, its row scrolled to, flashed and made the tree's place for the keys. Not inside the folder shown: the tree
+// moved to the folder holding it first, as for a file. The files shown again if folded away (not kept: the reader's
+// choice stays theirs); the file open stays open.
+function edShowFolder(dir) {
+  dir = dir.replace(/\/+$/, "") || "/";
+  if (ed.nav && ed.nav.hidden) edFoldTree(false, false);
+  if (!ed.root || !edUnder(dir, ed.root)) edGo(edDir(dir));
+  if (dir === ed.root) return;
+  edOpenTo(dir);
+  ed.cursor = ed.revealing = ed.flashFolder = dir;
+  ed.treeSig = ""; edTree();
 }
 // A PDF the Editor shows (editor-view.js), in pdf.js's viewer (/_ag/lib/pdfjs: the dashboard's copy, libs.py), in the
 // dashboard's colours, with no scripts of the PDF's and its sidebar closed when it opens.

@@ -5,8 +5,9 @@ other file shown. An app subclasses it, its manifest asking `docs` (and `edit_gu
 overriding `request` and `call`, handing on what it does not take. Its panel's requests, each answered as JSON ({error}
 with a status, refused):
 
-    edit/list, about, raw/<path>, files, choose, reveal, create     the folders, a file's kind and bytes, Go to
-                                                                    file's list, the system's dialogs, a new file
+    edit/list, about, raw/<path>, files, choose, reveal, create     the folders, a file's kind (or that it is a
+                                                                    folder) and bytes, Go to file's list, the system's
+                                                                    dialogs, a new file
     edit/stream, update, aware, save, settle, zone/clear            a file open live (app_kit.docs: its events)
     edit/text, put                                                  a file open plain (PLAIN): its text and version, and
                                                                     saved -- refused (409) if it changed on disk since
@@ -179,7 +180,10 @@ class FileEdit(App):
             if q.get("have") == got:
                 return {"version": got, "same": True}
             return {"version": got, "text": _read_file(real)}
-        if path == "edit/about":
+        if path == "edit/about":                    # a folder: said so, for the panel to show it in the tree
+            real = docs.resolve(q.get("path", ""), q.get("root", ""))
+            if os.path.isdir(real):
+                return {"path": q.get("path", ""), "real": real, "kind": "folder"}
             return {**docs.about(q.get("path", ""), q.get("root", "")), "reveal": chooser.shower() if here else None}
         if path == "edit/files":
             return docs.files(q.get("dir", ""), q.get("root", ""))
@@ -486,9 +490,9 @@ class FileEdit(App):
     def _tool_open(self, instance: Instance, args: dict, caller: Caller) -> ToolResult:
         real = self._path(args, caller)
         if not os.path.exists(real):
-            raise AppError(f"{real}: no such file")
+            raise AppError(f"{real}: no such file or folder")
         try:
-            line = int(args.get("line") or 0)
+            line = 0 if os.path.isdir(real) else int(args.get("line") or 0)     # a folder: shown in the tree
         except (TypeError, ValueError):
             raise AppError("line: a line number") from None
         if self.host.panels(instance) == 0:
