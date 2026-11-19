@@ -31,6 +31,18 @@ the Slack panel, where the user sends it, edits it or discards it; you are told 
 call slack_draft with its `draft` id and the new text. Write as the user would: it is posted as them. If you also have other Slack tools (a Slack connector), don't use them to post: replies go
 through slack_draft."""
 
+[[links]]
+form = "conversation/<conversation>"
+about = "A conversation: its id, as slack_read and the messages you are told of show it."
+
+[[links]]
+form = "conversation/<conversation>/<ts>"
+about = "A message in it: its ts."
+
+[[links]]
+form = "conversation/<conversation>/thread/<thread>"
+about = "A thread: the ts of the message it replies to."
+
 [agent]
 offered = true
 name = "Slack"

@@ -303,6 +303,15 @@ class ManifestTest(unittest.TestCase):
         self.assertIn("slack_draft", m.instructions)
         self.assertIn("never send", m.instructions)
 
+    def test_a_link_opens_a_conversation_a_message_or_a_thread(self):
+        m = app_kit.load(FOLDER)
+        self.assertEqual(m.link("conversation/C0123")[1], {"conversation": "C0123"})
+        self.assertEqual(m.link("conversation/C0123/1700000000.000100")[1],
+                         {"conversation": "C0123", "ts": "1700000000.000100"})
+        self.assertEqual(m.link("conversation/C0123/thread/1700000000.000100")[1],
+                         {"conversation": "C0123", "thread": "1700000000.000100"})
+        self.assertIn("- `ag://slack/conversation/<conversation>/thread/<thread>`", m.told())
+
     def test_the_slack_app_manifest_asks_for_socket_mode_and_user_scopes_only(self):
         with open(be.MANIFEST_FILE) as f:
             sm = json.load(f)

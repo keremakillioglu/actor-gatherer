@@ -103,3 +103,40 @@ describe("markdown", () => {
     }
   });
 });
+
+describe("a link in a message", () => {
+  const link = (md: string) => markdown(md).querySelector("a");
+
+  it("to a web page opens apart", () => {
+    const a = link("See [the docs](https://example.org/a).");
+    expect(a?.getAttribute("href")).toBe("https://example.org/a");
+    expect(a?.getAttribute("target")).toBe("_blank");
+    expect(a?.classList.contains("ag-link")).toBe(false);
+  });
+
+  it("to something in an app is kept, marked with its app's mark, for the page to open", () => {
+    const a = link("Added to [your To dos](ag://notes/page/k3p9x2wq#b8k2).");
+    expect(a?.getAttribute("href")).toBe("ag://notes/page/k3p9x2wq#b8k2");
+    expect(a?.classList.contains("ag-link")).toBe(true);
+    expect(a?.dataset.app).toBe("notes");
+    expect(a?.getAttribute("style")).toBe('--ag-mark: url("/apps/mark/notes.svg")');
+    expect(a?.hasAttribute("target")).toBe(false);
+  });
+
+  it("to a file -- a path, or file:// -- is kept, marked for the page to open in an app that shows files", () => {
+    for (const href of ["src/parser.py#L12", "/work/plan.md", "./a.txt", "../b/c.md:3", "file:///work/plan.md"]) {
+      const a = link(`See [it](${href}).`);
+      expect(a?.getAttribute("href")).toBe(href);
+      expect(a?.hasAttribute("data-path")).toBe(true);
+      expect(a?.hasAttribute("target")).toBe(false);
+    }
+    for (const href of ["https://example.org/a", "#top", "mailto:a@b.org", "//example.org/x"])
+      expect(link(`[x](${href})`)?.hasAttribute("data-path")).toBe(false);
+  });
+
+  it("of any other scheme is dropped, as before", () => {
+    expect(link("[x](javascript:alert(1))")?.hasAttribute("href")).toBe(false);
+    expect(link("[x](page:k3p9x2wq)")?.hasAttribute("href")).toBe(false);
+    expect(link('[x](ag://Notes"onclick=1/x)')?.classList.contains("ag-link")).toBe(false);
+  });
+});
