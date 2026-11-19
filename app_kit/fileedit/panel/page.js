@@ -39,11 +39,7 @@ const ICONS = {
 const HUE_MAIN = { red: "#ef4444", orange: "#f97316", yellow: "#fbbf24", lime: "#84cc16", green: "#22a55a", teal: "#14b8a6", sky: "#38bdf8",
   blue: "#3b6cf6", purple: "#8b5cf6", pink: "#f472b6", brown: "#a0683a", gray: "#64748b" };
 const full = (v) => v === null || v === undefined ? "–" : Math.round(v).toLocaleString();
-const ago = (t) => {
-  if (!t) return "never";
-  const s = Math.max(0, Date.now() / 1000 - t);
-  return s < 60 ? `${Math.round(s)}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
-};
+const ago = agKit.ago;                               // as the dashboard says it (the panels' kit)
 const firstLine = (t, n = 160) => { const l = String(t ?? "").split("\n")[0]; return l.length > n ? l.slice(0, n) + "…" : l; };
 const plural = (n, w) => `${full(n)} ${w}${n === 1 ? "" : "s"}`;
 const signature = (value) => JSON.stringify(value);

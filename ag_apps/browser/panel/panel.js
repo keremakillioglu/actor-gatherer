@@ -52,11 +52,7 @@
   const KEY = MAC ? "⌘" : "Ctrl+";
   const signature = (value) => JSON.stringify(value);
   const clock = (t) => t ? new Date(t * 1000).toLocaleString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "–";
-  const ago = (t) => {
-    if (!t) return "never";
-    const s = Math.max(0, Date.now() / 1000 - t);
-    return s < 60 ? `${Math.round(s)}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
-  };
+  const ago = agKit.ago;                             // as the dashboard says it (the panels' kit)
 
   // ---------------------------------------------------------------- the dashboard around it, and its backend
   const ag = await AgApp.connect();

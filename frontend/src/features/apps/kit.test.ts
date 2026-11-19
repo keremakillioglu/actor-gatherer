@@ -2,10 +2,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
+import { ago } from "../../core/format";
 
 type Kit = {
   el: (tag: string, attrs?: Record<string, unknown>, ...kids: unknown[]) => HTMLElement;
   patch: (box: Element, kids: Node[] | DocumentFragment) => void;
+  ago: (t: number | null) => string;
 };
 let kit: Kit;
 
@@ -39,5 +41,12 @@ describe("agKit.patch", () => {
     expect(log.children).toHaveLength(3);
     expect(getSelection()!.toString()).toBe("hello");
     log.remove();
+  });
+});
+
+describe("agKit.ago", () => {
+  it("says how long ago as the dashboard does", () => {
+    const now = Date.now() / 1000;
+    for (const t of [null, now - 5, now - 200, now - 7300, now - 90000]) expect(kit.ago(t)).toBe(ago(t));
   });
 });

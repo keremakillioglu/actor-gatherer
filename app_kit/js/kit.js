@@ -4,6 +4,8 @@
 //
 //   agKit.el(tag, attrs, ...kids)   an element: each attribute set (below), each child appended -- nodes as they are,
 //                                   anything else as its text; arrays flattened; null, undefined and false left out
+//   agKit.ago(t)                    how long ago the time `t` was (seconds): "45s ago", "3m ago", "2h ago", "4d ago",
+//                                   "never" for none -- as the dashboard says it (frontend/src/core/format.ts)
 //   agKit.patch(box, kids)          box's children made `kids` (nodes, or a fragment's), each child of box that is the
 //                                   same as one of them (its markup) kept in its place of that one: a list drawn anew,
 //                                   only what changed in it replaced -- a selection, an image loaded, a menu's place in
@@ -54,5 +56,12 @@
     while (at) { const next = at.nextSibling; at.remove(); at = next; }
   }
 
-  window.agKit = Object.freeze({ el, patch });
+  function ago(t) {
+    if (!t) return "never";
+    const s = Math.max(0, Date.now() / 1000 - t);
+    return s < 60 ? `${Math.round(s)}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago`
+      : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
+  }
+
+  window.agKit = Object.freeze({ el, patch, ago });
 })();
