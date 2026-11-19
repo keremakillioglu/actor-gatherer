@@ -147,6 +147,7 @@ export class Mux {
   private worked = false; // it did once: when it goes, it is tried again, not given up for EventSources
   private alone = false; // it never worked: every stream its own EventSource
   private tries = 0;
+  private again: ReturnType<typeof setTimeout> | null = null; // the socket tried again after it went, in a while
   private next = 1;
   private streams = new Map<string, Stream>(); // by id, those open on the socket (or to be once it is ready)
   private waiting = new Set<Stream>(); // to be opened once it is ready
@@ -158,7 +159,7 @@ export class Mux {
     if (this.ready) this.send(s);
     else {
       this.waiting.add(s);
-      if (!this.ws) this.connect();
+      if (!this.ws && !this.again) this.connect(); // (while it is tried again in a while, opened with the others then)
     }
   }
 
@@ -177,6 +178,7 @@ export class Mux {
   }
 
   private connect() {
+    if (this.ws) return; // one socket a page: a second, opened beside it, would take the first one's streams' events
     const ws = (this.ws = new WebSocket(this.url));
     ws.onmessage = (m) => {
       if (this.ws !== ws || typeof m.data !== "string") return;
@@ -224,7 +226,13 @@ export class Mux {
         s.ended(false);
         this.waiting.add(s); // opened again once it is back
       }
-      setTimeout(() => this.connect(), Math.min(MAX_WAIT_MS, 250 * 2 ** this.tries++));
+      this.again = setTimeout(
+        () => {
+          this.again = null;
+          this.connect();
+        },
+        Math.min(MAX_WAIT_MS, 250 * 2 ** this.tries++),
+      );
     };
   }
 }
