@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { leaves, leafNodes } from "./arrange";
 import { build, firstTree, type Shown } from "./build";
-import { foldable, minimized } from "./mins";
+import { canMin, foldable, marked, minimized, together } from "./mins";
 import type { Node } from "./tree";
 
 const at = (key: string | null, item: string): Shown<string> => ({
@@ -90,5 +90,71 @@ describe("the panes a bar minimizes, dragged past their least", () => {
     expect(built.splits.get(key(built, T, "col"))!.sizes[1]).toEqual({ fit: true });
     expect(minimized(folded, ["c1", "c2"], false)).toEqual(tree);
     expect(leaves(folded)).toEqual(leaves(tree));
+  });
+});
+
+describe("panes minimized by a pane's own button, or shown whole: those beside it with it", () => {
+  const ids = (built: ReturnType<typeof build<string>>, of: string[]) => items(built, of).sort();
+  const id = (built: ReturnType<typeof build<string>>, item: string) =>
+    [...built.items].find(([, v]) => v.item === item)![0];
+  const row = (...kids: Node[]): Node => ({ key: "", dir: "row", bar: 1, kids, sizes: kids.map(() => ({})) });
+  const col = (...kids: Node[]): Node => ({ key: "", dir: "col", bar: 1, kids, sizes: kids.map(() => ({})) });
+
+  it("two panes side by side under their task's app: both, either's button -- minimized or shown whole", () => {
+    const shown = [at(T, "app:b"), at(T, "c1"), at(T, "c2")];
+    const built = build(shown, {}, () => null, opts);
+    for (const on of [true, false]) {
+      expect(ids(built, together(built, id(built, "c1"), on))).toEqual(["c1", "c2"]);
+      expect(ids(built, together(built, id(built, "c2"), on))).toEqual(["c1", "c2"]);
+    }
+    const tree = firstTree(shown, null)!;
+    const min = marked(built, together(built, id(built, "c2"), true), true, () => tree).get(T)!;
+    expect(leafNodes(min).map((l) => [l.id, !!l.min])).toEqual([
+      ["app:b", false],
+      ["c1", true],
+      ["c2", true],
+    ]);
+    const after = build(shown, { [T]: min }, () => null, opts);
+    expect(ids(after, [...after.minimized])).toEqual(["c1", "c2"]);
+    expect(marked(after, together(after, id(after, "c1"), false), false, () => min).get(T)).toEqual(tree);
+  });
+
+  it("one above the other: that one alone", () => {
+    const built = build([at(T, "c1"), at(T, "c2")], { [T]: col({ id: "c1" }, { id: "c2" }) }, () => null, opts);
+    expect(ids(built, together(built, id(built, "c1"), true))).toEqual(["c1"]);
+  });
+
+  it("an app beside it: never minimized (a blank would stand above it), nor offered", () => {
+    const tree = col({ id: "c0" }, row({ id: "app:b" }, { id: "c1" }));
+    const built = build([at(T, "c0"), at(T, "app:b"), at(T, "c1")], { [T]: tree }, () => null, opts);
+    expect(built.under.has(id(built, "c1"))).toBe(true);
+    expect(together(built, id(built, "c1"), true)).toEqual([]);
+    expect(canMin(built, "c1")).toBe(false);
+    expect(canMin(built, "c0")).toBe(true); // (above them: alone in its kid)
+  });
+
+  it("two tasks side by side under a third: both tasks' panes, each in its own task's arrangement", () => {
+    const V = "g\u0000t3";
+    const shown = [at(V, "app:b"), at(T, "c1"), at(U, "c2")];
+    const screen = col({ id: V }, row({ id: T }, { id: U }));
+    const built = build(shown, {}, () => null, { ...opts, screen });
+    const both = together(built, id(built, "c1"), true);
+    expect(ids(built, both)).toEqual(["c1", "c2"]);
+    const trees = marked(built, both, true, (task) => ({ id: task === T ? "c1" : "c2" }));
+    expect([...trees.keys()].sort()).toEqual([T, U]);
+    const min = build(shown, Object.fromEntries(trees), () => null, { ...opts, screen });
+    expect(ids(min, [...min.minimized])).toEqual(["c1", "c2"]);
+    const one = build(shown, { [T]: trees.get(T)! }, () => null, { ...opts, screen }); // c2 whole: c1 shown whole too
+    expect(one.minimized.size).toBe(0);
+  });
+
+  it("a row further out: minimized with all of it; one shown whole, the row with it -- not a column inside it", () => {
+    const tree = col({ id: "app:b" }, row({ id: "a" }, col({ id: "b" }, { id: "c" })));
+    const shown = [at(T, "app:b"), at(T, "a"), at(T, "b"), at(T, "c")];
+    const built = build(shown, { [T]: tree }, () => null, opts);
+    expect(ids(built, together(built, id(built, "a"), true))).toEqual(["a", "b", "c"]);
+    expect(ids(built, together(built, id(built, "b"), true))).toEqual(["b"]);
+    expect(ids(built, together(built, id(built, "b"), false))).toEqual(["a", "b"]); // c stays, in its column
+    expect(ids(built, together(built, id(built, "a"), false))).toEqual(["a", "b", "c"]);
   });
 });
