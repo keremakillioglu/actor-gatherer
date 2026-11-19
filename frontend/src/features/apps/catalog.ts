@@ -5,7 +5,7 @@
 // shows its details beside the list; its ⋯ opens it, updates it (one from git) or uninstalls it. Installing, updating
 // and uninstalling are each asked in a dialog first (catalog-dialogs.ts). What it asks of the page around it
 // (src/features/apps/apps-page.js): an app opened, and the apps installed changed.
-import { get } from "../../core/api/client";
+import { get, post } from "../../core/api/client";
 import { glyph } from "../../core/ui/glyphs";
 import "./catalog.css";
 import { closeDialog, confirmBuiltin, confirmUninstall, fromSource, stageUpdate, type Asked } from "./catalog-dialogs";
@@ -27,7 +27,9 @@ export interface CatalogApp {
   access?: string;
   /** it can be opened with an agent of its own (its manifest's [agent] offered) */
   with_agent?: boolean;
-  /** what adding it to an actor or a task does ("join", "folder", "no": ag_dashboard/app_policy.py), as chosen; its
+  /** opened, it starts with an agent of its own: the reader's choice here (app_settings.py), yes until they say not */
+  opens_with_agent?: boolean;
+  /** what "+" on an actor or a task does with it ("join", "folder", "no": ag_dashboard/app_policy.py), as chosen; its
    * manifest's own; and those it can take (a group app: not "join") */
   on_task?: OnTask;
   on_task_own?: OnTask;
@@ -337,7 +339,8 @@ function brokenRow(b: Broken): HTMLElement {
   );
 }
 
-// its ⋯: Open, Details, Update (one from git with a newer commit), Uninstall
+// its ⋯: Open (the way chosen in its details: with an agent of its own, or on its own), Details, Update (one from git
+// with a newer commit), Uninstall
 function moreButton(a: CatalogApp): HTMLElement {
   const b = el("button", {
     type: "button",
@@ -351,8 +354,7 @@ function moreButton(a: CatalogApp): HTMLElement {
     ev.stopPropagation();
     if (b.getAttribute("aria-expanded") === "true") return closeMenu();
     menu(b, [
-      ["Open", () => open(a)],
-      ...(a.with_agent ? ([["Open with an agent", () => open(a, true)]] as [string, () => void][]) : []),
+      ["Open", () => open(a, !!a.opens_with_agent)],
       ["Details", () => select(a.name, true)],
       ...(page.updates[a.name] ? ([["Update…", () => void stageUpdate(a, asked)]] as [string, () => void][]) : []),
       ["Uninstall…", () => confirmUninstall(a, asked)],
@@ -413,6 +415,46 @@ function open(a: CatalogApp, withAgent = false): void {
     .finally(render);
 }
 
+// HOW IT OPENS, for an app that can have an agent of its own: with one (a new actor attached to it) or on its own -- the
+// way every place opens it (a group's "+ ⋯" menu, a new tab's "Or open", Open here), each listing it once. Kept by the
+// server (app_settings.py), so every page reads the same; the page around told, for its menus.
+function opensWith(a: CatalogApp): HTMLElement {
+  const pick = (agent: boolean, label: string) =>
+    el(
+      "button",
+      {
+        type: "button",
+        class: "ap-seg-b",
+        "aria-pressed": String(!!a.opens_with_agent === agent),
+        onclick: () => void choose(a, agent),
+      },
+      label,
+    );
+  return el(
+    "div",
+    { class: "ap-opens" },
+    el("span", { class: "ap-opens-l", text: "Opens" }),
+    el(
+      "div",
+      { class: "ap-seg", role: "group", "aria-label": `How ${a.label} opens` },
+      pick(true, "With its own agent"),
+      pick(false, "On its own"),
+    ),
+  );
+}
+async function choose(a: CatalogApp, agent: boolean): Promise<void> {
+  if (!!a.opens_with_agent === agent) return;
+  try {
+    await post("/api/apps/settings", { app: a.name, agent });
+    a.opens_with_agent = agent;
+    render();
+    await page.hooks?.changed();
+  } catch (e) {
+    page.note = `${a.label}: ${(e as Error).message}`;
+    render();
+  }
+}
+
 // ITS DETAILS, beside the list: what agents get, what it may do, when it works on its own, its windows, its data
 function details(a: CatalogApp): HTMLElement {
   const tools = page.allTools ? a.tools || [] : (a.tools || []).slice(0, 5),
@@ -440,13 +482,16 @@ function details(a: CatalogApp): HTMLElement {
       { class: "ap-acts" },
       el(
         "button",
-        { type: "button", class: "ap-btn primary", onclick: () => open(a) },
+        { type: "button", class: "ap-btn primary", onclick: () => open(a, !!a.opens_with_agent) },
         a.instances === "one" ? `Open ${a.label}` : `Open ${art} ${a.label}`,
       ),
-      a.with_agent
-        ? el("button", { type: "button", class: "ap-btn", onclick: () => open(a, true) }, "With an agent")
-        : null,
     ),
+    a.with_agent ? opensWith(a) : null,
+    onTaskChoice(a, (note) => {
+      page.note = note;
+      render();
+      void page.hooks?.changed(); // (its "+" menus read the apps again)
+    }),
     el("h3", { text: "What agents get" }),
     el(
       "div",
@@ -468,11 +513,6 @@ function details(a: CatalogApp): HTMLElement {
           )
         : null,
     ),
-    ...onTaskChoice(a, (note) => {
-      page.note = note;
-      void page.hooks?.changed(); // (its "+" menus read the apps again)
-      render();
-    }),
     el("h3", { text: "What it can do" }),
     el("ul", {}, ...said.can(a).map((c) => el("li", { text: c }))),
     (a.schedules || []).length ? el("h3", { text: "Schedule" }) : null,

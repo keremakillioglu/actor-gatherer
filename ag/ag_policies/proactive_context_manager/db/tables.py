@@ -8,31 +8,33 @@ gatherer's store (ag.ag_interface.GathererStore):
     tasks        each channel's tasks, by row range, with what each established
     cleaned_messages
                  user messages with their boilerplate removed, by events row
-    _builds      every build (an ANALYSIS of a channel's history): running /
+    _builds      every build (a channel's history split into tasks, summarized and ranked): running /
                  ready / failed / nothing; what it saw, where the verbatim part
                  starts, its ranking of the earlier tasks (internal)
     _boundaries  the boundary check's verdict per user message (internal)
 
 A leading underscore marks a table internal to the policy, which the agent
 has no reason to know about; `tasks` it may be pointed at. The no-channel
-pool is keyed '' (`key`) in tasks, _builds and _boundaries, since NULL
+pool is keyed '' (`get_channel_key`) in tasks, _builds and _boundaries, since NULL
 cannot be a key.
 
-    tasks       save_tasks, load_tasks, tasks_for, channels_with_tasks
-    cleaned     save_cleaned, cleaned_texts
-    builds      claim_build, new_build, settle, set_cut, fail_build, latest_build, build_for,
-                get_build; basis_of, in_use, waiting
-    boundaries  claim_boundary, record_boundary, boundary_verdict, checked_since
+    tasks       save_tasks, get_own_tasks, get_tasks, get_channels_with_tasks
+    cleaned     save_cleaned, get_cleaned_texts, apply_cleaned_texts
+    builds      claim_build, create_build, settle_build, set_cut, fail_build, get_own_latest_build, get_latest_build,
+                get_build; get_basis, is_waiting, is_join
+    boundaries  claim_boundary, record_boundary, get_boundary_verdict, has_checked_since
 """
 
 import json
 import sqlite3
 import time
 
-from ag.ag_policies.tools.channel import CHANNEL
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
-from ..tools.history import Task
+from ag.ag_policies.tools import channel
+from ag.ag_policies.tools.channel import CHANNEL
+
+from ag.ag_policies.tools.history import Task
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -64,12 +66,13 @@ CREATE TABLE IF NOT EXISTS _builds (
     status            TEXT NOT NULL,     -- running / ready / failed / nothing
     started_at        REAL NOT NULL,
     finished_at       REAL,
-    through_row       INTEGER,           -- the last row the analysis saw
+    through_row       INTEGER,           -- the last row the build saw
     open_from_row     INTEGER,           -- where the running (open) task starts
     ranking_json      TEXT,              -- earlier tasks, most relevant first: [[channel_key, task_index], ...]
     parallel_mark     INTEGER,           -- other channels' rows up to here were seen
     error             TEXT,
-    reason            TEXT               -- why it was started: limit / boundary / request / direct
+    reason            TEXT               -- why it was started: limit / boundary / request / direct /
+                                         -- compaction / join / asked / regrouped
 );
 CREATE INDEX IF NOT EXISTS _builds_channel ON _builds (channel_key, build_id);
 
@@ -91,16 +94,16 @@ def create(conn: sqlite3.Connection) -> None:
     """Create every table that is absent, and add the columns a database made by
     an older version lacks. Idempotent."""
     conn.executescript(SCHEMA)
-    if "reason" not in {r[1] for r in conn.execute("PRAGMA table_info(_builds)")}:
+    if "reason" not in {row[1] for row in conn.execute("PRAGMA table_info(_builds)")}:
         with conn:
             conn.execute("ALTER TABLE _builds ADD COLUMN reason TEXT")     # older builds: NULL
 
 
-def key(channel_id: Optional[str]) -> str:
+def get_channel_key(channel_id: Optional[str]) -> str:
     return channel_id or ""
 
 
-def changed(conn, what: str, channel_id=None, row: Optional[int] = None) -> None:
+def notify_changed(conn, what: str, channel_id=None, row: Optional[int] = None) -> None:
     """Tell whoever watches the gatherer that `what` of these tables was written, for the channel
     (None: no channel, or not at hand), after it committed (GathererStore.changed). A bare
     connection (a test's) tells no one."""
@@ -109,9 +112,29 @@ def changed(conn, what: str, channel_id=None, row: Optional[int] = None) -> None
         tell(what, {CHANNEL: channel_id} if channel_id else None, row)
 
 
-def _build_changed(conn, build_id: int) -> None:
+def _notify_build_changed(conn, build_id: int) -> None:
     row = conn.execute("SELECT channel_key FROM _builds WHERE build_id = ?", (build_id,)).fetchone()
-    changed(conn, "build", row[0] if row else None, build_id)
+    notify_changed(conn, "build", row[0] if row else None, build_id)
+
+
+# ---------------------------------------------------------------- the gatherer's messages
+
+#: The names the policy's own messages (made items) are stored under, by kind. A message from a stream and a
+#: file-change notice are named by the event types they show (events.py).
+GUIDE = "gatherer_guide"                # the guide every context opens with
+PARALLEL_REQUEST = "parallel_request"   # a request the user made to another session
+PARALLEL_BEFORE = "parallel_before"     # with no build: the other sessions' requests before this one began, as one block
+LEFT_OUT = "left_out"                   # agent steps stubbed to keep the context within max_context_tokens
+GROUP_CHANGE = "group_change"           # the message saying a change of groups changed what a session is shown
+
+
+def make_message(conn, fmt, tokenizer, channel_id, text: str, name: str, source: str) -> Tuple[int, Any, int]:
+    """(made_id, item, tokens) of `text` shown to the channel as a developer message named `name` -- `fmt`'s section
+    (the policy's `format`) -- stored as a made item, so the read log shows what was sent; `source` says what it was
+    made from."""
+    item = fmt.make_section(text, name)
+    made_id = conn.make_item(item, tokenizer, properties=channel.of(channel_id), name=name, source=source)
+    return made_id, item, conn.made_items([made_id])[made_id][2]
 
 
 # ---------------------------------------------------------------- tasks
@@ -119,12 +142,12 @@ def _build_changed(conn, build_id: int) -> None:
 def save_tasks(conn, channel_id, tasks: list) -> None:
     """Replace the channel's tasks with `tasks`, in order."""
     with conn:
-        conn.execute("DELETE FROM tasks WHERE channel_key = ?", (key(channel_id),))
+        conn.execute("DELETE FROM tasks WHERE channel_key = ?", (get_channel_key(channel_id),))
         conn.executemany(
             "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [(key(channel_id), i, t.name, t.description, t.first_row, t.last_row, t.tokens,
-              json.dumps(t.retention)) for i, t in enumerate(tasks)])
-    changed(conn, "tasks", channel_id)
+            [(get_channel_key(channel_id), i, task.name, task.description, task.first_row, task.last_row, task.tokens,
+              json.dumps(task.retention)) for i, task in enumerate(tasks)])
+    notify_changed(conn, "tasks", channel_id)
 
 
 # ---------------------------------------------------------------- cleaned messages
@@ -137,42 +160,51 @@ def save_cleaned(conn, build_id: int, texts: dict) -> None:
         conn.executemany("INSERT INTO cleaned_messages VALUES (?, ?, ?) ON CONFLICT (row_id) DO UPDATE "
                          "SET text = excluded.text, build_id = excluded.build_id",
                          [(row_id, text, build_id) for row_id, text in texts.items()])
-    changed(conn, "tasks", row=build_id)
+    notify_changed(conn, "tasks", row=build_id)
 
 
-def cleaned_texts(conn, row_ids) -> dict:
+def get_cleaned_texts(conn, row_ids) -> dict:
     """{events row_id: cleaned text} for the given rows that have one."""
-    ids = sorted(set(row_ids))
+    unique_ids = sorted(set(row_ids))
     out = {}
-    for i in range(0, len(ids), 900):                       # SQLite's limit on bound parameters
-        chunk = ids[i:i + 900]
+    for i in range(0, len(unique_ids), 900):                       # SQLite's limit on bound parameters
+        chunk = unique_ids[i:i + 900]
         out.update(conn.execute(f"SELECT row_id, text FROM cleaned_messages WHERE row_id IN "
                                 f"({','.join('?' * len(chunk))})", chunk).fetchall())
     return out
 
 
-def load_tasks(conn, channel_id) -> list:
+def apply_cleaned_texts(conn, entries) -> None:
+    """Show each user message in `entries` as its cleaned text, where it has one (in place). Its
+    row id -- the [id N] the context names it by -- is the original message's."""
+    texts = get_cleaned_texts(conn, [entry.row_id for entry in entries])
+    for entry in entries:
+        if entry.row_id in texts:
+            entry.text = texts[entry.row_id]
+
+
+def get_own_tasks(conn, channel_id) -> list:
     """The channel's stored tasks, in order, as `tools.history.Task`s."""
     rows = conn.execute(
         "SELECT task_index, name, description, first_row, last_row, tokens, retention_json "
-        "FROM tasks WHERE channel_key = ? ORDER BY task_index", (key(channel_id),))
-    return [Task(name=r[1], description=r[2] or "", first_row=r[3], last_row=r[4],
-                 tokens=r[5] or 0, retention=json.loads(r[6] or "{}"),
-                 channel_id=channel_id, task_index=r[0]) for r in rows]
+        "FROM tasks WHERE channel_key = ? ORDER BY task_index", (get_channel_key(channel_id),))
+    return [Task(name=row[1], description=row[2] or "", first_row=row[3], last_row=row[4],
+                 tokens=row[5] or 0, retention=json.loads(row[6] or "{}"),
+                 channel_id=channel_id, task_index=row[0]) for row in rows]
 
 
-def tasks_for(conn, channel_id) -> list:
+def get_tasks(conn, channel_id) -> list:
     """The tasks a channel continues from: its own, or -- while it has none
     -- the no-channel pool's, since a channel sees the pool's history as its
     own past (a bulk-loaded gatherer, joined later)."""
-    own = load_tasks(conn, channel_id)
+    own = get_own_tasks(conn, channel_id)
     if own or channel_id is None:
         return own
-    return load_tasks(conn, None)
+    return get_own_tasks(conn, None)
 
 
-def channels_with_tasks(conn) -> List[Optional[str]]:
-    return [(k or None) for (k,) in conn.execute(
+def get_channels_with_tasks(conn) -> List[Optional[str]]:
+    return [(channel_key or None) for (channel_key,) in conn.execute(
         "SELECT DISTINCT channel_key FROM tasks ORDER BY channel_key")]
 
 
@@ -183,7 +215,7 @@ BUILD_COLUMNS = ("build_id, status, started_at, finished_at, through_row, open_f
 #: Why a build was started: the context was over max_context_tokens; the boundary check found a new
 #: task; build_every_request; run directly (bulk loading, tests); the harness compacted its own
 #: history (a build that closes the running task, as `limit` does, and is adopted whatever its size); a
-#: channel with no build of its own joined a gatherer where another channel has one (`joinable`): it
+#: channel with no build of its own joined a gatherer where another channel has one (`is_joinable`): it
 #: starts from their work, its own history all the running task; a reader asked for one from outside
 #: any call (the dashboard's History view: `requested`), an ordinary build; the channel's group changed since the
 #: build its context comes from (`regrouped`): an ordinary build, adopted whatever its size, mid-turn too.
@@ -191,12 +223,12 @@ LIMIT, BOUNDARY, REQUEST, DIRECT, COMPACTION = "limit", "boundary", "request", "
 JOIN, ASKED, REGROUPED = "join", "asked", "regrouped"
 
 
-def _build(row) -> Optional[dict]:
+def _as_build(row) -> Optional[dict]:
     if not row:
         return None
     return {"build_id": row[0], "status": row[1], "started_at": row[2], "finished_at": row[3],
             "through_row": row[4], "open_from_row": row[5],
-            "ranking": [tuple(x) for x in json.loads(row[6])] if row[6] else [], "parallel_mark": row[7] or 0,
+            "ranking": [tuple(pair) for pair in json.loads(row[6])] if row[6] else [], "parallel_mark": row[7] or 0,
             "error": row[8], "reason": row[9]}
 
 
@@ -208,37 +240,37 @@ def claim_build(conn, channel_id, timeout: float, reason: str = DIRECT) -> Optio
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = conn.execute("SELECT status, started_at FROM _builds WHERE channel_key = ? "
-                           "ORDER BY build_id DESC LIMIT 1", (key(channel_id),)).fetchone()
+                           "ORDER BY build_id DESC LIMIT 1", (get_channel_key(channel_id),)).fetchone()
         if row and row[0] == "running" and now - row[1] < timeout:
             conn.execute("ROLLBACK")
             return None
-        cur = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
-                           "VALUES (?, 'running', ?, ?)", (key(channel_id), now, reason))
+        cursor = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
+                           "VALUES (?, 'running', ?, ?)", (get_channel_key(channel_id), now, reason))
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
         raise
-    changed(conn, "build", channel_id, cur.lastrowid)
-    return cur.lastrowid
+    notify_changed(conn, "build", channel_id, cursor.lastrowid)
+    return cursor.lastrowid
 
 
-def new_build(conn, channel_id, reason: str = DIRECT) -> int:
+def create_build(conn, channel_id, reason: str = DIRECT) -> int:
     """A `running` build row, unconditionally (for a build run directly)."""
     with conn:
-        cur = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
-                           "VALUES (?, 'running', ?, ?)", (key(channel_id), time.time(), reason))
-    changed(conn, "build", channel_id, cur.lastrowid)
-    return cur.lastrowid
+        cursor = conn.execute("INSERT INTO _builds (channel_key, status, started_at, reason) "
+                           "VALUES (?, 'running', ?, ?)", (get_channel_key(channel_id), time.time(), reason))
+    notify_changed(conn, "build", channel_id, cursor.lastrowid)
+    return cursor.lastrowid
 
 
 _SETTLE_FIELDS = ("through_row", "open_from_row", "ranking", "parallel_mark", "error")
 
 
-def settle(conn, build_id: int, status: str, **fields) -> None:
+def settle_build(conn, build_id: int, status: str, **fields) -> None:
     """Record how a build ended -- 'ready', 'failed' or 'nothing' -- and any
     of `through_row`, `open_from_row`, `ranking`, `parallel_mark`, `error`
     given; the others keep their values (a build refused at adoption keeps
-    what its analysis recorded)."""
+    what its build recorded)."""
     unknown = set(fields) - set(_SETTLE_FIELDS)
     if unknown:
         raise TypeError(f"settle: unknown fields {sorted(unknown)}")
@@ -246,7 +278,7 @@ def settle(conn, build_id: int, status: str, **fields) -> None:
     for name, value in fields.items():
         if name == "ranking":
             sets.append("ranking_json = ?")
-            values.append(json.dumps([list(x) for x in value]) if value is not None else None)
+            values.append(json.dumps([list(pair) for pair in value]) if value is not None else None)
         elif name == "error":
             sets.append("error = ?")
             values.append((value or "")[:2000] or None)
@@ -255,70 +287,69 @@ def settle(conn, build_id: int, status: str, **fields) -> None:
             values.append(value)
     with conn:
         conn.execute(f"UPDATE _builds SET {', '.join(sets)} WHERE build_id = ?", (*values, build_id))
-    _build_changed(conn, build_id)
+    _notify_build_changed(conn, build_id)
 
 
 def set_cut(conn, build_id: int, open_from_row: int) -> None:
     """Move a ready build's verbatim part to start at `open_from_row`: a cut inside the running task,
-    decided when the build is adopted (policy.cut_for)."""
+    decided when the build is adopted (core/assembly.py's `get_verbatim_start`)."""
     with conn:
         conn.execute("UPDATE _builds SET open_from_row = ? WHERE build_id = ?", (open_from_row, build_id))
-    _build_changed(conn, build_id)
+    _notify_build_changed(conn, build_id)
 
 
 def fail_build(conn, build_id: int, error: str, through_row: Optional[int] = None) -> None:
     fields = {"error": error}
     if through_row is not None:
         fields["through_row"] = through_row
-    settle(conn, build_id, "failed", **fields)
+    settle_build(conn, build_id, "failed", **fields)
 
 
-def latest_build(conn, channel_id) -> Optional[dict]:
+def get_own_latest_build(conn, channel_id) -> Optional[dict]:
     """The channel's most recent build, whatever its status."""
-    return _build(conn.execute(f"SELECT {BUILD_COLUMNS} FROM _builds WHERE channel_key = ? "
-                               "ORDER BY build_id DESC LIMIT 1", (key(channel_id),)).fetchone())
+    return _as_build(conn.execute(f"SELECT {BUILD_COLUMNS} FROM _builds WHERE channel_key = ? "
+                               "ORDER BY build_id DESC LIMIT 1", (get_channel_key(channel_id),)).fetchone())
 
 
-def build_for(conn, channel_id) -> Optional[dict]:
+def get_latest_build(conn, channel_id) -> Optional[dict]:
     """The build a read of `channel_id` goes by: its own latest, or -- while
-    it has none -- the no-channel pool's (see `tasks_for`)."""
-    own = latest_build(conn, channel_id)
+    it has none -- the no-channel pool's (see `get_tasks`)."""
+    own = get_own_latest_build(conn, channel_id)
     if own or channel_id is None:
         return own
-    return latest_build(conn, None)
+    return get_own_latest_build(conn, None)
 
 
-def joinable(conn, channel_id, keep=None) -> bool:
+def is_joinable(conn, channel_id, keep=None) -> bool:
     """Whether a channel with no build of its own can start from the gatherer's other channels:
     another channel (not the no-channel pool) has a ready build -- one `keep(channel)` keeps, given one
     (the policy's: one of its group)."""
     if channel_id is None:
         return False
     others = conn.execute("SELECT DISTINCT channel_key FROM _builds WHERE status = 'ready' AND channel_key NOT IN (?, '')",
-                          (key(channel_id),)).fetchall()
-    return any(keep is None or keep(k) for (k,) in others)
+                          (get_channel_key(channel_id),)).fetchall()
+    return any(keep is None or keep(channel_key) for (channel_key,) in others)
 
 
 def get_build(conn, build_id: int) -> Optional[dict]:
-    return _build(conn.execute(f"SELECT {BUILD_COLUMNS} FROM _builds WHERE build_id = ?",
+    return _as_build(conn.execute(f"SELECT {BUILD_COLUMNS} FROM _builds WHERE build_id = ?",
                                (build_id,)).fetchone())
 
 
-def basis_of(last_read) -> Optional[int]:
+def get_basis(last_read) -> Optional[int]:
     """The build the channel's last read came from (its `basis`), or None."""
     basis = last_read and last_read.get("basis")
     return int(basis) if basis else None
 
 
-def in_use(conn, last_read) -> Optional[dict]:
-    """The build the channel's last read came from, or None."""
-    used = basis_of(last_read)
-    return get_build(conn, used) if used is not None else None
-
-
-def waiting(build, last_read) -> bool:
+def is_waiting(build, last_read) -> bool:
     """A ready build the channel's context does not come from yet."""
-    return bool(build and build["status"] == "ready" and build["build_id"] != basis_of(last_read))
+    return bool(build and build["status"] == "ready" and build["build_id"] != get_basis(last_read))
+
+
+def is_join(build: Optional[dict]) -> bool:
+    """Whether `build` is a channel's join: its start from the gatherer's other channels."""
+    return bool(build) and build.get("reason") == JOIN
 
 
 # ---------------------------------------------------------------- boundaries
@@ -329,10 +360,10 @@ def claim_boundary(conn, row_id: int, channel_id) -> bool:
     try:
         with conn:
             conn.execute("INSERT INTO _boundaries (row_id, channel_key, asked_at) VALUES (?, ?, ?)",
-                         (row_id, key(channel_id), time.time()))
+                         (row_id, get_channel_key(channel_id), time.time()))
     except sqlite3.IntegrityError:
         return False
-    changed(conn, "boundary", channel_id, row_id)
+    notify_changed(conn, "boundary", channel_id, row_id)
     return True
 
 
@@ -345,17 +376,17 @@ def record_boundary(conn, row_id: int, new_task: bool, why: str, channel_id=None
                         VALUES (?, ?, ?, ?, ?, ?)
                         ON CONFLICT (row_id) DO UPDATE SET decided_at = excluded.decided_at,
                             new_task = excluded.new_task, why = excluded.why""",
-                     (row_id, key(channel_id), now, now, 1 if new_task else 0, (why or "")[:2000]))
-    changed(conn, "boundary", channel_id, row_id)
+                     (row_id, get_channel_key(channel_id), now, now, 1 if new_task else 0, (why or "")[:2000]))
+    notify_changed(conn, "boundary", channel_id, row_id)
 
 
-def checked_since(conn, channel_id, row_id: int) -> bool:
+def has_checked_since(conn, channel_id, row_id: int) -> bool:
     """Whether a user message of the channel after row `row_id` has been asked about (or is being)."""
     return conn.execute("SELECT 1 FROM _boundaries WHERE channel_key = ? AND row_id > ? LIMIT 1",
-                        (key(channel_id), row_id)).fetchone() is not None
+                        (get_channel_key(channel_id), row_id)).fetchone() is not None
 
 
-def boundary_verdict(conn, row_id: int) -> Optional[dict]:
+def get_boundary_verdict(conn, row_id: int) -> Optional[dict]:
     """{new_task (None while undecided), why, asked_at, decided_at} or None."""
     row = conn.execute("SELECT new_task, why, asked_at, decided_at FROM _boundaries WHERE row_id = ?",
                        (row_id,)).fetchone()
@@ -378,26 +409,26 @@ def append(conn, db: str, offset: int) -> None:
     (new ids), cleaned messages and boundary checks, their row ids moved by `offset` -- not the no-channel pool's, whose
     every channel would take it up."""
     def tables(schema):
-        return {r[0] for r in conn.execute(f"SELECT name FROM {schema}.sqlite_master WHERE type = 'table'")}
+        return {row[0] for row in conn.execute(f"SELECT name FROM {schema}.sqlite_master WHERE type = 'table'")}
 
     def columns(table, schema):
-        return [r[1] for r in conn.execute(f"PRAGMA {schema}.table_info({table})")]
+        return [row[1] for row in conn.execute(f"PRAGMA {schema}.table_info({table})")]
 
     here, there = tables("main"), tables(db)
     conn.execute("CREATE TEMP TABLE IF NOT EXISTS build_map (old INTEGER PRIMARY KEY, new INTEGER)")
     conn.execute("DELETE FROM build_map")
     if "_builds" in here and "_builds" in there:
-        cols = [c for c in columns("_builds", db) if c in columns("_builds", "main") and c != "build_id"]
-        for row in conn.execute(f"SELECT build_id, {', '.join(cols)} FROM {db}._builds WHERE channel_key != '' "
+        shared_columns = [column for column in columns("_builds", db) if column in columns("_builds", "main") and column != "build_id"]
+        for row in conn.execute(f"SELECT build_id, {', '.join(shared_columns)} FROM {db}._builds WHERE channel_key != '' "
                                 "ORDER BY build_id").fetchall():
-            values = [v + offset if c in BUILD_ROWS and isinstance(v, int) else v for c, v in zip(cols, row[1:])]
-            cur = conn.execute(f"INSERT INTO _builds ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", values)
-            conn.execute("INSERT INTO build_map VALUES (?, ?)", (row[0], cur.lastrowid))
+            values = [value + offset if column in BUILD_ROWS and isinstance(value, int) else value for column, value in zip(shared_columns, row[1:])]
+            cursor = conn.execute(f"INSERT INTO _builds ({', '.join(shared_columns)}) VALUES ({', '.join('?' * len(shared_columns))})", values)
+            conn.execute("INSERT INTO build_map VALUES (?, ?)", (row[0], cursor.lastrowid))
     for table, rows in APPENDED.items():
         if table not in here or table not in there:
             continue
-        cols = [c for c in columns(table, db) if c in columns(table, "main")]
-        values = [f"{c} + {int(offset)}" if c in rows else
-                  ("(SELECT new FROM temp.build_map WHERE old = s.build_id)" if c == "build_id" else c) for c in cols]
-        pool = " WHERE s.channel_key != ''" if "channel_key" in cols else ""
-        conn.execute(f"INSERT OR IGNORE INTO {table} ({', '.join(cols)}) SELECT {', '.join(values)} FROM {db}.{table} s{pool}")
+        shared_columns = [column for column in columns(table, db) if column in columns(table, "main")]
+        values = [f"{column} + {int(offset)}" if column in rows else
+                  ("(SELECT new FROM temp.build_map WHERE old = s.build_id)" if column == "build_id" else column) for column in shared_columns]
+        pool = " WHERE s.channel_key != ''" if "channel_key" in shared_columns else ""
+        conn.execute(f"INSERT OR IGNORE INTO {table} ({', '.join(shared_columns)}) SELECT {', '.join(values)} FROM {db}.{table} s{pool}")

@@ -294,7 +294,9 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
   call (access.py's `settle`, after each change of the tasks or the instances). A group's app never tells: every
   agent may use it always. An app's own messages to its agents name the instance: "Browser · work (<id>)".
 - **Opened alone or with an agent:** `[agent] offered` (the older `start`) says an app can be opened with an agent of
-  its own; the menus offer it both ways, alone and "with an agent".
+  its own. The menus list each app once; which way it opens is the user's choice in its details on the Apps page
+  ("Opens": with its own agent, the default, or on its own), kept by the dashboard (`ag_dashboard/app_settings.py`,
+  `<home>/dashboard/app_settings.json`) and given with each app in `/api/apps` (`opens_with_agent`).
 - **Installing is the user's:** `ag apps install|update|uninstall` run in an agent's shell asks the user, who approves
   or declines it in the dashboard (`ag_dashboard/app_requests.py`); the agent is told the answer. The Apps page, and
   `ag apps` in the user's own terminal, are as before. (An agent calling the dashboard's local API itself is not
@@ -325,7 +327,8 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
 - **Intents separate agent views from apps.** A view raises an intent and the host sends it to the app that handles
   that kind, opening its panel in the row above the panes:
   - `open-file {path, line, row_id}`
-  - `open-url {url}`
+  - `open-url {url}`: from a panel (Paper news's links), a new tab of a Browser shown in the group; none shown, one open
+    in no task (no agent's) shown again; none, a new Browser beside the panel
   - `explain-answer {channel, turn}`
   - `use-history {channel, rows}`
 

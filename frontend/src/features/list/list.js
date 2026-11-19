@@ -1,7 +1,7 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
-  BESIDE_KEY, ICONS, ago, closable, closeIcon, el, foldMark, get, harnessBadge, harnessInfo, harnessLogo, harnessName,
-  hideIcon, key, post, saveIcon, shellPath, strokeIcon,
+  BESIDE_KEY, ICONS, ago, closable, closeIcon, el, foldMark, gathererNamed, get, harnessBadge, harnessInfo,
+  harnessLogo, harnessName, hideIcon, key, post, saveIcon, shellPath, strokeIcon,
 } from "../../core/page/helpers.js";
 import { drawn, listSignature, loadHome, redrawList, setLive } from "../page/data.js";
 import { discardable, homeSince, homesTaken, newerTasks, seen, statusOf } from "./seen.js";
@@ -17,12 +17,12 @@ import {
   renderFolded, slideList,
 } from "./modes.js";
 import {
-  CREW_GROUP, actorPanes, addAppPane, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsOnly, appsOnlyLeft,
-  branchChip, closeAppPane, closePane, closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor,
-  holdAppPane, isAt, isAway, moveEnd, newForm, openActors, openPop, openTaskBeside, paneNote, pick, pickBeside,
-  placeIfShown, popMenu, rekeyTask, rememberTask, rowMore, rowPop, saveAppPanes, selectAppPane, selectedTask, show,
-  shownPanels, startButtons, startCwd, startSession, startable, taskAppsOpening, taskKey, taskLayout, tasksLaidOut,
-  topLayout, unselectApp, viaTabs, workPlacer,
+  CREW_GROUP, actorPanes, appClosed, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsOnlyKey, branchChip,
+  closeAppPane, closePane, closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, isAt,
+  isAway, moveEnd, newForm, openActors, openPop, openTaskBeside, paneNote, pick, pickBeside, showAppPanel,
+  placeIfShown, popMenu, rekeyTask, rememberTask, rowMore, rowPop, selectAppPane, selectedTask, show, shownPanels,
+  startButtons, startCwd, startSession, startable, taskAppsOpening, taskKey, taskLayout, tasksLaidOut, viaTabs,
+  workPlacer,
 } from "../layout/panes.js";
 import { refreshNewTab } from "../layout/new-tab.js";
 import { TASK_KINDS } from "../chat/chat.js";
@@ -353,7 +353,7 @@ function clearPicks(draw = true) {
 }
 // [its gatherer, the actors selected] as the home has them now (one gone since: left out)
 function pickedActors() {
-  const g = picks.g && state.home.gatherers.find((x) => x.name === picks.g);
+  const g = picks.g && gathererNamed(picks.g);
   return g ? [g, g.agents.filter((a) => picks.cs.has(a.channel) && !isCoordinator(a))] : [null, []];
 }
 function renderPickBar() {
@@ -602,7 +602,7 @@ const crewHideKey = (node) => node.startsWith("group:") ? node.slice("group:".le
 function crewPlace(node, g = null) {
   if (node === "all") return "everything";
   const [kind, id] = [node.slice(0, node.indexOf(":")), node.slice(node.indexOf(":") + 1)];
-  if (kind === "group") { const x = state.home.gatherers.find((y) => y.name === id); return x ? titleOf(x) : id; }
+  if (kind === "group") { const x = gathererNamed(id); return x ? titleOf(x) : id; }
   if (kind === "groups") { const f = folderById(GF, +id); return f ? f.name : "a folder of groups"; }
   const f = g ? folderById(g.name, +id) : null;
   return f ? f.name : "a folder";
@@ -619,8 +619,8 @@ function agentRow(g, a, group) {
   const [cls, label] = statusOf(a);
   const pk = picked(g, a);
   const away = isAway() && isAt(state.selected, g.name, a.channel);   // this page's own pane's, out of sight (an empty tab)
-  const current = !away && !appSelected() && !appsOnly && isAt(focusedActor(), g.name, a.channel);   // an app selected: it is, not the actor
-  const open = !current && !away && !appsOnly && openActors().some((sel) => isAt(sel, g.name, a.channel));   // (out of sight: not)
+  const current = !away && !appSelected() && !appsOnlyKey() && isAt(focusedActor(), g.name, a.channel);   // an app selected: it is, not the actor
+  const open = !current && !away && !appsOnlyKey() && openActors().some((sel) => isAt(sel, g.name, a.channel));   // (out of sight: not)
   const naming = !!state.renaming && isAt([state.renaming.g, state.renaming.c], g.name, a.channel);
   const named = a.name && a.name.text;
   // its name -- else what it was last asked -- double-clicked once it is the one shown (or F2): named there. Not a single
@@ -709,11 +709,11 @@ const NOTIFIED = ["notified", "Notification"];
 const appKey = (gname, id) => key(gname, appItem(id));
 // its notifications open, newest first: none, []
 function appNotices(gname, id) {
-  const g = state.home && state.home.gatherers.find((x) => x.name === gname), got = g && (g.apps || {})[id];
+  const g = gathererNamed(gname), got = g && (g.apps || {})[id];
   return got ? [...(got.notices || [])].reverse() : [];
 }
 function appStatusOf(gname, id) {
-  const g = state.home && state.home.gatherers.find((x) => x.name === gname), got = g && (g.apps || {})[id];
+  const g = gathererNamed(gname), got = g && (g.apps || {})[id];
   return got && got.last && got.last > (seen.at[appKey(gname, id)] || 0) ? NOTIFIED : null;
 }
 // a task's state, as its row says it: its most pressing item's -- its lead actor's, or a notification of one of its apps,
@@ -788,8 +788,28 @@ function readApps(gname, now = false) {
     const moved = had !== JSON.stringify(state.home.tasks || {});
     if (!moved && JSON.stringify(appsKnown.get(gname) || null) === is) return;
     appsKnown.set(gname, JSON.parse(is));
+    appsFollowHome(state.home);                      // read before a move the home has since: where the home has it
     renderAgents();
   }).catch(() => { /* none known: none shown */ });
+}
+// Each app where the home says it is (its `app_groups`, the server's app host's: read with the actors): one read under
+// another group -- moved since with its task or folder -- taken over to that one, its agents with it. Else the list
+// draws it twice for a moment: in its task in the new group, and alone in the old one, as last read there.
+function appsFollowHome(home) {
+  const where = home && home.app_groups;
+  if (!where) return;
+  for (const [g, known] of [...appsKnown]) {
+    const gone = (known.instances || []).filter((i) => where[i.id] !== undefined && where[i.id] !== g);
+    if (!gone.length) continue;
+    const ids = new Set(gone.map((i) => i.id)), attached = known.attached || {};
+    appsKnown.set(g, { ...known, instances: known.instances.filter((i) => !ids.has(i.id)),
+      attached: Object.fromEntries(Object.entries(attached).filter(([id]) => !ids.has(id))) });
+    for (const i of gone) {
+      const to = where[i.id], there = appsKnown.get(to) || { instances: [], attached: {} };
+      appsKnown.set(to, { ...there, instances: [...(there.instances || []).filter((x) => x.id !== i.id), { ...i, gatherer: to }],
+        attached: { ...(there.attached || {}), [i.id]: attached[i.id] || [] } });
+    }
+  }
 }
 // an open instance as the list has it -- {app (its manifest), id, title, name (the user's), folder, inst} -- null: of an
 // app not found here
@@ -892,7 +912,7 @@ function taskSaveButton(g, t) {
     "aria-label": saved ? "Unsave the task" : "Save the task for later" }, () => saveTask(g.name, t.id, !saved), saveIcon(saved));
 }
 async function saveTask(gname, id, save) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   for (const a of g ? taskMembers(g, id) : []) if (!!savedAs(gname, a) !== save) await setSaved(gname, a, save);
 }
 // A task CLOSED (its ×, while an actor of it runs): closed in the screen tabs first, as its tab's × would (features/layout/panes.js's
@@ -906,7 +926,7 @@ function taskCloseButton(g, t) {
     "aria-label": "Close the task" }, () => closeTask(g.name, t.id), closeIcon());
 }
 async function closeTask(gname, id) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g) return;
   const k = `${gname}\u0000t${id}`, apps = taskApps(g, id);
   await closedInTabs(k);
@@ -946,7 +966,7 @@ function appRow(g, o) {
 async function selectApp(gname, o, ev = null) {
   if (!state.home.gatherers.some((x) => x.name === gname)) return;
   const there = await viaTabs(taskKey(gname, appItem(o.id)), ev, appItem(o.id));   // where its task is open (features/layout/panes.js)
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g) return;
   if (there || !(ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT)) {
     const k = taskKey(gname, appItem(o.id));
@@ -958,12 +978,11 @@ async function selectApp(gname, o, ev = null) {
     }
   }
   let p = panes.apps.find((q) => q.instance.id === o.id);
-  if (p && p.held) holdAppPane(p, false);
-  if (!p) {
+  if (p) p = showAppPanel(o.app, p.instance);        // (one held out of sight: shown)
+  else {
     const inst = await window.agNext.apps.instanceOf(o.app.name, gname, o.id).catch(() => null);
     if (!inst) { paneNote(`${o.app.label}: closed`); readApps(gname, true); return; }
-    p = panes.apps.find((q) => q.instance.id === inst.id) || addAppPane(o.app, inst);
-    saveAppPanes();
+    p = showAppPanel(o.app, inst);
   }
   selectAppPane(p);
 }
@@ -973,13 +992,7 @@ async function closeApp(gname, o) {
   await closedInTabs(taskKey(gname, appItem(o.id)), appItem(o.id));
   try { await post("/api/apps/close", { gatherer: gname, instance: o.id }); }
   catch (e) { paneNote(`Close ${o.app.label}: ${e.message}`); return; }
-  unselectApp(o.id);
-  for (const p of panes.apps.filter((q) => q.instance.id === o.id)) {
-    panes.apps.splice(panes.apps.indexOf(p), 1);
-    p.panel.destroy(); p.node.remove();
-  }
-  appsOnlyLeft();
-  topLayout(); saveAppPanes();
+  appClosed(o.id);
   await loadHome();
   readApps(gname, true);
   renderAgents();
@@ -995,12 +1008,12 @@ async function closeApp(gname, o) {
 async function openTask(gname, id, focus = null, ev = null) {
   if (!state.home.gatherers.some((x) => x.name === gname)) return;
   const there = await viaTabs(`${gname}\u0000t${id}`, ev);   // where it is open (features/layout/panes.js)
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g) return;
   const k = `${gname}\u0000t${id}`, sel = focusedActor(), was = taskLayout(k);
   const wait = !(ev && ev.inTabs);                   // a tab being shown (features/layout/panes.js's enterTasks): its actor's Chat not waited on
   const ok = (c) => !!c && taskActors(g, id).some((a) => a.channel === c);
-  const mine = !appsOnly && !!sel && taskKey(sel[0], sel[1]) === k;   // its actor in the pane in focus
+  const mine = !appsOnlyKey() && !!sel && taskKey(sel[0], sel[1]) === k;   // its actor in the pane in focus
   const blank = mine && isAway() && !shownPanels().some((s) => s.key === k);   // ... out of sight, nothing else of it shown
   if (blank) tasksLaidOut.delete(k);                       // laid out again, as it was left (enterTask)
   const laid = mine && !blank && tasksLaidOut.has(k);      // shown already, laid out: as it is
@@ -1073,7 +1086,7 @@ function retask(was) {
   rekeyTask(was, now);
 }
 async function addToTask(gname, k, harness) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
   if (!a && !o) return;
   const cwd = (a ? cwdOf(a) : o.folder) || startCwd(g);
@@ -1097,7 +1110,7 @@ async function addToTask(gname, k, harness) {
 // first, if another is. Agents attached so are given the app's tools the next time they start (tool_gateway.py: at
 // launch).
 async function addAppToTask(gname, k, name) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
   const app = (a || o) && window.agNext ? window.agNext.apps.named(name) : null;
   if (!app) return;
@@ -1107,10 +1120,9 @@ async function addAppToTask(gname, k, name) {
     const inst = await window.agNext.apps.open(name, gname, (a ? cwdOf(a) : o.folder) || null);
     if (!o || inst.id !== o.id) takeTasks(await post("/api/tasks", { gatherer: gname, do: "add", to: keptAs(g, k), items: [appItem(inst.id)] }));
     await readApps(gname, true);
-    let there = panes.apps.find((p) => p.instance.id === inst.id);
-    if (!there) there = addAppPane(app, inst);
-    else { if (there.held) holdAppPane(there, false); there.panel.refresh(); }
-    saveAppPanes();
+    const had = panes.apps.some((p) => p.instance.id === inst.id);
+    const there = showAppPanel(app, inst);
+    if (had) there.panel.refresh();
     retask(was);
     selectAppPane(there);                              // added: selected, as an actor started is shown
   } catch (e) { paneNote(`${app.label}: ${e.message}`); }
@@ -1121,7 +1133,7 @@ async function addAppToTask(gname, k, name) {
 // panel shown above and selected; put in no task, no agent attached to it. The item's task shown first, if another is.
 // Not kept with the task's layout yet: the task left and entered again, it is not opened with it.
 async function openAppAt(gname, k, name) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
   const app = (a || o) && window.agNext ? window.agNext.apps.named(name) : null;
   if (!app) return;
@@ -1131,18 +1143,14 @@ async function openAppAt(gname, k, name) {
   try {
     const inst = await window.agNext.apps.open(name, gname, folder, null, true);
     await readApps(gname, true);
-    let there = panes.apps.find((p) => p.instance.id === inst.id);
-    if (!there) there = addAppPane(app, inst);
-    else if (there.held) holdAppPane(there, false);
-    saveAppPanes();
-    selectAppPane(there);
+    selectAppPane(showAppPanel(app, inst));           // (through the layout model, as addAppToTask's)
   } catch (e) { paneNote(`${app.label}: ${e.message}`); }
   renderAgents();
 }
 // An item taken out of its task: a task of its own again (the task gone, if one item is left in it) -- detached from the
 // task's others (task_links.py)
 async function takeOut(gname, k) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g || itemTaskOf(g, k) === null) return;
   try { takeTasks(await post("/api/tasks", { gatherer: gname, do: "out", items: [keptAs(g, k)] })); }
   catch (e) { paneNote(`Take it out of the task: ${e.message}`); }
@@ -1153,7 +1161,7 @@ async function takeOut(gname, k) {
 // Items put in item `k`'s task (dropped on its row): each out of its own, the task made if `k` is in none; filed where
 // `k` is
 async function joinTask(gname, k, items) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g) return;
   const was = selectedTask(), a = isAppItem(k) ? null : actorOf(g, k);
   const fid = a ? folderOf(gname, a) : appFolder(gname, k.slice(APP_ITEM.length));
@@ -1256,7 +1264,7 @@ async function endRename(keep) {
   if (!r) return;
   state.renaming = null; nameInput = null;
   if (r.kind) return keep ? nameItem(r.g, r.c, r.value) : redrawNamed();
-  const g = state.home.gatherers.find((x) => x.name === r.g), a = g && g.agents.find((x) => x.channel === r.c);
+  const g = gathererNamed(r.g), a = g && g.agents.find((x) => x.channel === r.c);
   const text = r.value.replace(/\s+/g, " ").trim().slice(0, 120);
   if (r.c === null) return keep && g && text !== titleOf(g) ? keepTitle(r.g, text) : redrawNamed();
   if (!keep || !a || text === ((a.name && a.name.text) || "") || (!text && !r.was)) { redrawNamed(); return; }
@@ -1306,7 +1314,7 @@ function startItemRename(g, k) {
   if (nameInput) { nameInput.focus(); nameInput.select(); }
 }
 async function nameItem(gname, k, value) {
-  const g = state.home.gatherers.find((x) => x.name === gname), got = g && itemNamed(g, k);
+  const g = gathererNamed(gname), got = g && itemNamed(g, k);
   const text = String(value || "").replace(/\s+/g, " ").trim().slice(0, 120);
   if (!got || text === got[2] || (!text && !got[4])) return redrawNamed();   // as it was
   const [kind, it] = got;
@@ -1619,7 +1627,7 @@ const withTasks = (g, cs) => [...new Set(cs.flatMap((c) => ((t) => t === null ? 
 const itemFolder = (g, c) => isAppItem(c) ? appFolder(g.name, c.slice(APP_ITEM.length)) : ((a) => a ? folderOf(g.name, a) : null)(actorOf(g, c));
 // Items put in folder `id` (null: their gatherer's top): actors as fileActors has them, apps by their item
 function fileItems(gname, items, id) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g) return null;
   const channels = items.map((c) => isAppItem(c) ? c : ((a) => a ? filedAs(gname, a) || a.channel : null)(actorOf(g, c))).filter(Boolean);
   if (!channels.length) return null;
@@ -1713,7 +1721,7 @@ function dropOn(n, g, id, open) {
   n.addEventListener("drop", (ev) => {
     if (!canDrop(g, id)) return;
     ev.preventDefault();
-    const d = listDrag, now = state.home.gatherers.find((x) => x.name === g.name) || g;
+    const d = listDrag, now = gathererNamed(g.name) || g;
     d.later = false;                                 // drawn by the move, next
     endDrag();
     const was = placeOf(d.gs ? d.gs[0] : d.g);       // a group, or an actor on its own, already inside `g`: just moved
@@ -1793,7 +1801,7 @@ export function start() {
 export {
   APP_ITEM, COLLAPSED_KEY, FOLDER_CHARS, GROUPS, LEAD_RANK, MANAGER, OPEN, SHELLS, TASK_ITEM, actorOf, actorTitle,
   actorsWithin, addButton, agentRow, aimStart, appFace, appFolder, appInfo, appItem, appKey, appMarkOf, appNotices,
-  appRowsIn, appShown, appStatusOf, appTaskOf, appTitle, appsKnown, appsNotified, askRefocus, boxGroups, boxKey,
+  appRowsIn, appShown, appStatusOf, appTaskOf, appTitle, appsFollowHome, appsKnown, appsNotified, askRefocus, boxGroups, boxKey,
   byName, closeApp, closeAsk, closeButton, closeShell, closedKids, closedSays, collapsed, crewAt, crewFace, crewHidden,
   crewHideKey, crewLine, crewPlace, crewRow, deleteFolder, dragFolder, dragItems, dragRow, dropFolderClosing, dropOn,
   dropOnItem, endDrag, endRename, envelope, fileStarted, firstAgent, foldOpen, folderAct, folderBox, folderById,

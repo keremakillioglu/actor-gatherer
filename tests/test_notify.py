@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_harness.store.notify import listeners_dir  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_tools import notify as doorbell  # noqa: E402
 from ag.ag_tools.llm.calllog import JOB_ENV, CallLog  # noqa: E402
 from test_core import PREAMBLE, Base, conversation, user  # noqa: E402
@@ -181,7 +181,7 @@ class WritesTest(Base):
         self.assertEqual(self.told(), [("boundary", "c1", 5), ("boundary", "c1", 5)])
 
     def test_a_bare_connection_tells_no_one(self):
-        tables.new_build(self.m._conn("s"), "c1")
+        tables.create_build(self.m._conn("s"), "c1")
         self.assertEqual(self.told(), [])
 
     def test_a_read_only_side_call_tells_no_one(self):

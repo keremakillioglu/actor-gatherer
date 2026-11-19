@@ -8,40 +8,22 @@ take (a group app's "join", a value not one of ON_TASK) is not used: the manifes
     choose(m, value)         the user's choice for `m` kept; its manifest's own value: the choice dropped
     of_item(host, gatherer, item)   for an item "app:<id>" of a gatherer, its app's (None: not an app's, or not known)
 
-Kept with the Apps page's other choices of an app, in <home>/dashboard/app_settings.json, {app: {"on_task": value,
-...}}: the dashboard's own file, not config.toml -- ag never reads it -- and not events: the choice is an app's, in no
-one gatherer, and every page (a browser's, the desktop app's) reads the same. An app uninstalled keeps its line."""
+Kept as the app's "on_task" beside its other choices on the Apps page, by app_settings.py: the one store of them, in
+<home>/dashboard/app_settings.json (the dashboard's own file, not config.toml: ag never reads it)."""
 
-import json
-import os
-import threading
 from typing import Dict, Optional
 
 import app_kit
 from app_kit.manifest import ON_TASK
 
-from . import home, tasks
+from . import app_settings, tasks
 
-KEY = "on_task"
-_lock = threading.Lock()
-
-
-def path() -> str:
-    return os.path.join(home.HOME, "dashboard", "app_settings.json")
-
-
-def _read() -> Dict[str, dict]:
-    try:
-        with open(path(), encoding="utf-8") as fh:
-            got = json.load(fh)
-    except (OSError, ValueError):
-        return {}
-    return {k: v for k, v in got.items() if isinstance(v, dict)} if isinstance(got, dict) else {}
+KEY = "on_task"                                    # its key among an app's choices (app_settings.py)
 
 
 def chosen() -> Dict[str, str]:
     """The user's choices, {app: value} (none: no file, or one that doesn't parse)."""
-    return {k: v[KEY] for k, v in _read().items() if isinstance(v.get(KEY), str)}
+    return {k: v for k, v in app_settings.chosen(KEY).items() if isinstance(v, str)}
 
 
 def allowed(m: "app_kit.Manifest", value: str) -> bool:
@@ -72,20 +54,7 @@ def choose(m: "app_kit.Manifest", value: str) -> str:
     later version of the app is followed."""
     if not allowed(m, value):
         raise ValueError(f"{value!r}: one of {', '.join(v for v in ON_TASK if allowed(m, v))} for {m.label}")
-    with _lock:
-        got = _read()
-        mine = got.setdefault(m.name, {})
-        if value == m.on_task:
-            mine.pop(KEY, None)
-        else:
-            mine[KEY] = value
-        if not mine:
-            del got[m.name]
-        os.makedirs(os.path.dirname(path()), exist_ok=True)
-        tmp = path() + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(got, fh, indent=1, sort_keys=True)
-        os.replace(tmp, path())
+    app_settings.keep(m.name, KEY, None if value == m.on_task else value)
     return of(m)
 
 

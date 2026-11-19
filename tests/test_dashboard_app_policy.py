@@ -1,5 +1,5 @@
 """app_policy.py: what adding an app to an actor or a task does ("join", "folder", "no") -- its manifest's `on_task`,
-unless the user chose otherwise for it on the Apps page, kept in <home>/dashboard/app_settings.json."""
+unless the user chose otherwise for it on the Apps page, kept by app_settings.py beside the app's other choices."""
 
 import json
 import os
@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app_kit  # noqa: E402
-from ag_dashboard import app_policy, home as dashboard_home  # noqa: E402
+from ag_dashboard import app_policy, app_settings, home as dashboard_home  # noqa: E402
 
 
 class AppPolicyTest(unittest.TestCase):
@@ -27,10 +27,10 @@ class AppPolicyTest(unittest.TestCase):
 
     def kept(self, got=None):
         if got is not None:
-            os.makedirs(os.path.dirname(app_policy.path()), exist_ok=True)
-            with open(app_policy.path(), "w") as fh:
+            os.makedirs(os.path.dirname(app_settings.path()), exist_ok=True)
+            with open(app_settings.path(), "w") as fh:
                 json.dump(got, fh)
-        with open(app_policy.path()) as fh:
+        with open(app_settings.path()) as fh:
             return json.load(fh)
 
     def test_the_manifest_s_unless_the_user_chose_otherwise(self):
@@ -60,7 +60,7 @@ class AppPolicyTest(unittest.TestCase):
         self.assertIn("one of folder, no for Files", str(ctx.exception))
         with self.assertRaises(ValueError):
             app_policy.choose(self.browser, "beside")
-        self.assertFalse(os.path.exists(app_policy.path()))
+        self.assertFalse(os.path.exists(app_settings.path()))
 
 
 if __name__ == "__main__":

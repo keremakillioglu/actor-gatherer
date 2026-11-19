@@ -34,5 +34,5 @@ given (ag.ag_interface.Jobs), which the harness runs in a worker of its own.
 
 What a policy makes of the tools' results -- which sections, in what words;
 which tables, what is kept -- is the policy's (e.g. ag/ag_policies/proactive_context_manager/
-layout.py and tables.py). The tools return tasks, a ranking, a verdict, text.
+core/sections.py and db/tables.py). The tools return tasks, a ranking, a verdict, text.
 """

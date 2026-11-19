@@ -12,7 +12,7 @@ import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import app_requests, server, tool_gateway  # noqa: E402
+from ag_dashboard import app_requests, app_settings, server, tool_gateway  # noqa: E402
 import app_kit  # noqa: E402
 from test_dashboard_app_host import NOTES, ROOT, HostBase, insert_here, write_app  # noqa: E402
 
@@ -74,6 +74,51 @@ class CatalogTest(HostBase):
         self.assertEqual(got["slate"]["origin"], "builtin")
         self.assertEqual(self.api("GET", "/api/apps/catalog")[1]["available"], [])
         self.assertTrue(i.id)
+
+    def test_an_app_with_an_agent_of_its_own_opens_with_it_until_the_reader_chooses_on_its_own(self):
+        write_app(self.builtin, "scribe", NOTES.replace('name = "notes"', 'name = "scribe"').replace(
+            'label = "Notes"', 'label = "Scribe"').replace("notes.added", "scribe.added") + '\n[agent]\noffered = true\n')
+        listed = lambda: {a["name"]: a["opens_with_agent"] for a in self.api("GET", "/api/apps")[1]["apps"]}  # noqa: E731
+        self.assertEqual(self.installed()["scribe"]["opens_with_agent"], True)       # yes, until chosen otherwise
+        self.assertEqual(listed(), {"notes": False, "scribe": True, "slate": False})  # (no agent to have: never)
+        self.assertEqual(self.api("POST", "/api/apps/settings", {"app": "scribe", "agent": False}), (200, {"agent": False}))
+        self.assertEqual((self.installed()["scribe"]["opens_with_agent"], listed()["scribe"]), (False, False))
+        with open(app_settings.path(), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh), {"scribe": {"agent": False}})         # the dashboard's own file, kept
+        self.api("POST", "/api/apps/settings", {"app": "scribe", "agent": True})
+        self.assertEqual(listed()["scribe"], True)
+        # refused: an app with no agent of its own, one not installed, and a choice that isn't one
+        self.assertEqual(self.api("POST", "/api/apps/settings", {"app": "notes", "agent": True})[0], 400)
+        self.assertEqual(self.api("POST", "/api/apps/settings", {"app": "nope", "agent": True})[0], 404)
+        self.assertEqual(self.api("POST", "/api/apps/settings", {"app": "scribe", "agent": "no"})[0], 400)
+        self.assertEqual(listed()["scribe"], True)
+
+    def test_an_app_s_choices_are_kept_together_and_set_through_one_route(self):
+        """The Apps page's two choices of an app -- how it opens (`agent`), and what "+" on an actor or a task does with
+        it (`on_task`, app_policy.py) -- kept side by side in app_settings.py's one file, each set through
+        /api/apps/settings; the app's own `on_task` chosen again: no choice kept."""
+        write_app(self.builtin, "scribe", NOTES.replace('name = "notes"', 'name = "scribe"').replace(
+            'label = "Notes"', 'label = "Scribe"').replace("notes.added", "scribe.added").replace(
+            'access = "group"', 'access = "task"') + '\n[agent]\noffered = true\n')
+        scribe = lambda: self.installed()["scribe"]                                  # noqa: E731
+        self.assertEqual((scribe()["on_task"], scribe()["on_task_own"], scribe()["on_task_can"]),
+                         ("join", "join", ["join", "folder", "no"]))
+        self.assertEqual(self.api("POST", "/api/apps/settings", {"app": "scribe", "agent": False, "on_task": "no"}),
+                         (200, {"agent": False, "on_task": "no"}))
+        with open(app_settings.path(), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh), {"scribe": {"agent": False, "on_task": "no"}})
+        self.assertEqual((scribe()["opens_with_agent"], scribe()["on_task"]), (False, "no"))
+        self.assertEqual(self.api("POST", "/api/apps/settings", {"app": "scribe", "on_task": "join"})[1],
+                         {"on_task": "join"})
+        with open(app_settings.path(), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh), {"scribe": {"agent": False}})            # its own: dropped, `agent` kept
+        # refused, neither kept: a choice the app can't take (a group app joins no task), and no choice at all
+        status, got = self.api("POST", "/api/apps/settings", {"app": "notes", "on_task": "join"})
+        self.assertEqual((status, got["error"]), (400, "on_task: one of folder, no for Notes"))
+        status, got = self.api("POST", "/api/apps/settings", {"app": "scribe", "agent": True, "on_task": "beside"})
+        self.assertEqual(status, 400)
+        self.assertEqual(scribe()["opens_with_agent"], False)
+        self.assertEqual(self.api("POST", "/api/apps/settings", {"app": "scribe"})[0], 400)
 
     def test_installed_from_a_folder_it_is_on_in_every_group_at_once_and_an_update_says_what_changes(self):
         status, st = self.api("POST", "/api/apps/stage", {"source": self.src})

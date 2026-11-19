@@ -14,6 +14,8 @@ import { Cards, withBlocks } from "./cards";
 import { canMin, foldable, folded, idOf, Mins, minimized } from "./mins";
 import { Mover } from "./move";
 import { Placer } from "./place";
+import * as M from "./model";
+import { shadow } from "./shadow";
 import { Tabs, type State, type TabsHooks } from "./tabs";
 import { drawStrip, Tasks } from "./tasks";
 import type { Node, Rect, Size } from "./tree";
@@ -91,7 +93,6 @@ export interface Moves {
   screens: { id: string; n: number; name: string }[] | null;
 }
 
-const SCREEN_KEY = "ag-dashboard-screen";
 // the well under the tabs' bar, this far from the work area's sides and bottom (none: it is the work area -- the cards
 // 6px in from every side and 6px apart, the least room the page's frame takes from what they show); the cards this far
 // in it, and apart
@@ -128,14 +129,7 @@ export class Work {
     private readonly work: HTMLElement,
     private readonly hooks: WorkHooks,
   ) {
-    const read = <T>(key: string, none: T): T => {
-      try {
-        return JSON.parse(localStorage.getItem(key) || "null") ?? none;
-      } catch {
-        return none;
-      }
-    };
-    this.screen = read(SCREEN_KEY, null);
+    this.screen = shadow.now().tabs.find((t) => t.id === shadow.now().current)?.screen ?? null; // (the layout model's)
     const well = document.createElement("div");
     well.className = "lay-well";
     work.prepend(well); // (first: under every panel)
@@ -583,11 +577,8 @@ export class Work {
     this.place();
   }
   private saveScreen(): void {
-    try {
-      localStorage.setItem(SCREEN_KEY, JSON.stringify(this.screen));
-    } catch {
-      /* this page only */
-    }
+    shadow.update(M.setScreen, this.screen); // the tab shown's arrangement: the layout model's (model.ts)
+    shadow.persist();
   }
 }
 

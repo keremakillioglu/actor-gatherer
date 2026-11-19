@@ -26,33 +26,14 @@
 import { glyph } from "../../core/ui/glyphs";
 import { BarDrag } from "./bar-drag";
 import { nameInPlace } from "./tab-naming";
-import {
-  cellsFor,
-  drawMap,
-  drawnCells,
-  pageMark,
-  sameMap,
-  snapshot,
-  type Cell,
-  type CellLook,
-  type Drawn,
-} from "./tab-map";
+import { drawMap, pageMark, sameMap, snapshot, type CellLook } from "./tab-map";
 import type { Node, Rect } from "./tree";
+import { MARKS, PAGES, pressing, tabLook, type State, type TabLook } from "./tab-look";
+import * as M from "./model";
+import { shadow } from "./shadow";
 
-export interface Tab {
-  id: string;
-  name: string;
-  /** the tasks it shows (kept as it is left; the tab shown: what the work area shows) */
-  tasks: string[];
-  screen: Node | null;
-  focus: string | null;
-  /** what its new-tab page's message box holds (a tab showing nothing): kept as it is */
-  draft?: string;
-  /** a page of the dashboard's it shows in place of its new-tab page, holding no task: "apps", the Apps page */
-  page?: string;
-  /** its panels as they were last laid out, for its map (tab-map.ts) */
-  map?: Cell[];
-}
+/** A screen tab: the layout model's (model.ts). */
+export type Tab = M.Tab;
 export interface TabsHooks {
   /** The tasks the work area shows, in order. */
   shown: () => string[];
@@ -92,32 +73,20 @@ export interface TabsHooks {
   carry?: (task: string, to: string | null) => void;
 }
 
-/** An item's state, as a tab marks it: `mark` one of MARKS (or "", none), `said` its word ("Waiting for you"). */
-export interface State {
-  mark: string;
-  said: string;
-}
-/** The marks, the most pressing first: what waits on the reader (a question, an error, an app's notification, a turn
- * done since they looked) before what is at work (a turn, in the background). A task's mark, its items' most pressing. */
-export const MARKS = ["asking", "error", "notified", "finished", "working", "background"];
-/** The pages a tab can show (Tab's `page`), by the name its tab is given. */
-export const PAGES: Record<string, string> = { apps: "Apps" };
-// whether a tab is kept when another is shown: one with tasks, a name, something typed in its new-tab page, or a page
-const holds = (t: Tab): boolean => t.tasks.length > 0 || !!t.name || !!t.draft || !!t.page;
-const rank = (m: string): number => (MARKS.includes(m) ? MARKS.indexOf(m) : MARKS.length);
-/** The most pressing of these states (none marked: the first, its word only). */
-export function pressing(states: State[]): State {
-  const best = states.reduce<State | null>((b, s) => (!b || rank(s.mark) < rank(b.mark) ? s : b), null);
-  return best || { mark: "", said: "" };
-}
-const TABS_KEY = "ag-dashboard-screen-tabs";
 export const TABS_H = 40;
 let made = 0;
 const newId = (): string => `s${Date.now().toString(36)}${(made++).toString(36)}`;
 
+export { MARKS, PAGES, pressing, type State }; // (tab-look.ts's, as tabs.ts gave them)
+
 export class Tabs {
-  private tabs: Tab[];
-  private current: string;
+  // the tabs and the tab shown: the layout model's (model.ts, kept by shadow.ts), read -- every change made by its rules
+  private get tabs(): Tab[] {
+    return shadow.now().tabs;
+  }
+  private get current(): string {
+    return shadow.now().current;
+  }
   private switching = false; // a tab being shown, its tasks' panes opened one by one (the screen held as it is meanwhile)
   private settling: Promise<void> = Promise.resolve(); // the tab being shown (or made): done
   private started = false; // the page's first tab shown as it was left (start): the tab shown kept as it changes since
@@ -133,15 +102,8 @@ export class Tabs {
     work: HTMLElement,
     private readonly hooks: TabsHooks,
   ) {
-    let kept: { tabs?: Tab[]; current?: string } = {};
-    try {
-      kept = JSON.parse(localStorage.getItem(TABS_KEY) || "{}") || {};
-    } catch {
-      /* none kept */
-    }
-    this.tabs = Array.isArray(kept.tabs) ? kept.tabs.filter((t) => t && t.id) : [];
-    if (!this.tabs.length) this.tabs = [{ id: newId(), name: "", tasks: [], screen: null, focus: null }];
-    this.current = this.tabs.some((t) => t.id === kept.current) ? kept.current! : this.tabs[0].id;
+    shadow.start(); // the layout model (model.ts): the tabs kept read, or one new tab
+    shadow.canonWith(hooks.canon);
     this.strip = document.createElement("div");
     this.strip.className = "lay-tabs";
     this.list = document.createElement("div");
@@ -235,11 +197,23 @@ export class Tabs {
   // the tab shown kept as it is now, once started: its tasks, their arrangement, the one in focus (a reload shows it so)
   private note(): void {
     if (!this.started || this.switching) return;
+    shadow.later(
+      () =>
+        this.switching
+          ? null
+          : {
+              current: this.current,
+              shown: this.hooks.shown(),
+              tabs: this.tabs.map((t) => ({ id: t.id, tasks: this.tasksOf(t) })),
+            },
+      this.hooks.canon,
+    );
     const tab = this.tab(),
-      now = { tasks: this.hooks.shown(), screen: this.hooks.screen(), focus: this.hooks.focus() };
-    if (JSON.stringify(now) === JSON.stringify({ tasks: tab.tasks, screen: tab.screen, focus: tab.focus })) return;
-    Object.assign(tab, now);
-    this.save();
+      screen = this.hooks.screen(),
+      focus = this.hooks.focus();
+    if (JSON.stringify([screen, focus]) !== JSON.stringify([tab.screen, tab.focus]))
+      shadow.update(M.noted, screen, focus);
+    this.save(); // (the tasks shown too: the page tells the model of them as it changes them)
   }
   /** The tab shown's panels placed (work.ts): its map, kept with it -- drawn again only if it looks different (a bar
    * dragged moves its boxes a pixel now and then); none taken while a tab is being shown. */
@@ -247,7 +221,7 @@ export class Tabs {
     const tab = this.tab(),
       cells = snapshot(rects, items);
     if (this.switching || sameMap(cells, tab.map || [])) return;
-    tab.map = cells;
+    shadow.update(M.mapped, tab.id, cells);
     this.save();
     this.draw();
   }
@@ -263,11 +237,10 @@ export class Tabs {
    * on by itself). */
   async route(task: string, idle = false): Promise<void> {
     if (this.switching) await this.settling;
-    const here = this.tasksOf(this.tab());
-    if (here.includes(task)) return;
-    const holding = this.tabs.find((t) => t.id !== this.current && this.tasksOf(t).includes(task));
-    if (holding) return this.show(holding.id, task);
-    if (this.tab().page || ((here.length || (this.tab().draft && !this.fill)) && !idle)) this.fresh();
+    const id = newId(),
+      { layout, go } = M.route(shadow.now(), task, { idle, fill: this.fill, id });
+    if (go === "tab") return this.show(layout.current, task);
+    if (go === "fresh") this.fresh(id);
   }
   /** The tab shown's new-tab page opening something (an actor, an app), or done: meanwhile, a task routed goes in it,
    * whatever is typed there. */
@@ -277,21 +250,16 @@ export class Tabs {
 
   /** ⌥+click: the task out of any other tab (one left with none closed, unless named), to be the tab shown's alone. */
   take(task: string): void {
-    for (const t of this.tabs) if (t.id !== this.current) t.tasks = this.tasksOf(t).filter((k) => k !== task);
-    this.tabs = this.tabs.filter((t) => t.id === this.current || holds(t));
+    shadow.tell("take", M.take, task);
     this.save();
     this.hooks.changed();
   }
 
   /** A new tab, shown, for what is shown next (a task open nowhere, clicked), the tab shown kept as it is. Its panels are
    * still there till what is shown next replaces them (blank: closed at once). */
-  fresh(): void {
-    const left = this.leave();
-    const at = this.tabs.indexOf(left);
-    const tab: Tab = { id: newId(), name: "", tasks: [], screen: null, focus: null };
-    this.tabs.splice(at + 1, 0, tab);
-    this.current = tab.id;
-    this.drop(left);
+  fresh(id = newId()): void {
+    this.leave();
+    shadow.tell("fresh", M.fresh, id);
     this.hooks.setScreen(null);
     this.save();
     this.hooks.changed();
@@ -307,18 +275,21 @@ export class Tabs {
   /** The tab `id` shown, `focus` in focus (else the task in focus when it was left). */
   async show(id: string, focus: string | null = null): Promise<void> {
     if (this.switching) await this.settling; // one at a time
-    const to = this.tabs.find((t) => t.id === id);
-    if (!to || id === this.current) return;
-    const tasks = this.tasksOf(to),
-      kept = to.focus && this.hooks.canon ? this.hooks.canon(to.focus) : to.focus;
-    const left = this.leave();
-    this.current = id;
-    this.drop(left);
+    if (id === this.current || !this.tabs.some((t) => t.id === id)) return;
+    this.leave();
+    shadow.tell("show", M.show, id, focus);
+    await this.enter();
+  }
+  // the tab now shown (the model's), its panes opened: its tasks, as they were left -- one showing nothing (a new tab
+  // kept for what is typed in it, a page), the panels shown closed
+  private async enter(): Promise<void> {
+    const to = this.tab(),
+      tasks = this.tasksOf(to),
+      focus = to.focus && this.hooks.canon ? this.hooks.canon(to.focus) : to.focus;
     this.save();
     this.hooks.setScreen(to.screen);
-    // (one showing nothing -- a new tab kept for what is typed in it: the panels shown closed)
     await this.switch(() =>
-      tasks.length ? this.hooks.enter(tasks, focus ?? kept) : (this.hooks.clear?.() ?? Promise.resolve()),
+      tasks.length ? this.hooks.enter(tasks, focus) : (this.hooks.clear?.() ?? Promise.resolve()),
     );
   }
 
@@ -350,11 +321,10 @@ export class Tabs {
   async close(id: string): Promise<void> {
     if (this.switching) await this.settling;
     if (this.tabs.length < 2) return;
-    if (id === this.current) {
-      const at = this.tabs.findIndex((t) => t.id === id);
-      await this.show((this.tabs[at + 1] || this.tabs[at - 1]).id);
-    }
-    this.tabs = this.tabs.filter((t) => t.id !== id);
+    const shown = id === this.current;
+    if (shown) this.leave();
+    shadow.tell("close", M.close, id);
+    if (shown) await this.enter();
     this.save();
     this.hooks.changed();
   }
@@ -364,10 +334,9 @@ export class Tabs {
     if (this.switching) await this.settling;
     if (this.tabs.length > 1) return this.close(this.current);
     const tab = this.tab();
-    if (!this.hooks.shown().length && !tab.name && !tab.draft && !tab.page) return;
+    if (!this.hooks.shown().length && !tab.tasks.length && !tab.name && !tab.draft && !tab.page) return;
     this.leave();
-    Object.assign(tab, { tasks: [], screen: null, focus: null, name: "", draft: "" });
-    delete tab.page;
+    shadow.tell("closeShown", M.closeShown);
     this.hooks.setScreen(null);
     this.save();
     await this.switch(() => this.hooks.clear?.() ?? Promise.resolve());
@@ -382,8 +351,7 @@ export class Tabs {
     const rest = this.tasksOf(tab).filter((k) => k !== task);
     if (tab.id === this.current) return rest.length ? here() : this.closeShown();
     if (!rest.length) return this.close(tab.id);
-    const focus = tab.focus && this.hooks.canon ? this.hooks.canon(tab.focus) : tab.focus;
-    Object.assign(tab, { tasks: rest, focus: focus === task ? rest[0] : tab.focus });
+    shadow.tell("closed", M.closed, task);
     this.save();
     this.hooks.changed();
   }
@@ -401,9 +369,9 @@ export class Tabs {
     const there = this.tabs.find((t) => t.page === page);
     if (there) return there.id === this.current ? undefined : this.show(there.id);
     const tab = this.tab(),
-      empty = !this.hooks.shown().length && !tab.draft && !tab.page;
+      empty = !this.hooks.shown().length && !tab.tasks.length && !tab.draft && !tab.page;
     if (!empty) this.fresh();
-    this.tab().page = page;
+    shadow.tell("page", M.setPage, page);
     this.save();
     if (empty) return this.hooks.changed();
     await this.switch(() => this.hooks.clear?.() ?? Promise.resolve());
@@ -413,8 +381,7 @@ export class Tabs {
   setDraft(text: string, id = this.current): void {
     const t = this.tabs.find((x) => x.id === id);
     if (!t || (t.draft || "") === text) return;
-    if (text) t.draft = text;
-    else delete t.draft;
+    shadow.tell("setDraft", M.setDraft, text, id);
     this.save();
   }
 
@@ -428,7 +395,7 @@ export class Tabs {
   merge(id: string): string[] {
     const tasks = this.held(id);
     if (!tasks.length) return [];
-    this.tabs = this.tabs.filter((t) => t.id !== id);
+    shadow.tell("merge", M.merged, id);
     this.save();
     this.hooks.changed();
     return tasks;
@@ -444,15 +411,7 @@ export class Tabs {
    * or, none, in a new tab: after the tab shown, or (`last`) at the bar's end. Not shown: shown, the tab opens it again
    * as it was. */
   put(task: string, to: string | null, last = false): void {
-    let tab = to && to !== this.current ? this.tabs.find((t) => t.id === to) : undefined;
-    if (!tab) {
-      tab = { id: newId(), name: "", tasks: [], screen: null, focus: task };
-      this.tabs.splice(last ? this.tabs.length : this.tabs.findIndex((t) => t.id === this.current) + 1, 0, tab);
-    }
-    for (const t of this.tabs)
-      if (t !== tab && t.id !== this.current) t.tasks = this.tasksOf(t).filter((k) => k !== task);
-    tab.tasks = [...this.tasksOf(tab).filter((k) => k !== task), task];
-    tab.focus ||= task;
+    shadow.tell("put", M.put, task, to, last, newId());
     this.save();
     this.hooks.changed();
   }
@@ -463,12 +422,9 @@ export class Tabs {
 
   /** Tab `id` put at place `at` (from 0) among the others: the bar's order, and so the list's numbers, changed. */
   move(id: string, at: number): void {
-    const tab = this.tabs.find((t) => t.id === id);
-    if (!tab) return;
-    const order = this.tabs.filter((t) => t !== tab);
-    order.splice(Math.max(0, Math.min(at, order.length)), 0, tab);
-    if (order.every((t, i) => t === this.tabs[i])) return;
-    this.tabs = order;
+    const was = this.tabs.map((t) => t.id).join(" ");
+    shadow.tell("move", M.move, id, at);
+    if (this.tabs.map((t) => t.id).join(" ") === was) return;
     this.save();
     this.list.dataset.sig = "";
     this.draw();
@@ -484,9 +440,8 @@ export class Tabs {
   }
 
   rename(id: string, name: string): void {
-    const tab = this.tabs.find((t) => t.id === id);
-    if (!tab) return;
-    tab.name = name.trim();
+    if (!this.tabs.some((t) => t.id === id)) return;
+    shadow.tell("rename", M.rename, id, name.trim());
     this.save();
     this.draw();
   }
@@ -509,71 +464,27 @@ export class Tabs {
   private tab(): Tab {
     return this.tabs.find((t) => t.id === this.current)!;
   }
-  // a tab's tasks: the tab shown's, what is shown; another's, the ones it was left with, by their keys now
+  // a tab's tasks, the model's, by their keys now (an item joined a task since)
   private tasksOf(t: Tab): string[] {
-    if (t.id === this.current && !this.switching) return this.hooks.shown();
     if (!this.hooks.canon) return t.tasks;
     const now = t.tasks.map((k) => this.hooks.canon!(k)).filter((k): k is string => !!k);
     return now.filter((k, i) => now.indexOf(k) === i);
   }
-  private look(t: Tab): {
-    id: string;
-    page: string;
-    name: string;
-    given: boolean;
-    on: boolean;
-    map: Drawn[];
-    says: string[];
-  } {
-    const tasks = this.tasksOf(t),
-      names = tasks.map((k) => this.hooks.name(k)).filter(Boolean);
-    const said = names.length
-      ? names.slice(0, 2).join(", ") + (names.length > 2 ? ` +${names.length - 2}` : "")
-      : (t.page && PAGES[t.page]) || "New tab";
-    // each task: its state, marked on its lead's box in the map (cellsFor gives every task a box)
-    const states = new Map(tasks.map((k) => [k, pressing(this.hooks.status?.(k) || [])]));
-    const title = (k: string): string => {
-      const st = states.get(k);
-      return st?.said ? `${this.hooks.name(k)} · ${st.said}` : this.hooks.name(k);
-    };
-    const map = drawnCells(
-      cellsFor(t.map, tasks, (k) => (this.hooks.canon ? this.hooks.canon(k) : k), this.hooks.lead || ((k) => k)),
-      (k, item) => this.hooks.look?.(k, item) ?? null,
-      (k) => ({ mark: states.get(k)?.mark || "", title: title(k) }),
-    );
-    return {
-      id: t.id,
-      page: tasks.length ? "" : t.page || "",
-      name: t.name || said,
-      given: !!t.name,
-      on: t.id === this.current,
-      map,
-      says: tasks.filter((k) => states.get(k)?.said).map(title),
-    };
+  private look(t: Tab): TabLook {
+    return tabLook(t, this.tasksOf(t), this.current, this.hooks);
   }
 
   // the tab shown kept as it is left: its tasks (each kept as it is: hooks.remember), their arrangement, the one in focus
   // -- none of them in another tab now (one left with none closed, unless named)
-  private leave(): Tab {
-    const tab = this.tab(),
-      tasks = this.hooks.shown();
-    this.hooks.remember?.(tasks);
-    Object.assign(tab, { tasks, screen: this.hooks.screen(), focus: this.hooks.focus() });
-    for (const t of this.tabs) if (t !== tab) t.tasks = this.tasksOf(t).filter((k) => !tasks.includes(k));
-    this.tabs = this.tabs.filter((t) => t === tab || holds(t));
-    return tab;
-  }
-  // a tab left showing nothing, unnamed, nothing typed in its new-tab page (a new one, nothing opened in it): closed
-  private drop(left: Tab): void {
-    if (!holds(left)) this.tabs = this.tabs.filter((t) => t !== left);
+  private leave(): void {
+    this.hooks.remember?.(this.hooks.shown());
+    const screen = this.hooks.screen(),
+      focus = this.hooks.focus();
+    shadow.update(M.noted, screen, focus);
   }
 
   private save(): void {
-    try {
-      localStorage.setItem(TABS_KEY, JSON.stringify({ tabs: this.tabs, current: this.current }));
-    } catch {
-      /* this page only */
-    }
+    shadow.persist(); // the layout model, kept in this browser (model.ts's KEY)
   }
 
   private tabEl(t: Tab, look: ReturnType<Tabs["look"]>): HTMLElement {

@@ -344,6 +344,58 @@ old page's "Files view") is React now; what is around it is still the old page's
 - Panes become components in one page, sharing one stream.
 - `page.js` has no module left to start, and goes with the bridge.
 
+The layout slice comes first, in four steps, each with every test passing:
+1. *The model* (built): `features/layout/model.ts`, one `Layout` value -- the screen tabs, the tab shown, what each
+   task was left with -- and pure functions for every change, by the rules `tabs.ts` and `rememberTask` have; with
+   `migrate()` from the six keys (`panes`, `top-apps`, `task-layouts-2`, `screen`, `screen-tabs`, `task-trees`).
+2. *Shadow mode* (built): `shadow.ts` runs the model beside the page. Each change is told where the page makes it --
+   the tab bar's operations, a task entered (`enterTask`, `enterAppsTask`), opened beside, an app's panel added, a
+   task's last panel closed, the actor the page opens on by itself -- and once the page is quiet, the tasks shown and
+   every tab's are checked against it. The browser tests record each difference (`AG_LAYOUT_STRICT` fails on one).
+   A task's key is read as it is now (`keysNow`): the task an item joined, or the items of one that dissolved, those
+   whose panels are open.
+3. *The tab bar on the model* (built): `tabs.ts` keeps no tabs of its own -- it reads the model's, and every change it
+   makes is the model's rule for it (`fresh`, `show`, `close`, `put`, ...), with the page's side effects (panes entered
+   or cleared, the arrangement set) after. The tab shown's tasks are the model's, kept by the page's tells: `note()` no
+   longer copies `shown()` into the tab, only the arrangement and the focus, and saves what changed. ⌥ (`take`) only
+   takes the task out of the other tabs; the page's entering it opens it. The check stays, and on a difference still
+   sets the model to the page. Entering a tab's tasks on a switch or a reload (`hooks.enter`) stays till step 4.
+4. *The page's state into the model, then one renderer* -- moved a record at a time, the full suite after each:
+   - 4a (built): each task's record is the model's -- what it was left with (`left`, the old page's `taskLayouts`,
+     with whatever else an older page kept there) and its tree and tabs (`tasks.ts`'s `Tasks`, now pure rules:
+     `setTree`, `addTaskTab`, `showTaskTab`, `changeTaskTab`, `closeTaskTab`, `renameTaskTab`). The model is kept under
+     one key, `ag-dashboard-layout` (`load`), made once from the keys of before (`migrate`), which are then dropped:
+     `screen-tabs`, `task-layouts-2`, `task-trees`.
+   - 4b (built): the page's panes and the apps' panels above them as it last showed them (`savePanes`,
+     `saveAppPanes`: the model's `panes` and `apps`, page-wide as they were) and the tab shown's arrangement (`work.ts`:
+     the tab's `screen`) -- the one key holds all; `panes`, `top-apps` and `screen` are dropped with the others. Its own
+     pane out of sight (`hereAway`) and a task of apps only (`appsOnly`), this page's alone and never kept, are 4c's:
+     the renderer makes them from the model.
+   - 4c-1 (built): focus is the model's -- one item in focus, an actor's pane or an app's panel selected (`focus`), and
+     the actor last in focus (`lastActor`) it goes back to when the app is unselected -- in place of the page's
+     `panes.focus` and `appSel`; `focusedPane()` and `appSelected()` read it, and a pane given another actor in place
+     (`retarget`) takes focus with it. This page's alone: not kept.
+   - 4c-2 (built): the apps' panels shown are the model's `apps` (since 4b a copy of them, now their source): what opens
+     or closes one says so to the model -- `showAppPanel` (a panel shown: an app opened, selected, linked to, its
+     actor's, a task's), `closeAppPane`, `unwantTaskApps` (a task entered, left or closed: the others' apps, those
+     still opening too), `appClosed` (an instance closed, an app uninstalled) -- and `renderApps` makes the panels
+     match: a wanted one whose instance is known opened at once (in the frame that asked, as before: no flicker), the
+     rest once the host gives it, if still wanted then; one no longer wanted closed, or held out of sight while its
+     agent is at work. Panels held for agents at work stay outside the model. The check also compares the model's apps
+     with the panels shown.
+   - 4c-3a (built): the panes beside the page's own are the model's `panes.others` (a copy since 4b, now their source):
+     `openBeside` wants one at its place, `closePane` (and every loop closing a task's panes through it) and `closeHere`
+     no longer want one, a pane given another actor (`retarget`) changes its entry, `restorePanes` renders those kept
+     still in the home, and `renderPanes` makes the frames match; `savePanes` notes only the page's own pane, the focus,
+     and each pane's view and width. The check also compares the model's panes with the frames.
+   - 4c-3b (built): the page's own pane out of sight or closed (`away`, the page's `hereAway`/`hereClosed`) and the task
+     of apps only shown (`appsOnly`) are the model's, this page's alone and not kept: `putAway`, `backInSight`,
+     `setAppsOnly` write it, `isAway`, `isShut` and `appsOnlyKey()` read it.
+   - 4c-3c: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
+     and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
+   (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,
+   `ag-dashboard-layout`. The model then holds each task's open items itself (what `keysNow` reads off the panels now).
+
 ### Track B: the server
 
 **B1. FastAPI beside the old server, then in its place.** Built.

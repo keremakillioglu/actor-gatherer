@@ -4,6 +4,7 @@ properties are ag.ag_interface's own."""
 import ast
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -85,6 +86,49 @@ def app_folder(toml: str = FULL, files=("panel/index.html", "instructions.md", "
 def without(toml: str, block: str) -> str:
     assert block in toml, block
     return toml.replace(block, "")
+
+
+class PanelKitTest(unittest.TestCase):
+    """The panels' kit (js/kit.js, at /_ag/lib/kit.js): served by the host, loaded before each panel's own script,
+    and its `el` what each panel builds with."""
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def test_it_is_served_and_every_panel_that_builds_with_it_loads_it_first(self):
+        from ag_dashboard import libs
+        body, kind = libs.lib_file("kit.js")
+        self.assertIn(b"window.agKit", body)
+        self.assertTrue(kind.startswith("text/javascript"))
+        for app in ("browser", "files", "latex", "notes", "paper_news", "slack"):
+            with self.subTest(app=app):
+                with open(os.path.join(self.ROOT, "ag_apps", app, "panel", "index.html"), encoding="utf-8") as fh:
+                    page = fh.read()
+                self.assertLess(page.index('src="/_ag/lib/kit.js"'), page.index('src="/_ag/app.js"'))
+
+    def test_el_sets_what_it_is_given_and_leaves_out_what_is_not(self):
+        if not shutil.which("node"):
+            self.skipTest("no node here")
+        script = textwrap.dedent("""
+            class Node { constructor() { this.attrs = {}; this.kids = []; } setAttribute(k, v) { this.attrs[k] = String(v); }
+              addEventListener(k) { this.attrs["on:" + k] = true; } append(k) { this.kids.push(k instanceof Node ? "<node>" : k); } }
+            class Input extends Node { constructor() { super(); this.value = ""; } }
+            const document = { createElement: (t) => (t === "input" ? new Input() : new Node()) };
+            const window = {};
+            %s
+            const { el } = window.agKit;
+            const a = el("button", { class: "b", hidden: false, disabled: true, title: null, "aria-pressed": "false",
+                                     onclick: () => {}, text: "Go" }, "x", null, false, [el("i"), ["y"]]);
+            const i = el("input", { value: "v", checked: true });
+            const j = el("input", { checked: "" }), k = el("input", { checked: 0 });
+            console.log(JSON.stringify({ a: [a.className, a.textContent, a.attrs, a.kids],
+                                         i: [i.value, i.checked, i.attrs], j: [j.checked, k.checked] }));
+        """)
+        with open(os.path.join(self.ROOT, "app_kit", "js", "kit.js"), encoding="utf-8") as fh:
+            script %= fh.read()
+        got = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(got["a"], ["b", "Go", {"disabled": "", "aria-pressed": "false", "on:click": True},
+                                    ["x", "<node>", "y"]])
+        self.assertEqual(got["i"], ["v", True, {}])
+        self.assertEqual(got["j"], [True, False])            # "" as a present attribute (`cond ? "" : null`)
 
 
 class SeparateTest(unittest.TestCase):

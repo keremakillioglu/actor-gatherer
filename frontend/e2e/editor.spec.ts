@@ -35,8 +35,10 @@ test("a Files app: opened alone, never with an agent, its files edited plain -- 
   await row.locator("button.new-more").click();
   const menu = page.locator(".row-menu[role=menu]");
   await expect(menu.getByText("Files", { exact: true })).toHaveCount(1); // alone
-  await expect(menu.getByText("Files with an agent…", { exact: true })).toHaveCount(0);
-  await expect(menu.getByText("LaTeX with an agent…", { exact: true })).toHaveCount(1);
+  await expect(menu.getByText("Files…", { exact: true })).toHaveCount(0);
+  // each app listed once: the LaTeX editor with its agent (its box asks the folder and harness first), not also alone
+  await expect(menu.getByText("LaTeX Editor…", { exact: true })).toHaveCount(1);
+  await expect(menu.getByText("LaTeX Editor", { exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await openFile(page, plot);
   const panel = editorPanel(page);

@@ -14,7 +14,6 @@ agent gets its tools when its terminal next starts (tool_gateway.py).
     restore(host, name)        an app that comes with ag, uninstalled, installed again
     uninstall(host, name, data)   -> how ("home": its folder removed; "builtin": named in config.toml)
     updates(host)              {name: newest commit} of the apps installed from git that have a newer one
-    set_on_task(host, name, v)   what adding the app to an actor or a task does, as the user chooses (app_policy.py)
 """
 
 import json
@@ -23,10 +22,10 @@ import threading
 from typing import Dict, List, Optional
 
 import app_kit
-from app_kit import AppError, finding, installing
+from app_kit import finding, installing
 from app_kit.installing import InstallError
 
-from . import app_policy, data, home
+from . import app_policy, app_settings, data, home
 
 CHARS_PER_TOKEN = 3.6           # a tool's definition, as the model reads it: about this many characters a token
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -59,7 +58,8 @@ def described(m: "app_kit.Manifest", where: str, src: Optional[dict] = None) -> 
     return {"name": m.name, "label": m.label, "version": m.version, "description": m.description,
             "mark": bool(m.mark), "origin": where, "kind": src.get("kind") or ("builtin" if where == "builtin" else ""),
             "source": src.get("source") or "", "commit": src.get("commit") or "",
-            "installed_at": src.get("at") or None, "access": m.access, "with_agent": m.agent.offered, "instances": m.instances,
+            "installed_at": src.get("at") or None, "access": m.access, "with_agent": m.agent.offered,
+            "opens_with_agent": app_settings.opens_with_agent(m), "instances": m.instances,
             "on_task": app_policy.of(m), "on_task_own": m.on_task,
             "on_task_can": [v for v in app_kit.manifest.ON_TASK if app_policy.allowed(m, v)],
             "tools": [app_kit.tool_name(m.name, t.name) for t in m.tools], "tokens": cost(m),
@@ -181,15 +181,6 @@ def uninstall(host, name: str, data_too: bool = False) -> dict:
     how = installing.uninstall(home.HOME, name, folder, data=data_too)
     host.find()
     return {"name": name, "how": how}
-
-
-def set_on_task(host, name: str, value: str) -> dict:
-    """What adding app `name` to an actor or a task does, as the user chose it (app_policy.py) -> {name, on_task}."""
-    m = host.hosted(name).manifest
-    try:
-        return {"name": name, "on_task": app_policy.choose(m, value)}
-    except ValueError as exc:
-        raise AppError(str(exc)) from None
 
 
 def updates(host) -> Dict[str, str]:

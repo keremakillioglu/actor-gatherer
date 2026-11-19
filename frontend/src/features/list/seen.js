@@ -1,8 +1,8 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { closable, key, post, sessionStatus } from "../../core/page/helpers.js";
+import { closable, gathererNamed, key, post, sessionStatus } from "../../core/page/helpers.js";
 import { setLive } from "../page/data.js";
 import { connect } from "../settings/panel.js";
-import { actorTitle, appItem, appKey, renderAgents } from "./list.js";
+import { actorTitle, appItem, appKey, appsFollowHome, renderAgents } from "./list.js";
 import { appsAtWork, isAt, isAway, openActors } from "../layout/panes.js";
 import { appsChanged } from "../apps/apps-page.js";
 import { dropGone, heedHome } from "../notify/notify.js";
@@ -101,6 +101,8 @@ function newerTasks(had, got, at, only = null) {
 // it kept any); the selected actor, while the page is visible.
 function takeHome(home) {
   homesTaken++;
+  appsFollowHome(home);                              // an app moved with its task: in its new group, as its task is --
+  //                                                    before anything draws the list for this home
   if (state.home) home.tasks = newerTasks(state.home.tasks, home.tasks, home.now);
   else newerTasks({}, home.tasks, home.now);
   window.agNext.home(home);                        // the new code's store has it too (src/bridge.ts)
@@ -152,14 +154,14 @@ function markSeen() {
   const looked = [], away = isAway();               // this page's own actor, out of sight while a tab without it shows
   for (const [gname, c] of openActors()) {
     if (away && isAt(state.selected, gname, c)) continue;
-    const g = state.home.gatherers.find((x) => x.name === gname);
+    const g = gathererNamed(gname);
     const a = g && g.agents.find((x) => x.channel === c);
     if (!a || !a.last || (seen.at[a.key] || 0) >= a.last) continue;
     seen.at[a.key] = a.last; looked.push([gname, c, a.last]);
   }
   let apps = false;
   for (const p of document.hasFocus() ? panes.apps : []) {
-    const g = !p.held && state.home.gatherers.find((x) => x.name === p.instance.gatherer), got = g && (g.apps || {})[p.instance.id];
+    const g = !p.held && gathererNamed(p.instance.gatherer), got = g && (g.apps || {})[p.instance.id];
     const k = got && appKey(g.name, p.instance.id);
     if (!got || !got.last || (seen.at[k] || 0) >= got.last) continue;
     seen.at[k] = got.last; looked.push([g.name, appItem(p.instance.id), got.last]); apps = true;

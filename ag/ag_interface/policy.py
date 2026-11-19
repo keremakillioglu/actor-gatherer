@@ -31,6 +31,11 @@ from .event import EventType
 from .store import Row, event_text
 
 
+#: Why a build is asked for (`Policy.request_build`): the harness compacted its own history; or a reader, from
+#: outside any call, wants the analysis brought up to date.
+COMPACTION, READER = "compaction", "reader"
+
+
 @dataclass(frozen=True)
 class Read:
     """One read call: which gatherer, the read's properties, and the event it
@@ -131,7 +136,7 @@ class Policy(ABC):
     | `llm` | The LLM client set in `[policies.llm]`; its model is `llm.model`. |
     | `options` | A dict: the catalog entry's `options`, then the gatherer's `[options]`. |
     | `tokenizer` | Counts tokens: `tokenizer.count(text)`. Also set as `self.tokenizer` when not taken. |
-    | `jobs` | Starts background work: `jobs.start(gatherer, properties, "build", job_id)` calls `policy.build(gatherer, properties, job_id)` in a worker process, with the same policy built from the home. The job opens the gatherer with `self.gatherers.open(gatherer)`. |
+    | `jobs` | Starts background work: `jobs.start(gatherer, properties, "build", job_id)` calls `policy.build(gatherer, properties, job_id)` in a worker process, with the same policy built from the home. The job opens the gatherer with `self.gatherers.open(gatherer)`. A job that raises is logged; whatever its failure should leave behind (a claim released, a result recorded), the job records itself before raising. |
 
     **Reading.** `read(store, read)` is called before every model call. `read.properties` holds
     the call's `channel` and `cwd`, and `read.row_id` the event it responds to (normally the
@@ -200,7 +205,8 @@ class Policy(ABC):
       results), add its type to `event_types` and have a poller output it; no other policy is
       affected.
     - `read` runs before every model call, so keep it fast. Put LLM calls and other slow work in
-      a background job (`jobs.start`), and use its result on a later read.
+      a background job (`jobs.start`), and use its result on a later read. A policy that builds in
+      the background this way can also be asked to build now (`request_build`).
     - The policies' building blocks are in `ag/ag_policies/tools/`: grouping events into turns
       and tasks, segmentation, summarization, the new-task check, ranking, and rendering to a
       token budget. A new policy can compose them.
@@ -250,6 +256,20 @@ class Policy(ABC):
             store: the gatherer's `GathererStore` (store.py).
             read: the read call: gatherer, properties, and the event responded to.
         """
+
+    def request_build(self, store, read: Read, why: str, *, wait: bool = False, min_messages: int = 0) -> dict:
+        """Build now, asked from outside a read: the harness compacted its history, or a reader wants the analysis
+        brought up to date. `why` says which:
+
+        - COMPACTION: the harness compacted its own history; what it sends next starts from a summary.
+        - READER: someone reading the gatherer from outside any call (the dashboard's History view) wants the
+          policy's analysis brought up to date, once `read.properties` names at least `min_messages` user
+          messages it has not analysed.
+
+        What a build is, and what each `why` means for it, is the policy's. With `wait`, return once the build
+        settles, or the harness gives up on the call (`read.stopped`). Returns what came of it, in the policy's
+        words; its "status", when waited for. Default: nothing, for a policy that does not build -- {}."""
+        return {}
 
     def bulk_loaded(self, store, gatherer_id: str, properties: Dict[str, Any]) -> Any:
         """Called after the manager stored a whole recorded history at once

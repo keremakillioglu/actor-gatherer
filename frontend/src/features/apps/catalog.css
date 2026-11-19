@@ -394,6 +394,53 @@
   padding-top: 14px;
   border-top: 1px solid var(--grid);
 }
+/* how it opens, and what "+" on a task does with it: one under the other, each its label above its buttons */
+.ap-opens {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 12px;
+}
+.ap-opens-l {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+.ap-opens-note {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+.ap-seg {
+  display: inline-flex;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ap-seg-b {
+  padding: 4px 10px;
+  border: 0;
+  background: var(--page);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ap-seg-b + .ap-seg-b {
+  border-left: 1px solid var(--grid);
+}
+.ap-seg-b:hover {
+  background: var(--wash);
+}
+.ap-seg-b[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--s1) 26%, var(--page));
+  color: var(--ink);
+  font-weight: 600;
+}
+.ap-seg-b:focus-visible {
+  outline: 2px solid var(--s1);
+  outline-offset: -2px;
+}
 .ap-kv {
   display: grid;
   grid-template-columns: 76px 1fr;
@@ -402,35 +449,6 @@
 }
 .ap-kv > :nth-child(odd) {
   color: var(--muted);
-}
-.ap-choice {
-  display: grid;
-  gap: 2px;
-}
-.ap-opt {
-  display: grid;
-  grid-template-columns: 18px 1fr;
-  align-items: start;
-  gap: 6px;
-  padding: 5px 6px;
-  border-radius: 7px;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-.ap-opt:hover {
-  background: var(--wash);
-}
-.ap-opt input {
-  margin: 3px 0 0;
-  accent-color: var(--s1);
-}
-.ap-opt-what {
-  color: var(--ink);
-}
-.ap-opt-note {
-  display: block;
-  color: var(--muted);
-  font-size: var(--fs-meta);
 }
 .ap-tools {
   display: flex;

@@ -1,5 +1,6 @@
 import { GROUP_ORDER, NOT_COUNTED, PREAMBLE, SNAPSHOT, state } from "./state.js";
 import { tildePath } from "./code.js";
+import { isShell, key, parse as parseKey, taskId, taskNumber } from "../model/keys";
 
 // ------------------------------------------------------------------ helpers
 const el = (tag, attrs = {}, ...kids) => {
@@ -466,7 +467,6 @@ function runnableNames(join) {
 }
 // A shell: the user's own shell in a terminal, opened from a gatherer's row (sessions.py's `shell`) and listed under it --
 // no actor, but shown as one is, in a pane, by its id in a channel's place ("shell:…", which no channel is).
-const isShell = (c) => typeof c === "string" && c.startsWith("shell:");
 const shellOf = (c) => (isShell(c) && state.home && (state.home.shells || []).find((s) => s.id === c)) || null;
 const shellPath = (s) => tildePath(s.cwd, state.home && state.home.home_dir);
 const statusEl = (cls, label) => el("span", { class: "status " + cls }, el("i", { "aria-hidden": "true" }), label);
@@ -485,9 +485,10 @@ async function post(path, body) {
 const selectedInfo = () => {
   if (!state.selected || !state.home) return null;
   const [g, c] = state.selected;
-  return (state.home.gatherers.find((x) => x.name === g) || { agents: [] }).agents.find((x) => x.channel === c) || null;
+  return (gathererNamed(g) || { agents: [] }).agents.find((x) => x.channel === c) || null;
 };
-const key = (g, c) => g + "\u0000" + c;
+// The gatherer of the home now named `name`; null for none (core/model/keys.ts keys its items by its name).
+const gathererNamed = (name) => (state.home && state.home.gatherers.find((x) => x.name === name)) || null;
 const signature = (value) => JSON.stringify(value);
 const MAC = /mac|iphone|ipad/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
 const BESIDE_KEY = MAC ? "⌘" : "Ctrl";
@@ -499,7 +500,8 @@ function escapeHtml(t) { return window.agNext.ui.escapeHtml(t); }
 export {
   BESIDE_KEY, GATHERER, HISTORY, HUE_INK, HUE_MAIN, ICONS, INLINE, MAC, OTHER_TYPE, PREAMBLE_TYPE, SHOWN_KEY, TYPES,
   ago, agoEl, atRest, atWork, avatarMode, axisTime, bareAvatar, buddy, clock, closable, closeIcon, color, compact,
-  doneCheck, el, foldMark, full, get, greeting, harnessBadge, harnessInfo, harnessLogo, harnessName, hasChat, hideIcon,
+  doneCheck, el, foldMark, full, gathererNamed, get, greeting, harnessBadge, harnessInfo, harnessLogo, harnessName, hasChat, hideIcon,
   hueInk, isShell, itemType, keepAvatarMode, key, lasting, post, restDelay, runnableNames, runsHere, saveIcon,
-  selectedInfo, sessionStatus, shellOf, shellPath, shownTypes, signature, span, statusEl, strokeIcon, svgEl, usd,
+  parseKey, selectedInfo, sessionStatus, shellOf, shellPath, shownTypes, signature, span, statusEl, strokeIcon, svgEl,
+  taskId, taskNumber, usd,
 };

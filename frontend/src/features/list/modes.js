@@ -1,7 +1,7 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
-  BESIDE_KEY, ICONS, MAC, ago, atWork, avatarMode, closeIcon, compact, el, foldMark, get, harnessName, hideIcon,
-  isShell, key, lasting, saveIcon, signature, strokeIcon,
+  BESIDE_KEY, ICONS, MAC, ago, atWork, avatarMode, closeIcon, compact, el, foldMark, gathererNamed, get, harnessName,
+  hideIcon, isShell, key, lasting, parseKey, saveIcon, signature, strokeIcon,
 } from "../../core/page/helpers.js";
 import { loadChat, refresh, render } from "../page/data.js";
 import { connect } from "../settings/panel.js";
@@ -341,7 +341,7 @@ function railBusyNow(shown) {
   const busy = new Map(shown.map((g) => [g.name, busyFolders(g)]));
   let gone = false;
   for (const k of busyFolded) {
-    const [gname, id] = k.split("\u0000");
+    const { group: gname, id } = parseKey(k);
     if (!(busy.get(gname) || { busy: new Set() }).busy.has(Number(id))) { busyFolded.delete(k); gone = true; }
   }
   if (gone) keepBusyFolded();
@@ -633,8 +633,8 @@ function cardRelease() { if (cardLive() && !hover.node.matches(":hover")) hoverT
 function cardDraw() {
   const box = hover.from && document.getElementById(hover.from);
   const at = box && [...box.querySelectorAll("[data-card]")].find((n) => n.dataset.card === hover.key);
-  const [gname, channel] = (hover.key || "").split("\u0000");
-  const g = state.home && state.home.gatherers.find((x) => x.name === gname), a = g && g.agents.find((x) => x.channel === channel);
+  const { group: gname, id: channel } = parseKey(hover.key);
+  const g = gathererNamed(gname), a = g && g.agents.find((x) => x.channel === channel);
   const f = g && !a && /^folder:\d+$/.test(channel || "") ? folderById(g.name, Number(channel.slice(7))) : null;
   const t = g && !a && /^task:\d+$/.test(channel || "") ? taskById(g.name, Number(channel.slice(5))) : null;
   const o = g && !a && isAppItem(channel) ? appInfo(g.name, channel.slice(APP_ITEM.length)) : null;
@@ -882,7 +882,7 @@ const cardAct = (cls, title, icon, fn) => el("button", { class: `act ${cls}`, ty
 // leaving it, keeps what is typed; Esc, or nothing typed, leaves it.
 let cardEdit = null, cardInput = null, cardMoving = false;
 function editInCard(edit) {
-  const g = state.home.gatherers.find((x) => x.name === edit.g);
+  const g = gathererNamed(edit.g);
   const item = edit.item && g ? itemNamed(g, edit.item) : null;
   if (edit.item && !item) return;
   cardEdit = { ...edit, key: hover.key, ...(item ? { kind: item[0], auto: item[3] } : {}),
@@ -916,7 +916,7 @@ function endCardEdit(keep) {
   cardEdit = null; cardInput = null;
   if (keep && e.item) nameItem(e.g, e.item, e.value);
   else if (keep && e.gatherer) {
-    const g = state.home.gatherers.find((x) => x.name === e.g), text = e.value.replace(/\s+/g, " ").trim();
+    const g = gathererNamed(e.g), text = e.value.replace(/\s+/g, " ").trim();
     if (g && text !== titleOf(g)) keepTitle(e.g, text);
   } else if (keep) nameFolder(e.g, e.id ?? null, e.parent ?? null, e.value);
   if (hover.node && !hover.node.hidden) cardDraw();

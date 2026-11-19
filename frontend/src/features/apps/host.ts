@@ -30,6 +30,8 @@ export interface AppInfo {
    * task; "folder", opened at the actor's directory, shown with the task, not put in it; "no", not offered */
   on_task?: "join" | "folder" | "no";
   agent?: { offered: boolean; name: string };
+  /** opened from a menu, it starts with an agent of its own (the Apps page's choice: app_settings.py) */
+  opens_with_agent?: boolean;
   capabilities?: Partial<Record<Capability, boolean>>;
   tools?: { name: string; handled_by: string }[];
   handles: { intent: string; types: string[] }[];

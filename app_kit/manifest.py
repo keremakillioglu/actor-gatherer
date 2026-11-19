@@ -234,9 +234,9 @@ class Asked:
 
 @dataclass(frozen=True)
 class Agent:
-    """`[agent]`: whether the app can be opened with an agent of its own -- the gatherer's menus then offer it both ways,
-    alone and "with an agent", that one a new agent attached to the new instance (not the agent in focus attached) --
-    and the name that agent is given ({folder}: the instance's folder's name; {app}: its label). `offered` is the key;
+    """`[agent]`: whether the app can be opened with an agent of its own -- a new agent attached to the new instance
+    (not the agent in focus attached); the gatherer's menus list it once, opened that way or alone as the user chose on
+    the Apps page (ag_dashboard/app_settings.py: with one, until they say not) -- and the name that agent is given ({folder}: the instance's folder's name; {app}: its label). `offered` is the key;
     `start`, its older name, is read too."""
     offered: bool = False
     name: str = "{app} · {folder}"

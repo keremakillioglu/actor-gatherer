@@ -9,8 +9,10 @@ installed, and installing, updating and uninstalling. `ag apps install|uninstall
                               {builtin}          an app that comes with ag, uninstalled, installed again
     POST /api/apps/discard    {id}               the staged app removed
     POST /api/apps/uninstall  {name, data?}      uninstalled; `data`: its data/ deleted too
-    POST /api/apps/on_task    {name, on_task}    what adding the app to an actor or a task does: "join", "folder" or
-                                                 "no" (app_policy.py), kept -> {name, on_task}
+    POST /api/apps/settings   {app, agent?, on_task?}   the reader's choices of an app, each given kept (app_settings.py):
+                                                 `agent`, opened with an agent of its own from now on, or on its own;
+                                                 `on_task`, what "+" on an actor or a task does with it: "join",
+                                                 "folder" or "no" (app_policy.py) -> {agent?, on_task?}
 
 With `actor` -- `ag apps` run in an agent's shell, which says who asks -- install and uninstall only ask the user
 (app_requests.py): {waiting: the request}, done once the user approves it in the dashboard:
@@ -25,10 +27,11 @@ agents get its tools, or lose them, when their terminal next starts."""
 from fastapi import APIRouter, Depends
 from starlette.responses import Response
 
+import app_kit
 from app_kit import AppError
 from app_kit.installing import InstallError
 
-from .. import app_catalog, app_requests
+from .. import app_catalog, app_policy, app_requests, app_settings
 from .common import Body, Errors, Parts, answer, failure, local_only
 
 router = APIRouter(route_class=Errors)
@@ -99,11 +102,29 @@ def apps_uninstall(srv: Parts, body: Body) -> Response:
     return _run(lambda: app_catalog.uninstall(_host(srv), str(body.get("name") or ""), bool(body.get("data"))))
 
 
-@router.post("/api/apps/on_task")
-def apps_on_task(srv: Parts, body: Body) -> Response:
-    """What adding the app to an actor or a task does, as the user chose it on the Apps page: "join" (put in its task),
-    "folder" (opened at the actor's directory, beside the task) or "no" (not offered). The app's own: no choice kept."""
-    return _run(lambda: app_catalog.set_on_task(_host(srv), str(body.get("name") or ""), str(body.get("on_task") or "")))
+@router.post("/api/apps/settings")
+def apps_settings(srv: Parts, body: Body) -> Response:
+    """{app, agent?, on_task?}: the reader's choices of the app, from now on -- `agent`, started with an agent of its
+    own when opened from a menu, or on its own (only for an app that can have one); `on_task`, what "+" on an actor or
+    a task does with it (app_policy.py: one it can take; its manifest's own, no choice kept). Each checked before
+    either is kept."""
+    def chosen():
+        name = str(body.get("app") or "")
+        m = _host(srv).hosted(name).manifest
+        if "agent" not in body and "on_task" not in body:
+            raise AppError("which choice? agent or on_task")
+        if "agent" in body and not isinstance(body["agent"], bool):
+            raise AppError("agent: true or false")
+        if "agent" in body and not m.agent.offered:
+            raise AppError(f"{name} has no agent of its own to open with")
+        if "on_task" in body and not app_policy.allowed(m, body["on_task"]):
+            can = [v for v in app_kit.manifest.ON_TASK if app_policy.allowed(m, v)]
+            raise AppError(f"on_task: one of {', '.join(can)} for {m.label}")
+        got = app_settings.choose(name, body["agent"]) if "agent" in body else {}
+        if "on_task" in body:
+            got = {**got, "on_task": app_policy.choose(m, body["on_task"])}
+        return got
+    return _run(chosen)
 
 
 @router.get("/api/apps/requests", dependencies=[Depends(local_only)])
