@@ -192,6 +192,18 @@ test("the rail's avatars have the list's bookmark and ×, over their corners: pr
   await expect(claude).toHaveAttribute("aria-current", "false");
 });
 
+test("a bookmark the server refused is taken back, with no home coming to say so", async ({ page }) => {
+  await streamsAsRequests(page);
+  await page.route("**/api/stream*", (route) => route.abort()); // no home after the first: the page's own copy shown
+  await page.route("**/api/saved", (route) => route.fulfill({ status: 500, json: { error: "disk full" } }));
+  await open(page);
+  const claude = page.locator("#agents button.agent", { hasText: "Parser fixes" });
+  await claude.hover();
+  await claude.locator(".save-btn").click();
+  await expect(page.locator("#live")).toContainText("Not saved");
+  await expect(claude.locator(".save-btn.on")).toHaveCount(0);
+});
+
 test("a rail bookmark under a resting pointer stays shown, every frame, while the rail scrolled is drawn again", async ({
   page,
 }) => {

@@ -93,12 +93,21 @@ const stale = (g) => !!lastOf(g) && (state.home.now || Date.now() / 1000) - last
 const isHidden = (g) => !g.alone
   && (choiceOf(g) === "hidden" || (stale(g) && choiceOf(g) !== "shown" && !g.agents.some((a) => savedAs(g.name, a))));
 async function keepChoice(name, choice) {
+  const before = state.home.hiding;
   state.home.hiding = { ...(state.home.hiding || {}) };
   if (choice) state.home.hiding[name] = choice; else delete state.home.hiding[name];
   if (SNAPSHOT) return;                            // a snapshot has no server: this page only
   const asked = homesTaken;                        // its answer kept unless a home came meanwhile (takeHome)
   try { const got = await post("/api/hiding", { gatherer: name, choice }); if (!homeSince(asked)) state.home.hiding = got; }
-  catch (err) { setLive(`Not saved: ${err.message}`); }
+  catch (err) { undone(asked, { hiding: before }); setLive(`Not saved: ${err.message}`); }
+}
+// A change the page made at once, as the reader asked, taken back when the server refused it -- unless a home came
+// since, which has what the server keeps (the stream sends a home only when it changed: without this, the page would
+// show the change till something else did)
+function undone(asked, was) {
+  if (homeSince(asked)) return;
+  Object.assign(state.home, was);
+  redrawList();
 }
 // The reader's name for a gatherer, kept by the server (titles.py, `home.titles`) and shown in place of its own, which
 // everything else -- its directory, its actors, `ag` -- still goes by.
@@ -132,7 +141,7 @@ const savedAs = (gname, a) => {
   return a.channel in kept ? a.channel : a.session && a.session.started_as in kept ? a.session.started_as : null;
 };
 async function setSaved(gname, a, save) {
-  const channel = savedAs(gname, a) || a.channel;
+  const channel = savedAs(gname, a) || a.channel, before = state.home.saved;
   const kept = { ...((state.home.saved || {})[gname] || {}) };
   if (save) kept[channel] = new Date().toISOString(); else delete kept[channel];
   state.home.saved = { ...(state.home.saved || {}), [gname]: kept };
@@ -140,7 +149,7 @@ async function setSaved(gname, a, save) {
   if (SNAPSHOT) return;                            // a snapshot has no server: this page only
   const asked = homesTaken;
   try { const got = await post("/api/saved", { gatherer: gname, channel, saved: save }); if (!homeSince(asked)) state.home.saved = got; }
-  catch (err) { setLive(`Not saved: ${err.message}`); }
+  catch (err) { undone(asked, { saved: before }); setLive(`Not saved: ${err.message}`); }
   redrawList();
 }
 // FOLDERS (folders.py, `home.folders`: {gatherer: {folders: [{id, parent, name}], filed: {channel: folder id}}}), kept by
@@ -1497,6 +1506,7 @@ function askRefocus(now = false) {
 async function closeFolder(g, f) {
   folderClosing = null;
   const tree = treeOf(g.name), ids = new Set(tree.folders.filter((x) => within(g.name, x.id, f.id)).map((x) => x.id));
+  const was = { saved: state.home.saved, shells: state.home.shells };
   const kept = { ...((state.home.saved || {})[g.name] || {}) };
   for (const a of actorsWithin(g, f.id)) { const k = savedAs(g.name, a); if (k) delete kept[k]; }
   for (const [c, at] of Object.entries(tree.filed)) if (ids.has(at)) delete kept[c];
@@ -1504,7 +1514,7 @@ async function closeFolder(g, f) {
   state.home.shells = (state.home.shells || []).filter((s) => !(s.gatherer === g.name && ids.has(s.folder)));
   const asked = homesTaken, at = new Date().toISOString();
   const got = await folderPost(g.name, { do: "close", id: f.id }, (t) => { for (const x of t.folders) if (ids.has(x.id)) x.closed = at; });
-  if (!got) return;
+  if (!got) { if (!SNAPSHOT) undone(asked, was); return; }   // (folderPost took its folders back)
   if (got.saved && !homeSince(asked)) { state.home.saved = got.saved; redrawList(); }
   const left = got.left || [];
   if (left.length) setLive(`${f.name} closed, but ${plural(left.length, "actor")} in it ${left.length === 1 ? "stays" : "stay"} open: ${left[0].why}`);
