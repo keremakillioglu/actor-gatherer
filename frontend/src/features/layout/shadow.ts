@@ -58,9 +58,16 @@ class Shadow {
     if (canon) this.canon = canon;
   }
   private persisted = "";
+  private dragged = false;
+  /** A bar between panels being dragged (`on`), or let go: the model kept in this browser only once it is let go --
+   * each move of it would write it all. */
+  dragging(on: boolean): void {
+    this.dragged = on;
+  }
   /** The model kept in this browser (M.KEY), if it changed since -- and the keys of before it was made from, dropped. */
   persist(): void {
     this.start();
+    if (this.dragged) return;
     const kept = { ...this.layout }; // (focus: this page's alone, not kept)
     delete kept.focus;
     delete kept.lastActor;
@@ -85,6 +92,7 @@ class Shadow {
   reset(): void {
     this.started = false;
     this.persisted = "";
+    this.dragged = false;
     this.layout = M.empty();
     this.told = [];
     this.log.length = 0;

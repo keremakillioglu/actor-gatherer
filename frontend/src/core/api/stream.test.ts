@@ -153,6 +153,27 @@ describe("streams over one socket", () => {
     expect(FakeEventSource.all).toEqual([]); // it worked once: never given up for EventSources
   });
 
+  it("keeps to one socket when a stream is opened while a socket that went is tried again", () => {
+    const mux = new Mux("ws://h/api/ws");
+    const a = new Stream("/api/stream", mux);
+    sock().hello();
+    sock().gone();
+    const b = new Stream("/api/agent?id=x", mux); // opened before the socket is tried again: waits for it
+    expect(FakeSocket.all).toHaveLength(1);
+    vi.advanceTimersByTime(250);
+    expect(FakeSocket.all).toHaveLength(2);
+    sock().hello();
+    expect(sock().sent).toEqual([
+      { open: "2", url: "/api/stream" },
+      { open: "3", url: "/api/agent?id=x" },
+    ]);
+    const seen: string[] = [];
+    b.addEventListener("agent", (ev) => seen.push((ev as MessageEvent).data));
+    sock().say("3", "agent", "x");
+    expect(seen).toEqual(["x"]); // heard on the one socket there is
+    expect(a.readyState).toBe(Stream.CONNECTING);
+  });
+
   it("opens each as its own EventSource where the socket never worked", () => {
     const mux = new Mux("ws://h/api/ws");
     const a = new Stream("/api/stream", mux);

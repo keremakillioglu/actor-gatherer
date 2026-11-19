@@ -49,6 +49,17 @@ afterEach(() => {
 });
 
 describe("AgSettings", () => {
+  it("keeps what is typed in its forms when config.toml is opened and the settings read again unchanged", async () => {
+    answering({ "/api/settings": SETTINGS });
+    render(<AgSettings closePanel={() => {}} />);
+    fireEvent.change(screen.getByLabelText("Gatherer model"), { target: { value: "claude-code/opus" } });
+    await act(async () => {
+      fireEvent.click(document.getElementById("cfg-edit")!);
+    });
+    expect(useSettings.getState().file.open).toBe(true);
+    expect((screen.getByLabelText("Gatherer model") as HTMLInputElement).value).toBe("claude-code/opus");
+  });
+
   it("says no model is set, and lists the harnesses ag runs", () => {
     render(<AgSettings closePanel={() => {}} />);
     const note = document.getElementById("cfg-model-note")!;

@@ -38,3 +38,9 @@ export function followEnd(node: HTMLElement): void {
   node.addEventListener("scroll", () => placed(node), { passive: true });
   sizes.observe(node);
 }
+
+/** `node` no longer followed: its conversation let go of (mount.tsx). */
+export function unfollow(node: HTMLElement): void {
+  sizes?.unobserve(node);
+  ends.delete(node);
+}

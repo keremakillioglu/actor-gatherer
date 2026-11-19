@@ -14,6 +14,7 @@ import { ACTOR_OPS, toActors } from "./actors";
 import { NOTICE_OPS, toNotices } from "./notices";
 import { SPELLING_OPS, spellingOn, toSpelling } from "./spelling";
 import type { LinkForm } from "./links";
+import { THEME_VARS } from "./theme-vars";
 
 type Capability =
   "message_agents" | "transcript" | "edit_guard" | "native_view" | "docs" | "actors" | "notify" | "message_actors";
@@ -105,35 +106,6 @@ export interface AgentState {
   name?: string | null;
 }
 type Msg = Record<string, unknown> & { ag?: number; id?: number; op?: string };
-
-/** The theme's colours a panel is given, as the dashboard's own page has them now. */
-const THEME_VARS = [
-  "--page",
-  "--surface",
-  "--side",
-  "--ink",
-  "--ink-2",
-  "--muted",
-  "--grid",
-  "--axis",
-  "--ring",
-  "--wash",
-  "--good",
-  "--warning",
-  "--critical",
-  "--selected",
-  "--md-link",
-  "--md-code",
-  "--hl-com",
-  "--hl-kw",
-  "--hl-str",
-  "--hl-num",
-  "--hl-fn",
-  "--hl-prop",
-  "--hl-meta",
-  "--hl-bg",
-  "--scroll",
-];
 
 let listed: Listed = { apps: [], instances: [], attached: {} };
 

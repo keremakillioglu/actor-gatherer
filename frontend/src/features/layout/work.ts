@@ -554,6 +554,7 @@ export class Work {
     this.place();
   }
   private resized(key: string, sizes: Size[], done: boolean): void {
+    shadow.dragging(!done); // (kept in this browser once it is let go, not at each move)
     const s = this.last?.splits.get(key);
     if (!s || !s.src) return;
     keepSizes(s, sizes);
