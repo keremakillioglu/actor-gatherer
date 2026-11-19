@@ -1,7 +1,8 @@
 import { MAX_PANES, PANE, PANES_KEY, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
-  HUE_MAIN, ICONS, MAC, el, get, harnessBadge, harnessInfo, harnessLogo, harnessName, isShell, key, post,
-  runnableNames, runsHere, selectedInfo, shellOf, shellPath, signature, strokeIcon,
+  HUE_MAIN, ICONS, MAC, el, gathererNamed, get, harnessBadge, harnessInfo, harnessLogo, harnessName, isShell, key,
+  parseKey, post, runnableNames, runsHere, selectedInfo, shellOf, shellPath, signature, strokeIcon, taskId,
+  taskNumber,
 } from "../../core/page/helpers.js";
 import { drawn, loadHome, setAbout, setAvatarMode, setEarlierTurns, setLive, setTheme } from "../page/data.js";
 import { connect, streamTake } from "../settings/panel.js";
@@ -53,7 +54,7 @@ async function pick(g, c, ev) {
   if (await viaTabs(taskKey(g, c), ev, c) || !beside) return show(g, c);
   await outOfAppsOnly(g, c);
   const k = taskKey(g, c);
-  return k && !k.startsWith(`${g}\u0000t`) ? openTaskBeside(g, k, c) : openBeside(g, c);
+  return k && taskNumber(parseKey(k).id) === null ? openTaskBeside(g, k, c) : openBeside(g, c);
 }
 function pickBeside(g, c, ev) {
   if (!MAC || !ev.ctrlKey || SNAPSHOT || ev.target.closest(".close-btn, .save-btn")) return;   // a Mac's Ctrl+click: a right click, no click after it
@@ -72,13 +73,13 @@ function taskKey(g, c) {
   if (!g || !c || isShell(c)) return null;
   if (isAppItem(c)) {                                // an app's instance, "app:<id>"
     const t = appTaskOf(g, c.slice(APP_ITEM.length));
-    return t === null ? `${g}\u0000${c}` : `${g}\u0000t${t}`;
+    return key(g, t === null ? c : taskId(t));
   }
-  const gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const gg = gathererNamed(g);
   const a = gg && gg.agents.find((x) => x.channel === c);
   if (!a) return null;
   const t = taskOf(g, a);                              // in a task with others (features/list/list.js's TASKS): the task's
-  return t === null ? `${g}\u0000${c}` : `${g}\u0000t${t}`;
+  return key(g, t === null ? c : taskId(t));
 }
 // the task an app's panel is of: its instance's
 const appPaneTask = (p) => taskKey(p.g, appItem(p.instance.id));
@@ -107,7 +108,7 @@ const TASK_LAYOUTS_KEY = "ag-dashboard-task-layouts-2", TASK_LAYOUTS_KEPT = 200;
 const taskLayouts = (() => { try { return JSON.parse(localStorage.getItem(TASK_LAYOUTS_KEY)) || {}; } catch (e) { return {}; } })();
 function rememberTask(key) {
   if (!key) return;
-  const sel = focusedActor(), [g] = key.split("\u0000"), its = (pg, c) => pg === g && taskKey(pg, c) === key;
+  const sel = focusedActor(), g = parseKey(key).group, its = (pg, c) => pg === g && taskKey(pg, c) === key;
   const shut = isShut() && its(...state.selected) ? state.selected[1] : null;
   const actors = openActors().filter(([pg, c]) => its(pg, c) && c !== shut).map(([, c]) => c);
   const views = {};                                  // each of its actors' panes: the view it shows
@@ -187,7 +188,7 @@ const tasksLaidOut = new Set();
 // a task's actors `rest`, not closed, opened beside `c` (shown), as many as there is room for -- each in the view it showed
 // when the task was left (`was`); `c` in focus after
 function layOutTask(g, to, c, rest, was = null) {
-  const gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const gg = gathererNamed(g);
   const open = (ch) => { const a = gg && gg.agents.find((x) => x.channel === ch); return a && statusOf(a)[0] !== "closed" && taskKey(g, ch) === to; };
   tasksLaidOut.add(to);
   for (const ch of rest) {
@@ -202,7 +203,7 @@ function layOutTask(g, to, c, rest, was = null) {
 // apps' panels added above (openTaskApps, `beside`); `first`'s pane in focus after.
 async function openTaskBeside(g, key, first) {
   await outOfAppsOnly(g, first);
-  const gg = state.home && state.home.gatherers.find((x) => x.name === g), was = taskLayout(key);
+  const gg = gathererNamed(g), was = taskLayout(key);
   tasksLaidOut.add(key);
   const open = (ch) => { const a = gg && gg.agents.find((x) => x.channel === ch); return a && statusOf(a)[0] !== "closed" && taskKey(g, ch) === key; };
   const order = [first, ...(was ? was.actors : taskOrder(g, key))].filter((ch, i, all) => ch && all.indexOf(ch) === i && open(ch));
@@ -229,8 +230,8 @@ async function outOfAppsOnly(g, c) {
 }
 // a task's actors not closed, as it opens at first: its lead first (features/list/list.js's taskActors)
 function taskOrder(g, key) {
-  const gg = state.home && state.home.gatherers.find((x) => x.name === g), id = key.split("\u0000")[1];
-  return gg && id.startsWith("t") ? taskActors(gg, Number(id.slice(1))).map((a) => a.channel) : [];
+  const gg = gathererNamed(g), id = parseKey(key).id;
+  return gg && taskNumber(id) !== null ? taskActors(gg, taskNumber(id)).map((a) => a.channel) : [];
 }
 // The apps' panels of a task -- its apps (features/list/list.js's taskApps), as the host has them now; an app alone, it -- up
 // to TASK_APPS, not open already; `only`, the task's layout as it was left (rememberTask): those of them it had open alone.
@@ -239,7 +240,7 @@ function taskOrder(g, key) {
 // switch between tasks with apps -- the Chat its whole height, its actor done large, then short again: a flicker. The
 // server's apps read then, the rest opened, as the host has them now; one opened at once, its app closed since, closed.
 async function openTaskApps(g, c, to, only = null, beside = false) {
-  const gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const gg = gathererNamed(g);
   if (!gg || !window.agNext) return;
   let found;
   ({ to, found } = taskAppsFound(g, gg, c, to, only));
@@ -269,16 +270,16 @@ async function openTaskApps(g, c, to, only = null, beside = false) {
 // task with others since: that one's), found, its apps -- `only`, those of them -- up to TASK_APPS, in that order, each
 // once: {app, id, size?, inst (its instance; one the page does not know open: none)}}
 function taskAppsFound(g, gg, c, to, only) {
-  const item = c || (to.split("\u0000")[1] || ""), now = taskKey(g, item);
-  if (now && now !== to && !to.split("\u0000")[1].startsWith("t")) {   // made one task with others since: that one's
+  const item = c || parseKey(to).id, now = taskKey(g, item);
+  if (now && now !== to && taskNumber(parseKey(to).id) === null) {   // made one task with others since: that one's
     rekeyTask(to, now);
     tasksLaidOut.add(now);
     to = now;
   }
   const found = [];
   const add = (k) => { if (window.agNext.apps.named(k.app) && !found.some((f) => f.id === k.id)) found.push(k); };
-  const id = to.split("\u0000")[1] || "";
-  const mine = id.startsWith("t") ? taskApps(gg, Number(id.slice(1)))
+  const id = parseKey(to).id;
+  const mine = taskNumber(id) !== null ? taskApps(gg, taskNumber(id))
     : isAppItem(id) ? [appInfo(g, id.slice(APP_ITEM.length))].filter(Boolean) : [];
   const known = (o) => (mine.find((m) => m.id === o.id) || [appInfo(g, o.id)].find((m) => m && m.app.name === o.app) || {}).inst;
   if (only) for (const o of only) add({ ...o, inst: known(o) });   // as it was left
@@ -571,7 +572,7 @@ async function onlyTask(k) {
   const others = [...new Set(shownPanels().map((s) => s.key))].filter((x) => x && x !== k);
   if (!others.length) return;
   for (const o of others) if (tasksLaidOut.has(o)) rememberTask(o);
-  const [g] = k.split("\u0000"), mine = (pg, c) => taskKey(pg, c) === k;
+  const g = parseKey(k).group, mine = (pg, c) => taskKey(pg, c) === k;
   for (const p of [...panes.apps]) if (!p.held && appPaneTask(p) !== k) closeAppPane(p);
   for (const p of [...actorPanes()]) if (!isShell(p.c) && !mine(p.g, p.c)) closePane(p);
   if (!appsOnly && state.selected && !isAway() && !mine(...state.selected)) {
@@ -585,10 +586,10 @@ async function onlyTask(k) {
 // A task of a screen tab dragged into the tab shown (features/layout/work.ts's mergeTab): opened beside the tasks shown,
 // as ⌘+click opens one -- not routed, its tab gone from the bar
 async function openTaskHereBeside(k) {
-  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const { group: g, id } = parseKey(k), gg = gathererNamed(g);
   if (!gg || id === undefined) return;
-  if (/^t\d+$/.test(id)) {
-    const t = Number(id.slice(1));
+  if (taskNumber(id) !== null) {
+    const t = taskNumber(id);
     if (!taskById(g, t)) return;
     if (!taskLead(gg, t)) return openTaskApps(g, null, k, (taskLayout(k) || {}).apps || null, true);   // apps alone
     return openTask(g, t, null, { metaKey: true, inTabs: true });
@@ -625,7 +626,7 @@ async function closeTaskHere(k) {
 // another tab (forgetActor); an app of one: its panel closed with it (features/list/list.js's closeApp).
 async function closedInTabs(k, item = null) {
   if (!workPlacer || !k || PANE || SNAPSHOT) return;
-  const [g, id] = k.split("\u0000");
+  const { group: g, id } = parseKey(k);
   if (item === null || id === item) return workPlacer.tabs.closed(k, () => closeTaskHere(k));
   if (isAppItem(item)) return;
   for (const p of [...actorPanes()]) if (isAt([p.g, p.c], g, item)) { workClosed(p.node); closePane(p); }
@@ -650,17 +651,17 @@ async function clearWork() {
 async function enterTasks(keys, focus) {
   const all = [focus, ...keys].filter((k, i, them) => k && them.indexOf(k) === i);
   const actor = (k) => {
-    const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+    const { group: g, id } = parseKey(k), gg = gathererNamed(g);
     if (!gg || id === undefined || isAppItem(id)) return false;
-    return /^t\d+$/.test(id) ? !!taskLead(gg, Number(id.slice(1))) : gg.agents.some((a) => a.channel === id);
+    return taskNumber(id) !== null ? !!taskLead(gg, taskNumber(id)) : gg.agents.some((a) => a.channel === id);
   };
   const order = [...all.filter(actor), ...all.filter((k) => !actor(k))];
   for (const [i, k] of order.entries()) {
-    const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+    const { group: g, id } = parseKey(k), gg = gathererNamed(g);
     if (!gg || id === undefined) continue;
     const beside = i > 0;
-    if (/^t\d+$/.test(id)) {
-      const t = Number(id.slice(1));
+    if (taskNumber(id) !== null) {
+      const t = taskNumber(id);
       if (!taskById(g, t)) continue;
       if (beside && !taskLead(gg, t)) await openTaskApps(g, null, k, (taskLayout(k) || {}).apps || null, true);   // apps alone
       else await openTask(g, t, null, { metaKey: beside, inTabs: true });   // (the tab's own: not routed, not waited on)
@@ -676,8 +677,8 @@ async function enterTasks(keys, focus) {
 // any other, as it is (a task's; one not known yet, its apps not read). A screen tab keeps the keys of the tasks it was
 // left with (features/layout/tabs.ts).
 function keyNow(k) {
-  const [g, id] = String(k).split("\u0000");
-  if (id === undefined || /^t\d+$/.test(id) || !state.home) return k;
+  const { group: g, id } = parseKey(k);
+  if (!id || taskNumber(id) !== null || !state.home) return k;
   return taskKey(g, id) || k;
 }
 // A TASK'S STATES, for its face in its screen tab (tabs.ts marks the most pressing): each of its actors' (statusOf),
@@ -686,9 +687,9 @@ function keyNow(k) {
 const TAB_MARK = { asking: "asking", error: "error", failed: "error", notified: "notified", finished: "finished",
   running: "working", building: "working", background: "background" };
 function taskStates(k) {
-  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const { group: g, id } = parseKey(k), gg = gathererNamed(g);
   if (!gg || id === undefined || isShell(id)) return [];
-  const told = (o) => appStatusOf(g, o.id), t = /^t\d+$/.test(id) ? Number(id.slice(1)) : null;
+  const told = (o) => appStatusOf(g, o.id), t = taskNumber(id);
   const one = isAppItem(id) ? appInfo(g, id.slice(APP_ITEM.length)) : null;
   const lead = t !== null ? taskLead(gg, t) : null;
   const actors = t !== null ? [lead, ...taskMembers(gg, t).filter((a) => a !== lead)].filter(Boolean)
@@ -700,7 +701,7 @@ function taskStates(k) {
 // TASK TABS (features/layout/tasks.ts). A task's tab shown: `items` of task `k` open, each in the view it showed, and
 // the task's other panels closed -- this page's own pane given another of the tab's actors, if it showed one not in it
 async function showTaskItems(k, items) {
-  const [g] = k.split("\u0000"), want = new Set(items), mine = (pg, c) => pg === g && taskKey(pg, c) === k;
+  const g = parseKey(k).group, want = new Set(items), mine = (pg, c) => pg === g && taskKey(pg, c) === k;
   const views = (taskLayout(k) || {}).views || {}, actors = items.filter((c) => !isAppItem(c) && !isShell(c));
   const open = (c) => openActors().some((s) => isAt(s, g, c));
   for (const p of [...actorPanes()]) if (mine(p.g, p.c) && !want.has(p.c)) closePane(p);
@@ -719,10 +720,10 @@ async function showTaskItems(k, items) {
 }
 // a task's lead actor (a new tab of the task holds it)
 function taskLeadOf(k) {
-  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const { group: g, id } = parseKey(k), gg = gathererNamed(g);
   if (!gg || id === undefined || isAppItem(id) || isShell(id)) return null;
-  if (!/^t\d+$/.test(id)) return id;
-  const a = taskLead(gg, Number(id.slice(1)));
+  if (taskNumber(id) === null) return id;
+  const a = taskLead(gg, taskNumber(id));
   return a && a.channel ? a.channel : null;
 }
 // a pane minimized now, or shown whole again: drawn so -- this page's own, or a frame's (told)
@@ -735,10 +736,10 @@ function workClosed(node) { if (workPlacer && node) workPlacer.closed(node); }
 // What a block of the work area is called on its strip (shown while there are others): its task's name, an actor's (the
 // coordinator agent's, unnamed: what it is), an app's; a terminal's (no task)
 function blockName(k) {
-  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const { group: g, id } = parseKey(k), gg = gathererNamed(g);
   if (k.startsWith("\u0002")) return isShell(k.slice(1)) ? "Terminal" : "";
   if (!gg || id === undefined) return "";
-  if (/^t\d+$/.test(id)) { const t = taskById(g, Number(id.slice(1))); return t ? taskName(gg, t) : "A task"; }
+  if (taskNumber(id) !== null) { const t = taskById(g, taskNumber(id)); return t ? taskName(gg, t) : "A task"; }
   if (isAppItem(id)) { const o = appInfo(g, id.slice(APP_ITEM.length)); return o ? appShown(o) : "An app"; }
   const a = gg.agents.find((x) => x.channel === id);
   return !a ? id : isCoordinator(a) && !(a.name && a.name.text) ? (a.over ? `${crewPlace(a.over, gg)} coordinator` : CREW_GROUP)
@@ -747,15 +748,15 @@ function blockName(k) {
 // A block's faces, on its card's head: its task's actors' (not closed; three at most) and its apps'
 // marks -- an actor's, an app's, alone
 function blockFaces(k) {
-  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const { group: g, id } = parseKey(k), gg = gathererNamed(g);
   if (!gg || id === undefined) return [];
   const face = (a) => {
     const src = a.avatar && !SNAPSHOT ? `/avatars/${a.avatar}.svg` : null;
     return src ? el("img", { class: "lay-face", src, alt: "", draggable: "false" }) : el("span", { class: "lay-face" }, harnessLogo(a.harness));
   };
   const mark = (o) => el("span", { class: "lay-face app" }, appMarkOf(o));
-  if (/^t\d+$/.test(id)) {
-    const t = Number(id.slice(1)), actors = taskActors(gg, t);
+  if (taskNumber(id) !== null) {
+    const t = taskNumber(id), actors = taskActors(gg, t);
     return [...actors.slice(0, 3).map(face), ...(actors.length ? [] : taskApps(gg, t).slice(0, 1).map(mark))];
   }
   if (isAppItem(id)) { const o = appInfo(g, id.slice(APP_ITEM.length)); return o ? [mark(o)] : []; }
@@ -765,10 +766,10 @@ function blockFaces(k) {
 // What a panel's box shows in its screen tab's map (tab-map.ts): an actor's, its avatar's hue and face; an app's, its
 // mark on grey. A task's key for its item (a tab with no map kept of it): its lead's, else its first app's.
 function cellLook(k, item) {
-  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const { group: g, id } = parseKey(k), gg = gathererNamed(g);
   if (!gg || id === undefined) return null;
-  if (item === k && /^t\d+$/.test(id)) {
-    const o = taskApps(gg, Number(id.slice(1)))[0];
+  if (item === k && taskNumber(id) !== null) {
+    const o = taskApps(gg, taskNumber(id))[0];
     item = o ? APP_ITEM + o.id : "";
   } else if (item === k) item = id;
   if (isAppItem(item)) {
@@ -780,9 +781,9 @@ function cellLook(k, item) {
 }
 // What is in a block, in words, on its card's head: its actors, how many; its apps, by name
 function blockAbout(k) {
-  const [g, id] = k.split("\u0000"), gg = state.home && state.home.gatherers.find((x) => x.name === g);
-  if (!gg || !/^t\d+$/.test(id || "")) return "";
-  const t = Number(id.slice(1)), n = taskActors(gg, t).length, apps = taskApps(gg, t).map((o) => o.app.label);
+  const { group: g, id } = parseKey(k), gg = gathererNamed(g);
+  if (!gg || taskNumber(id) === null) return "";
+  const t = taskNumber(id), n = taskActors(gg, t).length, apps = taskApps(gg, t).map((o) => o.app.label);
   return [n ? plural(n, "actor") : null, apps.length ? [...new Set(apps)].join(", ") : null].filter(Boolean).join(" · ");
 }
 // the task whose row (or a row of it) is dragged from the list: one task's items only; one not shown with an actor to
@@ -795,8 +796,8 @@ function draggedTask() {
 }
 // a task dropped on the work area from the list, not shown: opened beside the tasks shown (as ⌘+click on its row does)
 function openDropped(k) {
-  const [g, id] = k.split("\u0000");
-  if (/^t\d+$/.test(id)) openTask(g, Number(id.slice(1)), null, { metaKey: true });
+  const { group: g, id } = parseKey(k);
+  if (taskNumber(id) !== null) openTask(g, taskNumber(id), null, { metaKey: true });
   else if (!isAppItem(id)) openTaskBeside(g, k, id);
 }
 // A panel's head dragged -- this page's own pane's, its Chat bar's grip (the head put there); in a frame, the page
@@ -958,7 +959,7 @@ function topLayout() {
 // An actor of the home (its gatherer, its channel), as the page has it now; a codex actor's thread it was renamed to (one
 // from before `ag --channel`).
 const appActor = (g, c) => {
-  const gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const gg = gathererNamed(g);
   return (gg && gg.agents.find((a) => a.channel === c || a.started_as === c || (a.session && a.session.started_as === c))) || null;
 };
 // The actors as the list has them, for a panel that asks (the SDK's ag.actors): each one's name, avatar, hue, folder,
@@ -1009,7 +1010,7 @@ function appInterrupt(g, c) {
 // A message to any actor of a gatherer, as Chat sends one (an app asking message_actors): "gatherer", its gatherer agent,
 // started first if it has none, as its button starts it (openCoordinator). -> {channel}, the actor's.
 async function appSendActor(g, c, text) {
-  const gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const gg = gathererNamed(g);
   if (!gg) throw new Error(`no gatherer ${g}`);
   const a = c === "gatherer" ? groupCrew(gg) : appActor(g, c);
   if (a) { await appSend(g, a.channel, text); return { channel: a.channel }; }
@@ -1050,7 +1051,7 @@ function addAppPane(app, instance, size = 1, held = false) {
     openLink: (href, from) => openAppLink(from.instance.gatherer, null, href,   // ag.links.open
       { folder: from.instance.folder, item: appItem(from.instance.id) }),
     selection: () => appsSelection(),
-    agents: (g) => ((state.home && state.home.gatherers.find((x) => x.name === g)) || { agents: [] }).agents     // a gatherer's own
+    agents: (g) => (gathererNamed(g) || { agents: [] }).agents     // a gatherer's own
       .filter((a) => !a.closed && !isCoordinator(a))                                                           // agent: attached to no app
       .map((a) => ({ channel: a.channel, name: (a.name && a.name.text) || a.last_user_message || a.channel })),
     agentState: appAgentState, send: appSend, answer: appAnswer, interrupt: appInterrupt, focusAgent: appFocusAgent,
@@ -1150,7 +1151,7 @@ async function showAttached(p) {
   const g = p.instance.gatherer;
   const there = chans.map((c) => actorPanes().find((q) => isAt([q.g, q.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null)).find(Boolean);
   if (there) return focusPane(there);
-  const agents = ((state.home && state.home.gatherers.find((x) => x.name === g)) || { agents: [] }).agents;
+  const agents = (gathererNamed(g) || { agents: [] }).agents;
   const c = chans.find((ch) => agents.some((a) => a.channel === ch && !a.closed)) || chans.find((ch) => agents.some((a) => a.channel === ch));
   if (c) await show(g, c);
 }
@@ -1213,7 +1214,7 @@ async function showActorsApp(g, c) {
   if (PANE || SNAPSHOT || !window.agNext) return;
   const k = taskKey(g, c);
   if (k && (tasksLaidOut.has(k) || taskLayout(k))) return;   // its task laid out, or remembered: its layout decides (enterTask)
-  const gg = state.home && state.home.gatherers.find((x) => x.name === g);
+  const gg = gathererNamed(g);
   const r = appRole(gg && gg.agents.find((a) => a.channel === c));
   const app = r && window.agNext.apps.named(r.app);
   if (!app) return;
@@ -1289,7 +1290,7 @@ function linkClicked(href, ev, path = false) {
 function openLink(gname, c, url) {
   if (appLink(url)) { openAppLink(gname, c, url).catch((e) => paneNote(e.message)); return true; }
   if (fileLink(url)) { openFileLink(gname, c, url).catch((e) => paneNote(e.message)); return true; }
-  const g = state.home && state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   const a = g && !isShell(c) ? actorOf(g, c) : null;
   const app = window.agNext && window.agNext.apps.named(LINK_APP);
   if (PANE || !a || !app || isCoordinator(a)) return false;
@@ -1343,7 +1344,7 @@ async function openAppLink(gname, c, href, from = {}) {
   if (!app || app.failed) throw new Error(`No app called ${h.app} here, to open ${href}`);
   const m = apps.links.match(app.links, h.path);
   if (!m) throw new Error(`${app.label}: no such place to open (${h.path || "nothing"})`);
-  const g = state.home && state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g || PANE || SNAPSHOT) return;
   const a = c && !isShell(c) ? actorOf(g, c) : null;
   const here = a ? taskKey(gname, a.channel) : from.item ? taskKey(gname, from.item) : selectedTask();
@@ -1401,7 +1402,7 @@ async function openAppLink(gname, c, href, from = {}) {
 async function openFileLink(gname, c, href, from = {}) {
   const apps = window.agNext && window.agNext.apps, f = apps ? apps.links.file(href) : null;
   if (!f) throw new Error(`Not a file's path: ${href}`);
-  const g = state.home && state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g || PANE || SNAPSHOT) return;
   const a = c && !isShell(c) ? actorOf(g, c) : null;
   let path = f.path;
