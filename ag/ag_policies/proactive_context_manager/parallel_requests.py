@@ -112,7 +112,7 @@ class ParallelRequests(SessionGroups):
         if start is None:
             return [], 0
         last = conn.last_read(channel.of(channel_id))
-        if last and tables.basis_of(last) is None:
+        if last and tables.get_basis(last) is None:
             made = [r.made_id for r in last["refs"] if r.made_id is not None]
             kept = [(m, item, tokens) for m, (name, item, tokens) in conn.made_items(made).items()
                     if name == PARALLEL_BEFORE]

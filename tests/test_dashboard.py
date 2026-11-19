@@ -60,7 +60,7 @@ class HomeBase(unittest.TestCase):
             ctx, read_id = self.m._context("g", store.high_water(self.m._conn("g")), ch("c1"), limit)
             self.reads.append(read_id)
         self.m.record_real_tokens("g", self.reads[0], 9999)
-        self.build_id = tables.new_build(self.m._conn("g"), "c1")
+        self.build_id = tables.create_build(self.m._conn("g"), "c1")
         self.policy.build("g", ch("c1"), self.build_id)
         items.insert("g", user("the next request", 90), channel_id="c1")   # a new turn: the build is taken
         self.reads.append(self.m._context("g", store.high_water(self.m._conn("g")), ch("c1"), 244800)[1])

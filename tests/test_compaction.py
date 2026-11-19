@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ag.ag_harness import Manager  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
+from ag.ag_interface import Context, Policy  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
 from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
 from ag.integrations.harnesses.claude.adaptor import to_events as claude  # noqa: E402
@@ -69,7 +70,7 @@ class PolicyTest(unittest.TestCase):
         self.put(PREAMBLE + conversation(6))
         row = store.high_water(self.m._conn("s"))
         self.assertEqual(self.m.compacted("s", row, properties=ch("c1")), "ready")
-        build = tables.latest_build(self.m._conn("s"), "c1")
+        build = tables.get_own_latest_build(self.m._conn("s"), "c1")
         self.assertEqual((build["reason"], build["status"]), (tables.COMPACTION, "ready"))
         self.assertEqual(self.spawned, ["build"])
 
@@ -79,7 +80,7 @@ class PolicyTest(unittest.TestCase):
         self.put([user("which country was highest?", 20)])       # the user's next words, after the compaction
         ctx, _ = self.m._context("s", store.high_water(self.m._conn("s")), ch("c1"))
         self.assertIsNotNone(ctx.basis)                          # adopted: require_smaller does not refuse it
-        build = tables.latest_build(self.m._conn("s"), "c1")
+        build = tables.get_own_latest_build(self.m._conn("s"), "c1")
         self.assertEqual(build["status"], "ready")
         self.assertEqual(str(build["build_id"]), ctx.basis)
 
@@ -87,6 +88,45 @@ class PolicyTest(unittest.TestCase):
         self.policy.jobs = None
         self.put(PREAMBLE + conversation(2))
         self.assertEqual(self.m.compacted("s", store.high_water(self.m._conn("s")), properties=ch("c1")), "")
+
+    def test_a_policy_that_does_not_build_is_asked_for_nothing(self):
+        """`Policy.request_build`'s default: a policy that builds nothing answers {} -- a compaction comes to "",
+        a reader's request to {}."""
+        class Plain(Policy):
+            name = "plain"
+
+            def read(self, store, read):
+                return Context()
+        m = Manager(Plain())
+        m.init("p")
+        self.assertEqual(m.compacted("p", 0, properties=ch("c1")), "")
+        self.assertEqual(m.requested("p", properties=ch("c1")), {})
+
+    def test_a_build_that_raises_settles_its_build_failed(self):
+        """A job records what its failure leaves behind itself, and the worker only logs it: no build stays
+        claimed, holding off every other one until build_timeout."""
+        self.put(PREAMBLE + conversation(2))
+        build_id = tables.claim_build(self.m._conn("s"), "c1", 5, tables.REQUEST)
+
+        def down(*_):
+            raise RuntimeError("the model is down")
+        self.policy.run_build = down
+        with self.assertRaises(RuntimeError):
+            self.policy.build("s", ch("c1"), build_id)
+        build = tables.get_build(self.m._conn("s"), build_id)
+        self.assertEqual((build["status"], build["error"]), ("failed", "RuntimeError: the model is down"))
+
+    def test_a_check_that_raises_records_no(self):
+        self.put(PREAMBLE + conversation(2))
+        row = store.high_water(self.m._conn("s"))
+
+        def down(*_):
+            raise RuntimeError("the model is down")
+        self.policy.run_check = down
+        with self.assertRaises(RuntimeError):
+            self.policy.check("s", ch("c1"), row)
+        verdict = tables.get_boundary_verdict(self.m._conn("s"), row)
+        self.assertEqual((verdict["new_task"], verdict["why"]), (False, "check failed: RuntimeError: the model is down"))
 
 
 class Server:

@@ -174,7 +174,7 @@ class ShownTest(ParallelBase):
 
 class BuildTest(ParallelBase):
     def run_build(self, channel_id="c1"):
-        return self.policy.build("w", ch(channel_id), tables.new_build(self.m._conn("w"), channel_id))
+        return self.policy.build("w", ch(channel_id), tables.create_build(self.m._conn("w"), channel_id))
 
     def test_after_a_build_only_the_requests_since_it_are_shown_in_place(self):
         self.put(PREAMBLE + conversation(12))
@@ -217,7 +217,7 @@ class WordingTest(ParallelBase):
         self.wrapped.init("w")
         self.put(PREAMBLE + conversation(12))
         self.put(PREAMBLE + [user("their task", 100)], channel="c2")
-        policy.build("w", ch("c1"), tables.new_build(self.m._conn("w"), "c1"))
+        policy.build("w", ch("c1"), tables.create_build(self.m._conn("w"), "c1"))
         self.put([user("after the build", 101)], channel="c2")
         self.put([user("my next task", 50)])
         return "\n".join(self.texts(self.read()))

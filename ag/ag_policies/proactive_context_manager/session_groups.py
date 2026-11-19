@@ -198,7 +198,7 @@ class SessionGroups(GathererMessages):
         read, so seconds in a big gatherer -- cut short, with what was found so far, once `stopped` (the harness hung
         up on the call: `Read.stopped`)."""
         found, turns_by_channel, unseen = [], {}, self.get_hidden_sessions(conn, types, channel_id)
-        for other in tables.channels_with_tasks(conn):
+        for other in tables.get_channels_with_tasks(conn):
             if stopped():
                 break
             if other == channel_id or other is None or other in unseen:
@@ -206,5 +206,5 @@ class SessionGroups(GathererMessages):
             _, turns = history.split(history.rows(conn, types, self.groups, other), types, self.groups, self.tokenizer)
             tables.apply_cleaned_texts(conn, [t.entries[0] for t in turns])
             turns_by_channel[other] = turns
-            found += tasks_tool.locate(tables.load_tasks(conn, other), turns)
+            found += tasks_tool.locate(tables.get_own_tasks(conn, other), turns)
         return found, turns_by_channel

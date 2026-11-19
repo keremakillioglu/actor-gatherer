@@ -71,7 +71,7 @@ class ProactiveContextManager(Builds, Analysis, ExternalEvents, ParallelRequests
         # a max_context_tokens of the gatherer's own (or a whole config) wins over a harness's limit
         self.max_given = config is not None or "max_context_tokens" in (options or {})
         self._limited: Dict[int, ProactiveContextManagerConfig] = {}
-        self.drift = 1.0                            # by_provider's, set for each read and each build
+        self.drift = 1.0                            # get_provider_count's, set for each read and each build
 
     @property
     def groups(self):
@@ -100,25 +100,25 @@ class ProactiveContextManager(Builds, Analysis, ExternalEvents, ParallelRequests
             if not rows:
                 return Context()
             at_user = history.opens_turn(rows[-1], types, self.groups)
-            latest = tables.build_for(conn, ch)
+            latest = tables.get_latest_build(conn, ch)
             last = conn.last_read(channel.of(ch))
             self.drift = self.get_provider_drift(last)
             draft = self.draft_context(conn, types, rows, latest, last, at_user or self.is_build_for_this_turn(latest, rows, types), read)
             if last and self.has_group_changed(conn, types, ch, last.get("row_id") or 0) \
                     and self.rebuild_for_new_group(conn, types, read, rows, latest, draft.build):
-                latest = tables.build_for(conn, ch)
+                latest = tables.get_latest_build(conn, ch)
                 draft = self.draft_context(conn, types, rows, latest, last, True, read)
             over = self.is_over_limit(draft.size, last, draft.build, ch)
             if over and not at_user and tables.is_waiting(latest, last):        # a ready build: taken now, not at the user
                 draft = self.draft_context(conn, types, rows, latest, last, True, read)
                 over = self.is_over_limit(draft.size, last, draft.build, ch)
             if at_user or over:
-                latest = tables.build_for(conn, ch)
+                latest = tables.get_latest_build(conn, ch)
                 started = self.start_due_work(conn, types, read, rows, latest, draft.build, draft.size, over)
                 # over the limit, or joining, the read waits for its build however long it takes (up to build_timeout)
                 seconds = cfg.build_timeout if (over and started == "build") or started == "join" else cfg.sync_seconds
                 if started and seconds > 0 and self.wait_for_build(conn, ch, rows[-1].row_id, started, seconds, read.stopped):
-                    latest = tables.build_for(conn, ch)
+                    latest = tables.get_latest_build(conn, ch)
                     draft = self.draft_context(conn, types, rows, latest, last, True, read)
             if self.get_provider_count(draft.size) > cfg.max_context_tokens:   # still over: the steps that do not fit, left out
                 draft = Draft(draft.build, draft.made, *self.assemble_context(conn, rows, draft.build, draft.made, types, read, stub=True))
@@ -216,7 +216,7 @@ class ProactiveContextManager(Builds, Analysis, ExternalEvents, ParallelRequests
         item = self.format.make_section(text, GUIDE)
         col = property_column(CHANNEL)
         found = conn.execute(f"SELECT made_id FROM _made_items WHERE name = ? AND ifnull({col}, '') = ? "
-                             f"ORDER BY made_id DESC LIMIT 1", (GUIDE, tables.key(channel_id))).fetchone()
+                             f"ORDER BY made_id DESC LIMIT 1", (GUIDE, tables.get_channel_key(channel_id))).fetchone()
         made_id = found[0] if found else None
         if made_id is None or conn.made_items([made_id])[made_id][1] != item:
             made_id = conn.make_item(item, self.tokenizer, properties=channel.of(channel_id), name=GUIDE)

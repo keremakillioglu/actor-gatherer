@@ -101,7 +101,7 @@ class WholeContextTest(unittest.TestCase):
         self.put(PREAMBLE + long_turn(3))                      # one turn, under the max by itself
         self.read(self.system(2900))                           # with the system prompt, over it
         conn = self.m._conn("s")
-        build_id = tables.new_build(conn, "c1")
+        build_id = tables.create_build(conn, "c1")
         self.policy.build("s", ch("c1"), build_id)
         self.assertNotEqual((tables.get_build(conn, build_id) or {}).get("error"), "fewer than two turns")
 

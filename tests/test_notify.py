@@ -181,7 +181,7 @@ class WritesTest(Base):
         self.assertEqual(self.told(), [("boundary", "c1", 5), ("boundary", "c1", 5)])
 
     def test_a_bare_connection_tells_no_one(self):
-        tables.new_build(self.m._conn("s"), "c1")
+        tables.create_build(self.m._conn("s"), "c1")
         self.assertEqual(self.told(), [])
 
     def test_a_read_only_side_call_tells_no_one(self):

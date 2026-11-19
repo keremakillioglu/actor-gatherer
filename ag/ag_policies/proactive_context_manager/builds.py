@@ -3,7 +3,7 @@ and how a ready one is laid out as the history sections (adopted). What a build 
 analysis.py's.
 
 A channel with no build of its own, in a gatherer where another channel has a ready one
-(`tables.joinable`), JOINS at its first user message: a `join` build ranks the other
+(`tables.is_joinable`), JOINS at its first user message: a `join` build ranks the other
 channels' tasks against its request and marks their requests as seen, and the read waits
 for it. Its sections are the other channels' requests and related tasks, its own history
 all the running task, verbatim -- so a new session starts from what the gatherer's others
@@ -17,7 +17,7 @@ the switch replaces only the history before it."""
 import time
 from typing import Callable, List, Optional, Tuple
 
-from ag.ag_interface.policy import Read, TypeIds
+from ag.ag_interface.policy import COMPACTION, READER, Read, TypeIds
 from ag.ag_policies.tools import channel, history
 from ag.ag_policies.tools import tasks as tasks_tool
 from ag.ag_policies.tools.channel import channel_of
@@ -41,7 +41,7 @@ class Builds(ContextLimit, SessionGroups):
             made = self.adopt_build(conn, types, rows, latest, read)
             if made is not None:
                 return tables.get_build(conn, latest["build_id"]), made          # its cut as adoption set it
-        used = tables.basis_of(last_read)
+        used = tables.get_basis(last_read)
         if used is None:
             return None, []
         made = [r.made_id for r in last_read["refs"] if r.made_id is not None]
@@ -69,9 +69,9 @@ class Builds(ContextLimit, SessionGroups):
         if joining:                                  # its own history, all of it, is the running task
             tasks = [self.get_join_task(turns, ch)] if turns else []
         else:
-            tasks = tasks_tool.locate(tables.tasks_for(conn, ch), turns)
+            tasks = tasks_tool.locate(tables.get_tasks(conn, ch), turns)
         if not tasks:
-            tables.settle(conn, build["build_id"], "nothing", error="no tasks at adoption")
+            tables.settle_build(conn, build["build_id"], "nothing", error="no tasks at adoption")
             return None
         foreign, turns_by_channel = self.get_other_sessions_tasks(conn, types, ch, read.stopped)
         if read.stopped():                           # the harness hung up meanwhile (Esc): laid out at the next read
@@ -80,7 +80,7 @@ class Builds(ContextLimit, SessionGroups):
         before = tasks[:-2]
         earlier = layout.earlier_messages(before, turns, cfg, tok)
         shown = {id(before[i]) for i in earlier[1]}
-        by_key = {(tables.key(t.channel_id), t.task_index): t for t in before + foreign}
+        by_key = {(tables.get_channel_key(t.channel_id), t.task_index): t for t in before + foreign}
         ranked = [by_key[tuple(k)] for k in build["ranking"] if tuple(k) in by_key]
         ranked = [t for t in ranked if id(t) not in shown]
         mark = build["parallel_mark"]
@@ -96,7 +96,7 @@ class Builds(ContextLimit, SessionGroups):
             sections = layout.build_sections(turns, tasks, ranked, earlier, others, turns_by_channel, ch, cfg, tok,
                                              conn.path, build["through_row"], mark, cut_row=cut, joined=joining)
         if not joining and len(tasks) < 2 and sections.open_from_row == tasks[-1].first_row:
-            tables.settle(conn, build["build_id"], "nothing", error="fewer than two tasks, and no cut inside the one")
+            tables.settle_build(conn, build["build_id"], "nothing", error="fewer than two tasks, and no cut inside the one")
             return None
         if sections.open_from_row != build["open_from_row"]:
             tables.set_cut(conn, build["build_id"], sections.open_from_row)
@@ -105,7 +105,7 @@ class Builds(ContextLimit, SessionGroups):
         if cfg.require_smaller and build.get("reason") not in (tables.COMPACTION, tables.JOIN, tables.REGROUPED):
             why = self.get_not_smaller_reason(sections, rows, turns, types)
             if why:
-                tables.settle(conn, build["build_id"], "nothing", error=why)
+                tables.settle_build(conn, build["build_id"], "nothing", error=why)
                 self.log(f"build {build['build_id']} not adopted: {why}")
                 return None
         source = f"build {build['build_id']}"
@@ -143,7 +143,7 @@ class Builds(ContextLimit, SessionGroups):
         cfg, ch = self.config, channel_of(read)
         if self.jobs is None:                      # no background work
             return ""
-        if latest is None and tables.joinable(conn, ch, self.get_hidden_sessions(conn, types, ch).is_in_shown_group):
+        if latest is None and tables.is_joinable(conn, ch, self.get_hidden_sessions(conn, types, ch).is_in_shown_group):
             return "join" if self.start_build(conn, read, tables.JOIN) is not None else ""
         if latest and latest["status"] == "running" and time.time() - latest["started_at"] < cfg.build_timeout:
             return "build" if over else ""
@@ -166,7 +166,7 @@ class Builds(ContextLimit, SessionGroups):
         # cooldown's count): the first user message after it is asked about all the same, so a change of
         # topic gets a build of its own -- its ranking made for the new request, not for the old one
         after_asked = bool(in_use) and in_use.get("reason") == tables.ASKED \
-            and not tables.checked_since(conn, ch, in_use.get("through_row") or 0)
+            and not tables.has_checked_since(conn, ch, in_use.get("through_row") or 0)
         if into_task <= cfg.boundary_cooldown and not after_asked:
             return ""
         row_id = rows[-1].row_id
@@ -182,13 +182,13 @@ class Builds(ContextLimit, SessionGroups):
     def rebuild_for_new_group(self, conn, types: TypeIds, read: Read, rows, latest, in_use) -> bool:
         """After a change of the channel's group (`has_group_changed`): its sections built again from its group's work, and
         waited for (up to build_timeout) -- a `join` again, for a channel whose context came from one, or that has no
-        build and can join its new group (`tables.joinable`); a `regrouped` build, for one with a build of its own in
+        build and can join its new group (`tables.is_joinable`); a `regrouped` build, for one with a build of its own in
         use. Whether one is ready; nothing is started without background work, or while a build runs."""
         cfg, ch = self.config, channel_of(read)
         if self.jobs is None:
             return False
         joining = tables.is_join(in_use) or (in_use is None and latest is None)
-        if joining and not tables.joinable(conn, ch, self.get_hidden_sessions(conn, types, ch).is_in_shown_group):
+        if joining and not tables.is_joinable(conn, ch, self.get_hidden_sessions(conn, types, ch).is_in_shown_group):
             return False
         if not joining and in_use is None:          # a build of its own, not taken up yet: adopted at its user message
             return False
@@ -199,51 +199,71 @@ class Builds(ContextLimit, SessionGroups):
         self.log(f"[{ch}] its group changed: a {reason} build ({build_id})")
         return self.wait_for_build(conn, ch, rows[-1].row_id, "build", cfg.build_timeout, read.stopped)
 
-    def compacted(self, conn, read: Read) -> str:
-        """The harness compacted its own history (Claude Code's /compact, or its own at its limit): build
-        now -- a `compaction` build, which closes the running task as one over the limit does, and is
-        adopted at the next read whatever its size -- and wait for it, up to build_timeout. What it came
-        to: "ready", "failed", "nothing", "timeout"; "" with no background work."""
-        with self.use_limit(read.limit):
-            cfg, ch = self.config, channel_of(read)
-            if self.jobs is None:
-                return ""
-            build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.COMPACTION)
-            if build_id is None:                    # one is running: let it finish, then build again
-                self.wait_for_build(conn, ch, read.row_id, "build", cfg.build_timeout, read.stopped)
-                build_id = None if read.stopped() else \
-                    tables.claim_build(conn, ch, cfg.build_timeout, tables.COMPACTION)
-            if build_id is None:
-                return "timeout"
-            if self.start_worker(conn, read, build_id) is not None:
-                return "failed"
-            self.wait_for_build(conn, ch, read.row_id, "build", cfg.build_timeout, read.stopped)
-            build = tables.get_build(conn, build_id) or {}
-            return build.get("status") if build.get("status") in ("ready", "failed", "nothing") else "timeout"
+    def request_build(self, conn, read: Read, why: str, *, wait: bool = False, min_messages: int = 0) -> dict:
+        """Build now, asked from outside a read (`Policy.request_build`), within the harness's own limit when the
+        call states one (`use_limit`):
 
-    def requested(self, conn, read: Read, min_messages: int = 0) -> dict:
-        """A build a reader asked for from outside any call (the dashboard's History view): an ordinary
-        build (reason `asked`), started in the background and not waited for -- once the channel has at
-        least `min_messages` user messages since the last its builds went through (since its start,
-        before any) -- a join aside: it splits nothing of the channel's own history. Adopted as any build is: at the channel's next user message. What came of it:
-        {"started": build_id, "messages": n}; {"running": build_id}, one already is; {"few": n}, only n
-        such messages since; {"failed": why}; {} with no background work."""
+        - COMPACTION: the harness compacted its own history (Claude Code's /compact, or its own at its limit) --
+          a `compaction` build, which closes the running task as one over the limit does, and is adopted at the
+          next read whatever its size (`start_compaction_build`).
+        - READER: a reader outside any call (the dashboard's History view) -- an ordinary build, once the channel
+          has at least `min_messages` user messages its builds have not gone through (`start_reader_build`).
+
+        With `wait`, until the build settles, up to build_timeout. What came of it: {"started": build_id, ...},
+        with its "status" ("ready", "failed", "nothing" or "timeout") when waited for; or what the start came to
+        instead (`start_compaction_build`, `start_reader_build`); {} with no background work, or for a `why` it
+        does not know."""
+        with self.use_limit(read.limit):
+            if self.jobs is None:
+                return {}
+            if why == COMPACTION:
+                got = self.start_compaction_build(conn, read)
+            elif why == READER:
+                got = self.start_reader_build(conn, read, min_messages)
+            else:
+                return {}
+            if wait and "started" in got:
+                self.wait_for_build(conn, channel_of(read), read.row_id, "build", self.config.build_timeout,
+                                    read.stopped)
+                status = (tables.get_build(conn, got["started"]) or {}).get("status")
+                got["status"] = status if status in ("ready", "failed", "nothing") else "timeout"
+            return got
+
+    def start_compaction_build(self, conn, read: Read) -> dict:
+        """A `compaction` build started: {"started": build_id}. One already running is waited for first, then
+        built again: {"status": "timeout"} when it does not finish in time (or the harness gives up on the
+        call); {"failed": why} when the worker cannot be started."""
         cfg, ch = self.config, channel_of(read)
-        if self.jobs is None:
-            return {}
-        latest = tables.latest_build(conn, ch)
+        build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.COMPACTION)
+        if build_id is None:                    # one is running: let it finish, then build again
+            self.wait_for_build(conn, ch, read.row_id, "build", cfg.build_timeout, read.stopped)
+            build_id = None if read.stopped() else \
+                tables.claim_build(conn, ch, cfg.build_timeout, tables.COMPACTION)
+        if build_id is None:
+            return {"status": "timeout"}
+        failed = self.start_worker(conn, read, build_id)
+        return {"failed": failed} if failed is not None else {"started": build_id}
+
+    def start_reader_build(self, conn, read: Read, min_messages: int = 0) -> dict:
+        """An ordinary build (reason `asked`) started for a reader, not waited for -- once the channel has at
+        least `min_messages` user messages since the last its builds went through (since its start, before any)
+        -- a join aside: it splits nothing of the channel's own history. Adopted as any build is: at the
+        channel's next user message. What came of it: {"started": build_id, "messages": n}; {"running":
+        build_id}, one already is; {"few": n}, only n such messages since; {"failed": why}."""
+        cfg, ch = self.config, channel_of(read)
+        latest = tables.get_own_latest_build(conn, ch)
         if latest and latest["status"] == "running" and time.time() - latest["started_at"] < cfg.build_timeout:
             return {"running": latest["build_id"]}
         types = TypeIds.load(conn)
         since = conn.execute("SELECT max(through_row) FROM _builds WHERE channel_key = ? AND coalesce(reason, '') != ?",
-                             (tables.key(ch), tables.JOIN)).fetchone()[0] or 0
+                             (tables.get_channel_key(ch), tables.JOIN)).fetchone()[0] or 0
         n = sum(1 for r in history.rows(conn, types, self.groups, ch)
                 if r.row_id > since and history.opens_turn(r, types, self.groups))
         if n < min_messages:
             return {"few": n}
         build_id = tables.claim_build(conn, ch, cfg.build_timeout, tables.ASKED)
         if build_id is None:                         # another started one meanwhile
-            return {"running": (tables.latest_build(conn, ch) or {}).get("build_id")}
+            return {"running": (tables.get_own_latest_build(conn, ch) or {}).get("build_id")}
         failed = self.start_worker(conn, read, build_id)
         if failed is not None:
             return {"failed": failed}
@@ -284,14 +304,14 @@ class Builds(ContextLimit, SessionGroups):
                          f"({time.monotonic() - begun:.1f} s in)")
                 return False
             if started == "check":
-                verdict = tables.boundary_verdict(conn, row_id)
+                verdict = tables.get_boundary_verdict(conn, row_id)
                 if verdict and verdict["new_task"] is False:
                     return False
                 if verdict and verdict["new_task"] is True:
                     started = "build"
                     deadline = max(deadline, begun + self.config.build_wait_seconds)
             if started == "build":
-                build = tables.latest_build(conn, channel_id)
+                build = tables.get_own_latest_build(conn, channel_id)
                 if build and build["status"] == "ready":
                     return True
                 if build and build["status"] in ("failed", "nothing"):

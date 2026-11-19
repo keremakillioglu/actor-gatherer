@@ -67,7 +67,7 @@ class OutsideBase(Base):
         return self.m.read("w", store.high_water(self.m._conn("w")), properties=ch(channel))
 
     def run_build(self, gatherer, channel_id):
-        return self.policy.build(gatherer, ch(channel_id), tables.new_build(self.m._conn(gatherer), channel_id))
+        return self.policy.build(gatherer, ch(channel_id), tables.create_build(self.m._conn(gatherer), channel_id))
 
     def texts(self, context):
         return [codex.text(i) for i in context]
@@ -475,7 +475,7 @@ class AfterABuildTest(OutsideBase):
         self.assertTrue(any(t.startswith("# Previous task") for t in texts))   # the build was adopted
         self.assertEqual(self.shown(context), ["@#analytics alice: new"])
         self.assertEqual(self.notices(context), ["Notice: File /w/new.py was changed on disk (at 2)."])
-        build = tables.latest_build(self.m._conn("w"), "c1")
+        build = tables.get_own_latest_build(self.m._conn("w"), "c1")
         conn = self.m._conn("w")
         self.assertLess(store.locate(conn, ch("c1"), "context_stream:#analytics:1"), build["open_from_row"])
         self.assertLess(store.locate(conn, ch("c1"), "environment_update:files:/w/old.py@1"), build["open_from_row"])

@@ -20,8 +20,8 @@ def describe(conn, channel_id: Optional[str], groups: Optional[Groups] = None) -
     groups = groups or Groups()
     types = TypeIds.load(conn)
     rows = history.rows(conn, types, groups, channel_id)
-    tasks = tables.tasks_for(conn, channel_id)
-    build = tables.build_for(conn, channel_id)
+    tasks = tables.get_tasks(conn, channel_id)
+    build = tables.get_latest_build(conn, channel_id)
     out = {"gatherer_id": conn.gatherer, "channel_id": channel_id,
            "events": len(rows), "trace_tokens": sum(r.tokens for r in rows),
            "tasks": len(tasks), "build": None}

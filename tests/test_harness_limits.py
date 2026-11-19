@@ -104,7 +104,7 @@ class PolicyLimitTest(PolicyBase):
         seen = []
         within = self.policy.run_build
         self.policy.run_build = lambda *a: seen.append(self.policy.config.max_context_tokens) or within(*a)
-        self.policy.build("s", ch("c1"), tables.new_build(self.m._conn("s"), "c1"))
+        self.policy.build("s", ch("c1"), tables.create_build(self.m._conn("s"), "c1"))
         self.assertEqual(seen, [3000])
         self.assertEqual(self.policy.config.max_context_tokens, 200_000)
 
