@@ -28,6 +28,7 @@ from harness_kit.screen import Screen  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
 from ag.integrations.harnesses.claude.setup import launch  # noqa: E402
 from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.harnesses.codex.setup.hook_servers import HookServers  # noqa: E402
 from ag.integrations.tools.hook_server.hook_server import Answer  # noqa: E402
 from ag_dashboard import answers, chat_view, data, server, sessions  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
@@ -184,6 +185,8 @@ class LauncherTest(unittest.TestCase):
 
     def launched(self, **settings):
         class Servers:
+            serving = HookServers.serving                  # the real one, over these
+
             def running(self):
                 return []
 
