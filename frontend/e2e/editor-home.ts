@@ -1,12 +1,12 @@
 // What the Editor's browser tests share (ag_apps/editor/): a project to open -- a git repository the test makes, with a
 // script that draws an SVG -- an intent raised from a panel, as a page's link raises it, the Editor's pane and panel,
-// and an Editor started from the menu on a folder with its actor, and closed again.
+// an Editor started from the menu on a folder with its actor, and closed again; and what a preview's PDF viewer says.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
-import { closePanel, expect, streamsAsRequests } from "./test";
+import { atEnd, closePanel, expect, streamsAsRequests } from "./test";
 import { CLAUDE, openActor } from "./home";
 
 export function project(): { repo: string; plot: string } {
@@ -51,6 +51,17 @@ export async function raise(page: Page, kind: string, data: Record<string, unkno
 export const editorPane = (page: Page) => page.locator("#top-row > .app-pane[data-app=editor]");
 export const editorPanel = (page: Page) => editorPane(page).frameLocator("iframe");
 
+/** For expect.poll: what pdf.js's viewer in a preview says of its PDF -- `expr`, of its PDFViewerApplication `app` -- or
+ * null while there is no viewer, or none with its PDF loaded yet. A viewer's frame is there before pdf.js has run in it
+ * (no PDFViewerApplication yet), and expect.poll does not call again after a call that throws. */
+export const inPdf = (page: Page, expr: string) => async () => {
+  const viewer = page.frames().find((f) => /\/_ag\/lib\/pdfjs\/web\/viewer\.html/.test(f.url()));
+  if (!viewer) return null;
+  return viewer
+    .evaluate(`(app => (app && app.pdfDocument ? ${expr} : null))(globalThis.PDFViewerApplication)`)
+    .catch((e: Error) => `not read: ${e.message}`); // its frame gone meanwhile (a PDF built again): read again
+};
+
 /** The file opened in the Editor, as Chat's link to it opens it. */
 export async function openFile(page: Page, file: string) {
   await raise(page, "open-file", { path: file });
@@ -58,6 +69,8 @@ export async function openFile(page: Page, file: string) {
   await expect(editorPanel(page).locator(".ed-head .ed-path")).toContainText(path.basename(file));
   await expect(editorPanel(page).locator(".cm-content")).toHaveCount(1);
 }
+
+const started = new Set<string>(); // the actors of Editors started, not yet forgotten
 
 /** An Editor started from the menu on `repo`, with its actor (as DocWriter's test: Claude Code set up here, the page's
  * stream held back; the actor's session is only made, never run): the actor's row, and how to put the home back. */
@@ -88,6 +101,11 @@ export async function startEditor(page: Page, repo: string) {
   const listed = await (await page.request.get(`/api/apps?gatherer=${src.searchParams.get("gatherer")}`)).json();
   const sid: string = (listed.attached[src.searchParams.get("instance") || ""] || [])[0] || "";
   expect(sid).toMatch(/^[0-9a-f-]{36}$/);
+  started.add(sid);
+  atEnd(async (p) => {
+    // the test failed before its endEditor: the actor forgotten all the same (the Editor closed with every app)
+    if (started.delete(sid)) await p.request.post("/api/discard", { data: { session_id: sid } });
+  });
   return { actor, sid, src };
 }
 
@@ -101,4 +119,5 @@ export async function endEditor(page: Page, request: APIRequestContext, sid: str
   expect(closed.ok()).toBe(true);
   const discarded = await request.post("/api/discard", { data: { session_id: sid } });
   expect(discarded.ok(), await discarded.text()).toBe(true);
+  started.delete(sid);
 }

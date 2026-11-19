@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { closePanel, expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, NOW, openActor } from "./home";
-import { editorPane, editorPanel, endEditor, openFile, project, raise, startEditor } from "./editor-home";
+import { editorPane, editorPanel, endEditor, inPdf, openFile, project, raise, startEditor } from "./editor-home";
 
 test("an Editor started from the menu: its panel above on the folder, its actor below with its mark", async ({
   page,
@@ -233,8 +233,8 @@ test("the preview comes back as it was left: its tab, its output's scroll, its P
   await panel.getByRole("button", { name: "Save and run" }).click();
   await expect(panel.locator(".pv-st")).toContainText("Done", { timeout: 60_000 });
   const pdf = () => page.frames().find((f) => /\/_ag\/lib\/pdfjs\/web\/viewer\.html/.test(f.url()));
-  const place = () => pdf()?.evaluate("[PDFViewerApplication.page, PDFViewerApplication.pdfViewer.currentScaleValue]");
-  await expect.poll(async () => pdf()?.evaluate("PDFViewerApplication.pagesCount")).toBe(5);
+  const place = inPdf(page, "[app.page, app.pdfViewer.currentScaleValue]");
+  await expect.poll(inPdf(page, "app.pagesCount")).toBe(5);
   await pdf()!.evaluate("PDFViewerApplication.pdfViewer.currentScaleValue = '1.5'; PDFViewerApplication.page = 3");
   await expect.poll(place).toEqual([3, "1.5"]);
   // the output picked, scrolled up from its end
@@ -253,7 +253,7 @@ test("the preview comes back as it was left: its tab, its output's scroll, its P
     fs.writeFileSync(path.join(repo, "paper.tex"), tex(6));
     execFileSync("latexmk", ["-pdf", "-interaction=nonstopmode", "paper.tex"], { cwd: repo, stdio: "ignore" });
   });
-  await expect.poll(async () => pdf()?.evaluate("PDFViewerApplication.pagesCount")).toBe(6);
+  await expect.poll(inPdf(page, "app.pagesCount")).toBe(6);
   await expect.poll(place).toEqual([3, "1.5"]);
   await endEditor(page, request, sid, src);
 });
@@ -394,12 +394,10 @@ test("a LaTeX build shows in pdf.js, a source line to its place in the PDF and a
   await expect(panel.locator(".pv-st")).toContainText("Done", { timeout: 60_000 });
   const pdf = () => page.frames().find((f) => /\/_ag\/lib\/pdfjs\/web\/viewer\.html/.test(f.url()));
   type Viewer = { PDFViewerApplication: { pagesCount: number; page: number } };
-  await expect
-    .poll(async () => pdf()?.evaluate(() => (window as unknown as Viewer).PDFViewerApplication.pagesCount))
-    .toBe(2);
+  await expect.poll(inPdf(page, "app.pagesCount")).toBe(2);
   await panel.locator(".cm-line").nth(4).click(); // "Second page", line 5: "→ PDF" shows its page
   await panel.locator("button.ed-topdf").click();
-  await expect.poll(() => pdf()!.evaluate(() => (window as unknown as Viewer).PDFViewerApplication.page)).toBe(2);
+  await expect.poll(inPdf(page, "app.page")).toBe(2);
   await pdf()!.evaluate(() => ((window as unknown as Viewer).PDFViewerApplication.page = 1));
   await panel.frameLocator("iframe.pdf").locator(".page[data-page-number='1'] .textLayer span").first().dblclick();
   await expect(panel.locator(".cm-activeLine")).toContainText("First page."); // its source line, selected in the file
