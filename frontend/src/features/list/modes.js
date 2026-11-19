@@ -32,6 +32,7 @@ import { firstLine, plural } from "../transcript/transcript.js";
 import { FILE_KINDS, showKept } from "../chat/files-view.js";
 import { enc } from "../history/history.js";
 import { actorLogo } from "../apps/app-actors.js";
+import { useSettings } from "../settings/store";
 
 // ------------------------------------------------------------------ the list folded, or over the whole page
 // The list's shape, kept in this browser: "list"; folded to a rail ("folded"), the actors at work or wanting the reader
@@ -1231,7 +1232,7 @@ export function start() {
     requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("list-still")));
   }
   document.addEventListener("keydown", (ev) => {        // first: Esc closes the settings first, if they are open
-    if (ev.key !== "Escape" || listMode !== "full" || !document.getElementById("about").hidden || window.agNext.settings.fileOpen()) return;
+    if (ev.key !== "Escape" || listMode !== "full" || !document.getElementById("about").hidden || useSettings.getState().file.open) return;
     ev.preventDefault();
     leaveFull();
   }, true);

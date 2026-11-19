@@ -11,6 +11,8 @@ import { chatAtEnd, chatToEnd } from "../chat/chat.js";
 import { chatFeed, chatView } from "../chat/views.js";
 import { opened } from "../chat/files-view.js";
 import { canMinimize, chatMin, topShown } from "../layout/top.js";
+import { useTurns } from "../chat/store";
+import { useSettings } from "../settings/store";
 
 // ------------------------------------------------------------------ data
 let hidingMoved = false;
@@ -286,7 +288,7 @@ const EARLIER_KEY = "ag-dashboard-chat-earlier";
 let earlierTurns = "messages";
 function setEarlierTurns(pick, keep, draw = true) {
   earlierTurns = pick === "whole" ? "whole" : "messages";
-  window.agNext.chat.clearFlips();                   // the turns' clicks: Chat's turns (src/features/chat/store.ts)
+  useTurns.getState().clearFlips();                   // the turns' clicks: Chat's turns (src/features/chat/store.ts)
   for (const b of document.querySelectorAll("[data-earlier-pick]")) b.setAttribute("aria-pressed", b.dataset.earlierPick === earlierTurns ? "true" : "false");
   if (keep) { try { localStorage.setItem(EARLIER_KEY, earlierTurns); } catch (e) { /* this page only */ } }
   for (const p of panes.others) p.call("earlier", earlierTurns);
@@ -316,13 +318,13 @@ export function start() {
   document.getElementById("about-btn").addEventListener("click", () => {
     const open = document.getElementById("about").hidden;
     setAbout(open);
-    if (open) window.agNext.settings.load().catch(() => {});
+    if (open) useSettings.getState().load().catch(() => {});
   });
   document.getElementById("about-x").addEventListener("click", () => setAbout(false));   // its own ×, as Esc
   document.addEventListener("click", (ev) => { if (!ev.target.closest(".about-wrap, .cfg-file")) setAbout(false); });
   document.addEventListener("keydown", (ev) => {
     if (ev.key !== "Escape") return;
-    if (window.agNext.settings.fileOpen()) { window.agNext.settings.closeFile(); return; }
+    if (useSettings.getState().file.open) { useSettings.getState().closeFile(); return; }
     setAbout(false);
   });
 }

@@ -15,6 +15,8 @@ import { firstLine, memoryFolders, plural, str } from "../transcript/transcript.
 import { CHAT_FEEDS, CHAT_VIEWS, addChatView, chatView, offeredViews, setChatView } from "./views.js";
 import { MIN_TIP, canMinimize, setChatMin, topShown } from "../layout/top.js";
 import { appWordsOf } from "../apps/app-actors.js";
+import { drawTurns } from "./mount";
+import { cidsOf } from "./view";
 
 // ------------------------------------------------------------------ the Files view
 // A turn's files instead of its conversation: each file the agent read, searched or changed in it, the
@@ -426,10 +428,10 @@ function filesRender({ info, session, running, writable, held }) {
   // commands start where they would for a new turn -- the commands at their end, the conversation at its end or at the turn picked
   const afresh = !document.querySelector("#main .files .fl-grid");
   // the conversation, at the right: drawn by the new code (src/features/chat/) into a node of the actor's own, the same
-  // from draw to draw (agNext.chat.draw) -- before its first turn, all there is (the actor waving hello). From its first
+  // from draw to draw (chat/mount.tsx's drawTurns) -- before its first turn, all there is (the actor waving hello). From its first
   // message on -- the moment it is sent, its turn opening before any is stored -- beside its files and commands, so the
   // message does not move as its turn is stored.
-  const talk = window.agNext.chat.draw(talkFeed(info, session, writable, held, afresh), CHAT_HOST);
+  const talk = drawTurns(talkFeed(info, session, writable, held, afresh), CHAT_HOST);
   const view = chatViewOf(info), opening = !d.turns.length;
   if (opening && !(view && (view.turns.length || view.opening)) && !mySends().length) return [talk, asking].filter(Boolean);
   // its node, drawn before its first turn was stored at the frame's top, goes into the grid now: taken out first, so
@@ -583,7 +585,7 @@ function filesBackground(info) {
 const chatSends = [];                                 // {key, cid, text, at (the page's ms), ran}
 function takeChatView(g, c, view) {
   if (!view || view.error || !view.current) view = null;   // one the server could not make: none
-  const k = key(g, c), has = window.agNext.chat.cidsOf(view);
+  const k = key(g, c), has = cidsOf(view);
   state.chatView = { key: k, view };
   if (view) keep(k, "view", view);
   for (let i = chatSends.length - 1; i >= 0; i--) if (chatSends[i].key === k && has.has(chatSends[i].cid)) chatSends.splice(i, 1);

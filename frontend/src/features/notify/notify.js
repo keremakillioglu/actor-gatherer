@@ -7,6 +7,7 @@ import {
 } from "../list/list.js";
 import { cardDraw, hover } from "../list/modes.js";
 import { isAt, openActors, paneNote, pick } from "../layout/panes.js";
+import * as appHost from "../apps/host";
 
 // WHAT COMES TO WANT THE READER, said as it happens: an app's NOTIFICATION (app_kit's notices.py: sent by its backend's
 // Host.notify or its panel's ag.notices.send; data.py's `app_notices`, a gatherer's `apps`), and an actor that comes to
@@ -71,7 +72,7 @@ function heedHome() {
 // what it says: [title, line, where it is]
 function saidOf(w) {
   if (w.n) {
-    const o = appInfo(w.g.name, w.id), info = o ? o.app : (window.agNext && window.agNext.apps.named(w.app)) || {};
+    const o = appInfo(w.g.name, w.id), info = o ? o.app : (appHost.named(w.app)) || {};
     const label = o && (o.name || (o.title && o.title !== info.label)) ? appTitle(o) : info.label || w.app || "An app";
     return [w.n.title, w.n.text || "", `${label} · ${titleOf(w.g)}`];
   }

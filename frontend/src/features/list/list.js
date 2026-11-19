@@ -28,6 +28,7 @@ import { refreshNewTab } from "../layout/new-tab.js";
 import { TASK_KINDS } from "../chat/chat.js";
 import { firstLine, plural } from "../transcript/transcript.js";
 import { shownGone } from "../terminal/shell.js";
+import * as appHost from "../apps/host";
 
 async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
@@ -790,7 +791,7 @@ const appFolder = (gname, id) => { const f = treeOf(gname).filed[appItem(id)]; r
 // they changed
 const APPS_READ = 2000, appsKnown = new Map(), appsRead = new Map();
 function readApps(gname, now = false) {
-  if (PANE || SNAPSHOT || !window.agNext || !window.agNext.apps.found().length) return Promise.resolve();
+  if (PANE || SNAPSHOT || !appHost.found().length) return Promise.resolve();
   if (!now && Date.now() - (appsRead.get(gname) || 0) < APPS_READ) return Promise.resolve();
   appsRead.set(gname, Date.now());
   return get(`/api/apps?gatherer=${encodeURIComponent(gname)}`).then((got) => {
@@ -826,7 +827,7 @@ function appsFollowHome(home) {
 // an open instance as the list has it -- {app (its manifest), id, title, name (the user's), folder, inst} -- null: of an
 // app not found here
 function appOf(i, gname) {
-  const app = window.agNext && window.agNext.apps.named(i.app);
+  const app = appHost.named(i.app);
   return app ? { app, id: i.id, title: i.title || "", name: i.name || "", folder: i.folder || null, group: gname, inst: i } : null;
 }
 const gathererApps = (gname) => PANE || SNAPSHOT ? [] : ((appsKnown.get(gname) || {}).instances || []).map((i) => appOf(i, gname)).filter(Boolean);
@@ -992,7 +993,7 @@ async function selectApp(gname, o, ev = null) {
   let p = panes.apps.find((q) => q.instance.id === o.id);
   if (p) p = showAppPanel(o.app, p.instance);        // (one held out of sight: shown)
   else {
-    const inst = await window.agNext.apps.instanceOf(o.app.name, gname, o.id).catch(() => null);
+    const inst = await appHost.instanceOf(o.app.name, gname, o.id).catch(() => null);
     if (!inst) { paneNote(`${o.app.label}: closed`); readApps(gname, true); return; }
     p = showAppPanel(o.app, inst);
   }
@@ -1063,7 +1064,7 @@ function addButton(g, k, label = null) {
   const a = isAppItem(k) ? null : actorOf(g, k), o = a ? null : appInfo(g.name, k.slice(APP_ITEM.length));
   if ((!a && !o) || (a && isCoordinator(a)) || (o && groupApp(o.app))) return null;
   const hs = SNAPSHOT ? [] : startable();
-  const apps = SNAPSHOT || PANE || !window.agNext ? [] : window.agNext.apps.found().filter((app) => onTask(app) !== "no" && !app.failed);
+  const apps = SNAPSHOT || PANE ? [] : appHost.found().filter((app) => onTask(app) !== "no" && !app.failed);
   if (!hs.length && !apps.length) return null;
   // its menu's key: its own, apart from the list's "+" for the same item, which the menu would hang from otherwise
   const mk = `${label ? "card-" : ""}task-add:${g.name}/${k}`, id = itemTaskOf(g, k);
@@ -1124,12 +1125,12 @@ async function addToTask(gname, k, harness) {
 async function addAppToTask(gname, k, name) {
   const g = gathererNamed(gname);
   const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
-  const app = (a || o) && window.agNext ? window.agNext.apps.named(name) : null;
+  const app = (a || o) ? appHost.named(name) : null;
   if (!app) return;
   await showItemsTask(g, k);
   const was = selectedTask();
   try {
-    const inst = await window.agNext.apps.open(name, gname, (a ? cwdOf(a) : o.folder) || null);
+    const inst = await appHost.open(name, gname, (a ? cwdOf(a) : o.folder) || null);
     if (!o || inst.id !== o.id) takeTasks(await post("/api/tasks", { gatherer: gname, do: "add", to: keptAs(g, k), items: [appItem(inst.id)] }));
     await readApps(gname, true);
     const had = panes.apps.some((p) => p.instance.id === inst.id);
@@ -1147,13 +1148,13 @@ async function addAppToTask(gname, k, name) {
 async function openAppAt(gname, k, name) {
   const g = gathererNamed(gname);
   const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
-  const app = (a || o) && window.agNext ? window.agNext.apps.named(name) : null;
+  const app = (a || o) ? appHost.named(name) : null;
   if (!app) return;
   const folder = (a ? cwdOf(a) : o.folder) || startCwd(g);
   if (!folder) return paneNote(`${app.label}: no directory to open it at`);
   await showItemsTask(g, k);
   try {
-    const inst = await window.agNext.apps.open(name, gname, folder, null, true);
+    const inst = await appHost.open(name, gname, folder, null, true);
     await readApps(gname, true);
     selectAppPane(showAppPanel(app, inst));           // (through the layout model, as addAppToTask's)
   } catch (e) { paneNote(`${app.label}: ${e.message}`); }

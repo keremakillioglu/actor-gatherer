@@ -28,6 +28,9 @@ import { minRedraw, topChanged } from "./top.js";
 import { actorLogo, appAsked, appAskedOf, appRole } from "../apps/app-actors.js";
 import * as model from "./model";
 import { shadow } from "./shadow";
+import { work as workLayout } from "./work";
+import * as appHost from "../apps/host";
+import { FILE_FORM, fileHref, filePath, isAppHref, joinPath, matchPath, parseHref } from "../apps/links";
 
 // ------------------------------------------------------------------ panes
 // Actors side by side. A click in the list shows its actor in the pane in focus; Ctrl+click (⌘+click on a
@@ -241,7 +244,7 @@ function taskOrder(g, key) {
 // server's apps read then, the rest opened, as the host has them now; one opened at once, its app closed since, closed.
 async function openTaskApps(g, c, to, only = null, beside = false) {
   const gg = gathererNamed(g);
-  if (!gg || !window.agNext) return;
+  if (!gg) return;
   let found;
   ({ to, found } = taskAppsFound(g, gg, c, to, only));
   if (!beside && taskNow !== to) return;
@@ -268,7 +271,7 @@ function taskAppsFound(g, gg, c, to, only) {
     to = now;
   }
   const found = [];
-  const add = (k) => { if (window.agNext.apps.named(k.app) && !found.some((f) => f.id === k.id)) found.push(k); };
+  const add = (k) => { if (appHost.named(k.app) && !found.some((f) => f.id === k.id)) found.push(k); };
   const id = parseKey(to).id;
   const mine = taskNumber(id) !== null ? taskApps(gg, taskNumber(id))
     : isAppItem(id) ? [appInfo(g, id.slice(APP_ITEM.length))].filter(Boolean) : [];
@@ -546,7 +549,7 @@ function placeIfShown() { if (workPlacer && shownSig() !== placedFor) placeWork(
 function startPlacing() {
   if (PANE || SNAPSHOT || workPlacer) return;
   const work = document.querySelector(".work");
-  workPlacer = window.agNext.layout.work(work, { shown: shownPanels, narrow: () => NARROW.matches,
+  workPlacer = workLayout(work, { shown: shownPanels, narrow: () => NARROW.matches,
     old: (k) => taskLayout(k), known: () => !!state.home, label: blockName, open: openDropped, minChanged: paneMinimized,
     focus: selectedTask, enter: enterTasks, status: taskStates, showItems: showTaskItems, lead: taskLeadOf, canon: keyNow,
     clear: clearWork, remember: (keys) => { for (const k of keys) if (tasksLaidOut.has(k)) rememberTask(k); },
@@ -705,7 +708,7 @@ async function enterTasks(keys, focus) {
   // its app's task (unknown), its panel then restored beside the actor the page opened on (restoreAppPanes)
   const groups = [...new Set(all.map((k) => parseKey(k).group).filter(Boolean))];
   if (all.some((k) => isAppItem(parseKey(k).id || "")) && groups.some((g) => !appsKnown.has(g))) {
-    await window.agNext.apps.load();
+    await appHost.load();
     await Promise.all(groups.map((g) => readApps(g, true)));
   }
   const actor = (k) => {
@@ -1026,7 +1029,7 @@ function panesTake(name, data) {
 // An app's panel (app_kit/DESIGN.md) is in the top row (where it goes, the work area's arrangement: placeWork), above the
 // actors' panes at first, each panel's width its share (`size`, for a phone's width). Opening
 // one opens the actor it is attached to below it, in the pane in focus (one open already: its pane focused). Its head
-// and its iframe are made by features/apps/host.ts (window.agNext.apps); what its panel asks goes through it to the
+// and its iframe are made by features/apps/host.ts (appHost); what its panel asks goes through it to the
 // dashboard's /api/apps; the actor in focus (appsSelected) and the theme are told to it. The panels open are kept in
 // this browser (the layout model's `apps`: model.ts), opened again once the apps are known (restoreAppPanes).
 const topRowEl = () => document.getElementById("top-row");
@@ -1123,7 +1126,7 @@ function appFocusAgent(g, c) {
 }
 function addAppPane(app, instance, size = 1, held = false) {
   const p = { app, instance, g: instance.gatherer, size, held };
-  p.panel = window.agNext.apps.pane(app, instance, {
+  p.panel = new appHost.AppPane(app, instance, {
     close: () => { workClosed(p.node); closeAppPane(p); },   // its panel asking (ag.close)
     intent: (kind, data, from) => appIntent(kind, data, from.instance.gatherer),
     openLink: (href, from) => openAppLink(from.instance.gatherer, null, href,   // ag.links.open
@@ -1182,19 +1185,19 @@ const instCache = new Map(), fetching = new Set();
 const wanted = (id) => (shadow.layout.apps || []).some((w) => w.instance === id);
 const entryTask = (w) => (state.home ? taskKey(w.g, appItem(w.instance)) : null);   // (the home not come: none known)
 function renderApps() {
-  if (PANE || SNAPSHOT || !window.agNext) return;
+  if (PANE || SNAPSHOT) return;
   let changed = false;
   for (const p of [...panes.apps]) if (!p.held && !wanted(p.instance.id)) { dropAppPanel(p); changed = true; }
   for (const w of shadow.layout.apps || []) {
     const p = panes.apps.find((q) => q.instance.id === w.instance);
     if (p) { if (p.held) { holdAppPane(p, false); changed = true; } continue; }
-    const app = window.agNext.apps.named(w.app);
+    const app = appHost.named(w.app);
     if (!app) continue;
     const inst = instCache.get(w.instance) || (appInfo(w.g, w.instance) || {}).inst;
     if (inst) { addAppPane(app, inst, +w.size > 0 ? +w.size : 1); changed = true; continue; }
     if (fetching.has(w.instance)) continue;
     fetching.add(w.instance);
-    window.agNext.apps.instanceOf(w.app, w.g, w.instance).catch(() => null).then((got) => {
+    appHost.instanceOf(w.app, w.g, w.instance).catch(() => null).then((got) => {
       fetching.delete(w.instance);
       if (!got) { shadow.update(model.unwantApps, (x) => x.instance === w.instance); saveAppPanes(); return; }   // closed since
       instCache.set(got.id, got);
@@ -1271,7 +1274,7 @@ function appNeeded(p) {
 }
 let appsWorking = "";
 async function appsAtWork() {
-  if (PANE || SNAPSHOT || !state.home || !window.agNext) return;
+  if (PANE || SNAPSHOT || !state.home) return;
   for (const p of panes.apps) { p.panel.agentsChanged(); p.panel.actorsChanged(); }
   const working = [];
   for (const g of state.home.gatherers) for (const a of g.agents) if (agentAtWork(a)) working.push([g.name, a.channel]);
@@ -1280,9 +1283,9 @@ async function appsAtWork() {
     appsWorking = sig;
     for (const [g, c] of working) {
       let held;
-      try { held = await window.agNext.apps.attachedTo(g, c); } catch (e) { continue; }
+      try { held = await appHost.attachedTo(g, c); } catch (e) { continue; }
       for (const inst of held) {
-        const app = window.agNext.apps.named(inst.app);
+        const app = appHost.named(inst.app);
         if (!app || !panelTools(app) || panes.apps.some((p) => p.instance.id === inst.id)) continue;
         addAppPane(app, inst, 1, true);
       }
@@ -1317,10 +1320,10 @@ async function showAttached(p) {
 // task, its other apps and agents with it. A task's "+" (features/list/list.js's addAppToTask) or the panel's agents
 // menu put it with agents.
 async function openApp(g, name, folder) {
-  const app = window.agNext.apps.named(name);
+  const app = appHost.named(name);
   if (!app || PANE || SNAPSHOT) return null;
   let instance;
-  try { instance = await window.agNext.apps.open(name, g, folder || null); }
+  try { instance = await appHost.open(name, g, folder || null); }
   catch (e) { paneNote(`${app.label}: ${e.message}`); return null; }
   const p = showAppPanel(app, instance);             // (one held out of sight while its agent worked: shown now)
   renderAgents();
@@ -1331,10 +1334,10 @@ async function openApp(g, name, folder) {
 // An app opened from a group's menu: as a click on its row does (selectApp) -- in the tab its task is open in, else in a
 // tab of its own
 async function openAppTab(gname, name, folder) {
-  const app = window.agNext.apps.named(name);
+  const app = appHost.named(name);
   if (!app || PANE || SNAPSHOT) return;
   let inst;
-  try { inst = await window.agNext.apps.open(name, gname, folder || null); }
+  try { inst = await appHost.open(name, gname, folder || null); }
   catch (e) { paneNote(`${app.label}: ${e.message}`); return; }
   await readApps(gname, true);
   const o = appInfo(gname, inst.id);
@@ -1347,7 +1350,7 @@ async function appIntent(kind, data, g) {
   const type = { md: "text/markdown", txt: "text/plain", pdf: "application/pdf", png: "image/png", jpg: "image/jpeg",
     jpeg: "image/jpeg", svg: "image/svg+xml", html: "text/html", json: "application/json", tex: "text/x-tex",
     ltx: "text/x-tex", sty: "text/x-tex", cls: "text/x-tex", bib: "text/x-bibtex" }[ext] || (ext ? "text/plain" : undefined);
-  const apps = window.agNext.apps.handlers(kind, type), app = apps[0];
+  const apps = appHost.handlers(kind, type), app = apps[0];
   if (!app) throw new Error(`no app here takes ${kind}`);
   const into = g || (focusedActor() || [])[0] || ((state.home && state.home.gatherers[0]) || {}).name;
   // an app opened anew each time (instances "many": the Files app's, the LaTeX editor's) with one open above the panes:
@@ -1377,16 +1380,16 @@ async function appIntent(kind, data, g) {
 // An actor an app started, selected: its app's panel in the top row -- shown, if held out of sight -- as a DocWriter's
 // actor showed DocWriter when it was its view. Any other actor: nothing opened.
 async function showActorsApp(g, c) {
-  if (PANE || SNAPSHOT || !window.agNext) return;
+  if (PANE || SNAPSHOT) return;
   const k = taskKey(g, c);
   if (k && (tasksLaidOut.has(k) || taskLayout(k))) return;   // its task laid out, or remembered: its layout decides (enterTask)
   const gg = gathererNamed(g);
   const r = appRole(gg && gg.agents.find((a) => a.channel === c));
-  const app = r && window.agNext.apps.named(r.app);
+  const app = r && appHost.named(r.app);
   if (!app) return;
   const there = panes.apps.find((p) => p.instance.id === r.key);
   if (there) { showAppPanel(app, there.instance); return; }
-  const inst = await window.agNext.apps.instanceOf(app.name, g, r.key).catch(() => null);
+  const inst = await appHost.instanceOf(app.name, g, r.key).catch(() => null);
   if (!inst || !isAt(state.selected, g, c)) return;
   showAppPanel(app, inst);
 }
@@ -1424,8 +1427,8 @@ const webLink = (href) => {
   } catch (e) { return ""; }
 };
 const plainClick = (ev) => !ev || (!ev.button && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey);
-const appLink = (href) => !!(window.agNext && window.agNext.apps.links.isApp(href));
-const fileLink = (href) => !!(window.agNext && window.agNext.apps.links.file(href));   // a file's path (openFileLink)
+const appLink = (href) => isAppHref(href);
+const fileLink = (href) => !!filePath(href);   // a file's path (openFileLink)
 // Whether the page takes a click on a link to `href` shown with this page's actor (a frame's: the page around it does).
 // A link to something in an app (ag://, openAppLink), or to a file -- file://, or a path in what an agent wrote (`path`:
 // one Chat drew from its words, core/ui/md.ts's data-path; not one of the dashboard's own, as /api/image?…):
@@ -1449,7 +1452,7 @@ function openLink(gname, c, url) {
   if (fileLink(url)) { openFileLink(gname, c, url).catch((e) => paneNote(e.message)); return true; }
   const g = gathererNamed(gname);
   const a = g && !isShell(c) ? actorOf(g, c) : null;
-  const app = window.agNext && window.agNext.apps.named(LINK_APP);
+  const app = appHost.named(LINK_APP);
   if (PANE || !a || !app || isCoordinator(a)) return false;
   const k = key(gname, a.channel);
   const next = (linkOpening.get(k) || Promise.resolve()).then(() => linkInBrowser(g, a, app, url))
@@ -1460,12 +1463,12 @@ function openLink(gname, c, url) {
 async function linkInBrowser(g, a, app, url) {
   await showItemsTask(g, a.channel);
   const k = key(g.name, a.channel), made = linkMade.get(k);
-  const had = (await window.agNext.apps.attachedTo(g.name, a.channel)).filter((i) => i.app === app.name);
+  const had = (await appHost.attachedTo(g.name, a.channel)).filter((i) => i.app === app.name);
   const shown = (id) => panes.apps.find((p) => !p.held && p.instance.id === id);
   let inst = (had.find((i) => shown(i.id)) || (made && shown(made) && shown(made).instance) || had[0]) || null;
   if (!inst) {
     const was = selectedTask();
-    inst = await window.agNext.apps.open(app.name, g.name, cwdOf(a) || null, a.channel);
+    inst = await appHost.open(app.name, g.name, cwdOf(a) || null, a.channel);
     linkMade.set(k, inst.id);
     await readApps(g.name, true);                    // the task it made, as the server has it now
     retask(was);
@@ -1492,11 +1495,11 @@ async function linkInBrowser(g, a, app, url) {
 // above what is shown. A click calls no tool and attaches no agent: the user only looks. What can't be opened: an error
 // saying why.
 async function openAppLink(gname, c, href, from = {}) {
-  const apps = window.agNext && window.agNext.apps, h = apps ? apps.links.parse(href) : null;
+  const h = parseHref(href);
   if (!h) throw new Error(`Not a link to anything in an app: ${href}`);
-  const app = apps.named(h.app);
+  const app = appHost.named(h.app);
   if (!app || app.failed) throw new Error(`No app called ${h.app} here, to open ${href}`);
-  const m = apps.links.match(app.links, h.path);
+  const m = matchPath(app.links, h.path);
   if (!m) throw new Error(`${app.label}: no such place to open (${h.path || "nothing"})`);
   const g = gathererNamed(gname);
   if (!g || PANE || SNAPSHOT) return;
@@ -1507,11 +1510,11 @@ async function openAppLink(gname, c, href, from = {}) {
   const folder = (a && cwdOf(a)) || from.folder || null;
   let inst = null;
   if (h.instance) {
-    inst = await apps.instanceOf(app.name, gname, h.instance);
+    inst = await appHost.instanceOf(app.name, gname, h.instance);
     if (!inst) throw new Error(`${app.label}: that one (${h.instance}) is closed`);
   }
   if (!inst && a) {
-    const had = (await apps.attachedTo(gname, a.channel)).filter((i) => i.app === app.name);
+    const had = (await appHost.attachedTo(gname, a.channel)).filter((i) => i.app === app.name);
     inst = had.find((i) => shown(i.id)) || had[0] || null;
   }
   if (!inst) {
@@ -1527,7 +1530,7 @@ async function openAppLink(gname, c, href, from = {}) {
   }
   let fresh = false;
   if (!inst) {
-    inst = await apps.open(app.name, gname, folder);
+    inst = await appHost.open(app.name, gname, folder);
     fresh = true;
   }
   let p = shown(inst.id) || null;
@@ -1552,7 +1555,7 @@ async function openAppLink(gname, c, href, from = {}) {
 // of several, one the actor has open, else the first installed. A relative path is from the actor's folder (a panel's:
 // its instance's). None installed: an error saying so.
 async function openFileLink(gname, c, href, from = {}) {
-  const apps = window.agNext && window.agNext.apps, f = apps ? apps.links.file(href) : null;
+  const f = filePath(href);
   if (!f) throw new Error(`Not a file's path: ${href}`);
   const g = gathererNamed(gname);
   if (!g || PANE || SNAPSHOT) return;
@@ -1561,17 +1564,17 @@ async function openFileLink(gname, c, href, from = {}) {
   if (!path.startsWith("/")) {
     const base = (a && cwdOf(a)) || from.folder;
     if (!base) throw new Error(`${path}: from which folder isn't known`);
-    path = apps.links.join(base, path);
+    path = joinPath(base, path);
   }
-  const takers = apps.found().filter((x) => !x.failed && (x.links || []).some((l) => l.form === apps.links.FILE_FORM));
+  const takers = appHost.found().filter((x) => !x.failed && (x.links || []).some((l) => l.form === FILE_FORM));
   if (!takers.length) throw new Error(`No app here opens files, to open ${path}`);
-  const plain = takers.find((x) => (x.links || []).some((l) => l.form === apps.links.FILE_FORM && l.paths));
+  const plain = takers.find((x) => (x.links || []).some((l) => l.form === FILE_FORM && l.paths));
   let app = plain || takers[0];
   if (!plain && takers.length > 1 && a) {
-    const had = await apps.attachedTo(gname, a.channel);
+    const had = await appHost.attachedTo(gname, a.channel);
     app = takers.find((x) => had.some((i) => i.app === x.name)) || app;
   }
-  await openAppLink(gname, c, apps.links.fileHref(app.name, path, f.line), from);
+  await openAppLink(gname, c, fileHref(app.name, path, f.line), from);
 }
 // In a frame: its URL says what it shows -- its actor and view -- so that loaded again it shows them still.
 function paneUrl() {
@@ -1617,7 +1620,7 @@ const appStart = (v) => { const [name, ...h] = v.slice(APP_START.length).split("
 // harness here can give an agent its tools (`tooled`). startingApps: those that open with one, which the list's form
 // for a new actor also offers on each harness.
 const byLabel = (x, y) => x.label.localeCompare(y.label);
-const openableApps = () => (PANE || SNAPSHOT || !window.agNext ? [] : window.agNext.apps.found()).filter((a) => !a.failed).sort(byLabel);
+const openableApps = () => (PANE || SNAPSHOT ? [] : appHost.found()).filter((a) => !a.failed).sort(byLabel);
 const withAgentChosen = (a) => !!(a.agent && a.agent.offered && a.opens_with_agent !== false);
 const opensWithAgent = (a, tooled) => withAgentChosen(a) && tooled.length > 0;
 const startingApps = () => openableApps().filter(withAgentChosen);
@@ -1996,7 +1999,7 @@ async function startWithApp(gatherer, cwd, name, harness) {
   state.starting = { gatherer, harness: `${APP_START}${name}:${harness}` };
   renderAgents();
   try {
-    const got = await window.agNext.apps.start(name, gatherer, cwd, harness);
+    const got = await appHost.start(name, gatherer, cwd, harness);
     keptStart(gatherer);
     await fileStarted(gatherer, got.session.session_id);
     state.adding = null;
@@ -2004,7 +2007,7 @@ async function startWithApp(gatherer, cwd, name, harness) {
     await loadHome();
     await viaTabs(taskKey(gatherer, got.session.session_id), {});   // a tab of its own (features/layout/panes.js)
     await show(gatherer, got.session.session_id, "files");
-    const app = window.agNext.apps.named(name);
+    const app = appHost.named(name);
     if (app) {
       showAppPanel(app, got.instance);
     }
@@ -2232,7 +2235,7 @@ function newForm() {
     a.mark ? appMarkImg(a) : strokeIcon(ICONS.app, 14), a.label, harnessBadge(h)));
   if (state.home.terminals !== false) starts.push(el("button", { type: "submit", value: SHELL_START, class: shell ? "primary" : "",
     ...(state.starting ? { disabled: "" } : {}) }, strokeIcon(ICONS.terminal, 14), "Terminal"));
-  const appAt = String(adding.harness || "").startsWith(APP_START) ? window.agNext.apps.named(appStart(adding.harness)[0]) : null;
+  const appAt = String(adding.harness || "").startsWith(APP_START) ? appHost.named(appStart(adding.harness)[0]) : null;
   const form = el("form", { class: "newform", "aria-label": "New session" },
     el("div", { class: "desc", text: shell ? `New terminal in ${fixed}` : appAt ? `New ${appAt.label} in ${fixed}`
       : `New actor in ${fixed}` }),

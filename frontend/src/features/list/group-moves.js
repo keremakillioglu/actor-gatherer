@@ -16,6 +16,7 @@ import {
 } from "../layout/panes.js";
 import { plural } from "../transcript/transcript.js";
 import { appRole } from "../apps/app-actors.js";
+import * as appHost from "../apps/host";
 
 // ------------------------------------------------------------------ moves between groups
 // In the home's one database (state.home.merged: `ag home merge`'s), what is dragged in the list may be dropped into
@@ -76,7 +77,7 @@ function folderCanMove(g, id) {
 // one that closes for the group `to`'s own of its app (`joins`): "Its Paper news closes: it works with the lab group's."
 function appsLine(apps, many, to = null) {
   if (!apps || !apps.length) return null;
-  const label = (x) => ((a) => (a && a.label) || x.app)(window.agNext && window.agNext.apps.named(x.app));
+  const label = (x) => ((a) => (a && a.label) || x.app)(appHost.named(x.app));
   const named = (x) => label(x) + (x.title && x.title !== label(x) ? ` (${x.title})` : "");
   const going = apps.filter((x) => !x.joins), joining = apps.filter((x) => x.joins);
   const list = going.map(named), out = [];

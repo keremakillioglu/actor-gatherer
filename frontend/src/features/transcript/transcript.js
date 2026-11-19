@@ -2,6 +2,7 @@ import { state } from "../../core/page/state.js";
 import { el, full } from "../../core/page/helpers.js";
 import { keepingPlace } from "../settings/panel.js";
 import { renderMain } from "../page/main-view.js";
+import { markdown } from "../../core/ui/md";
 
 // ------------------------------------------------------------------ the Transcript view
 // The conversation as a terminal running the harness shows it: what was asked, what the agent said
@@ -13,7 +14,6 @@ const RESULT_LINES = 4;                            // a result's lines shown bef
 // Where each harness keeps its memory of a directory (harness_kit's `memory_folder`): [the folder's pattern, harness].
 const memoryFolders = () => Object.entries((state.home && state.home.harness_info) || {})
   .filter(([, h]) => h.memory_folder).map(([n, h]) => [new RegExp(`${h.memory_folder}$`), n]);
-function markdown(...a) { return window.agNext.ui.markdown(...a); }
 const firstLine = (t, n = 160) => { const l = String(t ?? "").split("\n")[0]; return l.length > n ? l.slice(0, n) + "…" : l; };
 // a tool's output as lines, less the terminal's escape codes (colors, line clears) it may have printed
 // eslint-disable-next-line no-control-regex -- a terminal's escapes (ESC [ ...), taken out

@@ -1,6 +1,7 @@
 import { GROUP_ORDER, NOT_COUNTED, PREAMBLE, SNAPSHOT, state } from "./state.js";
 import { tildePath } from "./code.js";
 import { isShell, key, parse as parseKey, taskId, taskNumber } from "../model/keys";
+import { escapeHtml } from "../ui/html";
 
 // ------------------------------------------------------------------ helpers
 const el = (tag, attrs = {}, ...kids) => {
@@ -493,9 +494,7 @@ const signature = (value) => JSON.stringify(value);
 const MAC = /mac|iphone|ipad/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
 const BESIDE_KEY = MAC ? "⌘" : "Ctrl";
 // Text escaped for HTML, and markdown as the page draws a message (a harness's reply block in it as a card, `unplanned`
-// its words less the block's tags): src/core/ui/html.ts and md.ts (ag_dashboard/DESIGN.md, A5), reached through
-// src/bridge.ts's window.agNext.ui.
-function escapeHtml(t) { return window.agNext.ui.escapeHtml(t); }
+// its words less the block's tags): src/core/ui/html.ts and md.ts (ag_dashboard/DESIGN.md, A5), imported from there.
 
 export {
   BESIDE_KEY, GATHERER, HISTORY, HUE_INK, HUE_MAIN, ICONS, INLINE, MAC, OTHER_TYPE, PREAMBLE_TYPE, SHOWN_KEY, TYPES,

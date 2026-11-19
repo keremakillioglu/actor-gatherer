@@ -7,6 +7,8 @@ import {
 } from "../layout/panes.js";
 import { START_HARNESS_KEY, keptValue, ntGroup, realGroups, startPlace } from "../layout/new-tab.js";
 import { topChanged } from "../layout/top.js";
+import { draw as drawCatalog } from "./catalog";
+import * as appHost from "./host";
 
 // THE APPS PAGE (features/apps/catalog.ts): what a tab showing nothing shows in place of its new-tab page when it is the
 // Apps page's (layout/tabs.ts's `page`) -- opened from the settings panel's "Manage apps", under Groups (openAppsPage),
@@ -20,12 +22,12 @@ function openAppsPage() {
 }
 function drawAppsPage(box) {
   box.classList.remove("nt");
-  window.agNext.appsPage.draw(box, { open: appsPageOpen, changed: appsChanged });
+  drawCatalog(box, { open: appsPageOpen, changed: appsChanged });
 }
 // An app opened from the page: the way the reader chose there (`withAgent`), as a group's "+ ⋯" menu opens it
 // (features/layout/panes.js's opensWithAgent) -- on its own when no harness here can give an agent its tools.
 async function appsPageOpen(a, withAgent = false) {
-  const app = window.agNext.apps.named(a.name);
+  const app = appHost.named(a.name);
   if (!app) throw new Error("it isn't loaded yet. Reload the page.");
   const p = startPlace(), g = p && !p.alone ? ntGroup(p) : realGroups()[0];
   if (!g) throw new Error("make a group first");
@@ -39,8 +41,8 @@ async function appsPageOpen(a, withAgent = false) {
   return openAppTab(g.name, app.name, cwd);
 }
 async function appsChanged() {
-  await window.agNext.apps.load();
-  for (const p of panes.apps.filter((q) => !window.agNext.apps.named(q.app.name))) appClosed(p.instance.id);   // its app
+  await appHost.load();
+  for (const p of panes.apps.filter((q) => !appHost.named(q.app.name))) appClosed(p.instance.id);   // its app
   topChanged(); renderAgents();                                                       // uninstalled: gone, even held
 }
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
