@@ -146,6 +146,40 @@ class CheckTest(unittest.TestCase):
                          (False, {"lines": ["made"]}))
         self.assertNotIn(("e", "out.txt", "created"), got)                     # an edit changes its own file only
 
+    def unnamed_of(self, command, cwd, changed):
+        """The files changed while `command` ran (none of them named by it) that are taken as its: {name: how}."""
+        call = tool_call({"type": "tool_use", "id": "s", "name": "Bash", "input": {"command": command}})
+        for path in changed:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            write(path, "made\n")
+        got = ck.check([("s", call, "", False)], cwd, {}, {path: "created" for path in changed})
+        return {os.path.relpath(t["path"], self.d): t["how"] for t in got if t.get("path")}
+
+    def test_a_file_changed_in_another_project_while_a_command_ran_is_not_the_command_s(self):
+        mine, theirs = self.p("mine"), self.p("theirs")                       # two worktrees, side by side
+        for top in (mine, theirs):
+            os.makedirs(top)
+            write(os.path.join(top, ".git"), "gitdir: /elsewhere\n")
+        out, built, other = os.path.join(mine, "out.txt"), os.path.join(mine, "static", "app.js"), os.path.join(theirs, "x.py")
+        self.assertEqual(self.unnamed_of("make", mine, [out, other]), {"mine/out.txt": "created"})
+        self.assertEqual(self.unnamed_of("cd frontend && npm run build", mine, [built, other]),   # its project's, anywhere
+                         {"mine/static/app.js": "created"})
+        self.assertEqual(self.unnamed_of("cd ../theirs && make", mine, [out, other]), {"theirs/x.py": "created"})
+        self.assertEqual(self.unnamed_of("(cd ../theirs && make); make", mine, [out, other]),
+                         {"mine/out.txt": "created", "theirs/x.py": "created"})
+        self.assertEqual(self.unnamed_of("git -C ../theirs pull", mine, [out, other]),
+                         {"mine/out.txt": "created", "theirs/x.py": "created"})
+        self.assertEqual(self.unnamed_of(f"T={theirs}; cd $T && make", mine, [other]), {"theirs/x.py": "created"})
+        self.assertEqual(self.unnamed_of("git worktree add ../theirs", mine, [other]), {"theirs/x.py": "created"})
+        self.assertEqual(self.unnamed_of("ls .. && ls ../theirs/..", mine, [other]), {})   # a folder in no repository:
+                                                                                         # not where it works
+        self.assertEqual(self.unnamed_of("cd $SOMEWHERE && make", mine, [out, other]),     # where it runs not known:
+                         {"mine/out.txt": "created", "theirs/x.py": "created"})            # any change may be its
+        plain = self.p("plain")                                                 # a folder in no repository: itself
+        self.assertEqual(self.unnamed_of("make", plain, [os.path.join(plain, "o.txt"), other]), {"plain/o.txt": "created"})
+        loose = self.p("loose.txt")                                             # one holding repositories: not theirs
+        self.assertEqual(self.unnamed_of("cd .. && sqlite3 db 'select 1'", mine, [loose, out, other]), {"loose.txt": "created"})
+
     def test_ag_s_own_writes_in_its_home_are_not_a_call_s_change(self):
         home = os.path.join(self.d, "aghome")
         os.makedirs(home)

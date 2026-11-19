@@ -6,7 +6,9 @@ given, and every word of a shell command that is a file there, from the director
 in, with the variables it sets itself and its `cd`s followed (`named`). Once their results are in
 (`check`), the same files are looked at again: one whose text differs was changed by the call
 naming it (`created`, `modified` with the lines that changed, `deleted`). A file changed that no call
-names is one the watcher saw change while they ran (watch.py): it is the calls' too, but not named.
+names is one the watcher saw change while they ran (watch.py): it is the calls' too, but not named -- a
+shell command's or a subagent's, and only one whose project holds it (`_scope`): the watcher sees every actor's
+folders, and a file another actor changed in its own folder, while this call ran, is not this call's.
 A change to a file in ag's home (AG_HOME, ~/.ag: its databases, its logs) is ag's own -- it writes them
 as the calls run, a gatherer's database at every model call -- and is left out, unless a call says it
 writes the file: `sqlite3 ~/.ag/.../context.db "SELECT ..."` is not an edit of it.
@@ -53,6 +55,98 @@ def _shell(call: ToolCall, cwd: Optional[str]) -> Tuple[str, Optional[str]]:
     if v.get("shape") != Shape.SHELL:
         return "", cwd
     return str(v.get("command") or ""), _resolve(v["cwd"], cwd or "") if isinstance(v.get("cwd"), str) and v["cwd"] else cwd
+
+
+def _repo(folder: str) -> Optional[str]:
+    """The top of the git repository (or worktree) `folder` is in: the nearest folder holding it that has a `.git`;
+    None when it is in none."""
+    d = folder
+    while True:
+        if os.path.exists(os.path.join(d, ".git")):
+            return d
+        up = os.path.dirname(d)
+        if up == d:
+            return None
+        d = up
+
+
+def _works_in(command: str, cwd: Optional[str]) -> Optional[set]:
+    """The folders a shell command works in: where its commands run -- where it starts, each `cd` followed, a
+    subshell's too, a folder given to `-C` (git's, make's) -- with the variables it sets itself; and any folder in a
+    git repository it names (`git worktree add ../x`, `git clone … x`, `cp -r a ../x/`): that repository's top. A
+    folder it names in none (`ls ~`) is not one: it may hold everything. None when where it runs is not known: a
+    `cd` to a variable it does not set, `cd -`, a command that cannot be read, no folder to start from."""
+    cmds = _simple_commands(command)
+    if cmds is None or not cwd:
+        return None
+    env, out, outer = {}, set(), []                     # outer: where each subshell open was entered from
+    for words, _ in cmds:
+        if words and all(re.fullmatch(r"[A-Za-z_]\w*=.*", w, re.S) for w in words):
+            for w in words:
+                k, v = w.split("=", 1)
+                env[k] = _expand(v, env)
+            continue
+        words = [_expand(w, env) for w in words]
+        while words and words[0].startswith("("):       # a subshell: `(cd sub && make); make`
+            outer.append(cwd)
+            words[0] = words[0][1:]
+            words = words if words[0] else words[1:]
+        ends = 0
+        if words and words[-1].endswith(")") and outer:
+            ends = min(len(outer), len(words[-1]) - len(words[-1].rstrip(")")))
+            words[-1] = words[-1][:len(words[-1]) - ends]
+            words = words if words[-1] else words[:-1]
+        if words[:1] == ["cd"]:
+            to = words[1] if len(words) > 1 else "~"
+            cwd = None if to == "-" else _path(to, cwd)
+            if cwd is None:
+                return None
+        else:
+            out.add(cwd)
+            out.update(d for d in (_path(w, cwd) for i, w in enumerate(words) if i and words[i - 1] == "-C") if d)
+            for w in words[1:]:
+                w = w.split("=", 1)[1] if w.startswith("--") and "=" in w else w      # --prefix=../x
+                p = None if not w or w.startswith("-") or "\n" in w else _path(w, cwd)
+                top = _repo(p) if p and os.path.isdir(p) else None
+                if top:
+                    out.add(top)
+        for _ in range(ends):                           # its subshell over: back where it was entered from
+            cwd = outer.pop()
+    return out or {cwd}
+
+
+def _scope(call: ToolCall, cwd: Optional[str]) -> Optional[List[Tuple[str, bool]]]:
+    """Where a call that may change files it does not name works: the projects of the folders its commands run in
+    (`_works_in`; a subagent's, the session's folder) -- each a repository's top, with all under it, or a folder in
+    no repository, with all under it but the repositories inside it (other projects: `~`'s is not every repository
+    in it) -- as [(folder, whether a repository's top)], each also as the system resolves it (/tmp is /private/tmp).
+    A file that changed outside them while it ran was changed by something else: another actor, most often, working
+    in another folder. None: not known (any file may be its)."""
+    if (call.view or {}).get("shape") == Shape.SHELL:
+        command, here = _shell(call, cwd)
+        folders = _works_in(command, here)
+    else:
+        folders = {cwd} if cwd else None
+    if folders is None:
+        return None
+    out = set()
+    for f in folders:
+        f = os.path.abspath(f)
+        top = _repo(f)
+        out |= {(top, True), (os.path.realpath(top), True)} if top else {(f, False), (os.path.realpath(f), False)}
+    return sorted(out)
+
+
+def _within(path: str, scope: Optional[List[Tuple[str, bool]]], repo=_repo) -> bool:
+    """Whether `path` is where a call works (`_scope`'s; None: anywhere). `repo`: `_repo`, or one remembering
+    what it found."""
+    if scope is None:
+        return True
+    for p in {path, os.path.realpath(path)}:
+        for root, top in scope:
+            if p.startswith(root.rstrip(os.sep) + os.sep) and (top or repo(os.path.dirname(p)) is None):
+                return True
+    return False
 
 
 class Look:
@@ -425,8 +519,12 @@ def check(calls: List[Tuple[str, ToolCall, str, bool]], cwd: Optional[str],
     owners: Dict[str, List[str]] = {}                       # a change's calls: those that say they write it,
     for p in changes:                                       # else those of the runners that name it
         owners[p] = [cid for cid in runners if p in says[cid]] or [cid for cid in runners if p in names[cid]]
-    unnamed = [p for p in changes if not owners[p]][:MAX_UNNAMED]
     by_id = {cid: call for cid, call, _, _ in calls}
+    scope = {cid: _scope(by_id[cid], cwd) for cid in shells}          # an unnamed change: one where it works
+    tops: Dict[str, Optional[str]] = {}
+    repo = lambda d: tops[d] if d in tops else tops.setdefault(d, _repo(d))     # noqa: E731 - looked up once
+    whose = {p: [cid for cid in shells if _within(p, scope[cid], repo)] for p in changes if not owners[p]}
+    unnamed = [p for p in changes if whose.get(p)][:MAX_UNNAMED]
     shares = {p: _share(changes[p], owners[p], by_id, cwd) for p in changes if len(owners[p]) > 1}
     out: List[dict] = []
     for cid, call, text, error in calls:
@@ -439,8 +537,9 @@ def check(calls: List[Tuple[str, ToolCall, str, bool]], cwd: Optional[str],
             if cid in owners[p]:
                 mine.append({"call_id": cid, "path": p, "how": how, "checked": None, "named": True,
                              "detail": shares[p][cid] if p in shares else detail})
-            elif p in unnamed and cid in shells:             # changed while it ran, by no call that names it
-                mine.append({"call_id": cid, "path": p, "how": how, "checked": None, "named": False, "detail": detail})
+            elif p in unnamed and cid in whose[p]:           # changed while it ran, where it works, by no call
+                mine.append({"call_id": cid, "path": p, "how": how, "checked": None,    # that names it
+                             "named": False, "detail": detail})
         out += mine or [{"call_id": cid}]
     for t in out:
         if isinstance(t.get("detail"), dict) and "path" in t["detail"]:
