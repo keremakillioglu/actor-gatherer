@@ -10,9 +10,11 @@ describe("the layout model run beside the page", () => {
     shadow.mismatches.length = 0;
   });
 
-  it("takes the page's first tab on a home with none kept, and agrees with the page as changes are told", () => {
+  let first = "";
+  it("agrees with the page as changes are told", () => {
+    shadow.reset();
     shadow.start(() => null);
-    shadow.begin([{ id: "s1", name: "", tasks: [] }], "s1");
+    first = shadow.now().current;
     shadow.tell("auto", M.opened, "g\u0000c1");
     shadow.tell("route", M.routed, "g\u0000c2", { id: "s2" });
     shadow.tell("enter", M.open, "g\u0000c2");
@@ -21,7 +23,7 @@ describe("the layout model run beside the page", () => {
         "s2",
         ["g\u0000c2"],
         [
-          { id: "s1", tasks: ["g\u0000c1"] },
+          { id: first, tasks: ["g\u0000c1"] },
           { id: "s2", tasks: [] },
         ],
       ),
@@ -36,7 +38,7 @@ describe("the layout model run beside the page", () => {
         "s2",
         ["g\u0000c3"],
         [
-          { id: "s1", tasks: ["g\u0000c1"] },
+          { id: first, tasks: ["g\u0000c1"] },
           { id: "s2", tasks: [] },
         ],
       ),
@@ -47,7 +49,7 @@ describe("the layout model run beside the page", () => {
         "s2",
         ["g\u0000c3"],
         [
-          { id: "s1", tasks: ["g\u0000c1"] },
+          { id: first, tasks: ["g\u0000c1"] },
           { id: "s2", tasks: [] },
         ],
       ),
@@ -65,7 +67,7 @@ describe("the layout model run beside the page", () => {
             "s2",
             ["g\u0000c4"],
             [
-              { id: "s1", tasks: ["g\u0000c1"] },
+              { id: first, tasks: ["g\u0000c1"] },
               { id: "s2", tasks: [] },
             ],
           );
@@ -81,7 +83,7 @@ describe("the layout model run beside the page", () => {
         "s2",
         ["g\u0000c5"],
         [
-          { id: "s1", tasks: ["g\u0000c1"] },
+          { id: first, tasks: ["g\u0000c1"] },
           { id: "s2", tasks: [] },
         ],
       ),
@@ -96,7 +98,7 @@ describe("the layout model run beside the page", () => {
         "s2",
         ["g\u0000t1"],
         [
-          { id: "s1", tasks: ["g\u0000c1"] },
+          { id: first, tasks: ["g\u0000c1"] },
           { id: "s2", tasks: [] },
         ],
       ),

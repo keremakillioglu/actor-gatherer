@@ -587,6 +587,7 @@ function focusTask(k) {
 // their panes and panels closed (terminals kept) -- this page's own pane given one of k's actors if it showed another's,
 // or, k of apps alone, the actors' panes out of sight (enterAppTask)
 async function onlyTask(k) {
+  shadow.tell("only", model.open, k);                 // (the layout model: this task alone in the tab shown)
   const others = [...new Set(shownPanels().map((s) => s.key))].filter((x) => x && x !== k);
   if (!others.length) return;
   for (const o of others) if (tasksLaidOut.has(o)) rememberTask(o);

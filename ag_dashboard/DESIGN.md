@@ -354,9 +354,14 @@ The layout slice comes first, in four steps, each with every test passing:
    every tab's are checked against it. The browser tests record each difference (`AG_LAYOUT_STRICT` fails on one).
    A task's key is read as it is now (`keysNow`): the task an item joined, or the items of one that dissolved, those
    whose panels are open.
-3. *Reads*: the page and the tabs read the model; the copying of `shown()` into the tab, and the replay on a switch and
-   at a reload, go.
-4. *Writes*: clicks call the model's functions, one renderer opens and closes panes to match it, and the old variables
+3. *The tab bar on the model* (built): `tabs.ts` keeps no tabs of its own -- it reads the model's, and every change it
+   makes is the model's rule for it (`fresh`, `show`, `close`, `put`, ...), with the page's side effects (panes entered
+   or cleared, the arrangement set) after. The tab shown's tasks are the model's, kept by the page's tells: `note()` no
+   longer copies `shown()` into the tab, only the arrangement and the focus, and saves what changed. ⌥ (`take`) only
+   takes the task out of the other tabs; the page's entering it opens it. The check stays, and on a difference still
+   sets the model to the page. Entering a tab's tasks on a switch or a reload (`hooks.enter`) stays till step 4.
+4. *Writes*: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
+   and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
    (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,
    `ag-dashboard-layout`. The model then holds each task's open items itself (what `keysNow` reads off the panels now).
 

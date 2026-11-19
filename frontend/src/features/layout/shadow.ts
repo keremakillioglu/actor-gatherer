@@ -31,7 +31,6 @@ class Shadow {
   private started = false;
   /** every change told since the page loaded, with the tabs it left (the newest 200): a mismatch's whole story */
   readonly log: string[] = [];
-  private blank = false; // none kept before: the page names its first tab
 
   /** Read once, as the page starts (the keys of before; nothing written). */
   start(
@@ -46,22 +45,31 @@ class Shadow {
     if (this.started) return;
     this.started = true;
     this.layout = M.migrate(get);
-    this.blank = this.layout.tabs.length === 1 && !M.holds(this.layout.tabs[0]);
   }
 
-  /** The page's tabs as it starts (tabs.ts's constructor): none kept before, the model takes them -- the ids of a new
-   * tab are the page's to give. */
-  begin(
-    tabs: { id: string; name: string; tasks: string[] }[],
-    current: string,
-    canon?: (k: string) => string | null,
-  ): void {
-    if (canon) this.canon = canon;
+  /** What the page keeps with the tab shown, not a change of what it shows (its arrangement, its map): the model's rule
+   * `f` applied, not listed among the changes told. */
+  update<A extends unknown[]>(f: (l: M.Layout, ...a: A) => M.Layout, ...args: A): void {
     this.start();
-    const l = this.layout;
-    // none kept: the model's one tab (holding what was told meanwhile: the actor the page opened on) is the page's
-    if (!this.blank || l.tabs.length !== 1 || tabs.length !== 1 || l.tabs[0].id === current) return;
-    this.layout = { ...l, tabs: [{ ...l.tabs[0], id: current, name: tabs[0].name }], current };
+    this.layout = f(this.layout, ...args);
+  }
+  /** How the page reads a key now (tabs.ts's hooks.canon), when no reader of keysWith's is given. */
+  canonWith(canon: ((k: string) => string | null) | undefined): void {
+    if (canon) this.canon = canon;
+  }
+  /** The model as the page reads it: each task by its key now. */
+  now(): M.Layout {
+    this.start();
+    return (this.layout = this.keyed());
+  }
+  /** Back to a page not started (the unit tests' each new page). */
+  reset(): void {
+    this.started = false;
+    this.layout = M.empty();
+    this.told = [];
+    this.log.length = 0;
+    this.mismatches.length = 0;
+    this.pending = null;
   }
 
   /** A change the page made, by the model's rule `name`. */
