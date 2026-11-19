@@ -3,5 +3,20 @@ test-results/
 playwright-report/
 pnpm-lock.yaml
 e2e/**/*-snapshots/
-src/legacy/
+# The page's script and styles from before its views were rewritten (src/page.js's modules, src/styles.ts's
+# sheets): their lines as page.html had them, so a branch that changed them before they moved still merges onto
+# them. Formatted in a change of its own, once no such branch is open.
+src/core/page/
+src/features/*/*.js
+src/features/apps/app-panes.css
+src/features/chat/chat.css
+src/features/chat/files-view.css
+src/features/layout/new-tab.css
+src/features/layout/panes.css
+src/features/layout/top.css
+src/features/list/list.css
+src/features/notify/notify.css
+src/features/page/layout.css
+src/features/terminal/terminal.css
+src/features/transcript/transcript.css
 index.html

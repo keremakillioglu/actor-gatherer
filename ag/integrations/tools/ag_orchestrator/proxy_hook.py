@@ -36,7 +36,7 @@ from harness_kit import Call, Fact, Facts, Harness, Part
 from harness_kit.base import HOOK_PATH
 
 from .adaptor import CHANNEL
-from .call_ag import HUNG_UP, read_of, report_measured
+from .call_ag import HUNG_UP, READ, call_ag, keep_read, read_of, report_measured
 from .records import Outbox, call_failed, derived, model_call, recap, reply_end, reply_parts, name
 from .session_files import SessionFiles
 
@@ -231,6 +231,83 @@ class ProxyHook:
         now = time.time()
         return [derived(Fact(Facts.ASK_SETTLED, k, now, {"call": k, "how": "answered", "result": None})) for k in done]
 
+    # ---- a turn: its context read by ag
+
+    #: Of the budget, by the policy's count: from there a turn's context is counted before it is sent, and read again
+    #: if it is over (`turn`).
+    COUNT_FROM = 0.5
+
+    async def turn(self, request, call: Call, gatherer: str, channel: str, cwd: Optional[str], items: list, field: str,
+                   body: dict, preamble: list, since: float, adaptor=None, run: Optional[str] = None,
+                   first: Optional[Callable[[dict], None]] = None) -> Tuple[Optional[list], dict]:
+        """A turn's call of the session, read for by ag, the same for every harness: recorded before ag reads for it
+        (`calling`); its keys kept for its answer; the files its last answer's calls touched checked, and what came
+        since derived (`arrived`); its context read (`call_ag`), and -- from COUNT_FROM of the budget -- counted as the
+        provider counts (`count`) and read again if over; the read kept (`kept`), and the counter started (`counting`).
+        `items` is the harness's history, sent as `body[field]`; `adaptor`, this call's (else the hook's); `first`, what
+        the call does with its first read's `out`, before it is counted. -> (the history to send, or None: the harness's
+        own; the read's `out`)."""
+        await self.calling(request, gatherer, channel, call)
+        if isinstance(getattr(request, "state", None), dict):
+            request.state[self.ANSWERED] = (gatherer, channel, cwd)
+            if self.files is not None:
+                request.state[self.FILES] = (gatherer, channel, cwd, since)
+        if self.files is not None:                         # the results of the last answer's calls: checked
+            self.files.arrived(gatherer, channel, cwd, items)
+        self.arrived(gatherer, channel, items)
+        client = self.ag_clients.client(gatherer)
+
+        async def read():
+            out = {}
+            new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd, items, adaptor or self.adaptor, out=out,
+                                      limit=getattr(request, "limit", None), preamble=preamble,
+                                      process=getattr(request, "process", None), run=run)
+            self.log(gatherer, f"[{channel}] {note}")
+            return new, out
+
+        new, out = await read()
+        if first is not None:
+            first(out)
+        stored = list(out.get("inserted") or [])           # what this call stored, over both reads
+        size, budget = out.get("sent_tokens"), out.get("budget")      # all of it, as the provider counts
+        if "read_id" in out and budget and size is not None and size >= self.COUNT_FROM * budget:
+            counted = await self.count(request, gatherer, channel, dict(body, **{field: items if new is None else new}))
+            if counted is not None and counted > budget:
+                self.log(gatherer, f"[{channel}] counted {counted} tokens before sending (ag's count {size}), "
+                                   f"over the budget {budget}: read again")
+                await client.request("measured", {"gatherer": gatherer, "read_id": out["read_id"], "tokens": counted})
+                again, out_again = await read()
+                stored += out_again.get("inserted") or []
+                if "read_id" in out_again:
+                    new, out = again, out_again
+        keep_read(request, gatherer, out)                 # what was sent is the read's context either way
+        self.kept(request, gatherer, channel, call, out, stored)
+        new = self.sending(new, out)
+        if self.count_events and "read_id" in out:
+            self.counting(request, client, gatherer, channel, body, items, items if new is None else new, out, preamble)
+        return new, out
+
+    def arrived(self, gatherer: str, channel: str, items: list) -> None:
+        """A turn's history come in, before ag reads for it: what the subclass reads of it (`derive`). Nothing here."""
+
+    async def count(self, request, gatherer: str, channel: str, body: dict) -> Optional[int]:
+        """The tokens `body` holds, as the provider counts them; None when it cannot be told (the shared counter's)."""
+        return await self.counter.exact(gatherer, channel, request, body)
+
+    def kept(self, request, gatherer: str, channel: str, call: Call, out: dict, stored: List[int]) -> None:
+        """A turn's read kept for its answer: what the subclass keeps beside it (`stored`, the rows its reads stored).
+        Nothing here."""
+
+    def sending(self, new: Optional[list], out: dict) -> Optional[list]:
+        """The history to send, as the subclass changes it last. As it is here."""
+        return new
+
+    def counting(self, request, client, gatherer: str, channel: str, body: dict, items: list, sent: list, out: dict,
+                 preamble: list) -> None:
+        """What was sent, to the counter (the shared one's, counting.py): kept, and counted as the call goes."""
+        self.counter.sent(gatherer, channel, out, sent, preamble)
+        self.counter.start(request, client, gatherer, {CHANNEL: channel}, body, items, sent, out)
+
     # ---- the hook server's reports
 
     async def hung_up(self, request) -> None:
@@ -315,8 +392,16 @@ class ProxyHook:
             self.log(kept[0], f"[{kept[1]}] answered ({answer.get('status')}): {note}")
 
     async def measured(self, request, tokens: Optional[int]) -> None:
-        """The hook server's report, once the answer is back: the call's input tokens, to the read."""
+        """The hook server's report, once the answer is back: the call's input tokens, to the read -- and to the
+        counter, which counts by them what the count endpoint cannot (the shared counter's `reported`, counting.py)."""
         await report_measured(self.ag_clients, request, tokens)
+        reported = getattr(getattr(self, "counter", None), "reported", None)   # Claude Code's own counter has none
+        state = getattr(request, "state", None) or {}
+        read, answered = state.get(READ), state.get(self.ANSWERED)
+        if reported and getattr(self, "count_events", False) and read and answered and isinstance(tokens, int):
+            gatherer, read_id = read
+            reported(request, self.ag_clients.client(gatherer), gatherer, answered[1], read_id, tokens,
+                     request.body if isinstance(request.body, dict) else {})
 
     async def failed(self, request, status: Optional[int], error: str, withdrawn: Optional[bool] = None) -> None:
         """The hook server's report that one of the session's own calls failed -- its endpoint answered an error, or

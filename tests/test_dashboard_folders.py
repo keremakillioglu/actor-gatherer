@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import folders, saved, sessions  # noqa: E402
+from ag_dashboard import folders, saved, sessions, store  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 
@@ -111,7 +111,7 @@ class FoldersTest(unittest.TestCase):
 
     def test_the_folders_of_saved_actors_from_before_are_copied_in_once(self):
         os.makedirs(dashboard_home.HOME)
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         conn.executescript("""
             CREATE TABLE saved (gatherer TEXT NOT NULL, channel TEXT NOT NULL, at TEXT NOT NULL, folder TEXT,
                                 PRIMARY KEY (gatherer, channel));
@@ -171,7 +171,7 @@ class FoldersTest(unittest.TestCase):
 
     def test_a_table_from_before_closed_is_given_it_every_folder_open(self):
         os.makedirs(dashboard_home.HOME)
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         conn.executescript("""
             CREATE TABLE folders (id INTEGER PRIMARY KEY AUTOINCREMENT, gatherer TEXT NOT NULL, parent INTEGER,
                                   name TEXT NOT NULL, at TEXT NOT NULL);

@@ -61,7 +61,7 @@ from datetime import datetime, timezone
 from collections import deque
 from typing import Dict, List, Optional, Tuple
 
-from . import data
+from . import data, store
 
 try:
     from pycrdt import Doc, Text
@@ -432,7 +432,7 @@ def writers(directories: List[str], since: float) -> Dict[str, List[dict]]:
     found: Dict[str, List[dict]] = {}               # by path: its changes
     names = data.gatherer_names()
     for gatherer in names[:1] if data.paths.merged() else names:        # the home's one database: read once
-        conn = data._connect(gatherer)
+        conn = store.gatherer(gatherer)
         if conn is None:
             continue
         try:
@@ -1070,13 +1070,6 @@ class LiveDocs:
             raise DocError("a connection id, please")
         room = self._room(path, root, create=True)
         return room, room.join(cid, client, hold)
-
-    def open_room(self, path: str, root: str) -> Optional[Room]:
-        """The file's document, if a page has it open now; else None."""
-        if not AVAILABLE:
-            return None
-        room = self.rooms.get(resolve(path, root))
-        return room if room is not None and room.conns else None
 
     def hold(self, path: str, root: str, cid: str, how: str) -> dict:
         return self._room(path, root).hold(cid, how)

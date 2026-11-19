@@ -22,7 +22,7 @@ from ag.ag_harness.store.processes import identity  # noqa: E402
 from ag.cli.launch import LaunchError  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
 from ag.integrations.harnesses.claude.setup.launch import session_args  # noqa: E402
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from ag.integrations.tools.hook_server.hook_server import Answer  # noqa: E402
 from ag_dashboard import data, sessions  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402

@@ -212,6 +212,22 @@ class Lifecycle(Home):
         self.assertEqual(code, 0)
         self.assertEqual(servers.running(), [])
 
+    def test_a_launcher_lists_and_stops_only_its_own_harness_servers(self):
+        port = 45000 + os.getpid() % 1000
+        servers = HookServers(self.home)
+        server = servers.start(codex.SETUP, "http://127.0.0.1:9", port)
+        self.addCleanup(servers.stop, server)
+        # another harness's, recorded in the same directory (this process's pid: alive, and never signalled)
+        other = os.path.join(servers.directory, "1.json")
+        with open(other, "w", encoding="utf-8") as fh:
+            json.dump({"port": 1, "pid": os.getpid(), "upstream": "http://127.0.0.1:11",
+                       "setup": "ag.integrations.harnesses.claude.setup.setup"}, fh)
+        self.addCleanup(lambda: os.path.exists(other) and os.remove(other))
+        launcher = codex.CodexLauncher({}, self.home)
+        self.assertEqual([line.split()[2] for line in launcher.status()], [f":{server.port}"])
+        self.assertEqual(launcher.stop(), [f"stopped the hook server :{server.port} (-> http://127.0.0.1:9)"])
+        self.assertEqual([s.port for s in servers.running()], [1])                     # the other harness's, kept
+
     def test_one_that_fails_to_start_says_why(self):
         with self.assertRaisesRegex(RuntimeError, "did not start"):
             HookServers(self.home).start("no.such.module", "http://127.0.0.1:9", 47999 - os.getpid() % 1000)

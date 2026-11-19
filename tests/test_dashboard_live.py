@@ -4,6 +4,7 @@ them, by a check of the files (live.Fallback)."""
 import json
 import os
 import socket
+import sqlite3
 import sys
 import threading
 import time
@@ -410,6 +411,30 @@ class StreamTest(HomeBase):
         s = self.open(httpd, "")
         name, home = s.next()
         self.assertEqual((name, home["gatherers"][0]["name"]), ("home", "g"))
+
+    def test_a_home_not_read_for_a_locked_database_leaves_the_stream_up(self):
+        httpd = self.start()
+        s = self.open(httpd, "")
+        self.assertEqual(s.next()[0], "home")
+        real, calls = type(httpd).read_home, []
+
+        def first_locked(srv):
+            calls.append(1)
+            if len(calls) == 1:
+                raise sqlite3.OperationalError("database is locked")
+            return real(srv)
+        with unittest.mock.patch.object(type(httpd), "read_home", first_locked), \
+                unittest.mock.patch.object(server, "SHARED_SECONDS", 0):
+            httpd.hub.ring("g", None, "events")
+            end = time.time() + 3
+            while not calls and time.time() < end:          # read, and not read for the lock
+                time.sleep(0.05)
+            self.m._conn("g").execute("UPDATE events SET inserted_at = '2030-01-01T00:00:00+00:00' "   # a change since
+                                      "WHERE row_id = (SELECT max(row_id) FROM events)")
+            self.m._conn("g").commit()
+            httpd.hub.ring("g", None, "events")
+            name, home = s.next(3)                          # the stream still up: the next event is the home read again
+        self.assertEqual((name, len(calls)), ("home", 2))
 
     def test_a_closed_page_s_stream_is_let_go(self):
         httpd = self.start()

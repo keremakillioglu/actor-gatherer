@@ -598,5 +598,30 @@ class ServedTest(Hosted):
                          [got["session"]["session_id"]])
 
 
+
+class SyncTeXTest(unittest.TestCase):
+    """DocWriter's SyncTeX (core.py's `synctex`, by app_kit/tex.py): a line to its place in the PDF and back, the paths
+    its folder's."""
+
+    def test_a_line_to_its_place_in_the_pdf_and_back(self):
+        if not (shutil.which("pdflatex") and shutil.which("synctex")):
+            self.skipTest("no pdflatex and synctex here")
+        from ag_apps.docwriter import core
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        with open(os.path.join(root, "paper.tex"), "w") as fh:
+            fh.write("\\documentclass{article}\n\\begin{document}\nFirst page.\n\\newpage\nSecond page, its own line.\n"
+                     "\\end{document}\n")
+        subprocess.run(["pdflatex", "-synctex=1", "-interaction=nonstopmode", "paper.tex"], cwd=root,
+                       capture_output=True, timeout=120, stdin=subprocess.DEVNULL)
+        there = core.synctex(root, {"pdf": "paper.pdf", "mode": "forward", "file": "paper.tex", "line": 5})
+        self.assertTrue(there["ok"], there)
+        self.assertEqual(there["page"], 2)
+        back = core.synctex(root, {"pdf": "paper.pdf", "page": 2, "x": there["h"] + 5, "y": there["v"] - 2})
+        self.assertEqual((back["ok"], back["file"], back["line"]), (True, "paper.tex", 5))
+        with self.assertRaises(core.DocWriterError):
+            core.synctex(root, {"pdf": "../elsewhere.pdf", "page": 1, "x": 1, "y": 1})
+
+
 if __name__ == "__main__":
     unittest.main()

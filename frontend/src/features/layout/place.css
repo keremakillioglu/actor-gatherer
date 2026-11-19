@@ -338,7 +338,7 @@
   height: 100%;
   background: none;
 }
-/* a phone's width (nothing placed: the page flows, 07-panes.js): the tabs still there, a row that scrolls sideways, each
+/* a phone's width (nothing placed: the page flows, features/layout/panes.js): the tabs still there, a row that scrolls sideways, each
    tab no narrower than its map and a few letters */
 @media (max-width: 760px) {
   :root:not(.list-full):has(.work) .tab-slot > .lay-tabs {
@@ -488,7 +488,7 @@
 .lay-dot[data-status="background"] {
   background: var(--good);
 }
-/* at work: the logo's dots going round, drawn by legacy/css/00-base.css (AN ACTOR AT WORK) */
+/* at work: the logo's dots going round, drawn by src/core/page/base.css (AN ACTOR AT WORK) */
 .lay-dot[data-status="working"] {
   width: 10px;
   height: 10px;

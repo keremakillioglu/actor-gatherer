@@ -1,4 +1,4 @@
-// Links clicked in an actor's pane (07-panes.js, openLink): opened in a Browser of the actor's task, by the open-url
+// Links clicked in an actor's pane (features/layout/panes.js, openLink): opened in a Browser of the actor's task, by the open-url
 // intent its panel takes -- a new Browser put in the task of an actor that has none, else a new tab of the Browser it
 // has. The Browser's panel is the real one; the host's answers and its backend's are the routes here (the test home has
 // no Chrome to run one).

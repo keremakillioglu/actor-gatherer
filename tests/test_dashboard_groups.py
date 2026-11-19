@@ -5,7 +5,9 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import types
 import unittest
 import unittest.mock
 
@@ -14,7 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ag.ag_harness.store import paths  # noqa: E402
 import app_kit  # noqa: E402
-from ag_dashboard import actions, app_agents, app_host, coordinators, data, folders, gatherer_folders, group_admin, groups, merges, naming, saved, sessions, tasks, titles, tool_gateway  # noqa: E402
+from ag_dashboard import placement  # noqa: E402
+from ag_dashboard import actions, app_agents, app_host, branches, coordinators, data, folders, gatherer_folders, group_admin, groups, merges, naming, saved, server, sessions, store, tasks, titles, tool_gateway  # noqa: E402
 from replies import insert  # noqa: E402
 from test_dashboard_app_host import NOTES, insert_here, write_app  # noqa: E402
 import test_home_db  # noqa: E402
@@ -44,18 +47,29 @@ class GroupsTest(unittest.TestCase):
         return [e for _, events in self.recorded for e in events if e["type"] == kind]
 
     def members(self, group):
-        conn = data._connect(group)
+        conn = store.gatherer(group)
         try:
             return sorted(data.members(conn, group))
         finally:
             conn.close()
 
     def rows(self, table):
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         try:
             return sorted(conn.execute(f"SELECT gatherer, channel FROM {table}"))
         finally:
             conn.close()
+
+    def test_what_is_where_is_read_once_for_every_part_that_asks_and_again_after_a_move(self):
+        with unittest.mock.patch.object(placement, "_read", wraps=placement._read) as read:
+            data.home()                                       # the list, its groups, folders and app notices
+            data.groups_now(), data.alone_names(), data.changed(), folders.of("a")
+            self.assertEqual(read.call_count, 1)
+            groups.move("a", "b", ["c1"])
+            self.assertEqual((self.members("a"), self.members("b")), (["c3"], ["c1", "c2"]))   # read again: moved
+            self.assertEqual(data.groups_now()["c1"], "b")
+            self.assertEqual(read.call_count, 2)
+        self.assertGreater(data.changed()["b"], 0)            # just changed: kept in view
 
     def test_a_plan_says_who_moves_and_changes_nothing(self):
         got = groups.plan("a", "b", ["c1"])
@@ -73,6 +87,12 @@ class GroupsTest(unittest.TestCase):
 
     def test_an_actor_moved_is_in_its_new_group_with_its_rows(self):
         saved.choose("a", "c1", True)
+        conn = sqlite3.connect(store.path())             # c1's own branch (branches.py), and c3's
+        conn.executescript(branches.SCHEMA)
+        conn.executemany("INSERT INTO branches (session_id, gatherer, project, worktree, branch, start, created) "
+                         "VALUES (?, 'a', '/p', ?, ?, 'main', 0)", [("c1", "/w1", "ag/c1"), ("c3", "/w3", "ag/c3")])
+        conn.commit()
+        conn.close()
         into = folders.make("b", "Inbox")
         groups.move("a", "b", ["c1"], into=into)
         self.assertEqual((self.members("a"), self.members("b")), (["c3"], ["c1", "c2"]))
@@ -81,6 +101,9 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual({k: event["payload"][k] for k in ("group", "was", "folder")}, {"group": "b", "was": "a", "folder": into})
         self.assertIn("c1", event["id"])                          # a read returns an id once, whatever its channel
         self.assertEqual(self.rows("saved"), [("b", "c1")])
+        conn = sqlite3.connect(store.path())
+        self.assertEqual(sorted(conn.execute("SELECT gatherer, session_id FROM branches")), [("a", "c3"), ("b", "c1")])
+        conn.close()
         self.assertEqual(folders.of("b")["filed"], {"c1": into})
         self.assertEqual(folders.of("a")["filed"], {})
 
@@ -99,7 +122,7 @@ class GroupsTest(unittest.TestCase):
 
     def crew(self, channel, gatherer, over):
         """A coordinator agent's session over `over` (sessions.py's table), as coordination.py's `ensure` makes one."""
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         try:
             conn.execute(sessions.SCHEMA)
             have = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
@@ -148,6 +171,78 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual(self.members("a"), [])
         self.assertEqual(tasks.stored()["b"]["tasked"], {"c1": task, "c3": task})
         self.assertNotIn("a", tasks.stored())
+
+    def session_row(self, channel, gatherer):
+        """A session of the dashboard's for `channel` in `gatherer` (sessions.py's table): its row names its group too."""
+        conn = sqlite3.connect(store.path())
+        try:
+            conn.execute(sessions.SCHEMA)
+            have = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
+            for name, kind in sessions.ADDED:
+                if name not in have:
+                    conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {kind}")
+            conn.execute("INSERT INTO sessions (session_id, gatherer, harness, cwd, permission_mode, created_at, status) "
+                         "VALUES (?, ?, 'claude', '/', 'auto', '2026-01-01T00:00:00Z', 'stopped')", (channel, gatherer))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def read_home(self, out):
+        """The home as the page reads it (server.py's `read_home`), into `out`."""
+        srv = types.SimpleNamespace(sessions=types.SimpleNamespace(list=sessions.stored, renames=None, shells=lambda: []),
+                                    known=None, branches=None, app_host=None)
+        out["home"] = server.Server.read_home(srv)
+
+    def half_moved(self):
+        """c1 (a session of the dashboard's, in a task with c3) moving from a to b, held halfway: ag's records in, the
+        apps and the dashboard's rows not yet (`_unhook` first, as the app host takes half a second) -> (the move's
+        thread, the Event that lets it go on)."""
+        self.session_row("c1", "a")
+        tasks.add("a", "c1", ["c3"])
+        halfway, go = threading.Event(), threading.Event()
+        unhook = groups._unhook
+
+        def held(*args):
+            halfway.set()
+            go.wait(5)
+            return unhook(*args)
+        patch = unittest.mock.patch.object(groups, "_unhook", side_effect=held)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.addCleanup(go.set)
+        mover = threading.Thread(target=groups.move, args=("a", "b", ["c1"]))
+        mover.start()
+        self.addCleanup(mover.join, 5)
+        self.assertTrue(halfway.wait(5))
+        return mover, go
+
+    def test_a_home_read_during_a_move_waits_for_all_of_it(self):
+        mover, go = self.half_moved()
+        got = {}
+        reader = threading.Thread(target=self.read_home, args=(got,))
+        reader.start()
+        reader.join(0.5)
+        self.assertTrue(reader.is_alive())                # not listed half moved: c1 in b by ag, in a by its session's row
+        go.set()
+        mover.join(5)
+        reader.join(5)
+        self.assertEqual(test_home_db.MergedHomeTest.listed(self, got["home"]), {"a": [], "b": ["c1", "c2", "c3"]})
+        self.assertEqual(got["home"]["tasks"], {"b": {"tasks": [{"id": 1, "name": ""}], "tasked": {"c1": 1, "c3": 1}}})
+
+    def test_the_home_says_which_group_each_app_is_in(self):
+        srv = types.SimpleNamespace(sessions=types.SimpleNamespace(list=sessions.stored, renames=None, shells=lambda: []),
+                                    known=None, branches=None, app_host=types.SimpleNamespace(groups=lambda: {"x1": "b"}))
+        self.assertEqual(server.Server.read_home(srv)["app_groups"], {"x1": "b"})
+        srv.app_host = None                               # a dashboard running no apps
+        self.assertEqual(server.Server.read_home(srv)["app_groups"], {})
+
+    def test_a_change_stuck_for_long_stops_no_home_read(self):
+        self.half_moved()
+        got = {}
+        with unittest.mock.patch.object(groups, "SETTLE_SECONDS", 0.2), \
+                unittest.mock.patch.object(server.avatars, "assign", side_effect=lambda h: h):   # none given meanwhile
+            self.read_home(got)                           # read all the same, half moved
+        self.assertIn("c1", test_home_db.MergedHomeTest.listed(self, got["home"])["b"])
 
     def test_nothing_of_the_dashboard_s_changes_when_ag_did_not_take_the_record(self):
         saved.choose("a", "c1", True)
@@ -451,7 +546,7 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual((self.events("group"), self.members("a")), ([], ["c1", "c3"]))
 
     def test_an_actor_never_called_goes_too(self):
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         try:
             with conn:
                 conn.execute(sessions.SCHEMA)
@@ -688,11 +783,11 @@ class FoldersInHomeTest(GroupsTest):
     test_an_actor_is_not_taken_out_with_others_of_its_task_nor_the_coordinator = None
 
     def kept_in_dashboard_db(self):
-        if not os.path.exists(sessions.db_path()):
+        if not os.path.exists(store.path()):
             return 0, 0
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         try:
-            if not folders._has(conn, "folders"):
+            if not store.has(conn, "folders"):
                 return 0, 0
             return tuple(conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ("folders", "filed"))
         finally:
@@ -824,6 +919,7 @@ class GroupAppsTest(GroupsTest):
         self.assertEqual(groups.move("a", "b", folder=work)["apps"], [page.id])
         self.assertEqual([i.id for i in self.host.instances_of("b")], [page.id])     # listed and reached in b
         self.assertEqual(self.host.instances_of("a"), [])
+        self.assertEqual(self.host.groups(), {page.id: "b"})                    # the home's `app_groups`: the list's
         self.assertEqual([i.id for i in self.host.attached_to("b", "c1")], [page.id])
         self.assertEqual(self.host.agents_of(self.host.instance("b", page.id)), ["c1"])   # c3, staying, let go
         self.assertEqual(folders.of("b")["filed"].get("app:" + page.id), work)        # still in its folder
@@ -856,7 +952,7 @@ class GroupAppsTest(GroupsTest):
 
     def started(self, channel, gatherer, inst):
         """`channel`, of `gatherer`, made the agent the app of `inst` started: its role names it, and it is attached."""
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         try:
             with conn:
                 conn.execute(sessions.SCHEMA)
@@ -933,7 +1029,7 @@ class GroupAppsTest(GroupsTest):
 
         def listed(group):
             self.host.flush()
-            conn = data._connect(group)
+            conn = store.gatherer(group)
             try:
                 return list(data.app_notices(conn, group))
             finally:

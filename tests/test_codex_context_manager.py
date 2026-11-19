@@ -29,7 +29,7 @@ except ImportError:                                   # the proxy's one dependen
 from ag.integrations.harnesses.codex.adaptor import to_events as codex_format  # noqa: E402
 
 from ag.integrations.harnesses.codex.ag_orchestrator import context_manager as codex_ag  # noqa: E402
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from channels import ch, on  # noqa: E402
 
 if web is not None:

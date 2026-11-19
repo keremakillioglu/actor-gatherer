@@ -35,22 +35,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     s.setAttribute("aria-hidden", "true");
     return s;
   }
-  function el(tag, attrs, ...kids) {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs || {})) {
-      if (v === null || v === undefined || v === false) continue;
-      if (k === "class") n.className = v;
-      else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
-      else if (k === "value") n.value = v;
-      else if (k === "checked") n.checked = !!v;
-      else n.setAttribute(k, v === true ? "" : v);
-    }
-    for (const k of kids.flat()) {
-      if (k === null || k === undefined || k === false || k === "") continue;
-      n.append(k instanceof Node ? k : String(k));
-    }
-    return n;
-  }
+  function el(...a) { return window.agKit.el(...a); }   // the panels' kit (app_kit/js/kit.js)
   const keep = {
     get(k, d) { try { const v = localStorage.getItem(`slack:${ag.instance}:${k}`); return v === null ? d : JSON.parse(v); } catch { return d; } },
     set(k, v) { try { localStorage.setItem(`slack:${ag.instance}:${k}`, JSON.stringify(v)); } catch { /* storage off: kept for now only */ } },

@@ -5,40 +5,23 @@
 // (work.ts places it), drawn: its name, then, its tabs being two or more, each tab's name (pressed, shown; double-clicked,
 // named; its ×, closed), and a "+" for another.
 import { glyph } from "../../core/ui/glyphs";
+import * as M from "./model";
+import type { TaskLayout, TaskTab } from "./model";
+import { shadow } from "./shadow";
 import type { Node } from "./tree";
 
-export interface TaskTab {
-  id: string;
-  name: string;
-  tree: Node;
-}
-interface Kept {
-  tree: Node;
-  at: number;
-  tabs?: TaskTab[];
-  tab?: string;
-}
-
-const KEY = "ag-dashboard-task-trees",
-  KEPT = 200;
-let made = 0;
-const newId = (): string => `k${Date.now().toString(36)}${(made++).toString(36)}`;
+export type { TaskTab };
 
 export class Tasks {
-  private kept: Record<string, Kept>;
-
-  constructor() {
-    try {
-      this.kept = JSON.parse(localStorage.getItem(KEY) || "{}") || {};
-    } catch {
-      this.kept = {};
-    }
+  // each task's record: the layout model's (model.ts, kept by shadow.ts) -- changed by its rules, kept with it
+  private get kept(): Record<string, TaskLayout> {
+    return shadow.now().tasks;
   }
 
   /** Each task's tree shown: its tab's. */
   trees(): Record<string, Node> {
     const out: Record<string, Node> = {};
-    for (const [k, v] of Object.entries(this.kept)) out[k] = v.tree;
+    for (const [k, v] of Object.entries(this.kept)) if (v.tree) out[k] = v.tree;
     return out;
   }
   tree(key: string): Node | null {
@@ -46,17 +29,10 @@ export class Tasks {
   }
   /** The tree of a task's tab shown, as it is now (changed in place: a bar dragged; or given a new one). */
   set(key: string, tree: Node): void {
-    const k = this.kept[key];
-    if (!k) this.kept[key] = { tree, at: Date.now() };
-    else {
-      k.tree = tree;
-      k.at = Date.now();
-      const tab = k.tabs?.find((t) => t.id === k.tab);
-      if (tab) tab.tree = tree;
-    }
+    shadow.update(M.setTree, key, tree, Date.now());
   }
   touch(key: string): void {
-    if (this.kept[key]) this.kept[key].at = Date.now();
+    shadow.update(M.touchTask, key, Date.now());
   }
 
   /** A task's tabs, with the one shown -- none, a task of one tab. */
@@ -67,73 +43,36 @@ export class Tasks {
   /** Another tab of a task, holding `tree` (a panel moved or copied there, its lead actor's): its id. The task's one tab so
    * far named "Tab 1". */
   addTab(key: string, tree: Node): string {
-    const k = this.kept[key] || (this.kept[key] = { tree, at: Date.now() });
-    if (!k.tabs || !k.tabs.length) {
-      k.tabs = [{ id: newId(), name: "Tab 1", tree: k.tree }];
-      k.tab = k.tabs[0].id;
-    }
-    const id = newId();
-    k.tabs.push({ id, name: `Tab ${k.tabs.length + 1}`, tree });
-    return id;
+    shadow.update(M.addTaskTab, key, tree, Date.now());
+    const tabs = this.kept[key].tabs!;
+    return tabs[tabs.length - 1].id;
   }
   /** A tab of a task shown: its tree. */
   showTab(key: string, id: string): Node | null {
-    const k = this.kept[key],
-      tab = k?.tabs?.find((t) => t.id === id);
-    if (!k || !tab) return null;
-    k.tab = id;
-    k.tree = tab.tree;
-    k.at = Date.now();
-    return tab.tree;
+    if (!this.kept[key]?.tabs?.some((t) => t.id === id)) return null;
+    shadow.update(M.showTaskTab, key, id, Date.now());
+    return this.kept[key].tree ?? null;
   }
   /** A tab's tree, changed as `change` says (the tab shown: its tree shown too); emptied, the tab gone: false. */
   changeTab(key: string, id: string, change: (tree: Node) => Node | null): boolean {
-    const k = this.kept[key],
-      tab = k?.tabs?.find((t) => t.id === id);
-    if (!k || !tab) return false;
+    const tab = this.kept[key]?.tabs?.find((t) => t.id === id);
+    if (!tab) return false;
     const tree = change(tab.tree);
-    if (tree) {
-      tab.tree = tree;
-      if (k.tab === id) k.tree = tree;
-      return true;
-    }
-    this.closeTab(key, id);
-    return false;
+    shadow.update(M.changeTaskTab, key, id, tree);
+    return !!tree;
   }
   /** A tab closed: the next one shown, if it was (its id); one tab left, the task as a task of one tab. */
   closeTab(key: string, id: string): string | null {
-    const k = this.kept[key];
-    if (!k?.tabs) return null;
-    const at = k.tabs.findIndex((t) => t.id === id);
-    if (at < 0) return null;
-    k.tabs.splice(at, 1);
-    if (k.tab === id) {
-      const next = k.tabs[at] || k.tabs[at - 1];
-      if (next) {
-        k.tab = next.id;
-        k.tree = next.tree;
-      }
-    }
-    if (k.tabs.length < 2) {
-      if (k.tabs[0]) k.tree = k.tabs[0].tree;
-      delete k.tabs;
-      delete k.tab;
-    }
-    return k.tab ?? null;
+    if (!this.kept[key]?.tabs?.some((t) => t.id === id)) return null;
+    shadow.update(M.closeTaskTab, key, id);
+    return this.kept[key].tab ?? null;
   }
   rename(key: string, id: string, name: string): void {
-    const tab = this.kept[key]?.tabs?.find((t) => t.id === id);
-    if (tab) tab.name = name.trim() || tab.name;
+    shadow.update(M.renameTaskTab, key, id, name);
   }
 
   save(): void {
-    const keys = Object.keys(this.kept).sort((a, b) => this.kept[b].at - this.kept[a].at);
-    for (const k of keys.slice(KEPT)) delete this.kept[k];
-    try {
-      localStorage.setItem(KEY, JSON.stringify(this.kept));
-    } catch {
-      /* this page only */
-    }
+    shadow.persist();
   }
 }
 
