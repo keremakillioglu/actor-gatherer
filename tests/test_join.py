@@ -14,13 +14,14 @@ from ag.ag_harness import Manager, db_path  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_interface import Jobs  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
-from ag.ag_policies.proactive_context_manager import layout, tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.core import sections  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 import codex_items as codex  # noqa: E402
 from test_core import PREAMBLE, Base, ScriptedLLM, agent, conversation, user  # noqa: E402
 from channels import ch  # noqa: E402
 
 GUIDE_START = "About this context, from the gatherer."
-JOINED = layout.JOINED_OPENING.split("\n")[0]
+JOINED = sections.JOINED_OPENING.split("\n")[0]
 
 
 class Inline(Jobs):
@@ -100,8 +101,8 @@ class GuideTest(JoinBase):
         self.assertIn("`p_channel`", guide)
 
     def test_the_sections_no_longer_say_where_the_history_is_themselves(self):
-        self.assertNotIn("SQLite database", layout.overview(self.cfg))
-        self.assertNotIn("SQLite database", layout.overview(self.cfg, joined=True))
+        self.assertNotIn("SQLite database", sections.overview(self.cfg))
+        self.assertNotIn("SQLite database", sections.overview(self.cfg, joined=True))
 
     def test_one_made_item_while_its_text_is_the_same(self):
         self.put(PREAMBLE + [user("my task", 1)])

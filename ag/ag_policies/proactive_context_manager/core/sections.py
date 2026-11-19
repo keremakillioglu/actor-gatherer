@@ -26,10 +26,10 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from ag.ag_interface import Tokenizer, property_column
 from ag.ag_policies.tools.channel import CHANNEL
-from .config import ProactiveContextManagerConfig
-from ..tools.history import Entry, Task, Turn
-from ..tools.render import fit, fit_task, label, render_messages
-from .wording import (BEFORE_HEADER, BEFORE_NOTE, BEFORE_OMITTED, CLIPPED, DB_GROUPS_HINT, DB_GROUP_HINT, DB_HINT,
+from ..config import ProactiveContextManagerConfig
+from ag.ag_policies.tools.history import Entry, Task, Turn
+from ag.ag_policies.tools.render import fit, fit_task, label, render_messages
+from .prompts import (BEFORE_HEADER, BEFORE_NOTE, BEFORE_OMITTED, CLIPPED, DB_GROUPS_HINT, DB_GROUP_HINT, DB_HINT,
                       EARLIER_HEADER, FROM_PARALLEL, INDEX_HEADER, JOINED_OPENING, OPENING, OVERVIEW, OVERVIEW_HEADER,
                       PREVIOUS_HEADER, RELATED_HEADER, REQUESTS_HEADER, REQUESTS_INTRO, REQUESTS_OMITTED, SO_FAR_HEADER,
                       SO_FAR_NOTE)
@@ -175,7 +175,7 @@ def clip(text: str, budget: int, tok: Tokenizer) -> str:
 # definition, a convention, a correction -- binds here too, so each context
 # carries the other channels' requests: in the index, up to the build
 # (`index_block`); those that arrived since are shown in place, before the
-# channel's latest request, or mid-turn after its latest step (parallel_requests.py's
+# channel's latest request, or mid-turn after its latest step (parallel_sessions.py's
 # `make_parallel_requests`, `get_request_positions`). The requests
 # themselves come from `tools/history.other_requests`.
 

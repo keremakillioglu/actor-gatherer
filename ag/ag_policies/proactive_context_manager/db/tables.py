@@ -8,7 +8,7 @@ gatherer's store (ag.ag_interface.GathererStore):
     tasks        each channel's tasks, by row range, with what each established
     cleaned_messages
                  user messages with their boilerplate removed, by events row
-    _builds      every build (an ANALYSIS of a channel's history): running /
+    _builds      every build (a channel's history split into tasks, summarized and ranked): running /
                  ready / failed / nothing; what it saw, where the verbatim part
                  starts, its ranking of the earlier tasks (internal)
     _boundaries  the boundary check's verdict per user message (internal)
@@ -29,10 +29,12 @@ import json
 import sqlite3
 import time
 
-from ag.ag_policies.tools.channel import CHANNEL
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
-from ..tools.history import Task
+from ag.ag_policies.tools import channel
+from ag.ag_policies.tools.channel import CHANNEL
+
+from ag.ag_policies.tools.history import Task
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -64,7 +66,7 @@ CREATE TABLE IF NOT EXISTS _builds (
     status            TEXT NOT NULL,     -- running / ready / failed / nothing
     started_at        REAL NOT NULL,
     finished_at       REAL,
-    through_row       INTEGER,           -- the last row the analysis saw
+    through_row       INTEGER,           -- the last row the build saw
     open_from_row     INTEGER,           -- where the running (open) task starts
     ranking_json      TEXT,              -- earlier tasks, most relevant first: [[channel_key, task_index], ...]
     parallel_mark     INTEGER,           -- other channels' rows up to here were seen
@@ -113,6 +115,26 @@ def notify_changed(conn, what: str, channel_id=None, row: Optional[int] = None) 
 def _notify_build_changed(conn, build_id: int) -> None:
     row = conn.execute("SELECT channel_key FROM _builds WHERE build_id = ?", (build_id,)).fetchone()
     notify_changed(conn, "build", row[0] if row else None, build_id)
+
+
+# ---------------------------------------------------------------- the gatherer's messages
+
+#: The names the policy's own messages (made items) are stored under, by kind. A message from a stream and a
+#: file-change notice are named by the event types they show (events.py).
+GUIDE = "gatherer_guide"                # the guide every context opens with
+PARALLEL_REQUEST = "parallel_request"   # a request the user made to another session
+PARALLEL_BEFORE = "parallel_before"     # with no build: the other sessions' requests before this one began, as one block
+LEFT_OUT = "left_out"                   # agent steps stubbed to keep the context within max_context_tokens
+GROUP_CHANGE = "group_change"           # the message saying a change of groups changed what a session is shown
+
+
+def make_message(conn, fmt, tokenizer, channel_id, text: str, name: str, source: str) -> Tuple[int, Any, int]:
+    """(made_id, item, tokens) of `text` shown to the channel as a developer message named `name` -- `fmt`'s section
+    (the policy's `format`) -- stored as a made item, so the read log shows what was sent; `source` says what it was
+    made from."""
+    item = fmt.make_section(text, name)
+    made_id = conn.make_item(item, tokenizer, properties=channel.of(channel_id), name=name, source=source)
+    return made_id, item, conn.made_items([made_id])[made_id][2]
 
 
 # ---------------------------------------------------------------- tasks
@@ -248,7 +270,7 @@ def settle_build(conn, build_id: int, status: str, **fields) -> None:
     """Record how a build ended -- 'ready', 'failed' or 'nothing' -- and any
     of `through_row`, `open_from_row`, `ranking`, `parallel_mark`, `error`
     given; the others keep their values (a build refused at adoption keeps
-    what its analysis recorded)."""
+    what its build recorded)."""
     unknown = set(fields) - set(_SETTLE_FIELDS)
     if unknown:
         raise TypeError(f"settle: unknown fields {sorted(unknown)}")
@@ -270,7 +292,7 @@ def settle_build(conn, build_id: int, status: str, **fields) -> None:
 
 def set_cut(conn, build_id: int, open_from_row: int) -> None:
     """Move a ready build's verbatim part to start at `open_from_row`: a cut inside the running task,
-    decided when the build is adopted (context_limit.py's `get_verbatim_start`)."""
+    decided when the build is adopted (core/assembly.py's `get_verbatim_start`)."""
     with conn:
         conn.execute("UPDATE _builds SET open_from_row = ? WHERE build_id = ?", (open_from_row, build_id))
     _notify_build_changed(conn, build_id)

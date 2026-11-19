@@ -1,19 +1,32 @@
-"""What a build computes, in the worker: segmentation, the summaries of the newly finished tasks and a ranking of
-every earlier task, kept in `tasks` and on the build (tables.py) -- or, for a join, only a ranking of the other
-sessions' tasks. And the boundary check: whether a user message starts a new task. The worker calls `build` and
-`check`, the job names builds.py starts them under; one that raises records what its failure leaves behind
-itself (`record_failure`), and the worker only logs it."""
+"""What gets summarized, and when. A build splits a session's history into tasks, summarizes each one newly
+finished, and ranks every earlier task -- its own, and its group's other sessions' -- against the work now; the
+history sections are laid out from that (sections.py). The new-task check asks the model whether a user message
+starts a new task. Both run in the worker (utils/jobs.py); what starts each is here (`start_due_work`,
+`rebuild_for_new_group`).
 
+A channel with no build of its own, in a gatherer where another channel has a ready one
+(`tables.joinable`), JOINS at its first user message: a `join` build ranks the other
+channels' tasks against its request and marks their requests as seen, and the read waits
+for it. Its sections are the other channels' requests and related tasks, its own history
+all the running task, verbatim -- so a new session starts from what the gatherer's others
+did, and their requests before the mark are an index within its budget, not a message each.
+
+A user message the boundary check finds starts a new task gets its build: the read waits
+for it up to build_wait_seconds. One that takes longer is taken up at the turn's next call
+(`for_this_turn`), not left for the next user message: the turn itself stays verbatim, so
+the switch replaces only the history before it."""
+
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List, Optional, Tuple
 
-from ag.ag_interface.policy import TypeIds
+from ag.ag_interface.policy import Read, TypeIds
 from ag.ag_policies.tools import boundary, channel, history, ranking, segmentation, summarize
 from ag.ag_policies.tools import tasks as tasks_tool
 from ag.ag_policies.tools.channel import channel_of
-from . import tables
-from .context_limit import ContextLimit
-from .session_groups import SessionGroups
+from ..db import tables
+from ..utils.jobs import BackgroundJobs
+from .parallel_sessions import ParallelSessions
 
 CURRENT_REQUEST = "Current request"   # the running task a `limit` build starts at the last user message
 
@@ -32,10 +45,77 @@ def get_cleaned_requests(tasks, turns) -> dict:
     return out
 
 
-class Analysis(ContextLimit, SessionGroups):
+class Summaries(BackgroundJobs, ParallelSessions):
+
+    def start_due_work(self, conn, types: TypeIds, read: Read, rows, latest, in_use, size: int, over: bool = False) -> str:
+        """Start what is due in the background: "build", "check", "join" or "" (the build thresholds) --
+        at a user message, or at any read when the context is `over` max_context_tokens: a build then,
+        or the one already running ("build", to wait for). A channel with no build at all (`latest`
+        None: neither its own nor the no-channel pool's) joins, when another channel has one: a
+        `join` build, whatever the context's size, which the read waits for."""
+        cfg, ch = self.config, channel_of(read)
+        if self.jobs is None:                      # no background work
+            return ""
+        if latest is None and tables.is_joinable(conn, ch, self.get_hidden_sessions(conn, types, ch).is_in_shown_group):
+            return "join" if self.start_build(conn, read, tables.JOIN) is not None else ""
+        if latest and latest["status"] == "running" and time.time() - latest["started_at"] < cfg.build_timeout:
+            return "build" if over else ""
+        if latest and latest["status"] == "ready" and (not in_use or latest["build_id"] != in_use["build_id"]):
+            return ""
+        if not over and self.get_provider_count(size) < cfg.min_context_tokens and not cfg.build_every_request:
+            return ""
+        if over or cfg.build_every_request:
+            return "build" if self.start_build(conn, read, tables.LIMIT if over else tables.REQUEST) is not None else ""
+        if not cfg.check_boundaries:
+            return ""
+        if in_use:
+            since_row = in_use["open_from_row"] - 1
+        elif latest and latest["status"] in ("failed", "nothing"):
+            since_row = latest["through_row"] or 0
+        else:
+            since_row = 0
+        into_task = sum(1 for r in rows if r.row_id > since_row and history.opens_turn(r, types, self.groups))
+        # a build a reader asked for, made mid-task, may have moved the running task's start (and so the
+        # cooldown's count): the first user message after it is asked about all the same, so a change of
+        # topic gets a build of its own -- its ranking made for the new request, not for the old one
+        after_asked = bool(in_use) and in_use.get("reason") == tables.ASKED \
+            and not tables.has_checked_since(conn, ch, in_use.get("through_row") or 0)
+        if into_task <= cfg.boundary_cooldown and not after_asked:
+            return ""
+        row_id = rows[-1].row_id
+        if not tables.claim_boundary(conn, row_id, ch):
+            return ""
+        try:
+            self.jobs.start(read.gatherer_id, channel.of(ch), "check", row_id)
+        except OSError as exc:
+            tables.record_boundary(conn, row_id, False, f"could not start the worker: {exc}", ch)
+            return ""
+        return "check"
+
+    def rebuild_for_new_group(self, conn, types: TypeIds, read: Read, rows, latest, in_use) -> bool:
+        """After a change of the channel's group (`has_group_changed`): its sections built again from its group's work, and
+        waited for (up to build_timeout) -- a `join` again, for a channel whose context came from one, or that has no
+        build and can join its new group (`tables.is_joinable`); a `regrouped` build, for one with a build of its own in
+        use. Whether one is ready; nothing is started without background work, or while a build runs."""
+        cfg, ch = self.config, channel_of(read)
+        if self.jobs is None:
+            return False
+        joining = tables.is_join(in_use) or (in_use is None and latest is None)
+        if joining and not tables.is_joinable(conn, ch, self.get_hidden_sessions(conn, types, ch).is_in_shown_group):
+            return False
+        if not joining and in_use is None:          # a build of its own, not taken up yet: adopted at its user message
+            return False
+        reason = tables.JOIN if joining else tables.REGROUPED
+        build_id = self.start_build(conn, read, reason)
+        if build_id is None:
+            return False
+        self.log(f"[{ch}] its group changed: a {reason} build ({build_id})")
+        return self.wait_for_build(conn, ch, rows[-1].row_id, "build", cfg.build_timeout, read.stopped)
+
+    # ---- the worker's jobs
 
     def build(self, gatherer_id: str, properties, build_id: int) -> Optional[dict]:
-        """The analysis: segmentation, the summaries of the newly finished
+        """The build: segmentation, the summaries of the newly finished
         tasks, a ranking of every earlier task. Kept in `tasks` and on the
         build (tables.py). A build started because the context was over
         max_context_tokens (reason `limit`) closes the running task at the
@@ -189,22 +269,6 @@ class Analysis(ContextLimit, SessionGroups):
         if build_id is not None:
             self.build(gatherer_id, channel.of(channel_id), build_id)
         return True
-
-    def record_failure(self, gatherer_id: str, properties, job: str, job_id: int, exc: Exception) -> None:
-        """What a job leaves behind when it raises, so no claim stays held: a build is settled `failed`, a
-        check's verdict is "no". Never raises itself: the job's own error is the one that goes on."""
-        error = f"{type(exc).__name__}: {exc}"
-        try:
-            conn = self.gatherers.open(gatherer_id)
-            try:
-                if job == "build":
-                    tables.fail_build(conn, job_id, error)
-                elif job == "check":
-                    tables.record_boundary(conn, job_id, False, f"check failed: {error}", channel_of(properties))
-            finally:
-                conn.close()
-        except Exception as inner:  # noqa: BLE001 - the job's own error is the one to report
-            self.log(f"{job} {job_id}: its failure could not be recorded: {inner!r}")
 
     def bulk_loaded(self, conn, gatherer_id: str, properties) -> Any:
         return self.build(gatherer_id, properties, tables.create_build(conn, channel_of(properties)))

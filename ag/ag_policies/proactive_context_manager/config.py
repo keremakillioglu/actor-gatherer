@@ -19,7 +19,7 @@ from ..tools import ranking as ranking_tool
 from ..tools import segmentation as segmentation_tool
 from ..tools import summarize as summarize_tool
 from ..tools.groups import Groups
-from . import wording
+from .core import prompts
 
 
 @dataclass
@@ -28,7 +28,7 @@ class ProactiveContextManagerConfig:
     # (its verbatim events since the cut, with the notices, stream messages and other
     # channels' requests among them), the history's preamble, the sections' overview, and
     # what the harness sends besides the context (its system prompt and tools) -- is at most
-    # max_context_tokens, as the provider counts it (context_limit.py's `get_provider_count`: ag's counts, which the
+    # max_context_tokens, as the provider counts it (utils/tokens.py's `get_provider_count`: ag's counts, which the
     # hooks replace by the provider's, scaled by how far the provider's count of the channel's last call
     # ran over them): above it, on any read, a build is started, waited for, and cuts
     # the running task so the context is below it again. At a user message, X being that size:
@@ -108,30 +108,30 @@ class ProactiveContextManagerConfig:
     # Tell the agent where its full history is (in the gatherer guide, below).
     db_hint: bool = True
 
-    # The text of each, and what it says, is in wording.py.
-    gatherer_guide: str = wording.GATHERER_GUIDE
+    # The text of each, and what it says, is in core/prompts.py.
+    gatherer_guide: str = prompts.GATHERER_GUIDE
 
-    message: str = wording.STREAM_MESSAGE
+    message: str = prompts.STREAM_MESSAGE
 
-    notice: str = wording.NOTICE
-    notice_repeat: str = wording.NOTICE_REPEAT
-    notice_named: str = wording.NOTICE_NAMED
-    notice_counted: str = wording.NOTICE_COUNTED
+    notice: str = prompts.NOTICE
+    notice_repeat: str = prompts.NOTICE_REPEAT
+    notice_named: str = prompts.NOTICE_NAMED
+    notice_counted: str = prompts.NOTICE_COUNTED
     notice_names: int = 5
 
-    parallel_message: str = wording.PARALLEL_MESSAGE
+    parallel_message: str = prompts.PARALLEL_MESSAGE
 
-    group_moved: str = wording.GROUP_MOVED
-    group_joined: str = wording.GROUP_JOINED
-    group_left: str = wording.GROUP_LEFT
-    group_alone: str = wording.GROUP_ALONE
-    group_back: str = wording.GROUP_BACK
-    group_own: str = wording.GROUP_OWN
-    reads_added: str = wording.READS_ADDED
-    reads_removed: str = wording.READS_REMOVED
+    group_moved: str = prompts.GROUP_MOVED
+    group_joined: str = prompts.GROUP_JOINED
+    group_left: str = prompts.GROUP_LEFT
+    group_alone: str = prompts.GROUP_ALONE
+    group_back: str = prompts.GROUP_BACK
+    group_own: str = prompts.GROUP_OWN
+    reads_added: str = prompts.READS_ADDED
+    reads_removed: str = prompts.READS_REMOVED
 
     # A user message of another channel that opens a line, in its first characters, with one of these is not
-    # shown to this one (session_groups.py's `is_user_request`): a message the actors of the gatherer sent each other through the
+    # shown to this one (core/parallel_sessions.py's `is_user_request`): a message the actors of the gatherer sent each other through the
     # dashboard (`ag actors`, ag_dashboard/coordination.py's envelopes), the receiver's to act on, not a request of the
     # user's. () = every one shown.
     unshared_openings: Tuple[str, ...] = ("Message from the coordinator agent", "Message from the gatherer agent", "Message from actor ",

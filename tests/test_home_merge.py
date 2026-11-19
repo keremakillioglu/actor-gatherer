@@ -18,7 +18,8 @@ from ag.ag_harness import Manager  # noqa: E402
 from ag.ag_harness.home import __main__ as home_cli  # noqa: E402
 from ag.ag_harness.store import merge, paths  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
-from ag.ag_policies.proactive_context_manager import ProactiveContextManager, tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_policies.proactive_context_manager.events import context_stream  # noqa: E402
 import codex_items  # noqa: E402
 from channels import ch, on  # noqa: E402

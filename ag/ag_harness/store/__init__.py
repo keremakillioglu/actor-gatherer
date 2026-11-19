@@ -8,7 +8,7 @@ shares, and the operations on them.
     paths.py       gatherer id -> database file
 
 A policy's own tables are not here: it creates them in its `init` and
-operates on them in its own module (e.g. ag_policies/proactive_context_manager/tables.py).
+operates on them in its own module (e.g. ag_policies/proactive_context_manager/db/tables.py).
 """
 
 from .paths import db_path

@@ -13,7 +13,7 @@ import ag.ag_harness  # noqa: E402,F401
 from ag.ag_harness import Manager  # noqa: E402
 import codex_items as codex  # noqa: E402
 from ag.ag_policies.proactive_context_manager.events import environment_update  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from test_core import PREAMBLE, Base, ScriptedLLM, agent, call, conversation, note, output, user  # noqa: E402

@@ -27,7 +27,7 @@ from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths, schema  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_harness import Manager  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, report_measured  # noqa: E402

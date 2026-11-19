@@ -1,4 +1,4 @@
-"""Looking at a gatherer from outside: what a bulk load analysed, what a read
+"""Looking at a gatherer from outside: what a bulk load built, what a read
 adopted, what each read returned. Read-only; for drivers and measurements,
 not for a policy."""
 
@@ -7,8 +7,8 @@ from typing import Optional
 from ag.ag_interface import property_column
 from ag.ag_interface.policy import TypeIds
 from . import tables
-from ..tools import channel, history
-from ..tools.groups import Groups
+from ag.ag_policies.tools import channel, history
+from ag.ag_policies.tools.groups import Groups
 
 
 def describe(conn, channel_id: Optional[str], groups: Optional[Groups] = None) -> dict:

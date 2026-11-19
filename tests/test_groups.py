@@ -10,8 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ag.ag_harness import Event, EventType  # noqa: E402
 import codex_items as codex  # noqa: E402
 from ag.ag_interface.policy import TypeIds     # noqa: E402
-from ag.ag_policies.proactive_context_manager import events, layout  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager import events  # noqa: E402
+from ag.ag_policies.proactive_context_manager.core import sections  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_policies.tools import history  # noqa: E402
 from ag.ag_policies.tools.groups import Groups  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
@@ -157,7 +158,7 @@ class UngroupedTypeTest(GroupsBase):
         self.assertEqual(codex.text(context[-1]), "q")
 
     def test_not_counted(self):
-        from ag.ag_policies.proactive_context_manager import report
+        from ag.ag_policies.proactive_context_manager.db import report
         self.put(PREAMBLE + conversation(2))
         before = report.describe(self.m.store("s"), "c1")
         self.change("a.py", 1)
@@ -205,11 +206,11 @@ class PinnedContextTest(GroupsBase):
         rows = history.rows(conn, types, groups, "c1")
         _, turns = history.split(rows, types, groups, self.policy.tokenizer)
         cut = turns[-1].first_row
-        secs = layout.Sections(sections=[("x", "small section")], open_from_row=cut)
+        secs = sections.Sections(sections=[("x", "small section")], open_from_row=cut)
         replaced_without = sum(r.tokens for r in rows if turns[0].first_row <= r.row_id < cut
                                and r.type.name != "context")
         self.assertIsNone(self.policy.get_not_smaller_reason(secs, rows, turns, types))    # small section < replaced
-        big = layout.Sections(sections=[("x", "y " * replaced_without)], open_from_row=cut)
+        big = sections.Sections(sections=[("x", "y " * replaced_without)], open_from_row=cut)
         self.assertIsNotNone(self.policy.get_not_smaller_reason(big, rows, turns, types))
         self.assertIn(f"({replaced_without})", self.policy.get_not_smaller_reason(big, rows, turns, types))
 

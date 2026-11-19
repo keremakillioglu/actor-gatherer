@@ -2,7 +2,7 @@
 opens every context, the messages it adds during a task (messages from a stream, file-change notices, requests made in
 parallel, notes of a change of groups, left-out notes), and the history sections' own words (their overview, headings
 and notes, and where the full history is). The config's text fields (config.py) take their defaults from here, so a
-gatherer's options can still change them; the rest is used as it is (layout.py, context_limit.py)."""
+gatherer's options can still change them; the rest is used as it is (sections.py, assembly.py)."""
 
 
 # ---------------------------------------------------------------- the gatherer guide (config.gatherer_guide)
@@ -10,7 +10,7 @@ gatherer's options can still change them; the rest is used as it is (layout.py, 
 # The gatherer guide: the first item of every context, after the harness's own set-up, on
 # every read -- with or without a build -- so the agent knows from its first call what the
 # gatherer adds to its context and where the rest is. `{db_path}` is the context database. With
-# db_hint, the database's layout follows it (layout.DB_HINT). "" = no guide.
+# db_hint, the database's layout follows it (sections.DB_HINT). "" = no guide.
 GATHERER_GUIDE = ("About this context, from the gatherer.\n\n"
     "This session runs inside a gatherer: it puts your context together on every call, and "
     "other sessions of your group may be working with you, in parallel or before you, for the same "
@@ -118,7 +118,7 @@ NOTICE_COUNTED = ("{count} files in your working directory were changed on disk 
 # `{channel_column}` where its work can be read. With no build, those made
 # before the channel began are messages only while they fit within
 # all_task_tokens + parallel_index_tokens; past that, one block of the
-# newest that fit (parallel_requests.py's `make_earlier_requests_block`).
+# newest that fit (parallel_sessions.py's `make_earlier_requests_block`).
 PARALLEL_MESSAGE = ("The user sent this to another session working in parallel with you:\n{text}\n\n"
     "This is how the gatherer shows you what the user asks your group's other sessions, where it arrived in "
     "your conversation. It is not addressed to you: do not answer it or take it up, and carry on with "
@@ -127,7 +127,7 @@ PARALLEL_MESSAGE = ("The user sent this to another session working in parallel w
     "{channel_column} = '{channel}'.")
 
 # The developer message shown, at its place in the history, for a change of groups that changes what this
-# session is shown (a `group` record in the verbatim part, session_groups.py's `make_group_change_notes`): its own move
+# session is shown (a `group` record in the verbatim part, parallel_sessions.py's `make_group_change_notes`): its own move
 # (`group_moved`), or a run of other sessions' moves into (`group_joined`) or out of (`group_left`) its group.
 # `{group}` and `{was}` name the groups (the record's `name` and `was_name`, else its ids; the gatherer's own
 # group is `group_own`); `{channels}` the sessions moved, by id. Its own move to a group of one -- an actor on its
@@ -162,7 +162,7 @@ LEFT_OUT_NOTE = ("[Agent steps were left out here to keep the context within max
 LEFT_OUT_CALLS = "; their calls: {calls}"
 
 
-# ---------------------------------------------------------------- the history sections (layout.py)
+# ---------------------------------------------------------------- the history sections (sections.py)
 
 OVERVIEW_HEADER = "# How this history is organised"
 

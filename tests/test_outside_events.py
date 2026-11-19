@@ -17,9 +17,9 @@ from ag.ag_harness.store import operations as store  # noqa: E402
 import codex_items as codex  # noqa: E402
 from ag.ag_interface import EventType, Property  # noqa: E402
 from ag.ag_policies.proactive_context_manager.events import context_stream, environment_update  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
-from ag.ag_policies.proactive_context_manager.wording import REMEMBER_MANY, REMEMBER_ONE  # noqa: E402
+from ag.ag_policies.proactive_context_manager.core.prompts import REMEMBER_MANY, REMEMBER_ONE  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from test_core import PREAMBLE, Base, ScriptedLLM, agent, call, conversation, output, user  # noqa: E402
 from channels import ch, on  # noqa: E402
@@ -311,7 +311,7 @@ class NoticeTest(OutsideBase):
                          "that relies on its contents, read the file again." + REMEMBER_ONE)
 
     def test_the_match_is_the_subject_as_a_whole(self):
-        from ag.ag_policies.proactive_context_manager.external_events import is_file_mentioned
+        from ag.ag_policies.proactive_context_manager.core.external_events import is_file_mentioned
         self.assertTrue(is_file_mentioned("cat /w/notes.txt", "notes.txt"))
         self.assertFalse(is_file_mentioned("open data.py", "a.py"))
         self.assertFalse(is_file_mentioned("a.pyc is stale", "a.py"))
@@ -354,7 +354,7 @@ class NoticeTest(OutsideBase):
         self.assertEqual(self.notices(self.read()), ["Notice: File ag/page.html was changed on disk (at 2)."])
 
     def test_a_relative_path_is_the_file_itself(self):
-        from ag.ag_policies.proactive_context_manager.external_events import is_file_mentioned
+        from ag.ag_policies.proactive_context_manager.core.external_events import is_file_mentioned
         self.assertTrue(is_file_mentioned("cat ./a.py", "a.py", "/w"))
         self.assertTrue(is_file_mentioned('Read({"file_path": "/w/a.py"})', "a.py", "/w"))
         self.assertTrue(is_file_mentioned("cat /w/./src/a.py", "src/a.py", "/w/"))
@@ -387,7 +387,7 @@ class NoticeTest(OutsideBase):
                 self.put([agent("done", 1), user("next", 2)])
                 self.read()
                 self.in_dir("proj/a.py", when, cwd="/w")                 # reported now, by /w's poller
-                from ag.ag_policies.proactive_context_manager.external_events import format_time
+                from ag.ag_policies.proactive_context_manager.core.external_events import format_time
                 self.assertEqual(self.notices(self.read()), [e.format(format_time(when)) for e in expected])
 
     def test_no_second_notice_until_the_agent_reads_it_again(self):

@@ -13,7 +13,7 @@ from ag.ag_harness import Manager  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from channels import ch  # noqa: E402
 from test_core import PREAMBLE, SMALL, Recording, ScriptedLLM, conversation, long_turn, user  # noqa: E402
 import codex_items  # noqa: E402

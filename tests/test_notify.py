@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_harness.store.notify import listeners_dir  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_tools import notify as doorbell  # noqa: E402
 from ag.ag_tools.llm.calllog import JOB_ENV, CallLog  # noqa: E402
 from test_core import PREAMBLE, Base, conversation, user  # noqa: E402

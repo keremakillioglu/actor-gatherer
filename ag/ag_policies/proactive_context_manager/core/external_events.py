@@ -28,9 +28,10 @@ from ag.ag_interface import event_text
 from ag.ag_interface.policy import TypeIds
 from ag.ag_policies.tools import history
 from ag.ag_policies.tools.cwd import cwd_of, same_place
-from .events import CONTEXT_STREAM, ENVIRONMENT_UPDATE
-from .gatherer_messages import TOOL_CALL
-from .session_groups import SessionGroups
+from ..db import tables
+from ..events import CONTEXT_STREAM, ENVIRONMENT_UPDATE
+from ag.ag_policies.tools.groups import TOOL_CALL
+from .parallel_sessions import ParallelSessions
 
 # A tool call that could have WRITTEN a file it names. Reading one (cat, head, grep, wc, awk, a script
 # that only opens it for reading) does not make a change to it the agent's own: in parallel work the
@@ -112,7 +113,7 @@ def format_time(timestamp) -> str:
     return str(timestamp)
 
 
-class ExternalEvents(SessionGroups):
+class ExternalEvents(ParallelSessions):
 
     def make_stream_messages(self, conn, types: TypeIds, channel_id, cut: int) -> List[tuple]:
         """("made", row_id, item, (made_id, tokens)) for each stream message
@@ -124,7 +125,7 @@ class ExternalEvents(SessionGroups):
             payload = r.payload if isinstance(r.payload, dict) else {}
             text = self.config.message.format(stream=payload.get("stream", ""), author=payload.get("author", ""),
                                               text=payload.get("text", ""), timestamp=format_time(payload.get("timestamp")))
-            made_id, item, tokens = self.make_message(conn, channel_id, text, CONTEXT_STREAM, f"message {r.row_id}")
+            made_id, item, tokens = tables.make_message(conn, self.format, self.tokenizer, channel_id, text, CONTEXT_STREAM, f"message {r.row_id}")
             out.append(("made", r.row_id, item, (made_id, tokens)))
         return out
 
@@ -200,7 +201,7 @@ class ExternalEvents(SessionGroups):
             else:
                 text = cfg.notice_counted.format(count=len(found))
             rows = [f[0] for f in found]
-            made_id, item, tokens = self.make_message(conn, channel_id, text, ENVIRONMENT_UPDATE,
+            made_id, item, tokens = tables.make_message(conn, self.format, self.tokenizer, channel_id, text, ENVIRONMENT_UPDATE,
                                               "update " + ",".join(map(str, rows)))
             out.append(("made", rows[0], item, (made_id, tokens)))
         return out

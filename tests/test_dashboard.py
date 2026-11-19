@@ -19,7 +19,7 @@ from ag.ag_harness import Manager  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag_dashboard import data, server  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 import page_source  # noqa: E402

@@ -23,7 +23,8 @@ from ag.ag_policies.tools import render  # noqa: E402
 from ag.ag_policies.tools.history import Entry, Task, Turn  # noqa: E402
 from ag.ag_policies.tools import ranking as rank  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
-from ag.ag_policies.proactive_context_manager import layout, tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.core import sections  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_tools import worker  # noqa: E402
 from ag.ag_interface import Jobs  # noqa: E402
 
@@ -294,14 +295,14 @@ class StrictMaxTest(Base):
         _, turns = history.split([r for r in rows], types, self.policy.groups, tok)
         tasks = [Task(f"t{i}", "d", turns[i].first_row, turns[i].last_row, i + 1, i + 1, channel_id="c1")
                  for i in range(len(turns))]
-        sections = layout.build_sections(turns, tasks, tasks[:-2], layout.earlier_messages(tasks[:-2], turns, cfg, tok),
-                                         [], {"c1": turns}, "c1", cfg, tok, None, rows[-1].row_id, 0,
-                                         cut_row=turns[-1].entries[2].row_id)
+        built = sections.build_sections(turns, tasks, tasks[:-2], sections.earlier_messages(tasks[:-2], turns, cfg, tok),
+                                        [], {"c1": turns}, "c1", cfg, tok, None, rows[-1].row_id, 0,
+                                        cut_row=turns[-1].entries[2].row_id)
         budget = {"requests": cfg.all_task_tokens + cfg.parallel_index_tokens, "earlier": cfg.keep_temporal_relevant_tokens,
                   "related": cfg.keep_task_relevant_tokens, "previous": cfg.keep_previous_task_tokens,
                   "so_far": cfg.keep_so_far_tokens}
-        fixed = tok.count(layout.overview(cfg, None) + "\n\n")
-        for name, text in sections.sections:
+        fixed = tok.count(sections.overview(cfg, None) + "\n\n")
+        for name, text in built.sections:
             self.assertLessEqual(tok.count(text) - (fixed if name == "requests" else 0), budget[name], name)
 
 
@@ -764,7 +765,7 @@ class PoolTest(Base):
         self.assertEqual(texts[-1], "more")
 
     def test_describe_and_reads(self):
-        from ag.ag_policies.proactive_context_manager import report
+        from ag.ag_policies.proactive_context_manager.db import report
         wrapped = codex.CodexItems(self.m)
         wrapped.bulk_load("s", PREAMBLE + conversation(8), channel_id=None)
         d = report.describe(self.m.store("s"), None)

@@ -23,7 +23,7 @@ from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_policies.proactive_context_manager.config import within_limit  # noqa: E402
 from ag.integrations.harnesses.claude.setup import launch as claude  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor import to_events as codex_events  # noqa: E402
