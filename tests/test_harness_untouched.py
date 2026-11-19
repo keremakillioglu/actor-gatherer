@@ -26,23 +26,25 @@ IN_TEXT = re.compile(r"(?i:%s)|\b(?:%s)\b" % ("|".join(LONG), "|".join(map(re.es
 IDENT = re.compile(r"(?i)(?:^|_)(?:%s)(?:_|$)" % "|".join(sorted(NAMES - {"pi"})))   # codex_rules, _claude_status, AGY_HEAD
 MODULE = re.compile(r"harness_kit\.(?:%s)\b|from harness_kit import [^\n#]*\b(?:%s)\b" % ("|".join(NAMES), "|".join(NAMES)))
 
+#: Any module of the page's script (page.js's: core/page/, the .js files of features/), in ALLOWED.
+PAGE_SCRIPT = "frontend/src/page.js"
 #: What the dashboard's code may still say that names a harness, and why it is not a harness's rule: (file, the words).
 ALLOWED = {
     ("data.py", '"codex"'): "the Gatherer model's providers (codex/..., claude-code/...): a model, not a session's harness",
     ("data.py", '"claude-code"'): "the same",
     ("settings.py", '"name a model, e.g. claude-code/sonnet or gemini/gemini-3.8-flash"'): "a Gatherer model's name, as an example",
-    ("frontend/src/legacy", '"No model set: every Gatherer call fails until one is. A coding agent on its own login (claude-code/'):
+    (PAGE_SCRIPT, '"No model set: every Gatherer call fails until one is. A coding agent on its own login (claude-code/'):
         "the same, in Settings",
     ("history.py", '"""\n\nFrom it, write an AGENTS.md: the standing instructions coding agents (Claude Code, Codex'):
         "what the Gatherer's model is asked for: who reads an AGENTS.md",
     ("history.py", '"claude"'): "a History record's kind (a CLAUDE.md, made before AGENTS.md), not a harness",
-    ("frontend/src/legacy", '"claude"'): "the same",
+    (PAGE_SCRIPT, '"claude"'): "the same",
     ("frontend/src/features/settings/AgSettings.tsx", '"claude-code/'): "the Gatherer model's providers: a model, not a session's harness",
     ("frontend/src/features/settings/AgSettings.tsx", '"codex/'): "the same",
     ("frontend/src/features/settings/AgSettings.tsx", '"No model set'): "the same, in its note",
     ("frontend/src/features/settings/AgSettings.tsx", "'[cli] gatherer: where `ag claude`"): "ag's own command, as config.toml's [cli] gatherer says it",
-    ("frontend/src/legacy", "claude"): "the same (HIST_KINDS.claude)",
-    ("frontend/src/legacy", '"CLAUDE.md"'): "the same: its file's name",
+    (PAGE_SCRIPT, "claude"): "the same (HIST_KINDS.claude)",
+    (PAGE_SCRIPT, '"CLAUDE.md"'): "the same: its file's name",
 }
 
 
@@ -79,7 +81,7 @@ LITERAL = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|`(?:[^`\\\n]|\
 
 def page_names(path: str, whole: bool = False) -> list:
     """The same for the page's script, line by line: comments (a line's own, or after ` // `) say what they like.
-    `whole`: a file that is all script (frontend/src/legacy/*.js), not a page with a <script> in it."""
+    `whole`: a file that is all script (a module of the page's), not a page with a <script> in it."""
     out, inside = [], whole
     with open(path, encoding="utf-8") as fh:
         lines = fh.read().split("\n")
@@ -103,17 +105,15 @@ class DashboardNamesNoHarnessTest(unittest.TestCase):
                       if not any(f == name and what.startswith(words) for f, words in ALLOWED)]
         front = os.path.join(ROOT, "frontend", "src")         # the new front end: core/, features/, the app's own files
         for folder, _, names in os.walk(front):
-            if os.path.relpath(folder, front).split(os.sep)[0] == "legacy":
-                continue
             for name in sorted(n for n in names if n.endswith((".ts", ".tsx")) and ".test." not in n):
                 path = os.path.join(folder, name)
                 rel = os.path.relpath(path, ROOT)
                 found += [f"{rel}:{line}: {what}" for line, what in page_names(path, whole=True)
                           if not any(f == rel and what.startswith(words) for f, words in ALLOWED)]
-        for path in page_source.script_files():               # the page's script (frontend/src/legacy/)
-            found += [f"frontend/src/legacy/{os.path.basename(path)}:{line}: {what}"
+        for path in page_source.script_files():               # the page's script: page.js's modules, .js
+            found += [f"{os.path.relpath(path, ROOT)}:{line}: {what}"
                       for line, what in page_names(path, whole=True)
-                      if not any(f == "frontend/src/legacy" and what.startswith(words) for f, words in ALLOWED)]
+                      if not any(f == PAGE_SCRIPT and what.startswith(words) for f, words in ALLOWED)]
         self.assertEqual(found, [], "a harness's rule in the dashboard: put it in its harness_kit class, and read it "
                                     "through a generic field (harness_kit/DESIGN.md)")
 

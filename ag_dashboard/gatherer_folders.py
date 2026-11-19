@@ -21,12 +21,11 @@ Table `gatherers_filed`, one row per gatherer in a folder (none: at the list's t
 
 A folder deleted, what was in it -- gatherers and folders -- moves up into the one it was in."""
 
-import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
-from . import sessions
+from . import store
 from .folders import FolderError, folder_name
 
 SCHEMA = (
@@ -43,6 +42,8 @@ SCHEMA = (
     at       TEXT NOT NULL
 )""",
 )
+store.table("gatherer_folders", *SCHEMA[:2])
+store.table("gatherers_filed", SCHEMA[2], merged=store.DROP)    # a group merged into another is gone from the folders
 
 
 def _now() -> str:
@@ -56,40 +57,23 @@ def none() -> dict:
 def stored() -> dict:
     """{folders: [{id, parent, name}] (by name, whatever its case), filed: {gatherer: folder id}}, read-only: both empty
     while none is kept."""
-    if not os.path.exists(sessions.db_path()):
-        return none()
-    conn = sqlite3.connect(f"file:{sessions.db_path()}?mode=ro", uri=True, timeout=8)
-    try:
-        got = none()
+    got = none()
+    with store.reading() as conn:
+        if conn is None or not store.has(conn, "gatherer_folders"):
+            return got
         for fid, parent, name in conn.execute("SELECT id, parent, name FROM gatherer_folders ORDER BY lower(name), name"):
             got["folders"].append({"id": fid, "parent": parent, "name": name})
-        for g, fid in conn.execute("SELECT gatherer, folder FROM gatherers_filed ORDER BY at"):
-            got["filed"][g] = fid
-        return got
-    except sqlite3.Error:                # no tables yet
-        return none()
-    finally:
-        conn.close()
+        if store.has(conn, "gatherers_filed"):
+            for g, fid in conn.execute("SELECT gatherer, folder FROM gatherers_filed ORDER BY at"):
+                got["filed"][g] = fid
+    return got
 
 
 # ---- changes: each in one transaction of its own (BEGIN IMMEDIATE), rolled back if it raises
 
 def _change(do):
-    os.makedirs(os.path.dirname(sessions.db_path()), exist_ok=True)
-    conn = sqlite3.connect(sessions.db_path(), timeout=8, isolation_level=None)
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        for statement in SCHEMA:
-            conn.execute(statement)
-        got = do(conn)
-        conn.execute("COMMIT")
-        return got
-    except BaseException:
-        if conn.in_transaction:
-            conn.execute("ROLLBACK")
-        raise
-    finally:
-        conn.close()
+    with store.transaction("gatherer_folders", "gatherers_filed") as conn:
+        return do(conn)
 
 
 def _folder(conn: sqlite3.Connection, fid) -> tuple:

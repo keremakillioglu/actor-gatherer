@@ -9,12 +9,10 @@ browser -- hides the same ones. Table `hiding`, one row per gatherer the reader 
 
 A gatherer with no row is left to the page: shown, unless it has had nothing for a week."""
 
-import os
-import sqlite3
 from datetime import datetime, timezone
 from typing import Dict
 
-from . import sessions
+from . import store
 
 CHOICES = ("hidden", "shown")
 SCHEMA = """CREATE TABLE IF NOT EXISTS hiding (
@@ -22,19 +20,15 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS hiding (
     choice   TEXT NOT NULL,
     at       TEXT NOT NULL
 )"""
+store.table("hiding", SCHEMA, merged=store.DROP)      # a group merged into another is gone, and so is its choice
 
 
 def stored() -> Dict[str, str]:
     """{gatherer: "hidden" | "shown"}, read-only: {} when nothing is kept yet."""
-    if not os.path.exists(sessions.db_path()):
-        return {}
-    conn = sqlite3.connect(f"file:{sessions.db_path()}?mode=ro", uri=True, timeout=8)
-    try:
+    with store.reading() as conn:
+        if conn is None or not store.has(conn, "hiding"):
+            return {}
         return {g: c for g, c in conn.execute("SELECT gatherer, choice FROM hiding ORDER BY gatherer")}
-    except sqlite3.Error:                # no table yet
-        return {}
-    finally:
-        conn.close()
 
 
 def choose(gatherer: str, choice: str) -> Dict[str, str]:
@@ -43,16 +37,11 @@ def choose(gatherer: str, choice: str) -> Dict[str, str]:
         raise ValueError("which gatherer?")
     if choice and choice not in CHOICES:
         raise ValueError(f"a choice is one of {', '.join(CHOICES)}, or empty")
-    os.makedirs(os.path.dirname(sessions.db_path()), exist_ok=True)
-    conn = sqlite3.connect(sessions.db_path(), timeout=8, isolation_level=None)
-    try:
-        conn.execute(SCHEMA)
+    with store.transaction("hiding") as conn:
         if choice:
             conn.execute("INSERT INTO hiding (gatherer, choice, at) VALUES (?, ?, ?) "
                          "ON CONFLICT (gatherer) DO UPDATE SET choice = excluded.choice, at = excluded.at",
                          (gatherer, choice, datetime.now(timezone.utc).isoformat()))
         else:
             conn.execute("DELETE FROM hiding WHERE gatherer = ?", (gatherer,))
-    finally:
-        conn.close()
     return stored()

@@ -25,7 +25,7 @@ import app_kit
 from app_kit import finding, installing
 from app_kit.installing import InstallError
 
-from . import data, home
+from . import app_settings, data, home
 
 CHARS_PER_TOKEN = 3.6           # a tool's definition, as the model reads it: about this many characters a token
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -58,7 +58,8 @@ def described(m: "app_kit.Manifest", where: str, src: Optional[dict] = None) -> 
     return {"name": m.name, "label": m.label, "version": m.version, "description": m.description,
             "mark": bool(m.mark), "origin": where, "kind": src.get("kind") or ("builtin" if where == "builtin" else ""),
             "source": src.get("source") or "", "commit": src.get("commit") or "",
-            "installed_at": src.get("at") or None, "access": m.access, "with_agent": m.agent.offered, "instances": m.instances,
+            "installed_at": src.get("at") or None, "access": m.access, "with_agent": m.agent.offered,
+            "opens_with_agent": app_settings.opens_with_agent(m), "instances": m.instances,
             "tools": [app_kit.tool_name(m.name, t.name) for t in m.tools], "tokens": cost(m),
             "can": m.capabilities.asked(), "own_process": bool(m.backend.command),
             "panel": bool(m.panel), "schedules": [said_schedule(s) for s in m.schedules]}

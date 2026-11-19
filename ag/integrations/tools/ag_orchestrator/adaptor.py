@@ -22,6 +22,7 @@ not among them, and `call_ag` refuses to send any other. adaptor.ts is the
 same in TypeScript.
 """
 
+import importlib
 from abc import ABC, abstractmethod
 from typing import ClassVar, Dict, List, Tuple
 
@@ -144,3 +145,12 @@ def part_properties(part: Part) -> Dict[str, str]:
     found = {KIND: part.kind, WORDS: part.words, ACTION: part.tool.action if part.tool is not None else None,
              CALL_ID: call}
     return {k: v for k, v in found.items() if isinstance(v, str) and v}
+
+
+def load_adaptor(spec: str) -> "Adaptor":
+    """An adaptor from its class's "module:Class" (a hook's `adaptor` option)."""
+    module, _, attr = spec.partition(":")
+    cls = getattr(importlib.import_module(module), attr)
+    if not (isinstance(cls, type) and issubclass(cls, Adaptor)):
+        raise TypeError(f"{spec} is not an Adaptor")
+    return cls()

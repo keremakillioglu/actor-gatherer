@@ -3,7 +3,7 @@
 // the panel (the list's row closes the app, attaches agents by its task, names it and moves it) -- and the bridge
 // between them. Everything the panel asks goes through here, by postMessage, and on to the dashboard's routes
 // (/api/apps/...), which check it against the app's manifest; what the panel is told (events, its backend's messages,
-// the theme, the agent in focus, an intent) comes back the same way. The old page (src/legacy/07-panes.js) keeps the
+// the theme, the agent in focus, an intent) comes back the same way. The old page (src/features/layout/panes.js) keeps the
 // pane among its others, as it keeps an actor's.
 import { get, post } from "../../core/api/client";
 import { glyph } from "../../core/ui/glyphs";
@@ -25,6 +25,8 @@ export interface AppInfo {
   instances: string;
   offer?: string;
   agent?: { offered: boolean; name: string };
+  /** opened from a menu, it starts with an agent of its own (the Apps page's choice: app_settings.py) */
+  opens_with_agent?: boolean;
   capabilities?: Partial<Record<Capability, boolean>>;
   tools?: { name: string; handled_by: string }[];
   handles: { intent: string; types: string[] }[];
@@ -215,7 +217,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: s
 }
 
 /** What a pane is called (its label, as a head named it before panes had none): the app, then the user's name for it,
- * else its own title (not the app's name again), else its folder's name -- as the list names it (05-agent-list.js's
+ * else its own title (not the app's name again), else its folder's name -- as the list names it (features/list/list.js's
  * appShown). */
 export function paneName(app: AppInfo, i: Instance): string {
   const title = i.title !== app.label ? i.title : "";
@@ -266,7 +268,7 @@ export class AppPane {
     window.addEventListener("message", this.onMessage);
   }
 
-  /** What the old page asks of a pane (07-panes.js's `call`): the theme, which it tells every pane of. */
+  /** What the old page asks of a pane (features/layout/panes.js's `call`): the theme, which it tells every pane of. */
   call(what: string): void {
     if (what === "theme") requestAnimationFrame(() => this.push("theme", { value: theme() }));
   }

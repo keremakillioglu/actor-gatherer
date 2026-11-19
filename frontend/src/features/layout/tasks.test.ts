@@ -2,10 +2,14 @@
 // as a task of one tab again; and the strip drawn with them.
 import { beforeEach, describe, expect, it } from "vitest";
 import { leaves } from "./arrange";
+import { shadow } from "./shadow";
 import { drawStrip, Tasks } from "./tasks";
 
 const T = "g\u0000t1";
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  shadow.reset(); // a page of its own: the layout model read afresh
+});
 
 describe("a task's tabs", () => {
   it("a second tab: the task's one so far its first, the new one holding what it is given", () => {
@@ -45,6 +49,7 @@ describe("a task's tabs", () => {
     const id = t.addTab(T, { id: "c2" });
     t.rename(T, id, "  Review ");
     t.save();
+    shadow.reset(); // the page loaded again: the model read from what this browser keeps
     const again = new Tasks();
     expect(again.tabs(T)!.tabs.map((x) => x.name)).toEqual(["Tab 1", "Review"]);
   });

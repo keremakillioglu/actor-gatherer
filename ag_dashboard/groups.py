@@ -70,12 +70,10 @@ from typing import Dict, Iterable, List, Optional
 
 from app_kit import AppError
 
-from . import actions, data, folders, gatherer_folders, home, merges, sessions, tasks, titles
+from . import actions, data, folders, gatherer_folders, home, merges, sessions, store, tasks, titles
 
 GROUP = "group"
 ALONE = "self:"                 # an actor on its own: the group of one `self:<its channel>` (the policy's ALONE too)
-#: The dashboard's tables that name an actor's gatherer beside its channel (sessions apart: by its session_id).
-ACTOR_TABLES = ("saved", "seen", "avatars", "tasked")
 #: Held while a change of groups is made (`_whole`): ag's records, the apps moved, the dashboard's own rows -- half a second,
 #: as an app's host moves it. A home read waits for it (`settled`: server.py's `read_home`), so none lists a change half
 #: made: an actor in its new group by ag's record, and in its old one too by its session's row (data.py's
@@ -247,13 +245,9 @@ def _join(to: str, there, users: List[str], own: List[str]) -> None:
     start (app_host.py's `adopt`)."""
     from . import app_agents, task_links
     if own:
-        conn = folders._write()
-        try:
-            with conn:
-                conn.executemany("UPDATE sessions SET role = ? WHERE session_id = ?",
-                                 [(app_agents.role(there.app, there.id), c) for c in own])
-        finally:
-            conn.close()
+        with store.transaction("sessions") as conn:
+            conn.executemany("UPDATE sessions SET role = ? WHERE session_id = ?",
+                             [(app_agents.role(there.app, there.id), c) for c in own])
     for c in users:
         task_links.link(to, there.id, c)
         _host().attach(to, there.id, c, by="group")
@@ -274,7 +268,7 @@ def _unhook(gatherer: str, moving: List[str], moved_apps: List[str]) -> None:
 
 
 def _members(group: str) -> set:
-    conn = data._connect(group)
+    conn = store.gatherer(group)
     if conn is None:
         return set()
     try:
@@ -284,7 +278,7 @@ def _members(group: str) -> set:
 
 
 def _sizes(*groups: str) -> Dict[str, int]:
-    conn = data._connect(groups[0])
+    conn = store.gatherer(groups[0])
     if conn is None:
         return {g: 0 for g in groups}
     try:
@@ -381,43 +375,22 @@ def move(gatherer: str, to: str, channels: Iterable[str] = (), folder: Optional[
 
 
 def _rows(gatherer: str, to: str, moving: List[str]) -> None:
-    """The dashboard's own rows of the moved actors moved to `to`'s name, in one transaction: their folders are the
+    """The dashboard's own rows of the moved actors moved to `to`'s name, in one transaction, as each table says
+    (store.py's `move_actors`: an actor's rows, its own branch, the task it moves with). Their folders are the
     records' (folders.py)."""
     if not moving:
         return
-    marks = ", ".join("?" * len(moving))
-    conn = folders._write()
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        if folders._has(conn, "sessions"):
-            conn.execute(f"UPDATE sessions SET gatherer = ? WHERE gatherer = ? AND session_id IN ({marks})",
-                         (to, gatherer, *moving))
-        for table in ACTOR_TABLES:
-            if folders._has(conn, table):
-                conn.execute(f"UPDATE {table} SET gatherer = ? WHERE gatherer = ? AND channel IN ({marks})",
-                             (to, gatherer, *moving))
-        if folders._has(conn, "tasks"):
-            conn.execute(f"UPDATE tasks SET gatherer = ? WHERE id IN (SELECT task FROM tasked WHERE gatherer = ? "
-                         f"AND channel IN ({marks}))", (to, to, *moving))
-        conn.execute("COMMIT")
-    except BaseException:
-        if conn.in_transaction:
-            conn.execute("ROLLBACK")
-        raise
-    finally:
-        conn.close()
+    with store.transaction() as conn:
+        store.move_actors(conn, gatherer, to, moving)
 
 
 def _over(channels: List[str], over: Optional[str]) -> None:
     """The coordinator agents `channels` over `over` (sessions.py's; None: their group's) from now on."""
     if not channels:
         return
-    conn = folders._write()
-    try:
+    with store.transaction("sessions") as conn:
         conn.execute(f"UPDATE sessions SET over = ? WHERE session_id IN ({', '.join('?' * len(channels))})",
                      (over, *channels))
-    finally:
-        conn.close()
 
 
 def _group_name(title: str) -> str:
@@ -579,33 +552,15 @@ def merge(gatherer: str, to: str, into: Optional[int] = None) -> dict:
 
 def _rows_all(gatherer: str, to: str, over: str) -> None:
     """Every row the dashboard keeps of the group `gatherer` made `to`'s, in one transaction (`merge`): the coordinator
-    agent over it over `over` (its folder now), what tables name the group by beside an actor or a task, its Editor's
-    projects (those `to` has already kept as they are), and it kept as merged -- its hiding and its place among the
-    folders of groups dropped."""
-    conn = folders._write()
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        if folders._has(conn, "sessions"):
+    agent over it over `over` (its folder now); each table's rows as it says (store.py's `merge_group`: an actor's or a
+    task's moved, its Editor's projects joined to `to`'s, its hiding, title and place among the folders of groups
+    dropped); and it kept as merged."""
+    with store.transaction("merged_groups") as conn:
+        if store.has(conn, "sessions"):
             conn.execute("UPDATE sessions SET over = ? WHERE gatherer = ? AND role = ? AND ifnull(over, '') = ''",
                          (over, gatherer, sessions.COORDINATOR))
-        for table in ("sessions", *ACTOR_TABLES, "tasks", "branches"):
-            if folders._has(conn, table):
-                conn.execute(f"UPDATE {table} SET gatherer = ? WHERE gatherer = ?", (to, gatherer))
-        if folders._has(conn, "projects"):
-            conn.execute("INSERT OR IGNORE INTO projects (gatherer, path, remote, added) "
-                         "SELECT ?, path, remote, added FROM projects WHERE gatherer = ?", (to, gatherer))
-            conn.execute("DELETE FROM projects WHERE gatherer = ?", (gatherer,))
-        for table in ("hiding", "gatherers_filed"):
-            if folders._has(conn, table):
-                conn.execute(f"DELETE FROM {table} WHERE gatherer = ?", (gatherer,))
+        store.merge_group(conn, gatherer, to)
         merges.add(conn, gatherer, to)
-        conn.execute("COMMIT")
-    except BaseException:
-        if conn.in_transaction:
-            conn.execute("ROLLBACK")
-        raise
-    finally:
-        conn.close()
 
 
 def _placed(group: str, to: str, folder: Optional[int]) -> dict:

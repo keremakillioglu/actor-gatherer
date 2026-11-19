@@ -52,7 +52,7 @@ What each app-like piece does now (`main` at 93d768b):
 | Editor | Not in `APPS`; named in `server.py` and `app.py`. `editor.py`, `api/editor.py`, `legacy/18-editor*.js` | None | None. It reads every gatherer's `file_touched` events to show who changed a file (`editor.writers`) | A Yjs document per open file, which follows the disk every 0.4 s with a three-way merge; conflicts in memory | Opened above the panes on a folder, not an actor; its own stream `/api/edit/stream` |
 | Preview | Inside the Editor; named in `server.py`. `preview.py`, `api/preview.py` | `ag preview` in the actor's shell, to the dashboard's local API. Agents learn it from ag's gatherer guide (`proactive_context_manager/config.py`) | None | The `previews` table in `dashboard.db`; the runs in memory | The Editor's preview side; its own stream `/api/preview/stream`. Borrows DocWriter's pdf.js and SyncTeX |
 | Branches | `branches.py`; named in `server.py` | `ag actors new --branch` | `context_stream` into the actor's channel when the reader rejects or edits its change (`branches.tell`) | `projects`, `branches`, `branch_files` tables in `dashboard.db` | Merges shown in the Editor |
-| Files and commands, file viewer | Inside Chat. `files.py`, `/api/files`, `legacy/16-files-view.js` | None | Reads `tool_call`, `tool_output`, `file_touched` (which ag's hook records, watching the disk as each call runs) and `actor_message` | None | Chat's left panel and file pane. The Editor's changes panel calls Chat's `fileBlock` |
+| Files and commands, file viewer | Inside Chat. `files.py`, `/api/files`, `src/features/chat/files-view.js` | None | Reads `tool_call`, `tool_output`, `file_touched` (which ag's hook records, watching the disk as each call runs) and `actor_message` | None | Chat's left panel and file pane. The Editor's changes panel calls Chat's `fileBlock` |
 | History actions | Inside History. `history.py`, `/api/history/extract`, `save`, `export` | None | None. They run through `ag home complete`; results are files in `<home>/dashboard/extracts/` | The extracts | History's right panel |
 | Answer sources | Not on main (uncommitted in the `dashboard-answer-sources` worktree) | None | None | `<home>/dashboard/sources/` | A Details tab |
 | Custom chat views | `agDashboard.chatView`, loaded from `<home>/dashboard/views/*.js` | None | None | None | Draws inside the pane. This is the only plug-in point the page has today |
@@ -286,7 +286,9 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
   call (access.py's `settle`, after each change of the tasks or the instances). A group's app never tells: every
   agent may use it always. An app's own messages to its agents name the instance: "Browser · work (<id>)".
 - **Opened alone or with an agent:** `[agent] offered` (the older `start`) says an app can be opened with an agent of
-  its own; the menus offer it both ways, alone and "with an agent".
+  its own. The menus list each app once; which way it opens is the user's choice in its details on the Apps page
+  ("Opens": with its own agent, the default, or on its own), kept by the dashboard (`ag_dashboard/app_settings.py`,
+  `<home>/dashboard/app_settings.json`) and given with each app in `/api/apps` (`opens_with_agent`).
 - **Installing is the user's:** `ag apps install|update|uninstall` run in an agent's shell asks the user, who approves
   or declines it in the dashboard (`ag_dashboard/app_requests.py`); the agent is told the answer. The Apps page, and
   `ag apps` in the user's own terminal, are as before. (An agent calling the dashboard's local API itself is not
@@ -406,7 +408,7 @@ page's side frontend/src/features/apps/links.ts), not one each: an app's name ma
   answer saying "link it as [Parser plan](ag://notes/page/...)", it linked it.
 - **Chat draws one** as a link with the app's mark before its words (core/ui/md.ts lets `ag://` through DOMPurify; any
   other scheme but the web's is still dropped). Other places drawing an agent's markdown do the same.
-- **A click opens it** (src/legacy/07-panes.js's `openAppLink`), the link checked against the app's forms. THE
+- **A click opens it** (src/features/layout/panes.js's `openAppLink`), the link checked against the app's forms. THE
   INSTANCE, the first of: the one the link names; one of the writing agent's task (attached to it: the one shown, of
   several); one of the app's whose panel is shown; one open in the group -- one that opens here (in no task, or in
   this one) before one of another task, and of those one on the agent's folder first; else the group's for that
@@ -555,7 +557,7 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
      (once, if its `pollers` names one too); ag builds and checks each as any poller.
    - The Browser's and DocWriter's own endpoints stay until step 8; their actors are given those, not the gateway.
 4. **App panels** (front end). Built, one change from the plan: app panes join the page's panes as they are (one
-   more kind beside the actors', `07-panes.js`), and the layout tree waits; rebuilding the panes as a tree now would
+   more kind beside the actors', `features/layout/panes.js`), and the layout tree waits; rebuilding the panes as a tree now would
    rewrite them under every other change to the page. Changed after step 5 (2026-11-07, its own PR): an app's panel
    is in the row above the panes (`#top-row`), beside the Editor, sharing its height; each panel's width its share
    (a bar before it); opening one shows the actor attached to it below, in the pane in focus (one open already: its
@@ -567,7 +569,7 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
      small × over its top right corner that closes the panel (the app left open); the panel keeps that corner clear,
      its bars along the top padded at their right by `var(--ag-corner)`, which the SDK sets. Its row in the list (or in
      its task's card) names it, closes it and puts agents in its task, and right-clicked, moves its panel or closes it
-     (07-panes.js's `appPanelMenu`) -- and the bridge to its frame, which checks every message's source and origin. A panel has one stream for its backend's messages, a tool call among them, and one per
+     (features/layout/panes.js's `appPanelMenu`) -- and the bridge to its frame, which checks every message's source and origin. A panel has one stream for its backend's messages, a tool call among them, and one per
      subscription; an intent for a panel not yet connected waits for it.
    - Apps are opened from a gatherer's "+ ⋯" menu, beside the pane in focus, the actor in focus attached. An app's
      pane is kept with the page's panes and opened again on a reload, if its instance is still open.
@@ -635,7 +637,7 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
      request's query (a dialog the app opens shows on the host's machine); an intent's handler, one naming the file's
      type first.
    - **The page**: its Editor is gone (`18-editor*.js`, `#ed-top`), with the actor's Editor button and what only it
-     used (`/api/files/place`, `files.lately_changed`); `18-top.js` keeps what is the page's -- the top row's grip, the
+     used (`/api/files/place`, `files.lately_changed`); `features/layout/top.js` keeps what is the page's -- the top row's grip, the
      chat minimized under the row -- for any panel there.
    - Checked: the Python suite and the browser tests (`e2e/editor.spec.ts`, in place of `preview.spec.ts`: an Editor
      started from the menu; a file opened by `open-file`, typed into and saved; Execute and the preview beside it; a

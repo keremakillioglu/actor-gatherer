@@ -1,4 +1,4 @@
-// DocWriter as an app (ag_apps/docwriter/): started from a gatherer's "+ ⋯" menu with an agent of its own -- its panel
+// DocWriter as an app (ag_apps/docwriter/): started from a gatherer's "+ ⋯" menu (its one entry, "DocWriter…") with an agent of its own -- its panel
 // (DocWriter's page, on the app's own origin) in the row above the panes, its new actor below it, the two one task, the
 // app's mark among its faces -- and its page talking to its backend through the panel SDK. The folder it writes in is
 // one the test makes.
@@ -26,7 +26,7 @@ test("a DocWriter started from the menu: its page above, its actor below, one ta
   const row = page.locator("#agents .gatherer-row").first();
   await row.hover();
   await row.locator("button.new-more").click();
-  await page.locator(".row-menu[role=menu]").getByText("DocWriter with an agent…", { exact: true }).click();
+  await page.locator(".row-menu[role=menu]").getByText("DocWriter…", { exact: true }).click();
   const box = page.locator(".dw-menu[role=dialog]", { hasText: "New DocWriter" });
   await box.locator("input").fill(folder);
   await box.locator("button.go").first().click();
@@ -71,4 +71,32 @@ test("a DocWriter started from the menu: its page above, its actor below, one ta
   const home = await (await request.get("/api/home")).json(); // the server's (the page's stream is held back)
   const all = home.gatherers.flatMap((g: { agents: { channel: string }[] }) => g.agents);
   expect(all.some((a: { channel: string }) => a.channel === sid)).toBe(false);
+});
+
+test("an app set on the Apps page to open on its own: its one menu entry opens it alone, with no box", async ({
+  page,
+  request,
+}) => {
+  await page.route("**/api/home", async (route) => {
+    const home = await (await route.fetch()).json();
+    home.harnesses = ["claude"];
+    home.harness_info.claude = { ...home.harness_info.claude, runs: true };
+    await route.fulfill({ json: home });
+  });
+  expect((await request.post("/api/apps/settings", { data: { app: "docwriter", agent: false } })).ok()).toBe(true);
+  try {
+    await openActor(page, CLAUDE);
+    const row = page.locator("#agents .gatherer-row").first();
+    await row.hover();
+    await row.locator("button.new-more").click();
+    const menu = page.locator(".row-menu[role=menu]");
+    await expect(menu.getByText("DocWriter", { exact: true })).toHaveCount(1); // once, alone: no box to fill in
+    await expect(menu.getByText("DocWriter…", { exact: true })).toHaveCount(0);
+    await expect(menu.getByText("LaTeX Editor…", { exact: true })).toHaveCount(1); // the others as they were
+    await page.keyboard.press("Escape");
+    // an app with no agent of its own to open with can't be set so
+    expect((await request.post("/api/apps/settings", { data: { app: "files", agent: true } })).status()).toBe(400);
+  } finally {
+    await request.post("/api/apps/settings", { data: { app: "docwriter", agent: true } }); // the home as it was
+  }
 });

@@ -346,7 +346,7 @@ class HookTest(unittest.TestCase):
 
     def test_claude_code(self):
         from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag
-        from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
+        from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients
         server = Server()
         hook = claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda g: server), log=lambda g, l: None, count="off")
         self.headers = {"X-Claude-Code-Session-Id": "s"}
@@ -372,7 +372,7 @@ class HookTest(unittest.TestCase):
 
     def test_codex(self):
         from ag.integrations.harnesses.codex.ag_orchestrator import context_manager as codex_ag
-        from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
+        from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients
         server = Server()
         hook = codex_ag.CodexContextManager(ag_clients=AgClients(lambda g: server), log=lambda g, l: None)
         self.headers = {"session-id": "th"}
@@ -391,7 +391,7 @@ class HookTest(unittest.TestCase):
 
     def test_off(self):
         from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag
-        from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
+        from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients
         hook = claude_ag.ClaudeContextManager(ag_clients=AgClients(lambda g: Server()), log=lambda g, l: None, files="off")
         self.assertIsNone(hook.files)
         with self.assertRaises(ValueError):
