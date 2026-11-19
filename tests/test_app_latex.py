@@ -745,31 +745,28 @@ class EditToolsTest(ServedBase):
             time.sleep(0.02)
         return got
 
-    def test_a_file_open_in_a_files_app_too_takes_the_stricter_mode_and_is_settled_in_either(self):
-        files = self.h.open("files", "g", self.repo)               # the Files app, on the same folder: its own actor
-        task_links.link("g", files.id, "c2")                             # its own actor, in its task
+    def test_a_files_app_on_the_file_neither_guards_it_nor_gives_tools_to_edit_it(self):
+        files = self.h.open("files", "g", self.repo)               # the Files app, on the same folder: plain
+        task_links.link("g", files.id, "c2")
         self.rows.append({"session_id": "c2", "gatherer": "g", "cwd": self.repo, "harness": "claude"})
-        self.opened()                                               # open in both: the LaTeX editor Live,
-        self.opened("p2", "files", files)
-        own = f"http://files.localhost:{self.port}"
-        status, _, raw = self.at_app(f"/api/mode?gatherer=g&instance={files.id}", "POST",
-                                     json.dumps({"mode": "review"}), origin=own, app="files")
-        self.assertEqual((status, json.loads(raw)["mode"]), (200, "review"))   # the Files app Review
-        self.assertEqual(self.h.backend("latex").file_mode(os.path.realpath(self.plot)), "review")   # the stricter
-        self.assertIn("latex_edit", self.h.guard("g", "c1", self.plot))            # each pointed at its own app's tool
-        self.assertIn("files_edit", self.h.guard("g", "c2", self.plot))
-        was = self.disk()
-        self.assertIn("Proposed", self.tool("edit", {"path": self.plot, "old_string": "import sys",
-                                                     "new_string": "import os, sys"}))
-        self.assertEqual(self.disk(), was)
-        status, _, raw = self.at_app(f"/api/edit/settle_all?gatherer=g&instance={files.id}", "POST",
-                                     json.dumps({"path": self.plot, "root": self.repo, "take": "theirs",
-                                                 "channel": "c1"}), origin=own, app="files")
-        self.assertEqual(status, 200)                               # accepted in the Files app's panel
-        self.assertFalse(json.loads(raw)["conflicts"])
-        self.assertTrue(self.disk().startswith("import os, sys\n"))
-        self.assertIn("The user accepted the change you proposed", self.told[-1][0]["payload"]["text"])
-        self.assertEqual(self.told[-1][1], "c1")                    # the LaTeX editor's actor told
+        self.opened()                                               # open live in the LaTeX editor
+        self.assertIn("latex_edit", self.h.guard("g", "c1", self.plot))   # its actor: pointed at its tool
+        self.assertIsNone(self.h.guard("g", "c2", self.plot))             # the Files app's: its own Edit, as always
+        names = [t["name"] for t in tool_gateway.tools("g", ("c2",))]
+        self.assertIn("files_open", names)
+        self.assertFalse({"files_read", "files_edit", "files_write"} & set(names))
+        own = f"http://files.localhost:{self.port}"                 # its save, plain, to disk -- read live there
+        q = f"gatherer=g&instance={files.id}"
+        status, _, raw = self.at_app(f"/api/edit/text?{q}&path={urllib.parse.quote(self.plot)}&root=/", app="files")
+        got = json.loads(raw)
+        status, _, raw = self.at_app(f"/api/edit/put?{q}", "POST", json.dumps({"path": self.plot, "root": "/",
+                                     "text": "import os\n" + got["text"], "base": got["version"]}), origin=own, app="files")
+        self.assertEqual(status, 200, raw)
+        self.assertTrue(self.disk().startswith("import os\n"))
+        deadline = time.time() + 5
+        while time.time() < deadline and not self.tool("read", {"path": self.plot}).split("\n")[1].endswith("import os"):
+            time.sleep(0.05)
+        self.assertTrue(self.tool("read", {"path": self.plot}).split("\n")[1].endswith("import os"))
 
     def test_a_file_no_editor_has_open_is_read_and_written_on_disk(self):
         new = os.path.join(self.repo, "notes", "a.md")

@@ -685,12 +685,27 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
      (editor.js): header buttons, a column beside the file, keys, CodeMirror extensions, bold/italic markup, its
      backend's messages. Which files are open, and as what mode, is one registry for every app built on it: a file's
      mode is the strictest of all that have it open, and a change put in through one is settled in any.
-   - **Files** (`ag_apps/files/`, tools `files_*`, event `files.mode`): FileEdit alone. It takes `open-file` for any
-     file.
+   - **Files** (`ag_apps/files/`): FileEdit, edited **plain** (the user, 2026-11-18: "just a regular viewer (i.e., no
+     support for accepting/reviewing agent edit), or considering for concurrency of conflicts", then "You can do
+     non-read-only"). A text file is read whole (`edit/text`: text and version), edited in the page alone, and saved
+     whole (`edit/put`) by Save, ⌘S or Auto-save. Changed on disk with nothing unsaved, it is read again; with edits
+     unsaved, the reader picks Reload or Keep mine, and no save goes over the change until then (409). It has no live
+     document, mode, conflict zone or branch approvals (`panel/plain.js`, the panel's `ed.plain`). Its agents edit
+     with their own tools; their one tool is `files_open`. `access = "group"` (any actor of the group may show the
+     user a file in it), `offered = false` (it opens alone). It takes `open-file` for any file.
    - **LaTeX** (`ag_apps/latex/`, tools `latex_*`, events `latex.mode`, `latex.preview_*`): FileEdit plus the
      Editor's preview (runs.py, texlog.py: Execute, the PDF, SyncTeX, Problems) and its LaTeX parts (latex.js:
      "→ PDF", the problems' marks, ⌘B/⌘I in LaTeX). The command can still be any; the guess for a .tex is latexmk.
      It takes `open-file` for `text/x-tex` and `text/x-bibtex`. `ag preview` is a client of its tools.
+   - **What actors changed lately**, in both apps (`panel/recent.js`): a window picked over the tree (10 min, 30 min,
+     1 h, 4 h; 30 min unless picked, kept per instance) is what the tree's avatars (the listing's `since`), the
+     header's and the file's marks show. The lines an actor changed are found in the file as it is now from what ag
+     recorded of its edits (`/api/files/changes`: a diff's new lines, a Write's text) and marked with a bar in its hue,
+     with its avatar after the first. A shell command's change has no recorded lines; deletions show only in the
+     header's Changes list. Any avatar pressed opens its actor as its row in the list does (`ag.actors.show`).
+   - **An actor started from the tree**: its menu's "Start an actor here…" (a folder) or "… on this file…" (a file,
+     its path put first in the box) asks for a harness and what to do, and starts it in that folder
+     (`ag.actors.start`), then opens it.
    - **Which opens a file**: the page asks the apps that take it in order (those naming its type, then those taking
      any) and tells the first with a panel open; with none open, it opens the first. So a LaTeX source goes to a
      LaTeX editor open, else a Files app open, else a new LaTeX editor; any other file to the Files app.

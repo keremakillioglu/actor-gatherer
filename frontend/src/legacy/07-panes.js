@@ -1941,7 +1941,7 @@ function branchChip(g, a) {
   const b = branchOf(g.name, a);
   if (!b) return null;
   const n = branchWaiting(b);
-  return el("div", { class: "branchline", title: branchRoute(b) + (n ? `\n${plural(n, "change")} to approve in the Files app or the LaTeX editor` : "") },
+  return el("div", { class: "branchline", title: branchRoute(b) + (n ? `\n${plural(n, "change")} to approve in the LaTeX editor` : "") },
     strokeIcon(ICONS.branch, 11), el("span", { class: "rt", text: `${b.branch} → ${checkedOut(b.onto)}` }),
     n ? el("span", { class: "wait", text: `${n} to approve` }) : null);
 }
@@ -2084,8 +2084,8 @@ function brRender() {
     el("div", { class: "desc", text: `In ${g}. Works in its own worktree on a new branch from the source's last commit. Its changes are merged into the source's folder as it makes them.` }),
     el("div", { class: "lbl", text: "Source" }),
     ...source,
-    el("label", { class: "check", title: "When off, changes merge as they come. Lines you're editing in the Files app or the LaTeX editor, or also changed, wait for you." },
-      approve, el("span", {}, el("b", { text: "Auto-merge with approval" }), ": accept or reject each change in the Files app or the LaTeX editor")),
+    el("label", { class: "check", title: "When off, changes merge as they come. Lines you're editing in the LaTeX editor, or also changed, wait for you." },
+      approve, el("span", {}, el("b", { text: "Auto-merge with approval" }), ": accept or reject each change in the LaTeX editor")),
     el("div", { class: "err", role: "alert", text: brPick.error || (hs.length ? "" : noHarness()) }),
     el("div", { class: "row" }, el("button", { type: "button", onclick: () => d.close() }, "Cancel"), ...starts),
   ].filter(Boolean));

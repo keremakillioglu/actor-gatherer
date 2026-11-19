@@ -8,7 +8,8 @@
   window.editor = ag;                                // the browser tests drive it as the page would
   const takeActors = (got) => {
     if (!got) return;
-    state.home = { ...state.home, gatherers: got.gatherers || [], home_dir: got.home_dir || "", cwd: got.cwd || "" };
+    state.home = { ...state.home, gatherers: got.gatherers || [], home_dir: got.home_dir || "", cwd: got.cwd || "",
+      harnesses: got.harnesses || [] };
     if (got.home_dir) ed.home = ed.home || got.home_dir;
     if (ed.host) { ed.treeSig = ""; edTree(); edHead(); edBranches(); if (ed.s) { edConflicts(ed.s); edAgentMarks(ed.s); } }
   };

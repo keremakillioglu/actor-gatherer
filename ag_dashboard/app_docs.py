@@ -36,8 +36,8 @@ class HostDocs(Docs):
 
     # -- the folders
 
-    def listing(self, directory: str, root: str) -> dict:
-        return self._call(self._docs.listing, directory, root)
+    def listing(self, directory: str, root: str, since: Optional[float] = None) -> dict:
+        return self._call(self._docs.listing, directory, root, since)
 
     def about(self, path: str, root: str) -> dict:
         return self._call(livedocs.about, path, root)

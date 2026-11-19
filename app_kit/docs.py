@@ -61,11 +61,11 @@ class Docs(ABC):
     # -- the folders
 
     @abstractmethod
-    def listing(self, directory: str, root: str) -> dict:
+    def listing(self, directory: str, root: str, since: Optional[float] = None) -> dict:
         """The folder's entries: {dir, entries: [{name, dir, size, mtime, pages (open in how many), dirty, conflicts,
         pending (an actor's branch's changes waiting), writers: [{gatherer, channel, at, how}], waiting (the actors
         whose changes to it wait for the reader: their branch's, a proposal, a conflict): [{gatherer, channel}]}], more},
-        ..."""
+        ... `since`: the writers since then (seconds; none: the last half hour)."""
 
     @abstractmethod
     def about(self, path: str, root: str) -> dict:

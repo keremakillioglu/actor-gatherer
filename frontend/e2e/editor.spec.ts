@@ -14,18 +14,27 @@ import { closePanel, expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, NOW, openActor } from "./home";
 import { editorPane, editorPanel, endEditor, openFile, project, raise, startEditor } from "./editor-home";
 
-test("a Files app started from the menu: its panel above on the folder, its actor below with its mark", async ({
+test("a Files app: opened alone, never with an agent, its files edited plain -- no mode, no build", async ({
   page,
-  request,
 }) => {
-  const { repo } = project();
-  const { sid, src } = await startEditor(page, repo);
-  await expect(page.locator("#controls button[aria-label=Editor]")).toHaveCount(0); // no button of its own on an actor
-  await expect(editorPane(page)).toHaveAttribute("aria-label", new RegExp(` · ${path.basename(repo)}$`));
-  await expect(editorPanel(page).locator(".ed-folder .nm")).toHaveText(path.basename(repo)); // the folder it was started on
-  await expect(editorPanel(page).locator(".ed-head")).toBeVisible();
-  await expect(editorPanel(page).locator("button.ed-exec")).toHaveCount(0); // no build: the LaTeX editor's
-  await endEditor(page, request, sid, src);
+  const { plot } = project();
+  await openActor(page, CLAUDE);
+  const row = page.locator("#agents .gatherer-row").first();
+  await row.hover();
+  await row.locator("button.new-more").click();
+  const menu = page.locator(".row-menu[role=menu]");
+  await expect(menu.getByText("Files", { exact: true })).toHaveCount(1); // alone
+  await expect(menu.getByText("Files with an agent…", { exact: true })).toHaveCount(0);
+  await expect(menu.getByText("LaTeX with an agent…", { exact: true })).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await openFile(page, plot);
+  const panel = editorPanel(page);
+  await expect(panel.locator(".ed-head .ed-status")).toHaveText("Saved");
+  await expect(panel.locator(".ed-mode-pick")).toHaveCount(0); // no Live / Review / Hands off
+  await expect(panel.locator("button.ed-exec")).toHaveCount(0); // no build: the LaTeX editor's
+  await expect(panel.locator(".ed-window select")).toHaveValue("1800"); // changes of the last 30 min, unless picked
+  await closePanel(page, editorPane(page));
+  await expect(editorPane(page)).toHaveCount(0);
 });
 
 test("in Review its actor's edit is a proposal in place, the file unchanged on disk until it is accepted", async ({
@@ -33,8 +42,8 @@ test("in Review its actor's edit is a proposal in place, the file unchanged on d
   request,
 }) => {
   const { repo, plot } = project();
-  const { sid, src } = await startEditor(page, repo);
-  const panel = editorPanel(page);
+  const { sid, src } = await startEditor(page, repo, "latex");
+  const panel = editorPanel(page, "latex");
   await panel.locator(".ed-row", { hasText: "plot.py" }).first().click();
   await expect(panel.locator(".cm-content")).toContainText("print('drawing')");
   await panel.locator(".ed-mode-pick select").selectOption("review");
@@ -47,7 +56,7 @@ test("in Review its actor's edit is a proposal in place, the file unchanged on d
       id: 1,
       method: "tools/call",
       params: {
-        name: "files_edit",
+        name: "latex_edit",
         arguments: { path: plot, old_string: "print('drawing')", new_string: "print('drawing, reviewed')" },
       },
     },
@@ -68,7 +77,7 @@ test("in Review its actor's edit is a proposal in place, the file unchanged on d
   await expect(box).toHaveCount(0);
   await expect(panel.locator(".cm-content")).toContainText("print('drawing, reviewed')");
   await expect.poll(() => fs.readFileSync(plot, "utf8").split("\n")[0]).toBe("print('drawing, reviewed')");
-  await endEditor(page, request, sid, src);
+  await endEditor(page, request, sid, src, "latex");
 });
 
 test("the header drawn again keeps its mode's menu in the page, with the keys, and text selected in it", async ({
@@ -79,8 +88,8 @@ test("the header drawn again keeps its mode's menu in the page, with the keys, a
   // taken out loses its selection, so the menu and what reads the same stay in place. (Headless Chrome closes an open
   // menu on its own, so what is checked is that it is never taken out.)
   const { repo } = project();
-  const { sid, src } = await startEditor(page, repo);
-  const panel = editorPanel(page);
+  const { sid, src } = await startEditor(page, repo, "latex");
+  const panel = editorPanel(page, "latex");
   await panel.locator(".ed-row", { hasText: "plot.py" }).first().click();
   await expect(panel.locator(".cm-content")).toContainText("print('drawing')");
   const frame = page.frames().find((f) => f.url().startsWith(src.origin))!;
@@ -115,10 +124,10 @@ test("the header drawn again keeps its mode's menu in the page, with the keys, a
   })()`);
   await expect.poll(() => frame.evaluate("window.redrawn"), { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
   expect(await frame.evaluate("getSelection().toString()")).toBe("plot.py");
-  await endEditor(page, request, sid, src);
+  await endEditor(page, request, sid, src, "latex");
 });
 
-test("the file open in a Files app stays open, at its place, when the reader goes to another task and back", async ({
+test("the file open in a LaTeX editor stays open, at its place, when the reader goes to another task and back", async ({
   page,
   request,
 }) => {
@@ -127,12 +136,12 @@ test("the file open in a Files app stays open, at its place, when the reader goe
     path.join(repo, "long.py"),
     Array.from({ length: 300 }, (_, i) => `x${i + 1} = ${i + 1}\n`).join(""),
   );
-  const { actor, sid, src } = await startEditor(page, repo);
+  const { actor, sid, src } = await startEditor(page, repo, "latex");
   const task = page.locator(`#agents button.agent[data-key="${await actor.getAttribute("data-key")}"]`); // the Editor's task
-  const panel = editorPanel(page);
+  const panel = editorPanel(page, "latex");
   await panel.locator(".ed-row", { hasText: "long.py" }).first().click();
   await expect(panel.locator(".cm-content")).toContainText("x1 = 1");
-  const frame = () => page.frames().find((f) => /^http:\/\/files\.localhost:\d+\//.test(f.url()))!;
+  const frame = () => page.frames().find((f) => /^http:\/\/latex\.localhost:\d+\//.test(f.url()))!;
   // the cursor on line 250, scrolled to it (`ed`: the panel's state, a const of its scripts, so reached by an expression)
   await frame().evaluate(
     "(v => v.dispatch({ selection: { anchor: v.state.doc.line(250).from + 3 }, scrollIntoView: true }))(ed.s.view)",
@@ -140,9 +149,9 @@ test("the file open in a Files app stays open, at its place, when the reader goe
   await expect(panel.locator(".cm-line", { hasText: "x250 = 250" })).toBeVisible();
   await page.waitForTimeout(500); // its place kept (a moment after it moves)
   await page.locator("#agents button.agent", { hasText: CODEX }).click(); // another task: the Editor's panel goes
-  await expect(editorPane(page)).toHaveCount(0);
+  await expect(editorPane(page, "latex")).toHaveCount(0);
   await task.click(); // back
-  await expect(editorPane(page)).toHaveCount(1);
+  await expect(editorPane(page, "latex")).toHaveCount(1);
   await expect(panel.locator(".ed-head .ed-path")).toContainText("long.py"); // the file still open
   await expect(panel.locator(".cm-line", { hasText: "x250 = 250" })).toBeVisible(); // where it was left
   const at = await frame().evaluate(
@@ -150,16 +159,16 @@ test("the file open in a Files app stays open, at its place, when the reader goe
   );
   expect(at).toEqual([250, 3]);
   await page.locator("#agents button.agent", { hasText: CODEX }).click(); // away again, and the file deleted meanwhile
-  await expect(editorPane(page)).toHaveCount(0);
+  await expect(editorPane(page, "latex")).toHaveCount(0);
   fs.rmSync(path.join(repo, "long.py"));
   await task.click(); // back: its folder alone, no error
-  await expect(editorPane(page)).toHaveCount(1);
+  await expect(editorPane(page, "latex")).toHaveCount(1);
   await expect(panel.locator(".ed-head .ed-hint")).toContainText("Pick a file");
   await expect(panel.locator(".ed-head .ed-path")).toHaveCount(0);
-  await endEditor(page, request, sid, src);
+  await endEditor(page, request, sid, src, "latex");
 });
 
-test("left while typing in a file in the Files app, the cursor is back where it was, typing going on there", async ({
+test("left while typing in a LaTeX editor's file, the cursor is back where it was, typing going on there", async ({
   page,
   request,
 }) => {
@@ -168,16 +177,16 @@ test("left while typing in a file in the Files app, the cursor is back where it 
     path.join(repo, "long.py"),
     Array.from({ length: 300 }, (_, i) => `x${i + 1} = ${i + 1}\n`).join(""),
   );
-  const { actor, sid, src } = await startEditor(page, repo);
+  const { actor, sid, src } = await startEditor(page, repo, "latex");
   const task = page.locator(`#agents button.agent[data-key="${await actor.getAttribute("data-key")}"]`); // the Editor's task
-  const panel = editorPanel(page);
-  const frame = () => page.frames().find((f) => /^http:\/\/files\.localhost:\d+\//.test(f.url()))!;
+  const panel = editorPanel(page, "latex");
+  const frame = () => page.frames().find((f) => /^http:\/\/latex\.localhost:\d+\//.test(f.url()))!;
   const line250 = () => frame().evaluate("ed.s.view.state.doc.line(250).text");
   const away = async () => {
     await page.locator("#agents button.agent", { hasText: CODEX }).click(); // another task: the Editor's panel goes
-    await expect(editorPane(page)).toHaveCount(0);
+    await expect(editorPane(page, "latex")).toHaveCount(0);
     await task.click(); // back
-    await expect(editorPane(page)).toHaveCount(1);
+    await expect(editorPane(page, "latex")).toHaveCount(1);
     await expect(panel.locator(".cm-line", { hasText: "x250 = 250" })).toBeVisible(); // scrolled where it was
   };
   await panel.locator(".ed-row", { hasText: "long.py" }).first().click();
@@ -208,7 +217,7 @@ test("left while typing in a file in the Files app, the cursor is back where it 
   await expect // and all of it saved on disk, the keys typed just before the panel went too
     .poll(() => fs.readFileSync(path.join(repo, "long.py"), "utf8").split("\n")[249])
     .toBe("x250 = 250 #here!");
-  await endEditor(page, request, sid, src);
+  await endEditor(page, request, sid, src, "latex");
 });
 
 test("the preview comes back as it was left: its tab, its output's scroll, its PDF's page, a rebuilt PDF's too", async ({
@@ -315,7 +324,7 @@ test("the tree shows a closed actor that changed a file only while a change of i
   // both changed plot.py lately (ag's hook's `file_touched`), as the listing says; what waits from them, as the test says
   let waiting: { gatherer: string; channel: string }[] = [];
   await page.route("**/api/edit/list*", async (route) => {
-    const u = new URL(route.request().url()); // the app's origin, files.localhost: a name only the browser resolves
+    const u = new URL(route.request().url()); // the app's origin, latex.localhost: a name only the browser resolves
     const host = u.host;
     u.hostname = "127.0.0.1";
     const got = (await (
@@ -336,17 +345,19 @@ test("the tree shows a closed actor that changed a file only while a change of i
     await route.fulfill({ json: got });
   });
   await openActor(page, CLAUDE);
-  await openFile(page, plot);
-  const avatars = editorPanel(page).locator(".ed-row", { hasText: "plot.py" }).locator(".ed-avs");
-  await expect(avatars.locator(":scope > img, :scope > .ed-noav")).toHaveCount(1); // the open actor's only
+  const tex = path.join(path.dirname(plot), "notes.tex"); // a LaTeX editor on the folder: its changes wait for the reader
+  fs.writeFileSync(tex, "% notes\n");
+  await openFile(page, tex);
+  const avatars = editorPanel(page, "latex").locator(".ed-row", { hasText: "plot.py" }).locator(".ed-avs");
+  await expect(avatars.locator(":scope > .ed-tree-av")).toHaveCount(1); // the open actor's only
   await expect(avatars).not.toHaveClass(/many/);
   await expect(avatars).not.toHaveAttribute("title", /closed/);
   waiting = [{ gatherer: GATHERER, channel: closed.channel }]; // a change of the closed one's waits: it is shown too
-  await expect(avatars.locator(":scope > img, :scope > .ed-noav")).toHaveCount(2);
+  await expect(avatars.locator(":scope > .ed-tree-av")).toHaveCount(2);
   await expect(avatars).toHaveClass(/many/);
   await expect(avatars).toHaveAttribute("title", /\(closed, change waiting for you\)/);
-  await closePanel(page, editorPane(page));
-  await expect(editorPane(page)).toHaveCount(0);
+  await closePanel(page, editorPane(page, "latex"));
+  await expect(editorPane(page, "latex")).toHaveCount(0);
 });
 
 test("Execute opens the project's preview beside the file on its form, a guess in it, and runs what is saved", async ({

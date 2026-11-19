@@ -7,13 +7,19 @@ with a status, refused):
 
     edit/list, about, raw/<path>, files, choose, reveal, create     the folders, a file's kind and bytes, Go to
                                                                     file's list, the system's dialogs, a new file
-    edit/stream, update, aware, save, settle, zone/clear            a file open (app_kit.docs: its events)
+    edit/stream, update, aware, save, settle, zone/clear            a file open live (app_kit.docs: its events)
+    edit/text, put                                                  a file open plain (PLAIN): its text and version, and
+                                                                    saved -- refused (409) if it changed on disk since
     edit/settle_all                                                 an actor's changes held there, all taken or not
     mode                                                            its mode: GET it, POST {mode}
     branches, branches/approve, branches/decide                     the actors on branches of the project shown
     files/changes                                                   an actor's changes to the file open
 
 Each instance is on a folder (its own), started with an actor of its own, as the Browser and DocWriter are.
+
+An app may edit its files PLAIN instead (its panel's `ed.plain`: the Files app): a file read, edited in the page alone,
+and saved whole -- no live document, no mode, no conflict zone; a save over a file changed on disk since it was read is
+refused, for the reader to reload it or keep theirs (`edit/put`, `force`). Its agents then have only <app>_open.
 
 Its agents change files with its tools, not their own -- Claude Code's Edit and Write on a file open in one are
 refused (`guard`, the host's edit_guard), pointing at <app>_edit. A file no such app has open is read and written on
@@ -160,7 +166,19 @@ class FileEdit(App):
     def _get(self, path: str, q: Dict[str, str], here: bool):
         docs = self.host.docs()
         if path == "edit/list":
-            return {**docs.listing(q.get("dir", ""), q.get("root", "")), "choose": chooser.name() if here else None}
+            try:
+                since = float(q["since"]) if q.get("since") else None
+            except ValueError:
+                raise AppError("since: seconds, please") from None
+            return {**docs.listing(q.get("dir", ""), q.get("root", ""), since), "choose": chooser.name() if here else None}
+        if path == "edit/text":                     # a file open plain: its text and version (`have`: unchanged, no text)
+            real = docs.resolve(q.get("path", ""), q.get("root", ""))
+            got = _version(real)
+            if got is None:
+                return {"version": None, "missing": True}
+            if q.get("have") == got:
+                return {"version": got, "same": True}
+            return {"version": got, "text": _read_file(real)}
         if path == "edit/about":
             return {**docs.about(q.get("path", ""), q.get("root", "")), "reveal": chooser.shower() if here else None}
         if path == "edit/files":
@@ -187,6 +205,8 @@ class FileEdit(App):
             return {}
         if path == "edit/save":
             return docs.save(p, root)
+        if path == "edit/put":                      # a file open plain, saved whole: not over a change made since
+            return _put(docs.resolve(p, root), b)
         if path == "edit/zone/clear":
             return docs.clear_zone(p, root)
         if path == "edit/create":
@@ -547,6 +567,33 @@ def _told_settled(real: str, c: dict, take: str, text: Optional[str]) -> None:
         app.host.insert(i, [context_stream(app._stream_name(), "the user", msg)], a["channel"])
     except AppError:
         pass
+
+
+def _version(real: str) -> Optional[str]:
+    """What a file is now, to tell a change on disk by: its modification time (ns) and size; None, no such file."""
+    try:
+        st = os.stat(real)
+    except OSError:
+        return None
+    if not os.path.isfile(real):
+        raise AppError(f"{real} is a folder")
+    return f"{st.st_mtime_ns}-{st.st_size}"
+
+
+def _put(real: str, b: dict) -> dict:
+    """A file open plain, saved: `text` written in place of it, unless it changed on disk since the page read it
+    (`base`, its version then; none: it was not there) -- refused then (409, with the version now), the page to reload
+    it or keep its own (`force`)."""
+    text = b.get("text")
+    if not isinstance(text, str):
+        raise AppError("text, please: the whole file")
+    if len(text.encode("utf-8")) > MAX_WRITE:
+        raise AppError(f"too large: the most it writes is {MAX_WRITE} bytes")
+    now = _version(real)
+    if not b.get("force") and now != (b.get("base") or None):
+        raise AppError("changed on disk since you opened it", 409)
+    _write_file(real, text)
+    return {"version": _version(real)}
 
 
 def _read_file(real: str) -> str:

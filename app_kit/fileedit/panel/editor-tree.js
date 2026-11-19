@@ -29,6 +29,8 @@ const ED_GLYPH = {
 };
 const ED_SEARCH = "M7 2.25a4.75 4.75 0 1 0 0 9.5a4.75 4.75 0 1 0 0-9.5zM10.5 10.5l3.25 3.25";
 const ED_COLLAPSE = "M3.25 2.75h9.5a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1h-9.5a1 1 0 0 1-1-1v-8.5a1 1 0 0 1 1-1zM5.25 8h5.5";
+// an actor started here: a head and shoulders, a + beside it (the tree's menu)
+const ED_ACTOR_GLYPH = "M6.5 7.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5zM2.25 13.25c.4-2.3 2.1-3.75 4.25-3.75 1 0 1.9.3 2.6.85M12 9.5v4M10 11.5h4";
 const ED_DIR_GLYPH = {
   shut: "M1.75 4a1 1 0 0 1 1-1h3.4l1.5 1.6h5.6a1 1 0 0 1 1 1v6.65a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z",
   open: "M1.75 11.6V4a1 1 0 0 1 1-1h3.4l1.5 1.6h4.85a1 1 0 0 1 1 1v1.65M1.95 12.7l1.6-4.75a1 1 0 0 1 .95-.7h9.05a.6.6 0 0 1 .57.8"
@@ -175,7 +177,7 @@ function edFolders() {
 // A folder's listing, or why there is none in words (the server's error, not the request's status).
 async function edFetchList(dir) {
   try {
-    const r = await fetch(`/api/edit/list?${new URLSearchParams({ dir, root: "/" })}`, { cache: "no-store" });
+    const r = await fetch(`/api/edit/list?${new URLSearchParams({ dir, root: "/", since: String(edSince()) })}`, { cache: "no-store" });
     const got = await r.json().catch(() => ({}));
     return r.ok ? got : { error: got.error || `Couldn't list this folder (${r.status})`, entries: [], ...("choose" in got ? { choose: got.choose } : {}) };
   } catch (e) { return { error: "The dashboard didn't respond. Is it still running?", entries: [] }; }
@@ -499,6 +501,10 @@ function edMenu(row, x, y) {
     item(ED_GLYPH.doc + "M8 7.75v4M6 9.75h4", into === ed.root ? "New file…" : `New file in ${edBase(into)}…`, () => edNew(into, false)),
     item(ICONS.folderNew, into === ed.root ? "New folder…" : `New folder in ${edBase(into)}…`, () => edNew(into, true)),
     row && dir ? item(ED_DIR_GLYPH.open, "Show this folder alone", () => edGo(p)) : null,
+    sep(),
+    agApp && ((state.home && state.home.harnesses) || []).length
+      ? item(ED_ACTOR_GLYPH, row && !dir ? "Start an actor on this file…" : "Start an actor here…",
+        () => edStartOpen(p, dir, x, y)) : null,
     sep(),
     item("M5.25 5.25V3.5a1 1 0 0 1 1-1h6.25a1 1 0 0 1 1 1v6.25a1 1 0 0 1-1 1H10.75M3.5 5.25h6.25a1 1 0 0 1 1 1v6.25a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V6.25a1 1 0 0 1 1-1z",
       "Copy path", () => edCopy(p)),

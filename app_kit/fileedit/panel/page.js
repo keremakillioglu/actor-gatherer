@@ -77,7 +77,7 @@ const forEditor = (path) => {
 async function get(path) {
   const r = await fetch(forEditor(path), { cache: "no-store" });
   const got = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(got.error || `${path}: ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error(got.error || `${path}: ${r.status}`), { status: r.status });
   return got;
 }
 // `keep`: sent even if the panel goes meanwhile (taken away with its task, or the page closed), the request outliving it --
@@ -88,7 +88,7 @@ async function post(path, body, keep = false) {
   const r = await fetch(forEditor(path), { method: "POST", headers: { "Content-Type": "application/json" }, body: data,
     keepalive: keep && data.length < KEEPALIVE_MAX });
   const got = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(got.error || `${path}: ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error(got.error || `${path}: ${r.status}`), { status: r.status });
   return got;
 }
 // A line over the panel for a moment: why nothing happened (07-panes.js's, over the panes).

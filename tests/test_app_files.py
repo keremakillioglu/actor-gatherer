@@ -3,14 +3,20 @@ each is (its tools, the files it takes), and the Editor's instances taken over b
 the LaTeX editor, any other by the Files app (a manifest's `replaces`, App.takes_over, the host's `_taken_over`) -- with
 their agents still attached and their actors' roles moved with them (app_agents.adopt_all). Their file editing is
 app_kit.fileedit's, tested through the LaTeX editor (test_app_latex.py) and the Files app (test_dashboard_editor*.py)."""
+import http.client
+import json
 import os
 import sys
+import threading
+import time
 import unittest
+import unittest.mock
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app_kit  # noqa: E402
-from ag_dashboard import app_agents, app_host  # noqa: E402
+from ag_dashboard import app_agents, app_host, server  # noqa: E402
 from app_kit import Instance  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
 from test_dashboard_app_host import insert_here  # noqa: E402
@@ -19,17 +25,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class ManifestTest(unittest.TestCase):
-    def test_files_has_the_file_tools_alone_and_takes_any_file_the_latex_editor_its_sources_first(self):
+    def test_files_shows_files_for_any_agent_the_latex_editor_edits_live_its_sources_first(self):
         files, latex = (app_kit.load(os.path.join(ROOT, "ag_apps", n)) for n in ("files", "latex"))
-        self.assertEqual([t.name for t in files.tools], ["read", "edit", "write", "open"])
+        self.assertEqual([t.name for t in files.tools], ["open"])            # its agents edit with their own tools
         self.assertEqual([t.name for t in latex.tools], ["read", "edit", "write", "open", "preview_show",
                                                          "preview_set", "preview_run", "preview_stop", "preview_clear"])
         self.assertEqual([(h.intent, h.types) for h in files.handles], [("open-file", ())])
         self.assertEqual([(h.intent, h.types) for h in latex.handles], [("open-file", ("text/x-tex", "text/x-bibtex"))])
         self.assertEqual((files.replaces, latex.replaces), (("editor",), ("editor",)))
+        self.assertEqual((files.access, files.agent.offered, files.capabilities.edit_guard), ("group", False, False))
+        self.assertEqual((latex.access, latex.agent.offered, latex.capabilities.edit_guard), ("task", True, True))
         for m in (files, latex):
-            self.assertTrue(m.agent.offered and m.capabilities.docs and m.capabilities.edit_guard)
-            self.assertEqual((m.instances, m.access), ("many", "task"))
+            self.assertTrue(m.capabilities.docs and m.capabilities.message_actors)
+            self.assertEqual(m.instances, "many")
             self.assertNotIn("editor_", m.instructions)
         self.assertNotIn("preview", files.instructions)
 
@@ -116,6 +124,87 @@ class TakenOverTest(HomeBase):
         os.rename(self.code, self.code + ".gone")                    # the Files app can't open it: no app takes it
         h = self.new_host()
         self.assertEqual([i["app"] for i in h.listed("g")["instances"]], ["latex"])
+
+
+class PlainTest(HomeBase):
+    """A file open plain in the Files app, through the dashboard's server: read with its version (edit/text), saved
+    whole (edit/put) -- refused, 409, over a change made on disk since, unless forced -- and the listing's writers in the
+    window the panel asks (since)."""
+
+    def setUp(self):
+        super().setUp()
+        self.root = os.path.realpath(self.tmp.name)
+        self.file = os.path.join(self.root, "notes.md")
+        with open(self.file, "w") as fh:
+            fh.write("one\ntwo\n")
+        self.httpd = server.serve("127.0.0.1", 0, live_updates=False)
+        self.httpd.app_host._write_fn = insert_here
+        self.hosts.append(self.httpd.app_host)
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        self.serving(self.httpd)
+        self.port = self.httpd.server_port
+        self.inst = self.httpd.app_host.open("files", "g", self.root)
+        self.q = f"gatherer=g&instance={self.inst.id}"
+
+    def at(self, path, method="GET", body=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+        headers = {"Host": f"files.localhost:{self.port}"}
+        if body is not None:
+            headers["Origin"] = f"http://files.localhost:{self.port}"
+        conn.request(method, f"{path}{'&' if '?' in path else '?'}{self.q}", json.dumps(body) if body is not None else None,
+                     headers)
+        r = conn.getresponse()
+        got = json.loads(r.read() or b"{}")
+        conn.close()
+        return r.status, got
+
+    def text(self, have=""):
+        return self.at(f"/api/edit/text?path={urllib.parse.quote(self.file)}&root=/&have={have}")[1]
+
+    def test_read_with_its_version_saved_whole_and_not_over_a_change_made_since(self):
+        got = self.text()
+        self.assertEqual(got["text"], "one\ntwo\n")
+        self.assertEqual(self.text(got["version"]), {"version": got["version"], "same": True})   # unchanged: no text
+        status, put = self.at("/api/edit/put", "POST", {"path": self.file, "root": "/", "text": "one\n2\n",
+                                                        "base": got["version"]})
+        self.assertEqual(status, 200)
+        with open(self.file) as fh:
+            self.assertEqual(fh.read(), "one\n2\n")
+        time.sleep(0.01)
+        with open(self.file, "w") as fh:                         # an actor's change, on disk
+            fh.write("one\n2\nthree\n")
+        status, refused = self.at("/api/edit/put", "POST", {"path": self.file, "root": "/", "text": "mine\n",
+                                                            "base": put["version"]})
+        self.assertEqual(status, 409)
+        self.assertIn("changed on disk", refused["error"])
+        with open(self.file) as fh:
+            self.assertEqual(fh.read(), "one\n2\nthree\n")   # kept
+        self.assertEqual(self.text(put["version"])["text"], "one\n2\nthree\n")
+        status, _ = self.at("/api/edit/put", "POST", {"path": self.file, "root": "/", "text": "mine\n",
+                                                      "base": put["version"], "force": True})   # the reader's Keep mine
+        self.assertEqual(status, 200)
+        with open(self.file) as fh:
+            self.assertEqual(fh.read(), "mine\n")
+        os.remove(self.file)
+        self.assertEqual(self.text(), {"version": None, "missing": True})
+        status, _ = self.at("/api/edit/put", "POST", {"path": self.file, "root": "/", "text": "back\n", "base": None})
+        self.assertEqual(status, 200)                            # Save restores a file deleted on disk
+
+    def test_the_listing_s_writers_are_those_of_the_window_asked(self):
+        from ag_dashboard import livedocs
+        now = time.time()
+        found = {"notes.md": [{"gatherer": "g", "channel": "c1", "at": now - 1200, "how": "modified"}]}   # by its path in it
+        asked = []
+
+        def writers(dirs, since):
+            asked.append(since)
+            return {p: [w for w in ws if w["at"] >= since] for p, ws in found.items()}
+        with unittest.mock.patch.object(livedocs, "writers", writers):
+            ten = self.at(f"/api/edit/list?dir={urllib.parse.quote(self.root)}&root=/&since={int(now - 600)}")[1]
+            half = self.at(f"/api/edit/list?dir={urllib.parse.quote(self.root)}&root=/")[1]
+        names = lambda got: [e["name"] for e in got["entries"] if e.get("writers")]   # noqa: E731
+        self.assertEqual((names(ten), names(half)), ([], ["notes.md"]))   # 20 min ago: in the half hour, not the 10 min
+        self.assertEqual(int(asked[0]), int(now - 600))
 
 
 if __name__ == "__main__":
