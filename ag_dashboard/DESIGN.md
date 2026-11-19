@@ -375,7 +375,14 @@ The layout slice comes first, in four steps, each with every test passing:
      the actor last in focus (`lastActor`) it goes back to when the app is unselected -- in place of the page's
      `panes.focus` and `appSel`; `focusedPane()` and `appSelected()` read it, and a pane given another actor in place
      (`retarget`) takes focus with it. This page's alone: not kept.
-   - 4c-2: each shown task's apps the model's, one reconcile opening and closing app panels to match.
+   - 4c-2 (built): the apps' panels shown are the model's `apps` (since 4b a copy of them, now their source): what opens
+     or closes one says so to the model -- `showAppPanel` (a panel shown: an app opened, selected, linked to, its
+     actor's, a task's), `closeAppPane`, `unwantTaskApps` (a task entered, left or closed: the others' apps, those
+     still opening too), `appClosed` (an instance closed, an app uninstalled) -- and `renderApps` makes the panels
+     match: a wanted one whose instance is known opened at once (in the frame that asked, as before: no flicker), the
+     rest once the host gives it, if still wanted then; one no longer wanted closed, or held out of sight while its
+     agent is at work. Panels held for agents at work stay outside the model. The check also compares the model's apps
+     with the panels shown.
    - 4c-3: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
      and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
    (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,

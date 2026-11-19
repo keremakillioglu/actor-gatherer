@@ -17,12 +17,12 @@ import {
   renderFolded, slideList,
 } from "./modes.js";
 import {
-  CREW_GROUP, actorPanes, addAppPane, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsOnly, appsOnlyLeft,
-  branchChip, closeAppPane, closePane, closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor,
-  holdAppPane, isAt, isAway, moveEnd, newForm, openActors, openPop, openTaskBeside, paneNote, pick, pickBeside,
-  placeIfShown, popMenu, rekeyTask, rememberTask, rowMore, rowPop, saveAppPanes, selectAppPane, selectedTask, show,
-  shownPanels, startButtons, startCwd, startSession, startable, taskAppsOpening, taskKey, taskLayout, tasksLaidOut,
-  topLayout, unselectApp, viaTabs, workPlacer,
+  CREW_GROUP, actorPanes, appClosed, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsOnly, branchChip,
+  closeAppPane, closePane, closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, isAt,
+  isAway, moveEnd, newForm, openActors, openPop, openTaskBeside, paneNote, pick, pickBeside, showAppPanel,
+  placeIfShown, popMenu, rekeyTask, rememberTask, rowMore, rowPop, selectAppPane, selectedTask, show, shownPanels,
+  startButtons, startCwd, startSession, startable, taskAppsOpening, taskKey, taskLayout, tasksLaidOut, viaTabs,
+  workPlacer,
 } from "../layout/panes.js";
 import { refreshNewTab } from "../layout/new-tab.js";
 import { TASK_KINDS } from "../chat/chat.js";
@@ -953,12 +953,11 @@ async function selectApp(gname, o, ev = null) {
     }
   }
   let p = panes.apps.find((q) => q.instance.id === o.id);
-  if (p && p.held) holdAppPane(p, false);
-  if (!p) {
+  if (p) p = showAppPanel(o.app, p.instance);        // (one held out of sight: shown)
+  else {
     const inst = await window.agNext.apps.instanceOf(o.app.name, gname, o.id).catch(() => null);
     if (!inst) { paneNote(`${o.app.label}: closed`); readApps(gname, true); return; }
-    p = panes.apps.find((q) => q.instance.id === inst.id) || addAppPane(o.app, inst);
-    saveAppPanes();
+    p = showAppPanel(o.app, inst);
   }
   selectAppPane(p);
 }
@@ -968,13 +967,7 @@ async function closeApp(gname, o) {
   await closedInTabs(taskKey(gname, appItem(o.id)), appItem(o.id));
   try { await post("/api/apps/close", { gatherer: gname, instance: o.id }); }
   catch (e) { paneNote(`Close ${o.app.label}: ${e.message}`); return; }
-  unselectApp(o.id);
-  for (const p of panes.apps.filter((q) => q.instance.id === o.id)) {
-    panes.apps.splice(panes.apps.indexOf(p), 1);
-    p.panel.destroy(); p.node.remove();
-  }
-  appsOnlyLeft();
-  topLayout(); saveAppPanes();
+  appClosed(o.id);
   await loadHome();
   readApps(gname, true);
   renderAgents();
@@ -1098,10 +1091,9 @@ async function addAppToTask(gname, k, name) {
     const inst = await window.agNext.apps.open(name, gname, (a ? cwdOf(a) : o.folder) || null);
     if (!o || inst.id !== o.id) takeTasks(await post("/api/tasks", { gatherer: gname, do: "add", to: keptAs(g, k), items: [appItem(inst.id)] }));
     await readApps(gname, true);
-    let there = panes.apps.find((p) => p.instance.id === inst.id);
-    if (!there) there = addAppPane(app, inst);
-    else { if (there.held) holdAppPane(there, false); there.panel.refresh(); }
-    saveAppPanes();
+    const had = panes.apps.some((p) => p.instance.id === inst.id);
+    const there = showAppPanel(app, inst);
+    if (had) there.panel.refresh();
     retask(was);
     selectAppPane(there);                              // added: selected, as an actor started is shown
   } catch (e) { paneNote(`${app.label}: ${e.message}`); }

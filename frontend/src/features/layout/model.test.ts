@@ -23,6 +23,9 @@ import {
   shownTab,
   take,
   unfocus,
+  unwantApps,
+  swapApp,
+  wantApp,
   where,
   type Layout,
 } from "./model";
@@ -194,6 +197,21 @@ describe("the migration from the six keys", () => {
     expect([l.focus, l.lastActor]).toEqual(["g\u0000app:i1", "g\u0000c1"]);
     expect(unfocus(l, "g\u0000app:i1").focus).toBe("g\u0000c1");
     expect(unfocus(l, "g\u0000app:other").focus).toBe("g\u0000app:i1");
+  });
+
+  it("the apps' panels wanted: one added last, once (its width kept), some no longer, one swapped for another", () => {
+    let l = wantApp(two(), { app: "notes", instance: "i1", g: "g" });
+    l = wantApp(l, { app: "notepad", instance: "i2", g: "g", size: 2 });
+    l = wantApp(l, { app: "notes", instance: "i1", g: "g", size: 3 });
+    expect(l.apps).toEqual([
+      { app: "notes", instance: "i1", g: "g", size: 3 },
+      { app: "notepad", instance: "i2", g: "g", size: 2 },
+    ]);
+    l = swapApp(l, "i2", { app: "notepad", instance: "i9", g: "h" });
+    expect(l.apps![1]).toEqual({ app: "notepad", instance: "i9", g: "h", size: 2 });
+    l = unwantApps(l, (a) => a.instance === "i1");
+    expect(l.apps!.map((a) => a.instance)).toEqual(["i9"]);
+    expect("apps" in unwantApps(l, () => true)).toBe(false);
   });
 
   it("starts as a fresh home with nothing kept, or what was kept unreadable", () => {
