@@ -81,6 +81,11 @@ export interface Layout {
   tasks: Record<string, TaskLayout>;
   panes?: PanesKept;
   apps?: AppKept[];
+  /** The item in focus -- an actor's pane, or an app's panel selected -- by its item key (`group\0channel`,
+   * `group\0app:<id>`), and the actor last in focus: an app's panel unselected, focus goes back to it. This page's only:
+   * not kept. */
+  focus?: string | null;
+  lastActor?: string | null;
 }
 
 export const KEY = "ag-dashboard-layout";
@@ -270,6 +275,13 @@ export function move(l: Layout, id: string, at: number): Layout {
 }
 
 export const rename = (l: Layout, id: string, name: string): Layout => withTab(l, id, (t) => ({ ...t, name }));
+/** Item `item` in focus: an actor's pane (`actor`), or an app's panel selected. */
+export const focusOn = (l: Layout, item: string | null, actor: boolean): Layout =>
+  actor ? { ...l, focus: item, lastActor: item } : { ...l, focus: item };
+/** Item `item` (an app's panel) no longer selected, if it was: the actor last in focus is, again. */
+export const unfocus = (l: Layout, item: string): Layout =>
+  l.focus === item ? { ...l, focus: l.lastActor ?? null } : l;
+
 /** The page's panes, and the apps' panels above them, as it shows them now (none: none beside its own pane; none). */
 export const keptPanes = (l: Layout, panes: PanesKept | null): Layout => {
   const out = { ...l };
@@ -445,6 +457,8 @@ export function load(get: (k: string) => string | null): Layout {
     return {
       ...kept,
       current: kept.tabs.some((t) => t.id === kept.current) ? kept.current : kept.tabs[0].id,
+      focus: null, // (this page's alone)
+      lastActor: null,
     };
   return migrate(get);
 }

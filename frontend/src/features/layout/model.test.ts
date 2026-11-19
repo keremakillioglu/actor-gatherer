@@ -4,6 +4,7 @@ import {
   closed,
   closeShown,
   empty,
+  focusOn,
   forgetActor,
   holds,
   load,
@@ -21,6 +22,7 @@ import {
   shown,
   shownTab,
   take,
+  unfocus,
   where,
   type Layout,
 } from "./model";
@@ -171,7 +173,7 @@ describe("the migration from the six keys", () => {
     expect(migrate((k) => old[k] ?? null).tasks["g\u0000t1"].left!.sizes).toEqual({ a: 0.5 });
     const now = { ...two(), current: "b" };
     const both: Record<string, string> = { ...old, "ag-dashboard-layout": JSON.stringify(now) };
-    expect(load((k) => both[k] ?? null)).toEqual(now);
+    expect(load((k) => both[k] ?? null)).toEqual({ ...now, focus: null, lastActor: null }); // (focus: the page's alone)
     expect(load((k) => (k === "ag-dashboard-layout" ? "{broken" : (old[k] ?? null))).tasks["g\u0000t1"]).toBeTruthy();
   });
 
@@ -184,6 +186,14 @@ describe("the migration from the six keys", () => {
     };
     const l = migrate((k) => old[k] ?? null);
     expect([l.panes, l.apps]).toEqual([panes, apps.apps]);
+  });
+
+  it("focus: one item, an actor's or an app's; an app unselected, the actor last in focus again", () => {
+    let l = focusOn(two(), "g\u0000c1", true);
+    l = focusOn(l, "g\u0000app:i1", false);
+    expect([l.focus, l.lastActor]).toEqual(["g\u0000app:i1", "g\u0000c1"]);
+    expect(unfocus(l, "g\u0000app:i1").focus).toBe("g\u0000c1");
+    expect(unfocus(l, "g\u0000app:other").focus).toBe("g\u0000app:i1");
   });
 
   it("starts as a fresh home with nothing kept, or what was kept unreadable", () => {
