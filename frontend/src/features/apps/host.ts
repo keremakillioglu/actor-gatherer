@@ -24,6 +24,11 @@ export interface AppInfo {
   origin: string;
   instances: string;
   offer?: string;
+  /** who may use its instances: "task" (the agents in its task) or "group" (every agent of its group) */
+  access?: string;
+  /** what adding it to an actor or a task does (ag_dashboard/app_policy.py, as the user chose it): "join", put in the
+   * task; "folder", opened at the actor's directory, shown with the task, not put in it; "no", not offered */
+  on_task?: "join" | "folder" | "no";
   agent?: { offered: boolean; name: string };
   /** opened from a menu, it starts with an agent of its own (the Apps page's choice: app_settings.py) */
   opens_with_agent?: boolean;
@@ -144,9 +149,16 @@ export async function load(gatherer?: string): Promise<AppInfo[]> {
 export const found = (): AppInfo[] => listed.apps;
 export const named = (name: string): AppInfo | undefined => listed.apps.find((a) => a.name === name);
 
-/** The app's instance for a gatherer and folder (the open one, where it has one per folder), `channel` attached. */
-export const open = (app: string, gatherer: string, folder: string | null, channel?: string | null) =>
-  post<Instance>("/api/apps/open", { app, gatherer, folder, ...(channel ? { channel } : {}) });
+/** The app's instance for a gatherer and folder (the open one, where it has one per folder), `channel` attached (an
+ * app that joins tasks). `reuse`: of an app with any number, one open at `folder` and in no task, if there is one. */
+export const open = (app: string, gatherer: string, folder: string | null, channel?: string | null, reuse = false) =>
+  post<Instance>("/api/apps/open", {
+    app,
+    gatherer,
+    folder,
+    ...(channel ? { channel } : {}),
+    ...(reuse ? { reuse } : {}),
+  });
 
 /** The instance, if it is still open in its gatherer. */
 export async function instanceOf(app: string, gatherer: string, id: string): Promise<Instance | null> {

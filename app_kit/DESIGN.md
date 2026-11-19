@@ -271,6 +271,14 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
 - **A group's app is in no task** (decided 2026-11-18): every agent of the group may use it, so a task would mean nothing
   for it. It is never put in one (task_links.py's `taskable`), and one found in a task is taken out as its group is
   read. A task app in no task is used by no actor until it is put in one (the coordinator agent may use it).
+- **What adding an app to an actor or a task does, said by the manifest and the user's to change** (decided
+  2026-11-19): `on_task` -- "join" (a task app's default: put in the task, its agents attached), "folder" (opened at
+  the actor's directory and shown with the task, not put in it: the Files app's) or "no" (not offered: a group app's
+  default). It is read where the user adds an app to an actor or a task: "+" on a row, an app's row dropped on another
+  (the page), and the server's `POST /api/tasks` add and `POST /api/apps/open` with an actor -- an app that is not
+  "join" is not put in a task there. An app starting its own agent is one task with it whatever it says. The user's
+  choice, app by app, is set on the Apps page and kept in the dashboard's own <home>/dashboard/app_settings.json
+  (`ag_dashboard/app_policy.py`), not config.toml: ag never reads it. A group app can't be made "join".
 - **What an agent is given by name when it starts is only what it may use then.** Every tool call -- an app's own,
   `apps_call`, `ag apps call` -- asks access.py again, and the host asks again before its backend (app_host's
   `may_use`); an agent that left a task is refused at once, whatever its tool list says.
