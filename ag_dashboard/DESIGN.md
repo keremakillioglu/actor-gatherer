@@ -371,7 +371,12 @@ The layout slice comes first, in four steps, each with every test passing:
      the tab's `screen`) -- the one key holds all; `panes`, `top-apps` and `screen` are dropped with the others. Its own
      pane out of sight (`hereAway`) and a task of apps only (`appsOnly`), this page's alone and never kept, are 4c's:
      the renderer makes them from the model.
-   - 4c: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
+   - 4c-1 (built): focus is the model's -- one item in focus, an actor's pane or an app's panel selected (`focus`), and
+     the actor last in focus (`lastActor`) it goes back to when the app is unselected -- in place of the page's
+     `panes.focus` and `appSel`; `focusedPane()` and `appSelected()` read it, and a pane given another actor in place
+     (`retarget`) takes focus with it. This page's alone: not kept.
+   - 4c-2: each shown task's apps the model's, one reconcile opening and closing app panels to match.
+   - 4c-3: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
      and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
    (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,
    `ag-dashboard-layout`. The model then holds each task's open items itself (what `keysNow` reads off the panels now).

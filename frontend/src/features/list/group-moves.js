@@ -11,7 +11,7 @@ import {
 import { GF, GFS, nameGroup } from "./gatherer-folders.js";
 import { railActor, railAppsIn, railRowsOf, railShow, select } from "./modes.js";
 import {
-  actorPanes, closeAppPane, closePop, noHarness, openPop, railNewBox, rowPop, savePanes, startCwd, startable,
+  actorPanes, closeAppPane, closePop, noHarness, openPop, railNewBox, retarget, rowPop, savePanes, startCwd, startable,
   swapAppPane,
 } from "../layout/panes.js";
 import { plural } from "../transcript/transcript.js";
@@ -307,7 +307,7 @@ function moveNames(from, channels) {
 // (`joined`, {its id: that one's}) shows that one
 async function followMoved(from, to, moved, apps = [], joined = {}) {
   const gone = new Set(moved);
-  for (const p of actorPanes()) if (p.g === from && gone.has(p.c)) { p.g = to; p.call("select", to, p.c, p.view); }
+  for (const p of actorPanes()) if (p.g === from && gone.has(p.c)) { retarget(p, to, p.c); p.call("select", to, p.c, p.view); }
   savePanes(); connect();
   if (apps.length || Object.keys(joined).length) {
     await Promise.all([readApps(from, true), readApps(to, true)]);

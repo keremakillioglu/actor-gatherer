@@ -11,6 +11,7 @@ import { chatView } from "../chat/views.js";
 import { shellCard } from "../terminal/shell.js";
 import { interrupt } from "../chat/files-view.js";
 import { chatMin, fitMini, shellMini, topMount } from "../layout/top.js";
+import { focusedPane } from "../layout/panes.js";
 
 function toggleType(type) {
   if (shownTypes.has(type)) shownTypes.delete(type); else shownTypes.add(type);
@@ -177,7 +178,7 @@ export function start() {
     if ((n && n.closest && n.closest("input, textarea, select, [contenteditable], .xterm, .top-row"))
       || document.querySelector("[role=menu]:not([hidden]), [role=dialog]:not([hidden]), dialog[open]")
       || !document.getElementById("about").hidden || window.agNext.settings.fileOpen()) return;
-    if (!PANE && panes.focus !== panes.here ? panes.focus.call("escape") : escapeShown()) ev.preventDefault();
+    if (!PANE && focusedPane() !== panes.here ? focusedPane().call("escape") : escapeShown()) ev.preventDefault();
   }, true);
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && state.details && !ev.defaultPrevented && !(ev.target && ev.target.id === "composer-text")

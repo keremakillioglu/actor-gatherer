@@ -43,10 +43,10 @@ const actorPanes = () => panes.others;           // every pane is an actor's: ap
 // The actors open in this page's panes, this page's own first; the one in the pane in focus.
 function openActors() { return PANE ? [] : [...(state.selected ? [state.selected] : []), ...actorPanes().map((p) => [p.g, p.c])]; }
 function focusedActor() {
-  const p = panes.focus;
+  const p = focusedPane();
   return p === panes.here || !panes.others.includes(p) ? state.selected : [p.g, p.c];
 }
-function paneSig() { return [state.selected, panes.others.map((p) => [p.g, p.c]), allPanes().indexOf(panes.focus), appSel]; }
+function paneSig() { return [state.selected, panes.others.map((p) => [p.g, p.c]), allPanes().indexOf(focusedPane()), appSelected()]; }
 function paneOf(win) { return panes.others.find((p) => p.frame.contentWindow === win) || null; }
 // A row of the list clicked: shown in the pane in focus, or (Ctrl/⌘) beside it -- where its task is open, first (viaTabs).
 // An actor that is a task of its own (features/layout/panes.js's TASKS), with ⌘/Ctrl: it and its apps beside (openTaskBeside); one in a
@@ -307,10 +307,10 @@ async function show(g, c, view = null, wait = true, shut = false) {
 async function showIn(g, c, view = null, wait = true) {
   const there = actorPanes().find((p) => isAt([p.g, p.c], g, c)) || (isAt(state.selected, g, c) ? panes.here : null);
   if (there) showActorsApp(g, c);                    // shown already: its app's panel, closed since, opened again
-  const p = there || panes.focus;
+  const p = there || focusedPane();
   if (p !== panes.here) {
     focusPane(p);
-    if (!there) { Object.assign(p, { g, c, view: view || p.view }); savePanes(); connect(); renderAgents(); p.call("select", g, c, view); }
+    if (!there) { retarget(p, g, c); p.view = view || p.view; savePanes(); connect(); renderAgents(); p.call("select", g, c, view); }
     else if (view) p.call("view", view);
     return null;
   }
@@ -334,7 +334,7 @@ function openBeside(g, c, view = null) {
   if (allPanes().length >= MAX_PANES) return paneNote(`At most ${MAX_PANES} actors fit side by side. Close one to open another.`);
   const bk = taskKey(g, c);
   if (bk) shadow.tell("beside", model.open, bk, true);
-  const from = panes.focus, at = from === panes.here ? 0 : panes.others.indexOf(from) + 1;
+  const from = focusedPane(), at = from === panes.here ? 0 : panes.others.indexOf(from) + 1;
   const p = addPane(g, c, view || (from === panes.here ? chatView().id : from.view), at);
   focusPane(p);
   layout(); savePanes(); connect();
@@ -366,7 +366,7 @@ function closePane(p) {
   panes.others.splice(i, 1);
   p.node.remove();                                   // its page goes, and its terminal's stream; the session stays
   topRow(p, null);
-  if (panes.focus === p) focusPane(panes.others[i - 1] || panes.here);
+  if (focusedPane() === p) focusPane(panes.others[i - 1] || panes.here);
   layout(); savePanes(); connect(); renderAgents();
 }
 // This page's own pane closed: the next pane's actor (`next`) -- and view -- moves into it, its frame gone.
@@ -403,10 +403,10 @@ async function closeHerePane() {
 // An actor's pane focused: the app selected, if one was, no longer (selectAppPane)
 function focusPane(p) {
   if (!p) return;
-  const had = appSel;
-  if (had) { appSel = null; markSelected(); }
-  if (panes.focus === p) { if (had && state.home) renderAgents(); return; }
-  panes.focus = p;
+  const had = appSelected(), same = focusedPane() === p;
+  shadow.update(model.focusOn, paneKey(p), true);    // (the app selected, if one was, no longer)
+  if (had) markSelected();
+  if (same) { if (had && state.home) renderAgents(); return; }
   for (const q of allPanes()) q.node.classList.toggle("focused", q === p);
   for (const q of panes.others) q.call("focused", q === p);
   savePanes();
@@ -417,19 +417,41 @@ function focusPane(p) {
 // marked as a focused pane is (.focused), the actors' panes not while it is; its line in the list filled. Selected by a
 // click on it in the list or a task's card (features/list/list.js's selectApp), a press on its panel's head, or the focus going
 // into its frame; an actor's pane focused (focusPane: a press in it, an actor shown) ends it.
-let appSel = null;
-const appSelected = () => (appSel && panes.apps.some((p) => !p.held && p.instance.id === appSel) ? appSel : null);
+// FOCUS is the layout model's (model.ts's focus and lastActor: one item, an actor's or an app's, and the actor last in
+// focus): the pane focused is the one showing that actor (none: this page's own), the app selected the one focus names.
+const paneKey = (p) => (p === panes.here ? (state.selected ? key(state.selected[0], state.selected[1]) : null) : key(p.g, p.c));
+function focusedPane() {
+  const k = shadow.layout.lastActor;
+  return (k && allPanes().find((p) => paneKey(p) === k)) || panes.here;
+}
+function appSelected() {
+  const f = shadow.layout.focus, id = f ? parseKey(f).id : null;
+  if (!id || !isAppItem(id)) return null;
+  const inst = id.slice(APP_ITEM.length);
+  return panes.apps.some((p) => !p.held && p.instance.id === inst) ? inst : null;
+}
+// pane `p` showing actor `c` of `g` in place of its own: focus goes with it, if it had it
+function retarget(p, g, c) {
+  const had = focusedPane() === p;
+  p.g = g; p.c = c;
+  if (had) shadow.update(model.focusOn, key(g, c), true);
+}
 function markSelected() {
   const sel = appSelected();
   for (const q of panes.apps) q.node.classList.toggle("focused", !!sel && q.instance.id === sel);
-  for (const q of allPanes()) q.node.classList.toggle("focused", !sel && q === panes.focus);
-  for (const q of panes.others) q.call("focused", !sel && q === panes.focus);
+  for (const q of allPanes()) q.node.classList.toggle("focused", !sel && q === focusedPane());
+  for (const q of panes.others) q.call("focused", !sel && q === focusedPane());
 }
 // an app's panel gone (closed, held out of sight, its app closed): no longer selected, the focused actor's pane marked again
-function unselectApp(id) { if (appSel && appSel === id) { appSel = null; markSelected(); } }
+function unselectApp(id) {
+  const f = shadow.layout.focus;
+  if (!f || parseKey(f).id !== appItem(id)) return;
+  shadow.update(model.unfocus, f);
+  markSelected();
+}
 function selectAppPane(p) {
   if (!p || p.held) return;
-  appSel = p.instance.id;
+  shadow.update(model.focusOn, key(p.instance.gatherer, appItem(p.instance.id)), false);
   markSelected();
   if (state.home) renderAgents();
 }
@@ -439,7 +461,7 @@ function selectedTask() {
   if (p) return appPaneTask(p);
   if (appsOnly) return appsOnly;
   const f = focusedActor();
-  return f && !(panes.focus === panes.here && isAway()) ? taskKey(f[0], f[1]) : null;   // (this page's own out of sight: none)
+  return f && !(focusedPane() === panes.here && isAway()) ? taskKey(f[0], f[1]) : null;   // (this page's own out of sight: none)
 }
 // A press this page never hears -- in a pane's frame (agPanes.focus), an app's panel (its `pressed`), a native page of
 // the ag app (agApp.onPressed), the focus gone into a frame: what floats over the page and closes on a press elsewhere
@@ -456,7 +478,7 @@ function pressedAway() {
 function layout() {
   const split = panes.others.length > 0;
   document.getElementById("panes").classList.toggle("split", split);
-  for (const p of allPanes()) { p.node.style.flexGrow = split ? String(p.size) : ""; p.node.classList.toggle("focused", p === panes.focus && !appSelected()); }
+  for (const p of allPanes()) { p.node.style.flexGrow = split ? String(p.size) : ""; p.node.classList.toggle("focused", p === focusedPane() && !appSelected()); }
   placeWork();
   drawn.who = null; drawWho();
 }
@@ -951,7 +973,7 @@ function paneNote(text) {
 function savePanes() {
   if (PANE || SNAPSHOT) return;
   shadow.update(model.keptPanes, !panes.others.length ? null : { here: state.selected, size: panes.here.size,   // (the layout
-    focus: panes.others.indexOf(panes.focus), others: panes.others.map((p) => ({ g: p.g, c: p.c, view: p.view, size: p.size })) });  // model's)
+    focus: panes.others.indexOf(focusedPane()), others: panes.others.map((p) => ({ g: p.g, c: p.c, view: p.view, size: p.size })) });  // model's)
   shadow.persist();
 }
 // The panes kept, opened again once the home is known: those whose actors are still in it.
@@ -1546,7 +1568,7 @@ async function openCoordinator(g, node = g ? `group:${g.name}` : "all") {
     if (g) state.adding = { gatherer: g.name, cwd: startCwd(g), harness: null, error: e.message };
     else alert(e.message);
   } finally { state.starting = null; renderAgents(); }
-  const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
+  const box = focusedPane() !== panes.here ? null : document.getElementById("composer-text");
   if (box) box.focus();
 }
 // A node's coordinator agent, its face on the node's row (a group's just after its name): a click shows it (started if
@@ -1878,7 +1900,7 @@ async function startSession(gatherer, cwd, harness, join = null, alone = false) 
     if (join && state.selected && !appsOnly) await openBeside(s.gatherer, s.session_id, "files");
     else { await viaTabs(taskKey(s.gatherer, s.session_id), {}); await show(s.gatherer, s.session_id, "files"); }   // a tab of its own
   } finally { state.starting = null; renderAgents(); }
-  const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
+  const box = focusedPane() !== panes.here ? null : document.getElementById("composer-text");
   if (box) box.focus();
   return s;
 }
@@ -2110,7 +2132,7 @@ async function startBranch(gatherer, project, harness, approve) {
     await viaTabs(taskKey(s.gatherer, s.session_id), {});   // a tab of its own
     await show(s.gatherer, s.session_id, "files");
   } finally { state.starting = null; renderAgents(); }
-  const box = panes.focus !== panes.here ? null : document.getElementById("composer-text");
+  const box = focusedPane() !== panes.here ? null : document.getElementById("composer-text");
   if (box) box.focus();
 }
 function newForm() {
@@ -2153,11 +2175,11 @@ function newForm() {
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
   panes.here = { node: document.getElementById("pane-here"), size: 1 };
-  panes.focus = panes.here;
+  shadow.update(model.focusOn, null, true);          // (focus: this page's own pane)
   if (!PANE && !SNAPSHOT) window.addEventListener("blur", () => setTimeout(() => {   // the focus gone into an app's frame
     if (document.activeElement && document.activeElement.localName === "iframe") pressedAway();   // (any frame's: one of a page no panel runs)
     const p = panes.apps.find((q) => q.frame === document.activeElement);
-    if (p && appSel !== p.instance.id) selectAppPane(p);
+    if (p && appSelected() !== p.instance.id) selectAppPane(p);
   }, 0));
   if (!PANE && !SNAPSHOT) { try { if (window.agApp && window.agApp.onPressed) window.agApp.onPressed(pressedAway); } catch (e) { /* not the app */ } }
   // ⌃Tab (⌃⇧Tab: back) in the ag app -- a browser keeps those keys for its own tabs: the next screen tab shown
@@ -2206,7 +2228,7 @@ export function start() {
       const p = paneOf(win);
       if (!p) return;
       p.ready = true;
-      p.call("focused", panes.focus === p);
+      p.call("focused", focusedPane() === p);
       if (panes.top) p.call("top", panes.top);
       if (!isAt(sel, p.g, p.c)) return p.call("select", p.g, p.c, p.view);   // shown another actor while it loaded
       if (panes.home) p.call("take", "home", panes.home);
@@ -2216,7 +2238,7 @@ export function start() {
     shows(win, sel) {                                  // its actor, chosen or renamed (a codex thread, from before)
       const p = paneOf(win);
       if (!p || !p.ready || !sel) return;              // not up yet: its pane's actor is the one it is given (ready)
-      if (!isAt(sel, p.g, p.c)) { [p.g, p.c] = sel; savePanes(); connect(); renderAgents(); return; }
+      if (!isAt(sel, p.g, p.c)) { retarget(p, sel[0], sel[1]); savePanes(); connect(); renderAgents(); return; }
       const a = panes.actors.get(key(p.g, p.c));
       if (a) p.call("take", "actor", a);
     },
@@ -2238,10 +2260,10 @@ export function start() {
 export {
   CREW_GROUP, actorPanes, addAppPane, appMarkImg, appPaneTask, appPanelMenu, appSelected, appsAtWork, appsOnly,
   appsOnlyLeft, appsSelected, branchChip, byLabel, closeAppPane, closeHere, closeHerePane, closePane, closePop,
-  closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, folderPicks, holdAppPane, isAt,
+  closedInTabs, crewButton, cwdOf, drawWho, enterAppTask, focusPane, focusedActor, focusedPane, folderPicks, holdAppPane, isAt,
   isAway, linkClicked, moveEnd, newForm, noHarness, openActors, openApp, openAppTab, openPop, openTaskBeside, paneNote,
   paneOf, paneReady, paneSig, paneUrl, panesTake, pick, pickBeside, placeIfShown, placeWork, popButton, popMenu,
-  railMore, railNew, railNewBox, rekeyTask, rememberTask, restoreAppPanes, restorePanes, rowMore, rowPop, saveAppPanes,
+  railMore, railNew, railNewBox, rekeyTask, retarget, rememberTask, restoreAppPanes, restorePanes, rowMore, rowPop, saveAppPanes,
   savePanes, selectAppPane, selectedTask, setAutoShown, show, showActorsApp, shownPanels, startButtons, startCwd,
   startPlacing, startSession, startShell, startTabs, startWithApp, startable, swapAppPane, taskAppsOpening, taskKey,
   taskLayout, tasksLaidOut, topLayout, unselectApp, viaTabs, watchTop, workPlacer,

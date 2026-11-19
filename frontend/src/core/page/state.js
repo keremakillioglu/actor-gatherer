@@ -28,11 +28,11 @@ let state = { home: null, selected: null, agent: null, readId: null, context: nu
                         // task or an app: c its item, kind, auto (features/list/list.js's startItemRename); the gatherer: c null
 if (PANE) state.selected = [PANE_URL.get("gatherer") || "", PANE_URL.get("channel") || ""];
 // The actors open side by side (panes, below): this page's own view (`here`, its actor state.selected), the
-// first, and the others (`others`), each the page in a frame; `focus` the one a click in the list shows its
-// actor in. `home` and `actors`: the stream's last home and each other pane's last agent, as sent (JSON), for
+// first, and the others (`others`), each the page in a frame (the one in focus: the layout model's, panes.js's
+// focusedPane). `home` and `actors`: the stream's last home and each other pane's last agent, as sent (JSON), for
 // a frame that is not ready when they come. `checked`: the panes kept in this browser opened again.
 const MAX_PANES = 4;
-const panes = { here: null, others: [], focus: null, home: null, actors: new Map(), checked: false, top: null };
+const panes = { here: null, others: [], home: null, actors: new Map(), checked: false, top: null };
 
 export {
   AGO_MS, GROUP_ORDER, MAX_PANES, NOT_COUNTED, PANE, PANE_URL, PREAMBLE, SNAPSHOT, label, panes, state,

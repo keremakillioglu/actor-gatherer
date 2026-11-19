@@ -61,7 +61,10 @@ class Shadow {
   /** The model kept in this browser (M.KEY), if it changed since -- and the keys of before it was made from, dropped. */
   persist(): void {
     this.start();
-    const now = JSON.stringify(this.layout);
+    const kept = { ...this.layout }; // (focus: this page's alone, not kept)
+    delete kept.focus;
+    delete kept.lastActor;
+    const now = JSON.stringify(kept);
     if (now === this.persisted) return;
     this.persisted = now;
     try {
