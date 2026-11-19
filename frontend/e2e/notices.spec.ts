@@ -1,4 +1,4 @@
-// Notifications (07-notices.js; app_kit's notices.py): an app's to the user -- a status of its own in the list (its
+// Notifications (features/notify/notify.js; app_kit's notices.py): an app's to the user -- a status of its own in the list (its
 // row's dot, a task's, the counts), listed in its card, popped up in the page's corner -- seen once its panel is shown,
 // dismissed from its card, cleared by the app; and an actor that comes to wait for the reader, or stops on an error,
 // popped up the same way, unless it is in front of them or they turned actors' pop-ups off. The app is Notepad

@@ -1,4 +1,4 @@
-// THE COORDINATOR AGENT IN THE SCREEN TABS (features/layout/tabs.ts): an actor on its own, as any other (07-panes.js's
+// THE COORDINATOR AGENT IN THE SCREEN TABS (features/layout/tabs.ts): an actor on its own, as any other (features/layout/panes.js's
 // taskKey). Its button on its group's row, or its row, opens it where it is open, else in a tab of its own, named for
 // what it is; a tab showing it is kept when left, a new tab opened or another shown, and shows it again when shown.
 import type { Page } from "@playwright/test";

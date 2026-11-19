@@ -1,5 +1,5 @@
 """TASKS: what the reader works with at once -- actors and apps alike, its ITEMS -- one row in the list, opened as one
-layout (the page's TASKS, 05-agent-list.js and 07-panes.js). An item is an actor, by its channel, or an app's instance,
+layout (the page's TASKS, features/list/list.js and features/layout/panes.js). An item is an actor, by its channel, or an app's instance,
 by "app:<its id>" (`app_item`); each is in one task at most, and one in none is a task of its own, needing no row here.
 A task is a LEAF: it holds items, not folders; where it is in the list's tree is where its actors are filed
 (folders.py), each actor put in one joining it filed where the task is. Within a task every agent is attached to every

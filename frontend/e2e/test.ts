@@ -1,6 +1,6 @@
 // Playwright's `test`, with one check more on every test: the page threw no error while it ran (an error in the page's
 // script would otherwise pass unseen, its view drawn as far as it got). And after each, every agent it attached to an
-// app's instance detached again: an actor opened opens the apps it is attached to with it (its task's, 07-panes.js's
+// app's instance detached again: an actor opened opens the apps it is attached to with it (its task's, features/layout/panes.js's
 // openTaskApps), so one a test left attached would open above a later test's view. The instances stay. Then what a
 // helper of the test's asked to have undone (`atEnd`). All of it whether the test passed or not: one that failed half
 // way must not leave the home changed under the tests after it.
@@ -46,7 +46,7 @@ async function clearApps(page: Page) {
 }
 export { expect };
 
-/** An app's panel's menu (07-panes.js's appPanelMenu: where it can be moved, and "Close panel"), opened as the reader
+/** An app's panel's menu (features/layout/panes.js's appPanelMenu: where it can be moved, and "Close panel"), opened as the reader
  * opens it -- an app's panel has no head: its row in the list right-clicked (an app in a task: its row in the task's
  * card, the task's row hovered). */
 export async function panelMenu(page: Page, pane: Locator): Promise<Locator> {

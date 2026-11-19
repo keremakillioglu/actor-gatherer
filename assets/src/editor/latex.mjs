@@ -5,7 +5,7 @@
 import { StreamLanguage, foldService } from "@codemirror/language";
 import { Tag, tags as t } from "@lezer/highlight";
 
-// The tags this file's tokens carry, and the page class each is shown with (frontend/src/legacy/css/, `.hl-tex-*` and `.hl-*`).
+// The tags this file's tokens carry, and the page class each is shown with (frontend/src/features/chat/files-view.css, `.hl-tex-*` and `.hl-*`).
 const TAGS = {
   texCommand: [Tag.define(t.macroName), "hl-fn"],              // \foo
   texStructure: [Tag.define(t.keyword), "hl-kw"],              // \begin, \section, \usepackage, \item, \newcommand

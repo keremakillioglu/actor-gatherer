@@ -209,7 +209,7 @@ test("an app opened shows the actor it is attached to below it", async ({ page }
   await expect(there.frameLocator("iframe").locator("#agents")).toHaveText(CODEX_CHANNEL);
   await closePanel(page, there);
   // opened again: its agent shown below, in the pane in focus -- another task than Claude's, so Claude's Notes, whose
-  // panel asked, goes with that task (07-panes.js's enterTask), its frame gone before the answer
+  // panel asked, goes with that task (features/layout/panes.js's enterTask), its frame gone before the answer
   await raise().catch(() => null);
   await expect(there).toHaveCount(1);
   await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CODEX })).toHaveCount(1);
