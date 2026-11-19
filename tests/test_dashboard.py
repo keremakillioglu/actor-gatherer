@@ -21,6 +21,7 @@ from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
 from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
 from ag_dashboard import data, server  # noqa: E402
+from ag_dashboard import store as dstore  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 import page_source  # noqa: E402
 from channels import ch  # noqa: E402
@@ -140,14 +141,14 @@ class DataTest(HomeBase):
         """Each agent's events found by ag's index on the channel, not by a scan of them all: by the bare column,
         a home of 64 agents in a 425 MB file took 2 s, every update."""
         def scans():
-            run, connect = [], data._connect
+            run, connect = [], dstore.gatherer
 
             def traced(gatherer):
                 conn = connect(gatherer)
                 if conn is not None:
                     conn.set_trace_callback(run.append)
                 return conn
-            with unittest.mock.patch.object(data, "_connect", traced):
+            with unittest.mock.patch.object(dstore, "gatherer", traced):
                 data.home()
             conn = sqlite3.connect(paths.db_path("g"))
             try:

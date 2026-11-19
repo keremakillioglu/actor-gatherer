@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ag.ag_harness.store import schema  # noqa: E402
-from ag_dashboard import data, live  # noqa: E402
+from ag_dashboard import data, live, store  # noqa: E402
 from followed import Followed  # noqa: E402
 from test_dashboard_answers import GathererBase, event  # noqa: E402
 
@@ -87,7 +87,7 @@ class ErrorsBase(GathererBase):
         return next(a for g in data.home([])["gatherers"] for a in g["agents"] if a["channel"] == SESSION)
 
     def failing(self):
-        conn = data._connect("g")
+        conn = store.gatherer("g")
         try:
             return data.failing(conn, SESSION)
         finally:
