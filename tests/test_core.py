@@ -23,7 +23,8 @@ from ag.ag_policies.tools import render  # noqa: E402
 from ag.ag_policies.tools.history import Entry, Task, Turn  # noqa: E402
 from ag.ag_policies.tools import ranking as rank  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
-from ag.ag_policies.proactive_context_manager import layout, tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.core import sections  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_tools import worker  # noqa: E402
 from ag.ag_interface import Jobs  # noqa: E402
 
@@ -128,7 +129,7 @@ class Base(unittest.TestCase):
 
     def run_build(self, gatherer, channel_id):
         """The analysis, as the worker would run it for a claimed build."""
-        return self.policy.build(gatherer, ch(channel_id), tables.new_build(self.m._conn(gatherer), channel_id))
+        return self.policy.build(gatherer, ch(channel_id), tables.create_build(self.m._conn(gatherer), channel_id))
 
     def put(self, items, channel="c1"):
         wrapped = codex.CodexItems(self.m)
@@ -193,8 +194,8 @@ class StrictMaxTest(Base):
     def test_a_read_over_the_limit_mid_turn_starts_a_build_and_waits_for_it(self):
         spawned, waited = [], []
         self.policy.jobs = Recording(lambda s, c, job, job_id: spawned.append(job))
-        wait = self.policy.wait
-        self.policy.wait = lambda conn, ch_, row, started, seconds, *more: waited.append(seconds) or wait(
+        wait = self.policy.wait_for_build
+        self.policy.wait_for_build = lambda conn, ch_, row, started, seconds, *more: waited.append(seconds) or wait(
             conn, ch_, row, started, seconds, *more)
         self.put(PREAMBLE + long_turn(40))                   # ends on a tool output, not a user message
         self.read()
@@ -209,7 +210,7 @@ class StrictMaxTest(Base):
         self.assertLessEqual(self.policy.last_tokens, self.cfg.max_context_tokens)
         conn = self.m._conn("s")
         last = store.rows(conn, match=ch("c1"))[-1].row_id
-        self.assertEqual(tables.latest_build(conn, "c1")["open_from_row"], last + 1)   # after its last event
+        self.assertEqual(tables.get_own_latest_build(conn, "c1")["open_from_row"], last + 1)   # after its last event
         self.assertFalse(any(i.get("type") in ("function_call", "function_call_output") for i in context))
         names = {n for n, *_ in store.made_items(conn, [r.made_id for r in store.last_read(conn, ch("c1"))["refs"]
                                                         if r.made_id is not None]).values()}
@@ -228,7 +229,7 @@ class StrictMaxTest(Base):
         self.put([user("next request", 99)])
         context = self.read()
         conn = self.m._conn("s")
-        build = tables.latest_build(conn, "c1")
+        build = tables.get_own_latest_build(conn, "c1")
         first = store.rows_by_id(conn, [build["open_from_row"]])[build["open_from_row"]]
         self.assertEqual(first.type.name, "user_message")    # the running task's start: verbatim as before
         self.assertIn("next request", self.texts(context))
@@ -244,19 +245,19 @@ class StrictMaxTest(Base):
         self.read()
         conn = self.m._conn("s")
         last = store.rows(conn, match=ch("c1"))[-1].row_id
-        self.assertEqual(tables.latest_build(conn, "c1")["open_from_row"], last + 1)   # cut, as the provider counts
+        self.assertEqual(tables.get_own_latest_build(conn, "c1")["open_from_row"], last + 1)   # cut, as the provider counts
         after = store.last_read(conn, ch("c1"))
         self.assertLessEqual(int(after["sent_tokens"] * 1.45), self.cfg.max_context_tokens)
 
     def test_the_provider_s_drift_is_its_count_over_ag_s_within_bounds(self):
-        drift = ProactiveContextManager.drift_of
+        drift = ProactiveContextManager.get_provider_drift
         self.assertEqual(drift(None), 1.0)
         self.assertEqual(drift({"real_tokens": None, "sent_tokens": 100}), 1.0)      # not counted yet
         self.assertEqual(drift({"real_tokens": 90, "sent_tokens": 100}), 1.0)        # the provider counted less
         self.assertAlmostEqual(drift({"real_tokens": 120, "sent_tokens": 100}), 1.2)
         self.assertEqual(drift({"real_tokens": 900, "sent_tokens": 100}), 1.5)       # not a tokenizer's: capped
         self.policy.drift = 1.2
-        self.assertEqual(self.policy.by_provider(1000), 1200)
+        self.assertEqual(self.policy.get_provider_count(1000), 1200)
 
     def test_pinned_rows_keep_the_newest_within_their_budget(self):
         items = PREAMBLE + [user("q", 1)]
@@ -266,7 +267,7 @@ class StrictMaxTest(Base):
         self.run_build("s", "c1")
         self.read()
         conn = self.m._conn("s")
-        cut = tables.latest_build(conn, "c1")["open_from_row"]
+        cut = tables.get_own_latest_build(conn, "c1")["open_from_row"]
         refs = [r.row_id for r in store.last_read(conn, ch("c1"))["refs"] if r.row_id is not None]
         rows = store.rows_by_id(conn, refs)
         pinned = [rows[r] for r in refs if r < cut and rows[r].type.name == "context" and r > 2]
@@ -294,14 +295,14 @@ class StrictMaxTest(Base):
         _, turns = history.split([r for r in rows], types, self.policy.groups, tok)
         tasks = [Task(f"t{i}", "d", turns[i].first_row, turns[i].last_row, i + 1, i + 1, channel_id="c1")
                  for i in range(len(turns))]
-        sections = layout.build_sections(turns, tasks, tasks[:-2], layout.earlier_messages(tasks[:-2], turns, cfg, tok),
-                                         [], {"c1": turns}, "c1", cfg, tok, None, rows[-1].row_id, 0,
-                                         cut_row=turns[-1].entries[2].row_id)
+        built = sections.build_sections(turns, tasks, tasks[:-2], sections.earlier_messages(tasks[:-2], turns, cfg, tok),
+                                        [], {"c1": turns}, "c1", cfg, tok, None, rows[-1].row_id, 0,
+                                        cut_row=turns[-1].entries[2].row_id)
         budget = {"requests": cfg.all_task_tokens + cfg.parallel_index_tokens, "earlier": cfg.keep_temporal_relevant_tokens,
                   "related": cfg.keep_task_relevant_tokens, "previous": cfg.keep_previous_task_tokens,
                   "so_far": cfg.keep_so_far_tokens}
-        fixed = tok.count(layout.overview(cfg, None) + "\n\n")
-        for name, text in sections.sections:
+        fixed = tok.count(sections.overview(cfg, None) + "\n\n")
+        for name, text in built.sections:
             self.assertLessEqual(tok.count(text) - (fixed if name == "requests" else 0), budget[name], name)
 
 
@@ -321,10 +322,10 @@ class LimitBuildTest(Base):
         self.m.init("s")
 
     def build(self, reason):
-        return self.policy.build("s", ch("c1"), tables.new_build(self.m._conn("s"), "c1", reason))
+        return self.policy.build("s", ch("c1"), tables.create_build(self.m._conn("s"), "c1", reason))
 
     def tasks(self):
-        return tables.load_tasks(self.m._conn("s"), "c1")
+        return tables.get_own_tasks(self.m._conn("s"), "c1")
 
     def first_row_of(self, text):
         return self.m._conn("s").execute("SELECT min(row_id) FROM events WHERE text = ?", (text,)).fetchone()[0]
@@ -380,8 +381,8 @@ class LimitBuildTest(Base):
                          "open_from_row INTEGER, ranking_json TEXT, parallel_mark INTEGER, error TEXT)")
             conn.execute("INSERT INTO _builds (channel_key, status, started_at) VALUES ('c1', 'ready', 1)")
         tables.create(conn)
-        self.assertIsNone(tables.latest_build(conn, "c1")["reason"])                   # an old build: not a limit one
-        self.assertEqual(tables.get_build(conn, tables.new_build(conn, "c1", tables.LIMIT))["reason"], "limit")
+        self.assertIsNone(tables.get_own_latest_build(conn, "c1")["reason"])                   # an old build: not a limit one
+        self.assertEqual(tables.get_build(conn, tables.create_build(conn, "c1", tables.LIMIT))["reason"], "limit")
 
 
 class ParsingTest(unittest.TestCase):
@@ -516,14 +517,14 @@ class BulkLoadTest(Base):
         self.assertIsNotNone(sections)
         conn = self.m._conn("s")
         self.assertEqual(conn.execute("SELECT count(*) FROM events").fetchone()[0], len(items))
-        self.assertEqual(tables.latest_build(conn, "c1")["status"], "ready")
+        self.assertEqual(tables.get_own_latest_build(conn, "c1")["status"], "ready")
         self.assertEqual(self.llm.calls.count("segment"), 1)          # the whole history in one window
-        self.assertEqual(len(tables.load_tasks(conn, "c1")), 6)
+        self.assertEqual(len(tables.get_own_tasks(conn, "c1")), 6)
 
     def test_the_last_task_is_not_summarized_the_rest_are(self):
         self.llm.retention = {"terminology": [{"applies_to": "x", "spec": "y"}]}
         self.m.bulk_load("s", self.records(PREAMBLE + conversation(12)), properties=ch("c1"))
-        tasks = tables.load_tasks(self.m._conn("s"), "c1")
+        tasks = tables.get_own_tasks(self.m._conn("s"), "c1")
         self.assertEqual(self.llm.calls.count("summarize"), len(tasks) - 1)
         self.assertTrue(all(t.retention["terminology"] for t in tasks[:-1]))
         self.assertEqual(tasks[-1].retention, {})
@@ -567,7 +568,7 @@ class BuildTest(Base):
 
     def test_tasks_cover_every_turn_in_order(self):
         self.build(12)
-        tasks = tables.load_tasks(self.m._conn("s"), "c1")
+        tasks = tables.get_own_tasks(self.m._conn("s"), "c1")
         self.assertEqual(len(tasks), 6)
         self.assertEqual([t.name for t in tasks][:2], ["task 1-2", "task 3-4"])
         firsts = [t.first_row for t in tasks]
@@ -626,7 +627,7 @@ class BuildTest(Base):
         self.cfg.task_chunk_tokens = 20
         self.build(8)
         self.assertIn("subdivide", self.llm.calls)
-        self.assertGreater(len(tables.load_tasks(self.m._conn("s"), "c1")), 1)
+        self.assertGreater(len(tables.get_own_tasks(self.m._conn("s"), "c1")), 1)
 
     def test_only_finished_tasks_are_summarized(self):
         self.build(8)                                        # 4 tasks: 3 finished + the open one
@@ -638,21 +639,21 @@ class BuildTest(Base):
 
     def test_rebuild_keeps_finished_tasks_and_resegments_the_open_one(self):
         self.build(8)
-        before = [t.name for t in tables.load_tasks(self.m._conn("s"), "c1")]
+        before = [t.name for t in tables.get_own_tasks(self.m._conn("s"), "c1")]
         self.put(conversation(4, start=9))
         self.llm.calls.clear()
         self.run_build("s", channel_id="c1")
-        after = [t.name for t in tables.load_tasks(self.m._conn("s"), "c1")]
+        after = [t.name for t in tables.get_own_tasks(self.m._conn("s"), "c1")]
         self.assertEqual(after[:len(before) - 1], before[:-1])
         self.assertEqual(len(after), 6)
 
     def test_a_build_no_smaller_than_the_history_is_refused_at_adoption(self):
         self.cfg.require_smaller = True
         self.assertIsNotNone(self.build(4))                # the analysis itself is fine
-        self.assertEqual(tables.latest_build(self.m._conn("s"), "c1")["status"], "ready")
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("s"), "c1")["status"], "ready")
         self.put([user("next", 99)])
         self.assertFalse(any(t.startswith("# ") for t in self.texts(self.read())))   # tiny turns: the overview alone is bigger
-        build = tables.latest_build(self.m._conn("s"), "c1")
+        build = tables.get_own_latest_build(self.m._conn("s"), "c1")
         self.assertEqual(build["status"], "nothing")       # the policy settled it when it laid it out
         self.assertIn("not smaller", build["error"])
         self.assertIsNotNone(build["through_row"])         # what the analysis recorded stays
@@ -669,14 +670,14 @@ class BuildTest(Base):
     def test_too_little_history_builds_nothing(self):
         self.put(PREAMBLE + conversation(1))
         self.assertIsNone(self.run_build("s", channel_id="c1"))
-        self.assertEqual(tables.latest_build(self.m._conn("s"), "c1")["status"], "nothing")
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("s"), "c1")["status"], "nothing")
 
     def test_model_unavailable_fails_instead_of_storing_placeholders(self):
         self.llm.fail = True
         self.assertIsNone(self.build(8))
-        build = tables.latest_build(self.m._conn("s"), "c1")
+        build = tables.get_own_latest_build(self.m._conn("s"), "c1")
         self.assertEqual(build["status"], "failed")
-        self.assertEqual(tables.load_tasks(self.m._conn("s"), "c1"), [])
+        self.assertEqual(tables.get_own_tasks(self.m._conn("s"), "c1"), [])
         self.put([user("next", 99)])
         self.assertEqual(len(self.read()), len(PREAMBLE) + 8 * 4 + 1)
 
@@ -707,7 +708,7 @@ class OverlapTest(Base):
         self.assertLess(time.monotonic() - t0, 4)
         self.assertEqual(self.llm.calls.count("summarize"), 8)
         self.assertTrue(all(rank_seen_by_summary))                 # every summary saw rank arrive
-        tasks = tables.load_tasks(self.m._conn("s"), "c1")
+        tasks = tables.get_own_tasks(self.m._conn("s"), "c1")
         self.assertTrue(all(t.retention for t in tasks[:-1]))      # summaries stored all the same
         self.assertEqual(tasks[-1].retention, {})
 
@@ -734,9 +735,9 @@ class PoolTest(Base):
         self.assertTrue(any(t.startswith("# Previous task") for t in texts))
         self.assertEqual(texts[-1], "fresh question")
         conn = self.m._conn("s")
-        pool_build = tables.latest_build(conn, None)
+        pool_build = tables.get_own_latest_build(conn, None)
         self.assertEqual(int(store.last_read(conn, ch("c1"))["basis"]), pool_build["build_id"])
-        self.assertIsNone(tables.latest_build(conn, "c1"))
+        self.assertIsNone(tables.get_own_latest_build(conn, "c1"))
 
     def test_without_a_build_the_pool_is_the_channels_history_behind_its_preamble(self):
         self.put(PREAMBLE + conversation(2), channel=None)
@@ -750,21 +751,21 @@ class PoolTest(Base):
     def test_the_channels_first_build_continues_from_the_pools_tasks(self):
         wrapped = codex.CodexItems(self.m)
         wrapped.bulk_load("s", PREAMBLE + conversation(8), channel_id=None)
-        pool_tasks = len(tables.load_tasks(self.m._conn("s"), None))
+        pool_tasks = len(tables.get_own_tasks(self.m._conn("s"), None))
         self.llm.calls.clear()
         self.put(self.OWN_PREAMBLE + [user("fresh question", 50), agent("a", 50), user("more", 51)])
         self.assertIsNotNone(self.run_build("s", "c1"))
         self.assertEqual(self.llm.calls.count("segment"), 1)            # only the open task, not all 8 turns
-        own = tables.load_tasks(self.m._conn("s"), "c1")
+        own = tables.get_own_tasks(self.m._conn("s"), "c1")
         self.assertGreaterEqual(len(own), pool_tasks)
         self.assertEqual([t.name for t in own[:pool_tasks - 1]],
-                         [t.name for t in tables.load_tasks(self.m._conn("s"), None)][:pool_tasks - 1])
+                         [t.name for t in tables.get_own_tasks(self.m._conn("s"), None)][:pool_tasks - 1])
         texts = self.texts(self.read())
         self.assertEqual(texts[0], "You are Codex, live.")
         self.assertEqual(texts[-1], "more")
 
     def test_describe_and_reads(self):
-        from ag.ag_policies.proactive_context_manager import report
+        from ag.ag_policies.proactive_context_manager.db import report
         wrapped = codex.CodexItems(self.m)
         wrapped.bulk_load("s", PREAMBLE + conversation(8), channel_id=None)
         d = report.describe(self.m.store("s"), None)
@@ -799,18 +800,18 @@ class SwitchTest(Base):
         self.put(PREAMBLE + conversation(8) + [user("fresh start", 50)])
         self.assertFalse(any(t.startswith("# ") for t in self.texts(self.read())))   # went on without it
         conn = self.m._conn("s")
-        self.policy.build("s", ch("c1"), tables.new_build(conn, "c1", tables.BOUNDARY))
+        self.policy.build("s", ch("c1"), tables.create_build(conn, "c1", tables.BOUNDARY))
         self.put([call(50), output(50)])
         texts = self.texts(self.read())                   # mid-turn, its own turn: taken up now
         self.assertTrue(any(t.startswith("# Previous task") for t in texts))
         self.assertIn("fresh start", texts)               # the turn itself stays verbatim
         self.assertIn("out 50", texts)
-        build_id = tables.latest_build(conn, "c1")["build_id"]
+        build_id = tables.get_own_latest_build(conn, "c1")["build_id"]
         self.assertEqual(int(store.last_read(conn, ch("c1"))["basis"]), build_id)
 
     def test_a_new_task_build_for_an_earlier_turn_waits_for_a_user_message(self):
         self.put(PREAMBLE + conversation(8) + [user("question 9", 9)])
-        self.policy.build("s", ch("c1"), tables.new_build(self.m._conn("s"), "c1", tables.BOUNDARY))
+        self.policy.build("s", ch("c1"), tables.create_build(self.m._conn("s"), "c1", tables.BOUNDARY))
         self.put([output(9), agent("answer 9", 9), user("question 10", 10), call(10)])
         self.assertFalse(any(t.startswith("# ") for t in self.texts(self.read())))
         self.put([output(10), agent("answer 10", 10), user("question 11", 11)])
@@ -972,7 +973,7 @@ class ParallelTest(Base):
         self.put(PREAMBLE + conversation(8), "c2")
         self.run_build("s", channel_id="c2")
         self.put(PREAMBLE + conversation(3))
-        self.assertEqual(tables.load_tasks(self.m._conn("s"), "c1"), [])
+        self.assertEqual(tables.get_own_tasks(self.m._conn("s"), "c1"), [])
         self.assertFalse(any(t.startswith("# ") for t in self.texts(self.read())))
 
 
@@ -1066,7 +1067,7 @@ class BackgroundTest(Base):
     def test_no_factory_never_spawns(self):
         self.put(PREAMBLE + conversation(8) + [user("q", 50)])
         self.read()
-        self.assertIsNone(tables.latest_build(self.m._conn("s"), "c1"))
+        self.assertIsNone(tables.get_own_latest_build(self.m._conn("s"), "c1"))
 
     def test_read_claims_once_and_spawns(self):
         spawned = []
@@ -1075,14 +1076,14 @@ class BackgroundTest(Base):
         self.read()
         self.read()                     # already running
         self.assertEqual(spawned, [("s", "c1", "build")])
-        self.assertEqual(tables.latest_build(self.m._conn("s"), "c1")["status"], "running")
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("s"), "c1")["status"], "running")
 
     def test_a_refused_build_is_tried_again_at_the_next_user_message(self):
         spawned = []
         self.policy.jobs = Recording(lambda s, c, job, job_id: spawned.append(job))
         self.put(PREAMBLE + conversation(8))
         conn = self.m._conn("s")
-        tables.settle(conn, tables.new_build(conn, "c1"), "nothing", through_row=conn.execute(
+        tables.settle_build(conn, tables.create_build(conn, "c1"), "nothing", through_row=conn.execute(
             "SELECT max(row_id) FROM events").fetchone()[0], error="too small")
         self.put([user("a little more", 90)])
         self.read()
@@ -1093,7 +1094,7 @@ class BackgroundTest(Base):
         self.cfg.max_context_tokens, self.cfg.build_every_request = 10 ** 9, False
         self.put(PREAMBLE + conversation(8) + [user("q", 50)])
         self.read()
-        self.assertIsNone(tables.latest_build(self.m._conn("s"), "c1"))
+        self.assertIsNone(tables.get_own_latest_build(self.m._conn("s"), "c1"))
         self.assertEqual(self.m._conn("s").execute("SELECT count(*) FROM _boundaries").fetchone()[0], 0)
 
     def test_the_real_worker_builds(self):
@@ -1120,10 +1121,10 @@ def make():
         self.read()
         conn = self.m._conn("s")
         for _ in range(100):
-            if tables.latest_build(conn, "c1")["status"] != "running":
+            if tables.get_own_latest_build(conn, "c1")["status"] != "running":
                 break
             time.sleep(0.1)
-        build = tables.latest_build(conn, "c1")
+        build = tables.get_own_latest_build(conn, "c1")
         self.assertEqual(build["status"], "ready", build.get("error"))
         self.put([user("next", 51)])
         self.assertTrue(any(t.startswith("# Previous task") for t in self.texts(self.read())))
@@ -1147,11 +1148,11 @@ class RequestedTest(Base):
         self.put(conversation(1, start=10))
         got = self.ask()
         self.assertEqual((got["messages"], self.spawned), (10, [("build", got["started"])]))
-        build = tables.latest_build(self.m._conn("s"), "c1")
+        build = tables.get_own_latest_build(self.m._conn("s"), "c1")
         self.assertEqual((build["status"], build["reason"]), ("running", tables.ASKED))
         self.assertEqual(self.ask(), {"running": got["started"]})          # not twice
         self.policy.build("s", ch("c1"), got["started"])                    # as the worker runs it: an ordinary build
-        self.assertEqual(tables.latest_build(self.m._conn("s"), "c1")["status"], "ready")
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("s"), "c1")["status"], "ready")
         self.assertEqual(self.ask(), {"few": 0})                            # counted from what it went through
         self.put(conversation(3, start=11))
         self.assertEqual(self.ask(), {"few": 3})
@@ -1199,7 +1200,7 @@ class RequestedTest(Base):
     def test_a_join_splits_nothing_so_its_messages_still_count(self):
         self.put(PREAMBLE + conversation(12))
         conn = self.m._conn("s")
-        tables.settle(conn, tables.claim_build(conn, "c1", 60, tables.JOIN), "ready", through_row=store.high_water(conn))
+        tables.settle_build(conn, tables.claim_build(conn, "c1", 60, tables.JOIN), "ready", through_row=store.high_water(conn))
         self.assertEqual(self.ask()["messages"], 12)
 
     def test_nothing_without_background_work(self):
@@ -1228,7 +1229,7 @@ class BoundaryTest(Base):
         return self.m._conn("s").execute("SELECT max(row_id) FROM events").fetchone()[0]
 
     def verdict(self, row_id):
-        v = tables.boundary_verdict(self.m._conn("s"), row_id)
+        v = tables.get_boundary_verdict(self.m._conn("s"), row_id)
         return None if v is None else (v["new_task"], v["why"])
 
     def test_parse_verdict(self):
@@ -1244,7 +1245,7 @@ class BoundaryTest(Base):
         self.read()
         self.read()                         # same message: not asked twice
         self.assertEqual(self.spawned, [{"check": self.last_row()}])
-        self.assertIsNone(tables.latest_build(self.m._conn("s"), "c1"))
+        self.assertIsNone(tables.get_own_latest_build(self.m._conn("s"), "c1"))
         self.put([call(50), output(50), agent("a", 50)])
         self.read()                         # mid-turn: nothing
         self.assertEqual(len(self.spawned), 1)
@@ -1270,7 +1271,7 @@ class BoundaryTest(Base):
         self.read()                         # switches to the build
         self.put([agent("a", 50), user("q", 51), agent("a", 51), user("q", 52)])
         conn = self.m._conn("s")
-        build = tables.latest_build(conn, "c1")
+        build = tables.get_own_latest_build(conn, "c1")
         made_ids = [r.made_id for r in store.last_read(conn, ch("c1"))["refs"] if r.made_id is not None]
         made = sum(t for _, _, t in store.made_items(conn, made_ids).values())
         rows = store.rows(conn, match=ch("c1"))
@@ -1298,7 +1299,7 @@ class BoundaryTest(Base):
                 self.policy.build("s", ch("c1"), tables.claim_build(conn, "c1", 60, reason))
                 self.put([user("q", 51)])                          # the running task's 2nd: within the cooldown
                 self.read()                                        # the build taken up here
-                self.assertEqual(store.last_read(conn, ch("c1"))["basis"], str(tables.latest_build(conn, "c1")["build_id"]))
+                self.assertEqual(store.last_read(conn, ch("c1"))["basis"], str(tables.get_own_latest_build(conn, "c1")["build_id"]))
                 self.assertEqual(self.spawned, [{"check": self.last_row()}] if asked else [])
 
     def test_checks_are_off_when_disabled(self):
@@ -1317,7 +1318,7 @@ class BoundaryTest(Base):
         self.put(PREAMBLE + conversation(8) + [user("q", 50)])
         self.assertFalse(self.check(self.last_row()))
         self.assertEqual(self.verdict(self.last_row()), (False, "scripted"))
-        self.assertIsNone(tables.latest_build(self.m._conn("s"), "c1"))
+        self.assertIsNone(tables.get_own_latest_build(self.m._conn("s"), "c1"))
         self.assertEqual(self.llm.calls, ["boundary"])
         # the prompt shows the open task's requests, numbered, the new one last (an event's text: the adaptor's)
         self.assertIn("\n[9] q\n", self.llm.prompts[0])
@@ -1330,7 +1331,7 @@ class BoundaryTest(Base):
         self.assertTrue(self.check(self.last_row()))
         self.assertEqual(self.verdict(self.last_row()), (True, "scripted"))
         conn = self.m._conn("s")
-        build = tables.latest_build(conn, "c1")
+        build = tables.get_own_latest_build(conn, "c1")
         self.assertEqual(build["status"], "ready", build.get("error"))
         self.assertEqual(build["open_from_row"], self.last_row())
         texts = self.texts(self.read())
@@ -1368,7 +1369,7 @@ class BoundaryTest(Base):
         self.assertFalse(self.check(self.last_row()))
         self.assertEqual(self.verdict(self.last_row())[0], False)
         self.assertIn("treated as a continuation", self.verdict(self.last_row())[1])
-        self.assertIsNone(tables.latest_build(self.m._conn("s"), "c1"))
+        self.assertIsNone(tables.get_own_latest_build(self.m._conn("s"), "c1"))
 
     def factory(self, new_task=True):
         """A module the worker imports: a manager on this temp directory with
@@ -1398,7 +1399,7 @@ def make():
         texts = self.texts(self.read())
         self.assertTrue(any(t.startswith("# Previous task") for t in texts))   # this very read
         self.assertIn("fresh start", texts[-1])
-        self.assertEqual(tables.latest_build(self.m._conn("s"), "c1")["status"], "ready")
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("s"), "c1")["status"], "ready")
         self.assertEqual(int(store.last_read(self.m._conn("s"), ch("c1"))["basis"]), 1)
 
     def test_a_continuation_returns_before_the_deadline(self):
@@ -1410,25 +1411,25 @@ def make():
         self.assertLess(time.monotonic() - t0, 25)
         self.assertFalse(any(t.startswith("# ") for t in texts))
         self.assertEqual(self.verdict(self.last_row()), (False, "scripted"))
-        self.assertIsNone(tables.latest_build(self.m._conn("s"), "c1"))
+        self.assertIsNone(tables.get_own_latest_build(self.m._conn("s"), "c1"))
 
     def test_a_new_task_s_build_is_waited_for_longer_than_its_check(self):
         # the check answers at once; the build is ready 0.4 s later, past sync_seconds
         self.cfg.sync_seconds, self.cfg.build_wait_seconds = 0.1, 2.0
         t0 = time.monotonic()
         ready = lambda conn, ch: {"status": "ready" if time.monotonic() - t0 > 0.4 else "running"}
-        with mock.patch.object(tables, "boundary_verdict", lambda conn, row: {"new_task": True}), \
-                mock.patch.object(tables, "latest_build", ready):
-            self.assertTrue(self.policy.wait(None, "c1", 1, "check", self.cfg.sync_seconds))
+        with mock.patch.object(tables, "get_boundary_verdict", lambda conn, row: {"new_task": True}), \
+                mock.patch.object(tables, "get_own_latest_build", ready):
+            self.assertTrue(self.policy.wait_for_build(None, "c1", 1, "check", self.cfg.sync_seconds))
             self.assertGreater(time.monotonic() - t0, 0.4)
             self.cfg.build_wait_seconds = 0.2                       # one slower than that is not waited for
             t0 = time.monotonic()
-            self.assertFalse(self.policy.wait(None, "c1", 1, "check", self.cfg.sync_seconds))
+            self.assertFalse(self.policy.wait_for_build(None, "c1", 1, "check", self.cfg.sync_seconds))
             self.assertLess(time.monotonic() - t0, 0.4)
         no = lambda conn, row: {"new_task": False}
-        with mock.patch.object(tables, "boundary_verdict", no):    # a continuation: no longer wait
+        with mock.patch.object(tables, "get_boundary_verdict", no):    # a continuation: no longer wait
             t0 = time.monotonic()
-            self.assertFalse(self.policy.wait(None, "c1", 1, "check", 5))
+            self.assertFalse(self.policy.wait_for_build(None, "c1", 1, "check", 5))
             self.assertLess(time.monotonic() - t0, 0.2)
 
     def test_past_the_deadline_the_worker_finishes_in_the_background(self):
@@ -1439,7 +1440,7 @@ def make():
         self.assertFalse(any(t.startswith("# ") for t in texts))    # too slow: the old context
         conn = self.m._conn("s")
         for _ in range(300):
-            build = tables.latest_build(conn, "c1")
+            build = tables.get_own_latest_build(conn, "c1")
             if build and build["status"] != "running":
                 break
             time.sleep(0.1)
@@ -1471,7 +1472,7 @@ def make():
         conn = self.m._conn("s")
         build = None
         for _ in range(200):
-            build = tables.latest_build(conn, "c1")
+            build = tables.get_own_latest_build(conn, "c1")
             if build and build["status"] != "running":
                 break
             time.sleep(0.1)

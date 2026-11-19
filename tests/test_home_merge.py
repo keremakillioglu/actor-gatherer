@@ -18,7 +18,8 @@ from ag.ag_harness import Manager  # noqa: E402
 from ag.ag_harness.home import __main__ as home_cli  # noqa: E402
 from ag.ag_harness.store import merge, paths  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
-from ag.ag_policies.proactive_context_manager import ProactiveContextManager, tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_policies.proactive_context_manager.events import context_stream  # noqa: E402
 import codex_items  # noqa: E402
 from channels import ch, on  # noqa: E402
@@ -51,7 +52,7 @@ class MergeBase(unittest.TestCase):
             for c in chans:
                 for item in PREAMBLE + conversation(8, prefix=f"{c} "):
                     self.items.insert(g, item, channel_id=c)
-                self.policy.build(g, ch(c), tables.new_build(self.m._conn(g), c))
+                self.policy.build(g, ch(c), tables.create_build(self.m._conn(g), c))
         ids = {t.name: t.id for t in self.m.event_types("big")}
         self.m.insert("big", on(context_stream(ids["context_stream"], "#big", "bob", "big news", 5), None))
         conn = self.m._conn("small")
@@ -60,7 +61,7 @@ class MergeBase(unittest.TestCase):
             conn.execute("INSERT INTO _withdrawn (row_id, withdrawn_at) VALUES (?, '2026-01-01T00:00:00')", (self.taken,))
         self.before = {g: rows(paths.db_path(g), "SELECT row_id, event_id, payload_json FROM events ORDER BY row_id")
                        for g in ("big", "small")}
-        self.small_build = tables.latest_build(conn, "s1")
+        self.small_build = tables.get_own_latest_build(conn, "s1")
         self.small_tasks = rows(paths.db_path("small"), "SELECT task_index, first_row, last_row FROM tasks "
                                                         "WHERE channel_key = 's1' ORDER BY task_index")
         self.own = {g: paths.db_path(g) for g in ("big", "small")}
@@ -149,7 +150,7 @@ class MergeTest(MergeBase):
         self.merged()
         offset = self.before["big"][-1][0]
         conn = self.m._conn("small")                                 # the home's one database now
-        build = tables.latest_build(conn, "s1")
+        build = tables.get_own_latest_build(conn, "s1")
         for k in ("through_row", "open_from_row", "parallel_mark"):
             self.assertEqual(build[k], self.small_build[k] + offset)
         self.assertEqual(build["status"], "ready")

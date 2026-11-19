@@ -27,7 +27,7 @@ from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths, schema  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_harness import Manager  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, keep_read, report_measured  # noqa: E402
@@ -176,7 +176,7 @@ class MeasuredOverTest(unittest.TestCase):
         self.put(long_turn(1, start=10)[1:])                # the next step, mid-turn
         self.read()
         self.assertEqual(self.spawned, ["build"])
-        build = tables.latest_build(self.m._conn("s"), "c1")
+        build = tables.get_own_latest_build(self.m._conn("s"), "c1")
         self.assertEqual(build["reason"], tables.LIMIT)
 
     def test_under_by_both_counts_but_over_as_the_provider_would_count_the_next_a_build_starts(self):
@@ -188,7 +188,7 @@ class MeasuredOverTest(unittest.TestCase):
         self.put(long_turn(2, start=10)[1:])                # the next steps: ag's count still under the limit ...
         self.read()
         self.assertEqual(self.spawned, ["build"])           # ... the provider's, by the same 30%, over it
-        self.assertEqual(tables.latest_build(self.m._conn("s"), "c1")["reason"], tables.LIMIT)
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("s"), "c1")["reason"], tables.LIMIT)
         now = store.last_read(self.m._conn("s"), ch("c1"))["sent_tokens"]
         self.assertLessEqual(int(now * 1.3), self.cfg.max_context_tokens)   # meanwhile, left out to fit as it counts
 
@@ -204,9 +204,9 @@ class MeasuredOverTest(unittest.TestCase):
         self.put(PREAMBLE + conversation(8) + long_turn(3, start=50))   # turns enough for a build to condense
         _, read_id = self.read()
         self.m.record_real_tokens("s", read_id, self.cfg.max_context_tokens + 1)
-        build_id = tables.new_build(self.m._conn("s"), "c1")
+        build_id = tables.create_build(self.m._conn("s"), "c1")
         self.policy.build("s", ch("c1"), build_id)          # a build is ready, made since that call
-        self.assertEqual(tables.latest_build(self.m._conn("s"), "c1")["status"], "ready")
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("s"), "c1")["status"], "ready")
         self.put(long_turn(1, start=60)[1:])
         ctx, _ = self.read()
         self.assertEqual(ctx.basis, str(build_id))          # the ready build is taken ...

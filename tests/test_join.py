@@ -14,13 +14,14 @@ from ag.ag_harness import Manager, db_path  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_interface import Jobs  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
-from ag.ag_policies.proactive_context_manager import layout, tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.core import sections  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 import codex_items as codex  # noqa: E402
 from test_core import PREAMBLE, Base, ScriptedLLM, agent, conversation, user  # noqa: E402
 from channels import ch  # noqa: E402
 
 GUIDE_START = "About this context, from the gatherer."
-JOINED = layout.JOINED_OPENING.split("\n")[0]
+JOINED = sections.JOINED_OPENING.split("\n")[0]
 
 
 class Inline(Jobs):
@@ -62,7 +63,7 @@ class JoinBase(Base):
     def built(self, channel="c1"):
         """A build of `channel` run directly, ready."""
         conn = self.m._conn("w")
-        build = self.policy.build("w", ch(channel), tables.new_build(conn, channel))
+        build = self.policy.build("w", ch(channel), tables.create_build(conn, channel))
         self.assertEqual(build["status"], "ready")
         return build
 
@@ -100,8 +101,8 @@ class GuideTest(JoinBase):
         self.assertIn("`p_channel`", guide)
 
     def test_the_sections_no_longer_say_where_the_history_is_themselves(self):
-        self.assertNotIn("SQLite database", layout.overview(self.cfg))
-        self.assertNotIn("SQLite database", layout.overview(self.cfg, joined=True))
+        self.assertNotIn("SQLite database", sections.overview(self.cfg))
+        self.assertNotIn("SQLite database", sections.overview(self.cfg, joined=True))
 
     def test_one_made_item_while_its_text_is_the_same(self):
         self.put(PREAMBLE + [user("my task", 1)])
@@ -162,7 +163,7 @@ class JoinTest(JoinBase):
         self.assertEqual(self.parallel(context), [])                         # before the mark: in the index
         self.assertEqual(self.texts(context)[-1], "new work")                # its own, verbatim
         self.assertEqual(self.jobs.started, [("c2", "build")])
-        self.assertEqual(tables.latest_build(self.m._conn("w"), "c2")["reason"], tables.JOIN)
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("w"), "c2")["reason"], tables.JOIN)
 
     def test_it_is_adopted_though_it_replaces_nothing_of_the_channel_s_own(self):
         self.other_session()
@@ -245,7 +246,7 @@ class JoinTest(JoinBase):
         self.put(PREAMBLE + [user("new work", 100)], channel="c2")
         self.read("c2")
         conn = self.m._conn("w")
-        self.assertEqual(tables.load_tasks(conn, "c2"), [])
+        self.assertEqual(tables.get_own_tasks(conn, "c2"), [])
         self.put([agent("ok", 100)] + conversation(10, prefix="c2 ", start=101), channel="c2")
         own = self.built("c2")
         self.put([user("next", 300)], channel="c2")
@@ -310,7 +311,7 @@ class RegroupTest(JoinBase):
         sections = self.sections(self.read())
         self.assertNotIn("c2 question", sections)
         self.assertEqual(self.jobs.started, [("c1", "build")])
-        self.assertEqual(tables.latest_build(self.m._conn("w"), "c1")["reason"], tables.REGROUPED)
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("w"), "c1")["reason"], tables.REGROUPED)
 
     def test_a_joined_folder_s_requests_come_in_the_index_not_one_by_one(self):
         self.moved("c2", "b")
@@ -351,7 +352,7 @@ class RegroupTest(JoinBase):
         self.assertIn("c3 question", again)
         self.assertNotIn("c1 question", again)
         self.assertEqual(self.jobs.started, [("c2", "build"), ("c2", "build")])
-        self.assertEqual(tables.latest_build(self.m._conn("w"), "c2")["reason"], tables.JOIN)
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("w"), "c2")["reason"], tables.JOIN)
 
     def said(self, context):
         return [t for t in self.texts(context) if "your group" in t.lower() and not t.startswith("About this context")]
@@ -470,7 +471,7 @@ class RegroupTest(JoinBase):
         self.put([agent("working on it", 200)])
         context = self.read()
         self.assertEqual(self.jobs.started, [("c1", "build")])
-        self.assertEqual(tables.latest_build(self.m._conn("w"), "c1")["reason"], tables.REGROUPED)
+        self.assertEqual(tables.get_own_latest_build(self.m._conn("w"), "c1")["reason"], tables.REGROUPED)
         said = self.shown_more(context)
         self.assertEqual(len(said), 2)
         self.assertIn("also shown the work of the sessions of these groups: Paper", said[0])
