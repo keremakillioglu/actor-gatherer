@@ -56,7 +56,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 import app_kit
 from app_kit import App, AppError, Caller, Instance, Manifest, Response, ToolResult, remote
 
-from . import home, store
+from . import app_settings, home, store
 
 PATH_ENV = app_kit.finding.PATH_ENV
 HELD_RETRY = 2.0                # a new gatherer has no database until its first call: its writes, held, tried this often
@@ -245,12 +245,13 @@ class AppHost:
     # -- what the page is told
 
     def listed(self, gatherer: Optional[str] = None) -> dict:
-        """Every app found (its manifest, its panel's origin), the broken ones, and -- for `gatherer` -- its open
-        instances and the agents attached to each."""
+        """Every app found (its manifest, its panel's origin, whether the reader opens it with an agent of its own:
+        app_settings.py), the broken ones, and -- for `gatherer` -- its open instances and the agents attached to each."""
         if gatherer:
             self._load(gatherer)
         with self.lock:
             apps = [{**h.manifest.to_dict(), "origin": self.origin(n), "folder": h.manifest.folder,
+                     "opens_with_agent": app_settings.opens_with_agent(h.manifest),
                      "failed": h.failed} for n, h in sorted(self.apps.items())]
             insts = [i.to_dict() for i in self.instances.values() if gatherer and i.gatherer == gatherer]
             attached = {i["id"]: sorted(self.attached.get(i["id"], ())) for i in insts}

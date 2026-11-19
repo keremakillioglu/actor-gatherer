@@ -25,6 +25,8 @@ export interface AppInfo {
   instances: string;
   offer?: string;
   agent?: { offered: boolean; name: string };
+  /** opened from a menu, it starts with an agent of its own (the Apps page's choice: app_settings.py) */
+  opens_with_agent?: boolean;
   capabilities?: Partial<Record<Capability, boolean>>;
   tools?: { name: string; handled_by: string }[];
   handles: { intent: string; types: string[] }[];
