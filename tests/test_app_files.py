@@ -35,6 +35,7 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual((files.replaces, latex.replaces), (("editor",), ("editor",)))
         self.assertEqual((files.access, files.agent.offered, files.capabilities.edit_guard), ("group", False, False))
         self.assertEqual((latex.access, latex.agent.offered, latex.capabilities.edit_guard), ("task", True, True))
+        self.assertEqual((files.on_task, latex.on_task), ("folder", "join"))   # "+": Files at the actor's directory
         for m in (files, latex):
             self.assertTrue(m.capabilities.docs and m.capabilities.message_actors)
             self.assertEqual(m.instances, "many")

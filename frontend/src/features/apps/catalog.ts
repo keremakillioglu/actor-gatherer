@@ -9,6 +9,7 @@ import { get } from "../../core/api/client";
 import { glyph } from "../../core/ui/glyphs";
 import "./catalog.css";
 import { closeDialog, confirmBuiltin, confirmUninstall, fromSource, stageUpdate, type Asked } from "./catalog-dialogs";
+import { onTaskChoice, type OnTask } from "./catalog-on-task";
 import { el, kb, markOf, said, tokens } from "./catalog-parts";
 
 export interface CatalogApp {
@@ -26,6 +27,11 @@ export interface CatalogApp {
   access?: string;
   /** it can be opened with an agent of its own (its manifest's [agent] offered) */
   with_agent?: boolean;
+  /** what adding it to an actor or a task does ("join", "folder", "no": ag_dashboard/app_policy.py), as chosen; its
+   * manifest's own; and those it can take (a group app: not "join") */
+  on_task?: OnTask;
+  on_task_own?: OnTask;
+  on_task_can?: OnTask[];
   instances?: string;
   tools?: string[];
   tokens?: number;
@@ -462,6 +468,11 @@ function details(a: CatalogApp): HTMLElement {
           )
         : null,
     ),
+    ...onTaskChoice(a, (note) => {
+      page.note = note;
+      void page.hooks?.changed(); // (its "+" menus read the apps again)
+      render();
+    }),
     el("h3", { text: "What it can do" }),
     el("ul", {}, ...said.can(a).map((c) => el("li", { text: c }))),
     (a.schedules || []).length ? el("h3", { text: "Schedule" }) : null,

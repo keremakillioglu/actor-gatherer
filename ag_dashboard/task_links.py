@@ -29,12 +29,17 @@ An instance of an app every agent of its group may use (its manifest's `access =
 either (`taskable`): a task would mean nothing for it. One found in a task -- put there before this rule -- is taken out
 of it as its group is read (`on_load`).
 
+An app the user adds to an actor or a task is put in its task only when that is what adding it does (app_policy.py:
+"join"; not "folder", opened at the actor's directory beside the task, nor "no"): the tasks route refuses one that isn't
+(`kept_out`), and an app opened for an actor is only opened (api/apps.py). An app starting its own agent is one task
+with it (`link`, from app_agents.py) whatever it says.
+
 A gatherer's own agent (sessions.py's COORDINATOR) is in no task, and attached to no app (`attachable`, the host's
 check): it reaches every app without (tool_gateway.py)."""
 
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import access, sessions, tasks, tool_gateway
+from . import access, app_policy, sessions, tasks, tool_gateway
 from app_kit import AppError
 
 RING: Optional[Callable] = None         # the server's hub.ring: the page told the tasks changed (server.py)
@@ -128,6 +133,21 @@ def taskable(gatherer: str, item: str) -> bool:
 def untaskable(gatherer: str, items) -> List[str]:
     """Of `items`, those that may not be put in a task (`taskable`)."""
     return [str(x) for x in items if not taskable(gatherer, str(x))]
+
+
+def kept_out(gatherer: str, items) -> List[str]:
+    """Of `items`, the apps' instances that adding to an actor or a task doesn't put in it (app_policy.py: "folder" or
+    "no"), by their apps' labels."""
+    host = _host()
+    out = []
+    for x in items:
+        x = str(x)
+        if tasks.app_of(x) is not None and app_policy.of_item(host, gatherer, x) not in (None, "join"):
+            with host.lock:
+                inst = host.instances.get(tasks.app_of(x))
+                label = host.apps[inst.app].manifest.label if inst is not None and inst.app in host.apps else x
+            out.append(label)
+    return out
 
 
 def link(gatherer: str, instance: str, channel: str, move: bool = False) -> bool:

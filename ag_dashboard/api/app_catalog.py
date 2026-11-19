@@ -9,6 +9,8 @@ installed, and installing, updating and uninstalling. `ag apps install|uninstall
                               {builtin}          an app that comes with ag, uninstalled, installed again
     POST /api/apps/discard    {id}               the staged app removed
     POST /api/apps/uninstall  {name, data?}      uninstalled; `data`: its data/ deleted too
+    POST /api/apps/on_task    {name, on_task}    what adding the app to an actor or a task does: "join", "folder" or
+                                                 "no" (app_policy.py), kept -> {name, on_task}
 
 With `actor` -- `ag apps` run in an agent's shell, which says who asks -- install and uninstall only ask the user
 (app_requests.py): {waiting: the request}, done once the user approves it in the dashboard:
@@ -95,6 +97,13 @@ def apps_uninstall(srv: Parts, body: Body) -> Response:
         return _run(lambda: {"waiting": app_requests.ask(_host(srv), srv.sessions.list(), str(body["actor"]),
                                                          "uninstall", args)})
     return _run(lambda: app_catalog.uninstall(_host(srv), str(body.get("name") or ""), bool(body.get("data"))))
+
+
+@router.post("/api/apps/on_task")
+def apps_on_task(srv: Parts, body: Body) -> Response:
+    """What adding the app to an actor or a task does, as the user chose it on the Apps page: "join" (put in its task),
+    "folder" (opened at the actor's directory, beside the task) or "no" (not offered). The app's own: no choice kept."""
+    return _run(lambda: app_catalog.set_on_task(_host(srv), str(body.get("name") or ""), str(body.get("on_task") or "")))
 
 
 @router.get("/api/apps/requests", dependencies=[Depends(local_only)])

@@ -4,7 +4,9 @@ own origin (`Origins`) -- its panel's files and its backend's routes, and nothin
 On the dashboard's origin, for its page:
 
     GET  /api/apps?gatherer=G                    the apps found, broken ones, G's instances and their agents
-    POST /api/apps/open    {app, gatherer, folder?, args?, channel?}   an instance (attached to `channel`, if given)
+    POST /api/apps/open    {app, gatherer, folder?, args?, channel?, reuse?}   an instance (attached to `channel`, if
+                                                 given and the app joins tasks; `reuse`: one open at that folder, of an
+                                                 app with any number, in no task)
     POST /api/apps/close   {gatherer, instance}
     POST /api/apps/rename  {gatherer, instance, name}         what the user calls it ("": its own title again)
     POST /api/apps/attach  {gatherer, instance, channel}      POST /api/apps/detach (the same)
@@ -44,7 +46,7 @@ import app_kit
 import harness_kit
 from app_kit import AppError, Caller, remote
 
-from .. import app_agents, app_host, desktop, libs, livedocs, mcp, task_links, tasks, tool_gateway
+from .. import app_agents, app_host, app_policy, desktop, libs, livedocs, mcp, task_links, tasks, tool_gateway
 from .common import (KEEPALIVE_EVENT, Body, Errors, Events, Parts, answer, blocking, event, failure, local_only, named_here, not_found,
                      queue_events)
 
@@ -86,6 +88,7 @@ def apps_listed(srv: Parts, gatherer: str = "") -> Response:
     with them), with when they were read (`now`, as the home's: the page takes no tasks read before those it has)."""
     try:
         got = _host(srv).listed(gatherer or None)
+        got = {**got, "apps": app_policy.listed(got["apps"])}       # each's on_task as the user chose it
         if not gatherer:
             return answer(got)
         now = time.time()                                     # (taken before they are read: no later than they are)
@@ -97,17 +100,31 @@ def apps_listed(srv: Parts, gatherer: str = "") -> Response:
 @router.post("/api/apps/open")
 def apps_open(srv: Parts, body: Body) -> Response:
     """The app's instance for the gatherer (and folder, for an app with one per folder or checkout): the open one, or
-    a new one. With `channel`, that agent attached to it when they come to be in one task -- the app, in no task, put
-    in the agent's; the agent, in none, in the app's (task_links.py's `link`)."""
+    a new one -- `reuse`, for an app with any number, one open at that folder and in no task, if there is one. With
+    `channel`, that agent attached to it when they come to be in one task -- the app, in no task, put in the agent's;
+    the agent, in none, in the app's (task_links.py's `link`) -- unless adding the app to an actor doesn't put it in a
+    task (app_policy.py: "folder", "no"): then only opened."""
     try:
         name, gatherer = _need(body, "app", "gatherer")
         h = _host(srv)
-        i = h.open(name, gatherer, body.get("folder") or None, body.get("args") or {})
-        if body.get("channel"):                                # in one task with it, attached; else (each in a
-            task_links.link(gatherer, i.id, body["channel"])   # task of its own already) only opened
-        return answer(i.to_dict())
+        folder = body.get("folder") or None
+        i = _open_at(h, name, gatherer, folder) if body.get("reuse") and folder else None
+        if i is None:
+            i = h.open(name, gatherer, folder, body.get("args") or {})
+        if body.get("channel") and app_policy.of(h.hosted(name).manifest) == "join":
+            task_links.link(gatherer, i.id, body["channel"])   # in one task with it, attached; else (each in a
+        return answer(i.to_dict())                             # task of its own already) only opened
     except AppError as exc:
         return _failed(exc)
+
+
+def _open_at(h, name: str, gatherer: str, folder: str):
+    """An instance of app `name` (one with any number) open in `gatherer` at `folder` and in no task; None: none."""
+    if h.hosted(name).manifest.instances != "many":
+        return None                                            # (its own rule finds the one open there, if any)
+    where = os.path.realpath(folder)
+    return next((i for i in h.instances_of(gatherer, name) if i.folder == where
+                 and tasks.task_of(gatherer, tasks.app_item(i.id)) is None), None)
 
 
 @router.post("/api/apps/close")

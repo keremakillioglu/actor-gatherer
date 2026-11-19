@@ -210,6 +210,19 @@ class ManifestTest(unittest.TestCase):
         self.refused("name = 3", "name: a string, not int")
         self.refused("name = \"x\"\nname2 = ", "app.toml:")             # not TOML
 
+    def test_what_adding_it_to_an_actor_or_a_task_does(self):
+        """`on_task`: a task app joins the task unless it says otherwise; a group app, in no task, is not added unless it
+        says "folder" -- and can't say "join"."""
+        parse = app_kit.parse
+        self.assertEqual(parse({"name": "x"}).on_task, "join")
+        self.assertEqual(parse({"name": "x", "access": "group"}).on_task, "no")
+        self.assertEqual(parse({"name": "x", "access": "group", "on_task": "folder"}).on_task, "folder")
+        self.assertEqual(parse({"name": "x", "on_task": "no"}).to_dict()["on_task"], "no")      # as the page reads it
+        self.refused(FULL.replace('instances = "per-folder"', 'instances = "per-folder"\non_task = "beside"'),
+                     "on_task: 'beside'")
+        self.refused(FULL.replace('instances = "per-folder"', 'instances = "per-folder"\naccess = "group"\n'
+                                  'on_task = "join"'), "is in no task")
+
     def test_a_tool_the_backend_handles_needs_a_backend_and_a_panel_tool_a_panel(self):
         self.refused(without(FULL, '[backend]\npython = "notes_app:NotesApp"\n'), "tools[0].handled_by")
         no_panel = without(FULL, '[panel]\nentry = "panel/index.html"\n')

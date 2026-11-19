@@ -403,6 +403,35 @@
 .ap-kv > :nth-child(odd) {
   color: var(--muted);
 }
+.ap-choice {
+  display: grid;
+  gap: 2px;
+}
+.ap-opt {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: start;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.ap-opt:hover {
+  background: var(--wash);
+}
+.ap-opt input {
+  margin: 3px 0 0;
+  accent-color: var(--s1);
+}
+.ap-opt-what {
+  color: var(--ink);
+}
+.ap-opt-note {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
 .ap-tools {
   display: flex;
   flex-wrap: wrap;

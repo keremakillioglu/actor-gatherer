@@ -648,3 +648,18 @@ Not done yet:
     user's, as the test runs it; a real Linux desktop Chrome may differ. To do: try it on one, then choose a fix
     (e.g. a window of its own in the background, not minimized, which `new_target` falls back to already).
     `test_a_browser_in_the_user_s_chrome` runs on macOS only until then.
+
+## Apps added to an actor or a task (`on_task`)
+
+What "+" on a row does with an app is the app's `on_task` (app_kit's manifest), or the user's choice on the Apps page
+(app_policy.py): "join" (put in the task), "folder" (opened at the actor's directory, shown with the task, not in it:
+Files) or "no" (not offered).
+
+- [ ] **A "folder" app's panel is not kept with the task's layout.** "+ Files" shows its panel above the task, but the
+  task's layout (features/layout: rememberTask / openTaskApps) keeps only its own apps' panels, so leaving the task
+  and coming back closes Files' panel and doesn't reopen it. To do once the layout model (#429-#437) is in main: let a
+  task's record keep panels of apps outside it that were opened for it, and reopen them with it.
+- [ ] **Two stores of the Apps page's choices.** app-open-default keeps "Opens with an agent" in
+  <home>/dashboard/app_settings.json (app_settings.py); app_policy.py keeps `on_task` in the same file, read and
+  written on its own. Once both are in main: one module reads and writes an app's choices, both through it, and the
+  two controls side by side on the page.
