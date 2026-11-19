@@ -270,7 +270,7 @@ svg.ft-gray { color: var(--ft-gray); }
 .ed-row:hover { background: var(--wash); }
 .ed-row.on { background: color-mix(in srgb, var(--s1) 12%, transparent); }
 .ed-rows:focus-within .ed-row.on { background: color-mix(in srgb, var(--s1) 20%, transparent); }
-.ed-row.flash { animation: ed-row-flash 2s ease-out; }   /* a folder a link showed (edShowFolder) */
+.ed-row.flash { animation: ed-row-flash 2s ease-out; }   /* a folder a link showed (edShowFolder; ED_FLASH_MS) */
 @keyframes ed-row-flash { from, 30% { background: color-mix(in srgb, var(--s1) 26%, transparent); } }
 .ed-row:focus-visible, .ed-row.menu-on { box-shadow: inset 0 0 0 1px var(--s1); }
 .ed-row .tw { flex: none; width: 12px; display: inline-grid; place-items: center; color: var(--muted); }

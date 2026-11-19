@@ -368,6 +368,13 @@ function edReveal(path) {
   ed.revealing = path;
   edOpenTo(edDir(path));
 }
+// A folder a link showed (edShowFolder), flashed for ED_FLASH_MS (editor.css's .ed-row.flash, as long) from when its row
+// was first drawn: `ed.flash`, {path, at}. A row drawn again meanwhile goes on where the last one was in the flash.
+const ED_FLASH_MS = 2000;
+const edFlashing = (path) => {
+  const ms = ed.flash && ed.flash.path === path ? Date.now() - ed.flash.at : -1;
+  return ms >= 0 && ms < ED_FLASH_MS ? ms : null;
+};
 // The rows, each a treeitem: a twistie (a folder's), its icon, its name and what is going on with it. Drawn again only
 // when what it shows changed; the keyboard's place (a row, or a new name being typed) kept across a draw.
 function edTree() {
@@ -387,9 +394,10 @@ function edTree() {
       const p = edJoin(dir, e.name), all = edWriters(e), writers = edTreeWriters(e, all), dim = e.name.startsWith(".") ? " dim" : "";
       const at = { type: "button", role: "treeitem", "aria-level": depth + 1, tabindex: "-1", style: lvl(depth), "data-path": p };
       if (e.dir) {
-        const open = ed.open.has(p);
+        const open = ed.open.has(p), flashed = edFlashing(p), flash = flashed === null ? "" : " flash";
         sig.push(p, open, writers.map((w) => w.channel), e.pending);
-        rows.push(el("button", { ...at, class: "ed-row dir" + dim, "data-dir": "1", title: edTilde(p), "aria-expanded": open ? "true" : "false",
+        if (flash) at.style += `; animation-delay: -${flashed}ms`;
+        rows.push(el("button", { ...at, class: "ed-row dir" + dim + flash, "data-dir": "1", title: edTilde(p), "aria-expanded": open ? "true" : "false",
           onclick: () => edToggle(p) },
           el("span", { class: "tw" + (open ? " open" : "") }, strokeIcon(ICONS.chevron, 12)), edDirIcon(open), el("span", { class: "n", text: e.name }),
           open ? null : edAvatars(writers, "files in it"), open ? null : edWaiting(e.pending)));
@@ -427,7 +435,10 @@ function edTree() {
     const r = ed.tree.querySelector(`.ed-row[data-path="${CSS.escape(ed.revealing)}"]`);
     if (r) {
       ed.revealing = null; r.scrollIntoView({ block: "nearest" });
-      if (ed.flashFolder === r.dataset.path) { ed.flashFolder = null; r.classList.add("flash"); }   // edShowFolder's
+      if (ed.flashFolder === r.dataset.path) {         // edShowFolder's: flashed from now (edFlashing)
+        ed.flashFolder = null; ed.flash = { path: r.dataset.path, at: Date.now() };
+        r.classList.add("flash");
+      }
     }
   }
 }

@@ -28,7 +28,7 @@ const ed = { root: "", home: "", lists: new Map(), open: new Set(), file: null, 
   timer: null, treeSig: "", barSig: "", host: null, bar: null, tree: null, head: null, body: null, side: null, changes: null,
   v: null, turn: 0, keys: false, blurAt: -Infinity,                                 // v: 18-editor-view.js's; keys, blurAt: edHadKeys's
   branches: [], brSig: "", brs: null, brOpen: null,
-  nav: null, fold: null, cursor: null, revealing: null, flashFolder: null, newItem: null, pick: null, menu: null, find: null,   // 18-editor-tree.js's
+  nav: null, fold: null, cursor: null, revealing: null, flashFolder: null, flash: null, newItem: null, pick: null, menu: null, find: null,   // 18-editor-tree.js's
   choose: null, choosing: null, go: null,                                                                     // 18-editor-open.js's
   mode: "live", modePick: null,                                                    // how an agent's change lands, its menu (edModePick)
   auto: (() => { try { return localStorage.getItem(ED_AUTO_KEY) !== "0"; } catch (e) { return true; } })(),   // on unless turned off
