@@ -80,6 +80,9 @@ export function firstTree(items: Shown<unknown>[], old: Old | null): Node | null
 }
 
 export const leafId = (block: string, item: string): string => `${block}\u0001${item}`;
+/** Whether split `n` of `built` is a block's strip over its panels (a column of its card's, not of its panels). */
+export const isStrip = (built: Built<unknown>, n: Split): boolean =>
+  !isSplit(n.kids[0]) && built.strips.has(n.kids[0].id);
 const STRIP = "\u0003strip", // a block's strip, as an item of it: the head of its card
   STRIP_H = 34;
 
@@ -139,7 +142,6 @@ export function build<N>(
       out.items.set(id, { block, key, item: v.id });
       if (v.min && !v.id.startsWith(APP)) marked.add(id);
       if (under) out.under.add(id);
-      if (under && marked.has(id)) out.minimized.add(id);
       return { id };
     }
     const apps = v.kids.map((k) => leaves(k).every((id) => id.startsWith(APP))),
@@ -225,13 +227,21 @@ export function build<N>(
   // not a terminal's, of no task (kept nowhere, it could not stay so)
   const stacked = (n: Node, on: boolean): void => {
     if (isSplit(n)) for (const k of n.kids) stacked(k, on || (!!(n as Shows).screen && n.dir === "col"));
-    else if (on && (out.items.get(n.id)?.key ?? null) !== null) {
-      out.under.add(n.id);
-      if (marked.has(n.id)) out.minimized.add(n.id);
+    else if (on && (out.items.get(n.id)?.key ?? null) !== null) out.under.add(n.id);
+  };
+  // minimized: a pane marked so in a kid of a column as long as what it shows -- every pane beside it marked too (one
+  // marked beside one whole would stand in their row's full height, a blank above its message box: shown whole)
+  const fitted = (n: Node, fit: boolean): void => {
+    if (!isSplit(n)) {
+      if (fit && out.under.has(n.id) && marked.has(n.id)) out.minimized.add(n.id);
+      return;
     }
+    const strip = isStrip(out, n); // (a block's strip on its panels: no column of theirs)
+    n.kids.forEach((k, i) => fitted(k, n.dir === "col" && !strip ? !!n.sizes[i]?.fit : fit));
   };
   const v = out.screen && view(out.screen, () => true);
   out.tree = v ? blocks(v) : null;
   if (out.tree) stacked(out.tree, false);
+  if (out.tree) fitted(out.tree, false);
   return out;
 }

@@ -1,5 +1,5 @@
-// A pane MINIMIZED on its own (features/layout/work.ts): only its message box, where something of its task is above or
-// below it -- the others left whole; panes side by side all minimized, their row only as tall as their message boxes.
+// A pane MINIMIZED (features/layout/work.ts): only its message box, where something of its task is above or below it --
+// with the panes side by side with it, all minimized or all whole, their row only as tall as their message boxes.
 // Kept in its task's arrangement: moved where nothing is above or below it, shown whole; moved back, minimized again.
 // Minimized by the bar above it too, dragged past its least (BELOW_MIN): shorter than FOLD_UNDER, minimized; longer again,
 // whole -- in the same drag, or a later one; shown whole by its own button, as tall as before it was dragged. So too a
@@ -15,7 +15,7 @@ const other = (page: Page) => page.locator("#panes > .pane").nth(1);
 const minimize = (where: Page | ReturnType<Page["frameLocator"]>) =>
   where.locator("button[aria-label='Minimize the chat']:visible").first();
 
-test("two panes under an app: one minimized, the other whole; both, their row only as tall as their message boxes", async ({
+test("two panes under an app: minimized together by either's button, their row only as tall as their message boxes; shown whole together", async ({
   page,
 }) => {
   await taskHome(page, true); // Claude and Codex, one task, side by side
@@ -25,15 +25,20 @@ test("two panes under an app: one minimized, the other whole; both, their row on
   await addNotepad(page, taskRow(page)); // Notepad above both
   await expect(notes(page)).toHaveCount(1);
   const frame = other(page).frameLocator("iframe");
-  await minimize(page).click(); // Claude's
-  await expect(page.locator("#main > .chat.mini")).toHaveCount(1);
-  await expect(frame.locator("#main > .chat.mini")).toHaveCount(0); // Codex's whole
-  await expect.poll(async () => (await box(page.locator("#pane-here"))).height).toBeLessThan(150);
-  expect((await box(other(page))).height).toBeGreaterThan(300);
+  const claudeMini = page.locator("#main > .chat.mini"),
+    codexMini = frame.locator("#main > .chat.mini");
   const tall = (await box(notes(page))).height;
-  await minimize(frame).click(); // Codex's too: the row of the two only as tall as their message boxes
-  await expect(frame.locator("#main > .chat.mini")).toHaveCount(1);
+  await minimize(page).click(); // Claude's: Codex's beside it too -- no blank above either message box
+  await expect(claudeMini).toHaveCount(1);
+  await expect(codexMini).toHaveCount(1);
   await expect.poll(async () => (await box(notes(page))).height).toBeGreaterThan(tall + 200);
+  await frame.locator("#main > .chat.mini .mini-hist .mh-row").first().click(); // Codex's shown whole: Claude's too
+  await expect(codexMini).toHaveCount(0);
+  await expect(claudeMini).toHaveCount(0);
+  await expect.poll(async () => (await box(notes(page))).height).toBeLessThan(tall + 50);
+  await minimize(frame).click(); // Codex's own button: both again
+  await expect(claudeMini).toHaveCount(1);
+  await expect(codexMini).toHaveCount(1);
 });
 
 test("a minimized pane moved beside its app is whole; moved back under it, minimized again", async ({ page }) => {

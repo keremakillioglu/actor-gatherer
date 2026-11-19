@@ -28,8 +28,6 @@ export interface PlaceHooks {
   resized: (key: string, sizes: Size[], done: boolean) => void;
   /** How far in from each side of the box the panels go (the tabs' bar over them, the well round them). */
   inset?: () => { top: number; right: number; bottom: number; left: number };
-  /** A panel as tall as what it shows though its spot is not (a pane minimized beside one that is not). */
-  fitted?: (id: string) => boolean;
   /** The panels placed (again): whatever is drawn round them follows. */
   placed?: () => void;
   /** Whether kid `kid` of a split can be minimized by its bar, and under what length: dragged shorter than that (past
@@ -95,7 +93,7 @@ export class Placer {
       };
     const laid = lay(tree, area, (kid, cross) => this.natural(kid, cross));
     const now = new Map<string, HTMLElement>();
-    const fitted = new Set([...laid.rects.keys()].filter((id) => laid.fitted.has(id) || !!this.hooks.fitted?.(id)));
+    const fitted = laid.fitted;
     for (const [id, r] of laid.rects) {
       const e = this.hooks.node(id);
       if (!e) continue;
