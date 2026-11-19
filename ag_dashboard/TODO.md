@@ -681,3 +681,14 @@ update would cost a round trip. The fix is to keep the direct reads, against a p
   migrations): test it on a fresh database and on an upgraded one.
 - [ ] **ag declares which of its own tables and columns readers may use**, documents them with the store, and moves the
   dashboard off the internal ones; a test fails when the dashboard queries a table or view outside that list.
+
+## Apps added to an actor or a task (`on_task`)
+
+What "+" on a row does with an app is the app's `on_task` (app_kit's manifest), or the user's choice on the Apps page
+(app_policy.py): "join" (put in the task), "folder" (opened at the actor's directory, shown with the task, not in it:
+Files) or "no" (not offered).
+
+- [ ] **A "folder" app's panel is not kept with the task's layout.** "+ Files" shows its panel above the task, but the
+  task's layout (features/layout/panes.js's rememberTask and openTaskApps, the task's record in model.ts) keeps only
+  its own apps' panels, so leaving the task and coming back closes Files' panel and doesn't reopen it. To do: let a
+  task's record keep the panels of apps outside it that were opened for it, and reopen them with it.

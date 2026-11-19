@@ -25,7 +25,7 @@ import app_kit
 from app_kit import finding, installing
 from app_kit.installing import InstallError
 
-from . import app_settings, data, home
+from . import app_policy, app_settings, data, home
 
 CHARS_PER_TOKEN = 3.6           # a tool's definition, as the model reads it: about this many characters a token
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -60,6 +60,8 @@ def described(m: "app_kit.Manifest", where: str, src: Optional[dict] = None) -> 
             "source": src.get("source") or "", "commit": src.get("commit") or "",
             "installed_at": src.get("at") or None, "access": m.access, "with_agent": m.agent.offered,
             "opens_with_agent": app_settings.opens_with_agent(m), "instances": m.instances,
+            "on_task": app_policy.of(m), "on_task_own": m.on_task,
+            "on_task_can": [v for v in app_kit.manifest.ON_TASK if app_policy.allowed(m, v)],
             "tools": [app_kit.tool_name(m.name, t.name) for t in m.tools], "tokens": cost(m),
             "can": m.capabilities.asked(), "own_process": bool(m.backend.command),
             "panel": bool(m.panel), "schedules": [said_schedule(s) for s in m.schedules]}

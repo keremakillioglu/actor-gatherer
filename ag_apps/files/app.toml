@@ -5,13 +5,15 @@
 # use their own tools, and it shows what they did; files_open shows the user a file or folder. Any agent of the group
 # may use it (access "group"), and it opens alone, with no agent of its own. Lines selected in a file are sent from
 # there to any actor of the gatherer, and an actor started on a file or folder of its tree, as the user's message
-# (message_actors).
+# (message_actors). Added to an actor or a task ("+" on its row): opened at the actor's directory, shown with the task
+# (on_task "folder").
 name = "files"
 label = "Files"
 version = "1"
 description = "open a folder's files, see what your actors changed, and edit"
 instances = "many"
 access = "group"
+on_task = "folder"
 mark = "mark.svg"
 replaces = ["editor"]
 instructions = """The user has a Files app in the dashboard: it shows a folder's files, and which actors changed which files
