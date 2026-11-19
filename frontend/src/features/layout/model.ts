@@ -295,6 +295,25 @@ export const keptApps = (l: Layout, apps: AppKept[] | null): Layout => {
   else delete out.apps;
   return out;
 };
+/** App panel `app` wanted above the panes (last, if it is not already; its size kept, if given). */
+export function wantApp(l: Layout, app: AppKept): Layout {
+  const apps = l.apps || [];
+  const at = apps.findIndex((a) => a.instance === app.instance);
+  if (at < 0) return { ...l, apps: [...apps, app] };
+  if (app.size === undefined || apps[at].size === app.size) return l;
+  return { ...l, apps: apps.map((a, i) => (i === at ? { ...a, size: app.size } : a)) };
+}
+/** The app panels for which `drop` says so no longer wanted. */
+export function unwantApps(l: Layout, drop: (a: AppKept) => boolean): Layout {
+  const apps = (l.apps || []).filter((a) => !drop(a));
+  return keptApps(l, apps);
+}
+/** App panel `instance` the one of `app` now (the same instance in another group, or the group's own one). */
+export const swapApp = (l: Layout, instance: string, app: AppKept): Layout =>
+  (l.apps || []).some((a) => a.instance === instance)
+    ? { ...l, apps: (l.apps || []).map((a) => (a.instance === instance ? { ...app, size: a.size } : a)) }
+    : l;
+
 /** The tab shown's arrangement, as the work area has it now. */
 export const setScreen = (l: Layout, screen: Node | null): Layout => withTab(l, l.current, (t) => ({ ...t, screen }));
 /** The tab shown's arrangement and the task in focus, as the page has them now. */

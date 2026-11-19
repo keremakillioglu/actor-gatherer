@@ -3,7 +3,7 @@ import { harnessInfo } from "../../core/page/helpers.js";
 import { setAbout } from "../page/data.js";
 import { aimStart, renderAgents } from "../list/list.js";
 import {
-  appsOnlyLeft, openAppTab, saveAppPanes, startCwd, startWithApp, startable, unselectApp, workPlacer,
+  appClosed, openAppTab, startable, startCwd, startWithApp, workPlacer,
 } from "../layout/panes.js";
 import { START_HARNESS_KEY, keptValue, ntGroup, realGroups, startPlace } from "../layout/new-tab.js";
 import { topChanged } from "../layout/top.js";
@@ -39,13 +39,8 @@ async function appsPageOpen(a, withAgent = false) {
 }
 async function appsChanged() {
   await window.agNext.apps.load();
-  for (const p of panes.apps.filter((q) => !window.agNext.apps.named(q.app.name))) {   // its app uninstalled: gone,
-    panes.apps.splice(panes.apps.indexOf(p), 1);                                       // even one held for an agent
-    unselectApp(p.instance.id);
-    p.panel.destroy();
-    p.node.remove();
-  }
-  appsOnlyLeft(); saveAppPanes(); topChanged(); renderAgents();
+  for (const p of panes.apps.filter((q) => !window.agNext.apps.named(q.app.name))) appClosed(p.instance.id);   // its app
+  topChanged(); renderAgents();                                                       // uninstalled: gone, even held
 }
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
