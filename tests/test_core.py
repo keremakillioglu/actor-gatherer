@@ -193,8 +193,8 @@ class StrictMaxTest(Base):
     def test_a_read_over_the_limit_mid_turn_starts_a_build_and_waits_for_it(self):
         spawned, waited = [], []
         self.policy.jobs = Recording(lambda s, c, job, job_id: spawned.append(job))
-        wait = self.policy.wait
-        self.policy.wait = lambda conn, ch_, row, started, seconds, *more: waited.append(seconds) or wait(
+        wait = self.policy.wait_for_build
+        self.policy.wait_for_build = lambda conn, ch_, row, started, seconds, *more: waited.append(seconds) or wait(
             conn, ch_, row, started, seconds, *more)
         self.put(PREAMBLE + long_turn(40))                   # ends on a tool output, not a user message
         self.read()
@@ -249,14 +249,14 @@ class StrictMaxTest(Base):
         self.assertLessEqual(int(after["sent_tokens"] * 1.45), self.cfg.max_context_tokens)
 
     def test_the_provider_s_drift_is_its_count_over_ag_s_within_bounds(self):
-        drift = ProactiveContextManager.drift_of
+        drift = ProactiveContextManager.get_provider_drift
         self.assertEqual(drift(None), 1.0)
         self.assertEqual(drift({"real_tokens": None, "sent_tokens": 100}), 1.0)      # not counted yet
         self.assertEqual(drift({"real_tokens": 90, "sent_tokens": 100}), 1.0)        # the provider counted less
         self.assertAlmostEqual(drift({"real_tokens": 120, "sent_tokens": 100}), 1.2)
         self.assertEqual(drift({"real_tokens": 900, "sent_tokens": 100}), 1.5)       # not a tokenizer's: capped
         self.policy.drift = 1.2
-        self.assertEqual(self.policy.by_provider(1000), 1200)
+        self.assertEqual(self.policy.get_provider_count(1000), 1200)
 
     def test_pinned_rows_keep_the_newest_within_their_budget(self):
         items = PREAMBLE + [user("q", 1)]
@@ -1419,16 +1419,16 @@ def make():
         ready = lambda conn, ch: {"status": "ready" if time.monotonic() - t0 > 0.4 else "running"}
         with mock.patch.object(tables, "boundary_verdict", lambda conn, row: {"new_task": True}), \
                 mock.patch.object(tables, "latest_build", ready):
-            self.assertTrue(self.policy.wait(None, "c1", 1, "check", self.cfg.sync_seconds))
+            self.assertTrue(self.policy.wait_for_build(None, "c1", 1, "check", self.cfg.sync_seconds))
             self.assertGreater(time.monotonic() - t0, 0.4)
             self.cfg.build_wait_seconds = 0.2                       # one slower than that is not waited for
             t0 = time.monotonic()
-            self.assertFalse(self.policy.wait(None, "c1", 1, "check", self.cfg.sync_seconds))
+            self.assertFalse(self.policy.wait_for_build(None, "c1", 1, "check", self.cfg.sync_seconds))
             self.assertLess(time.monotonic() - t0, 0.4)
         no = lambda conn, row: {"new_task": False}
         with mock.patch.object(tables, "boundary_verdict", no):    # a continuation: no longer wait
             t0 = time.monotonic()
-            self.assertFalse(self.policy.wait(None, "c1", 1, "check", 5))
+            self.assertFalse(self.policy.wait_for_build(None, "c1", 1, "check", 5))
             self.assertLess(time.monotonic() - t0, 0.2)
 
     def test_past_the_deadline_the_worker_finishes_in_the_background(self):

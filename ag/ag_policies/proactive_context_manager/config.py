@@ -12,19 +12,14 @@ know nothing of it.
 """
 
 from dataclasses import dataclass, field, replace
-from typing import List, Tuple
+from typing import Tuple
 
 from ..tools import boundary as boundary_tool
 from ..tools import ranking as ranking_tool
 from ..tools import segmentation as segmentation_tool
 from ..tools import summarize as summarize_tool
 from ..tools.groups import Groups
-
-# Every file-change notice ends with this: a notice that arrives while the agent works on something
-# the change does not touch is otherwise treated as settled by its next answer, and forgotten when a
-# later question does depend on the file.
-REMEMBER_ONE = (' Remember this for later too: until you have read the file again, any answer or work, in this turn or a later one, that uses its contents must start by re-reading it.')
-REMEMBER_MANY = (' Remember this for later too: until you have read them again, any answer or work, in this turn or a later one, that uses their contents must start by re-reading them.')
+from . import wording
 
 
 @dataclass
@@ -33,7 +28,7 @@ class ProactiveContextManagerConfig:
     # (its verbatim events since the cut, with the notices, stream messages and other
     # channels' requests among them), the history's preamble, the sections' overview, and
     # what the harness sends besides the context (its system prompt and tools) -- is at most
-    # max_context_tokens, as the provider counts it (the policy's `by_provider`: ag's counts, which the
+    # max_context_tokens, as the provider counts it (context_limit.py's `get_provider_count`: ag's counts, which the
     # hooks replace by the provider's, scaled by how far the provider's count of the channel's last call
     # ran over them): above it, on any read, a build is started, waited for, and cuts
     # the running task so the context is below it again. At a user message, X being that size:
@@ -113,139 +108,30 @@ class ProactiveContextManagerConfig:
     # Tell the agent where its full history is (in the gatherer guide, below).
     db_hint: bool = True
 
-    # The gatherer guide: the first item of every context, after the harness's own set-up, on
-    # every read -- with or without a build -- so the agent knows from its first call what the
-    # gatherer adds to its context and where the rest is. `{db_path}` is the context database. With
-    # db_hint, the database's layout follows it (layout.DB_HINT). "" = no guide.
-    gatherer_guide: str = (
-        "About this context, from the gatherer.\n\n"
-        "This session runs inside a gatherer: it puts your context together on every call, and "
-        "other sessions of your group may be working with you, in parallel or before you, for the same "
-        "user. Besides the conversation itself, your context may hold these messages from the "
-        "gatherer:\n\n"
-        "- **History sections**: earlier history, of this session or of your group's other "
-        "sessions, put together to fit. The first of them says how they are organised and how to "
-        "read them.\n"
-        "- **Requests made in parallel** (\"The user sent this to another session working in parallel "
-        "with you: ...\"): a request the user made to another session, where it arrived -- before "
-        "your user message, or after your latest step if it came mid-turn. It is not your task, but "
-        "the same user gave it, on the same material: a definition, convention, correction or "
-        "exclusion stated there applies to your work too.\n"
-        "- **File-change notices**: a file you read has been modified by someone else since. What "
-        "you read from it is out of date; read it again before relying on it.\n"
-        "- **Messages from a stream** (\"Message in <stream> from <author> ...\"): information "
-        "from outside the conversation, at the point it arrived.\n"
-        "- **Left-out notes** (\"[Agent steps were left out here ...]\"): steps of this session "
-        "dropped to keep the context within its limit; they name the rows to read them from.\n\n"
-        "None of these is the user speaking to you in this session: the user's own messages are the "
-        "requests you answer.\n\n"
-        "**Other actors, and coordinator agents.** The other sessions of your group are actors like you -- "
-        "Claude Code, Codex and other agents -- often working in the same directories at the same time. Each is "
-        "known by its session id (the one a request made in parallel names), or its first characters. Run "
-        "`ag actors` in your shell to list them -- their ids, names, status, directories and what each was last "
-        "asked -- and `ag actors --help` for the rest: what one is doing (`show`), which actors changed a file "
-        "(`who`), and `ag actors send <id> \"<message>\"` to message one. A message from another actor reaches you "
-        "as a message of this conversation starting \"Message from actor <id>\"; answer it the same way. "
-        "`ag actors` talks to the dashboard on this machine. Under Codex, run every `ag actors` command with "
-        "sandbox_permissions \"require_escalated\" from the first try: Codex's sandbox has no network, even to this "
-        "machine, so it always fails inside it.\n\n"
-        "**Coordinator agents.** The user can start a coordinator agent over any folder of the dashboard's list -- a "
-        "folder in your group, your group, a folder of groups, or everything. It coordinates, for the user, the actors in "
-        "its folder and in the folders inside it. `ag actors` names the ones over you, the nearest first; there may be "
-        "none. If you find work conflicting with yours -- another actor changing files you are working on (a "
-        "file-change notice for one of them; `ag actors who <file>` names who, in any group), or working on the same "
-        "task or one that overlaps it -- don't settle it with the other actor yourself, and don't undo its changes: stop "
-        "changing what the conflict touches, and tell the coordinator agent over you both with `ag actors send "
-        "coordinator --with <the other actor's id> \"<the conflict, and how you found it>\"` (`--with` once for each "
-        "other actor in it). ag sends it to the coordinator agent of the nearest folder that holds you all. Then end your "
-        "turn saying so; its answer comes as a new message. If no coordinator agent is over you all, nothing is sent and "
-        "the command says so: end your turn telling the user about the conflict -- what it touches, the other actor's "
-        "id, and how you found it -- so they can settle it, or start a coordinator agent over a folder that holds you "
-        "both.\n\n"
-        "A message starting \"Message from the coordinator agent\" is from one of them: it acts for the user, so listen "
-        "to it and do as it says, as you would the user's own request -- unless the user tells you otherwise. If two "
-        "coordinator agents tell you different things, do as the one over the wider folder says, and tell the other. "
-        "Message a coordinator agent back, with the command its message gives, only when it asks you to, or when you "
-        "can't do what it says: each message costs it a turn.\n\n"
-        "**The LaTeX editor's preview.** The dashboard's LaTeX editor has an Execute button that runs a git project's "
-        "preview command -- latexmk on its main .tex, unless another is set -- and shows what it makes beside the file: "
-        "the PDF, a file it writes, the page of a server it starts, or its output. When the user asks for a preview, "
-        "set it with `ag preview set \"<command>\" --show <file or URL>` "
-        "(for the repository you are in); `ag preview` says what it is now, and `ag preview run` runs it, once the user "
-        "has let that command run (`ag preview --help`). Under Codex, run it escalated too, as `ag actors`.")
+    # The text of each, and what it says, is in wording.py.
+    gatherer_guide: str = wording.GATHERER_GUIDE
 
-    # The developer message a stream message (a `context_stream` event in the
-    # verbatim part) is shown as, at its place in the history.
-    # `{stream}`, `{author}` and `{text}` are the event's; `{timestamp}` is
-    # the event's, shown as a UTC date and time when it is seconds since the
-    # epoch.
-    message: str = "Message in {stream} from {author} at {timestamp}: {text}"
+    message: str = wording.STREAM_MESSAGE
 
-    # The developer message shown, at its place in the history, for the
-    # environment updates one poll found (`environment_update` events in the
-    # verbatim part) whose subjects the verbatim rows before them refer to:
-    # one message per poll. For one update, `notice`: `{what}` and
-    # `{subject}` are the event's, `{timestamp}` as above. For up to
-    # `notice_names` of them, `notice_named`, `{subjects}` naming each; for
-    # more, `notice_counted`, with their `{count}`.
-    notice: str = ("{what} at {timestamp}, after you last read it.{repeat} What you read from it before is now "
-                   "out of date. Before giving any answer, or writing anything, that relies on its contents, read the "
-                   "file again." + REMEMBER_ONE)
-    # {repeat} in `notice`: added when the agent was already notified of an earlier change to the same file,
-    # so a second change is not taken for the first one, already handled.
-    notice_repeat: str = (" This is a new change that just happened, separate from any earlier notice you received "
-                          "about this file: even a read you made after that notice may not include it.")
-    notice_named: str = ("These files in your working directory were changed on disk after you last read them: "
-                         "{subjects}. What you read from them before is now out of date. Before giving any answer, "
-                         "or writing anything, that relies on their contents, read them again." + REMEMBER_MANY)
-    notice_counted: str = ("{count} files in your working directory were changed on disk after you last read them. "
-                           "What you read from them before is now out of date. Before giving any answer, or writing "
-                           "anything, that relies on one of them, read it again." + REMEMBER_MANY)
+    notice: str = wording.NOTICE
+    notice_repeat: str = wording.NOTICE_REPEAT
+    notice_named: str = wording.NOTICE_NAMED
+    notice_counted: str = wording.NOTICE_COUNTED
     notice_names: int = 5
 
-    # The developer message each request the user made to another channel since
-    # the build in use (all of them, before one) is shown as: right before the
-    # user message the agent is working on, or, arriving mid-turn, after the
-    # turn's latest step -- as Claude Code shows a message the user sends
-    # mid-turn. Its text is the same wherever it goes: it stays there, and a
-    # changed text would leave out the thinking after it. `{text}` is the
-    # request; `{channel}` the other channel's id; `{db_path}` and
-    # `{channel_column}` where its work can be read. With no build, those made
-    # before the channel began are messages only while they fit within
-    # all_task_tokens + parallel_index_tokens; past that, one block of the
-    # newest that fit (policy.requests_before).
-    parallel_message: str = (
-        "The user sent this to another session working in parallel with you:\n{text}\n\n"
-        "This is how the gatherer shows you what the user asks your group's other sessions, where it arrived in "
-        "your conversation. It is not addressed to you: do not answer it or take it up, and carry on with "
-        "your own task. But a definition, convention, correction or exclusion the user states in it "
-        "applies to your work too. That session's work is in {db_path}, table events, where "
-        "{channel_column} = '{channel}'.")
+    parallel_message: str = wording.PARALLEL_MESSAGE
 
-    # The developer message shown, at its place in the history, for a change of groups that changes what this
-    # session is shown (a `group` record in the verbatim part, policy.py's `group_changes`): its own move
-    # (`group_moved`), or a run of other sessions' moves into (`group_joined`) or out of (`group_left`) its group.
-    # `{group}` and `{was}` name the groups (the record's `name` and `was_name`, else its ids; the gatherer's own
-    # group is `group_own`); `{channels}` the sessions moved, by id. Its own move to a group of one -- an actor on its
-    # own, `self:<channel>` -- is `group_alone`, and back from one `group_back`.
-    group_moved: str = ("Your group changed: from now on you share work with the sessions of {group}, no longer with "
-                        "those of {was}. What you were shown of their work before is no longer part of yours.")
-    group_joined: str = "These sessions are in your group now, and their work is part of yours: {channels}."
-    group_left: str = "These sessions left your group, and their work is no longer part of yours: {channels}."
-    group_alone: str = ("You work on your own now: from now on you share work with no other session, no longer with "
-                        "those of {was}. What you were shown of their work before is no longer part of yours.")
-    group_back: str = ("Your group changed: from now on you share work with the sessions of {group}. Until now you "
-                       "worked on your own.")
-    group_own: str = "this gatherer's own group"
-    # The same, for a change of the groups a session reads besides its own (a coordinator agent's over several: its
-    # `role` record's `reads`): groups it is shown from now on (`reads_added`), and those it no longer is
-    # (`reads_removed`). `{groups}` names them (the record's `names`, else their ids).
-    reads_added: str = "From now on you are also shown the work of the sessions of these groups: {groups}."
-    reads_removed: str = ("You are no longer shown the work of the sessions of these groups, and what you were shown of "
-                          "it before is no longer part of yours: {groups}.")
+    group_moved: str = wording.GROUP_MOVED
+    group_joined: str = wording.GROUP_JOINED
+    group_left: str = wording.GROUP_LEFT
+    group_alone: str = wording.GROUP_ALONE
+    group_back: str = wording.GROUP_BACK
+    group_own: str = wording.GROUP_OWN
+    reads_added: str = wording.READS_ADDED
+    reads_removed: str = wording.READS_REMOVED
 
     # A user message of another channel that opens a line, in its first characters, with one of these is not
-    # shown to this one (policy.py's `shared`): a message the actors of the gatherer sent each other through the
+    # shown to this one (session_groups.py's `is_user_request`): a message the actors of the gatherer sent each other through the
     # dashboard (`ag actors`, ag_dashboard/coordination.py's envelopes), the receiver's to act on, not a request of the
     # user's. () = every one shown.
     unshared_openings: Tuple[str, ...] = ("Message from the coordinator agent", "Message from the gatherer agent", "Message from actor ",

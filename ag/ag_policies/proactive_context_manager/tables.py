@@ -19,9 +19,9 @@ pool is keyed '' (`key`) in tasks, _builds and _boundaries, since NULL
 cannot be a key.
 
     tasks       save_tasks, load_tasks, tasks_for, channels_with_tasks
-    cleaned     save_cleaned, cleaned_texts
+    cleaned     save_cleaned, cleaned_texts, apply_cleaned_texts
     builds      claim_build, new_build, settle, set_cut, fail_build, latest_build, build_for,
-                get_build; basis_of, in_use, waiting
+                get_build; basis_of, is_waiting, is_join
     boundaries  claim_boundary, record_boundary, boundary_verdict, checked_since
 """
 
@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS _builds (
     ranking_json      TEXT,              -- earlier tasks, most relevant first: [[channel_key, task_index], ...]
     parallel_mark     INTEGER,           -- other channels' rows up to here were seen
     error             TEXT,
-    reason            TEXT               -- why it was started: limit / boundary / request / direct
+    reason            TEXT               -- why it was started: limit / boundary / request / direct /
+                                         -- compaction / join / asked / regrouped
 );
 CREATE INDEX IF NOT EXISTS _builds_channel ON _builds (channel_key, build_id);
 
@@ -149,6 +150,15 @@ def cleaned_texts(conn, row_ids) -> dict:
         out.update(conn.execute(f"SELECT row_id, text FROM cleaned_messages WHERE row_id IN "
                                 f"({','.join('?' * len(chunk))})", chunk).fetchall())
     return out
+
+
+def apply_cleaned_texts(conn, entries) -> None:
+    """Show each user message in `entries` as its cleaned text, where it has one (in place). Its
+    row id -- the [id N] the context names it by -- is the original message's."""
+    texts = cleaned_texts(conn, [e.row_id for e in entries])
+    for e in entries:
+        if e.row_id in texts:
+            e.text = texts[e.row_id]
 
 
 def load_tasks(conn, channel_id) -> list:
@@ -260,7 +270,7 @@ def settle(conn, build_id: int, status: str, **fields) -> None:
 
 def set_cut(conn, build_id: int, open_from_row: int) -> None:
     """Move a ready build's verbatim part to start at `open_from_row`: a cut inside the running task,
-    decided when the build is adopted (policy.cut_for)."""
+    decided when the build is adopted (context_limit.py's `get_verbatim_start`)."""
     with conn:
         conn.execute("UPDATE _builds SET open_from_row = ? WHERE build_id = ?", (open_from_row, build_id))
     _build_changed(conn, build_id)
@@ -310,15 +320,14 @@ def basis_of(last_read) -> Optional[int]:
     return int(basis) if basis else None
 
 
-def in_use(conn, last_read) -> Optional[dict]:
-    """The build the channel's last read came from, or None."""
-    used = basis_of(last_read)
-    return get_build(conn, used) if used is not None else None
-
-
-def waiting(build, last_read) -> bool:
+def is_waiting(build, last_read) -> bool:
     """A ready build the channel's context does not come from yet."""
     return bool(build and build["status"] == "ready" and build["build_id"] != basis_of(last_read))
+
+
+def is_join(build: Optional[dict]) -> bool:
+    """Whether `build` is a channel's join: its start from the gatherer's other channels."""
+    return bool(build) and build.get("reason") == JOIN
 
 
 # ---------------------------------------------------------------- boundaries

@@ -208,10 +208,10 @@ class PinnedContextTest(GroupsBase):
         secs = layout.Sections(sections=[("x", "small section")], open_from_row=cut)
         replaced_without = sum(r.tokens for r in rows if turns[0].first_row <= r.row_id < cut
                                and r.type.name != "context")
-        self.assertIsNone(self.policy.not_smaller(secs, rows, turns, types))    # small section < replaced
+        self.assertIsNone(self.policy.get_not_smaller_reason(secs, rows, turns, types))    # small section < replaced
         big = layout.Sections(sections=[("x", "y " * replaced_without)], open_from_row=cut)
-        self.assertIsNotNone(self.policy.not_smaller(big, rows, turns, types))
-        self.assertIn(f"({replaced_without})", self.policy.not_smaller(big, rows, turns, types))
+        self.assertIsNotNone(self.policy.get_not_smaller_reason(big, rows, turns, types))
+        self.assertIn(f"({replaced_without})", self.policy.get_not_smaller_reason(big, rows, turns, types))
 
     def test_a_user_context_message_opens_no_turn(self):
         self.put(PREAMBLE + conversation(2))
