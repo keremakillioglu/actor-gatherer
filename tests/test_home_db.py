@@ -157,6 +157,32 @@ class MergedHomeTest(unittest.TestCase):
         self.assertEqual({rel: [(w["gatherer"], w["channel"]) for w in ws] for rel, ws in found.items()},
                          {"one.txt": [("a", "c1")], "two.txt": [("b", "c2")]})
 
+    def test_a_change_no_call_names_is_left_out_when_another_actor_s_call_that_names_it_made_it(self):
+        hunk = lambda old, new: {"hunks": [{"at": 1, "old": [old], "new": [new], "above": [], "below": []}]}  # noqa: E731
+        touches = [   # (gatherer, channel, path, how, named, detail)
+            ("a", "c1", "/w/x.py", "modified", True, hunk("a = 1", "a = 2")),      # c1's edit, and the same
+            ("a", "c3", "/w/x.py", "modified", False, hunk("a = 1", "a = 2")),     # change seen while c3's
+            ("b", "c2", "/w/x.py", "modified", False, hunk("a = 1", "a = 2")),     # commands ran: c1's alone
+            ("a", "c1", "/w/z.py", "modified", True, hunk("b = 1", "b = 2")),      # c3 reverting it: its own
+            ("a", "c3", "/w/z.py", "modified", False, hunk("b = 2", "b = 1")),
+            ("a", "c1", "/w/y.py", "modified", True, hunk("c = 1", "c = 2")),      # other lines: its own too
+            ("b", "c2", "/w/y.py", "modified", False, hunk("d = 1", "d = 2")),
+            ("b", "c2", "/w/out.txt", "created", False, {"lines": ["built"]}),    # no call names it: kept
+            ("a", "c1", "/w/gone.txt", "deleted", True, {}),                       # lines not known: the same kind
+            ("b", "c2", "/w/gone.txt", "deleted", False, {}),
+            ("a", "c1", "/w/pic.png", "modified", True, {}),
+            ("b", "c2", "/w/pic.png", "deleted", False, {}),                       # not the same kind: kept
+        ]
+        for i, (gatherer, channel, path, how, named, detail) in enumerate(touches):
+            insert(self.m, gatherer, ch(channel), [{"type": "file_touched", "id": f"touch:{i}",
+                                                    "payload": {"call": f"call{i}", "path": path, "how": how,
+                                                                "named": named, "detail": detail}}])
+        writers = lambda: {rel: sorted(w["channel"] for w in ws) for rel, ws in livedocs.writers(["/w"], 0).items()}  # noqa: E731
+        self.assertEqual(writers(), {"x.py": ["c1"], "z.py": ["c1", "c3"], "y.py": ["c1", "c2"], "out.txt": ["c2"],
+                                     "gone.txt": ["c1"], "pic.png": ["c1", "c2"]})
+        with unittest.mock.patch.object(livedocs, "GUESS_SPAN", -1.0):             # too far apart: each its own
+            self.assertEqual(writers()["x.py"], ["c1", "c2", "c3"])
+
 class MergedAppsTest(MergedHomeTest):
     """Apps in the home's one database: a gatherer's are the instances opened in it."""
 
