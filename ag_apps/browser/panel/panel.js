@@ -16,15 +16,7 @@
   "use strict";
 
   // ---------------------------------------------------------------- helpers (the dashboard page's own, small)
-  const el = (tag, attrs = {}, ...kids) => {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === "class") n.className = v; else if (k === "text") n.textContent = v;
-      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else if (v !== undefined && v !== null) n.setAttribute(k, v);
-    }
-    for (const kid of kids) if (kid !== null && kid !== undefined) n.append(kid);
-    return n;
-  };
+  const el = window.agKit.el;                       // the panels' kit (app_kit/js/kit.js)
   const svgEl = (tag, attrs = {}) => {
     const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
     for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
