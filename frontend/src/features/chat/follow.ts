@@ -1,7 +1,7 @@
 // The conversation kept at its end as its box changes size -- the window made shorter or narrower, the files and
 // commands opened beside it, the message box grown with what is typed: read to its end before, at its end after. A box
 // made smaller keeps its top where it was, so without this its end goes out of sight under the message box; the page
-// follows the end only when it draws (03-settings.js's keepingPlace), and a size change is no draw.
+// follows the end only when it draws (features/settings/panel.js's keepingPlace), and a size change is no draw.
 //
 // At its end: within END_PX of it, as keepingPlace has it -- known from the reader's last scroll, or where the page last
 // put it (`placed`), since once the box has changed size it no longer is. A box hidden (a file shown beside it in a

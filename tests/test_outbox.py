@@ -150,7 +150,7 @@ class HookTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_turn_s_end_recorded_as_the_database_is_locked_is_stored_before_the_next_call(self):
         from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag
-        from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
+        from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients
         from ag.integrations.tools.hook_server.trace import response_of
         from test_pending import sse
 

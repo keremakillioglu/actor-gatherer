@@ -1,19 +1,46 @@
 // Playwright's `test`, with one check more on every test: the page threw no error while it ran (an error in the page's
 // script would otherwise pass unseen, its view drawn as far as it got). And after each, every agent it attached to an
-// app's instance detached again: an actor opened opens the apps it is attached to with it (its task's, 07-panes.js's
-// openTaskApps), so one a test left attached would open above a later test's view. The instances stay.
+// app's instance detached again: an actor opened opens the apps it is attached to with it (its task's, features/layout/panes.js's
+// openTaskApps), so one a test left attached would open above a later test's view. The instances stay. Then what a
+// helper of the test's asked to have undone (`atEnd`). All of it whether the test passed or not: one that failed half
+// way must not leave the home changed under the tests after it.
 import { expect, test as base, type Locator, type Page, type WebSocketRoute } from "@playwright/test";
 
 export const test = base.extend({
-  page: async ({ page }, use) => {
+  page: async ({ page }, use, info) => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
     await use(page);
-    expect(errors, "errors thrown in the page").toEqual([]);
-    await page.unrouteAll({ behavior: "ignoreErrors" }); // a request a test's route still answers, as it ends: let go
-    await clearApps(page);
+    try {
+      expect(errors, "errors thrown in the page").toEqual([]);
+      await layoutAgreed(page, info.title);
+    } finally {
+      await page.unrouteAll({ behavior: "ignoreErrors" }); // a request a test's route still answers, as it ends: let go
+      await clearApps(page);
+      for (const undo of undos.splice(0).reverse()) await undo(page);
+    }
   },
 });
+
+/** The layout model run beside the page (features/layout/shadow.ts) agreed with it: every difference it found, kept in
+ * test-results/layout-mismatches.jsonl -- and, AG_LAYOUT_STRICT set, failing the test. */
+async function layoutAgreed(page: Page, title: string) {
+  const found = await page
+    .evaluate(() => (window as unknown as { agLayoutShadow?: { flush(): unknown[] } }).agLayoutShadow?.flush() ?? [])
+    .catch(() => []);
+  if (!found.length) return;
+  const fs = await import("node:fs");
+  fs.mkdirSync("test-results", { recursive: true });
+  fs.appendFileSync("test-results/layout-mismatches.jsonl", JSON.stringify({ test: title, found }) + "\n");
+  if (process.env.AG_LAYOUT_STRICT) expect(found, "the layout model differs from the page").toEqual([]);
+}
+
+const undos: ((page: Page) => Promise<unknown>)[] = [];
+/** What a helper changed in the home, undone after the test that called it -- as the test itself would at its end, had
+ * it got there (editor-home.ts's startEditor: its actor forgotten), and after the test's own undoing if it did. */
+export function atEnd(undo: (page: Page) => Promise<unknown>) {
+  undos.push(undo);
+}
 
 /** Every app a test opened closed, and every task it made undone: an app open is a row of the list, and an actor in a
  * task one of its row's, in the tests after it. */
@@ -33,7 +60,7 @@ async function clearApps(page: Page) {
 }
 export { expect };
 
-/** An app's panel's menu (07-panes.js's appPanelMenu: where it can be moved, and "Close panel"), opened as the reader
+/** An app's panel's menu (features/layout/panes.js's appPanelMenu: where it can be moved, and "Close panel"), opened as the reader
  * opens it -- an app's panel has no head: its row in the list right-clicked (an app in a task: its row in the task's
  * card, the task's row hovered). */
 export async function panelMenu(page: Page, pane: Locator): Promise<Locator> {

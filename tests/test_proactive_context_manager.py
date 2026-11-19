@@ -392,7 +392,10 @@ class OwnChangeTest(ParallelBase):
                            ("Write", {"file_path": "salaries.csv", "content": "x"}),
                            ("MultiEdit", {"file_path": "salaries.csv", "edits": []}),
                            ("edit", {"path": "salaries.csv", "edits": [{"oldText": "a", "newText": "b"}]}),
-                           ("write", {"filePath": "salaries.csv", "content": "x"})):
+                           ("write", {"filePath": "salaries.csv", "content": "x"}),
+                           # agy's: its calls' text is `write_file({"Path": ...})`, not the others' names or keys
+                           ("write_file", {"Path": "salaries.csv", "Content": "x"}),
+                           ("edit_file", {"Path": "salaries.csv", "Old": "a", "New": "b"})):
             with self.subTest(name=name):
                 self.setUp()
                 self.put(PREAMBLE + [user("fix salaries.csv", 1)])

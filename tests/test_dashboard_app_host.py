@@ -8,6 +8,8 @@ import io
 import json
 import os
 import queue
+import shutil
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -24,6 +26,8 @@ from ag.ag_harness.home.__main__ import main as home_main  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.cli import apps as apps_cli  # noqa: E402
+from ag.cli.main import PYLIB  # noqa: E402
+from ag.cli.pylib import agapps  # noqa: E402
 from ag_dashboard import access, app_host, data, server, task_links, tasks, tool_gateway  # noqa: E402
 import app_kit  # noqa: E402
 from app_kit import AppError, Caller  # noqa: E402
@@ -474,6 +478,7 @@ class GatewayTest(GatewayBase):
         self.assertIn("- Notes (notes): Notes -- used by every agent of the group", said)   # every app installed
         self.assertNotIn("ag apps", said)
         self.assertIn("ag apps call", tool_gateway.instructions("g", cli=True))
+        self.assertIn("`import agapps`", said)                                    # the same from the agent's Python
 
     def test_every_app_installed_is_on_in_every_group_whatever_its_gatherer_toml_says(self):
         self.gatherer_toml("apps = []\n")                               # the old key: no longer read
@@ -753,6 +758,67 @@ class GatewayServedTest(GatewayBase):
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
                 self.assertEqual(apps_cli.main(["call", "notes_add", "not json"]), 1)
             self.assertIn("not JSON", err.getvalue())
+
+    def as_actor(self, actor):
+        """os.environ as a session `actor` of this dashboard has it: agapps asks as it."""
+        return unittest.mock.patch.dict(os.environ, {"AG_DASHBOARD": f"http://127.0.0.1:{self.port}", "AG_ACTOR": actor,
+                                                     "CLAUDE_CODE_SESSION_ID": "", "CODEX_THREAD_ID": ""})
+
+    def test_agapps_calls_from_an_agent_s_own_python_checked_as_any_call(self):
+        access.ROWS = lambda: self.rows                       # (the server's sessions, as the test has them)
+        write_app(self.apps_dir, "book", book_toml("many", "task"), BOOK)
+        self.httpd.app_host.find()
+        with self.as_actor("c1"):
+            self.assertEqual(agapps.app("notes").add(text="from python"), "kept")     # a method per tool
+            self.assertEqual(agapps.call("notes_add", {"text": "again"}), "kept")      # or by its full name
+            self.assertEqual(agapps.call("notes_add", text="raw", raw=True),
+                             {"content": [{"type": "text", "text": "kept"}], "isError": False})
+            with self.assertRaises(agapps.AppError) as refused:
+                agapps.app("book").add(text="x")                                         # a task's app, in none of c1's
+            self.assertIn("you may use none of its instances", str(refused.exception))
+            book = self.httpd.app_host.open("book", "g", self.folder)
+            task_links.change("g", lambda: tasks.add("g", "c1", ["app:" + book.id]))     # c1 and the Book: one task
+            self.assertEqual(agapps.app("book").add(text="y"), "kept")
+            self.assertIn(book.id, agapps.mine())
+            self.assertIn("Book (book)", agapps.installed())
+            self.assertIn("book_add", agapps.about("book"))
+            with self.assertRaises(agapps.AppError) as unknown:
+                agapps.app("notes").nope()
+            self.assertIn("no such tool", str(unknown.exception))
+        with self.as_actor("tmp-2"):                                                     # codex, not in the task
+            with self.assertRaises(agapps.AppError) as refused:
+                agapps.app("book", book.id).add(text="z")
+            self.assertIn("you may not use Book", str(refused.exception))
+        with self.as_actor(""), self.assertRaises(agapps.AppError) as nobody:
+            agapps.mine()
+        self.assertIn("not run by an actor", str(nobody.exception))
+        self.httpd.app_host.flush()
+        self.assertEqual([e["payload"]["text"] for e in self.httpd.app_host.read("book", book, ["book.added"])], ["y"])
+
+    @unittest.skipUnless(shutil.which("python3", path="/usr/bin"), "no system python3")
+    def test_agapps_is_imported_by_name_in_a_python_of_its_own(self):
+        """As an agent's script imports it: by its name, in the system's Python -- not ag's -- with ag's PYLIB on
+        PYTHONPATH (ag/cli/main.py), loading nothing of ag's."""
+        script = ("import agapps, sys\n"
+                  "print(agapps.app('notes').add(text='from a script'))\n"
+                  "ours = ('ag', 'ag_dashboard', 'app_kit', 'harness_kit', 'ag_apps')\n"
+                  "print(' '.join(m for m in sys.modules if m.split('.')[0] in ours) or 'standalone')\n")
+        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")}
+        env.update({"PYTHONPATH": PYLIB, "AG_DASHBOARD": f"http://127.0.0.1:{self.port}", "AG_ACTOR": "c1",
+                    "CLAUDE_CODE_SESSION_ID": "", "CODEX_THREAD_ID": ""})
+        done = subprocess.run(["/usr/bin/python3", "-c", script], env=env, cwd=self.tmp.name, capture_output=True,
+                              text=True, timeout=60)
+        self.assertEqual((done.returncode, done.stdout.split()), (0, ["kept", "standalone"]), done.stderr)
+
+    def test_what_agapps_makes_of_a_result_s_parts(self):
+        from ag.cli import actors
+        self.assertEqual(agapps.ACTOR_VARS, actors.ACTOR_VARS)                    # who asks: as `ag actors` says
+        self.assertEqual(agapps._part({"type": "text", "text": '{"a": [1]}'}), {"a": [1]})         # JSON, parsed
+        self.assertEqual(agapps._part({"type": "text", "text": "[not json"}), "[not json")
+        self.assertEqual(agapps._part({"type": "text", "text": "- [ ] a line"}), "- [ ] a line")
+        pic = agapps._part({"type": "image", "mimeType": "image/png", "data": "iVBORw=="})
+        self.assertEqual((pic.mime_type, pic.data), ("image/png", b"\x89PNG"))
+        self.assertTrue(pic.save(self.tmp.name).endswith("picture.png"))
 
 
 REMOTE = NOTES.replace('name = "notes"', 'name = "far_notes"').replace(

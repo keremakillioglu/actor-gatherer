@@ -7,3 +7,4 @@ from .base import Named
 class OpenCode(Named):
     name = "opencode"
     label = "OpenCode"
+    edit_tools = {"edit": "filePath", "write": "filePath", "multiedit": "filePath"}

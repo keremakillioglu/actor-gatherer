@@ -21,7 +21,8 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app_kit.finding  # noqa: E402
-from ag_dashboard import avatars, data, folders, hiding, saved, seen, server, sessions, titles  # noqa: E402
+from ag_dashboard import store  # noqa: E402
+from ag_dashboard import avatars, data, folders, hiding, saved, seen, server, sessions, tasks, titles  # noqa: E402
 import harness_kit  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
@@ -634,7 +635,7 @@ class ChatTerminalTest(SessionsBase):
             got = sqlite3.connect(db)
             got.row_factory = sqlite3.Row
             return got
-        with unittest.mock.patch.object(data, "_connect", side_effect=opened):
+        with unittest.mock.patch.object(store, "gatherer", side_effect=opened):
             self.assertFalse(self.s._began(t))                           # no call yet
             called("turn", t.prompted - 5)                               # one of before it started
             called("other", t.prompted + 0.5)                            # a side call is no turn's
@@ -958,8 +959,8 @@ class KeptTest(SessionsBase):
 
     def test_a_table_from_before_kept_gets_it(self):
         self.s.close()
-        os.remove(sessions.db_path())
-        conn = sqlite3.connect(sessions.db_path())
+        os.remove(store.path())
+        conn = sqlite3.connect(store.path())
         conn.execute(sessions.SCHEMA[:sessions.SCHEMA.index(",\n    kept")] + "\n)")     # the columns before `kept`
         conn.execute("INSERT INTO sessions VALUES ('x', 'g', 'claude', '/', 'auto', 'now', 1, 'idle', NULL)")
         conn.commit()
@@ -1144,8 +1145,8 @@ class EndedTest(SessionsBase):
 
     def test_a_table_from_before_ended_gets_it_set_for_what_had_run_and_stopped(self):
         self.s.close()
-        os.remove(sessions.db_path())
-        conn = sqlite3.connect(sessions.db_path())
+        os.remove(store.path())
+        conn = sqlite3.connect(store.path())
         conn.execute(sessions.SCHEMA[:sessions.SCHEMA.index(",\n    ended")] + "\n)")    # the columns before `ended`
         conn.executemany("INSERT INTO sessions VALUES (?, 'g', 'claude', '/', 'auto', 'now', ?, ?, NULL, ?, NULL, NULL)",
                          [("ran", 1, "stopped", 0), ("never", 0, "stopped", 0), ("kept", 1, "stopped", 5.0),
@@ -1161,13 +1162,17 @@ class EndedTest(SessionsBase):
         self.assertEqual(ended, {"never": 0, "kept": 0, "open": 0})
 
 
+#: the tables with a row per actor by its channel, which a discard clears (store.py's `discard_actor`)
+ACTOR_TABLES = ("saved", "seen", "avatars", "tasked")
+
+
 class DiscardTest(SessionsBase):
     """A session that never started, discarded: nothing of it kept."""
 
     def actor_rows(self):
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         try:
-            return {t: sorted(conn.execute(f"SELECT gatherer, channel FROM {t}").fetchall()) for t in sessions.ACTOR_TABLES}
+            return {t: sorted(conn.execute(f"SELECT gatherer, channel FROM {t}").fetchall()) for t in ACTOR_TABLES}
         finally:
             conn.close()
 
@@ -1177,16 +1182,27 @@ class DiscardTest(SessionsBase):
         for c in (sid, other):
             saved.choose("g", c, True)
             seen.look([["g", c, 1.0]])
-        conn = sqlite3.connect(sessions.db_path())
+        tasks.add("g", other, [sid, "app:notes"])                       # one task of three
+        conn = sqlite3.connect(store.path())
         conn.execute(avatars.SCHEMA)
         conn.executemany("INSERT INTO avatars VALUES ('g', ?, 'animals/fox', 'now', NULL)", [(sid,), (other,)])
         conn.commit()
         conn.close()
         self.s.discard(sid)
         self.assertEqual([x["session_id"] for x in self.s.list()], [other])
-        self.assertEqual(self.actor_rows(), {t: [("g", other)] for t in sessions.ACTOR_TABLES})
+        rows = self.actor_rows()
+        self.assertEqual(rows.pop("tasked"), sorted([("g", other), ("g", "app:notes")]))   # the task, two left
+        self.assertEqual(rows, {t: [("g", other)] for t in ACTOR_TABLES if t != "tasked"})
         with self.assertRaises(sessions.SessionError):                      # gone
             self.s.discard(sid)
+
+    def test_forgotten_out_of_a_task_of_two_the_task_goes(self):
+        # a task is two items or more: its other one is on its own again, as when taken out
+        sid = self.s.create("g", self.work)["session_id"]
+        other = self.s.create("g", self.work)["session_id"]
+        tasks.add("g", other, [sid])
+        self.s.discard(sid)
+        self.assertEqual(tasks.of("g"), {"tasks": [], "tasked": {}})
 
     def test_no_table_of_the_others_yet_is_nothing_to_forget(self):
         sid = self.s.create("g", self.work)["session_id"]

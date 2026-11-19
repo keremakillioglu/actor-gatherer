@@ -24,7 +24,7 @@ except ImportError:
 from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
 from ag.integrations.harnesses.codex.ag_orchestrator import context_manager as codex_ag  # noqa: E402
 from ag.integrations.harnesses.codex.ag_orchestrator import counting  # noqa: E402
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from ag.integrations.harnesses.codex.ag_orchestrator.counting import Counter  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor.adaptor import CodexAdaptor  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor.to_messages import ag_message  # noqa: E402

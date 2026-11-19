@@ -56,6 +56,10 @@ test("an app opens above the panes, with no agent attached, its panel on an orig
   await closePanel(page, pane); // its row in the list right-clicked: "Close panel"
   await expect(page.locator("#top-row > .app-pane")).toHaveCount(0);
   await expect(page.locator("#top-row")).toBeHidden(); // nothing in it: the panes have the height
+  // its tab left showing nothing, its new-tab page: Claude, the first tab's, not brought into it (one task, one tab)
+  await expect(page.locator(".work > .lay-empty.nt:not([hidden])")).toBeVisible();
+  await expect(page.locator("#pane-here")).toBeHidden();
+  await expect(page.locator("#agents button.agent", { hasText: CLAUDE }).locator(".tab-no")).toHaveText("1");
 });
 
 test("a note the user adds in the panel is stored, comes back as an event, and is told to the agents", async ({
@@ -137,6 +141,27 @@ test("the panel follows the actor in focus, and the agents attached to it", asyn
   await expect(panel.locator("#agents")).not.toContainText(CODEX_CHANNEL);
 });
 
+test("a panel that connects before the page has read its agents is told them when the read comes", async ({ page }) => {
+  // a pane made reads who is attached to its instance while its frame loads; the panel connecting first is told the
+  // agents known then -- none -- and the host's stream tells only of agents attached later (a busy server, or CI's
+  // machine, whose answers come late at times, made app-links.spec.ts's test of another task's app fail so)
+  await page.request.post("/api/apps/open", {
+    data: { app: "notepad", gatherer: GATHERER, folder: "/w/late", channel: CODEX_CHANNEL },
+  });
+  await page.route(
+    (url) => url.pathname === "/api/apps" && url.searchParams.has("gatherer"),
+    async (route) => {
+      const got = await route.fetch();
+      await new Promise((r) => setTimeout(r, 800)); // after the panel's hello
+      await route.fulfill({ response: got });
+    },
+  );
+  await openActor(page, CODEX); // its task's app opened with it, above it
+  const panel = page.locator("#top-row > .app-pane[data-app=notepad]").filter({ visible: true }).frameLocator("iframe");
+  await expect(panel.locator("body[data-ready='1']")).toHaveCount(1);
+  await expect(panel.locator("#agents")).toHaveText(CODEX_CHANNEL);
+});
+
 test("an app's panel closed by the × over its top right corner: the app left open, its row in the list", async ({
   page,
 }) => {
@@ -161,12 +186,26 @@ test("an app's panel closed by the × over its top right corner: the app left op
 
 test("an app's panel is kept in this browser", async ({ page }) => {
   await openActor(page, CLAUDE);
-  await openNotepad(page);
+  await openNotepad(page); // in a tab of its own, alone
+  // the apps' instances read late after the reload (the first read): its tab shown before the page knows them, as on a
+  // slow server
+  let held = false;
+  await page.route("**/api/apps?gatherer=*", async (route) => {
+    if (!held) {
+      held = true;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await route.continue().catch(() => {});
+  });
   await page.reload();
   await expect(page.locator("#top-row > .app-pane[data-app=notepad]")).toHaveCount(1);
   await expect(page.locator("#top-row > .app-pane").frameLocator("iframe").locator("body[data-ready='1']")).toHaveCount(
     1,
   );
+  // its tab shown as it was left, the app alone: the actor the page opens on by itself not put beside it
+  await expect(page.locator("#pane-here")).toBeHidden();
+  await expect(page.locator(".lay-tabs:visible .lay-tab")).toHaveCount(2);
+  await expect(page.locator("#agents button.agent", { hasText: CODEX }).locator(".tab-no")).toHaveCount(0);
 });
 
 test("an app opened shows the actor it is attached to below it", async ({ page }) => {
@@ -188,7 +227,7 @@ test("an app opened shows the actor it is attached to below it", async ({ page }
   await expect(there.frameLocator("iframe").locator("#agents")).toHaveText(CODEX_CHANNEL);
   await closePanel(page, there);
   // opened again: its agent shown below, in the pane in focus -- another task than Claude's, so Claude's Notes, whose
-  // panel asked, goes with that task (07-panes.js's enterTask), its frame gone before the answer
+  // panel asked, goes with that task (features/layout/panes.js's enterTask), its frame gone before the answer
   await raise().catch(() => null);
   await expect(there).toHaveCount(1);
   await expect(page.locator("#agents button.agent[aria-current=true]", { hasText: CODEX })).toHaveCount(1);

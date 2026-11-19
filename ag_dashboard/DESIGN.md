@@ -1,7 +1,7 @@
 # The dashboard on a standard stack: plan
 
-Status: A0–A4, B1 and B3 built; A5 begun (the renderers the views share, in `core/ui/`; Chat's turn list, in
-`features/chat/`). A1's build step, the server serving it and `publish.yml` building it come with A3, the
+Status: A0–A4, B1, B3, B4 and B5 built; A3b (the old page as modules, `src/legacy/` gone) built; A5 begun (the renderers
+the views share, in `core/ui/`; Chat's turn list, in `features/chat/`). A1's build step, the server serving it and `publish.yml` building it come with A3, the
 first step with something to build. It moves the
 dashboard to the tools most web front ends and Python APIs are built with now, in steps that keep it working.
 
@@ -80,7 +80,8 @@ frontend/                  the dashboard's front end: Vite, TypeScript, React
       editor/              CodeMirror and Yjs, Tree, Changes, Conflicts, Preview
     apps/                  index.ts (APPS), docwriter/, browser/
     compat/                agDashboard.chatView, for <home>/dashboard/views/*.js
-    legacy/                page.html's script and styles, cut at its sections (A3); empties as views move to React
+    page.js, styles.ts     page.html's script and styles as modules (A3, A3b): started in its order; each module goes
+                           as its view moves to React (core/page/ and the .js files of features/)
   tests/                   Vitest
   e2e/                     Playwright: a spec per view, screenshots (tests/web_home.py builds and serves its home)
 ag_dashboard/
@@ -159,13 +160,15 @@ moved into `state`. A3's script checks the same at its finer cuts, where a secti
   into one module (`virtual:legacy`), with a source map back to each file. The sections share one scope and run top
   to bottom, as they did in one `<script>`. Turned into modules that import each other, they would run in import
   order instead, and a section's code that runs at load would reach another's values before they are set. The
-  files are temporary: each goes as its view is rewritten (A5, A6), and new code is ordinary modules.
+  files are temporary: each goes as its view is rewritten (A5, A6), and new code is ordinary modules. (A3b made
+  them modules too, started in this order.)
 - **The server** serves the build (`ag_dashboard/static/`: `index.html` and `/assets/`, the assets cached for good
   since their names change with their content), and the vendored scripts each on its own too, for `vite` in
   development. A snapshot inlines the build's script and styles, so it is still one file. With no build, the page
   and `ag dashboard`'s start say how to build; `ag dashboard` also says when the build is older than `frontend/`.
-- **Porting a branch begun before the split:** since the lines are unchanged, `split.mjs --port` rewrites a diff of
-  `page.html` as a diff of the new files:
+- **Porting a branch begun before the split:** since the lines are unchanged, `split.mjs --port` rewrote a diff of
+  `page.html` as a diff of the new files (the script went with A3b; a branch from before the split is ported by
+  hand now):
 
   ```
   base=$(git merge-base HEAD origin/main)
@@ -192,6 +195,36 @@ Left open: the production build carries no source maps. `build.sourcemap` is set
 Checks: the browser tests pass against the screenshots taken of `page.html` (A0), now failing on any error thrown in
 the page; the page also runs under `vite` in development with no errors.
 
+**A3b. The old page as modules, `src/legacy/` gone.** A5 stopped after Chat's turn list, and the old page kept
+growing where it was: from 8,844 lines in 22 files at the split to 11,206 in 28, new features going into the one
+scope where everything they touched already was. So its files became ordinary modules, without being rewritten:
+- **Where they went:** each file whole into the feature it draws (`07-panes.js` into `features/layout/panes.js`,
+  `10-chat.js` into `features/chat/chat.js`, ...), and what they all share (`00-preamble.js`, `01-helpers.js`,
+  `11-code.js`) into `core/page/`: `state.js`, `helpers.js`, `code.js`. Their styles beside them, cascading in the
+  same order (`src/styles.ts`). Every statement is as it was; a script made the imports and exports each module
+  needs from the one scope's references.
+- **core/ first:** `core/page/` imports no feature, as all of `core/` (ESLint checks it). The few helpers that
+  needed a feature went to it (the list's `closeSession`, `discardSession`; `statusOf` beside `unseen`; `actorLogo`
+  beside `appMark`; `toggleType` beside `renderMain`), and plain ones the helpers needed came into core
+  (`signature`, `escapeHtml`, `MAC`, `BESIDE_KEY`). So core loads before any feature, whatever order the features'
+  import cycles load in.
+- **Started in the old order:** a module only declares as it loads. What a file did as the script ran -- its
+  listeners, what it set up and drew -- is its exported `start()`, and `src/page.js` imports every module and then
+  calls each `start()` in the order the files ran, so listeners are added, and things drawn, in the same order as
+  before. The script checked that no declaration reads, as it loads, a feature module's `const` (which may not have
+  loaded yet): the two that did (`window.agDashboard`, `CHAT_HOST`'s `BESIDE_KEY`) became a statement and a core
+  constant.
+- **No module assigns another's variables** (modules can't): the five places that did call a function of the
+  variable's own module now (`setAutoShown`, `rekeyTask`, `dropFolderClosing`, `keepAvatarMode`).
+- **Lint:** ESLint covers them now. Unused code it found went (`MIN_PANE`, `shownTheme`, `unplanned`); the import
+  rules leave out the old feature modules, which still import each other as the one script they were; and the seven
+  over 500 lines are listed in `eslint.config.js`, a list that only shrinks. They stay plain JS, and out of Prettier
+  (`.prettierignore`) so that a branch that changed `src/legacy/` still merges: git takes each file's move as a
+  rename and puts the branch's changes into it. Formatting them is a change of its own once no such branch is open.
+- **Tests** that read the page read it through `tests/page_source.py`, which follows `page.js`'s imports.
+
+Each of these modules still goes as its view is rewritten (A5, A6), and a new view's code is TypeScript.
+
 **A4. React and the store, and the first view in React: ag's settings.**
 - **How the two halves talk** (`src/bridge.ts`): the bridge runs first and sets `window.agNext`, which the old page
   calls: it hands over the stream's home (`04-seen.js`'s `takeHome`) and asks for ag's settings (opening the panel,
@@ -206,15 +239,15 @@ the page; the page also runs under `vite` in development with no errors.
   store for config.toml, its markup and classes as before so it looks the same. Its tests (`AgSettings.test.tsx`,
   Testing Library) cover what each form sends and shows.
 - **The rules** (`eslint.config.js`): React's hooks rules, and eslint-plugin-boundaries: `core/` imports no feature,
-  a feature imports only `core/` and itself, and the app's own files (`main.ts`, `bridge.ts`) any. `src/legacy/`
-  stays outside lint and formatting until it is gone.
+  a feature imports only `core/` and itself, and the app's own files (`main.ts`, `bridge.ts`) any. The old
+  page's modules (A3b) are linted; the import rules leave out its feature modules until each is rewritten.
 - **One look changed, a fix:** the Browser logins' site picker showed, empty, before Chrome was read (its CSS
   `display` overrode `hidden`); it shows once read now. The settings screenshot was taken again for it.
 
 **A5. The views in React, one PR each.** Each PR:
 - adds the view's Playwright specs if A0 didn't have them;
 - rewrites it with Radix primitives for its menus and popovers, and react-virtuoso for long lists;
-- deletes its `legacy/` module.
+- deletes its old module (a `.js` file of the page's script, A3b).
 
 Order: Chat (where most of the redraw bugs were), Details, Transcript, History, the list (with the rail and
 monitor), settings, Terminal, Editor, then DocWriter and Browser as entries in `APPS`.
@@ -309,7 +342,59 @@ old page's "Files view") is React now; what is around it is still the old page's
   panes, Details, the chat minimized. It replaces today's separate browser keys, which are read once and dropped.
 - react-resizable-panels draws the splits.
 - Panes become components in one page, sharing one stream.
-- `legacy/` is empty and goes.
+- `page.js` has no module left to start, and goes with the bridge.
+
+The layout slice comes first, in four steps, each with every test passing:
+1. *The model* (built): `features/layout/model.ts`, one `Layout` value -- the screen tabs, the tab shown, what each
+   task was left with -- and pure functions for every change, by the rules `tabs.ts` and `rememberTask` have; with
+   `migrate()` from the six keys (`panes`, `top-apps`, `task-layouts-2`, `screen`, `screen-tabs`, `task-trees`).
+2. *Shadow mode* (built): `shadow.ts` runs the model beside the page. Each change is told where the page makes it --
+   the tab bar's operations, a task entered (`enterTask`, `enterAppsTask`), opened beside, an app's panel added, a
+   task's last panel closed, the actor the page opens on by itself -- and once the page is quiet, the tasks shown and
+   every tab's are checked against it. The browser tests record each difference (`AG_LAYOUT_STRICT` fails on one).
+   A task's key is read as it is now (`keysNow`): the task an item joined, or the items of one that dissolved, those
+   whose panels are open.
+3. *The tab bar on the model* (built): `tabs.ts` keeps no tabs of its own -- it reads the model's, and every change it
+   makes is the model's rule for it (`fresh`, `show`, `close`, `put`, ...), with the page's side effects (panes entered
+   or cleared, the arrangement set) after. The tab shown's tasks are the model's, kept by the page's tells: `note()` no
+   longer copies `shown()` into the tab, only the arrangement and the focus, and saves what changed. ⌥ (`take`) only
+   takes the task out of the other tabs; the page's entering it opens it. The check stays, and on a difference still
+   sets the model to the page. Entering a tab's tasks on a switch or a reload (`hooks.enter`) stays till step 4.
+4. *The page's state into the model, then one renderer* -- moved a record at a time, the full suite after each:
+   - 4a (built): each task's record is the model's -- what it was left with (`left`, the old page's `taskLayouts`,
+     with whatever else an older page kept there) and its tree and tabs (`tasks.ts`'s `Tasks`, now pure rules:
+     `setTree`, `addTaskTab`, `showTaskTab`, `changeTaskTab`, `closeTaskTab`, `renameTaskTab`). The model is kept under
+     one key, `ag-dashboard-layout` (`load`), made once from the keys of before (`migrate`), which are then dropped:
+     `screen-tabs`, `task-layouts-2`, `task-trees`.
+   - 4b (built): the page's panes and the apps' panels above them as it last showed them (`savePanes`,
+     `saveAppPanes`: the model's `panes` and `apps`, page-wide as they were) and the tab shown's arrangement (`work.ts`:
+     the tab's `screen`) -- the one key holds all; `panes`, `top-apps` and `screen` are dropped with the others. Its own
+     pane out of sight (`hereAway`) and a task of apps only (`appsOnly`), this page's alone and never kept, are 4c's:
+     the renderer makes them from the model.
+   - 4c-1 (built): focus is the model's -- one item in focus, an actor's pane or an app's panel selected (`focus`), and
+     the actor last in focus (`lastActor`) it goes back to when the app is unselected -- in place of the page's
+     `panes.focus` and `appSel`; `focusedPane()` and `appSelected()` read it, and a pane given another actor in place
+     (`retarget`) takes focus with it. This page's alone: not kept.
+   - 4c-2 (built): the apps' panels shown are the model's `apps` (since 4b a copy of them, now their source): what opens
+     or closes one says so to the model -- `showAppPanel` (a panel shown: an app opened, selected, linked to, its
+     actor's, a task's), `closeAppPane`, `unwantTaskApps` (a task entered, left or closed: the others' apps, those
+     still opening too), `appClosed` (an instance closed, an app uninstalled) -- and `renderApps` makes the panels
+     match: a wanted one whose instance is known opened at once (in the frame that asked, as before: no flicker), the
+     rest once the host gives it, if still wanted then; one no longer wanted closed, or held out of sight while its
+     agent is at work. Panels held for agents at work stay outside the model. The check also compares the model's apps
+     with the panels shown.
+   - 4c-3a (built): the panes beside the page's own are the model's `panes.others` (a copy since 4b, now their source):
+     `openBeside` wants one at its place, `closePane` (and every loop closing a task's panes through it) and `closeHere`
+     no longer want one, a pane given another actor (`retarget`) changes its entry, `restorePanes` renders those kept
+     still in the home, and `renderPanes` makes the frames match; `savePanes` notes only the page's own pane, the focus,
+     and each pane's view and width. The check also compares the model's panes with the frames.
+   - 4c-3b (built): the page's own pane out of sight or closed (`away`, the page's `hereAway`/`hereClosed`) and the task
+     of apps only shown (`appsOnly`) are the model's, this page's alone and not kept: `putAway`, `backInSight`,
+     `setAppsOnly` write it, `isAway`, `isShut` and `appsOnlyKey()` read it.
+   - 4c-3c: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
+     and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
+   (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,
+   `ag-dashboard-layout`. The model then holds each task's open items itself (what `keysNow` reads off the panels now).
 
 ### Track B: the server
 
@@ -409,6 +494,32 @@ What went another way, and why:
   DocWriter's folder) would end that; not done here.
 - **`compare_servers.py`** gives the old server's call of `Coordination` (an argument per app) its new form
   (`_as_before`): the old `server.py` runs on today's modules.
+
+**B4. The dashboard's database in one place (`store.py`).** Built. Twelve modules each opened `dashboard.db` their
+own way (37 `sqlite3.connect` calls), made their tables on every write, added columns by hand, and kept their own lists
+of which tables follow an actor that moves group, a group merged or an actor discarded; two such lists disagreed (a
+discarded actor's task row left behind, a moved actor's branch left under its old group). Now:
+- **Each table is declared once,** by the module that keeps it (`store.table`): its statements, the columns added
+  since, and what its rows do when an actor moves (`actor`, `on_move`), a group is merged (`merged`: MOVE, DROP, STAY or
+  a function; required of any table with a `gatherer` column, so a new one is decided, not forgotten), or an actor is
+  discarded (`discarded`), and a `tidy` after any of these.
+- **Made at the first write** (`store.write`, `store.transaction`), and given its columns since once per database a
+  process opens (looked at again after any schema change, `PRAGMA schema_version`). A read never makes one: some
+  tell "never kept" by its absence.
+- **Moves, merges and discards** (`move_actors`, `merge_group`, `discard_actor`) go over every declared table; groups.py
+  and sessions.py no longer list tables.
+- **A locked database is an error**, after the connection's TIMEOUT: a read no longer takes it for "nothing kept". The
+  page's stream keeps the home it has and reads it again at the next wake.
+- **A gatherer's database** (ag's) is opened read-only by `store.gatherer`, not by three copies of it.
+Checked against a copy of a real home: `data.home()`'s output is the same, byte for byte, before and after.
+
+**B5. Where each thing is, read once (`placement.py`).** Built. Which group each actor is in, the folders and what is
+filed in them, each app instance's group and when each group last changed were each worked out from ag's records in
+their own place: `data._groups` (once per group, for each group listed), `alone_names`, `changed`, `_instances_of`,
+`folders._records`. Two of them missed a move once (an actor listed under its old group; an app's notices left under
+it). Now one pass over those records gives all of it, kept until a record of theirs is added (their last row id, how
+many, their sum), and every one of those reads it: a home read replays them once, not once per group. `data.home()`
+gives the same output on a copy of a real home.
 
 ### Dependencies
 

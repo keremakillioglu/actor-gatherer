@@ -1,4 +1,4 @@
-// The Chat view's turn list (ag_dashboard/DESIGN.md, A5), drawn where the old page's Chat view puts it (16-files-view.js's
+// The Chat view's turn list (ag_dashboard/DESIGN.md, A5), drawn where the old page's Chat view puts it (features/chat/files-view.js's
 // filesRender, which hands it its feed and host at each draw): into a node of each actor's own, .fl-talk, the same from
 // draw to draw -- the page's patch() finds it where it is and leaves it there (its data-sig: the actor's) -- so its React
 // root stays and React changes in place only what changed, the actor's stage among it keeping its animations running.

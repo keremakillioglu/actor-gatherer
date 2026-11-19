@@ -1,6 +1,6 @@
 /* The panel of an app built on app_kit.fileedit (editor.js and the others), moved from the dashboard's page
    (frontend/src/legacy/css/07, 09, 10, 12 and 13) as it was: its head, its tree, its body (CodeMirror), its conflicts' boxes, its viewers; and Chat's way of
-   showing a file's lines (11-files-view.css's), for an actor's changes beside the file. */
+   showing a file's lines (features/chat/files-view.css's), for an actor's changes beside the file. */
 
 .ed-top { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative;
   background: var(--page); --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -412,7 +412,7 @@ button.ed-changed.again { border: 0; background: var(--wash); border-radius: 9px
 button.ed-changed.again:hover { color: var(--ink); }
 @media (max-width: 720px) { .ed-head .ed-dl, .ed-head .ed-reveal { font-size: 0; gap: 0; padding: 4px 6px; } }
 
-/* ---- 11-files-view.css */
+/* ---- features/chat/files-view.css */
 /* the Files view: a turn's files, each as the agent saw it (files.py) */
 .chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   container: talk / size; }   /* its height the layout's: short (under the Editor, say), the actor at work said on one line */

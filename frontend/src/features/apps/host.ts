@@ -3,7 +3,7 @@
 // the panel (the list's row closes the app, attaches agents by its task, names it and moves it) -- and the bridge
 // between them. Everything the panel asks goes through here, by postMessage, and on to the dashboard's routes
 // (/api/apps/...), which check it against the app's manifest; what the panel is told (events, its backend's messages,
-// the theme, the agent in focus, an intent) comes back the same way. The old page (src/legacy/07-panes.js) keeps the
+// the theme, the agent in focus, an intent) comes back the same way. The old page (src/features/layout/panes.js) keeps the
 // pane among its others, as it keeps an actor's.
 import { get, post } from "../../core/api/client";
 import { glyph } from "../../core/ui/glyphs";
@@ -215,7 +215,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: s
 }
 
 /** What a pane is called (its label, as a head named it before panes had none): the app, then the user's name for it,
- * else its own title (not the app's name again), else its folder's name -- as the list names it (05-agent-list.js's
+ * else its own title (not the app's name again), else its folder's name -- as the list names it (features/list/list.js's
  * appShown). */
 export function paneName(app: AppInfo, i: Instance): string {
   const title = i.title !== app.label ? i.title : "";
@@ -266,7 +266,7 @@ export class AppPane {
     window.addEventListener("message", this.onMessage);
   }
 
-  /** What the old page asks of a pane (07-panes.js's `call`): the theme, which it tells every pane of. */
+  /** What the old page asks of a pane (features/layout/panes.js's `call`): the theme, which it tells every pane of. */
   call(what: string): void {
     if (what === "theme") requestAnimationFrame(() => this.push("theme", { value: theme() }));
   }
@@ -517,11 +517,17 @@ export class AppPane {
     this.push("states", { value: now });
   }
 
-  /** Its agents, as the host has them now: read again and given (the page opens the first below it). */
+  /** Its agents, as the host has them now: read again and given (the page opens the first below it). A panel that
+   * connected before the read came back was told the agents known then (none, for a pane just made: its hello comes
+   * as soon as its frame loads), and the host's stream tells only of agents attached or detached later -- so a list
+   * that differs is told it here, as that stream tells it. */
   async refresh(): Promise<string[]> {
     const got = await get<Listed>(`/api/apps?gatherer=${encodeURIComponent(this.instance.gatherer)}`).catch(() => null);
     if (got) {
-      this.attached = got.attached[this.instance.id] || [];
+      const now = got.attached[this.instance.id] || [];
+      const changed = now.join("\n") !== this.attached.join("\n");
+      this.attached = now;
+      if (changed) this.push("message", { value: { ag: "instance", attached: now } });
       this.lastStates = "";
       this.agentsChanged();
     }

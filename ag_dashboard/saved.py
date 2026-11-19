@@ -20,14 +20,13 @@ started for it, for REST_SECONDS; and no page has it open in a pane (live.py's `
 read for it alone (data.py's `actors`), not the whole home. A process the dashboard does not run (a
 terminal outside it) is never touched."""
 
-import os
 import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Set
 
-from . import sessions
+from . import sessions, store
 
 REST_SECONDS = 120.0            # how long a saved actor's process is left unused before it is put away
 REST_CHECK = 10.0               # how often that is looked at
@@ -38,44 +37,29 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS saved (
     at       TEXT NOT NULL,
     PRIMARY KEY (gatherer, channel)
 )"""
-
-
-def _write() -> sqlite3.Connection:
-    """The dashboard's database, for a change: its table made."""
-    os.makedirs(os.path.dirname(sessions.db_path()), exist_ok=True)
-    conn = sqlite3.connect(sessions.db_path(), timeout=8, isolation_level=None)
-    conn.execute(SCHEMA)
-    return conn
+store.table("saved", SCHEMA, actor="channel", merged=store.MOVE)
 
 
 def stored() -> Dict[str, Dict[str, str]]:
     """{gatherer: {channel: when saved}}, read-only: {} when nothing is kept yet."""
-    if not os.path.exists(sessions.db_path()):
-        return {}
-    conn = sqlite3.connect(f"file:{sessions.db_path()}?mode=ro", uri=True, timeout=8)
-    try:
+    with store.reading() as conn:
+        if conn is None or not store.has(conn, "saved"):
+            return {}
         found: Dict[str, Dict[str, str]] = {}
         for g, c, at in conn.execute("SELECT gatherer, channel, at FROM saved ORDER BY gatherer, at"):
             found.setdefault(g, {})[c] = at
         return found
-    except sqlite3.Error:                # no table yet
-        return {}
-    finally:
-        conn.close()
 
 
 def choose(gatherer: str, channel: str, save: bool) -> Dict[str, Dict[str, str]]:
     """The actor saved for later (`save`) or no longer: every one saved, after. Its folder (folders.py) is left as it is."""
     if not gatherer or not channel:
         raise ValueError("which actor?")
-    conn = _write()
-    try:
+    with store.transaction("saved") as conn:
         if save:                         # saved again: kept from when it was first
             conn.execute("INSERT OR IGNORE INTO saved (gatherer, channel, at) VALUES (?, ?, ?)", (gatherer, channel, _now()))
         else:
             conn.execute("DELETE FROM saved WHERE gatherer = ? AND channel = ?", (gatherer, channel))
-    finally:
-        conn.close()
     return stored()
 
 
