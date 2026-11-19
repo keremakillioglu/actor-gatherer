@@ -1023,8 +1023,7 @@ function retask(was) {
   const now = selectedTask();
   if (!was || !now || was === now) return;
   if (tasksLaidOut.has(was)) tasksLaidOut.add(now);
-  if (taskNow === was) taskNow = now;
-  if (appsOnly === was) appsOnly = now;
+  rekeyTask(was, now);
 }
 async function addToTask(gname, k, harness) {
   const g = state.home.gatherers.find((x) => x.name === gname);
@@ -1377,6 +1376,8 @@ function folderLine(g, f) {
 // end, take off -- with "Close folder" and Cancel (Esc). Its buttons keep their focus through the list's redraws
 // (askRefocus).
 let folderClosing = null;
+// The question let go of where it was asked (`from`): its card hidden (06-list-modes.js's cardHide).
+const dropFolderClosing = (from) => { if (folderClosing && folderClosing.from === from) folderClosing = null; };
 function closeWhat(g, f) {
   const inside = actorsWithin(g, f.id), t = folderTally(g, f.id);
   return { open: t.open, busy: t.running + t.asking, marks: inside.filter((a) => savedAs(g.name, a)).length,

@@ -610,7 +610,7 @@ function cardHide(ev = null) {
   if (ev && "clientX" in ev) hover.still = [ev.clientX, ev.clientY];
   hover.from = null; hover.key = null; hover.shown = false;
   cardEdit = null; cardInput = null;
-  if (folderClosing && folderClosing.from === "card") folderClosing = null;
+  dropFolderClosing("card");
   if (hover.node) hover.node.hidden = true;
 }
 // A LIVE card -- a folder's or a gatherer's, in the rail -- is one to use, not only read: the pointer may go onto it,

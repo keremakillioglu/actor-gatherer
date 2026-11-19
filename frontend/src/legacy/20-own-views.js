@@ -1,6 +1,8 @@
 // ------------------------------------------------------------------ the reader's own views
 // What a view gets to draw with -- and, for one in a file of its own, how it adds itself.
-const agDashboard = window.agDashboard = Object.freeze({
+// (set as the page starts, below: what every view is drawn with is there by then)
+let agDashboard = null;
+agDashboard = window.agDashboard = Object.freeze({
   chatView: addChatView,
   el, svgEl, markdown, clock, ago, full, compact, plural, firstLine,
   contextItem, columns, typeChips, itemType, transcriptBlocks, foldedOutput, notesSwitch, sizeCard, contextCard,

@@ -125,7 +125,7 @@ async function refresh(userAction = false) {
       const first = state.home.gatherers.find((g) => g.agents.length && !isHidden(g)) || state.home.gatherers.find((g) => g.agents.length);
       if (first) {
         state.selected = [first.name, firstAgent(first).channel];
-        if (!PANE) autoShown = taskKey(...state.selected);   // shown by itself: the tab's as if empty (07-panes.js's viaTabs)
+        if (!PANE) setAutoShown(taskKey(...state.selected));   // shown by itself: the tab's as if empty (07-panes.js's viaTabs)
       }
     }
     if (state.selected && !PANE) showActorsApp(...state.selected);   // an app's actor (19-app-actors.js): its panel above
@@ -246,9 +246,8 @@ const shownTheme = () => document.documentElement.dataset.theme
 // The actor at work in the Chat view: acting out what it does (the stage), or small with its one motion ("simple"); kept in
 // this browser, acting until one is picked.
 const AVATAR_KEY = "ag-dashboard-avatar";
-let avatarMode = "acting";
 function setAvatarMode(pick, keep, draw = true) {
-  avatarMode = pick === "simple" ? "simple" : "acting";
+  keepAvatarMode(pick === "simple" ? "simple" : "acting");
   for (const b of document.querySelectorAll("[data-avatar-pick]")) b.setAttribute("aria-pressed", b.dataset.avatarPick === avatarMode ? "true" : "false");
   if (keep) { try { localStorage.setItem(AVATAR_KEY, avatarMode); } catch (e) { /* this page only */ } }
   for (const p of panes.others) p.call("avatar", avatarMode);

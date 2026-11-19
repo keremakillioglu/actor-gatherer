@@ -146,6 +146,10 @@ function doneCheck() {
   ok.append(svgEl("path", { d: "M2.2 5.2L4.2 7.1L7.9 3.1", fill: "none", stroke: "#fff", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round" }));
   return ok;
 }
+// How an actor at work is drawn: "acting" (the stage) or "simple"; set by 02-data.js's setAvatarMode, kept in this
+// browser.
+let avatarMode = "acting";
+const keepAvatarMode = (pick) => { avatarMode = pick; };
 // The actor at work in the Chat view: its avatar acting out its turn -- `t`, the turn, its `work` (work.py's summary) --
 // on the stage; or, the setting "Simple" (avatarMode), buddy()'s one motion. An actor with no avatar has the turning glyph.
 function atWork(a, t) {

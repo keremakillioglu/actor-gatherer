@@ -67,6 +67,11 @@ function setAppsOnly(k) {
   placeWork();
 }
 let taskNow = null;                                  // the task last entered: what the apps opened for it wait on
+// The task entered, and the one whose apps alone show, under the key a change of the tasks gave it (`was` -> `now`).
+function rekeyTask(was, now) {
+  if (taskNow === was) taskNow = now;
+  if (appsOnly === was) appsOnly = now;
+}
 // Each task's LAYOUT, as it was left (`taskLayouts`, kept in this browser): its actors' panes, in order, the one in focus,
 // the view each shows, and its apps' panels -- with the chat minimized under them or not -- so a task is opened again as
 // it was, an actor's pane or an app's panel closed in it staying closed; where each goes, and how wide or tall, its
@@ -242,8 +247,7 @@ async function openTaskApps(g, c, to, only = null, beside = false) {
 function taskAppsFound(g, gg, c, to, only) {
   const item = c || (to.split("\u0000")[1] || ""), now = taskKey(g, item);
   if (now && now !== to && !to.split("\u0000")[1].startsWith("t")) {   // made one task with others since: that one's
-    if (taskNow === to) taskNow = now;
-    if (appsOnly === to) appsOnly = now;
+    rekeyTask(to, now);
     tasksLaidOut.add(now);
     to = now;
   }
@@ -501,6 +505,8 @@ function startPlacing() {
 // on another task shows it in its place, not in a new tab.
 // True: the task now shown where the click goes on as a plain one (⌘ having brought its tab forward).
 let autoShown = null;
+// The actor the page opened on by itself, set where it is opened (02-data.js's refresh, 03-settings.js's restore).
+const setAutoShown = (k) => { autoShown = k; };
 async function viaTabs(k, ev, item = null) {
   if (!workPlacer || !k || !ev || ev.inTabs || SNAPSHOT || ev.shiftKey) return false;
   const tabs = workPlacer.tabs;
