@@ -297,9 +297,9 @@ def cmd_complete(h, purpose: str, system: str, effort: str, timeout: float, as_j
 
 def cmd_build(h, gatherer: str, properties: str, min_messages: int) -> int:
     """A build the reader asked for: started in the background, not waited for (the policy's
-    `requested`), for the events `properties` (a JSON object, in the policy's own names) name; what
-    came of it on stdout, as JSON. Exit 1 when the gatherer has no database, or the properties do not
-    read as an object."""
+    `request_build`, asked by a reader), for the events `properties` (a JSON object, in the policy's own
+    names) name; what came of it on stdout, as JSON. Exit 1 when the gatherer has no database, or the
+    properties do not read as an object."""
     try:
         props = json.loads(properties or "{}")
     except ValueError:

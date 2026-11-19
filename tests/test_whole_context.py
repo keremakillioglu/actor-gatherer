@@ -13,7 +13,7 @@ from ag.ag_harness import Manager  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from channels import ch  # noqa: E402
 from test_core import PREAMBLE, SMALL, Recording, ScriptedLLM, conversation, long_turn, user  # noqa: E402
 import codex_items  # noqa: E402
@@ -101,7 +101,7 @@ class WholeContextTest(unittest.TestCase):
         self.put(PREAMBLE + long_turn(3))                      # one turn, under the max by itself
         self.read(self.system(2900))                           # with the system prompt, over it
         conn = self.m._conn("s")
-        build_id = tables.new_build(conn, "c1")
+        build_id = tables.create_build(conn, "c1")
         self.policy.build("s", ch("c1"), build_id)
         self.assertNotEqual((tables.get_build(conn, build_id) or {}).get("error"), "fewer than two turns")
 

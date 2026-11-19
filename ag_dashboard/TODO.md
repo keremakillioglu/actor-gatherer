@@ -648,3 +648,36 @@ Not done yet:
     user's, as the test runs it; a real Linux desktop Chrome may differ. To do: try it on one, then choose a fix
     (e.g. a window of its own in the background, not minimized, which `new_target` falls back to already).
     `test_a_browser_in_the_user_s_chrome` runs on macOS only until then.
+
+## Reading ag's database: a declared contract
+
+The dashboard reads every gatherer's database itself, read-only (store.py's `gatherer`), each time ag's doorbell says it
+changed (ag_tools/notify.py, live.py), and imports nothing of ag (`__init__.py`). Reading directly is the right call
+here: SQLite serves readers beside a writer, a read-only connection can't break anything, it works with no ag process
+running (ag has none that is always up), and each update costs no round trip. What it reads is the problem. The schema
+is the contract between ag and the dashboard, and nothing declares which part of it is meant to be read:
+
+- **ag's internal tables.** Besides the shared ones (`events`, `event_types`, `_reads`, `_read_items`, `_made_items`),
+  it queries `_withdrawn`, `_open`, `_stays`, `_preambles`, `_migrated` and `_read_items_old`, whose leading underscore
+  marks them as internal.
+- **One policy's private tables.** history.py and data.py read the proactive context manager's `tasks`, `_builds`,
+  `_boundaries` and `cleaned_messages`: the History view's tasks, its build status and the "N messages since the last
+  build" count, the list's "building" mark and task counts, the actor's builds and checks, user messages shown without
+  their wrapper, and the Context view's kept/recent split (a read's `basis` joined to `_builds.open_from_row`). With
+  another policy, those features go quiet.
+- **Signs of it:** defensive checks for drift (`if "_builds" in tables`, `if "reason" in cols`), and logic kept twice
+  (the count of messages since the last build is the policy's too, in `request_build`).
+
+The textbook alternative, the dashboard asking ag through an API, fits poorly: ag has no always-on process, and every
+update would cost a round trip. The fix is to keep the direct reads, against a published read model:
+
+- [ ] **The policy publishes views, with columns the interface documents** (ag_interface's `Policy`), made in its
+  `init` over its own tables; the dashboard reads only these, and a policy that has none of a kind makes none:
+  `policy_jobs` (its background work: id, channel, kind, status, why started, times, error, a one-line result, the row
+  it covered through), `policy_segments` (how it divides a session: name, description, first and last row, tokens),
+  `policy_row_texts` (a row's text to show in place of its own) and `policy_bases` (each basis a read names, and the row
+  its word-for-word part starts from). The dashboard's JSON stays the same, so the page doesn't change. A view must
+  name only columns that already exist (one naming a column `events` lacks yet broke `ALTER TABLE ... RENAME` in ag's
+  migrations): test it on a fresh database and on an upgraded one.
+- [ ] **ag declares which of its own tables and columns readers may use**, documents them with the store, and moves the
+  dashboard off the internal ones; a test fails when the dashboard queries a table or view outside that list.

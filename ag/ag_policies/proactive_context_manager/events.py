@@ -51,6 +51,10 @@ def context_stream(type_id: int, stream: str, author: str, text: str, timestamp:
     return Event(type_id, {"stream": stream, "author": author, "text": text, "timestamp": timestamp},
                  id=f"context_stream:{stream}:{timestamp}", text=f"{author} in {stream}: {text}")
 
+# The property a harness's adaptor gives a tool call and its output alike, which pairs them (core/assembly.py's
+# `get_call_output_pairs`).
+CALL_ID = "call_id"
+
 USER_MESSAGE_TYPE = EventType(USER_MESSAGE, (CHANNEL_PROPERTY, CWD_PROPERTY))
 AGENT_MESSAGE_TYPE = EventType(AGENT_MESSAGE, (CHANNEL_PROPERTY, CWD_PROPERTY))
 TOOL_CALL_TYPE = EventType(TOOL_CALL, (CHANNEL_PROPERTY, CWD_PROPERTY))
