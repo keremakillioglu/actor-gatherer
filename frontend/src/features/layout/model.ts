@@ -86,6 +86,11 @@ export interface Layout {
    * not kept. */
   focus?: string | null;
   lastActor?: string | null;
+  /** The page's own pane out of sight -- its actor (`g`, `c`) not in the tab shown, or closed by the reader (`shut`) --
+   * and the task of apps only shown (its key: the actors' panes out of sight, its apps taking the room). This page's
+   * only: not kept. */
+  away?: { g: string; c: string; shut: boolean } | null;
+  appsOnly?: string | null;
 }
 
 export const KEY = "ag-dashboard-layout";
@@ -275,6 +280,12 @@ export function move(l: Layout, id: string, at: number): Layout {
 }
 
 export const rename = (l: Layout, id: string, name: string): Layout => withTab(l, id, (t) => ({ ...t, name }));
+/** The page's own pane out of sight, its actor `sel` (`shut`: closed by the reader); none: in sight again. */
+export const setAway = (l: Layout, sel: [string, string] | null, shut = false): Layout =>
+  sel ? { ...l, away: { g: sel[0], c: sel[1], shut } } : { ...l, away: null };
+/** Task `key` shown with its apps alone (none: none is). */
+export const setAppsOnly = (l: Layout, key: string | null): Layout => ({ ...l, appsOnly: key });
+
 /** Item `item` in focus: an actor's pane (`actor`), or an app's panel selected. */
 export const focusOn = (l: Layout, item: string | null, actor: boolean): Layout =>
   actor ? { ...l, focus: item, lastActor: item } : { ...l, focus: item };
@@ -513,6 +524,8 @@ export function load(get: (k: string) => string | null): Layout {
       current: kept.tabs.some((t) => t.id === kept.current) ? kept.current : kept.tabs[0].id,
       focus: null, // (this page's alone)
       lastActor: null,
+      away: null,
+      appsOnly: null,
     };
   return migrate(get);
 }

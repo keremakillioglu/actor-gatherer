@@ -388,7 +388,9 @@ The layout slice comes first, in four steps, each with every test passing:
      no longer want one, a pane given another actor (`retarget`) changes its entry, `restorePanes` renders those kept
      still in the home, and `renderPanes` makes the frames match; `savePanes` notes only the page's own pane, the focus,
      and each pane's view and width. The check also compares the model's panes with the frames.
-   - 4c-3b: the page's own pane -- its actor, out of sight, a task of apps only -- the model's.
+   - 4c-3b (built): the page's own pane out of sight or closed (`away`, the page's `hereAway`/`hereClosed`) and the task
+     of apps only shown (`appsOnly`) are the model's, this page's alone and not kept: `putAway`, `backInSight`,
+     `setAppsOnly` write it, `isAway`, `isShut` and `appsOnlyKey()` read it.
    - 4c-3c: clicks call the model's functions, one renderer opens and closes panes to match it (in place of the tells,
      and of entering a tab's tasks), `shadow.ts` becomes the layout's store, and the old variables
    (`appsOnly`, `taskNow`, `hereAway`, `tasksLaidOut`, `autoShown`, `taskLayouts`) and the six keys go -- one key,

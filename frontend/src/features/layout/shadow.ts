@@ -64,6 +64,8 @@ class Shadow {
     const kept = { ...this.layout }; // (focus: this page's alone, not kept)
     delete kept.focus;
     delete kept.lastActor;
+    delete kept.away;
+    delete kept.appsOnly;
     const now = JSON.stringify(kept);
     if (now === this.persisted) return;
     this.persisted = now;
