@@ -23,6 +23,7 @@ other error (the database locked past TIMEOUT seconds) is raised, never taken fo
 `gatherer(name)` opens a gatherer's database (ag's: the home's one, or the gatherer's own), read-only."""
 import importlib
 import os
+import random
 import re
 import sqlite3
 import threading
@@ -59,7 +60,10 @@ OWNERS = ("sessions", "saved", "seen", "avatars", "tasks", "hiding", "titles", "
           "branches", "coordination")
 TABLES: Dict[str, Table] = {}
 # (database file) -> (its schema's version then, the tables made and given their columns at it), in this process: a
-# change to its schema since (another process's, or a table dropped and made again) has them looked at again
+# change to its schema since (another process's, or a table dropped and made again) has them looked at again. The file
+# is told by its path, device and inode, and by a token kept in it (`PRAGMA user_version`, set once, when it is 0): a
+# file deleted and made again at the same path can be given the same inode (Linux does), and a new one's schema
+# version can match the old one's, but a new file's token is 0 -- it is looked at again.
 _made: Dict[tuple, Tuple[int, Set[str]]] = {}
 _lock = threading.Lock()
 
@@ -146,7 +150,12 @@ def transaction(*tables: str, rows: bool = False) -> Iterator[sqlite3.Connection
 def prepare(conn: sqlite3.Connection, tables: Iterable[str]) -> None:
     """`tables` made on `conn` (dashboard.db, autocommit), and given the columns added since: once per database file."""
     st = os.stat(path())
-    key = (path(), st.st_dev, st.st_ino)
+    token = conn.execute("PRAGMA user_version").fetchone()[0]
+    if not token:                                       # a file new to this store (or from before it): told apart
+        token = random.randint(1, 2 ** 31 - 1)
+        conn.execute(f"PRAGMA user_version = {token}")
+        token = conn.execute("PRAGMA user_version").fetchone()[0]   # (another process's, if it set one first)
+    key = (path(), st.st_dev, st.st_ino, token)
     version = conn.execute("PRAGMA schema_version").fetchone()[0]
     with _lock:
         seen, done = _made.get(key, (None, set()))
