@@ -1,7 +1,7 @@
 # A notepad that agents and the user share: the test app for app_kit's contract (app_kit/DESIGN.md). It uses every part
 # of it -- a backend in the host's process, a tool the backend answers and one its panel answers, its own event type,
-# a message to its agents, an intent it takes, a notification to the user -- so the browser tests (frontend/e2e/
-# apps.spec.ts, notices.spec.ts) can drive each.
+# a message to its agents, an intent it takes, a link to it, a notification to the user -- so the browser tests
+# (frontend/e2e/apps.spec.ts, notices.spec.ts, app-links.spec.ts) can drive each.
 name = "notepad"
 label = "Notepad"
 version = "1"
@@ -34,6 +34,10 @@ description = "A note kept: {text}; `by` the agent's channel, or user."
 [[handles]]
 intent = "open-file"
 types = ["text/markdown"]
+
+[[links]]
+form = "note/<n>"
+about = "A note: its number, the first 1. Add #<words> for where in it."
 
 [capabilities]
 notify = true

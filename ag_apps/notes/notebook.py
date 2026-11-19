@@ -76,9 +76,11 @@ SOURCE: `source`, that agent's channel, and `source_at`, when it wrote it: the c
 written by one call share both, and show as one. The user's follow-ups on them go to that agent and, with its replies,
 are the block's thread. Retyped -- by the user, or by an agent not from its conversation -- a block keeps its source.
 
-A LINK TO A PAGE: an `a` whose href is `page:<the page's id>` (markdown: `[its title](page:<id>)`). Its words are the
-page's title when it was linked; the panel and the markdown agents read show the title the page has now, and the id
-stays the same however the page is renamed or moved.
+A LINK TO A PAGE: an `a` whose href is `page:<the page's id>`. Agents read and write it as a link to the app's page
+(app_kit/links.py), `[its title](ag://notes/page/<id>)` -- the link Chat opens too -- and the older `(page:<id>)` is
+still taken. Its words are the page's title when it was linked; the panel and the markdown agents read show the title
+the page has now, and the id stays the same however the page is renamed or moved. A LINK TO SOMETHING IN AN APP
+(`ag://<app>/...`, another Notes page's line too) is kept as written: the panel opens it in that app (ag.links.open).
 
 PICTURES: an `image` block shows a picture kept in the app's files (media.py), `file` its name there (its contents'
 hash and its kind), `w` and `h` its size in pixels, `width` how wide it is drawn (a percent of the page's width; none:
@@ -118,6 +120,9 @@ MAX_TEXT = 20_000
 MAX_TITLE = 300
 ID = re.compile(r"^[a-z0-9]{6,24}$")
 PAGE_HREF = re.compile(r"^page:[a-z0-9]{6,24}$")
+#: a link to something in an app (app_kit/links.py's form); one to a page of these notes, stored as `page:<id>`
+APP_HREF = re.compile(r"^ag://[a-z][a-z0-9_]{0,23}(?:[/?#][^\s\"'<>]*)?$")
+NOTES_PAGE = re.compile(r"^ag://notes/page/([a-z0-9]{6,24})$")
 #: an actor's channel, as a block sent to one names it (a session's id, a codex thread's)
 CHANNEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")
 #: who wrote a thread's line: the user, or an agent (its channel)
@@ -209,10 +214,12 @@ class _Cleaner(HTMLParser):
         elif tag in self.TAGS:
             t = self.TAGS[tag]
             if t == "a":
-                href = dict(attrs).get("href") or ""
-                if not re.match(r"^(https?:|mailto:)", href.strip(), re.I) and not PAGE_HREF.match(href.strip()):
+                href = (dict(attrs).get("href") or "").strip()
+                page = NOTES_PAGE.match(href)
+                href = f"page:{page.group(1)}" if page else href
+                if not (re.match(r"^(https?:|mailto:)", href, re.I) or PAGE_HREF.match(href) or APP_HREF.match(href)):
                     return
-                self.out.append(f'<a href="{html.escape(href.strip(), quote=True)}">')
+                self.out.append(f'<a href="{html.escape(href, quote=True)}">')
             else:
                 self.out.append(f"<{t}>")
             self.open.append(t)
@@ -272,7 +279,8 @@ class _Markdowner(HTMLParser):
 
     def handle_endtag(self, tag):
         if tag == "a" and self.hrefs:
-            self.out.append(f"]({self.hrefs.pop()})")
+            href = self.hrefs.pop()
+            self.out.append(f"]({'ag://notes/page/' + href[5:] if PAGE_HREF.match(href) else href})")
         elif tag in self.MARKS:
             self.out.append(self.MARKS[tag])
 
@@ -282,7 +290,8 @@ class _Markdowner(HTMLParser):
 
 def inline_markdown(text: str, title: Optional[Callable[[str], Optional[str]]] = None) -> str:
     """A block's text (clean_html's) as markdown: **bold**, *italic*, ~~struck~~, `code`, [links](url), <br>. A link to
-    a page says the title `title(its id)` gives (the page's now), if it gives one; else the words it was linked with."""
+    a page is `[its title](ag://notes/page/<id>)`, the title `title(its id)` gives (the page's now), if it gives one;
+    else the words it was linked with."""
     if title:
         def now(m: "re.Match[str]") -> str:
             name = title(m.group(1))
@@ -295,7 +304,7 @@ def inline_markdown(text: str, title: Optional[Callable[[str], Optional[str]]] =
 
 
 _CODE = re.compile(r"`([^`]+)`")
-_LINK = re.compile(r"\[([^\]]+)\]\(((?:https?:|mailto:)[^)\s]+|page:[a-z0-9]{6,24})\)")
+_LINK = re.compile(r"\[([^\]]+)\]\(((?:https?:|mailto:)[^)\s]+|page:[a-z0-9]{6,24}|ag://[a-z][a-z0-9_]*[^)\s]*)\)")
 _PAGE_LINK = re.compile(r'<a href="page:([a-z0-9]{6,24})">(.*?)</a>', re.S)
 _STYLES = ((re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*"), "b"), (re.compile(r"__(?=\S)(.+?)(?<=\S)__"), "b"),
            (re.compile(r"~~(?=\S)(.+?)(?<=\S)~~"), "s"),
@@ -552,20 +561,22 @@ class Notebook:
         return (p.get("title") or "Untitled") + (" (in the trash)" if p.get("deleted") else "")
 
     def page_links(self, md: str) -> str:
-        """Markdown an agent wrote, its links to pages by id and said as the page's title: `[words](page:<an id, or a
-        title>)` made `[its title](page:<its id>)` (the words kept, if the title would break the link). NotebookError
-        for a page that is not there, so the agent can look it up."""
+        """Markdown an agent wrote, its links to pages by id and said as the page's title: `[words](ag://notes/page/<an
+        id, or a title>)` -- or `(page:...)` -- made `[its title](page:<its id>)` (the words kept, if the title would
+        break the link). One to a line of a page (`#<block>`) is kept as written. NotebookError for a page that is not
+        there, so the agent can look it up."""
         def one(m: "re.Match[str]") -> str:
             words, name = m.group(1), m.group(2).strip()
             p = self._get(name) if ID.match(name) else None
             p = p or self.page(name)
             if p is None:
-                raise NotebookError(f"no page {name!r} to link to: a link to a page is [its title](page:<its id>), "
+                raise NotebookError(f"no page {name!r} to link to: a link to a page is "
+                                    f"[its title](ag://notes/page/<its id>), "
                                     f"the id from notes_read.\n{self.outline()}")
             title = p.get("title") or "Untitled"
             return f"[{words if re.search(r'[][]', title) else title}](page:{p['id']})"
         with self.lock:
-            return re.sub(r"\[([^\]\n]*)\]\(page:([^)\n]+)\)", one, md or "")
+            return re.sub(r"\[([^\]\n]*)\]\((?:page:|ag://notes/page/)([^)#\n]+)\)", one, md or "")
 
     def children(self, pid: Optional[str], deleted: bool = False) -> List[dict]:
         return [p for p in self.pages if p.get("parent") == pid and bool(p.get("deleted")) == deleted]
@@ -614,7 +625,8 @@ class Notebook:
             head = f"# {(page.get('icon') + ' ') if page.get('icon') else ''}{page.get('title') or 'Untitled'}"
             where = f"page {page['id']}" + (f", under {parent.get('title') or 'Untitled'} ({parent['id']})"
                                            if parent else "")
-            lines = [f"{head}   ({where})", ""]
+            link = f"[{page.get('title') or 'Untitled'}](ag://notes/page/{page['id']})"     # as a reply links it
+            lines = [f"{head}   ({where}) -- link it as {link}", ""]
             body = markdown_lines(page.get("blocks", []), title=self.link_title)
             lines.extend(body or ["(no blocks yet)"])
             sent = [b for b in page.get("blocks", []) if is_work(b) or (b.get("thread") and not b.get("source"))]

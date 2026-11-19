@@ -12,6 +12,7 @@ import { desktop, nativePanes, nativeSoon, type NativePlace } from "./native";
 import { ACTOR_OPS, toActors } from "./actors";
 import { NOTICE_OPS, toNotices } from "./notices";
 import { SPELLING_OPS, spellingOn, toSpelling } from "./spelling";
+import type { LinkForm } from "./links";
 
 type Capability =
   "message_agents" | "transcript" | "edit_guard" | "native_view" | "docs" | "actors" | "notify" | "message_actors";
@@ -26,6 +27,8 @@ export interface AppInfo {
   capabilities?: Partial<Record<Capability, boolean>>;
   tools?: { name: string; handled_by: string }[];
   handles: { intent: string; types: string[] }[];
+  /** The paths of `ag://<name>/...` links its panel opens (app_kit/links.py). */
+  links?: LinkForm[];
   failed?: string | null;
 }
 export interface Instance {
@@ -73,6 +76,8 @@ export interface PaneHooks {
   showActor?: (gatherer: string, channel: string) => Promise<unknown> | void;
   /** A press in its panel, which the page around it never hears: what floats over the page (a menu, Settings) closed. */
   pressed?: () => void;
+  /** A link to something in an app (`ag://...`, the SDK's ag.links.open) opened, as a click on it in Chat opens it. */
+  openLink?: (href: string, from: AppPane) => Promise<unknown> | void;
 }
 /** What a panel asking `actors` is told of them (the SDK's ag.actors). */
 export interface Actors {
@@ -400,6 +405,9 @@ export class AppPane {
       }
       case "intent":
         return this.hooks.intent(String(m.kind), (m.data || {}) as Record<string, unknown>, this);
+      case "link":
+        if (!this.hooks.openLink) throw new Error("links to apps open only in the dashboard's own page");
+        return this.hooks.openLink(String(m.href || ""), this) ?? null;
       case "close":
         this.hooks.close();
         return null;

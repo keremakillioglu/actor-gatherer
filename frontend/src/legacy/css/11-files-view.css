@@ -157,6 +157,10 @@
 .files .md > h1:first-child, .files .md > h2:first-child, .files .md > h3:first-child { line-height: var(--lh); }   /* beside the reply's dot */
 .files .md strong { color: var(--ink); font-weight: 650; }
 .files .md a { color: var(--md-link); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--md-link) 40%, transparent); text-underline-offset: 2px; }
+/* a link to something in an app (ag://, core/ui/md.ts): its app's mark before its words; the page opens it in the app */
+.md a.ag-link { cursor: pointer; }
+.md a.ag-link::before { content: ""; display: inline-block; width: 1.05em; height: 1.05em; margin: 0 0.25em 0 0.05em;
+  vertical-align: -0.18em; background: var(--ag-mark) center / contain no-repeat; }
 .files .md a:hover { text-decoration-color: currentColor; }
 .files .md ul, .files .md ol { padding-left: 22px; }
 .files .md li { margin: 3px 0; } .files .md li > ul, .files .md li > ol { margin: 3px 0 0; }

@@ -131,6 +131,12 @@ class Store:
                                         for c in asked}})
         return out
 
+    def day_of(self, pid: str) -> Optional[str]:
+        """The latest day a paper was listed on, if it was kept."""
+        with self.lock:
+            row = self.db.execute("SELECT max(day) FROM listed WHERE id = ?", (pid,)).fetchone()
+        return row[0] if row else None
+
     def papers(self, day: str) -> List[dict]:
         """A day's papers in arXiv's order, each with the agent's pick of it that day ({score, why}, or None) and the
         user's word on it ("relevant", "not", or None)."""

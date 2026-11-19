@@ -170,7 +170,7 @@ def instructions(gatherer: str, cli: bool = False, channels: Tuple[str, ...] = (
                                         for m in apps)]
     for m in apps:
         if m.access == access.GROUP or head:
-            about = (m.instructions or m.description).strip()
+            about = (m.told() or m.description).strip()
             parts.append(f"## {m.label} ({m.name})\n{about}" if about else f"## {m.label} ({m.name})")
     return "\n\n".join(parts)
 
@@ -197,7 +197,7 @@ def launch_args(s: dict) -> List[str]:
         return []
     served = h.mcp_args(NAME, f"{ORIGIN}/mcp/{actor_of(s)}")
     mine = [] if lead(s) else task_apps(s["gatherer"], channels)
-    told = [m.instructions.strip() for m in mine if m.instructions.strip()]
+    told = [m.told().strip() for m in mine if m.told().strip()]
     if served is None:
         told.insert(0, instructions(s["gatherer"], cli=True, channels=channels, head=lead(s)))
     out = list(served or [])
@@ -349,7 +349,7 @@ def apps_help(gatherer: str, name: str) -> str:
         raise AppError(f"{name or '(none)'}: no such app installed ({', '.join(x.name for x in on(gatherer)) or 'none'})")
     tools = [{"name": app_kit.tool_name(m.name, t.name), "description": t.description, "arguments": t.input_schema}
              for t in m.tools]
-    about = (m.instructions or m.description).strip()
+    about = (m.told() or m.description).strip()
     return (f"# {m.label} ({m.name})\nUsed by {WHO[m.access]}.\n\n{about}\n\n## Tools\n"
             + json.dumps(tools, indent=1, ensure_ascii=False)
             + "\n\nEach also takes `instance`: which one, if you may use more than one. A tool you were not given by "
