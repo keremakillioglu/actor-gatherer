@@ -1357,6 +1357,18 @@ async function appIntent(kind, data, g) {
   const open = apps.map((a) => a.instances === "many"
     && panes.apps.find((q) => !q.held && q.app.name === a.name && q.instance.gatherer === into)).find(Boolean);
   if (open) return open.panel.intent(kind, data || {});
+  // a web page (open-url), none shown: one the gatherer has open in no task -- so no agent's: a Browser a panel's link
+  // opened before, its panel closed since -- shown again and told, not another opened each time (a page needs no
+  // folder: any will do; for a file, the server's open picks the instance by its folder)
+  if (kind === "open-url") {
+    await readApps(into, true);
+    const free = gathererApps(into).find((o) => o.app.name === app.name && appTaskOf(into, o.id) === null);
+    const p = free && showAppPanel(app, free.inst);
+    if (p) {
+      renderAgents();
+      return p.panel.intent(kind, data || {});
+    }
+  }
   const folder = data && data.path ? String(data.path).replace(/\/[^/]*$/, "") : null;
   const p = await openApp(into, app.name, folder);
   if (!p) throw new Error(`${app.label} could not be opened`);
