@@ -9,6 +9,7 @@ import { paneOf, placeIfShown, placeWork, workPlacer } from "./panes.js";
 import { renderMain } from "../page/main-view.js";
 import { chatToEnd } from "../chat/chat.js";
 import { miniCard, miniHistory, miniRest } from "../chat/mini-history.js";
+import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ the top row, as the actors' panes see it
 // Above the panes, the apps' panels (features/layout/panes.js's top row): whether it shows any (topShown), and each pane's chat
@@ -90,12 +91,12 @@ function setMiniSplit(f) {
   if (n > 0 && n < 1000) { r.setProperty("--mini-box", `${n}fr`); r.setProperty("--mini-hist", `${1000 - n}fr`); }
   else { r.removeProperty("--mini-box"); r.removeProperty("--mini-hist"); }
 }
-const keptMiniSplit = () => { try { return Number(localStorage.getItem(MINI_SPLIT_KEY)) || 0; } catch (e) { return 0; } };
+const keptMiniSplit = () => Number(prefs.text(MINI_SPLIT_KEY)) || 0;
 const miniGrip = () => el("div", { class: "mini-grip", "aria-hidden": "true",
   title: "Drag to resize · double-click to reset",
   onpointerdown: miniGripDown, ondblclick: () => {
     setMiniSplit(0);
-    try { localStorage.removeItem(MINI_SPLIT_KEY); } catch (e) { /* this page only */ }
+    prefs.drop(MINI_SPLIT_KEY);
   } });
 function miniGripDown(ev) {
   const grip = ev.currentTarget, strip = grip.closest(".chat.mini");
@@ -125,7 +126,7 @@ function miniGripDown(ev) {
       d.removeEventListener("pointercancel", end);
       delete d.documentElement.dataset.miniDrag;
     }
-    if (f !== null) try { localStorage.setItem(MINI_SPLIT_KEY, String(f)); } catch (e) { /* this page only */ }
+    if (f !== null) prefs.setText(MINI_SPLIT_KEY, String(f));
   };
   for (const d of docs) {
     d.addEventListener("pointermove", move);

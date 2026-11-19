@@ -17,6 +17,7 @@ import {
 import { plural } from "../../core/format";
 import { appRole } from "../apps/app-actors.js";
 import * as appHost from "../apps/host";
+import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ moves between groups
 // In the home's one database (state.home.merged: `ag home merge`'s), what is dragged in the list may be dropped into
@@ -183,7 +184,7 @@ async function askMerge(name, g, id, back = false, ask = true) {
     const got = await post("/api/groups", { gatherer: name, to: g.name, into: id, do: "merge" });
     const m = got.merged;
     if (collapsed.delete(g.name)) {                  // the group it went into open, and the folder it became
-      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
+      prefs.keep(COLLAPSED_KEY, [...collapsed]);
     }
     showFolder(g.name, id, true);
     showFolder(g.name, m.folder, true);
@@ -521,7 +522,7 @@ const placedRows = (g, id) => placedIn(g.name, id).map((x) => x.alone ? aloneBox
 // the group `gname` open, and its folder `id` with the folders it is in
 function openWhere(gname, id) {
   if (collapsed.delete(gname)) {
-    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
+    prefs.keep(COLLAPSED_KEY, [...collapsed]);
   }
   for (let f = id; f !== null && f !== undefined; f = (folderById(gname, f) || {}).parent ?? null) showFolder(gname, f, true);
 }
@@ -590,13 +591,13 @@ function mgSwitch(label, options, now, ask, why = "") {
 const mgIn = (g) => [titleOf(g), `Shares context with ${titleOf(g)}'s actors`];
 // What the panel has folded: "g:<group>", "f:<group>:<folder id>", "alone" (those on their own at the top)
 const MG_FOLDED_KEY = "ag-dashboard-manage-groups-folded";
-const mgFolded = new Set((() => { try { return JSON.parse(localStorage.getItem(MG_FOLDED_KEY) || "[]"); } catch (e) { return []; } })());
+const mgFolded = new Set(prefs.list(MG_FOLDED_KEY) || []);
 // `key` folded or opened (`open`; flipped, left out), and the panel drawn so
 function mgToggle(key, open) {
   const fold = open === undefined ? !mgFolded.has(key) : !open;
   if (fold === mgFolded.has(key)) return;
   if (fold) mgFolded.add(key); else mgFolded.delete(key);
-  try { localStorage.setItem(MG_FOLDED_KEY, JSON.stringify([...mgFolded])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(MG_FOLDED_KEY, [...mgFolded]);
   drawManage();
 }
 // a row's name, its caret first -- turned down while open, folding what is under it, and its name so too -- or, nothing

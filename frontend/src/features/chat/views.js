@@ -8,6 +8,7 @@ import { backgroundNote, chatToEnd, columns, contextItem, tally, typeChips } fro
 import { blockCache, notesSwitch, showNotes, transcriptBlocks } from "../transcript/transcript.js";
 import { hist } from "../history/history.js";
 import { chatMin } from "../layout/top.js";
+import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ chat views
 // How the chat shows an actor's history: one VIEW of several, the reader's choice (kept in this
@@ -80,7 +81,7 @@ async function setChatView(id) {
                                                      // if due, and at its tasks if it has them
   state.chatViewId = id;
   if (PANE) { paneUrl(); PANE.viewed(window, id); }  // a frame's: kept with its pane, not as every page's
-  else try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
+  else prefs.setText(CHAT_VIEW_KEY, id);
   await loadChat();
   keepingPlace(renderMain);
   chatToEnd();
@@ -111,7 +112,7 @@ const chatFeed = (view = chatView()) => (chatMin() ? CHAT_FEEDS.files : CHAT_FEE
 const txBlocks = blockCache(), msgRows = blockCache();
 // What this module did as the page's script ran, in that order: page.js runs it once every module is loaded.
 export function start() {
-  state.chatViewId = (PANE && PANE_URL.get("view")) || (() => { try { return localStorage.getItem(CHAT_VIEW_KEY) || "files"; } catch (e) { return "files"; } })();
+  state.chatViewId = (PANE && PANE_URL.get("view")) || prefs.text(CHAT_VIEW_KEY) || "files";
   // "agent": what ag recorded of the actor's calls -- each read (items), and the context the chart has picked
   // (state.context) -- loaded with the actor already.
   CHAT_FEEDS.agent = {

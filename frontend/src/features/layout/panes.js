@@ -31,6 +31,7 @@ import { shadow } from "./shadow";
 import { work as workLayout } from "./work";
 import * as appHost from "../apps/host";
 import { FILE_FORM, fileHref, filePath, isAppHref, joinPath, matchPath, parseHref } from "../apps/links";
+import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ panes
 // Actors side by side. A click in the list shows its actor in the pane in focus; Ctrl+click (⌘+click on a
@@ -320,7 +321,7 @@ async function showIn(g, c, view = null, wait = true) {
 }
 function setViewHere(id) {
   state.chatViewId = id;
-  try { localStorage.setItem(CHAT_VIEW_KEY, id); } catch (e) { /* this page only */ }
+  prefs.setText(CHAT_VIEW_KEY, id);
 }
 function openBeside(g, c, view = null) {
   if (PANE || SNAPSHOT || !state.selected) return show(g, c, view);
@@ -2115,7 +2116,7 @@ async function openBranchMenu(g, button) {
 // or a folder or GitHub repository typed), where the branch comes from and where its changes go, whether each change
 // waits for approval (the last choice, kept in this browser), and the harness that starts it.
 async function openBranchDialog(g, project) {
-  try { brPick.approve = localStorage.getItem(BRANCH_APPROVE_KEY) === "1"; } catch (e) { brPick.approve = false; }
+  brPick.approve = prefs.flag(BRANCH_APPROVE_KEY);
   Object.assign(brPick, { g: g.name, project: project || "", choosing: !project, where: "", error: "", busy: false });
   if (!brPick.dialog) {
     brPick.dialog = el("dialog", { class: "br-dialog", "aria-label": "New actor on a branch" });
@@ -2181,7 +2182,7 @@ function brRender() {
   }
   const approve = el("input", { type: "checkbox", checked: brPick.approve ? "" : null, onchange: (ev) => {
     brPick.approve = ev.target.checked;
-    try { localStorage.setItem(BRANCH_APPROVE_KEY, brPick.approve ? "1" : "0"); } catch (e) { /* this page only */ }
+    prefs.setFlag(BRANCH_APPROVE_KEY, brPick.approve);
   } });
   const ready = chosen && !brPick.choosing && !brPick.busy && !state.starting;
   const starts = hs.map((h) => el("button", { type: "submit", value: h, ...(ready ? {} : { disabled: "" }) },

@@ -11,6 +11,7 @@ import { opened } from "../chat/files-view.js";
 import { appAsked, appAskedOf } from "../apps/app-actors.js";
 import { useDashboard } from "../../core/store";
 import { askedByAgent } from "../apps/catalog-dialogs";
+import * as prefs from "../../core/prefs";
 
 // A session made here that never started -- no process of it now, none starting, nothing of it in its gatherer (no
 // events, no calls): its × discards it (sessions.py's `discard`), so it is listed nowhere and nothing of it is kept.
@@ -45,10 +46,10 @@ const SEEN_KEY = "ag-dashboard-seen";                // where this browser kept 
 const seen = { at: {}, here: false, handing: false, dropped: false };   // here: kept in this browser
 const unseen = (a) => !!a.key && !!a.last && a.last > (seen.at[a.key] || 0);
 function keptHere() {
-  try { const v = JSON.parse(localStorage.getItem(SEEN_KEY)); return v && typeof v === "object" ? v : {}; }
-  catch (e) { return {}; }
+  const v = prefs.json(SEEN_KEY);
+  return v && typeof v === "object" ? v : {};
 }
-function dropHere() { try { localStorage.removeItem(SEEN_KEY); } catch (e) { /* stays; the server's looks win */ } }
+function dropHere() { prefs.drop(SEEN_KEY); }
 // Every actor of `home` taken as seen: as of `had`, where it has one; else as it is.
 function everySeen(home, had) {
   const at = { ...had };
@@ -73,7 +74,7 @@ function takeSeen(home) {
 // Looks kept: by the server, or in this browser for a server from before `seen`. Whether they were.
 async function tellSeen(looked) {
   if (SNAPSHOT || PANE || !looked.length) return false;
-  if (seen.here) { try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen.at)); return true; } catch (e) { return false; } }
+  if (seen.here) return prefs.keep(SEEN_KEY, seen.at);
   try { await post("/api/seen", { seen: looked }); return true; }
   catch (err) { setLive(`Not saved: ${err.message}`); return false; }
 }

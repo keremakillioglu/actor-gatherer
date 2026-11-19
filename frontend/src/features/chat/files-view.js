@@ -18,6 +18,7 @@ import { MIN_TIP, canMinimize, setChatMin, topShown } from "../layout/top.js";
 import { appWordsOf } from "../apps/app-actors.js";
 import { drawTurns } from "./mount";
 import { cidsOf } from "./view";
+import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ the Files view
 // A turn's files instead of its conversation: each file the agent read, searched or changed in it, the
@@ -111,8 +112,7 @@ async function setFilesTurn(n) {
 // hits are off until switched on (a file only matched by a search is left out); the choice kept in this browser.
 const KINDS_KEY = "ag-dashboard-files-hidden-kinds";
 let hiddenKinds = (() => {
-  try { const v = JSON.parse(localStorage.getItem(KINDS_KEY)); return new Set(Array.isArray(v) ? v : ["hit"]); }
-  catch (e) { return new Set(["hit"]); }
+  return new Set(prefs.list(KINDS_KEY) || ["hit"]);
 })();
 function kindSwitches(gitFiles) {
   return el("div", { class: "fl-legend fl-kinds" }, ...Object.entries(FILE_KINDS).map(([k, [name]]) => {
@@ -121,7 +121,7 @@ function kindSwitches(gitFiles) {
       title: `${on ? "Hide" : "Show"} ${name} files`,
       onclick: () => {
         on ? hiddenKinds.add(k) : hiddenKinds.delete(k);
-        try { localStorage.setItem(KINDS_KEY, JSON.stringify([...hiddenKinds])); } catch (e) { /* this page only */ }
+        prefs.keep(KINDS_KEY, [...hiddenKinds]);
         keepingPlace(renderMain);
       } }, kindMark(k, 12, ""), name);
   }), gitFiles ? gitSwitch(gitFiles) : null);
@@ -129,13 +129,13 @@ function kindSwitches(gitFiles) {
 // The files in temporary folders (/tmp, $TMPDIR: scratchpads, tests' folders): hidden until asked for, the choice
 // kept in this browser. The commands are all listed, whatever folders they touched.
 const TMP_KEY = "ag-dashboard-files-tmp";
-let showTmp = (() => { try { return localStorage.getItem(TMP_KEY) === "1"; } catch (e) { return false; } })();
+let showTmp = prefs.flag(TMP_KEY);
 function tmpSwitch(n) {
   const box = el("input", { type: "checkbox" });
   box.checked = showTmp;
   box.addEventListener("change", () => {
     showTmp = box.checked;
-    try { localStorage.setItem(TMP_KEY, showTmp ? "1" : "0"); } catch (e) { /* this page only */ }
+    prefs.setFlag(TMP_KEY, showTmp);
     keepingPlace(renderMain);
   });
   return el("label", { class: "tmp", title: "Show files in temporary folders (/tmp, $TMPDIR)" },
@@ -145,14 +145,14 @@ function tmpSwitch(n) {
 // another's running then (files.py's `git`): left out until switched on in the files' legend, of the files, a file's
 // calls and a command's files; the choice kept in this browser.
 const GIT_KEY = "ag-dashboard-files-git";
-let showGit = (() => { try { return localStorage.getItem(GIT_KEY) === "1"; } catch (e) { return false; } })();
+let showGit = prefs.flag(GIT_KEY);
 const gitOnly = (f) => !f.kinds.length && !!(f.git || []).length;   // a file only git changed
 function gitSwitch(n) {
   return el("button", { type: "button", class: "kind" + (showGit ? "" : " off"), "aria-pressed": showGit ? "true" : "false",
     title: `${showGit ? "Hide" : "Show"} ${plural(n, "file")} changed by git (pulls, merges, checkouts)`,
     onclick: () => {
       showGit = !showGit;
-      try { localStorage.setItem(GIT_KEY, showGit ? "1" : "0"); } catch (e) { /* this page only */ }
+      prefs.setFlag(GIT_KEY, showGit);
       keepingPlace(renderMain);
     } }, kindMark("git", 12, ""), `by git (${full(n)})`);
 }
@@ -160,7 +160,7 @@ function gitSwitch(n) {
 // bar or on a message's button for them (or ⌘+click on it), and folded again by the button in their heading or that button
 // of the turn they show. The choice kept in this browser.
 const SIDE_KEY = "ag-dashboard-files-side-folded-2";   // -2: folded by default
-let sideFolded = (() => { try { return localStorage.getItem(SIDE_KEY) !== "0"; } catch (e) { return true; } })();
+let sideFolded = prefs.flag(SIDE_KEY, true);
 // A NARROW pane (under 760px: two side by side, a small window) has no room for them beside the conversation: there
 // they start folded, whatever the choice kept, and open over the conversation (features/chat/files-view.css), not above it --
 // open until folded again or the pane widens; the choice kept is the wide pane's.
@@ -194,16 +194,16 @@ function foldSide(fold, draw = true) {
     return;
   }
   sideFolded = fold;
-  try { localStorage.setItem(SIDE_KEY, fold ? "1" : "0"); } catch (e) { /* this page only */ }
+  prefs.setFlag(SIDE_KEY, fold);
   if (fold && state.files && state.files.turn !== null) return setFilesTurn(null);   // folded: the latest turn, which its bar counts
   if (draw) keepingPlace(renderMain);
 }
 // The background's section under the commands: folded to its heading until opened, the choice kept in this browser.
 const BG_KEY = "ag-dashboard-files-bg-open";
-let bgOpen = (() => { try { return localStorage.getItem(BG_KEY) === "1"; } catch (e) { return false; } })();
+let bgOpen = prefs.flag(BG_KEY);
 function openBackground(open, draw = true) {
   bgOpen = open;
-  try { localStorage.setItem(BG_KEY, open ? "1" : "0"); } catch (e) { /* this page only */ }
+  prefs.setFlag(BG_KEY, open);
   if (draw) keepingPlace(renderMain);
 }
 // The bar: the files, by kind, in the colours of the tree's (a file of two kinds counted in both; the kinds switched

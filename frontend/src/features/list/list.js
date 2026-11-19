@@ -29,6 +29,7 @@ import { TASK_KINDS } from "../chat/chat.js";
 import { firstLine, plural } from "../../core/format";
 import { shownGone } from "../terminal/shell.js";
 import * as appHost from "../apps/host";
+import * as prefs from "../../core/prefs";
 
 async function closeSession(a) {
   try { await post("/api/stop", { session_id: a.session.session_id }); }
@@ -45,7 +46,7 @@ async function discardSession(g, a) {
 // ------------------------------------------------------------------ the agent list
 const COLLAPSED_KEY = "ag-dashboard-collapsed-gatherers";
 const collapsed = (() => {                        // gatherers the reader folded, kept in this browser
-  try { const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(COLLAPSED_KEY); if (v) return new Set(v); }
   return new Set();
 })();
 // Closed actors (their process gone), and those saved for later, are each folded away under a line ("N closed",
@@ -53,32 +54,32 @@ const collapsed = (() => {                        // gatherers the reader folded
 // gatherer's shells ("N terminals", SHELLS) -- but none in view while folded, even one open in a pane.
 const FOLD_KEYS = { Closed: "ag-dashboard-closed-shown", Saved: "ag-dashboard-saved-shown", Terminals: "ag-dashboard-terminals-shown" };
 const foldOpen = Object.fromEntries(Object.entries(FOLD_KEYS).map(([group, key]) => {
-  try { const v = JSON.parse(localStorage.getItem(key)); if (Array.isArray(v)) return [group, new Set(v)]; } catch (e) { /* none kept */ }
+  { const v = prefs.list(key); if (v) return [group, new Set(v)]; }
   return [group, new Set()];
 }));
 function toggleFold(group, name) {
   const open = foldOpen[group];
   if (open.has(name)) open.delete(name); else open.add(name);
-  try { localStorage.setItem(FOLD_KEYS[group], JSON.stringify([...open])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(FOLD_KEYS[group], [...open]);
   renderAgents();
 }
 // The coordinator agents the reader hid from the list, kept in this browser: a group's by the group's name, any other's by
 // its node (crewHideKey) -- its face on its group's or folder's row (crewButton) shows it again, and opens it.
 const CREW_HIDDEN_KEY = "ag-dashboard-crew-hidden";
 const crewHidden = (() => {
-  try { const v = JSON.parse(localStorage.getItem(CREW_HIDDEN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(CREW_HIDDEN_KEY); if (v) return new Set(v); }
   return new Set();
 })();
 function setCrewHidden(name, hide) {
   if (hide) crewHidden.add(name); else crewHidden.delete(name);
-  try { localStorage.setItem(CREW_HIDDEN_KEY, JSON.stringify([...crewHidden])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(CREW_HIDDEN_KEY, [...crewHidden]);
   renderAgents();
 }
 // The actor shown when none is chosen: the newest not closed, else the newest.
 const firstAgent = (g) => g.agents.find((a) => a.status !== "closed") || g.agents[0];
 function toggleGatherer(name) {
   if (collapsed.has(name)) collapsed.delete(name); else collapsed.add(name);
-  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(COLLAPSED_KEY, [...collapsed]);
   renderAgents();
 }
 // Hidden gatherers, kept by the server (hiding.py, `home.hiding`) so every dashboard on this home
@@ -239,7 +240,7 @@ const closedSays = (g, id, own) => {
 // in, opened
 const FOLDERS_OPEN_KEY = "ag-dashboard-folders-open";
 const foldersOpen = (() => {
-  try { const v = JSON.parse(localStorage.getItem(FOLDERS_OPEN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(FOLDERS_OPEN_KEY); if (v) return new Set(v); }
   return new Set();
 })();
 const folderKey = (gname, id) => `${gname}\u0000${id}`;
@@ -249,7 +250,7 @@ function showFolder(gname, id, open) {
   if (gname === GF) return gfShow(id, open);
   const k = folderKey(gname, id);
   if (open) foldersOpen.add(k); else foldersOpen.delete(k);
-  try { localStorage.setItem(FOLDERS_OPEN_KEY, JSON.stringify([...foldersOpen])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(FOLDERS_OPEN_KEY, [...foldersOpen]);
 }
 function toggleFolder(gname, id) {
   showFolder(gname, id, !isOpenFolder(gname, id));
@@ -422,13 +423,12 @@ async function closePicks(g, list) {
 }
 // Choices this browser kept before the server did: handed to the server once, then dropped here.
 async function moveHidingToServer() {
-  let v = null;
-  try { v = JSON.parse(localStorage.getItem(HIDDEN_KEY)); } catch (e) { /* none kept */ }
+  const v = prefs.json(HIDDEN_KEY);
   if (SNAPSHOT || !v) return;
   const had = state.home.hiding || {};
   for (const name of v.hidden || []) if (!had[name]) await keepChoice(name, "hidden");
   for (const name of v.shown || []) if (!had[name]) await keepChoice(name, "shown");
-  try { localStorage.removeItem(HIDDEN_KEY); } catch (e) { /* stays; the server's choices win */ }
+  prefs.drop(HIDDEN_KEY);
   renderAgents();
 }
 // A gatherer's or a folder's actors as its box lists them (FOLDERS): [group, list] for each that has any -- its actors
@@ -1539,7 +1539,7 @@ function startFolderEdit(gname, id = null, parent = null) {
   folderInput = null;
   if (collapsed.has(gname)) {
     collapsed.delete(gname);
-    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])); } catch (e) { /* kept for this page only */ }
+    prefs.keep(COLLAPSED_KEY, [...collapsed]);
   }
   showFolder(gname, state.folderEdit.parent, true);
   renderAgents();

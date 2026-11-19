@@ -3,6 +3,7 @@ import { tildePath } from "./code.js";
 import { isShell, key, parse as parseKey, taskId, taskNumber } from "../model/keys";
 import { escapeHtml } from "../ui/html";
 import { ago, axisTime, clock, compact, full, lasting, span, usd } from "../format";
+import * as prefs from "../prefs";
 
 // ------------------------------------------------------------------ helpers
 const el = (tag, attrs = {}, ...kids) => {
@@ -43,7 +44,7 @@ const HISTORY = new Set(["Recent history", "Kept from before the cut"]);
 const SHOWN_KEY = "ag-dashboard-shown-types-4";   // -4: system/developer messages and the preamble hidden by default
 const shownTypes = (() => {                       // the reader's choice, kept in this browser; by default the
                                                   // conversation: user and assistant messages, and the Gatherer's
-  try { const v = JSON.parse(localStorage.getItem(SHOWN_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(SHOWN_KEY); if (v) return new Set(v); }
   return new Set(["user_message", "agent_message", "gatherer"]);
 })();
 const GROUP_COLORS = { [PREAMBLE]: "var(--s8)", [NOT_COUNTED]: "var(--axis)", "Gatherer guide": "var(--t-gatherer)" };

@@ -13,10 +13,11 @@ import { interrupt } from "../chat/files-view.js";
 import { chatMin, fitMini, shellMini, topMount } from "../layout/top.js";
 import { focusedPane } from "../layout/panes.js";
 import { useSettings } from "../settings/store";
+import * as prefs from "../../core/prefs";
 
 function toggleType(type) {
   if (shownTypes.has(type)) shownTypes.delete(type); else shownTypes.add(type);
-  try { localStorage.setItem(SHOWN_KEY, JSON.stringify([...shownTypes])); } catch (e) { /* kept for this page only */ }
+  prefs.keep(SHOWN_KEY, [...shownTypes]);
   keepingPlace(renderMain);
 }
 // ------------------------------------------------------------------ the selected agent

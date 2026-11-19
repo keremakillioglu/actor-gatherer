@@ -11,6 +11,7 @@ import { blockCache, str } from "../transcript/transcript.js";
 import { markdown } from "../../core/ui/md";
 import { plural } from "../../core/format";
 import { CHAT_FEEDS, addChatView, chatView } from "../chat/views.js";
+import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ the History view
 // The selected actor's history to look through and pick from -- its turns (a user message and all that answered it),
@@ -171,12 +172,12 @@ function histTree(h) {
 // shown and, searching, one that matches.
 const HIST_TYPES_KEY = "ag-dashboard-history-types";
 const histTypes = (() => {
-  try { const v = JSON.parse(localStorage.getItem(HIST_TYPES_KEY)); if (Array.isArray(v)) return new Set(v); } catch (e) { /* none kept */ }
+  { const v = prefs.list(HIST_TYPES_KEY); if (v) return new Set(v); }
   return new Set(["user_message", "agent_message"]);
 })();
 function toggleHistType(type) {
   if (histTypes.has(type)) histTypes.delete(type); else histTypes.add(type);
-  try { localStorage.setItem(HIST_TYPES_KEY, JSON.stringify([...histTypes])); } catch (e) { /* this page only */ }
+  prefs.keep(HIST_TYPES_KEY, [...histTypes]);
   hist.version++; histRedraw();
 }
 const histShown = (r) => { const m = hist.byId.get(`m:${r}`); return !m || histTypes.has(itemType({ name: m.event.type, group: "Recent history" })[0]); };

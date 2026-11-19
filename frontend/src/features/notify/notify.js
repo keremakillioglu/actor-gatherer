@@ -8,6 +8,7 @@ import {
 import { cardDraw, hover } from "../list/modes.js";
 import { isAt, openActors, paneNote, pick } from "../layout/panes.js";
 import * as appHost from "../apps/host";
+import * as prefs from "../../core/prefs";
 
 // WHAT COMES TO WANT THE READER, said as it happens: an app's NOTIFICATION (app_kit's notices.py: sent by its backend's
 // Host.notify or its panel's ag.notices.send; data.py's `app_notices`, a gatherer's `apps`), and an actor that comes to
@@ -29,8 +30,8 @@ const HEED_KEY = "ag-dashboard-notify";
 const POP_SECONDS = 8, POP_MOST = 3;
 const heed = (() => {
   const v = { actors: true, system: true };
-  try { const k = JSON.parse(localStorage.getItem(HEED_KEY)) || {}; for (const n of Object.keys(v)) if (typeof k[n] === "boolean") v[n] = k[n]; }
-  catch (e) { /* none kept */ }
+  const k = prefs.json(HEED_KEY) || {};
+  for (const n of Object.keys(v)) if (typeof k[n] === "boolean") v[n] = k[n];
   return v;
 })();
 let heedWas = null;                                  // what wanted the reader in the last home taken (null: none taken)
@@ -162,7 +163,7 @@ function dropGone(home) {
 // given its leave, a button asking for it
 function setHeed(what, on, keep = true) {
   heed[what] = on;
-  if (keep) { try { localStorage.setItem(HEED_KEY, JSON.stringify(heed)); } catch (e) { /* this page only */ } }
+  if (keep) { prefs.keep(HEED_KEY, heed); }
   drawHeed();
 }
 function drawHeed() {

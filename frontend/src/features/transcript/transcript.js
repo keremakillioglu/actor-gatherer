@@ -4,13 +4,14 @@ import { keepingPlace } from "../settings/panel.js";
 import { renderMain } from "../page/main-view.js";
 import { markdown } from "../../core/ui/md";
 import { firstLine, plural } from "../../core/format";
+import * as prefs from "../../core/prefs";
 
 // ------------------------------------------------------------------ the Transcript view
 // The conversation as a terminal running the harness shows it: what was asked, what the agent said
 // (markdown), each tool call with its result under it, its thinking folded away. The data has made
 // every harness's events the same parts (data.parts), each call with its shape (SHAPES says how each is shown).
 const NOTES_KEY = "ag-dashboard-transcript-notes";
-let showNotes = (() => { try { return localStorage.getItem(NOTES_KEY) === "1"; } catch (e) { return false; } })();
+let showNotes = prefs.flag(NOTES_KEY);
 const RESULT_LINES = 4;                            // a result's lines shown before "+N lines"
 // Where each harness keeps its memory of a directory (harness_kit's `memory_folder`): [the folder's pattern, harness].
 const memoryFolders = () => Object.entries((state.home && state.home.harness_info) || {})
@@ -207,7 +208,7 @@ function notesSwitch() {
   box.checked = showNotes;
   box.addEventListener("change", () => {
     showNotes = box.checked;
-    try { localStorage.setItem(NOTES_KEY, showNotes ? "1" : "0"); } catch (e) { /* this page only */ }
+    prefs.setFlag(NOTES_KEY, showNotes);
     keepingPlace(renderMain);
   });
   return el("label", { title: "The harness's system messages and ag's notices" }, box, "Show system and ag notes");

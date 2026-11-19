@@ -14,6 +14,7 @@ import { drawAppsPage, openAppsPage } from "../apps/apps-page.js";
 import { renderMain } from "../page/main-view.js";
 import { tildePath } from "../../core/page/code.js";
 import * as appHost from "../apps/host";
+import * as prefs from "../../core/prefs";
 
 // A NEW TAB's page (features/layout/work.ts's `blank` hook): what a tab showing nothing shows -- one made by "+" on the
 // tabs' bar or the new-tab key, or the last tab closed. A message box for a new actor: Enter starts one where its line
@@ -33,8 +34,8 @@ const START_PLACE_KEY = "ag-dashboard-start-place", START_HARNESS_KEY = "ag-dash
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 // the page drawn: its tab, the choices made on it (null: as they start), its parts redrawn as the home changes
 const newTab = { tab: "", box: null, input: null, parts: null, place: null, cwd: null, harness: null, error: "", busy: "", sig: "" };
-const keptValue = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
-const keepValue = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* this page only */ } };
+const keptValue = (k) => prefs.json(k);
+const keepValue = (k, v) => { prefs.keep(k, v); };
 const realGroups = () => (state.home ? state.home.gatherers.filter((g) => !g.alone) : []);
 const canAlone = () => !!(state.home && state.home.merged && startable().length && aloneUnder());
 // a place as it is now: its group still there, its folder still in it and not closed (else the group's top); on its own,
