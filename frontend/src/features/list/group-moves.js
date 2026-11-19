@@ -1,5 +1,5 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
-import { ICONS, el, foldMark, post, strokeIcon } from "../../core/page/helpers.js";
+import { ICONS, el, foldMark, gathererNamed, post, strokeIcon } from "../../core/page/helpers.js";
 import { loadHome, setAbout, setLive } from "../page/data.js";
 import { connect } from "../settings/panel.js";
 import {
@@ -36,7 +36,7 @@ const WORKING = new Set(["Running", "Waiting for you", "Background"]);     // gr
 function canCross(g) {
   const d = listDrag;
   if (!d || d.g === g.name || !state.home.merged || d.gs || g.alone || !state.home.gatherers.some((x) => x.name === g.name)) return false;
-  const from = state.home.gatherers.find((x) => x.name === d.g);
+  const from = gathererNamed(d.g);
   if (!from) return false;
   if (d.folder !== null) return folderCanMove(from, d.folder);
   const items = withOwn(from, d.cs);
@@ -64,7 +64,7 @@ function withOwn(g, cs) {
 const appCanMove = (gname, k, items = []) => ((o) => !!o && (o.app.instances === "many" || ownAgentIn(gname, o.id, items)))(
   appInfo(gname, String(k).slice(APP_ITEM.length)));
 const ownAgentIn = (gname, id, items) => ((g) => !!g && g.agents.some((a) => items.includes(a.channel)
-  && ((r) => !!r && r.key === id)(appRole({ session: { role: a.role } }))))(state.home.gatherers.find((x) => x.name === gname));
+  && ((r) => !!r && r.key === id)(appRole({ session: { role: a.role } }))))(gathererNamed(gname));
 // whether folder `id` of group `g` may go: it is there, and every app in it, or in its actors' tasks, may go too
 function folderCanMove(g, id) {
   if (!folderById(g.name, id)) return false;
@@ -98,7 +98,7 @@ const crewsSaid = (crews, made) => !crews.length ? null : crews.length === 1
 // folder's group, as the default rule has it (an actor on its own: it joins; kept on its own there only from Manage
 // groups). Dropped in the list (`d.ask` false), at once; else the dialog first.
 async function askMove(d, g, id) {
-  const from = state.home.gatherers.find((x) => x.name === d.g);
+  const from = gathererNamed(d.g);
   if (!from) return;
   const body = { gatherer: d.g, to: g.name, ...(d.folder !== null ? { folder: d.folder } : { channels: withOwn(from, d.cs) }) };
   if (d.ask === false) {
@@ -127,7 +127,7 @@ async function askMove(d, g, id) {
 // A folder dropped outside every group (`d`, listDrag's): the dialog, then the folder made a group of its own (groups.py's
 // `split`) -- the server's, named after it
 function askSplit(d) {
-  const from = state.home.gatherers.find((x) => x.name === d.g), f = from && folderById(d.g, d.folder);
+  const from = gathererNamed(d.g), f = from && folderById(d.g, d.folder);
   if (f) askOwn(from, f, false, d.ask !== false);
 }
 // Folder `f` of group `g` given a group of its own (groups.py's `own`), where it is (`here`: its line's button) -- or,
@@ -167,7 +167,7 @@ function askOwn(g, f, here = true, ask = true) {
 function canMerge(g, id = null) {
   const d = listDrag;
   if (!d || !d.gs || d.gs.length !== 1 || !state.home.merged || g.name === GF || g.alone || d.gs[0] === g.name) return false;
-  const from = state.home.gatherers.find((x) => x.name === d.gs[0]), p = from && placeOf(from.name);
+  const from = gathererNamed(d.gs[0]), p = from && placeOf(from.name);
   return !!from && !from.alone && state.home.gatherers.some((x) => x.name === g.name) && !insideOf(g.name, from.name)
     && !(p && p.in === g.name && p.folder === id);
 }
@@ -176,7 +176,7 @@ function canMerge(g, id = null) {
 // `back`: a group inside `g`'s folder, made part of `g` again (Manage groups' switch). Dropped in the list (`ask`
 // false): the merge at once.
 async function askMerge(name, g, id, back = false, ask = true) {
-  const from = state.home.gatherers.find((x) => x.name === name);
+  const from = gathererNamed(name);
   if (!from) return;
   const merge = async () => {
     const got = await post("/api/groups", { gatherer: name, to: g.name, into: id, do: "merge" });
@@ -329,7 +329,7 @@ function canOutside() {
   const d = listDrag;
   if (!d || !state.home.merged) return false;
   if (d.gs) return d.gs.length === 1 && !!placeOf(d.gs[0]);   // a group inside a folder: back at the top, its own group kept
-  const from = state.home.gatherers.find((x) => x.name === d.g);
+  const from = gathererNamed(d.g);
   if (!from) return false;
   if (from.alone) return d.folder === null && !!placeOf(from.name);   // on its own in a folder: back at the top
   if (d.folder !== null) return folderCanMove(from, d.folder);
@@ -459,7 +459,7 @@ function railAloneShut(gs) {
 // One actor (`d`, listDrag's) dropped outside every group: the dialog, then it on its own, with its task's apps and
 // its own window if it is an app's agent (withOwn) -- dropped in the list (`d.ask` false), at once
 function askAlone(d, here = false) {
-  const from = state.home.gatherers.find((x) => x.name === d.g), items = from ? withOwn(from, d.cs || []) : [];
+  const from = gathererNamed(d.g), items = from ? withOwn(from, d.cs || []) : [];
   const c = items.find((k) => !isAppItem(k)), a = c && actorOf(from, c);
   if (!a) return;
   const name = actorTitle(a), others = from.agents.filter((x) => !isCoordinator(x) && x.channel !== c).length;
@@ -502,7 +502,7 @@ function placeOf(name) {
     if (seen.has(at)) return null;
     seen.add(at);
   }
-  const outer = state.home.gatherers.find((x) => x.name === p.in);
+  const outer = gathererNamed(p.in);
   if (!outer || outer.alone || isHidden(outer) || isCrewHome(outer)) return null;
   return { in: p.in, folder: p.folder !== null && p.folder !== undefined && folderById(p.in, p.folder) ? p.folder : null };
 }
@@ -511,7 +511,7 @@ function insideOf(name, outer) {
   for (let at = name, n = 0; at && n < 64; at = (placeOf(at) || {}).in, n++) if (at === outer) return true;
   return false;
 }
-const nestedIn = (g) => ((p) => p ? state.home.gatherers.find((x) => x.name === p.in) || null : null)(placeOf(g.name));
+const nestedIn = (g) => ((p) => p ? gathererNamed(p.in) || null : null)(placeOf(g.name));
 // the groups drawn in folder `id` of group `gname` (null: its top): groups, by their titles, then actors on their own
 const placedIn = (gname, id) => state.home.gatherers.filter((x) => !isHidden(x) && !isCrewHome(x)
   && ((p) => !!p && p.in === gname && p.folder === id)(placeOf(x.name)))

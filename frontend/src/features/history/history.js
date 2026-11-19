@@ -1,7 +1,7 @@
 import { SNAPSHOT, state } from "../../core/page/state.js";
 import {
-  ICONS, TYPES, ago, clock, compact, el, full, get, harnessInfo, harnessName, itemType, key, lasting, post,
-  selectedInfo, signature, span, statusEl, strokeIcon, svgEl,
+  ICONS, TYPES, ago, clock, compact, el, full, gathererNamed, get, harnessInfo, harnessName, itemType, key, lasting,
+  post, selectedInfo, signature, span, statusEl, strokeIcon, svgEl,
 } from "../../core/page/helpers.js";
 import { drawn, mainSignature } from "../page/data.js";
 import { keepingPlace } from "../settings/panel.js";
@@ -376,7 +376,7 @@ function histRow(n, depth, header) {
     return row;
   });
 }
-const selectedGatherer = () => state.home && state.selected ? state.home.gatherers.find((g) => g.name === state.selected[0]) : null;
+const selectedGatherer = () => state.home && state.selected ? gathererNamed(state.selected[0]) : null;
 function searchIcon() {
   const svg = svgEl("svg", { viewBox: "0 0 16 16", width: 13, height: 13, "aria-hidden": "true", fill: "none", stroke: "currentColor", "stroke-width": 1.6, "stroke-linecap": "round" });
   svg.append(svgEl("circle", { cx: 7, cy: 7, r: 4.75 }), svgEl("line", { x1: 10.5, y1: 10.5, x2: 14, y2: 14 }));

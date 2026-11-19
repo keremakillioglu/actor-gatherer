@@ -1,7 +1,7 @@
 import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
-  BESIDE_KEY, ICONS, ago, closable, closeIcon, el, foldMark, get, harnessBadge, harnessInfo, harnessLogo, harnessName,
-  hideIcon, key, post, saveIcon, shellPath, strokeIcon,
+  BESIDE_KEY, ICONS, ago, closable, closeIcon, el, foldMark, gathererNamed, get, harnessBadge, harnessInfo,
+  harnessLogo, harnessName, hideIcon, key, post, saveIcon, shellPath, strokeIcon,
 } from "../../core/page/helpers.js";
 import { drawn, listSignature, loadHome, redrawList, setLive } from "../page/data.js";
 import { discardable, homeSince, homesTaken, newerTasks, seen, statusOf } from "./seen.js";
@@ -353,7 +353,7 @@ function clearPicks(draw = true) {
 }
 // [its gatherer, the actors selected] as the home has them now (one gone since: left out)
 function pickedActors() {
-  const g = picks.g && state.home.gatherers.find((x) => x.name === picks.g);
+  const g = picks.g && gathererNamed(picks.g);
   return g ? [g, g.agents.filter((a) => picks.cs.has(a.channel) && !isCoordinator(a))] : [null, []];
 }
 function renderPickBar() {
@@ -602,7 +602,7 @@ const crewHideKey = (node) => node.startsWith("group:") ? node.slice("group:".le
 function crewPlace(node, g = null) {
   if (node === "all") return "everything";
   const [kind, id] = [node.slice(0, node.indexOf(":")), node.slice(node.indexOf(":") + 1)];
-  if (kind === "group") { const x = state.home.gatherers.find((y) => y.name === id); return x ? titleOf(x) : id; }
+  if (kind === "group") { const x = gathererNamed(id); return x ? titleOf(x) : id; }
   if (kind === "groups") { const f = folderById(GF, +id); return f ? f.name : "a folder of groups"; }
   const f = g ? folderById(g.name, +id) : null;
   return f ? f.name : "a folder";
@@ -709,11 +709,11 @@ const NOTIFIED = ["notified", "Notification"];
 const appKey = (gname, id) => key(gname, appItem(id));
 // its notifications open, newest first: none, []
 function appNotices(gname, id) {
-  const g = state.home && state.home.gatherers.find((x) => x.name === gname), got = g && (g.apps || {})[id];
+  const g = gathererNamed(gname), got = g && (g.apps || {})[id];
   return got ? [...(got.notices || [])].reverse() : [];
 }
 function appStatusOf(gname, id) {
-  const g = state.home && state.home.gatherers.find((x) => x.name === gname), got = g && (g.apps || {})[id];
+  const g = gathererNamed(gname), got = g && (g.apps || {})[id];
   return got && got.last && got.last > (seen.at[appKey(gname, id)] || 0) ? NOTIFIED : null;
 }
 // a task's state, as its row says it: its most pressing item's -- its lead actor's, or a notification of one of its apps,
@@ -887,7 +887,7 @@ function taskSaveButton(g, t) {
     "aria-label": saved ? "Unsave the task" : "Save the task for later" }, () => saveTask(g.name, t.id, !saved), saveIcon(saved));
 }
 async function saveTask(gname, id, save) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   for (const a of g ? taskMembers(g, id) : []) if (!!savedAs(gname, a) !== save) await setSaved(gname, a, save);
 }
 // A task CLOSED (its ×, while an actor of it runs): closed in the screen tabs first, as its tab's × would (features/layout/panes.js's
@@ -901,7 +901,7 @@ function taskCloseButton(g, t) {
     "aria-label": "Close the task" }, () => closeTask(g.name, t.id), closeIcon());
 }
 async function closeTask(gname, id) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g) return;
   const k = `${gname}\u0000t${id}`, apps = taskApps(g, id);
   await closedInTabs(k);
@@ -941,7 +941,7 @@ function appRow(g, o) {
 async function selectApp(gname, o, ev = null) {
   if (!state.home.gatherers.some((x) => x.name === gname)) return;
   const there = await viaTabs(taskKey(gname, appItem(o.id)), ev, appItem(o.id));   // where its task is open (features/layout/panes.js)
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g) return;
   if (there || !(ev && (ev.ctrlKey || ev.metaKey) && !SNAPSHOT)) {
     const k = taskKey(gname, appItem(o.id));
@@ -990,7 +990,7 @@ async function closeApp(gname, o) {
 async function openTask(gname, id, focus = null, ev = null) {
   if (!state.home.gatherers.some((x) => x.name === gname)) return;
   const there = await viaTabs(`${gname}\u0000t${id}`, ev);   // where it is open (features/layout/panes.js)
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g) return;
   const k = `${gname}\u0000t${id}`, sel = focusedActor(), was = taskLayout(k);
   const wait = !(ev && ev.inTabs);                   // a tab being shown (features/layout/panes.js's enterTasks): its actor's Chat not waited on
@@ -1064,7 +1064,7 @@ function retask(was) {
   rekeyTask(was, now);
 }
 async function addToTask(gname, k, harness) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
   if (!a && !o) return;
   const cwd = (a ? cwdOf(a) : o.folder) || startCwd(g);
@@ -1088,7 +1088,7 @@ async function addToTask(gname, k, harness) {
 // first, if another is. Agents attached so are given the app's tools the next time they start (tool_gateway.py: at
 // launch).
 async function addAppToTask(gname, k, name) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
   const app = (a || o) && window.agNext ? window.agNext.apps.named(name) : null;
   if (!app) return;
@@ -1110,7 +1110,7 @@ async function addAppToTask(gname, k, name) {
 // An item taken out of its task: a task of its own again (the task gone, if one item is left in it) -- detached from the
 // task's others (task_links.py)
 async function takeOut(gname, k) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g || itemTaskOf(g, k) === null) return;
   try { takeTasks(await post("/api/tasks", { gatherer: gname, do: "out", items: [keptAs(g, k)] })); }
   catch (e) { paneNote(`Take it out of the task: ${e.message}`); }
@@ -1121,7 +1121,7 @@ async function takeOut(gname, k) {
 // Items put in item `k`'s task (dropped on its row): each out of its own, the task made if `k` is in none; filed where
 // `k` is
 async function joinTask(gname, k, items) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g) return;
   const was = selectedTask(), a = isAppItem(k) ? null : actorOf(g, k);
   const fid = a ? folderOf(gname, a) : appFolder(gname, k.slice(APP_ITEM.length));
@@ -1224,7 +1224,7 @@ async function endRename(keep) {
   if (!r) return;
   state.renaming = null; nameInput = null;
   if (r.kind) return keep ? nameItem(r.g, r.c, r.value) : redrawNamed();
-  const g = state.home.gatherers.find((x) => x.name === r.g), a = g && g.agents.find((x) => x.channel === r.c);
+  const g = gathererNamed(r.g), a = g && g.agents.find((x) => x.channel === r.c);
   const text = r.value.replace(/\s+/g, " ").trim().slice(0, 120);
   if (r.c === null) return keep && g && text !== titleOf(g) ? keepTitle(r.g, text) : redrawNamed();
   if (!keep || !a || text === ((a.name && a.name.text) || "") || (!text && !r.was)) { redrawNamed(); return; }
@@ -1274,7 +1274,7 @@ function startItemRename(g, k) {
   if (nameInput) { nameInput.focus(); nameInput.select(); }
 }
 async function nameItem(gname, k, value) {
-  const g = state.home.gatherers.find((x) => x.name === gname), got = g && itemNamed(g, k);
+  const g = gathererNamed(gname), got = g && itemNamed(g, k);
   const text = String(value || "").replace(/\s+/g, " ").trim().slice(0, 120);
   if (!got || text === got[2] || (!text && !got[4])) return redrawNamed();   // as it was
   const [kind, it] = got;
@@ -1587,7 +1587,7 @@ const withTasks = (g, cs) => [...new Set(cs.flatMap((c) => ((t) => t === null ? 
 const itemFolder = (g, c) => isAppItem(c) ? appFolder(g.name, c.slice(APP_ITEM.length)) : ((a) => a ? folderOf(g.name, a) : null)(actorOf(g, c));
 // Items put in folder `id` (null: their gatherer's top): actors as fileActors has them, apps by their item
 function fileItems(gname, items, id) {
-  const g = state.home.gatherers.find((x) => x.name === gname);
+  const g = gathererNamed(gname);
   if (!g) return null;
   const channels = items.map((c) => isAppItem(c) ? c : ((a) => a ? filedAs(gname, a) || a.channel : null)(actorOf(g, c))).filter(Boolean);
   if (!channels.length) return null;
@@ -1680,7 +1680,7 @@ function dropOn(n, g, id, open) {
   n.addEventListener("drop", (ev) => {
     if (!canDrop(g, id)) return;
     ev.preventDefault();
-    const d = listDrag, now = state.home.gatherers.find((x) => x.name === g.name) || g;
+    const d = listDrag, now = gathererNamed(g.name) || g;
     d.later = false;                                 // drawn by the move, next
     endDrag();
     const was = placeOf(d.gs ? d.gs[0] : d.g);       // a group, or an actor on its own, already inside `g`: just moved
