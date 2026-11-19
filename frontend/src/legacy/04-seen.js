@@ -70,6 +70,8 @@ function newerTasks(had, got, at, only = null) {
 // it kept any); the selected actor, while the page is visible.
 function takeHome(home) {
   homesTaken++;
+  appsFollowHome(home);                              // an app moved with its task: in its new group, as its task is --
+  //                                                    before anything draws the list for this home
   if (state.home) home.tasks = newerTasks(state.home.tasks, home.tasks, home.now);
   else newerTasks({}, home.tasks, home.now);
   window.agNext.home(home);                        // the new code's store has it too (src/bridge.ts)
