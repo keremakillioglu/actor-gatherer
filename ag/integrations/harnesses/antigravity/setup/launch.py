@@ -102,16 +102,9 @@ class AntigravityLauncher(Launcher):
         url = urlsplit(run.env.get(BASE_URL) or DEFAULT_API)
         origin, path = f"{url.scheme}://{url.netloc}", url.path.rstrip("/")
         options = {"adaptor": run.adaptor} if run.adaptor else {}
-        if run.dry_run:
-            found = self.servers.find(SETUP, origin, "", options)
-            server_url = found.url if found else f"http://127.0.0.1:{int(self.settings['port'])}"
-        else:
-            if any(origin == s.url for s in self.servers.running()):
-                raise LaunchError(f"{BASE_URL} already points at a hook server ag started ({origin})")
-            try:
-                server_url = self.servers.start(SETUP, origin, int(self.settings["port"]), "", options).url
-            except RuntimeError as exc:
-                raise LaunchError(str(exc)) from exc
+        server_url, _ = self.servers.serving(SETUP, origin, int(self.settings["port"]), run.dry_run,
+                                             f"{BASE_URL} already points at a hook server ag started ({origin})", "",
+                                             options)
         server_url += (f"/h/{run.gatherer}" if run.gatherer else "") + ("" if run.dry_run else f"/r/{os.getpid()}") \
             + (f"/a/{run.channel}" if getattr(run, "channel", None) else "")      # its conversation's channel, chosen
         if not run.dry_run:

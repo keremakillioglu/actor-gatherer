@@ -18,10 +18,10 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from harness_kit.processes import running
-from ag.cli.launch import REPO
+from ag.cli.launch import REPO, LaunchError
 
 
 @dataclass
@@ -122,6 +122,22 @@ class HookServers:
                 + (f"  logs {s.log_dir}" if s.log_dir else "")
                 + f"  output {self.log(s.port)}"
                 for s in self.of(setup)]
+
+    def serving(self, setup: str, upstream: str, port: int, dry_run: bool, looped: str, log_dir: str = "",
+                options: Optional[Dict[str, str]] = None, **start) -> Tuple[str, bool]:
+        """A launcher's hook server for `setup` relaying to `upstream` -> (its URL, whether it runs): in a dry run, the
+        one found, else where one would start (`port`), none started; otherwise the one found or started (`start`'s
+        other arguments: trace_root, thread_headers). LaunchError (`looped`, what to say) when `upstream` is itself a
+        hook server ag started -- the harness pointed at one already -- or when it does not start."""
+        if dry_run:
+            found = self.find(setup, upstream, log_dir, options, start.get("trace_root", ""))
+            return (found.url, True) if found else (f"http://127.0.0.1:{port}", False)
+        if any(upstream == s.url for s in self.running()):
+            raise LaunchError(looped)
+        try:
+            return self.start(setup, upstream, port, log_dir, options, **start).url, True
+        except RuntimeError as exc:
+            raise LaunchError(str(exc)) from exc
 
     def stop_all(self, setup: str) -> List[str]:
         """`ag stop`: `setup`'s hook servers stopped, one line each."""

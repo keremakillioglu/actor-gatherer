@@ -1019,13 +1019,6 @@ class LiveDocs:
         room = self._room(path, root, create=True)
         return room, room.join(cid, client, hold)
 
-    def open_room(self, path: str, root: str) -> Optional[Room]:
-        """The file's document, if a page has it open now; else None."""
-        if not AVAILABLE:
-            return None
-        room = self.rooms.get(resolve(path, root))
-        return room if room is not None and room.conns else None
-
     def hold(self, path: str, root: str, cid: str, how: str) -> dict:
         return self._room(path, root).hold(cid, how)
 

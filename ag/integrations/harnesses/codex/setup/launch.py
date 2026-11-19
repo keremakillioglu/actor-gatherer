@@ -396,18 +396,11 @@ class CodexLauncher(Launcher):
         p.actor = getattr(run, "channel", None)                                     # its thread's channel, chosen
         p.daemonless = takes(list(run.command), {**os.environ, **run.env}, NO_DAEMON)
         p.home_set = bool(run.env.get("CODEX_HOME") or os.environ.get("CODEX_HOME"))
+        server_url, runs = self.servers.serving(
+            SETUP, p.upstream, port, run.dry_run, f"codex's provider {p.provider!r} already points at a hook server ag "
+            f"started ({p.upstream}); run codex through ag with its own provider", log_dir, options)
         if run.dry_run:
-            found = self.servers.find(SETUP, p.upstream, log_dir, options)
-            server_url = found.url if found else f"http://127.0.0.1:{port}"
-            notes.append(f"hook server: {server_url}{'' if found else ' (not started: dry run)'} -> {p.upstream}")
-        else:
-            if any(p.upstream == s.url for s in self.servers.running()):
-                raise LaunchError(f"codex's provider {p.provider!r} already points at a hook server ag started "
-                                  f"({p.upstream}); run codex through ag with its own provider")
-            try:
-                server_url = self.servers.start(SETUP, p.upstream, port, log_dir, options).url
-            except RuntimeError as exc:
-                raise LaunchError(str(exc)) from exc
+            notes.append(f"hook server: {server_url}{'' if runs else ' (not started: dry run)'} -> {p.upstream}")
         notes.append(f"codex provider {p.provider}: {p.base_url(server_url, run.gatherer)} -> {p.upstream}{p.path}")
         if p.compaction_off:
             notes.append(f"codex's own automatic compaction: off for the run ({COMPACT_LIMIT}={NO_COMPACTION})")
