@@ -4,7 +4,8 @@
 // opened as it found it, or asserts nothing another test changes.
 import type { FrameLocator, Locator, Page } from "@playwright/test";
 import { attachTo, closePanel, expect, test } from "./test";
-import { CLAUDE, CODEX, GATHERER, openActor } from "./home";
+import { CLAUDE, CODEX, GATHERER, open, openActor } from "./home";
+import { openNotes } from "./notes-home";
 
 const CLAUDE_CHANNEL = "5f0c2a2e-8d1b-4c7e-9a3f-1b2c3d4e5f60";
 const CODEX_CHANNEL = "019a1f2b-3c4d-7e5f-8a9b-0c1d2e3f4a5b";
@@ -253,4 +254,24 @@ test("a menu from a row stays open while a Chat's history scrolls by itself; the
   await expect(menu).toHaveCount(1);
   await page.locator("#agents").evaluate((e) => e.dispatchEvent(new Event("scroll"))); // its button moved: closed
   await expect(menu).toHaveCount(0);
+});
+
+test("a panel with no native page over it is not woken each frame", async ({ page }) => {
+  // every frame's requestAnimationFrame counted, the panels' among them
+  await page.addInitScript(() => {
+    const w = window as unknown as { __frames: number };
+    w.__frames = 0;
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) => (w.__frames++, raf(cb));
+  });
+  await open(page);
+  await openNotes(page);
+  const pane = page.locator("#top-row > .app-pane[data-app=notes]");
+  const frame = await (await pane.locator("iframe").elementHandle())!.contentFrame();
+  const frames = () => frame!.evaluate(() => (window as unknown as { __frames: number }).__frames);
+  await page.waitForTimeout(500); // settled
+  const before = await frames();
+  await page.waitForTimeout(1000);
+  expect((await frames()) - before).toBeLessThan(5); // not one a frame (about 60 a second)
+  await closePanel(page, pane);
 });
