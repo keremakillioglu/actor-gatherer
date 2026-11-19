@@ -100,6 +100,32 @@ class MadeTest(StoreBase):
         self.assertEqual(titles.stored(), {"g": "Group G"})
 
 
+class RemadeTest(StoreBase):
+    def test_a_file_made_again_at_the_same_path_is_prepared_again_whatever_its_inode_and_schema_version(self):
+        """A dashboard.db deleted and made again at its path, an older table in it: its columns added since are added,
+        though the new file has the old one's inode (Linux gives a freed inode out again) and schema version."""
+        from ag_dashboard import sessions
+        conn = store.write("sessions")                        # made, and known to this process as prepared
+        conn.close()
+        st = os.stat(store.path())
+        with store.reading() as c:
+            version = c.execute("PRAGMA schema_version").fetchone()[0]
+        os.remove(store.path())
+        conn = sqlite3.connect(store.path())
+        conn.execute(sessions.SCHEMA[:sessions.SCHEMA.index(",\n    kept")] + "\n)")   # the columns before `kept`
+        conn.execute(f"PRAGMA schema_version = {version}")    # as the old file's
+        conn.commit()
+        conn.close()
+        real = os.stat
+        same = lambda p, *a, **k: st if p == store.path() else real(p, *a, **k)   # noqa: E731 -- the old inode
+        with unittest.mock.patch.object(store.os, "stat", same):
+            conn = store.write("sessions")
+            try:
+                self.assertIn("kept", store.columns(conn, "sessions"))
+            finally:
+                conn.close()
+
+
 class FollowTest(StoreBase):
     def test_an_actor_that_moves_takes_every_row_kept_of_it_and_its_task(self):
         for c in ("c1", "c2"):
