@@ -1,10 +1,12 @@
 // Links clicked in an actor's pane (07-panes.js, openLink): opened in a Browser of the actor's task, by the open-url
 // intent its panel takes -- a new Browser put in the task of an actor that has none, else a new tab of the Browser it
-// has. The Browser's panel is the real one; the host's answers and its backend's are the routes here (the test home has
-// no Chrome to run one).
+// has. A page an app's panel asks for (the same intent, as Paper news's links do): in a Browser of no task, beside it.
+// The Browser's panel is the real one; the host's answers and its backend's are the routes here (the test home has no
+// Chrome to run one).
 import type { Page } from "@playwright/test";
-import { expect, streamsAsRequests, test } from "./test";
+import { closePanel, expect, streamsAsRequests, test } from "./test";
 import { CLAUDE, GATHERER, openActor } from "./home";
+import { raise } from "./editor-home";
 
 const KEY = "0123456789abcdef";
 const LINK = "https://example.com/docs";
@@ -120,4 +122,37 @@ test("a link clicked with a key held is left to the browser, as before", async (
   }
   expect(seen.opened).toEqual([]);
   await expect(browserPane(page)).toHaveCount(0);
+});
+
+test("a page a panel asks for opens in a Browser beside it; its panel closed, that Browser is shown again", async ({
+  page,
+}) => {
+  const seen = await host(page, () => false);
+  let made = false; // the Browser the first page opened: in no task, no agent attached, the server's from then on
+  const browser = { id: KEY, app: "browser", gatherer: GATHERER, folder: null, title: "Browser", data: {} };
+  await page.route("**/api/apps?gatherer=*", async (route) => {
+    const got = await (await route.fetch()).json();
+    if (made) got.instances.push(browser);
+    await route.fulfill({ json: got });
+  });
+  await page.route("**/api/apps/open", async (route) => {
+    if (route.request().postDataJSON().app !== "browser") return route.continue(); // the asking panel's own app
+    seen.opened.push(route.request().postDataJSON());
+    made = true;
+    await route.fulfill({ json: browser });
+  });
+  await openActor(page, CLAUDE);
+  await raise(page, "open-url", { url: LINK });
+  await expect(browserPane(page)).toHaveCount(1);
+  await expect.poll(() => seen.links).toEqual([LINK]); // told its panel, which asked its backend to open it
+  expect(seen.opened).toEqual([expect.objectContaining({ app: "browser", gatherer: GATHERER, folder: null })]);
+  await raise(page, "open-url", { url: LINK }); // shown: a new tab of it
+  await expect.poll(() => seen.links).toEqual([LINK, LINK]);
+  await closePanel(page, browserPane(page)); // the panel closed, the Browser still open
+  await expect(browserPane(page)).toHaveCount(0);
+  await raise(page, "open-url", { url: LINK });
+  await expect(browserPane(page)).toHaveCount(1); // the same Browser shown again, no other made
+  await expect.poll(() => seen.links).toEqual([LINK, LINK, LINK]);
+  expect(seen.opened).toHaveLength(1);
+  await expect(page).toHaveURL(/127\.0\.0\.1/);
 });

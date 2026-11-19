@@ -317,7 +317,8 @@ for apps. An app's event types are ag `EventType`s with ag `Property`s (`Manifes
 - **Intents separate agent views from apps.** A view raises an intent and the host sends it to the app that handles
   that kind, opening its panel in the row above the panes:
   - `open-file {path, line, row_id}`
-  - `open-url {url}`
+  - `open-url {url}`: from a panel (Paper news's links), a new tab of a Browser shown in the group; none shown, one open
+    in no task (no agent's) shown again; none, a new Browser beside the panel
   - `explain-answer {channel, turn}`
   - `use-history {channel, rows}`
 
