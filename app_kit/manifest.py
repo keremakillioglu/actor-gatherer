@@ -2,7 +2,8 @@
 
     load(folder)            the manifest of the app in `folder` (its app.toml), its files checked to be there
     parse(data, folder)     the same from the TOML's data, already read
-    Manifest                what the manifest says: name, label, version, instances, backend, panel, tools, events,
+    Manifest                what the manifest says: name, label, version, instances, access, on_task, backend, panel,
+                            tools, events,
                             the intents it handles, the links to it it opens (links.py), its schedules
                             (schedules.py), its capabilities, what agents are told of it
     tool_name(app, tool)    a tool's name as agents see it: <app>_<tool>
@@ -51,6 +52,12 @@ INSTANCES = ("one", "per-folder", "per-checkout", "per-repository", "many")
 ACCESS = ("task", "group")
 #: The older key `offer`, read as `access`: "always" -> "group", "attached" -> "task".
 OFFERS = {"always": "group", "attached": "task"}
+#: What the dashboard does with an app the user adds to an actor or a task ("+" on its row, an app's row dragged onto
+#: it, a link opened for an actor): "join", the app put in the task, its agents attached (a "task" app's default);
+#: "folder", the app opened at the actor's directory and shown with the task, not put in it (none attached); "no", it
+#: isn't added at all (a "group" app's default). A "group" app is in no task, so never "join". The user may choose
+#: otherwise, app by app, on the Apps page (ag_dashboard/app_policy.py).
+ON_TASK = ("join", "folder", "no")
 #: Names no app may take: the tools agents are given for the apps themselves are named <name>_<what> (`apps_list`,
 #: `dashboard_ls`: ag_dashboard/tool_gateway.py's AG_TOOLS), as an app's are <app>_<tool>.
 RESERVED = ("apps", "dashboard")
@@ -244,6 +251,7 @@ class Manifest:
     description: str = ""
     instances: str = "one"
     access: str = "task"
+    on_task: str = "join"                        # ON_TASK: what adding it to an actor or a task does
     instructions: str = ""
     agent: "Agent" = field(default_factory=lambda: Agent())
     asked: "Asked" = field(default_factory=lambda: Asked())
@@ -304,7 +312,8 @@ class Manifest:
         """The manifest as JSON (the host's /api/apps, the remote protocol)."""
         return {
             "name": self.name, "label": self.label, "version": self.version, "description": self.description,
-            "instances": self.instances, "access": self.access, "instructions": self.instructions,
+            "instances": self.instances, "access": self.access, "on_task": self.on_task,
+            "instructions": self.instructions,
             "agent": {"offered": self.agent.offered, "name": self.agent.name},
             "asked": {"when": self.asked.when, "pattern": self.asked.pattern, "otherwise": self.asked.otherwise},
             "mark": bool(self.mark),
@@ -329,6 +338,12 @@ class Manifest:
                              "notify": self.capabilities.notify,
                              "message_actors": self.capabilities.message_actors},
         }
+
+
+def on_task_default(access: str) -> str:
+    """What adding an app to an actor or a task does when its manifest doesn't say (ON_TASK): a "task" app joins the
+    task; a "group" app, in no task, isn't added."""
+    return "no" if access == "group" else "join"
 
 
 def tool_name(app: str, tool: str) -> str:
@@ -365,7 +380,7 @@ def load(folder: str) -> Manifest:
 def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE) -> Manifest:
     """The manifest the TOML's `data` says. With `folder`, the files it names are read from there and must exist."""
     r = _Reader(where)
-    _known(r, data, "", ("name", "label", "version", "description", "instances", "access", "offer", "instructions",
+    _known(r, data, "", ("name", "label", "version", "description", "instances", "access", "offer", "on_task", "instructions",
                          "instructions_file", "agent", "asked", "mark", "backend", "panel", "tools", "tools_file",
                          "events", "pollers", "handles", "links", "schedules", "capabilities", "replaces"))
     name = r.string(data, "name")
@@ -388,6 +403,11 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
         access = r.string(data, "access", "task")
         if access not in ACCESS:
             r.fail("access", f"{access!r}: one of {', '.join(ACCESS)}")
+    on_task = r.string(data, "on_task", on_task_default(access))
+    if on_task not in ON_TASK:
+        r.fail("on_task", f"{on_task!r}: one of {', '.join(ON_TASK)}")
+    if on_task == "join" and access == "group":
+        r.fail("on_task", '"join": an app every agent of its group may use (access "group") is in no task -- folder or no')
     agent_d = data.get("agent", {})
     _known(r, agent_d, "agent.", ("offered", "start", "name"))
     if "offered" in agent_d and "start" in agent_d:
@@ -463,7 +483,7 @@ def parse(data: Dict[str, Any], folder: Optional[str] = None, where: str = FILE)
     if replaces and not (backend.python or backend.command):
         r.fail("replaces", "its backend says which instances it takes over, and the app has no [backend]")
     return Manifest(name=name, label=r.string(data, "label", name), version=r.string(data, "version", "0"),
-                    description=r.string(data, "description", ""), instances=instances, access=access,
+                    description=r.string(data, "description", ""), instances=instances, access=access, on_task=on_task,
                     instructions=instructions, agent=agent, asked=asked, mark=mark,
                     backend=backend, panel=panel, tools=tools, events=events, pollers=pollers, handles=handles,
                     links=links, schedules=schedules, capabilities=_capabilities(r, data.get("capabilities", {})),

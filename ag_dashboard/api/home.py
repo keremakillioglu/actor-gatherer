@@ -168,7 +168,8 @@ def task(srv: Parts, body: Body) -> Response:
     add {to, items, name?} (the items put in the task the item `to` is in -- in none, one made of them all, called
     `name`, none: named by what is in it -- each agent among them attached to the task's apps before its agent starts, so
     it is given their tools as it starts: `attached`, {channel: [instance ids]}), out {items} (taken out of their
-    tasks), rename {id, to} ("": named by what is in it again). `channels` is `items`, as it was called before apps were items."""
+    tasks), rename {id, to} ("": named by what is in it again). `channels` is `items`, as it was called before apps were items.
+    An app among `items` is put in the task only if that is what adding it to an actor or a task does (app_policy.py)."""
     g, do = str(body.get("gatherer") or ""), str(body.get("do") or "")
     items = body.get("items", body.get("channels"))
     if do in ("add", "out") and not isinstance(items, list):
@@ -180,6 +181,9 @@ def task(srv: Parts, body: Body) -> Response:
             raise ValueError("the coordinator agent can't be in a task")
         if task_links.untaskable(g, [str(body.get("to") or ""), *new]):
             raise ValueError("an app every agent of the group can use isn't put in a task")
+        out = task_links.kept_out(g, new)                      # an app added to an actor or a task: only one that
+        if out:                                                # joins it (app_policy.py)
+            raise ValueError(f"{', '.join(out)} isn't added to a task: the Apps page says what adding it does")
         tid, attached = task_links.change(g, lambda: tasks.add(g, str(body.get("to") or ""), new, body.get("name")))
         got = {"task": tid, "attached": attached}
     elif do == "out":

@@ -9,6 +9,7 @@ import { get, post } from "../../core/api/client";
 import { glyph } from "../../core/ui/glyphs";
 import "./catalog.css";
 import { closeDialog, confirmBuiltin, confirmUninstall, fromSource, stageUpdate, type Asked } from "./catalog-dialogs";
+import { onTaskChoice, type OnTask } from "./catalog-on-task";
 import { el, kb, markOf, said, tokens } from "./catalog-parts";
 
 export interface CatalogApp {
@@ -28,6 +29,11 @@ export interface CatalogApp {
   with_agent?: boolean;
   /** opened, it starts with an agent of its own: the reader's choice here (app_settings.py), yes until they say not */
   opens_with_agent?: boolean;
+  /** what "+" on an actor or a task does with it ("join", "folder", "no": ag_dashboard/app_policy.py), as chosen; its
+   * manifest's own; and those it can take (a group app: not "join") */
+  on_task?: OnTask;
+  on_task_own?: OnTask;
+  on_task_can?: OnTask[];
   instances?: string;
   tools?: string[];
   tokens?: number;
@@ -481,6 +487,11 @@ function details(a: CatalogApp): HTMLElement {
       ),
     ),
     a.with_agent ? opensWith(a) : null,
+    onTaskChoice(a, (note) => {
+      page.note = note;
+      render();
+      void page.hooks?.changed(); // (its "+" menus read the apps again)
+    }),
     el("h3", { text: "What agents get" }),
     el(
       "div",

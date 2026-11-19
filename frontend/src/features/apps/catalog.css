@@ -394,15 +394,21 @@
   padding-top: 14px;
   border-top: 1px solid var(--grid);
 }
+/* how it opens, and what "+" on a task does with it: one under the other, each its label above its buttons */
 .ap-opens {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 12px;
 }
 .ap-opens-l {
   color: var(--muted);
+  font-size: var(--fs-meta);
+}
+.ap-opens-note {
+  color: var(--muted);
+  font-size: var(--fs-meta);
 }
 .ap-seg {
   display: inline-flex;

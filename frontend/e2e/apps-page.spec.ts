@@ -20,6 +20,9 @@ const BROWSER: App = {
   with_agent: true,
   opens_with_agent: true,
   instances: "many",
+  on_task: "join",
+  on_task_own: "join",
+  on_task_can: ["join", "folder", "no"],
   tools: tool(19, "browser"),
   tokens: 8873,
   can: ["a native web view over its panel, in the desktop app"],
@@ -37,6 +40,9 @@ const STANDUP: App = {
   source: "https://github.com/someone/ag-standup",
   commit: "9c1e04a11",
   access: "group",
+  on_task: "no",
+  on_task_own: "no",
+  on_task_can: ["folder", "no"],
   tools: ["standup_today"],
   tokens: 820,
   can: [],
@@ -122,8 +128,13 @@ async function appsHome(page: Page) {
     return { name: b.builtin || "pager" };
   });
   await answer("settings", (b) => {
-    state.installed = state.installed.map((a) => (a.name === b.app ? { ...a, opens_with_agent: b.agent } : a));
-    return { agent: b.agent };
+    const now = (a: App) => ({
+      ...a,
+      ...("agent" in b ? { opens_with_agent: b.agent } : {}),
+      ...("on_task" in b ? { on_task: b.on_task } : {}),
+    });
+    state.installed = state.installed.map((a) => (a.name === b.app ? now(a) : a));
+    return { ...("agent" in b ? { agent: b.agent } : {}), ...("on_task" in b ? { on_task: b.on_task } : {}) };
   });
   await answer("uninstall", (b) => {
     state.installed = state.installed.filter((a) => a.name !== b.name);
@@ -180,6 +191,33 @@ test("the settings panel's Apps opens the Apps page in a tab of its own: every a
   await expect(side).toHaveCount(0);
   await appsPage(page).getByLabel("Search apps").fill("standup_today"); // its tools are searched too
   await expect(appsPage(page).locator(".ap-row")).toHaveCount(1);
+});
+
+test("an app's details choose what + on an actor or a task does with it, beside how it opens; kept at once", async ({
+  page,
+}) => {
+  const state = await appsHome(page);
+  await open(page);
+  await fromSettings(page);
+  await appRow(page, "browser").click();
+  const side = appsPage(page).locator(".ap-side");
+  const opens = side.getByRole("group", { name: "How Browser opens" });
+  const choice = side.getByRole("group", { name: "What + on an actor or a task does with Browser" });
+  await expect(opens).toBeVisible(); // the two, one under the other
+  await expect(choice.getByRole("button")).toHaveText(["Joins it", "At the agent's folder", "Not offered"]);
+  await expect(choice.getByRole("button", { name: "Joins it" })).toHaveAttribute("aria-pressed", "true");
+  await expect(side.locator(".ap-on-task .ap-opens-note")).toContainText("Its default.");
+  await choice.getByRole("button", { name: "At the agent's folder" }).click();
+  await expect
+    .poll(() => state.asked.filter(([p]) => p === "settings"))
+    .toEqual([["settings", { app: "browser", on_task: "folder" }]]);
+  await expect(choice.getByRole("button", { name: "At the agent's folder" })).toHaveAttribute("aria-pressed", "true");
+  await expect(side.locator(".ap-on-task .ap-opens-note")).toHaveText(
+    "Opened at the agent's directory, shown with the task, not part of it.",
+  );
+  await appRow(page, "standup").click(); // an app every agent of the group may use: never in a task
+  const its = side.getByRole("group", { name: "What + on an actor or a task does with Standup" });
+  await expect(its.getByRole("button")).toHaveText(["At the agent's folder", "Not offered"]);
 });
 
 test("a new tab's Apps… opens the page in that tab, and opening it again shows that tab, not a second", async ({

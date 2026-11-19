@@ -821,7 +821,12 @@ const gathererApps = (gname) => PANE || SNAPSHOT ? [] : ((appsKnown.get(gname) |
 const appInfo = (gname, id) => gathererApps(gname).find((o) => o.id === id) || null;
 // an app every agent of its group may use (its manifest's access "group": task_links.py's `taskable`): in no task, ever
 const groupApp = (app) => !!app && app.access === "group";
-const isGroupItem = (g, k) => isAppItem(k) && groupApp((appInfo(g.name, k.slice(APP_ITEM.length)) || {}).app);
+// what adding an app to an actor or a task does (ag_dashboard/app_policy.py, as the user chose it on the Apps page):
+// "join", put in its task (addAppToTask); "folder", opened at its directory, shown with it, in no task (openAppAt); "no",
+// not offered. A server older than the choice: a group app's "no", another's "join"
+const onTask = (app) => !app ? "no" : app.on_task || (groupApp(app) ? "no" : "join");
+// an item that is an app's instance whose app doesn't join tasks: not put in one by dragging (canJoin), either way
+const keptOut = (g, k) => isAppItem(k) && onTask((appInfo(g.name, k.slice(APP_ITEM.length)) || {}).app) !== "join";
 // a task's apps, as they were opened
 const taskApps = (g, id) => gathererApps(g.name).filter((o) => appTaskOf(g.name, o.id) === id);
 // an app's mark: small, beside a task's faces
@@ -1040,20 +1045,24 @@ async function openTask(gname, id, focus = null, ev = null) {
   }
 }
 // "+" on an item's row, a task's (on its first item), and in a task's card (`label` beside it): something added to the
-// item's task -- a new agent on a harness picked (addToTask), or an app (addAppToTask) -- from its menu
+// item's task -- a new agent on a harness picked (addToTask), or an app, as adding it does (onTask): put in the task
+// (addAppToTask), or opened at the item's directory beside it (openAppAt) -- from its menu
 function addButton(g, k, label = null) {
   const a = isAppItem(k) ? null : actorOf(g, k), o = a ? null : appInfo(g.name, k.slice(APP_ITEM.length));
   if ((!a && !o) || (a && isCoordinator(a)) || (o && groupApp(o.app))) return null;
   const hs = SNAPSHOT ? [] : startable();
-  const apps = SNAPSHOT || PANE || !window.agNext ? [] : window.agNext.apps.found().filter((app) => !groupApp(app) && !app.failed);
+  const apps = SNAPSHOT || PANE || !window.agNext ? [] : window.agNext.apps.found().filter((app) => onTask(app) !== "no" && !app.failed);
   if (!hs.length && !apps.length) return null;
   // its menu's key: its own, apart from the list's "+" for the same item, which the menu would hang from otherwise
   const mk = `${label ? "card-" : ""}task-add:${g.name}/${k}`, id = itemTaskOf(g, k);
   const where = id !== null ? taskName(g, taskById(g.name, id)) : a ? actorTitle(a) : appTitle(o);
   const items = [
     ...hs.map((h) => ({ mark: harnessBadge(h), text: harnessName(h), note: "a new agent in the same directory", run: () => addToTask(g.name, k, h) })),
-    ...apps.map((app) => ({ icon: ICONS.app, mark: app.mark ? appMarkImg(app) : null, text: app.label, note: "an app the task's agents can use",
-      run: () => addAppToTask(g.name, k, app.name) })),
+    ...apps.map((app) => onTask(app) === "folder"
+      ? { icon: ICONS.app, mark: app.mark ? appMarkImg(app) : null, text: app.label, note: "opened at its directory, beside the task",
+        run: () => openAppAt(g.name, k, app.name) }
+      : { icon: ICONS.app, mark: app.mark ? appMarkImg(app) : null, text: app.label, note: "an app the task's agents can use",
+        run: () => addAppToTask(g.name, k, app.name) }),
   ];
   const b = rowButton("task-add", { title: `Add ${[hs.length ? "an agent" : null, apps.length ? "an app" : null].filter(Boolean).join(" or ")} to this task`,
     "aria-label": "Add to this task", "data-pop": mk, "aria-haspopup": "menu", "aria-expanded": String(rowPop.key === mk) },
@@ -1116,6 +1125,25 @@ async function addAppToTask(gname, k, name) {
     if (had) there.panel.refresh();
     retask(was);
     selectAppPane(there);                              // added: selected, as an actor started is shown
+  } catch (e) { paneNote(`${app.label}: ${e.message}`); }
+  renderAgents();
+}
+// An app added to an item that it doesn't join (onTask "folder": the Files app's): opened at the item's directory -- an
+// actor's working directory, an app's folder -- the one open there already, if the app has any number (`reuse`), its
+// panel shown above and selected; put in no task, no agent attached to it. The item's task shown first, if another is.
+// Not kept with the task's layout yet: the task left and entered again, it is not opened with it.
+async function openAppAt(gname, k, name) {
+  const g = gathererNamed(gname);
+  const a = g && !isAppItem(k) ? actorOf(g, k) : null, o = g && !a ? appInfo(gname, k.slice(APP_ITEM.length)) : null;
+  const app = (a || o) && window.agNext ? window.agNext.apps.named(name) : null;
+  if (!app) return;
+  const folder = (a ? cwdOf(a) : o.folder) || startCwd(g);
+  if (!folder) return paneNote(`${app.label}: no directory to open it at`);
+  await showItemsTask(g, k);
+  try {
+    const inst = await window.agNext.apps.open(name, gname, folder, null, true);
+    await readApps(gname, true);
+    selectAppPane(showAppPanel(app, inst));           // (through the layout model, as addAppToTask's)
   } catch (e) { paneNote(`${app.label}: ${e.message}`); }
   renderAgents();
 }
@@ -1610,11 +1638,12 @@ function fileItems(gname, items, id) {
   });
 }
 // Whether what is dragged may be put in item `k`'s task (dropped on its row): of its gatherer, items -- not `k` itself,
-// and one of them at least not in its task yet; neither `k` nor any of them an app every agent of the group may use
+// and one of them at least not in its task yet; none of them an app that doesn't join tasks (onTask: a group's app, in no
+// task, among them), nor `k` one in no task (a task made of it)
 function canJoin(g, k) {
   const d = listDrag;
   if (!d || d.g !== g.name || !d.cs || d.cs.includes(k)) return false;
-  if (isGroupItem(g, k) || d.cs.some((c) => isGroupItem(g, c))) return false;   // a group's app: in no task
+  if ((keptOut(g, k) && itemTaskOf(g, k) === null) || d.cs.some((c) => keptOut(g, c))) return false;
   const t = itemTaskOf(g, k);
   return d.cs.some((c) => t === null || itemTaskOf(g, c) !== t);
 }
