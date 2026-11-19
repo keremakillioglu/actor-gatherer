@@ -1,10 +1,10 @@
-import { AGO_MS, PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
+import { PANE, SNAPSHOT, panes, state } from "../../core/page/state.js";
 import {
   avatarMode, clock, el, get, isShell, keepAvatarMode, key, selectedInfo, signature,
 } from "../../core/page/helpers.js";
 import { keepingPlace } from "../settings/panel.js";
 import { statusOf, takeHome } from "../list/seen.js";
-import { firstAgent, isHidden, moveHidingToServer, renderAgents } from "../list/list.js";
+import { firstAgent, isHidden, moveHidingToServer, renderAgents, staleNames } from "../list/list.js";
 import { drawWho, paneSig, restorePanes, setAutoShown, showActorsApp, startTabs, taskKey } from "../layout/panes.js";
 import { renderMain } from "./main-view.js";
 import { chatAtEnd, chatToEnd } from "../chat/chat.js";
@@ -137,10 +137,12 @@ async function loadContext(readId) {
 const drawn = { agents: null, main: null, who: null };
 // What the list draws from: kept as `drawn.agents` by renderAgents whoever calls it -- a home, or the reader's own
 // action, which draws at once -- so a home that only confirms that action draws nothing anew (a row drawn again under
-// the pointer as the reader presses it to drag starts no drag). "ago" texts: every 30 s.
+// the pointer as the reader presses it to drag starts no drag). Not the clock: its "ago" texts count where they are, as
+// every `data-ago` does (features/history/history.js's ticker), and a redraw for them alone would take the keyboard's
+// place in the list away every 30 s -- only what the time decides, the groups hidden for being inactive (`staleNames`).
 const listSignature = () => signature([state.home.gatherers, state.home.hook_servers, state.home.hiding, state.home.titles,
   state.home.saved, state.home.folders, state.home.gatherer_folders, state.home.places, state.home.tasks, state.home.seen, state.home.harnesses, state.home.shells, state.home.branches,
-  paneSig(), opened(selectedInfo()), Math.floor(Date.now() / AGO_MS)]);
+  paneSig(), opened(selectedInfo()), staleNames()]);
 // The list drawn again only if what it draws from changed since: after an action's answer, which mostly says what the
 // page guessed and drew already -- a list drawn anew for nothing, as a drag begins, loses its row.
 const redrawList = () => { if (listSignature() !== drawn.agents) renderAgents(); };

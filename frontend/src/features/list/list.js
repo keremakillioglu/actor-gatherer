@@ -89,6 +89,8 @@ const STALE_SECONDS = 7 * 86400;
 const choiceOf = (g) => (state.home.hiding || {})[g.name] || "";
 const lastOf = (g) => g.last ? Math.max(g.last, g.changed || 0) : null;   // none: no actor yet, never stale
 const stale = (g) => !!lastOf(g) && (state.home.now || Date.now() / 1000) - lastOf(g) > STALE_SECONDS;
+// The groups inactive by now: what the time changes in the list (page/data.js's listSignature)
+const staleNames = () => state.home.gatherers.filter(stale).map((g) => g.name);
 // An actor on its own never: closed, it is in its line at the list's end (features/list/group-moves.js's aloneShut).
 const isHidden = (g) => !g.alone
   && (choiceOf(g) === "hidden" || (stale(g) && choiceOf(g) !== "shown" && !g.agents.some((a) => savedAs(g.name, a))));
@@ -488,7 +490,8 @@ function renderAgents() {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
       el("summary", { text: `${hidden.length} hidden group${hidden.length === 1 ? "" : "s"}` }));
     for (const g of hidden) list.append(el("div", { class: "hidden-row" }, el("span", { class: "gname", text: titleOf(g) }),
-      el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `inactive for ${ago(lastOf(g)).replace(" ago", "")}` }),
+      el("span", { class: "why" }, ...(choiceOf(g) === "hidden" ? ["hidden"]
+        : ["inactive, last active ", el("span", { "data-ago": lastOf(g), text: ago(lastOf(g)) })])),
       el("button", { type: "button", onclick: () => setHidden(g, false) }, "Show")));
     const wasOpen = document.getElementById("hidden-gatherers");
     if (wasOpen && wasOpen.open) list.open = true;
@@ -1759,7 +1762,7 @@ function shellRow(g, s) {
     el("div", {},
       el("div", { class: "name", text: where.split("/").filter(Boolean).pop() || where }),
       el("div", { class: "asked", text: where }),
-      el("div", { class: "meta" }, el("span", { text: `Terminal · opened ${ago(s.since)}` }),
+      el("div", { class: "meta" }, el("span", {}, "Terminal · opened ", el("span", { "data-ago": s.since || "", text: ago(s.since) })),
         rowActs(el("span", { class: "close-btn", role: "button", tabindex: "0", title: "End the shell and everything running in it",
           "aria-label": "Terminate shell", onclick: close,
           onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); close(ev); } } }, closeIcon())))));
@@ -1820,7 +1823,7 @@ export {
   isOpenFolder, itemNamed, keepTitle, kidFolders, listDrag, markDragged, moveHidingToServer, nameFolder, nameItem,
   nameNote, openIn, openTask, openUp, parentOf, pickMark, picked, plainFace, pressClose, readApps, renderAgents,
   reopenFolder, retask, rowButton, rowsOf, saveButton, savedAs, selectApp, setCrewHidden, setHidden, shellFolder,
-  shellLogo, showFolder, showItemsTask, shownClosed, startDrag, startFolderEdit, startIn, tabLine, takeOut, tallyChips,
+  shellLogo, showFolder, showItemsTask, shownClosed, staleNames, startDrag, startFolderEdit, startIn, tabLine, takeOut, tallyChips,
   taskActors, taskApps, taskById, taskCloseButton, taskFaces, taskItems, taskLead, taskMembers, taskName, taskOf,
   taskSaveButton, taskStatus, titleOf, toggleFold, toggleFolder, toggleGatherer, togglePick, treeOf, withTasks, within,
 };
