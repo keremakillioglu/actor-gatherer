@@ -19,7 +19,6 @@ import os
 import re
 import secrets
 import shlex
-import shutil
 import subprocess
 import threading
 import time
@@ -27,6 +26,7 @@ import urllib.error
 import urllib.request
 from typing import Callable, Dict, List, Optional, Tuple
 
+from app_kit import tex
 from harness_kit.processes import end_group
 
 from . import texlog
@@ -531,10 +531,9 @@ def synctex(checkout: str, body: dict) -> dict:
     pdf = inside(checkout, str(body.get("pdf") or ""))
     if pdf is None or not os.path.isfile(pdf):
         raise PreviewError(f"no PDF {body.get('pdf')!r} in {checkout}")
-    stem = os.path.splitext(pdf)[0]
-    if not any(os.path.isfile(stem + ext) for ext in (".synctex.gz", ".synctex")):
+    if not tex.built(pdf):
         return {"ok": False, "reason": "no-synctex"}
-    if shutil.which("synctex") is None:
+    if not tex.tool():
         return {"ok": False, "reason": "no-tool"}
     try:
         if body.get("mode") == "forward":
@@ -544,43 +543,18 @@ def synctex(checkout: str, body: dict) -> dict:
             line, col = int(body.get("line") or 0), int(body.get("column") or 0)
             if line < 1:
                 raise PreviewError("line: 1 or more")
-            got: Dict[str, str] = {}
-            for raw in _synctex(["view", "-i", f"{line}:{col}:{src}", "-o", pdf], checkout).splitlines():
-                k, _, v = raw.partition(":")
-                if k in ("Page", "x", "y", "h", "v", "W", "H") and k not in got:
-                    got[k] = v.strip()
-                if raw.startswith("SyncTeX result end"):
-                    break
-            if "Page" not in got:
-                return {"ok": False, "reason": "no-match"}
-            num = lambda k: float(got[k]) if k in got else None   # noqa: E731
-            return {"ok": True, "page": int(float(got["Page"])), "x": num("x"), "y": num("y"), "h": num("h"),
-                    "v": num("v"), "w": num("W"), "height": num("H")}
+            got = tex.forward(pdf, src, line, col, checkout)
+            return {"ok": True, **got} if got else {"ok": False, "reason": "no-match"}
         page, x, y = float(body.get("page")), float(body.get("x")), float(body.get("y"))
     except (TypeError, ValueError):
         raise PreviewError("page, x and y: numbers") from None
-    src, line = None, None
-    begun = False
-    for raw in _synctex(["edit", "-o", f"{round(page)}:{x}:{y}:{pdf}"], checkout).splitlines():
-        begun = begun or raw.startswith("SyncTeX result begin")
-        if begun and raw.startswith("Input:") and src is None:
-            src = raw[len("Input:"):].strip()
-        elif begun and raw.startswith("Line:") and line is None:
-            line = int(raw[len("Line:"):].strip() or 0)
-    if not src or not line:
+    found = tex.backward(pdf, page, x, y, checkout)
+    if found is None:
         return {"ok": False, "reason": "no-match"}
-    full = inside(checkout, os.path.normpath(src if os.path.isabs(src) else os.path.join(os.path.dirname(pdf), src)))
+    full = inside(checkout, found[0])
     if full is None:
         return {"ok": False, "reason": "outside-checkout"}
-    return {"ok": True, "file": os.path.relpath(full, checkout), "line": line}
-
-
-def _synctex(args: List[str], cwd: str) -> str:
-    try:
-        return subprocess.run(["synctex", *args], cwd=cwd, capture_output=True, text=True, timeout=20,
-                              stdin=subprocess.DEVNULL).stdout
-    except (OSError, subprocess.SubprocessError):
-        return ""
+    return {"ok": True, "file": os.path.relpath(full, checkout), "line": found[1]}
 
 
 def _texty(body: bytes) -> bool:

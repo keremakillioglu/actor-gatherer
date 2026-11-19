@@ -41,7 +41,7 @@ from typing import Dict, List, Optional
 import harness_kit
 from harness_kit import Kind, Shape, ToolCall
 
-from . import data, work
+from . import data, store, work
 from . import home as paths
 from harness_kit.shell import (  # noqa: F401 - python_changes: tested here
     GLOB, GREP_PATH_LINE, READ_LINE, _patch_files, _resolve, python_changes, runs_git, shell_changes, shell_reads,
@@ -637,7 +637,7 @@ def files(gatherer: str, channel: str, turn: Optional[int] = None, cwd: str = ""
     its `did`. A file in a temporary folder (`temporary`) has `temporary` true.
     Relative paths in shell commands are taken from `cwd` (the session's directory). `home`: the
     user's home folder, which the page shows as ~."""
-    conn = data._connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return {"error": f"no database for gatherer {gatherer!r}"}
     try:
@@ -1148,7 +1148,7 @@ def image(gatherer: str, row_id: int, call_id: str) -> Optional[tuple]:
     """The image a call's result holds, as stored in event `row_id`: (media type, bytes), or None.
     Claude Code's {"type": "image", "source": {"media_type", "data"}}, or codex's input_image with a
     data URL."""
-    conn = data._connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return None
     try:

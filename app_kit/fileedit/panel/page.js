@@ -1,5 +1,5 @@
 // The panel of an app built on app_kit.fileedit: the page around its code -- what the dashboard's own page gave the
-// Editor when it was drawn there (frontend/src/legacy/01-helpers.js and the others), small and as it was, and the
+// Editor when it was drawn there (frontend/src/core/page/helpers.js and the others), small and as it was, and the
 // dashboard reached through app_kit's SDK instead: the actors (`ag.actors`: their names, avatars, hues, folders, what
 // they are doing), the theme, the agent in focus, and an intent the page asks of it (open-file). Loaded first; the rest
 // (editor.js, editor-tree.js, editor-open.js, editor-view.js, editor-send.js), then the app's own, then start.js, after
@@ -8,7 +8,7 @@
 const DASH = new URLSearchParams(location.search).get("host") || "";   // the dashboard's origin: its avatars
 const PANE = null, SNAPSHOT = false;                 // (the page's: a pane's frame, a snapshot -- never here)
 
-// ------------------------------------------------------------------ helpers (01-helpers.js's)
+// ------------------------------------------------------------------ helpers (core/page/helpers.js's)
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -65,7 +65,7 @@ const hlLines = (t, lang) => window.agEditor.ui.hlLines(t, lang);
 const hlPart = (...a) => window.agEditor.ui.hlPart(...a);
 const guessWeb = (t) => window.agEditor.ui.guessWeb(t);
 const ansiHtml = (t) => window.agEditor.ui.ansiHtml(t);
-// The theme the dashboard shows, as its page has it (02-data.js's shownTheme): told to this panel by the SDK.
+// The theme the dashboard shows, as its page has it (features/page/data.js's shownTheme): told to this panel by the SDK.
 const shownTheme = () => (agApp && agApp.theme.current && agApp.theme.current.mode) || "light";
 // The panel's backend: its requests on its own origin, as the dashboard's routes were (a JSON body; {error} refused),
 // each naming its Editor (`forEditor`: its gatherer and instance, which the host passes on to the backend).
@@ -91,7 +91,7 @@ async function post(path, body, keep = false) {
   if (!r.ok) throw Object.assign(new Error(got.error || `${path}: ${r.status}`), { status: r.status });
   return got;
 }
-// A line over the panel for a moment: why nothing happened (07-panes.js's, over the panes).
+// A line over the panel for a moment: why nothing happened (features/layout/panes.js's, over the panes).
 function paneNote(text) {
   const n = el("div", { class: "pane-note", role: "status", text });
   document.body.append(n);
@@ -125,14 +125,14 @@ const state = { home: { gatherers: [], home_dir: "", cwd: "" }, selected: null, 
 const statusOf = (a) => (a && a.status) || ["idle", "Idle"];
 // An avatar's picture, from the dashboard (an image from another origin: shown, never read).
 const avatarSrc = (name) => `${DASH}/avatars/${encodeURIComponent(name)}.svg`;
-// What an actor's branch is (07-panes.js's branchRoute): where it works, and where its changes go.
+// What an actor's branch is (features/layout/panes.js's branchRoute): where it works, and where its changes go.
 const checkedOut = (o) => !o || !o.head ? "?" : o.branch || `${o.head} (no branch)`;
 const branchRoute = (b) => `Branch ${b.branch} in ${tildePath(b.worktree, state.home.home_dir)}, `
   + `started from ${b.started_on || "a commit"} at ${(b.start || "").slice(0, 7)}.\n`
   + `Merges into ${tildePath(b.project, state.home.home_dir)} (on ${checkedOut(b.onto)} now)`
   + `${b.approve ? " once you approve each change" : ", except on lines you're editing or changed"}.`;
 
-// ------------------------------------------------------------------ a file's lines, as Chat shows them (16-files-view.js's)
+// ------------------------------------------------------------------ a file's lines, as Chat shows them (features/chat/files-view.js's)
 const FILE_KINDS = { read: ["read", "var(--s1)"], hit: ["search hit", "var(--s4)"], edit: ["edited", "var(--s2)"],
   write: ["written", "var(--s3)"], delete: ["deleted", "var(--critical)"] };
 const MARKS = {

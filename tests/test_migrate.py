@@ -19,7 +19,7 @@ from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.integrations.harnesses.claude.adaptor.adaptor import ClaudeAdaptor  # noqa: E402
 from ag.integrations.tools.ag_orchestrator import migrate  # noqa: E402
-from ag_dashboard import data, files, migrating  # noqa: E402
+from ag_dashboard import data, files, migrating, store  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 CALL = {"type": "tool_use", "id": "toolu_1", "name": "Read", "input": {"file_path": "/w/rows.csv"}}
@@ -131,7 +131,7 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(s["last"], self.t + 4)                                  # when its answer came, as its read kept it
         self.assertEqual([i["text"] for i in data.agent("g", "s", [])["pending"]], ["There are 42 rows."])
         self.assertEqual(s["turn_over"], True)                                   # its last answer, ended (end_turn)
-        conn = data._connect("g")
+        conn = store.gatherer("g")
         try:
             (newest,) = data._newest_reads(conn, "s", 1)
         finally:

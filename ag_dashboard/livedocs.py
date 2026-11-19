@@ -61,7 +61,7 @@ from datetime import datetime, timezone
 from collections import deque
 from typing import Dict, List, Optional, Tuple
 
-from . import data
+from . import data, store
 
 try:
     from pycrdt import Doc, Text
@@ -426,7 +426,7 @@ def writers(directories: List[str], since: float) -> Dict[str, List[dict]]:
     out: Dict[str, Dict[tuple, dict]] = {}
     names = data.gatherer_names()
     for gatherer in names[:1] if data.paths.merged() else names:        # the home's one database: read once
-        conn = data._connect(gatherer)
+        conn = store.gatherer(gatherer)
         if conn is None:
             continue
         try:

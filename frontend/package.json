@@ -13,8 +13,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "e2e": "playwright test",
-    "e2e:update": "playwright test --update-snapshots",
-    "split": "node scripts/split.mjs"
+    "e2e:update": "playwright test --update-snapshots"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

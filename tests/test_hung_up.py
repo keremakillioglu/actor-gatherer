@@ -9,7 +9,7 @@ from types import SimpleNamespace
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from ag.integrations.tools.ag_orchestrator.proxy_hook import ProxyHook  # noqa: E402
 
 

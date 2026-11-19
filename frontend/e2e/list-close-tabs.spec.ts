@@ -1,4 +1,4 @@
-// CLOSED FROM THE LIST, CLOSED IN THE SCREEN TABS (07-panes.js's closedInTabs, tabs.ts's `closed`): an actor's, a task's,
+// CLOSED FROM THE LIST, CLOSED IN THE SCREEN TABS (features/layout/panes.js's closedInTabs, tabs.ts's `closed`): an actor's, a task's,
 // an app's × in the list closes it in the tabs too, as there a tab's × would -- its tab closed if it held nothing else (the
 // tab shown: the next shown; the only one, emptied: a new tab), else it out of that tab, the tab's other tasks as they
 // are. One actor of a task closed from the task's card: its pane closed, as its pane's × does.

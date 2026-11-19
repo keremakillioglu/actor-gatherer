@@ -484,7 +484,7 @@ class HookTest(unittest.TestCase):
     def setUp(self):
         import tempfile
         from ag.integrations.harnesses.antigravity.ag_orchestrator import context_manager as agy_ag
-        from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
+        from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients
         self.home = tempfile.mkdtemp()
         self.clients = {}
 

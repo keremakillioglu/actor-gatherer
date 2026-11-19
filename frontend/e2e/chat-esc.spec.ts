@@ -1,4 +1,4 @@
-// Esc in Chat (09-selected-agent.js): the agent's turn interrupted -- the key typed into the terminal the dashboard runs
+// Esc in Chat (features/page/main-view.js): the agent's turn interrupted -- the key typed into the terminal the dashboard runs
 // for it -- from the message box, and from anywhere else on the page that nothing else takes it. The same while the
 // agent asks: the question dismissed, as an Esc on it in its terminal.
 import type { Page } from "@playwright/test";

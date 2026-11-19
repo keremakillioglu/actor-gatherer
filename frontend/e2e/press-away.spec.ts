@@ -1,5 +1,5 @@
 // What floats over the page and closes on a press elsewhere -- Settings, a row's drop-down -- closes on a press in a frame
-// too, which the page itself never hears (07-panes.js's pressedAway): in an app's panel (told by app_kit's SDK, also a
+// too, which the page itself never hears (features/layout/panes.js's pressedAway): in an app's panel (told by app_kit's SDK, also a
 // press the panel's own code stops), in another actor's pane.
 import type { Page } from "@playwright/test";
 import { expect, test } from "./test";

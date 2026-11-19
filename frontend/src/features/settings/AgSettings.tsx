@@ -1,6 +1,6 @@
 // ag's settings, at the top of the dashboard's panel: the Gatherer's model, a new gatherer's defaults, the harnesses
 // ag runs, and config.toml itself in a dialog over the page (a Browser's logins: its panel's own menu). The markup and its classes are the page's
-// before (frontend/index.html's #cfg, src/legacy/css/00-base.css), so it looks as it did.
+// before (frontend/index.html's #cfg, src/core/page/base.css), so it looks as it did.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import type { Settings } from "../../core/api/types";

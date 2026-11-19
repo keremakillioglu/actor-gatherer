@@ -4,7 +4,7 @@
 import { createElement, useLayoutEffect, type ReactNode, type RefObject } from "react";
 
 /** Whether the node on the page shows what `next` does: by their data-sig, else by their markup -- the old page's
- * patch() rule for the nodes it kept from one draw to the next (09-selected-agent.js). */
+ * patch() rule for the nodes it kept from one draw to the next (features/page/main-view.js). */
 function same(cur: Node, next: Node): boolean {
   if (cur instanceof HTMLElement && next instanceof HTMLElement && ("sig" in cur.dataset || "sig" in next.dataset))
     return cur.dataset.sig === next.dataset.sig && cur.tagName === next.tagName;
@@ -12,7 +12,7 @@ function same(cur: Node, next: Node): boolean {
 }
 
 /**
- * The old page's stage (`make`: 01-helpers.js's atWork, atRest, greeting) first in `box`, before React's own nodes in it
+ * The old page's stage (`make`: core/page/helpers.js's atWork, atRest, greeting) first in `box`, before React's own nodes in it
  * (`after`, the first of them, if any): made again at each render, as each of the old page's draws made it -- its moments
  * counted on from the last -- and the node on the page kept while it shows the same, so its animations run on. The stage
  * may have put a node of its own in its place since (its next moment, on its own clock): what is first in `box` is
