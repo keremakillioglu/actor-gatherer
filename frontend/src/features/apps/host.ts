@@ -509,11 +509,17 @@ export class AppPane {
     this.push("states", { value: now });
   }
 
-  /** Its agents, as the host has them now: read again and given (the page opens the first below it). */
+  /** Its agents, as the host has them now: read again and given (the page opens the first below it). A panel that
+   * connected before the read came back was told the agents known then (none, for a pane just made: its hello comes
+   * as soon as its frame loads), and the host's stream tells only of agents attached or detached later -- so a list
+   * that differs is told it here, as that stream tells it. */
   async refresh(): Promise<string[]> {
     const got = await get<Listed>(`/api/apps?gatherer=${encodeURIComponent(this.instance.gatherer)}`).catch(() => null);
     if (got) {
-      this.attached = got.attached[this.instance.id] || [];
+      const now = got.attached[this.instance.id] || [];
+      const changed = now.join("\n") !== this.attached.join("\n");
+      this.attached = now;
+      if (changed) this.push("message", { value: { ag: "instance", attached: now } });
       this.lastStates = "";
       this.agentsChanged();
     }
