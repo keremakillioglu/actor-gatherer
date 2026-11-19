@@ -9,6 +9,7 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "lint:panels": "node scripts/lint-panels.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",

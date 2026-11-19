@@ -730,7 +730,7 @@ nodes from its text (`render`), never as HTML; links go out only to http, https 
     try { await navigator.clipboard.writeText(text); return true; } catch { /* no clipboard in this frame: the old way */ }
     const t = el("textarea", { style: "position:fixed;opacity:0;top:0;left:0" });
     t.value = text; document.body.append(t); t.select();
-    let ok = false;
+    let ok;
     try { ok = document.execCommand("copy"); } catch { ok = false; }
     t.remove();
     return ok;

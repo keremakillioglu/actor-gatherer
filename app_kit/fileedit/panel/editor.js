@@ -244,7 +244,7 @@ const edWaiting = (n) => n && !ed.plain ? el("span", { class: "mk br", title: `$
 // Above the tree, under the folder: the actors on branches of the project shown (branches.py), and what waits from them.
 async function edFetchBranches() {
   if (!ed.root || ed.plain) return;                  // edited plain: no actors' branches to approve
-  let got = [];
+  let got;
   try { got = await get(`/api/branches?${new URLSearchParams({ root: ed.root })}`); } catch (e) { return; }
   ed.branches = got;
   edBranches();

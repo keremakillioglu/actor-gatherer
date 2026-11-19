@@ -59,7 +59,8 @@ function pvMount(box) {
 }
 function pvMake(ag, root) {
   const OUT_MAX = 300000;                               // the most characters of a run's output kept here
-  const ANSI = /\x1b(?:\[[0-?]*[ -\/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
+  // eslint-disable-next-line no-control-regex -- a terminal's escapes (ESC [ ..., ESC ] ... BEL), taken out
+  const ANSI = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
   const NO_SIDEBAR = 0;                                 // pdf.js's SidebarView.NONE
   const dom = { head: root.querySelector(".pv-h"), cmd: root.querySelector(".pv-cmd"), card: root.querySelector(".pv-card"),
     result: root.querySelector(".pv-result"), output: root.querySelector(".pv-out"), busy: root.querySelector(".pv-busy"),
@@ -83,7 +84,6 @@ function pvMake(ag, root) {
     if (!r.ok) throw new Error(got.error || `${r.status}`);
     return got;
   }
-  const path = () => pv.path || undefined;
 
   // ---- what it is, and its runs as they go
   async function load() {
