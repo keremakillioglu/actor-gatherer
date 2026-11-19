@@ -201,9 +201,21 @@ keeps var(--ag-corner) clear at its right end, which this file sets on :root. */
     await frame();
     if (n === stillAsked) send("native.drawn", { target: still.target }).catch(() => {});
   }
-  function everyFrame() { report(); requestAnimationFrame(everyFrame); }
-  requestAnimationFrame(everyFrame);
-  setInterval(report, 250);            // (frames stop while the window is hidden or covered)
+  // the look, each frame and every 250 ms (frames stop while the window is hidden or covered) -- only while a native
+  // page is shown: a panel without one is not woken each frame for nothing
+  let loop = null;
+  function look() {
+    if (loop || !nativeOn || !shown) return;
+    const me = (loop = { interval: setInterval(() => step(me), 250) });
+    const tick = () => { if (step(me)) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  }
+  function step(me) {                  // true while `me` is the loop and a native page is shown
+    if (loop !== me) return false;
+    if (!nativeOn || !shown) { clearInterval(me.interval); loop = null; return false; }
+    report();
+    return true;
+  }
 
   const ag = {
     get app() { return info && info.app; },
@@ -229,7 +241,7 @@ keeps var(--ag-corner) clear at its right end, which this file sets on :root. */
     },
     native: {
       get available() { return nativeOn; },
-      show(el, target) { shown = target ? { el, target: String(target) } : null; report(); },
+      show(el, target) { shown = target ? { el, target: String(target) } : null; report(); look(); },
       hide() { shown = null; report(); },
       release: () => send("native.release", {}),
     },
@@ -302,6 +314,7 @@ keeps var(--ag-corner) clear at its right end, which this file sets on :root. */
       attached = got.attached || [];
       states = got.states || {};
       nativeOn = !!got.native;
+      look();                          // (a page shown before the host said native pages are there)
       spellOn = !!got.spelling;
       selection = got.selection || null;
       actors = got.actors || null;

@@ -193,6 +193,27 @@ test("the settings panel's Apps opens the Apps page in a tab of its own: every a
   await expect(appsPage(page).locator(".ap-row")).toHaveCount(1);
 });
 
+test("the search box keeps its caret where it is typed, though the page is drawn again on each key", async ({
+  page,
+}) => {
+  await appsHome(page);
+  await open(page);
+  await fromSettings(page);
+  const search = appsPage(page).getByLabel("Search apps");
+  await search.fill("brwser");
+  await search.press("Home");
+  await search.press("ArrowRight");
+  await search.press("ArrowRight");
+  await search.pressSequentially("o"); // mid-word: "brwser" made "browser"
+  await expect(appsPage(page).getByLabel("Search apps")).toHaveValue("browser");
+  expect(
+    await appsPage(page)
+      .getByLabel("Search apps")
+      .evaluate((e: HTMLInputElement) => e.selectionStart),
+  ).toBe(3);
+  await expect(appsPage(page).locator(".ap-row")).toHaveCount(1);
+});
+
 test("an app's details choose what + on an actor or a task does with it, beside how it opens; kept at once", async ({
   page,
 }) => {

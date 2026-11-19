@@ -131,6 +131,32 @@ test("an app under a pane is never minimized by its bar: it stops at its least, 
   expect(Math.round((await box(notes(page))).height)).toBeGreaterThanOrEqual(130);
 });
 
+test("a bar dragged keeps the layout in the browser once, when it is let go, not at each move", async ({ page }) => {
+  await open(page);
+  const claude = page.locator("#agents button.agent", { hasText: CLAUDE });
+  await claude.click();
+  await addNotepad(page, claude);
+  await expect(notes(page)).toHaveCount(1);
+  await page.evaluate(() => {
+    const w = window as unknown as { __writes: number };
+    w.__writes = 0;
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k: string, v: string) {
+      if (k === "ag-dashboard-layout") w.__writes++;
+      return set.call(this, k, v);
+    };
+  });
+  const writes = () => page.evaluate(() => (window as unknown as { __writes: number }).__writes);
+  const b = await box(page.locator(".lay-bar.thick")),
+    x = b.x + b.width / 2;
+  await page.mouse.move(x, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, b.y + 60, { steps: 12 });
+  expect(await writes()).toBe(0); // held: none yet
+  await page.mouse.up();
+  await expect.poll(writes).toBe(1);
+});
+
 test("a task of one pane under another task in the tab: minimized by the line between them, dragged", async ({
   page,
 }) => {

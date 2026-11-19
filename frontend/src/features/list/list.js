@@ -89,16 +89,27 @@ const STALE_SECONDS = 7 * 86400;
 const choiceOf = (g) => (state.home.hiding || {})[g.name] || "";
 const lastOf = (g) => g.last ? Math.max(g.last, g.changed || 0) : null;   // none: no actor yet, never stale
 const stale = (g) => !!lastOf(g) && (state.home.now || Date.now() / 1000) - lastOf(g) > STALE_SECONDS;
+// The groups inactive by now: what the time changes in the list (page/data.js's listSignature)
+const staleNames = () => state.home.gatherers.filter(stale).map((g) => g.name);
 // An actor on its own never: closed, it is in its line at the list's end (features/list/group-moves.js's aloneShut).
 const isHidden = (g) => !g.alone
   && (choiceOf(g) === "hidden" || (stale(g) && choiceOf(g) !== "shown" && !g.agents.some((a) => savedAs(g.name, a))));
 async function keepChoice(name, choice) {
+  const before = state.home.hiding;
   state.home.hiding = { ...(state.home.hiding || {}) };
   if (choice) state.home.hiding[name] = choice; else delete state.home.hiding[name];
   if (SNAPSHOT) return;                            // a snapshot has no server: this page only
   const asked = homesTaken;                        // its answer kept unless a home came meanwhile (takeHome)
   try { const got = await post("/api/hiding", { gatherer: name, choice }); if (!homeSince(asked)) state.home.hiding = got; }
-  catch (err) { setLive(`Not saved: ${err.message}`); }
+  catch (err) { undone(asked, { hiding: before }); setLive(`Not saved: ${err.message}`); }
+}
+// A change the page made at once, as the reader asked, taken back when the server refused it -- unless a home came
+// since, which has what the server keeps (the stream sends a home only when it changed: without this, the page would
+// show the change till something else did)
+function undone(asked, was) {
+  if (homeSince(asked)) return;
+  Object.assign(state.home, was);
+  redrawList();
 }
 // The reader's name for a gatherer, kept by the server (titles.py, `home.titles`) and shown in place of its own, which
 // everything else -- its directory, its actors, `ag` -- still goes by.
@@ -132,7 +143,7 @@ const savedAs = (gname, a) => {
   return a.channel in kept ? a.channel : a.session && a.session.started_as in kept ? a.session.started_as : null;
 };
 async function setSaved(gname, a, save) {
-  const channel = savedAs(gname, a) || a.channel;
+  const channel = savedAs(gname, a) || a.channel, before = state.home.saved;
   const kept = { ...((state.home.saved || {})[gname] || {}) };
   if (save) kept[channel] = new Date().toISOString(); else delete kept[channel];
   state.home.saved = { ...(state.home.saved || {}), [gname]: kept };
@@ -140,7 +151,7 @@ async function setSaved(gname, a, save) {
   if (SNAPSHOT) return;                            // a snapshot has no server: this page only
   const asked = homesTaken;
   try { const got = await post("/api/saved", { gatherer: gname, channel, saved: save }); if (!homeSince(asked)) state.home.saved = got; }
-  catch (err) { setLive(`Not saved: ${err.message}`); }
+  catch (err) { undone(asked, { saved: before }); setLive(`Not saved: ${err.message}`); }
   redrawList();
 }
 // FOLDERS (folders.py, `home.folders`: {gatherer: {folders: [{id, parent, name}], filed: {channel: folder id}}}), kept by
@@ -479,7 +490,8 @@ function renderAgents() {
     const list = el("details", { class: "hidden-list", id: "hidden-gatherers" },
       el("summary", { text: `${hidden.length} hidden group${hidden.length === 1 ? "" : "s"}` }));
     for (const g of hidden) list.append(el("div", { class: "hidden-row" }, el("span", { class: "gname", text: titleOf(g) }),
-      el("span", { class: "why", text: choiceOf(g) === "hidden" ? "hidden" : `inactive for ${ago(lastOf(g)).replace(" ago", "")}` }),
+      el("span", { class: "why" }, ...(choiceOf(g) === "hidden" ? ["hidden"]
+        : ["inactive, last active ", el("span", { "data-ago": lastOf(g), text: ago(lastOf(g)) })])),
       el("button", { type: "button", onclick: () => setHidden(g, false) }, "Show")));
     const wasOpen = document.getElementById("hidden-gatherers");
     if (wasOpen && wasOpen.open) list.open = true;
@@ -1497,6 +1509,7 @@ function askRefocus(now = false) {
 async function closeFolder(g, f) {
   folderClosing = null;
   const tree = treeOf(g.name), ids = new Set(tree.folders.filter((x) => within(g.name, x.id, f.id)).map((x) => x.id));
+  const was = { saved: state.home.saved, shells: state.home.shells };
   const kept = { ...((state.home.saved || {})[g.name] || {}) };
   for (const a of actorsWithin(g, f.id)) { const k = savedAs(g.name, a); if (k) delete kept[k]; }
   for (const [c, at] of Object.entries(tree.filed)) if (ids.has(at)) delete kept[c];
@@ -1504,7 +1517,7 @@ async function closeFolder(g, f) {
   state.home.shells = (state.home.shells || []).filter((s) => !(s.gatherer === g.name && ids.has(s.folder)));
   const asked = homesTaken, at = new Date().toISOString();
   const got = await folderPost(g.name, { do: "close", id: f.id }, (t) => { for (const x of t.folders) if (ids.has(x.id)) x.closed = at; });
-  if (!got) return;
+  if (!got) { if (!SNAPSHOT) undone(asked, was); return; }   // (folderPost took its folders back)
   if (got.saved && !homeSince(asked)) { state.home.saved = got.saved; redrawList(); }
   const left = got.left || [];
   if (left.length) setLive(`${f.name} closed, but ${plural(left.length, "actor")} in it ${left.length === 1 ? "stays" : "stay"} open: ${left[0].why}`);
@@ -1749,7 +1762,7 @@ function shellRow(g, s) {
     el("div", {},
       el("div", { class: "name", text: where.split("/").filter(Boolean).pop() || where }),
       el("div", { class: "asked", text: where }),
-      el("div", { class: "meta" }, el("span", { text: `Terminal · opened ${ago(s.since)}` }),
+      el("div", { class: "meta" }, el("span", {}, "Terminal · opened ", el("span", { "data-ago": s.since || "", text: ago(s.since) })),
         rowActs(el("span", { class: "close-btn", role: "button", tabindex: "0", title: "End the shell and everything running in it",
           "aria-label": "Terminate shell", onclick: close,
           onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); close(ev); } } }, closeIcon())))));
@@ -1810,7 +1823,7 @@ export {
   isOpenFolder, itemNamed, keepTitle, kidFolders, listDrag, markDragged, moveHidingToServer, nameFolder, nameItem,
   nameNote, openIn, openTask, openUp, parentOf, pickMark, picked, plainFace, pressClose, readApps, renderAgents,
   reopenFolder, retask, rowButton, rowsOf, saveButton, savedAs, selectApp, setCrewHidden, setHidden, shellFolder,
-  shellLogo, showFolder, showItemsTask, shownClosed, startDrag, startFolderEdit, startIn, tabLine, takeOut, tallyChips,
+  shellLogo, showFolder, showItemsTask, shownClosed, staleNames, startDrag, startFolderEdit, startIn, tabLine, takeOut, tallyChips,
   taskActors, taskApps, taskById, taskCloseButton, taskFaces, taskItems, taskLead, taskMembers, taskName, taskOf,
   taskSaveButton, taskStatus, titleOf, toggleFold, toggleFolder, toggleGatherer, togglePick, treeOf, withTasks, within,
 };

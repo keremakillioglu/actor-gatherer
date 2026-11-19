@@ -7,7 +7,7 @@
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { ChatContext } from "./context";
-import { followEnd } from "./follow";
+import { followEnd, unfollow } from "./follow";
 import { FirstTurns } from "./Hello";
 import { drawn, listenForPulls } from "./pull";
 import { TURNS_SHOWN, useTurns } from "./store";
@@ -15,17 +15,32 @@ import { Turns } from "./Turns";
 import type { ChatFeed, ChatHost } from "./types";
 import { AT_WORK, currentOf, openingOf, pickedOf, turnsOf } from "./view";
 
+/** The conversations kept drawn, each in its root, so one shown again is as it was at once (its stage's animations
+ * running): those of the actors shown lately, as many as the Chat view keeps the data of (files-view.js's KEPT_ACTORS),
+ * the one shown last last. An older one, not on the page, is unmounted: each holds the feed it was last drawn from. */
+export const KEPT_TALKS = 12;
 const talks = new Map<string, { node: HTMLDivElement; root: Root }>();
+
+/** How many conversations are kept drawn (for tests). */
+export const talksKept = (): number => talks.size;
 
 /** The actor's conversation drawn from `feed`: its node, for the page to put where it goes. */
 export function drawTurns(feed: ChatFeed, host: ChatHost): HTMLDivElement {
   listenForPulls();
   let talk = talks.get(feed.key);
-  if (!talk) {
+  if (talk) talks.delete(feed.key);
+  else {
     const node = document.createElement("div");
     talk = { node, root: createRoot(node) };
-    talks.set(feed.key, talk);
     followEnd(node);
+  }
+  talks.set(feed.key, talk);
+  for (const [k, t] of talks) {
+    if (talks.size <= KEPT_TALKS) break;
+    if (k === feed.key || t.node.isConnected) continue;
+    t.root.unmount();
+    unfollow(t.node);
+    talks.delete(k);
   }
   useTurns.getState().forFiles(feed.files);
   const turns = turnsOf(feed),

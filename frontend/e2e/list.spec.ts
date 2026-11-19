@@ -1,7 +1,7 @@
 // The list of actors (page.html: "the agent list", "the list folded, or over the whole page").
 import type { WebSocketRoute } from "@playwright/test";
 import { expect, streamsAsRequests, test } from "./test";
-import { CLAUDE, CODEX, GATHERER, masks, open } from "./home";
+import { CLAUDE, CODEX, GATHERER, NOW, masks, open } from "./home";
 
 test("lists the gatherer's actors, each by its name alone: hovered, a card says who it is", async ({ page }) => {
   await open(page);
@@ -190,6 +190,32 @@ test("the rail's avatars have the list's bookmark and ×, over their corners: pr
   await expect.poll(() => stopped.length).toBe(1);
   expect(stopped[0]).toEqual({ session_id: "s-claude" });
   await expect(claude).toHaveAttribute("aria-current", "false");
+});
+
+test("a row keeps the keyboard's focus as time passes: the list is not drawn again for its clocks", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date(NOW * 1000) }); // a clock that runs (open() fixes it)
+  await page.goto("/");
+  await expect(page.locator("#agents")).toContainText(GATHERER);
+  await page.clock.fastForward(15_000); // the list as it settles after loading, drawn again once
+  const claude = page.locator("#agents button.agent", { hasText: "Parser fixes" });
+  await claude.focus();
+  await expect(claude).toBeFocused();
+  await page.clock.fastForward(95_000); // the page's 30 s redraws, three of them
+  await expect(claude).toBeFocused();
+});
+
+test("a bookmark the server refused is taken back, with no home coming to say so", async ({ page }) => {
+  await streamsAsRequests(page);
+  await page.route("**/api/stream*", (route) => route.abort()); // no home after the first: the page's own copy shown
+  await page.route("**/api/saved", (route) => route.fulfill({ status: 500, json: { error: "disk full" } }));
+  await open(page);
+  const claude = page.locator("#agents button.agent", { hasText: "Parser fixes" });
+  await claude.hover();
+  await claude.locator(".save-btn").click();
+  await expect(page.locator("#live")).toContainText("Not saved");
+  await expect(claude.locator(".save-btn.on")).toHaveCount(0);
 });
 
 test("a rail bookmark under a resting pointer stays shown, every frame, while the rail scrolled is drawn again", async ({

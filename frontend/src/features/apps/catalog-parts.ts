@@ -141,3 +141,18 @@ export const said = {
     return "Install it again to update.";
   },
 };
+
+/** How many windows show `a`, in every group. */
+export const windows = (a: CatalogApp): number => Object.values(a.open || {}).reduce((x, y) => x + y, 0);
+/** Which agents may use `a`'s instances, in words. */
+export const whoGets = (a: CatalogApp): string =>
+  a.access === "group" ? "Every agent of a group" : "The agents in its task";
+
+/** A row of what is known of an app, each part a span. */
+export function meta(parts: (string | HTMLElement | null)[]): HTMLElement {
+  return el(
+    "div",
+    { class: "ap-meta" },
+    ...parts.filter(Boolean).map((p) => (typeof p === "string" ? el("span", { text: p }) : p)),
+  );
+}
