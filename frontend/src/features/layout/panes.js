@@ -650,6 +650,13 @@ async function clearWork() {
 // each loads to show (a Chat at times slow): a click while a tab is shown waits for this (viaTabs).
 async function enterTasks(keys, focus) {
   const all = [focus, ...keys].filter((k, i, them) => k && them.indexOf(k) === i);
+  // an app's among them: its group's apps read first -- a tab shown at a reload, before the page read them, would skip
+  // its app's task (unknown), its panel then restored beside the actor the page opened on (restoreAppPanes)
+  const groups = [...new Set(all.map((k) => parseKey(k).group).filter(Boolean))];
+  if (all.some((k) => isAppItem(parseKey(k).id || "")) && groups.some((g) => !appsKnown.has(g))) {
+    await window.agNext.apps.load();
+    await Promise.all(groups.map((g) => readApps(g, true)));
+  }
   const actor = (k) => {
     const { group: g, id } = parseKey(k), gg = gathererNamed(g);
     if (!gg || id === undefined || isAppItem(id)) return false;
@@ -1099,8 +1106,14 @@ function closeAppPane(p) {
   appsOnlyLeft();
   saveAppPanes(); renderAgents(); topChanged();
 }
-// a task of apps only shown, its last panel gone: the actors' panes in sight again (nothing else to show)
-function appsOnlyLeft() { if (appsOnly && !panes.apps.some((q) => !q.held)) setAppsOnly(null); }
+// a task of apps only shown, its last panel gone: out of apps only -- under screen tabs the tab is left showing nothing
+// (its new-tab page), this page's own actor not brought back into it: that actor's task was left when the apps were
+// entered (it is another tab's, or ⌥ replaced it), and one task is never in two tabs
+function appsOnlyLeft() {
+  if (!appsOnly || panes.apps.some((q) => !q.held)) return;
+  setAppsOnly(null);
+  if (workPlacer && state.selected && !isShell(state.selected[1]) && !isAway()) putAway(state.selected);
+}
 // An app whose panel answers tools of its own (DocWriter's documents' tools) runs while an agent attached to it is at
 // work, out of sight if the reader has not opened it: the agent's calls are answered at once, as they were when the
 // app was its actor's view. `appsAtWork`, on each change of the home, holds one for each such agent; one held whose
