@@ -32,8 +32,9 @@ export interface TaskTab {
   tree: Node;
 }
 
-/** What a task was left with, to open it again as it was. */
-export interface TaskLayout {
+/** What a task was left with, to open it again as it was (panes.js's rememberTask) -- and whatever else an older page
+ * kept there (the widths it had: work.ts makes a first arrangement from them). */
+export interface Left {
   /** its actors' panes open, by channel, in order */
   actors: string[];
   /** its apps' panels open */
@@ -45,7 +46,13 @@ export interface TaskLayout {
   views: Record<string, string>;
   /** the actor whose pane its × closed: opened out of sight if no other is open */
   shut: string | null;
-  /** its panels' arrangement, and its own tabs (tasks.ts) */
+  at?: number;
+  [older: string]: unknown;
+}
+
+/** A task's record: what it was left with (none: never left), its panels' arrangement, and its own tabs (tasks.ts). */
+export interface TaskLayout {
+  left?: Left;
   tree?: Node;
   tabs?: TaskTab[];
   tab?: string;
@@ -283,26 +290,125 @@ export function rekey(l: Layout, from: string, to: string): Layout {
   return { ...l, tabs, tasks };
 }
 
-/** What task `key` was left with, kept -- the newest TASKS_KEPT tasks only. */
-export function remember(l: Layout, key: string, left: Omit<TaskLayout, "at">, now: number): Layout {
-  const tasks = { ...l.tasks, [key]: { ...l.tasks[key], ...left, at: now } };
+// task `key`'s record changed (`f`), its time now; the newest TASKS_KEPT records kept
+function withTask(l: Layout, key: string, f: (t: TaskLayout) => TaskLayout, now: number): Layout {
+  const tasks = { ...l.tasks, [key]: { ...f(l.tasks[key] ?? { at: now }), at: now } };
   const keys = Object.keys(tasks).sort((x, y) => tasks[y].at - tasks[x].at);
   for (const k of keys.slice(TASKS_KEPT)) delete tasks[k];
   return { ...l, tasks };
 }
 
+/** What task `key` was left with, kept. */
+export const remember = (l: Layout, key: string, left: Left, now: number): Layout =>
+  withTask(l, key, (t) => ({ ...t, left: { ...left, at: now } }), now);
+
 /** Actor `c` closed from the list: out of task `key` as it was left -- not opened with it again. */
 export function forgetActor(l: Layout, key: string, c: string): Layout {
-  const was = l.tasks[key];
+  const was = l.tasks[key]?.left;
   if (!was || (!was.actors.includes(c) && was.focus !== c)) return l;
   const actors = was.actors.filter((x) => x !== c);
-  return {
-    ...l,
-    tasks: { ...l.tasks, [key]: { ...was, actors, focus: was.focus === c ? actors[0] || null : was.focus } },
-  };
+  const left = { ...was, actors, focus: was.focus === c ? actors[0] || null : was.focus };
+  return { ...l, tasks: { ...l.tasks, [key]: { ...l.tasks[key], left } } };
 }
 
-// ---- the six keys of before, read once
+// ---- a task's arrangement and its tabs (tasks.ts)
+
+let tabsMade = 0;
+const newTaskTabId = (): string => `k${Date.now().toString(36)}${(tabsMade++).toString(36)}`;
+
+/** The tree of task `key`'s tab shown, as it is now. */
+export const setTree = (l: Layout, key: string, tree: Node, now: number): Layout =>
+  withTask(
+    l,
+    key,
+    (t) => ({ ...t, tree, ...(t.tabs ? { tabs: t.tabs.map((x) => (x.id === t.tab ? { ...x, tree } : x)) } : {}) }),
+    now,
+  );
+/** Task `key` shown again: its record kept among the newest. */
+export const touchTask = (l: Layout, key: string, now: number): Layout =>
+  l.tasks[key] ? withTask(l, key, (t) => t, now) : l;
+/** Another tab of task `key`, holding `tree` -- the task's one tab so far named "Tab 1". `id`: the new tab's. */
+export function addTaskTab(l: Layout, key: string, tree: Node, now: number, id = newTaskTabId()): Layout {
+  return withTask(
+    l,
+    key,
+    (t) => {
+      const was = t.tree ?? tree;
+      const tabs = t.tabs?.length ? t.tabs : [{ id: newTaskTabId(), name: "Tab 1", tree: was }];
+      return {
+        ...t,
+        tree: was,
+        tabs: [...tabs, { id, name: `Tab ${tabs.length + 1}`, tree }],
+        tab: t.tabs?.length ? t.tab : tabs[0].id,
+      };
+    },
+    now,
+  );
+}
+/** Task `key`'s tab `id` shown: its tree the task's. */
+export function showTaskTab(l: Layout, key: string, id: string, now: number): Layout {
+  const tab = l.tasks[key]?.tabs?.find((x) => x.id === id);
+  return tab ? withTask(l, key, (t) => ({ ...t, tab: id, tree: tab.tree }), now) : l;
+}
+/** Task `key`'s tab `id` given `tree` (the tab shown: the task's too); none, the tab closed. */
+export function changeTaskTab(l: Layout, key: string, id: string, tree: Node | null): Layout {
+  const t = l.tasks[key];
+  if (!t?.tabs?.some((x) => x.id === id)) return l;
+  if (!tree) return closeTaskTab(l, key, id);
+  const tabs = t.tabs.map((x) => (x.id === id ? { ...x, tree } : x));
+  return { ...l, tasks: { ...l.tasks, [key]: { ...t, tabs, ...(t.tab === id ? { tree } : {}) } } };
+}
+/** Task `key`'s tab `id` closed: the next shown, if it was; one tab left, the task as a task of one tab. */
+export function closeTaskTab(l: Layout, key: string, id: string): Layout {
+  const t = l.tasks[key];
+  const at = t?.tabs ? t.tabs.findIndex((x) => x.id === id) : -1;
+  if (!t?.tabs || at < 0) return l;
+  const tabs = t.tabs.filter((x) => x.id !== id);
+  let { tab, tree } = t;
+  if (tab === id) {
+    const next = tabs[at] || tabs[at - 1];
+    if (next) [tab, tree] = [next.id, next.tree];
+  }
+  const out: TaskLayout = { ...t, tabs, tab, tree };
+  if (tabs.length < 2) {
+    if (tabs[0]) out.tree = tabs[0].tree;
+    delete out.tabs;
+    delete out.tab;
+  }
+  return { ...l, tasks: { ...l.tasks, [key]: out } };
+}
+/** Task `key`'s tab `id` named `name` (none: as it was). */
+export function renameTaskTab(l: Layout, key: string, id: string, name: string): Layout {
+  const t = l.tasks[key];
+  if (!t?.tabs || !name.trim()) return l;
+  const tabs = t.tabs.map((x) => (x.id === id ? { ...x, name: name.trim() } : x));
+  return { ...l, tasks: { ...l.tasks, [key]: { ...t, tabs } } };
+}
+
+// ---- kept in this browser: one key (KEY), or, before it, the six keys of before -- read once, then dropped
+
+/** The keys of before this file's KEY held what it holds now (the panes', the top apps', the screen's still read). */
+export const OLD_KEYS = ["ag-dashboard-screen-tabs", "ag-dashboard-task-layouts-2", "ag-dashboard-task-trees"];
+
+/** The layout kept: KEY's, if readable; else made from the keys of before (migrate). */
+export function load(get: (k: string) => string | null): Layout {
+  const kept = read(get, KEY) as Layout | null;
+  if (
+    kept &&
+    Array.isArray(kept.tabs) &&
+    kept.tabs.length &&
+    kept.tabs.every((t) => t && typeof t.id === "string" && Array.isArray(t.tasks)) &&
+    typeof kept.current === "string" &&
+    kept.tasks &&
+    typeof kept.tasks === "object"
+  )
+    return {
+      tabs: kept.tabs,
+      current: kept.tabs.some((t) => t.id === kept.current) ? kept.current : kept.tabs[0].id,
+      tasks: kept.tasks,
+    };
+  return migrate(get);
+}
 
 const read = (get: (k: string) => string | null, k: string): unknown => {
   try {
@@ -338,23 +444,30 @@ export function migrate(get: (k: string) => string | null): Layout {
   const screen = read(get, "ag-dashboard-screen") as Node | null;
   const here = shownTab(l);
   if (screen && !here.screen) here.screen = screen;
-  const layouts = (read(get, "ag-dashboard-task-layouts-2") || {}) as Record<string, Partial<TaskLayout>>;
+  const layouts = (read(get, "ag-dashboard-task-layouts-2") || {}) as Record<string, Partial<Left>>;
   const trees = (read(get, "ag-dashboard-task-trees") || {}) as Record<
     string,
     { tree: Node; at: number; tabs?: TaskTab[]; tab?: string }
   >;
   for (const k of new Set([...Object.keys(layouts), ...Object.keys(trees)])) {
-    const a = layouts[k] || {},
+    const a = layouts[k],
       t = trees[k];
     l.tasks[k] = {
-      actors: Array.isArray(a.actors) ? a.actors : [],
-      apps: Array.isArray(a.apps) ? a.apps : [],
-      focus: a.focus ?? null,
-      focusApp: a.focusApp ?? null,
-      views: a.views && typeof a.views === "object" ? a.views : {},
-      shut: a.shut ?? null,
+      ...(a && typeof a === "object"
+        ? {
+            left: {
+              ...a,
+              actors: Array.isArray(a.actors) ? a.actors : [],
+              apps: Array.isArray(a.apps) ? a.apps : [],
+              focus: (a.focus as string) ?? null,
+              focusApp: (a.focusApp as string) ?? null,
+              views: a.views && typeof a.views === "object" ? (a.views as Record<string, string>) : {},
+              shut: (a.shut as string) ?? null,
+            },
+          }
+        : {}),
       ...(t ? { tree: t.tree, ...(t.tabs ? { tabs: t.tabs, tab: t.tab } : {}) } : {}),
-      at: Math.max(a.at || 0, t?.at || 0),
+      at: Math.max(Number(a?.at) || 0, t?.at || 0),
     };
   }
   return l;

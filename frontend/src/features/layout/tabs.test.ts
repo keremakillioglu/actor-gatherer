@@ -360,7 +360,7 @@ describe("screen tabs", () => {
     now = { a: "t1" }; // a put in a task since: its key now, the same map
     t.draw();
     expect(map(0)).toHaveLength(2);
-    expect(JSON.parse(localStorage.getItem("ag-dashboard-screen-tabs")!).tabs[0].map).toHaveLength(2); // kept on reload
+    expect(JSON.parse(localStorage.getItem("ag-dashboard-layout")!).tabs[0].map).toHaveLength(2); // kept on reload
   });
 
   it("marks ranked: what waits on the reader before what is at work", () => {
