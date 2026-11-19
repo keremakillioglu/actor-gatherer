@@ -471,11 +471,20 @@ class FakeClient:
         pass
 
 
+class SetupOptionsTest(unittest.TestCase):
+    def test_the_options_setup_offers_build_the_hook(self):
+        # setup.py's `--option factory=... --option path=...`, as the hook server builds the hook with them
+        from ag.integrations.harnesses.antigravity.setup import setup
+        from ag.integrations.tools.hook_server.hook_server import load_hook
+        hook = load_hook(setup.HOOK, {"factory": "my.module:make", "path": os.pathsep.join(["/a", "/b"]), "files": "off"})
+        self.assertEqual(hook.ag_clients.make("g").args, ["--factory", "my.module:make", "--path", "/a", "--path", "/b"])
+
+
 class HookTest(unittest.TestCase):
     def setUp(self):
         import tempfile
         from ag.integrations.harnesses.antigravity.ag_orchestrator import context_manager as agy_ag
-        from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients
+        from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients
         self.home = tempfile.mkdtemp()
         self.clients = {}
 

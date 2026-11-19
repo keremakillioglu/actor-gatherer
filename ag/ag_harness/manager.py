@@ -35,7 +35,7 @@ from datetime import datetime
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from ag.ag_interface import AG, ContextManager, Event, EventType, Poller, Tokenizer, is_ag
-from ag.ag_interface.policy import Context, Policy, Read
+from ag.ag_interface.policy import COMPACTION, READER, Context, Policy, Read
 from .store import operations as store
 from .store import schema
 from .store.paths import db_path
@@ -372,27 +372,28 @@ class Manager(ContextManager):
                   limit: Optional[int] = None, preamble: Optional[List[dict]] = None,
                   stopped: Optional[Callable[[], bool]] = None) -> str:
         """Not part of the interface: the harness compacted its own history, in response to the event
-        `row_id` -- the policy builds (its `compacted`, if it has one) and waits for it, until the harness
-        gives up on the call (`stopped`). What it came to, in the policy's words; "" for a policy that does
-        not build, or a gatherer with no database."""
-        hook = getattr(self.policy, "compacted", None)
-        if hook is None or not os.path.exists(db_path(gatherer_id)):
+        `row_id` -- the policy is asked to build now, and waited for (`Policy.request_build`, COMPACTION),
+        until the harness gives up on the call (`stopped`). What it came to, in the policy's words; "" for a
+        policy that does not build, or a gatherer with no database."""
+        if not os.path.exists(db_path(gatherer_id)):
             return ""
         conn = self._conn(gatherer_id)
-        return hook(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), row_id, limit,
-                                                   fixed_tokens=store.preamble_tokens(conn, preamble),
-                                                   **_stopping(stopped)))
+        got = self.policy.request_build(Store(conn, gatherer_id),
+                                        Read(gatherer_id, dict(properties or {}), row_id, limit,
+                                             fixed_tokens=store.preamble_tokens(conn, preamble), **_stopping(stopped)),
+                                        COMPACTION, wait=True)
+        return got.get("status") or ("failed" if "failed" in got else "")
 
     def requested(self, gatherer_id: str, *, properties: Optional[dict] = None, min_messages: int = 0) -> dict:
-        """Not part of the interface: a build a reader asked for, outside any call -- the policy's
-        `requested`, if it has one: started in the background, not waited for. What came of it, in the
-        policy's words; {} for a policy that does not build, or a gatherer with no database."""
-        hook = getattr(self.policy, "requested", None)
-        if hook is None or not os.path.exists(db_path(gatherer_id)):
+        """Not part of the interface: a build a reader asked for, outside any call (`Policy.request_build`,
+        READER): started in the background, not waited for. What came of it, in the policy's words; {} for a
+        policy that does not build, or a gatherer with no database."""
+        if not os.path.exists(db_path(gatherer_id)):
             return {}
         conn = self._conn(gatherer_id)
-        return hook(Store(conn, gatherer_id), Read(gatherer_id, dict(properties or {}), store.high_water(conn)),
-                    min_messages=min_messages)
+        return self.policy.request_build(Store(conn, gatherer_id),
+                                         Read(gatherer_id, dict(properties or {}), store.high_water(conn)),
+                                         READER, min_messages=min_messages)
 
     def context_only(self, gatherer_id: str, row_id: int, *, properties: Optional[dict] = None,
                      limit: Optional[int] = None, preamble: Optional[List[dict]] = None) -> Tuple[List[dict], dict]:

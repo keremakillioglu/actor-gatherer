@@ -56,7 +56,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 import app_kit
 from app_kit import App, AppError, Caller, Instance, Manifest, Response, ToolResult, remote
 
-from . import home
+from . import app_settings, home, store
 
 PATH_ENV = app_kit.finding.PATH_ENV
 HELD_RETRY = 2.0                # a new gatherer has no database until its first call: its writes, held, tried this often
@@ -245,12 +245,13 @@ class AppHost:
     # -- what the page is told
 
     def listed(self, gatherer: Optional[str] = None) -> dict:
-        """Every app found (its manifest, its panel's origin), the broken ones, and -- for `gatherer` -- its open
-        instances and the agents attached to each."""
+        """Every app found (its manifest, its panel's origin, whether the reader opens it with an agent of its own:
+        app_settings.py), the broken ones, and -- for `gatherer` -- its open instances and the agents attached to each."""
         if gatherer:
             self._load(gatherer)
         with self.lock:
             apps = [{**h.manifest.to_dict(), "origin": self.origin(n), "folder": h.manifest.folder,
+                     "opens_with_agent": app_settings.opens_with_agent(h.manifest),
                      "failed": h.failed} for n, h in sorted(self.apps.items())]
             insts = [i.to_dict() for i in self.instances.values() if gatherer and i.gatherer == gatherer]
             attached = {i["id"]: sorted(self.attached.get(i["id"], ())) for i in insts}
@@ -264,6 +265,13 @@ class AppHost:
         self._load(gatherer)
         with self.lock:
             return [i for i in self.instances.values() if i.gatherer == gatherer and (app is None or i.app == app)]
+
+    def groups(self) -> Dict[str, str]:
+        """{instance id: its group now} of the open instances the host holds -- those of the groups read so far, which
+        are all the page has listed (`listed`): the home's (server.py's `read_home`), so the list puts an app that moved
+        where the home has its task, not where it read the app last."""
+        with self.lock:
+            return {i.id: i.gatherer for i in self.instances.values()}
 
     def instance(self, gatherer: str, instance_id: str, app: Optional[str] = None) -> Instance:
         self._load(gatherer)
@@ -1065,22 +1073,13 @@ def _ag_insert(gatherer: str, properties: dict, events: List[dict], types: List[
         raise RuntimeError((done.stdout or done.stderr).strip()[-300:] or f"exited {done.returncode}")
 
 
-def _connect(gatherer: str) -> Optional[sqlite3.Connection]:
-    path = home.db_path(gatherer)
-    if not os.path.exists(path):
-        return None
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def _columns(conn: sqlite3.Connection) -> Set[str]:
     return {r[1] for r in conn.execute("PRAGMA table_info(events)")}
 
 
 def _host_records(gatherer: str) -> List[Tuple[str, str, Optional[str], dict]]:
     """(kind, instance, channel, payload) of the gatherer's app records, in order."""
-    conn = _connect(gatherer)
+    conn = store.gatherer(gatherer)
     if conn is None:
         return []
     try:
@@ -1105,7 +1104,7 @@ def _host_records(gatherer: str) -> List[Tuple[str, str, Optional[str], dict]]:
 
 def _read(instance: Instance, types: Sequence[str], after: int, channel: Optional[str], agents: List[str],
           limit: int) -> List[dict]:
-    conn = _connect(instance.gatherer)
+    conn = store.gatherer(instance.gatherer)
     if conn is None:
         return []
     try:

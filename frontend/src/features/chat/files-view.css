@@ -1,0 +1,959 @@
+/* the Files view: a turn's files, each as the agent saw it (files.py) */
+.chat .chat-frame.files { overflow: hidden; display: flex; flex-direction: column; padding: 0; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  container: talk / size; }   /* its height the layout's: short (under the Editor, say), the actor at work said on one line */
+.files .fl-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }
+.files .fl-grid.open { grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
+/* --lh: a line of the conversation, which a reply's dot and its first line share */
+/* the right column: the conversation, and under it what the agent waits on the user for (askingNote) */
+.files .fl-right { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--ring); }
+.files .fl-grid:not(.open) .fl-right { border-left: 0; }
+.files .fl-right > .asking-note { flex-shrink: 1; min-height: 0; max-height: min(560px, 75%); }
+.files .fl-talk { flex: 1; min-height: 0; position: relative; overflow: auto; padding: 6px 0 24px; font-size: var(--fs-ui); --lh: 20px; line-height: var(--lh); }
+.files .fl-grid:not(.open) .fl-talk { font-size: var(--fs-body); --lh: 21px; }
+.files .fl-turn { margin: 2px 6px; padding: 7px 8px 9px 10px; }
+/* a turn opening (Pending.tsx's OpenedTurn): grown in from nothing, so what is under it -- the actor -- slides down to make
+   room rather than jumping; the turn ag stores in its place goes on from where it was (--in, Pending.tsx's useGrowing) */
+.files .fl-turn.fl-in { animation: fl-turn-in .32s cubic-bezier(.4, .05, .25, 1) var(--in, 0ms) 1 backwards; interpolate-size: allow-keywords; }
+@keyframes fl-turn-in { from { height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; overflow: hidden; } to { height: auto; overflow: hidden; } }
+@supports not (interpolate-size: allow-keywords) {     /* its height not animated to its own: up to a height that holds most */
+  @keyframes fl-turn-in { from { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; overflow: hidden; }
+    to { max-height: 200px; overflow: hidden; } } }
+.files .fl-grid:not(.folded) .fl-turn.on { box-shadow: inset 2px 0 0 var(--muted); }   /* the turn whose files and commands show: a grey bar */
+/* the user's message: a band across the turn, at its head, in the colour the page gives the user (--s7) -- at the left,
+   with the replies under it, however wide the page */
+.files .fl-user { display: flex; gap: 8px; width: 100%; margin: 0; text-align: left;
+  background: color-mix(in srgb, var(--s7) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--s7) 28%, transparent);
+  border-radius: 8px; padding: 6px 12px; font: inherit; line-height: var(--lh); color: var(--ink); }
+.files .fl-user .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.files .fl-turn.on .fl-user .tx, .files .fl-turn.shown .fl-user .tx { -webkit-line-clamp: unset; }
+/* before the latest, the message a button: a click shows or folds the turn's replies (folded: the turn closer to the next),
+   its chevron at the end of its first line saying which. At the right of each message, clear of its band, its button for
+   the turn's files and commands at the left. */
+.files button.fl-user { cursor: pointer; }
+.files button.fl-user:hover { background: color-mix(in srgb, var(--s7) 17%, var(--surface)); border-color: color-mix(in srgb, var(--s7) 55%, transparent); }
+.files .fl-bash > button.fl-user.bash:hover { background: color-mix(in srgb, var(--term-bash) 7%, transparent); }
+.files .fl-user > .tx { flex: 1 1 auto; }   /* its words wide as the band: the count and the chevron at its end */
+/* the count and the chevron on its first line, however many lines it runs to: by the files button, the top row's */
+.files .fl-user .fold-mark { flex: none; align-self: flex-start; height: var(--lh); display: grid; place-items: center; color: var(--muted); }
+.files .fl-user .fl-count { flex: none; align-self: flex-start; font-size: var(--fs-meta); line-height: var(--lh); color: var(--muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
+.files .fl-user .fold-mark svg { transition: transform .15s; }
+.files .fl-user[aria-expanded="true"] .fold-mark svg { transform: rotate(90deg); }
+.files .fl-turn.folded { padding-top: 3px; padding-bottom: 3px; }
+.files .fl-head { position: relative; }
+.files .fl-head > .fl-user, .files .fl-head > :is(.fl-bash, .fl-crew) > .fl-user { padding-right: 40px; }
+.files .fl-btns { position: absolute; top: 3px; right: 4px; display: flex; }
+.files .fl-btns button { width: 28px; height: calc(var(--lh) + 6px); padding: 0; border: 0; border-radius: 6px; background: none;
+  color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+/* on the message's violet band: a wash under the pointer, the selection's blue while its files are shown (violet is the
+   user's own words, not "on") */
+.files .fl-btns button:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.files .fl-btns button[aria-pressed="true"] { color: var(--ink); background: color-mix(in srgb, var(--s1) 32%, transparent); }
+/* what was written while the turn ran, sent to the agent: under the turn's message, set in a little, a + in the gap
+   by its first line saying it came later in the same turn, and a thin line down from the message above into the +
+   (::after; its box starts at the bottom edge of what is above: the 4px gap and this one's border). Another written
+   after it: the line goes on under the + to the next one's, a gap in it where the + sits -- one rail through them. */
+.files :is(.fl-user, .fl-crew).joined { --join-in: 18px; --join-line: color-mix(in srgb, var(--s7) 40%, transparent);
+  position: relative; margin: 4px 0 0 var(--join-in); }
+.files .fl-user.joined { width: calc(100% - var(--join-in)); }
+.files :is(.fl-user, .fl-crew).joined::before { content: "+"; position: absolute; top: 6px; left: calc(-1 * var(--join-in) - 1px);
+  width: var(--join-in); line-height: var(--lh); text-align: center; font-weight: 600; color: var(--muted); pointer-events: none; }
+.files :is(.fl-user, .fl-crew).joined::after { content: ""; position: absolute; top: -5px; left: calc(-1 * var(--join-in) / 2 - 1.75px);
+  width: 1.5px; height: calc(var(--lh) / 2 + 3px); border-radius: 1px; background: var(--join-line); pointer-events: none; }
+.files :is(.fl-user, .fl-crew).joined:has(+ .joined)::after { height: auto; bottom: -1px; background: linear-gradient(
+  var(--join-line) calc(var(--lh) / 2 + 3px), transparent 0 calc(var(--lh) / 2 + 19px), var(--join-line) 0); }
+/* written while it works, not sent yet: at the turn's end, faded, until the harness gives it to the agent */
+.files .fl-pending { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
+.files .fl-pending .fl-user { opacity: .55; }
+.files .fl-pending .lbl { color: var(--muted); font-size: var(--fs-meta); margin-left: 4px; }
+.files .fl-pending .to-term { font-size: inherit; padding: 0; border: 0; background: none; color: var(--term-link); text-decoration: underline; }
+/* a turn begun, its message sent, that ag has not stored yet: in full, as the latest turn shows it, not yet one to pick */
+.files .fl-turn.opened .fl-user .tx { -webkit-line-clamp: unset; }
+.files .fl-user .tx.bang { font: .92em/var(--lh) var(--mono); }   /* a command the user ran with `!`, or typed as /name */
+/* a message an app wrote for the user (a line Notes sent): where in the app it came from, then the user's words */
+.files .fl-user .tx.app-said { display: flex; flex-direction: column; gap: 2px; -webkit-line-clamp: unset; }
+.files .app-from { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-meta); color: var(--muted); }
+.files .app-from img { width: 13px; height: 13px; flex: none; }
+.files .app-words { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.files .fl-turn.on .fl-user .app-words, .files .fl-turn.shown .fl-user .app-words, .files .fl-turn.opened .fl-user .app-words { -webkit-line-clamp: unset; }
+/* a bash band (bashBubble): a command the user ran with `!`, as a terminal shows it -- its `!` in bash mode's colour,
+   the band edged in it -- and under a rule, in the same band, what it printed */
+.files .fl-user.bash { background: var(--term-code); border-color: color-mix(in srgb, var(--term-bash) 45%, transparent); }
+.files .fl-user .bash-mark { color: var(--term-bash); font-weight: 700; }
+/* a message between the gatherer's actors (envelope, sentBubble): in a plain band, not the user's colour, its sender's
+   avatar beside it (the receiver's, for one sent) and its name over its words */
+.files .fl-user.crew, .files .fl-sent.crew { background: var(--surface); border: 1px solid var(--ring); }
+.files button.fl-user.crew:hover { background: var(--wash); border-color: color-mix(in srgb, var(--ink) 16%, transparent); }
+.files .fl-user.crew .tx { -webkit-line-clamp: unset; display: flex; gap: 10px; align-items: flex-start; }
+.files .crew-face { width: 26px; height: 26px; flex: none; }
+.files .crew-face.none { display: grid; place-items: center; color: var(--muted); background: var(--wash); border-radius: 50%; }
+.files .crew-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.files .crew-from { font-size: var(--fs-meta); font-weight: 600; color: var(--ink-2); }
+.files .crew-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.files .fl-sent { display: flex; gap: 10px; align-items: flex-start; margin: 6px 0 4px; padding: 6px 12px; border-radius: 8px;
+  line-height: var(--lh); color: var(--ink); }
+.files .fl-sent .crew-from { font-weight: 600; color: var(--muted); }
+/* its words folded to their first three lines (crewFold; news, two), the rest under "Show all" -- shown only where
+   there is more (.long). A turn's bubble, a button, is in a band (.fl-crew) with the toggle under it. */
+.files .crew-fold:not(.open) .crew-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.files .crew-more { align-self: flex-start; margin: 0; padding: 0; background: none; border: 0; font: inherit; font-size: var(--fs-meta);
+  line-height: 18px; color: var(--muted); cursor: pointer; }
+.files .crew-more:hover { color: var(--ink); text-decoration: underline; }
+.files .crew-fold:not(.long) .crew-more { display: none; }
+.files .fl-crew { display: flex; flex-direction: column; min-width: 0; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; }
+.files .fl-crew:has(> button.fl-user):hover { background: var(--wash); border-color: color-mix(in srgb, var(--ink) 16%, transparent); }
+.files .fl-crew > .fl-user.crew, .files .fl-crew > button.fl-user.crew:hover { background: none; border: 0; border-radius: 8px; }
+.files .fl-crew.long > .fl-user.crew { padding-bottom: 1px; }
+.files .fl-crew > .crew-more { margin: 0 12px 5px 48px; }   /* under the words: the bubble's padding, the avatar, its gap */
+.files .fl-sent .crew-more { margin-top: 1px; }
+.files .fl-pending .fl-crew { opacity: .55; }
+.files .fl-pending .fl-crew > .fl-user { opacity: 1; }
+/* a watch's news: a quiet line, the actor it is about small beside it; what it was asked and said, folded to two lines
+   (crewFold, as a message is) */
+.files .fl-user.crew.update { background: none; border-color: transparent; padding-top: 3px; padding-bottom: 3px; }
+.files button.fl-user.crew.update:hover { background: var(--wash); }
+.files .fl-user.crew.update .crew-face { width: 18px; height: 18px; margin-top: 2px; }
+.files .fl-user.crew.update .crew-from { font-weight: 600; }
+.files .fl-user.crew.update .crew-how { font-weight: 400; color: var(--muted); }
+.files .fl-user.crew.update .crew-text { font-size: var(--fs-ui); color: var(--muted); }
+.files .crew-fold.update:not(.open) .crew-text { -webkit-line-clamp: 2; }
+.files .fl-crew.update { background: none; border-color: transparent; }
+.files .fl-crew.update:has(> button.fl-user):hover { background: var(--wash); }
+.files .fl-crew.update > .crew-more { margin: 0 12px 3px 40px; }   /* its avatar smaller */
+.files .fl-bash { display: flex; flex-direction: column; min-width: 0; margin: 0;
+  background: var(--term-code); border: 1px solid color-mix(in srgb, var(--term-bash) 45%, transparent); border-radius: 8px; overflow: hidden; }
+.files .fl-bash > .fl-user.bash { border: 0; border-radius: 0; background: none; }
+.files .fl-bash-out { margin: 0; padding: 6px 12px 8px; border-top: 1px solid var(--term-rule); max-height: 15em; overflow: auto;
+  font: var(--fs-meta)/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; background: none; }
+.files .fl-bash-out.none { color: var(--muted); font-style: italic; }
+.files .fl-reply { margin: 4px 0 0 2px; color: var(--ink-2); overflow-wrap: anywhere; }
+.files .fl-reply > summary { display: flex; gap: 6px; margin: 0; font-size: inherit; cursor: pointer; list-style: none; }
+.files .fl-reply > summary::-webkit-details-marker { display: none; }
+.files .fl-reply > summary .dot { flex: none; color: var(--muted); font-size: 9px; line-height: var(--lh); }
+.files .fl-reply > summary .first { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .fl-reply > summary:hover .first { color: var(--ink); }
+.files .fl-reply[open] > summary .dot { color: var(--ink-2); } .files .fl-reply > summary:hover .dot { color: var(--s1); }
+.files .fl-reply[open] > summary .first { display: none; }
+.files .fl-reply > .md { margin: calc(-1 * var(--lh)) 0 6px 15px; }
+/* a turn's last message, whole, in the page's ink; the ones before it smaller and quieter, each folded to a line,
+   the latest few shown and the earlier behind "+ N earlier messages" (folded again by its "−") */
+.files .fl-reply.main { margin-top: 6px; color: var(--ink); }
+.files .fl-reply.main > summary .dot, .files .fl-reply.main[open] > summary .dot { color: var(--ink); }
+.files .fl-minor { font-size: var(--fs-ui); --lh: 18px; color: var(--muted); }
+.files .fl-minor .fl-reply { color: var(--ink-2); }
+.files .fl-minor .fl-reply:not([open]) > summary .first { color: var(--muted); }
+.files .fl-minor .fl-reply > summary:hover .first { color: var(--ink-2); }
+.files .fl-more { background: none; border: 0; border-radius: 4px; margin: 4px 0 0 2px; padding: 0 4px 0 0;
+  font-size: var(--fs-ui); color: var(--muted); cursor: pointer; }
+.files .fl-more .sg { display: inline-block; width: 15px; text-align: left; }   /* + or −, under the messages' dots */
+.files .fl-more:hover { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+/* above the turns drawn, how many are not yet: a pull up past the top draws them */
+.files .fl-earlier { margin: 2px 6px 6px; padding: 2px 10px; font-size: var(--fs-meta); color: var(--muted); text-align: center; }
+/* a reply's markdown, coloured as the NumPy docs (the PyData theme) colour it, and no more: links teal, inline
+   code magenta on grey, a table's header ruled in teal; headings, code and quotes in the text's own colours */
+.files .md { min-width: 0; }
+.files .md > :first-child { margin-top: 0; } .files .md > :last-child { margin-bottom: 0; }
+.files .md p, .files .md ul, .files .md ol, .files .md pre, .files .md table, .files .md blockquote { margin: 0 0 10px; }
+.files .md h1, .files .md h2, .files .md h3, .files .md h4, .files .md h5, .files .md h6 { color: var(--ink); font-weight: 600; line-height: 1.35; margin: 18px 0 6px; }
+.files .md h1 { font-size: 1.35em; } .files .md h2 { font-size: 1.2em; } .files .md h3 { font-size: 1.07em; } .files .md h4, .files .md h5, .files .md h6 { font-size: 1em; }
+.files .md > h1:first-child, .files .md > h2:first-child, .files .md > h3:first-child { line-height: var(--lh); }   /* beside the reply's dot */
+.files .md strong { color: var(--ink); font-weight: 600; }
+.files .md a { color: var(--md-link); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--md-link) 40%, transparent); text-underline-offset: 2px; }
+/* a link to something in an app (ag://, core/ui/md.ts): its app's mark before its words; the page opens it in the app */
+.md a.ag-link { cursor: pointer; }
+.md a.ag-link::before { content: ""; display: inline-block; width: 1.05em; height: 1.05em; margin: 0 0.25em 0 0.05em;
+  vertical-align: -0.18em; background: var(--ag-mark) center / contain no-repeat; }
+.files .md a:hover { text-decoration-color: currentColor; }
+.files .md ul, .files .md ol { padding-left: 22px; }
+.files .md li { margin: 3px 0; } .files .md li > ul, .files .md li > ol { margin: 3px 0 0; }
+.files .md li::marker { color: var(--muted); }
+.files .md li:has(> input[type="checkbox"]) { list-style: none; margin-left: -20px; }
+.files .md li > input[type="checkbox"] { margin: 0 6px 0 0; vertical-align: -2px; accent-color: var(--md-link); }
+.files .md code { font: .92em var(--mono); color: var(--md-code); background: color-mix(in srgb, var(--ink) 6%, transparent);
+  border: 1px solid var(--ring); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+.files .md pre { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); border: 1px solid var(--ring);
+  border-radius: 4px; padding: 9px 12px; overflow-x: hidden; max-width: 100%; white-space: pre-wrap; tab-size: 4; }
+.files .md pre code { font: var(--fs-ui)/1.55 var(--mono); color: var(--ink); background: none; border: 0; padding: 0; border-radius: 0; overflow-wrap: anywhere; }
+/* a fenced block's line wrapped in the box, never scrolled sideways: its rest two columns in from where it begins */
+.files .md .cf-l { padding-left: calc((var(--in) + 2) * 1ch); text-indent: calc((var(--in) + 2) * -1ch); }
+.files .md blockquote { padding: 7px 12px; border-left: 4px solid var(--muted); border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 5%, var(--surface)); color: var(--ink-2); }
+.files .md hr { border: 0; border-top: 1px solid var(--axis); margin: 16px 0; }
+.files .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--fs-ui); line-height: 1.45; }
+.files .md th, .files .md td { border: 0; border-bottom: 1px solid var(--ring); padding: 5px 12px; text-align: left; vertical-align: top; white-space: normal; }
+.files .md th + th, .files .md td + td { border-left: 1px solid var(--ring); }
+.files .md thead tr { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); }
+.files .md th { color: var(--ink); font-weight: 600; border-bottom: 2px solid var(--md-link); }
+.files .md tbody tr:nth-child(even) { background: var(--wash); }
+.files .md th[align="right"], .files .md td[align="right"] { text-align: right; font-variant-numeric: tabular-nums; }
+.files .md th[align="center"], .files .md td[align="center"] { text-align: center; }
+.files .md img { max-width: 100%; }
+.files .fl-none { margin: 4px 0 0 2px; color: var(--muted); font-style: italic; }
+/* how a turn stopped short (stoppedLine): a line under it, as Claude Code draws it -- dim; an error in its colour */
+.files .fl-stopped { display: flex; gap: 8px; margin: 4px 0 0 2px; color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; }
+.files .fl-stopped .lead { flex: none; }
+.files .fl-stopped.error { color: var(--critical); }
+/* a run of thinking: a message as the others are, "Thought:" before it, dim and in italics; opened, its words under the word */
+.files .fl-reply.thought > summary .lbl { flex: none; color: var(--muted); font-style: italic; }
+.files .fl-reply.thought > .md { margin-top: 0; }
+/* the turn's latest call, while nothing was said or thought after it: a message as the others, its dot how it went; opened, its call and output */
+.files .fl-reply.call > summary .dot.ok { color: var(--good); } .files .fl-reply.call > summary .dot.err { color: var(--critical); }
+.files .fl-reply.call > summary .dot.run { color: var(--warning); animation: term-blink 1s steps(2) infinite; }
+.files .fl-reply.call > summary .dot.wait { color: var(--warning); } .files .fl-reply.call > summary .dot.stop { color: var(--muted); }
+.files .fl-reply.call > summary .lbl { flex: none; color: var(--muted); }
+.files .fl-reply.call > summary .lbl.err { color: var(--critical); }
+.files .fl-reply.call[open] > summary .first { display: block; }
+/* Claude Code's notes among the messages (notedReply): a line, what it is in grey; opened, the rest under it */
+.files .fl-reply.noted > summary .lbl { flex: none; color: var(--muted); }
+.files .fl-reply.noted[open] > summary .first { display: block; }
+.files .fl-reply.noted > .md, .files .fl-reply.noted > .fl-none { margin: 4px 0 6px 15px; }
+.files .fl-status { display: flex; align-items: center; gap: 6px; margin: 6px 0 0 2px; color: var(--term-accent); font-size: var(--fs-ui); }
+.files .fl-status .spin { flex: none; }
+.files .fl-status .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the actor at work, "Simple" (buddy()): its avatar's character out of its circle, small, moving as it would -- its
+   data-motion, a move and an effect (avatars/README.md); and on the stage, while it thinks, the same effect laid over the
+   character (.stage-box). Every animation runs on the page's clock (--t), so a redraw does not restart it. */
+.buddy { position: relative; display: inline-block; width: 24px; height: 24px; flex: none; isolation: isolate; pointer-events: none; --t: 0s; }
+/* a soft edge round it, so a white character stands out on a light page (--buddy-edge: the theme's) */
+.buddy img { width: 100%; height: 100%; display: block; transform-origin: var(--o, 50% 50%);
+  filter: drop-shadow(0 0 .7px var(--buddy-edge, rgba(0, 0, 0, .45))) drop-shadow(0 1px 1px var(--buddy-edge2, rgba(0, 0, 0, .12)));
+  animation: var(--m, b-bob) var(--d, 2.4s) var(--e, ease-in-out) infinite var(--t); }
+.buddy i { position: absolute; pointer-events: none; opacity: 0; font-style: normal; line-height: 1;
+  animation: var(--f, none) var(--fd, 2.4s) var(--fe, ease-out) infinite; }
+.buddy i:nth-of-type(1) { --k: 0; animation-delay: var(--t); }
+.buddy i:nth-of-type(2) { --k: 1; animation-delay: calc(var(--t) - var(--fd, 2.4s) / 3); }
+.buddy i:nth-of-type(3) { --k: 2; animation-delay: calc(var(--t) - var(--fd, 2.4s) * 2 / 3); }
+.buddy.still img, .buddy.still i, .buddy.still::before { animation: none; }
+.buddy.still { opacity: .55; filter: grayscale(.6); }
+@media (prefers-reduced-motion: reduce) { .buddy img, .buddy i, .buddy::before { animation: none !important; } }
+
+/* moves: the character (small, .buddy; or on its stage as it thinks, .me), about its middle, its foot (50% 100%) or the string it
+   hangs from (50% 0) */
+.m-bob { --m: b-bob; --d: 2.4s; }
+@keyframes b-bob { 50% { transform: translateY(-2px); } }
+.m-float { --m: b-float; --d: 3.6s; }
+@keyframes b-float { 25% { transform: translateY(-1.5px) rotate(-3deg); } 75% { transform: translateY(.5px) rotate(3deg); } }
+.m-hop { --m: b-hop; --d: 2.2s; --e: ease-out; --o: 50% 100%; }
+@keyframes b-hop { 0%, 55%, 100% { transform: none; } 8% { transform: scale(1.08, .9); } 24% { transform: translateY(-5px) scale(.96, 1.05); }
+  42% { transform: translateY(0) scale(1.07, .93); } }
+.m-swim { --m: b-swim; --d: 3s; }
+@keyframes b-swim { 0%, 100% { transform: translateX(-1.5px) rotate(4deg); } 50% { transform: translate(1.5px, -.5px) rotate(-4deg); } }
+.m-glide { --m: b-glide; --d: 5s; }
+@keyframes b-glide { 0%, 100% { transform: translateX(-2.5px) rotate(1deg); } 50% { transform: translateX(2.5px) rotate(-1deg); } }
+.m-pulse { --m: b-pulse; --d: 2.6s; --o: 50% 100%; }
+@keyframes b-pulse { 0%, 100% { transform: none; } 25% { transform: scale(1.08, .88); } 50% { transform: translateY(-3px) scale(.95, 1.06); }
+  75% { transform: translateY(-1px); } }
+.m-puff { --m: b-puff; --d: 3.2s; }
+@keyframes b-puff { 0%, 30%, 100% { transform: none; } 45% { transform: scale(1.15); } 70% { transform: scale(1.13); } 85% { transform: scale(.98); } }
+.m-waddle { --m: b-waddle; --d: 1.3s; --e: linear; --o: 50% 100%; }
+@keyframes b-waddle { 0%, 100% { transform: rotate(-6deg); } 25% { transform: translateY(-1px); } 50% { transform: rotate(6deg); } 75% { transform: translateY(-1px); } }
+.m-wobble { --m: b-wobble; --d: 3s; --o: 50% 100%; }
+@keyframes b-wobble { 0%, 70%, 100% { transform: none; } 10% { transform: rotate(-11deg); } 25% { transform: rotate(8deg); } 40% { transform: rotate(-5deg); }
+  55% { transform: rotate(2deg); } }
+.m-swing { --m: b-swing; --d: 3s; --o: 50% 0; }
+@keyframes b-swing { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+.m-sway { --m: b-sway; --d: 4s; --o: 50% 100%; }
+@keyframes b-sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+.m-nod { --m: b-nod; --d: 2.8s; --o: 50% 100%; }
+@keyframes b-nod { 0%, 60%, 100% { transform: none; } 70% { transform: translateY(1px) rotate(7deg); } 80% { transform: none; } 88% { transform: translateY(.5px) rotate(5deg); } }
+.m-peck { --m: b-peck; --d: 2.2s; --o: 50% 100%; }
+@keyframes b-peck { 0%, 50%, 100% { transform: none; } 10%, 30% { transform: rotate(-13deg); } 20%, 40% { transform: none; } }
+.m-roll { --m: b-roll; --d: 3.6s; }
+@keyframes b-roll { 0%, 100% { transform: translateX(-3px) rotate(-17deg); } 50% { transform: translateX(3px) rotate(17deg); } }
+.m-fan { --m: b-fan; --d: 1.2s; --o: 50% 90%; }
+@keyframes b-fan { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(10deg); } }
+.m-beckon { --m: b-beckon; --d: 2.6s; --o: 50% 100%; }
+@keyframes b-beckon { 0%, 45%, 100% { transform: none; } 10%, 30% { transform: translateY(-1px) rotate(-7deg); } 20% { transform: none; } }
+.m-squish { --m: b-squish; --d: 2.4s; --o: 50% 100%; }
+@keyframes b-squish { 0%, 100% { transform: none; } 30% { transform: scale(1.09, .91); } 60% { transform: scale(.96, 1.05); } 80% { transform: scale(1.02, .98); } }
+.m-crawl { --m: b-crawl; --d: 6s; }
+@keyframes b-crawl { 0%, 100% { transform: translateX(-2.5px); } 25%, 75% { transform: translateY(-.5px); } 50% { transform: translateX(2.5px); } }
+.m-wag { --m: b-wag; --d: 2s; }
+@keyframes b-wag { 0%, 50%, 100% { transform: none; } 10%, 30% { transform: rotate(6deg); } 20% { transform: rotate(-6deg); } 40% { transform: rotate(-3deg); } }
+.m-patter { --m: b-patter; --d: 1.8s; --o: 50% 100%; }
+@keyframes b-patter { 0%, 45%, 100% { transform: none; } 8%, 24% { transform: translateY(-1.5px) scale(1.02, .98); } 16%, 32% { transform: none; } }
+.m-flutter { --m: b-flutter; --d: 2.6s; }
+@keyframes b-flutter { 0%, 100% { transform: none; } 6% { transform: translateY(-2px); } 12% { transform: translateY(-1px); } 18% { transform: translateY(-3px); }
+  24% { transform: translateY(-2px); } 30% { transform: translateY(-3.5px); } 55% { transform: translateY(-2.5px) rotate(-3deg); } 80% { transform: none; } }
+.m-lookabout { --m: b-lookabout; --d: 4.4s; --o: 50% 100%; }
+@keyframes b-lookabout { 0%, 100% { transform: none; } 15%, 75% { transform: translateY(-1.5px); } 30% { transform: translateY(-1.5px) rotate(-8deg); }
+  55% { transform: translateY(-1.5px) rotate(8deg); } 90% { transform: none; } }
+.m-flip { --m: b-flip; --d: 4s; }
+@keyframes b-flip { 0%, 72% { transform: none; } 84% { transform: translateY(-4px) rotateY(180deg); } 96%, 100% { transform: rotateY(360deg); } }
+.m-whisk { --m: b-whisk; --d: 2s; --e: linear; }
+@keyframes b-whisk { 0%, 50%, 100% { transform: none; } 6%, 18%, 30%, 42% { transform: translateX(-1px); } 12%, 24%, 36% { transform: translateX(1px); } }
+.m-wiggle { --m: b-wiggle; --d: 1.6s; }
+@keyframes b-wiggle { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+.m-spin { --m: b-spin; --d: 10s; --e: linear; }
+@keyframes b-spin { 100% { transform: rotate(360deg); } }
+
+/* effects: three of each, a third of the way apart (or, a spout, together), around the avatar */
+.buddy.f-steam { --f: b-steam; --fd: 2.4s; }
+.buddy.f-steam i { top: -3px; left: calc(30% + var(--k) * 20%); width: 2px; height: 6px; border-radius: 2px; background: var(--muted); }
+@keyframes b-steam { 0% { opacity: 0; transform: translateY(2px); } 30% { opacity: .55; } 60% { transform: translate(1.5px, -5px); }
+  100% { opacity: 0; transform: translate(-.5px, -10px) scaleY(1.4); } }
+.buddy.f-bubbles { --f: b-bubbles; --fd: 2.6s; }
+.buddy.f-bubbles i { top: 15%; left: calc(15% + var(--k) * 30%); width: 4px; height: 4px; border: 1px solid #5fb0e6; border-radius: 50%; }
+@keyframes b-bubbles { 0% { opacity: 0; transform: scale(.4); } 20% { opacity: .85; } 100% { opacity: 0; transform: translate(1px, -13px) scale(1); } }
+.buddy.f-spout { --f: b-spout; --fd: 3.6s; }
+.buddy.f-spout i { top: 0; left: 45%; width: 2.5px; height: 2.5px; border-radius: 50%; background: #5fb0e6; --x: calc((var(--k) - 1) * 4px);
+  animation-delay: var(--t); }
+@keyframes b-spout { 0%, 60% { opacity: 0; transform: none; } 66% { opacity: .9; } 80% { transform: translate(calc(var(--x) * .6), -8px); }
+  100% { opacity: 0; transform: translate(var(--x), -3px); } }
+.buddy.f-petals { --f: b-petals; --fd: 3.6s; --fe: linear; }
+.buddy.f-petals i { top: -6px; left: calc(var(--k) * 35%); width: 4px; height: 3px; border-radius: 3px 0; background: #f6a5c8; }
+@keyframes b-petals { 0% { opacity: 0; transform: none; } 15% { opacity: .9; } 50% { transform: translate(4px, 12px) rotate(120deg); }
+  100% { opacity: 0; transform: translate(1px, 25px) rotate(260deg); } }
+.buddy.f-snow { --f: b-snow; --fd: 3.4s; --fe: linear; }
+.buddy.f-snow i { top: -5px; left: calc(5% + var(--k) * 40%); width: 2.5px; height: 2.5px; border-radius: 50%; background: #9cc3ef; }
+@keyframes b-snow { 0% { opacity: 0; transform: none; } 15% { opacity: .95; } 50% { transform: translate(2px, 12px); } 100% { opacity: 0; transform: translate(-1px, 26px); } }
+.buddy.f-sparkle { --f: b-sparkle; --fd: 2.7s; --fe: ease-in-out; }
+.buddy.f-sparkle i { font-size: 7px; color: #f2b01e; }
+.buddy.f-sparkle i::before { content: "✦"; }
+.buddy.f-sparkle i:nth-of-type(1) { top: -4px; left: -4px; } .buddy.f-sparkle i:nth-of-type(2) { top: -5px; right: -4px; }
+.buddy.f-sparkle i:nth-of-type(3) { bottom: 1px; right: -6px; }
+@keyframes b-sparkle { 0%, 60%, 100% { opacity: 0; transform: scale(.3); } 30% { opacity: 1; transform: scale(1) rotate(45deg); } }
+.buddy.f-notes { --f: b-notes; --fd: 3.3s; }
+.buddy.f-notes i { top: -2px; left: 62%; font-size: 8px; color: var(--muted); }
+.buddy.f-notes i::before { content: "♪"; } .buddy.f-notes i:nth-of-type(2)::before { content: "♫"; }
+@keyframes b-notes { 0% { opacity: 0; transform: none; } 20% { opacity: .85; } 100% { opacity: 0; transform: translate(6px, -10px) rotate(15deg); } }
+.buddy.f-breeze { --f: b-breeze; --fd: 1.8s; }
+.buddy.f-breeze i { right: 100%; top: calc(28% + var(--k) * 20%); width: 6px; height: 1.2px; border-radius: 1px; background: var(--muted); transform-origin: right; }
+@keyframes b-breeze { 0% { opacity: 0; transform: scaleX(.3); } 30% { opacity: .7; } 100% { opacity: 0; transform: translateX(-6px) scaleX(1); } }
+.buddy.f-ripple { --f: b-ripple; --fd: 3s; }
+.buddy.f-ripple i { left: 50%; bottom: -3px; width: 20px; height: 5px; margin-left: -10px; border: 1px solid #6aaee0; border-radius: 50%; }
+@keyframes b-ripple { 0% { opacity: .75; transform: scale(.35); } 100% { opacity: 0; transform: scale(1.35); } }
+.buddy.f-glow::before { content: ""; position: absolute; inset: -5px; z-index: -1; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 166, 64, .6), transparent 68%); animation: b-glow 2.8s ease-in-out infinite var(--t); }
+@keyframes b-glow { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.08); } }
+
+/* The actor at work in the Chat view (atWork): its avatar's character out of its circle, acting out what its turn is doing
+   (s-<kind>, work.py's) with the same tool whatever the character, so a tool always means the same thing; reacting to how a
+   call ended, once (r-*); between calls, thinking, moving as its character does (its avatar_motion's move: .me.m-<move>).
+   Its loops run on the page's clock (--t; its action's, --a, slowing to a stop as a call ends), a reaction from when it
+   began (--r), so a redraw restarts neither. */
+/* at the end of the latest turn, its times; the actor at work under them, what it is doing in words beside it */
+.files .fl-working { margin: 6px 0 0 2px; font-size: var(--fs-ui); min-width: 0; }
+.files .fl-working > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.files .fl-working .now { color: var(--term-accent); }
+/* tall: the words shown beside the avatar (.fl-status, aria-hidden), so these only read out */
+@container talk (not (max-height: 420px)) {
+  .files .fl-working > .now { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } }
+/* when it last did something, and how long the turn has run: counting, dim, above the words */
+.files .fl-working .fl-times { color: var(--muted); font-size: var(--fs-meta); opacity: .8; font-variant-numeric: tabular-nums; }
+.files .fl-working > .fl-mini { display: none; }
+.files .fl-working.fl-finished { display: none; }   /* short of height only */
+.files .fl-mini img { display: block; width: 1.3em; height: 1.3em; }
+.files .fl-talk > .fl-status { margin: 4px 6px 0 8px; }
+/* short of height: the actor at work on one line -- its avatar small, as tall as the words, "Working…", then the times --
+   in place of the two lines and the avatar under them (or the avatar done). Those put away, not display: none: laying the
+   Chat out again -- the message box growing as it is typed in, say -- Chrome tries the frame at no height and at its
+   least on the way, the query true there for that moment; display: none would restart their animations at every key,
+   the avatar done growing in again. Hidden, not content-visibility: hidden: flipped within every layout, that set Chrome
+   numbering each numbered list (an <ol> in a reply) again, which asked for another layout -- each read of a size laid the
+   whole Chat out anew (a redraw of 40 turns 4-5 times as long), and with some replies it never settled, the Chat laid out
+   again and again while nothing happened */
+@container talk (max-height: 420px) {
+  .files .fl-working { display: flex; align-items: center; gap: 6px; }
+  .files .fl-working > .fl-mini { display: inline-flex; flex: none; order: 0; color: var(--term-accent); }
+  .files .fl-working > .now { order: 1; flex: none; }
+  .files .fl-working > .fl-times { order: 2; flex: 0 1 auto; }
+  .files .fl-working > .fl-times::before { content: "· "; }
+  .files .fl-working.fl-finished { display: flex; }
+  .files .fl-talk > .fl-status, .files .fl-talk > .fl-done { visibility: hidden; overflow: hidden; height: 0; margin: 0; }
+  .files .fl-talk { padding-bottom: 6px; } }   /* no avatar under the last line to leave room for */
+.files .fl-status svg.stage { height: 60px; margin: 0 0 0 -4px; }
+.files .fl-status .spin { font-size: 1.4em; }
+.files .fl-status > .buddy { margin: 2px 0 0 4px; }
+.files .fl-status > .stage-box + .now { margin-top: 6px; }   /* the stage keeps room above the character: words at its middle */
+/* the turn over: the actor small, done -- a check at its corner, still; grown in if the page saw it end (--r) */
+.files .fl-done { display: flex; align-items: center; margin: 6px 6px 0 17px; }
+.files .fl-done .done { position: relative; display: inline-flex; flex: none; transform-origin: 30% 90%;
+  animation: w-arrive .5s cubic-bezier(.3, 1.3, .5, 1) var(--r, -60s) 1 both; }
+.files .fl-done .done img { width: 24px; height: 24px; display: block; filter: drop-shadow(0 0 .6px var(--buddy-edge, rgba(0, 0, 0, .45))); }
+.files .fl-done .done .ok { position: absolute; right: -4px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: #22a55a;
+  box-shadow: 0 0 0 1.5px var(--surface); display: grid; place-items: center; }
+.files .fl-done .done .ok svg { width: 8px; height: 8px; }
+/* before its first message: the actor waving hello (greeting()), in the middle of the conversation's space -- under the
+   message sent, while it waits to reach the agent */
+.files .fl-talk.hi { display: flex; flex-direction: column; }
+.files .fl-hello { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px; color: var(--muted);
+  text-align: center; }
+.files .fl-hello svg.stage { height: 84px; }
+.files .fl-hello > .buddy { width: 40px; height: 40px; }
+/* what it says (helloLine()): a haiku's lines in italics */
+.files .fl-say { max-width: 340px; }
+.files .fl-say.verse { font-style: italic; }
+@container talk (max-height: 420px) { .files .fl-hello svg.stage { height: 48px; } }
+svg.stage { height: 32px; width: auto; flex: none; overflow: visible; --t: 0s; --a: 0s; --r: -60s; --x: -60s; --y: -60s; --z: -60s; --p: -60s;
+  --b: -60s; --dot: #f97316; --metal: light-dark(#94a3b8, #8a94a3); }
+.stage .me, .stage .prop, .stage .tb, .stage .bd, .stage .cf, .stage .o-bang, .stage .mag, .stage .gear, .stage .parcel, .stage .flip,
+.stage .hg, .stage .st, .stage .sb, .stage .mini { transform-box: fill-box; }
+/* a soft edge round it, so a white character stands out on a light page (--buddy-edge: the theme's) */
+.stage image { filter: drop-shadow(0 0 .7px var(--buddy-edge, rgba(0, 0, 0, .45))) drop-shadow(0 1px 1px var(--buddy-edge2, rgba(0, 0, 0, .12))); }
+.stage .ov { display: none; }
+.stage .me { transform-origin: 50% 100%; }
+/* from one action to the next (--x: since the change): the old tool fades out as the new one grows in; a new turn's actor
+   grows in (--z) */
+.stage .enter, .stage .leave { transform-box: fill-box; transform-origin: 50% 80%; }
+.stage .enter { animation: w-in .5s ease-out var(--x) 1 both; }
+.stage .leave { animation: w-out .4s ease-in var(--x) 1 both; }
+@keyframes w-in { from { opacity: 0; transform: scale(.88); } to { opacity: 1; transform: none; } }
+@keyframes w-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.92); } }
+svg.stage.arriving { transform-origin: 30% 90%; animation: w-arrive .55s cubic-bezier(.3, 1.3, .5, 1) var(--z) 1 both; }
+@keyframes w-arrive { from { opacity: 0; transform: translateY(4px) scale(.6); } to { opacity: 1; transform: none; } }
+/* in Chat, the actor that arrives was just there, done, under the turn before (.fl-done's small avatar, 24px at 17px, 6px):
+   the stage grows from it -- its character (64 of the 102 by 82 view box, at 8, 14; the stage 60px high, at 4px, 4px in
+   .fl-status) laid over the small avatar at first -- rather than fading in from nothing */
+.files .fl-talk > .fl-status svg.stage.arriving { transform-origin: 0 0; animation: w-from-done .52s cubic-bezier(.4, .05, .25, 1) var(--z) 1 both; }
+@keyframes w-from-done { from { transform: translate(10px, -3.25px) scale(.5125); } to { transform: none; } }
+/* thinking (no call running): moving as its character does, slower; a thought by its head -- two puffs, then a cloud, grown in
+   from --b, its dots hopping in the avatar's colour (--dot); popped away (--y) as a call begins */
+.stage.s-think .me { transform-origin: var(--o, 50% 50%); animation: var(--m, b-bob) calc(var(--d, 2.4s) * 1.4) var(--e, ease-in-out) var(--t) infinite; }
+.stage .o-think { display: none; }
+.stage.musing .o-think, .stage.popping .o-think { display: inline; }
+.stage.r-fail .o-think, .stage.r-pass .o-think, .stage.r-tfail .o-think, .stage.r-ship .o-think, .stage.streak .o-think, .stage.retry .o-think { display: none; }
+.stage .tb { transform-origin: 50% 50%; animation: w-bub .4s cubic-bezier(.3, 1.6, .5, 1) var(--b) 1 both; }
+.stage .tb2 { animation-delay: calc(var(--b) + .12s); }
+.stage .tb3 { transform-origin: 15% 85%; animation-delay: calc(var(--b) + .24s); }
+@keyframes w-bub { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: none; } }
+.stage .te { fill: light-dark(#ddd7cf, #7a746c); stroke: light-dark(#ddd7cf, #7a746c); stroke-width: 1.8; }
+.stage .tf, .stage .tb1, .stage .tb2 { fill: light-dark(#fff, #fbf8f3); }
+.stage .tb1, .stage .tb2 { stroke: light-dark(#ddd7cf, #7a746c); stroke-width: .9; }
+.stage .td circle { fill: var(--dot); transform-box: fill-box; animation: w-dothop 1.2s ease-in-out var(--t) infinite; }
+.stage .td circle:nth-child(2) { animation-delay: calc(var(--t) + .16s); }
+.stage .td circle:nth-child(3) { animation-delay: calc(var(--t) + .32s); }
+@keyframes w-dothop { 0%, 55%, 100% { transform: none; } 25% { transform: translateY(-1.7px); } }
+.stage.popping .o-think { transform-box: fill-box; transform-origin: 0% 100%; animation: w-unbub .3s ease-in var(--y) 1 both; }
+@keyframes w-unbub { to { opacity: 0; transform: scale(.3); } }
+/* a call over: what it did slows to a stop, then it puts its tool away (.putting, from --p), each its own way -- the book
+   shut, the gears faded, the rest set aside or lowered */
+.stage.putting .prop { transform-origin: 50% 100%; animation: w-away .55s ease-in var(--p) 1 both; }
+@keyframes w-away { to { opacity: 0; transform: translateY(5px) scale(.85); } }
+.stage.putting.s-read .prop { transform-origin: 50% 50%; animation-name: w-shut; }
+@keyframes w-shut { 45% { opacity: 1; transform: scaleX(.14); } 100% { opacity: 0; transform: translateY(7px) scaleX(.14); } }
+.stage.putting.s-edit .prop, .stage.putting.s-test .prop, .stage.putting.s-ship .prop, .stage.putting.s-wait .prop,
+.stage.putting.s-team .prop { animation-name: w-aside; }
+@keyframes w-aside { to { opacity: 0; transform: translateX(10px) scale(.9); } }
+.stage.putting.s-run .prop { transform-origin: 50% 50%; animation-name: w-fadeback; }
+@keyframes w-fadeback { to { opacity: 0; transform: scale(.8); } }
+/* read: a book, a page turning; it sways a little over it */
+.stage.s-read .me { animation: w-read 3.2s ease-in-out var(--a) infinite; }
+@keyframes w-read { 50% { transform: translateY(.6px) rotate(1.5deg); } }
+.stage .flip { transform-origin: 0% 50%; animation: w-flip 5s var(--a) infinite; }
+@keyframes w-flip { 0%, 70% { transform: none; opacity: 0; } 71% { opacity: 1; } 82% { transform: scaleX(0); } 92% { transform: scaleX(-1); opacity: 1; }
+  95%, 100% { transform: scaleX(-1); opacity: 0; } }
+/* search: a magnifying glass sweeping, glinting as it looks */
+.stage.s-search .me { animation: w-search 2.4s ease-in-out var(--a) infinite; }
+@keyframes w-search { 0%, 100% { transform: rotate(-3deg); } 50% { transform: translateX(1.2px) rotate(3deg); } }
+.stage .mag { transform-origin: 50% 50%; animation: w-sweep 2.4s ease-in-out var(--a) infinite; }
+@keyframes w-sweep { 0%, 100% { transform: translate(-7px, 2px) rotate(-14deg); } 50% { transform: translate(3px, -3px) rotate(10deg); } }
+.stage .glint { animation: w-glint 2.4s ease-in-out var(--a) infinite; }
+@keyframes w-glint { 0%, 35%, 65%, 100% { opacity: .35; } 50% { opacity: 1; } }
+/* edit: a pencil writing lines on a sheet */
+.stage.s-edit .me { animation: w-edit 1.2s ease-in-out var(--a) infinite; }
+@keyframes w-edit { 50% { transform: rotate(2.5deg) translateY(.4px); } }
+.stage .paper { fill: #fff; stroke: #d6d3d1; stroke-width: .8; }
+.stage .ln { stroke: #57534e; stroke-width: 1.3; stroke-linecap: round; fill: none; stroke-dasharray: 17; stroke-dashoffset: 17; }
+.stage .l1 { animation: w-l1 3.6s linear var(--a) infinite; } .stage .l2 { animation: w-l2 3.6s linear var(--a) infinite; }
+.stage .l3 { animation: w-l3 3.6s linear var(--a) infinite; }
+@keyframes w-l1 { 0% { stroke-dashoffset: 17; } 28%, 96% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 17; } }
+@keyframes w-l2 { 0%, 31% { stroke-dashoffset: 17; } 61%, 96% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 17; } }
+@keyframes w-l3 { 0%, 64% { stroke-dashoffset: 17; } 88%, 96% { stroke-dashoffset: 6; } 100% { stroke-dashoffset: 17; } }
+.stage .pen { animation: w-pen 3.6s linear var(--a) infinite; }
+@keyframes w-pen { 0% { transform: none; } 7%, 21% { transform: translate(5px, .2px); } 14% { transform: translate(8px, 1.2px); } 28% { transform: translate(16px, 1.4px); }
+  31% { transform: translate(-.4px, 4.5px); } 46% { transform: translate(8px, 5.6px); } 61% { transform: translate(15.6px, 5.9px); } 64% { transform: translate(-.8px, 9px); }
+  88%, 96% { transform: translate(10.2px, 9.9px); } 100% { transform: none; } }
+/* test: a checklist on a clipboard, ticked off line by line */
+.stage.s-test .me { animation: w-test 3s ease-in-out var(--a) infinite; }
+@keyframes w-test { 0%, 100% { transform: rotate(1deg); } 50% { transform: translateY(-.8px) rotate(3deg); } }
+.stage .tk { fill: none; stroke: #475569; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 7; stroke-dashoffset: 7; }
+.stage .tk0 { animation: w-tk0 3s linear var(--a) infinite; } .stage .tk1 { animation: w-tk1 3s linear var(--a) infinite; }
+.stage .tk2 { animation: w-tk2 3s linear var(--a) infinite; }
+@keyframes w-tk0 { 0%, 8% { stroke-dashoffset: 7; } 20%, 92% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 7; } }
+@keyframes w-tk1 { 0%, 32% { stroke-dashoffset: 7; } 44%, 92% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 7; } }
+@keyframes w-tk2 { 0%, 56% { stroke-dashoffset: 7; } 68%, 92% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 7; } }
+.stage .tx { display: none; }
+/* run: gears turning; it bobs along with them */
+.stage.s-run .me { animation: w-run .5s ease-in-out var(--a) infinite; }
+@keyframes w-run { 50% { transform: translateY(-1.6px) scale(1.02, .98); } }
+.stage .gear { transform-origin: 50% 50%; fill: none; stroke: var(--metal); }
+.stage .g1 { animation: w-gear 2.6s linear var(--a) infinite; } .stage .g2 { animation: w-gear 1.8s linear var(--a) infinite reverse; }
+@keyframes w-gear { to { transform: rotate(360deg); } }
+/* ship: a parcel sent off, an arrow up */
+.stage.s-ship .me { animation: w-ship 2.6s var(--a) infinite; }
+@keyframes w-ship { 0%, 40%, 62%, 100% { transform: none; } 46% { transform: scale(1.05, .94); } 54% { transform: translateY(-3px) rotate(4deg); } }
+.stage .parcel { transform-origin: 50% 100%; animation: w-parcel 2.6s ease-in-out var(--a) infinite; }
+@keyframes w-parcel { 0% { opacity: 0; transform: scale(.5); } 10%, 40% { opacity: 1; transform: none; } 46% { transform: scale(1.08, .9); }
+  54% { transform: translateY(-3px); } 62% { opacity: 1; transform: none; } 82%, 100% { opacity: 0; transform: translate(14px, -16px) rotate(18deg) scale(.8); } }
+.stage .arrow { animation: w-arrow 2.6s ease-in-out var(--a) infinite; }
+@keyframes w-arrow { 0%, 52% { opacity: 0; transform: none; } 64% { opacity: 1; } 84% { opacity: 1; transform: translateY(-4px); } 100% { opacity: 0; transform: translateY(-6px); } }
+/* wait: an hourglass running and turning; a foot tapping */
+.stage.s-wait .me { animation: w-wait 2.4s ease-in-out var(--a) infinite; }
+@keyframes w-wait { 0%, 45%, 100% { transform: none; } 10%, 30% { transform: rotate(2.5deg); } 20% { transform: none; } }
+.stage .wood { fill: #a0683a; } .stage .glass { fill: rgba(186, 230, 253, .3); stroke: var(--metal); stroke-width: .8; }
+.stage .sand { fill: #fbbf24; } .stage .stream { stroke: #fbbf24; stroke-width: .7; animation: w-stream 5s var(--a) infinite; }
+.stage .hg { transform-origin: 50% 50%; animation: w-hg 5s ease-in-out var(--a) infinite; }
+@keyframes w-hg { 0%, 82% { transform: none; } 96%, 100% { transform: rotate(180deg); } }
+.stage .st { transform-origin: 50% 100%; animation: w-st 5s linear var(--a) infinite; }
+@keyframes w-st { 0% { transform: none; } 80%, 100% { transform: scaleY(0); } }
+.stage .sb { transform-origin: 50% 100%; animation: w-sb 5s linear var(--a) infinite; }
+@keyframes w-sb { 0% { transform: scaleY(0); } 80%, 100% { transform: none; } }
+@keyframes w-stream { 0%, 79% { opacity: 1; } 80%, 100% { opacity: 0; } }
+/* team: little copies of it, scurrying, one for each subagent running (up to three) */
+.stage.s-team .me { animation: w-team 3.2s ease-in-out var(--a) infinite; }
+@keyframes w-team { 0%, 100% { transform: rotate(3deg); } 50% { transform: rotate(5deg) translateY(-.6px); } }
+.stage .mini { animation: w-scurry 1.6s ease-in-out var(--a) infinite; }
+.stage .mini.m1 { animation-delay: calc(var(--a) - .55s); } .stage .mini.m2 { animation-delay: calc(var(--a) - 1.1s); }
+@keyframes w-scurry { 0%, 100% { transform: translate(-2.5px, 0); } 25% { transform: translate(0, -1.6px); } 50% { transform: translate(2.5px, 0); }
+  75% { transform: translate(0, -1.6px); } }
+/* a call failed: startled, a red ! */
+.stage.r-fail .me { animation: w-startle .7s ease-out var(--r) 1 both; }
+@keyframes w-startle { 0% { transform: none; } 25% { transform: translateY(-4px) scale(.97, 1.04); } 50% { transform: none; } 62% { transform: translateX(-.8px); }
+  74% { transform: translateX(.8px); } 86%, 100% { transform: none; } }
+.stage.r-fail .o-bang { display: inline; transform-origin: 50% 100%; animation: w-pop 2.6s ease-out var(--r) 1 both; }
+@keyframes w-pop { 0% { transform: scale(0); opacity: 0; } 10% { transform: scale(1.35); opacity: 1; } 18% { transform: scale(1); } 75% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1); } }
+/* failing again and again: a storm cloud */
+.stage.streak .o-cloud { display: inline; animation: w-jitter 2.4s ease-in-out var(--t) infinite; }
+@keyframes w-jitter { 0%, 100% { transform: none; } 50% { transform: translateX(1px); } }
+/* tests passed, or a commit landed: a hop for joy, confetti and a check -- the list all ticked, the parcel off */
+.stage.r-pass .me, .stage.r-ship .me { animation: w-cheer .9s ease-out var(--r) 2 both; }
+@keyframes w-cheer { 0% { transform: none; } 15% { transform: scale(1.06, .92); } 45% { transform: translateY(-7px) scale(.96, 1.05); } 75% { transform: none; }
+  85% { transform: scale(1.04, .96); } 100% { transform: none; } }
+.stage.r-pass .o-confetti, .stage.r-ship .o-confetti, .stage.r-pass .o-check, .stage.r-ship .o-check, .stage.r-tfail .o-cross { display: inline; }
+.stage .cf { transform-origin: 50% 50%; animation: w-confetti 1.6s ease-out var(--r) 1 both; }
+@keyframes w-confetti { 0% { opacity: 0; transform: none; } 10% { opacity: 1; } 60% { transform: translate(var(--dx), var(--dy)) rotate(200deg); }
+  100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 8px)) rotate(360deg); } }
+.stage .bd { transform-origin: 50% 50%; animation: w-pop 3s ease-out var(--r) 1 both; }
+.stage.r-pass .tk, .stage.r-tfail .tk { animation: none; stroke-dashoffset: 0; stroke: #16a34a; }
+.stage.r-ship .parcel { animation: w-parcel-off .9s ease-in var(--r) 1 both; } .stage.r-ship .arrow { animation: none; opacity: 1; }
+@keyframes w-parcel-off { to { opacity: 0; transform: translate(16px, -20px) rotate(20deg) scale(.8); } }
+/* tests failed: a tumble, dizzy stars and a cross -- a line of the list crossed out */
+.stage.r-tfail .me { transform-origin: 50% 55%; animation: w-tumble 1s cubic-bezier(.3, .7, .4, 1) var(--r) 1 both; }
+@keyframes w-tumble { 0% { transform: none; } 20% { transform: translate(5px, -6px) rotate(80deg); } 55% { transform: translate(-3px, -2px) rotate(300deg); }
+  75% { transform: rotate(360deg); } 86% { transform: translateY(1px) rotate(354deg); } 100% { transform: rotate(360deg); } }
+.stage.r-tfail .tk1 { display: none; } .stage.r-tfail .tx { display: inline; }
+.stage.r-tfail .o-stars { display: inline; }
+.stage .star { fill: #fbbf24; animation: w-orbit 1.4s linear var(--r) infinite; }
+.stage .star.s2 { animation-delay: calc(var(--r) - .467s); } .stage .star.s3 { animation-delay: calc(var(--r) - .933s); }
+@keyframes w-orbit { 0%, 100% { transform: translate(11px, 0); } 12.5% { transform: translate(7.8px, 2.1px); } 25% { transform: translate(0, 3px); }
+  37.5% { transform: translate(-7.8px, 2.1px); } 50% { transform: translate(-11px, 0); } 62.5% { transform: translate(-7.8px, -2.1px); }
+  75% { transform: translate(0, -3px); } 87.5% { transform: translate(7.8px, -2.1px); } }
+/* its model calls failing (Retrying…): still and gray, a ? */
+.stage.retry, .stage.retry * { animation: none !important; }
+.stage.retry .me, .stage.retry .prop { filter: grayscale(.9); opacity: .55; }
+.stage.retry .o-q { display: inline; }
+.stage .qb { fill: var(--surface); stroke: var(--muted); stroke-width: .8; } .stage .qt { fill: var(--muted); font: 800 9px system-ui, sans-serif; }
+/* hello, before its first message: a hand in its hue raised beside it (an outline under, its fill over), waving a few
+   times with a swish at each end of a wave, then resting; the character leaning into it */
+.stage.s-hello .me { animation: w-greet 4s ease-in-out var(--t) infinite; }
+@keyframes w-greet { 0%, 62%, 100% { transform: none; } 8% { transform: translateY(-2px) rotate(-2deg); } 16%, 50% { transform: rotate(3deg); } }
+.stage .hand { transform-box: fill-box; transform-origin: 50% 100%; animation: w-wave 4s ease-in-out var(--t) infinite; }
+@keyframes w-wave { 0%, 62%, 100% { transform: none; } 10% { transform: rotate(-22deg); } 20% { transform: rotate(16deg); }
+  30% { transform: rotate(-22deg); } 40% { transform: rotate(16deg); } 50% { transform: rotate(-12deg); } }
+.stage .hand line { stroke-linecap: round; }
+.stage .hand .ho { stroke: color-mix(in srgb, var(--dot) 62%, #000); fill: color-mix(in srgb, var(--dot) 62%, #000); }
+.stage .hand .hf { stroke: var(--dot); fill: var(--dot); }
+.stage .swish { fill: none; stroke: var(--dot); stroke-width: 1.3; stroke-linecap: round; opacity: 0; animation: w-swish 4s linear var(--t) infinite; }
+.stage .swish.s2 { animation-name: w-swish2; }
+@keyframes w-swish { 0%, 6%, 14%, 26%, 34%, 100% { opacity: 0; } 10%, 30% { opacity: .9; } }
+@keyframes w-swish2 { 0%, 16%, 24%, 36%, 44%, 100% { opacity: 0; } 20%, 40% { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) { svg.stage, svg.stage *, .files .fl-done .done, .files .fl-turn.fl-in { animation: none !important; }
+  svg.stage .leave, svg.stage .o-confetti { display: none !important; } }
+/* the stage and, while it thinks, its character's effect round it (.buddy) laid over the character */
+.stage-box { position: relative; display: inline-flex; flex: none; isolation: isolate; }
+.stage-box > .buddy { display: none; position: absolute; left: calc(8 / 102 * 100%); top: calc(14 / 82 * 100%); width: calc(64 / 102 * 100%);
+  height: calc(64 / 82 * 100%); }
+.stage-box > svg.s-think:not(.retry) + .buddy { display: block; }
+.stage-box > .buddy.f-glow { z-index: -1; }
+.files .fl-side { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-right: 1px solid var(--ring); }
+/* the files and commands folded: a thin bar of their numbers, opened again by a click */
+.files .fl-grid.folded { grid-template-columns: 30px minmax(0, 1fr); }
+.files .fl-grid.folded.open { grid-template-columns: 30px minmax(0, 1fr) minmax(240px, 340px); }
+.files .fl-bar { display: flex; flex-direction: column; align-items: center; gap: 14px; min-width: 0; min-height: 0; overflow: hidden;
+  margin: 0; padding: 10px 0; background: none; border: 0; border-right: 1px solid var(--ring); border-radius: 0;
+  font: var(--fs-label) var(--mono); color: var(--muted); cursor: pointer; }
+.files .fl-bar:hover, .files .fl-bar:focus-visible { background: var(--wash); color: var(--ink-2); }
+.files .fl-bar > svg { flex: none; color: var(--ink-2); }
+/* the Editor open: the bar in a box with the pane's head's icons (barActs) at its top -- the numbers at its foot -- or,
+   a row, at its right; the head itself hidden */
+.files .fl-barbox { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--ring); }
+.files .fl-barbox > .fl-bar { flex: 1 1 auto; border: 0; }
+.files .fl-acts { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 0;
+  border-bottom: 1px solid var(--grid); }
+.files .fl-act { display: inline-flex; align-items: center; justify-content: center; width: var(--ib); height: var(--ib); padding: 0;
+  border: 0; border-radius: 5px; background: none; color: var(--ink-2); font-size: 16px; line-height: 1; cursor: pointer; }
+.files .fl-act:hover, .files .fl-act:focus-visible { background: var(--wash); color: var(--ink); }
+.files .fl-act[aria-pressed="true"] { background: var(--selected); color: var(--ink); }
+.files .fl-act.close { color: var(--muted); }
+.pane:has(.files .fl-acts) > .pane-top { display: none; }
+.files .fl-bar .it { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.files .fl-bar .stats { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: auto; }   /* the latest turn's, at the foot */
+.files .fl-bar .sub { display: inline-flex; align-items: center; gap: 2px; }
+.files .fl-bar .g { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+.files .fl-bar .g.ok { background: var(--good); } .files .fl-bar .sub.ok { color: var(--ink-2); }
+.files .fl-bar .g.err { background: var(--critical); } .files .fl-bar .sub.err { color: var(--critical); }
+.files .fl-bar .g.run { background: var(--warning); animation: term-blink 1s steps(2) infinite; } .files .fl-bar .sub.run { color: var(--warning); }
+.files .fl-bar .sub.kd { color: var(--ink-2); }   /* the files of a kind, by its colour in the tree */
+.files .fl-bar .g.bg { background: var(--good); } .files .fl-bar .sub.bg { color: var(--ink-2); }   /* the Background dot */
+.files .fl-h .fold { flex: none; display: inline-grid; place-items: center; width: var(--ib); height: var(--ib); margin: -6px -8px -6px auto; padding: 0;
+  background: none; border: 0; border-radius: 7px; color: var(--muted); cursor: pointer; }
+.files .fl-h .tmp + .fold { margin-left: 0; }
+.files .fl-h .fold:hover { background: var(--wash); color: var(--ink); }
+.files .fl-sec { display: flex; flex-direction: column; min-height: 0; }
+/* the files as tall as they are (a turn with none: its heading and a line), up to 60%; the commands the rest */
+.files .fl-sec.files-sec { flex: 0 1 auto; max-height: 60%; } .files .fl-sec.cmds-sec { flex: 1 1 0; border-top: 1px solid var(--ring); }
+.files .fl-sec.files-sec > .fl-scroll { flex: 0 1 auto; }
+/* short of room (a short window, a pane under another): the commands keep their heading and a few rows, nothing of them
+   under the files, and the files and commands scroll whole */
+.files .fl-sec:is(.files-sec, .cmds-sec) { overflow: hidden; } .files .fl-sec.cmds-sec { min-height: 120px; }
+.files .fl-sec > .fl-h { flex: none; }
+.files .fl-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
+.files .fl-sec > .fl-legend { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--ring); }
+/* under the commands, what runs in the background: a section folded to its heading, opened by a click to its tasks,
+   listed as the commands are */
+.files .fl-sec.bg-sec { flex: none; max-height: 40%; border-top: 1px solid var(--ring); }
+.files .fl-sec.bg-sec.open { flex: 0 1 auto; }
+.files .fl-sec.bg-sec > .fl-h { width: 100%; margin: 0; padding: 8px 12px; background: none; border: 0; border-radius: 0; cursor: pointer;
+  font-family: inherit; text-align: left; }
+.files .fl-sec.bg-sec.open > .fl-h { padding-bottom: 4px; }
+.files .fl-sec.bg-sec > .fl-h:hover, .files .fl-sec.bg-sec > .fl-h:focus-visible { background: var(--wash); color: var(--ink-2); }
+.files .fl-sec.bg-sec > .fl-h .tw { flex: none; width: 10px; text-align: center; font-size: 8px; color: var(--ink-2); }   /* as its rows' */
+.files .fl-sec.bg-sec > .fl-h .mark { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--good); }   /* the Background dot */
+.files .fl-cmd .g.bg { color: var(--good); }
+.files .fl-cmd summary .kind { color: var(--muted); font: var(--fs-label) var(--mono); margin-right: 6px; }
+.files .fl-bg-meta { font-size: var(--fs-meta); color: var(--ink-2); margin: 2px 0 6px; }
+.files .fl-bg-meta .p { font: var(--fs-label) var(--mono); overflow-wrap: anywhere; }
+.files .fl-h { display: flex; align-items: center; gap: 8px; font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); padding: 10px 12px 4px; }
+.files .fl-h .tmp { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0;
+  font-size: var(--fs-meta); cursor: pointer; }
+.files .fl-h .tmp:hover { color: var(--ink-2); } .files .fl-h .tmp input { margin: 0; }
+.files .fl-dir { display: flex; align-items: center; gap: 4px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
+  padding: 3px 12px; font: var(--fs-meta) var(--mono); color: var(--ink-2); text-align: left; cursor: pointer; }
+.files .fl-dir:hover { background: var(--wash); }
+.files .fl-dir .tw { flex: none; width: 10px; text-align: center; color: var(--muted); font-size: 10px; }
+.files .fl-dir .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .fl-dir .n, .files .fl-dir .wd { flex: none; color: var(--muted); font-size: var(--fs-label); }
+/* an opened folder's contents, a line down from its caret along them */
+.files .fl-kids { position: relative; }
+.files .fl-kids::before { content: ""; position: absolute; left: var(--guide); top: 0; bottom: 4px; border-left: 1px solid var(--axis);
+  pointer-events: none; }
+/* where the session works, under the files' heading */
+.files .fl-wd { flex: none; display: flex; align-items: baseline; gap: 6px; padding: 0 12px 6px; font-size: var(--fs-meta); color: var(--muted); }
+.files .fl-wd > span:first-child { flex: none; white-space: nowrap; }
+.files .fl-wd .p { min-width: 0; font: var(--fs-label) var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
+.files .fl-file { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; border-radius: 0; margin: 0;
+  padding: 3px 12px 3px 22px; text-align: left; cursor: pointer; font: var(--fs-meta)/1.5 var(--mono); color: var(--ink); }
+.files .fl-file:hover { background: var(--wash); } .files .fl-file.on { background: var(--selected); }
+.files .fl-file .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .badges { display: flex; gap: 3px; flex: none; }
+.files .fb { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+/* a kind's mark (kindMark), and a change's lines added and removed */
+.files .km { flex: none; display: inline-flex; align-items: center; } .files .km svg { display: block; }
+.files .badges .km + .km { margin-left: 1px; }
+.files .chg { flex: none; display: inline-flex; gap: 5px; font: var(--fs-label)/1 var(--mono); white-space: nowrap; }
+.files .chg .a, .files .fl-bar .chg-a { color: var(--term-ok); } .files .chg .r, .files .fl-bar .chg-r { color: var(--term-err); }
+.files .fl-bar .chg-a, .files .fl-bar .chg-r { font: var(--fs-label) var(--mono); }
+.files .fl-cmd-files button { display: inline-flex; align-items: center; gap: 4px; }
+.files .fl-cmd summary .chg { margin-left: 8px; vertical-align: 0; }
+.files .fv-call .chg { align-self: center; }
+.files .fl-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--fs-label); color: var(--muted); }
+.files .fl-legend span { display: inline-flex; align-items: center; gap: 4px; }
+/* the files' legend: each kind a switch, the files of the kinds switched off left out of the tree */
+/* each a pill: outlined while shown, dashed and faint while left out -- never struck through, which read as "deleted" */
+.files .fl-kinds { gap: 6px; }
+.files .fl-kinds .kind { display: inline-flex; align-items: center; gap: 4px; background: none; border: 1px solid var(--ring); border-radius: 999px;
+  margin: 0; padding: 2px 8px; font: inherit; color: var(--ink-2); cursor: pointer; }
+.files .fl-kinds .kind:hover { color: var(--ink); background: var(--wash); }
+.files .fl-kinds .kind.off { border-style: dashed; color: var(--muted); opacity: .7; }
+.files .fl-cmd summary .k { display: inline-block; min-width: 18px; color: var(--muted); font: var(--fs-label) var(--mono); }
+.files .fl-cmd-files { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.files .fl-cmd-files button { margin: 0; padding: 1px 6px; font: var(--fs-label) var(--mono); background: var(--wash); border: 1px solid var(--ring); border-radius: 4px; color: var(--ink-2); cursor: pointer; }
+.files .fl-cmd-files button:hover { color: var(--ink); border-color: var(--axis); }
+.files .fl-cmd { display: flex; gap: 8px; padding: 2px 12px; font-size: var(--fs-meta); }
+.files .fl-cmd .g { flex: none; font-size: 10px; line-height: 18px; }
+.files .fl-cmd .g.ok { color: var(--good); } .files .fl-cmd .g.err { color: var(--critical); }
+.files .fl-cmd .g.run { color: var(--warning); animation: term-blink 1s steps(2) infinite; }
+.files .fl-cmd details { min-width: 0; flex: 1; } .files .fl-cmd summary { margin: 0; font-size: var(--fs-meta); overflow-wrap: anywhere; list-style: none; }
+.files .fl-cmd summary::-webkit-details-marker { display: none; }
+.files .fl-cmd summary .tw { margin-right: 4px; }   /* the fold's chevron (core/page/base.css), as every fold's */
+.files .fl-cmd details[open] > summary .tw { transform: rotate(90deg); }
+.files pre.call, .files pre.out { font: var(--fs-label)/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--wash);
+  border-radius: 4px; padding: 6px 8px; margin: 4px 0; max-height: 320px; overflow: auto; }
+.files .fl-pane { overflow: auto; min-width: 0; }
+.files .fv-h { position: sticky; top: 0; z-index: 1; background: var(--surface); padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--ring);
+  display: flex; align-items: center; gap: 8px; }
+.files .fv-h .fv-path { flex: 1; min-width: 0; }
+.files .fv-close { flex: none; background: none; border: 0; margin: 0; padding: 0 6px; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; border-radius: 4px; }
+.files .fv-close:hover { color: var(--ink); background: var(--wash); }
+.files .fv-path { font: 600 var(--fs-ui) var(--mono); overflow-wrap: anywhere; }
+.files .fv-call { border-bottom: 1px solid var(--ring); }
+.files .fv-call > summary { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 6px 16px; font-size: var(--fs-ui); cursor: pointer; list-style: none; }
+.files .fv-call > summary::-webkit-details-marker { display: none; }
+.files .fv-call > summary:hover { background: var(--wash); } .files .fv-call > summary:hover .via { color: var(--ink); }
+.files .fv-call > summary .tw { flex: none; width: 10px; color: var(--muted); font-size: 10px; }
+.files .fv-call[open] > summary .tw { transform: rotate(90deg); }
+.files .fv-call[open] { padding-bottom: 8px; }
+.files .fv-call .k { flex: none; min-width: 16px; color: var(--muted); font: var(--fs-label) var(--mono); }
+.files .fv-call .kinds { flex: none; display: flex; gap: 3px; align-self: center; }
+.files .fv-call .via { flex: 1; min-width: 0; color: var(--ink-2); font-weight: 600; overflow-wrap: anywhere; }
+.files .fv-call .what { flex: none; color: var(--muted); font-size: var(--fs-meta); }
+.files .fv-call .what .chk { color: var(--good); } .files .fv-call .what .chk.off { color: var(--critical); }
+.files .fv-call.err .what { color: var(--critical); }
+.files .fv-cmd { margin: 0 16px 2px 58px; } .files .fv-cmd > summary { margin: 0; font-size: var(--fs-meta); color: var(--muted); cursor: pointer; }
+.files .code { font: var(--fs-meta)/1.5 var(--mono); padding: 4px 0 0; }
+.files .code .sep { height: 6px; }
+.files .fv-img { display: block; margin: 4px 16px 0 58px; }
+.files .fv-img img { display: block; max-width: 100%; max-height: 70vh; border: 1px solid var(--ring); border-radius: 4px; background: #fff; }
+.files .code .sep:last-child { display: none; }
+.files .ln.ctx .tx { opacity: .62; }               /* the lines around a change: its colours kept, quieter */
+.files .ln { display: grid; grid-template-columns: 56px 18px minmax(0, 1fr); padding-right: 12px; }
+.files .ln .no { text-align: right; color: var(--muted); padding-right: 10px; user-select: none; }
+.files .ln .mk { color: var(--muted); user-select: none; }
+.files .ln .tx { white-space: pre-wrap; overflow-wrap: anywhere; }
+.files .ln.add { background: color-mix(in srgb, var(--good) 15%, transparent); } .files .ln.add .mk { color: var(--good); }
+.files .ln.del { background: color-mix(in srgb, var(--critical) 15%, transparent); } .files .ln.del .mk { color: var(--critical); }
+.files .ln.hit .mk { color: var(--s4); font-weight: 700; }
+.files .ln.hit .tx { background: color-mix(in srgb, var(--s4) 14%, transparent); }
+.files .gap { color: var(--muted); font-size: var(--fs-label); padding: 1px 0 1px 74px; margin: 3px 0; background: var(--wash); }
+.files .fv-note { color: var(--muted); font-size: var(--fs-meta); padding: 10px 16px 0; }
+.files .fv-block { margin: 10px 16px 0; } .files .fv-block .diff div { white-space: pre-wrap; overflow-wrap: anywhere; font: var(--fs-meta)/1.5 var(--mono); padding: 0 6px; }
+.files .fv-block .diff .add { background: color-mix(in srgb, var(--good) 15%, transparent); }
+.files .fv-block .diff .del { background: color-mix(in srgb, var(--critical) 15%, transparent); }
+.files .fv-block .diff .ctx { color: var(--muted); }
+/* code, coloured by the page's highlighter (hlTokens, shLex): what a reader scans for, the rest in the text's own ink */
+.hl-com { color: var(--hl-com); font-style: italic; } .hl-kw, .hl-tag { color: var(--hl-kw); } .hl-str { color: var(--hl-str); }
+.hl-num { color: var(--hl-num); } .hl-fn { color: var(--hl-fn); } .hl-prop { color: var(--hl-prop); } .hl-meta { color: var(--hl-meta); }
+.hl-sec { color: var(--hl-kw); font-weight: 650; } .hl-b { font-weight: 650; } .hl-add { color: var(--term-ok); } .hl-del { color: var(--term-err); }
+.hl-sp { color: var(--muted); user-select: none; }
+/* shell: the command run and each step's operators (&&, |, >) stand out, the way a reader finds the steps */
+.hl-cmd { color: var(--hl-fn); font-weight: 600; } .hl-flag { color: var(--hl-prop); } .hl-var { color: var(--hl-num); } .hl-op { color: var(--term-bash); font-weight: 600; }
+/* a command's output, in the colours its terminal showed (ansiHtml) */
+.a-red { color: var(--term-err); } .a-green { color: var(--term-ok); } .a-yellow { color: var(--term-run); } .a-blue { color: var(--hl-fn); }
+.a-magenta { color: var(--hl-kw); } .a-cyan { color: var(--hl-prop); } .a-dim { color: var(--muted); } .a-bold { font-weight: 650; }
+/* a fenced block in a message, and its Copy (and a long one's Fold) at the top right, shown on hover; each line a row */
+.code-box { position: relative; margin: 0 0 10px; }
+.files .md .code-box > pre, .term .md .code-box > pre { margin: 0; }
+.cf-l { display: block; }
+.code-copy, .code-fold { margin: 0; padding: 1px 7px; font: var(--fs-label) system-ui, -apple-system, sans-serif; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 4px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.code-copy { position: absolute; top: 5px; right: 5px; }
+.code-tools { position: absolute; top: 5px; right: 5px; display: flex; gap: 4px; }
+.code-tools .code-copy { position: static; }
+.code-copy:hover, .code-fold:hover { color: var(--ink); border-color: var(--axis); }
+.code-box:hover .code-copy, .code-box:hover .code-fold, .cv-in:hover .code-copy, .code-copy:focus-visible, .code-fold:focus-visible { opacity: 1; }
+@media (hover: none) { .code-copy, .code-fold { opacity: 1; } }
+/* folded: its first six rows (codeFence's), the last fading out, and under them the way back to all of it */
+.code-box.folded > pre { padding-bottom: 30px; }
+.code-box.folded code { display: block; max-height: calc(6 * 1lh); overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6lh), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6lh), transparent); }
+.code-more { display: none; position: absolute; left: 6px; bottom: 5px; margin: 0; padding: 1px 6px; font: var(--fs-meta) system-ui, -apple-system, sans-serif;
+  color: var(--muted); background: none; border: 0; border-radius: 4px; cursor: pointer; }
+.code-more::before { content: "▸ "; }
+.code-more:hover, .code-more:focus-visible { color: var(--ink); background: var(--wash); }
+.code-box.folded .code-more { display: block; }
+/* a call opened (callView): its command as a terminal shows it -- "$ " in the gutter, each step on a line, the lines
+   continuing one indented, a heredoc's body set apart; a script or a change coloured; other inputs one by one */
+.files .cv { margin: 4px 0 6px; font: var(--fs-meta)/1.5 var(--mono); min-width: 0; }
+.files .cv-in { position: relative; background: var(--hl-bg); border: 1px solid var(--ring); border-radius: 6px; max-height: 360px; overflow: auto; }
+.files .cv-in.sh { border-left: 3px solid color-mix(in srgb, var(--term-bash) 50%, transparent); }
+.files .cv-src { padding: 6px 10px; color: var(--ink); }
+.files .cv-in.src .cv-src { white-space: pre-wrap; overflow-wrap: anywhere; }
+.files .cv-in.diff .cv-src { padding: 4px 0; }
+.files .sh-l { white-space: pre-wrap; overflow-wrap: anywhere; padding-left: calc((var(--i) + 2) * 2ch); text-indent: -2ch; }
+.files .sh-l.p { text-indent: -4ch; }
+.files .sh-p { color: var(--muted); user-select: none; }
+.files .sh-here { margin: 2px 0 2px 2ch; padding: 3px 8px; white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid var(--axis);
+  background: color-mix(in srgb, var(--ink) 3%, transparent); border-radius: 0 4px 4px 0; }
+.files .cv .cl { display: grid; grid-template-columns: 16px minmax(0, 1fr); padding: 0 10px 0 4px; }
+.files .cv .cl .mk { color: var(--muted); user-select: none; text-align: center; }
+.files .cv .cl .tx { white-space: pre-wrap; overflow-wrap: anywhere; }
+.files .cv .cl.add { background: color-mix(in srgb, var(--good) 13%, transparent); } .files .cv .cl.add .mk { color: var(--good); }
+.files .cv .cl.del { background: color-mix(in srgb, var(--critical) 13%, transparent); } .files .cv .cl.del .mk { color: var(--critical); }
+.files .cv-sep { height: 1px; background: var(--ring); margin: 4px 0; }
+.files .cv-path { font: 600 var(--fs-label) var(--mono); color: var(--ink-2); margin: 0 0 3px; overflow-wrap: anywhere; }
+.files .cv-args { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 10px; padding: 6px 10px; background: var(--hl-bg);
+  border: 1px solid var(--ring); border-radius: 6px; max-height: 360px; overflow: auto; }
+.files .cv-args .k { color: var(--hl-prop); } .files .cv-args .v { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+.files .cv-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 5px 0 0; font: var(--fs-label) var(--mono); color: var(--muted); }
+.files .cv-tags span { padding: 0 7px; border: 1px solid var(--ring); border-radius: 9px; }
+.files .cv-tags .ok { color: var(--good); } .files .cv-tags .bad { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 40%, transparent); }
+.files .cv pre.out { margin: 4px 0 0; font-size: var(--fs-meta); }
+.files .cv.err pre.out { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--critical) 60%, transparent); }
+.files .fl-reply.call > .cv { margin: 4px 0 6px 15px; }
+.files .fv-cmd .cv { margin: 4px 0; }
+/* a call's line that is a shell command (no description given): in the terminal's type, coloured */
+.files .cmdline { font: .92em var(--mono); }
+@media (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
+@media (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; }
+  .files .fl-barbox { flex-direction: row-reverse; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-barbox > .fl-bar { border: 0; }
+  .files .fl-acts { flex-direction: row; padding: 0 6px; border-bottom: 0; border-left: 1px solid var(--grid); } }
+/* the same by the pane's width: one of several side by side is narrower than the window */
+@container pane (max-width: 1100px) { .files .fl-grid.open { grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(200px, 260px); } }
+@container pane (max-width: 760px) { .files .fl-grid.open .fl-talk { display: none; } .files .fl-grid, .files .fl-grid.open { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); } .files .fl-side { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-right { border-left: 0; }
+  .files .fl-grid.folded, .files .fl-grid.folded.open { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } .files .fl-bar { flex-direction: row; justify-content: flex-start; padding: 6px 12px; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-bar .it { flex-direction: row; } .files .fl-bar .stats { flex-direction: row; margin: 0; }
+  .files .fl-barbox { flex-direction: row-reverse; border-right: 0; border-bottom: 1px solid var(--ring); } .files .fl-barbox > .fl-bar { border: 0; }
+  .files .fl-acts { flex-direction: row; padding: 0 6px; border-bottom: 0; border-left: 1px solid var(--grid); } }
+/* a NARROW pane's (features/chat/files-view.js's sideNarrow, the width the queries above use): opened, the files and commands lie
+   over the conversation's left, not above it, so the conversation keeps its height; folded, they are the bar above it */
+.files .fl-grid.narrow:not(.folded) { position: relative; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.files .fl-grid.narrow:not(.folded) > .fl-side { position: absolute; inset: 0 auto 0 0; z-index: 6; width: min(320px, 88%); max-height: none;
+  background: var(--surface); border-right: 1px solid var(--ring); border-bottom: 0; box-shadow: 6px 0 22px rgba(0,0,0,.28); }
+.files .fl-grid.narrow:not(.folded) > :is(.fl-pane, .fl-right) { grid-column: 1; grid-row: 1; }
+/* the History view: the history to pick from at the left; what the Gatherer made of it at the right, once something is picked */
+.chat .chat-frame.hist { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
+.hist .h-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns .2s ease; }
+.hist .h-grid:has(> .h-side.open) { grid-template-columns: minmax(0, 1fr) min(400px, 42%); }   /* the panel: only while open */
+@media (prefers-reduced-motion: reduce) { .hist .h-grid { transition: none; } }
+.hist .h-left { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+/* the header: one line -- search, Tasks|Turns, which types are shown -- and at its right, how the tasks stand */
+.hist .h-bar { flex: none; position: relative; z-index: 5; padding: 10px 20px; border-bottom: 1px solid var(--ring); font-size: var(--fs-meta); color: var(--ink-2); }
+.hist .h-controls { display: flex; align-items: center; gap: 10px; }
+.hist .h-search { flex: 0 1 380px; display: flex; align-items: center; gap: 6px; min-width: 140px; border: 1px solid var(--ring); border-radius: 6px;
+  background: var(--page); padding: 0 8px; }
+.hist .h-search:focus-within { border-color: var(--axis); }
+.hist .h-search svg { flex: none; color: var(--muted); }
+.hist .h-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: var(--fs-ui); padding: 5px 0; }
+.hist .h-group { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--ring); border-radius: 6px;
+  font-size: var(--fs-meta); color: var(--ink); cursor: pointer; white-space: nowrap; user-select: none; }
+.hist .h-group:hover { background: var(--wash); }
+.hist .h-group.off { color: var(--muted); cursor: default; } .hist .h-group.off:hover { background: none; }
+.hist .h-group input { margin: 0; accent-color: var(--s1); }
+.hist .h-group .spin { display: inline-block; width: 1.2em; text-align: center; }
+.hist .h-types { position: relative; flex: none; }
+.hist .h-types > summary { list-style: none; margin: 0; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ring); border-radius: 6px;
+  padding: 4px 10px; font-size: var(--fs-meta); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.hist .h-types > summary::-webkit-details-marker { display: none; }
+.hist .h-types > summary:hover, .hist .h-types[open] > summary { background: var(--wash); }
+.hist .h-types > summary .lbl { color: var(--muted); }
+.hist .h-types .menu { position: absolute; top: calc(100% + 4px); left: 0; min-width: 190px; padding: 6px; display: grid; gap: 1px; background: var(--surface);
+  border: 1px solid var(--ring); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+.hist .h-types .menu label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 5px; color: var(--ink); cursor: pointer; }
+.hist .h-types .menu label:hover { background: var(--wash); }
+.hist .h-types .menu input { margin: 0; accent-color: var(--s1); }
+.hist .h-types .menu i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.hist .h-status { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 12px; font-size: var(--fs-meta); overflow: hidden; white-space: nowrap; }
+.hist .h-found { white-space: nowrap; color: var(--ink-2); }
+.hist .h-build { white-space: nowrap; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hist .h-build.bad { color: var(--warning); }
+/* the list: no rules between rows; a timeline down the left, a dot for each task (green: the running
+   task); what a row holds nested along a guide, smaller and quieter; when and how big, on hover */
+.hist .h-list { flex: 1; min-height: 0; overflow: auto; padding: 8px 0 28px; }
+.hist .h-row { --row-bg: var(--surface); position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 8px; align-items: start;
+  padding: 8px 20px 8px calc(40px + var(--depth, 0) * 20px); background-color: var(--row-bg); cursor: default; user-select: none;
+  content-visibility: auto; contain-intrinsic-size: auto 46px; }
+.hist .h-row:hover { --row-bg: color-mix(in srgb, var(--surface) 95%, var(--ink)); }
+.hist .h-row.some { --row-bg: color-mix(in srgb, var(--surface) 92%, var(--s1)); }
+.hist .h-row.on, .hist .h-row.on:hover { --row-bg: color-mix(in srgb, var(--surface) 83%, var(--s1)); }   /* selected; a part of it: half as strong */
+.hist .h-row::after { content: ""; position: absolute; left: 24px; top: 0; bottom: 0; width: 1px; background: var(--grid); }
+.hist .h-row:first-child::after { top: 15px; }
+.hist .h-row:last-of-type::after { bottom: calc(100% - 15px); }
+.hist .h-row:first-child:last-of-type::after { display: none; }
+.hist .h-row:not(.nested)::before { content: ""; position: absolute; left: 21px; top: 12px; width: 7px; height: 7px; border-radius: 50%; z-index: 1;
+  background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--axis); }
+.hist .h-row.current::before { background: var(--good); box-shadow: none; }
+.hist .h-row.on:not(.nested)::before { background: var(--s1); box-shadow: none; }
+.hist .h-row.nested { background-image: linear-gradient(var(--grid), var(--grid)); background-repeat: no-repeat; background-size: 1px 100%;
+  background-position: calc(46px + (var(--depth) - 1) * 20px) 0; padding-top: 5px; padding-bottom: 5px; }
+.hist .h-full { user-select: text; cursor: text; }
+.hist .h-tw { border: 0; padding: 0; margin: 3px 1px 0; color: var(--muted); cursor: pointer; }   /* the fold's chevron (core/page/base.css) */
+.hist .h-tw:hover { color: var(--ink); background: currentColor; }
+.hist .h-main { min-width: 0; padding-right: 4px; }
+.hist .h-label { font-size: var(--fs-ui); line-height: 1.45; color: var(--ink); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.hist .h-row.task:not(.nested) .h-label { font-size: var(--fs-ui); font-weight: 600; letter-spacing: -.005em; }
+.hist .h-row.nested .h-label { font-size: var(--fs-ui); }
+.hist .h-row.message .h-label { color: var(--ink-2); }
+.hist .h-row.open .h-label { -webkit-line-clamp: 6; }
+.hist .h-label.dim { color: var(--muted); font-style: italic; }
+.hist .h-kind { display: inline-block; font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--good); margin-right: 6px; }
+.hist .h-main.keyed { border-left: 3px solid var(--key); padding-left: 9px; }   /* a message's type, as the Messages view keys it */
+.hist .h-badge { display: inline-block; font-size: var(--fs-label); font-weight: 600; color: var(--s1); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-right: 6px; line-height: 15px; }
+.hist .h-sub { font-size: var(--fs-ui); line-height: 1.45; color: var(--ink-2); margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.hist .h-sub.dim { color: var(--muted); }
+.hist .h-hit { font-size: var(--fs-meta); color: var(--ink-2); margin-top: 3px; overflow-wrap: anywhere; }
+.hist mark { background: color-mix(in srgb, var(--s4) 35%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
+.hist .h-meta { position: absolute; right: 14px; top: 8px; padding: 0 0 0 22px; font-size: var(--fs-label); line-height: 19px; color: var(--muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums; background: linear-gradient(to right, transparent, var(--row-bg) 18px); opacity: 0; pointer-events: none; transition: opacity .12s; }
+.hist .h-row.nested .h-meta { top: 5px; }
+.hist .h-row:hover .h-meta { opacity: 1; }
+.hist .h-full { grid-column: 2 / -1; margin: 6px 0 2px; font: var(--fs-meta)/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+  color: var(--ink-2); background: var(--page); border: 1px solid var(--grid); border-radius: 6px; padding: 8px 10px; max-height: 360px; overflow: auto; }
+.hist .h-more { display: block; margin: 12px auto; }
+.hist .h-note { color: var(--muted); font-size: var(--fs-meta); padding: 14px 20px; }
+.hist .h-act { padding: 12px 14px; display: grid; gap: 8px; border-bottom: 1px solid var(--ring); margin-bottom: 10px; }
+.hist .h-act textarea { width: 100%; min-height: 38px; max-height: 30vh; resize: vertical; font: inherit; font-size: var(--fs-ui); color: var(--ink); background: var(--page);
+  border: 1px solid var(--ring); border-radius: 6px; padding: 6px 8px; field-sizing: content; }
+.hist .h-act .row { display: flex; align-items: center; gap: 8px; }
+.hist .h-act .row .h-picked:first-child { flex: 1; }
+.hist .h-act .kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.hist .h-act .h-x { border: 0; background: none; font-size: 18px; line-height: 1; padding: 0 6px; color: var(--muted); }
+.hist .h-act .h-x:hover { color: var(--ink); background: var(--wash); }
+.hist .h-picked { font-size: var(--fs-meta); color: var(--ink-2); }
+.hist .h-picked b { color: var(--ink); font-weight: 600; }
+.hist .h-act .err { color: var(--critical); font-size: var(--fs-meta); }
+.hist .h-act .err:empty { display: none; }
+.hist .h-side { border-left: 1px solid var(--ring); overflow: auto; min-height: 0; background: var(--page); }
+.hist .h-side.closed { display: none; }
+.hist .h-side-h { font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 2px 14px 6px; }
+.hist .h-older { display: block; margin: 0 10px 12px; border: 0; background: none; color: var(--muted); padding: 2px 4px; }
+.hist .h-older:hover { color: var(--ink); background: none; text-decoration: underline; }
+.hist .h-side.open { animation: h-side-in .2s ease-out; }
+@keyframes h-side-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .hist .h-side.open { animation: none; } }
+.hist .h-side .h-note { padding: 4px 14px 12px; }
+.hist .h-rec { margin: 0 10px 10px; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; }
+.hist .h-rec > summary { list-style: none; margin: 0; padding: 8px 10px; cursor: pointer; display: grid; gap: 2px; color: var(--ink); }
+.hist .h-rec > summary::-webkit-details-marker { display: none; }
+.hist .h-rec > summary .top { display: flex; align-items: center; gap: 8px; font-size: var(--fs-meta); }
+.hist .h-rec > summary .top .when { margin-left: auto; color: var(--muted); font-size: var(--fs-label); white-space: nowrap; }
+.hist .h-rec > summary .what { font-size: var(--fs-meta); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .h-rec > summary .ask { font-size: var(--fs-meta); color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .h-rec .chip-k { font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-radius: 999px; padding: 1px 7px; color: #fff; }
+.hist .h-rec .chip-k.summary { background: var(--s1); } .hist .h-rec .chip-k.memory { background: var(--s7); } .hist .h-rec .chip-k.skill { background: var(--s3); }
+.hist .h-rec .chip-k.agents, .hist .h-rec .chip-k.claude { background: var(--s2); text-transform: none; letter-spacing: 0; }
+/* a memory: its title and type, what decides whether it is read, then the fact */
+.hist .h-mem { border: 1px solid var(--grid); border-radius: 6px; padding: 6px 8px; margin: 0 0 8px; background: var(--page); }
+.hist .h-mem .t { display: flex; align-items: baseline; gap: 6px; font-weight: 600; font-size: var(--fs-ui); }
+.hist .h-mem .t span { flex: none; margin-left: auto; font-weight: 600; font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.hist .h-mem .d { font-size: var(--fs-meta); color: var(--ink-2); margin: 2px 0 4px; }
+.hist .h-mem .md { font-size: var(--fs-ui); }
+/* saving: where to, then each file and what it gets, before anything is written */
+.hist .h-save { border-top: 1px solid var(--grid); padding: 8px 12px 10px; display: grid; gap: 8px; font-size: var(--fs-meta); }
+.hist .h-save .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hist .h-save input[type=text] { flex: 1; min-width: 0; font: var(--fs-meta) ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink);
+  background: var(--page); border: 1px solid var(--ring); border-radius: 6px; padding: 4px 8px; }
+.hist .h-save .where { color: var(--ink-2); }
+.hist .h-save .file { border: 1px solid var(--grid); border-radius: 6px; background: var(--page); }
+.hist .h-save .file > summary { list-style: none; margin: 0; padding: 5px 8px; display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.hist .h-save .file > summary::-webkit-details-marker { display: none; }
+.hist .h-save .file .p { font: var(--fs-meta) ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; min-width: 0; color: var(--ink); }
+.hist .h-save .file .a { flex: none; font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--good); }
+.hist .h-save .file .a.append { color: var(--s1); } .hist .h-save .file .a.replace { color: var(--warning); }
+.hist .h-save .file pre { margin: 0; padding: 6px 8px; border-top: 1px solid var(--grid); font: var(--fs-meta)/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; color: var(--ink-2); }
+.hist .h-save .err { color: var(--critical); } .hist .h-save .ok { color: var(--good); }
+.hist .h-save .warnline { color: var(--warning); }
+.hist .h-rec .saved { font-size: var(--fs-meta); color: var(--ink-2); padding: 0 12px 8px; overflow-wrap: anywhere; }
+.hist .h-rec .saved b { color: var(--good); font-weight: 600; }
+.hist .h-rec .body { border-top: 1px solid var(--grid); padding: 8px 12px 10px; font-size: var(--fs-ui); overflow-wrap: anywhere; }
+.hist .h-rec .body .md > :first-child { margin-top: 0; } .hist .h-rec .body .md > :last-child { margin-bottom: 0; }
+.hist .h-rec .body .md pre { overflow: auto; background: var(--page); border-radius: 6px; padding: 6px 8px; font-size: var(--fs-meta); }
+.hist .h-rec .body .md code { font-size: var(--fs-meta); }
+.hist .h-rec .body .md h1 { font-size: var(--fs-head); } .hist .h-rec .body .md h2 { font-size: var(--fs-body); } .hist .h-rec .body .md h3, .hist .h-rec .body .md h4 { font-size: var(--fs-ui); }
+.hist .h-rec .body .md h1, .hist .h-rec .body .md h2, .hist .h-rec .body .md h3 { margin: 12px 0 4px; }
+.hist .h-rec .body .md ul, .hist .h-rec .body .md ol { padding-left: 20px; }
+.hist .h-rec .front { margin: 0 0 8px; font: var(--fs-meta)/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; background: var(--page);
+  border: 1px solid var(--grid); border-radius: 6px; padding: 6px 8px; color: var(--ink-2); }
+.hist .h-rec .acts { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 10px; }
+.hist .h-rec .fail { color: var(--critical); font-size: var(--fs-meta); white-space: pre-wrap; }
+.hist .h-rec .working { color: var(--ink-2); font-size: var(--fs-meta); display: flex; align-items: center; gap: 6px; }
+.hist .h-rec .working .spin, .hist .h-build .spin { flex: none; display: inline-block; width: 1.2em; text-align: center; }
+/* a time that counts up: its digits all one width, at the end of its line, where it moves nothing */
+.hist .ticking { font-variant-numeric: tabular-nums; color: var(--muted); }
+@media (max-width: 1100px) { .hist .h-grid, .hist .h-grid:has(> .h-side.open) { grid-template-columns: minmax(0, 1fr); }
+  .hist .h-grid:has(> .h-side.open) { grid-template-rows: minmax(0, 1fr) minmax(0, 42%); }
+  .hist .h-side { border-left: 0; border-top: 1px solid var(--ring); } .hist .h-status { display: none; } }

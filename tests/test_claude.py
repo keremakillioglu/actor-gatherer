@@ -13,10 +13,11 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ag.integrations.harnesses.claude.adaptor import to_events as claude  # noqa: E402
+from ag.integrations.harnesses.codex.setup.hook_servers import HookServers  # noqa: E402
 from ag.integrations.harnesses.claude.adaptor import to_messages as back  # noqa: E402
 from ag.integrations.harnesses.claude.adaptor.adaptor import ClaudeAdaptor  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 
 USER_MESSAGE, AGENT_MESSAGE, TOOL_CALL, TOOL_OUTPUT, CONTEXT, AGENT_REASONING = claude.OUTPUTS
 
@@ -1073,6 +1074,8 @@ class GatewayTest(unittest.TestCase):
         seen = []
 
         class Servers:
+            serving = HookServers.serving                  # the real one, over these
+
             def running(self):
                 return []
 
@@ -1136,6 +1139,8 @@ class LauncherTraceTest(unittest.TestCase):
         seen = {}
 
         class Servers:
+            serving = HookServers.serving                  # the real one, over these
+
             def running(self):
                 return []
 
@@ -1156,6 +1161,8 @@ class LauncherTraceTest(unittest.TestCase):
         from ag.integrations.harnesses.claude.setup import launch
 
         class Servers:
+            serving = HookServers.serving                  # the real one, over these
+
             def running(self):
                 return []
 

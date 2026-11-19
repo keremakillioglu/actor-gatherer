@@ -1,4 +1,4 @@
-// A task opened again is laid out as it was left (07-panes.js's rememberTask, enterTask): the chat minimized under its apps
+// A task opened again is laid out as it was left (features/layout/panes.js's rememberTask, enterTask): the chat minimized under its apps
 // or not, the view each of its actors' panes showed, and how wide each pane was.
 import { expect, test } from "./test";
 import { CLAUDE, CODEX, GATHERER, open } from "./home";

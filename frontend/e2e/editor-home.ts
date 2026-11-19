@@ -52,7 +52,7 @@ export async function raise(page: Page, kind: string, data: Record<string, unkno
 /** The apps built on app_kit.fileedit; the one a file opens in, as the page sends a link to it: a LaTeX source or a
  * bibliography, the LaTeX editor; any other, the Files app. */
 export type FileApp = "files" | "latex";
-const LABEL: Record<FileApp, string> = { files: "Files", latex: "LaTeX" };
+const LABEL: Record<FileApp, string> = { files: "Files", latex: "LaTeX Editor" };
 export const appOf = (file: string): FileApp => (/\.(tex|ltx|sty|cls|bib)$/i.test(file) ? "latex" : "files");
 export const editorPane = (page: Page, app: FileApp = "files") => page.locator(`#top-row > .app-pane[data-app=${app}]`);
 export const editorPanel = (page: Page, app: FileApp = "files") => editorPane(page, app).frameLocator("iframe");
@@ -99,7 +99,7 @@ export async function startEditor(page: Page, repo: string, app: FileApp = "file
   const row = page.locator("#agents .gatherer-row").first();
   await row.hover();
   await row.locator("button.new-more").click();
-  await page.locator(".row-menu[role=menu]").getByText(`${LABEL[app]} with an agent…`, { exact: true }).click();
+  await page.locator(".row-menu[role=menu]").getByText(`${LABEL[app]}…`, { exact: true }).click();
   const box = page.locator(".dw-menu[role=dialog]", { hasText: `New ${LABEL[app]}` });
   await box.locator("input").fill(repo);
   await box.locator("button.go").first().click();

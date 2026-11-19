@@ -32,8 +32,8 @@ import harness_kit
 from app_kit import AppError
 
 from . import (access, actions, app_agents, app_docs, app_host, app_requests, app_schedules, avatars, branches,
-               coordination, data, folders, home, live, livedocs, migrating, page_build, saved, sessions, task_links,
-               tool_gateway)
+               coordination, data, folders, groups, home, live, livedocs, migrating, page_build, saved, sessions,
+               task_links, tool_gateway)
 
 STATIC, INDEX = page_build.STATIC, page_build.INDEX   # frontend/'s build (vite.config.ts), built by page_build.py
 BUILD = page_build.COMMAND
@@ -240,13 +240,17 @@ class Server:
         """The home as the page gets it: with the sessions' state, and what a new session starts from -- the
         harnesses it can run on here (sessions.py's `available`); the shells open, and the user's home directory,
         which the page shows their directories under as ~. A name held for a session's terminal is typed there once its turn is over
-        (`rename_due`). Its agents as read before (data.py's `Kept`), where kept."""
+        (`rename_due`). Its agents as read before (data.py's `Kept`), where kept. With the group each open app is in
+        (`app_groups`: app_host.py's `groups`). Never in the middle of a change of groups (groups.py's `settled`): its
+        sessions' rows, ag's records and the apps' groups read with none half made."""
         started = self.sessions
-        got = data.home(started.list(), self.known)
+        with groups.settled():
+            got = avatars.assign(data.home(started.list(), self.known))
+            got["app_groups"] = self.app_host.groups() if self.app_host is not None else {}
         if started.renames:
             started.rename_due(a["channel"] for g in got["gatherers"] for a in g["agents"]
                                if a.get("turn_over") and a.get("status") not in (data.ASKING, data.RUNNING))
-        return {**avatars.assign(got), "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
+        return {**got, "cwd": os.getcwd(), "permission_modes": list(sessions.PERMISSION_MODES),
                 "terminals": sessions.TERMINALS, "harnesses": sessions.available(), "shells": started.shells(),
                 "home_dir": os.path.expanduser("~"),
                 "branches": self.branches.listed() if self.branches is not None else [],

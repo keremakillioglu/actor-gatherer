@@ -44,19 +44,7 @@ Keys: j / k the next or previous paper, s save it, o open its arXiv page, Enter 
     if (!r.ok) throw new Error(j.error || `${r.status}`);
     return j;
   }
-  function el(tag, attrs, ...kids) {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs || {})) {
-      if (v === null || v === undefined || v === false) continue;
-      if (k === "class") n.className = v;
-      else if (k === "html") n.innerHTML = v;                // our own icons only
-      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
-      else if (k === "value") n.value = v;
-      else n.setAttribute(k, v === true ? "" : v);
-    }
-    for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) n.append(c.nodeType ? c : document.createTextNode(String(c)));
-    return n;
-  }
+  function el(...a) { return window.agKit.el(...a); }   // the panels' kit (app_kit/js/kit.js)
   const dateOf = (day) => { const [y, m, d] = day.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)); };
   const dayShort = (day) => dateOf(day).toLocaleDateString(undefined, { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
   const dayLong = (day) => dateOf(day).toLocaleDateString(undefined, { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" });

@@ -18,6 +18,7 @@ const BROWSER: App = {
   kind: "builtin",
   access: "task",
   with_agent: true,
+  opens_with_agent: true,
   instances: "many",
   tools: tool(19, "browser"),
   tokens: 8873,
@@ -120,6 +121,10 @@ async function appsHome(page: Page) {
     } else if (b.id === PAGER.id) state.installed = [...state.installed, { ...PAGER, origin: "home" }];
     return { name: b.builtin || "pager" };
   });
+  await answer("settings", (b) => {
+    state.installed = state.installed.map((a) => (a.name === b.app ? { ...a, opens_with_agent: b.agent } : a));
+    return { agent: b.agent };
+  });
   await answer("uninstall", (b) => {
     state.installed = state.installed.filter((a) => a.name !== b.name);
     return { name: b.name, how: "builtin" };
@@ -141,7 +146,7 @@ async function fromSettings(page: Page) {
 test("the settings panel's Apps opens the Apps page in a tab of its own: every app, what agents get, its details", async ({
   page,
 }) => {
-  await appsHome(page);
+  const state = await appsHome(page);
   await open(page);
   await fromSettings(page);
   await expect(page.locator("#about")).toBeHidden(); // the panel closed
@@ -159,7 +164,13 @@ test("the settings panel's Apps opens the Apps page in a tab of its own: every a
   const side = appsPage(page).locator(".ap-side");
   await expect(side.locator("h2")).toHaveText("Browser");
   await expect(side).toContainText("only the agents in its task");
-  await expect(side.getByRole("button", { name: "With an agent" })).toBeVisible(); // alone, or with an agent
+  // one Open, the way chosen under it: with an agent of its own (until the reader says not), or on its own
+  await expect(side.getByRole("button", { name: /^Open/ })).toHaveCount(1);
+  const opens = side.getByRole("group", { name: "How Browser opens" });
+  await expect(opens.getByRole("button", { name: "With its own agent" })).toHaveAttribute("aria-pressed", "true");
+  await opens.getByRole("button", { name: "On its own" }).click();
+  await expect(opens.getByRole("button", { name: "On its own" })).toHaveAttribute("aria-pressed", "true");
+  expect(state.asked.at(-1)).toEqual(["settings", { app: "browser", agent: false }]);
   await expect(side).toContainText("A native web view over its panel, in the desktop app");
   await expect(side.locator(".ap-kv").last()).toContainText("demo3 open");
   await expect(side.locator(".ap-tools code")).toHaveCount(5);

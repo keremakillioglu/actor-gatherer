@@ -19,8 +19,9 @@ from ag.ag_harness import Manager  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag_dashboard import data, server  # noqa: E402
+from ag_dashboard import store as dstore  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 import page_source  # noqa: E402
 from channels import ch  # noqa: E402
@@ -60,7 +61,7 @@ class HomeBase(unittest.TestCase):
             ctx, read_id = self.m._context("g", store.high_water(self.m._conn("g")), ch("c1"), limit)
             self.reads.append(read_id)
         self.m.record_real_tokens("g", self.reads[0], 9999)
-        self.build_id = tables.new_build(self.m._conn("g"), "c1")
+        self.build_id = tables.create_build(self.m._conn("g"), "c1")
         self.policy.build("g", ch("c1"), self.build_id)
         items.insert("g", user("the next request", 90), channel_id="c1")   # a new turn: the build is taken
         self.reads.append(self.m._context("g", store.high_water(self.m._conn("g")), ch("c1"), 244800)[1])
@@ -140,14 +141,14 @@ class DataTest(HomeBase):
         """Each agent's events found by ag's index on the channel, not by a scan of them all: by the bare column,
         a home of 64 agents in a 425 MB file took 2 s, every update."""
         def scans():
-            run, connect = [], data._connect
+            run, connect = [], dstore.gatherer
 
             def traced(gatherer):
                 conn = connect(gatherer)
                 if conn is not None:
                     conn.set_trace_callback(run.append)
                 return conn
-            with unittest.mock.patch.object(data, "_connect", traced):
+            with unittest.mock.patch.object(dstore, "gatherer", traced):
                 data.home()
             conn = sqlite3.connect(paths.db_path("g"))
             try:

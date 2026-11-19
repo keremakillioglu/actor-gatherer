@@ -16,11 +16,10 @@ returns a context manager (possibly wrapped, with `.inner` leading to the
 
 The worker decides nothing: it calls `policy.<job>(gatherer, properties, id)`
 -- the properties the policy started the job with (ag.ag_interface.Jobs).
-What a job does, and what follows from its result, is the policy's method.
-When that method raises, the worker hands the failure back to the policy too
--- `policy.failed(gatherer, properties, job, id, error)`, if it has one -- so
-the policy decides what a failed job leaves behind (a claim released, a
-verdict recorded) and a crash never leaves a claim held.
+What a job does, and what follows from its result, is the policy's method --
+what a failed job leaves behind too (a claim released, a verdict recorded),
+which the method records itself before it raises (ag.ag_interface.Policy:
+`jobs`). The worker only logs the failure.
 """
 
 import argparse
@@ -105,7 +104,6 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     os.environ[JOB_ENV] = json.dumps({"gatherer": args.gatherer, "job": args.job, "id": args.id,
                                       "properties": args.properties})    # named on its model calls (CallLog)
-    policy = None
     try:
         policy = unwrap(call(load_factory(args.factory, args.path), args.gatherer))      # a factory may take the gatherer
         if getattr(policy, "gatherers", None) is None:
@@ -114,16 +112,9 @@ def main(argv=None) -> int:
         result = getattr(policy, args.job)(args.gatherer, args.properties, args.id)
         warn(f"{args.job} {args.id} for {args.gatherer} {args.properties}: {result!r}"[:300])
         return 0
-    except Exception as exc:  # noqa: BLE001 - hand it to the policy, never leave a claim held
+    except Exception as exc:  # noqa: BLE001 - the job recorded what its failure leaves behind; logged here
         traceback.print_exc()
-        try:
-            failed = getattr(policy, "failed", None)
-            if failed is not None:
-                failed(args.gatherer, args.properties, args.job, args.id, f"{type(exc).__name__}: {exc}")
-            else:
-                warn(f"{args.job} {args.id} failed and the policy records no failures: {exc!r}")
-        except Exception:  # noqa: BLE001
-            traceback.print_exc()
+        warn(f"{args.job} {args.id} for {args.gatherer} failed: {exc!r}")
         return 1
 
 

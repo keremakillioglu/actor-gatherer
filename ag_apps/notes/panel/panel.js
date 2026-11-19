@@ -87,19 +87,7 @@ and what agents see of it. The words under either are its caption. */
     for (const x of a) s += c[x % 36];
     return s;
   }
-  function el(tag, attrs, ...kids) {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs || {})) {
-      if (v === null || v === undefined || v === false) continue;
-      if (k === "class") n.className = v;
-      else if (k === "html") n.innerHTML = v;
-      else if (k === "text") n.textContent = v;
-      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
-      else n.setAttribute(k, v === true ? "" : v);
-    }
-    for (const k of kids) if (k !== null && k !== undefined && k !== false) n.append(k);
-    return n;
-  }
+  function el(...a) { return window.agKit.el(...a); }   // the panels' kit (app_kit/js/kit.js)
   const store = {
     get(k, d) { try { const v = localStorage.getItem(`notes:${ag.instance}:${k}`); return v === null ? d : JSON.parse(v); } catch { return d; } },
     set(k, v) { try { localStorage.setItem(`notes:${ag.instance}:${k}`, JSON.stringify(v)); } catch { /* storage off: kept for now only */ } },

@@ -1,4 +1,4 @@
-// An actor's pane CLOSED by its ×, as an app's panel is (07-panes.js's closeHerePane): in every view of it -- its head,
+// An actor's pane CLOSED by its ×, as an app's panel is (features/layout/panes.js's closeHerePane): in every view of it -- its head,
 // its Chat bar (a panel above it), its minimized box -- even alone. Its actor goes on; what else is shown takes its room
 // (nothing: the tab's new-tab page); a click on it in the list shows it again. Its task, left and opened again (another
 // tab shown and back, the page reloaded), shows its apps alone, the actor's pane still closed.
