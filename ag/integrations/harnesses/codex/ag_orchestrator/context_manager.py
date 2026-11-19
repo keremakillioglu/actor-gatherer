@@ -78,7 +78,7 @@ from harness_kit.codex import (METADATA, TRIGGER, TURN, compaction_split, cwd_of
 
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
-from ag.integrations.tools.ag_orchestrator.call_ag import READ, call_ag, keep_read, preamble_of, read_of, report_measured
+from ag.integrations.tools.ag_orchestrator.call_ag import call_ag, preamble_of, read_of
 from ag.integrations.tools.ag_orchestrator.proxy_hook import ProxyHook
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
 from .ag_clients import AgClients
@@ -90,7 +90,6 @@ FILES = "codex_files"         # the same, for what the answer's calls do to file
 SIDE = "codex_side"                   # the same, for a side call whose answer is kept: (kind, gatherer, thread)
 KEPT = ("thread_title", "system")     # the side calls whose answers are kept: a title, a recap
 NAME_CHARS = 120                      # the longest name kept (codex asks for 36 characters at most)
-COUNT_FROM = 0.5      # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
 def load_adaptor(spec: str) -> Adaptor:
@@ -177,53 +176,23 @@ class CodexContextManager(ProxyHook):
         if run:
             self.runs[(request.label, run)] = (gatherer, channel)
         self.following(request, gatherer, channel, call)       # its rollout, followed (session_files.py)
-        items, out = body["input"], {}
+        items = body["input"]
         cwd = cwd_of(items) or self.cwd
         compaction = compaction_split(metadata, items)
         if compaction is not None:
             self.called(gatherer, channel, call)
             return await self.compaction(request, gatherer, channel, body, cwd, *compaction)
-        await self.calling(request, gatherer, channel, call)     # recorded before ag reads for it (proxy_hook.py)
-        if isinstance(getattr(request, "state", None), dict):
-            request.state[ANSWERED] = (gatherer, channel, cwd)
-            if self.files is not None:
-                request.state[FILES] = (gatherer, channel, cwd, since)
-        if self.files is not None:                         # the results of the last answer's calls: checked
-            self.files.arrived(gatherer, channel, cwd, items)
-        client = self.ag_clients.client(gatherer)
         preamble = preamble_of({"instructions": body.get("instructions"), "tools": body.get("tools")})
-
-        async def read():
-            out = {}
-            new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd, items, self.adaptor, out=out,
-                                      limit=getattr(request, "limit", None), preamble=preamble,
-                                      process=getattr(request, "process", None), run=run)
-            self.log(gatherer, f"[{channel}] {note}")
-            return new, out
-
-        messages, out = await read()
-        self.counter.learn(gatherer, channel, out.get("context"))      # reasoning as costed: for the check
-        size, budget = out.get("sent_tokens"), out.get("budget")      # all of it, as the provider counts
-        if "read_id" in out and budget and size is not None and size >= COUNT_FROM * budget:
-            counted = await self.counter.exact(gatherer, channel, request,
-                                               dict(body, input=items if messages is None else messages))
-            if counted is not None and counted > budget:
-                self.log(gatherer, f"[{channel}] counted {counted} tokens before sending (ag's count {size}), "
-                                   f"over the budget {budget}: read again")
-                await client.request("measured", {"gatherer": gatherer, "read_id": out["read_id"], "tokens": counted})
-                again, out_again = await read()
-                if "read_id" in out_again:
-                    messages, out = again, out_again
-        keep_read(request, gatherer, out)                 # what was sent is the read's context either way
-        if isinstance(out.get("read_id"), int):
-            self.latest[(gatherer, channel)] = max(out["read_id"], self.latest.get((gatherer, channel), 0))
-        sent = items if messages is None else messages
-        if self.count_events and "read_id" in out:
-            self.counter.sent(gatherer, channel, out, sent, preamble)
-            self.counter.start(request, client, gatherer, {CHANNEL: channel}, body, items, sent, out)
+        learn = lambda out: self.counter.learn(gatherer, channel, out.get("context"))   # noqa: E731 - reasoning as
+        messages, out = await self.turn(request, call, gatherer, channel, cwd, items, "input", body, preamble, since,
+                                        run=run, first=learn)                            # costed: for the check
         if messages is None or messages == items:
             return None                                   # nothing to change: codex's own bytes go through
         return dict(body, input=messages)
+
+    def kept(self, request, gatherer: str, channel: str, call, out: dict, stored) -> None:
+        if isinstance(out.get("read_id"), int):           # the newest read of the channel's (`overtaken`)
+            self.latest[(gatherer, channel)] = max(out["read_id"], self.latest.get((gatherer, channel), 0))
 
     async def compaction(self, request, gatherer: str, channel: str, body: dict, cwd: Optional[str], history: list,
                          trigger: list) -> Optional[dict]:
@@ -237,17 +206,6 @@ class CodexContextManager(ProxyHook):
         if new is None:
             return None
         return dict(body, input=new + [dict(t) for t in trigger])
-
-    async def measured(self, request, tokens: Optional[int]) -> None:
-        """The hook server's report, once the answer is back: the call's input tokens, to the read -- and
-        to the counter, which counts by them what the count endpoint cannot (`Counter.reported`)."""
-        await report_measured(self.ag_clients, request, tokens)
-        state = getattr(request, "state", None) or {}
-        read, answered = state.get(READ), state.get(ANSWERED)
-        if self.count_events and read and answered and isinstance(tokens, int):
-            gatherer, read_id = read
-            self.counter.reported(request, self.ag_clients.client(gatherer), gatherer, answered[1], read_id, tokens,
-                                  request.body if isinstance(request.body, dict) else {})
 
     def overtaken(self, request, gatherer: str, channel: str) -> bool:
         """Whether a later call of the thread has been read since this one: codex sends its next call

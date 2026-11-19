@@ -105,7 +105,7 @@ from ag.integrations.harnesses.codex.ag_orchestrator.context_manager import load
 from ag.integrations.tools.ag_connection.ag_client import AgClient
 from ag.integrations.tools.ag_orchestrator.adaptor import CHANNEL, Adaptor
 from ag.integrations.tools.hook_server.hook_server import Answer
-from ag.integrations.tools.ag_orchestrator.call_ag import (HUNG_UP, call_ag, keep_read, keep_stored, preamble_of,
+from ag.integrations.tools.ag_orchestrator.call_ag import (HUNG_UP, call_ag, keep_stored, preamble_of,
                                                           report_withdrawn)
 from ag.integrations.tools.ag_orchestrator.proxy_hook import ProxyHook
 from ag.integrations.tools.ag_orchestrator.file_touches import Files
@@ -117,7 +117,6 @@ from .counting import Counter, countable, fresh_thinking  # noqa: F401 - countab
 ANSWERED = "claude_answered"   # the hook's key in the hook server's `request.state`: where a call's answer is kept
 RECAPPED = "claude_recap"      # the same, for a recap: (gatherer, session), its answer kept as the session's recap
 FILES = "claude_files"         # the same, for what the answer's calls do to files: (gatherer, session, cwd, since)
-COUNT_FROM = 0.5            # of the budget, by the policy's count: from there a context is counted before it is sent
 
 
 def is_gemini(model) -> bool:
@@ -217,55 +216,40 @@ class ClaudeContextManager(ProxyHook):
             return await self.side_call(request, client, gatherer, channel, body, call.history, call.own,
                                         adaptor, mode, op, call.kind)
 
-        await self.calling(request, gatherer, channel, call)     # recorded before ag reads for it (proxy_hook.py)
         cwd = cwd_of(messages) or self.cwd
-        if isinstance(getattr(request, "state", None), dict):
-            request.state[ANSWERED] = (gatherer, channel, cwd)
-            if self.files is not None:
-                request.state[FILES] = (gatherer, channel, cwd, since)
-        if self.files is not None:                         # the results of the last answer's calls: checked
-            self.files.arrived(gatherer, channel, cwd, messages)
+
+        def fell_back(out):                                # Claude Code went back: which case ag took it for
+            said = continuity.fallback() if continuity is not None else None      # (to_events.py)
+            if said:
+                self.log(gatherer, f"[{channel}] {said}")
+        new, out = await self.turn(request, call, gatherer, channel, cwd, messages, "messages", body,
+                                   preamble_of({"system": body.get("system"), "tools": body.get("tools")}), since,
+                                   adaptor=adaptor, first=fell_back)
+        if new is None or new == messages:
+            return None                                   # nothing to change: Claude Code's own bytes go through
+        return dict(body, messages=new)
+
+    def arrived(self, gatherer: str, channel: str, messages: list) -> None:
         # its last answer and what came after -- its calls' results, tasks' notices: what they say of its asks and tasks
         last = next((i for i in range(len(messages) - 1, -1, -1) if isinstance(messages[i], dict)
                      and messages[i].get("role") == "assistant"), 0)
         self.derive(gatherer, channel, self.harness.read(self.harness.items(messages[last:])), asks=False)
 
-        async def read():
-            out = {}
-            new, note = await call_ag(client, gatherer, {CHANNEL: channel}, cwd,
-                                      messages, adaptor, out=out, limit=getattr(request, "limit", None),
-                                      preamble=preamble_of({"system": body.get("system"), "tools": body.get("tools")}),
-                                      process=getattr(request, "process", None))
-            self.log(gatherer, f"[{channel}] {note}")
-            return new, out
+    async def count(self, request, gatherer: str, channel: str, body: dict) -> Optional[int]:
+        return await self.counter.exact(request, body)      # its own counter (counting.py here)
 
-        new, out = await read()
-        fell_back = continuity.fallback() if continuity is not None else None
-        if fell_back:                                      # Claude Code went back: which case ag took it for (to_events.py)
-            self.log(gatherer, f"[{channel}] {fell_back}")
-        stored = list(out.get("inserted") or [])           # what this call stored: withdrawn, should Claude Code take it back
-        size, budget = out.get("sent_tokens"), out.get("budget")      # all of it, as the provider counts
-        if "read_id" in out and budget and size is not None and size >= COUNT_FROM * budget:
-            counted = await self.counter.exact(request, dict(body, messages=messages if new is None else new))
-            if counted is not None and counted > budget:
-                self.log(gatherer, f"[{channel}] counted {counted} tokens before sending (ag's count {size}), "
-                                   f"over the budget {budget}: read again")
-                await client.request("measured", {"gatherer": gatherer, "read_id": out["read_id"], "tokens": counted})
-                again, out_again = await read()
-                stored += out_again.get("inserted") or []
-                if "read_id" in out_again:
-                    new, out = again, out_again
-        keep_read(request, gatherer, out)                 # what was sent is the read's context either way
-        keep_stored(request, gatherer, {CHANNEL: channel}, stored)
-        if new is not None and "read_id" in out:
+    def kept(self, request, gatherer: str, channel: str, call, out: dict, stored) -> None:
+        keep_stored(request, gatherer, {CHANNEL: channel}, stored)   # withdrawn, should Claude Code take it back
+
+    def sending(self, new, out: dict):
+        if new is not None and "read_id" in out:          # thinking the model has not had: left out, off the read's count
             new, out["left_out_events"] = fresh_thinking(out.get("context"), new)
-            out["left_out"] = sum(out["left_out_events"].values())          # off the read's sent_tokens
-        sent = messages if new is None else new
-        if self.count_events and "read_id" in out:
-            self.counter.start(request, client, gatherer, {CHANNEL: channel}, body, messages, sent, out)
-        if new is None or new == messages:
-            return None                                   # nothing to change: Claude Code's own bytes go through
-        return dict(body, messages=new)
+            out["left_out"] = sum(out["left_out_events"].values())
+        return new
+
+    def counting(self, request, client, gatherer: str, channel: str, body: dict, items: list, sent: list, out: dict,
+                 preamble: list) -> None:
+        self.counter.start(request, client, gatherer, {CHANNEL: channel}, body, items, sent, out)
 
     @staticmethod
     def where(request, session: str) -> Tuple[str, str]:
