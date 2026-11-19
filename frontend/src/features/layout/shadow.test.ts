@@ -131,4 +131,17 @@ describe("the model's rules the page tells it by", () => {
     expect([M.shown(out), M.shownTab(out).focus, out.tabs.length]).toEqual([["g\u0000c1"], "g\u0000c1", 1]);
     expect(M.shownTab(M.pick(two, "g\u0000c1")).focus).toBe("g\u0000c1");
   });
+
+  it("keeps the model in this browser only once a bar dragged is let go", () => {
+    shadow.reset();
+    shadow.start(() => null);
+    localStorage.removeItem(M.KEY);
+    shadow.dragging(true);
+    shadow.tell("enter", M.open, "g\u0000c1");
+    shadow.persist();
+    expect(localStorage.getItem(M.KEY)).toBeNull(); // not at each move
+    shadow.dragging(false);
+    shadow.persist();
+    expect(localStorage.getItem(M.KEY)).toContain("c1");
+  });
 });
