@@ -124,7 +124,15 @@ class Harnesses(WithPlugins):
         self.add_harness("echo")
         code, out, err = self.run_ag("--dry-run", "echo", "hi")
         self.assertEqual(code, 0, err)
-        self.assertEqual(out.strip(), "echo via echo_adaptor:Plain hi")
+        held = os.environ.get("PYTHONPATH")
+        pythonpath = os.pathsep.join(p for p in (held, main.PYLIB) if p)        # agapps, for the agent's own Python
+        self.assertEqual(out.strip(), f"PYTHONPATH={pythonpath} echo via echo_adaptor:Plain hi")
+
+    def test_the_agent_s_python_is_given_agapps_after_what_its_pythonpath_holds_once(self):
+        self.assertEqual(main.with_pylib(None), main.PYLIB)
+        self.assertEqual(main.with_pylib(f"/a{os.pathsep}/b"), os.pathsep.join(["/a", "/b", main.PYLIB]))
+        self.assertEqual(main.with_pylib(f"{main.PYLIB}{os.pathsep}/a"), f"{main.PYLIB}{os.pathsep}/a")   # once
+        self.assertTrue(os.path.isfile(os.path.join(main.PYLIB, "agapps.py")))
 
     def test_a_policy_that_does_not_take_the_adaptor_s_outputs_is_refused_before_anything_runs(self):
         self.add_harness("odd", adaptor="echo_adaptor:Odd")
