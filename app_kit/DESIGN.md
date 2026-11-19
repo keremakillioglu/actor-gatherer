@@ -713,7 +713,10 @@ Each step is one PR and leaves the dashboard working. Steps 1–3 change nothing
      no longer found is taken over by an app that replaces it -- the one that wants it most -- kept as its own under
      the same id (`app_opened` by "replaced"), so its agents stay attached and its name, task and group are kept;
      its actors' roles are moved with it (app_agents.py's `adopt_all`). Both replace "editor": the LaTeX editor
-     wants one on a folder with a LaTeX source at its top, the Files app any other. Not carried over: a preview set
+     wants one on a folder with a LaTeX source at its top, the Files app any other. One taken by an app of access
+     "group" (the Files app) leaves the task the Editor was in -- an app every agent of the group may use is in no task
+     (the user, 2026-11-18) -- as its group is read (task_links.py's `on_load`, as any group app found in a task); one taken by the LaTeX
+     editor (access "task") stays in it. Not carried over: a preview set
      in an Editor (its events are `editor.*`, which no app now reads; the guess comes back), and what a browser kept
      of an Editor's panel (its folder, its file open: kept on the Editor's origin).
    - Checked: test_app_latex.py (the Editor's tests, as the LaTeX editor's; a file open in both apps),

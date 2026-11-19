@@ -16,7 +16,7 @@ import urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app_kit  # noqa: E402
-from ag_dashboard import app_agents, app_host, server  # noqa: E402
+from ag_dashboard import access, app_agents, app_host, server, task_links, tasks, tool_gateway  # noqa: E402
 from app_kit import Instance  # noqa: E402
 from test_dashboard import HomeBase  # noqa: E402
 from test_dashboard_app_host import insert_here  # noqa: E402
@@ -119,6 +119,26 @@ class TakenOverTest(HomeBase):
         app_agents.adopt_all(Sessions(rows), h)
         self.assertEqual([app_agents.role_of(r) for r in rows], [("latex", paper.id), ("files", code.id), None])
         self.assertEqual(h.listed("g")["attached"][paper.id], ["c1"])
+
+    def test_taken_over_by_the_files_app_it_leaves_its_task_by_the_latex_editor_it_stays(self):
+        """A group's app is in no task (task_links.py's `on_load`): one an Editor was, taken over by Files, too."""
+        paper, code = self.editors
+        for i, channel in zip(self.editors, ("c1", "c2")):                 # each in a task with its actor, as before
+            tasks.add("g", channel, [tasks.app_item(i.id)])
+        h = self.new_host()
+        h.loaded_then = task_links.on_load                                # as the server has it
+        with unittest.mock.patch.object(tool_gateway, "HOST", h), \
+                unittest.mock.patch.object(access, "STARTED", lambda g, c: True):
+            got = h.listed("g")
+            taskable = [task_links.taskable("g", tasks.app_item(i.id)) for i in self.editors]
+        self.assertEqual({i["id"]: i["app"] for i in got["instances"]}, {paper.id: "latex", code.id: "files"})
+        self.assertEqual(tasks.task_of("g", tasks.app_item(paper.id)), tasks.task_of("g", "c1"))   # LaTeX: "task", kept
+        self.assertIsNotNone(tasks.task_of("g", "c1"))
+        self.assertIsNone(tasks.task_of("g", tasks.app_item(code.id)))     # Files: "group", in no task
+        self.assertIsNone(tasks.task_of("g", "c2"))                        # (its actor alone: the task gone with it)
+        self.assertEqual(got["attached"].get(paper.id), ["c1"])
+        self.assertEqual(h.listed("g")["attached"].get(code.id, []), [])  # left its task: detached, as any would be
+        self.assertEqual(taskable, [True, False])                         # nor put in one again
 
     def test_an_editor_on_a_folder_gone_waits_as_it_did(self):
         os.rename(self.code, self.code + ".gone")                    # the Files app can't open it: no app takes it

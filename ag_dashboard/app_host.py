@@ -898,7 +898,8 @@ class AppHost:
         """An instance of an app no longer found, taken over by an app whose manifest `replaces` that app: the one whose
         backend wants it most (App.takes_over; ties, by name), as its own -- the same id, so its agents stay attached and
         its task, its name and its group are kept -- opened again by it (args {"replaced": the app it was}) and kept so
-        (`app_opened`, by "replaced"). None: no app takes it."""
+        (`app_opened`, by "replaced"). Taken by an app of access "group", it leaves its task as its group is read
+        (task_links.py's `on_load`: such an app is in no task). None: no app takes it."""
         with self.lock:
             heirs = sorted(n for n, h in self.apps.items() if inst.app in h.manifest.replaces)
         best, most = None, 0
