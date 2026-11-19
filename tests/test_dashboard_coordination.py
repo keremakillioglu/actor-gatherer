@@ -21,6 +21,7 @@ import harness_kit  # noqa: E402
 import page_source  # noqa: E402
 from harness_kit.base import Box  # noqa: E402
 from ag.cli import actors as cli  # noqa: E402
+from ag_dashboard import store  # noqa: E402
 from ag_dashboard import access, branches, coordination, coordinators, data, files, folders, gatherer_folders, groups, livedocs, saved, server, sessions, tasks  # noqa: E402
 from test_dashboard_sessions import FAKE_AG, SessionsBase  # noqa: E402
 
@@ -721,7 +722,7 @@ class WatchTest(CoordinationBase):
         n = self.crew.when(self.a, self.b)["watch"]
         with unittest.mock.patch.object(data, "groups_now", return_value={self.a: "elsewhere", self.b: "elsewhere"}):
             self.assertEqual(self.crew.check(), [])
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         try:
             self.assertEqual(conn.execute("SELECT gatherer, fired FROM watches WHERE id = ?", (n,)).fetchone(), ("elsewhere", 0))
         finally:

@@ -17,9 +17,9 @@ from ag.ag_harness.store import operations as store  # noqa: E402
 import codex_items as codex  # noqa: E402
 from ag.ag_interface import EventType, Property  # noqa: E402
 from ag.ag_policies.proactive_context_manager.events import context_stream, environment_update  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
-from ag.ag_policies.proactive_context_manager.config import REMEMBER_MANY, REMEMBER_ONE  # noqa: E402
+from ag.ag_policies.proactive_context_manager.core.prompts import REMEMBER_MANY, REMEMBER_ONE  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from test_core import PREAMBLE, Base, ScriptedLLM, agent, call, conversation, output, user  # noqa: E402
 from channels import ch, on  # noqa: E402
@@ -67,7 +67,7 @@ class OutsideBase(Base):
         return self.m.read("w", store.high_water(self.m._conn("w")), properties=ch(channel))
 
     def run_build(self, gatherer, channel_id):
-        return self.policy.build(gatherer, ch(channel_id), tables.new_build(self.m._conn(gatherer), channel_id))
+        return self.policy.build(gatherer, ch(channel_id), tables.create_build(self.m._conn(gatherer), channel_id))
 
     def texts(self, context):
         return [codex.text(i) for i in context]
@@ -311,10 +311,10 @@ class NoticeTest(OutsideBase):
                          "that relies on its contents, read the file again." + REMEMBER_ONE)
 
     def test_the_match_is_the_subject_as_a_whole(self):
-        from ag.ag_policies.proactive_context_manager.policy import mentions
-        self.assertTrue(mentions("cat /w/notes.txt", "notes.txt"))
-        self.assertFalse(mentions("open data.py", "a.py"))
-        self.assertFalse(mentions("a.pyc is stale", "a.py"))
+        from ag.ag_policies.proactive_context_manager.core.external_events import is_file_mentioned
+        self.assertTrue(is_file_mentioned("cat /w/notes.txt", "notes.txt"))
+        self.assertFalse(is_file_mentioned("open data.py", "a.py"))
+        self.assertFalse(is_file_mentioned("a.pyc is stale", "a.py"))
         self.put(PREAMBLE + [user("look at data.py", 1)] + opened("data.py", 1) + [agent("ok", 1)])
         self.change("a.py", 1)
         self.assertEqual(self.notices(self.read()), [])
@@ -354,19 +354,19 @@ class NoticeTest(OutsideBase):
         self.assertEqual(self.notices(self.read()), ["Notice: File ag/page.html was changed on disk (at 2)."])
 
     def test_a_relative_path_is_the_file_itself(self):
-        from ag.ag_policies.proactive_context_manager.policy import mentions
-        self.assertTrue(mentions("cat ./a.py", "a.py", "/w"))
-        self.assertTrue(mentions('Read({"file_path": "/w/a.py"})', "a.py", "/w"))
-        self.assertTrue(mentions("cat /w/./src/a.py", "src/a.py", "/w/"))
-        self.assertFalse(mentions("cat src/a.py", "a.py", "/w"))
-        self.assertFalse(mentions("cat /x/a.py", "a.py", "/w"))
-        self.assertTrue(mentions("cat src/a.py", "a.py"))                 # no directory known: as before
-        self.assertTrue(mentions("cat a.py /x/a.py", "a.py", "/w"))
-        self.assertFalse(mentions("cd /x && wc -l a.py", "a.py", "/w"))     # build_ag: another worktree's file
-        self.assertFalse(mentions("cd src; cat a.py", "a.py", "/w"))
-        self.assertTrue(mentions("cd /w && cat a.py", "a.py", "/w"))
-        self.assertTrue(mentions('Bash({"command": "cd \\"/w\\" && cat a.py"})', "a.py", "/w"))
-        self.assertTrue(mentions("cd /x && cat /w/a.py", "a.py", "/w"))
+        from ag.ag_policies.proactive_context_manager.core.external_events import is_file_mentioned
+        self.assertTrue(is_file_mentioned("cat ./a.py", "a.py", "/w"))
+        self.assertTrue(is_file_mentioned('Read({"file_path": "/w/a.py"})', "a.py", "/w"))
+        self.assertTrue(is_file_mentioned("cat /w/./src/a.py", "src/a.py", "/w/"))
+        self.assertFalse(is_file_mentioned("cat src/a.py", "a.py", "/w"))
+        self.assertFalse(is_file_mentioned("cat /x/a.py", "a.py", "/w"))
+        self.assertTrue(is_file_mentioned("cat src/a.py", "a.py"))                 # no directory known: as before
+        self.assertTrue(is_file_mentioned("cat a.py /x/a.py", "a.py", "/w"))
+        self.assertFalse(is_file_mentioned("cd /x && wc -l a.py", "a.py", "/w"))     # build_ag: another worktree's file
+        self.assertFalse(is_file_mentioned("cd src; cat a.py", "a.py", "/w"))
+        self.assertTrue(is_file_mentioned("cd /w && cat a.py", "a.py", "/w"))
+        self.assertTrue(is_file_mentioned('Bash({"command": "cd \\"/w\\" && cat a.py"})', "a.py", "/w"))
+        self.assertTrue(is_file_mentioned("cd /x && cat /w/a.py", "a.py", "/w"))
 
     def test_a_change_reported_late_is_still_the_agent_s_own(self):
         """making_ag: the session came back to /home/sep, whose poller had last looked minutes before,
@@ -387,8 +387,8 @@ class NoticeTest(OutsideBase):
                 self.put([agent("done", 1), user("next", 2)])
                 self.read()
                 self.in_dir("proj/a.py", when, cwd="/w")                 # reported now, by /w's poller
-                from ag.ag_policies.proactive_context_manager.policy import shown
-                self.assertEqual(self.notices(self.read()), [e.format(shown(when)) for e in expected])
+                from ag.ag_policies.proactive_context_manager.core.external_events import format_time
+                self.assertEqual(self.notices(self.read()), [e.format(format_time(when)) for e in expected])
 
     def test_no_second_notice_until_the_agent_reads_it_again(self):
         self.put(PREAMBLE + [user("read notes.txt", 1)] + opened("notes.txt", 1) + [agent("X", 1)])
@@ -475,7 +475,7 @@ class AfterABuildTest(OutsideBase):
         self.assertTrue(any(t.startswith("# Previous task") for t in texts))   # the build was adopted
         self.assertEqual(self.shown(context), ["@#analytics alice: new"])
         self.assertEqual(self.notices(context), ["Notice: File /w/new.py was changed on disk (at 2)."])
-        build = tables.latest_build(self.m._conn("w"), "c1")
+        build = tables.get_own_latest_build(self.m._conn("w"), "c1")
         conn = self.m._conn("w")
         self.assertLess(store.locate(conn, ch("c1"), "context_stream:#analytics:1"), build["open_from_row"])
         self.assertLess(store.locate(conn, ch("c1"), "environment_update:files:/w/old.py@1"), build["open_from_row"])

@@ -151,7 +151,7 @@ Environment variables for one harness, set when you run it:
 
 A policy is a subclass of `ag.ag_interface.Policy`:
 
-<!-- gen: stub ag.ag_interface.policy:Policy name event_types init read bulk_loaded -->
+<!-- gen: stub ag.ag_interface.policy:Policy name event_types init read request_build bulk_loaded -->
 
 <!-- gen: doc ag.ag_interface.policy:Policy -->
 

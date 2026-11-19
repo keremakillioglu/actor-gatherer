@@ -14,7 +14,7 @@ import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ag_dashboard import data, sessions  # noqa: E402
+from ag_dashboard import data, sessions, store  # noqa: E402
 from ag_dashboard import home as dashboard_home  # noqa: E402
 
 THREAD = "01a16f39-7f0a-7531-a545-d854579d7d68"
@@ -121,7 +121,7 @@ class CreateTest(CodexBase):
 
     def test_a_table_from_before_gets_the_new_columns(self):
         os.makedirs(dashboard_home.HOME, exist_ok=True)
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         conn.execute("DROP TABLE IF EXISTS sessions")       # setUp's, made new
         conn.execute("CREATE TABLE sessions (session_id TEXT PRIMARY KEY, gatherer TEXT NOT NULL, harness TEXT NOT NULL, "
                      "cwd TEXT NOT NULL, permission_mode TEXT NOT NULL, created_at TEXT NOT NULL, turns INTEGER NOT NULL "
@@ -131,7 +131,7 @@ class CreateTest(CodexBase):
         self.assertEqual({k: sessions.stored()[0][k] for k in ("kept", "model", "started_as", "harness_id")},
                          {"kept": 0, "model": None, "started_as": None, "harness_id": None})
         sessions.Sessions()
-        conn = sqlite3.connect(sessions.db_path())
+        conn = sqlite3.connect(store.path())
         have = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
         conn.close()
         self.assertLessEqual({"kept", "model", "started_as", "harness_id"}, have)

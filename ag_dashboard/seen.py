@@ -11,12 +11,10 @@ one row per actor looked at:
 A row only moves forward: a look at an older `last` (a page behind the server) keeps the newer one. No
 table yet: no dashboard on this home has kept a look, and the page takes every actor as seen."""
 
-import os
-import sqlite3
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from . import sessions
+from . import store
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS seen (
     gatherer TEXT NOT NULL,
@@ -25,24 +23,18 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS seen (
     at       TEXT NOT NULL,
     PRIMARY KEY (gatherer, channel)
 )"""
+store.table("seen", SCHEMA, actor="channel", merged=store.MOVE)
 
 
 def stored() -> Optional[Dict[str, Dict[str, float]]]:
-    """{gatherer: {channel: last}}, read-only: None when none was ever kept (no table yet)."""
-    if not os.path.exists(sessions.db_path()):
-        return None
-    conn = sqlite3.connect(f"file:{sessions.db_path()}?mode=ro", uri=True, timeout=8)
-    try:
-        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'seen'").fetchone() is None:
+    """{gatherer: {channel: last}}, read-only: None when none was ever kept (no table yet: it is made by the first look)."""
+    with store.reading() as conn:
+        if conn is None or not store.has(conn, "seen"):
             return None
         found: Dict[str, Dict[str, float]] = {}
         for g, c, last in conn.execute("SELECT gatherer, channel, last FROM seen ORDER BY gatherer, channel"):
             found.setdefault(g, {})[c] = last
         return found
-    except sqlite3.Error:                # unreadable for now: nothing seen, not none ever kept
-        return {}
-    finally:
-        conn.close()
 
 
 def look(looked: List) -> Dict[str, Dict[str, float]]:
@@ -57,13 +49,8 @@ def look(looked: List) -> Dict[str, Dict[str, float]]:
         rows.append((g, c, float(last), at))
     if not rows:
         raise ValueError("which actors?")
-    os.makedirs(os.path.dirname(sessions.db_path()), exist_ok=True)
-    conn = sqlite3.connect(sessions.db_path(), timeout=8, isolation_level=None)
-    try:
-        conn.execute(SCHEMA)
+    with store.transaction("seen") as conn:
         conn.executemany("INSERT INTO seen (gatherer, channel, last, at) VALUES (?, ?, ?, ?) "
                          "ON CONFLICT (gatherer, channel) DO UPDATE SET last = excluded.last, at = excluded.at "
                          "WHERE excluded.last > seen.last", rows)
-    finally:
-        conn.close()
     return stored() or {}

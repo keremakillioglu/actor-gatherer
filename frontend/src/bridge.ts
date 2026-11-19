@@ -1,5 +1,5 @@
-// Between the old page (src/legacy/, one script) and the new code, while views move from one to the other
-// (ag_dashboard/DESIGN.md, A4-A6). Set up before the old page runs, as `window.agNext`: what it hands the new code
+// Between the old page (page.js's modules, plain JS) and the new code, while views move from one to the other
+// (ag_dashboard/DESIGN.md, A4-A6). Set up before the old page starts, as `window.agNext`: what it hands the new code
 // (the stream's home) and calls of it (ag's settings; the renderers it draws with, `ui`; Chat's turns, `chat`). The old
 // page hands back `window.agLegacy`: what the new code calls of it. Each side goes once nothing calls it.
 import { useDashboard } from "./core/store";
@@ -28,7 +28,7 @@ import { work } from "./features/layout/work";
 import { useTurns } from "./features/chat/store";
 import { useSettings } from "./features/settings/store";
 
-/** What the old page gives the new code (src/legacy/03-settings.js). */
+/** What the old page gives the new code (src/features/settings/panel.js). */
 export interface AgLegacy {
   /** The dashboard's panel opened or closed. */
   setAbout: (open: boolean) => void;
@@ -40,14 +40,14 @@ export interface AgLegacy {
 const agNext = Object.freeze({
   /** A stream of the dashboard's, as `new EventSource(url)`, on the page's one WebSocket (core/api/stream.ts). */
   stream,
-  /** The stream's home, as the old page takes it (04-seen.js's takeHome). */
+  /** The stream's home, as the old page takes it (features/list/seen.js's takeHome). */
   home: (home: Home) => useDashboard.getState().setHome(home),
   settings: Object.freeze({
     load: () => useSettings.getState().load(),
     fileOpen: () => useSettings.getState().file.open,
     closeFile: () => useSettings.getState().closeFile(),
   }),
-  /** The renderers the old page draws with (src/legacy/11-code.js's and 12-transcript.js's functions call these). */
+  /** The renderers the old page draws with (src/core/page/code.js's and features/transcript/transcript.js's functions call these). */
   ui: Object.freeze({
     escapeHtml,
     langOfPath,
@@ -62,12 +62,12 @@ const agNext = Object.freeze({
     markdown,
     unplanned,
   }),
-  /** Chat's turns (src/legacy/16-files-view.js's filesRender): drawn from the feed it hands over, into the actor's own
+  /** Chat's turns (src/features/chat/files-view.js's filesRender): drawn from the feed it hands over, into the actor's own
    * node, which it puts in its view; what they call of the page, its host (features/chat/types.ts). The setting "Chat's
-   * earlier turns" picked (02-data.js): every turn as it has them, the clicks against it dropped. */
+   * earlier turns" picked (features/page/data.js): every turn as it has them, the clicks against it dropped. */
   chat: Object.freeze({ draw: drawTurns, clearFlips: () => useTurns.getState().clearFlips(), cidsOf }),
   /** The apps (features/apps/host.ts): those found, an instance opened, and an app's pane -- its head, its frame and the
-   * bridge to its panel -- which the old page keeps in the top row, above the panes (src/legacy/07-panes.js's addAppPane). */
+   * bridge to its panel -- which the old page keeps in the top row, above the panes (src/features/layout/panes.js's addAppPane). */
   apps: Object.freeze({
     load: apps.load,
     found: apps.found,
@@ -91,9 +91,9 @@ const agNext = Object.freeze({
     }),
     pane: (app: apps.AppInfo, instance: apps.Instance, hooks: apps.PaneHooks) => new apps.AppPane(app, instance, hooks),
   }),
-  /** The Apps page (features/apps/catalog.ts), drawn in a tab's box when the tab is its (src/legacy/07-apps-page.js). */
+  /** The Apps page (features/apps/catalog.ts), drawn in a tab's box when the tab is its (src/features/apps/apps-page.js). */
   appsPage: Object.freeze({ draw: drawAppsPage, askedByAgent }),
-  /** The work area's layout (features/layout/): the panels the old page shows (src/legacy/07-panes.js's shownPanels), each
+  /** The work area's layout (features/layout/): the panels the old page shows (src/features/layout/panes.js's shownPanels), each
    * task's as the reader arranges them, placed; a panel moved by its head or its menu. */
   layout: Object.freeze({ work }),
 });

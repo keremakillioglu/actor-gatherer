@@ -61,7 +61,7 @@ from datetime import datetime, timezone
 from collections import deque
 from typing import Dict, List, Optional, Tuple
 
-from . import data
+from . import data, store
 
 try:
     from pycrdt import Doc, Text
@@ -416,17 +416,23 @@ def _utf16(raw: bytes, at: int) -> int:
     return len(raw[:at].decode("utf-8", errors="ignore").encode("utf-16-le")) // 2
 
 
+GUESS_SPAN = 600.0          # seconds: how far apart another actor's change, its call naming the file, may be from a
+                            # change no call of an actor's names, to be taken as the one that made it (`_made_by_another`)
+
+
 def writers(directories: List[str], since: float) -> Dict[str, List[dict]]:
     """The actors that changed a file under any of `directories` since `since` (seconds), by the file's path from
     its directory: [{gatherer, channel, at, how}], each actor's latest change, the latest first -- what ag's hook found
     each tool call did on disk (every gatherer's `file_touched` events; an older gatherer's `_touches`, copied there
-    once). Read newest first, by the events' type, and only back to `since`: the events are in the order they came
-    (copied ones, in theirs, before any that came after)."""
+    once). Read newest first, by the events' type, and only back to GUESS_SPAN before `since`: the events are in the
+    order they came (copied ones, in theirs, before any that came after). A change no call of the actor's names --
+    the file changed while its command ran -- is left out when another actor's call that names the file made it
+    (`_made_by_another`)."""
     prefixes = [d.rstrip("/") + "/" for d in set(directories)]
-    out: Dict[str, Dict[tuple, dict]] = {}
+    found: Dict[str, List[dict]] = {}               # by path: its changes
     names = data.gatherer_names()
     for gatherer in names[:1] if data.paths.merged() else names:        # the home's one database: read once
-        conn = data._connect(gatherer)
+        conn = store.gatherer(gatherer)
         if conn is None:
             continue
         try:
@@ -437,25 +443,71 @@ def writers(directories: List[str], since: float) -> Dict[str, List[dict]]:
             for r in conn.execute(f"SELECT {data.CHANNEL} AS session, inserted_at, payload_json FROM events "
                                   "WHERE event_type_id = ? ORDER BY row_id DESC", (kind[0],)):
                 at = data._seconds(r["inserted_at"])
-                if at is None or at < since:
+                if at is None or at < since - GUESS_SPAN:
                     break
                 t = data._json(r["payload_json"]) or {}
                 path = t.get("path")
                 if t.get("how") not in ("created", "modified", "deleted") or not isinstance(path, str):
                     continue
                 mine = gatherer if owner is None else owner.get(r["session"])    # its group's, in the one database
-                if mine is None:
-                    continue
-                for prefix in prefixes:
-                    if path.startswith(prefix):
-                        key, kept = (mine, r["session"]), out.setdefault(path[len(prefix):], {})
-                        if key not in kept or at > kept[key]["at"]:
-                            kept[key] = {"gatherer": mine, "channel": r["session"], "at": at, "how": t["how"]}
+                if mine is not None and any(path.startswith(prefix) for prefix in prefixes):
+                    found.setdefault(path, []).append({"gatherer": mine, "channel": r["session"], "at": at,
+                                                       "how": t["how"], "named": t.get("named"),
+                                                       "lines": _lines(t.get("detail"))})
         except sqlite3.Error:                       # being written, or not ag's: the next listing
             continue
         finally:
             conn.close()
+    out: Dict[str, Dict[tuple, dict]] = {}
+    for path, changes in found.items():
+        for c in changes:
+            if c["at"] < since or _made_by_another(c, changes):
+                continue
+            key = (c["gatherer"], c["channel"])
+            for prefix in prefixes:
+                if path.startswith(prefix):
+                    kept = out.setdefault(path[len(prefix):], {})
+                    if key not in kept or c["at"] > kept[key]["at"]:
+                        kept[key] = {"gatherer": c["gatherer"], "channel": c["channel"], "at": c["at"], "how": c["how"]}
     return {rel: sorted(by.values(), key=lambda w: -w["at"]) for rel, by in out.items()}
+
+
+def _lines(detail) -> Tuple[frozenset, frozenset]:
+    """The lines a change took out and put in, by its `file_touched` detail (a change's hunks, a file made's lines):
+    each stripped, a blank one left out. Neither: not known (a file not seen before, not text)."""
+    d = detail if isinstance(detail, dict) else {}
+    out, put = set(), set()
+    for h in d.get("hunks") or []:
+        if isinstance(h, dict):
+            out.update(s.strip() for s in h.get("old") or [] if isinstance(s, str) and s.strip())
+            put.update(s.strip() for s in h.get("new") or [] if isinstance(s, str) and s.strip())
+    put.update(s.strip() for s in d.get("lines") or [] if isinstance(s, str) and s.strip())
+    return frozenset(out), frozenset(put)
+
+
+def _guessed(c: dict) -> bool:
+    """Whether change `c` is one no call of its actor's names: the file changed while its command ran (`named`
+    false; None, an older record's: not known, taken as named)."""
+    return c.get("named") is not None and not c["named"]
+
+
+def _made_by_another(c: dict, changes: List[dict]) -> bool:
+    """Whether change `c`, one no call of its actor's names (`_guessed`), was another actor's: one whose call names
+    the file made the same kind of change (a deletion, or else a change) at most GUESS_SPAN seconds from it, its
+    lines holding `c`'s -- every line `c` took out among those it took out, every line `c` put in among those it
+    put in (taken together, when several made it). Lines not known, on either side: the same kind of change is
+    enough. A revert of another actor's change is its own: its lines are the other way round."""
+    if not _guessed(c):
+        return False
+    deleted = c["how"] == "deleted"
+    others = [o for o in changes if not _guessed(o) and (o["gatherer"], o["channel"]) != (c["gatherer"], c["channel"])
+              and (o["how"] == "deleted") == deleted and abs(o["at"] - c["at"]) <= GUESS_SPAN]
+    if not others:
+        return False
+    out, put = c["lines"]
+    if not (out or put) or any(not (o["lines"][0] or o["lines"][1]) for o in others):
+        return True
+    return out <= frozenset().union(*(o["lines"][0] for o in others)) and put <= frozenset().union(*(o["lines"][1] for o in others))
 
 
 def _latest(found: List[dict]) -> List[dict]:
@@ -1018,13 +1070,6 @@ class LiveDocs:
             raise DocError("a connection id, please")
         room = self._room(path, root, create=True)
         return room, room.join(cid, client, hold)
-
-    def open_room(self, path: str, root: str) -> Optional[Room]:
-        """The file's document, if a page has it open now; else None."""
-        if not AVAILABLE:
-            return None
-        room = self.rooms.get(resolve(path, root))
-        return room if room is not None and room.conns else None
 
     def hold(self, path: str, root: str, cid: str, how: str) -> dict:
         return self._room(path, root).hold(cid, how)

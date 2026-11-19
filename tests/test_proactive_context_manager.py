@@ -13,7 +13,7 @@ import ag.ag_harness  # noqa: E402,F401
 from ag.ag_harness import Manager  # noqa: E402
 import codex_items as codex  # noqa: E402
 from ag.ag_policies.proactive_context_manager.events import environment_update  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from test_core import PREAMBLE, Base, ScriptedLLM, agent, call, conversation, note, output, user  # noqa: E402
@@ -174,7 +174,7 @@ class ShownTest(ParallelBase):
 
 class BuildTest(ParallelBase):
     def run_build(self, channel_id="c1"):
-        return self.policy.build("w", ch(channel_id), tables.new_build(self.m._conn("w"), channel_id))
+        return self.policy.build("w", ch(channel_id), tables.create_build(self.m._conn("w"), channel_id))
 
     def test_after_a_build_only_the_requests_since_it_are_shown_in_place(self):
         self.put(PREAMBLE + conversation(12))
@@ -217,7 +217,7 @@ class WordingTest(ParallelBase):
         self.wrapped.init("w")
         self.put(PREAMBLE + conversation(12))
         self.put(PREAMBLE + [user("their task", 100)], channel="c2")
-        policy.build("w", ch("c1"), tables.new_build(self.m._conn("w"), "c1"))
+        policy.build("w", ch("c1"), tables.create_build(self.m._conn("w"), "c1"))
         self.put([user("after the build", 101)], channel="c2")
         self.put([user("my next task", 50)])
         return "\n".join(self.texts(self.read()))
@@ -392,7 +392,10 @@ class OwnChangeTest(ParallelBase):
                            ("Write", {"file_path": "salaries.csv", "content": "x"}),
                            ("MultiEdit", {"file_path": "salaries.csv", "edits": []}),
                            ("edit", {"path": "salaries.csv", "edits": [{"oldText": "a", "newText": "b"}]}),
-                           ("write", {"filePath": "salaries.csv", "content": "x"})):
+                           ("write", {"filePath": "salaries.csv", "content": "x"}),
+                           # agy's: its calls' text is `write_file({"Path": ...})`, not the others' names or keys
+                           ("write_file", {"Path": "salaries.csv", "Content": "x"}),
+                           ("edit_file", {"Path": "salaries.csv", "Old": "a", "New": "b"})):
             with self.subTest(name=name):
                 self.setUp()
                 self.put(PREAMBLE + [user("fix salaries.csv", 1)])

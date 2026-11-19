@@ -1,5 +1,5 @@
 // Links to things in apps (app_kit/DESIGN.md, "5d. Links"): an agent's `[words](ag://<app>/<path>)`, drawn as Chat draws
-// a message (core/ui/md.ts) with its app's mark, and opened by a click in the app's panel above the actor (07-panes.js's
+// a message (core/ui/md.ts) with its app's mark, and opened by a click in the app's panel above the actor (features/layout/panes.js's
 // openAppLink), which is handed the link (the SDK's ag.links.onOpen). The test app is Notepad (tests/apps/notepad/),
 // whose [[links]] take `note/<n>`. Its instance is left open, as apps.spec.ts leaves it; its panel closed.
 import fs from "node:fs";

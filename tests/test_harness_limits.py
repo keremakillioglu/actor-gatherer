@@ -23,7 +23,7 @@ from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import operations as store  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.ag_policies.proactive_context_manager import ProactiveContextManager, ProactiveContextManagerConfig  # noqa: E402
-from ag.ag_policies.proactive_context_manager import tables  # noqa: E402
+from ag.ag_policies.proactive_context_manager.db import tables  # noqa: E402
 from ag.ag_policies.proactive_context_manager.config import within_limit  # noqa: E402
 from ag.integrations.harnesses.claude.setup import launch as claude  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor import to_events as codex_events  # noqa: E402
@@ -102,9 +102,9 @@ class PolicyLimitTest(PolicyBase):
         self.put(PREAMBLE + conversation(8) + long_turn(3, start=50))
         self.read(self.LIMIT)
         seen = []
-        within = self.policy.build_within
-        self.policy.build_within = lambda *a: seen.append(self.policy.config.max_context_tokens) or within(*a)
-        self.policy.build("s", ch("c1"), tables.new_build(self.m._conn("s"), "c1"))
+        within = self.policy.run_build
+        self.policy.run_build = lambda *a: seen.append(self.policy.config.max_context_tokens) or within(*a)
+        self.policy.build("s", ch("c1"), tables.create_build(self.m._conn("s"), "c1"))
         self.assertEqual(seen, [3000])
         self.assertEqual(self.policy.config.max_context_tokens, 200_000)
 

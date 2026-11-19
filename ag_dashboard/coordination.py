@@ -96,7 +96,8 @@ from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Tu
 import harness_kit
 from app_kit import AppError
 
-from . import actions, branches, coordinators, data, files, folders, groups, home, livedocs, naming, saved, sessions
+from . import (actions, branches, coordinators, data, files, folders, groups, home, livedocs, naming, saved, sessions,
+               store)
 
 COORDINATOR = sessions.COORDINATOR
 ALIASES = ("gatherer", "gatherer-agent", "coordinator")   # what `send`, `show` and `when` take for a coordinator agent
@@ -146,6 +147,8 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS watches (
     fired        REAL NOT NULL DEFAULT 0,
     outcome      TEXT
 )"""
+# a watch's group is followed by the watch itself (`_regrouped`: with its actors when both move, ended when they part)
+store.table("watches", SCHEMA, merged=store.STAY)
 
 
 class CoordinationError(sessions.SessionError):
@@ -1164,16 +1167,12 @@ class Coordination:
     # ---- the watches
 
     def _db(self) -> sqlite3.Connection:
-        os.makedirs(os.path.dirname(sessions.db_path()), exist_ok=True)
-        conn = sqlite3.connect(sessions.db_path(), timeout=8, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        conn.execute(SCHEMA)
-        return conn
+        return store.write("watches", rows=True)
 
     def check(self, now: Optional[float] = None) -> List[int]:
         """The watches whose watcher was told now: their numbers."""
         now = time.time() if now is None else now
-        if not os.path.exists(sessions.db_path()):
+        if not os.path.exists(store.path()):
             return []
         conn = self._db()
         try:
@@ -1413,7 +1412,7 @@ def _none_over(sc: Scope, named: List[str], lca: Optional[List[str]] = None) -> 
 
 def _role_in(group: str, channel: str) -> Optional[dict]:
     """The latest `role` record's payload in the channel, as ag keeps it; None for none (or not read)."""
-    conn = data._connect(groups.runs_under(group))
+    conn = store.gatherer(groups.runs_under(group))
     if conn is None:
         return None
     try:

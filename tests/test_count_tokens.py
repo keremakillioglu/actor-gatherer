@@ -24,7 +24,7 @@ from ag.ag_harness.server import serve  # noqa: E402
 from ag.ag_harness.server.__main__ import server_for  # noqa: E402
 from ag.ag_harness.store import paths  # noqa: E402
 from ag.integrations.harnesses.claude.ag_orchestrator import context_manager as claude_ag  # noqa: E402
-from ag.integrations.harnesses.codex.ag_orchestrator.ag_clients import AgClients  # noqa: E402
+from ag.integrations.tools.ag_orchestrator.ag_clients import AgClients  # noqa: E402
 from ag.integrations.harnesses.codex.adaptor import to_events as codex  # noqa: E402
 
 TOOLS = [{"name": "Bash", "input_schema": {"type": "object"}},
